@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Seed, SeedRun } from '@ultimat3/entity';
 import { dbCommand } from './cmd-db';
 import type { CommandContext } from './command';
@@ -19,7 +20,7 @@ import {
   seedTotals,
   selectSeeds,
 } from './db-seed';
-import { CLI_ERROR_TITLES, docsFor } from './error-codes';
+import { CLI_ERROR_TITLES } from './error-codes';
 import { fixProblem } from './error-contract';
 import { exec } from './exec';
 import { explainErrorCode } from './mcp-errors';
@@ -176,7 +177,7 @@ describe('unit · x db seed · which seeds this environment runs', () => {
     expect(explained?.fix).toContain('--tier dev');
     expect(explained?.fix).toContain('--json');
     expect(fixProblem(explained?.fix ?? '')).toBeUndefined();
-    expect(explained?.docs).toBe(docsFor('X_SEED_ENVIRONMENT'));
+    expect(explained?.docs).toBe(ERROR_DOCS_URL);
   });
 
   test('naming the tier is the consent: --tier dev runs it in production', () => {
@@ -311,7 +312,7 @@ describe('unit · x db seed · the command', () => {
         code: 'X_SEED_ENVIRONMENT',
         cause: (error as { cause: string }).cause,
         fix: 'x db seed dev --tier dev --json',
-        docs: docsFor('X_SEED_ENVIRONMENT'),
+        docs: ERROR_DOCS_URL,
       });
     });
   });

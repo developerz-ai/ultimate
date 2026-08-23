@@ -185,7 +185,21 @@ export class SyncSocket {
       }
       return false;
     }
-    this.#ws.send(encode(frame));
+    // `WsLike.send` is declared `: number` for this line and no other: Bun answers `0` for a
+    // message it DROPPED — the socket closed between the buffered-amount check above and this
+    // write — and `-1` under backpressure. Discarded, a dropped frame read as delivered, so
+    // `live-fanout` advanced the subscriber's cursor past a patch that never left and
+    // `sync-frames`' desync mark was never taken: permanently stale on a healthy socket, which is
+    // the exact outcome every other `socket.send` on this node reads its answer to prevent.
+    if (this.#ws.send(encode(frame)) <= 0) {
+      this.droppedFrames += 1;
+      // The same ceiling backpressure takes: a socket the runtime keeps refusing is one to close,
+      // and the two are one failure — the write went nowhere either way.
+      if (this.droppedFrames > this.#maxDroppedFrames) {
+        this.close(CLOSE.overloaded, 'backpressure');
+      }
+      return false;
+    }
     this.sentFrames += 1;
     return true;
   }

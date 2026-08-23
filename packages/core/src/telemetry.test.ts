@@ -3,9 +3,11 @@ import { frozenClock } from './clock';
 import { createContext, runWithContext } from './context';
 import { traceId as newTraceId, spanId, uuid } from './ids';
 import { alwaysOffSampler, alwaysOnSampler, parentBasedRatioSampler } from './sampler';
+import type { SpanContext } from './telemetry';
 import {
   configureTelemetry,
   currentSpan,
+  currentSpanContext,
   memoryExporter,
   parseTraceparent,
   resetTelemetry,
@@ -237,5 +239,27 @@ describe('traceparent', () => {
   test('round-trips the ids core mints', () => {
     const context = { traceId: newTraceId(), spanId: spanId(), traceFlags: 1 };
     expect(parseTraceparent(traceparent(context))).toEqual(context);
+  });
+
+  // The synthetic context a request builds carries `spanId: ''`. Interpolated bare it rendered
+  // `00-<trace>--01`, 39 characters, which this file's own regex — and every collector — rejects.
+  test('substitutes a span id for the synthetic context a request builds', () => {
+    const ctx = createContext({ traceId: newTraceId() });
+    const header = runWithContext(ctx, () => traceparent(currentSpanContext() as SpanContext));
+
+    const parsed = parseTraceparent(header);
+    expect(parsed).toBeDefined();
+    expect(parsed?.traceId).toBe(ctx.traceId);
+    expect(parsed?.spanId).not.toBe('');
+    expect(header).not.toContain('--');
+  });
+
+  test('a fresh span id is minted per call, never a zero one a collector drops', () => {
+    const context = { traceId: newTraceId(), spanId: '', traceFlags: 1 };
+    const first = parseTraceparent(traceparent(context));
+    const second = parseTraceparent(traceparent(context));
+
+    expect(first?.spanId).not.toBe('0'.repeat(16));
+    expect(first?.spanId).not.toBe(second?.spanId);
   });
 });

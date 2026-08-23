@@ -178,20 +178,20 @@ Three of the four optional members degrade rather than refuse: no `introspect` i
 
 **`leases` is the one that refuses.** The in-process limiter is a fast path over one heap and is multiplied by the replica count, so a driver with no `LeaseStore` can only hold `concurrency.limit` per process. `createWorker().start()` therefore **throws `X_JOB_CONCURRENCY_UNENFORCEABLE`**, naming every registered job that declared `concurrency`, rather than logging a cap it cannot keep. `postgres` ships one; a driver you write yourself needs one before any job in the tree may declare `concurrency`.
 
-Two implementations ship in 1.0.0. Two more are **not in 4.0.0** — interface-complete stubs, so an app typechecks against them, and every method throws `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than silently dropping a job.
+Two implementations ship. Two more have **not shipped**, `As of 2026-08` — interface-complete stubs, so an app typechecks against them, and every method throws `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than silently dropping a job.
 
 | Driver | Status `As of 2026-08` | When | Trade-off |
 |---|---|---|---|
 | `postgres` (default) | **shipped** | always, up to ~thousands of jobs/sec. `x dev` runs it too, against the embedded PGlite | outbox is free (same DB, same tx); `SELECT ... FOR UPDATE SKIP LOCKED` claiming; zero extra infra |
 | `memory` | **shipped**; there is no config value for any driver | tests and fixtures — reached through `createMemoryDriver()`, and as `x jobs drain --to memory` | in-process; nothing survives a restart |
-| `redis` | **not in 4.0.0 — throws `X_NOT_IMPLEMENTED`** | high-throughput, short jobs | would need the outbox relay; loses "queue state in one backup" |
-| `nats` | **not in 4.0.0 — throws `X_NOT_IMPLEMENTED`** | very high fanout, multi-region, JetStream retention | strongest delivery semantics, most operational surface |
+| `redis` | **not shipped — throws `X_NOT_IMPLEMENTED`** | high-throughput, short jobs | would need the outbox relay; loses "queue state in one backup" |
+| `nats` | **not shipped — throws `X_NOT_IMPLEMENTED`** | very high fanout, multi-region, JetStream retention | strongest delivery semantics, most operational surface |
 
 **There is no `jobs.driver`, and 5.0.0 is where it went.** It accepted `'postgres' | 'redis' | 'nats'` and had **no reader anywhere** — boot always built `createPgDriver`, stated in [`packages/jobs/src/driver.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/jobs/src/driver.ts)'s own header. So setting it to `redis` never boot-and-then-threw, as this page once claimed: it changed nothing at all and you silently got Postgres, which is the more dangerous of the two behaviours because nothing reports it. On 4.x the field still typechecks and still does nothing; deleting it from `app.config.ts` is the whole of the upgrade.
 
 **The seam that does work is `setJobDriver(driver)`** — swap the driver, zero job-code change, which is what the interface buys. The `redis` and `nats` stubs are real and throw `X_NOT_IMPLEMENTED` on every method; you reach them by constructing one and passing it to `setJobDriver`, never through config. Tracked as [issue #223](https://github.com/developerz-ai/ultimate/issues/223): the field is a declaration nothing reads, the same shape 4.0.0 deleted for `realtime.heartbeatMs` and `PrecacheAsset.critical`, and removing it is breaking — so it waits for the next major.
 
-`x jobs drain --to <driver>` moves in-flight rows between drivers, and `--to memory` is the only target that completes today: `--to redis` and `--to nats` construct the target and fail on the first enqueue with `X_NOT_IMPLEMENTED`. The cross-driver migration procedure is not in 3.0.0 — see [Upgrading](Upgrading).
+`x jobs drain --to <driver>` moves in-flight rows between drivers, and `--to memory` is the only target that completes today: `--to redis` and `--to nats` construct the target and fail on the first enqueue with `X_NOT_IMPLEMENTED`. There is no cross-driver migration procedure, `As of 2026-08` — and none is needed while `postgres` is the only driver that runs.
 
 ## Dead letter
 

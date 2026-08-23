@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { isUltimateError, type UltimateError } from '@ultimat3/core';
 import {
   formatDate,
   formatDateTime,
@@ -238,5 +239,49 @@ describe('formatRange', () => {
       Object.defineProperty(Intl.DateTimeFormat.prototype, 'formatRange', descriptor);
     }
     expect(formatRange(at, to, { locale: 'en-GB', zone: 'Europe/Berlin' })).toMatch(COLLAPSED);
+  });
+});
+
+// One vocabulary for a locale across the package. `cron-describe` refused a malformed tag with
+// `X_LOCALE_INVALID` from the start and every other formatter handed the caller's raw string to an
+// `Intl` constructor, so `formatDateTime(at, { locale: 'en_US', zone: 'UTC' })` died as an uncoded
+// `RangeError` several frames from the header it came out of. A locale is caller input on every
+// one of these — an `Accept-Language` value, a stored user preference — never a literal.
+describe('a malformed locale tag', () => {
+  const zone = 'Europe/Berlin';
+  const refusals: readonly [string, () => unknown][] = [
+    ['formatDateTime', () => formatDateTime(at, { locale: 'en_US', zone })],
+    ['formatDate', () => formatDate(at, { locale: 'en_US', zone })],
+    ['formatTime', () => formatTime(at, { locale: 'en_US', zone })],
+    ['formatWithOffset', () => formatWithOffset(at, { locale: 'en_US', zone })],
+    ['formatRange', () => formatRange(at, at, { locale: 'en_US', zone })],
+    ['formatRelative', () => formatRelative(at, { locale: 'en_US', now: at })],
+  ];
+
+  for (const [name, run] of refusals) {
+    test(`${name} refuses it with X_LOCALE_INVALID, never a bare RangeError`, () => {
+      let caught: unknown;
+      try {
+        run();
+      } catch (thrown) {
+        caught = thrown;
+      }
+      expect(isUltimateError(caught)).toBe(true);
+      expect((caught as UltimateError).code).toBe('X_LOCALE_INVALID');
+      expect((caught as UltimateError).cause).toContain('en_US');
+    });
+  }
+
+  test('a well-formed tag ICU does not know still formats — Intl falls back, so do we', () => {
+    // The refusal is about a tag that is not a tag. `zz` is one; refusing it would break every
+    // app whose users carry a locale this runtime has no data for.
+    expect(() => formatDateTime(at, { locale: 'zz', zone })).not.toThrow();
+    expect(() => formatRelative(at, { locale: 'zz', now: at })).not.toThrow();
+  });
+
+  test('a canonical spelling is what reaches Intl, so EN-us and en-US are one formatter', () => {
+    expect(formatDate(at, { locale: 'EN-us', zone })).toBe(
+      formatDate(at, { locale: 'en-US', zone }),
+    );
   });
 });

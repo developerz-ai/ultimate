@@ -45,8 +45,9 @@ export const config = defineConfig({
 
   jobs: { queues: ['default', 'mail', 'digest'], concurrency: 8 },
 
-  /** Tier 3: live queries plus a durable client store, because the feed must work offline. */
-  realtime: { enabled: true, tier: 'local-first', transport: 'nats', urlEnv: 'NATS_URL' },
+  // NATS rather than the in-process transport, because this app is the one that has to prove the
+  // multi-node shape. There is no `tier:` key: nothing ever read it, so it is deleted.
+  realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' },
 
   pwa: { enabled: true, offline: 'runtime', backgroundSync: true },
 

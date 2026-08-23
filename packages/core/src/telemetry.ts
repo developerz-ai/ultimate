@@ -326,7 +326,13 @@ const TRACEPARENT_RE = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
  */
 export function traceparent(context: SpanContext): string {
   const flags = (context.traceFlags & 0xff).toString(16).padStart(2, '0');
-  return `00-${context.traceId}-${context.spanId}-${flags}`;
+  // The empty `spanId` `currentSpanContext()` synthesises is the one value this function cannot
+  // interpolate bare: `00-<trace>--01` is 39 characters and `TRACEPARENT_RE` — like every
+  // collector — rejects it, so the trace the header exists to continue is lost either way. A
+  // freshly minted id is what a propagator with no reported parent sends, and it keeps the trace
+  // id joinable. Deliberately not all-zero: `parseTraceparent` refuses that, as the spec requires.
+  const parentId = context.spanId === '' ? newSpanId() : context.spanId;
+  return `00-${context.traceId}-${parentId}-${flags}`;
 }
 
 export function parseTraceparent(header: string | null | undefined): SpanContext | undefined {

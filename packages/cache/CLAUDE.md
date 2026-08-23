@@ -252,6 +252,13 @@ Tier 1. Tagged caching + THE invalidation graph.
   and clears nothing, which is the one CDN failure no later read can catch.
 - `retryable` on `X_CACHE_PURGE_FAILED` is derived, never guessed: 408/409/425/429 and 5xx, plus
   any request that never got a status. That table lives in `purge-http.ts` and is edited there.
+  **It reaches `error.retry` too, `As of 2026-08-23`** — `CachePurgeFailedError` passes
+  `retry: input.retryable ? 'retryable' : 'terminal'`. Without it the constructor fell back to
+  `retryFor('X_CACHE_PURGE_FAILED')`, this package registers no retry class, and the default is
+  `terminal`: a 429 serialised as `{ "retry": "terminal", "meta": { "retryable": true } }` — one
+  error answering the retry question two ways, with `errorRetry()` (the one question a retry loop
+  asks) giving the wrong one. Per-INSTANCE, never `registerErrorRetry`: one code covers a 401 that
+  will never land and a 429 that will.
 - `X_CACHE_PURGE_FAILED` means a provider refused. A batch size that is not a positive integer is
   this package miswired, so `chunked()` raises `X_CACHE_DRIVER_UNAVAILABLE` instead — and it raises
   it *before* the loop, because a `0` spins forever and a `NaN` yields one empty batch, a purge that

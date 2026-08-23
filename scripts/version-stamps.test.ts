@@ -9,16 +9,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from './lib/run';
+import { readStampPages, readStamps, STAMP_PAGE, skipStampPath } from './lib/version-stamp-scan';
 import { readRootManifest, workspaceManifests } from './lib/workspaces';
 import {
   checkVersionStamps,
   compareVersions,
   readInternalDeps,
   readLockedDeps,
-  readStampPages,
-  readStamps,
-  STAMP_PAGE,
-  skipStampPath,
   versionGapFindingFor,
   versionStampFindings,
 } from './version-stamps';
@@ -305,6 +302,105 @@ describe('which version this tree ships', () => {
       '9.0.0 everywhere except @ultimat3/cli@10.0.0',
     );
     expect(gaps.some((gap) => gap.kind === 'stale')).toBe(false);
+  });
+});
+
+describe('the shape of a stamp, which one missing character used to defeat', () => {
+  // Fixtures, never the live pages: `CLAUDE.md` and `AGENTS.md` are rewritten every release, and a
+  // rule proven against their current text is a rule proven against nothing next month.
+  const seen = (text: string): readonly string[] =>
+    readStamps({ path: 'wiki/Whatever.md', text }).map((stamp) => stamp.version);
+
+  test('no `v`, and prose between the number and the date — the AGENTS.md line', () => {
+    expect(seen('All 30 publish to npm at **3.0.0** in lockstep, `As of 2026-08-19`.')).toEqual([
+      '3.0.0',
+    ]);
+  });
+
+  test('no `v`, a comma in the gap — the root CLAUDE.md Status line', () => {
+    expect(seen('**Status:** 7.0.0, released, `As of 2026-08-21`.')).toEqual(['7.0.0']);
+  });
+
+  test('the `v` form still reads, which is what the footer writes', () => {
+    expect(seen('**Ultimate** — v9.0.0 `As of 2026-08`. Stable API.')).toEqual(['9.0.0']);
+  });
+
+  test('a version with no date beside it is not a stamp', () => {
+    expect(seen('git tag -a v1.1.0 -m "release"')).toEqual([]);
+    expect(seen('Yugabyte v2025.2.3 is the closest comparable.')).toEqual([]);
+  });
+
+  test('a four-part or suffixed version is not a semver stamp of this tree', () => {
+    expect(seen('node 20.11.1.2 `As of 2026-08`')).toEqual([]);
+    expect(seen('image ultimate:1.2.3-rc1 `As of 2026-08`')).toEqual([]);
+  });
+
+  test('a gap longer than the cap joins two unrelated claims and is refused', () => {
+    const far = `v1.2.0 ${'x'.repeat(60)} \`As of 2026-08\``;
+    expect(seen(far)).toEqual([]);
+  });
+
+  test('a backtick in the gap ends the claim', () => {
+    expect(seen('1.2.0 and `npm view @ultimat3/core version` `As of 2026-08`')).toEqual([]);
+  });
+});
+
+describe('a page that names a version for a reason that is not a stamp', () => {
+  test('is excused only by a pin naming the page AND the version', () => {
+    const files = [
+      footer(stamped),
+      { path: 'docs/idea/16-app-targets.md', text: 'Tauri 2.x (2.10.1, `As of 2026-08`)' },
+    ];
+    expect(checkVersionStamps({ files, versions: lockstep })).toHaveLength(1);
+    expect(
+      checkVersionStamps({
+        files,
+        versions: lockstep,
+        stampPins: {
+          'docs/idea/16-app-targets.md@2.10.1': "Tauri's version, not this framework's",
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  test('a pin on the page does not excuse a DIFFERENT version on it', () => {
+    const gaps = checkVersionStamps({
+      files: [
+        footer(stamped),
+        {
+          path: 'docs/idea/16-app-targets.md',
+          text: '**Status:** 1.2.0, released, `As of 2026-08`',
+        },
+      ],
+      versions: lockstep,
+      stampPins: { 'docs/idea/16-app-targets.md@2.10.1': "Tauri's version" },
+    });
+    expect(gaps.map((gap) => gap.kind).sort()).toEqual(['duplicate', 'pin-stale']);
+  });
+
+  test('a pin whose sentence is gone is a finding with an executable fix', () => {
+    const gaps = checkVersionStamps({
+      files: [footer(stamped)],
+      versions: lockstep,
+      stampPins: { 'wiki/Gone.md@4.0.0': 'the page said it once' },
+    });
+    expect(gaps).toHaveLength(1);
+    const finding = versionGapFindingFor(gaps[0] as never, '1.2.0');
+    expect(finding.code).toBe('X_VERSION_STAMP_PIN_STALE');
+    expect(finding.fix).toBe('bun run scripts/version-stamps.ts --unpin wiki/Gone.md@4.0.0');
+  });
+
+  test('a non-wiki page gets a fix it can follow — the footer renders under wiki/ only', () => {
+    const gaps = checkVersionStamps({
+      files: [
+        footer(stamped),
+        { path: 'AGENTS.md', text: 'at **3.0.0** in lockstep, `As of 2026-08`' },
+      ],
+      versions: lockstep,
+    });
+    const finding = versionGapFindingFor(gaps[0] as never, '1.2.0');
+    expect(finding.fix).not.toContain('reaches that page through');
+    expect(finding.fix).toContain("'AGENTS.md@3.0.0'");
   });
 });
 

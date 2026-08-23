@@ -12,7 +12,7 @@
 
 import { type Actor, mayPublish, mayReadFeed, memberOf } from '@postly/core';
 import { canAuthor, type MemberId, type OrgId } from '@postly/domain';
-import { can, definePermissions } from '@ultimat3/policy';
+import { can, definePermissions, definePolicy } from '@ultimat3/policy';
 
 /**
  * The permission set, declared rather than assumed. The augmentation narrows `can()` to these
@@ -85,11 +85,24 @@ export const postRead = can<PostScope>(
   ({ actor, input }) => memberOf(actor)?.orgId === input.orgId,
 );
 
-/** Liking is a membership right; the same tenancy check is what keeps it tenant-safe. */
-export const postLike = can<PostScope>(
-  'post:like',
-  ({ actor, input }) => memberOf(actor)?.orgId === input.orgId,
-);
+/**
+ * Liking is a membership right; the same tenancy check is what keeps it tenant-safe.
+ *
+ * Written with `definePolicy` rather than `can`, and this is the one rule here that is — both
+ * forms return the SAME `Policy` object, so every surface evaluates them identically and there is
+ * no second authoring path to choose between. What `definePolicy` adds is `deny:`, a message KEY
+ * rather than a sentence: a refusal a person reads goes through `t()` like every other
+ * user-facing string, so it is translatable and two surfaces cannot word one refusal differently.
+ * `can()` is the right form where nobody but an agent reads the denial — `postPublish`'s reason
+ * is `x actions describe`, not a toast.
+ *
+ * `check` is synchronous for the reason every predicate on this page is: a live query
+ * re-evaluates one per subscriber on every change.
+ */
+export const postLike = definePolicy<PostScope>('post:like', {
+  deny: 'errors.policyDenied',
+  check: ({ actor, input }) => memberOf(actor)?.orgId === input.orgId,
+});
 
 /**
  * Re-evaluated at subscribe and again per delivered row, so a post that leaves the actor's org

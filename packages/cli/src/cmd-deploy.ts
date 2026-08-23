@@ -3,6 +3,7 @@
 // anything that runs containers can execute.
 
 import { join } from 'node:path';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, UnknownCommandError } from './errors';
@@ -31,6 +32,13 @@ import { quoteArg } from './shell-quote';
  * honours. Both compose definitions carry it — `docker/docker-compose.prod.yml`'s `backfill` and
  * the one `templates/scaffold-container.ts` scaffolds, which also gates on `migrate` completing.
  * This paragraph said they "still owe" both for as long as they have had them.
+ *
+ * COMPOSE-ONLY, and `backfill` is why that has to be written down. `docker/helm`'s `roles:` map is
+ * `web|sync|worker|scheduler|replicator` plus a `migrate` Job — there is no `backfill` object in
+ * the chart at all — and the helm plan is one `helm upgrade --install`, so this list describes
+ * neither the objects a chart deploy creates nor the steps it runs. Every reader of it is therefore
+ * inside the compose branch; the SUMMARY reads `plan.steps` instead, or `x deploy --method helm`
+ * reports a post-deploy sweep to an operator that nothing will ever run.
  */
 export const DEPLOY_ROLES = ['migrate', 'web', 'sync', 'worker', 'scheduler', 'backfill'] as const;
 
@@ -202,11 +210,14 @@ export const deployCommand: CliCommand = {
       env: { ...plan.env },
       steps: plan.steps.map((step) => ({ role: step.role, command: step.command.join(' ') })),
     };
+    // The roles THIS plan has, never the compose list: on `--method helm` there is one step,
+    // `all`, and naming `backfill` there promises an operator a sweep the chart cannot run.
+    const roles = plan.steps.map((step) => step.role).join(',');
     if (flagBool(ctx.args, 'dry-run')) {
       return {
         ok: true,
         command: 'deploy',
-        summary: msg('cli.deploy.plan', { images: 1, roles: DEPLOY_ROLES.join(',') }),
+        summary: msg('cli.deploy.plan', { images: 1, roles }),
         data: planJson,
         lines: plan.steps.map(
           (step) => `  ${step.role.padEnd(10)} ${stepLine(plan.env, step.command)}`,
@@ -225,7 +236,7 @@ export const deployCommand: CliCommand = {
               code: 'X_DEPLOY_FAILED',
               cause: `role "${step.role}" step exited ${result.code}`,
               fix: `${stepLine(plan.env, step.command)}   # run it directly to see the full output`,
-              docs: 'https://ultimate.dev/errors/X_DEPLOY_FAILED',
+              docs: ERROR_DOCS_URL,
             },
           ],
           data: planJson,
@@ -235,7 +246,7 @@ export const deployCommand: CliCommand = {
     return {
       ok: true,
       command: 'deploy',
-      summary: msg('cli.deploy.plan', { images: 1, roles: DEPLOY_ROLES.join(',') }),
+      summary: msg('cli.deploy.plan', { images: 1, roles }),
       data: planJson,
     };
   },

@@ -3,12 +3,13 @@
 // an action with no policy never compiles. The code and its factory stay published for a
 // declaration site that cannot express the requirement in a type — a config-driven route table,
 // a policy resolved by name — and `policyMissing()` is how such a site says it.
-import { nearestName, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { nearestName, registerErrorCodes, renderCauseValue, UltimateError } from '@ultimat3/core';
 
 export const POLICY_ERROR_CODES = [
   'X_FORBIDDEN',
   'X_POLICY_MISSING',
   'X_PERMISSION_UNKNOWN',
+  'X_POLICY_SURFACE_UNKNOWN',
   'X_ROLE_REDEFINED',
 ] as const;
 
@@ -18,6 +19,7 @@ export const POLICY_ERROR_TITLES: Readonly<Record<PolicyErrorCode, string>> = {
   X_FORBIDDEN: 'policy denied this actor',
   X_POLICY_MISSING: 'an action was declared without a policy',
   X_PERMISSION_UNKNOWN: 'permission string is not in the permission set',
+  X_POLICY_SURFACE_UNKNOWN: 'enforce() was handed a surface no adapter answers to',
   X_ROLE_REDEFINED: 'two modules define the same role differently',
 };
 
@@ -37,7 +39,6 @@ export class PolicyError extends UltimateError {
       code: init.code,
       cause: init.cause,
       fix: init.fix,
-      docs: `https://ultimate.dev/errors/${init.code}`,
     });
   }
 }
@@ -105,3 +106,22 @@ export const permissionUnknown = (permission: string, known: readonly string[]):
         : `use '${nearest}', the nearest declared permission — or add '${permission}' to definePermissions([...]) if it is genuinely new`,
   });
 };
+
+/**
+ * `enforce()` was handed a surface with no adapter. Thrown rather than denied, because the value
+ * this reports on is one an index would have resolved to something: every object literal inherits
+ * `Object.prototype`, so `adapters['valueOf']` answers a function and `adapters['constructor']`
+ * answers a constructor. Both are truthy, so the dispatcher fails CLOSED and returns a
+ * `SurfaceDenial` no caller can read — a refusal with no code and no reason, which is worse than
+ * the refusal it is standing in for.
+ *
+ * `known` comes from the adapter table itself, so a fifth surface joins this fix line by existing.
+ * The received value goes through `renderCauseValue` and never `${}`: the parameter is typed
+ * `Surface`, and the call site this guard exists for is one no type reached.
+ */
+export const surfaceUnknown = (surface: unknown, known: readonly string[]): PolicyError =>
+  new PolicyError({
+    code: 'X_POLICY_SURFACE_UNKNOWN',
+    cause: `enforce() was handed surface ${renderCauseValue(surface)}, which no policy adapter answers to`,
+    fix: `pass one of ${known.join(', ')} — e.g. enforce('${known[0] ?? 'http'}', policy, args)`,
+  });

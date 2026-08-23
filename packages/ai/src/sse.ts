@@ -8,7 +8,8 @@
 import { AiTransportError } from './errors';
 
 /**
- * The most one unterminated frame may buffer. A peer that sends a body with no frame boundary in
+ * The most one unterminated frame may buffer — the REMAINDER after every complete frame has been
+ * split off, never the whole decode buffer. A peer that sends a body with no frame boundary in
  * it — an HTML error page, a proxy answering on the model's port, a hung gateway — grows `buffer`
  * without limit, and no read deadline interrupts it because every individual read SUCCEEDS. Coded
  * failure > OOM, the same call `@ultimat3/mail`'s `createReplyParser` makes for the same shape.
@@ -86,10 +87,14 @@ export async function* readSse(
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      guard(buffer, provider);
       const decoded = decodeSse(buffer);
       buffer = decoded.rest;
       for (const frame of decoded.frames) yield frame;
+      // The REMAINDER, after the split, and after the frames that did complete were delivered.
+      // Measured against the whole decode buffer it refused a busy provider that landed a
+      // megabyte of perfectly framed deltas in one read — every one of them terminated — for
+      // "sending more than 1048576 characters without completing one SSE frame".
+      guard(buffer, provider);
     }
     buffer += decoder.decode();
     const tail = frameOf(buffer);

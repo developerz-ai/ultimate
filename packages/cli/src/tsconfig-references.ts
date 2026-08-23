@@ -7,7 +7,7 @@
 // root that has no `tsconfig.json` at all, so an `existsSync` ahead of it was a second question
 // with one answer.
 import { join } from 'node:path';
-import { docsFor } from './error-codes';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Finding } from './output';
 import { maskLiterals, stripComments } from './ts-scan';
 
@@ -82,7 +82,7 @@ export const unreferencedFinding = (dir: string): Finding => ({
   code: 'X_PACKAGE_UNREFERENCED',
   cause: `packages/${dir} is a published workspace and ${ROOT_TSCONFIG} has no reference to it, so tsc -b never builds it`,
   fix: `add { "path": "./packages/${dir}" } to "references" in ${ROOT_TSCONFIG}, then run bunx tsc -b --pretty false`,
-  docs: docsFor('X_PACKAGE_UNREFERENCED'),
+  docs: ERROR_DOCS_URL,
   at: ROOT_TSCONFIG,
 });
 

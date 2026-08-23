@@ -89,7 +89,22 @@ const WRITE_KEYWORDS = new Set([
  *  - ADVANCE A SEQUENCE (`nextval`, `setval`) — a write that leaves no keyword behind, and one
  *    `ROLLBACK` does not undo: a consumed sequence value is gone, so a read can silently burn the
  *    next id a real insert would have taken. `currval`/`lastval` read the session and stay legal.
+ *    `txid_current`/`pg_current_xact_id` are the same ban one level down: they ASSIGN a real
+ *    transaction id to a read, and a rollback does not give it back;
+ *  - PUBLISH A MESSAGE — `pg_notify` is `NOTIFY` spelled as a call, and `notify`, `listen` and
+ *    `unlisten` are all write keywords above. The keyword scan cannot see it: it is one token;
+ *  - CONTROL THE SERVER (`pg_reload_*`, `pg_rotate_*`, `pg_switch_*`, `pg_promote`,
+ *    `pg_wal_replay_*`) — the family `pg_cancel_backend`/`pg_terminate_backend` already
+ *    established, in the spellings that reconfigure or fail over the server rather than a backend;
+ *  - CONSUME THE REPLICATION STREAM (`pg_create_*`, `pg_drop_*`, `pg_replication_*`,
+ *    `pg_logical_*`) — `pg_logical_slot_get_changes` advances a slot's confirmed position, so the
+ *    changes it returned are gone for the real consumer. Exactly the `nextval` argument: a write
+ *    with no keyword, and no `ROLLBACK` undoes it. The catalog VIEWS beside them
+ *    (`pg_replication_slots`, `pg_stat_replication`) are read `from`, never called, so the call
+ *    scan never sees them;
+ *  - WRITE A FILE (`pg_file_*`) — the other half of `pg_read_*`, which was banned from the start.
  *
+
  * The prefix is applied to a CALL — a name followed by `(` — and never to a bare word, so a
  * column called `pg_sleep_for_seconds` stays readable. Quoting does not evade it: the scan reads
  * a form where a quoted identifier keeps its content, because `"pg_advisory_lock"(1)` is the same
@@ -101,15 +116,31 @@ const FORBIDDEN_FUNCTIONS = [
   'nextval',
   'pg_advisory_',
   'pg_cancel_backend',
+  'pg_create_',
+  'pg_current_xact_id',
+  'pg_drop_',
+  'pg_file_',
+  'pg_logical_',
   'pg_ls_',
+  'pg_notify',
+  'pg_promote',
   'pg_read_',
+  'pg_reload_',
+  'pg_replication_',
+  'pg_rotate_',
   'pg_sleep',
   'pg_stat_file',
   'pg_stat_reset',
+  // Not reachable from `pg_stat_reset`: the extension spells the same reset with the statistics
+  // view's name in the middle, so a prefix of one is not a prefix of the other.
+  'pg_stat_statements_reset',
+  'pg_switch_',
   'pg_terminate_backend',
   'pg_try_advisory_',
+  'pg_wal_replay_',
   'set_config',
   'setval',
+  'txid_current',
 ];
 
 /** The family refusing `called`, or `undefined`. A prefix, so a new member is refused by default. */
@@ -291,8 +322,7 @@ function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = '
   while (i < sql.length) {
     const two = sql.slice(i, i + 2);
     if (two === '--') {
-      const end = sql.indexOf('\n', i);
-      i = end === -1 ? sql.length : end;
+      i = endOfLineComment(sql, i);
       out += ' ';
       continue;
     }
@@ -334,6 +364,24 @@ function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = '
     i += 1;
   }
   return out;
+}
+
+/**
+ * Where a `--` comment ends: the first CR **or** LF, or the end of the input.
+ *
+ * The boundary set is the lexer's, never one character of it. Postgres defines a line comment as
+ * `--` followed by `non_newline*`, and `non_newline` is `[^\n\r]` — so a bare CR ends the comment
+ * for the server. Scanning for `\n` alone blanked everything after a CR, and that tail is real SQL
+ * the server runs: `select 1;--\rupdate members set role='admin'` was one statement with no
+ * mutating keyword to every check in this file, and was handed back verbatim to be executed.
+ * Same shape as `skipSingleQuoted` below, which reads Postgres' escape rules rather than one of them.
+ */
+function endOfLineComment(sql: string, start: number): number {
+  for (let i = start + 2; i < sql.length; i += 1) {
+    const char = sql[i];
+    if (char === '\n' || char === '\r') return i;
+  }
+  return sql.length;
 }
 
 /** A quoted run's content: the delimiters dropped, SQL's doubled-quote escape collapsed. */

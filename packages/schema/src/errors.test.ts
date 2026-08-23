@@ -72,3 +72,54 @@ describe('SchemaError.message', () => {
     expect(isSchemaError(error)).toBe(true);
   });
 });
+
+describe('the title table is read with Object.hasOwn, never the index alone', () => {
+  // `SchemaErrorInit.code` is a bare `string` — a code an app or a provider chose — and `TITLES`
+  // is a plain object, so `TITLES['constructor']` answered with the `Object` FUNCTION. The
+  // constructor then handed that to `singleLine`, which called `.replace` on a function: the error
+  // that reports a bad value died reporting it, and the caller got a `TypeError` in place of the
+  // failure it raised. Same discriminator as `@ultimat3/action`'s `IRREGULAR[word]`.
+  test.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])(
+    'a code named %s humanises rather than throwing',
+    (code) => {
+      const error = new SchemaError({ code, cause: 'a value', fix: 'x doctor --json' });
+      expect(typeof error.title).toBe('string');
+      expect(error.title).toBe(code.replace(/^X_/, '').toLowerCase().replaceAll('_', ' '));
+      expect(error.format().split('\n')).toHaveLength(3);
+    },
+  );
+
+  test('a declared code still renders its registered title', () => {
+    const error = new SchemaError({
+      code: 'X_VALIDATION_FAILED',
+      cause: 'body.title: expected a string',
+      fix: 'x doctor --json',
+    });
+    expect(error.title).toBe('value did not match its schema');
+  });
+});
+
+describe('docs', () => {
+  // The literal is a DELIBERATE duplicate of `@ultimat3/core`'s `ERROR_DOCS_URL` — schema and core
+  // are both tier 0, so neither may import the other. Pinning it here is what makes the copy
+  // checkable at all from inside this package; the cross-package pin belongs in `@ultimat3/cli`.
+  const WIKI = 'https://github.com/developerz-ai/ultimate/wiki/Error-Codes';
+
+  test('every code points at the one wiki page — never a per-code URL', () => {
+    for (const code of ['X_VALIDATION_FAILED', 'X_SCHEMA_UNSUPPORTED', 'X_APP_OWNED']) {
+      const error = new SchemaError({ code, cause: 'a value', fix: 'x doctor --json' });
+      expect(error.docs).toBe(WIKI);
+      expect(error.docs).not.toContain(code);
+    }
+  });
+
+  test('an explicit docs still wins — the constant is the fallback, not an override', () => {
+    const error = new SchemaError({
+      code: 'X_VALIDATION_FAILED',
+      cause: 'a value',
+      fix: 'x doctor --json',
+      docs: 'https://example.com/handbook',
+    });
+    expect(error.docs).toBe('https://example.com/handbook');
+  });
+});

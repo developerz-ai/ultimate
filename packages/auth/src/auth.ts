@@ -10,7 +10,6 @@ import { normaliseEmail } from './email';
 import { mfaRequired, mfaRequiredUnenforceable, sessionUnknown } from './errors';
 import { installedAuthLimiter } from './limiter-install';
 import type { OAuthProviderId } from './oauth';
-import { oauthProviderIds } from './oauth-registry';
 import {
   checkPasswordStrength,
   DEFAULT_PASSWORD_POLICY,
@@ -147,6 +146,11 @@ export interface AuthConfigInput {
    */
   readonly orgLimiter?: AuthLimiter | undefined;
   readonly mfa?: Partial<AuthMfaPolicy> | undefined;
+  /**
+   * The OAuth providers this app serves login routes for. Defaults to `[]` — an empty list is
+   * "no OAuth", and every `/auth/oauth/<id>` answers `X_OAUTH_PROVIDER_UNKNOWN`. Never the live
+   * registry, which a dependency can write into.
+   */
   readonly providers?: readonly OAuthProviderId[] | undefined;
   /** Defaults to `'verified-email'` — both halves proven. See `OAuthLinkPolicy`. */
   readonly link?: OAuthLinkPolicy | undefined;
@@ -213,7 +217,17 @@ export function defineAuth(config: AuthConfigInput): Auth {
     orgRateLimit: orgLimiter.policy,
     orgLimiter,
     mfa,
-    providers: config.providers ?? oauthProviderIds(),
+    // BREAKING (majors only): the default is `[]`, never the live registry.
+    //
+    // It was `oauthProviderIds()`, so `defineAuth({ providers })`'s own documented purpose — the
+    // uniform 404 for a provider this app "left out" — could never fire: nothing was ever left
+    // out. Worse, a registry any dependency writes into with `registerOAuthProvider` decided which
+    // login endpoints an app serves. A capability is DECLARED, never inherited.
+    //
+    // Migration is one line: `defineAuth({ providers: ['github', 'google'] })`, naming what the app
+    // actually enabled. Nothing else changes — an unnamed provider is the 404 it was always meant
+    // to be.
+    providers: config.providers ?? [],
     link: config.link ?? 'verified-email',
   });
 }
@@ -286,10 +300,21 @@ export async function login(auth: Auth, input: LoginInput): Promise<LoginResult>
   }
 
   await auth.limiter.recordSuccess(account);
-  if (ip !== null) await auth.limiter.recordSuccess(ipKey(ip));
-  // No `recordSuccess` on the tenant bucket, and that asymmetry is the point: one member signing
-  // in successfully must not clear the count a broken integration is running up beside them, or
-  // the tenant cap is cleared by exactly the traffic that proves the tenant is still in use.
+  // ONLY the account bucket is cleared. The ACCOUNT window belongs to one person, so a success
+  // proves the typos before it were theirs and clearing it is what stops a typo costing a lockout.
+  //
+  // Neither the IP nor the tenant bucket is cleared, and it is the same argument for both: they
+  // count traffic from a SHARED source, so a success is not evidence the failures beside it were
+  // benign. `recordSuccess(ipKey(ip))` used to run here and deleted the whole address bucket —
+  // which made it inert against the attack it exists for. A credential-stuffing run never spends
+  // `maxAttempts` guesses on one account, so the per-account bucket never fires; the address
+  // bucket is the only one that sees the pattern, and `4 wrong guesses + 1 login to an account
+  // the attacker owns, repeat` wiped it every fifth request. Measured: 5 guesses to
+  // `X_ACCOUNT_LOCKED` without the reset, 160 and never locked with it.
+  //
+  // The cost is a shared NAT accumulating failures from unrelated people, which is exactly what
+  // `windowMs` bounds — and `X_ACCOUNT_LOCKED`'s `fix:` already names `recordSuccess(<key>)` as
+  // the deliberate manual escape for that case.
 
   // Parameters were raised since this hash was written: upgrade it now, while we hold the
   // plaintext. This is the only moment it is possible without asking the user for anything.

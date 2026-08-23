@@ -5,9 +5,9 @@
 // account linking with it. The three built-ins register through the same call an app uses, so the
 // opening does not create a second path.
 
-import { oauthProviderDuplicate, oauthProviderUnknown } from './errors';
 import type { OAuthProvider } from './oauth';
 import { BUILTIN_OAUTH_PROVIDERS } from './oauth-builtins';
+import { oauthProviderDuplicate, oauthProviderUnknown } from './oauth-errors';
 
 const registry = new Map<string, OAuthProvider>();
 

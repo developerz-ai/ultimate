@@ -222,10 +222,20 @@ export interface OpfsLocalStoreOptions {
  * long write never blocks the main thread. Browser-only, so it must not be reachable from a server
  * bundle — which is why it is a factory that throws rather than a class you can accidentally new
  * on the server.
+ *
+ * The refusal below is the whole of what tier 3's durable half ships today, so its two lines have
+ * to be true of THIS build. Both were false until 2026-08-23: the fix told the caller to import
+ * this factory from a `/browser` subpath, which `package.json`'s `exports` has never declared —
+ * two entries ship, `.` and `./server` — so pasting it ended in a module-resolution failure. Its
+ * alternative was `persist: false` on the query, which `query()` has never accepted either (a
+ * `TS2353` excess property). An instruction that cannot run is axiom 4 failing in the package that
+ * documents it, so the fix now names an export that exists on an entry that exists:
+ * `MemoryLocalStore`, on `.`, declared beside this factory. `fix-specifier.test.ts` is the
+ * mechanical half.
  */
 export function createOpfsLocalStore(options: OpfsLocalStoreOptions): LocalStore {
   throw new NotImplementedError({
-    what: `OPFS SQLite local store (${options.file} v${options.schemaVersion})`,
-    fix: "import { createOpfsLocalStore } from '@ultimat3/realtime/browser' (tier 3, v2); today use MemoryLocalStore or set persist: false on the query",
+    what: `the OPFS SQLite local store for ${options.file} (schema v${options.schemaVersion}), which is realtime tier 3's durable half,`,
+    fix: "replace createOpfsLocalStore(...) with new MemoryLocalStore(), imported from '@ultimat3/realtime' beside it: the same LocalStore contract — journalled writes, ordered rollback, one row value per (entity, id) — held for the tab's lifetime rather than across a reload",
   });
 }

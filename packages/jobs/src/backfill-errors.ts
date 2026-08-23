@@ -6,7 +6,6 @@
 // `backfill-pending.ts` and `backfill-registry.ts`.
 
 import { UltimateError } from '@ultimat3/core';
-import { docsFor } from './errors';
 
 /**
  * The seven backfill codes below all answer one question — "why is this sweep not running?" — and
@@ -31,7 +30,6 @@ export class BackfillPendingError extends UltimateError {
       code: 'X_BACKFILL_PENDING',
       cause: `backfill "${input.backfill}" is declared and x_backfills holds no completed pass for it in ${input.environment}`,
       fix: `x db backfill ${input.backfill} --write --json`,
-      docs: docsFor('X_BACKFILL_PENDING'),
     });
   }
 }
@@ -43,7 +41,6 @@ export class BackfillAppliedError extends UltimateError {
       code: 'X_BACKFILL_APPLIED',
       cause: `backfill "${input.backfill}" completed as run ${input.runId} at ${input.completedAt}; a forced rerun writes a NEW ledger row and never edits that one`,
       fix: `x db backfill ${input.backfill} --write --force --json`,
-      docs: docsFor('X_BACKFILL_APPLIED'),
     });
   }
 }
@@ -68,7 +65,6 @@ export class BackfillEnvironmentError extends UltimateError {
         target === undefined
           ? 'x db backfill --pending --json'
           : `ULTIMATE_ENV=${target} x db backfill ${input.backfill} --write --json`,
-      docs: docsFor('X_BACKFILL_ENVIRONMENT'),
     });
   }
 }
@@ -84,7 +80,6 @@ export class BackfillMigrationPendingError extends UltimateError {
       code: 'X_BACKFILL_MIGRATION_PENDING',
       cause: `backfill "${input.backfill}" requires migration ${input.migration}, which x_migrations does not record as applied`,
       fix: 'x db migrate --json',
-      docs: docsFor('X_BACKFILL_MIGRATION_PENDING'),
     });
   }
 }
@@ -100,7 +95,6 @@ export class BackfillRunningError extends UltimateError {
       code: 'X_BACKFILL_RUNNING',
       cause: `backfill "${input.backfill}" already has a live pass queued as ${input.jobId}, and one name holds one live pass; its step trace names the batch it is on, and a pass that is not advancing is a worker that lost its lease`,
       fix: `x jobs show ${input.jobId} --json`,
-      docs: docsFor('X_BACKFILL_RUNNING'),
     });
   }
 }
@@ -116,7 +110,6 @@ export class BackfillStalledError extends UltimateError {
       code: 'X_BACKFILL_STALLED',
       cause: `backfill "${input.backfill}" swept ${input.swept} rows, exhausted its source, and count() still matches ${input.remaining} — a WHERE the sweep narrows and the count does not is what leaves rows behind`,
       fix: `make count() select on exactly what source() selects on in backfill("${input.backfill}")`,
-      docs: docsFor('X_BACKFILL_STALLED'),
     });
   }
 }
@@ -131,7 +124,6 @@ export class BackfillUnknownError extends UltimateError {
           ? `no backfill named "${input.backfill}" is declared, and this app declares none at all`
           : `no backfill named "${input.backfill}" is declared (declared: ${input.known.join(', ')})`,
       fix: 'x db backfill --pending --json',
-      docs: docsFor('X_BACKFILL_UNKNOWN'),
     });
   }
 }

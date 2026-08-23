@@ -254,6 +254,9 @@ const REPORT: StaticReport = {
       why: "render: 'isr' regenerates on a tag or ttl",
     },
   ],
+  unmeasured: [
+    { path: '/posts/new', reason: 'X_NO_CONTEXT: useContext() outside runWithContext()' },
+  ],
 };
 
 test('a static build reports emitted and skipped, with a why per skipped route', () => {
@@ -274,6 +277,30 @@ test('a static build reports emitted and skipped, with a why per skipped route',
   ]);
 });
 
+/**
+ * `X_BUDGET_UNMEASURED`'s `fix:` is `x build --target static --json   # its "unmeasured" list says
+ * why <url> could not be weighed`. This is the assertion that makes that sentence true: the list
+ * was computed by `prerenderSite`, returned on the in-process `PrerenderReport`, and reached NO
+ * output surface any `x` command produced — `buildResult` discards a successful subprocess's
+ * stdout. An author ran the fix verbatim and got no `unmeasured` key and no reason.
+ */
+test('the fix line`s "unmeasured" list is a key this command actually prints', () => {
+  const payload = JSON.parse(
+    renderJson(
+      buildResult({
+        target: 'static',
+        artifact: '/app/.x/static',
+        command: ['bun', 'run', 'prerender.ts'],
+        result: { ...exec(true), command: ['bun', 'run', 'prerender.ts'] },
+        report: REPORT,
+      }),
+    ),
+  ) as { data: { unmeasured?: readonly { path: string; reason: string }[] } };
+  expect(payload.data.unmeasured).toEqual([
+    { path: '/posts/new', reason: 'X_NO_CONTEXT: useContext() outside runWithContext()' },
+  ]);
+});
+
 test('the HUMAN output says it too — a silent terminal is the same bug in a different costume', () => {
   const text = renderHuman(
     buildResult({
@@ -289,6 +316,10 @@ test('the HUMAN output says it too — a silent terminal is the same bug in a di
   expect(text).toContain('app/ surface');
   expect(text).toContain('index.html');
   expect(text).toContain('built static');
+  // Same three lists in both renderers, or the terminal reader is sent to `--json` for a fact the
+  // finding told them this command reports.
+  expect(text).toContain('unmeasured');
+  expect(text).toContain('/posts/new');
 });
 
 test('a target with no inventory carries no emitted/skipped keys at all', () => {

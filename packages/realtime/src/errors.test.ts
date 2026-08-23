@@ -4,7 +4,7 @@
 // come out exactly as it went in, or a code silently disappears from `x errors explain`.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
+import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
 import {
   isClientFault,
   isPolicyDenial,
@@ -15,8 +15,10 @@ import {
   REALTIME_ERROR_CODES,
   REALTIME_ERROR_TITLES,
   REALTIME_OWNED_ERROR_CODES,
+  SubscriptionLimitError,
   TopicForbiddenError,
 } from './errors';
+import { toWireError } from './sync-protocol';
 
 const ORIGINAL_MEMBERS = [
   'X_TOPIC_FORBIDDEN',
@@ -93,10 +95,35 @@ describe('error code registry', () => {
     }
   });
 
-  test('every realtime code documents at its own X_* url', () => {
+  test('every realtime code documents at the one framework docs url', () => {
+    // Core's constant, never a copy of the string: `wiki/` is the only public documentation
+    // surface and a code lives there in a TABLE ROW, which has no anchor — so there is one URL
+    // for every code and this package restating it would be a second answer that can go stale.
     for (const code of REALTIME_ERROR_CODES) {
-      expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
     }
+  });
+
+  // The registry test above passed the whole time `RealtimeError` was overriding `docs:` with
+  // `https://ultimate.dev/errors/<code>`, a host that answers 404 — a registry read cannot see
+  // what a CONSTRUCTOR puts on an instance, and the instance is what reaches a client.
+  test('a constructed realtime error carries that url too, not a per-code one', () => {
+    const errors = [
+      new TopicForbiddenError({ topic: 'org.1.feed', actorId: 'u1', reason: 'not a member' }),
+      new LiveQueryUnknownError({ name: 'feedd' }),
+      new SubscriptionLimitError({ scope: 'socket', id: 's1', limit: 32 }),
+    ];
+    for (const error of errors) {
+      expect(error.docs).toBe(ERROR_DOCS_URL);
+      expect(error.docs).not.toContain(error.code);
+      expect(error.docs).not.toContain('ultimate.dev');
+    }
+  });
+
+  test('the wire error a client receives carries it as well', () => {
+    // `toWireError` is what a browser sees; a dead link there is the one a user's console shows.
+    const wire = toWireError(new LiveQueryUnknownError({ name: 'feedd' }));
+    expect(wire.docs).toBe(ERROR_DOCS_URL);
   });
 
   test('X_NOT_IMPLEMENTED is borrowed from core, read through the registry not through realtime', () => {

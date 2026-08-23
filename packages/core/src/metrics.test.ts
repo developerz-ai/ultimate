@@ -107,6 +107,57 @@ describe('histogram', () => {
     const duration = histogram('test_nan_seconds');
     expect(() => duration.record(Number.NaN)).toThrow('X_METRIC_VALUE_INVALID');
   });
+
+  // `record` takes the FIRST bound an observation fits, so bounds out of order put an
+  // observation in a bucket that is not its own. Both halves are wrong and neither is visible
+  // from the other: the counts, and the `le` series they render as.
+  test('counts a hand-computed distribution over non-default bounds', () => {
+    const duration = histogram('test_hand_counted_seconds', { bounds: [0.5, 1, 5] });
+    for (const observed of [0.4, 0.7, 1, 3, 9]) duration.record(observed);
+
+    const point = pointsOf('test_hand_counted_seconds')[0] as HistogramPoint;
+    // A bound is INCLUSIVE (`le`), so the observation of exactly 1 belongs to the `le=1` bucket:
+    // 0.4 -> 0.5; 0.7 and 1 -> 1; 3 -> 5; 9 -> +Inf.
+    expect(point.buckets).toEqual([1, 2, 1, 1]);
+    expect(point.count).toBe(5);
+  });
+
+  test('refuses bounds that are not strictly ascending', () => {
+    let caught: unknown;
+    try {
+      histogram('test_unsorted_seconds', { bounds: [1, 0.5, 5] });
+    } catch (thrown) {
+      caught = thrown;
+    }
+    expect(isUltimateError(caught)).toBe(true);
+    expect((caught as UltimateError).code).toBe('X_METRIC_NAME_INVALID');
+    expect((caught as UltimateError).cause).toContain('ascending');
+    // Refused at declaration means nothing was registered under the name.
+    expect(pointsOf('test_unsorted_seconds')).toHaveLength(0);
+  });
+
+  test('refuses a duplicate bound, which renders two le series for one bucket', () => {
+    expect(() => histogram('test_dup_bound_seconds', { bounds: [0.5, 0.5, 1] })).toThrow(
+      'X_METRIC_NAME_INVALID',
+    );
+  });
+
+  test('refuses a bound that is not a finite number', () => {
+    expect(() => histogram('test_nan_bound_seconds', { bounds: [0.5, Number.NaN] })).toThrow(
+      'X_METRIC_NAME_INVALID',
+    );
+    expect(() =>
+      histogram('test_inf_bound_seconds', { bounds: [0.5, Number.POSITIVE_INFINITY] }),
+    ).toThrow('X_METRIC_NAME_INVALID');
+  });
+
+  test('an empty bounds array is a declaration, not a handle-fetch', () => {
+    // `[]` is one `+Inf` bucket — degenerate but well-formed, and distinguishable from omitting
+    // the option, which takes a handle on whatever is already declared.
+    const duration = histogram('test_empty_bounds_seconds', { bounds: [] });
+    duration.record(1);
+    expect((pointsOf('test_empty_bounds_seconds')[0] as HistogramPoint).buckets).toEqual([1]);
+  });
 });
 
 describe('the instrument registry', () => {

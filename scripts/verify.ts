@@ -142,7 +142,6 @@ export const frameworkManifest: HostCheck = async (root) => {
         code: 'X_VERIFY_FAILED',
         cause: manifestFailureCause(error),
         fix: 'bun run manifest',
-        docs: 'https://ultimate.dev/errors/X_VERIFY_FAILED',
         at: DEFAULT_OUT,
       },
     ];
@@ -153,7 +152,6 @@ export const frameworkManifest: HostCheck = async (root) => {
       code: 'X_MANIFEST_DRIFT',
       cause: `${DEFAULT_OUT} no longer describes the code: ${drift.join(', ')}`,
       fix: 'bun run manifest',
-      docs: 'https://ultimate.dev/errors/X_MANIFEST_DRIFT',
       at: DEFAULT_OUT,
     },
   ];

@@ -61,12 +61,56 @@ describe('open — startup packet', () => {
       database: 'app',
       application_name: 'ultimate-replicator',
       replication: 'database',
+      // The output formats the WAL decoder assumes — asserted for what they are one test down.
+      options: '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3',
     });
     const withoutReplication = new FakeStream();
     await openTrusted(withoutReplication);
     expect(Object.keys(decodeStartup(writeAt(withoutReplication, 0)).params)).not.toContain(
       'replication',
     );
+  });
+
+  /**
+   * `pg-values.ts` decodes a `timestamptz` off the WAL by matching postgres' ISO text, and keeps
+   * the TEXT when it does not match — deliberately, because a wrong instant is worse than a
+   * string. A server running `DateStyle = SQL`, `German` or `Postgres` therefore re-opens the
+   * defect that decode exists to close: the shared live window holds `Date`s, the patch holds
+   * text, `compareValues` falls through to string comparison, and one edit to one column moves
+   * its row to the top of every `orderBy('createdAt','desc')` feed for every subscriber. The
+   * session is the only place that can be decided once, and postgres' OWN logical-replication
+   * client pins exactly these three (`libpqwalreceiver.c`).
+   */
+  test('pins the output formats the WAL decoder assumes, on every session it opens', async () => {
+    for (const extra of [{ replication: 'database' } as const, {}]) {
+      const stream = new FakeStream();
+      await openTrusted(stream, extra);
+      const params = decodeStartup(writeAt(stream, 0)).params;
+      expect(params['options']).toBe(
+        '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3',
+      );
+    }
+  });
+
+  test('a server that refuses one of them fails the handshake loudly', async () => {
+    // The opposite of the silent hole: a GUC the server will not take answers `ErrorResponse` at
+    // startup, so the replicator refuses to boot with the server's own words rather than decoding
+    // WAL text it cannot read. Never a warning nobody reads.
+    const stream = new FakeStream();
+    stream.push(
+      authOk(),
+      errorResponse({
+        S: 'FATAL',
+        C: '42704',
+        M: 'unrecognized configuration parameter "datestyle"',
+      }),
+    );
+    const failure = await openTrusted(stream).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(ReplicationFailedError);
+    expect((failure as ReplicationFailedError).cause).toContain('unrecognized configuration');
   });
 });
 

@@ -61,7 +61,10 @@ const fixFor = (status: number): string => {
 function acceptedFrom(body: PurgeBody, batch: readonly string[]): string[] {
   const payload = body.json;
   if (!isRecord(payload)) return [...batch];
-  const named = batch.filter((key) => key in payload);
+  // `Object.hasOwn`, never `in`: a surrogate key named `constructor` or `toString` answered `true`
+  // out of a body that never mentioned it, so `InvalidationReport.tiers` listed keys nothing had
+  // purged — a partial bust reading as a clean one.
+  const named = batch.filter((key) => Object.hasOwn(payload, key));
   return named.length > 0 ? named : [...batch];
 }
 

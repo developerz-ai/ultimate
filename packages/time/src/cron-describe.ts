@@ -4,9 +4,10 @@
  * ship English to every locale that forgot the argument — so injection is mandatory, not opt-in.
  */
 
-import { cachedFormatter, canonicalLocale } from '@ultimat3/core';
+import { cachedFormatter } from '@ultimat3/core';
 import { type CronExpression, parseCronOnce } from './cron-parse';
-import { cronNotDescribable, localeInvalid } from './errors';
+import { cronNotDescribable } from './errors';
+import { assertLocale } from './locale';
 
 export interface CronPhrases {
   everyMinute: string;
@@ -99,16 +100,6 @@ function clockTimes(
   return `${shown} ${fill(phrases.andMore, { n: times.length - MAX_LISTED_TIMES })}`;
 }
 
-/**
- * `Intl` throws a bare `RangeError` on a malformed tag; convert it once, at the entry point — and
- * hand back the canonical spelling, so validating and keying are the same single step.
- */
-function assertLocale(locale: string): string {
-  const tag = canonicalLocale(locale);
-  if (tag === undefined) throw localeInvalid(locale);
-  return tag;
-}
-
 /** Step fields: an evenly spaced set starting at 0 that covers the whole range. */
 function uniformStep(values: readonly number[], size: number): number | undefined {
   const first = values[0];
@@ -130,7 +121,7 @@ function fill(template: string, vars: Readonly<Record<string, string | number>>)
 
 /**
  * Canonically keyed **and** hard-capped, because `locale` can arrive from an Accept-Language
- * header. `canonicalLocale` collapses the spellings of one locale — `EN-us`, `en-latn-us` — but it
+ * header. `assertLocale` collapses the spellings of one locale — `EN-us`, `en-latn-us` — but it
  * still returns a distinct string for every unknown `-u-` extension value, so the key alone does
  * not bound anything and only the cap keeps the key space finite. Neither half is redundant. The
  * cap and its FIFO live in `@ultimat3/core`'s `intl-cache.ts`, because `zones.ts`, `format.ts` and

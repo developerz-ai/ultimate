@@ -77,12 +77,16 @@ export interface MailErrorInit {
 export class MailError extends UltimateError {
   override readonly name = 'MailError';
 
+  // No `docs:`. `UltimateError` fills it from `describeErrorCode(code).docs`, which is
+  // `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
+  // `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE
+  // ROW, which has no anchor. The `https://ultimate.dev/errors/<code>` link this class built until
+  // 9.x answered 404, host included, on every error mail has ever thrown.
   constructor(init: MailErrorInit) {
     super({
       code: init.code,
       cause: init.cause,
       fix: init.fix,
-      docs: `https://ultimate.dev/errors/${init.code}`,
       meta: init.meta,
       ...(init.retry === undefined ? {} : { retry: init.retry }),
     });
@@ -123,6 +127,22 @@ export const mailDuplicate = (mailId: string): MailError =>
     cause: `mail id "${mailId}" is already registered by another defineMail() call`,
     fix: `rename one of the two defineMail({ id: '${mailId}' }) declarations — an id is the key both surfaces address a template by`,
     meta: { mailId },
+  });
+
+/**
+ * A layout name claimed twice. Same code as a duplicate mail id, because it is the same failure —
+ * a name this package addresses something by, taken by two declarations — and the cause names
+ * which of the two spellings the reader is looking at.
+ *
+ * `layouts.set(name, layout)` used to answer whichever registration ran LAST: a package
+ * registering `base` silently re-shelled every framework mail with nothing reported anywhere.
+ */
+export const mailLayoutDuplicate = (name: string): MailError =>
+  new MailError({
+    code: 'X_MAIL_DUPLICATE',
+    cause: `mail layout "${name}" is already registered, so a second registerLayout() would replace it`,
+    fix: `pick a name of your own: registerLayout('${name}-custom', myLayout) — a layout name is the key defineMail({ layout }) addresses a shell by`,
+    meta: { layout: name },
   });
 
 export const textMissing = (mailId: string): MailError =>

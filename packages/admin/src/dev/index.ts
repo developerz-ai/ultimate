@@ -31,7 +31,7 @@ export type {
 } from './facts';
 export { type DevPanel, type PanelPayload, panelPayload } from './panel';
 export { type CachePanelData, cachePanel } from './panel-cache';
-export { assertReadOnly, type DbPanelData, dbPanel } from './panel-db';
+export { assertReadOnly, type DbPanelData, dbPanel, type ReadOnlyVerdict } from './panel-db';
 export { type JobsPanelData, jobsPanel } from './panel-jobs';
 export { type LivePanelData, livePanel } from './panel-live';
 export { type MailPanelData, mailPanel } from './panel-mail';

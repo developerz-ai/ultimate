@@ -14,6 +14,7 @@
  * `UltimateError` does everywhere else in the framework.
  */
 
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { PwaSyncFlushFailedError, PwaSyncIncompleteError } from './errors';
 import { BUILD_ID_HEADER } from './version-skew';
 
@@ -54,11 +55,13 @@ export interface BackgroundSyncOptions {
 export const DEFAULT_FLUSH_ENDPOINT = '/_x/outbox/flush';
 
 /**
- * Where the emitted class sends a reader. The same host `./errors.ts` documents these two codes
- * at — retyped here because the SW builds its URL from the code at throw time, and
- * `background-sync.test.ts` asserts the two halves still agree.
+ * Where the emitted class sends a reader — `@ultimat3/core`'s `ERROR_DOCS_URL`, interpolated into
+ * the worker source rather than restated, because a URL retyped in a generated string is a second
+ * constant that drifts silently. One page for every code, not one per code: `wiki/` is the
+ * framework's only public documentation surface and a code lives there in a table row, which has no
+ * anchor. `background-sync.test.ts` asserts the emitted value still equals what the registry says.
  */
-const SYNC_DOCS_BASE = 'https://ultimate.dev/errors/';
+const SYNC_DOCS = ERROR_DOCS_URL;
 
 /**
  * The generated realm's own coded error, as source. Small on purpose — this ships in `sw.js` — and
@@ -70,7 +73,7 @@ const SYNC_DOCS_BASE = 'https://ultimate.dev/errors/';
 const SYNC_ERROR_CLASS = `
 class PwaSyncError extends Error{
   constructor(code,cause,fix){
-    const docs=${JSON.stringify(SYNC_DOCS_BASE)}+code;
+    const docs=${JSON.stringify(SYNC_DOCS)};
     super(code+': '+cause+'\\n  fix:   '+fix+'\\n  docs:  '+docs);
     this.name='PwaSyncError';this.code=code;this.cause=cause;this.fix=fix;this.docs=docs;
   }
@@ -92,7 +95,9 @@ ${SYNC_ERROR_CLASS}
 async function flushOutbox(){
   const res=await fetch(FLUSH_ENDPOINT,{method:'POST',headers:{${JSON.stringify(BUILD_ID_HEADER)}:BUILD_ID}});
   if(!res.ok)throw new PwaSyncError(${JSON.stringify(PwaSyncFlushFailedError.code)},'outbox flush POST '+FLUSH_ENDPOINT+' returned '+res.status,'curl -i -X POST '+FLUSH_ENDPOINT+' — @ultimat3/realtime must mount it and answer 2xx');
-  const body=await res.json().catch(()=>({remaining:0}));
+  // ||{} rather than a default inside the catch: json() on a 200 body of null RESOLVES with null,
+  // so the catch never fires and body.remaining raised inside waitUntil instead of refusing coded.
+  const body=(await res.json().catch(()=>null))||{};
   if(body.remaining>0)throw new PwaSyncError(${JSON.stringify(PwaSyncIncompleteError.code)},'outbox flush at '+FLUSH_ENDPOINT+' left '+body.remaining+' mutation(s) queued','x dev --role sync   # drain the outbox, or raise pwa.backgroundSync.retry.maxAttempts in app.config.ts');
 }
 self.addEventListener('sync',(event)=>{

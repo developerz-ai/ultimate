@@ -42,6 +42,7 @@ import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { isTestPath, lineOf } from './lib/source-scan';
 
 /**
  * How a value that may not be a string reached the text of a refusal. Three named mechanisms,
@@ -263,13 +264,6 @@ export function enclosingCallee(span: string, at: number): string | undefined {
   return undefined;
 }
 
-/** 1-based line of a character index. Exported for `catch-render.ts`, which reports the same way. */
-export const lineOf = (text: string, index: number): number => {
-  let line = 1;
-  for (let i = 0; i < index; i += 1) if (text[i] === '\n') line += 1;
-  return line;
-};
-
 /** The two calls that render a value and can throw doing it. Anything else is not this check's. */
 // A `Map`, not an object literal: `callee` is a name parsed out of arbitrary source, so
 // `CONVERTERS['toString']` on an object answers `Object.prototype.toString` — a FUNCTION where an
@@ -372,11 +366,9 @@ function unsafeUses(
   return found;
 }
 
-const isTest = (path: string): boolean => /\.(?:test|spec|d)\.tsx?$/.test(path);
-
 /** Every unsafe render in one file, in source order. */
 export function checkFile(file: SourceFile): readonly UnsafeRender[] {
-  if (isTest(file.path)) return [];
+  if (isTestPath(file.path)) return [];
   const mask = maskToCode(file.source);
   const segments = topLevelSegments(mask.code);
   const depths = parenDepths(mask.code);

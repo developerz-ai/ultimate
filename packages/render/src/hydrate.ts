@@ -122,31 +122,44 @@ return el.__x=import(e).then(function(m){return m.mount(el,props)}).then(
 function(r){el.setAttribute('${ISLAND_MOUNTED_ATTRIBUTE}','');return r},
 function(x){el.setAttribute('${ISLAND_FAILED_ATTRIBUTE}',x&&x.message||'1');throw x})}
 function each(s,f){Array.prototype.forEach.call(document.querySelectorAll(s),f)}
+function hush(){}
 `.trim();
+// `hush` above: `boot` rethrows, so every runtime below has to terminate the chain it starts or
+// the page reports an unhandled rejection for a failure it already recorded on the element.
 
 const RUNTIME_IDLE = `
 each('[data-x-hydrate="idle"]',function(el){
-var go=function(){boot(el)};
+var go=function(){boot(el).catch(hush)};
 if('requestIdleCallback'in window)requestIdleCallback(go,{timeout:${IDLE_HYDRATE_TIMEOUT_MS}});else setTimeout(go,1)})
 `.trim();
 
 const RUNTIME_VISIBLE = `
 each('[data-x-hydrate="visible"]',function(el){
 var io=new IntersectionObserver(function(es){es.forEach(function(en){
-if(en.isIntersecting){io.disconnect();boot(el)}})},{rootMargin:el.getAttribute('data-x-margin')||'200px'});
+if(en.isIntersecting){io.disconnect();boot(el).catch(hush)}})},{rootMargin:el.getAttribute('data-x-margin')||'200px'});
 io.observe(el)})
 `.trim();
 
 // Event replay: the listener is registered before the chunk exists, records the event that
 // woke the island, and re-dispatches it once mounted. Without this, the first click on a
 // cold island is silently lost — the failure users read as "the button does nothing".
+//
+// `off` is BOTH arms of the `then`, and the rejection arm is the reason it is a named function.
+// `boot` rethrows on purpose (see the prelude), so `el.__x` holds a rejected promise from the
+// first failed mount onward — and a `.then` with no rejection handler makes a fresh rejected
+// promise out of it on EVERY event, i.e. one unhandled rejection per user click, forever. The
+// queue was the second half: nothing ever set `done`, so the listeners stayed attached and `q`
+// grew by one retained `Event` — each holding a live `target` — per click, for an island that
+// will never mount. Swallowing here loses no signal: the DOM already carries the failure as
+// `data-x-failed`, which is the documented observable.
 const RUNTIME_INTERACTION = `
 each('[data-x-hydrate="interaction"]',function(el){
 var evs=(el.getAttribute('data-x-events')||'click').split(' ');
 var q=[],done=false;
+var off=function(){done=true;evs.forEach(function(n){el.removeEventListener(n,on,true)});q=[]};
 var on=function(ev){if(done)return;q.push(ev);
-boot(el).then(function(){done=true;evs.forEach(function(n){el.removeEventListener(n,on,true)});
-q.forEach(function(ev){var c=new ev.constructor(ev.type,ev);ev.target.dispatchEvent(c)});q=[]})};
+boot(el).then(function(){var r=q;off();
+r.forEach(function(ev){var c=new ev.constructor(ev.type,ev);ev.target.dispatchEvent(c)})},off)};
 evs.forEach(function(n){el.addEventListener(n,on,true)})})
 `.trim();
 

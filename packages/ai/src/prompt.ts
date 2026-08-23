@@ -27,7 +27,17 @@ export interface DefinePromptInput<V extends PromptVars> {
   readonly system?: string;
   /** Schema of the variables, for the manifest. */
   readonly input?: JsonSchema;
-  /** Expected output shape, fed to `output_config.format` when the caller opts in. */
+  /**
+   * The output shape this prompt PROMISES. Declarative: it is hashed into `ref` and published by
+   * `describePrompts()`, and it is deliberately never sent on the wire — structured output is the
+   * `respond` tool `llm()` projects from the ACTION's `output`, and a second path through
+   * `output_config.format` / `response_format` is the ambiguity axiom 1 refuses (it is also the
+   * one feature most OpenAI-compatible servers do not implement).
+   *
+   * Editing it moves the hash and so needs a `version` bump, which is the point: a prompt whose
+   * promised shape changed is a different prompt, and every score already filed against the old
+   * hash describes the old one.
+   */
   readonly output?: JsonSchema;
   readonly model?: ModelId;
   readonly effort?: Effort;

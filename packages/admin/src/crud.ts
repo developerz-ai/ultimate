@@ -173,6 +173,51 @@ export async function adminDetail<Row extends AdminRow>(
   };
 }
 
+/** The reason on a `failed` entry. A key, never the database's message. */
+const WRITE_FAILED_REASON = 'admin.audit.write-failed';
+
+/**
+ * Run a repo WRITE, and leave a `failed` entry behind if it throws.
+ *
+ * `AuditOutcome` has declared a `failed` member all along and this file emitted it in exactly one
+ * place — `invalid()`, for a VALIDATION issue. A constraint violation, a statement that timed out
+ * after committing, a connection dropped mid-write: each left no entry at all, which is the case
+ * an auditor opens the log for. Both siblings already do this and each states the rule
+ * (`search.ts`, `action-gate.ts`).
+ *
+ * A mutation cannot append BEFORE the call the way a read does — that would record a write which
+ * may never have happened. So: try, record, re-throw UNCHANGED. Nothing about the thrown value is
+ * read or rendered; the caller owns it, and an audit reason is a key, not a database message.
+ */
+async function auditedWrite<T>(
+  // Only the NAME is read, so this stays invariance-free: `AdminResource<Row>` at four call
+  // sites would need the generic threaded through for nothing.
+  resource: { readonly name: string },
+  op: AdminOperation,
+  ctx: CrudCtx,
+  entityId: string | null,
+  decision: AdminDecision,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    await ctx.audit.append({
+      requestId: ctx.requestId,
+      actor: ctx.actor,
+      operation: op,
+      kind: 'operation',
+      entity: resource.name,
+      entityId,
+      permission: decision.permission,
+      outcome: 'failed',
+      reason: WRITE_FAILED_REASON,
+      diff: [],
+    });
+    throw error;
+  }
+}
+
 export async function adminCreate<Row extends AdminRow>(
   resource: AdminResource<Row>,
   ctx: CrudCtx,
@@ -184,7 +229,9 @@ export async function adminCreate<Row extends AdminRow>(
   const parsed = await validateInput(resource.entity.$schema, input);
   if (!parsed.ok) return invalid(resource, 'create', ctx, null, parsed.issues, decision);
 
-  const row = await repoOf(resource).create(parsed.value);
+  const row = await auditedWrite(resource, 'create', ctx, null, decision, () =>
+    repoOf(resource).create(parsed.value),
+  );
   return {
     ok: true,
     row,
@@ -234,7 +281,9 @@ export async function adminUpdate<Row extends AdminRow>(
       .filter((key) => Object.hasOwn(parsed.value, key))
       .map((key) => [key, parsed.value[key]]),
   );
-  const after = await repo.update(id, validatedPatch);
+  const after = await auditedWrite(resource, 'update', ctx, id, decision, () =>
+    repo.update(id, validatedPatch),
+  );
   return {
     ok: true,
     row: after,
@@ -282,7 +331,7 @@ export async function adminDestroy<Row extends AdminRow>(
     );
   }
 
-  await repo.destroy(id);
+  await auditedWrite(resource, 'delete', ctx, id, decision, () => repo.destroy(id));
   return {
     ok: true,
     row: null,

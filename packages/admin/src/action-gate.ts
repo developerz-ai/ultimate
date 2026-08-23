@@ -24,6 +24,12 @@ export interface AdminActionButton {
   readonly decision: AdminDecision;
 }
 
+/**
+ * The reason on a `failed` action entry. A key the view renders — never a sentence carried out of
+ * a caught value, which is how a database message or an attacker's string reaches an audit log.
+ */
+const ACTION_FAILED_REASON = 'admin.error.action-failed';
+
 /** The permissions an action needs: the admin-level gate, then the action's own policy. */
 export function permissionsForAction<Input, Output>(
   action: AdminAction<Input, Output>,
@@ -179,12 +185,20 @@ export async function invokeAdminAction<Input, Output>(
       }),
     };
   } catch (error) {
-    const failed: AdminDecision = {
-      allowed: false,
-      permission: action.permission,
-      reason: 'admin.error.action-failed',
-      trace: [error instanceof Error ? `${error.name}: ${error.message}` : String(error)],
-    };
+    // NOTHING is read off `error` before the append, and nothing is read off it at all.
+    //
+    // This built an `AdminDecision` first, whose `trace` rendered the caught value with
+    // `String(error)` — and a `catch` binding is annotated by nobody, so it holds whatever an
+    // app's handler threw. `Object.create(null)` has no `toString`, no `valueOf` and no
+    // `Symbol.toPrimitive`, so `String(it)` raises `TypeError: No default value` from inside the
+    // block that owes the auditor an entry: measured, ZERO entries, and the caller received the
+    // TypeError instead of what was thrown. Ordering was the second half — the render ran BEFORE
+    // `append`, so its throw skipped the append rather than merely spoiling one field.
+    //
+    // The decision object was also DEAD: only its `reason` was ever read, and `append` takes no
+    // trace. So there is no destination for a rendered value here and `renderThrowable` is not
+    // needed either — an audit reason is a key the view renders, never a sentence from a
+    // database, an upstream or an attacker.
     await audit.append({
       requestId,
       actor,
@@ -194,7 +208,7 @@ export async function invokeAdminAction<Input, Output>(
       entityId,
       permission: action.permission,
       outcome: 'failed',
-      reason: failed.reason,
+      reason: ACTION_FAILED_REASON,
       diff: [],
     });
     throw error;

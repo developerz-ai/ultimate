@@ -4,7 +4,11 @@
 
 import { UltimateError } from '@ultimat3/core';
 
-const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` at any construction site in this file. `UltimateError` fills it from
+// `describeErrorCode(code).docs`, which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for
+// every code, never one per code, because a code lives on that page in a TABLE ROW and a row has
+// no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 2026-08-23
+// answered 404, host included, on every error this app has ever thrown.
 
 /** The graph has no self-edge: a person is neither their own friend nor their own block. */
 export class FriendSelfError extends UltimateError {
@@ -15,7 +19,6 @@ export class FriendSelfError extends UltimateError {
       code: FriendSelfError.code,
       cause: `${verb} was called with the caller's own id, and the friendship graph has no self-edge`,
       fix: `${verb}({ userId: "<another user's id, from /u/<handle>>" })`,
-      docs: docs(FriendSelfError.code),
     });
   }
 }
@@ -36,7 +39,6 @@ export class FriendMirrorExistsError extends UltimateError {
         `this pair already has a ${status} friendship in the other direction (${requesterId} asked ` +
         'first), and a second row would be the mirror the composite key cannot refuse',
       fix: `respondFriend({ requesterId: "${requesterId}", decision: "accept" })`,
-      docs: docs(FriendMirrorExistsError.code),
       meta: { requesterId, status },
     });
   }
@@ -51,7 +53,6 @@ export class FriendRequestNotFoundError extends UltimateError {
       code: FriendRequestNotFoundError.code,
       cause: `no friend request from ${requesterId} is waiting for this actor to answer`,
       fix: 'bun run ../../packages/cli/src/bin.ts dev --json   # then open /friends to read the inbox',
-      docs: docs(FriendRequestNotFoundError.code),
       meta: { requesterId },
     });
   }

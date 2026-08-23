@@ -19,7 +19,7 @@ import { type HttpConfig, stripBasePath } from './config';
 import { actorView, elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
 import { checkCsrf, selfOrigin } from './csrf';
-import { factsOf } from './error-map';
+import { factsOf, retryAfterOf } from './error-map';
 import {
   bodyInvalid,
   csrfBlocked,
@@ -349,10 +349,22 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
           ...(notices.length === 0 ? {} : { notices }),
         });
       }
-      const retryAfter =
-        facts.code === 'X_RATE_LIMITED' && ctx.rateLimit !== undefined
-          ? { 'retry-after': String(ctx.rateLimit.retryAfterSeconds) }
-          : {};
+      // The limiter's own decision first — it is the live one and it knows this request's bucket —
+      // then whatever the THROWABLE computed. Only the first half existed, so every other refusal
+      // that had a delay to give told the caller to come back without saying when:
+      // `X_ACCOUNT_LOCKED` is a 429 with no `Retry-After` at all, and `X_OVERLOADED` from
+      // `@ultimat3/auth`'s KDF gate carries the number in `meta` under a comment saying the host
+      // reads it. Nothing was the host.
+      // `> 0` and not merely `!== undefined`: `RateLimitDecision.retryAfterSeconds` is `0` on an
+      // ALLOWED request, so a handler raising `X_RATE_LIMITED` from a limiter of its own — an
+      // action's declared `rateLimit`, `@ultimat3/auth`'s credential limiter — was answered
+      // `retry-after: 0`, which is "retry now" and is the stampede the header exists to spread.
+      const decided =
+        facts.code === 'X_RATE_LIMITED' && (ctx.rateLimit?.retryAfterSeconds ?? 0) > 0
+          ? ctx.rateLimit?.retryAfterSeconds
+          : undefined;
+      const seconds = decided ?? retryAfterOf(error);
+      const retryAfter = seconds === undefined ? {} : { 'retry-after': String(seconds) };
       return problem(error, {
         instance: ctx.url.pathname,
         requestId: ctx.requestId,

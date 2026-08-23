@@ -59,7 +59,7 @@ X_FORBIDDEN: policy denied the request
 { "code": "X_FORBIDDEN",
   "cause": "actor user_2 (roles: editor) lacks post:publish on post_9",
   "fix": "x actions describe publishPost --json   # the capability it enforces; grant post:publish to editor in apps/web/shared/policies.ts",
-  "docs": "https://ultimate.dev/errors/X_FORBIDDEN" }
+  "docs": "https://github.com/developerz-ai/ultimate/wiki/Error-Codes" }
 ```
 
 A `fix` is a command to run, a call to paste, or a file to open — never advice. `x errors explain <CODE> --json` prints the same `{ code, cause, fix, docs }` for any registered code.

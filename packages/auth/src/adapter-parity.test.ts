@@ -8,6 +8,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createRecordingClient } from '@ultimat3/db';
 import { BuiltinAdapter } from './builtin-adapter';
+import { AuthError } from './errors';
 import { MemoryAdapter } from './memory-adapter';
 import { X_USERS_TABLE } from './tables';
 
@@ -65,5 +66,89 @@ describe('an address is looked up exactly as it is stored', () => {
       })
       .catch(() => undefined);
     expect(client.statements.at(-1)?.values?.[1]).toBe(' Ada@Example.COM ');
+  });
+});
+
+/**
+ * `x_users.email` is `text not null unique` and `external_id` is `text unique`, so Postgres refuses
+ * a second row at either address. `MemoryAdapter` enforced neither — and it is what `x new`
+ * scaffolds and what every test in this package and in an app runs against, so the whole
+ * `resolveUser`/`createUserFor` duplicate path was only ever exercised against the permissive one.
+ *
+ * Reproduced before the fix: two `register()` calls at one address created TWO rows, and logging in
+ * with the SECOND password answered `X_UNAUTHENTICATED` — `findUserByEmail` returns the first, so
+ * the second row was unreachable forever.
+ */
+describe('a duplicate identity is refused by both, not created by one', () => {
+  const SECOND = '00000000-0000-7000-8000-000000000202';
+
+  test('a second row at one email is refused, and the constraint says so in the DDL', async () => {
+    const memory = new MemoryAdapter();
+    await seed(memory, 'ada@example.com');
+
+    let code = 'did-not-throw';
+    try {
+      await memory.createUser({
+        id: SECOND,
+        email: 'ada@example.com',
+        passwordHash: 'hash-2',
+        orgId: null,
+        roles: [],
+        createdAt: new Date('2026-08-09T12:00:00.000Z'),
+      });
+    } catch (error) {
+      code = error instanceof AuthError ? error.code : `not-an-AuthError: ${String(error)}`;
+    }
+    expect(code).toBe('X_AUTH_WRITE_FAILED');
+    // The first row is untouched: a refusal that had already written would be worse than the
+    // duplicate it refused.
+    expect((await memory.findUserById(ID))?.passwordHash).toBe('hash');
+    expect(await memory.findUserById(SECOND)).toBeNull();
+
+    expect(X_USERS_TABLE).toContain('email                 text not null unique');
+  });
+
+  test('a second row at one external_id is refused too, for the same constraint', async () => {
+    const memory = new MemoryAdapter();
+    await memory.createUser({
+      id: ID,
+      email: 'ada@example.com',
+      passwordHash: null,
+      orgId: null,
+      roles: [],
+      externalId: 'okta|abc',
+      createdAt: new Date('2026-08-09T12:00:00.000Z'),
+    });
+
+    expect(
+      memory.createUser({
+        id: SECOND,
+        email: 'grace@example.com',
+        passwordHash: null,
+        orgId: null,
+        roles: [],
+        externalId: 'okta|abc',
+        createdAt: new Date('2026-08-09T12:00:00.000Z'),
+      }),
+    ).rejects.toThrow(expect.objectContaining({ code: 'X_AUTH_WRITE_FAILED' }));
+
+    expect(X_USERS_TABLE).toContain('external_id           text unique');
+  });
+
+  test('the case-sensitivity rule still holds: two spellings are two rows in both', async () => {
+    // Uniqueness is over the STORED string, which is `normaliseEmail`'s output at every door.
+    // The adapter does not fold case — that would be the divergence the first describe pins.
+    const memory = new MemoryAdapter();
+    await seed(memory, 'ada@example.com');
+    await expect(
+      memory.createUser({
+        id: SECOND,
+        email: 'Ada@Example.COM',
+        passwordHash: 'hash-2',
+        orgId: null,
+        roles: [],
+        createdAt: new Date('2026-08-09T12:00:00.000Z'),
+      }),
+    ).resolves.toMatchObject({ id: SECOND });
   });
 });

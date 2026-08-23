@@ -24,7 +24,7 @@
 // test and `x dev` must enqueue with nothing wired — but it is a fallback, not the guarantee.
 
 import type { Clock } from '@ultimat3/core';
-import { currentSpanContext, logger, traceparent, uuid } from '@ultimat3/core';
+import { currentSpanContext, logger, renderThrowable, traceparent, uuid } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
@@ -421,7 +421,7 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
           id: record.id,
           published,
           remaining: batch.length - published,
-          error: error instanceof Error ? error.message : String(error),
+          error: renderThrowable(error),
         });
         // Hand the rest of the batch back rather than sit on a claim nobody is publishing. The
         // claim is a lease now, so without this a single pool timeout parks every committed row
@@ -456,7 +456,7 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
           .then((): void => undefined)
           .catch((error: unknown) => {
             logger.error('jobs.outbox.tick-failed', {
-              error: error instanceof Error ? error.message : String(error),
+              error: renderThrowable(error),
             });
           })
           .finally(() => {

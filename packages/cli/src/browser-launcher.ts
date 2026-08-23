@@ -7,7 +7,6 @@ import { existsSync } from 'node:fs';
 import { UltimateError } from '@ultimat3/core';
 import type { CdpLauncherLike, ScrapeDriver } from '@ultimat3/scraping';
 import { localBrowser } from '@ultimat3/scraping';
-import { docsFor } from './error-codes';
 
 /**
  * The one library this works against. Playwright is not an alternative and is not a flag:
@@ -33,7 +32,6 @@ export class ShotBrowserMissingError extends UltimateError {
       // one literal, and a fix line the gate cannot read is a fix line nothing holds to the
       // contract. `browser-launcher.test.ts` pins it against the constant instead.
       fix: 'bun add -d puppeteer-core',
-      docs: docsFor('X_SHOT_BROWSER_MISSING'),
       meta: { root: input.root, package: BROWSER_PACKAGE },
     });
   }

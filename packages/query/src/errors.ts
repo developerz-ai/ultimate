@@ -2,7 +2,12 @@
 import { assertNever, registerErrorCodes, UltimateError } from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
 
-const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` on the classes below, with one exception noted at `QueryRequestFailedError`.
+// `UltimateError` fills it from `describeErrorCode(code).docs`, which is `@ultimat3/core`'s
+// `ERROR_DOCS_URL` — one page for every code, never one per code, because `wiki/` is the
+// framework's only public documentation surface and a code lives there in a TABLE ROW, which has
+// no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x answered
+// 404, host included, on every read this package has ever refused.
 
 /** One class, one code: core owns the cursor codec, so core owns `X_CURSOR_INVALID`. */
 export { CursorInvalidError } from '@ultimat3/core';
@@ -76,7 +81,6 @@ export class QueryDeniedError extends UltimateError {
       code,
       cause: `${query} denied: ${denialReason(denial)}`,
       fix: `x policy explain ${query} --json   # shows which clause decided and why`,
-      docs: docs(code),
     });
     this.denial = denial;
   }
@@ -89,7 +93,6 @@ export class QueryUnregisteredError extends UltimateError {
       code: 'X_QUERY_UNREGISTERED',
       cause: 'a query was used before it was registered, so it has no name',
       fix: "call registerQueries(await import('./live')) at boot, before serving reads",
-      docs: docs('X_QUERY_UNREGISTERED'),
     });
   }
 }
@@ -106,7 +109,6 @@ export class QueryForeignError extends UltimateError {
       code: 'X_QUERY_FOREIGN',
       cause: `"${name === '' ? 'anonymous' : name}" is not a query built by query()`,
       fix: "declare it as `export const name = query({ input, policy, sql })` from '@ultimat3/query'",
-      docs: docs('X_QUERY_FOREIGN'),
     });
   }
 }
@@ -125,7 +127,6 @@ export class QueryInputUnencodableError extends UltimateError {
       code: 'X_QUERY_INPUT_UNENCODABLE',
       cause: `${offender}, and a read is served as GET /_x/query/<name> — a query string carries characters, not structures or nulls`,
       fix: 'flatten the key into scalar arguments (status: t.string, limit: t.number), spell an absent value as `.optional()` rather than `t.nullable(...)`, or declare it as an action() if it really needs a JSON body',
-      docs: docs('X_QUERY_INPUT_UNENCODABLE'),
     });
   }
 }
@@ -148,7 +149,6 @@ export class QueryCacheTtlInvalidError extends UltimateError {
       code: 'X_QUERY_CACHE_TTL_INVALID',
       cause: `a query declares cache.ttlMs as ${ttlMs}, and every cache tier refuses a lease that is not positive and finite`,
       fix: 'set `cache: { ttlMs: 60_000 }` to a positive whole number of milliseconds, or drop ttlMs to take the read cache default',
-      docs: docs('X_QUERY_CACHE_TTL_INVALID'),
       meta: { ttlMs },
     });
   }
@@ -160,7 +160,6 @@ export class QueryDuplicateError extends UltimateError {
       code: 'X_QUERY_DUPLICATE',
       cause: `two queries are registered under the name "${name}"`,
       fix: 'rename one export — query names are globally unique: x queries list --json',
-      docs: docs('X_QUERY_DUPLICATE'),
     });
   }
 }
@@ -179,7 +178,6 @@ export class QueryPolicyMissingError extends UltimateError {
       code: 'X_QUERY_POLICY_MISSING',
       cause: `query "${name}" was registered without a policy`,
       fix: `add \`policy: can('<resource>:<verb>')\` to the query() that exports "${name}" — a permission your definePermissions() call declares, never the query's own name — or \`allow('<resource>:<verb>')\` to state that the read is public`,
-      docs: docs('X_QUERY_POLICY_MISSING'),
     });
   }
 }
@@ -196,7 +194,6 @@ export class QueryDeprecationInvalidError extends UltimateError {
       code: 'X_QUERY_DEPRECATION_INVALID',
       cause: `query "${name}" declares deprecated.${field} as "${value}", which is not a date`,
       fix: `edit \`deprecated: { ${field}: … }\` on ${name} to an ISO-8601 instant — e.g. '2026-12-31T23:59:59Z'`,
-      docs: docs('X_QUERY_DEPRECATION_INVALID'),
       meta: { query: name, field, value },
     });
   }
@@ -214,7 +211,6 @@ export class QueryNotPageableError extends UltimateError {
       code: 'X_QUERY_NOT_PAGEABLE',
       cause: `a row from ${subject} has no "id", so a cursor cannot name its position`,
       fix: `return the primary key from the query's sql: db.${entity ?? 'rows'}.select({ id: true, … })`,
-      docs: docs('X_QUERY_NOT_PAGEABLE'),
     });
   }
 }
@@ -237,7 +233,6 @@ export class CursorValueUnsupportedError extends UltimateError {
       code: 'X_CURSOR_VALUE_UNSUPPORTED',
       cause: `a sort key holds ${description}, which no cursor can carry`,
       fix: 'order by a scalar column — .orderBy("createdAt") or .orderBy("id") — and project the composite value into the row instead',
-      docs: docs('X_CURSOR_VALUE_UNSUPPORTED'),
     });
   }
 }
@@ -249,7 +244,6 @@ export class MatcherUnsupportedError extends UltimateError {
       code: 'X_MATCHER_UNSUPPORTED',
       cause: `live query "${name}" uses ${feature}, which the incremental matcher cannot patch`,
       fix: `set \`live: false\` and poll, or reshape the query to equality filters + orderBy + limit`,
-      docs: docs('X_MATCHER_UNSUPPORTED'),
     });
   }
 }
@@ -260,7 +254,6 @@ export class QueryInputInvalidError extends UltimateError {
       code: 'X_INPUT_INVALID',
       cause: `input for query "${name}" failed validation: ${detail}`,
       fix: `x queries describe ${name} --json  # prints the expected input schema`,
-      docs: docs('X_INPUT_INVALID'),
     });
   }
 }
@@ -283,13 +276,18 @@ export interface QueryProblem {
 export class QueryRequestFailedError extends UltimateError {
   constructor(name: string, status: number, problem: QueryProblem = {}) {
     const code = text(problem.code) ?? 'X_RPC_FAILED';
+    const served = text(problem.docs);
     super({
       code,
       cause: text(problem.cause) ?? text(problem.detail) ?? `${name} returned HTTP ${status}`,
       fix:
         text(problem.fix) ??
         `check the gateway in front of the app, then: x queries describe ${name} --json`,
-      docs: text(problem.docs) ?? docs(code),
+      // The one place a `docs` is passed: the SERVER's, re-thrown verbatim beside the cause and
+      // fix it came with. An app that documents its own codes somewhere else is entitled to say
+      // so, and overwriting it with this framework's page would bury the answer. Absent, the
+      // constructor resolves `ERROR_DOCS_URL` like every other error here.
+      ...(served === undefined ? {} : { docs: served }),
     });
   }
 }

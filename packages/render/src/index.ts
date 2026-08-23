@@ -77,15 +77,7 @@ export type { IslandCollector, IslandCollectorInput } from './island-collector';
 export { createIslandCollector, islandModuleIds } from './island-collector';
 export type { IslandProps, JsonValue } from './island-props';
 export { checkIslandProps, ISLAND_PROPS_MAX_BYTES } from './island-props';
-export type { BudgetReport, BundleGraph, GraphName, Island, RouteBytes } from './islands';
-export {
-  assertBudget,
-  checkBudget,
-  checkBudgets,
-  graphFor,
-  parseByteBudget,
-  routeJsBytes,
-} from './islands';
+export { parseByteBudget } from './islands';
 export type { JsxComponent, JsxNode, JsxProps } from './jsx';
 export { Fragment, h, isJsxNode, JSX_NODE } from './jsx';
 export type { ModeCheckContext, ModeSpec, RouteShape } from './modes';

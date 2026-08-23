@@ -89,6 +89,19 @@ describe('fastlyPurgeDriver.purge', () => {
     expect(await driverWith(fetch).purge(['post', 'post:1'])).toEqual(['post', 'post:1']);
   });
 
+  // `key in payload` walked the prototype, so a surrogate key spelled `constructor` reported as
+  // named-and-cleared out of a body that names one key — a partial bust reading as a clean one,
+  // which is the one CDN failure no later read can catch.
+  test('a key Fastly did not name is not accepted just because Object.prototype has it', async () => {
+    const { fetch } = recorder(() => json({ post: 'purge-id-1' }));
+    expect(await driverWith(fetch).purge(['post', 'constructor', 'toString'])).toEqual(['post']);
+  });
+
+  test('a key Fastly DID name is accepted even when it spells a prototype member', async () => {
+    const { fetch } = recorder(() => json({ constructor: 'purge-id-1' }));
+    expect(await driverWith(fetch).purge(['post', 'constructor'])).toEqual(['constructor']);
+  });
+
   test('a non-JSON 2xx body is still acceptance, not a failure', async () => {
     const { fetch } = recorder(() => new Response('ok'));
     expect(await driverWith(fetch).purge(['post'])).toEqual(['post']);

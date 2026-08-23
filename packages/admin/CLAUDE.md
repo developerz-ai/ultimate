@@ -28,6 +28,60 @@ Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev
 - **`dev/panel-db.ts`'s `sanitize` decides "did they type a statement", not "is it safe".** It blanks every opaque span in ONE left-to-right pass — `'…'`, `"…"`, `$tag$…$tag$` and both comment forms in a single alternation, because each form can contain another's opener — so `-- still typing` reads as an empty box. It used to feed a write-keyword scan in this file and that scan is gone; **do not cite it as a security property**. It once said an unterminated quote "leaves the rest visible — the guard fails closed": true of the scan it fed, meaningless now, and it never covered `$tag$` or slash-star, whose surviving character is `$` or `/`.
 - **A dev panel catches only the error that means "not wired".** `DevSourceUnavailableError` and nothing wider: a bare `catch` in `dev/panel-live.ts` reported an authz refusal and a dropped NATS connection from a *running* sync node as `dev.live.no-sync-node`, telling the reader to install a tier they already had. Everything else reaches `panelPayload`, which renders its code and its fix.
 - **What an entity does not declare, the admin does not invent.** `sensitive`, a fixed `currency` and `labelField` come from `AdminResourceOptions` or they are absent. Same rule for a URL: the reference widget links through `WidgetContext.hrefFor` or renders plain text — it used to build `/${entity}s/${id}`, which is English pluralisation by concatenation and drops `basePath`. The route table is `AdminApp`'s; a widget three layers down does not get to guess it.
+- **`assertReadOnly` answers a VERDICT carrying the runnable string, and the panel executes THAT.**
+  `assertReadOnlyQuery` documents that what it returns is what the caller must execute — every
+  check ran on a stripped form and the return is the reconciled one — and `panel-db.ts` discarded
+  it and ran the textarea's bytes. Benign only for as long as `verbatim()` normalises nothing more
+  than a trailing `;`, which is a promise no other file is keeping; `@ultimat3/mcp`'s own
+  `dev-server.ts` honours the contract, and a `string | null` return here made it impossible to.
+  `ReadOnlyVerdict` is exported from `@ultimat3/admin/dev` beside it.
+- **`decideAll([])` DENIES.** `permissions[length - 1] ?? ''` fell through to `allowed('')`, so a
+  declared-but-empty gate opened for every actor, anonymous included, and named no permission at
+  all. `visibleNav` hands an author's `item.permissions` straight to it, so `permissions: []` on a
+  nav item was that gate. `pages.ts` already refuses an empty PAGE list at declaration
+  (`X_ADMIN_PAGE_UNGUARDED`); this is the same rule at the seam every surface shares, which is
+  where the ones that never pass through `defineAdmin` are decided. Reason
+  `admin.policy.none-declared`.
+- **Two resources may not claim one `path:`** — `assertUniqueResourcePaths` in `admin.ts`, refused
+  at `defineAdmin` with `X_ADMIN_PAGE_PATH_INVALID` (`subject: 'resource'`). `adminRouteFor`
+  resolves by `.find()`, so a duplicate produced EIGHT routes over FOUR paths and the second
+  resource's four screens were unreachable, silently, with the dashboard rendering. Identical
+  argument to the duplicate action NAME one line below it and to `pages.ts`'s shadow check — the
+  same `taken` set, one step earlier. **A currently-booting app with a duplicate path now refuses
+  at boot.**
+- **The audit diff is TOTAL over every value a row holds.** `same()` compared with
+  `JSON.stringify`, which THROWS on a bigint — and `money()` puts one on the row
+  (`widget-value.ts`), so every update of a money-bearing row raised, AFTER `repo.update()` had
+  committed: the write landed, the caller got an uncoded `TypeError`, and the log stayed empty.
+  `canonicalJson` from `@ultimat3/core`, the same answer `packages/manifest/src/diff-routes.ts`
+  gives to the same question. `crud.test.ts`'s fixture entity carries a `money()` column and its
+  repo CLONES on read, because two reads of one row are two objects and a shared reference
+  short-circuits the comparison the diff exists to make.
+- **A repo that THROWS leaves a `failed` entry.** `AuditOutcome` declared the member and `crud.ts`
+  emitted it in exactly one place — `invalid()`, for a validation issue — so a constraint
+  violation, a statement that timed out after committing and a dropped connection each left nothing
+  at all. `auditedWrite` wraps the three repo writes: try, record, re-throw UNCHANGED. A mutation
+  cannot append BEFORE the call the way `search.ts` does for a read; that would record a write
+  which may never have happened. The reason is a key (`admin.audit.write-failed`), never anything
+  read off the thrown value.
+- **Nothing is read off a caught value in `action-gate.ts`, and the append runs first.** It built an
+  `AdminDecision` whose `trace` was `String(error)` — and a `catch` binding is annotated by nobody,
+  so `Object.create(null)` raised `TypeError: No default value` from inside the block that owed the
+  auditor an entry: measured, ZERO entries and the caller received the TypeError. The decision
+  object was DEAD anyway (only its `reason` was ever read; `append` takes no trace), so there is no
+  destination for a rendered value and `renderThrowable` is not needed either.
+- **`decideAll`'s and `/_x`'s record indexing is `Object.hasOwn` / a `Map`, never a bare index.**
+  `ADMIN_PERMISSION_SPEC[permission]` consulted the PROTOTYPE CHAIN, so a polluted
+  `Object.prototype` gave any granted permission an `implies` the table never declared — and
+  `expandPermissions` walks it. `panel-cache.ts`, `panel-routes.ts` and `panel-policy.ts` counted
+  into plain objects, where `__proto__` reads a prototype (so `?? 0` never fires) and WRITES through
+  the setter, dropping the row: the policy matrix reported a permission unreachable while an actor
+  held it. `Map` + `Object.fromEntries`, which DEFINES each key.
+- **The locale picker reads `registeredLocales()`, not a bundled list.** It was
+  `['en','es','de','fr','pt','ja']`, one line under a comment forbidding exactly that for IANA
+  zones: an app registering `it` could not pick it, and an app with only `en` was offered five
+  locales it renders `⟦key⟧` for. No fallback — an app with no catalog has no locale to offer, and
+  inventing one is the admin declaring what the app did not.
 - **One read-only SQL guard, and it is `@ultimat3/mcp`'s — the whole verdict, with nothing held back.** `dev/panel-db.ts` calls `assertReadOnlyQuery` (tier 5 → tier 4, already a dependency) rather than keeping a second keyword scan: that guard also refuses a batch, a call into the `pg_read_*`/`pg_advisory_*`/`pg_sleep`/`set_config` families, `FOR UPDATE`, and a delimiter that never closes in all five forms (`'`, `E'`, `"`, `$tag$`, slash-star). A local unterminated-delimiter refusal lived here for one revision and was **deleted**: it tested for a surviving `'`/`"`, so it covered three of the five and called a dollar-quoted body "a quote" — one failure mode, two explanations, and a second detector for a property the guard below already tests. What stays local is the emptiness test and the **way out**: `@ultimat3/mcp` tells its caller to expose an action, which a developer at `/_x` cannot act on. The panel says "Fix the statement, or — if it is meant to write — run it with `x db psql --write`", conditional on purpose: `--write` grants writes, it does not close a delimiter, and it used to be printed as *the* fix for a syntax error.
 - **Every admin operation is audited, reads included.** `adminList` was the one call that logged nothing in either direction; `ListResult` now carries its `AuditEntry` on both branches, keyed on the table (`entityId: null`), because the subject of a listing is not a row. `adminSearch` was the second, and it read rows out of EVERY readable entity: `AdminSearchResult.audit` now carries one entry per resource it decided about — `allowed` per searched resource, a `deniedDraft` per refused one. A resource skipped for having no text field or no repo is not an authz event and writes none.
 - Money through `assertMoney`, timestamps through `assertZone`, pagination through `pagination.ts`. No `offset`, ever.

@@ -465,7 +465,8 @@ jobs:
             exit 1
           fi
 
-  # One job per package: its own tests, its own lint, its own coverage bar.
+  # One job per package: its own tests and its own coverage bar, in isolation. No lint — the
+  # step beside `test + coverage` below says why, and it is the half of this summary that drifted.
   #
   # This does NOT duplicate `verify`, and the rule at the top of this file is why it has to be
   # argued rather than assumed. `verify` answers "does the framework ship" over the whole tree at

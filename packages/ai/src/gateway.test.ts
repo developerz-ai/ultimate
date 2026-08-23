@@ -1,104 +1,15 @@
+// Which provider serves a gateway call and what reaches the caller when one cannot: fallthrough,
+// the retry rules, the response cache, and the code a failure surfaces under. The budget ledger
+// is `gateway-budget.test.ts`.
+
 import { describe, expect, test } from 'bun:test';
-import { MemoryBudgetStore } from './budget';
+import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
 import { createGateway } from './gateway';
 import { ANTHROPIC_MODEL_IDS } from './models';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
-import { costOf, EchoProvider } from './provider';
+import { EchoProvider } from './provider';
 
 const echo = new EchoProvider();
-
-describe('budgets refuse rather than truncate', () => {
-  test('a request past the per-request budget throws before the provider is called', async () => {
-    let calls = 0;
-    const counting: Provider = {
-      name: 'counting',
-      models: ANTHROPIC_MODEL_IDS,
-      async generate(request) {
-        calls += 1;
-        return echo.generate(request);
-      },
-      stream: (request) => echo.stream(request),
-    };
-
-    const gateway = createGateway({ providers: [counting], budget: { request: 100 } });
-    const failure = gateway.scope({}, () =>
-      gateway.generate({
-        messages: [{ role: 'user', content: 'x'.repeat(2_000) }],
-        maxTokens: 64,
-      }),
-    );
-
-    await expect(failure).rejects.toMatchObject({ code: 'X_AI_BUDGET_EXCEEDED' });
-    // The point of refusing: nothing was spent, and nothing was silently shortened.
-    expect(calls).toBe(0);
-  });
-
-  test('actor spend accumulates across calls until the actor budget refuses', async () => {
-    const store = new MemoryBudgetStore();
-    const gateway = createGateway({
-      providers: [echo],
-      budget: { actor: 400 },
-      budgetStore: store,
-    });
-
-    await gateway.scope({ actorKey: 'actor:u1' }, async () => {
-      await gateway.generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 32 });
-    });
-    const afterFirst = store.spent('actor:u1');
-    expect(afterFirst).toBeGreaterThan(0);
-
-    const failure = gateway.scope({ actorKey: 'actor:u1' }, () =>
-      gateway.generate({
-        messages: [{ role: 'user', content: 'y'.repeat(4_000) }],
-        maxTokens: 32,
-      }),
-    );
-    await expect(failure).rejects.toMatchObject({ code: 'X_AI_BUDGET_EXCEEDED' });
-    // Refused calls do not move the counter.
-    expect(store.spent('actor:u1')).toBe(afterFirst);
-  });
-
-  test('a budget-free call still reports cost in integer minor units', async () => {
-    const gateway = createGateway({ providers: [echo] });
-    const result = await gateway.generate({
-      messages: [{ role: 'user', content: 'hello world' }],
-      maxTokens: 32,
-    });
-    expect(result.cost.currency).toBe('USD');
-    expect(Number.isInteger(result.cost.minor)).toBe(true);
-  });
-});
-
-describe('cost accounting', () => {
-  test('cost is integer minor units and rounds up, never down to zero', () => {
-    // 1 output token on opus-5 is 2500/1_000_000 of a cent — must round to 1, not 0.
-    const tiny = costOf('claude-opus-5', {
-      inputTokens: 0,
-      outputTokens: 1,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-    });
-    expect(tiny).toEqual({ minor: 1, currency: 'USD' });
-
-    // 1M input + 1M output on opus-5 = $5 + $25 = 3000 cents.
-    const full = costOf('claude-opus-5', {
-      inputTokens: 1_000_000,
-      outputTokens: 1_000_000,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-    });
-    expect(full.minor).toBe(3_000);
-
-    // Cache reads are ~0.1x input: 1M cached reads on opus-5 is 50 cents, not 500.
-    const cached = costOf('claude-opus-5', {
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 1_000_000,
-      cacheWriteTokens: 0,
-    });
-    expect(cached.minor).toBe(50);
-  });
-});
 
 describe('routing and retries', () => {
   test('a retryable failure falls through to a healthy provider', async () => {
@@ -288,5 +199,129 @@ describe('routing and retries', () => {
     // Caching one would keep serving a classifier decision long after the prompt was fixed.
     expect(store.size).toBe(0);
     expect(calls).toBe(2);
+  });
+});
+
+// `attempt` collects every provider's failure into one `X_AI_PROVIDER_UNAVAILABLE`. That is right
+// for a TRANSPORT failure — it says "provider 1 timed out, provider 2 429'd" — and wrong for a
+// refusal the framework itself raised before the socket opened: the same rejection is waiting on
+// every provider and every attempt, which is the stated reason a 400 is not retried.
+describe('a local refusal reaches the caller with its own code', () => {
+  const localRefusal = (): Provider => ({
+    name: 'keyless',
+    models: ANTHROPIC_MODEL_IDS,
+    generate: () =>
+      Promise.reject(new AiKeyMissingError({ provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY' })),
+    // biome-ignore lint/correctness/useYield: the refusal happens before the first chunk
+    async *stream(): AsyncIterable<StreamChunk> {
+      throw new AiKeyMissingError({ provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY' });
+    },
+  });
+
+  test('generate answers X_AI_KEY_MISSING, the same code stream answers', async () => {
+    const gateway = createGateway({
+      providers: [localRefusal()],
+      retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+      sleep: async () => undefined,
+    });
+
+    let fromGenerate: unknown;
+    try {
+      await gateway.generate({ messages: [{ role: 'user', content: 'x' }], maxTokens: 8 });
+    } catch (error) {
+      fromGenerate = error;
+    }
+    let fromStream: unknown;
+    try {
+      for await (const _chunk of gateway.stream({
+        messages: [{ role: 'user', content: 'x' }],
+        maxTokens: 8,
+      })) {
+        // never reached
+      }
+    } catch (error) {
+      fromStream = error;
+    }
+
+    expect((fromGenerate as { code?: string } | undefined)?.code).toBe('X_AI_KEY_MISSING');
+    expect((fromGenerate as { code?: string } | undefined)?.code).toBe(
+      (fromStream as { code?: string } | undefined)?.code,
+    );
+    // The runnable fix is what a swallowed refusal discards, and it is the point of the code.
+    expect((fromGenerate as { fix?: string } | undefined)?.fix).toContain('ANTHROPIC_API_KEY');
+  });
+
+  test('a local refusal is not retried — the same rejection waits on every attempt', async () => {
+    let attempts = 0;
+    const counting: Provider = {
+      name: 'keyless',
+      models: ANTHROPIC_MODEL_IDS,
+      generate: () => {
+        attempts += 1;
+        return Promise.reject(
+          new AiRequestInvalidError({
+            detail: 'model "claude-haiku-4-5" does not accept effort',
+            fix: "drop effort from definePrompt, or set model: 'claude-opus-5'",
+          }),
+        );
+      },
+      // biome-ignore lint/correctness/useYield: unused by this test
+      async *stream(): AsyncIterable<StreamChunk> {
+        throw new AiKeyMissingError({ provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY' });
+      },
+    };
+    const gateway = createGateway({
+      providers: [counting],
+      retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+      sleep: async () => undefined,
+    });
+
+    let thrown: unknown;
+    try {
+      await gateway.generate({ messages: [{ role: 'user', content: 'x' }], maxTokens: 8 });
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as { code?: string } | undefined)?.code).toBe('X_AI_REQUEST_INVALID');
+    expect(attempts).toBe(1);
+  });
+
+  test('a transport failure still collects across providers as X_AI_PROVIDER_UNAVAILABLE', async () => {
+    // The other half of the rule: `AiTransportError` IS `X_AI_PROVIDER_UNAVAILABLE`, so a 503 on
+    // provider one must still fall through to provider two rather than reaching the caller.
+    let served = false;
+    const down: Provider = {
+      name: 'down',
+      models: ANTHROPIC_MODEL_IDS,
+      generate: () =>
+        Promise.reject(
+          new AiTransportError({ provider: 'down', status: 503, detail: 'overloaded' }),
+        ),
+      // biome-ignore lint/correctness/useYield: unused by this test
+      async *stream(): AsyncIterable<StreamChunk> {
+        throw new AiTransportError({ provider: 'down', status: 503, detail: 'overloaded' });
+      },
+    };
+    const healthy: Provider = {
+      name: 'healthy',
+      models: ANTHROPIC_MODEL_IDS,
+      generate: (request) => {
+        served = true;
+        return echo.generate(request);
+      },
+      stream: (request) => echo.stream(request),
+    };
+    const gateway = createGateway({
+      providers: [down, healthy],
+      retry: { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
+      sleep: async () => undefined,
+    });
+
+    const result = await gateway.generate({
+      messages: [{ role: 'user', content: 'x' }],
+      maxTokens: 8,
+    });
+    expect(served).toBe(true);
+    expect(result.provider).toBe('healthy');
   });
 });

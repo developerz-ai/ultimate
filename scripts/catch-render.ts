@@ -16,16 +16,26 @@
 // and on a cycle. Each turns a coded refusal into an uncoded crash, in the exact place the process
 // has no second chance. `renderThrowable(value)` is the total form and is one import.
 //
-// WHAT IT CANNOT SEE: a caught value handed to a helper that renders it two files away, a
-// `.message` read on its own (a getter can throw too), and a rethrow whose renderer is the
-// constructor's. A floor, like the check beside it.
+// WHAT IT NOW SEES, `As of 2026-08-23`: `trace:` — `@ultimat3/admin`'s `AdminDecision` field, which
+// `packages/admin/src/action-gate.ts:186` rendered a caught value into while this rule reported
+// nothing, because the destination list was three names long and its own name promised more. And
+// ONE cross-file hop: a caught value rendered into a field that the SAME package's `src/errors.ts`
+// interpolates into a refusal. `packages/cli/src/island-bundle.ts:94` put `String(error)` into a
+// `string`-typed `logs`, and `packages/cli/src/errors.ts:307` interpolated `${input.logs}` into a
+// `cause:` — legal at both ends, lethal end to end, and invisible to `error-render.ts` because
+// `logs` is annotated `string` and to this rule because `logs` was not a destination.
+//
+// WHAT IT STILL CANNOT SEE: a caught value handed to a helper that renders it in a THIRD file, a
+// field laundered by a package other than the one holding the catch, a `.message` read on its own
+// (a getter can throw too), and a rethrow whose renderer is the constructor's. A floor, like the
+// check beside it.
 //
 //   bun run scripts/catch-render.ts [--json]
 //   bun run scripts/catch-render.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
 import type { SourceFile } from './boundaries';
 import { collectSourceFiles } from './boundaries';
-import { enclosingCallee, lineOf, localDuckRenderers, maskToCode, valueEnd } from './error-render';
+import { enclosingCallee, localDuckRenderers, maskToCode, valueEnd } from './error-render';
 import { flagList, parseScriptArgs } from './lib/args';
 import {
   applyCatchRenderUnpin,
@@ -36,6 +46,7 @@ import {
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { isTestPath, lineOf } from './lib/source-scan';
 import { packageOf } from './test-fix-citations';
 
 const SCRIPT = 'catch-render';
@@ -46,7 +57,8 @@ export type CatchRenderKind = 'instanceof' | 'conversion' | 'stringify' | 'inter
 export interface CatchRenderSite {
   readonly path: string;
   readonly line: number;
-  readonly field: 'cause' | 'fix' | 'detail';
+  /** A refusal field, or the name of a package field its own `errors.ts` launders into one. */
+  readonly field: string;
   readonly binding: string;
   readonly kind: CatchRenderKind;
 }
@@ -58,8 +70,78 @@ export interface CatchRenderSite {
  */
 const CATCH_BINDING = /\bcatch\s*\(\s*([A-Za-z_$][\w$]*)\s*(?::\s*(?:unknown|any)\s*)?\)/g;
 
-/** The three fields a refusal renders into. `detail` is `@ultimat3/http`'s and carries the same risk. */
-const FIELD_KEY = /(?<![.\w$])(cause|fix|detail)\s*[:=]\s*/g;
+/**
+ * The fields a refusal renders into. `detail` is `@ultimat3/http`'s; `trace` is `@ultimat3/admin`'s
+ * `AdminDecision` and was NOT here until 2026-08-23, which is how `packages/admin/src/action-gate.ts`
+ * shipped a `String(error)` into one under a green gate — the rule's own name promised a coverage
+ * its destination list did not have.
+ */
+export const REFUSAL_FIELDS: readonly string[] = ['cause', 'fix', 'detail', 'trace'];
+
+/**
+ * `cause = …` and `cause: …` both, for a REFUSAL field: an `UltimateError` subclass writes the
+ * property and a builder writes the variable, and both end up in the same rendered line.
+ */
+const fieldKey = (fields: readonly string[]): RegExp =>
+  new RegExp(`(?<![.\\w$])(${fields.map((one) => RegExp.escape(one)).join('|')})\\s*[:=]\\s*`, 'g');
+
+/**
+ * A LAUNDERED field is matched on `:` alone — an object PROPERTY, never a local binding.
+ *
+ * The hop this rule follows is `new SomeError({ logs: … })`: a value written into a field of a
+ * constructor's input, which that constructor then interpolates. A `const reason = …` that happens
+ * to share a name with `FlagInvalidError`'s `input.reason` is a NAME COLLISION and nothing else,
+ * and reporting one would be this rule making the mistake `scripts/config-readers.ts` was repaired
+ * for on the same day: a bare name matching in an unrelated file is not evidence.
+ * Measured — it is the difference between one false finding in this tree and none.
+ */
+const launderedKey = (fields: readonly string[]): RegExp =>
+  new RegExp(`(?<![.\\w$])(${fields.map((one) => RegExp.escape(one)).join('|')})\\s*:\\s*`, 'g');
+
+const FIELD_KEY = fieldKey(REFUSAL_FIELDS);
+
+/** A dotted chain's last segment: `input.logs` -> `logs`, `built.logs.map` -> `logs`. */
+const LAUNDERED = /(?:[A-Za-z_$][\w$]*\s*\.\s*)*([A-Za-z_$][\w$]*)/y;
+
+/**
+ * The CROSS-FILE hop, and the reason a second destination list exists at all.
+ *
+ * `packages/cli/src/island-bundle.ts:94` stashed `String(error)` into a field typed `string`, and
+ * `packages/cli/src/errors.ts:307` interpolated `${input.logs}` into a `cause:` — ONE FILE AWAY.
+ * `error-render.ts` reads a parameter annotated `unknown` and `logs` is annotated `string`, so
+ * neither rule could see it: the laundering is legal at both ends and lethal end to end.
+ *
+ * So a package's own `errors.ts` is read for the field names it interpolates into a refusal, and
+ * those names become destinations for every other file in that package. `input.logs` reaching a
+ * `cause:` is what makes `logs:` a refusal field for `@ultimat3/cli` and for nobody else.
+ *
+ * WHAT IT DOES NOT SPAN: a helper in a THIRD file that renders on the error class's behalf, and a
+ * field laundered by a package OTHER than the one holding the catch. One hop, stated.
+ */
+export function launderedFields(errorsSource: string): ReadonlySet<string> {
+  const mask = maskToCode(errorsSource);
+  const code = mask.code;
+  const fields = new Set<string>();
+  for (const key of code.matchAll(FIELD_KEY)) {
+    const start = key.index + key[0].length;
+    const end = valueEnd(code, start);
+    for (const substitution of mask.substitutions) {
+      if (substitution.start < start || substitution.end > end) continue;
+      LAUNDERED.lastIndex = 0;
+      const inner = code.slice(substitution.start, substitution.end).trim();
+      const match = LAUNDERED.exec(inner);
+      // A bare `${code}` names no property and is the constructor's own argument, never a field
+      // something else wrote into — only a dotted chain records the hop this rule follows.
+      if (match !== null && inner.slice(0, match[0].length).includes('.')) {
+        fields.add(match[1] as string);
+      }
+    }
+  }
+  // The refusal fields themselves are already destinations; a package re-laundering one adds
+  // nothing, and leaving them in would double-count a `cause:` inside `errors.ts`.
+  for (const field of REFUSAL_FIELDS) fields.delete(field);
+  return fields;
+}
 
 /** The span of the block opened after `from`, `{` to its matching `}`. */
 function blockAfter(code: string, from: number): { start: number; end: number } | undefined {
@@ -152,24 +234,29 @@ function mechanisms(
  * counting it twice would make a ratchet that a single edit moves by two, and the pin would read
  * as a number of defects when it is a number of occurrences.
  */
-export function scanCatchRenders(path: string, source: string): readonly CatchRenderSite[] {
+export function scanCatchRenders(
+  path: string,
+  source: string,
+  laundered: ReadonlySet<string> = new Set(),
+): readonly CatchRenderSite[] {
   const mask = maskToCode(source);
   const code = mask.code;
   const ducks = localDuckRenderers(code);
   const seen = new Set<string>();
   const sites: CatchRenderSite[] = [];
+  const patterns = laundered.size === 0 ? [FIELD_KEY] : [FIELD_KEY, launderedKey([...laundered])];
   for (const caught of code.matchAll(CATCH_BINDING)) {
     const binding = caught[1] as string;
     const block = blockAfter(code, caught.index + caught[0].length - 1);
     if (block === undefined) continue;
     const body = code.slice(block.start, block.end);
-    for (const key of body.matchAll(FIELD_KEY)) {
+    for (const key of patterns.flatMap((pattern) => [...body.matchAll(pattern)])) {
       const start = block.start + key.index + key[0].length;
       const end = valueEnd(code, start);
       const span = code.slice(start, end);
       for (const hit of mechanisms(span, start, binding, mask.substitutions, ducks)) {
         const line = lineOf(code, start + hit.at);
-        const field = key[1] as CatchRenderSite['field'];
+        const field = key[1] as string;
         const key_ = `${String(line)}:${field}:${binding}`;
         if (seen.has(key_)) continue;
         seen.add(key_);
@@ -179,8 +266,6 @@ export function scanCatchRenders(path: string, source: string): readonly CatchRe
   }
   return sites;
 }
-
-const isTest = (path: string): boolean => /\.(?:test|spec|d)\.tsx?$/.test(path);
 
 export type CatchRenderGapKind = 'over' | 'stale' | 'unscanned';
 
@@ -197,15 +282,36 @@ export interface CatchRenderInput {
   readonly pins: Readonly<Record<string, number>>;
 }
 
+/**
+ * Each package's laundered field names, keyed by package. `src/errors.ts` and nothing else: it is
+ * where every package declares its `UltimateError` subclasses, and widening the search to any file
+ * holding a `cause:` would make the destination set the union of every property name in the tree.
+ */
+export function launderedByPackage(
+  files: readonly SourceFile[],
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const out = new Map<string, ReadonlySet<string>>();
+  for (const file of files) {
+    const pkg = packageOf(file.path);
+    if (file.path !== `packages/${pkg}/src/errors.ts`) continue;
+    out.set(pkg, launderedFields(file.source));
+  }
+  return out;
+}
+
+const NOTHING: ReadonlySet<string> = new Set();
+
 /** The ratchet: a package may hold what it is pinned at, may fall, may never rise. */
 export function checkCatchRenders(input: CatchRenderInput): readonly CatchRenderGap[] {
   if (input.files.length === 0) {
     return [{ kind: 'unscanned', pkg: '', found: 0, pinned: 0 }];
   }
+  const laundered = launderedByPackage(input.files);
   const found = new Map<string, CatchRenderSite[]>();
   for (const file of input.files) {
-    if (isTest(file.path)) continue;
-    for (const site of scanCatchRenders(file.path, file.source)) {
+    if (isTestPath(file.path)) continue;
+    const fields = laundered.get(packageOf(file.path)) ?? NOTHING;
+    for (const site of scanCatchRenders(file.path, file.source, fields)) {
       const list = found.get(packageOf(site.path)) ?? [];
       list.push(site);
       found.set(packageOf(site.path), list);
@@ -289,9 +395,15 @@ export const catchRenderFindings = async (root: string): Promise<readonly Findin
 /** Every site per package, for `--unpin` and for the number a maintainer wants when lowering one. */
 export async function catchRenderCounts(root: string): Promise<Readonly<Record<string, number>>> {
   const counts: Record<string, number> = {};
-  for (const file of await collectSourceFiles(root)) {
-    if (isTest(file.path)) continue;
-    for (const site of scanCatchRenders(file.path, file.source)) {
+  const files = await collectSourceFiles(root);
+  const laundered = launderedByPackage(files);
+  for (const file of files) {
+    if (isTestPath(file.path)) continue;
+    for (const site of scanCatchRenders(
+      file.path,
+      file.source,
+      laundered.get(packageOf(file.path)) ?? NOTHING,
+    )) {
       counts[packageOf(site.path)] = (counts[packageOf(site.path)] ?? 0) + 1;
     }
   }

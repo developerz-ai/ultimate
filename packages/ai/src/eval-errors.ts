@@ -3,9 +3,13 @@
 // stay in ./errors — one owner, one registration, one place a duplicate can surface.
 
 import { UltimateError } from '@ultimat3/core';
-import type { AiErrorCode } from './errors';
 
-const docsFor = (code: AiErrorCode): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
+// which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
+// `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE ROW,
+// which has no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x
+// answered 404, host included, on every error it has ever thrown; restating the replacement here
+// would be the same constant in eight places waiting to drift again.
 
 /**
  * An eval scored further below its recorded baseline than its tolerance allows. The gate is the
@@ -33,7 +37,6 @@ export class EvalThresholdError extends UltimateError {
       // so the eval's own name there is `X_CLI_BAD_FLAG` ("not a test type") — a fix line that
       // cannot be run is axiom 4 broken at the one moment it is needed.
       fix: `x test eval --filter ${input.eval} to see per-case scores, then fix the prompt — or ULTIMATE_EVAL_RECORD=1 x test eval to accept the new numbers as a reviewed diff`,
-      docs: docsFor('X_EVAL_THRESHOLD'),
     });
   }
 }
@@ -48,7 +51,6 @@ export class EvalBaselineMissingError extends UltimateError {
       code: 'X_EVAL_BASELINE_MISSING',
       cause: `eval "${input.eval}" gates against ${input.path}, which ${input.reason}`,
       fix: input.fix ?? `ULTIMATE_EVAL_RECORD=1 x test eval, then commit ${input.path}`,
-      docs: docsFor('X_EVAL_BASELINE_MISSING'),
     });
   }
 }
@@ -60,7 +62,6 @@ export class EvalBaselineInvalidError extends UltimateError {
       code: 'X_EVAL_BASELINE_INVALID',
       cause: `the recorded baseline ${input.path} ${input.problem}`,
       fix: `ULTIMATE_EVAL_RECORD=1 x test eval to re-record ${input.path}`,
-      docs: docsFor('X_EVAL_BASELINE_INVALID'),
     });
   }
 }
@@ -75,7 +76,6 @@ export class EvalMissingError extends UltimateError {
       code: 'X_EVAL_MISSING',
       cause: `prompt "${input.prompt}" has no eval`,
       fix: `defineEval({ name: '${input.id}', prompt, cases, scorers, tolerance, baseline }) beside the prompt, then ULTIMATE_EVAL_RECORD=1 x test eval`,
-      docs: docsFor('X_EVAL_MISSING'),
     });
   }
 }
@@ -92,7 +92,6 @@ export class EvalRecordingError extends UltimateError {
       code: 'X_EVAL_RECORDING',
       cause: `${input.env} is set, so every eval would re-record its baseline instead of gating on it`,
       fix: `env -u ${input.env} x verify`,
-      docs: docsFor('X_EVAL_RECORDING'),
     });
   }
 }

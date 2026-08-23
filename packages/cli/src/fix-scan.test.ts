@@ -4,6 +4,7 @@
 // `x db branch <name>` through the positional helper, `@ultimat3/ui`'s four through the imported one.
 
 import { describe, expect, test } from 'bun:test';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { scanFixes, scanFixSites } from './fix-scan';
 
 const fixes = (source: string): readonly string[] =>
@@ -30,9 +31,7 @@ describe('scanFixes', () => {
   });
 
   test('stops at the property that follows', () => {
-    expect(fixes("({ fix: 'x help', docs: 'https://ultimate.dev/errors/X_A' })")).toEqual([
-      'x help',
-    ]);
+    expect(fixes(`({ fix: 'x help', docs: '${ERROR_DOCS_URL}' })`)).toEqual(['x help']);
   });
 
   // The bug this guards: the quotes inside a regex like this file's own `CODE_LITERAL` read as

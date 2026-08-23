@@ -151,8 +151,14 @@ export function parseByteRange(
   if (from === '' && to === '') return undefined;
   if (from === '') {
     const wanted = Number(to);
-    // A suffix longer than the object is the whole object, not a refusal.
-    return wanted === 0 ? UNSATISFIABLE : { start: Math.max(size - wanted, 0), end: size - 1 };
+    // A suffix longer than the object is the whole object, not a refusal — but there is no whole
+    // object to fall back to at `size === 0`, and the arithmetic below answers `{ start: 0, end:
+    // -1 }`, which the route renders as `content-range: bytes 0--1/0` with status 206. RFC 9110
+    // requires 416. The non-suffix branch already gets this right through `start >= size`; this
+    // one had no equivalent test.
+    return size === 0 || wanted === 0
+      ? UNSATISFIABLE
+      : { start: Math.max(size - wanted, 0), end: size - 1 };
   }
   const start = Number(from);
   const end = to === '' ? size - 1 : Math.min(Number(to), size - 1);

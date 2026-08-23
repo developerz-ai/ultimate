@@ -219,4 +219,17 @@ describe('zoneAbbrev', () => {
     expect(zoneAbbrev('eUrOpE/bErLiN', summer, 'en-US', 'shortOffset')).toBe('GMT+2');
     expect(zoneAbbrev('europe/berlin', summer, 'en-US', 'shortOffset')).toBe('GMT+2');
   });
+
+  test('refuses a malformed LOCALE the same way it refuses a malformed zone', () => {
+    // Both arguments arrive from a request header on the path this function exists for, so one
+    // uncoded `RangeError` is as unhelpful as the other.
+    let caught: unknown;
+    try {
+      zoneAbbrev('Europe/Berlin', summer, 'en_US');
+    } catch (error) {
+      caught = error;
+    }
+    expect(isUltimateError(caught)).toBe(true);
+    expect((caught as UltimateError).code).toBe('X_LOCALE_INVALID');
+  });
 });

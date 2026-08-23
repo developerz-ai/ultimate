@@ -4,7 +4,7 @@
 // only which routes qualify and where the bytes land.
 
 import { join } from 'node:path';
-import { renderThrowable } from '@ultimat3/core';
+import { createContext, renderThrowable, runWithContext } from '@ultimat3/core';
 import type { RouteEntry } from '@ultimat3/render';
 import { routeEntries } from '@ultimat3/render';
 import { renderStatic } from '@ultimat3/render/server';
@@ -15,8 +15,12 @@ import { measureDocumentJs, writeBuildStats } from './budgets';
 import { routeDocument } from './dev-render';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands, writeIslands } from './island-bundle';
-import type { SkippedRoute } from './static-report';
+import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
+
+// Re-exported, never re-declared: `static-report.ts` owns the shape because the report on disk
+// carries it, and this file already imports that module.
+export type { UnmeasuredRoute };
 
 /**
  * `static` only. `isr` revalidates and `ssr`/`stream` need a process, so writing any of them to
@@ -44,12 +48,6 @@ export interface PrerenderedPage {
   readonly file: string;
   readonly hash: string;
   readonly bytes: number;
-}
-
-/** A route that declared a budget and could not be rendered here, and what stopped it. */
-export interface UnmeasuredRoute {
-  readonly path: string;
-  readonly reason: string;
 }
 
 export interface PrerenderReport {
@@ -130,6 +128,22 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const islands = await buildIslands(options.root);
   await writeIslands(islands, options.out);
 
+  // Every render below goes through `routeDocument`, which is the function a REQUEST reaches — and
+  // a request arrives inside `runWithContext`, installed by the HTTP pipeline (`dev-render.ts`).
+  // Called bare, any route whose component, `load` or `meta` reads `useContext()` threw
+  // `X_NO_CONTEXT`: measured against `examples/dummy`, `/posts/new` and `/settings` were filed
+  // unmeasured for that reason alone, and a `render: 'static'` route reading it failed the whole
+  // build. One context for the build, `role: 'web'` because that is the role serving these
+  // documents, and this build's own id so a component reading `ctx.buildId` stamps the artifact
+  // with the id the report and the stats carry.
+  const ctx = createContext({ role: 'web', buildId });
+  const document = (entry: RouteEntry, data: { url: string; params: Record<string, string> }) =>
+    runWithContext(ctx, () =>
+      routeDocument(entry, data, {
+        resolveIsland: (file: string) => islands.resolverFor(file),
+      }),
+    );
+
   for (const entry of routeEntries()) {
     const facts = { surface: entry.surface, render: entry.config.render, route: entry.path };
     const reason = skipReasonFor(facts);
@@ -141,11 +155,10 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       // routes it never used to touch would be a worse regression than the gap it closes. A route
       // that will not render here is reported, gets no stats entry, and stays `X_BUDGET_UNMEASURED`.
       try {
-        const html = await routeDocument(
-          entry,
-          { url: new URL(entry.path, origin).href, params: {} },
-          { resolveIsland: (file: string) => islands.resolverFor(file) },
-        );
+        const html = await document(entry, {
+          url: new URL(entry.path, origin).href,
+          params: {},
+        });
         const measured = await measureDocumentJs(html, options.out);
         const chain = heaviestSource(islands, measured.entries);
         routes.push({
@@ -162,12 +175,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     }
     const artifacts = await renderStatic(
       entry,
-      ({ path, params }) =>
-        routeDocument(
-          entry,
-          { url: new URL(path, origin).href, params },
-          { resolveIsland: (file: string) => islands.resolverFor(file) },
-        ),
+      ({ path, params }) => document(entry, { url: new URL(path, origin).href, params }),
       { buildId },
     );
     // `enumeratePrerender` answers `[]` for a dynamic route with no `prerender()`, so a
@@ -209,6 +217,11 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     buildId,
     emitted: pages.map((page) => ({ route: page.route, path: page.path, file: page.file })),
     skipped,
+    // The list `X_BUDGET_UNMEASURED`'s `fix:` cites by name. It rode home on the in-process
+    // `PrerenderReport` and nowhere else, and `cmd-build.ts` discards a successful subprocess's
+    // stdout — so the one command the finding tells an author to run printed no `unmeasured` key
+    // and no reason. Written into the report is what makes the instruction true.
+    unmeasured,
   });
   return {
     out: options.out,

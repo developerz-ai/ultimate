@@ -61,7 +61,12 @@ registerErrorCodes(
   Object.fromEntries(Object.entries(ADMIN_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
 
-const docsFor = (code: AdminErrorCode): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
+// which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
+// `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE ROW,
+// which has no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x
+// answered 404, host included, on every error it has ever thrown; restating the replacement here
+// would be the same constant in eight places waiting to drift again.
 
 /** A resource, nav item, or MCP tool named an entity the registry does not have. */
 export class AdminEntityUnknownError extends UltimateError {
@@ -74,7 +79,6 @@ export class AdminEntityUnknownError extends UltimateError {
           input.known.length > 0 ? input.known.join(', ') : 'none'
         })`,
       fix: `x g entity ${input.entity}   # then: x manifest`,
-      docs: docsFor('X_ADMIN_ENTITY_UNKNOWN'),
     });
   }
 }
@@ -90,7 +94,6 @@ export class AdminFieldUnsupportedError extends UltimateError {
       code: 'X_ADMIN_FIELD_UNSUPPORTED',
       cause: `${input.entity}.${input.field}: ${input.cause}`,
       fix: input.fix,
-      docs: docsFor('X_ADMIN_FIELD_UNSUPPORTED'),
     });
   }
 }
@@ -109,7 +112,6 @@ export class AdminActionDuplicateError extends UltimateError {
       // The convention the framework's own examples already follow, made into the instruction:
       // an entity-qualified name is unique by construction.
       fix: `rename one in defineAdmin's actions — name: '<entity>.${input.name}' — so "${input.name}" belongs to one of them`,
-      docs: docsFor('X_ADMIN_ACTION_DUPLICATE'),
     });
   }
 }
@@ -129,7 +131,6 @@ export class AdminPolicyMissingError extends UltimateError {
       code: 'X_ADMIN_POLICY_MISSING',
       cause: `${input.kind} "${input.subject}" is exposed in the admin with no policy`,
       fix: `add \`policy: can('<resource>:<verb>')\` to the ${input.kind} "${input.subject}" — a permission your definePermissions() call declares, never the ${input.kind}'s own name`,
-      docs: docsFor('X_ADMIN_POLICY_MISSING'),
     });
   }
 }
@@ -145,19 +146,23 @@ export class AdminPageUnguardedError extends UltimateError {
       code: 'X_ADMIN_PAGE_UNGUARDED',
       cause: `the admin page "${input.path}" declares no permissions, so nothing gates it`,
       fix: `add permissions: ['${input.path.replace(/^\//, '').split('/')[0] ?? 'ops'}:read'] to the pages entry for "${input.path}"`,
-      docs: docsFor('X_ADMIN_PAGE_UNGUARDED'),
     });
   }
 }
 
 /** A page path that cannot be mounted: not rooted, malformed, or already served. */
 export class AdminPagePathInvalidError extends UltimateError {
-  constructor(input: { path: string; cause: string; fix: string }) {
+  /**
+   * `subject` names WHICH declaration owns the bad path — `'page'` by default, `'resource'` when
+   * two resources claim one URL. One code, because it is one failure (an admin URL with more than
+   * one claimant), and a reader told "page path" while looking at a `resources:` entry goes to the
+   * wrong file.
+   */
+  constructor(input: { path: string; cause: string; fix: string; subject?: string }) {
     super({
       code: 'X_ADMIN_PAGE_PATH_INVALID',
-      cause: `the admin page path "${input.path}" ${input.cause}`,
+      cause: `the admin ${input.subject ?? 'page'} path "${input.path}" ${input.cause}`,
       fix: input.fix,
-      docs: docsFor('X_ADMIN_PAGE_PATH_INVALID'),
     });
   }
 }
@@ -178,7 +183,6 @@ export class DevSourceUnavailableError extends UltimateError {
       // that call site passes its own `wiring` rather than render `hooks: { authz + actors }`,
       // which is not syntax an agent could run.
       fix: `devDashboard({ sources: defaultDevSources(${input.wiring ?? `{ hooks: { ${input.source} } }`}) })`,
-      docs: docsFor('X_NOT_IMPLEMENTED'),
     });
   }
 }
@@ -190,7 +194,6 @@ export class DevDashboardInProdError extends UltimateError {
       code: 'X_DEV_DASHBOARD_IN_PROD',
       cause: `devDashboard() was called with role="${input.role}" env="${input.env}"; /_x exposes SQL, policy traces, and caught mail`,
       fix: 'delete the /_x mount from the production entrypoint; run `x dev` locally instead',
-      docs: docsFor('X_DEV_DASHBOARD_IN_PROD'),
     });
   }
 }

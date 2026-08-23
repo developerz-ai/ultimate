@@ -97,7 +97,6 @@ export class DbError extends UltimateError {
       code: init.code,
       cause: init.cause,
       fix: init.fix,
-      docs: `https://ultimate.dev/errors/${init.code}`,
       meta: init.meta,
       sourceError: init.sourceError,
     });

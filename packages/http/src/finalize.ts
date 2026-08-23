@@ -21,7 +21,10 @@ export type Recover = (request: UltimateRequest, ctx: RequestContext) => Promise
 const lastResort = (): Response =>
   new Response(
     JSON.stringify({
-      type: 'https://ultimate.dev/errors/X_INTERNAL',
+      // Spelled out rather than built: this function calls nothing, which is what "last resort"
+      // means. `problemTypeFor('X_INTERNAL')` is the one it must equal, and
+      // `pipeline-finalize.test.ts` asserts that equality so the two cannot drift apart in silence.
+      type: 'urn:ultimate:error:X_INTERNAL',
       title: 'unhandled server error',
       status: 500,
       detail: 'the error renderer itself failed, so nothing of the original error survives here',

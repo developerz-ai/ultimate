@@ -4,7 +4,14 @@
 // deploy turns "at least once" into "always twice", so draining is on by default.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import { logger, onShutdown, recordJob, recordQueueDepth, uuid } from '@ultimat3/core';
+import {
+  logger,
+  onShutdown,
+  recordJob,
+  recordQueueDepth,
+  renderThrowable,
+  uuid,
+} from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { DEFAULT_QUEUE, DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
@@ -141,7 +148,7 @@ export function createWorker(options: WorkerOptions): Worker {
       // Instrumentation never costs a tick: a queue that cannot be measured must still be worked.
       logger.warn('jobs.worker.depth-failed', {
         workerId,
-        error: error instanceof Error ? error.message : String(error),
+        error: renderThrowable(error),
       });
     }
   };
@@ -290,7 +297,7 @@ export function createWorker(options: WorkerOptions): Worker {
               workerId,
               job: job.name,
               jobId: job.id,
-              error: error instanceof Error ? error.message : String(error),
+              error: renderThrowable(error),
             });
           },
         );
@@ -332,7 +339,7 @@ export function createWorker(options: WorkerOptions): Worker {
         .catch((error: unknown) => {
           logger.error('jobs.worker.tick-failed', {
             workerId,
-            error: error instanceof Error ? error.message : String(error),
+            error: renderThrowable(error),
           });
         })
         .finally(() => {

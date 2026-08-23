@@ -213,6 +213,24 @@ describe('unit · a console line keeps its level', () => {
     rec.emit('console', message('warning'));
     expect(page.console.entries().map((line) => line.text)).toEqual(['a warning']);
   });
+
+  /**
+   * `type` is a string off the WIRE, so `CONSOLE_LEVELS[type]` read the prototype chain:
+   * `__proto__` answered `Object.prototype` and `constructor` the `Object` function, neither of
+   * which `?? 'log'` can rescue. `ConsoleLine.level` then held a value its own type says is one of
+   * five words — so `entries().filter((l) => l.level === 'error')`, which is the only reason this
+   * ring exists, silently matched nothing, and `JSON.stringify` dropped the field from a session
+   * snapshot entirely. Same discriminator as `packages/flags/src/subject.ts`.
+   */
+  test('a level naming an Object.prototype member falls back to log, never to a function', async () => {
+    const { rec, target } = open();
+    const page = await target;
+    for (const type of ['__proto__', 'constructor', 'toString', 'valueOf', 'hasOwnProperty'])
+      rec.emit('console', message(type));
+    const levels = page.console.entries().map((line) => line.level);
+    expect(levels).toEqual(['log', 'log', 'log', 'log', 'log']);
+    for (const level of levels) expect(typeof level).toBe('string');
+  });
 });
 
 describe('unit · an uncaught page exception is recorded, and is NOT a console line', () => {

@@ -43,7 +43,14 @@ describe('signInWithOAuth', () => {
 
     const account = await adapter.findAccount('github', '583231');
     expect(account?.userId).toBe(user?.id ?? '');
-    expect(account?.accessToken).toBe('gho_first');
+    // NOT PERSISTED. `x_accounts.access_token` / `refresh_token` held a live provider credential
+    // in the clear, under a `tables.ts` header promising "no column holds a plaintext secret", and
+    // NOTHING in this package ever read either one back — `oauth-profile.ts` uses the token from
+    // the exchange, in flight. `packages/auth/CLAUDE.md` says refresh is not implemented. So this
+    // is the "declared and never wired" deletion, and the type keeps the columns because
+    // `AuthAccount` is the documented adapter seam.
+    expect(account?.accessToken).toBeNull();
+    expect(account?.refreshToken).toBeNull();
   });
 
   test('a verified stamp the adapter loses fails closed, with no session and no link', async () => {
@@ -64,7 +71,7 @@ describe('signInWithOAuth', () => {
     expect(await losing.listSessions(created?.id ?? '')).toEqual([]);
   });
 
-  test('the second login reuses the linked user and refreshes the stored tokens', async () => {
+  test('the second login reuses the linked user and stores no token either time', async () => {
     const first = await signInWithOAuth(auth, { profile: profile(), tokens: tokens() });
     const linked = await adapter.findAccount('github', '583231');
 
@@ -75,7 +82,7 @@ describe('signInWithOAuth', () => {
 
     expect(second.actor.id).toBe(first.actor.id);
     const account = await adapter.findAccount('github', '583231');
-    expect(account?.accessToken).toBe('gho_second');
+    expect(account?.accessToken).toBeNull();
     // The row keeps its own identity: the provider account never changes hands.
     expect(account?.id).toBe(linked?.id ?? '');
     expect(account?.createdAt).toEqual(linked?.createdAt ?? NOW);

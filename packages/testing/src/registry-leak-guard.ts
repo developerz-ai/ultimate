@@ -14,13 +14,38 @@ import { captureProcessRegistries, restoreProcessRegistries } from './registry-s
  * manifest's entity names, `registerTier` takes `app.config.ts`'s tiers — so "empty again when the
  * file ends" is the honest invariant for a test. The entity, job, route and permission registries
  * are not here: `entity()` and `job()` register at module scope, which is how an app declares
- * itself, so a file that leaves them filled is idiomatic rather than leaky. A test whose subject is
+ * itself, so a file that leaves them FILLED is idiomatic rather than leaky. A test whose subject is
  * an EMPTY one of those establishes it itself — `isolateEntityRegistry()`.
  *
- * Neither is RESTORED, and that is the same judgement read the other way: `@ultimat3/cache`
- * publishes no un-declare for a tag, so there is nothing to put a tag registry back WITH. The
+ * Neither is RESTORED, and for the tag registry that is the same judgement read the other way:
+ * `@ultimat3/cache` publishes no un-declare, so there is nothing to put one back WITH. The
  * registries that are restored are `registry-snapshot.ts`'s, and none of them is reported —
  * repairing a state and then failing the run over it would be two answers to one question.
+ *
+ * **Filled and CLEARED are different questions, and the paragraph above only answers the first.**
+ * "Idiomatic to leave filled" says nothing about a file that calls `clear*()`/`reset*()` and takes
+ * a module-scope declaration from every file after it — a module evaluates once per process, so the
+ * next file's own `import` is a cache hit that declares nothing. That is what `registry-snapshot.ts`
+ * repairs, and it repairs FOUR registries out of the set that has one:
+ *
+ *   | registry | reset export | owner | in the snapshot? |
+ *   |---|---|---|---|
+ *   | locales / catalogs | `resetCatalogs` | `@ultimat3/i18n` | yes |
+ *   | permissions / roles | `restorePermissions` / `restoreRoles` | `@ultimat3/policy` | yes |
+ *   | routes | `clearRoutes` | `@ultimat3/render` | **no** |
+ *   | jobs | `resetJobs` | `@ultimat3/jobs` | **no** |
+ *   | tasks | `resetTasks` | `@ultimat3/jobs` | **no** |
+ *   | actions | `resetRegistry` | `@ultimat3/action` | **no** |
+ *   | queries | `resetRegistry` | `@ultimat3/query` | **no** |
+ *   | models / prompts / agents | `resetModels` / `resetPrompts` / `resetAgents` | `@ultimat3/ai` | **no** |
+ *   | mails | `resetMails` | `@ultimat3/mail` | **no** |
+ *   | entities | `clearRegistry` | `@ultimat3/entity` | no, by decision — `registry-isolation.ts` |
+ *
+ * Every "no" needs the SAME two halves the two "yes" rows have: a reader and a writer in the owning
+ * package (`restorePermissions` was added to `@ultimat3/policy` for exactly this), and one line
+ * here. `@ultimat3/jobs`, `@ultimat3/action`, `@ultimat3/query` and `@ultimat3/mail` publish a
+ * lister and a reset but no restore, so the change is theirs first and this file's second — and it
+ * has to land as ONE change, because the cost of the rest is a second edit of this same shape.
  */
 export interface RegistrySample {
   readonly tags: readonly string[];
@@ -138,7 +163,10 @@ export function installRegistryLeakGuard(): void {
       // loader exists to replace — and, because the first matching handler wins and this one is
       // registered from the preload, it would shadow render's transform for that file. Routing
       // `.tsx` through `transformTsx` is not the alternative either: it needs `@ultimat3/render`,
-      // whose import installs that global loader into every test process in the repo. Zero
+      // and the transform itself is on `@ultimat3/render/server`, whose import installs that global
+      // loader into every test process in the repo. (The `.` barrel does NOT — `installRenderLoader()`
+      // moved to `server.ts:15` in the 9.0.0 split, and this comment claimed otherwise until
+      // 2026-08-23. The `server` half is still the one that would have to be imported.) Zero
       // `.test.tsx` files exist and the convention is `<file>.test.ts`, so the narrower filter
       // costs nothing today; a `.test.tsx` added later is unguarded rather than mis-compiled.
       build.onLoad({ filter: /\.test\.ts$/ }, async (args) => {

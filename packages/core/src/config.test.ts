@@ -22,6 +22,7 @@ describe('defineConfig', () => {
     // `JobsConfig.driver`'s shape, three more times: `auth.afterSignInPath`, `pwa.installPrompt`
     // and `ai.modelEnv` were each declared, defaulted and merged here and read by NO file, so an
     // app setting one got silence. Key SETS, not spot checks — a spot check cannot see a fourth.
+    // `realtime`'s own key set has its own describe below, beside the two fields deleted from it.
     const config = defineConfig({ name: 'myapp' });
 
     expect(Object.keys(config.auth).sort()).toEqual(['signInPath']);
@@ -38,13 +39,13 @@ describe('defineConfig', () => {
     const config = defineConfig(
       { name: 'myapp', locales: ['en', 'es'], defaultLocale: 'es' },
       { jobs: { concurrency: 32 } },
-      { realtime: { enabled: true, tier: 'live-queries', transport: 'nats', urlEnv: 'NATS_URL' } },
+      { realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } },
     );
 
     expect(config.jobs.concurrency).toBe(32);
     // untouched keys still come from defaults
     expect(config.jobs.maxAttempts).toBe(5);
-    expect(config.realtime.tier).toBe('live-queries');
+    expect(config.realtime.transport).toBe('nats');
     expect(config.defaultLocale).toBe('es');
   });
 
@@ -195,15 +196,34 @@ describe('database config carries only what something reads', () => {
 });
 
 describe('realtime section', () => {
-  // `realtime.heartbeatMs` was declared, defaulted to 15_000 and read by NOTHING — the socket
-  // heartbeat is the client's own option and the presence beat is derived from the TTL
-  // (`PresenceRegistry.heartbeatMs`). Axiom 1: one knob. Deleted 2026-08-19, and this is what
-  // stops it coming back, since a re-added field would sail through `section()` unnoticed.
-  test('carries no heartbeatMs — the beat is the client option and the derived presence one', () => {
+  // Two fields have been deleted from this section for one reason. `heartbeatMs` was declared,
+  // defaulted to 15_000 and read by NOTHING — the socket heartbeat is the client's own option and
+  // the presence beat is derived from the TTL (`PresenceRegistry.heartbeatMs`). `tier` accepted
+  // `'channels' | 'live-queries' | 'local-first'`, defaulted to `'channels'`, was documented with
+  // per-value semantics, was set by both tracked apps — and was compared, branched on and
+  // dereferenced by nothing, so all three values were one behaviour and `'local-first'` promised a
+  // durable client store `createOpfsLocalStore` still refuses to build. Axiom 1: one knob, and it
+  // has to be a knob. Deleted 2026-08-19 and 2026-08-23; this is what stops either coming back,
+  // since a re-added field sails through `section()` unnoticed.
+  test('carries neither heartbeatMs nor tier — only the two fields something reads', () => {
     const config = defineConfig({ name: 'myapp' });
 
-    expect(Object.keys(config.realtime).sort()).toEqual(['enabled', 'tier', 'transport', 'urlEnv']);
+    expect(Object.keys(config.realtime).sort()).toEqual(['enabled', 'transport', 'urlEnv']);
     expect('heartbeatMs' in config.realtime).toBe(false);
+    expect('tier' in config.realtime).toBe(false);
+  });
+
+  // An overlay is the widest path a key can re-enter by: it is merged last, it wins, and
+  // `section()` copies whatever the patch carries onto the output. So the key set has to hold
+  // after one too, or the deletion is real in `defaults()` alone.
+  test('an overlay that patches the section adds no key to it', () => {
+    const config = defineConfig(
+      { name: 'myapp' },
+      { realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } },
+    );
+
+    expect(Object.keys(config.realtime).sort()).toEqual(['enabled', 'transport', 'urlEnv']);
+    expect(config.realtime.transport).toBe('nats');
   });
 });
 

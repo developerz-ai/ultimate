@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { toJsonSchema, toMcpInputSchema } from './json-schema';
+import { nodeToJsonSchema, toJsonSchema, toMcpInputSchema } from './json-schema';
 import { CURRENCY_CODE_PATTERN } from './money-value';
+import type { SchemaNode } from './node';
 import { configureSchemaProvider, resetSchemaProvider } from './provider';
 import { t } from './t';
 import { builtinT } from './validators';
@@ -184,5 +185,32 @@ describe('toJsonSchema', () => {
     });
     void t.uuid;
     expect(calls).toBe(1);
+  });
+});
+
+/**
+ * The same prototype-chain read `@ultimat3/action`'s `sample-input.ts` carries, one package down.
+ * `node.format` arrives from a schema PROVIDER's IR — `configureSchemaProvider` is the seam, so
+ * the string is not this build's — and `FORMAT_MAP['constructor']` is the `Object` function
+ * rather than `undefined`, which the `?? node.format` fallback cannot rescue. A function in
+ * `format` is dropped silently by `JSON.stringify`, so the published `openapi.json` lost the
+ * constraint with nothing anywhere saying it had.
+ */
+describe('a foreign format is looked up in the table, never on Object.prototype', () => {
+  const stringNode = (format: string): SchemaNode =>
+    ({ kind: 'string', format }) as unknown as SchemaNode;
+
+  test.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', 'invented-by-a-provider'])(
+    'format %s is published verbatim, as a string',
+    (format) => {
+      const schema = nodeToJsonSchema(stringNode(format));
+      expect(schema['format']).toBe(format);
+      expect(typeof schema['format']).toBe('string');
+    },
+  );
+
+  test('a format this build does map is still translated', () => {
+    expect(nodeToJsonSchema(stringNode('timezone'))['format']).toBe('iana-time-zone');
+    expect(nodeToJsonSchema(stringNode('cursor'))['format']).toBe('ultimate-cursor');
   });
 });

@@ -32,6 +32,14 @@ two differ, and it is why a surface that decides on input alone needs no edit.
 
 - **Never add a second authz path.** If a surface cannot use `evaluate()`, add an
   adapter to `surfaces.ts` — nothing else.
+- **`enforce()` dispatches with `Object.hasOwn`, never a bare index** (`As of 2026-08-23`). The
+  adapter table is an object literal and so inherits `Object.prototype`: `adapters['valueOf']`
+  answered a FUNCTION, so `enforce('valueOf' as Surface, …)` called it with the table as receiver
+  and returned the table typed as a `SurfaceDenial` — truthy, so the public authz dispatcher failed
+  **closed with a denial carrying no code and no reason**. Same hazard, same fix and same reason as
+  the role map below (`Object.hasOwn`, `defineProperty`). An unknown surface is `X_POLICY_SURFACE_UNKNOWN`, whose `fix:`
+  lists `Object.keys(adapters)` so a fifth surface joins it by existing. Pinned in
+  `surfaces.test.ts`.
 - **A derived question about a policy TREE is answered in this PACKAGE, once.** `policyPermissions`
   (in `policy.ts`) and `admitsAnonymous` (in `policy-anonymous.ts`) both walk the combinators
   `policy.ts` declares, so an answer computed in a surface package would drift from them the first

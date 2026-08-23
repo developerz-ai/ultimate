@@ -22,6 +22,7 @@ import { flagBool, flagList, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { isTestPath } from './lib/source-scan';
 
 const SCRIPT = 'side-effects';
 export const PINS_FILE = 'scripts/side-effects.ts';
@@ -236,7 +237,6 @@ export const sideEffectFinding = (gap: SideEffectGap): Finding => FINDINGS[gap.k
 export const PACKAGE_GLOB = 'packages/*/package.json';
 
 const SKIP = /(?:^|\/)(?:node_modules|dist|\.turbo)\//;
-const isTest = (path: string): boolean => /\.(test|spec)\.tsx?$/.test(path);
 
 /** The `exports` map's own targets, flattened across conditions. */
 const exportTargets = (exports: unknown): readonly string[] => {
@@ -298,7 +298,7 @@ export async function reachableEffects(
     const source = await Bun.file(file).text();
     const lines = scanTopLevelEffects(source);
     const first = lines[0];
-    if (first !== undefined && !isTest(file)) {
+    if (first !== undefined && !isTestPath(file)) {
       effects.push({ path: file.slice(absolute.length + 1), line: first });
     }
     for (const match of stripComments(source).matchAll(SPECIFIER)) {

@@ -123,13 +123,21 @@ const envDeclaration = (): string => `${envSchemaSource()}
 export const env = defineEnv(envSchema);`;
 
 /**
- * No `installPrompt`, no `afterSignInPath`, no `modelEnv`. All three were declared by
- * `defineConfig`, defaulted by it, and read by NO file; all three are DELETED from
- * `packages/core/src/config.ts` as of 2026-08-22, whose header now records the removal rather than
- * the marker this comment used to cite. So scaffolding one is no longer a switch with no wire — it
- * is `TS2353` in the generated app's first `x verify`. The note belongs HERE rather than in the
- * emitted file: an app author has no use for a comment about keys their config does not name.
- * `scaffold-config.test.ts` is what keeps them from growing back.
+ * No `installPrompt`, no `afterSignInPath`, no `modelEnv`, and no `realtime.tier`. All four were
+ * declared by `defineConfig`, defaulted by it, and read by NO file; all four are DELETED from
+ * `packages/core/src/config.ts` — the first three as of 2026-08-22, `tier` on 2026-08-23 — whose
+ * header now records the removals rather than the marker this comment used to cite. So scaffolding
+ * one is no longer a switch with no wire: it is `TS2353` in the generated app's first `x verify`,
+ * which is CI's `scaffold-smoke` job. The note belongs HERE rather than in the emitted file: an app
+ * author has no use for a comment about keys their config does not name.
+ *
+ * `tier` is the one that got through, and it says what the list was worth. It accepted
+ * `'channels' | 'live-queries' | 'local-first'`, so `'local-first'` read as a durable client store
+ * that does not exist (`createOpfsLocalStore` throws `X_NOT_IMPLEMENTED`) — silent, and shaped like
+ * a capability. Which realtime tier an app is on is decided by what it DECLARES: a `channel()`
+ * topic, a `live: true` query, a local store. `scaffold-config.test.ts` no longer holds a list of
+ * dead names to remember; it resolves every key path this literal writes against what `defineConfig`
+ * really returns, so the fourteenth deletion fails there with no edit here.
  */
 const appConfig = (
   app: NameSet,
@@ -154,7 +162,7 @@ export const config = defineConfig({
   cache: { tiers: ['request-memo', 'lru'] },
   jobs: { queues: ['${app.kebab}-default'], concurrency: 4 },
   // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
-  realtime: { enabled: true, tier: 'live-queries', transport: 'memory' },
+  realtime: { enabled: true, transport: 'memory' },
   pwa: { enabled: true, offline: 'runtime' },
   ai: { mcp: { expose: true, path: '/mcp' } },
 });

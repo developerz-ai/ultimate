@@ -118,6 +118,54 @@ describe('backgroundSyncSource', () => {
   });
 });
 
+/**
+ * `flushOutbox`, evaluated and RUN the way the browser runs it. The generated realm supplies
+ * `self`, `BUILD_ID` and `fetch`; everything else in the block is its own.
+ */
+function emittedFlush(reply: () => Response): () => Promise<void> {
+  const build = new Function(
+    'self',
+    'BUILD_ID',
+    'fetch',
+    `${backgroundSyncSource()}
+return flushOutbox;`,
+  );
+  return build({ addEventListener: () => undefined }, 'build-1', async () =>
+    reply(),
+  ) as () => Promise<void>;
+}
+
+describe('the emitted flushOutbox, executed', () => {
+  test('a 200 whose body is the four bytes `null` completes instead of throwing a TypeError', async () => {
+    // `res.json()` RESOLVES with `null` here, so the `.catch` never fires and the default object
+    // never arrives — `body.remaining` was a TypeError inside `event.waitUntil`, i.e. an unhandled
+    // rejection in the service-worker realm in place of the coded refusal this block exists for.
+    await emittedFlush(() => new Response('null', { status: 200 }))();
+  });
+
+  test('an unparseable body still completes, which is what the default was always for', async () => {
+    await emittedFlush(() => new Response('<html>proxy</html>', { status: 200 }))();
+  });
+
+  test('a body that reports work left behind is still X_PWA_SYNC_INCOMPLETE', async () => {
+    const failure = emittedFlush(
+      () => new Response(JSON.stringify({ remaining: 3 }), { status: 200 }),
+    )();
+    await expect(failure).rejects.toMatchObject({
+      code: PwaSyncIncompleteError.code,
+      name: 'PwaSyncError',
+    });
+  });
+
+  test('a non-2xx is still X_PWA_SYNC_FLUSH_FAILED, before the body is read at all', async () => {
+    const failure = emittedFlush(() => new Response('null', { status: 503 }))();
+    await expect(failure).rejects.toMatchObject({
+      code: PwaSyncFlushFailedError.code,
+      name: 'PwaSyncError',
+    });
+  });
+});
+
 describe('retryDelayMs', () => {
   test('doubles per attempt and stops at the ceiling', () => {
     expect(retryDelayMs(1)).toBe(DEFAULT_RETRY.baseDelayMs);

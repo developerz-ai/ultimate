@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   configureErrorReporting,
+  ERROR_DOCS_URL,
   memoryErrorReporter,
   resetErrorReporting,
   UltimateError,
@@ -168,7 +169,7 @@ describe('factsOf', () => {
     expect(facts.cause).toContain('GET /missing');
     expect(facts.fix).toContain('x routes list');
     expect(facts.status).toBe(404);
-    expect(facts.docs).toBe('https://ultimate.dev/errors/X_ROUTE_NOT_FOUND');
+    expect(facts.docs).toBe(ERROR_DOCS_URL);
   });
 
   test('titles a borrowed code from its owning package, without repeating the code', () => {
@@ -206,7 +207,8 @@ describe('toProblem', () => {
       requestId: 'req-1',
     });
     expect(document.status).toBe(422);
-    expect(document.type).toBe('https://ultimate.dev/errors/X_BODY_INVALID');
+    // The value itself is `problem-type.test.ts`'s subject; here it is one member of the shape.
+    expect(document.type).toBe('urn:ultimate:error:X_BODY_INVALID');
     expect(document.detail).toContain('title: required');
     expect(document.code).toBe('X_BODY_INVALID');
     expect(document.fix).toContain('x routes --json');

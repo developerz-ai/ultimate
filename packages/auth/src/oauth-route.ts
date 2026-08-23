@@ -8,12 +8,18 @@
 // is tier 4 and describes a rendered page. A bare `Request` in, a `Response` out, drivable from
 // a test and mountable by any router that can match a `:param`.
 
-import { type Clock, isUltimateError, renderThrowable, type UltimateError } from '@ultimat3/core';
+import {
+  type Clock,
+  isUltimateError,
+  logger,
+  renderThrowable,
+  type UltimateError,
+} from '@ultimat3/core';
 import type { Auth, LoginResult } from './auth';
-import { oauthDenied, oauthExchangeFailed, oauthProviderUnknown } from './errors';
 import { beginOAuth, type OAuthProviderId } from './oauth';
 import { BUILTIN_OAUTH_PROVIDER_IDS } from './oauth-builtins';
 import { clearHandshakeCookie, handshakeCookie, readHandshakeCookie } from './oauth-cookie';
+import { oauthDenied, oauthExchangeFailed, oauthProviderUnknown } from './oauth-errors';
 import type { OAuthClientCredentials, OAuthFetch } from './oauth-exchange';
 import { oauthCredentials } from './oauth-exchange';
 import { completeOAuthLogin, type ResolveOAuthGrants } from './oauth-login';
@@ -102,6 +108,24 @@ export const OAUTH_ROUTE_STATUS: Readonly<Record<string, number>> = {
 };
 
 /**
+ * The status for a code, read as an OWN key of the table above.
+ *
+ * `OAUTH_ROUTE_STATUS[code] ?? 502` is an index read on a plain object, so `Object.prototype`
+ * answered for `toString`, `constructor`, `hasOwnProperty` and `__proto__` — and `toString`
+ * yields a FUNCTION, which was handed straight to `ResponseInit.status`. `code` is a plain
+ * `string` on every `UltimateError`, so no cast makes that unreachable. Fourth instance of the
+ * class in the framework, after i18n's catalog lookup, schema's `coerce` and mcp's `validate-args`.
+ *
+ * Exported so a test can drive it without building a `Response`; `OAUTH_ROUTE_STATUS` stays
+ * exported unchanged, because `scripts/oauth-route-status.test.ts` pins it against
+ * `@ultimat3/http`'s `statusFor`.
+ */
+export function oauthRouteStatus(code: string): number {
+  // 502 is the default: an uncoded throw on this path came out of the provider conversation.
+  return Object.hasOwn(OAUTH_ROUTE_STATUS, code) ? (OAUTH_ROUTE_STATUS[code] ?? 502) : 502;
+}
+
+/**
  * What an anonymous caller is allowed to read. `UltimateError.toJSON()` carries `meta` and `stack`
  * — a developer's fields — and BOTH legs of this flow are public by definition, so serialising it
  * whole published a stack trace and whatever a factory put in `meta` to whoever typed the URL. Four
@@ -122,23 +146,39 @@ const publicBody = (coded: UltimateError): Record<string, string> => ({
  * wants a rendered page wraps these two descriptors; the framework ships the debuggable answer.
  */
 function problem(error: unknown, extraCookies: readonly string[]): Response {
-  const coded = isUltimateError(error)
-    ? error
-    : oauthExchangeFailed({
-        provider: 'oauth',
-        stage: 'token',
-        // `renderThrowable`, never `error.message`: the throw came from an adapter or a `fetch`
-        // this package does not own, and a getter on `message` — or a `Proxy` trapping
-        // `getPrototypeOf` — would make the callback's last answer throw instead of send.
-        detail: renderThrowable(error),
-        fix: 'throw an UltimateError from the AuthAdapter or OAuthFetch that failed — the factories are in packages/auth/src/errors.ts',
-      });
+  const coded = isUltimateError(error) ? error : uncoded(error);
   const headers = new Headers({ 'content-type': 'application/json; charset=utf-8' });
   for (const cookie of extraCookies) headers.append('set-cookie', cookie);
   return new Response(JSON.stringify(publicBody(coded)), {
-    // 502 is the default: an uncoded throw on this path came out of the provider conversation.
-    status: OAUTH_ROUTE_STATUS[coded.code] ?? 502,
+    status: oauthRouteStatus(coded.code),
     headers,
+  });
+}
+
+/**
+ * A throw with no code: a bug in an `AuthAdapter` or an `OAuthFetch` this package does not own.
+ *
+ * Its text goes to the LOG and never into the response. `publicBody` publishes `cause`, and the
+ * rendered value went straight into it — so a bare
+ * `Error('connect ECONNREFUSED 10.4.2.17:5432 (postgres://app:hunter2@db.internal/prod)')` from a
+ * pool inside a callback was served to whoever typed the URL, as a 502 with the connection string
+ * in the body. The comment above `publicBody` says a stack and `meta` must never reach that
+ * reader; the field carrying the message was the one exception nobody meant to make.
+ *
+ * `renderThrowable`, never `error.message`: the value came from code this package does not own,
+ * and a getter on `message` — or a `Proxy` trapping `getPrototypeOf` — would make the callback's
+ * last answer throw instead of send. Same shape `rate-limit.ts`'s `loginFailed()` uses: one fixed
+ * sentence outward, the discriminating detail kept where only an operator can read it.
+ */
+function uncoded(error: unknown): UltimateError {
+  logger.error('auth.oauth.uncoded_failure', { detail: renderThrowable(error) });
+  return oauthExchangeFailed({
+    provider: 'oauth',
+    stage: 'token',
+    detail:
+      'an adapter or fetch this package does not own threw a value with no error code; the ' +
+      'detail is in this process log under auth.oauth.uncoded_failure',
+    fix: 'throw an UltimateError from the AuthAdapter or OAuthFetch that failed — the factories are in packages/auth/src/errors.ts, and the OAuth ones in packages/auth/src/oauth-errors.ts',
   });
 }
 
@@ -173,6 +213,37 @@ function assertEnabled(auth: Auth, segment: string): OAuthProviderId {
   return provider;
 }
 
+/**
+ * The credentials for a provider, or the SAME 404 an unknown provider gets.
+ *
+ * `assertEnabled` collapses "never heard of it" and "not enabled here" into one answer so an
+ * anonymous caller cannot enumerate this deployment's configuration. Past it, `oauthCredentials`
+ * threw `X_ENV_MISSING` and `problem()` answered 500 — publishing the app's own environment
+ * variable names in the `cause` and, worse, restoring the oracle: 500 meant "registered here",
+ * 404 meant "not". A provider with no credentials is not usable, which is the only thing this
+ * caller is entitled to learn.
+ *
+ * The real cause is not lost: `X_ENV_MISSING`'s `cause` and `fix` are the operator's, and they go
+ * to the process log where only an operator can read them.
+ */
+function credentialsFor(
+  provider: OAuthProviderId,
+  options: OAuthLoginOptions,
+): OAuthClientCredentials {
+  if (options.credentials !== undefined) return options.credentials;
+  try {
+    return oauthCredentials(provider, options.env ?? Bun.env);
+  } catch (error) {
+    if (!isUltimateError(error) || error.code !== 'X_ENV_MISSING') throw error;
+    logger.error('auth.oauth.credentials_missing', {
+      provider,
+      cause: error.cause,
+      fix: error.fix,
+    });
+    throw oauthProviderUnknown(provider, BUILTIN_OAUTH_PROVIDER_IDS);
+  }
+}
+
 function originFor(request: Request, options: OAuthLoginOptions): string {
   const env = options.env ?? Bun.env;
   const declared = options.baseUrl ?? env['APP_URL']?.trim() ?? '';
@@ -195,7 +266,7 @@ async function startHandler(
 ): Promise<Response> {
   try {
     const provider = assertEnabled(auth, providerSegment(request, 'start'));
-    const credentials = options.credentials ?? oauthCredentials(provider, options.env ?? Bun.env);
+    const credentials = credentialsFor(provider, options);
     const handshake = beginOAuth({
       provider,
       clientId: credentials.clientId,
@@ -233,6 +304,10 @@ async function callbackHandler(
   const clear = hasOAuthProvider(segment) ? [clearHandshakeCookie(segment)] : [];
   try {
     const provider = assertEnabled(auth, segment);
+    // Asked here purely so a provider with no credentials answers 404 on THIS leg too: the
+    // exchange below resolves them again from the same two sources. One oracle, closed on both
+    // halves — a 404 on start and a 500 on callback is the same enumeration one request later.
+    credentialsFor(provider, options);
     const url = new URL(request.url);
     assertNoProviderError(url, provider);
     const result: LoginResult = await completeOAuthLogin(auth, {

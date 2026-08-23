@@ -7,10 +7,11 @@
 // catches it and re-queues the job for `resumeAt` instead of holding a process for three days.
 
 import type { Clock } from '@ultimat3/core';
-import { logger } from '@ultimat3/core';
+import { logger, renderThrowable } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { nowMs, toMs } from './clock';
 import { JobAbortedError, JobTimeoutError, StepDuplicateError } from './errors';
+import { createRunSignal } from './run-signal';
 
 /**
  * The runtime list is the declaration and `StepStatus` is derived from it, the shape
@@ -283,10 +284,16 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
     // The step's own ceiling, folded into the run's cancellation so the body reads ONE signal and
     // sees whichever deadline lands first. Composed only when there is a second one to compose.
     const deadline = new AbortController();
-    const signal =
-      options.stepTimeoutMs === undefined
-        ? runSignal
-        : AbortSignal.any([runSignal, deadline.signal]);
+    // `createRunSignal` and never `AbortSignal.any`, which is the rule this package's `CLAUDE.md`
+    // states as absolute: a composite cannot be undone, so ONE dependent signal per STEP stayed on
+    // the run's signal for the whole attempt. A `backfill()` at `batch: 1000` over 5M rows is
+    // 5,000 of them held at once, and an app whose `WorkerOptions.context()` carries a
+    // process-lifetime signal keeps them past the run. Composed only when there is a second signal
+    // to compose, and DISPOSED in the `finally` below, which is the whole reason `run-signal.ts`
+    // exists — `worker-run.ts` disposes the run's own the same way.
+    const composed =
+      options.stepTimeoutMs === undefined ? null : createRunSignal([runSignal, deadline.signal]);
+    const signal = composed?.signal ?? runSignal;
     try {
       const output = await withStepTimeout(
         fn(signal),
@@ -320,12 +327,16 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
           status: 'failed',
           startedAt,
           attempts,
-          error: error instanceof Error ? error.message : String(error),
+          error: renderThrowable(error),
         };
         await store.put(failure);
         remember(failure);
       }
       throw error;
+    } finally {
+      // Nothing of the run's is held past the step. Idempotent, and it never aborts: a step that
+      // settled leaves its signal in whatever state it ended in.
+      composed?.dispose();
     }
   }
 

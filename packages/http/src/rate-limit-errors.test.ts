@@ -3,6 +3,7 @@
 // it says about the bucket it hit is disclosure.
 
 import { describe, expect, test } from 'bun:test';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { HttpError } from './errors';
 import {
   rateLimited,
@@ -26,7 +27,7 @@ describe('rateLimited', () => {
     expect(error.fix).toBe(
       'retry after the Retry-After header, or raise rateLimit.buckets in app.config.ts',
     );
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_RATE_LIMITED');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 

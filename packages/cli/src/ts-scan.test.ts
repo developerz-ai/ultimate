@@ -17,8 +17,8 @@ describe('stripComments', () => {
   });
 
   test('leaves a comment marker that is inside a string literal alone', () => {
-    expect(stripComments("const url = 'https://ultimate.dev/x';")).toContain(
-      'https://ultimate.dev/x',
+    expect(stripComments("const url = 'https://example.com/x';")).toContain(
+      'https://example.com/x',
     );
   });
 });
@@ -150,7 +150,7 @@ describe('isCodeRegistry', () => {
   // registry hands it every code it throws, and `X_NOT_IMPLEMENTED` moves off `core`.
   test('a classes-only errors.ts is not a registry', () => {
     const source = [
-      "import { docsFor } from './error-codes';",
+      "import { CLI_ERROR_TITLES } from './error-codes';",
       'export class NotImplementedError extends UltimateError {',
       "  constructor() { super({ code: 'X_NOT_IMPLEMENTED' }); }",
       '}',

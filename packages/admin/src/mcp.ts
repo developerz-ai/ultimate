@@ -307,7 +307,17 @@ function toMcpTool(opts: AdminMcpOptions, requestId: () => string, tool: AdminMc
       if (result.ok) return jsonResult(result.data);
       // An expected outcome the model should reason about (a policy said no), not a
       // protocol error: the transport still answers 200 with the denial in the body.
-      return { ...jsonResult({ error: result.error, reason: result.reason }), isError: true };
+      //
+      // `code` is for the AUDIT line only and never reaches the wire — it is already in the
+      // body above. Without it the server classified every refusal here as `policy-denied` at
+      // `warn`, so a malformed `create` sat in the bucket a prober's name walk is alerted from,
+      // beside real denials. `X_ADMIN_INVALID` is a client misreading a schema that publishes a
+      // `type` per field and nothing else; `X_ADMIN_DENIED` is authz, and stays outcome 3.
+      return {
+        ...jsonResult({ error: result.error, reason: result.reason }),
+        isError: true,
+        code: result.error,
+      };
     },
   };
 }

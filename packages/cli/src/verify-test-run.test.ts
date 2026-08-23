@@ -3,6 +3,7 @@
 // file set, not the whole type) and the fact that only the failing shards' output survives.
 
 import { describe, expect, test } from 'bun:test';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { ExecResult, Runner } from './exec';
 import type { TestFile } from './test-select';
 import { SHARD_COMMAND_PREFIX } from './test-shards';
@@ -84,7 +85,7 @@ describe('runParallel', () => {
     // The reproduction has to carry the type AND the effective width, or the rerun splits a
     // different corpus and runs a different file.
     expect(finding?.fix).toBe('x test contract --workers 4 --worker 1');
-    expect(finding?.docs).toBe('https://ultimate.dev/errors/X_TEST_SHARD_FAILED');
+    expect(finding?.docs).toBe(ERROR_DOCS_URL);
   });
 
   test('only the failing shards’ output survives, headed by the shard index', async () => {

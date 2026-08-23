@@ -2,7 +2,6 @@
 // that resolves it — the codes themselves, their titles and their registration are `./error-codes`,
 // so a package importing a class does not pull the table and vice versa.
 import { UltimateError } from '@ultimat3/core';
-import { docsFor } from './error-codes';
 
 /** An unknown command or subcommand. Carries a suggestion so the retry is one keystroke away. */
 export class UnknownCommandError extends UltimateError {
@@ -11,7 +10,6 @@ export class UnknownCommandError extends UltimateError {
       code: 'X_CLI_UNKNOWN_COMMAND',
       cause: `"x ${input.path}" is not a command (known: ${input.known.join(', ')})`,
       fix: input.suggestion === undefined ? 'x help' : `x ${input.suggestion}`,
-      docs: docsFor('X_CLI_UNKNOWN_COMMAND'),
     });
   }
 }
@@ -27,7 +25,6 @@ export class BadFlagError extends UltimateError {
       code: 'X_CLI_BAD_FLAG',
       cause: `--${input.flag} on "x ${input.command}": ${input.reason}`,
       fix: input.fix ?? `x ${input.command} --help`,
-      docs: docsFor('X_CLI_BAD_FLAG'),
     });
   }
 }
@@ -46,7 +43,6 @@ export class MissingPositionalError extends UltimateError {
       code: 'X_CLI_BAD_FLAG',
       cause: `"x ${input.command}" needs a <${input.positional}> positional and got none`,
       fix: input.example,
-      docs: docsFor('X_CLI_BAD_FLAG'),
     });
   }
 }
@@ -70,7 +66,6 @@ export class MissingSubcommandError extends UltimateError {
       code: 'X_CLI_BAD_FLAG',
       cause: `"x ${input.command}" takes a subcommand and got none (one of: ${input.known.join(', ')})`,
       fix: `x help ${input.command}`,
-      docs: docsFor('X_CLI_BAD_FLAG'),
     });
   }
 }
@@ -82,7 +77,6 @@ export class VerifyFailedError extends UltimateError {
       code: 'X_VERIFY_FAILED',
       cause: `${input.failed.length} verify step(s) failed: ${input.failed.join(', ')}`,
       fix: 'x verify --json',
-      docs: docsFor('X_VERIFY_FAILED'),
     });
   }
 }
@@ -94,7 +88,6 @@ export class NotInAppError extends UltimateError {
       code: 'X_NOT_IN_APP',
       cause: `"x ${input.command}" must run inside an Ultimate app; no app.config.ts at or above ${input.from}`,
       fix: 'x new myapp && cd myapp',
-      docs: docsFor('X_NOT_IN_APP'),
     });
   }
 }
@@ -106,7 +99,6 @@ export class BunVersionError extends UltimateError {
       code: 'X_BUN_VERSION',
       cause: `Bun ${input.found} is older than the required ${input.required}`,
       fix: 'bun upgrade',
-      docs: docsFor('X_BUN_VERSION'),
     });
   }
 }
@@ -127,7 +119,6 @@ export class NoTestFilesError extends UltimateError {
       code: 'X_TEST_NO_FILES',
       cause: `no *.test.ts files${where} under ${input.root}`,
       fix: parts.length === 0 ? 'x test --json   # run it from the repo root' : 'x test',
-      docs: docsFor('X_TEST_NO_FILES'),
     });
   }
 }
@@ -146,7 +137,6 @@ export class ScaffoldPathEscapeError extends UltimateError {
       fix:
         input.fix ??
         `make the path relative to the app root with no ".." segment, then re-run: bun test packages/cli/src/scaffold-typecheck.contract.test.ts`,
-      docs: docsFor('X_SCAFFOLD_PATH_ESCAPE'),
     });
   }
 }
@@ -163,7 +153,6 @@ export class GenerateJsonInvalidError extends UltimateError {
       code: 'X_GENERATE_JSON_INVALID',
       cause: `${input.path} is declared merge: 'json' but the generator's own contents for it do not parse as a JSON object`,
       fix: `fix the template that emits ${input.path}, then re-run: bun test packages/cli/src/cmd-generate.test.ts`,
-      docs: docsFor('X_GENERATE_JSON_INVALID'),
     });
   }
 }
@@ -182,7 +171,6 @@ export class CatalogExistsError extends UltimateError {
       code: 'X_GENERATE_CONFLICT',
       cause: `${input.path} already exists`,
       fix: `x i18n sync ${input.locale}`,
-      docs: docsFor('X_GENERATE_CONFLICT'),
     });
   }
 }
@@ -198,7 +186,6 @@ export class AppPackageInvalidError extends UltimateError {
       code: 'X_APP_PACKAGE_INVALID',
       cause: `${input.path} ${input.problem}, so the manifest has no app name or version to gate on`,
       fix: 'bun pm pkg set name=my-app version=0.1.0',
-      docs: docsFor('X_APP_PACKAGE_INVALID'),
     });
   }
 }
@@ -216,7 +203,6 @@ export class ErrorCodeUnknownError extends UltimateError {
         input.suggestion === undefined
           ? 'x errors list --json'
           : `x errors explain ${input.suggestion}`,
-      docs: docsFor('X_ERROR_CODE_UNKNOWN'),
     });
   }
 }
@@ -243,7 +229,6 @@ export class DeclarationUnknownError extends UltimateError {
         input.suggestion === undefined
           ? `x ${input.kind} list --json`
           : `x ${input.kind} ${input.verb ?? 'describe'} ${input.suggestion}`,
-      docs: docsFor('X_DECLARATION_UNKNOWN'),
     });
   }
 }
@@ -255,7 +240,6 @@ export class JobUnknownError extends UltimateError {
       code: 'X_JOB_UNKNOWN',
       cause: `the "${input.driver}" queue holds no job with id "${input.id}"`,
       fix: 'x jobs ls --json',
-      docs: docsFor('X_JOB_UNKNOWN'),
     });
   }
 }
@@ -274,7 +258,6 @@ export class FixTargetUnknownError extends UltimateError {
         input.suggestion === undefined
           ? 'x routes --json   # every registered route file, app-root-relative'
           : `x fix boundary ${input.suggestion}`,
-      docs: docsFor('X_FIX_TARGET_UNKNOWN'),
     });
   }
 }
@@ -290,7 +273,6 @@ export class BuildEntryMissingError extends UltimateError {
       code: 'X_BUILD_ENTRY_MISSING',
       cause: `x build --target ${input.target} builds from ${input.entry}, and the app does not have it`,
       fix: `x new scratch-app --dry-run --json   # its file list carries ${input.entry}; copy that file into this app`,
-      docs: docsFor('X_BUILD_ENTRY_MISSING'),
     });
   }
 }
@@ -306,7 +288,6 @@ export class IslandBuildFailedError extends UltimateError {
       code: 'X_BUILD_FAILED',
       cause: `${input.file} is an island entry point and would not bundle: ${input.logs}`,
       fix: `bun build --target browser ${input.file}`,
-      docs: docsFor('X_BUILD_FAILED'),
     });
   }
 }
@@ -321,7 +302,6 @@ export class RoleUnknownError extends UltimateError {
       code: 'X_ROLE_UNKNOWN',
       cause: `ROLE="${input.role}" is not a role (known: ${input.known.join(', ')})`,
       fix: `docker run -e ROLE=web my-app:latest   # one of: ${input.known.join(', ')}`,
-      docs: docsFor('X_ROLE_UNKNOWN'),
     });
   }
 }
@@ -344,7 +324,6 @@ export class RuntimeDriverSplitError extends UltimateError {
       // queues, and "they match" is exactly the reading that makes this bug invisible.
       cause: `an app module installed a ${input.driver} driver (ambient: "${input.ambient}") that is not the object this boot captured ("${input.captured}"), so enqueues and claims would use different queues`,
       fix: `pass the driver to the boot instead of installing it from an app module: runRole({ root, env, runtime: { ${input.driver}: yourDriver } })`,
-      docs: docsFor('X_RUNTIME_DRIVER_SPLIT'),
     });
   }
 }
@@ -362,7 +341,6 @@ export class PortInvalidError extends UltimateError {
       code: 'X_PORT_INVALID',
       cause: `${name}="${input.value}" is not a TCP port number between 0 and 65535`,
       fix: `docker run -e ${name}=${name === 'PORT' ? 3000 : 9090} my-app:latest`,
-      docs: docsFor('X_PORT_INVALID'),
     });
   }
 }
@@ -382,7 +360,6 @@ export class EnvSchemaMissingError extends UltimateError {
       code: 'X_CONFIG_INVALID',
       cause: `x env ${input.subcommand} needs the env declaration, and app.config.ts exports no "envSchema"`,
       fix: "add to app.config.ts: export const envSchema = { DATABASE_URL: { type: 'url', description: 'Postgres connection URL' } } satisfies EnvSchema; export const env = defineEnv(envSchema);",
-      docs: docsFor('X_CONFIG_INVALID'),
     });
   }
 }
@@ -394,7 +371,6 @@ export class CliNotImplementedError extends UltimateError {
       code: 'X_NOT_IMPLEMENTED',
       cause: `${input.feature} is not implemented in this build`,
       fix: input.fix,
-      docs: docsFor('X_NOT_IMPLEMENTED'),
     });
   }
 }
@@ -410,7 +386,7 @@ export class CliNotImplementedError extends UltimateError {
  */
 export class StorageUnwritableError extends UltimateError {
   constructor(cause: string, fix: string) {
-    super({ code: 'X_STORAGE_UNWRITABLE', cause, fix, docs: docsFor('X_STORAGE_UNWRITABLE') });
+    super({ code: 'X_STORAGE_UNWRITABLE', cause, fix });
   }
 }
 
@@ -435,7 +411,6 @@ export class LocalDiskUnsafeError extends UltimateError {
         `disk at ${input.root} — and with no STORAGE_SIGNING_SECRET it would sign upload grants ` +
         'with the development key published in @ultimat3/storage',
       fix: 'export S3_ENDPOINT=https://s3.example.com S3_BUCKET=my-app-uploads   # or keep the disk on a mounted volume: export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
-      docs: docsFor('X_ENV_MISSING'),
     });
   }
 }
@@ -450,7 +425,6 @@ export class SecretsEditorMissingError extends UltimateError {
       code: 'X_SECRETS_EDITOR_MISSING',
       cause: `x secrets edit opens the decrypted secrets in an editor and none of ${input.vars.join(', ')} is set`,
       fix: 'EDITOR=nano x secrets edit',
-      docs: docsFor('X_SECRETS_EDITOR_MISSING'),
     });
   }
 }
@@ -466,7 +440,6 @@ export class SecretsEditFailedError extends UltimateError {
       code: 'X_SECRETS_EDIT_FAILED',
       cause: `"${input.editor}" exited ${input.code}, so the decrypted buffer was discarded and the committed secrets file was not rewritten`,
       fix: 'x secrets edit',
-      docs: docsFor('X_SECRETS_EDIT_FAILED'),
     });
   }
 }
@@ -483,7 +456,6 @@ export class SecretsExistsError extends UltimateError {
       code: 'X_GENERATE_CONFLICT',
       cause: `${input.path} already exists, and x secrets init would replace it`,
       fix: input.fix,
-      docs: docsFor('X_GENERATE_CONFLICT'),
     });
   }
 }

@@ -22,8 +22,9 @@ import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import type { Workspace } from './lib/workspaces';
-import { listWorkspaces } from './lib/workspaces';
+import { tierOf } from './lib/tiers';
+import type { PackageJson } from './lib/workspaces';
+import { readWorkspaceManifest } from './lib/workspaces';
 
 const SCRIPT = 'package-map-graph';
 
@@ -295,57 +296,44 @@ export interface GraphWorkspaces {
   readonly unreadable: readonly string[];
 }
 
-/** Which manifests do not parse. Asked only after a read failed, so the finding names a FILE:
- *  `listWorkspaces` rejects on the first bad one without saying which, and its rejection reached
- *  the top of the script — no result, no `--json`, no code, nothing an agent could act on. */
-async function unparsableManifests(root: string): Promise<readonly string[]> {
-  const bad: string[] = [];
-  for await (const relative of new Bun.Glob(PACKAGES_GLOB).scan({ cwd: root })) {
-    try {
-      await Bun.file(join(root, relative)).json();
-    } catch {
-      bad.push(relative);
-    }
-  }
-  return bad.sort();
-}
-
-/** In-repo dependencies only: an arrow on this graph is never `nats` or `sass`. */
+/**
+ * In-repo dependencies only: an arrow on this graph is never `nats` or `sass`.
+ *
+ * Enumerated HERE rather than through `listWorkspaces`, which now refuses an unreadable manifest
+ * with `X_WORKSPACE_MANIFEST_UNREADABLE` (#281). Refusing is right for a release tool and wrong
+ * for this one: a broken manifest is this rule's own FINDING, and one file must not take the other
+ * twenty-nine out of the answer. Both halves read `readWorkspaceManifest`, so "unreadable" means
+ * the same thing on both sides of that seam — which the try/catch pair this replaced did not: it
+ * caught the throw and then re-globbed with a bare `.json()`, so JSON that parsed to `[]` was
+ * unreadable to one half and fine to the other, and the finding named the glob instead of the file.
+ */
 export async function readGraphWorkspaces(root: string): Promise<GraphWorkspaces> {
-  let listed: readonly Workspace[];
-  try {
-    listed = await listWorkspaces(root);
-  } catch {
-    const unreadable = await unparsableManifests(root);
-    // A rejection with no bad manifest behind it is still a refusal, never a clean answer.
-    return { workspaces: [], unreadable: unreadable.length > 0 ? unreadable : [PACKAGES_GLOB] };
-  }
-  const names = new Set(listed.map((workspace) => workspace.name));
+  const read: { readonly dir: string; readonly manifest: PackageJson }[] = [];
   const unreadable: string[] = [];
-  const workspaces: GraphWorkspace[] = [];
-  for (const workspace of listed) {
-    let parsed: unknown;
-    try {
-      parsed = await Bun.file(join(workspace.path, 'package.json')).json();
-    } catch {
-      parsed = undefined;
-    }
-    // A manifest that parses to `[]`, `null` or a number reads as "declares no dependency", which
-    // would report every arrow out of that package as unbacked. Unreadable is the honest answer.
-    if (!isRecord(parsed)) {
-      unreadable.push(`packages/${workspace.dir}/package.json`);
+  for await (const relative of new Bun.Glob(PACKAGES_GLOB).scan({ cwd: root })) {
+    const manifest = await readWorkspaceManifest(join(root, relative));
+    if (manifest.kind !== 'read') {
+      unreadable.push(relative);
       continue;
     }
-    workspaces.push({
-      dir: workspace.dir,
-      name: workspace.name,
-      version: workspace.version,
-      private: workspace.private,
-      tier: workspace.tier,
-      deps: manifestDeps(parsed).filter((name) => names.has(name)),
-    });
+    read.push({ dir: relative.split('/')[1] ?? '', manifest: manifest.manifest });
   }
-  return { workspaces, unreadable };
+  const named = read.map((one) => ({
+    dir: one.dir,
+    name: one.manifest.name ?? `@ultimat3/${one.dir}`,
+    version: one.manifest.version ?? '0.0.0',
+    private: one.manifest.private === true,
+    tier: tierOf(one.dir),
+    manifest: one.manifest,
+  }));
+  const names = new Set(named.map((one) => one.name));
+  const workspaces: GraphWorkspace[] = named
+    .map(({ manifest, ...one }) => ({
+      ...one,
+      deps: manifestDeps(manifest).filter((name) => names.has(name)),
+    }))
+    .sort((a, b) => a.tier - b.tier || a.dir.localeCompare(b.dir));
+  return { workspaces, unreadable: unreadable.sort() };
 }
 
 export async function packageMapGraphFindings(root: string): Promise<readonly Finding[]> {

@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { frozenClock } from '@ultimat3/core';
+import { frozenClock, isLocal } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import {
   DEV_SIGNING_SECRET,
+  type LocalDriverOptions,
   localDriver,
   STORAGE_SIGNING_SECRET_KEY,
   usesDevStorageSecret,
@@ -326,7 +327,7 @@ describe('the dev signing secret', () => {
   });
 
   /** The code `localDriver` refused to construct with, or how it failed to refuse. */
-  const bootCode = (options: { readonly signingSecret?: string }): string => {
+  const bootCode = (options: Omit<LocalDriverOptions, 'root'>): string => {
     try {
       localDriver({ root, ...options });
     } catch (error) {
@@ -383,6 +384,92 @@ describe('the dev signing secret', () => {
     expect(localDriver({ root }).name).toBe('local');
     delete process.env[KEY];
     expect(localDriver({ root }).name).toBe('local');
+  });
+
+  test('the predicate reads the env it is handed, never the process it happens to run in', () => {
+    // The two halves of one guard. `dev-runtime.ts` asks `!isLocal({ env }) &&
+    // usesDevStorageSecret({ env })` — and until this option existed the second half answered
+    // about `process.env` while the first answered about the boot, so an embedding caller
+    // (`serveApp({ env })`, a test fixture, `@ultimat3/testing`) whose env differs got a verdict
+    // assembled from two different processes. The dangerous direction is this one: the boot has
+    // no secret, the process that launched it does, and the disk signs with the published key.
+    const wouldSignWithTheDevKey = (env: Readonly<Record<string, string | undefined>>): boolean =>
+      !isLocal({ env }) && usesDevStorageSecret({ env });
+
+    process.env[ENV] = 'development';
+    process.env[KEY] = 'a-real-secret';
+    expect(wouldSignWithTheDevKey({ ULTIMATE_ENV: 'production' })).toBe(true);
+    expect(wouldSignWithTheDevKey({ ULTIMATE_ENV: 'production', [KEY]: 'a-real-secret' })).toBe(
+      false,
+    );
+
+    // And the reverse, which is a boot refused over a secret it actually has.
+    delete process.env[KEY];
+    expect(wouldSignWithTheDevKey({ ULTIMATE_ENV: 'production', [KEY]: 'boot-secret' })).toBe(
+      false,
+    );
+
+    // An empty table is a boot that declared nothing, not a fall-through to `process.env`.
+    process.env[KEY] = 'a-real-secret';
+    expect(usesDevStorageSecret({ env: {} })).toBe(true);
+    expect(usesDevStorageSecret({ env: { [KEY]: DEV_SIGNING_SECRET } })).toBe(true);
+    expect(usesDevStorageSecret({ env: { [KEY]: '' } })).toBe(true);
+  });
+
+  test('no options is still the process, so no existing caller changes answer', () => {
+    // `x doctor` and `dev-runtime.ts` both call it bare today; the option is additive.
+    process.env[KEY] = 'a-real-secret';
+    expect(usesDevStorageSecret()).toBe(false);
+    expect(usesDevStorageSecret({})).toBe(false);
+    delete process.env[KEY];
+    expect(usesDevStorageSecret()).toBe(true);
+    expect(usesDevStorageSecret({})).toBe(true);
+  });
+
+  test('the DRIVER reads the env it is handed, never the process it happens to run in', () => {
+    // The other half of the guard above. `usesDevStorageSecret({ env })` asks about the BOOT's
+    // table; `localDriver` — the constructor that actually decides whether this disk signs with
+    // the published key — read `process.env`, so `x doctor` and the disk it reports on answered
+    // about two different processes. The dangerous direction is this one: the boot is production
+    // and declares no secret, the shell that launched it is development and has one, and the disk
+    // signed every grant with a key published in this repo.
+    process.env[ENV] = 'development';
+    process.env[KEY] = 'a-real-secret';
+    expect(bootCode({ env: { ULTIMATE_ENV: 'production' } })).toBe('X_ENV_MISSING');
+    expect(bootCode({ env: { ULTIMATE_ENV: 'production', [KEY]: DEV_SIGNING_SECRET } })).toBe(
+      'X_ENV_MISSING',
+    );
+    // An empty table is a boot that declared nothing, which resolves to `development` — the same
+    // reading `usesDevStorageSecret({ env: {} })` takes, never a fall-through to `process.env`.
+    expect(bootCode({ env: {} })).toBe('no-throw');
+
+    // The cause names the environment the BOOT resolved. Reading `process.env` here would report
+    // `production` for a disk refused over a `staging` deploy, which is a fix aimed at the wrong
+    // machine.
+    process.env[ENV] = 'production';
+    delete process.env[KEY];
+    let cause = '';
+    try {
+      localDriver({ root, env: { ULTIMATE_ENV: 'staging' } });
+    } catch (error) {
+      cause = isStorageError(error) ? error.cause : 'not-a-storage-error';
+    }
+    expect(cause).toContain('the resolved environment is "staging"');
+
+    // And the reverse, which is a boot refused over a secret it actually holds.
+    expect(bootCode({ env: { ULTIMATE_ENV: 'production', [KEY]: 'boot-secret' } })).toBe(
+      'no-throw',
+    );
+    expect(bootCode({ env: { ULTIMATE_ENV: 'development' } })).toBe('no-throw');
+  });
+
+  test('no env is still the process, so no existing localDriver caller changes answer', () => {
+    // `defineStorage` and every app config call it with no `env` today; the option is additive.
+    process.env[ENV] = 'production';
+    delete process.env[KEY];
+    expect(bootCode({})).toBe('X_ENV_MISSING');
+    process.env[KEY] = 'a-real-secret';
+    expect(bootCode({})).toBe('no-throw');
   });
 
   test('a production disk with a real secret boots, and dev still needs none', () => {

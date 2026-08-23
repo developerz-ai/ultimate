@@ -28,7 +28,7 @@ describe('DEFAULT_ISLAND_JS_BYTES', () => {
     trivialCounter: 13_663,
     referenceAppIsland: 17_797,
     /** `idle`. Not what an undeclared island route pays — see the row below. */
-    hydrateRuntimeIdle: 744,
+    hydrateRuntimeIdle: 774,
     /**
      * `DEFAULT_ISLAND_HYDRATE` is `'interaction'` (`route.ts:33`), so THIS is the runtime an island
      * route declaring no `hydrate` actually ships. The budget derivation used `idle` and understated
@@ -37,8 +37,13 @@ describe('DEFAULT_ISLAND_JS_BYTES', () => {
      * Moved 881 -> 1,010 on 2026-08-21, when the prelude learned to mark a mount's OUTCOME
      * (`data-x-mounted` / `data-x-failed`): +139 B for the markers, -10 B for a dead `var Q={};`
      * the same change deleted, so +129 B once in the shared prelude whatever the strategy mix.
+     *
+     * Moved 1,010 -> 1,067 on 2026-08-23, when the three runtimes learned to TERMINATE the chain
+     * `boot` starts: `hush` in the shared prelude (+18 B, so `idle` 744 -> 774 and `visible`
+     * 816 -> 846) and, here, an `off` that runs on the rejection arm as well — one unhandled
+     * rejection per user event, and a queue of retained `Event` objects, otherwise.
      */
-    hydrateRuntimeDefault: 1_010,
+    hydrateRuntimeDefault: 1_067,
   } as const;
 
   test('a Solid island can reach it — the property 4096 did not have', () => {

@@ -112,6 +112,9 @@ const REPORT: StaticReport = {
       why: 'app/ surface — server-rendered, not prerendered',
     },
   ],
+  unmeasured: [
+    { path: '/posts/new', reason: 'X_NO_CONTEXT: useContext() outside runWithContext()' },
+  ],
 };
 
 describe('the report on disk', () => {
@@ -163,9 +166,19 @@ describe('the --json rendering', () => {
   test('carries the inventory and nothing about where this build happened to run', () => {
     // `data` already holds `artifact`; `out` is an absolute path off this machine and `buildId`
     // is this run's — neither is the inventory, and both would be noise an agent diffs on.
-    expect(Object.keys(staticReportData(REPORT)).sort()).toEqual(['emitted', 'skipped']);
+    expect(Object.keys(staticReportData(REPORT)).sort()).toEqual([
+      'emitted',
+      'skipped',
+      'unmeasured',
+    ]);
     expect(staticReportData(REPORT)['emitted']).toEqual(REPORT.emitted);
     expect(staticReportData(REPORT)['skipped']).toEqual(REPORT.skipped);
+    // The list `X_BUDGET_UNMEASURED`'s own `fix:` cites by name. It was computed by
+    // `prerenderSite`, returned on `PrerenderReport` and reached NO output surface any `x` command
+    // produced — `cmd-build.ts` discards a successful subprocess's stdout — so an author who ran
+    // the fix verbatim got no `unmeasured` key and no reason. Axiom 4 inverted at the step meant
+    // to unblock them.
+    expect(staticReportData(REPORT)['unmeasured']).toEqual(REPORT.unmeasured);
   });
 
   test('no report is no keys, never an empty inventory', () => {
@@ -193,5 +206,29 @@ describe('the human rendering', () => {
     expect(lines).toContain('/feed');
     // The `why` is the whole point of the human path: `--json` is not the only reader.
     expect(lines).toContain('app/ surface');
+  });
+});
+
+describe('the unmeasured list survives the file it is read back from', () => {
+  test('a route the build could not weigh round-trips with its reason', async () => {
+    await writeStaticReport(ROOT, REPORT);
+    const read = await readStaticReport(ROOT);
+    expect(read?.unmeasured).toEqual([
+      { path: '/posts/new', reason: 'X_NO_CONTEXT: useContext() outside runWithContext()' },
+    ]);
+  });
+
+  // Optional on the way IN and total on the way out: `.x/` survives a checkout of an older
+  // commit, and a report written before this field existed must read as "nothing unmeasured"
+  // rather than as no report at all — which would answer `X_BUDGET_UNMEASURED` for every route
+  // on a build that had in fact weighed them.
+  test('a report written before the field existed still parses, as an empty list', () => {
+    const { unmeasured: _dropped, ...older } = REPORT;
+    expect(parseStaticReport(older)?.unmeasured).toEqual([]);
+  });
+
+  test('a malformed row is no report, exactly as a malformed skip row is', () => {
+    expect(parseStaticReport({ ...REPORT, unmeasured: [{ path: '/x' }] })).toBeUndefined();
+    expect(parseStaticReport({ ...REPORT, unmeasured: 'all of them' })).toBeUndefined();
   });
 });

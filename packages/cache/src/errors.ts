@@ -33,8 +33,6 @@ registerErrorCodes(
   Object.fromEntries(Object.entries(CACHE_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
 
-const docsFor = (code: CacheErrorCode): string => `https://ultimate.dev/errors/${code}`;
-
 /** A tier's backing store is missing at runtime (no Redis binding, no CDN token). */
 export class CacheDriverUnavailableError extends UltimateError {
   constructor(input: { driver: string; cause: string; fix: string }) {
@@ -42,7 +40,6 @@ export class CacheDriverUnavailableError extends UltimateError {
       code: 'X_CACHE_DRIVER_UNAVAILABLE',
       cause: `cache tier "${input.driver}" is unavailable: ${input.cause}`,
       fix: input.fix,
-      docs: docsFor('X_CACHE_DRIVER_UNAVAILABLE'),
     });
   }
 }
@@ -59,7 +56,6 @@ export class CacheTagUnknownError extends UltimateError {
         input.known.length > 0 ? input.known.join(', ') : 'none'
       })`,
       fix: 'x manifest',
-      docs: docsFor('X_CACHE_TAG_UNKNOWN'),
     });
   }
 }
@@ -71,7 +67,6 @@ export class CacheTooLargeError extends UltimateError {
       code: 'X_CACHE_TOO_LARGE',
       cause: `entry "${input.key}" is ${input.bytes}B, over the ${input.tier} budget of ${input.maxBytes}B`,
       fix: `raise cache.${input.tier}.maxBytes in app.config.ts, or cache a projection instead of the row`,
-      docs: docsFor('X_CACHE_TOO_LARGE'),
     });
   }
 }
@@ -93,7 +88,6 @@ export class CacheTtlInvalidError extends UltimateError {
         input.ttlMs,
       )}; a TTL is a positive, finite number of milliseconds`,
       fix: `cache.write('${input.key}', value, { ttlMs: 60_000 })   # or drop the option for the tier default; a value you do not want held is one you do not write`,
-      docs: docsFor('X_CACHE_TTL_INVALID'),
       meta: { key: input.key, ttlMs: input.ttlMs, tier: input.tier },
     });
   }
@@ -116,7 +110,6 @@ export class CacheJitterInvalidError extends UltimateError {
         input.jitterFraction,
       )}; a jitter fraction is a finite number in [0, 1)`,
       fix: `set cache.${input.tier}.jitterFraction in app.config.ts to a value in [0, 1) — 0.05 is the default, 0 disables jitter`,
-      docs: docsFor('X_CACHE_JITTER_INVALID'),
       meta: { tier: input.tier, jitterFraction: input.jitterFraction },
     });
   }
@@ -141,7 +134,11 @@ export class CachePurgeFailedError extends UltimateError {
       code: 'X_CACHE_PURGE_FAILED',
       cause: `${input.driver} refused the purge${status}: ${input.detail}`,
       fix: input.fix,
-      docs: docsFor('X_CACHE_PURGE_FAILED'),
+      // Per-instance rather than `registerErrorRetry`, because one code covers both a 401 (never
+      // worth resending) and a 429 (worth resending unchanged). Without it every purge failure
+      // fell back to the registry's `terminal` while `meta.retryable` said otherwise — one error
+      // answering the retry question two ways.
+      retry: input.retryable ? 'retryable' : 'terminal',
       meta: {
         driver: input.driver,
         retryable: input.retryable,

@@ -4,6 +4,7 @@
 // the wire paths answer the same conditions with a JSON-RPC code instead.
 
 import { describe, expect, test } from 'bun:test';
+import { describeErrorCode, ERROR_DOCS_URL } from '@ultimat3/core';
 import {
   MCP_ERROR_CODES,
   MCP_ERROR_TITLES,
@@ -15,6 +16,17 @@ import {
 describe('the code table', () => {
   test('every code has a title and no title names a code the table does not declare', () => {
     expect(Object.keys(MCP_ERROR_TITLES).sort()).toEqual([...MCP_ERROR_CODES].sort());
+  });
+
+  // mcp passes no `docs:`, so the link is whatever the registry resolved: one page for every
+  // code, declared once in `@ultimat3/core`. Pinned against the constant and never a literal — a
+  // hand-copied URL is how the dead `https://ultimate.dev/errors/<code>` host survived every
+  // suite in the tree, with the code interpolated into a fragment no page has an anchor for.
+  test('every code resolves to the one docs page, never a per-code URL', () => {
+    for (const code of MCP_ERROR_CODES) {
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
+      expect(describeErrorCode(code).docs).not.toContain(code);
+    }
   });
 });
 
@@ -29,7 +41,7 @@ describe('McpToolUnknownError', () => {
       'no MCP tool named "orders.void" is visible to this caller (visible: orders.read, orders.list)',
     );
     expect(error.fix).toBe('call tools/list to read the catalog this caller may use');
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_MCP_TOOL_UNKNOWN');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 
   test('an empty catalog reads "none", never an empty parenthesis', () => {
@@ -58,7 +70,7 @@ describe('McpProtocolError', () => {
     expect(error.code).toBe('X_MCP_PROTOCOL');
     expect(error.cause).toBe('body is not an object');
     expect(error.fix).toBe("send a JSON-RPC 2.0 body: { jsonrpc: '2.0', id, method, params }");
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_MCP_PROTOCOL');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 
   test('a supplied fix replaces the fallback rather than being appended to it', () => {

@@ -15,7 +15,6 @@ import type { OfflineStrategy } from './route-vocabulary';
 import { isIanaZoneName } from './time-zone-name';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
-export type RealtimeTier = 'channels' | 'live-queries' | 'local-first';
 export type RealtimeTransport = 'memory' | 'nats' | 'redis';
 
 export interface ThemeConfig {
@@ -119,10 +118,19 @@ export interface JobsConfig {
  * server config, and the presence beat is DERIVED (`PresenceRegistry.heartbeatMs` is
  * `max(1000, floor(ttlMs / 3))`). A second knob is a second number that can disagree with the one
  * it is a fraction of, and a knob nothing reads is a knob nothing enforces — axioms 1 and 3.
+ *
+ * No `tier` either, and no `RealtimeTier` — deleted 2026-08-23, the thirteenth instance of the
+ * same defect and the dangerous shape of it. It accepted
+ * `'channels' | 'live-queries' | 'local-first'`, defaulted to `'channels'`, was documented with
+ * per-value semantics, was set by both tracked apps — and no file anywhere compared it, branched
+ * on it or dereferenced it. `transport` and `urlEnv` are the only two fields of this section any
+ * code reads. So `tier: 'local-first'` bought the durable client store that does not exist
+ * (`createOpfsLocalStore` still throws `X_NOT_IMPLEMENTED`), exactly as `jobs: { driver: 'redis' }`
+ * bought Postgres. Which realtime tier an app is on is decided by what it DECLARES — a `channel()`
+ * topic, a `live: true` query, a local store — never by a config key.
  */
 export interface RealtimeConfig {
   readonly enabled: boolean;
-  readonly tier: RealtimeTier;
   readonly transport: RealtimeTransport;
   readonly urlEnv: string | undefined;
 }
@@ -244,7 +252,7 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
       backoff: 'exponential',
       visibilityTimeoutMs: 30_000,
     },
-    realtime: { enabled: false, tier: 'channels', transport: 'memory', urlEnv: undefined },
+    realtime: { enabled: false, transport: 'memory', urlEnv: undefined },
     ai: { mcp: { expose: true, path: '/mcp' } },
   };
 }

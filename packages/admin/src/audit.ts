@@ -2,6 +2,7 @@
 // If it isn't logged, it didn't happen — so denied and failed attempts are logged too, and
 // there is deliberately no update or delete on this interface.
 
+import { canonicalJson } from '@ultimat3/core';
 import type { AdminActor, AdminDecision } from './authz';
 import type { AdminRow } from './registry';
 
@@ -117,14 +118,25 @@ export function memoryAuditLog(opts: AuditLogOptions = {}): AuditLog {
   };
 }
 
+/**
+ * "Is this field unchanged?", TOTAL over every value a row can hold.
+ *
+ * `JSON.stringify(a) === JSON.stringify(b)` was neither: it THROWS on a bigint, and `money()` puts
+ * one on the row (`widget-value.ts` — Postgres `bigint` minor units). Two distinct
+ * `{ minor, currency }` objects are never `===`, so every update of a money-bearing row reached
+ * that branch and raised. `crud.ts` calls `diffRows` inside the argument to `ctx.audit.append`,
+ * AFTER `repo.update()` has committed — so the write landed, the caller got an uncoded
+ * `TypeError`, and the audit log recorded nothing at all.
+ *
+ * `canonicalJson` is tier 0, already a dependency, and already this repo's answer to exactly this
+ * question (`packages/manifest/src/diff-routes.ts` asks it of a route descriptor). It is injective
+ * per type, so `1000n` and `1000` stay two values rather than folding into one unchanged field.
+ */
 const same = (a: unknown, b: unknown): boolean => {
   if (a === b) return true;
   if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
   if (a === null || b === null || a === undefined || b === undefined) return false;
-  if (typeof a === 'object' && typeof b === 'object') {
-    return JSON.stringify(a) === JSON.stringify(b);
-  }
-  return false;
+  return canonicalJson(a) === canonicalJson(b);
 };
 
 /**

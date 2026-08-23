@@ -7,7 +7,7 @@
 // resumes at 12:00:30 must still see an event published at 12:00:10.
 
 import type { Clock } from '@ultimat3/core';
-import { logger, systemClock, uuid } from '@ultimat3/core';
+import { logger, renderThrowable, systemClock, uuid } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { nowMs, toMs } from './clock';
 import type { PgExecutor } from './driver-pg';
@@ -54,7 +54,7 @@ export function createPgEventBus(options: PgEventBusOptions): EventBus {
     void exec.query(SQL_EVENT_PURGE, []).catch((error: unknown) => {
       // Housekeeping never costs a publish: an unpurged row is filtered out of every read.
       logger.warn('jobs.event.purge-failed', {
-        error: error instanceof Error ? error.message : String(error),
+        error: renderThrowable(error),
       });
     });
     return 0;

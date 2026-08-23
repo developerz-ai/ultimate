@@ -4,24 +4,34 @@
 // deploy that rolls four services and then exits X_DEPLOY_FAILED on `no such service`, which is
 // exactly the state both tracked apps were in until 2026-08-22.
 //
-// Five rules, each recording a defect that shipped: a missing role, a `backfill` with no
+// Six rules, each recording a defect that shipped: a missing role, a `backfill` with no
 // `entrypoint:` (the image's ENTRYPOINT reads ROLE and PORT only, so argv is discarded and the
 // service serves HTTP as `web`), a role that starts beside `migrate` instead of after it, a
 // healthcheck invoking `/app/x` — a path only the framework's distroless CLI image carries, so the
-// service it guards never becomes healthy and everything gated on it never starts — and a role that
+// service it guards never becomes healthy and everything gated on it never starts — a role that
 // INHERITS the image's `/readyz` probe while opening no HTTP socket, which is the same ending
-// reached from the other direction: `unhealthy` forever, on a port the role never binds.
+// reached from the other direction: `unhealthy` forever, on a port the role never binds — and
+// `sync`, which is the SAME ending from a third direction and needs its own rule because the two
+// probe rules above are both blind to it: it IS an HTTP role, so the inherited-probe rule exempts
+// it, and the correct fix names `/readyz`, so `overridesImageProbe` reads it as not overriding.
+// `sync` binds `PORT + 1` (`syncPortFor`), the image's HEALTHCHECK fetches `$PORT`, and three
+// committed files paired the two until 2026-08-23.
 //
-// A sixth rule covers the OTHER compose file, `docker-compose.dev.yml`: every published port binds
-// a loopback address. A dev stack ships its credentials in the file, so Docker's short form
+// A seventh rule covers the OTHER compose file, `docker-compose.dev.yml`: every published port
+// binds a loopback address. A dev stack ships its credentials in the file, so Docker's short form
 // `'5432:5432'` — which binds 0.0.0.0 and writes DNAT rules a host firewall does not stop — hands
 // an authenticated Postgres to everyone on the café wifi.
 
 import { describe, expect, test } from 'bun:test';
 // `join` builds the host-separator paths to ROOT and each compose file; Bun ships no path join.
 import { join } from 'node:path';
-import { planDeploy, planNewApp } from '@ultimat3/cli';
+import { DEFAULT_PORT, planDeploy, planNewApp } from '@ultimat3/cli';
 import { YAML } from 'bun';
+// `syncPortFor` is not on `@ultimat3/cli`'s barrel, and this rule may not restate `PORT + 1`: the
+// number the sync role binds has to come from the function that computes it, exactly as
+// DEPLOY_ROLES comes from `planDeploy`. Same relative reach `scripts/test-setup.ts` already takes
+// into a package's `src/`.
+import { syncPortFor } from '../packages/cli/src/dev-sync';
 import { APP_ROOTS } from './boundaries';
 
 const ROOT = join(import.meta.dir, '..');
@@ -55,21 +65,27 @@ const services = (source: string, at: string): Readonly<Record<string, Service>>
   return table;
 };
 
-/** `environment: { ROLE: web }` and `environment: [ROLE=web]` are the same declaration. */
-const roleOf = (service: Service): string | undefined => {
+/**
+ * One environment value, in either legal shape: `environment: { ROLE: web }` and
+ * `environment: [ROLE=web]` are the same declaration. Answered as a string because the map form is
+ * YAML — `PORT: 3000` arrives as a number and `PORT=3000` as text, for one fact.
+ */
+const envValue = (service: Service, key: string): string | undefined => {
   const environment = service['environment'];
   if (isRecord(environment)) {
-    const role = environment['ROLE'];
-    return typeof role === 'string' ? role : undefined;
+    const value = environment[key];
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : undefined;
   }
   if (Array.isArray(environment)) {
     for (const entry of environment) {
-      if (typeof entry === 'string' && entry.startsWith('ROLE='))
-        return entry.slice('ROLE='.length);
+      if (typeof entry === 'string' && entry.startsWith(`${key}=`))
+        return entry.slice(key.length + 1);
     }
   }
   return undefined;
 };
+
+const roleOf = (service: Service): string | undefined => envValue(service, 'ROLE');
 
 /**
  * Every service that runs the app image as a process of the deployment: one carrying a `ROLE`, plus
@@ -103,6 +119,41 @@ const waitsForMigrate = (service: Service): boolean => {
  * entrypoint and exits.
  */
 const HTTP_ROLES: readonly string[] = ['web', 'sync'];
+
+/**
+ * The one role whose socket the image's HEALTHCHECK cannot compute. `web` binds `$PORT` and the
+ * inherited probe fetches `$PORT`, so it agrees by construction; `sync` binds `PORT + 1`.
+ */
+const SYNC_ROLE = 'sync';
+
+/**
+ * The port a serving role's container actually listens on. `PORT` defaults to the image's own
+ * `ENV PORT=3000` (`DEFAULT_PORT`, packages/cli/src/serve.ts), which is why both tracked apps and
+ * the scaffold leave it unset; `syncPortFor` — not a `+ 1` restated here — is what the sync role
+ * hands `listenSyncNode`.
+ */
+const boundPortOf = (service: Service, role: string): number => {
+  const declared = envValue(service, 'PORT');
+  const port = declared === undefined ? DEFAULT_PORT : Number(declared);
+  return role === SYNC_ROLE ? syncPortFor(port) : port;
+};
+
+/**
+ * The CONTAINER side of a published port — the last field of the short form, `target` in the long
+ * one. `'3001:3001'`, `'127.0.0.1:3001:3001'`, `'[::1]:3001:3001'` and `{ published, target }` all
+ * answer 3001, and a bare `3001` publishes the container port itself. A range or a protocol suffix
+ * (`'3001-3002'`, `'3001/udp'`) names no single port and is not this rule's business.
+ */
+const targetPortOf = (entry: unknown): number | undefined => {
+  if (isRecord(entry)) {
+    const target = entry['target'];
+    return typeof target === 'number' ? target : undefined;
+  }
+  if (typeof entry === 'number') return entry;
+  if (typeof entry !== 'string') return undefined;
+  const port = Number(entry.split(':').at(-1));
+  return Number.isInteger(port) ? port : undefined;
+};
 
 /** The healthcheck argv, whichever of the two shapes it was written in. */
 const healthcheckArgv = (service: Service): readonly string[] => {
@@ -252,6 +303,33 @@ describe('the compose files agree with the deploy plan', () => {
         expect(
           inherited,
           `${at}: ${inherited.join(', ')} inherit the image's /readyz HEALTHCHECK and bind no HTTP port, so each reports unhealthy for its whole life — probe METRICS_PORT /metrics, or declare healthcheck: { disable: true } on a run-once service`,
+        ).toEqual([]);
+      });
+
+      test('sync names the port it binds, in its probe and in what it publishes', () => {
+        const service = table[SYNC_ROLE];
+        // Never `if (service === undefined) return`: `sync` is a DEPLOY_ROLE, so an absent one is
+        // this rule's failure as much as the rule above's, and a rule that agrees with every file
+        // whose subject is missing is the vacuous green the whole file exists to refuse.
+        expect(service, `${at} declares no ${SYNC_ROLE} service`).toBeDefined();
+        const sync = service ?? {};
+        const declared = envValue(sync, 'PORT');
+        expect(
+          declared === undefined || Number.isInteger(Number(declared)),
+          `${at}: sync declares PORT=${declared}, which is not a port, so nothing here can say which socket it opens`,
+        ).toBe(true);
+        const port = boundPortOf(sync, SYNC_ROLE);
+        expect(
+          healthcheckArgv(sync).some((word) => word.includes(String(port))),
+          `${at}: sync binds ${port} (syncPortFor, packages/cli/src/dev-sync.ts) and its healthcheck names no such port, so it inherits the image's /readyz on $PORT — a socket this role never opens. The container is unhealthy from start_period onward and never recovers, and anything gated on sync: { condition: service_healthy } never starts. Declare healthcheck.test fetching http://127.0.0.1:${port}/readyz`,
+        ).toBe(true);
+        const ports = sync['ports'];
+        const misrouted = (Array.isArray(ports) ? ports : [])
+          .map(targetPortOf)
+          .filter((target) => target !== undefined && target !== port);
+        expect(
+          misrouted,
+          `${at}: sync publishes to container port ${misrouted.join(', ')} while binding ${port}, so Docker routes every connection to a port this role never opens`,
         ).toEqual([]);
       });
 

@@ -3,7 +3,7 @@
 // page. These tests are what keeps that contract from rotting silently.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
+import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
 import { I18N_ERROR_CODES, I18N_ERROR_TITLES } from './errors';
 
 describe('I18N_ERROR_TITLES', () => {
@@ -29,9 +29,13 @@ describe('registration', () => {
 });
 
 describe('docs', () => {
-  test('every code resolves to its canonical docs page', () => {
+  // Asserted against core's constant, never a literal: a hand-copied URL is exactly how the dead
+  // `https://ultimate.dev/errors/<code>` host survived every suite in the tree. There is ONE page
+  // and no per-code anchor, so the code must NOT appear in the link.
+  test('every code resolves to the one docs page core declares', () => {
     for (const code of I18N_ERROR_CODES) {
-      expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
+      expect(describeErrorCode(code).docs).not.toContain(code);
     }
   });
 });

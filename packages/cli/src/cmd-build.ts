@@ -3,7 +3,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { frameworkVersion, VERSION_DEFINE } from '@ultimat3/core';
+import { ERROR_DOCS_URL, frameworkVersion, VERSION_DEFINE } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
 import { runVerify } from './cmd-verify';
 import type { CliCommand, CommandContext } from './command';
@@ -143,7 +143,7 @@ export function buildResult(input: {
             code: 'X_BUILD_FAILED',
             cause: `${input.command.join(' ')} exited ${result.code}`,
             fix: target === 'docker' ? 'x doctor --json && docker info' : 'x verify --json',
-            docs: 'https://ultimate.dev/errors/X_BUILD_FAILED',
+            docs: ERROR_DOCS_URL,
           },
         ],
     data: {

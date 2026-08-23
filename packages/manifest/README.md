@@ -40,7 +40,8 @@ The file is committed and reviewed, so two builds of the same tree must produce 
 bytes. Enforced, not hoped for:
 
 - **No timestamps, no git sha, no hostname, no build counter.**
-- Every collection is sorted by a stable key before writing — `Map`/`Set` iteration order is
+- Every collection is sorted by a stable key before writing, inner lists included (a route's
+  `revalidateTags`, an action's `cacheInvalidates`, a task's `enqueues`) — `Map`/`Set` iteration order is
   insertion order, and insertion order depends on module load order, which depends on the
   filesystem.
 - Object keys are written in a fixed order, not `JSON.stringify` order, so reordering a
@@ -59,7 +60,7 @@ whole mechanism.
 | Class | Examples |
 |---|---|
 | **breaking** | action/query/route/job/**task**/entity/**policy**/**error code** removed; input or output schema changed; policy changed; **an operation gained a required permission**; **a policy gained an enforcement site**; **a rate limit was tightened or introduced**; MCP exposure withdrawn; column removed, retyped, or made NOT NULL; **a column's `primaryKey` or `references` changed in either direction**; **an entity's `table` renamed**; **an invariant added**; **a job's `queue` moved or its `retry.attempts` lowered**; **a route's `surface` changed**; live query became non-live |
-| **additive** | primitive added; nullable column added; a required permission dropped; an enforcement site dropped; **an invariant dropped**; a rate limit loosened or removed; **more retry attempts**; MCP exposure granted; locale added |
+| **additive** | primitive added; nullable column added; **a column that lost NOT NULL**; a required permission dropped; an enforcement site dropped; **an invariant dropped**; a rate limit loosened or removed; **more retry attempts**; MCP exposure granted; locale added |
 | **internal** | cache tags changed (actions **and queries**); render mode changed; **a route's `offline`/`hydrate`/`budget`/`revalidateTags`**; **a task's `cron`/`tz`/`enqueues`**; **a job's `retry.backoff`**; job steps reordered; **an error code's owning package**; `buildId` |
 
 Every top-level section is classified, and that is checked rather than promised:

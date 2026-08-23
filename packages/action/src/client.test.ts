@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -64,7 +65,7 @@ describe('typed client', () => {
     const fetchStub: FetchLike = async () =>
       Response.json(
         {
-          type: 'https://ultimate.dev/errors/X_INPUT_INVALID',
+          type: ERROR_DOCS_URL,
           title: 'input invalid',
           status: 400,
           code: 'X_INPUT_INVALID',
@@ -86,7 +87,11 @@ describe('typed client', () => {
       status: 400,
     });
     expect(failure).toBeInstanceOf(RemoteActionError);
-    expect((failure as RemoteActionError).docs).toBe('https://ultimate.dev/errors/X_INPUT_INVALID');
+    // `remoteDocs` answers `undefined` for a code this build registered, so the constructor
+    // resolves the descriptor — which is core's one URL unless the owning package declared its
+    // own. Asserted against the constant, never a literal: a hand-copied link is how the dead
+    // `ultimate.dev` host survived every suite in the tree.
+    expect((failure as RemoteActionError).docs).toBe(ERROR_DOCS_URL);
   });
 
   test("an app's own code is marked remote-origin and never linked to an invented page", async () => {
@@ -105,8 +110,8 @@ describe('typed client', () => {
       action: 'publishPost',
       status: 403,
     });
-    // ...and no page documents it, so the link is the index, not `/errors/X_SIGNUP_CLOSED`.
-    expect((failure as RemoteActionError).docs).toBe('https://ultimate.dev/errors/');
+    // ...and no page documents it, so the link is the one wiki page, never `/errors/X_SIGNUP_CLOSED`.
+    expect((failure as RemoteActionError).docs).toBe(ERROR_DOCS_URL);
     expect((failure as RemoteActionError).toJSON().docs).not.toContain('X_SIGNUP_CLOSED');
   });
 
@@ -134,7 +139,7 @@ describe('typed client', () => {
       },
       status: 403,
     });
-    expect((blank as RemoteActionError).docs).toBe('https://ultimate.dev/errors/');
+    expect((blank as RemoteActionError).docs).toBe(ERROR_DOCS_URL);
   });
 
   test('an unusable `docs` falls through to a usable `type` instead of burying it', async () => {

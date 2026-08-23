@@ -4,6 +4,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Manifest } from '@ultimat3/manifest';
 import {
   AGENTS_MD_FILENAME,
@@ -330,7 +331,7 @@ async function specFindings(root: string, manifest: Manifest): Promise<readonly 
       code: 'X_MANIFEST_STALE',
       cause: `${OPENAPI_FILE} does not match the actions the code registers`,
       fix: 'x manifest',
-      docs: 'https://ultimate.dev/errors/X_MANIFEST_STALE',
+      docs: ERROR_DOCS_URL,
       at: OPENAPI_FILE,
     },
   ];
@@ -344,6 +345,6 @@ const seoFinding = (issue: MetaIssue): Finding => ({
   code: issue.code,
   cause: issue.cause,
   fix: issue.fix,
-  docs: `https://ultimate.dev/errors/${issue.code}`,
+  docs: ERROR_DOCS_URL,
   at: issue.file,
 });

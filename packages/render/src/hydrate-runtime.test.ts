@@ -29,7 +29,11 @@ describe('the interaction runtime, executed', () => {
     readonly replayed: readonly string[];
     /** Let the island's `mount` finish. */
     readonly finishMount: () => void;
+    /** Reject the island's `mount`, the way a chunk with a broken import does. */
+    readonly failMount: (message: string) => void;
     readonly mounts: () => number;
+    /** Event types the element is still listening for. */
+    readonly attached: () => readonly string[];
     readonly dispose: () => Promise<void>;
   }
 
@@ -47,8 +51,12 @@ describe('the interaction runtime, executed', () => {
 
     let mounts = 0;
     let finishMount = (): void => undefined;
-    const gate = new Promise<void>((resolve) => {
+    let failMount = (_message: string): void => undefined;
+    const gate = new Promise<void>((resolve, reject) => {
       finishMount = resolve;
+      failMount = (message) => {
+        reject(new TypeError(message));
+      };
     });
     globals['__xTestMount'] = (): Promise<void> => {
       mounts += 1;
@@ -107,7 +115,9 @@ describe('the interaction runtime, executed', () => {
       },
       replayed,
       finishMount,
+      failMount,
       mounts: () => mounts,
+      attached: () => [...listeners].filter(([, fns]) => fns.length > 0).map(([name]) => name),
       dispose: async () => {
         globals['document'] = undefined;
         globals['__xTestMount'] = undefined;
@@ -153,6 +163,35 @@ describe('the interaction runtime, executed', () => {
       harness.fire('click');
       await settle();
       expect(harness.replayed).toEqual(['click']);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  // `boot` rethrows on purpose, so `el.__x` is a REJECTED promise from the first failed mount
+  // onward. Nothing here calls `settled()` — this suite has no `__x` to await and Bun's runner
+  // fails a test on an unhandled rejection, so a `.then` with no rejection arm reds this test by
+  // itself, which is the whole point: in a browser that is one console rejection per user event.
+  test('a mount that throws detaches its listeners instead of queueing forever', async () => {
+    const harness = await bootInteractionRuntime();
+    try {
+      harness.fire('click');
+      await settle();
+      expect(harness.attached()).toEqual(['click']);
+
+      harness.failMount('mount is not a function');
+      await settle();
+
+      // The island is dead: nothing is replayed into it, and it stops holding the events.
+      expect(harness.replayed).toEqual([]);
+      expect(harness.attached()).toEqual([]);
+
+      // A later click reaches nothing here — the retained `Event` objects, each with a live
+      // `target`, were the growing half of the leak.
+      harness.fire('click');
+      await settle();
+      expect(harness.replayed).toEqual([]);
+      expect(harness.mounts()).toBe(1);
     } finally {
       await harness.dispose();
     }
@@ -317,6 +356,93 @@ describe('the mount markers, executed', () => {
       expect(harness.attribute('data-x-mounted')).toBeNull();
     } finally {
       await harness.dispose();
+    }
+  });
+
+  // `settled()` is deliberately NOT called: it attaches a rejection handler of its own, which is
+  // exactly what the runtime was missing. Bun's runner fails a test on an unhandled rejection, so
+  // a bare `boot(el)` in the idle block reds this test by itself.
+  test('a failed mount leaves no unhandled rejection behind', async () => {
+    const harness = await bootIdleRuntime();
+    try {
+      harness.failMount('mount is not a function');
+      await tick();
+      // The failure is not swallowed, only terminated: the DOM still carries it.
+      expect(harness.attribute('data-x-failed')).toBe('mount is not a function');
+    } finally {
+      await harness.dispose();
+    }
+  });
+});
+
+// The same rule for `visible`, which reaches `boot` from an IntersectionObserver callback — a
+// stack with no caller left to hand a rejection to.
+describe('the visible runtime, executed', () => {
+  const tick = async (): Promise<void> => {
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    await new Promise((resolve) => {
+      setTimeout(resolve, 5);
+    });
+  };
+
+  test('an island that fails to mount is marked failed and rejects nothing globally', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-visible-'));
+    const globals = globalThis as unknown as Record<string, unknown>;
+    let failMount = (_message: string): void => undefined;
+    const gate = new Promise<void>((_resolve, reject) => {
+      failMount = (message) => {
+        reject(new TypeError(message));
+      };
+    });
+    globals['__xTestMount'] = (): Promise<void> => gate;
+
+    const island = join(dir, 'island.mjs');
+    await writeFile(island, 'export function mount(){return globalThis.__xTestMount()}\n', 'utf8');
+
+    const attributes = new Map<string, string>([['data-x-entry', pathToFileURL(island).href]]);
+    const element = {
+      getAttribute: (name: string): string | null => attributes.get(name) ?? null,
+      setAttribute: (name: string, value: string): void => {
+        attributes.set(name, value);
+      },
+    };
+    globals['document'] = {
+      querySelectorAll: (selector: string): unknown[] =>
+        selector.includes('visible') ? [element] : [],
+      querySelector: (): unknown => null,
+    };
+    // Fires immediately, which is what a viewport-visible island does on first paint.
+    globals['IntersectionObserver'] = class {
+      readonly #callback: (entries: readonly { isIntersecting: boolean }[]) => void;
+      constructor(callback: (entries: readonly { isIntersecting: boolean }[]) => void) {
+        this.#callback = callback;
+      }
+      observe(): void {
+        this.#callback([{ isIntersecting: true }]);
+      }
+      disconnect(): void {
+        // The runtime disconnects before it boots; nothing here has to observe that.
+      }
+    };
+
+    try {
+      const runtime = join(dir, 'runtime.mjs');
+      const source = hydrateRuntime([directive({ strategy: 'visible' })])
+        .replace('<script type="module">', '')
+        .replace('</script>', '');
+      await writeFile(runtime, source, 'utf8');
+      await import(pathToFileURL(runtime).href);
+
+      failMount('mount is not a function');
+      await tick();
+
+      expect(attributes.get('data-x-failed')).toBe('mount is not a function');
+      expect(attributes.has('data-x-mounted')).toBe(false);
+    } finally {
+      globals['document'] = undefined;
+      globals['IntersectionObserver'] = undefined;
+      globals['__xTestMount'] = undefined;
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });

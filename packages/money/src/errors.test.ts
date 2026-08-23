@@ -3,7 +3,7 @@
 // disagrees with, is a broken contract nothing else here would catch.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, hasErrorCode, renderThrowable } from '@ultimat3/core';
+import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode, renderThrowable } from '@ultimat3/core';
 import {
   allocationInvalid,
   currencyDeclarationInvalid,
@@ -46,9 +46,13 @@ describe('error code registry', () => {
     }
   });
 
-  test('every money code documents at its own X_* url', () => {
+  // Asserted against core's constant, never a literal: a hand-copied URL is exactly how the dead
+  // `https://ultimate.dev/errors/<code>` host survived every suite in the tree. There is ONE page
+  // and no per-code anchor, so the code must NOT appear in the link.
+  test('every money code documents at the one page core declares', () => {
     for (const code of MONEY_ERROR_CODES) {
-      expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
+      expect(describeErrorCode(code).docs).not.toContain(code);
     }
   });
 });

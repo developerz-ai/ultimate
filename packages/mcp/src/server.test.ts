@@ -308,3 +308,35 @@ describe('a throw that fights being read is still an answer, never an escape', (
     );
   });
 });
+
+/**
+ * `code` on a tool's own `isError` result is an AUDIT field. It exists so a tool that renders its
+ * own refusal (`@ultimat3/admin` does) is classified by the same `outcomeForCode` a THROWN error
+ * is, instead of every refusal landing in the `policy-denied` bucket a prober's name walk is
+ * alerted from. It must never reach the wire — the code is already inside the rendered body.
+ */
+describe('a self-rendered refusal names its code for the audit, never for the caller', () => {
+  const selfRefusing: AnyMcpTool = {
+    name: 'admin.create',
+    description: 'renders its own refusal',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: true },
+    async handle(): Promise<McpToolResult> {
+      return {
+        content: [{ type: 'text', text: '{"error":"X_ADMIN_INVALID"}' }],
+        isError: true,
+        code: 'X_ADMIN_INVALID',
+      };
+    },
+  };
+
+  test('the result carries content and isError, and no third key', async () => {
+    const self = createMcpServer({ tools: [selfRefusing] });
+    const response = await self.handle(
+      call('tools/call', { name: 'admin.create', arguments: {} }),
+      caller(undefined, []),
+    );
+    const result = response?.result as Record<string, unknown> | undefined;
+    expect(Object.keys(result ?? {}).sort()).toEqual(['content', 'isError']);
+    expect(result?.['isError']).toBe(true);
+  });
+});

@@ -70,7 +70,8 @@ never in the browser.
 the packages actually export. Both halves matter: Bun's test runner links lazily, so a symbol that
 does not exist is `undefined` under `bun test` and a hard failure under `bun run`.
 
-Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live,jobs,policy,ui}.ts`.
+Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live,jobs,policy,ui}.ts`,
+plus `backfills/<name>.ts` for a one-pass table sweep.
 
 | File | Owns | Never |
 |---|---|---|
@@ -81,7 +82,8 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
 | `mutator.ts` | `mutator` declarations (local twin + server) | I/O inside `local` |
 | `live.ts` | `query` declarations | writes |
 | `jobs.ts` | `job` declarations | inline slow work |
-| `policy.ts` | `policy` rules | data shaping |
+| `backfills/` | `backfill()` sweeps — a job factory, so each one registers in `defineApi({ jobs })` | a `step` of its own; the pass mints one per page |
+| `policy.ts` | `policy` rules — `can()` or `definePolicy()`, both returning the same `Policy` | data shaping |
 | `ui/` | Solid components | fetching, business logic, authz |
 
 ## Conventions
@@ -106,7 +108,22 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
 - Colours are `var(--color-*)` from `@ultimat3/ui` tokens. A raw hex fails lint.
 - User-facing strings come from `t('<feature>.<key>')`. A missing key renders `⟦key⟧` and fails
   `x verify`.
-- `idempotencyKey` on every job is required by the type. Keys derive from `input` only.
+- `idempotencyKey` on every job is required by the type. Keys derive from `input` only. A
+  `backfill()` supplies its own — the sweep's `name` — so one live pass runs per name, forced or
+  not, and a second kick is the same pass rather than a second writer on one table.
+- A backfill's `handle` is **at least once**: it runs before its checkpoint lands, so an attempt
+  cancelled between the two replays that page whole. Write through `upsertAll`, `updateWhere` or a
+  statement whose second run changes nothing — never `count + 1`. What a step persists is a
+  **cursor**, never the page. `app/posts/backfills/post-excerpts.ts` is the worked example, and its
+  `.job.test.ts` asserts the projection twice through equals once through.
+- Two policy authoring forms, and the choice is who reads the denial. `can(permission, predicate)`
+  where only an agent does — the reason is `x actions describe`. `definePolicy(permission, { deny,
+  check })` where a person does: `deny` is a message KEY, so the refusal goes through `t()` like
+  every other user-facing string. Same `Policy` object either way, so every surface evaluates them
+  identically and neither form is a second authz path.
+- `packages/db/src/client.ts` NAMES its driver rather than taking `database()`'s default, because
+  the seed and the app have to write and read one store. `postgresDriver()` everywhere except
+  `bun test`, where nothing installs a client.
 - Tests sit next to their source: `<file>.test.ts` (unit), `.contract.test.ts`, `.live.test.ts`,
   `.job.test.ts`, `.e2e.test.ts`, `.eval.test.ts`.
 - Every prompt carries `<name>.evals.ts` (the cases) and `<name>.vN.baseline.json` (the recorded

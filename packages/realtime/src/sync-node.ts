@@ -6,6 +6,7 @@
 
 import { type Clock, logger, markReady, reportError, systemClock, uuid } from '@ultimat3/core';
 import type { ChannelHub, Topic } from './channel';
+import { detach } from './detach';
 import { isClientFault } from './errors';
 import type { Transport, TransportSubscription } from './fanout';
 import type { LiveQueryRegistry } from './live-query';
@@ -161,25 +162,6 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   let sweeping: ReturnType<typeof setInterval> | null = null;
   let reauthing: ReturnType<typeof setInterval> | null = null;
   let idling: ReturnType<typeof setInterval> | null = null;
-
-  /**
-   * Work nobody is waiting on — a presence leave from a synchronous close, a sweep on a timer, a
-   * fanout off the change bus. It reaches the bus or a policy, so it can fail; failing must not take
-   * a socket or the process with it, and must not be silent either, or "the room still shows someone
-   * who left" and "that change reached nobody" have nothing to read. `operation` stays low
-   * cardinality so the monitor can group on it; the topic or entity goes in `at`.
-   */
-  const detach = (work: Promise<unknown>, operation: string, at?: string): void => {
-    void work.catch((error: unknown) => {
-      logger.error(`${operation} failed`, {
-        ...(at === undefined ? {} : { at }),
-        error: error instanceof Error ? error.message : String(error),
-      });
-      // Nobody is awaiting this, so the log is the only trace it leaves — and a log is not a
-      // signal anyone is paged on. The bus is this node's dependency, never the client's.
-      reportError(error, { source: 'realtime', scope: { operation } });
-    });
-  };
 
   /**
    * Everything `start()` acquired that is not a socket: the change subscription and the presence

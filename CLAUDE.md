@@ -12,25 +12,30 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
-**Status:** 7.0.0, released, `As of 2026-08-21`. 29 `@ultimat3/*` packages plus the unscoped
+**Status:** released, `As of 2026-08-23`. 29 `@ultimat3/*` packages plus the unscoped
 `create-ultimate` — 30 in all — **versioned** in lockstep and **published** in lockstep: one version,
 one commit, one tag, 30 tarballs.
 
-**Repository, tag and registry agree.** Never read a number here as the installable one; run the
-command beside it — that is the only thing here that cannot go stale. `bun run scripts/registry-audit.ts --json`
-covers the **npm** rows in one call — it answers `30/30 publishable packages are on npm at 7.0.0,
-every one attested` or names each gap with a runnable `fix:` — and it asks nothing about the tag or
-the Release, which are the two rows below it.
+**This page states no version number, deliberately.** It carried one for two majors after the tree
+moved past it, and a version written here is read as the installable one. Every row below is a
+command instead: **run the right-hand column — never quote the left.** [`README.md`](README.md) and
+[`llms.txt`](llms.txt) have been clean by construction since 2026-08-20 for this reason; this file
+was the one that opted out. `bun run scripts/registry-audit.ts --json` covers every **npm** row in
+one call — `N/N publishable packages are on npm at <version>, every one attested`, or each gap with
+a runnable `fix:` — and it asks nothing about the tag or the Release, which are rows of their own.
 
-| Fact | State, `As of 2026-08-21` | Read it yourself |
-|---|---|---|
-| Repository version | **7.0.0**, every workspace stamped | `bun run scripts/release.ts --check 7.0.0` |
-| Publishable workspaces | 30 | `bun run scripts/release-workflow.ts --json` |
-| On the registry | **all 30 at 7.0.0**, no holes | `bun run scripts/registry-audit.ts --json` |
-| npm `latest` | **7.0.0** — `bunx create-ultimate myapp` installs it | `npm view @ultimat3/core version` |
-| Provenance | every 7.0.0 tarball attested, `_npmUser: GitHub Actions` | `npm view @ultimat3/core@7.0.0 dist.attestations _npmUser` |
-| Tag and Release | `v7.0.0` pushed **annotated**, GitHub Release published — the Release is what triggers the workflow | `git ls-remote --tags origin 'refs/tags/v7.0.0*'` — both the ref **and** its peeled `^{}` line, which is what proves it is annotated and on the remote; then `gh release view v7.0.0 --json tagName,isDraft,publishedAt`. **Not** `git tag --list`, which reads the local repository and answered `v4.0.0` throughout the window in which the tag had never been pushed |
-| OIDC trusted publisher | attached to all 30, with `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
+| Fact | Read it yourself |
+|---|---|
+| what this tree is stamped at, per workspace | `bun run scripts/list-workspaces.ts --json` — `.data[].version`; one value across every workspace, or the tree is out of lockstep |
+| the whole repository is stamped at one version | `bun run scripts/release.ts --check <version>` — exits 1 and names every finding when it is not |
+| the release workflow names every publishable workspace | `bun run scripts/release-workflow.ts --json` |
+| every one of them is on npm at that version, attested | `bun run scripts/registry-audit.ts --json` |
+| what npm serves, and what `bunx create-ultimate myapp` installs | `npm view @ultimat3/core version` |
+| provenance on a release | `npm view @ultimat3/core@<version> dist.attestations _npmUser` — `GitHub Actions` is the workflow; a person's name is a hand publish and carries no attestation |
+| the tag is **annotated** and on the remote | `git ls-remote --tags origin 'refs/tags/v<version>*'` — both the ref **and** its peeled `^{}` line, which is what proves it. **Not** `git tag --list`, which reads the local repository and answered `v4.0.0` throughout the window in which the tag had never been pushed |
+| the GitHub Release exists — the Release is what triggers the workflow | `gh release view v<version> --json tagName,isDraft,publishedAt` |
+| the OIDC trusted publisher is attached, `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
+| which majors have shipped, and what each one breaks | `grep -n '^## ' CHANGELOG.md` · [`wiki/Upgrading.md`](wiki/Upgrading.md), one section per major, newest first |
 
 **A lightweight tag is not a release trigger, and `--follow-tags` will not push one.** `v4.0.0` was
 first created with a bare `git tag v4.0.0`; `git push --follow-tags` pushed the commit, said nothing,
@@ -50,31 +55,32 @@ when the run finished). The publish list itself is **derived** from `scripts/lis
 which is what keeps a new package from being silently absent from it. Step 1 of `PUBLISHING.md`
 comes due again for the next package added after a release run, and nothing else.
 
-**5.0.0 is a major, and its migration is one line.** Four breaking changes, each deleting or
-correcting a DECLARATION that promised something the code did not do — the same sweep 4.0.0 ran,
-applied to what was left after it. Only one needs an edit: delete `driver:` from `jobs` in
-`app.config.ts`. `JobsConfig.driver` accepted `'postgres' | 'redis' | 'nats'`, had **no reader
-anywhere**, and boot always built `createPgDriver` — so `jobs: { driver: 'redis' }` did not throw,
-did not warn, and silently gave you Postgres. Worse than `realtime.heartbeatMs`, which 4.0.0 deleted
-for the same reason, because it failed silently in the DANGEROUS direction. The other three are
-`@ultimat3/testing`'s `subscribe` fixture types, which nothing could have implemented: the fixture
-had no driver until 5.0.0 built one.
+**Every major here has been one sweep, in two halves.** Things **declared and never wired** are
+wired or deleted (`JobsConfig.driver`, `realtime.heartbeatMs`, `PrecacheAsset.critical`,
+`CaptureOptions.timeoutMs`, `PERIODIC_SYNC_TAG`, `requiresApp`); things that **answered the wrong
+thing** are corrected (`on delete` reaching the generated SQL, `in` with a non-array operand,
+`t.date` accepting an offsetless date-time, `isValidCron` accepting an unsatisfiable day/month
+pair, a local disk's signed URLs carrying the driver kind rather than the registered disk name).
+No codemod ships: each entry names its own manual edit.
+[`wiki/Upgrading.md`](wiki/Upgrading.md) walks every major, oldest first, and states its own count —
+`bun run changelog-check` reads each count from that major's own `CHANGELOG.md` section.
 
-**4.0.0 was the sweep before it** — 25 entries marked `BREAKING —` and no codemod, so each one is a
-manual edit its own entry names. [`wiki/Upgrading.md`](wiki/Upgrading.md) walks every major. The shape of the sweep: things **declared and never wired** were either wired or deleted
-(`PrecacheAsset.critical`, `realtime.heartbeatMs`, `CaptureOptions.timeoutMs`, `PERIODIC_SYNC_TAG`,
-`requiresApp`), and things that **answered the wrong thing** were corrected (`on delete` reaching
-the generated SQL, `in` with a non-array operand, `t.date` accepting an offsetless date-time,
-`isValidCron` accepting an unsatisfiable day/month pair, a local disk's signed URLs carrying the
-driver kind rather than the registered disk name). 2.0.0 was the **first** major and carried 33;
-3.0.0 carried 10.
+**The declared-and-never-wired half is now mechanised.** `bun run scripts/config-readers.ts` is a
+ratchet over every leaf key of `AppConfig`, written because twelve such keys across four releases
+had each been found by hand, in a major — `jobs.driver` accepted `'postgres' | 'redis' | 'nats'`,
+had no reader anywhere, and boot always built `createPgDriver`, so `jobs: { driver: 'redis' }` did
+not throw, did not warn, and silently gave you Postgres. That is the dangerous direction, and it is
+the one this repo keeps re-shipping; the guard's own header
+([`scripts/config-readers.ts`](scripts/config-readers.ts)) calls it "the framework's most repeated
+defect".
 
 **Every package has an OIDC trusted publisher.** `developerz-ai` / `ultimate` / `release.yml` /
 environment `npm-publish`, publish permission, all 30, verified per package with
 `npx -y npm@12 trust list <pkg> --json` — `npm trust` shipped in **npm 12** and Bun's bundled npm
 answers it as an unknown command, which is why `scripts/trust-publishers.ts` pins the runner. That
-attachment is what let [`.github/workflows/release.yml`](.github/workflows/release.yml) publish
-3.0.0 and then 4.0.0: 30 tarballs per release, each attested, `_npmUser: GitHub Actions`.
+attachment is what lets [`.github/workflows/release.yml`](.github/workflows/release.yml) publish at
+all: 30 tarballs per release, each attested, `_npmUser: GitHub Actions`, on every release from
+3.0.0 on.
 
 **The `npm-publish` environment needs a human to approve the run.** The release workflow reaches
 `waiting` and publishes nothing until a named reviewer approves the pending deployment — the last
@@ -168,10 +174,12 @@ Milestone detail: [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
 | Task | Command |
 |---|---|
 | install | `bun install` |
+| fresh clone to running | `bun run setup` — idempotent, so it is safe to re-run after every pull. It pins the Bun series CI runs, which is a different question from `engines.bun`: that one is a floor on who may install `@ultimat3/*`, this one is a floor on who may claim to have run the gate |
 | **the gate** | `bun run verify` — `x verify` at the repo root, 19 steps: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap. Green = shippable. The list is `VERIFY_STEP_NAMES` in `packages/cli/src/verify-step.ts`; `bun run scripts/gate-steps.ts` fails when a page states another number. |
-| typecheck | `bun run typecheck` |
-| lint | `bun run lint` · fix: `bun run lint:fix` |
-| test (all) | `bun run test` — every framework suite, opt-in ones included. The reference app is gated separately: `cd examples/dummy && bun run ../../packages/cli/src/bin.ts verify` |
+| typecheck | `bun run typecheck` · start over: `bun run typecheck:clean` |
+| lint | `bun run lint` · fix: `bun run lint:fix` · formatting alone: `bun run format` |
+| test (all) | `bun run test` — every framework suite, opt-in ones included; `bun run test:watch` is the same set, re-run on change. The reference app is gated separately: `cd examples/dummy && bun run ../../packages/cli/src/bin.ts verify` |
+| coverage, per package | `bun run coverage` (every package) · `bun run coverage:package <pkg>` — a package's own `src/` against its own tests, on a pin table. Scoped deliberately: `bun test packages/<pkg>` loads everything that package imports and Bun's summary averages over all of it, which read `@ultimat3/cache` at 35% while its own sources were at 98.8% |
 | **the app gate** | `bun run scripts/reference-app-gate.ts` — both tracked apps' own 19 steps (`examples/dummy`, `dummy/social-media-clone`), blocking on a ratchet: a step passing today must keep passing, a step pinned in that app's `expectedRed` (`scripts/lib/gated-apps.ts`) must still be failing, and a `typecheck` that goes green must join the root `tsconfig.json` references |
 | shrink the ratchet | `bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]` — the edit `X_REFERENCE_APP_PIN_STALE` names, performed |
 | test (one file) | `bun test packages/core/src/errors.test.ts` |
@@ -186,11 +194,17 @@ Milestone detail: [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
 | dishonest `sideEffects` | `bun run side-effects` — a step of the gate's `unit` check, standalone. Refuses a package whose `sideEffects` excludes a module that provably runs at import time, and an entry matching no file — a stale entry protects nothing while reading as a rule still in force. **Never `false` where a `registerErrorCodes()` runs**: measured, `false` on `@ultimat3/core` drops `schema-error-codes.ts`, which registers `@ultimat3/schema`'s titles because schema (tier 0) cannot register its own. The array form costs ~376 B an island against the lie, and 22,214 → 5,948 B against declaring nothing. A ratchet — 24 of 30 packages silent on day one; `--explain --json` prints the array the tree measures |
 | changelog and migration drift | `bun run changelog-check` — a step of the gate's `unit` check, standalone. Two `##` headings sharing a version, an empty released section, `BREAKING —` still under `[Unreleased]` at a tagged commit, and each major's `wiki/Upgrading.md` count against **that section's own** entries — a count derived from the whole file cannot see a misplaced entry, because it only makes the number smaller |
 | a caught value rendered into a refusal | `bun run scripts/catch-render.ts` — a step of the gate's `unit` check, standalone. The **second** rule beside `error-render`, because that one reads a parameter annotated `unknown` and a `catch (error)` binding is annotated by nobody: it measured green through a seven-site fix. Refuses `instanceof` / `String()` / `JSON.stringify()` / `${…}` on a caught value reaching a `cause:`, `fix:` or `detail:`. `renderThrowable(value)` is the total form, one import. A ratchet |
+| a secret compared with `===` | `bun run secret-compare` — a step of the gate's `unit` check, standalone. Refuses `===` / `!==` / `.includes()` where an operand's NAME says it holds a credential; `timingSafeEqual` from `@ultimat3/core` is the one form. [`packages/auth/CLAUDE.md`](packages/auth/CLAUDE.md) has always said "never `===` on a secret" and nothing read it: all twelve `timingSafeEqual` sites in `@ultimat3/auth` were rewritten to `===` and the package's suite stayed green — `session.test.ts` 24 of 24 over the comparison a session cookie's authenticity rests on. A unit test cannot assert constant time, which is why the rule has to be static. A ratchet — 53 sites across 14 packages on day one, each pinned with the sentence saying what the value really is, and **`auth` is not on it** |
+| a prototype member answered instead of `undefined` | `bun run proto-index` — a step of the gate's `unit` check, standalone. Refuses a computed read of a `Record<…>` object literal where the key is data: `TABLE[name]` answers an `Object.prototype` member, so `useService('constructor')` returned the `Object` function out of the function whose whole job is throwing `X_SERVICE_MISSING`. Thirteen instances across four sweeps, six of them fixed and written up before this existed, and it kept coming back. `Object.hasOwn(TABLE, key)` or a `Map` is the repair; a string-literal key, a null-prototype table and a read already guarded by `Object.hasOwn` / `in` are recognised rather than pinned. A ratchet — 102 reads across 18 packages on day one, per `scripts/lib/proto-index-pins.ts`, which carries a sentence per package saying why its keys are closed |
+| a `node:` import with no reason | `bun run node-imports` — a step of the gate's `unit` check, standalone. Refuses a `node:` import carrying no `why:` comment on it or directly above — the second half of the **Bun only** non-negotiable below, which nothing read: 146 unexplained imports on day one, out of the 238 files that reach for a builtin at all — `scripts/lib/node-import-pins.ts` records both, and `--json` re-derives the first. A literal `why:` token, not "a comment nearby", because the sentence naming the Bun native that was missing is what lets the next agent delete the import when Bun ships it, and only a token is greppable. A ratchet |
+| a drawn arrow no manifest declares | `bun run package-map-graph` — a step of the gate's `unit` check, standalone. Every arrow in [`docs/architecture/01-package-map.md`](docs/architecture/01-package-map.md)'s mermaid fence must be a dependency the `from` package's own `package.json` holds, and every publishable workspace must be a node on it. Eleven arrows described imports no manifest and no module ever made, `ui` sat in the wrong tier subgraph and `scraping` was absent entirely; they were corrected by hand and nothing read the graph afterwards, which is axiom 3. Inside the fence only — the prose above it writes two of the wrong arrows as examples, and `<!-- … -->` ends in one |
 | a config key nothing reads | `bun run scripts/config-readers.ts` — a step of the gate's `unit` check, standalone. Every leaf key of `AppConfig` needs a reader in `packages/*/src`, or a pinned reason. Twelve keys across four releases were found by hand before this existed — `jobs.driver`, `realtime.heartbeatMs`, `database.poolSize`, `pwa.installPrompt`, `auth.afterSignInPath`, `ai.modelEnv` and the rest. A ratchet |
 | a documented config key that does not exist | `bun run scripts/doc-config-keys.ts` — a step of the gate's `unit` check, standalone, and the other half of `doc-fixes`: that one resolves the `x <command>` in a `fix:`, this one resolves the `<section>.<key>`. Narrow on purpose — a dotted key on a line that also names `app.config.ts` or `defineConfig` — so its findings never have to be argued with |
+| a URL on a host that 404s | `bun run dead-docs-host` — a step of the gate's `unit` check, standalone. Refuses a string literal building a URL on `ultimate.dev`, a host that answers **404 on every path** and that shipped as the `docs:` line of roughly ninety error declarations plus a `docsFor(code)` helper in four packages. `ERROR_DOCS_URL` in `@ultimat3/core` is the one answer, and `UltimateError` resolves it from the registered descriptor, so a declaration needs no `docs:` line at all. A comment naming the host as the thing that was removed cannot 404 and is never reported. Pinned at **zero** on day one — the sweep landed first, so this one enforces outright; the reason a sweep alone was not enough is that `scripts/new-package.ts` wrote the dead URL into every future package's `errors.ts` template |
 | a factory counted instead of listed | `bun test scripts/primitive-factories.test.ts` — a step of the gate's `unit` check, standalone. An exported function returning an `Action` or a `JobHandle` needs a row in `PRIMITIVE_FACTORIES`, and a row needs a function. Lives in `scripts/` and not in `@ultimat3/core` because the table is tier 0 and the scan has to read `ai`, `jobs`, `scraping` and `action` |
 | a browser barrel that reaches `node:async_hooks` | `bun test scripts/browser-barrel.test.ts` — a step of the gate's `unit` check, standalone. Bundles every package that touches the ALS seam **for the browser and evaluates it**, closing the two blind spots `async-context-guard` names in its own header: `await import('node:async_hooks')` and `const C = hooks.AsyncLocalStorage; new C()`. The barrel set is derived from source; the hand-written line is a FLOOR that may only shrink |
 | regenerate manifest | `bun run manifest` |
+| stale `@ultimat3/*` ranges in `bun.lock` | `bun run lockfile` reports, `bun run lockfile:fix` performs the edit `X_LOCKFILE_STALE` names. `bun install` will not do it: Bun refreshes a workspace block only when that workspace's own manifest changed, and `--frozen-lockfile` accepts every stale one, because a workspace edge resolves by NAME and the range is never read back. Surgical on purpose — `rm bun.lock && bun install` fixes the pins and drags every external dependency to its newest matching release with it |
 | list workspaces | `bun run workspaces:list` |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | the CLI, in-repo | `bun run x -- <args>` (e.g. `bun run x -- doctor --json`) |
@@ -316,7 +330,7 @@ lands. `As of 2026-08-22`.
   the `boundaries` step audits the second (`X_CATALOG_KEY_UNREACHABLE`), because the framework repo
   is not an app and the app check cannot read it.
   **Pointing `x i18n check` at this repo does not answer `ok`** — this file said so until 2026-08-20
-  and `packages/cli/src/cmd-i18n.ts:227` calls `requireAppRoot('i18n', ctx.cwd)`, which refuses with
+  and `packages/cli/src/cmd-i18n.ts:289` calls `requireAppRoot('i18n', ctx.cwd)`, which refuses with
   `X_NOT_IN_APP` before a catalog is loaded. The vacuous green was one step further in: an app WITH
   an `app.config.ts` and no catalogs at all loaded zero locales and passed, and a catalog on disk
   that no module registered passed with it. Both are now refused — `X_CATALOG_UNREGISTERED` — and
@@ -351,7 +365,7 @@ Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. Target un
 | `scaffold-smoke` | `x new` → `bun install` → the documented first run (`x db gen`, `x db migrate`, **every** generator in `GENERATORS`) → the scaffolded app's own `x verify`, outside the checkout |
 | `container` | `docker/` as a built artifact — every stage of the image, ending in the runtime stage's own `/app/x --version`, plus `helm template` assertions the chart's own values can fail |
 | `package-list` | the matrix for the job below, **derived** from `scripts/list-package-dirs.ts` rather than hand-listed |
-| `package` | each package linted and covered **alone** — a suite that only passes because another package's preload registered something first is green in `verify` and red here |
+| `package` | each package tested and covered **alone** — a suite that only passes because another package's preload registered something first is green in `verify` and red here. Its one step is `bun run scripts/coverage-gate.ts --package <pkg>`; there is deliberately **no `lint` step**, because `bunx biome check packages/<pkg>` is a strict subset of the `verify` job's `biome check .` and cannot fail on its own |
 
 **`container` is the one job with no `./.github/actions/setup`, deliberately.** Nothing in it runs bun, so the composite's frozen install would be pure latency; `docker`, `helm` and `jq` come from the runner image and its first step refuses by name if one stops shipping. Every other job starts with the composite — bun, the install cache, a frozen install.
 
@@ -365,7 +379,7 @@ The workflows, `As of 2026-08-22` — `ls .github/workflows`:
 | `deploy-social-demo.yml` | push to `main` | builds and publishes the demo app's production image |
 | `wiki.yml` | push to `main` | mirrors `wiki/` into the GitHub wiki |
 
-Releases publish with **provenance** — which 2.0.0 did not get, because no trusted publisher existed for the exchange to verify against. All 30 were attached on 2026-08-19, and 3.0.0, 4.0.0, 4.1.0 and 5.0.0 all went out through the workflow: `npm view @ultimat3/core@5.0.0 dist.attestations _npmUser`. See [`PUBLISHING.md`](PUBLISHING.md).
+Releases publish with **provenance** — which 2.0.0 did not get, because no trusted publisher existed for the exchange to verify against. All 30 were attached on 2026-08-19, and every release from 3.0.0 on has gone out through the workflow: `npm view @ultimat3/core@<version> dist.attestations _npmUser`. See [`PUBLISHING.md`](PUBLISHING.md).
 
 ## Note
 

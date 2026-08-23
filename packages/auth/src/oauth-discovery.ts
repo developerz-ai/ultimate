@@ -4,9 +4,9 @@
 // four endpoints that nobody re-checks when the vendor moves one.
 
 import { renderThrowable } from '@ultimat3/core';
-import { oauthExchangeFailed } from './errors';
 import { isRecord } from './json';
 import type { OAuthProvider } from './oauth';
+import { oauthExchangeFailed } from './oauth-errors';
 import type { OAuthFetch } from './oauth-exchange';
 
 const DEFAULT_TIMEOUT_MS = 10_000;

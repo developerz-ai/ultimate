@@ -9,7 +9,7 @@
 
 // `join`/`relative` are `node:`-only by necessity: Bun exposes no path-join primitive.
 import { join, relative } from 'node:path';
-import { docsFor } from './error-codes';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Finding } from './output';
 import type { CommandSpec, FlagSpec } from './parse';
 import { GLOBAL_FLAGS } from './parse';
@@ -64,7 +64,7 @@ const unreadFinding = (declared: DeclaredFlag, at: string): Finding => ({
   code: 'X_CLI_FLAG_UNREAD',
   cause: `x ${declared.command} declares --${declared.flag.name} ("${declared.flag.summary}") and no file in the CLI's source reads it, so the flag parses and changes nothing`,
   fix: `read it in ${at} with flag${declared.flag.type === 'boolean' ? 'Bool' : 'String'}(ctx.args, '${declared.flag.name}'), or delete it from the spec's flags`,
-  docs: docsFor('X_CLI_FLAG_UNREAD'),
+  docs: ERROR_DOCS_URL,
   at,
 });
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { HashEmbedder, normalize } from './embeddings';
 import { assembleContext, chunk } from './rag';
-import { MemoryVectorStore } from './vector';
+import { fuse, MemoryVectorStore } from './vector';
 
 const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
 
@@ -204,5 +204,47 @@ describe('chunking and assembly', () => {
     expect(context.used).toEqual(['a', 'c']);
     expect(context.dropped).toEqual(['b']);
     expect(context.tokens).toBeLessThanOrEqual(100);
+  });
+});
+
+// `pg-vector-sql.ts` claims its SQL fusion is "identical to `fuse()` in `vector.ts`, so dev and
+// production order hits the same way", and the SQL ends `order by f.score desc, d."id" asc`.
+// Ties are the common case in RRF — two documents that swap rank between the dense and the lexical
+// list score exactly the same — so without a second key the two implementations disagree on the
+// order of every one of them, and the developer machine and the deployed app return different
+// pages of the same search.
+describe('unit · RRF fusion breaks ties the way the SQL does', () => {
+  const hit = (id: string) => ({ id, score: 0, text: id, metadata: {} });
+
+  test('two documents that swap rank between the lists come back id-ascending', () => {
+    // score(a) === score(b): each is rank 1 in one list and rank 2 in the other.
+    const fused = fuse([
+      [hit('b'), hit('a')],
+      [hit('a'), hit('b')],
+    ]);
+    expect(fused.map((h) => h.id)).toEqual(['a', 'b']);
+    expect(fused[0]?.score).toBe(fused[1]?.score ?? -1);
+  });
+
+  test('the tie-break never outranks the score', () => {
+    // 'z' is rank 1 in both lists; 'a' is rank 2 in both. Score still decides.
+    const fused = fuse([
+      [hit('z'), hit('a')],
+      [hit('z'), hit('a')],
+    ]);
+    expect(fused.map((h) => h.id)).toEqual(['z', 'a']);
+  });
+
+  test('the order does not depend on which list a document was seen in first', () => {
+    const forward = fuse([
+      [hit('m'), hit('d')],
+      [hit('d'), hit('m')],
+    ]);
+    const reversed = fuse([
+      [hit('d'), hit('m')],
+      [hit('m'), hit('d')],
+    ]);
+    expect(forward.map((h) => h.id)).toEqual(reversed.map((h) => h.id));
+    expect(forward.map((h) => h.id)).toEqual(['d', 'm']);
   });
 });

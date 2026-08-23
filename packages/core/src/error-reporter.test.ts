@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { userActor } from './actor';
 import { frozenClock } from './clock';
 import { createContext, runWithContext } from './context';
+import { ERROR_DOCS_URL } from './error-codes';
 import {
   configureErrorReporting,
   type ErrorReport,
@@ -45,7 +46,7 @@ describe('reportError', () => {
     expect(event.cause).toBe('table "posts" has an undeclared column');
     // The whole reason a report is not a message string: the fix is what the paged human runs.
     expect(event.fix).toBe('x db gen "add publish_at"');
-    expect(event.docs).toBe('https://ultimate.dev/errors/X_DB_DRIFT');
+    expect(event.docs).toBe(ERROR_DOCS_URL);
     expect(event.meta).toEqual({ table: 'posts' });
     expect(event.severity).toBe('error');
     expect(event.source).toBe('http');

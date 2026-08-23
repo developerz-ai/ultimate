@@ -14,6 +14,7 @@
 import { join as joinPath } from 'node:path';
 // The POSIX variants resolve specifiers against import-graph keys, which are POSIX on every host.
 import { dirname, join, normalize, relative } from 'node:path/posix';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { BoundaryRule, ImportGraph } from '@ultimat3/render';
 import { checkSurfaceBoundary, importGraph, SURFACES } from '@ultimat3/render';
 import type { Finding } from './output';
@@ -47,8 +48,6 @@ const CODE_OF: Readonly<Record<BoundaryRule, BoundaryCode>> = {
  * commands drifting onto different codes for one edge.
  */
 export const boundaryCodeOf = (rule: BoundaryRule): BoundaryCode => CODE_OF[rule];
-
-const docs = (code: BoundaryCode): string => `https://ultimate.dev/errors/${code}`;
 
 const isRoute = (path: string): boolean => /\/(page|layout|route)\.[cm]?tsx?$/.test(path);
 const isService = (path: string): boolean => /\/service\.[cm]?ts$/.test(path);
@@ -128,7 +127,7 @@ const surfaceFindings = (graph: ImportGraph): readonly Finding[] =>
       code,
       cause: violation.cause,
       fix: violation.fix,
-      docs: docs(code),
+      docs: ERROR_DOCS_URL,
       at: violation.importer,
     };
   });
@@ -198,7 +197,7 @@ function layerFindings(scanned: readonly ScannedFile[]): readonly Finding[] {
           code: 'X_BOUNDARY_ROUTE_TO_DB',
           cause: `route imports the database ("${specifier}") — routes call actions and queries`,
           fix: generate('query', file.path, 'then call it from'),
-          docs: docs('X_BOUNDARY_ROUTE_TO_DB'),
+          docs: ERROR_DOCS_URL,
           at: file.path,
         });
       }
@@ -207,7 +206,7 @@ function layerFindings(scanned: readonly ScannedFile[]): readonly Finding[] {
           code: 'X_BOUNDARY_SERVICE_TO_HTTP',
           cause: `service imports HTTP ("${specifier}") — a service that knows about requests cannot be reused by a job`,
           fix: generate('action', file.path, 'read the request there and pass plain values to'),
-          docs: docs('X_BOUNDARY_SERVICE_TO_HTTP'),
+          docs: ERROR_DOCS_URL,
           at: file.path,
         });
       }

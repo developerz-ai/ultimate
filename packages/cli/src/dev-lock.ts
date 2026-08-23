@@ -16,8 +16,7 @@
 
 import { closeSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { UltimateError } from '@ultimat3/core';
-import { docsFor } from './error-codes';
+import { stringField, UltimateError } from '@ultimat3/core';
 import { exec, type Runner } from './exec';
 import { quoteArg } from './shell-quote';
 
@@ -68,7 +67,11 @@ export const isProcessAlive = (pid: number): boolean => {
     return true;
   } catch (error) {
     // EPERM means it exists and belongs to another user. Alive, and not ours to signal.
-    return (error as { code?: string }).code === 'EPERM';
+    // `stringField`, never a cast plus a property read: the rule `metrics-endpoint.ts` states and
+    // `caught-value-reads.test.ts` enforces — a getter that throws would take this path down one
+    // line before the guard meant to make it safe, and this guard decides whether a second `x dev`
+    // is allowed to open a single-writer data directory.
+    return stringField(error, 'code') === 'EPERM';
   }
 };
 
@@ -96,7 +99,6 @@ export class DevAlreadyRunningError extends UltimateError {
       code: 'X_DEV_ALREADY_RUNNING',
       cause: `pid ${input.lock.pid} is already running x dev on ${input.lock.url} and holds ${input.stateDir}${single}`,
       fix: `use the one already running at ${input.lock.url}, or stop it: kill ${input.lock.pid}`,
-      docs: docsFor('X_DEV_ALREADY_RUNNING'),
       meta: { pid: input.lock.pid, port: input.lock.port, stateDir: input.stateDir },
     });
   }
@@ -118,7 +120,6 @@ export class DevLockUnreadableError extends UltimateError {
       code: 'X_DEV_LOCK_UNREADABLE',
       cause: `${input.path} could not be parsed as a dev lock and could not be removed, so x dev cannot tell whether another process owns ${input.stateDir}`,
       fix: `rm ${quoteArg(input.path)}   # then re-run x dev`,
-      docs: docsFor('X_DEV_LOCK_UNREADABLE'),
       meta: { path: input.path, stateDir: input.stateDir },
     });
   }
@@ -198,7 +199,6 @@ export class DevPortInUseError extends UltimateError {
         holder.pid === undefined
           ? `x dev --port ${input.suggestion}`
           : `x dev --port ${input.suggestion}   # or free it, if that pid is yours: kill ${holder.pid}`,
-      docs: docsFor('X_PORT_IN_USE'),
       meta: { port: input.port, ...holder },
     });
   }
@@ -247,7 +247,8 @@ function claimExclusive(path: string, lock: DevLock): boolean {
   try {
     fd = openSync(path, 'wx');
   } catch (error) {
-    if ((error as { code?: string }).code === 'EEXIST') return false;
+    // Same rule as `isProcessAlive` above: read the field, never cast and dereference.
+    if (stringField(error, 'code') === 'EEXIST') return false;
     throw error;
   }
   try {

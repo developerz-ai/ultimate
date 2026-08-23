@@ -65,7 +65,12 @@ registerErrorCodes(
   Object.fromEntries(Object.entries(AI_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
 
-const docsFor = (code: AiErrorCode): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
+// which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
+// `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE ROW,
+// which has no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x
+// answered 404, host included, on every error it has ever thrown; restating the replacement here
+// would be the same constant in eight places waiting to drift again.
 
 /** Every configured provider refused or errored. Carries what each one said. */
 export class AiProviderUnavailableError extends UltimateError {
@@ -74,7 +79,6 @@ export class AiProviderUnavailableError extends UltimateError {
       code: 'X_AI_PROVIDER_UNAVAILABLE',
       cause: `no provider could serve model "${input.model}" (${input.attempts.join(' | ')})`,
       fix: 'check ai.providers in app.config.ts and the provider API key env var',
-      docs: docsFor('X_AI_PROVIDER_UNAVAILABLE'),
     });
   }
 }
@@ -99,7 +103,6 @@ export class AiBudgetExceededError extends UltimateError {
         `request needs ${input.requested} ${input.unit ?? 'tokens'} but scope ` +
         `"${input.scope}" has ${input.remaining} of ${input.limit} left`,
       fix: `raise ai.budget for "${input.scope}" in app.config.ts, or shorten the prompt`,
-      docs: docsFor('X_AI_BUDGET_EXCEEDED'),
     });
   }
 }
@@ -115,7 +118,6 @@ export class AiGatewayMissingError extends UltimateError {
       code: 'X_AI_GATEWAY_MISSING',
       cause: `an llm action on prompt "${input.prompt}" ran before any gateway was configured`,
       fix: 'configureAi({ gateway: createGateway({ providers: [new AnthropicProvider()] }) }) at boot',
-      docs: docsFor('X_AI_GATEWAY_MISSING'),
     });
   }
 }
@@ -137,7 +139,6 @@ export class AiModelUnknownError extends UltimateError {
       // The `errors` gate blanks every interpolation, so the literal half alone has to name the
       // call. Which ids ARE registered is a fact of the failure, and cause is where facts live.
       fix: 'registerModel({ id, contextWindow, maxOutput, inputPerMillion, outputPerMillion, cacheMinimumTokens, reasoning }) at boot, before configureAi',
-      docs: docsFor('X_AI_MODEL_UNKNOWN'),
       meta: { model: input.model },
     });
   }
@@ -155,7 +156,6 @@ export class AiPromptSecretError extends UltimateError {
       code: 'X_AI_PROMPT_SECRET',
       cause: `prompt "${input.ref}" was given a Secret in vars(): ${input.keys.join(', ')}`,
       fix: 'drop the key from vars() and from the template, or revealSecret(value) in vars() if the model genuinely has to read it',
-      docs: docsFor('X_AI_PROMPT_SECRET'),
     });
   }
 }
@@ -172,7 +172,6 @@ export class LlmStreamInvalidError extends UltimateError {
       code: 'X_LLM_STREAM_INVALID',
       cause: `streamed answer to prompt "${input.prompt}" failed its output schema: ${input.issues}`,
       fix: 'call the action instead of .stream() when the answer must satisfy a structured schema — a stream has already delivered its tokens and cannot take a repair turn',
-      docs: docsFor('X_LLM_STREAM_INVALID'),
     });
   }
 }
@@ -190,7 +189,6 @@ export class LlmOutputInvalidError extends UltimateError {
         `prompt "${input.prompt}" returned output failing its schema on all ` +
         `${input.attempts} attempts: ${input.issues}`,
       fix: 'describe the output shape in the prompt template and bump its version, or widen `output` in the llm() declaration',
-      docs: docsFor('X_LLM_OUTPUT_INVALID'),
     });
   }
 }
@@ -213,7 +211,6 @@ export class AgentMaxTurnsError extends UltimateError {
         `agent "${input.agent}" used all ${input.turns} turns and ${input.calls} tool calls ` +
         `without calling the respond tool`,
       fix: 'tell the template when to stop and answer through the respond tool, then bump its version — raise maxTurns only once the run demonstrably converges',
-      docs: docsFor('X_AGENT_MAX_TURNS'),
       meta: { agent: input.agent, turns: input.turns },
     });
   }
@@ -234,7 +231,6 @@ export class AgentToolUnexposedError extends UltimateError {
       code: 'X_AGENT_TOOL_UNEXPOSED',
       cause: `agent "${input.agent}" lists tools no MCP surface exposes: ${input.tools.join(', ')}`,
       fix: 'add mcp: { expose: true } to the action named in cause, or drop it from the agent tools list',
-      docs: docsFor('X_AGENT_TOOL_UNEXPOSED'),
     });
   }
 }
@@ -270,7 +266,6 @@ export class LlmRefusedError extends UltimateError {
         input.alternative === undefined
           ? `edit the template in definePrompt('${input.prompt}') and bump its version — no blessed model is more capable than '${input.model}'`
           : `set model: '${input.alternative}' on the llm() declaration, or edit the template in definePrompt('${input.prompt}') and bump its version`,
-      docs: docsFor('X_LLM_REFUSED'),
       meta: { model: input.model, category: input.category },
     });
   }
@@ -287,7 +282,6 @@ export class LlmTruncatedError extends UltimateError {
       code: 'X_LLM_TRUNCATED',
       cause: `prompt "${input.prompt}" was cut off at its ${input.maxTokens}-token ceiling`,
       fix: `set maxTokens: ${input.maxTokens * 2} on the llm() declaration, or drop fields from its output schema`,
-      docs: docsFor('X_LLM_TRUNCATED'),
     });
   }
 }
@@ -301,7 +295,6 @@ export class AiPromptVersionError extends UltimateError {
         input.available.length > 0 ? input.available.join(', ') : 'none'
       })`,
       fix: 'bump the version in definePrompt after editing the template, then x manifest',
-      docs: docsFor('X_AI_PROMPT_VERSION'),
     });
   }
 }
@@ -317,7 +310,6 @@ export class AiPromptRenderError extends UltimateError {
       code: 'X_AI_PROMPT_VERSION',
       cause: `prompt "${input.ref}" was rendered without: ${input.missing.join(', ')}`,
       fix: 'pass every {{variable}} the template declares, or remove it from the template',
-      docs: docsFor('X_AI_PROMPT_VERSION'),
     });
   }
 }
@@ -331,7 +323,6 @@ export class VectorDimMismatchError extends UltimateError {
       // Not `x ai reindex`: that command is PLANNED and throws, so a fix line naming it sends an
       // operator to a wall. A fix has to be performable today, which here means app code.
       fix: 'use the same embedder that created the store, or re-embed every record at the new width and upsert it',
-      docs: docsFor('X_VECTOR_DIM_MISMATCH'),
     });
   }
 }
@@ -349,7 +340,6 @@ export class VectorScopeWidenedError extends UltimateError {
         `store "${input.store}" is bound to tenant "${input.held}" and cannot be re-scoped ` +
         `to "${input.requested}"`,
       fix: `derive from the unscoped store instead: vectorStore.scoped({ tenant: '${input.requested}' })`,
-      docs: docsFor('X_VECTOR_SCOPE_WIDENED'),
     });
   }
 }
@@ -367,7 +357,6 @@ export class EmbedderDimMismatchError extends UltimateError {
         `embedder "${input.embedder}" is declared with ${input.expected} dimensions but the ` +
         `provider returned ${input.received}`,
       fix: `set dimension: ${input.received} on the embedder, then re-embed every record at that width and upsert it`,
-      docs: docsFor('X_VECTOR_DIM_MISMATCH'),
     });
   }
 }
@@ -386,7 +375,6 @@ export class AiEmbedderInvalidError extends UltimateError {
       // interpolation — so the literal half alone has to name the call. Which embedder broke the
       // invariant is a fact of the failure, and the cause and `meta` are where facts live.
       fix: 'return one vector per input text from embed(), in the order the texts arrived',
-      docs: docsFor('X_AI_EMBEDDER_INVALID'),
       meta: { embedder: input.embedder },
     });
   }
@@ -399,7 +387,6 @@ export class AiKeyMissingError extends UltimateError {
       code: 'X_AI_KEY_MISSING',
       cause: `provider "${input.provider}" has no API key: ${input.envVar} is unset and none was passed to its constructor`,
       fix: `export ${input.envVar}=<key>, or pass { apiKey } when constructing the provider`,
-      docs: docsFor('X_AI_KEY_MISSING'),
       meta: { provider: input.provider, envVar: input.envVar },
     });
   }
@@ -416,7 +403,6 @@ export class AiRequestInvalidError extends UltimateError {
       code: 'X_AI_REQUEST_INVALID',
       cause: input.detail,
       fix: input.fix,
-      docs: docsFor('X_AI_REQUEST_INVALID'),
     });
   }
 }
@@ -446,7 +432,6 @@ export class AiTransportError extends UltimateError {
         input.status === undefined ? 'failed' : `returned ${input.status}`
       }: ${input.detail}`,
       fix: fixForStatus(input.status, input.envVar),
-      docs: docsFor('X_AI_PROVIDER_UNAVAILABLE'),
       meta: { provider: input.provider, status: input.status },
     });
     this.status = input.status;

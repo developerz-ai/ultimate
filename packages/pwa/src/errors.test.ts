@@ -4,7 +4,7 @@
 // is read back from the registry rather than re-declared here.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
+import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
 import {
   PWA_BORROWED_ERROR_CODES,
   PWA_ERROR_CODES,
@@ -45,7 +45,7 @@ describe('error code registry', () => {
 
   test('every pwa code documents at its own X_* url', () => {
     for (const code of PWA_ERROR_CODES) {
-      expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
     }
   });
 

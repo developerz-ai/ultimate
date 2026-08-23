@@ -14,6 +14,7 @@ import type {
   UserPatch,
   UserQuery,
 } from './adapter';
+import { authUniqueViolation } from './errors';
 import { timingSafeEqual } from './tokens';
 
 const verificationKey = (purpose: string, identifier: string): string => `${purpose}:${identifier}`;
@@ -43,7 +44,25 @@ export class MemoryAdapter implements AuthAdapter {
     return this.#users.get(id) ?? null;
   }
 
+  /**
+   * The two UNIQUE constraints `x_users` declares, enforced here because `BuiltinAdapter` LEANS on
+   * them: `email text not null unique` and `external_id text unique` (`tables.ts`). Without them
+   * this adapter — the one `x new` scaffolds and every test runs against — accepted two rows at one
+   * address, and the second was unreachable forever, since `findUserByEmail` returns the first.
+   *
+   * Over the STORED string, exactly as Postgres compares it. No case folding: that is the
+   * divergence `adapter-parity.test.ts`'s first case pins, and `normaliseEmail` above the seam is
+   * what makes two spellings one address.
+   */
   async createUser(input: CreateUserInput): Promise<AuthUser> {
+    for (const existing of this.#users.values()) {
+      if (existing.email === input.email) {
+        throw authUniqueViolation('createUser', 'x_users', 'email');
+      }
+      if (input.externalId !== undefined && existing.externalId === input.externalId) {
+        throw authUniqueViolation('createUser', 'x_users', 'external_id');
+      }
+    }
     const user: AuthUser = {
       id: input.id,
       // Stored as handed over, exactly as the `insert into x_users` binds it.

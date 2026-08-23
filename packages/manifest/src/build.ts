@@ -44,7 +44,7 @@ export interface ManifestSources {
 }
 
 export function buildManifest(sources: ManifestSources): Manifest {
-  const routes = sortBy(sources.routes ?? [], (r) => r.url);
+  const routes = sortBy(sources.routes ?? [], (r) => r.url).map(normalizeRoute);
   const entities = sortBy(sources.entities ?? [], (e) => e.name).map(normalizeEntity);
   const actions = sortBy(sources.actions ?? [], (a) => a.name).map(normalizeAction);
   const queries = sortBy(sources.queries ?? [], (q) => q.name).map(normalizeQuery);
@@ -117,6 +117,18 @@ function unique(values: readonly string[]): readonly string[] {
 }
 
 // Inner collections are sorted too: a reordered column list is a spurious diff.
+// `revalidateTags` is an author-declared SET — the same kind of list as an action's
+// `cacheInvalidates`, which has always been sorted here. Left in declaration order it was the one
+// inner collection `buildManifest` did not normalise, so reordering `revalidate: [tag.b, tag.a]`
+// in a route file churned `buildId` and emitted a spurious `routes.<url>.revalidateTags` change.
+// `jobs[].steps` is the one deliberate exception, and says why above itself.
+const normalizeRoute = (route: RouteFact): RouteFact =>
+  route.revalidateTags === undefined
+    ? route
+    : // Spread, never assigned: `exactOptionalPropertyTypes` makes an explicit `undefined` a
+      // different answer from an absent key, and `emit.ts` writes what it is given.
+      { ...route, revalidateTags: [...route.revalidateTags].sort() };
+
 const normalizeEntity = (entity: EntityFact): EntityFact => ({
   ...entity,
   columns: sortBy(entity.columns, (c) => c.name),

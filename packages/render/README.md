@@ -280,18 +280,22 @@ are never serialized.
 const collector = createIslandCollector({ file, hydrate: config.hydrate, resolve });
 const html = await renderToHtml(page, { islands: collector });
 document.body += hydrateRuntime(collector.directives);   // the one thing left to remember
-assertBudget(entry, measuredIslands, collector.directives);
 ```
 
-`routeJsBytes` reads **both** sources — what registration declared in `entry.islands` and what the
-render actually pulled in. Reading only the first is how a page could be charged for the hydration
-runtime and not for the chunk it boots: a budget that counts the wrapper and not the code.
+Declaring an island is what puts a `budget.js` on the route — `defaultIslandBudget(surface)`,
+applied by `registerRoute`, so a page that declares one is charged without saying so. **Weighing it
+is `x verify`'s `budgets` step**, which measures the emitted document against the manifest's
+per-route budget and fails with `X_BUDGET_EXCEEDED`.
+
+**Removed `As of 2026-08-23`** (breaking): `routeJsBytes`, `graphFor`, `checkBudget`, `checkBudgets`, `assertBudget` and
+the `Island` / `BundleGraph` / `RouteBytes` / `BudgetReport` types. They were a second, graph-based
+answer to the same question that nothing in the framework ever asked — the gate has always been the
+CLI's. `parseByteBudget` (the `'40kb'` grammar) and `defaultIslandBudget` stay.
 
 `entry.islands` is filled from `config.islands` at registration and from nothing else, so a declared
-island is weighed even on a route no render has touched. It was `input.islands ?? []` and nothing
-ever passed `islands`, which left that half of the union reading nothing at all; `RegisterRouteInput`
-no longer carries the key, because the only thing a caller could do with it was un-weigh a
-declaration.
+island is on the record even on a route no render has touched. It was `input.islands ?? []` and
+nothing ever passed `islands`; `RegisterRouteInput` no longer carries the key, because the only
+thing a caller could do with it was un-declare an island.
 
 An island on a route that resolves to `hydrate: 'never'`, or rendered with no collector, is
 `X_ISLAND_NOT_HYDRATED` — inert markup either way. With `hydrate` derived it means one of exactly
@@ -361,7 +365,7 @@ side effect. Anything that loads an app's source — `x dev`, `x build`, `server
 | `installRenderLoader`†, `compileStylesheet`† | the `.tsx`/`.scss` loaders, installed on import |
 | `emitIslandAttributes`, `hydrateRuntime` | the four hydration strategies |
 | `ISLAND_MOUNTED_ATTRIBUTE`, `ISLAND_FAILED_ATTRIBUTE`, `IDLE_HYDRATE_TIMEOUT_MS` | what hydration looks like from outside the page |
-| `graphFor`, `checkBudget`, `assertBudget` | two bundle graphs, per-route budgets |
+| `parseByteBudget`, `defaultIslandBudget` | the `'40kb'` budget grammar, and the ceiling a declared island earns |
 | `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script |
 
 ## Notes

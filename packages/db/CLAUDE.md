@@ -547,12 +547,34 @@ app: `create table "comments" (… references "posts" …)` before `create table
 `relation "posts" does not exist`. `down` had the mirror fault — `drop table "posts"` while
 `comments` still referenced it is `2BP01`. So `foreignKeyPlan` collects every key into a bucket of
 its own, merged into the plan **after** every table statement; `down` is reversed as a whole, so the
-drops pushed last there come out first. No topological sort and **no cycle error**: two tables
-referencing each other cannot be expressed inline in any order, and separate constraints need no
-order at all. The same call site answers the other half — a `references()` added to a column that
+drops pushed last there come out first. No topological sort and **no cycle error** *for adds*: two
+tables referencing each other cannot be expressed inline in any order, and separate constraints need
+no order at all. Dropping is not symmetrical and does need one — the paragraph below. The same call site answers the other half — a `references()` added to a column that
 already exists now emits its `add constraint`, where before `up` came out **empty**, `x db gen`
 wrote no file, and `x verify`'s drift step stayed red forever with `x db gen "…"` as a fix that did
 nothing.
+
+**Dropping a table has its own bucket, emitted BEFORE the table statements — the mirror image of
+the one above, `As of 2026-08-23`.** `--allow-destructive` emitted a bare `drop table "authors";`
+with every `alter table … drop constraint` appended AFTER it, so dropping a table another entity
+`references()` was `2BP01 cannot drop table authors because other objects depend on it` — during
+`ROLE=migrate` in the release phase, with the ledger recording nothing and a `down` of
+`-- "<table>" cannot be restored`, i.e. nothing to reverse and a generated file to hand-edit. The
+two-table case failed identically because drops came out **alphabetically**, which puts the parent
+first. Two halves. `foreignKeyPlan` routes a key whose `referencedTable` is doomed into `preDrops`
+instead of `constraints` — whether the entity still declares it or not, since a constraint cannot
+outlive its target — and its `down` is a comment, because `add constraint` against a table no
+`down` can restore is a rollback that cannot run. `drop-order.ts` orders the drops children-first
+(a self-reference is not a blocker: `drop table` takes the table's own constraints with it) and
+breaks a cycle between two doomed tables by dropping one inbound key first, which is the only
+statement it emits. The `--allow-destructive` refusal is raised over that same ordered list, so
+which table it names does not move with the alphabet.
+
+**`foreignKeyPlan` lives in `foreign-key-plan.ts`, `As of 2026-08-23`** — split out of
+`generate.ts` at the 500-line ceiling, along the seam it already drew: `generate.ts` assembles a
+plan, `foreign-key-plan.ts` decides which bucket each key statement goes in, `foreign-key.ts`
+writes the SQL. `Plan`, `foreignKeysOf` and `referenceParts` went with it because they are that
+module's vocabulary; `snapshotOf` imports `foreignKeysOf` back, one direction only.
 
 **`foreignKeyPlan` walks both directions, `As of 2026-08-19`.** A *removed* `references()` used to
 emit nothing while the snapshot beside it recorded `foreignKeys: []` — so the orphan constraint

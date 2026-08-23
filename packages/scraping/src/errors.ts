@@ -4,12 +4,7 @@
 // once, in this file, rather than re-decided by whichever `catch` saw it.
 
 import type { ErrorRetry } from '@ultimat3/core';
-import {
-  errorDocsUrl,
-  registerErrorCodes,
-  registerErrorRetry,
-  UltimateError,
-} from '@ultimat3/core';
+import { registerErrorCodes, registerErrorRetry, UltimateError } from '@ultimat3/core';
 
 /** Codes this package declares and owns. */
 export const SCRAPE_OWNED_ERROR_CODES = [
@@ -184,7 +179,6 @@ export class ScrapeError extends UltimateError {
       code: init.code,
       cause: init.cause,
       fix: init.fix,
-      docs: errorDocsUrl(init.code),
       meta: init.meta,
       ...(init.retry === undefined ? {} : { retry: init.retry }),
     });

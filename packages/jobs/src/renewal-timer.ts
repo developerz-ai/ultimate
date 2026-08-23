@@ -4,6 +4,8 @@
 // the interval, which does nothing to the request already on the wire. So a flag is what every
 // branch after an `await` re-reads — the shape `settleWithin`'s `decided` uses in core.
 
+import { logger, renderThrowable } from '@ultimat3/core';
+
 export interface RenewalTimer {
   /**
    * True once `stop()` has been called. Read AFTER every await in the renewal body: a clean
@@ -22,7 +24,20 @@ export function startRenewalTimer(
 ): RenewalTimer {
   let stopped = false;
   const timer = setInterval(() => {
-    void renew();
+    // `Promise.resolve().then(renew)` and never `void renew()`: a `renew` that throws SYNCHRONOUSLY
+    // escapes before any `.catch` its body chained exists. `worker-fleet-slots.ts` guards the
+    // promise chain and cannot guard this — `LeaseStore.renew` is an injected seam, and a store
+    // that throws on a closed pool throws on the call, not in the chain. Nothing sits above a
+    // `setInterval` callback, so that throw is an uncaught exception in the timer that was going
+    // to keep the lease alive. The shape `outbox.ts`'s tick loop already uses.
+    void Promise.resolve()
+      .then(renew)
+      .catch((error: unknown) => {
+        // A renewal that FAILS is each caller's own business and both handle it. Reaching here
+        // means the seam broke its contract, which is a different fact and is worth its own line —
+        // swallowed, it would be a lease that stops renewing with nothing anywhere saying so.
+        logger.error('jobs.renewal.raised', { error: renderThrowable(error) });
+      });
   }, intervalMs);
   return {
     stopped: () => stopped,

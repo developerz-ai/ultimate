@@ -6,8 +6,7 @@
  */
 import {
   assertNever,
-  ERROR_DOCS_BASE,
-  errorDocsUrl,
+  ERROR_DOCS_URL,
   hasErrorCode,
   registerErrorCodes,
   UltimateError,
@@ -24,10 +23,6 @@ export {
   IdempotencyReplayedFailureError,
   IdempotencyStatusUnknownError,
 } from './errors-idempotency';
-
-// Core's spelling, aliased — never a second one. A local template drifts from what
-// `x errors explain` prints the moment `ERROR_DOCS_BASE` moves.
-const docs = errorDocsUrl;
 
 /**
  * Titles for the framework-wide code table — every one of them owned by this package.
@@ -70,7 +65,6 @@ export class ActionUnregisteredError extends UltimateError {
       code: 'X_ACTION_UNREGISTERED',
       cause: 'an action was projected before it was registered, so it has no name',
       fix: "call registerActions(await import('./actions')) at boot, before mounting routes",
-      docs: docs('X_ACTION_UNREGISTERED'),
     });
   }
 }
@@ -87,7 +81,6 @@ export class ActionForeignError extends UltimateError {
       code: 'X_ACTION_FOREIGN',
       cause: `"${name === '' ? 'anonymous' : name}" is not an action built by action()`,
       fix: "declare it as `export const name = action({ input, output, policy, handle })` from '@ultimat3/action'",
-      docs: docs('X_ACTION_FOREIGN'),
     });
   }
 }
@@ -134,7 +127,6 @@ export class ActionDeniedError extends UltimateError {
       code,
       cause: `${action} denied: ${denialReason(denial)}`,
       fix: `x policy explain ${action} --json   # shows which clause decided and why`,
-      docs: docs(code),
     });
     this.denial = denial;
   }
@@ -146,7 +138,6 @@ export class ActionDuplicateError extends UltimateError {
       code: 'X_ACTION_DUPLICATE',
       cause: `two actions are registered under the name "${name}"`,
       fix: `rename one export — action names are globally unique: x actions list --json`,
-      docs: docs('X_ACTION_DUPLICATE'),
     });
   }
 }
@@ -163,7 +154,6 @@ export class ActionPathDuplicateError extends UltimateError {
       code: 'X_ACTION_PATH_DUPLICATE',
       cause: `actions "${input.name}" and "${input.existing}" both derive ${input.path}`,
       fix: `rename one export so the two derive different paths — x actions list --json prints every derived route`,
-      docs: docs('X_ACTION_PATH_DUPLICATE'),
     });
   }
 }
@@ -181,7 +171,6 @@ export class ActionPolicyMissingError extends UltimateError {
       code: 'X_ACTION_POLICY_MISSING',
       cause: `action "${name}" was registered without a policy`,
       fix: `add \`policy: can('<resource>:<verb>')\` to the action() that exports "${name}" — a permission your definePermissions() call declares, never the action's own name — or \`allow('<resource>:<verb>')\` if the operation is genuinely public`,
-      docs: docs('X_ACTION_POLICY_MISSING'),
     });
   }
 }
@@ -192,7 +181,6 @@ export class InputInvalidError extends UltimateError {
       code: 'X_INPUT_INVALID',
       cause: `input for action "${name}" failed validation: ${detail}`,
       fix: `x actions describe ${name} --json  # prints the expected input schema`,
-      docs: docs('X_INPUT_INVALID'),
     });
   }
 }
@@ -208,7 +196,6 @@ export class OutputInvalidError extends UltimateError {
       code: 'X_OUTPUT_INVALID',
       cause: `action "${name}" returned a value its output schema rejects: ${detail}`,
       fix: `x actions describe ${name} --json  # compare the handler's return against \`output:\``,
-      docs: docs('X_OUTPUT_INVALID'),
     });
   }
 }
@@ -225,7 +212,6 @@ export class ActionDeprecationInvalidError extends UltimateError {
       code: 'X_ACTION_DEPRECATION_INVALID',
       cause: `action "${action}" declares deprecated.${field} as "${value}", which is not a date`,
       fix: `edit \`deprecated: { ${field}: … }\` on ${action} to an ISO-8601 instant — e.g. '2026-12-31T23:59:59Z'`,
-      docs: docs('X_ACTION_DEPRECATION_INVALID'),
       meta: { action, field, value },
     });
   }
@@ -252,23 +238,27 @@ export interface RemoteFailure {
 const ABSOLUTE_HTTP_URL = /^https?:\/\//;
 
 /**
- * The docs link, or the honest absence of one. `UltimateError` resolves an unregistered code to
- * `https://ultimate.dev/errors/<code>`, and a code the SERVER owns — `X_SIGNUP_CLOSED`, declared
- * by the app through `registerErrorStatus` — is exactly the kind this bundle never registered:
- * that URL is a 404 dressed as documentation, printed under `docs:` as if the framework wrote the
- * page. So: the server's own link when it sent a resolvable one, this build's registered link
- * when it knows the code, and otherwise the index — a page that exists.
+ * The docs link the SERVER offered, or the framework's own. It never synthesizes a per-code URL:
+ * a code the server owns — `X_SIGNUP_CLOSED`, declared by the app through `registerErrorStatus` —
+ * is one this bundle never registered, and a `https://…/errors/X_SIGNUP_CLOSED` invented for it
+ * would be a 404 printed under `docs:` as if the framework wrote the page.
  *
  * `sent` is ordered, not singular: a server that fills `docs` with a `javascript:` URI still
  * sent RFC-9457's `type`, and taking the first *resolvable* candidate means the unusable one
  * costs nothing. Testing only the preferred slot would have dropped a valid link on the floor.
+ *
+ * The two fallbacks agree by construction since `ERROR_DOCS_URL` replaced the per-code base:
+ * `describeErrorCode` answers an unregistered code with that same constant, so `hasErrorCode`
+ * only still distinguishes a package that declared its OWN `docs:` on a registered code. Kept
+ * explicit rather than collapsed to `undefined`, because that declaration is the seam that would
+ * make them differ again.
  */
 function remoteDocs(code: string, sent: readonly (string | undefined)[] = []): string | undefined {
   const link = sent.find((value) => value !== undefined && ABSOLUTE_HTTP_URL.test(value));
   if (link !== undefined) return link;
   // `undefined` lets the constructor resolve the REGISTERED descriptor, whose docs a package
   // may have declared as something other than the default URL.
-  return hasErrorCode(code) ? undefined : ERROR_DOCS_BASE;
+  return hasErrorCode(code) ? undefined : ERROR_DOCS_URL;
 }
 
 /**
@@ -303,7 +293,6 @@ export class RpcFailedError extends UltimateError {
       code: 'X_RPC_FAILED',
       cause: `${name} returned HTTP ${status} without a problem+json body`,
       fix: `check the gateway in front of the app, then: x actions describe ${name} --json`,
-      docs: docs('X_RPC_FAILED'),
     });
   }
 }
@@ -321,7 +310,6 @@ export class AuditSinkMissingError extends UltimateError {
       code: 'X_AUDIT_SINK_MISSING',
       cause: `action "${action}" declares \`audit: true\` and no audit sink is installed`,
       fix: "call setAuditSink(yourSink) from '@ultimat3/action' at boot, before registerActions()",
-      docs: docs('X_AUDIT_SINK_MISSING'),
     });
   }
 }
@@ -354,7 +342,6 @@ export class AuditSinkFailedError extends UltimateError {
       fix: replayable
         ? `fix the sink installed by setAuditSink, then retry with the same Idempotency-Key — the replay re-records without re-running the handler`
         : `fix the sink installed by setAuditSink, then reconcile this one change by hand — do NOT retry: ${action} ran with no Idempotency-Key, so a second call runs the committed handler again. Add \`idempotent: true\` and send the header to make retries safe`,
-      docs: docs('X_AUDIT_SINK_FAILED'),
       // Read by `--json` and the error reporter: whether a retry is safe is the one decision an
       // operator makes here, so it is a field and not only a sentence.
       meta: { action, replayable },
@@ -365,6 +352,6 @@ export class AuditSinkFailedError extends UltimateError {
 
 export class ContractDriftError extends UltimateError {
   constructor(cause: string, fix: string) {
-    super({ code: 'X_CONTRACT_DRIFT', cause, fix, docs: docs('X_CONTRACT_DRIFT') });
+    super({ code: 'X_CONTRACT_DRIFT', cause, fix });
   }
 }

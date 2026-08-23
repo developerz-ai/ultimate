@@ -7,16 +7,15 @@ import { ConfigInvalidError, logger, uuid } from '@ultimat3/core';
 import type { AuthAccount, AuthUser } from './adapter';
 import type { Auth, LoginResult } from './auth';
 import { normaliseEmail } from './email';
+import { authWriteFailed, mfaRequired } from './errors';
+import type { OAuthCallback, OAuthHandshake } from './oauth';
 import {
-  authWriteFailed,
   emailVerifiedNotStored,
-  mfaRequired,
   oauthAccountNotLinked,
   oauthExchangeFailed,
   oauthLinkingDisabled,
   restartAt,
-} from './errors';
-import type { OAuthCallback, OAuthHandshake } from './oauth';
+} from './oauth-errors';
 import {
   exchangeOAuthCode,
   type OAuthClientCredentials,
@@ -200,8 +199,20 @@ function accountFor(auth: Auth, user: AuthUser, input: OAuthSignInInput): AuthAc
     userId: user.id,
     provider: input.profile.provider,
     providerAccountId: input.profile.providerAccountId,
-    accessToken: input.tokens.accessToken,
-    refreshToken: input.tokens.refreshToken,
+    // `null`, deliberately — this package does not persist a provider credential.
+    //
+    // `x_accounts.access_token` and `refresh_token` held live provider tokens in the CLEAR, under
+    // a `tables.ts` header promising "no column holds a plaintext secret", and NOTHING read either
+    // one back: `oauth-profile.ts` uses the token from the exchange, in flight, and
+    // `packages/auth/CLAUDE.md` states that refresh is not implemented. Declared and never wired
+    // — the same deletion this repo already ran for `jobs.driver`, except this one made a database
+    // dump into a set of usable third-party credentials.
+    //
+    // The TYPE keeps both fields: `AuthAccount` is the documented adapter seam, and an app that
+    // deliberately stores tokens implements `linkAccount` itself. What changed is what the
+    // framework writes.
+    accessToken: null,
+    refreshToken: null,
     expiresAt: input.tokens.expiresAt,
     createdAt: auth.clock.now(),
   };

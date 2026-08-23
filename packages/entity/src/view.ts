@@ -3,6 +3,7 @@
 // already describe. Values are validated by the entity's own column parsers; an unknown key is a
 // declaration-time failure, not a surprise on the first request.
 
+import { renderThrowable } from '@ultimat3/core';
 import { describeValue, type StandardSchemaV1 } from '@ultimat3/schema';
 import { invariantViolated } from './errors';
 import type { AnyColumn, ColumnMap } from './types';
@@ -83,9 +84,10 @@ export const viewFor = <Row, K extends keyof Row & string>(
         try {
           return { value: parse(value) };
         } catch (error) {
-          return {
-            issues: [{ message: error instanceof Error ? error.message : String(error) }],
-          };
+          // The entity's rule, for the same reason: `instanceof` and `String()` are both reads of
+          // a caught value, and a throwable that fights being read turned a rejected projection
+          // into an uncatchable `TypeError`. `renderThrowable` is total.
+          return { issues: [{ message: renderThrowable(error) }] };
         }
       },
     },

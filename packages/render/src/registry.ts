@@ -269,9 +269,11 @@ export function registerRoute<TData = RouteData>(
     config,
     suspenseBoundaries,
     // The declaration is the ONLY source. It was `input.islands ?? []`, which nothing ever passed,
-    // so `routeJsBytes`'s "what registration declared" half read `[]` on every route in the
-    // framework's history — and keeping the input as a fallback would be a second answer to one
-    // question that can only ever weaken it: a caller passing `[]` un-weighs a declared island.
+    // so the now-deleted `routeJsBytes`'s "what registration declared" half read `[]` on every
+    // route in the framework's history — and keeping the input as a fallback would be a second
+    // answer to one question that can only ever weaken it: a caller passing `[]` un-declares an
+    // island. The field outlives that reader: it is the only record a build has of an island a
+    // page declared but did not render on a given pass.
     islands: config.islands.map((spec) => spec.moduleId),
     pattern: compilePattern(path),
     // Spread, never assigned: `exactOptionalPropertyTypes` makes an explicit `undefined` a

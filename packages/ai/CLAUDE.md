@@ -54,7 +54,7 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
 | `llm-stream.ts` | `.stream()`'s plumbing: the sink, the ambient mark, the one-turn drive |
 | `agent.ts` | `agent()` — the tool loop, declared as an `action` |
 | `agent-transcript.ts` | what one turn leaves in the transcript: the assistant replay, the tool results, the correction |
-| `agent-facts.ts` | `describeAgents()` — the agent registry and the row a manifest publishes |
+| `agent-facts.ts` | `describeAgents()` — the agent registry, and the row a manifest WOULD publish: nothing reads it yet, because `manifest` is tier 4 like this package and the consumer has to be `cli` at tier 5 |
 | `agent-job.ts` | `agentJob()` — an agent as a real `JobHandle`, composed from `job()` |
 | `hive.ts` | `hive()` — one action fanned out over many inputs, declared as an `action` |
 | `hive-result.ts` | `HiveMember` / `HiveResult`, and the SCHEMA built from the member's own `output` |
@@ -120,6 +120,25 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   zero leaks the ceiling upward on every release.
 - Cost is `Money` (integer minor units), rounded **up**. Never a float, never a division
   that loses a fraction.
+- **`attempt` collects TRANSPORT failures only, `As of 2026-08-23`.** A caught value that is an
+  `UltimateError` whose code is not `X_AI_PROVIDER_UNAVAILABLE` is rethrown verbatim, on the spot:
+  those are raised locally, before the socket opens — a missing credential, a control the model does
+  not accept — so the same rejection is waiting on every provider and every attempt, which is
+  exactly the reason a 400 is not retried. Collecting one flattened `X_AI_KEY_MISSING` and its
+  runnable `export ANTHROPIC_API_KEY=…` into "no provider could serve model X", and made
+  `generate()` and `stream()` answer the SAME misconfiguration two different ways — `stream()`
+  never routes through `attempt`. `AiTransportError` carries `X_AI_PROVIDER_UNAVAILABLE`, so
+  "provider one 503'd, provider two timed out" still collects across candidates unchanged.
+  **Breaking**: a caller catching `X_AI_PROVIDER_UNAVAILABLE` today starts seeing the real code.
+  The read is `stringField(error, 'code')`, never `error.code` — the value came from an app's
+  `Provider` and a property read on it is a getter call or a `Proxy` trap.
+- **`Gateway.stream` routes BEFORE it reserves.** `providerFor` throws for a registered model no
+  configured provider serves, and it used to run between `reserve()` and the `try` that releases —
+  so the estimate was debited, landed on the `BudgetStore` under `actorKey`/`orgKey`, and nothing
+  credited it back. `MemoryBudgetStore` is per process and never expires, so five refused streams
+  spent an org's whole ceiling with nothing ever sent, and every later call in that process was
+  `X_AI_BUDGET_EXCEEDED` forever. `settled = true` moved AFTER `await ledger.record(...)` for the
+  same reason: a store that throws at `done` left the reservation both unreleased and half-recorded.
 - **The gateway's two reads of a provider's throw are total.** A `Provider` is the APP's object, so
   the value it rejects with is one the framework did not build: `isRetryable` indexes it (a getter,
   or a `Proxy` trap) and fails closed if the read raises, and the failure line goes through core's
@@ -424,7 +443,12 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   - An aborted `ctx` unwinds the whole hive with `X_ABORTED`, which is a DIFFERENT event from
     `onMemberError: 'abort'`: the latter is a completed run with a partial harvest worth returning,
     the former has nobody left to hand it to.
-- **`describeAgents()` publishes what an `ActionDescriptor` cannot.** An agent projects to the same
+- **`describeAgents()` is OFFERED, not published, `As of 2026-08-23`** — no reader exists anywhere
+  in the tree, and neither does one for `registeredModels()`. Both are tier-4 exports whose only
+  legal consumer is `@ultimat3/cli` (tier 5); `@ultimat3/manifest` is tier 4, so the obvious import
+  is a sideways edge `bun run boundaries` refuses. Their doc comments say so now, because a comment
+  claiming a consumer that does not exist is the documentation axiom 3 calls no rule at all.
+- **`describeAgents()` describes what an `ActionDescriptor` cannot.** An agent projects to the same
   descriptor as any other action, and that descriptor knows nothing about turns, tools, models or
   prompt hashes — so "how far can this loop and what may it call" had no answer outside the source.
   Same shape as `describePrompts()` / `describeEvals()`, and deliberately NOT a new

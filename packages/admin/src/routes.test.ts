@@ -3,6 +3,7 @@
 // second time — the shape the deployed demo shipped on five pages until 1.2.0.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
 import { defineAdmin } from './admin';
 import { type AdminActor, staticAuthz } from './authz';
@@ -83,5 +84,69 @@ describe('adminRouteConfig composes the gate exactly once', () => {
       expect(route.permissions[0]).toBe(config.policy.permission);
       expect(config.config.policy).toEqual(config.policy);
     }
+  });
+});
+
+/**
+ * `adminRouteFor` resolves by `.find()`, so two resources declaring one `path:` produced EIGHT
+ * routes over FOUR paths and the second resource's four screens were unreachable — silently, at
+ * boot, with the dashboard rendering. `admin.ts` already makes the identical argument for a
+ * duplicate action NAME and refuses it there ("a call that succeeds against the wrong action and
+ * reports nothing"), and `pages.ts` already refuses a page shadowing a generated route. A resource
+ * path was the one claim on a URL that nothing checked.
+ */
+describe('two resources cannot claim one path', () => {
+  const alt = entity('admin_routes_note', {
+    columns: { id: uuid().primaryKey(), title: text({ max: 120 }) },
+  });
+
+  test('the second claim is refused at defineAdmin, naming both resources', () => {
+    let thrown: unknown;
+    try {
+      defineAdmin({
+        entities: [post, alt],
+        resources: {
+          admin_routes_post: { path: '/things' },
+          admin_routes_note: { path: '/things' },
+        },
+        auth,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    if (!isUltimateError(thrown)) expect.unreachable('expected defineAdmin to refuse');
+    expect(thrown.code).toBe('X_ADMIN_PAGE_PATH_INVALID');
+    expect(thrown.cause).toContain('/admin/things');
+    // Both names, so one boot names the pair rather than half of it.
+    expect(thrown.cause).toContain('admin_routes_post');
+    expect(thrown.fix).toContain('path');
+  });
+
+  test('a page may still not shadow a generated resource route', () => {
+    // The pre-existing half of the same rule, kept green: pages are checked against the paths the
+    // resources claimed, and resources are now checked against each other first.
+    expect(() =>
+      defineAdmin({
+        entities: [post],
+        resources: { admin_routes_post: { path: '/posts' } },
+        pages: [{ ...ops, path: '/posts' }],
+        auth,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'X_ADMIN_PAGE_PATH_INVALID' }));
+  });
+
+  test('distinct paths still produce one route table with every screen', () => {
+    const two = defineAdmin({
+      entities: [post, alt],
+      resources: {
+        admin_routes_post: { path: '/posts' },
+        admin_routes_note: { path: '/notes' },
+      },
+      auth,
+    });
+    const paths = two.routes.map((route) => route.path);
+    expect(new Set(paths).size).toBe(paths.length);
+    expect(paths).toContain('/admin/posts');
+    expect(paths).toContain('/admin/notes');
   });
 });

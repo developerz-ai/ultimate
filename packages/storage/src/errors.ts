@@ -2,7 +2,7 @@
 // rejected upload must tell the caller which constraint fired and where that constraint is
 // configured, or the caller retries the same bytes forever.
 
-import { errorDocsUrl, registerErrorCodes, renderThrowable, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, renderThrowable, UltimateError } from '@ultimat3/core';
 
 /** Codes this package declares and owns. */
 export const STORAGE_OWNED_ERROR_CODES = [
@@ -80,7 +80,6 @@ export class StorageError extends UltimateError {
       code: init.code,
       cause: init.cause,
       fix: init.fix,
-      docs: errorDocsUrl(init.code),
       meta: init.meta,
     });
   }

@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { useContext } from '@ultimat3/core';
 import { clearRoutes, defineRoute, island, registerRoute, routeEntries } from '@ultimat3/render';
 import { appManifest } from './app-manifest';
 import { checkBudgets, readBuildStats } from './budgets';
@@ -145,6 +146,13 @@ describe('x build --target static', () => {
     const report = await prerenderSite({ root: ROOT, out: join(ROOT, 'static') });
     expect(report.unmeasured.map((entry) => entry.path)).toEqual(['/broken']);
     expect(report.unmeasured[0]?.reason).toContain('needs a request');
+    // On the FILE, not only on the in-process report. `X_BUDGET_UNMEASURED`'s `fix:` sends its
+    // reader to `x build --target static --json`, which spawns `prerender.ts` as a subprocess and
+    // reads this file back — so a list that lives only on the returned object reaches no reader at
+    // all: `cmd-build.ts` discards a successful subprocess's stdout.
+    const onDisk = await readStaticReport(ROOT);
+    expect(onDisk?.unmeasured).toEqual(report.unmeasured);
+    expect(onDisk?.unmeasured.map((entry) => entry.path)).toEqual(['/broken']);
     // And the budget it declared still fails the gate, because nothing weighed it.
     const { manifest } = await appManifest(ROOT);
     const findings = checkBudgets(manifest, (await readBuildStats(ROOT)) ?? { routes: [] });
@@ -353,5 +361,69 @@ describe('x build --target static, with islands', () => {
     expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_EXCEEDED']);
     // Naming the island is the whole point: "your bundle got bigger" is not an instruction.
     expect(findings[0]?.cause).toContain('apps/web/site/heavy/heavy.island.tsx');
+  });
+});
+
+/**
+ * The build measures a budget by RENDERING the route, through the same `routeDocument` a request
+ * takes — and a request arrives inside `runWithContext`, installed by the HTTP pipeline
+ * (`dev-render.ts`). `prerenderSite` called it bare, so every route whose component, `load` or
+ * `meta` reads `useContext()` threw `X_NO_CONTEXT` and was filed as unmeasured. Measured against
+ * `examples/dummy`: `/posts/new` and `/settings` both, for that reason alone.
+ */
+describe('the budget render runs inside a request context, exactly as a served render does', () => {
+  const contextReading = (title: string) =>
+    defineRoute({
+      render: 'ssr',
+      hydrate: 'visible',
+      offline: 'runtime',
+      budget: { js: '10kb' },
+      meta: () => ({ title, description: 'reads the ambient request context' }),
+    });
+
+  test('a component that reads useContext() is weighed, not filed as unmeasured', async () => {
+    registerRoute({
+      file: 'apps/web/app/settings/page.tsx',
+      config: contextReading('Settings'),
+      // The one line the served path makes work and the build did not.
+      component: () => `<p>${useContext().role}</p>`,
+    });
+    const report = await prerenderSite({ root: ROOT, out: join(ROOT, 'static') });
+    expect(report.unmeasured).toEqual([]);
+    expect((await readBuildStats(ROOT))?.routes.map((route) => route.path)).toEqual(['/settings']);
+  });
+
+  test('the context it runs under is the web role and this build`s id', async () => {
+    const seen: string[] = [];
+    registerRoute({
+      file: 'apps/web/app/probe/page.tsx',
+      config: contextReading('Probe'),
+      component: () => {
+        const ctx = useContext();
+        seen.push(`${ctx.role}:${ctx.buildId}`);
+        return '<p>ok</p>';
+      },
+    });
+    const report = await prerenderSite({ root: ROOT, out: join(ROOT, 'static') });
+    expect(report.unmeasured).toEqual([]);
+    expect(seen).toEqual([`web:${report.buildId}`]);
+  });
+
+  // The other call site, and it had the same hole: a `render: 'static'` route reaches
+  // `renderStatic`, whose page callback is this same `routeDocument`.
+  test('a prerendered static route reads it too', async () => {
+    registerRoute({
+      file: 'apps/web/site/page.tsx',
+      config: defineRoute({
+        render: 'static',
+        hydrate: 'never',
+        offline: 'precache',
+        meta: () => ({ title: 'Home', description: 'the landing page a crawler reads' }),
+      }),
+      component: () => `<p>${useContext().role}</p>`,
+    });
+    const report = await prerenderSite({ root: ROOT, out: join(ROOT, 'static') });
+    expect(report.pages.map((page) => page.path)).toEqual(['/']);
+    expect(report.skipped).toEqual([]);
   });
 });

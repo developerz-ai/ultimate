@@ -4,6 +4,7 @@
 // browser drops every one of those declarations from, byte-for-byte identical to a working page
 // apart from the styling nobody sees missing. A silent failure is exactly what axiom 3 exists for.
 
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Surface } from '@ultimat3/render';
 import { routeEntries } from '@ultimat3/render';
 import { stylesFor } from '@ultimat3/render/server';
@@ -49,7 +50,7 @@ export function checkDocumentStyles(documents: readonly SurfaceDocument[]): read
       code: 'X_STYLES_GLOBAL_MISSING',
       cause: `a ${document.surface}/ document carries ${document.css.length} characters of CSS and defines no :root custom properties, so every var(--color-*) and var(--space-*) in it resolves to nothing`,
       fix: `add apps/web/${APP_GLOBAL_STYLESHEET} containing \`@use '@ultimat3/ui/global.scss';\` and apps/web/${APP_GLOBAL_MODULE} containing \`import './global.scss';\``,
-      docs: 'https://ultimate.dev/errors/X_STYLES_GLOBAL_MISSING',
+      docs: ERROR_DOCS_URL,
       at: `apps/web/${APP_GLOBAL_STYLESHEET}`,
     }));
 }

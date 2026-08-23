@@ -82,6 +82,11 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   whether that string is a path, a storage key or a URL is the app's fact, not seo's — never add
   a filesystem fallback. Pixels come from `@ultimat3/core`'s pipeline; seo owns no second scaler,
   and the driver reports the size it probed off the output, never the size that was requested.
+- **A table keyed on a caller string is read with `Object.hasOwn`, never a bare index.**
+  `MIME_TYPES[format]` in `images.ts` walked the prototype, so `formats: ['constructor']` rendered
+  `<source type="function Object() { [native code] }">` — into the one attribute a browser reads to
+  decide whether to fetch the candidate at all. `mimeTypeFor` is the own-key read; the fallback is
+  still `image/<format>`.
 - **One spelling of the transform query keys.** `IMAGE_QUERY_KEYS` in `images.ts` is the only
   place `w`/`f`/`q` are spelled; `defaultUrlFor` writes them and `parseImageQuery` is the only
   reader — never hand-roll either half against a literal. A present-but-unusable `w` or `q`

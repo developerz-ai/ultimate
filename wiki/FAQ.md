@@ -31,7 +31,7 @@ What it does **not** claim:
 |---|---|
 | A multi-node realtime result | the 50k forced-restart benchmark **is** measured and committed, but on **one** `sync` node over `InProcessTransport` — it never crossed NATS. Fanout across nodes, throughput, and per-node socket capacity are all still targets, not results ([Realtime](Realtime)) |
 | The two-platform deploy proof | all three build targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — and so do the compose files and the Helm chart. The demo app running on Compose **and** K8s from one image, with a rolling restart invisible to connected clients, is milestone 11's remaining item ([Deployment](Deployment)) |
-| Not in 4.0.0 | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — all behind the interfaces that ship today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
+| Not shipped, `As of 2026-08` | realtime tier 3 (local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — all behind the interfaces that ship today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
 
 ### What is actually finished?
 
@@ -115,13 +115,13 @@ One container running `ROLE=web` and one Postgres — there is **no** `ROLE=all`
 
 ### Can I use it without the realtime tiers?
 
-Yes. `realtime.tier: 1` with `transport: 'memory'` is the default, and a tier-1 app needs no `sync` role, no `replicator`, and no NATS. That is a complete product without any realtime at all: entities, actions, a typed client, five render modes, a 0kb static path, and durable jobs.
+Yes. `realtime: { enabled: false }` is the default, and there is no tier key to set — a tier is what your app **declares** (a `channel()` topic, a `live: true` query), never a config value. An app that declares none needs no `sync` role, no `replicator`, and no NATS. That is a complete product without any realtime at all: entities, actions, a typed client, five render modes, a 0kb static path, and durable jobs.
 
 ## Risk
 
 ### What happens if the sync engine doesn't work out?
 
-It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first is not in 4.0.0. The reconnect benchmark that gated topology — 50k sockets, a forced `sync` restart, recovery time and DB load — **is measured at 1.1.0**: all 50,000 reconnected, 49,981 received a channel patch inside the window, p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([Realtime](Realtime)). That is **reachability** — first patch on the reconnected socket — not consistency; the delivery half is a separate 10,000-client run, **1,666,882 patches received, 0 observed sequence gaps** — a lower bound, since a hole is only visible between two frames one connection received ([Realtime](Realtime)) — and `As of 2026-08` the only run that counts lost patches at all. Both were run on **one** node, so multi-node fanout is still unproven. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
+It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first has **not shipped**, `As of 2026-08`. The reconnect benchmark that gated topology — 50k sockets, a forced `sync` restart, recovery time and DB load — **is measured at 1.1.0**: all 50,000 reconnected, 49,981 received a channel patch inside the window, p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([Realtime](Realtime)). That is **reachability** — first patch on the reconnected socket — not consistency; the delivery half is a separate 10,000-client run, **1,666,882 patches received, 0 observed sequence gaps** — a lower bound, since a hole is only visible between two frames one connection received ([Realtime](Realtime)) — and `As of 2026-08` the only run that counts lost patches at all. Both were run on **one** node, so multi-node fanout is still unproven. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
 
 ### Why ship realtime last if it's the differentiator?
 
@@ -135,7 +135,7 @@ Stated risk, not a hidden one. `As of 2026-08` long-running Bun processes are le
 
 ### Where do plugins fit?
 
-Nowhere — the plugin API is not in 1.x, not in 2.x, not in 3.x and not in 4.0.0. Semver covers the documented surface, not internals, and a plugin API freezes internals permanently. Fork the blessed path if you need something else; extension points earn their existence from real forks, not from speculation.
+Nowhere — there is no plugin API and there has never been one, `As of 2026-08`. Semver covers the documented surface, not internals, and a plugin API freezes internals permanently. Fork the blessed path if you need something else; extension points earn their existence from real forks, not from speculation.
 
 ### Will you add an adapter for my host or my ORM?
 

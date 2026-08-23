@@ -80,6 +80,20 @@ const CONSOLE_LEVELS: Readonly<Record<string, ConsoleLine['level']>> = {
 };
 
 /**
+ * `Object.hasOwn`, never the read alone: the type word arrives off the WIRE, so
+ * `CONSOLE_LEVELS['__proto__']` answered `Object.prototype` and `['constructor']` the `Object`
+ * function — neither of which a `?? 'log'` fallback can rescue, because neither is `undefined`.
+ * `ConsoleLine.level` would then hold a value its own type says is one of five words, so the
+ * `level === 'error'` filter this ring exists for matched nothing and `JSON.stringify` dropped
+ * the field from a snapshot outright. Lowercasing is not the guard: `__proto__` and `constructor`
+ * are already lowercase. Same discriminator as `packages/flags/src/subject.ts`.
+ */
+const consoleLevel = (type: string): ConsoleLine['level'] => {
+  const word = type.toLowerCase();
+  return Object.hasOwn(CONSOLE_LEVELS, word) ? (CONSOLE_LEVELS[word] ?? 'log') : 'log';
+};
+
+/**
  * Reads a string out of somebody else's event payload, calling an accessor THROUGH ITS OWNER.
  *
  * `HTTPRequest.method()` and `ConsoleMessage.type()`/`.text()` read `this` — they are methods on
@@ -184,7 +198,7 @@ async function arm(init: CdpTargetInit, sinks: CdpSinks): Promise<void> {
   });
   init.page.on('console', (payload) => {
     console_.push({
-      level: CONSOLE_LEVELS[(readStringFrom(payload, 'type') ?? '').toLowerCase()] ?? 'log',
+      level: consoleLevel(readStringFrom(payload, 'type') ?? ''),
       text: readStringFrom(payload, 'text') ?? '',
       at: init.clock.now().getTime(),
     });

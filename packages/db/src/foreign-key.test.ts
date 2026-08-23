@@ -104,4 +104,14 @@ describe('unit · onDeleteRule', () => {
   test('it is idempotent, so either side may be normalised twice', () => {
     expect(onDeleteRule(onDeleteRule('c'))).toBe('cascade');
   });
+
+  test('a prototype member is a name, never the member', () => {
+    // `CATALOG_RULES[raw]` walked the prototype, so `onDeleteRule('constructor')` handed back the
+    // `Object` FUNCTION through a `string | null` signature — `compareForeignKeys` then compared a
+    // function against a string and reported a `changed-foreign-key` whose fix: was DDL built out
+    // of it. An unknown rule is normalised and handed back, prototype name or not.
+    for (const raw of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) {
+      expect(onDeleteRule(raw)).toBe(raw.toLowerCase());
+    }
+  });
 });

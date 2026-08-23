@@ -3,6 +3,7 @@
 // renderer, because email clients drop <style> and templates must never carry a raw hex.
 // Table-based and 600px wide: Outlook still renders with Word's HTML engine.
 
+import { mailLayoutDuplicate } from './errors';
 import { escapeHtml, safeUrl, styleAttr } from './html';
 
 export type ColorScheme = 'light' | 'dark';
@@ -207,7 +208,15 @@ function footerHtml(input: LayoutInput): string {
 
 const layouts = new Map<string, MailLayout>([[BASE_LAYOUT, baseLayout]]);
 
+/**
+ * Claim a layout name. Once, ever — a second claim is refused rather than resolved.
+ *
+ * `layouts.set` answered whichever registration ran last, `base` included, so a dependency that
+ * registered `base` re-shelled every framework mail with no error anywhere and nothing to grep
+ * for. `defineMail` refuses a duplicate id one file over for the identical reason.
+ */
 export function registerLayout(name: string, layout: MailLayout): void {
+  if (layouts.has(name)) throw mailLayoutDuplicate(name);
   layouts.set(name, layout);
 }
 

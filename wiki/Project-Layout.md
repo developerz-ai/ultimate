@@ -127,7 +127,7 @@ Inside the framework repo, a package may import from **strictly lower** tiers on
 | 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail` | tier 0–3 |
 | 5 | `ui`, `admin`, `testing`, `cli` | tier 0–4 |
 
-Four sideways edges are declared and no others: `realtime → query`, `cli → admin`, `cli → testing`, `create-ultimate → cli`. `admin → ui` was deleted 2026-08-19 by moving `ui` from tier 5 to 4 — the edge existed only to undo a placement two tiers above what `ui` actually imports. [`scripts/lib/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/lib/tiers.ts) is the executable copy of both tables.
+**Five** sideways edges are declared and no others, `As of 2026-08-23`: `realtime → query`, `cli → admin`, `cli → scraping`, `cli → testing`, `create-ultimate → cli`. `cli → scraping` was declared 2026-08-21, when `x shot` needed the one package that drives a real browser. `admin → ui` was deleted 2026-08-19 by moving `ui` from tier 5 to 4 — the edge existed only to undo a placement two tiers above what `ui` actually imports. [`scripts/lib/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/lib/tiers.ts) is the executable copy of both tables.
 
 Per-package layout is fixed: `package.json`, `tsconfig.json`, `README.md`, `CLAUDE.md`, `src/index.ts` (explicit exports, no `export *` outside pure-type modules), `src/errors.ts` (this package's `X_*` codes), one `src/<concern>.ts` per responsibility with `<concern>.test.ts` beside it. Target < 200 LOC per file, hard ceiling ~500. See [Contributing](Contributing).
 

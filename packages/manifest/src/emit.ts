@@ -12,8 +12,19 @@ import { isManifest } from './schema';
 
 export const MANIFEST_FILENAME = 'x.manifest.json';
 
-/** Top-level key order. Explicit so the file reads in a sensible order every time. */
-const KEY_ORDER: readonly (keyof Manifest)[] = [
+/**
+ * Top-level key order. Explicit so the file reads in a sensible order every time.
+ *
+ * `as const satisfies` and a test that WALKS it, the treatment `ARRAY_SECTIONS` already has
+ * (`schema.ts`) — the annotation catches a key that is not on `Manifest`, only a walk catches one
+ * that is missing. It was a bare annotation, and `manifestJson` writes these keys and no others
+ * while `contentHash` hashes the whole body: a 14th field added to `Manifest` would have gone into
+ * the hash and been dropped from the file, after which `assertNoDrift` convicts the committed
+ * manifest as HAND_EDITED — a correct refusal carrying the wrong diagnosis, about a file nobody
+ * touched. Exported for that test alone; deliberately NOT re-exported by `src/index.ts`, because
+ * the ORDER is this module's business and a public one would be semver-locked.
+ */
+export const KEY_ORDER = [
   'manifestVersion',
   'buildId',
   'app',
@@ -27,7 +38,7 @@ const KEY_ORDER: readonly (keyof Manifest)[] = [
   'permissions',
   'locales',
   'errorCodes',
-];
+] as const satisfies readonly (keyof Manifest)[];
 
 /** The exact bytes written to disk. Deterministic for a given manifest. */
 export function manifestJson(manifest: Manifest): string {

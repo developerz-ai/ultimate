@@ -12,8 +12,16 @@ goes red first.
 ```bash
 bun install && x dev          # embedded Postgres, in-process NATS, S3 → local dir
 x verify                      # the only gate: typecheck, lint, boundaries, 6 test types, budgets
-x db seed dev                 # 2 orgs, 5 members across 4 timezones, 2 currencies — deterministic
+x db migrate && x db seed dev # 2 orgs, 5 members across 4 timezones, 2 currencies — deterministic
 ```
+
+**Seed and app share one store**, `As of 2026-08-23`. `packages/db/src/client.ts` names its driver
+(`postgresDriver()`, or `memoryDriver()` under `bun test`) instead of taking `database()`'s default,
+so what `x db seed dev` writes to the embedded PGlite is what the running app reads back. It did not
+until then: the app took the module-private memory driver and had never read a row out of the
+Postgres this line advertises (#270). Re-derive it: `x db migrate && x db seed dev` reports
+`22 already stored`, and `await db.orgs.count()` against `.x/pgdata` answers **2** — it answered 0
+before.
 
 ## Primitive → file
 
@@ -22,7 +30,7 @@ x db seed dev                 # 2 orgs, 5 members across 4 timezones, 2 currenci
 | `entity` | [`packages/db/src/schema/plans.ts`](packages/db/src/schema/plans.ts) | `money()` column, invariant → CHECK constraint |
 | `entity` | [`packages/db/src/schema/members.ts`](packages/db/src/schema/members.ts) | `tz()` + `locale()` per member, `orgId()` tenancy |
 | `entity` | [`apps/web/app/posts/entity.ts`](apps/web/app/posts/entity.ts) | the feature's view schema (`PostView`) over the shared table |
-| `policy` | [`apps/web/app/posts/policy.ts`](apps/web/app/posts/policy.ts) | `post:publish` = owns-or-org-admin, one definition, five surfaces |
+| `policy` | [`apps/web/app/posts/policy.ts`](apps/web/app/posts/policy.ts) | `post:publish` = owns-or-org-admin, one definition, five surfaces. Both authoring forms, once each: `can()` where only an agent reads the denial, `definePolicy()` on `post:like` where a person does — same `Policy` object, and `deny:` is a message key so the refusal goes through `t()` |
 | `action` | [`apps/web/app/posts/actions.ts`](apps/web/app/posts/actions.ts) | `createPost`, `publishPost`, and `summarize` — an `llm()` model call, which is an action factory rather than a ninth primitive |
 | `action` | [`apps/web/app/orgs/actions.ts`](apps/web/app/orgs/actions.ts) | `inviteMember`, `upgradePlan` (minor-unit arithmetic), `grantAvatarUpload` — a presigned PUT whose key and signature are `@ultimat3/storage`'s ([`avatar.ts`](apps/web/app/orgs/avatar.ts)) |
 | `action` | [`apps/web/app/settings/actions.ts`](apps/web/app/settings/actions.ts) | `savePreferences` — a one-action slice still gets an `actions.ts` |
@@ -32,6 +40,7 @@ x db seed dev                 # 2 orgs, 5 members across 4 timezones, 2 currenci
 | `job` | [`apps/web/app/orgs/jobs.ts`](apps/web/app/orgs/jobs.ts) | `onboardOrg` — durable steps + `step.sleep('3d')` |
 | `job` | [`apps/web/app/posts/jobs.ts`](apps/web/app/posts/jobs.ts) | `notifySubscribers` — fanout, `concurrency: 1` (one in flight across the fleet) |
 | `job` | [`apps/web/app/digest/jobs.ts`](apps/web/app/digest/jobs.ts) | `sendDigest` — 09:00 **local per member**, DST-correct, delivered one (org, zone) group at a time |
+| `job` | [`apps/web/app/posts/backfills/post-excerpts.ts`](apps/web/app/posts/backfills/post-excerpts.ts) | `postExcerpts` — `backfill()` is a **job factory**, not a ninth primitive: one pass over the rows that are behind, every page in its own `step.run`, the checkpoint a cursor and never the page, the handler idempotent because `handle` is at-least-once |
 | `task` | [`apps/web/api/tasks.ts`](apps/web/api/tasks.ts) | `nightlyDigest` cron with an explicit `tz` |
 | `route` | [`apps/web/site/page.tsx`](apps/web/site/page.tsx) | `static`, `hydrate: 'never'`, 0kb JS |
 | `route` | [`apps/web/site/pricing/page.tsx`](apps/web/site/pricing/page.tsx) | `isr`, money formatted at the edge |

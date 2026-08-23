@@ -4,7 +4,7 @@
 // hardest bug in a queue to see from the outside and the easiest to name from in here.
 
 import type { Clock } from '@ultimat3/core';
-import { logger, recordLeaseLost } from '@ultimat3/core';
+import { logger, recordLeaseLost, renderThrowable } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
 import { LeaseLostError } from './errors';
@@ -76,9 +76,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
       attempt: claimed.attempt,
       visibilityTimeoutMs,
       reason: reason ?? 'expired',
-      ...(error === undefined
-        ? {}
-        : { error: error instanceof Error ? error.message : String(error) }),
+      ...(error === undefined ? {} : { error: renderThrowable(error) }),
     });
     recordLeaseLost(claimed.queue);
     // Cancel LAST, so the loss is logged and counted before the body it unwinds starts throwing.
@@ -134,7 +132,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
         job: claimed.name,
         jobId: claimed.id,
         attempt: claimed.attempt,
-        error: error instanceof Error ? error.message : String(error),
+        error: renderThrowable(error),
       });
       if (lapsed()) reportLost(error);
     } finally {

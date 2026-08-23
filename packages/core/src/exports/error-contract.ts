@@ -12,9 +12,8 @@ export type {
 export {
   CORE_ERROR_CODES,
   describeErrorCode,
-  ERROR_DOCS_BASE,
+  ERROR_DOCS_URL,
   errorCodeSnapshot,
-  errorDocsUrl,
   hasErrorCode,
   listErrorCodes,
   registerErrorCodes,

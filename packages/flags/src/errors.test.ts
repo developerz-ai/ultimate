@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { hasErrorCode } from '@ultimat3/core';
+import { ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
 import {
   FLAGS_ERROR_CODES,
   FLAGS_ERROR_TITLES,
@@ -44,7 +44,10 @@ describe('unit · @ultimat3/flags errors', () => {
       expect(error).toBeUltimateError(error.code);
       expect(error.cause).toContain('search.rerank');
       expect(error.fix.length).toBeGreaterThan(0);
-      expect(error.docs).toBe(`https://ultimate.dev/errors/${error.code}`);
+      // Core's constant, never a literal: there is ONE docs page and no per-code anchor, and a
+      // hand-copied URL is how the dead `ultimate.dev` host survived every suite in the tree.
+      expect(error.docs).toBe(ERROR_DOCS_URL);
+      expect(error.docs).not.toContain(error.code);
       expect(error.meta?.['key']).toBe('search.rerank');
     }
   });

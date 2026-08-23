@@ -51,6 +51,12 @@ function patchBytes(patch: RowPatch): number {
 
 export class RingChangeBuffer implements ResumeSource {
   readonly #rings = new Map<string, Ring>();
+  /**
+   * Query hashes whose ring was dropped, so the ring the NEXT change builds knows it does not
+   * carry the history before it. A `Set` of ids and not a `Map` of lsns: what the next ring is
+   * complete from is its own first patch, which only that patch can name.
+   */
+  readonly #forgotten = new Set<string>();
   readonly #capacity: number;
   readonly #maxQueries: number;
   readonly #maxBytesPerQuery: number;
@@ -71,7 +77,17 @@ export class RingChangeBuffer implements ResumeSource {
 
   append(qid: string, patch: RowPatch): void {
     const existing = this.#rings.get(qid);
-    const ring: Ring = existing ?? { patches: [], bytes: 0, evictedThrough: null };
+    // A ring RE-CREATED after a `forget` is complete only from this patch onward: everything before
+    // it went with the ring, and — on the `unsubscribe` path — the entry went too, so the changes
+    // in between were never appended at all. `evictedThrough` at its own first lsn is what makes
+    // `since` refuse a cursor from before that, which it could not do while the field came back
+    // `null` and every earlier cursor read as in-window on a ring that had held none of it.
+    const reborn = this.#forgotten.delete(qid);
+    const ring: Ring = existing ?? {
+      patches: [],
+      bytes: 0,
+      evictedThrough: reborn ? patch.lsn : null,
+    };
     ring.patches.push(patch);
     const cost = patchBytes(patch);
     ring.bytes += cost;
@@ -124,9 +140,29 @@ export class RingChangeBuffer implements ResumeSource {
    */
   forget(qid: string): void {
     const ring = this.#rings.get(qid);
-    if (!ring) return;
-    this.#bytes -= ring.bytes;
-    this.#rings.delete(qid);
+    if (ring !== undefined) {
+      this.#bytes -= ring.bytes;
+      this.#rings.delete(qid);
+    }
+    // The qid is remembered, the patches are not — and unconditionally, because the ring being
+    // absent is not the history being intact. Both callers lose history here and neither could say
+    // so: `LiveQueryRegistry.unsubscribe` drops the ENTRY, so every change until the next
+    // subscriber is never appended at all, and the LRU fires on a query that still has LIVE
+    // subscribers. Either way the next `append` was building a ring that reported itself complete
+    // from the beginning of time, so a client reconnecting inside `maxLagMs` folded a partial patch
+    // list onto a stale window with `shouldResnapshot` answering `in-window` and nothing marked
+    // desynced — permanently divergent on a healthy socket. What the tombstone costs in exchange is
+    // a resume that could have been a delta taking the snapshot path; that is one bounded read, and
+    // it is the direction this package errs in everywhere else.
+    this.#forgotten.add(qid);
+    // Bounded like everything else here: insertion-ordered, so the oldest tombstone goes first.
+    // Losing one costs a resume that could have been a delta; keeping them unbounded costs memory
+    // a client-chosen input mints at will.
+    while (this.#forgotten.size > this.#maxQueries) {
+      const oldest = this.#forgotten.values().next();
+      if (oldest.done === true) break;
+      this.#forgotten.delete(oldest.value);
+    }
   }
 
   get queryCount(): number {

@@ -360,3 +360,73 @@ describe('consumeVerification', () => {
     expect(expired.cause).toBe(unknown.cause);
   });
 });
+
+/**
+ * The fourth identity door, and the one that did not normalise.
+ *
+ * `packages/auth/CLAUDE.md`: "Every door now normalises before the adapter sees the address —
+ * `register`, `login`, `profileEmail`, and `accountKey`." `issueVerification` is a fourth, and
+ * `input.identifier` reached `putVerification`/`takeVerification` raw. `putVerification` upserts on
+ * `(purpose, identifier)` and `adapter.ts` guarantees that "issuing a new token invalidates the
+ * previous one" — a guarantee that was PER SPELLING, so N live reset tokens for one address could
+ * be held at once simply by varying the case, and each of them is a password.
+ */
+describe('a verification identifier is normalised at both ends of the flow', () => {
+  test('a second issue in another spelling invalidates the first, not sits beside it', async () => {
+    const rt = runtime();
+    const first = await issueVerification(rt, {
+      purpose: 'password-reset',
+      identifier: 'Ada@Example.test',
+      locale: 'en',
+    });
+    const second = await issueVerification(rt, {
+      purpose: 'password-reset',
+      identifier: 'ADA@EXAMPLE.TEST  ',
+      locale: 'en',
+    });
+
+    // One row, under the normalised key — never two.
+    expect([...rt.store.written.keys()]).toEqual(['password-reset:ada@example.test']);
+    // The superseded token is dead, which is the guarantee `adapter.ts` states.
+    const dead = await caught(() =>
+      consumeVerification(rt, {
+        purpose: 'password-reset',
+        identifier: 'ada@example.test',
+        token: first.token,
+      }),
+    );
+    expect(dead.code).toBe('X_UNAUTHENTICATED');
+    const live = await consumeVerification(rt, {
+      purpose: 'password-reset',
+      identifier: 'ada@example.test',
+      token: second.token,
+    });
+    expect(live.identifier).toBe('ada@example.test');
+  });
+
+  test('a token issued in one spelling is redeemable in another', async () => {
+    const rt = runtime();
+    const { token } = await issueVerification(rt, {
+      purpose: 'email-verify',
+      identifier: 'ada@example.test',
+      locale: 'en',
+    });
+    // The link lands in the same inbox whatever the user typed into the form.
+    const record = await consumeVerification(rt, {
+      purpose: 'email-verify',
+      identifier: '  ADA@Example.test ',
+      token,
+    });
+    expect(record.identifier).toBe('ada@example.test');
+  });
+
+  test('the mail goes to the normalised address, the one the account is keyed by', async () => {
+    const rt = runtime();
+    await issueVerification(rt, {
+      purpose: 'email-verify',
+      identifier: ' Ada@Example.test ',
+      locale: 'en',
+    });
+    expect(rt.mail.sent[0]?.to).toBe('ada@example.test');
+  });
+});

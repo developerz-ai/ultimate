@@ -24,7 +24,7 @@ missing the packages/files its own **Ships** column names. `As of 2026-08`.
 | 8 | ✅ | **PWA + offline + version skew** | generated `sw.js`, precache derivation, manifest/icons/splash from one source icon, required offline fallback, immutable build ID, N-deploy retention, `AppUpdateAvailable` | demo: installable app, works offline, and **six deploys with a tab left open never 404s a chunk**. Reading the client build-ID spread back is `x status`, still **planned** `As of 2026-08` — it is in the registry and exits `X_NOT_IMPLEMENTED` ([`12-build-deploy.md`](./12-build-deploy.md)) |
 | 9 | ✅ | **AI-first surface** | MCP dev server, `x.manifest.json`, every action as an MCP tool, `llm` gateway, versioned prompts + evals, pgvector hybrid search, branch environments | demo: an agent drives the demo app end-to-end through MCP only — migrate in a branch DB, run tests, publish a post — with **identical authz** to the UI; evals run in `x verify` |
 | 10 | ✅ | **Admin + generators + `x new`** | generated admin dashboard (with its own MCP surface), all `x g` generators, `create-ultimate`, `/_x` dev dashboard complete | `bunx create-ultimate myapp && cd myapp && x dev` is <60s with **no Docker and no env editing**; `x new`'s output clears every step of `x verify` but `budgets`, on every push, in CI's `scaffold-smoke` job. **Not an unmodified green gate**, and the row says ✅ on the artifacts its Ships column names rather than on that: a scaffolded app has never run `x build`, so its declared budgets are unmeasured, and `budgets` is the one allowance left. It is a ratchet, not a waiver — `scripts/scaffold-gate.ts` fails the job the day the step starts passing and the allowance is still written. The wider claim — **every** `x g` generator's output gating the same way — is covered too `As of 2026-08-22`: the job runs `scripts/scaffold-first-run.ts`, which projects the run from the CLI's own `GENERATORS` registry rather than a sample, then the gate above over the result |
-| 11 | 🚧 | **Deploy + docs + 1.0** | `x build --target docker\|binary\|static`, `packages/cli/src/serve.ts`, the scaffolded `apps/web/server.ts` + `prerender.ts` + Dockerfile + `docker-compose.prod.yml`, dev/prod compose, Helm with per-role HPAs, graceful drain everywhere, docs site, error-code pages | the demo app runs on Hetzner+Compose **and** a K8s cluster from one image; a rolling restart is invisible to connected clients; every `X_*` code has a docs page |
+| 11 | 🚧 | **Deploy + docs + 1.0** | `x build --target docker\|binary\|static`, `packages/cli/src/serve.ts`, the scaffolded `apps/web/server.ts` + `prerender.ts` + Dockerfile + `docker-compose.prod.yml`, dev/prod compose, Helm with per-role HPAs, graceful drain everywhere | the demo app runs on Hetzner+Compose **and** a K8s cluster from one image; a rolling restart is invisible to connected clients |
 
 Milestones 12–14 exist as a **design, not a plan in progress** — see [Designed, not started](#designed-not-started-milestones-12-to-14) below.
 
@@ -41,6 +41,14 @@ Milestones 12–14 exist as a **design, not a plan in progress** — see [Design
 Four known gaps sat inside what did ship — the compose host port paired with `replicas` > 1, the shared cache tier's Lua `DEL` of keys it never declared in `KEYS`, `x build --target binary`, and `resolveEnvironment()` declared in two packages. **All four are closed** `As of 2026-08`. The row-by-row table, with what each fix actually proves, is in [`CLAUDE.md`](../../CLAUDE.md) and is not restated here ([`CHANGELOG.md`](../../CHANGELOG.md) carries the history).
 
 The deploy proof is a measurement, not code. It does not block an app built on 1.0.0; it blocks the claim above being repeated as fact.
+
+**Milestone 11 no longer names a docs site or per-code docs pages**, `As of 2026-08-23`. Both were
+dropped when `wiki/` became the only public documentation surface — a decision, not a deferral
+([`19-cutting-a-major.md`](../architecture/19-cutting-a-major.md)). The error-code documentation
+surface is [`wiki/Error-Codes.md`](../../wiki/Error-Codes.md), which the gate's `errors` step already
+requires a row in for every declared code, and `ERROR_DOCS_URL` is the one URL every framework error
+points at. A per-code page would need a per-code anchor, and a table row has none. Do not add the row
+back.
 
 ### Closed: the 50k-socket forced-restart benchmark
 

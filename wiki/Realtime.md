@@ -2,7 +2,7 @@
 
 Three tiers, one ladder. Same mutator shape at every rung — climbing is a config change, never a rewrite.
 
-`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 ship. Tier 3 (local-first) is not in 4.0.0.
+`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 ship. Tier 3 (local-first) has **not shipped**, `As of 2026-08`.
 
 ## Two entries: `.` is the browser's, `./server` is the node's
 
@@ -90,13 +90,15 @@ The parsed-vs-raw asymmetry between `.local()` and `.server()` is deliberate, no
 
 `.named()` rewraps rather than dropping the twin — a renamed mutator keeps both halves, its `conflict`, and every inherited action member.
 
-## Tier 2 → tier 3 is `persist: true`
+## Tier 2 → tier 3 is `persist: true` — the design, not a shipped field
+
+**`persist` is not a field `query()` accepts**, `As of 2026-08-23`. The block below is what tier 3 is designed to cost, and pasting it today is a `TS2353` excess property at the `typecheck` step.
 
 ```ts
-// tier 2
+// tier 2 — this typechecks and runs
 export const liveFeed = query({ /* ... */ live: true });
 
-// tier 3 — same query, durable client store + offline writes
+// tier 3 — the intended shape: same query, durable client store + offline writes
 export const liveFeed = query({ /* ... */ live: true, persist: true });
 ```
 

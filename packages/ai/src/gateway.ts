@@ -4,7 +4,7 @@
 // budgeted, and cost-accounted in integer minor units. Everything an app does with a model
 // goes through here, so budgets and accounting cannot be bypassed by a stray fetch.
 
-import { renderThrowable } from '@ultimat3/core';
+import { isUltimateError, renderThrowable, stringField } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import type { BudgetLimits, BudgetStore } from './budget';
 import { BudgetLedger, currentBudget, estimateSpend, withBudget } from './budget';
@@ -31,6 +31,9 @@ export interface RetryPolicy {
 }
 
 export const DEFAULT_RETRY: RetryPolicy = { attempts: 3, baseDelayMs: 500, maxDelayMs: 8_000 };
+
+/** The one code `attempt` may collect into. Every other coded refusal is the caller's answer. */
+const PROVIDER_UNAVAILABLE = 'X_AI_PROVIDER_UNAVAILABLE';
 
 export interface CreateGatewayInput {
   /** Tried in order for a given model. First provider that lists the model wins. */
@@ -124,9 +127,13 @@ class GatewayImpl implements Gateway {
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
     const model = request.model ?? this.config.defaultModel ?? DEFAULT_MODEL;
     const resolved: GenerateRequest = { ...request, model };
-    const ledger = currentBudget();
-    const reservation = await ledger?.reserve(estimateSpend(resolved));
 
+    // Routed BEFORE the reservation, not after it. `providerFor` throws for a registered model no
+    // configured provider serves — an ordinary boot misconfiguration — and a debit taken first has
+    // nothing to credit it back: the throw is outside the `finally` below, and the estimate has
+    // already landed on the `BudgetStore`, which is per process and never expires. Five refused
+    // streams and the org's ceiling is gone for the life of the process, with nothing ever sent.
+    //
     // The streaming path does not retry AT ALL — not mid-flight, and not on the handshake either.
     // Mid-flight is the obvious one: the consumer has already been handed tokens, and replaying
     // from the top would duplicate them. The handshake is not separable from it here, because
@@ -136,6 +143,9 @@ class GatewayImpl implements Gateway {
     // its fallback across providers belong to `generate` alone. A caller that wants either uses
     // `generate`, or reconnects itself and knows what it has already shown.
     const provider = this.providerFor(model);
+
+    const ledger = currentBudget();
+    const reservation = await ledger?.reserve(estimateSpend(resolved));
     let settled = false;
     try {
       for await (const chunk of provider.stream(resolved)) {
@@ -143,8 +153,10 @@ class GatewayImpl implements Gateway {
           yield chunk;
           continue;
         }
-        settled = true;
+        // Settled only once `record` has LANDED. Marking it first left a store that threw here
+        // holding the reservation and half the record — the `finally` saw a settled stream.
         await ledger?.record(chunk.result.usage, chunk.result.cost, reservation);
+        settled = true;
         yield { type: 'done', result: { ...chunk.result, provider: provider.name } };
       }
     } finally {
@@ -190,6 +202,19 @@ class GatewayImpl implements Gateway {
         try {
           return { ...(await call(provider)), provider: provider.name };
         } catch (error) {
+          // A coded refusal that is NOT `X_AI_PROVIDER_UNAVAILABLE` reaches the caller verbatim.
+          // Those are raised locally, before the socket opens — a missing credential, a control
+          // the model does not accept — so the same rejection is waiting on every provider and
+          // every attempt, which is the reason a 400 is not retried three lines below. Collecting
+          // one into `X_AI_PROVIDER_UNAVAILABLE` discards its runnable `fix:` and answers the same
+          // failure a different way from `stream`, which does not route through here at all.
+          // A transport failure keeps the old path: `AiTransportError` IS
+          // `X_AI_PROVIDER_UNAVAILABLE`, so "provider one 503'd, provider two timed out" still
+          // collects across the candidates. `stringField` rather than `error.code`, because the
+          // value came from an app's `Provider` and a property read on it can trap.
+          if (isUltimateError(error) && stringField(error, 'code') !== PROVIDER_UNAVAILABLE) {
+            throw error;
+          }
           // `renderThrowable`, never `error.message` or `String(error)`: this line becomes the
           // `cause` of `X_AI_PROVIDER_UNAVAILABLE`, and a renderer that throws replaces the coded
           // refusal with a `TypeError` nothing downstream can catch by code. It bounds the text

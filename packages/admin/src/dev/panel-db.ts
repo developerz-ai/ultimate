@@ -78,13 +78,28 @@ function sanitize(sql: string): string {
  * What stays local is the emptiness test and the WAY OUT: `@ultimat3/mcp` tells its caller to
  * expose an action, which is not advice a developer standing at `/_x` can act on. Only this file
  * knows which reader it is talking to.
+ *
+ * The verdict carries the RUNNABLE STRING, never just a yes. `assertReadOnlyQuery` documents that
+ * what it returns is what the caller must execute — every check it made ran on a stripped form,
+ * and the return is the reconciled one. This panel threw that value away and executed the
+ * textarea's own bytes, so the two callers of one guard disagreed about which string runs.
+ * `@ultimat3/mcp`'s own `dev-server.ts` honours the contract; a `string | null` return here made
+ * it impossible to.
  */
-export function assertReadOnly(sql: string): string | null {
-  // Nothing to run — a blank box or a comment the developer is still writing, not a refusal.
-  if (sanitize(sql).trim() === '') return null;
+export type ReadOnlyVerdict =
+  /** Safe to execute — and `sql` is the string to execute, not the one that was typed. */
+  | { readonly kind: 'runnable'; readonly sql: string }
+  /** The sentence to show instead of a result grid. */
+  | { readonly kind: 'refused'; readonly refused: string };
+
+export function assertReadOnly(sql: string): ReadOnlyVerdict {
+  // Nothing to run — a blank box or a comment the developer is still writing, not a refusal, and
+  // not something the guard can hand a statement back for either (it refuses an empty one). The
+  // caller's own text goes through: a comment against a database is a no-op, and flashing a
+  // refusal mid-keystroke is the failure this branch exists to avoid.
+  if (sanitize(sql).trim() === '') return { kind: 'runnable', sql };
   try {
-    assertReadOnlyQuery(sql);
-    return null;
+    return { kind: 'runnable', sql: assertReadOnlyQuery(sql) };
   } catch (error) {
     // Structurally, never `String(error)`: the guard throws an `UltimateError` whose `cause` is
     // the sentence a developer needs, and anything else here is a bug in the guard, not a verdict.
@@ -93,7 +108,10 @@ export function assertReadOnly(sql: string): string | null {
     // another package's prose — so the way out is phrased to be true for both. It used to assert
     // `Run it with: x db psql --write`, which is the wrong instruction for a missing quote: that
     // flag grants writes, it does not close a delimiter.
-    return `refused: ${error.cause}. Fix the statement, or — if it is meant to write — run it with: x db psql --write`;
+    return {
+      kind: 'refused',
+      refused: `refused: ${error.cause}. Fix the statement, or — if it is meant to write — run it with: x db psql --write`,
+    };
   }
 }
 
@@ -117,13 +135,15 @@ export const dbPanel: DevPanel<DbPanelData> = {
       return { tables, drift, sql: null, result: null, refused: null, readOnly: true };
     }
 
-    const refused = assertReadOnly(sql);
+    // `verdict.sql`, never `sql`: what the guard proved read-only is what runs. `sql` below is
+    // what stays in the textarea for the operator to edit, which is a different question.
+    const verdict = assertReadOnly(sql);
     return {
       tables,
       drift,
       sql,
-      result: refused === null ? await sources.runSql(sql) : null,
-      refused,
+      result: verdict.kind === 'runnable' ? await sources.runSql(verdict.sql) : null,
+      refused: verdict.kind === 'refused' ? verdict.refused : null,
       readOnly: true,
     };
   },

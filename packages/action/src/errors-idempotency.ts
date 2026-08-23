@@ -4,13 +4,10 @@
  * `registerErrorCodes` call, because a second registration is how two modules end up deciding a
  * title by load order.
  */
-import { errorDocsUrl, renderCauseValue, UltimateError } from '@ultimat3/core';
+import { renderCauseValue, UltimateError } from '@ultimat3/core';
 // Type-only: `idempotency.ts` imports the classes below, and a runtime edge here would close the
 // cycle. `verbatimModuleSyntax` is what makes that guarantee mechanical.
 import type { IdempotencyFailure } from './idempotency';
-
-// Core's spelling, aliased — never a second one, and the same alias `errors.ts` takes.
-const docs = errorDocsUrl;
 
 export type IdempotencyConflictReason = 'payload-mismatch' | 'in-flight';
 
@@ -28,7 +25,6 @@ export class IdempotencyConflictError extends UltimateError {
         reason === 'payload-mismatch'
           ? 'set the Idempotency-Key header to a fresh crypto.randomUUID() — one key per payload, since this one already names a different request'
           : 'resend this request with the same Idempotency-Key once the first one settles — a fresh crypto.randomUUID() here would run the mutation twice',
-      docs: docs('X_IDEMPOTENCY_CONFLICT'),
     });
   }
 }
@@ -56,7 +52,6 @@ export class IdempotencyKeyInvalidError extends UltimateError {
           ? `action "${action}" was called with an empty Idempotency-Key, which every caller sending a blank header would share`
           : `action "${action}" was called with an Idempotency-Key of ${length} characters, past the 255 its OpenAPI operation publishes`,
       fix: 'set the Idempotency-Key header to a fresh crypto.randomUUID() on the client, one per request — or omit the header entirely to run this call without idempotency',
-      docs: docs('X_IDEMPOTENCY_KEY_INVALID'),
       meta: { action, problem, length },
     });
   }
@@ -83,7 +78,6 @@ export class IdempotencyNotSharedError extends UltimateError {
       // reservation. The framework's own boot already installs this store; a host booting the
       // framework itself wraps the client it opened.
       fix: "the framework boot installs a shared store — reach this only from a host that boots it itself: setIdempotencyStore(postgresIdempotencyStore({ executor: { query: (text, values) => client.query({ text, values }) } })) from '@ultimat3/action', or drop the declaration to configureIdempotency({ scope: 'process' })",
-      docs: docs('X_IDEMPOTENCY_NOT_SHARED'),
       meta: { storeScope: storeScope ?? null },
     });
   }
@@ -140,7 +134,6 @@ export class IdempotencyStatusUnknownError extends UltimateError {
         `x_idempotency.status holds ${renderCauseValue(input.value)} for key "${input.key}", ` +
         `which this build does not know — it reads ${input.known.join(', ')}`,
       fix: `psql "$DATABASE_URL" -c "select key, status from x_idempotency where status not in ('in-flight', 'settled', 'failed')" # then drain the older processes: a status this build cannot read was written by a newer deploy`,
-      docs: docs('X_IDEMPOTENCY_STATUS_UNKNOWN'),
       meta: { key: input.key, value: renderCauseValue(input.value), known: [...input.known] },
     });
   }

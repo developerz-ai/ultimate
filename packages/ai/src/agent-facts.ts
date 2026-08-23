@@ -51,6 +51,11 @@ export function registerAgentFact(target: AnyAction, facts: () => Omit<AgentFact
 /**
  * Every registered agent, by name.
  *
+ * OFFERED, not yet published. Nothing outside this package reads it: `@ultimat3/manifest` is tier 4
+ * and so is this package, so a direct import is a sideways edge the boundary check refuses, and the
+ * consumer has to be `@ultimat3/cli` at tier 5. Until that wiring lands, "the row a manifest
+ * publishes" describes the SHAPE, never a row any manifest carries.
+ *
  * An agent still carrying no name is left out, and that is not a silent drop: a name is stamped by
  * `registerAction`, an action without one reaches no route, no tool catalogue and no queue, so
  * there is no capability for a row to describe. `named()` builds a TWIN rather than naming in

@@ -8,7 +8,7 @@
 // process-global and a sibling test in this package clears it.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { logger } from '@ultimat3/core';
+import { ERROR_DOCS_URL, logger } from '@ultimat3/core';
 import type { StatementAttribution } from '@ultimat3/db';
 import type { RepeatedStatement } from './dev-n-plus-one';
 import { renderFinding } from './output';
@@ -52,7 +52,10 @@ describe('unit · a verdict becomes the error @ultimat3/entity owns', () => {
     // Not `ran 5 times` because that is where the threshold sat: a surface asks, and the answer is
     // the loop as it actually ran.
     expect(facts.cause).toContain('ran 50 times');
-    expect(facts.docs).toBe('https://ultimate.dev/errors/X_N_PLUS_ONE_QUERY');
+    // `loopFacts` copies the error's own `docs`, so this pins @ultimat3/entity's link THROUGH the
+    // projection — against the CONSTANT, never a literal, which is how the dead per-code host
+    // survived every suite in the tree while each one asserted its own hand-copied spelling of it.
+    expect(facts.docs).toBe(ERROR_DOCS_URL);
   });
 
   test('an attributed read names the batched call on the entity that repeated', () => {
@@ -113,11 +116,18 @@ describe('unit · one verdict, projected onto each surface', () => {
     const facts = loopFacts(repeat());
     const notice = loopNotice(facts);
 
+    // `StatementLoopFact.docs` is `string | null` and `OverlayNotice.docs` is omitted-or-string, so
+    // the null case cannot be compared as a key — and `nPlusOne` always resolves one, which is what
+    // this asserts before reading it. The absent case is the test below.
+    const docs = facts.docs;
+    if (docs === null) expect.unreachable('nPlusOne resolved no docs link');
     expect(notice).toEqual({
       code: facts.code,
       cause: facts.cause,
       fix: facts.fix,
-      docs: 'https://ultimate.dev/errors/X_N_PLUS_ONE_QUERY',
+      // The projection's own field, not the constant: this test asks whether the overlay carries
+      // the SAME strings the finding does. Where the link itself comes from is pinned once, above.
+      docs,
     });
     expect(Object.hasOwn(notice, 'at')).toBe(false);
   });

@@ -2,10 +2,11 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Seven majors have shipped, and this page walks all seven** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Nine majors have shipped, and this page walks all nine** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 9.x → 10.0.0 | **19** | the `10.0.0` section, in order |
 | 8.x → 9.0.0 | **5** | the `9.0.0` section, in order |
 | 7.x → 8.0.0 | **6** | the `8.0.0` section, in order |
 | 6.x → 7.0.0 | **4** | the `7.0.0` section, in order |
@@ -14,14 +15,20 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 1.x → 9.0.0 | **92** | all seven sections, oldest first |
+| 1.x → 10.0.0 | **111** | all nine sections, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 92 As of 2026-08 — 87 inside the section of the major that shipped it, and 5 under
-# [Unreleased], staged for the next major. A released section's count is what the table above reads.
+# 111 As of 2026-08-23 — the WHOLE file, and every one of them sits inside the section of the
+# major that shipped it, so this number is also the sum of the nine per-major rows above.
+# `[Unreleased]` reads "Nothing yet." and holds none of them: entries under that heading are
+# breaking changes that have not been released, which has been true here in the past.
+# Scope the count to one section to read a single row —
+#   sed -n '13,241p' CHANGELOG.md | grep -cE '^(- \*\*|### )BREAKING —'   # 19, the 10.0.0 section
+# `bun run changelog-check` compares both directions: each row against its OWN section, and the
+# line above against the file.
 ```
 
 Each entry changes a surface the table below covers.
@@ -34,6 +41,249 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 9.x → 10.0.0, entry by entry
+
+**Nineteen breaking entries, from a twelve-audit correctness sweep.** Every one deletes or corrects
+a declaration that promised something the code did not do. **One `app.config.ts` edit.** Six compile
+errors. Five that no compiler will find — read those even if nothing else here applies. Four refuse
+a declaration that was *already* broken, and three are corrected underneath you at no cost. No
+codemod.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `ERROR_DOCS_BASE` and `errorDocsUrl(code)` are deleted | you construct an `UltimateError` with an explicit `docs:` |
+| 2 | a problem document's `type` is `urn:ultimate:error:<CODE>` | a client matches on that string |
+| 3 | `@ultimat3/time` refuses a malformed locale with `X_LOCALE_INVALID` | you catch `RangeError` around a formatter |
+| 4 | `realtime.tier` and `RealtimeTier` are deleted | your `app.config.ts` sets `realtime.tier` — **the one config edit in this major** |
+| 5 | the WAL decoder returns parsed values, not Postgres' own text | you name `PgOutputMessage`, `entityRow` or `PhysicalRow` |
+| 6 | a delta resume no longer seats a pre-policy cursor | never — a cross-tenant leak, closed |
+| 7 | `verifyDigest()` is deleted from `@ultimat3/realtime` | you called it, which nothing could have |
+| 8 | `defineAuth({ providers })` defaults to `[]` | you serve an OAuth route and name no provider |
+| 9 | `@ultimat3/auth` writes `x_accounts.access_token` / `refresh_token` as `null` | your own SQL reads either column |
+| 10 | a multi-audience id token needs a matching `azp`; a future `nbf` is refused | your OAuth provider issues multi-audience id tokens, or a host clock is ahead |
+| 11 | `MemoryAdapter.createUser` enforces `x_users`' two UNIQUE constraints | a test registers one address twice |
+| 12 | two admin resources may not claim one `path:` | your `defineAdmin` already had four screens unreachable |
+| 13 | `registerLayout(name, layout)` refuses a name already taken | two modules register one layout name |
+| 14 | `assertReadOnly` returns a `ReadOnlyVerdict` | you call it from `@ultimat3/admin/dev` |
+| 15 | `generate()` no longer collects a LOCAL refusal | you catch `X_AI_PROVIDER_UNAVAILABLE` to mean "the model call failed" |
+| 16 | `@ultimat3/render`'s graph-based island budget API is removed | you imported `routeJsBytes`, `graphFor`, `checkBudget`, `checkBudgets` or `assertBudget` |
+| 17 | `@ultimat3/pwa`'s `routeRules` orders by specificity, wildcards last | you ship a generated `sw.js` |
+| 18 | `subscriptionState` takes a `Clock` | you passed epoch milliseconds |
+| 19 | `StaticReport` gained a required `unmeasured` | you construct one by hand |
+
+### Start here — the one config edit
+
+```diff
+  realtime: {
+    enabled: true,
+-   tier: 'live-queries',
+    transport: 'nats',
+    urlEnv: 'NATS_URL',
+  },
+```
+
+`TS2353`, and nothing else. `RealtimeConfig` is `{ enabled, transport, urlEnv }` —
+[`packages/core/src/config.ts:132`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts#L132).
+
+`tier` accepted `'channels' | 'live-queries' | 'local-first'`, defaulted, was documented with
+per-value semantics, and was set by both tracked apps and every scaffolded app — and **nothing read
+it**. No comparison, no branch, no dereference. `tier: 'local-first'` bought exactly what
+`'channels'` bought, and the durable local store it advertised does not exist. Which tier an app is
+on is decided by what it **declares**: a `channel()` topic, a `live: true` query, a local store.
+
+**Leaving the line in also works, and that is the hazard.** `section()` copies an unknown key
+through, so a stale `tier:` still boots and still does nothing; an app that builds its config into a
+variable before passing it to `defineConfig` loses excess-property checking and sees no error at
+all. Same shape as `jobs.driver` in 5.0.0 and `realtime.heartbeatMs` in 4.0.0 — the thirteenth
+instance of that class. `bun run scripts/config-readers.ts` is what keeps the fourteenth out.
+
+### Entries 1, 7, 14, 16, 18 and 19 — a compile error the moment you upgrade
+
+**1. Omit `docs:`; do not substitute the new constant.**
+
+```diff
+- import { errorDocsUrl, UltimateError } from '@ultimat3/core';
++ import { UltimateError } from '@ultimat3/core';
+
+  export class BillingDeclinedError extends UltimateError {
+    constructor(cause: string) {
+-     super({ code: 'X_BILLING_DECLINED', cause, fix: 'retry with another card', docs: errorDocsUrl('X_BILLING_DECLINED') });
++     super({ code: 'X_BILLING_DECLINED', cause, fix: 'retry with another card' });
+    }
+  }
+```
+
+The constructor already resolves `docs` from the registry, so passing it by hand is a second
+declaration of one fact. `ERROR_DOCS_URL` is exported from `@ultimat3/core` for a caller rendering
+the link *outside* an error — not as a drop-in for the deleted function.
+
+Why: `https://ultimate.dev/errors/<code>` answered **HTTP 404**, host included, on every error this
+framework has ever thrown, including the first line a new agent reads. One URL rather than one per
+code, because codes live on [Error codes](Error-Codes) in **table rows** and a row has no anchor —
+a `#X_DB_DRIFT` fragment would be a second dead declaration, not a fix for the first.
+
+**7. Delete the `verifyDigest()` call.** That is the whole migration, and nobody had one to delete:
+a delta-resumed cursor carries `DIGEST_UNVERIFIED`, so the check answered `false` for every cursor
+drift can occur in, and `identity-map.ts` merges columns across queries by design — any app with two
+reads over one entity would have reported permanent drift. Drift is the server's `desynced` mark.
+
+**14. `assertReadOnly` returns a verdict, and the verdict carries the string to run.**
+
+```diff
+- const refusal = assertReadOnly(sql);
+- if (refusal !== null) return { refused: refusal };
+- const rows = await client.query(sql);
++ const verdict = assertReadOnly(sql);
++ if (verdict.kind === 'refused') return { refused: verdict.refused };
++ const rows = await client.query(verdict.sql);
+```
+
+`ReadOnlyVerdict` is `{ kind: 'runnable'; sql } | { kind: 'refused'; refused }`. **Execute
+`verdict.sql`, never the string you passed in**: every check ran on a stripped form and the verdict
+is the reconciled one. The `/_x` panel discarded it and ran the textarea's own bytes, so two callers
+of one guard disagreed about which string runs.
+
+**16. Delete the import.** Removed from `@ultimat3/render`: `routeJsBytes`, `graphFor`,
+`checkBudget`, `checkBudgets`, `assertBudget` and their types. Every one was exported from the
+barrel and called by nothing; the budget gate that actually runs is `@ultimat3/cli`'s and it
+measures the emitted document. `parseByteBudget`, `defaultIslandBudget` and `islandModuleIds` are
+unchanged.
+
+**18. `subscriptionState` takes a `Clock` where it took epoch milliseconds** — `TS2345` on a
+`number`. The parameter is optional and defaults to `systemClock`, so most callers delete an
+argument:
+
+```diff
+- subscriptionState(record, lastStatus, Date.now())
++ subscriptionState(record, lastStatus)
++ subscriptionState(record, lastStatus, frozenClock(NOW))   // a test, from @ultimat3/core
+```
+
+**19. `StaticReport` gained a required `unmeasured`** — every budgeted route a build could not
+weigh, with the reason, which is the list `X_BUDGET_UNMEASURED`'s `fix:` cites by name and which
+until now reached no `x` command's output at all.
+
+```diff
+  const report: StaticReport = {
+    target: 'static', out, buildId, emitted, skipped,
++   unmeasured: [],
+  };
+```
+
+**Reading one costs nothing**: `parseStaticReport` takes the field as optional and answers `[]` when
+it is absent, so a `.x/static-report.json` written by an older build still parses. Only
+hand-construction moves.
+
+### Entries 2, 3, 8, 15 and 17 — nothing fails to compile, and a caller can see the difference
+
+**2. A problem document's `type` is a URN, per code.**
+
+```diff
+- if (problem.type === 'https://ultimate.dev/errors/X_RATE_LIMITED') …
++ if (problem.type === problemTypeFor('X_RATE_LIMITED')) …
+```
+
+`problemTypeFor(code)` is `urn:ultimate:error:${code}`, exported from `@ultimat3/http`. **`code` is
+unchanged and is the simpler match** — `problem.code === 'X_RATE_LIMITED'` needs no import. `type`
+and `docs` used to carry the same dead link on every 4xx and 5xx; they are two values now because
+they answer two questions — `type` is RFC 9457's identifier for the problem *kind*, a URN so it has
+no host left to rot, and `docs` is the one wiki page.
+
+**3. A malformed locale is refused with a code instead of dying as a bare `RangeError`.**
+
+| Tag | Before | Now |
+|---|---|---|
+| `en`, `en-GB`, `de-DE` | formats | formats |
+| `zz` — well-formed, unknown | `Intl` falls back | `Intl` falls back, **still not refused** |
+| `en_US`, `''`, a raw `Accept-Language` value | bare `RangeError` out of `Intl`, several frames from the header it came from | `X_LOCALE_INVALID`, with a runnable `fix:` |
+
+Every `@ultimat3/time` entry point taking a `locale` passed the caller's raw tag to an `Intl`
+constructor. `assertLocale` is the single gate now, and the list is one command:
+
+```sh
+grep -rn 'assertLocale(' packages/time/src
+```
+
+**Edit only if you catch `RangeError`** around a formatter; screen header input with
+`Intl.DateTimeFormat.supportedLocalesOf([tag])`. The code's row is on [Error codes](Error-Codes).
+
+**8. `defineAuth({ providers })` defaults to `[]`, not the live OAuth registry.**
+
+```diff
+  export const auth = defineAuth({
+    adapter,
++   providers: ['github', 'google'],
+  });
+```
+
+An app already passing `providers:` needs nothing. An app that passed none now serves **no**
+`/auth/oauth/<id>` route — name the ones you mean. The default was every provider any dependency had
+registered, so the uniform 404 the option exists for could never fire, and an import decided the
+app's login surface. With the credentials fix in the same release, that closed an enumeration
+oracle: 500 meant registered, 404 meant not, and the 500 published the app's own `*_CLIENT_ID` and
+`*_CLIENT_SECRET` names.
+
+**15. `X_AI_PROVIDER_UNAVAILABLE` now means one thing: the transport failed, on every provider
+tried.** A *local* refusal reaches the caller with its own code and its own runnable `fix:`.
+
+| Code | Raised when | Its `fix:` |
+|---|---|---|
+| `X_AI_KEY_MISSING` | no key configured and none passed | `export ANTHROPIC_API_KEY=<key>`, or pass `{ apiKey }` to the provider |
+| `X_AI_REQUEST_INVALID` | a reasoning control the chosen model does not have | set `model:` on the `llm()` request |
+| `X_AI_PROVIDER_UNAVAILABLE` | a non-2xx, an in-band `error` event, or a stream cut before `message_stop` | retry, or configure a second provider |
+
+A `catch` treating `X_AI_PROVIDER_UNAVAILABLE` as "the model call failed" stops seeing the two
+misconfigurations, which is the point: collecting one discarded its instruction and made
+`generate()` and `stream()` answer one misconfiguration two ways.
+
+**17. Regenerate `sw.js` — with the call, because no command writes it.** `x build` emits no service
+worker and nothing in the framework calls `generateServiceWorker`; the generated file's own
+`regenerate:` header names the call for that reason.
+
+```ts
+generateServiceWorker(routes, config, buildId);   // from @ultimat3/pwa
+```
+
+The emitted file changes for any app with a dynamic route above a static sibling. `ruleFor` returns
+the **first** pattern that matches and the order was alphabetical: `:` (0x3A) and `*` (0x2A) sort
+before every letter, so `/posts/:id` shadowed `/posts/new`, and a single `/*` shadowed the whole
+table — every `PRECACHE_MANIFEST` entry downloaded at install and then never looked up. Path is
+still the tie-break, so identical input still emits an identical file.
+
+### Entries 10, 11, 12 and 13 — a refusal of something that was already broken
+
+**If one of these fires, your app was half-broken before the upgrade** — each produced a declaration
+that was silently unreachable, not a rule the framework tightened for its own sake. The refusal
+names the finding.
+
+| # | Refuses | Code | What had been happening |
+|---|---|---|---|
+| 10 | an id token naming several audiences whose `azp` is not this client, and an `nbf` in the future | `X_OAUTH_TOKEN_INVALID` | both only narrow, on the `ID_TOKEN_CLOCK_SKEW_MS` `id-token.ts` already exported to `workload.ts` and did not itself enforce — an `nbf` ten years out verified, and a token an OP minted for another client that also lists yours verified with it (OIDC Core 3.1.3.7) |
+| 11 | a second `x_users` row with one `email`, or with one `external_id` | `X_AUTH_WRITE_FAILED` | `MemoryAdapter` is what `x new` scaffolds and what every test runs against, so the duplicate path was exercised only against the permissive half of the seam: two `register()` calls at one address made two rows, and the second was unreachable forever |
+| 12 | two `defineAdmin` resources claiming one `path:` | `X_ADMIN_PAGE_PATH_INVALID` | eight routes over four paths, with the second resource's four screens silently unreachable. The `fix:` hands you a `path:` for one of them |
+| 13 | `registerLayout(name, …)` on a name already registered | `X_MAIL_DUPLICATE` | `layouts.set` answered whichever module ran last, `base` included, so a dependency could re-shell every framework mail in silence |
+
+### Entries 5, 6 and 9 — corrected underneath you
+
+| # | What changed | What you do |
+|---|---|---|
+| 5 | the WAL decoder returns the values a repository row holds. `PgOutputDecoder` decoded a `timestamptz` as `'2026-08-09 12:00:00+00'`, a `text[]` as `'{a,b}'` and a `bytea` as `'\x0102'`, while the shared live window holds rows `@ultimat3/entity` parsed — and `compareValues` normalises a `Date` to its epoch, so **an edit to any column of any row jumped that row to the top of every `orderBy('createdAt', 'desc')` feed for every subscriber**, carrying the raw string into the window. `post.tags.map(…)` threw on the first patch | nothing, unless you name `PgOutputMessage`, `entityRow` or `PhysicalRow` from `@ultimat3/realtime/server` — `after`/`before` and `entityRow`'s return widen to `PhysicalRow`. It is a wire **convergence**: only a real walsender diverged, because `setRowObserver` emits already-parsed rows and the parity test handed the same object to both sides |
+| 6 | a delta resume no longer seats a pre-policy cursor. `resumeFrom` advanced across the retained patch list, which is pre-policy by design, so a subscriber reconnecting inside the retain window gained the id of every row inserted for every **other** actor while it was away — and then received a `delete` frame carrying another tenant's row id | nothing. The leak `subscriber-gate` exists to close, re-opened one layer up and closed again |
+| 9 | `@ultimat3/auth` no longer persists provider access or refresh tokens. `x_accounts.access_token` and `refresh_token` held live third-party credentials in the clear under a `tables.ts` header promising "no column holds a plaintext secret", and nothing ever read either one back | nothing, unless **your own** SQL selected either column — both are written `null` now. The type and the DDL are unchanged; keep a token you actually call out with in your own table, encrypted |
+
+### Fixed in the same release, and none of it costs an edit
+
+Read these if you built a workaround for one.
+
+| Fix | What stops happening |
+|---|---|
+| `Gateway.stream()` resolved the provider between `reserve()` and the `try/finally` that releases it | a registered model no configured provider serves debited the estimate and never credited it back — on `MemoryBudgetStore`, which is per process and never expires, **five refused streams spent an org's whole ceiling with nothing ever sent**, and every later call was `X_AI_BUDGET_EXCEEDED` for the life of the process ([#319](https://github.com/developerz-ai/ultimate/issues/319)) |
+| a successful login cleared the per-IP failure bucket | one credential the attacker owns bought unlimited stuffing — 4 guesses, 1 login, repeat: 160 guesses from one address against a 5-attempt limit, never locked ([#317](https://github.com/developerz-ai/ultimate/issues/317)) |
+| the OAuth callback published uncoded internal exception text to an unauthenticated caller | connection strings and bind passwords reaching the browser, on two independent paths. The token-endpoint body is no longer reflected either — that request carries `client_secret` ([#318](https://github.com/developerz-ai/ultimate/issues/318)) |
+| `readonly-sql` ended a `--` comment at `\n` only | a CR terminated the comment for Postgres and not for the scanner, hiding the payload from all four layer-3 checks — including `select pg_advisory_lock(42)`, whose **session** lock survives `ROLLBACK` and outlives the read on a pooled connection ([#316](https://github.com/developerz-ai/ultimate/issues/316)) |
+| `diffRows` threw on a `money()` column | every `adminUpdate` on a money-bearing entity failed with an uncoded `TypeError` **after** `repo.update()` committed, landing zero audit entries ([#321](https://github.com/developerz-ai/ultimate/issues/321)) |
+| `x db gen --allow-destructive` emitted a migration Postgres refuses | `drop table` with no preceding FK drop, tables ordered alphabetically rather than by dependency — `SQLSTATE 2BP01` during `ROLE=migrate`, with a `down` that cannot restore |
 
 ## 8.x → 9.0.0, entry by entry
 
@@ -855,7 +1105,7 @@ A client running build `A` requesting an asset from build `B` is the failure mod
 | Client sends its build ID | `X-Ultimate-Build` on RPC, query, and WS handshake — so the server answers "you are stale" instead of guessing |
 | N-deploy asset retention | the last **3** builds' assets stay served — `retentionPlan(deploys, keep = 3)` in [`packages/pwa/src/version-skew.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/pwa/src/version-skew.ts). A count of deploys, with **no time component**: there is no 7-day half, and **no `pwa.retention` field** — `PwaConfig` was `{ enabled, offline, installPrompt, backgroundSync, push }` at 7.0.0 (`installPrompt` is deleted in 8.0.0). Pass `keep` at the call site to hold more |
 | `AppUpdateAvailable` signal | a Solid signal flips when the server reports a newer build. Your app renders its own "Update available — reload". No forced navigation, no lost form state |
-| Forced reload | `updatePolicy({ graceMs = 6h, forceOn = ['security'] })` + `updateSignal()` from `@ultimat3/pwa`: past the grace, the signal carries `forced: true` and `deadlineAt: now`. The app renders the countdown and the drain — the framework runs neither. `x deploy --critical` is **removed in 4.0.0** — it was echoed into the deploy plan and read by nothing, so no migration is needed beyond dropping the flag |
+| Forced reload | **not a capability this framework has, `As of 2026-08`.** 9.0.0 deleted `updateSignal`, `updatePolicy`, `DEFAULT_GRACE_MS` and their types — they computed a grace, a `forced:` flag and a `deadlineAt`, and nothing performed the reload, nor could: `@ultimat3/http` (tier 2) and `@ultimat3/realtime` (tier 3) both sit below `pwa` (tier 4). Notification is complete — read `useConnection().updateAvailable`, or compare the worker's posted `to` with `detectSkew`, and render your own affordance. `x deploy --critical` was **removed in 4.0.0** for the same reason: echoed into the deploy plan, read by nothing |
 | Skew is observable | the `/_x` live panel reports the build-ID distribution of connected clients. `x status --json` is **planned**, not shipped |
 
 Server behavior on a stale build ID:
@@ -899,7 +1149,7 @@ Job code never changes across a driver: `steps` is a driver member, so step pers
 
 | Source | Contents |
 |---|---|
-| [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) | Keep a Changelog format, `Added` / `Changed` / `Removed`. A `BREAKING —` entry names its manual edit **inline**; there is no per-entry `Migration` block convention and never a codemod name — `grep -c '\*\*Migration' CHANGELOG.md` answers `1` `As of 2026-08`, against 71 breaking entries |
+| [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) | Keep a Changelog format, `Added` / `Changed` / `Removed`. A `BREAKING —` entry names its manual edit **inline**; there is no per-entry `Migration` block convention and never a codemod name — `grep -c '\*\*Migration' CHANGELOG.md` answers `9` `As of 2026-08-23`, against 111 breaking entries |
 | [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) | the twelve milestones, 0–10 shipped. Milestone 11's two-platform deploy proof is the one item still open |
 | [`docs/idea/15-risks.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/15-risks.md) | what could still change shape — the sync engine is roughly 70% of total effort |
 | [`docs/architecture/19-cutting-a-major.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/architecture/19-cutting-a-major.md) | how this page is maintained: one section per major, written when the first breaking change lands. Maintainer-facing — read it if you are opening a PR against the framework, not if you are upgrading an app |

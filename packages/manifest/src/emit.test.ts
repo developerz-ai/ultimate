@@ -13,6 +13,7 @@ import { buildManifest } from './build';
 import {
   assertNoDrift,
   emitManifest,
+  KEY_ORDER,
   MANIFEST_FILENAME,
   manifestJson,
   readManifest,
@@ -85,6 +86,26 @@ describe('manifestJson', () => {
       'locales',
       'errorCodes',
     ]);
+  });
+
+  // `KEY_ORDER` is hand-maintained and `contentHash` hashes the WHOLE body, so a 14th top-level
+  // field would be built into the hash and then dropped from the file — after which `assertNoDrift`
+  // convicts the file as HAND_EDITED, a correct refusal with the wrong diagnosis. The same
+  // treatment `ARRAY_SECTIONS` already has, and for the same reason: `satisfies` catches a key that
+  // does not exist, a walk catches one that is missing.
+  test('KEY_ORDER covers every key a built manifest has — no field can be dropped in silence', () => {
+    // Both sides as plain strings: `KEY_ORDER` is a union of key literals and `Object.keys` is
+    // `string[]`, and `toEqual` infers its expected type from the actual one — so the comparison
+    // this test exists to make does not typecheck until the two are read at the same width.
+    const ordered: readonly string[] = KEY_ORDER;
+    expect([...ordered].sort()).toEqual(Object.keys(fresh).sort());
+  });
+
+  test('every key of the built manifest survives the round trip to the file', () => {
+    const written = JSON.parse(manifestJson(fresh)) as Record<string, unknown>;
+    expect(Object.keys(written).sort()).toEqual(Object.keys(fresh).sort());
+    // …and the file's own bytes still verify against the hash taken over the whole body.
+    expect(verifyBuildId(written as unknown as Manifest)).toBe(true);
   });
 
   test('is two-space indented and ends in a newline — it is diffed by git', () => {

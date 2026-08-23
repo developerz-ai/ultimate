@@ -4,9 +4,15 @@
 // offered four more times.
 
 import { describe, expect, test } from 'bun:test';
-import { declaredErrorRetry } from '@ultimat3/core';
+import { declaredErrorRetry, describeErrorCode, ERROR_DOCS_URL } from '@ultimat3/core';
 import { nextRetryForError } from '@ultimat3/jobs';
-import { MAIL_ERROR_RETRY, type SendFailure, sendFailed } from './errors';
+import {
+  localeMissing,
+  MAIL_ERROR_CODES,
+  MAIL_ERROR_RETRY,
+  type SendFailure,
+  sendFailed,
+} from './errors';
 
 const failure = (patch: Partial<SendFailure> = {}): SendFailure => ({
   driver: 'smtp',
@@ -65,5 +71,33 @@ describe('unit · X_MAIL_SEND_FAILED is classified, not merely described', () =>
     const error = sendFailed(failure({ stage: 'connect', retryable: true }));
     expect(error.retry).toBe('retryable');
     expect(nextRetryForError(POLICY, 1, error).retry).toBe(true);
+  });
+});
+
+/**
+ * `MailError` passes no `docs:`, so the link is whatever the registry resolved: one page for every
+ * code, declared once in `@ultimat3/core`. Pinned against the constant and never a literal — a
+ * hand-copied URL is how the dead `https://ultimate.dev/errors/<code>` host survived every suite in
+ * the tree, with the code interpolated into a fragment no page has ever had an anchor for.
+ *
+ * The INSTANCE is asserted first, and that ordering is the finding. `jobs` and `realtime` both had
+ * `describeErrorCode(code).docs === ERROR_DOCS_URL` and both were green for as long as their
+ * constructors were overriding `docs:` with the dead URL on the way out — a registry read cannot
+ * see what a constructor puts on an instance.
+ */
+describe('unit · where a mail error sends its reader', () => {
+  test('a CONSTRUCTED error carries the one page, never a per-code URL', () => {
+    const errors = [localeMissing('welcome'), sendFailed(failure())];
+    for (const error of errors) {
+      expect(error.docs).toBe(ERROR_DOCS_URL);
+      expect(error.docs).not.toContain(error.code);
+      expect(error.docs).not.toContain('ultimate.dev');
+    }
+  });
+
+  test('and every code mail declares resolves to that same link', () => {
+    for (const code of MAIL_ERROR_CODES) {
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
+    }
   });
 });

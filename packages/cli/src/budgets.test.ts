@@ -15,6 +15,8 @@ import {
   readBuildStats,
   writeBuildStats,
 } from './budgets';
+import type { StaticReport } from './static-report';
+import { staticReportData } from './static-report';
 
 const manifestOf = (...routes: readonly RouteFact[]) =>
   buildManifest({ app: { name: 'fixture', version: '1.0.0' }, routes });
@@ -26,6 +28,16 @@ const route = (url: string, budget?: RouteFact['budget']): RouteFact => ({
 });
 
 const stats = (...routes: BuildStats['routes']): BuildStats => ({ routes });
+
+/** The shape `x build --target static --json` spreads into `data` — what the `fix:` promises. */
+const EMPTY_REPORT: StaticReport = {
+  target: 'static',
+  out: '/app/.x/static',
+  buildId: 'b1',
+  emitted: [],
+  skipped: [],
+  unmeasured: [],
+};
 
 /**
  * The total alone. It was `budgets.ts`'s own `measureJsBytes` export, whose doc named "a caller
@@ -53,7 +65,16 @@ describe('unit · budgets', () => {
   test('a build that ran and missed the route says so, and does not ask for a rebuild alone', () => {
     const built = checkBudgets(manifestOf(route('/pricing', { js: '20kb' })), stats());
     expect(built[0]?.cause).toContain('the build ran and could not weigh it');
-    expect(built[0]?.fix).toContain('unmeasured');
+    // NOT `toContain('unmeasured')`, which is what this asserted while the list did not exist:
+    // the word appeared in the fix line, `x build --target static --json` printed no such key, and
+    // an author who ran the instruction verbatim got nothing. The key the fix NAMES is resolved
+    // out of the fix itself and looked up in what that command really prints.
+    const named = /"([a-z]+)" list/.exec(built[0]?.fix ?? '')?.[1];
+    // The fix line naming no list at all is the same defect as it naming the wrong one, so it is a
+    // failure here rather than a `?? ''` that would make the lookup below ask about an empty key.
+    if (named === undefined) expect.unreachable('the fix line names no report list');
+    expect(named).toBe('unmeasured');
+    expect(Object.keys(staticReportData(EMPTY_REPORT))).toContain(named);
     const never = checkBudgets(manifestOf(route('/pricing', { js: '20kb' })), undefined);
     expect(never[0]?.cause).toContain('no build has written');
     expect(never[0]?.fix).toBe('x build --target static --json && x verify --json');

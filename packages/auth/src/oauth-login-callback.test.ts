@@ -69,7 +69,13 @@ describe('completeOAuthLogin', () => {
     ]);
     expect(result.actor.kind).toBe('user');
     expect((await adapter.findUserByEmail('ada@example.com'))?.id).toBe(result.actor.id);
-    expect((await adapter.findAccount('github', '583231'))?.accessToken).toBe('gho_token');
+    // The link exists; the provider credential does not. See `accountFor` in `oauth-login.ts`:
+    // nothing ever read these columns back, and holding them made a database dump into a set of
+    // usable third-party tokens.
+    const linked = await adapter.findAccount('github', '583231');
+    expect(linked?.providerAccountId).toBe('583231');
+    expect(linked?.accessToken).toBeNull();
+    expect(linked?.refreshToken).toBeNull();
   });
 
   test('a Google callback identifies from the id token alone', async () => {

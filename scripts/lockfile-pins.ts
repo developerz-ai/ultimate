@@ -22,7 +22,7 @@ import { flagBool, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { workspaceManifests } from './lib/workspaces';
+import { requireWorkspaceManifest, workspaceManifests } from './lib/workspaces';
 import { LOCK_BLOCK, LOCK_DEP, readInternalDeps } from './version-stamps';
 
 interface LockedFact {
@@ -106,8 +106,11 @@ export async function readDeclaredVersions(
 ): Promise<Readonly<Record<string, string>>> {
   const out: Record<string, string> = {};
   for (const path of await workspaceManifests(root)) {
-    const json = (await Bun.file(path).json()) as { version?: string };
-    if (json.version !== undefined) out[relative(root, dirname(path))] = json.version;
+    const dir = relative(root, dirname(path));
+    // Same read `listWorkspaces` uses (#281): a cast let a `"version": 9` through as the string
+    // `0.0.0` and this pass would then rewrite every lock block to it.
+    const json = await requireWorkspaceManifest(path, `${dir}/package.json`);
+    if (json.version !== undefined) out[dir] = json.version;
   }
   return out;
 }

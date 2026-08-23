@@ -3,12 +3,14 @@
 // page. These tests are what keeps that contract from rotting silently.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
+import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
 import {
   ADMIN_BORROWED_ERROR_CODES,
   ADMIN_ERROR_CODES,
   ADMIN_ERROR_TITLES,
   ADMIN_OWNED_ERROR_CODES,
+  AdminActionDuplicateError,
+  AdminEntityUnknownError,
   AdminPolicyMissingError,
 } from './errors';
 
@@ -47,10 +49,27 @@ describe('registration', () => {
   });
 });
 
+// Admin passes no `docs:`, so the link is whatever the registry resolved: one page for every
+// code, declared once in `@ultimat3/core`. Pinned against the constant and never a literal — a
+// hand-copied URL is how the dead `https://ultimate.dev/errors/<code>` host survived every suite
+// in the tree, with the code interpolated into a fragment no page has ever had an anchor for.
 describe('docs', () => {
-  test('every code resolves to its canonical docs page', () => {
+  test('every code resolves to the one docs page, never a per-code URL', () => {
     for (const code of ADMIN_ERROR_CODES) {
-      expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
+      expect(describeErrorCode(code).docs).not.toContain(code);
+    }
+  });
+
+  test('a constructed admin error carries that same link', () => {
+    const errors = [
+      new AdminEntityUnknownError({ entity: 'posts', known: [] }),
+      new AdminPolicyMissingError({ subject: 'createPost', kind: 'action' }),
+      new AdminActionDuplicateError({ name: 'publish', entities: ['posts'] }),
+    ];
+    for (const error of errors) {
+      expect(error.docs).toBe(ERROR_DOCS_URL);
+      expect(error.docs).not.toContain(error.code);
     }
   });
 });

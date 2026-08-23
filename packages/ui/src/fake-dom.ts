@@ -76,8 +76,15 @@ export class FakeElement extends Listeners {
     this.attrs['tabindex'] = String(value);
   }
 
+  /**
+   * `Object.hasOwn`, never the read alone: `attrs` is a `{...spread}`, so
+   * `attrs['constructor']` answered with the `Object` FUNCTION where a real
+   * `Element.getAttribute` answers `null` — and `attrMatches` decides presence with
+   * `getAttribute(inner) !== null`, so `querySelectorAll('[constructor]')` matched every
+   * element in the tree. A fake that disagrees with the DOM makes every suite built on it lie.
+   */
   getAttribute(name: string): string | null {
-    return this.attrs[name] ?? null;
+    return Object.hasOwn(this.attrs, name) ? (this.attrs[name] ?? null) : null;
   }
 
   append(...children: readonly FakeElement[]): FakeElement {

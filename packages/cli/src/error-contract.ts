@@ -6,7 +6,7 @@
 
 // `join` is `node:`-only by necessity: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { docsFor } from './error-codes';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { citedCommandProblem, loadCommandCatalog } from './fix-command';
 import { createHelperResolver } from './fix-imports';
 import { scanFixSites } from './fix-scan';
@@ -63,7 +63,7 @@ const fixFinding = (site: FixSite, problem: string): Finding => ({
   code: 'X_ERROR_FIX_INVALID',
   cause: problem,
   fix: `rewrite the fix at ${site.at}:${site.line} as a command to run, a call to paste, or an edit naming a file`,
-  docs: docsFor('X_ERROR_FIX_INVALID'),
+  docs: ERROR_DOCS_URL,
   at: `${site.at}:${site.line}`,
 });
 
@@ -132,7 +132,7 @@ const undocumentedFinding = (code: string, at: string, line: number, page: strin
   code: 'X_ERROR_CODE_UNDOCUMENTED',
   cause: `${code} is declared at ${at}:${line} and ${page} has no entry for it`,
   fix: `add a row for ${code} to ${page}, with its cause and the command that fixes it`,
-  docs: docsFor('X_ERROR_CODE_UNDOCUMENTED'),
+  docs: ERROR_DOCS_URL,
   at: page,
 });
 
@@ -163,7 +163,7 @@ const unregisteredFinding = (code: string, page: string): Finding => ({
   code: 'X_ERROR_CODE_UNREGISTERED',
   cause: `${page} documents ${code} as a live code and nothing registers it, so "x errors explain ${code}" refuses a code this page promises`,
   fix: `register ${code} through registerErrorCodes() in its package's src/errors.ts, or move its row under "${RESERVED_HEADING}" in ${page}`,
-  docs: docsFor('X_ERROR_CODE_UNREGISTERED'),
+  docs: ERROR_DOCS_URL,
   at: page,
 });
 
@@ -249,7 +249,7 @@ export async function checkErrorCodeDocs(root: string, page: string): Promise<re
         code: 'X_ERROR_CODE_UNDOCUMENTED',
         cause: `the error reference ${page} does not exist, so no code can be documented`,
         fix: `create ${page} with a row per X_* code, or stop naming it as the error reference`,
-        docs: docsFor('X_ERROR_CODE_UNDOCUMENTED'),
+        docs: ERROR_DOCS_URL,
         at: page,
       },
     ];

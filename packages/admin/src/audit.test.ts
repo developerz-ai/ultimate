@@ -10,6 +10,35 @@ describe('diffRows', () => {
     expect(diff).toEqual([{ field: 'title', before: 'Draft', after: 'Published' }]);
   });
 
+  /**
+   * `same()` compared two objects with `JSON.stringify(a) === JSON.stringify(b)`, and
+   * `JSON.stringify` THROWS on a bigint. `money()` puts one on the row — `widget-value.ts` states
+   * it, Postgres `bigint` minor units — so two distinct `{ minor, currency }` objects (never
+   * `===`) reached that branch on EVERY update of a money-bearing row. `crud.ts` calls `diffRows`
+   * inside the argument to `ctx.audit.append`, after `repo.update()` has already committed: the
+   * write landed, the caller got an uncoded `TypeError`, and the audit log stayed empty.
+   *
+   * `canonicalJson` is total over every JS value and is already this repo's answer to the same
+   * question (`packages/manifest/src/diff-routes.ts`).
+   */
+  test('a bigint on the row is compared, not thrown on', () => {
+    const price = (minor: bigint): Record<string, unknown> => ({
+      price: { minor, currency: 'EUR' },
+    });
+    expect(diffRows(price(1000n), price(1000n))).toEqual([]);
+    expect(diffRows(price(1000n), price(2000n))).toEqual([
+      {
+        field: 'price',
+        before: { minor: 1000n, currency: 'EUR' },
+        after: { minor: 2000n, currency: 'EUR' },
+      },
+    ]);
+    // A bare bigint field, and a bigint against the number that reads the same: distinct values,
+    // so `1000n` and `1000` are a change. Nothing here may throw.
+    expect(diffRows({ n: 1000n }, { n: 1000n })).toEqual([]);
+    expect(diffRows({ n: 1000n }, { n: 1000 }).length).toBe(1);
+  });
+
   test('added and removed fields both show up', () => {
     expect(diffRows({ a: 1 }, { b: 2 })).toEqual([
       { field: 'a', before: 1, after: undefined },

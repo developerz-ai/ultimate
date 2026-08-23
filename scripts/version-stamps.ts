@@ -16,17 +16,25 @@
 //   bun run scripts/version-stamps.ts [--json]
 
 import { dirname, relative } from 'node:path';
-import { parseScriptArgs } from './lib/args';
+import { flagList, parseScriptArgs } from './lib/args';
 import type { MarkdownFile } from './lib/doc-citations';
-import { readMarkdown } from './lib/doc-citations';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import {
+  applyStampUnpin,
+  STAMP_PINS_FILE,
+  stampPinnedFor,
+  VERSION_STAMP_PINS,
+} from './lib/version-stamp-pins';
+import { readStampPages, readStamps, STAMP_PAGE } from './lib/version-stamp-scan';
 import type { RootManifest } from './lib/workspaces';
-import { listWorkspaces, readRootManifest, workspaceManifests } from './lib/workspaces';
-
-/** The one page allowed to name a version, and the one page required to. */
-export const STAMP_PAGE = 'wiki/_Footer.md';
+import {
+  listWorkspaces,
+  readRootManifest,
+  requireWorkspaceManifest,
+  workspaceManifests,
+} from './lib/workspaces';
 
 /**
  * One workspace block in `bun.lock`, declared here and imported by `scripts/lockfile-pins.ts` so
@@ -46,24 +54,6 @@ export const LOCK_BLOCK = /^ {4}"([^"]*)":\s*\{(.*?)\n {4}\},/gms;
  * comment naming this exact bug — the whole time.
  */
 export const LOCK_DEP = /"(@ultimat3\/[a-z0-9-]+)":\s*"([^"]+)"/g;
-
-export const STAMP_GLOBS: readonly string[] = [
-  '*.md',
-  'wiki/**/*.md',
-  'docs/**/*.md',
-  'packages/*/*.md',
-];
-
-/**
- * A STAMP is `v1.2.0` followed by an `As of` date — never a bare `vX.Y.Z`.
- *
- * The anchor is what separates a claim about this build from an example of one, and both live in
- * the tree today: `PUBLISHING.md` writes `git tag v1.1.0` in a shell block and `v1.10.1` in a
- * worked example of the tag-versus-manifest mismatch, and `docs/idea/17-scale-ladder.md` names
- * Yugabyte's `v2025.2.3`. None of the three is a claim about `@ultimat3/*` and a rule that read
- * them as one would be a rule its readers learn to ignore.
- */
-const STAMP = /\bv(\d+\.\d+\.\d+)[\s*_.]*`As of\b/g;
 
 /** The file that names every workspace, and the one this rule cannot proceed without. */
 export const ROOT_MANIFEST = 'package.json';
@@ -96,35 +86,6 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** `docs/plans/` is a dated record; `CHANGELOG.md` names every past version by design. */
-export const skipStampPath = (path: string): boolean =>
-  path.startsWith('docs/plans/') || path === 'CHANGELOG.md';
-
-export interface VersionStamp {
-  readonly path: string;
-  readonly line: number;
-  readonly version: string;
-}
-
-/** Every stamp on one page. Pure over the text. */
-export function readStamps(file: MarkdownFile): readonly VersionStamp[] {
-  const found: VersionStamp[] = [];
-  const lines = file.text.split('\n');
-  let fenced = false;
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? '';
-    if (/^\s*(?:```|~~~)/.test(line)) {
-      fenced = !fenced;
-      continue;
-    }
-    if (fenced) continue;
-    for (const match of line.matchAll(STAMP)) {
-      found.push({ path: file.path, line: index + 1, version: match[1] as string });
-    }
-  }
-  return found;
-}
-
 /**
  * `stale` and `lockstep` are the hazards. `duplicate` is the rule the footer states about itself.
  * `vacuous` is the false green: no footer, or a footer that stamps nothing, means this rule
@@ -136,6 +97,7 @@ export type VersionGapKind =
   | 'lockstep'
   | 'dependency'
   | 'lockfile'
+  | 'pin-stale'
   | 'vacuous';
 
 export interface VersionGap {
@@ -146,6 +108,12 @@ export interface VersionGap {
 
 export interface VersionInput {
   readonly files: readonly MarkdownFile[];
+  /**
+   * The pages allowed to name a version beside an `As of` without it being a stamp, keyed
+   * `<page>@<version>`. Omitted means the real table — a caller passing fixtures gets the empty
+   * one, so a test can never pass because a production pin happened to cover its fixture.
+   */
+  readonly stampPins?: Readonly<Record<string, string>>;
   /** Every workspace's declared version, keyed by package name — `listWorkspaces`' own answer. */
   readonly versions: Readonly<Record<string, string>>;
   /**
@@ -256,7 +224,20 @@ export function checkVersionStamps(input: VersionInput): readonly VersionGap[] {
   if (onPage.length === 0) {
     gaps.push({ kind: 'vacuous', at: STAMP_PAGE, detail: 'stamps no version' });
   }
+  const pins = input.stampPins ?? {};
+  // A pin that no longer matches anything is the ratchet's other direction: it would excuse the
+  // next real stamp that lands on that page at that version, which is the waiver this table is
+  // written to refuse. Reported BEFORE the stamps, so the reader sees the table is out of date
+  // before they are asked to trust what it excused.
+  for (const key of Object.keys(pins)) {
+    const at = key.lastIndexOf('@');
+    const path = key.slice(0, at);
+    const version = key.slice(at + 1);
+    if (stamps.some((stamp) => stamp.path === path && stamp.version === version)) continue;
+    gaps.push({ kind: 'pin-stale', at: key, detail: pins[key] ?? '' });
+  }
   for (const stamp of stamps) {
+    if (stampPinnedFor(stamp.path, stamp.version, pins) !== undefined) continue;
     if (stamp.path !== STAMP_PAGE) {
       gaps.push({
         kind: 'duplicate',
@@ -282,10 +263,19 @@ const staleFinding = (gap: VersionGap, shipped: string): Finding => ({
   at: gap.at,
 });
 
+/**
+ * The `fix:` branches on WHERE the page is, because only a wiki page inherits the footer. Telling
+ * the author of `AGENTS.md` that "the version reaches that page through wiki/_Footer.md" is advice
+ * that cannot be followed — nothing renders that footer outside `wiki/`, so the repair there is to
+ * name the COMMAND instead of the number, which is what those pages already tell their own readers
+ * to do.
+ */
 const duplicateFinding = (gap: VersionGap): Finding => ({
   code: 'X_VERSION_STAMP_DUPLICATE',
-  cause: `${gap.at} stamps ${gap.detail}, and ${STAMP_PAGE} is the only page that may — it renders under every wiki page, so a second stamp is one fact hand-copied and one more line to bump per release`,
-  fix: `delete the ${gap.detail} stamp from ${gap.at}; the version reaches that page through ${STAMP_PAGE}`,
+  cause: `${gap.at} stamps ${gap.detail}, and ${STAMP_PAGE} is the only page that may — a second stamp is one fact hand-copied, one more line to bump per release, and the line that is wrong two majors later`,
+  fix: gap.at.startsWith('wiki/')
+    ? `delete the ${gap.detail} stamp from ${gap.at}; the version reaches that page through ${STAMP_PAGE}`
+    : `delete the version from the stamped sentence in ${gap.at} and leave the date, or replace it with \`bun run scripts/list-workspaces.ts\`; if that sentence is about a PAST or third-party version instead, add '${gap.at.split(':')[0] ?? gap.at}@${gap.detail.replace(/^v/, '')}' to VERSION_STAMP_PINS in ${STAMP_PINS_FILE} with the sentence saying so`,
   at: gap.at,
 });
 
@@ -307,6 +297,13 @@ const lockfileFinding = (gap: VersionGap): Finding => ({
   cause: `bun.lock disagrees with a package.json it was generated from — ${gap.detail}`,
   fix: 'bun run scripts/lockfile-pins.ts --write, then bun install --frozen-lockfile to confirm',
   at: gap.at,
+});
+
+const pinStaleFinding = (gap: VersionGap): Finding => ({
+  code: 'X_VERSION_STAMP_PIN_STALE',
+  cause: `${gap.at} is pinned as a version this page names for a reason that is not a stamp ("${gap.detail}") and the page no longer says it — the pin outlived its sentence, so it now excuses whatever lands there next`,
+  fix: `bun run scripts/version-stamps.ts --unpin ${gap.at}`,
+  at: STAMP_PINS_FILE,
 });
 
 const lockstepFinding = (gap: VersionGap): Finding => ({
@@ -346,6 +343,7 @@ export function versionGapFindingFor(gap: VersionGap, shipped: string): Finding 
   if (gap.kind === 'lockstep') return lockstepFinding(gap);
   if (gap.kind === 'dependency') return dependencyFinding(gap, shipped);
   if (gap.kind === 'lockfile') return lockfileFinding(gap);
+  if (gap.kind === 'pin-stale') return pinStaleFinding(gap);
   return vacuousFinding(gap);
 }
 
@@ -366,10 +364,14 @@ export async function readInternalDeps(
   const out: Record<string, Record<string, string>> = {};
   for (const path of await workspaceManifests(root)) {
     const dir = relative(root, dirname(path));
-    const json = (await Bun.file(path).json()) as {
-      dependencies?: Record<string, string>;
-      devDependencies?: Record<string, string>;
-    };
+    // `requireWorkspaceManifest`, never a cast: this is the second half of #281 and the same
+    // defect one file over — a trailing comma in ANY workspace manifest left a bare `SyntaxError`
+    // out of the `manifest` gate step, and a `"dependencies"` that is not an object of strings
+    // reached the comparison below and reported a lockstep gap spelling `[object Object]`.
+    const json = await requireWorkspaceManifest(
+      path,
+      dir === '' ? ROOT_MANIFEST : `${dir}/package.json`,
+    );
     const merged = { ...json.dependencies, ...json.devDependencies };
     const internal = Object.fromEntries(
       Object.entries(merged).filter(([name]) => name.startsWith('@ultimat3/')),
@@ -402,14 +404,6 @@ export async function readLockedDeps(
   return out;
 }
 
-export const readStampPages = async (root: string): Promise<readonly MarkdownFile[]> => {
-  const seen = new Map<string, MarkdownFile>();
-  for (const glob of STAMP_GLOBS) {
-    for (const file of await readMarkdown(root, glob, skipStampPath)) seen.set(file.path, file);
-  }
-  return [...seen.values()].sort((a, b) => (a.path < b.path ? -1 : 1));
-};
-
 /** What this repo contributes to `x verify`'s `manifest` step. */
 export async function versionStampFindings(root: string): Promise<readonly Finding[]> {
   const versions = await readVersions(root);
@@ -420,6 +414,7 @@ export async function versionStampFindings(root: string): Promise<readonly Findi
     internalDeps: await readInternalDeps(root),
     lockedDeps: await readLockedDeps(root),
     rootManifest: await readRootManifest(root),
+    stampPins: VERSION_STAMP_PINS,
   }).map((gap) => versionGapFindingFor(gap, shipped));
 }
 
@@ -434,7 +429,25 @@ if (import.meta.main) {
     internalDeps: await readInternalDeps(root),
     lockedDeps: await readLockedDeps(root),
     rootManifest: await readRootManifest(root),
+    stampPins: VERSION_STAMP_PINS,
   });
+  const unpin = flagList(args, 'unpin');
+  if (unpin.length > 0) {
+    const stale = gaps.filter((gap) => gap.kind === 'pin-stale').map((gap) => gap.at);
+    const dropped = await applyStampUnpin(root, unpin, stale);
+    report(
+      {
+        ok: true,
+        script: 'version-stamps',
+        summary:
+          dropped.length === 0
+            ? 'nothing to drop — every named page still says the version its pin excuses'
+            : `dropped ${String(dropped.length)} pin(s): ${dropped.join(', ')}`,
+        findings: [],
+      },
+      args.json,
+    );
+  }
   report(
     {
       ok: gaps.length === 0,

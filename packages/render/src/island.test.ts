@@ -6,8 +6,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { BudgetExceededError } from './errors';
-import { hydrateRuntime, hydrateRuntimeBytes } from './hydrate';
+import { hydrateRuntime } from './hydrate';
 import {
   clearDeclaredIslands,
   drainDeclaredIslands,
@@ -17,8 +16,7 @@ import {
 } from './island';
 import { createIslandCollector, islandModuleIds } from './island-collector';
 import { ISLAND_PROPS_MAX_BYTES } from './island-props';
-import type { Island } from './islands';
-import { assertBudget, checkBudget, parseByteBudget, routeJsBytes } from './islands';
+import { parseByteBudget } from './islands';
 import { h } from './jsx';
 import { DEFAULT_ISLAND_JS_BYTES, defaultIslandBudget } from './modes';
 import { clearRoutes, registerRoute } from './registry';
@@ -30,18 +28,6 @@ import { SURFACE_SPECS } from './surfaces';
 const meta = (() => ({ title: 'Pricing', description: 'd'.repeat(60) })) as unknown as RouteMetaFn;
 
 const PAGE = 'apps/web/site/pricing/page.tsx';
-
-const pricingRoute = () =>
-  registerRoute({
-    file: PAGE,
-    config: defineRoute({
-      render: 'static',
-      offline: 'precache',
-      hydrate: 'interaction',
-      budget: { js: '10kb' },
-      meta,
-    }),
-  });
 
 const codeOf = (run: () => unknown): string => {
   try {
@@ -264,21 +250,10 @@ describe('island · a static page ships JS for only its island', () => {
     expect(runtime).not.toContain('requestIdleCallback');
     expect(runtime).not.toContain('IntersectionObserver');
 
-    // And the budget counts that island and that runtime — nothing for <Hero>.
-    const entry = pricingRoute();
-    const measured: readonly Island[] = [
-      {
-        id: islandModuleIds(collector.directives)[0] ?? '',
-        file: `apps/web/site/pricing/contact-modal${ISLAND_EXTENSION}`,
-        graph: 'site',
-        strategy: 'interaction',
-        bytes: 3 * 1024,
-      },
-    ];
-    const bytes = routeJsBytes(entry, measured, collector.directives);
-    expect(bytes.islandBytes).toBe(3 * 1024);
-    expect(bytes.runtimeBytes).toBe(hydrateRuntimeBytes(collector.directives));
-    expect(bytes.total).toBe(3 * 1024 + bytes.runtimeBytes);
+    // And exactly one module id is on the page for the budget to weigh — nothing for <Hero>.
+    // Weighing it is `@ultimat3/cli`'s `checkBudgets`, over the emitted document; render's own
+    // graph-based half was deleted 2026-08-23 with no caller outside this file.
+    expect(islandModuleIds(collector.directives)).toEqual(['contact-modal']);
   });
 
   test('the same island twice gets one module and two prop bags', async () => {
@@ -294,27 +269,6 @@ describe('island · a static page ships JS for only its island', () => {
     expect(new Set(ids).size).toBe(2);
     expect(html).toContain('{"subject":"top"}');
     expect(html).toContain('{"subject":"bottom"}');
-  });
-
-  test('an island that outgrows the route budget fails the build, naming the island', async () => {
-    const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}` });
-    const collector = createIslandCollector({ file: PAGE, hydrate: 'interaction' });
-    await renderToHtml(h(Modal, null, 'Contact us'), { islands: collector });
-
-    const entry = pricingRoute();
-    const measured: readonly Island[] = [
-      {
-        id: 'contact-modal',
-        file: `apps/web/site/pricing/contact-modal${ISLAND_EXTENSION}`,
-        graph: 'site',
-        strategy: 'interaction',
-        bytes: 40 * 1024,
-      },
-    ];
-    // The route declared 10kb. Without the island counted this passes at 0 measured bytes, which
-    // is the budget quietly meaning nothing — the whole reason the directives are a second source.
-    expect(() => assertBudget(entry, measured, collector.directives)).toThrow(BudgetExceededError);
-    expect(checkBudget(entry, measured, collector.directives).cause).toContain('contact-modal');
   });
 
   test('an island node is a JSX child, which is what makes `<Modal />` compile', async () => {
@@ -372,34 +326,17 @@ describe('island · declaring one is the whole declaration', () => {
     expect(html).toContain(`data-x-entry="./contact-modal${ISLAND_EXTENSION}"`);
     expect(hydrateRuntime(collector.directives)).toContain('addEventListener');
 
-    // 4. and the chunk is what the budget weighs — the runtime alone would always fit
-    const measured: readonly Island[] = [
-      {
-        id: 'contact-modal',
-        file: `apps/web/site/pricing/contact-modal${ISLAND_EXTENSION}`,
-        graph: 'site',
-        strategy: 'interaction',
-        bytes: 40 * 1024,
-      },
-    ];
-    expect(checkBudget(entry, measured, collector.directives).ok).toBe(false);
-    expect(checkBudget(entry, measured, collector.directives).cause).toContain('contact-modal');
+    // 4. and the module id the built chunk is weighed under is on the page. What weighs it is
+    // `@ultimat3/cli`'s `checkBudgets`, against the manifest's `budget.js` written in step 2.
+    expect(islandModuleIds(collector.directives)).toEqual(['contact-modal']);
   });
 
-  test('the declared island is weighed even when no render produced a directive', () => {
+  test('the declaration reaches the route entry even when no render produced a directive', () => {
     const { config } = pageWithIsland();
     const entry = registerRoute({ file: PAGE, config });
-    const measured: readonly Island[] = [
-      {
-        id: 'contact-modal',
-        file: `apps/web/site/pricing/contact-modal${ISLAND_EXTENSION}`,
-        graph: 'site',
-        strategy: 'interaction',
-        bytes: 875,
-      },
-    ];
-    // `entry.islands` was `[]` on every route ever registered, so this half read nothing at all.
-    expect(routeJsBytes(entry, measured).islandBytes).toBe(875);
+    // `entry.islands` was `[]` on every route ever registered, and it is the only record a build
+    // has of an island a page declared but did not render on this pass.
+    expect(entry.islands).toEqual(['contact-modal']);
   });
 
   test('a declaration still wins, both of them', () => {

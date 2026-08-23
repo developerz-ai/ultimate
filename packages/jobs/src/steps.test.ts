@@ -91,7 +91,9 @@ describe('step.run replay', () => {
 
     const record = await store.get('run-4', 'flaky');
     expect(record?.status).toBe('failed');
-    expect(record?.error).toBe('boom');
+    // `renderThrowable`'s form. A persisted step failure carries the throwable's NAME beside its
+    // message, and it is rendered totally rather than through `String(error)`.
+    expect(record?.error).toBe('Error: boom');
 
     const retry = createStepRunner({ runId: 'run-4', jobName: 'j', store });
     await expect(retry.step.run('flaky', () => 'ok')).resolves.toBe('ok');

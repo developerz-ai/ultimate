@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { isUltimateError, type UltimateError } from '@ultimat3/core';
 import {
   DAY,
   formatDuration,
@@ -160,5 +161,28 @@ describe('formatDuration and maxUnits', () => {
     expect(formatDuration(9_000_000, 'en', { maxUnits: 1 })).toBe('2 hr');
     expect(formatDuration(9_000_000, 'en', { maxUnits: 2 })).toBe('2 hr 30 min');
     expect(formatDuration(0, 'en')).toBe('0 sec');
+  });
+});
+
+describe('formatDuration locale', () => {
+  // `Intl.NumberFormat` and `Intl.ListFormat` both raise a bare `RangeError` on a malformed tag,
+  // and a duration's locale is as caller-supplied as a date's.
+  test('a malformed tag is X_LOCALE_INVALID, never an uncoded RangeError', () => {
+    let caught: unknown;
+    try {
+      formatDuration(9_000_000, 'en_US');
+    } catch (thrown) {
+      caught = thrown;
+    }
+    expect(isUltimateError(caught)).toBe(true);
+    expect((caught as UltimateError).code).toBe('X_LOCALE_INVALID');
+  });
+
+  test('the zero fallback screens the tag too — it is a second Intl construction', () => {
+    expect(() => formatDuration(0, 'en_US')).toThrow(/X_LOCALE_INVALID/);
+  });
+
+  test('a well-formed tag ICU does not know still formats', () => {
+    expect(() => formatDuration(9_000_000, 'zz')).not.toThrow();
   });
 });

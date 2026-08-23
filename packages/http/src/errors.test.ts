@@ -2,7 +2,9 @@
 // interface an agent gets when a request fails. These tests treat that as the contract it is:
 // the code list cannot drift from what the docs promise, and no factory may emit a fix line
 // that names nothing runnable.
+
 import { describe, expect, test } from 'bun:test';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import {
   bodyInvalid,
   buildSkew,
@@ -32,7 +34,7 @@ describe('routeNotFound', () => {
     expect(error.cause).toContain('GET');
     expect(error.cause).toContain('/x');
     expect(error.fix).toBe('x routes list --json   # then: x g route /x');
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_ROUTE_NOT_FOUND');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 
@@ -44,7 +46,7 @@ describe('pathInvalid', () => {
     expect(error.cause).toContain('/posts/%ZZ');
     expect(error.cause).toContain('%ZZ');
     expect(error.fix).toContain('encodeURIComponent');
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_PATH_INVALID');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 
@@ -57,7 +59,7 @@ describe('methodNotAllowed', () => {
     expect(error.cause).toContain('GET, PUT');
     expect(error.cause).toContain('POST');
     expect(error.fix).toBe('add a POST route for /posts or call it with GET');
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_METHOD_NOT_ALLOWED');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 
   test('an empty allow list falls back to GET in the fix line', () => {
@@ -76,7 +78,7 @@ describe('bodyInvalid', () => {
     expect(error.fix).toBe(
       'x routes --json   # find /posts, then send a body matching its input schema',
     );
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_BODY_INVALID');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 
@@ -89,7 +91,7 @@ describe('unauthenticated', () => {
     expect(error.fix).toBe(
       "send a session cookie or Authorization header, or set meta.auth to 'public'",
     );
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_UNAUTHENTICATED');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 
@@ -100,7 +102,7 @@ describe('forbidden', () => {
     expect(error.code).toBe('X_FORBIDDEN');
     expect(error.cause).toContain('/x');
     expect(error.cause).toContain('not the owner');
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_FORBIDDEN');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 
   // `x policy explain` resolves a policy SUBJECT. A route pathname is not one — reproduced in
@@ -135,7 +137,7 @@ describe('buildSkew', () => {
     expect(error.fix).toBe(
       'reload the page — the service worker will fetch the new build manifest',
     );
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_BUILD_SKEW');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 
@@ -146,7 +148,7 @@ describe('serverNotStarted', () => {
     expect(error.code).toBe('X_SERVER_NOT_STARTED');
     expect(error.cause).toContain('url()');
     expect(error.fix).toBe('call createServer({ ... }).start() before reading url()');
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_SERVER_NOT_STARTED');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 
@@ -159,7 +161,7 @@ describe('pipelineNoResponse', () => {
     expect(error.fix).toBe(
       'return a Response from the route handler, or a Response from the stage that short-circuits',
     );
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_PIPELINE_NO_RESPONSE');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 
@@ -171,7 +173,7 @@ describe('finalizeFailed', () => {
     expect(error.cause).toContain('"response"');
     expect(error.cause).toContain('immutable headers');
     expect(error.fix).toContain('redirect()');
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_PIPELINE_FINALIZE_FAILED');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 
   // A stage may throw anything at all — the cause line has to read as an instruction regardless.
@@ -192,7 +194,7 @@ describe('routeConflict', () => {
     expect(error.fix).toBe(
       'x routes list --json   # remove or rename one of the two routes at /posts/:id',
     );
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_ROUTE_CONFLICT');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 
@@ -204,7 +206,7 @@ describe('HttpError', () => {
     expect(error.code).toBe('X_ROUTE_NOT_FOUND');
     expect(error.cause).toBe('c');
     expect(error.fix).toBe('f');
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_ROUTE_NOT_FOUND');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 
@@ -216,7 +218,7 @@ describe('noRequest', () => {
     expect(error.cause).toContain('setRedirect()');
     expect(error.cause).toContain('outside an HTTP request');
     expect(error.fix).toContain('route handler');
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_NO_REQUEST');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 
@@ -228,7 +230,7 @@ describe('errorStatusInvalid', () => {
     expect(error.cause).toContain('X_UNAUTHENTICATED');
     expect(error.cause).toContain('already maps it to 401');
     expect(error.fix).toContain('registerErrorStatus({ X_UNAUTHENTICATED: 422 })');
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_ERROR_STATUS_INVALID');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 

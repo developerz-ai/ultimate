@@ -10,6 +10,7 @@ import { type Actor, type Clock, systemClock, uuid } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
 import type { ChangeEvent } from './changefeed';
 import {
+  advance,
   type LiveCursor,
   makeCursor,
   type ReconnectBudget,
@@ -199,10 +200,18 @@ export class LiveQueryRegistry {
           resumed.patches,
           new Set(cursor.ids),
         );
-        const subscription = this.#attachUnlessGone(entry, args.socket, sid, resumed.cursor);
+        // Advanced over the FILTERED list, never over `resumed.cursor` — which `resumeFrom` built
+        // by advancing across the retained window, and that window is PRE-POLICY. Seated as it
+        // came back, this subscriber's `cursor.ids` gained the id of every row inserted for every
+        // OTHER actor while it was away; `subscriber-gate` then reads `held.has(patch.id)` off it,
+        // takes the "the subscriber holds this row" branch, and delivers a `delete` frame carrying
+        // another tenant's row id and the instant it went. The leak that branch closes, re-opened
+        // one layer up. `live-fanout.ts` advances over `allowed` for exactly this reason.
+        const seated = advance(cursor, patches, resumed.cursor.lsn, now);
+        const subscription = this.#attachUnlessGone(entry, args.socket, sid, seated);
         return {
           subscription,
-          frame: { type: 'patch', v: PROTOCOL_VERSION, sid, patches, lsn: resumed.cursor.lsn },
+          frame: { type: 'patch', v: PROTOCOL_VERSION, sid, patches, lsn: seated.lsn },
         };
       }
       const subscription = this.#attachUnlessGone(entry, args.socket, sid, resumed.cursor);

@@ -4,10 +4,10 @@
 // decides whether this login may attach itself to an existing account by address.
 
 import { logger, renderThrowable } from '@ultimat3/core';
-import { oauthExchangeFailed, restartAt } from './errors';
 import { idTokenEmailVerified, isVerifiedFlag } from './id-token';
 import { isRecord } from './json';
 import type { OAuthProviderId } from './oauth';
+import { oauthExchangeFailed, restartAt } from './oauth-errors';
 import {
   OAUTH_USER_AGENT,
   type OAuthFetch,

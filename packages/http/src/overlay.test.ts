@@ -2,6 +2,7 @@
 // agent debugs from, and it must show the same facts the terminal and `--json` do. An
 // escaping slip or a field silently dropped from the render turns that screen into a lie.
 import { describe, expect, test } from 'bun:test';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import { bodyInvalid, routeNotFound } from './errors';
 import type { OverlayNotice } from './overlay';
@@ -38,7 +39,7 @@ describe('renderOverlay', () => {
     expect(markup).toContain('X_ROUTE_NOT_FOUND');
     expect(markup).toContain('no route registered for GET /missing');
     expect(markup).toContain('x routes list --json');
-    expect(markup).toContain('https://ultimate.dev/errors/X_ROUTE_NOT_FOUND');
+    expect(markup).toContain(ERROR_DOCS_URL);
   });
 
   test('escapes html embedded in the cause instead of injecting it raw', () => {
@@ -158,7 +159,7 @@ describe('renderOverlay notices', () => {
   });
 
   test('docs is a link when the notice carries one, and no anchor at all when it does not', () => {
-    const url = 'https://ultimate.dev/errors/X_N_PLUS_ONE_QUERY';
+    const url = ERROR_DOCS_URL;
     const linked = noticesCardOf(renderOverlay(error, { notices: [{ ...nPlusOne, docs: url }] }));
     expect(linked).toContain(`<a href="${url}">${url}</a>`);
 

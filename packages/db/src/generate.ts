@@ -5,16 +5,16 @@
 
 import { assert, systemClock } from '@ultimat3/core';
 import { isDestructive } from './destructive';
+import { dropOrder } from './drop-order';
 import type {
   ColumnDescriptionLike,
   EntityDescriptionLike,
   IndexDescriptionLike,
 } from './entity-shape';
 import { migrationIrreversible } from './errors';
-import { addForeignKey, dropForeignKey, foreignKeyTarget, onDeleteRule } from './foreign-key';
+import { type ConstraintPlans, foreignKeyPlan, foreignKeysOf, type Plan } from './foreign-key-plan';
 import {
   type ColumnDescription,
-  type ForeignKeyDescription,
   findTable,
   type IndexDescription,
   type SchemaDescription,
@@ -50,16 +50,6 @@ function defaultExpression(column: ColumnDescriptionLike): string | null {
   if (column.kind === 'uuid' && column.primaryKey) return 'gen_random_uuid()';
   if (column.kind === 'timestamptz') return 'now()';
   return null;
-}
-
-/**
- * The two ends of a `references()`, which entity renders as `"<table>.<column>"`. Read once: the
- * clause that writes the constraint and the snapshot that records it must not disagree about what
- * it points at, or drift reports a key the database holds exactly as declared.
- */
-function referenceParts(references: string): readonly [string, string] {
-  const [table = references, column = 'id'] = references.split('.');
-  return [table, column];
 }
 
 function columnClause(column: ColumnDescriptionLike): string {
@@ -101,37 +91,6 @@ function impliedByColumnClause(
   // unsafe for exactly this reason — applying it turned a green typecheck red.
   // biome-ignore lint/complexity/useOptionalChain: an optional chain widens the return to include undefined
   return column !== undefined && column.unique && !column.primaryKey && added.has(only);
-}
-
-/**
- * The keys this entity declares, recorded so drift can see one dropped by hand. Recording
- * `foreignKeys: []` while the same run emitted a constraint was a snapshot claiming a constraint
- * does not exist that the migration beside it creates, and `compareTable` had nothing to compare —
- * a key dropped on the database was invisible to every check the framework runs.
- *
- * The name is `<table>_<column>_fkey` — what Postgres would have called an inline `references`
- * clause — and `addForeignKey` now writes it out, so the snapshot records a name the migration
- * beside it chose rather than one it guessed. It is still *not* what drift matches on: see
- * `compareForeignKeys` in `drift.ts`.
- *
- * `onDelete` is the column's own, and `addForeignKey` spells it: a rule recorded here while no
- * clause declared one would be a claim about the database that is not true, which is what it was
- * until the clause learned to write it out.
- */
-function foreignKeysOf(entity: EntityDescriptionLike): ForeignKeyDescription[] {
-  return entity.columns
-    .filter((column) => column.references !== null)
-    .map((column): ForeignKeyDescription => {
-      const [table, key] = referenceParts(column.references ?? '');
-      return {
-        name: `${entity.table}_${column.column}_fkey`,
-        columns: [column.column],
-        referencedTable: table,
-        referencedColumns: [key],
-        onDelete: column.onDelete ?? null,
-      };
-    })
-    .sort((a, b) => (a.name < b.name ? -1 : 1));
 }
 
 export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDescription {
@@ -200,69 +159,6 @@ function createIndex(table: string, index: IndexDescriptionLike): string {
   const columns = index.columns.map((column) => `"${column}"${direction}`).join(', ');
   const predicate = index.where === null ? '' : ` where (${index.where})`;
   return `${kind} "${index.name}" on "${table}" (${columns})${predicate};`;
-}
-
-interface Plan {
-  readonly up: string[];
-  readonly down: string[];
-}
-
-/**
- * Every foreign key the entity declares that the previous snapshot does not already record, as its
- * own `add constraint`. One call site for both cases the generator has — a table being created and
- * a `references()` added to a column that already exists — because they are one question: which of
- * this entity's keys does the database not hold yet.
- *
- * The statements land in a bucket of their own, appended after every table statement, so a key
- * never runs before the table it points at. `down` is reversed as a whole, so pushing the drops
- * last here puts them *first* on the way back: `drop table "posts"` with `comments` still
- * referencing it is `2BP01`, a migration that cannot be rolled back at all.
- *
- * Both directions, because a snapshot may not lie: a removed `references()` used to emit nothing
- * while the snapshot beside it recorded `foreignKeys: []`, so the orphan constraint stayed on the
- * database *and* the record denied one the catalog holds — and `compareForeignKeys` judges the
- * declared side, so no drift check could ever see it. Not parity with a removed index either: that
- * leaves the snapshot correct by omission. The drop names the constraint the previous snapshot
- * recorded, never the name this generator would have chosen — a hand-written `fk_legacy` is
- * `42704` under the generated spelling.
- */
-function foreignKeyPlan(
-  entity: EntityDescriptionLike,
-  live: TableDescription | undefined,
-  constraints: Plan,
-): void {
-  const wanted = foreignKeysOf(entity);
-  const held = new Map((live?.foreignKeys ?? []).map((key) => [foreignKeyTarget(key), key]));
-  for (const key of wanted) {
-    const recorded = held.get(foreignKeyTarget(key));
-    if (recorded === undefined) {
-      constraints.up.push(addForeignKey(entity.table, key));
-      constraints.down.push(dropForeignKey(entity.table, key.name));
-      continue;
-    }
-    // The rule is not part of a key's identity, so the same key under a new one is a rebuild —
-    // Postgres has no `alter constraint` for it, the same reason `redefineIndex` recreates.
-    if (onDeleteRule(recorded.onDelete) === onDeleteRule(key.onDelete)) continue;
-    constraints.up.push(
-      dropForeignKey(entity.table, recorded.name),
-      addForeignKey(entity.table, key),
-    );
-    // Pushed forwards and read backwards, like `redefineIndex`: `down` is reversed at assembly.
-    constraints.down.push(
-      addForeignKey(entity.table, recorded),
-      dropForeignKey(entity.table, key.name),
-    );
-  }
-  const declared = new Set(wanted.map(foreignKeyTarget));
-  const columns = new Set(entity.columns.map((column) => column.column));
-  for (const key of live?.foreignKeys ?? []) {
-    if (declared.has(foreignKeyTarget(key))) continue;
-    // `drop column` takes the constraint with it, so a `drop constraint` after that statement is
-    // `42704` on a constraint that is already gone.
-    if (!key.columns.every((column) => columns.has(column))) continue;
-    constraints.up.push(dropForeignKey(entity.table, key.name));
-    constraints.down.push(addForeignKey(entity.table, key));
-  }
 }
 
 /**
@@ -405,11 +301,19 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   const plan: Plan = { up: [], down: [] };
   // Merged into `plan` once every table statement is in, never interleaved with them.
   const constraints: Plan = { up: [], down: [] };
+  // Merged in BEFORE them, for the mirror-image reason: a key still pointing at a table this
+  // migration drops makes that `drop table` `2BP01`.
+  const preDrops: Plan = { up: [], down: [] };
   const wanted = new Set(options.entities.map((entity) => entity.table));
+
+  const doomed = new Set(
+    current.tables.filter((table) => !wanted.has(table.name)).map((table) => table.name),
+  );
+  const plans: ConstraintPlans = { constraints, preDrops, doomed };
 
   for (const entity of options.entities) {
     const live = findTable(current, entity.table);
-    foreignKeyPlan(entity, live, constraints);
+    foreignKeyPlan(entity, live, plans);
     if (live === undefined) {
       plan.up.push(...createTable(entity));
       plan.down.push(`drop table "${entity.table}";`);
@@ -433,14 +337,18 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
     }
   }
 
-  for (const table of current.tables) {
-    if (wanted.has(table.name)) continue;
+  const order = dropOrder(current.tables.filter((table) => !wanted.has(table.name)));
+  for (const table of order.tables) {
     if (options.allowDestructive !== true) {
       throw migrationIrreversible(
         `dropping table "${table.name}" discards every row and cannot be undone`,
         `x db gen "${options.name}" --allow-destructive   # or delete the entity in two releases`,
       );
     }
+  }
+  plan.up.push(...preDrops.up, ...order.constraints);
+  plan.down.push(...preDrops.down, ...order.constraints.map(() => '-- constraint not restored'));
+  for (const table of order.tables) {
     plan.up.push(`drop table "${table.name}";`);
     plan.down.push(`-- "${table.name}" cannot be restored; recover it from a backup`);
   }

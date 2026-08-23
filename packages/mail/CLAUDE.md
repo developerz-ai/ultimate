@@ -90,7 +90,23 @@
   what each did rather than a proxy for it, and neither side can move alone. The memory driver joins
   the cases about the MESSAGE and none about a wire: it dials nothing, maps no status and carries no
   idempotency header, and that is documented difference, not defect.
-- `Bcc` is an envelope field. It reaches `RCPT TO` and Resend's body, never a header.
+- **`assertHeaderSafe` gates the ADDRESS LISTS too — `to` and `cc`** (`As of 2026-08-23`). It
+  checked `subject` and `Object.entries(messageHeaders(message))`, and `messageHeaders` emits only
+  `Auto-Submitted`, `Reply-To` and the two `List-Unsubscribe` lines — while `to` and `cc` become
+  `To:` and `Cc:` in `mime.ts` and went through neither gate. `renderMessage` ACCEPTED
+  `to: ['victim@x.test\r\nBcc: attacker@evil.test']` and `SendResult.accepted` handed it back;
+  SMTP refuses it one layer down (`envelope-address.ts`), the memory driver and Resend do not.
+  Exactly the three-answers split this rule was lifted out of `mime.ts` to close.
+- **`registerLayout` refuses a second claim on a name** (`X_MAIL_DUPLICATE`, `mailLayoutDuplicate`).
+  `layouts.set` answered whichever registration ran LAST, `base` included, so a dependency that
+  registered `base` silently re-shelled every framework mail with no error anywhere and nothing to
+  grep for. `defineMail` refuses a duplicate id one file over for the identical reason, and
+  `@ultimat3/mcp`'s `ResourceRegistry.register` states the general rule. **Breaking for an app that
+  registered one name twice** — the old behaviour was pinned by a test called "last writer wins",
+  which is what kept it.
+- `Bcc` is an envelope field. It reaches `RCPT TO` and Resend's body, never a header — so
+  `assertHeaderSafe` deliberately does NOT check it and `envelope-address.ts` does. Two wire
+  formats, one gate each; naming a `Bcc` header in a refusal would name one no message has.
 - Recipient addresses stay out of logs and out of error text we write ourselves; the server's own
   reply is passed through verbatim, and that is where the refused address comes from.
 - Every header value is checked for CR/LF (`X_MAIL_HEADER_INVALID`) before folding — interpolated

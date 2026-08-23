@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createGateway } from './gateway';
 import { definePrompt, resetPrompts } from './prompt';
+import type { GenerateRequest, Provider } from './provider';
 import { EchoProvider } from './provider';
-import { contains, exact, jsonSchemaValid, jsonValid, llmJudge, numericTolerance } from './scorers';
+import {
+  clampScore,
+  contains,
+  exact,
+  jsonSchemaValid,
+  jsonValid,
+  llmJudge,
+  numericTolerance,
+} from './scorers';
 
 afterEach(() => {
   resetPrompts();
@@ -35,6 +44,28 @@ describe('unit · built-in scorers', () => {
   });
 });
 
+// `clampScore` is the last thing between an app's scorer and a recorded number, and every score
+// in a run passes through it. A comparison against `NaN` is false in BOTH directions, so an
+// unclamped `NaN` reaches `EvalResult.score`, `regressionsAgainst`'s `now < was - tolerance` is
+// false for it, and `assert()` reports a pass over a run that measured nothing.
+describe('unit · clampScore', () => {
+  test('scores outside 0..1 are pulled to the edge', () => {
+    expect(clampScore(-3)).toBe(0);
+    expect(clampScore(1.5)).toBe(1);
+    expect(clampScore(0.25)).toBe(0.25);
+    expect(clampScore(0)).toBe(0);
+    expect(clampScore(1)).toBe(1);
+  });
+
+  test('a non-finite score is zero, not a pass nobody measured', () => {
+    // The trigger is ordinary: `output.length / expected.length` on a case with no `expected`.
+    expect(clampScore(Number.NaN)).toBe(0);
+    expect(clampScore(Number.POSITIVE_INFINITY)).toBe(1);
+    expect(clampScore(Number.NEGATIVE_INFINITY)).toBe(0);
+    expect(Number.isFinite(clampScore(0 / 0))).toBe(true);
+  });
+});
+
 describe('unit · llm judge', () => {
   const judgePrompt = () =>
     definePrompt<{ output: string; expected: string }>({
@@ -63,5 +94,37 @@ describe('unit · llm judge', () => {
 
     expect(await scorer.score({ output: 'good', expected: 'ref' })).toBe(0.8);
     expect(await scorer.score({ output: 'vague', expected: 'ref' })).toBe(0);
+  });
+
+  test('the judge is called with the whole prompt configuration it was declared with', async () => {
+    // The scorer's NAME is the judge prompt's content hash, and `contentHash` covers `effort` and
+    // `thinking` — so a call that drops either measures with a judge the name does not describe.
+    const judge = definePrompt<{ output: string; expected: string }>({
+      id: 'judge.configured',
+      version: '1',
+      template: 'Score 0..1. Answer: {{output}}. Reference: {{expected}}.',
+      effort: 'low',
+      thinking: 'disabled',
+    });
+    const seen: GenerateRequest[] = [];
+    const echo = new EchoProvider();
+    const recording: Provider = {
+      name: 'recording',
+      get models() {
+        return echo.models;
+      },
+      generate(request) {
+        seen.push(request);
+        return echo.generate(request);
+      },
+      stream: (request) => echo.stream(request),
+    };
+
+    const scorer = llmJudge({ gateway: createGateway({ providers: [recording] }), judge });
+    await scorer.score({ output: 'good', expected: 'ref' });
+
+    expect(seen.length).toBe(1);
+    expect(seen[0]?.effort).toBe('low');
+    expect(seen[0]?.thinking).toBe('disabled');
   });
 });

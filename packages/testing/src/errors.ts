@@ -62,7 +62,12 @@ registerErrorCodes(
   ),
 );
 
-const docsFor = (code: TestingErrorCode): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
+// which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
+// `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE ROW,
+// which has no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x
+// answered 404, host included, on every error it has ever thrown; restating the replacement here
+// would be the same constant in eight places waiting to drift again.
 
 /** A test reached the network without a mock or an allowlist entry. Always a bug, never a flake. */
 export class NetworkSealedError extends UltimateError {
@@ -73,7 +78,6 @@ export class NetworkSealedError extends UltimateError {
         input.allowed.length > 0 ? input.allowed.join(', ') : 'none'
       })`,
       fix: `mockFetch('${input.url}', () => new Response('{}')) — or allowHost('${hostOf(input.url)}') if it must be real`,
-      docs: docsFor('X_TEST_NETWORK_SEALED'),
     });
   }
 }
@@ -85,7 +89,6 @@ export class TestDatabaseUnavailableError extends UltimateError {
       code: 'X_TEST_DB_UNAVAILABLE',
       cause: input.cause,
       fix: 'x dev (embedded Postgres), or set TEST_DATABASE_URL to a running Postgres',
-      docs: docsFor('X_TEST_DB_UNAVAILABLE'),
     });
   }
 }
@@ -97,7 +100,6 @@ export class NondeterministicError extends UltimateError {
       code: 'X_TEST_NONDETERMINISTIC',
       cause: `${input.what} produced "${input.first}" then "${input.second}"`,
       fix: 'wrap the test in frozenClock() / seededRandom(), or remove the wall-clock read',
-      docs: docsFor('X_TEST_NONDETERMINISTIC'),
     });
   }
 }
@@ -124,7 +126,6 @@ export class FixtureUnknownError extends UltimateError {
           ? `test requested fixture "${input.name}" but none are registered`
           : `test requested fixture "${input.name}"; registered: ${input.registered.join(', ')}`,
       fix: `register it at test setup: defineFixtures({ ${input.name}: () => buildIt() })`,
-      docs: docsFor('X_TEST_FIXTURE_UNKNOWN'),
     });
   }
 }
@@ -145,7 +146,6 @@ export class FixtureUnavailableError extends UltimateError {
       code: 'X_TEST_FIXTURE_UNAVAILABLE',
       cause: `fixture "${input.name}" is declared but nothing in this process drives it — it needs ${input.needs}`,
       fix: `install one in the test preload: defineFixtures({ ${input.name}: () => yourDriver() })`,
-      docs: docsFor('X_TEST_FIXTURE_UNAVAILABLE'),
     });
   }
 }
@@ -170,7 +170,6 @@ export class LiveNodeEmptyError extends UltimateError {
       cause:
         'no query declared live: true is registered in this process, so the node would serve none',
       fix: "import the app's api module in the test preload — import './apps/web/api' — then: x queries list --json",
-      docs: docsFor('X_TEST_LIVE_NODE_EMPTY'),
     });
   }
 }
@@ -189,7 +188,6 @@ export class LiveNodeUpgradeRefusedError extends UltimateError {
       code: 'X_TEST_LIVE_NODE_UPGRADE_REFUSED',
       cause: `the sync node answered the upgrade with ${status === undefined ? 'no response' : `HTTP ${String(status)}`} instead of taking it`,
       fix: 'await node.start() before connect(), and keep the request path at /_x/sync',
-      docs: docsFor('X_TEST_LIVE_NODE_UPGRADE_REFUSED'),
     });
   }
 }
@@ -208,7 +206,6 @@ export class NetworkOfflineError extends UltimateError {
       code: 'X_TEST_NETWORK_OFFLINE',
       cause: `${input.method} ${input.url} while the test network is ${input.mode}`,
       fix: 'network.online() before the call — or assert the offline path instead of the request',
-      docs: docsFor('X_TEST_NETWORK_OFFLINE'),
     });
   }
 }
@@ -220,7 +217,6 @@ export class TestEvalThresholdError extends UltimateError {
       code: 'X_TEST_EVAL_THRESHOLD',
       cause: `eval "${input.name}" scored below ${input.threshold}: ${input.detail}`,
       fix: 'improve the prompt under test, or lower the threshold passed to evalTest()',
-      docs: docsFor('X_TEST_EVAL_THRESHOLD'),
     });
   }
 }
@@ -234,7 +230,6 @@ export class TestSchemaExpectedError extends UltimateError {
       // Names the call, not the intent: "assert against action.input" left the reader to work out
       // which call to edit, and a fix is only executable if it can be pasted over the failing line.
       fix: 'call toRejectInput(action.input) — the schema, not toRejectInput(action) or the query',
-      docs: docsFor('X_TEST_SCHEMA_EXPECTED'),
     });
   }
 }
@@ -247,7 +242,6 @@ export class TestJobExpectedError extends UltimateError {
       cause: 'toEmitSteps expects a job declaration built with job(...)',
       // Same rule as X_TEST_SCHEMA_EXPECTED's: the paste-able call, not a description of it.
       fix: 'call toEmitSteps(myJob) with the job export, not toEmitSteps(myJob.run)',
-      docs: docsFor('X_TEST_JOB_EXPECTED'),
     });
   }
 }
@@ -266,7 +260,6 @@ export class FactoryTraitUnknownError extends UltimateError {
           ? `factory "${input.table}" was asked for trait "${input.trait}" but declares none`
           : `factory "${input.table}" has no trait "${input.trait}"; declared: ${input.declared.join(', ')}`,
       fix: `declare it: defineFactory(${input.table}, { traits: { ${input.trait}: { /* columns */ } } })`,
-      docs: docsFor('X_TEST_FACTORY_TRAIT_UNKNOWN'),
     });
   }
 }
@@ -282,7 +275,6 @@ export class FactoryNotPersistedError extends UltimateError {
       code: 'X_TEST_FACTORY_NOT_PERSISTED',
       cause: `factory "${input.table}".create() ran with no persister in this process`,
       fix: 'usePersister({ insert: (table, row) => repoFor(table).insert(row) }) in the test preload — or build() for an in-memory row',
-      docs: docsFor('X_TEST_FACTORY_NOT_PERSISTED'),
     });
   }
 }
@@ -298,7 +290,6 @@ export class NetworkRaceError extends UltimateError {
       code: 'X_TEST_NETWORK_RACE',
       cause: 'sealed network lost its original fetch mid-request',
       fix: 'do not call unsealNetwork() while a request from the same test is still in flight',
-      docs: docsFor('X_TEST_NETWORK_RACE'),
     });
   }
 }
@@ -357,7 +348,6 @@ export class RegistryLeakError extends UltimateError {
       code: 'X_TEST_REGISTRY_LEAK',
       cause: input.leaks.map(describeLeak).join('; '),
       fix: `${input.leaks.map(repairFor).join('; ')} — then re-run: bun test ${files.join(' ')}`,
-      docs: docsFor('X_TEST_REGISTRY_LEAK'),
     });
   }
 }
@@ -384,7 +374,6 @@ export class IslandNotBuiltError extends UltimateError {
         input.built.length === 0
           ? 'x g island <name> --at apps/web/site — then set root to the directory holding apps/'
           : `mountIsland({ build, root, file: ${renderFixLiteral(input.built[0], ISLAND_PLACEHOLDER)} }) — the path is app-root-relative, not relative to the test, and ${file} is not one of them`,
-      docs: docsFor('X_TEST_ISLAND_NOT_BUILT'),
     });
   }
 }
@@ -434,7 +423,6 @@ export class IslandMountMissingError extends UltimateError {
         component === undefined
           ? `${file} exports nothing a mount could render — x g island <name> --at apps/web/site writes an island whose mount() is already there, and its shape is the one to copy`
           : `in ${file} add: import { render } from 'solid-js/web'; export function mount(el: HTMLElement, props: Parameters<typeof ${component}>[0]): void { el.textContent = ''; render(() => <${component} {...props} />, el); }`,
-      docs: docsFor('X_TEST_ISLAND_NO_MOUNT'),
     });
   }
 }

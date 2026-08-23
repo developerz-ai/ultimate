@@ -3,7 +3,7 @@
 // `x db branch ls` used to clone a database called `ls`, because the argument was the name.
 // The facts (what a branch is, per mode) are `db-branch.ts`; the client lifetime is here.
 
-import { nearestName } from '@ultimat3/core';
+import { ERROR_DOCS_URL, nearestName } from '@ultimat3/core';
 import { createPostgresClient, type DbClient } from '@ultimat3/db';
 import type { CommandContext } from './command';
 import type { BranchRow } from './db-branch';
@@ -215,6 +215,6 @@ function notABranch(services: DevServices, name: string): CommandResult {
     code: 'X_DB_BRANCH_FAILED',
     cause: `"${name}" is not a branch of this database, so nothing was dropped (it would be ${target})`,
     fix: LIST_FIX,
-    docs: 'https://ultimate.dev/errors/X_DB_BRANCH_FAILED',
+    docs: ERROR_DOCS_URL,
   });
 }

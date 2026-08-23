@@ -12,6 +12,8 @@ import {
   type CatchRenderSite,
   catchRenderFindingFor,
   checkCatchRenders,
+  launderedByPackage,
+  launderedFields,
   scanCatchRenders,
 } from './catch-render';
 import { checkErrorRendering } from './error-render';
@@ -248,5 +250,96 @@ describe('unit · the ratchet moves in one direction', () => {
     for (const [pkg, count] of Object.entries(CATCH_RENDER_PINS)) {
       expect(count).toBeLessThanOrEqual(dayOne[pkg] ?? 0);
     }
+  });
+});
+describe('the destinations the rule name promised and the list did not have', () => {
+  /**
+   * `packages/admin/src/action-gate.ts:186` — `trace:` was not one of the three names, so an
+   * `AdminDecision` rendering a caught value with `String(error)` passed under a green gate. The
+   * shape below is that line, reduced.
+   */
+  test('a caught value rendered into `trace:` is reported', () => {
+    expect(kinds('try { a(); } catch (error) { return { trace: [String(error)] }; }')).toEqual([
+      'trace:error:conversion',
+    ]);
+  });
+
+  test('and `cause`, `fix` and `detail` still are, so the widening added rather than replaced', () => {
+    expect(kinds('try { a(); } catch (e) { throw new E({ detail: String(e) }); }')).toEqual([
+      'detail:e:conversion',
+    ]);
+  });
+});
+
+describe('one hop: a field this package own errors.ts launders into a refusal', () => {
+  const ERRORS = [
+    'export class IslandBuildFailedError extends UltimateError {',
+    '  constructor(input: { file: string; logs: string }) {',
+    '    super({',
+    '      code: "X_ISLAND_BUILD_FAILED",',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
+    '      cause: `${input.file} would not bundle: ${input.logs}`,',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
+    '      fix: `bun build --target browser ${input.file}`,',
+    '    });',
+    '  }',
+    '}',
+  ].join('\n');
+
+  test('the field names are read off errors.ts, dotted ones only', () => {
+    const fields = launderedFields(ERRORS);
+    expect([...fields].sort()).toEqual(['file', 'logs']);
+  });
+
+  test('a refusal field is never re-listed as a laundered one', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
+    expect([...launderedFields('const e = { cause: `${input.cause}` };')]).toEqual([]);
+  });
+
+  /** `packages/cli/src/island-bundle.ts:94`, reduced: `String(error)` into a `string`-typed field. */
+  test('a caught value written into that field, one file away, is reported', () => {
+    const site = scanCatchRenders(
+      'packages/cli/src/island-bundle.ts',
+      'try { a(); } catch (error) { throw new IslandBuildFailedError({ file, logs: String(error) }); }',
+      launderedFields(ERRORS),
+    );
+    expect(site.map((one) => `${one.field}:${one.binding}:${one.kind}`)).toEqual([
+      'logs:error:conversion',
+    ]);
+  });
+
+  test('and is silent without the hop, which is what the two rules used to be', () => {
+    expect(
+      scanCatchRenders(
+        'packages/cli/src/island-bundle.ts',
+        'try { a(); } catch (error) { throw new E({ file, logs: String(error) }); }',
+      ),
+    ).toEqual([]);
+  });
+
+  /**
+   * The line this rule refuses to report, and the reason the laundered pattern demands a `:`.
+   * `packages/cli/src/verify-floor.ts:46` binds a local `const reason` whose name collides with
+   * `FlagInvalidError`'s `input.reason` in the same package. A name matching in an unrelated place
+   * is not evidence — the exact mistake `scripts/config-readers.ts` was repaired for the same day.
+   */
+  test('a local binding sharing a laundered field name is a collision, not a hop', () => {
+    expect(
+      scanCatchRenders(
+        'packages/cli/src/verify-floor.ts',
+        'try { a(); } catch (error) { const reason = error instanceof Error ? error.message : String(error); return reason; }',
+        new Set(['reason']),
+      ),
+    ).toEqual([]);
+  });
+
+  test('the laundered set is per package, keyed off that package own errors.ts', () => {
+    const map = launderedByPackage([
+      { path: 'packages/cli/src/errors.ts', source: ERRORS },
+      { path: 'packages/cli/src/island-bundle.ts', source: 'const a = 1;' },
+      { path: 'packages/ai/src/other.ts', source: ERRORS },
+    ]);
+    expect([...(map.get('cli') ?? [])].sort()).toEqual(['file', 'logs']);
+    expect(map.has('ai')).toBe(false);
   });
 });

@@ -4,8 +4,13 @@
 // token is verified here, so no caller downstream can forget to.
 
 import type { Clock } from '@ultimat3/core';
-import { EnvMissingError, renderCauseValue, renderThrowable, systemClock } from '@ultimat3/core';
-import { oauthExchangeFailed, restartAt } from './errors';
+import {
+  EnvMissingError,
+  logger,
+  renderCauseValue,
+  renderThrowable,
+  systemClock,
+} from '@ultimat3/core';
 import { type IdTokenClaims, verifyIdToken } from './id-token';
 import { isRecord } from './json';
 import type { IdTokenKeys } from './jwks';
@@ -15,6 +20,7 @@ import {
   type OAuthHandshake,
   type OAuthProviderId,
 } from './oauth';
+import { oauthExchangeFailed, restartAt } from './oauth-errors';
 import { providerFor } from './oauth-registry';
 
 /** Just the call. `typeof fetch` also carries `preconnect`, which no test double should have to. */
@@ -91,7 +97,31 @@ export function oauthCredentials(
  * mostly prose this package authored, and quoting that would make every readable message unread-
  * able. The rule is "remote text is rendered", and this function is where remote text is made.
  */
-export async function providerDetail(response: Response): Promise<string> {
+/**
+ * How much of a body this leg may quote back.
+ *
+ * `'raw'` — the default and what userinfo, discovery and jwks use: those requests carry a bearer
+ * token or nothing, and the raw text is what makes a misconfigured enterprise OP debuggable.
+ *
+ * `'coded-only'` — the `POST /token` leg, and ONLY it. That request carries `client_secret`, and
+ * an endpoint that echoes what it was sent (compromised, impersonated, or a misbehaving gateway)
+ * put the secret into an `X_OAUTH_EXCHANGE_FAILED` `cause:` that `oauth-route.ts` publishes to an
+ * unauthenticated caller. Measured: 38 of 42 characters of the secret reached the response body,
+ * and a shorter `redirect_uri` fits all of it inside `MAX_DETAIL_LENGTH`. A coded OAuth error
+ * still comes through — `invalid_grant`, `redirect_uri_mismatch` — because that is a field the
+ * SPEC defines and the whole reason this string exists.
+ */
+export type DetailEcho = 'raw' | 'coded-only';
+
+/** What a `coded-only` leg says instead of the body. Names why, so nobody re-adds the echo. */
+const OPAQUE_BODY =
+  'the endpoint answered with a body that is not a coded OAuth error, and this leg does not quote ' +
+  'one back because its request carries the client secret';
+
+export async function providerDetail(
+  response: Response,
+  echo: DetailEcho = 'raw',
+): Promise<string> {
   const text = await response.text().catch(() => '');
   if (text === '') return 'the response body was empty';
   try {
@@ -105,6 +135,7 @@ export async function providerDetail(response: Response): Promise<string> {
   } catch {
     // Not JSON — fall through to the truncated raw text below.
   }
+  if (echo === 'coded-only') return OPAQUE_BODY;
   return renderCauseValue(
     text.length > MAX_DETAIL_LENGTH ? `${text.slice(0, MAX_DETAIL_LENGTH)}…` : text,
   );
@@ -143,16 +174,31 @@ async function postForm(
       signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     });
   } catch (error) {
-    // `renderThrowable`, never `error.message` behind an `instanceof`: the rejection comes from
-    // an injected `fetch`, and `instanceof` itself throws on a value whose `getPrototypeOf` trap
-    // does — losing the one refusal that tells a caller the code is already spent.
-    const reason = renderThrowable(error);
+    // The rendered value goes to the LOG, never into the `detail:`.
+    //
+    // `oauth-route.ts` publishes this cause to an unauthenticated caller, and the rejection comes
+    // from an injected `OAuthFetch` — an app's own wrapper, a proxy client, an adapter behind it —
+    // so its text is a server's internals. Reproduced: a bare
+    // `Error('connect ECONNREFUSED 10.4.2.17:5432 (postgres://app:hunter2@db.internal/prod)')`
+    // was served as the 502 body of a public callback. `problem()`'s uncoded branch does NOT catch
+    // this one: it is coded by the time it gets there.
+    //
+    // `renderThrowable`, never `error.message` behind an `instanceof`: `instanceof` itself throws
+    // on a value whose `getPrototypeOf` trap does, losing the one refusal that tells a caller the
+    // code is already spent. What stays in the sentence is `url` and the remedy, both framework
+    // constants, so the failure is still fixable without quoting anything this package does not own.
+    logger.error('auth.oauth.token_fetch_failed', {
+      provider,
+      url,
+      detail: renderThrowable(error),
+    });
     throw oauthExchangeFailed({
       provider,
       stage: 'token',
       detail:
-        `${reason} — nothing left this host for ${url} (egress, DNS or TLS); restart the ` +
-        'flow once it does, since the code is already spent',
+        `nothing left this host for ${url} (egress, DNS or TLS); the reason is in this process ` +
+        'log under auth.oauth.token_fetch_failed. Restart the flow once it does, since the code ' +
+        'is already spent',
       fix: `curl -sS -m 5 -o /dev/null ${url}`,
     });
   }
@@ -161,7 +207,9 @@ async function postForm(
     throw oauthExchangeFailed({
       provider,
       stage: 'token',
-      detail: await providerDetail(response),
+      // `coded-only`: this request carried `client_secret`, and `oauth-route.ts` publishes this
+      // cause to whoever typed the URL.
+      detail: await providerDetail(response, 'coded-only'),
       status: response.status,
       fix: fixForStatus(provider, response.status),
     });

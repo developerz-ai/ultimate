@@ -66,6 +66,16 @@ export type ContentBlock =
 export interface McpToolResult {
   readonly content: readonly ContentBlock[];
   readonly isError?: boolean;
+  /**
+   * The `X_*` code an `isError` result refused with. AUDIT ONLY — never written to the wire,
+   * because the code is already in the rendered body the model reads.
+   *
+   * A tool that renders its own refusal was otherwise audited `policy-denied` whatever it refused
+   * for, so a tool's own ARGUMENT check landed in the bucket a prober's name walk is alerted from.
+   * Naming the code sends it through `outcomeForCode`, the classifier a THROWN error already goes
+   * through. Absent keeps the conservative reading.
+   */
+  readonly code?: string;
 }
 
 export type ToolArgs = Record<string, unknown>;

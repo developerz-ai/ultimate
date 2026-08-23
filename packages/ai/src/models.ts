@@ -128,7 +128,14 @@ export function modelIds(): readonly ModelId[] {
   return [...registry.keys()];
 }
 
-/** Every registered spec, in ladder order. Consumed by `x manifest` and by doctor-style checks. */
+/**
+ * Every registered spec, in ladder order.
+ *
+ * OFFERED, not yet published: nothing in the tree reads it. `@ultimat3/manifest` is tier 4 and so
+ * is this package, so the consumer has to be `@ultimat3/cli` (tier 5) — a direct import would be a
+ * sideways edge the boundary check refuses. The doc claimed `x manifest` consumed it, which is
+ * exactly the kind of statement axiom 3 says is not a rule.
+ */
 export function registeredModels(): readonly ModelSpec[] {
   return [...registry.values()];
 }

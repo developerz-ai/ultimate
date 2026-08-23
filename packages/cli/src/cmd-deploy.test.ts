@@ -372,3 +372,51 @@ describe('unit · x deploy --method compose passes the image it reports', () => 
     expect(planDeploy('repo/app:tag', 'helm', '/app').env).toEqual({});
   });
 });
+
+/**
+ * The summary is what an operator READS, and it named `DEPLOY_ROLES` whatever the plan actually
+ * was. On `--method helm` the plan is one `helm upgrade --install` and the chart has no `backfill`
+ * object at all (`scaffold-helm.ts`'s `roles:` is web|sync|worker|scheduler|replicator plus a
+ * `migrate` Job), so the line reported six roles including the post-deploy sweep — and the sweep
+ * never ran.
+ */
+describe('unit · the summary names the roles this plan really has', () => {
+  const summaryRoles = (summary: string): readonly string[] =>
+    (summary.split('roles ')[1] ?? '').split(',');
+
+  test('helm reports the one step it runs, never compose`s six roles', async () => {
+    const root = appRoot();
+    const { runner } = recordingRunner();
+    const result = await deployCommand.run(
+      runContext(
+        ['deploy', '--method', 'helm', '--image', 'repo/app:1.2.3', '--dry-run'],
+        root,
+        runner,
+      ),
+    );
+
+    expect(summaryRoles(result.summary)).toEqual(['all']);
+    expect(result.summary).not.toContain('backfill');
+  });
+
+  test('compose still reports every role it really runs', async () => {
+    const root = appRoot();
+    const { runner } = recordingRunner();
+    const result = await deployCommand.run(
+      runContext(['deploy', '--image', 'repo/app:1.2.3', '--dry-run'], root, runner),
+    );
+
+    expect(summaryRoles(result.summary)).toEqual([...DEPLOY_ROLES]);
+  });
+
+  test('and a completed run says the same thing the dry run did', async () => {
+    const root = appRoot();
+    const { runner } = recordingRunner();
+    const result = await deployCommand.run(
+      runContext(['deploy', '--method', 'helm', '--image', 'repo/app:1.2.3'], root, runner),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(summaryRoles(result.summary)).toEqual(['all']);
+  });
+});

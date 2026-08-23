@@ -9,7 +9,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { renderCauseValue, renderThrowable } from '@ultimat3/core';
+import { ERROR_DOCS_URL, renderCauseValue, renderThrowable } from '@ultimat3/core';
 import { fixProblem } from './error-contract';
 import type { Finding } from './output';
 import type { HostCheck } from './verify-step';
@@ -105,7 +105,7 @@ const failed = (path: string, cause: string): Finding => ({
   code: 'X_GUARD_FAILED',
   cause,
   fix: `return a finding from ${path} instead of throwing, then: x verify`,
-  docs: 'https://ultimate.dev/errors/X_GUARD_FAILED',
+  docs: ERROR_DOCS_URL,
   at: path,
 });
 
@@ -113,7 +113,7 @@ const invalid = (path: string, cause: string): Finding => ({
   code: 'X_GUARD_INVALID',
   cause,
   fix: `export a \`guard\` object — { summary, check } — from ${path}, then: x verify`,
-  docs: 'https://ultimate.dev/errors/X_GUARD_INVALID',
+  docs: ERROR_DOCS_URL,
   at: path,
 });
 
@@ -121,7 +121,7 @@ const findingInvalid = (path: string, cause: string): Finding => ({
   code: 'X_GUARD_FINDING_INVALID',
   cause: `${path} returned a finding that is not one: ${cause}`,
   fix: `rewrite what ${path} returns as a code, a cause and a fix naming a command or a file, then: x verify`,
-  docs: 'https://ultimate.dev/errors/X_GUARD_FINDING_INVALID',
+  docs: ERROR_DOCS_URL,
   at: path,
 });
 

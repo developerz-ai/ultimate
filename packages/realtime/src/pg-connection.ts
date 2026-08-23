@@ -80,8 +80,22 @@ export class PgConnection {
       user: options.user,
       database: options.database,
       application_name: options.applicationName ?? 'ultimate-replicator',
+      // The session's output formats, decided here because the decoder cannot ask. Postgres sends
+      // every WAL value as TEXT and `pg-values.ts` reads a `timestamptz` by matching postgres'
+      // ISO spelling — keeping the raw text when it does not match, on purpose, because a wrong
+      // instant is worse than a string. So `DateStyle = SQL | German | Postgres` on the SERVER
+      // silently re-opens the defect that decode exists to close: the shared window holds `Date`s,
+      // the patch holds text, and one edit to one column jumps its row to the top of every
+      // `orderBy('createdAt','desc')` feed for every subscriber.
+      //
+      // Byte for byte what postgres' OWN logical-replication client sends (`libpqwalreceiver.c`),
+      // which is why a walsender takes it: `intervalstyle` for the values this decoder keeps as
+      // text (a text form still has to be ONE text form), `extra_float_digits` so a float8 round
+      // trips exactly on servers whose default is not already 3. A server that refuses one
+      // answers `ErrorResponse` during startup, so the replicator fails to boot with the server's
+      // own words — never a warning that a feed then goes on mis-sorting behind.
+      options: '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3',
     };
-    // A walsender rejects most GUCs, so only the two it accepts are sent.
     if (options.replication !== undefined) parameters['replication'] = options.replication;
     // A handshake fails on ordinary conditions — no password, an ErrorResponse, an EOF — and on
     // every one of them the caller gets an exception instead of an object, so nothing is left

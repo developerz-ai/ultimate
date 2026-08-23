@@ -121,6 +121,9 @@ export {
   type ReplicationStreamStats,
 } from './pg-replication';
 export { bunPgStream, type PgTarget, parsePgUrl, type SslMode } from './pg-socket';
+// The value domain a WAL tuple lands in. Public because it is `PgOutputMessage`'s and
+// `entityRow`'s: a caller naming either type has to be able to name what is inside one.
+export { decodeValue, type PhysicalRow, type PhysicalValue } from './pg-values';
 export type { PgStream } from './pg-wire';
 export {
   type PgColumn,

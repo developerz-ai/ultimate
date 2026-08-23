@@ -94,9 +94,12 @@ describe('the change bus subscription', () => {
     // surfacing as a dead process — and on a runtime that only warns, as nothing at all.
     await publish(change);
 
+    // `renderThrowable`'s form, `Name: message` — `detach` renders through it rather than through
+    // `String(error)`, which raises on a null-prototype throwable from the one frame whose whole
+    // job is not to throw.
     expect(errors).toHaveBeenCalledWith('live.deliver failed', {
       at: 'posts',
-      error: 'fanout could not finish',
+      error: 'TypeError: fanout could not finish',
     });
     errors.mockRestore();
     await node.stop();

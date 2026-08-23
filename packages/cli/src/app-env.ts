@@ -7,7 +7,12 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EnvSchema, EnvVarDecl } from '@ultimat3/core';
-import { checkEnvExample, ENV_EXAMPLE_PATH, renderEnvExample } from '@ultimat3/core';
+import {
+  checkEnvExample,
+  ENV_EXAMPLE_PATH,
+  ERROR_DOCS_URL,
+  renderEnvExample,
+} from '@ultimat3/core';
 import { APP_CONFIG_FILE } from './app-root';
 import type { Finding } from './output';
 import { findingFrom } from './output';
@@ -63,7 +68,7 @@ const driftFinding = (cause: string): Finding => ({
   // The generator, not the assertion: `assertEnvExample`'s own fix is a `Bun.write(…)` call for
   // an app that has a schema object in scope, and a gate reader has a shell.
   fix: 'x env example',
-  docs: 'https://ultimate.dev/errors/X_ENV_EXAMPLE_DRIFT',
+  docs: ERROR_DOCS_URL,
   at: ENV_EXAMPLE_PATH,
 });
 

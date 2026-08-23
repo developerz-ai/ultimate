@@ -42,7 +42,12 @@ registerErrorCodes(
   Object.fromEntries(Object.entries(MCP_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
 
-const docsFor = (code: McpErrorCode): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
+// which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
+// `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE ROW,
+// which has no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x
+// answered 404, host included, on every error it has ever thrown; restating the replacement here
+// would be the same constant in eight places waiting to drift again.
 
 /**
  * OUTCOME 1 of three: a tool name reached the dispatcher that no VISIBLE tool answers to —
@@ -59,7 +64,6 @@ export class McpToolUnknownError extends UltimateError {
         input.visible.length > 0 ? input.visible.join(', ') : 'none'
       })`,
       fix: 'call tools/list to read the catalog this caller may use',
-      docs: docsFor('X_MCP_TOOL_UNKNOWN'),
     });
   }
 }
@@ -87,7 +91,6 @@ export class McpScopeDeniedError extends UltimateError {
         subject === 'tool'
           ? `reconnect with a token whose scopes include "${input.scope}" — the app's resolveToken(token) is what returns them — or drop "${input.scope}" from defineAppMcp({ scopes }); scopes are fixed for the life of a connection`
           : `reconnect with a token whose scopes include "${input.scope}" — the app's resolveToken(token) is what returns them — or drop scope: '${input.scope}' from the resource declaring "${input.name}"; scopes are fixed for the life of a connection`,
-      docs: docsFor('X_MCP_SCOPE_DENIED'),
     });
     this.scope = input.scope;
   }
@@ -100,7 +103,6 @@ export class McpArgsInvalidError extends UltimateError {
       code: 'X_MCP_ARGS_INVALID',
       cause: `arguments for "${input.name}" are invalid: ${input.issues.join('; ')}`,
       fix: `re-read the tool's inputSchema from tools/list and resend`,
-      docs: docsFor('X_MCP_ARGS_INVALID'),
     });
   }
 }
@@ -116,7 +118,6 @@ export class McpToolUnsafeError extends UltimateError {
       code: 'X_MCP_TOOL_UNSAFE',
       cause: `tool "${input.name}" declares no policy; an unguarded tool is a second door into the data`,
       fix: `add policy: '<resource>:<verb>' to the tool, reusing the permission its action uses`,
-      docs: docsFor('X_MCP_TOOL_UNSAFE'),
     });
   }
 }
@@ -143,7 +144,6 @@ export class McpToolUndeclaredError extends UltimateError {
       fix:
         "add mcp: { expose: true, description: '<what it does>' } beside the policy on each — " +
         "or drop it from the list and let include: 'exposed' project what opted in",
-      docs: docsFor('X_MCP_TOOL_UNDECLARED'),
     });
     this.names = input.names;
   }
@@ -176,7 +176,6 @@ export class McpToolDuplicateError extends UltimateError {
         sites.length > 0
           ? `rename one — "${input.name}" is projected by ${sites.join(' and ')}; change the name at one of them`
           : "rename one: the tool name is the primitive's export name, the `tools` record key, or an admin action's `name`",
-      docs: docsFor('X_MCP_TOOL_DUPLICATE'),
     });
     this.declaredBy = sites;
   }
@@ -194,7 +193,6 @@ export class McpResourceDuplicateError extends UltimateError {
       code: 'X_MCP_RESOURCE_DUPLICATE',
       cause: `two resources are registered at "${input.uri}"; a URI addresses one document`,
       fix: `give one of them its own URI — register({ uri: '${input.uri}-<what-it-is>', … }) — or drop the duplicate registration`,
-      docs: docsFor('X_MCP_RESOURCE_DUPLICATE'),
     });
   }
 }
@@ -215,7 +213,6 @@ export class McpScopeUnknownError extends UltimateError {
       code: 'X_MCP_SCOPE_UNKNOWN',
       cause: `scopes["${input.scope}"] names "${input.name}", which this server does not project (projected: ${projected})`,
       fix: `in defineAppMcp, spell it as one of the projected names above — or drop "${input.name}" from scopes["${input.scope}"]`,
-      docs: docsFor('X_MCP_SCOPE_UNKNOWN'),
     });
     this.projected = input.projected;
   }
@@ -239,7 +236,6 @@ export class McpScopeConflictError extends UltimateError {
       code: 'X_MCP_SCOPE_CONFLICT',
       cause: `tool "${input.name}" is claimed by two scopes ("${input.scopes[0]}" and "${input.scopes[1]}"); a tool carries one`,
       fix: `in defineAppMcp, keep "${input.name}" under the single scope a token must hold for it, and remove the other entry`,
-      docs: docsFor('X_MCP_SCOPE_CONFLICT'),
     });
     this.scopes = input.scopes;
   }
@@ -252,7 +248,6 @@ export class McpProtocolError extends UltimateError {
       code: 'X_MCP_PROTOCOL',
       cause: input.cause,
       fix: input.fix ?? `send a JSON-RPC 2.0 body: { jsonrpc: '2.0', id, method, params }`,
-      docs: docsFor('X_MCP_PROTOCOL'),
     });
   }
 }
@@ -275,7 +270,6 @@ export class McpQueryRejectedError extends UltimateError {
       code: 'X_MCP_QUERY_REJECTED',
       cause: input.cause,
       fix: input.fix,
-      docs: docsFor('X_MCP_QUERY_REJECTED'),
     });
   }
 }
@@ -295,7 +289,6 @@ export class McpNotBranchDbError extends UltimateError {
       code: 'X_MCP_NOT_BRANCH_DB',
       cause: input.cause,
       fix: input.fix,
-      docs: docsFor('X_MCP_NOT_BRANCH_DB'),
     });
   }
 }

@@ -1,7 +1,7 @@
 // The one place a framework error code becomes an HTTP status. A table, not a
 // switch chain: adding a code elsewhere in the framework means adding a row here,
 // and a missing row is a loud 500 rather than a silently wrong 200.
-import { renderCauseValue, singleLine, stringField } from '@ultimat3/core';
+import { ERROR_DOCS_URL, renderCauseValue, singleLine, stringField } from '@ultimat3/core';
 import { errorStatusInvalid, HTTP_ERROR_TITLES } from './errors';
 
 /**
@@ -155,6 +155,13 @@ export const ERROR_STATUS = {
   // @ultimat3/policy
   X_POLICY_MISSING: 500,
   X_PERMISSION_UNKNOWN: 500,
+  // 500, and the page IS the point — deliberately not a 4xx to keep this table quiet.
+  // `enforce()` was handed a surface no adapter answers to, which reaches a request only through a
+  // config-driven route table, a surface name off the wire or a JS host; none of those is a value
+  // the caller can correct, and a 400 would tell them to fix a request that is not the problem.
+  // It is the third authz-dispatch fault beside the two rows above and takes their status for the
+  // same reason: the declaration is wrong, not the call.
+  X_POLICY_SURFACE_UNKNOWN: 500,
   // @ultimat3/query — the read declares no id, so no cursor can name a position in it. The one
   // paging failure that is NOT the caller's: the fix is an edit to the read's own select, nothing
   // the client sends changes the answer, and the report to the on-call monitor is the point.
@@ -351,11 +358,57 @@ export const factsOf = (error: unknown): ErrorFacts => {
     // command that throws is axiom 4 inverted: the one instruction the reader is given fails.
     // `x errors explain` ships, and it is the command that answers "what is this code".
     fix: str(error, 'fix') ?? `x errors explain ${code} --json   # then fix the throwing call site`,
-    docs: str(error, 'docs') ?? `https://ultimate.dev/errors/${code}`,
+    // Core's one constant, never a per-code URL: `wiki/` is the only public documentation surface
+    // and a code lives there in a table row, which has no anchor. An `UltimateError` already
+    // resolved this at construction, so the fallback only fires for a throwable the framework did
+    // not build — and it must not be the `https://ultimate.dev/errors/<code>` link that answered
+    // 404 on every problem document this package has ever rendered.
+    docs: str(error, 'docs') ?? ERROR_DOCS_URL,
     status: statusFor(code),
     stack: str(error, 'stack'),
   };
 };
+
+/**
+ * `Retry-After`, in whole seconds, for a refusal that computed one — or `undefined`.
+ *
+ * The contract it reads is already written down by the packages BELOW this one: `@ultimat3/auth`'s
+ * `kdfOverloaded` says "`retryAfterSeconds` rides in `meta` because this package cannot reach an
+ * HTTP header; the host reads it onto `Retry-After`", and `rateLimited` in this package carries the
+ * same field. Nothing was the host. So a 503 shed by the KDF gate and a 429 from an account lockout
+ * both told the caller to come back and never said when — which is the shed-with-no-delay pattern
+ * the `admit` stage exists to avoid, one layer in.
+ *
+ * Total, for `str`'s reason one function up: `meta` is a property read on a value this package did
+ * not build, and it is read in the frame that decides what the caller sees.
+ */
+export function retryAfterOf(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  try {
+    const meta: unknown = (error as Record<string, unknown>)['meta'];
+    if (typeof meta !== 'object' || meta === null) return undefined;
+    const seconds: unknown = (meta as Record<string, unknown>)['retryAfterSeconds'];
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return undefined;
+    // At least one second, exactly as `RateLimitDecision.retryAfterSeconds` is clamped: `0` reads
+    // as "retry now", which is the stampede a Retry-After exists to spread.
+    return Math.max(1, Math.ceil(seconds));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * RFC-9457 `type`, per code. A URN, and deliberately not a URL: `type` is the document's PRIMARY
+ * identifier for the problem KIND — a client switches on it — while `docs` is where a human goes
+ * to read about it, and those stopped being the same string when `docs` became one wiki page for
+ * every code. Collapsing `type` onto that page too would have given a 422 body-invalid and a 403
+ * forbidden the same identifier, which is the one thing a `type` may not do.
+ *
+ * A URN has no host to resolve, so it cannot rot the way `https://ultimate.dev/errors/<code>` did
+ * — it was never dereferenceable and never claimed to be, which RFC 9457 §3.1.1 explicitly allows.
+ * `code` carries the same string as a plain member for a reader that would rather not parse a URI.
+ */
+export const problemTypeFor = (code: string): string => `urn:ultimate:error:${singleLine(code)}`;
 
 /** RFC-9457 problem document. `code`/`cause`/`fix`/`docs` are our extensions. */
 export interface ProblemDocument {
@@ -377,7 +430,7 @@ export const toProblem = (
 ): ProblemDocument => {
   const facts = factsOf(error);
   return {
-    type: facts.docs,
+    type: problemTypeFor(facts.code),
     title: facts.title,
     status: facts.status,
     detail: facts.cause,

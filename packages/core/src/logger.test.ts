@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 // proving which of the two a line lands on means intercepting those exact writers.
 import process from 'node:process';
 import { type Clock, frozenClock } from './clock';
+import { ERROR_DOCS_URL } from './error-codes';
 import { UltimateError } from './errors';
 import { createLogger, REDACTED, redactKeys, setLogStream } from './logger';
 
@@ -192,7 +193,7 @@ describe('logger', () => {
       code: 'X_INTERNAL',
       cause: 'boom',
       fix: 'x verify',
-      docs: 'https://ultimate.dev/errors/X_INTERNAL',
+      docs: ERROR_DOCS_URL,
     });
   });
 });

@@ -79,7 +79,7 @@ strand a well-behaved client.
 | A predicate audience sees the caller and nothing else | it is handed `McpCaller` — never the call arguments, so two calls with different inputs cannot answer differently. Must return the literal `true`; if it throws, the tool is hidden |
 | `tools/list` is answered per caller | filtered on every call against the caller the transport resolved — one per HTTP request, one per stdio connection — never a static catalog |
 | Gate order | visibility → scope → arguments → policy; the scope gate never waits on a policy run against attacker-supplied input |
-| Every outcome is audited | one line per `tools/call`; hidden/scope/policy at `warn`, ok at `info` — see `audit.ts` |
+| Every outcome is audited | one line per `tools/call`; hidden/scope/policy at `warn`, ok and invalid-args at `info` — see `audit.ts`. A tool that renders its OWN `isError` result may name the code it refused with (`McpToolResult.code`, audit-only, never on the wire) and is then classified by the same `outcomeForCode` a thrown error is — otherwise every self-rendered refusal lands in the `policy-denied` bucket a prober's name walk is alerted from |
 | Audit lines carry no payload | tool, outcome, actor, code. Never arguments, never rows |
 | No trusted-tool mode | there is no flag that skips policy evaluation |
 

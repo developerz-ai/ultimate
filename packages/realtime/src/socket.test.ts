@@ -7,8 +7,14 @@ import { CLOSE, idleSweepPeriodMs, SocketRegistry, SyncSocket, type WsLike } fro
 
 class FakeWs implements WsLike {
   closedWith: number | undefined;
+  /**
+   * Bun's own contract, and the reason `send` is declared `: number`: bytes accepted, `0` for a
+   * message the runtime dropped, `-1` under backpressure. A fake that answered `data.length`
+   * whatever its state could not tell an accepted frame from a dropped one, so no test here could
+   * see the bug — the socket closes, the write returns `0`, and the caller was told `true`.
+   */
   send(data: string): number {
-    return data.length;
+    return this.closedWith === undefined ? data.length : 0;
   }
   close(code?: number): void {
     this.closedWith = code;

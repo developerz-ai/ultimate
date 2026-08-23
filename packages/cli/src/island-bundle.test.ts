@@ -9,7 +9,13 @@ import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import type { MountedIsland } from '@ultimat3/testing';
 import { mountIsland } from '@ultimat3/testing';
-import { buildIslands, discoverIslands, ISLAND_BASE_PATH, islandBundle } from './island-bundle';
+import {
+  buildIslands,
+  describeBuildError,
+  discoverIslands,
+  ISLAND_BASE_PATH,
+  islandBundle,
+} from './island-bundle';
 import { transformIslandTsx } from './solid-loader';
 
 // `.island-fixture/bundle`, never `.island-fixture` itself. This suite wipes its root in both
@@ -331,5 +337,65 @@ describe('an island that renders JSX', () => {
     expect(second).toContain('two');
     // And the same source is answered from the cache rather than recompiled.
     expect(await transformIslandTsx('export const a = <b>two</b>;\n', path)).toBe(second);
+  });
+});
+
+/**
+ * What `Bun.build`'s throw becomes, and it is not a log line: `IslandBuildFailedError` interpolates
+ * it straight into a `cause:` (`errors.ts`). A cross-FILE hop, which is why neither
+ * `scripts/catch-render.ts` nor `scripts/error-render.ts` can see it — and it read the value three
+ * unsafe ways at once: `instanceof` (a `Proxy` answers it through `getPrototypeOf`), `.message` (a
+ * getter that can raise) and `String()` (throws outright on a Symbol). A throw there replaces the
+ * whole refusal with a TypeError about reporting it.
+ */
+describe('unit · the bundler diagnostic a cause is built from', () => {
+  test('an ordinary Error keeps its message', () => {
+    expect(describeBuildError(new TypeError('Could not resolve: "solid-js"'))).toContain(
+      'Could not resolve: "solid-js"',
+    );
+  });
+
+  test('an aggregate is flattened, which is what puts a line number in the cause', () => {
+    const rendered = describeBuildError(
+      new AggregateError([new Error('a.tsx:3 unresolved'), new Error('b.tsx:9 syntax')], 'nope'),
+    );
+    expect(rendered).toContain('a.tsx:3 unresolved');
+    expect(rendered).toContain('b.tsx:9 syntax');
+    expect(rendered).toContain(';');
+  });
+
+  test('a message getter that throws is rendered, never re-thrown', () => {
+    const hostile = new Error('unused');
+    Object.defineProperty(hostile, 'message', {
+      get() {
+        throw new TypeError('message is a trap');
+      },
+    });
+    expect(() => describeBuildError(hostile)).not.toThrow();
+    expect(describeBuildError(hostile)).not.toContain('message is a trap');
+  });
+
+  test('a Symbol is rendered, where String() throws outright', () => {
+    expect(() => describeBuildError(Symbol('boom'))).not.toThrow();
+    expect(describeBuildError(Symbol('boom')).length).toBeGreaterThan(0);
+  });
+
+  test('a Proxy that traps getPrototypeOf and get is rendered too', () => {
+    const trap = new Proxy(
+      { errors: [] },
+      {
+        getPrototypeOf() {
+          throw new TypeError('no prototype for you');
+        },
+        get() {
+          throw new TypeError('no properties for you');
+        },
+      },
+    );
+    expect(() => describeBuildError(trap)).not.toThrow();
+  });
+
+  test('a non-Error throw is not flattened to a placeholder', () => {
+    expect(describeBuildError('bundle failed')).toContain('bundle failed');
   });
 });

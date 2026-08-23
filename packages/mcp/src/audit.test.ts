@@ -8,8 +8,8 @@ import { describe, expect, test } from 'bun:test';
 import type { Logger } from '@ultimat3/core';
 import { agentActor, createLogger, frozenClock } from '@ultimat3/core';
 import type { McpOutcome } from './audit';
-import { auditToolCall, outcomeForCode } from './audit';
-import type { McpCaller } from './registry';
+import { auditToolCall, outcomeForCode, outcomeForResult } from './audit';
+import type { McpCaller, McpToolResult } from './registry';
 
 interface Capture {
   readonly logger: Logger;
@@ -101,5 +101,55 @@ describe('outcomeForCode', () => {
     // A projected action rejecting input MCP validated means the two schemas have drifted.
     expect(outcomeForCode('X_INPUT_INVALID')).toBe('failed');
     expect(outcomeForCode('X_MCP_QUERY_REJECTED')).toBe('failed');
+  });
+});
+
+/**
+ * A tool that renders its OWN refusal (`@ultimat3/admin` does, so the model reads a code/cause/fix
+ * body rather than a transport failure) was audited as `policy-denied` at `warn` whatever it
+ * refused for — so a malformed `admin.create` landed in the bucket this file calls "every refusal
+ * a prober can drive", beside the denials an alert rule is watching for.
+ */
+/**
+ * A real `McpToolResult`, which is what the transport hands the classifier. `outcomeForResult`'s
+ * parameter is structural and narrower than the interface — it reads `isError` and `code` and
+ * nothing else — so a fresh object literal carrying the `content` every actual result has is an
+ * excess property against it. Driving the cases through the shipped shape keeps them the transport's.
+ */
+const rendered = (over: Omit<McpToolResult, 'content'> = {}): McpToolResult => ({
+  content: [],
+  ...over,
+});
+
+describe('outcomeForResult classifies a tool that rendered its own error', () => {
+  test('a result that is not an error is outcome ok', () => {
+    expect(outcomeForResult(rendered())).toBe('ok');
+    expect(outcomeForResult(rendered({ isError: false }))).toBe('ok');
+  });
+
+  test('an isError result naming no code stays outcome 3, the conservative reading', () => {
+    expect(outcomeForResult(rendered({ isError: true }))).toBe('policy-denied');
+  });
+
+  test('a named code is classified exactly as a THROWN one is — one classifier, not two', () => {
+    expect(outcomeForResult(rendered({ isError: true, code: 'X_ADMIN_DENIED' }))).toBe(
+      'policy-denied',
+    );
+    expect(outcomeForResult(rendered({ isError: true, code: 'X_ADMIN_INVALID' }))).toBe(
+      'invalid-args',
+    );
+    expect(outcomeForResult(rendered({ isError: true, code: 'X_DB_UNREACHABLE' }))).toBe('failed');
+  });
+
+  test('the admin codes are classified where they are decided', () => {
+    // `X_ADMIN_DENIED` is authz saying no, wherever it was decided — the same outcome
+    // `X_FORBIDDEN` gets. `X_ADMIN_INVALID` is the caller mis-typing an argument the published
+    // JSON Schema could not have refused: admin publishes a `type` per field and nothing else,
+    // so the entity's own rules are the first thing the value meets.
+    expect(outcomeForCode('X_ADMIN_DENIED')).toBe('policy-denied');
+    expect(outcomeForCode('X_ADMIN_INVALID')).toBe('invalid-args');
+    // NOT the same as `X_INPUT_INVALID`, which stays `failed` above: a projected action
+    // publishes its whole schema, so input MCP already validated failing there is drift.
+    expect(outcomeForCode('X_INPUT_INVALID')).toBe('failed');
   });
 });

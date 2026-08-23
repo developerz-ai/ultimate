@@ -276,7 +276,15 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     // `posts/repo.ts` joined the list when it was rewritten onto @ultimat3/entity's real surface:
     // it spells the column three times now — the view mapper, the feed projection, the insert
     // shape — where the builder API it used to call named no column at all.
+    //
+    // The two `backfills/post-excerpts` files joined it 2026-08-23 with the backfill itself: a
+    // sweep that fills blank excerpts names the column in its `source` predicate, in its row
+    // projection and in its test's row builder, so a rename reaches it exactly as it reaches the
+    // repo. Added in the same commit as the consumer, which is the discipline this list exists
+    // for — a file appearing here on its own would be a hop that used to be silent.
     const touchedFiles = [
+      'apps/web/app/posts/backfills/post-excerpts.job.test.ts',
+      'apps/web/app/posts/backfills/post-excerpts.ts',
       'apps/web/app/posts/entity.ts',
       'apps/web/app/posts/repo.ts',
       'apps/web/app/posts/repo.test.ts',
@@ -328,7 +336,7 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     // list on purpose, in the same commit, the same discipline `KNOWN_GAPS` in
     // `packages/cli/src/scaffold-typecheck.ts` uses for pinned compiler drift.
     expect(new Set(introduced.map((d) => d.file))).toEqual(new Set(touchedFiles));
-    expect(introduced).toHaveLength(16);
+    expect(introduced).toHaveLength(21);
 
     // `entity.ts`: the view's field list no longer names a real column (hop 4).
     expect(
@@ -348,5 +356,17 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
 
     // `seeds/dev.ts`: raw insert literals no longer match the entity's columns (hop 1 → 2).
     expect(introduced.filter((d) => d.file === 'packages/db/seeds/dev.ts')).toHaveLength(4);
+
+    // `backfills/post-excerpts.ts`: the sweep names the column in its `source` predicate and in
+    // its row projection, so the rename reaches a job the same way it reaches a read (hop 2 → 3).
+    expect(
+      introduced.filter((d) => d.file === 'apps/web/app/posts/backfills/post-excerpts.ts').length,
+    ).toBeGreaterThan(0);
+
+    // Its test builds a row literal, which is hop 1 → 2 again — the same shape as `repo.test.ts`.
+    expect(
+      introduced.filter((d) => d.file === 'apps/web/app/posts/backfills/post-excerpts.job.test.ts')
+        .length,
+    ).toBeGreaterThan(0);
   }, 30_000);
 });

@@ -6,7 +6,7 @@
 
 import type { Actor, ActorFactMap, FactKeysOf, FactMapOf } from './actor';
 import type { CacheTierName } from './cache-vocabulary';
-import type { AppConfigInput, CacheConfig, DatabaseConfig } from './config';
+import type { AppConfigInput, CacheConfig, DatabaseConfig, RealtimeConfig } from './config';
 import type { CtxPatch } from './context';
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
 
@@ -117,6 +117,26 @@ type _CacheConfigCarriesNoDeadField = Assert<
 /** And the input side with it — `Input<CacheConfig>` is what an `app.config.ts` writes. */
 type _CacheInputCarriesNoDeadField = Assert<
   Extract<keyof NonNullable<AppConfigInput['cache']>, DeadCacheField> extends never ? true : false
+>;
+
+/**
+ * The two `config.realtime` fields deleted for the same rule — `heartbeatMs` (2026-08-19) and
+ * `tier` (2026-08-23). `tier` is the worse of the two and the reason this pin exists: it accepted
+ * three values with three documented meanings, and `transport`/`urlEnv` are the only fields of
+ * this section any code reads, so all three meanings were one behaviour. Re-adding it restores a
+ * knob whose `'local-first'` setting promises a durable local store the framework does not build.
+ */
+type DeadRealtimeField = 'tier' | 'heartbeatMs';
+
+type _RealtimeConfigCarriesNoDeadField = Assert<
+  Extract<keyof RealtimeConfig, DeadRealtimeField> extends never ? true : false
+>;
+
+/** And the input side with it — `Input<RealtimeConfig>` is what an `app.config.ts` writes. */
+type _RealtimeInputCarriesNoDeadField = Assert<
+  Extract<keyof NonNullable<AppConfigInput['realtime']>, DeadRealtimeField> extends never
+    ? true
+    : false
 >;
 
 /**

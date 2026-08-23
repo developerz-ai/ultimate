@@ -31,6 +31,20 @@ export const ROOT_ELEMENT_ID = 'x-root';
 const MAX_DEPTH = 500;
 
 /**
+ * Asserted at the top of `unwrap`, not only in `renderNode`. The element path was the only one
+ * bounded, and it is not the only one that recurses: `unwrap` walks arrays and calls thunks, both
+ * of which a component's `children` routinely are, so a self-referencing array or a self-returning
+ * accessor escaped `renderToHtml` as a bare `RangeError` — no code, no `fix:`, nothing to catch by.
+ */
+function assertDepth(depth: number): void {
+  if (depth <= MAX_DEPTH) return;
+  throw new PrerenderFailedError(
+    `component tree exceeded ${MAX_DEPTH} levels, so it renders itself`,
+    'remove the self-reference from the component that renders its own tag',
+  );
+}
+
+/**
  * What the walk carries besides depth. One object per render, never module-global: two concurrent
  * requests render different params, and a shared collector would bill one page for the other's JS.
  */
@@ -41,8 +55,12 @@ export interface RenderHtmlOptions {
 /**
  * A thunk is called, not stringified. Solid's reactive reads are accessors (`count()`), and a
  * `children` prop is routinely a function — evaluating it once is exactly the server's job.
+ *
+ * Which is also why the depth bound belongs HERE and not only on the element path: the array and
+ * thunk branches below recurse, and both are ordinary shapes for a component's children.
  */
 async function unwrap(value: unknown, depth: number, walk: RenderHtmlOptions): Promise<string> {
+  assertDepth(depth);
   if (value === null || value === undefined || value === false || value === true) return '';
   if (typeof value === 'string') return escapeText(value);
   if (typeof value === 'number' || typeof value === 'bigint') return escapeText(String(value));
@@ -106,12 +124,7 @@ async function renderNode(
   depth: number,
   walk: RenderHtmlOptions,
 ): Promise<string> {
-  if (depth > MAX_DEPTH) {
-    throw new PrerenderFailedError(
-      `component tree exceeded ${MAX_DEPTH} levels, so it renders itself`,
-      'remove the self-reference from the component that renders its own tag',
-    );
-  }
+  assertDepth(depth);
   if (typeof type === 'string') return renderElement(type, props, depth, walk);
   return unwrap(type(props), depth + 1, walk);
 }

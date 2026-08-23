@@ -5,6 +5,7 @@
 
 import type { Clock } from '@ultimat3/core';
 import type { AuthVerification, VerificationStore } from './adapter';
+import { normaliseEmail } from './email';
 import { AuthError } from './errors';
 import { randomToken, sha256Hex, timingSafeEqual } from './tokens';
 
@@ -68,10 +69,17 @@ export async function issueVerification(
   const token = randomToken(32);
   const ttl = input.ttlMs ?? DEFAULT_VERIFICATION_TTL_MS[input.purpose];
   const expiresAt = new Date(now.getTime() + ttl);
+  // The FOURTH identity door, and the one that did not normalise: `register`, `login`,
+  // `profileEmail` and `accountKey` all do. `putVerification` upserts on `(purpose, identifier)`
+  // and `adapter.ts` promises that "issuing a new token invalidates the previous one" — a promise
+  // that was per SPELLING, so N live reset tokens for one address could be held at once by varying
+  // the case, and each one of them is a password. It is also the address the mail is sent to, so
+  // the link goes to the inbox the account is keyed by rather than to whatever a form posted.
+  const identifier = normaliseEmail(input.identifier);
   await runtime.store.putVerification({
     id: randomToken(12),
     purpose: input.purpose,
-    identifier: input.identifier,
+    identifier,
     tokenHash: sha256Hex(token),
     expiresAt,
     consumedAt: null,
@@ -79,7 +87,7 @@ export async function issueVerification(
   });
   await runtime.mail.send(
     VERIFICATION_TEMPLATES[input.purpose],
-    input.identifier,
+    identifier,
     {
       ...(input.data ?? {}),
       link: input.link?.(token) ?? token,
@@ -119,7 +127,13 @@ export async function consumeVerification(
   input: ConsumeVerificationInput,
 ): Promise<AuthVerification> {
   const tokenHash = sha256Hex(input.token);
-  const record = await runtime.store.takeVerification(input.purpose, input.identifier, tokenHash);
+  // Normalised on the way OUT as well as in, or a link issued for `ada@x.test` is unredeemable by
+  // a form that posted `Ada@X.test` — one door, one key.
+  const record = await runtime.store.takeVerification(
+    input.purpose,
+    normaliseEmail(input.identifier),
+    tokenHash,
+  );
   if (record === null) throw verificationInvalid(input.purpose);
   // Kept for the seam, not for the blessed adapters: `VerificationStore` is implementable by an
   // app, and one that ignores the third argument would otherwise redeem any token. Constant-time

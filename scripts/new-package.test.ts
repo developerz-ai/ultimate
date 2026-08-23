@@ -38,11 +38,21 @@ describe('unit · a scaffolded package documents its OWN boundary', () => {
     expect(paths).toContain('LICENSE');
   });
 
-  test('the scaffolded error class carries a namespaced code and a docs url', () => {
+  /**
+   * The `docs:` line is the assertion that CHANGED, and it changed because it was wrong: this
+   * template wrote `https://ultimate.dev/errors/<code>` into every package it ever scaffolded and
+   * that host answers 404. `UltimateError`'s constructor resolves the registered descriptor, whose
+   * default is `ERROR_DOCS_URL` — so the correct template emits no `docs:` at all, and a test
+   * pinning the old one was pinning the defect.
+   */
+  test('the scaffolded error class carries a namespaced code and NO docs url', () => {
     const errors = fileNamed('widget-set', 1, 'src/errors.ts');
     expect(errors).toContain("'X_WIDGET_SET_INVALID'");
-    expect(errors).toContain('https://ultimate.dev/errors/X_WIDGET_SET_INVALID');
     expect(errors).toContain('extends UltimateError');
+    expect(errors).not.toContain('ultimate.dev');
+    // The CONSTRUCTOR call, not the word: the file's own header explains why the line is absent,
+    // and asserting the word never appears would forbid it saying so.
+    expect(errors).not.toContain("docs: '");
   });
 });
 
