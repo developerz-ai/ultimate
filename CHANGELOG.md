@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 8.0.0 - 2026-08-23
+
 ### Changed
 
 - **BREAKING — three config fields deleted: `pwa.installPrompt`, `auth.afterSignInPath`,
@@ -489,6 +493,18 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 - **`HealthReport.registered`** — the count of registered readiness checks, so a caller can tell
   "every check passed" from "nobody registered one". Reported, not enforced.
+
+### Commits
+
+- fix(docker,ci,docs): a compose that ran backfill as a second web, and a fail-fast that never fired (#303)
+- fix(scaffold,scripts): the scaffold's fix chain was an infinite loop, and 102 lockfile facts were stale (#301)
+- fix(cli): three security holes, a gate step reading the wrong files, and x verify --only (#298)
+- fix(tiers 4–5): an XSS in the attribute name, x shot broken on every route, and a config page describing a framework we do not ship (#294)
+- fix(tier 3): the realtime barrel split, the idempotency reservation fence, and six more (#292)
+- fix(tier 2): eleven defects, plus the Postgres stores that make scope: 'shared' deployable (#291)
+- fix(tiers 0–1): fifteen defects from deep-dive sweep two, each with a failing-first test (#288)
+- plan
+- docs: restamp to 7.0.0, from the registry rather than from intent (#287)
 
 ## 7.0.0 - 2026-08-21
 
