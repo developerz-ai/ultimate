@@ -88,21 +88,6 @@ export const GATED_APPS: readonly GatedApp[] = [
         'X_BUDGET_UNMEASURED on every route that declares a `budget:` — the same never-run half ' +
         'of the step pinned on examples/dummy above, for the same reason: no `.x/build-stats.json` ' +
         'has ever existed here. Closed by running `x build` ahead of this gate',
-
-      drift:
-        'X_DB_DRIFT — a step that was VACUOUSLY green, not a regression. `checkSourceDrift` used ' +
-        'to hash the source TEXT under packages/db/src; it now hashes the entity registry too ' +
-        '(9e5a8d1d7ae44bbb -> 977567e0ad5471f3), and the text half is structurally blind to a ' +
-        'change in what describe() MEANS by unchanged source — which is what happened here: no ' +
-        'entity file was edited, and `on delete` reaching the generated SQL (4.0.0) moved every ' +
-        'foreign key. The diff is real and it is 3,872 characters of `alter table … drop ' +
-        'constraint` / `add constraint` across 13 entities, off a clean load (0 loadApp ' +
-        'findings). Closed by a DELIBERATE `cd dummy/social-media-clone && x db gen "reconcile ' +
-        'foreign key rules"` reviewed by the app owner — never by re-recording the .hash ' +
-        'sidecar, which `reconcileSchemaHash` refuses for this exact reason: the sidecar would ' +
-        'then claim 20260817122509_initial_schema produced a schema it did not. If the current ' +
-        'hash in the finding is no longer 977567e0ad5471f3, this pin is stale and the entities ' +
-        'have moved again',
     } satisfies Partial<Record<VerifyStepName, string>>,
   },
 ];
