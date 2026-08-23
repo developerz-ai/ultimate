@@ -7,7 +7,7 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 | [`00-thesis.md`](./00-thesis.md) | Rails' philosophy, but the primary developer is an AI agent — plus the inspire-explicitly table and the 8 axioms. |
 | [`01-stack.md`](./01-stack.md) | One locked choice per layer; Bun natives delete ~40 dependencies before you write a line. |
 | [`02-primitives.md`](./02-primitives.md) | Eight primitives. `action` projects to six artifacts. Two authz systems is how every Meteor-like framework died. |
-| [`03-realtime.md`](./03-realtime.md) | Channels → live queries → local-first: a ladder, not three products. Tier 2 → 3 is a config flag. |
+| [`03-realtime.md`](./03-realtime.md) | Channels → live queries → local-first: a ladder, not three products. Tier 2 → 3 is `persist: true` on a **query** — never a config key: `realtime.tier` was read by nothing and was deleted in 10.0.0. |
 | [`04-jobs.md`](./04-jobs.md) | Transactional outbox by default, durable steps, idempotency key required by the type. |
 | [`05-caching.md`](./05-caching.md) | Four tiers, one invalidation graph. `invalidates: [tag.post]` reaches memo, LRU, Redis, ISR, and the CDN in one hop. |
 | [`06-surfaces.md`](./06-surfaces.md) | `site/` cannot import `app/` — a build error, because that import is how marketing pages ship charting libraries. |
@@ -25,19 +25,21 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 | [`18-build-vs-wrap.md`](./18-build-vs-wrap.md) | Own the integration layer, wrap the protocol layer. Verdicts: jobs BUILD, SMTP BUILD, NATS WRAP — adopted, `nats@2.29.3` at the transport seam. |
 | [`19-mechanism-not-convention.md`](./19-mechanism-not-convention.md) | Axiom 8. Mechanisms and structural conventions ship; business conventions never do. Tenancy ships, an org model does not — the app wraps. |
 | [`20-large-app-readiness.md`](./20-large-app-readiness.md) | The capability axis: what a very large app already gets, and whether a company can plug its own infrastructure in. The primitives are enterprise-grade; the dominant defect is a mechanism **built, exported, and never called by the boot** — the outbox, the scheduler watermark, the shared cache tier, WebSocket auth. |
+| [`21-the-range.md`](./21-the-range.md) | **Who it is for, and the range**: a homework assignment to a very large product, one framework, no lite mode. The small end measured (0 questions, 134 files, 4 commands, 18 of 19 gate steps after following the `fix:` lines); the large end anchored to the ladder, the tiers and the gate; and why enforced conventions pay MORE with a cheap model. |
 
 ## Reading paths
 
 | You are | Read |
 |---|---|
-| Evaluating the idea | `00` → `01` → `02` → `15` |
+| **Deciding whether it fits a project this size** | `21` — the range, homework to very large, with the small end measured and the large end anchored |
+| Evaluating the idea | `00` → `21` → `01` → `02` → `15` |
 | Implementing a package | `02` → the doc for your primitive → `10` |
 | Judging shippability | `14` → `10` → `12` |
 | Here for the AI story | `09` → `02` → `13` |
 | Operating it | `11` → `12` → `08` |
 | **Deploying and scaling** | `17` → `12` → `11`, then [`docs/ops/`](../ops/README.md) for the runbooks. Start at rung 0: a free PaaS plan, no card |
 | **Building for mobile or desktop** | `16` → `02` → `06`. Design only — no package, no build target, no gate step exists yet |
-| **Adopting it for a very large product** | `20` → `19` → `17`. `20` is the capability axis — what is built but uncalled, and which seams take your own drivers; `19` is the rule it scores against; `17` is the deployment one |
+| **Adopting it for a very large product** | `21` → `20` → `19` → `17`. `20` is the capability axis — what is built but uncalled, and which seams take your own drivers; `19` is the rule it scores against; `17` is the deployment one |
 
 ## The one-paragraph version
 
@@ -72,7 +74,7 @@ Consequences of each in [`00-thesis.md`](./00-thesis.md); axiom 8 in full in [`1
 | OIDC trusted publisher | attached to all 30 on 2026-08-19, with `Environment: npm-publish` — that attachment is what lets the workflow publish at all, and its absence is why 2.0.0 has no provenance. Not the first ever: 1.1.0 and 1.2.0 published under earlier publisher configurations (a different `oidcConfigId` per package) | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — every package, and without a fresh code they all read as missing. Per version: `npm view @ultimat3/core@1.2.0 _npmUser.trustedPublisher` |
 | Release approval | the workflow stops at `waiting` on the `npm-publish` environment until a named reviewer approves the pending deployment — the last point an irreversible publish can be stopped | `gh run view <id> --json status` |
 
-Docs `00`–`15`, `18` and `19` describe what exists; `16` and `17` are design only and say so in every claim.
+Docs `00`–`15` and `18`–`21` describe what exists. **`16` is the only design-only doc** and says so in every claim; `17` is not — it states rung by rung which rungs are real (0–2) and names where the "no app code change" invariant breaks today, which is why the index row above and [`wiki/Home.md`](../../wiki/Home.md) both call it shipped.
 
 Milestone order and the "done when" bar for each live in [`14-roadmap.md`](./14-roadmap.md); the honest accounting of what could kill the project is in [`15-risks.md`](./15-risks.md) — read it before the roadmap, not after.
 

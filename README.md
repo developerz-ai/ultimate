@@ -34,11 +34,25 @@ Rails' philosophy on a Bun + Postgres + SolidJS stack. Everything is one of **ei
 
 <p align="center"><sub><em>The Matrix</em> (1999)</sub></p>
 
+## Who it is for, and the range
+
+**A homework assignment through to a very large product, one framework, no lite mode.** The small end pays nothing for the large end — the large end is configuration the small end never types — and the large end is reachable because nothing the small end did has to be undone.
+
+| End of the range | The claim | Measured `As of 2026-08-23` |
+|---|---|---|
+| **small** — a weekend idea, a first app | not overkill: nothing to install, nothing to choose | `x new` asks **0** questions (all five flags defaulted), writes **136** files you never edit, installs **104** packages, and reaches a running app in **4** commands with **0** env values supplied |
+| **large** — many teams, real traffic | the ladder, the tier boundaries and the 19-step gate are already in the beginner's app | the same `x verify`, the same primitives, the same image; climbing is `ROLE`, env and replica counts ([scale ladder](docs/idea/17-scale-ladder.md)) |
+| **the model you can afford** | enforced conventions and executable `fix:` lines are worth *more* the cheaper the model | a fresh scaffold's gate goes from red to **18 of 19** by running the `fix:` lines it printed, bounded at three rounds, on every push in CI |
+
+→ [The range, in full, with every number's command](docs/idea/21-the-range.md)
+
 ## Run it
 
 ```sh
-bunx create-ultimate myapp && cd myapp && x dev
+bunx create-ultimate myapp && cd myapp && bin/setup && x dev
 ```
+
+`bin/setup` is `bun install`, `x db gen "initial"`, `x db migrate`, `x db seed` — idempotent, and the app's own README names it too. **Not `x dev` straight after `cd`:** `x new` installs nothing, so the app has no `node_modules` and no `x` of its own, and `x dev` stops on `X_BUILD_FAILED` — *"Could not resolve `@ultimat3/ui`. Maybe you need to `bun install`?"* (measured 2026-08-23; this file said otherwise until then).
 
 No Docker, no env scavenger hunt. Embedded Postgres, in-process NATS, S3 → a local directory, a seeded database, a working route and a dev dashboard at `/_x`.
 
@@ -160,6 +174,7 @@ One hop per question.
 
 | You want | Go |
 |---|---|
+| to know whether it fits a project this size | [docs/idea/21-the-range.md](docs/idea/21-the-range.md) |
 | the reference manual — every field, flag, error code | [wiki/](wiki/Home.md) · [browsable](https://github.com/developerz-ai/ultimate/wiki) |
 | **what to do, step by step, to add a feature** | [docs/architecture/15-adding-a-feature.md](docs/architecture/15-adding-a-feature.md) |
 | why a decision was made | [docs/idea/](docs/idea/README.md) |
@@ -331,7 +346,7 @@ The 1,767 generated Lucide glyph files are excluded on purpose — leaving them 
 
 | Not claimed | Why |
 |---|---|
-| that the demo passes its own gate | it is **pinned red on 3 steps**, `As of 2026-08-22` — `boundaries` (`X_BOUNDARY_SITE_TO_APP` ×3, the static feed importing the authed post service), `budgets` (`X_BUDGET_UNMEASURED`, no `.x/build-stats.json` has ever existed there) and `drift` (`X_DB_DRIFT`, real and unreconciled). [`examples/dummy`](examples/dummy/README.md) is pinned on 4 steps including `typecheck`. The pins and their reasons are [`scripts/lib/gated-apps.ts`](scripts/lib/gated-apps.ts); `bun run scripts/reference-app-gate.ts` re-derives them |
+| that the demo passes its own gate | it is **pinned red on 2 steps**, `As of 2026-08-23` — `boundaries` (`X_BOUNDARY_SITE_TO_APP` ×3, the static feed importing the authed post service) and `budgets` (`X_BUDGET_UNMEASURED`, no `.x/build-stats.json` has ever existed there). It was 3: `drift` came off when the migration reconciling its foreign keys landed. [`examples/dummy`](examples/dummy/README.md) is pinned on 4 steps — `typecheck`, `e2e`, `drift`, `budgets`. The pins and their reasons are [`scripts/lib/gated-apps.ts`](scripts/lib/gated-apps.ts); `bun run scripts/reference-app-gate.ts` re-derives them |
 | that low lines means high leverage | partly it means **few features**. Roughly half of [`DOMAIN.md`](dummy/social-media-clone/DOMAIN.md) is a plan, not a build: `likes` and `comments` are entities with migrations and no write path |
 | that the framework wrote the auth | it did not. 13 non-test files hand-write argon2id parameters, `__Host-` cookie prefixes, session token hashing and a captcha, and **`@ultimat3/auth` is imported nowhere in that app**. `@ultimat3/storage` likewise, despite a media feature. The largest thing the framework could have projected and did not |
 | that live messaging works | the one live query is declared, unit-tested and **not wired**: nothing calls `installRealtimeTopics` at boot, and [`apps/web/api/realtime.ts`](dummy/social-media-clone/apps/web/api/realtime.ts) says so in its own header |
