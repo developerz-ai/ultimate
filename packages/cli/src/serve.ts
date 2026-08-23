@@ -328,6 +328,9 @@ async function bootRoles(boot: {
     // Same declaration `x dev` reads. Without it a container answers a browser that opened a
     // guarded page with the problem document, rendered as raw JSON in the viewport.
     signInPath: await loadSignInPath(options.root),
+    // The app's own `apps/web/site/errors/<status>.html`, resolved inside `startWeb` so this
+    // process and `x dev` cannot answer a browser differently.
+    root: options.root,
     http: CONTAINER_BINDING,
     ...(options.runtime === undefined ? {} : { overrides: options.runtime }),
   });

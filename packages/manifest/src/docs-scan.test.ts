@@ -47,6 +47,24 @@ describe('unit · scanPackageDocs', () => {
     expect(entries[0]?.symbols).toEqual(['Dialog']);
   });
 
+  /**
+   * Module order is CODE UNITS, never `localeCompare`: this file promises that "two scans of one
+   * tree agree", and `localeCompare` with no locale argument answers from the runtime's ICU default
+   * and collation version — `'jobs.Cache'.localeCompare('jobs.cache')` is `1` while
+   * `'jobs.Cache' < 'jobs.cache'` is `true`, so one installed tree scanned two ways on two
+   * machines. Same rule `@ultimat3/jobs`' `job.ts` states for the manifest it emits.
+   */
+  test('module entries sort by code unit, so two scans of one tree agree', async () => {
+    const dir = fixture({
+      'package.json': '{"name":"@ultimat3/jobs"}',
+      'src/index.ts': "export { Cache } from './Cache';\nexport { cache } from './cache';",
+      'src/Cache.ts': '// The class.\nexport function Cache() {}',
+      'src/cache.ts': '// The helper.\nexport function cache() {}',
+    });
+    const entries = await scanPackageDocs(dir);
+    expect(entries.map((entry) => entry.topic)).toEqual(['jobs.Cache', 'jobs.cache']);
+  });
+
   test('a .ts module still wins when both spellings exist', async () => {
     const dir = fixture({
       'package.json': '{"name":"@ultimat3/ui"}',

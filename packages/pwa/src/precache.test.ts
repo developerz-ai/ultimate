@@ -47,6 +47,27 @@ describe('buildPrecacheManifest', () => {
     expect(manifest.entries.some((e) => e.url === '/legal')).toBe(false);
   });
 
+  /**
+   * Entry order is CODE UNITS, never `localeCompare`: this manifest is emitted into `sw.js`, whose
+   * header promises byte-identical output for identical input, and `localeCompare` with no locale
+   * argument answers from the runtime's ICU default and collation version — so an asset named
+   * `/App.js` sorts one way here and the other way on a machine with a different ICU, and the SW
+   * update check fires on a no-op deploy. `@ultimat3/jobs`' `job.ts:359` states the same rule.
+   */
+  test('entries sort by code unit, so two ICU builds emit one manifest', () => {
+    const manifest = buildPrecacheManifest({
+      buildId: 'b1',
+      routes: [],
+      assets: [
+        { url: '/app.js', revision: 'a', bytes: 1 },
+        { url: '/App.js', revision: 'b', bytes: 1 },
+        { url: '/_boot.js', revision: 'c', bytes: 1 },
+      ],
+    });
+
+    expect(manifest.entries.map((e) => e.url)).toEqual(['/App.js', '/_boot.js', '/app.js']);
+  });
+
   test('a dynamic route cannot be precached as one URL and says so', () => {
     const manifest = buildPrecacheManifest({ buildId: 'b1', routes });
     expect(manifest.entries.some((e) => e.url === '/blog/:slug')).toBe(false);

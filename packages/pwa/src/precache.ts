@@ -99,7 +99,12 @@ export function buildPrecacheManifest(input: PrecacheInput): PrecacheManifest {
     add({ url: asset.url, revision: asset.revision, bytes: asset.bytes, reason: 'asset' });
   }
 
-  const sorted = [...entries.values()].sort((a, b) => a.url.localeCompare(b.url));
+  // CODE UNITS, never `localeCompare`: these entries are emitted into `sw.js`, whose header
+  // promises byte-identical output for identical input, and `localeCompare` with no locale
+  // argument answers from the runtime's ICU default and collation version — two machines, two
+  // orders, one no-op deploy that fires the SW update check. Same rule as `service-worker.ts`'s
+  // rule tie-break and `@ultimat3/jobs`' `job.ts`.
+  const sorted = [...entries.values()].sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
   const totalBytes = sorted.reduce((sum, entry) => sum + entry.bytes, 0);
   const warnBytes = input.warnBytes ?? DEFAULT_PRECACHE_WARN_BYTES;
 

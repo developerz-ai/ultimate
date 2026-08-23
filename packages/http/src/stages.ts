@@ -20,6 +20,7 @@ import { actorView, elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
 import { checkCsrf, selfOrigin } from './csrf';
 import { factsOf, retryAfterOf } from './error-map';
+import { errorPageResponse } from './error-page';
 import {
   bodyInvalid,
   csrfBlocked,
@@ -32,9 +33,10 @@ import {
   unauthenticated,
 } from './errors';
 import type { ServerHooks } from './hooks';
+import { acceptsHtml } from './html-render';
 import { readCookie } from './locale';
 import { compose, type Middleware } from './middleware';
-import { overlayResponse, wantsOverlay } from './overlay';
+import { overlayResponse } from './overlay';
 import { type RateLimiter, rateLimitKey } from './rate-limit';
 import { rateLimited } from './rate-limit-errors';
 import type { UltimateRequest } from './request';
@@ -297,7 +299,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       return undefined;
     },
 
-    'error-map': (request, ctx) => {
+    'error-map': async (request, ctx) => {
       const error = ctx.error;
       const facts = factsOf(error);
       // This package's ONE error-reporting call site, and it is the framework's own — `onError`
@@ -336,19 +338,6 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         ctx,
       });
       if (toSignIn !== undefined) return redirect(toSignIn.location, toSignIn.status);
-      if (config.dev && wantsOverlay(request.raw)) {
-        // Asked for inside the branch, never above it: the overlay is the only surface a notice
-        // has, so a production process — or an agent that asked for json — must not pay a
-        // diagnostic's per-request cost to produce findings nothing will render.
-        const notices = hooks.devNotices?.(ctx) ?? [];
-        return overlayResponse(error, {
-          requestId: ctx.requestId,
-          method: ctx.method,
-          path: ctx.url.pathname,
-          buildId: config.buildId,
-          ...(notices.length === 0 ? {} : { notices }),
-        });
-      }
       // The limiter's own decision first — it is the live one and it knows this request's bucket —
       // then whatever the THROWABLE computed. Only the first half existed, so every other refusal
       // that had a delay to give told the caller to come back without saying when:
@@ -365,6 +354,42 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
           : undefined;
       const seconds = decided ?? retryAfterOf(error);
       const retryAfter = seconds === undefined ? {} : { 'retry-after': String(seconds) };
+      // One sniff, two documents: a browser is never handed a problem document, and an agent is
+      // never handed a page. Which of the two a browser gets is the ENVIRONMENT — the overlay
+      // prints the cause, the fix and the stack, which is what a visitor may never see.
+      if (acceptsHtml(request.raw)) {
+        if (config.dev) {
+          // Asked for inside the branch, never above it: the overlay is the only surface a notice
+          // has, so a production process — or an agent that asked for json — must not pay a
+          // diagnostic's per-request cost to produce findings nothing will render.
+          const notices = hooks.devNotices?.(ctx) ?? [];
+          return overlayResponse(error, {
+            requestId: ctx.requestId,
+            method: ctx.method,
+            path: ctx.url.pathname,
+            buildId: config.buildId,
+            ...(notices.length === 0 ? {} : { notices }),
+          });
+        }
+        return errorPageResponse(
+          {
+            status: facts.status,
+            code: facts.code,
+            path: ctx.url.pathname,
+            requestId: ctx.requestId,
+            locale: ctx.locale,
+            // The rule the 403 page may name, and the one the `authz` stage was evaluating —
+            // never a row, never the actor. `forbidden`'s own `fix:` already cites this field.
+            ...(ctx.route?.meta.policy === undefined ? {} : { permission: ctx.route.meta.policy }),
+            ...(seconds === undefined ? {} : { retryAfterSeconds: seconds }),
+            signInPath: config.signInPath,
+          },
+          // The app's own file, read per request by whoever mounted the hook. A throw here is
+          // caught by `recoverWith` and degrades to the problem document, which is the answer a
+          // page whose renderer failed can still give.
+          { override: await hooks.errorPage?.(facts.status, ctx), headers: retryAfter },
+        );
+      }
       return problem(error, {
         instance: ctx.url.pathname,
         requestId: ctx.requestId,

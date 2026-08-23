@@ -30,6 +30,13 @@ export interface SecretComparePin {
  * Measured 2026-08-23, on the first run. `@ultimat3/auth` is ABSENT and that is the point: every
  * comparison of a token, a hash, a nonce or a state there already goes through `timingSafeEqual`,
  * so the package this rule was written for is at zero and stays there by construction.
+ *
+ * RE-MEASURED the same day, when the vocabulary learned the spelling a module-scope constant
+ * actually uses: `SESSION_SECRET`, `API_KEY`, `DEV_SIGNING_SECRET` — SCREAMING_SNAKE read as an
+ * ordinary identifier, and `password`/`otp` were not words at all. That added `storage` (which had
+ * been absent entirely, while comparing a signing secret) and one `core` site, and moved nothing
+ * else. `bun run secret-compare --json` re-derives every count in `data.counts`; no number below
+ * is a claim about the tree that the command cannot check.
  */
 export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
   action: {
@@ -53,9 +60,9 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
       'build and CLI plumbing: a `candidate` EXECUTABLE PATH, OUTPUT PATH, COMMAND NAME or CI JOB NAME; a parsed CLI `token` and its aliases; a `review.state` from the GitHub API; and a content `hash` compared to decide whether a bundle or a migration changed. None is a credential check.',
   },
   core: {
-    count: 3,
+    count: 4,
     reason:
-      '`lifecycle.ts:250,289` compare a `candidate` REGISTRATION and WAITER by object identity while removing one from a list. `cursor.ts:71` compares the configured cursor secret against the SHIPPED DEV CONSTANT so `x doctor` can report you are still on it — `DEV_SECRET` is a literal in that file, so there is nothing an attacker does not already have.',
+      '`lifecycle.ts:250,289` compare a `candidate` REGISTRATION and WAITER by object identity while removing one from a list. `cursor.ts:71` compares the configured cursor secret against the SHIPPED DEV CONSTANT so `x doctor` can report you are still on it — `DEV_SECRET` is a literal in that file, so there is nothing an attacker does not already have. `image/png-pixels.ts:86` compares one byte of a decoded file against `PNG_SIGNATURE`, the eight-byte magic number every PNG in the world opens with.',
   },
   db: {
     count: 3,
@@ -96,6 +103,11 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     count: 1,
     reason:
       '`reference-app-gate.ts:364` matches a `candidate` APP DIRECTORY against the one `--unpin` named.',
+  },
+  storage: {
+    count: 2,
+    reason:
+      "`driver-local.ts:73,182` compare the configured signing secret against `DEV_SIGNING_SECRET`, the SHIPPED DEV CONSTANT, so `x doctor` and `localDriver()` can refuse to sign with it outside development. Declared as a literal at `driver-local.ts:50` and re-exported from `index.ts`, exactly as `@ultimat3/core`'s `cursor.ts:71` pin above — the same question, and no byte an attacker does not already hold.",
   },
   time: {
     count: 1,

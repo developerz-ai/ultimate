@@ -106,6 +106,21 @@ describe('readOnlyQuery', () => {
     expect(client.texts).toContain('DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR select 1');
   });
 
+  // A `;` the splitter already cut away, followed by a COMMENT: `statementsOf` reads that as one
+  // statement (a chunk of pure noise is not a statement), so the text passes the one-statement
+  // gate — and the trailing regex strip could not see it, because the text does not END in `;`.
+  // `DECLARE … CURSOR FOR select 1; -- note` is two commands, which Postgres answers with
+  // "cannot insert multiple commands into a prepared statement": an uncoded driver error out of
+  // a path whose whole job is to bound the read.
+  test('a trailing comment after the separator is not spliced into the DECLARE', async () => {
+    const client = createRecordingClient();
+    await readOnlyQuery('select 1; -- note', { client, maxRows: 5 });
+
+    expect(client.texts).toContain('DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR select 1');
+    // Nothing carries the tail — the splice takes the COMMAND the splitter cut, not the text.
+    expect(client.texts.some((text) => text.includes('-- note'))).toBe(false);
+  });
+
   test.each([
     ['table events', true],
     ['values (1),(2)', true],

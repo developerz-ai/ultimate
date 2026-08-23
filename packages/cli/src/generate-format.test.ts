@@ -95,6 +95,18 @@ const typescriptPaths = (files: readonly GeneratedFile[]): number =>
       .map((file) => file.path),
   ).size;
 
+/**
+ * An app scope that sorts AFTER `@ultimat3`, which is the half this file could not see.
+ *
+ * Both fixtures below were `ledger-demo` and `invoice`, and both sort BEFORE it — so did CI's two
+ * scaffold fixtures, `demoapp` and `bareapp`. Every template emitted the app's own import first,
+ * which is right for those names and wrong for these: `x new zebra` scaffolded four files biome
+ * refuses (`assist/source/organizeImports`) and the app's first `x verify` was red on `lint`.
+ * A generated file's import ORDER depends on the app's name, so a fixture is only a fixture with
+ * one on each side of `@ultimat3` (`templates/imports.ts`).
+ */
+const AFTER_ULTIMATE = 'zebra-demo';
+
 test('every file x g emits is already clean under the repo own biome', async () => {
   const emitted = GENERATORS.flatMap((kind) =>
     generate({ kind, name: 'invoice', feature: 'invoice' }),
@@ -116,4 +128,30 @@ test('every file x new writes is clean too — the scaffold is generated code as
   const run = await runBiome(scaffold);
   expect(run.problems).toBe('');
   expect(run.checked).toBeGreaterThanOrEqual(typescriptPaths(scaffold));
+}, 60_000);
+
+test('and both are clean for an app whose scope sorts AFTER @ultimat3', async () => {
+  // One assertion per surface the order can go wrong on: the scaffold writes the app's `@x/i18n`
+  // beside `@ultimat3/render`, and a generator writes whatever `resolveCatalogModule` read off the
+  // app's own manifest beside the same package.
+  const scaffold = planNewApp({ name: AFTER_ULTIMATE, example: true });
+  const generated = GENERATORS.flatMap((kind) =>
+    generate({
+      kind,
+      name: 'invoice',
+      feature: 'invoice',
+      catalogModule: `@${AFTER_ULTIMATE}/i18n`,
+    }),
+  );
+
+  expect(scaffold.length).toBeGreaterThan(50);
+  expect(generated.length).toBeGreaterThan(50);
+
+  const scaffoldRun = await runBiome(scaffold);
+  expect(scaffoldRun.problems).toBe('');
+  expect(scaffoldRun.checked).toBeGreaterThanOrEqual(typescriptPaths(scaffold));
+
+  const generatedRun = await runBiome(generated);
+  expect(generatedRun.problems).toBe('');
+  expect(generatedRun.checked).toBeGreaterThanOrEqual(typescriptPaths(generated));
 }, 60_000);

@@ -4,6 +4,7 @@ import { dbUnavailable } from './errors';
 import { createRecordingClient, type RecordingClient } from './fake';
 import { reservableOver } from './fake-reservable';
 import { sql } from './sql';
+import type { IsolationLevel } from './transaction';
 import { beginStatement, currentTx, withTransaction } from './transaction';
 
 let client: RecordingClient;
@@ -134,6 +135,28 @@ describe('withTransaction', () => {
   test('the isolation level reaches the wire', async () => {
     await withTransaction(async () => undefined, { isolation: 'repeatable read' });
     expect(client.texts[0]).toBe('BEGIN ISOLATION LEVEL REPEATABLE READ');
+  });
+
+  // `BEGIN` takes no parameters, so this is one of the two statements in the package built as
+  // TEXT — and the level was `options.isolation.toUpperCase()` spliced straight into it. The type
+  // is not the guard: an isolation level reaches `withTransaction` from an app's config, a JSON
+  // body or a `--isolation` flag, none of which TypeScript checked. Re-derived from the closed
+  // set now, so the only three strings that can appear are written in this file.
+  test('an isolation level that is not one of the three is refused, never interpolated', () => {
+    const injected = 'read committed; drop table x; --' as IsolationLevel;
+    // Observed before the fix: 'BEGIN ISOLATION LEVEL READ COMMITTED; DROP TABLE X; --'.
+    expect(() => beginStatement({ isolation: injected })).toThrow(
+      expect.objectContaining({ code: 'X_SQL_UNSAFE' }),
+    );
+  });
+
+  test('and a non-string is the same refusal, not a TypeError', () => {
+    // `.toUpperCase()` on a number is `TypeError: not a function` — uncoded, with no `fix:` line
+    // and nothing naming the option that caused it.
+    const wrong = 3 as unknown as IsolationLevel;
+    expect(() => beginStatement({ isolation: wrong })).toThrow(
+      expect.objectContaining({ code: 'X_SQL_UNSAFE' }),
+    );
   });
 });
 

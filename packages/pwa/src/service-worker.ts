@@ -123,8 +123,14 @@ const hasWildcard = (path: string): boolean =>
  * install and then never looked up, and a route the app declared cacheable served `network-only`,
  * which offline is the `/offline` document.
  *
- * The path stays as the tie-break, so the emitted file is still byte-identical for identical input.
+ * The path stays as the tie-break, so the emitted file is still byte-identical for identical input
+ * — compared by CODE UNIT, never `localeCompare`, which answers from the runtime's ICU default and
+ * collation version: `/Posts` sorted before `/posts` on one machine and after it on the next, for
+ * the same route table. The rule `@ultimat3/jobs`' `job.ts` states for `x.manifest.json`, applied
+ * to the artifact this file emits.
  */
+const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 export function routeRules(routes: readonly PwaRoute[]): readonly RouteRule[] {
   return [...routes]
     .filter((route) => route.surface !== 'api')
@@ -132,7 +138,7 @@ export function routeRules(routes: readonly PwaRoute[]): readonly RouteRule[] {
       (a, b) =>
         Number(hasWildcard(a.path)) - Number(hasWildcard(b.path)) ||
         specificityOf(b.path) - specificityOf(a.path) ||
-        a.path.localeCompare(b.path),
+        byCodeUnit(a.path, b.path),
     )
     .map((route) => {
       const strategy = strategyFor(route);

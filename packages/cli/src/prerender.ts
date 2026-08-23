@@ -13,6 +13,7 @@ import { appManifest } from './app-manifest';
 import type { RouteStats } from './budgets';
 import { measureDocumentJs, writeBuildStats } from './budgets';
 import { routeDocument } from './dev-render';
+import { errorPageDocument, STATIC_ERROR_PAGE } from './error-pages';
 import { FAVICON_PATH, faviconBytes } from './favicon';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands, writeIslands } from './island-bundle';
@@ -96,6 +97,9 @@ function heaviestSource(
 
 export const DEFAULT_ORIGIN = 'https://localhost';
 
+/** The one status a static export can answer for itself: a path that matches no file. */
+const NOT_FOUND_STATUS = 404;
+
 /**
  * Prerendering and measuring are two questions, and conflating them made `X_BUDGET_UNMEASURED`
  * unclosable by any invocation: only `static` was ever rendered, so a `budget:` on an ssr, isr,
@@ -134,6 +138,14 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   await Bun.write(
     join(options.out, FAVICON_PATH.slice(1)),
     (await faviconBytes(options.root)).bytes,
+  );
+  // And the one error page a static host serves ITSELF: `404.html` at the export root is what S3,
+  // Cloudflare Pages, Netlify and nginx all reach for when a path matches no file. The app's own
+  // file if it wrote one, the framework's page otherwise — the same two rungs the served process
+  // answers a 404 with, so the artifact and the server cannot disagree about one document.
+  await Bun.write(
+    join(options.out, STATIC_ERROR_PAGE),
+    await errorPageDocument(options.root, NOT_FOUND_STATUS),
   );
 
   // Every render below goes through `routeDocument`, which is the function a REQUEST reaches — and

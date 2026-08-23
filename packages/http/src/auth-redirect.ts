@@ -3,7 +3,7 @@
 // sign-in page. One condition, two audiences, decided here so the error stage stays one branch.
 
 import type { RequestContext } from './context';
-import { wantsOverlay } from './overlay';
+import { acceptsHtml } from './html-render';
 import type { RedirectIntent } from './response';
 
 /** The query parameter carrying where the visitor was going. One spelling, both halves. */
@@ -28,9 +28,9 @@ export function signInRedirect(input: {
 }): RedirectIntent | undefined {
   const { code, signInPath, request, ctx } = input;
   if (code !== 'X_UNAUTHENTICATED' || signInPath === null) return undefined;
-  // The same question `wantsOverlay` asks — "does this client render HTML?" — and deliberately
-  // the same answer, so a client cannot get the overlay in dev and JSON in production.
-  if (!wantsOverlay(request)) return undefined;
+  // The same question the overlay and the error page ask — "does this client render HTML?" — and
+  // deliberately the same answer, so a client cannot get a page in dev and JSON in production.
+  if (!acceptsHtml(request)) return undefined;
   // A sign-in page that declares `auth: 'required'` by mistake would otherwise redirect to
   // itself forever, and a browser reports that as a bare "too many redirects" with no code.
   if (ctx.url.pathname === signInPath) return undefined;

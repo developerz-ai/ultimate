@@ -186,6 +186,20 @@ describe('a row may name the acting actor’s tenant, or none', () => {
     expect(filtered.statements).toBe(0);
   });
 
+  // The PATCH is judged, never the rows it happened to reach: `postgresRepo` calls
+  // `assertRowTenant` on it before the statement exists, so a filter matching nothing still
+  // refuses. `memoryRepo` judged the merged rows inside its loop, and a loop over no rows judges
+  // nothing — so the same call answered `0` there and threw here, and the guard's verdict depended
+  // on the table's contents rather than on what the caller asked for.
+  test('the patch is refused even when the filter matches no row at all', async () => {
+    const outcome = await asOrgA(() =>
+      both((repo) => repo.updateWhere({ slug: 'no-such-slug' }, { orgId: OTHER_ORG })),
+    );
+    expect(outcome.memory).toBe('X_TENANCY_ACTOR_MISMATCH');
+    expect(outcome.pg).toBe('X_TENANCY_ACTOR_MISMATCH');
+    expect(outcome.statements).toBe(0);
+  });
+
   test('naming the actor’s own tenant is a restatement, and both write it', async () => {
     const outcome = await asOrgA(() =>
       both((repo) => repo.insert(post({ id: idAt('37'), orgId: ORG, slug: 'fresh' }))),

@@ -21,10 +21,9 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 111 As of 2026-08-23 — the WHOLE file, and every one of them sits inside the section of the
-# major that shipped it, so this number is also the sum of the nine per-major rows above.
-# `[Unreleased]` reads "Nothing yet." and holds none of them: entries under that heading are
-# breaking changes that have not been released, which has been true here in the past.
+# 112 As of 2026-08-23 — the WHOLE file. 111 sit inside the section of the major that shipped
+# them, the sum of the nine per-major rows above; the one more is under `[Unreleased]`, a
+# breaking change that has not been released and becomes the next major's row when it ships.
 # Scope the count to one section to read a single row —
 #   sed -n '13,241p' CHANGELOG.md | grep -cE '^(- \*\*|### )BREAKING —'   # 19, the 10.0.0 section
 # `bun run changelog-check` compares both directions: each row against its OWN section, and the

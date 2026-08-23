@@ -242,9 +242,12 @@ export async function scanPackageDocs(dir: string): Promise<readonly DocEntry[]>
   // alphabetically would reorder an argument its author sequenced on purpose, and prose read out
   // of order is prose an agent has to reassemble. Both halves are deterministic, which is what
   // "two scans of one tree agree" actually requires.
+  // Code units, never `localeCompare`, which answers from the runtime's ICU default and collation
+  // version: `jobs.Cache` sorted before `jobs.cache` on one machine and after it on the next, for
+  // one installed tree. `@ultimat3/jobs`' `job.ts` states the same rule.
   const moduleEntries = scanned
     .filter((entry) => entry !== undefined)
-    .sort((a, b) => a.topic.localeCompare(b.topic));
+    .sort((a, b) => (a.topic < b.topic ? -1 : a.topic > b.topic ? 1 : 0));
   return [...moduleEntries, ...(await guideEntries(dir, name, version))];
 }
 

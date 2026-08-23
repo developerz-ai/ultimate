@@ -136,9 +136,14 @@ describe('devNotices is consulted on the overlay path and nowhere else', () => {
     const response = await pipeline.handle(get('/boom/7', browser), { role: 'web' });
 
     expect(response.status).toBe(500);
-    expect(response.headers.get('content-type')).toContain('application/problem+json');
+    // A browser in production gets the framework's error PAGE, not the overlay and not the
+    // problem document — and a notice is an overlay card, so this page is the proof it was never
+    // asked for: `calls()` says the hook did not run, and the body says nothing rendered it.
+    expect(response.headers.get('content-type')).toContain('text/html');
     expect(calls()).toBe(0);
-    expect(await response.text()).not.toContain('X_N_PLUS_ONE_QUERY');
+    const body = await response.text();
+    expect(body).not.toContain('X_N_PLUS_ONE_QUERY');
+    expect(body).not.toContain('<h2>notices</h2>');
   });
 
   test('an agent asking for json in dev is not charged for a card it will never render', async () => {

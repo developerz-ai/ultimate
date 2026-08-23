@@ -24,8 +24,20 @@ import type { AuthLimiter, AuthRateLimitPolicy } from './rate-limit';
 export type AuthLimiterFactory = (policy: AuthRateLimitPolicy) => AuthLimiter;
 
 let factory: AuthLimiterFactory | undefined;
-/** Every limiter this process built through the factory above, so a purge can reach them. */
-let built: AuthLimiter[] = [];
+/**
+ * The limiters a purge can still reach, ONE per distinct window.
+ *
+ * A list appended to per call is a leak with no ceiling: `installedAuthLimiter` runs twice per
+ * `defineAuth` — the account/IP bucket and the tenant bucket — and nothing trimmed it, so a
+ * process that redefines auth (`x dev`'s reload, a test file, a host building one `Auth` per app)
+ * held every limiter it ever built, and the store behind each, for its whole life.
+ *
+ * Keyed by `windowMs` because that is the only thing `purgeAuthLimits` reads: every limiter here
+ * writes the same two tables, so one per window is all a sweep can distinguish. The FIRST of a
+ * window is kept, which is the limiter the old list already swept — a second install clears the
+ * map, so nothing here outlives the pool it was built on either way.
+ */
+let built = new Map<number, AuthLimiter>();
 
 /**
  * The ONE install point, the same shape as `configureKdfGate` beside it: a host that owns the
@@ -37,13 +49,13 @@ let built: AuthLimiter[] = [];
  */
 export function configureAuthLimiters(next: AuthLimiterFactory): void {
   factory = next;
-  built = [];
+  built = new Map();
 }
 
 /** Back to `createAuthLimiter`, the per-process default. A host that installs one calls this on stop. */
 export function resetAuthLimiters(): void {
   factory = undefined;
-  built = [];
+  built = new Map();
 }
 
 /**
@@ -55,8 +67,18 @@ export function resetAuthLimiters(): void {
 export function installedAuthLimiter(policy: AuthRateLimitPolicy): AuthLimiter | undefined {
   if (factory === undefined) return undefined;
   const limiter = factory(policy);
-  built.push(limiter);
+  if (!built.has(policy.windowMs)) built.set(policy.windowMs, limiter);
   return limiter;
+}
+
+/**
+ * How many limiters a purge can still reach. Deliberately NOT exported from `src/index.ts`: it
+ * exists because unbounded retention has no other observation — `purgeAuthLimits` sweeps exactly
+ * one limiter however many were held, so no assertion about behaviour could see the growth. The
+ * same shape as `@ultimat3/realtime`'s `droppedChannelFrames`.
+ */
+export function installedLimiterCount(): number {
+  return built.size;
 }
 
 /** A limiter that keeps rows somebody else has to delete. The memory limiter sweeps itself. */
@@ -82,7 +104,7 @@ const canPurge = (limiter: AuthLimiter): limiter is PurgingAuthLimiter =>
  */
 export async function purgeAuthLimits(): Promise<number> {
   let widest: PurgingAuthLimiter | undefined;
-  for (const limiter of built) {
+  for (const limiter of built.values()) {
     if (!canPurge(limiter)) continue;
     if (widest === undefined || limiter.policy.windowMs > widest.policy.windowMs) widest = limiter;
   }

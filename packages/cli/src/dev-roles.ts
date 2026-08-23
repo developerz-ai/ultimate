@@ -26,6 +26,7 @@ import { startReplicator } from './dev-replicator';
 import type { RunningServices } from './dev-runtime';
 import type { Env } from './dev-services';
 import { startSync } from './dev-sync';
+import { errorPageHook } from './error-pages';
 import { BadFlagError, PortInvalidError, RuntimeDriverSplitError } from './errors';
 import { DEFAULT_METRICS_PORT, startMetricsEndpoint } from './metrics-endpoint';
 import type { RuntimeOverrides } from './runtime-overrides';
@@ -63,6 +64,16 @@ export interface StartRolesOptions {
    * `startRoles` takes plain values — a test starts a web role with no `app.config.ts` at all.
    */
   readonly signInPath?: string | null;
+  /**
+   * The app root, for the one seam that is a FILE and not a value: `apps/web/site/errors/404.html`
+   * and its siblings. Bound HERE rather than passed by each caller, because `x dev` and `serve.ts`
+   * both boot through this function and an override wired at one of them alone is a page that
+   * appears in dev and not in production — `/favicon.ico`'s rule, one seam over.
+   *
+   * Optional for the reason `signInPath` is: `startRoles` takes plain values, and a test starts a
+   * web role with no app on disk at all. Absent, every error page is the framework's.
+   */
+  readonly root?: string;
   /**
    * Inline `<style>` bodies this process serves that the app's own surfaces do not account for —
    * `/_x`'s shell. The surfaces themselves are read from the stylesheet registry here rather than
@@ -235,7 +246,10 @@ function startWeb(options: StartRolesOptions): ServerHandle {
   return createServer({
     routes: options.routes,
     role: 'web',
-    hooks: devHooks(options.devNotices === undefined ? {} : { devNotices: options.devNotices }),
+    hooks: devHooks({
+      ...(options.devNotices === undefined ? {} : { devNotices: options.devNotices }),
+      ...(options.root === undefined ? {} : { errorPage: errorPageHook(options.root) }),
+    }),
     // Both seams `createServer` already had and `startRoles` passed neither of, so an app's own
     // middleware could not reach the pipeline any process the framework boots actually runs.
     ...(options.overrides?.middleware === undefined

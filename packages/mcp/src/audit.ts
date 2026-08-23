@@ -1,5 +1,5 @@
-// One structured line per `tools/call`, whatever the outcome — including the outcomes that
-// deliberately tell the caller nothing.
+// One structured line per `tools/call` and per `resources/read`, whatever the outcome — including
+// the outcomes that deliberately tell the caller nothing.
 //
 // The three-outcome model works by giving a prober no signal. That is a property of the
 // ANSWER, not of the system: enumeration is a pattern across many requests, so the refusal
@@ -88,19 +88,31 @@ export interface McpAuditEntry {
   readonly code?: string;
 }
 
+/** The same entry for the DOCUMENT surface, addressed by URI rather than by tool name. */
+export interface McpResourceAuditEntry {
+  readonly uri: string;
+  readonly outcome: McpOutcome;
+  readonly caller: McpCaller;
+  readonly scope?: string;
+  readonly code?: string;
+}
+
 /**
  * Severity per outcome. Every refusal a prober can drive is `warn` so one alert rule covers
  * the whole enumeration surface; `invalid-args` is a well-behaved client misreading a schema,
  * and an unexpected throw is the only `error` because it is the only one that is a bug.
  */
-const LEVEL = Object.freeze<Record<McpOutcome, 'info' | 'warn' | 'error'>>({
-  ok: 'info',
-  hidden: 'warn',
-  'scope-denied': 'warn',
-  'policy-denied': 'warn',
-  'invalid-args': 'info',
-  failed: 'error',
-});
+const LEVEL: ReadonlyMap<McpOutcome, 'info' | 'warn' | 'error'> = new Map([
+  ['ok', 'info'],
+  ['hidden', 'warn'],
+  ['scope-denied', 'warn'],
+  ['policy-denied', 'warn'],
+  ['invalid-args', 'info'],
+  ['failed', 'error'],
+]);
+// An outcome is a closed union, so the `Map` is total; `?? 'error'` is the type's witness, not a
+// reachable branch — a `Map` rather than a literal because the key is data (`proto-index`).
+const levelOf = (outcome: McpOutcome): 'info' | 'warn' | 'error' => LEVEL.get(outcome) ?? 'error';
 
 /**
  * Audit one call. `log` is a parameter so a test can read the line it produced; production
@@ -111,9 +123,41 @@ const LEVEL = Object.freeze<Record<McpOutcome, 'info' | 'warn' | 'error'>>({
  * that names `post p_42 in org o_9` is a row leak wearing an audit line's clothes.
  */
 export function auditToolCall(entry: McpAuditEntry, log: Logger = logger): void {
-  const fields: LogFields = {
-    surface: 'mcp',
+  // `<subsystem>.<event>.<outcome>`, matching every other structured line in the framework,
+  // so `x logs --json | grep mcp.tool-call.hidden` is the whole enumeration alert.
+  log[levelOf(entry.outcome)](`mcp.tool-call.${entry.outcome}`, {
     tool: entry.tool,
+    ...callerFields(entry),
+  });
+}
+
+/**
+ * Audit one `resources/read`, on the same three outcomes and at the same levels.
+ *
+ * The document surface owed this and emitted nothing at all: a URI walk over the four documents an
+ * app publishes — the manifest, the OpenAPI document, the route table and the entity schema, which
+ * together are its whole policy and data map — left no trace anywhere, while the identical walk
+ * over tool NAMES was one `warn` per attempt. The refusal that tells the caller nothing is exactly
+ * the one that has to reach whoever reads the logs.
+ *
+ * A separate EVENT rather than a `tool:` field holding a URI: an alert rule that buckets a
+ * document read as a tool call cannot tell the two walks apart, and a field named `tool` carrying
+ * `ultimate://manifest` is a lie a query has to work around forever.
+ *
+ * `resources/list` is deliberately NOT audited, exactly as `tools/list` is not — it is answered
+ * pre-filtered, so it reveals only what the caller could already see.
+ */
+export function auditResourceRead(entry: McpResourceAuditEntry, log: Logger = logger): void {
+  log[levelOf(entry.outcome)](`mcp.resource-read.${entry.outcome}`, {
+    resource: entry.uri,
+    ...callerFields(entry),
+  });
+}
+
+/** What every audit line carries whatever it is about. Fields carry the DECISION, never the data. */
+function callerFields(entry: McpResourceAuditEntry | McpAuditEntry): LogFields {
+  return {
+    surface: 'mcp',
     outcome: entry.outcome,
     actor: entry.caller.actor.id,
     actorKind: entry.caller.actor.kind,
@@ -121,7 +165,4 @@ export function auditToolCall(entry: McpAuditEntry, log: Logger = logger): void 
     ...(entry.scope === undefined ? {} : { scope: entry.scope }),
     ...(entry.code === undefined ? {} : { code: entry.code }),
   };
-  // `<subsystem>.<event>.<outcome>`, matching every other structured line in the framework,
-  // so `x logs --json | grep mcp.tool-call.hidden` is the whole enumeration alert.
-  log[LEVEL[entry.outcome]](`mcp.tool-call.${entry.outcome}`, fields);
 }

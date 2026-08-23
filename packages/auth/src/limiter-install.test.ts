@@ -5,7 +5,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { defineAuth } from './auth';
-import { configureAuthLimiters, purgeAuthLimits, resetAuthLimiters } from './limiter-install';
+import {
+  configureAuthLimiters,
+  installedLimiterCount,
+  purgeAuthLimits,
+  resetAuthLimiters,
+} from './limiter-install';
 import { MemoryAdapter } from './memory-adapter';
 import type { AuthLimiter, AuthRateLimitPolicy } from './rate-limit';
 import { createAuthLimiter, DEFAULT_AUTH_RATE_LIMIT } from './rate-limit';
@@ -168,6 +173,30 @@ describe('purgeAuthLimits', () => {
     expect(await purgeAuthLimits()).toBe(11);
     expect(built.filter((limiter) => limiter.sweeps() > 0)).toHaveLength(1);
     expect(built.at(-1)?.sweeps()).toBe(0);
+  });
+
+  // What a purge can REACH is one limiter per window, and never one per `defineAuth`. The list
+  // this replaced was appended to on every call and trimmed by nothing, so a process that redefines
+  // auth — `x dev`'s reload, a test file, a multi-tenant host building one `Auth` per app — held
+  // two more limiters, and the two stores behind them, for its whole life. `purgeAuthLimits`
+  // sweeps exactly ONE of them however many were retained, so nothing about behaviour could see
+  // the growth: this counter is the only observation there is.
+  test('what is retained is one limiter per window, not one per defineAuth', () => {
+    configureAuthLimiters((policy) => tableLimiter(policy, 0));
+    for (let boot = 0; boot < 50; boot += 1) defineAuth({ adapter: adapter() });
+
+    // 100 limiters built — the account/IP bucket and the tenant bucket per call — over ONE window,
+    // since `orgRateLimit` changes `maxAttempts` and nothing else. Observed before the fix: 100.
+    expect(installedLimiterCount()).toBe(1);
+  });
+
+  test('a distinct window is still kept, or the widest could not be found', async () => {
+    configureAuthLimiters((policy) => tableLimiter(policy, rowsFor(policy.windowMs)));
+    defineAuth({ adapter: adapter() });
+    defineAuth({ adapter: adapter(), rateLimit: { windowMs: 1_800_000 } });
+
+    expect(installedLimiterCount()).toBe(2);
+    expect(await purgeAuthLimits()).toBe(11);
   });
 
   test('a second install forgets what the first built', async () => {

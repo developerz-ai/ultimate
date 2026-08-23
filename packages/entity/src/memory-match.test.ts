@@ -4,7 +4,7 @@
 // the ordering of a decimal-string column, the case of a `uuid`, and what a `\` does inside a LIKE.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { integer, text, uuid } from './columns';
+import { integer, money, text, uuid } from './columns';
 import { bigint, decimal } from './columns-data';
 import { entity } from './entity';
 import { clearRegistry } from './registry';
@@ -275,5 +275,99 @@ describe('a NULL column, under every operator', () => {
     expect(await matching({ column: 'seats', op: 'in', value: [5] })).toEqual([FULL_ROW]);
     expect(await matching({ column: 'seats', op: 'is-null' })).toEqual([EMPTY_ROW]);
     expect(await matching({ column: 'seats', op: 'is-not-null' })).toEqual([FULL_ROW]);
+  });
+});
+
+// A row that never NAMED a nullable column and a row that stored `null` in it are ONE row in
+// Postgres: the column holds NULL either way, and `predicateSql` compiles `eq null` to
+// `"col" is null`, which answers both. In memory the absent half is `undefined`, and this file
+// already says so — `isNull` is `value === null || value === undefined`, and `is-null`,
+// `is-not-null` and the ordering guard all read it. `eq`, `neq` and `in` did not: they compared
+// with `===`, so the absent row was invisible to `eq null` and to `in [null]` while `neq null`
+// answered it, each the opposite of what the same predicate does in production.
+//
+// Absent is reachable two ways, and the second needs no hand-built fixture at all: a `money()`
+// column holding NULL has no `price.minor` to read, so `valueAt` answers `undefined` for a row
+// `$parse` itself produced.
+describe('a column the row never named is NULL, as it is in the table', () => {
+  const absent = entity('match_test_absent', {
+    columns: {
+      id: uuid().primaryKey(),
+      seats: integer().nullable(),
+      price: money().nullable(),
+    },
+  });
+
+  type Absent = typeof absent.$row;
+
+  const NEVER_NAMED = idAt(1);
+  const STORED_NULL = idAt(2);
+  const VALUED = idAt(3);
+
+  const seededAbsent = () => {
+    const repo = memoryRepo(absent);
+    return {
+      repo,
+      ready: Promise.all([
+        // The repository seam takes the row as handed over — a seed, a fixture and every direct
+        // `memoryRepo` caller reach it without `$parse`, so `seats` is simply not there.
+        repo.insert({ id: NEVER_NAMED } as Absent),
+        repo.insert({ id: STORED_NULL, seats: null, price: null } as Absent),
+        repo.insert({ id: VALUED, seats: 5, price: { minor: 100, currency: 'EUR' } } as Absent),
+      ]),
+    };
+  };
+
+  const matching = async (where: Predicate): Promise<readonly string[]> => {
+    const { repo, ready } = seededAbsent();
+    await ready;
+    const found = await repo.findMany({ where: [where] });
+    return found.rows.map((row) => row.id);
+  };
+
+  test('eq null answers it, exactly as `"seats" is null` does', async () => {
+    // Observed before the fix: [STORED_NULL] — the row that spelled the null out.
+    expect(await matching({ column: 'seats', op: 'eq', value: null })).toEqual([
+      NEVER_NAMED,
+      STORED_NULL,
+    ]);
+  });
+
+  test('neq null does NOT answer it: `is distinct from null` is false for a NULL column', async () => {
+    // Observed before the fix: [NEVER_NAMED, VALUED] — `undefined !== null`, so the absent row
+    // read as a value that differs from NULL.
+    expect(await matching({ column: 'seats', op: 'neq', value: null })).toEqual([VALUED]);
+  });
+
+  test('in [null] answers it, exactly as the `or "seats" is null` half of the list does', async () => {
+    expect(await matching({ column: 'seats', op: 'in', value: [null] })).toEqual([
+      NEVER_NAMED,
+      STORED_NULL,
+    ]);
+    expect(await matching({ column: 'seats', op: 'in', value: [5, null] })).toEqual([
+      NEVER_NAMED,
+      STORED_NULL,
+      VALUED,
+    ]);
+  });
+
+  test('a value still never matches the absent row', async () => {
+    expect(await matching({ column: 'seats', op: 'eq', value: 5 })).toEqual([VALUED]);
+    // `is distinct from 5` is TRUE for a NULL column, in both drivers.
+    expect(await matching({ column: 'seats', op: 'neq', value: 5 })).toEqual([
+      NEVER_NAMED,
+      STORED_NULL,
+    ]);
+    expect(await matching({ column: 'seats', op: 'in', value: [5] })).toEqual([VALUED]);
+  });
+
+  test('a money part of a NULL money column is NULL too, and needs no hand-built row', async () => {
+    // `price_minor` is NULL in the table for both of the first two rows, so `is null` answers
+    // both — and `valueAt(row, "price.minor")` is `undefined` for both, whatever `$parse` did.
+    expect(await matching({ column: 'price.minor', op: 'eq', value: null })).toEqual([
+      NEVER_NAMED,
+      STORED_NULL,
+    ]);
+    expect(await matching({ column: 'price.minor', op: 'eq', value: 100 })).toEqual([VALUED]);
   });
 });

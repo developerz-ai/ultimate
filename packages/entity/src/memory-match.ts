@@ -141,7 +141,20 @@ export const matchesPredicate = <Row>(
   // predicate and a money sort key both name.
   const kind = kindOf(entity, predicate.column);
   const actual = valueAt(row, predicate.column);
-  const same = (candidate: unknown): boolean => sameValueOfKind(kind, actual, candidate);
+  /**
+   * `col = <value>`, with SQL's three-valued logic on both sides: a NULL is never EQUAL to
+   * anything, the other NULL included, so `equals` answers false the moment either side is one
+   * and the operators below decide what that means for them.
+   *
+   * The row side reads through `isNull`, so a row that never NAMED a nullable column is the same
+   * row as one that stored `null` — which is what the table holds for both, and what `is-null`
+   * has always answered here. `===` made them two: `eq null` skipped the absent row, `in [null]`
+   * missed it and `neq null` answered it, each the opposite of the same predicate in production.
+   * A `money()` column holding NULL reaches this every time, with no hand-built row at all —
+   * `valueAt(row, 'price.minor')` has nothing to read.
+   */
+  const equals = (candidate: unknown): boolean =>
+    !isNull(actual) && !isNull(candidate) && sameValueOfKind(kind, actual, candidate);
   // `col > NULL` is UNKNOWN in SQL and UNKNOWN is not a match, so a NULL on EITHER side matches no
   // row here either — `predicateSql` emits a bare `"col" > $1` and Postgres returns nothing. Without
   // this the fall-through compared `String(null)` as the text `"null"`, which sorts after `"5"` and
@@ -151,14 +164,25 @@ export const matchesPredicate = <Row>(
   const unknown = (): boolean => isNull(actual) || isNull(predicate.value);
   const order = (): number => compareByKind(kind, actual, predicate.value);
   switch (predicate.op) {
+    // `predicateSql` compiles a null operand to `"col" is null` rather than binding it, so this
+    // is the same predicate, not a widening of it.
     case 'eq':
-      return same(predicate.value);
+      return predicate.value === null ? isNull(actual) : equals(predicate.value);
+    // `is distinct from` reads a NULL as a value on BOTH sides: TRUE where one side is null and
+    // the other is not, FALSE where both are. A bound `undefined` is a NULL parameter there, so
+    // the operand side reads through `isNull` and the two spellings mean one thing.
     case 'neq':
-      return !same(predicate.value);
+      return isNull(predicate.value) ? !isNull(actual) : !equals(predicate.value);
     // `in` reads a LIST or nothing: an operand that is not an array matches no row, which is what
     // `predicateSql` now compiles it to and what `@ultimat3/query` answers for the same operand.
+    // A NULL inside the list is asked as `is null` beside the list there, for the same reason.
     case 'in':
-      return Array.isArray(predicate.value) && predicate.value.some(same);
+      return (
+        Array.isArray(predicate.value) &&
+        predicate.value.some((candidate) =>
+          isNull(candidate) ? isNull(actual) : equals(candidate),
+        )
+      );
     case 'gt':
       return !unknown() && order() > 0;
     case 'gte':

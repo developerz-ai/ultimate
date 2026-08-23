@@ -37,6 +37,19 @@ export {
   statusFor,
   toProblem,
 } from './error-map';
+export type {
+  ErrorPageAction,
+  ErrorPageCopy,
+  ErrorPageGroup,
+  ErrorPageInput,
+  ErrorPageOptions,
+} from './error-page';
+export {
+  ERROR_PAGE_LINKS,
+  errorPageResponse,
+  renderErrorPage,
+  resolveErrorPageCopy,
+} from './error-page';
 export type { HttpErrorCode } from './errors';
 export {
   bodyInvalid,
@@ -73,6 +86,7 @@ export {
 } from './forwarded';
 export type { Authenticator, AuthzDecision, ServerHooks } from './hooks';
 export { configureAuthenticator, configuredAuthenticator, resetAuthenticator } from './hooks';
+export { acceptsHtml, escapeHtml } from './html-render';
 export type { LocaleConfig, TimeZoneConfig } from './locale';
 export { DEFAULT_LOCALE_CONFIG, DEFAULT_TZ_CONFIG, readCookie } from './locale';
 export type { Middleware } from './middleware';

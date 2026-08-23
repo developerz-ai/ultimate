@@ -129,6 +129,23 @@ describe('unit · searchDocs', () => {
     ]);
   });
 
+  /**
+   * ...and on CODE UNITS, never `localeCompare`, which answers from the runtime's ICU default and
+   * collation version: `'a.Cache'.localeCompare('a.cache')` is `1` while `'a.Cache' < 'a.cache'`
+   * is `true`, so one corpus ranked two ways on two machines — and this file's header states the
+   * order is a function of its input alone. Same rule `@ultimat3/jobs`' `job.ts` states.
+   */
+  test('and on code units, so the same corpus ranks alike under any ICU', () => {
+    const cased: readonly DocEntry[] = [
+      entry({ topic: 'a.cache', symbols: ['cache'] }),
+      entry({ topic: 'a.Cache', symbols: ['cache'] }),
+    ];
+    expect(searchDocs(cased, 'cache').map((hit) => hit.entry.topic)).toEqual([
+      'a.Cache',
+      'a.cache',
+    ]);
+  });
+
   test('a query below the coverage floor still gets the topics it half-matched', () => {
     expect(nearestTopics(corpus, 'kubernetes ingress annotation rewrite retry')).toEqual([
       'jobs.retry',
@@ -181,6 +198,18 @@ describe('unit · nearestTopics ranking', () => {
     expect(nearestTopics([entry({ topic: 'jobs.retry' })], 'retries')).toEqual(['jobs.retry']);
     // A word sharing nothing with the topic earns nothing.
     expect(nearestTopics([entry({ topic: 'jobs.retry' })], 'kubernetes')).toEqual([]);
+  });
+
+  /**
+   * The tie-break is CODE UNITS, never `localeCompare`. This file's header states the order is a
+   * function of the input alone, and `localeCompare` with no locale argument answers from the
+   * runtime's ICU default and collation version: `'a.Retry'.localeCompare('a.retry')` is `1` and
+   * `'a.Retry' < 'a.retry'` is `true`, so one corpus ranked two ways on two machines — and
+   * `x docs search` is what an agent quotes back. Same rule `@ultimat3/jobs`' `job.ts` states.
+   */
+  test('a tie breaks on code units, so two ICU builds rank one corpus alike', () => {
+    const cased: readonly DocEntry[] = [entry({ topic: 'a.retry' }), entry({ topic: 'a.Retry' })];
+    expect(nearestTopics(cased, 'retry')).toEqual(['a.Retry', 'a.retry']);
   });
 
   test('one topic is suggested once, however many entries carry it', () => {

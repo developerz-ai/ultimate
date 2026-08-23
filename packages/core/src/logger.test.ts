@@ -5,7 +5,8 @@ import process from 'node:process';
 import { type Clock, frozenClock } from './clock';
 import { ERROR_DOCS_URL } from './error-codes';
 import { UltimateError } from './errors';
-import { createLogger, REDACTED, redactKeys, setLogStream } from './logger';
+import type { LogLevel } from './logger';
+import { createLogger, LOG_LEVELS, REDACTED, redactKeys, setLogStream } from './logger';
 
 function capture(level: 'trace' | 'info' = 'info') {
   const lines: Record<string, unknown>[] = [];
@@ -78,6 +79,37 @@ describe('logger', () => {
     logger.warn('signal');
     expect(lines).toHaveLength(1);
     expect(lines[0]?.['level']).toBe('warn');
+  });
+
+  // The threshold is the one read in this file that decided what a process DISCLOSES, and it
+  // failed open: `LEVEL_WEIGHT[level]` on a level nothing checked is `undefined`, every
+  // `weight < undefined` is false, and the logger emitted every line at every level — a `trace`
+  // stream out of a production process, from one typo in a config file. A level is typed and
+  // arrives untyped: `app.config.ts`, a JSON file, `LOG_LEVEL`'s neighbour on the command line.
+  test('a level that is not a level is refused, never a logger that emits everything', () => {
+    const lines: string[] = [];
+    const build = (): unknown =>
+      createLogger({
+        level: 'verbose' as LogLevel,
+        writer: (line) => lines.push(line),
+      });
+
+    expect(build).toThrow(expect.objectContaining({ code: 'X_INVARIANT' }));
+    // Observed before the guard: a logger, and `logger.trace('...')` writing a line.
+    expect(lines).toEqual([]);
+  });
+
+  test('withLevel is the same door, so a child cannot widen what the parent refused', () => {
+    const { logger } = capture();
+    expect(() => logger.withLevel('loud' as LogLevel)).toThrow(
+      expect.objectContaining({ code: 'X_INVARIANT' }),
+    );
+  });
+
+  test('every declared level still builds a logger', () => {
+    for (const level of LOG_LEVELS) {
+      expect(createLogger({ level, writer: () => undefined }).level).toBe(level);
+    }
   });
 
   test('child fields are bound and overridable', () => {

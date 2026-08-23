@@ -2,6 +2,7 @@
 // action registry rather than re-listed, plus the test that pins every projected tool describing
 // itself.
 
+import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { packageShapeFiles } from './scaffold-package-shape';
 
@@ -44,9 +45,11 @@ const mcpIndex = (
   app: NameSet,
 ): string => `// The app's own MCP tools. Every action with mcp.expose is already a tool; add app-specific
 // read-only helpers here. Authorization is the action's policy, unchanged.
-import * as api from '@${app.kebab}/web/api/health';
-import { registerActions } from '@ultimat3/action';
-import { defineAppMcp } from '@ultimat3/mcp';
+${sortedImports([
+  `import * as api from '@${app.kebab}/web/api/health';`,
+  `import { registerActions } from '@ultimat3/action';`,
+  `import { defineAppMcp } from '@ultimat3/mcp';`,
+])}
 
 // Names come from export names, so the registry agrees with the module the app already wrote.
 registerActions(api);

@@ -156,6 +156,28 @@ describe('a list the author wrote out is refused, not filtered', () => {
     expect(error?.cause).toBe('listed in defineAppMcp but never declared mcp.expose: alpha, omega');
   });
 
+  /**
+   * `McpExposure.name` is an override a HAND-AUTHORED `ProjectablePrimitive` can set, and it was
+   * read as dead code because no `action()` or `query()` declaration carries a `name` field —
+   * `exposureOf` in `projectable.ts` cannot copy what `ActionMcp`/`QueryMcp` never declare. But
+   * `ListedPrimitive` accepts a `ProjectablePrimitive` outright, for surfaces that build their
+   * catalog programmatically, and `asProjectable` passes it through untouched: this is the path,
+   * and `packages/mcp/README.md` documents it. Pinned here so the next reader does not delete a
+   * public override on the evidence of the declaration surfaces alone.
+   */
+  test('a hand-authored primitive may NAME its tool, and the catalog answers under that name', () => {
+    const primitive: ProjectablePrimitive = {
+      name: 'internalReindex',
+      mcp: { expose: true, name: 'catalog.reindex' },
+      mutates: true,
+      run: async () => ({ ok: true }),
+    };
+
+    expect(toolsListed([primitive]).map((tool) => tool.name)).toEqual(['catalog.reindex']);
+    // ...and only there. The primitive's own name addresses nothing on the wire.
+    expect(toolFromAction(primitive).name).not.toBe('internalReindex');
+  });
+
   test('an all-exposed list projects exactly as toolsFrom does — same tools, same order', () => {
     const list = [
       makeAction().action,

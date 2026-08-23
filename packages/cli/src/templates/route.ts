@@ -5,6 +5,7 @@
 // fallback is a blank screen on a train.
 
 import { catalogJson } from './catalog-json';
+import { sortedImports } from './imports';
 import { catalogPath, resolveLocales } from './locales';
 import type { GeneratedFile } from './naming';
 import { kebab, pascal, titleKey } from './naming';
@@ -112,8 +113,7 @@ const pageSource = (surface: Surface, path: string, module: string | undefined):
   return `// Route: /${path} on the ${surface} surface. Config first: render mode, offline
 // strategy and budget are declarations, not runtime choices.
 
-${catalogImport(module)}
-import { defineRoute } from '@ultimat3/render';
+${sortedImports([catalogImport(module), `import { defineRoute } from '@ultimat3/render';`])}
 import styles from './page.module.scss';
 
 export const config = defineRoute({

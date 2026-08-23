@@ -10,7 +10,7 @@ import type { JobDriver, NackOptions } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
-import { SQL_LEASE_RENEW, SQL_NACK, SQL_STATS } from './driver-pg-sql';
+import { SQL_ACK, SQL_LEASE_RENEW, SQL_NACK, SQL_STATS } from './driver-pg-sql';
 import { createMemoryLeaseStore } from './leases';
 
 /**
@@ -67,6 +67,63 @@ describe('attempt never goes below zero', () => {
     // The floor the pg driver has always had. Both halves in one test: dropped from either side,
     // this fails.
     expect(SQL_NACK).toContain('greatest(attempt - 1, 0)');
+  });
+});
+
+describe('a settled job holds no lease', () => {
+  /**
+   * `SQL_ACK` and `SQL_NACK` both write `visible_at = null, claimed_by = null`; the memory driver
+   * patched `state` alone, so a `done` or re-queued row kept the worker id and the lease deadline
+   * of the attempt that settled it. `x jobs show` reads those two columns straight off the record,
+   * so `x dev` reported a finished job as still claimed by `w1` until its stale deadline passed —
+   * and a re-queued row was `ready` while naming a worker that no longer holds it, which is the
+   * exact state the claim scan's lease-expiry branch exists to distinguish.
+   */
+  test('ack clears the lease the claim stamped, as SQL_ACK does', async () => {
+    const driver = createMemoryDriver();
+    const { id } = await driver.enqueue({
+      name: 'settler',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'settler:1',
+      maxAttempts: 3,
+    });
+    await claimOne(driver);
+    // The claim is what stamps them, so the test is only meaningful if it did.
+    const claimed = await driver.introspect?.job(id);
+    expect(claimed?.claimedBy).toBe('w1');
+    expect(typeof claimed?.visibleAt).toBe('number');
+
+    await driver.ack(id);
+
+    const settled = await driver.introspect?.job(id);
+    expect(settled?.state).toBe('done');
+    expect(settled?.claimedBy).toBeUndefined();
+    expect(settled?.visibleAt).toBeUndefined();
+    // The pg half, in the same test, so neither side can move alone.
+    expect(SQL_ACK).toContain('visible_at = null');
+    expect(SQL_ACK).toContain('claimed_by = null');
+  });
+
+  test('nack does too, so a re-queued row names no worker', async () => {
+    const driver = createMemoryDriver();
+    const { id } = await driver.enqueue({
+      name: 'settler',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'settler:2',
+      maxAttempts: 3,
+    });
+    await claimOne(driver);
+    await driver.nack(id, { delayMs: 0, error: 'boom' });
+
+    const settled = await driver.introspect?.job(id);
+    expect(settled?.state).toBe('ready');
+    expect(settled?.lastError).toBe('boom');
+    expect(settled?.claimedBy).toBeUndefined();
+    expect(settled?.visibleAt).toBeUndefined();
+    expect(SQL_NACK).toContain('visible_at = null');
+    expect(SQL_NACK).toContain('claimed_by = null');
   });
 });
 

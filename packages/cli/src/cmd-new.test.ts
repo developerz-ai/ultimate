@@ -13,9 +13,9 @@ import type { NestedCatalog } from '@ultimat3/i18n';
 import { catalogKeys, defineCatalogs, loadCatalog } from '@ultimat3/i18n';
 import { BuiltinImagePipeline } from '@ultimat3/pwa';
 import { renderHelp } from './cmd-help';
-import { newCommand, planNewApp, writeNewApp } from './cmd-new';
+import { appNamePath, newCommand, planNewApp, writeNewApp } from './cmd-new';
 import type { CommandContext } from './command';
-import { MissingPositionalError } from './errors';
+import { AppNameIsPathError, MissingPositionalError } from './errors';
 import { exec } from './exec';
 import { MIGRATIONS_DIR } from './migrations';
 import { parseArgs } from './parse';
@@ -125,7 +125,41 @@ describe('unit · x new · x db gen is the only writer of packages/db/migrations
     expect(error.fix).toBe('x new myapp');
   });
 
-  test('its next-steps summary names x db gen "initial"', async () => {
+  test('a PATH where the name goes is refused, with the invocation that was meant', async () => {
+    // It used to be slugified: `x new /tmp/probe/vision` wrote `tmp-probe-vision` into the CWD and
+    // git-init'd it there. Nothing failed, and the app the caller asked for did not exist.
+    const ctx: CommandContext = {
+      args: parseArgs(['new', '/srv/apps/shop'], SPECS),
+      cwd: tmpdir(),
+      runner: exec,
+      env: {},
+      bunVersion: '1.3.0',
+    };
+    const thrown: unknown = await newCommand.run(ctx).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(AppNameIsPathError);
+    const error = thrown as AppNameIsPathError;
+    expect(error.code).toBe('X_CLI_BAD_FLAG');
+    expect(error.cause).toContain('/srv/apps/shop');
+    // Runnable, built from what the caller typed — never `x new <name> --dir <path>`.
+    expect(error.fix).toBe('x new shop --dir /srv/apps');
+  });
+
+  test('the split it reports is the one --dir takes', () => {
+    expect(appNamePath('/srv/apps/shop')).toEqual({ parent: '/srv/apps', base: 'shop' });
+    // A trailing separator, a relative lead and a bare root each name a directory that exists.
+    expect(appNamePath('./shop')).toEqual({ parent: '.', base: 'shop' });
+    expect(appNamePath('shop/')).toEqual({ parent: '.', base: 'shop' });
+    expect(appNamePath('/shop')).toEqual({ parent: '/', base: 'shop' });
+    // A Windows path pasted into a shell is the same mistake, and `\\` is no more a name than `/`.
+    expect(appNamePath('C:\\apps\\shop')).toEqual({ parent: 'C:\\apps', base: 'shop' });
+    // A NAME is not a path, and must stay one: this is the case every other `x new` test runs.
+    expect(appNamePath('demo-app')).toBeUndefined();
+  });
+
+  test('its next-steps summary is the ONE first run the scaffold documents', async () => {
     const ctx: CommandContext = {
       args: parseArgs(['new', 'demo-app', '--dry-run'], SPECS),
       cwd: tmpdir(),
@@ -135,7 +169,11 @@ describe('unit · x new · x db gen is the only writer of packages/db/migrations
     };
     const result = await newCommand.run(ctx);
     expect(result.ok).toBe(true);
-    expect(result.summary).toContain('x db gen "initial"');
+    // `bin/setup`, the script the scaffold writes and its README names — never a second spelling
+    // of the same steps. The four-command line this replaced ran `x dev` on a tree where nothing
+    // had installed the CLI (`X_BUILD_FAILED`) and never seeded.
+    expect(result.summary).toContain('bin/setup');
+    expect(result.summary).not.toContain('bun install');
   });
 });
 
@@ -359,7 +397,7 @@ describe('unit · x new · the API surface registers the app own primitives by n
 /**
  * `x new --help` used to contradict itself: the usage line offered `--no-example`, the flag table
  * listed `--example`, and neither said which way the scaffold goes when you type neither. The
- * example slice is 134 files against 107, so "which one do I get" is the first question the page has
+ * example slice is 136 files against 109, so "which one do I get" is the first question the page has
  * to answer — and `default: true` is a field only `--json` renders.
  */
 describe('unit · x new · the sitemap and robots.txt it wires', () => {

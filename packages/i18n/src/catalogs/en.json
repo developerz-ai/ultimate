@@ -21,7 +21,12 @@
   "errors": {
     "notFound": {
       "title": "Page not found",
-      "body": "We looked for {path} and came up empty.",
+      "body": "That address doesn't lead anywhere.",
+      "action": "Back to safety"
+    },
+    "badRequest": {
+      "title": "That request didn't work",
+      "body": "Something about it was off, so nothing happened.",
       "action": "Back to safety"
     },
     "forbidden": {
@@ -53,6 +58,14 @@
       "title": "Check the highlighted fields",
       "count": "{count} field needs attention",
       "count_plural": "{count} fields need attention"
+    },
+    "unavailable": {
+      "title": "Down for a moment",
+      "body": "We're not taking requests right now. Try again shortly.",
+      "action": "Try again"
+    },
+    "page": {
+      "builtWith": "Built with Ultimate"
     }
   },
   "validation": {

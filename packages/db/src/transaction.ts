@@ -5,7 +5,7 @@
 
 import { assert, asyncContext, nanoid } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
-import { serializationExhausted } from './errors';
+import { isolationLevelInvalid, serializationExhausted } from './errors';
 import { raw, type SqlFragment } from './sql';
 import { isRetryableState } from './sqlstate';
 
@@ -102,11 +102,36 @@ export function inLiveTx(): boolean {
   return storage.get()?.live.value === true;
 }
 
+/**
+ * The SQL for one isolation level, RE-DERIVED from the closed set rather than built out of the
+ * value — the same rule `pg-sql.ts` follows for `asc|desc`, and for the same reason: `BEGIN` takes
+ * no parameters, so this is one of the two statements here built as text, and a level spliced into
+ * it is whatever the caller passed. `isolation` is typed, and a type is not a runtime guard: the
+ * value reaches `withTransaction` from an app's config, a JSON body or a CLI flag —
+ * `{ isolation: 'read committed; drop table x; --' }` became exactly that statement, and a
+ * non-string became an uncoded `TypeError` inside a template literal.
+ *
+ * The `default` arm is `never`, so a fourth member added to `IsolationLevel` with no SQL beside it
+ * is a type error here rather than a refusal at runtime.
+ */
+const isolationMode = (declared: IsolationLevel): string => {
+  switch (declared) {
+    case 'read committed':
+      return 'ISOLATION LEVEL READ COMMITTED';
+    case 'repeatable read':
+      return 'ISOLATION LEVEL REPEATABLE READ';
+    case 'serializable':
+      return 'ISOLATION LEVEL SERIALIZABLE';
+    default: {
+      const unhandled: never = declared;
+      throw isolationLevelInvalid(unhandled);
+    }
+  }
+};
+
 export function beginStatement(options: TransactionOptions): string {
   const modes: string[] = [];
-  if (options.isolation !== undefined) {
-    modes.push(`ISOLATION LEVEL ${options.isolation.toUpperCase()}`);
-  }
+  if (options.isolation !== undefined) modes.push(isolationMode(options.isolation));
   if (options.readOnly === true) modes.push('READ ONLY');
   if (options.deferrable === true) modes.push('DEFERRABLE');
   return modes.length === 0 ? 'BEGIN' : `BEGIN ${modes.join(' ')}`;

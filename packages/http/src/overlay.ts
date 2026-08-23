@@ -3,19 +3,9 @@
 // surfaces. Labels here ("cause", "fix", "notices") are protocol strings from the
 // error contract, not UI copy, so they are not routed through the i18n catalog.
 import { factsOf, renderErrorLines, toProblem } from './error-map';
+import { acceptsHtml, escapeHtml } from './html-render';
 import { OVERLAY_STYLE } from './overlay-style';
 import { html } from './response';
-
-// `'` is escaped even though every attribute below is double-quoted: the escape set is what the
-// next author reads as the guarantee, and a single-quoted attribute written later would inherit a
-// hole nothing here would have flagged.
-const escapeHtml = (value: string): string =>
-  value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
 
 /**
  * An `href` is a SCHEME decision, not an escaping one: `javascript:alert(1)` survives every entity
@@ -119,6 +109,10 @@ export const overlayResponse = (error: unknown, meta: OverlayMeta = {}): Respons
     headers: { 'cache-control': 'no-store' },
   });
 
-/** Dev only, and only when the caller is a browser: agents and RPC want problem+json. */
-export const wantsOverlay = (request: Request): boolean =>
-  (request.headers.get('accept') ?? '').includes('text/html');
+/**
+ * Dev only, and only when the caller is a browser: agents and RPC want problem+json. The sniff
+ * itself is `acceptsHtml`, shared with the production error page — the two documents answer the
+ * same caller in two environments, so asking the question twice is how one of them starts
+ * disagreeing with the other.
+ */
+export const wantsOverlay = (request: Request): boolean => acceptsHtml(request);

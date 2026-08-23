@@ -91,6 +91,9 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // this fix builds an image, writes no `.x/build-stats.json`, and the next `x verify` reports the
   // same code. Byte-identical to `checkBudgets`'s own finding, which is the other half of the pair.
   X_BUDGET_UNMEASURED: 'x build --target static --json && x verify --json',
+  // `x routes` first, because the finding is about a ROUTE and the table names its file and its
+  // islands; the generator that fixes it takes the directory that table just printed.
+  X_LIVE_ROUTE_NO_ISLAND: 'x routes --json   # then: x g island <route-dir> --at <route-dir>',
   X_BUILD_FAILED: 'x build --json   # the finding names the failing step',
   X_BUILD_ENTRY_MISSING:
     'x new scratch-app --dry-run --json   # the file list names every entry a build needs',

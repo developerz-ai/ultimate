@@ -42,7 +42,7 @@ nothing to check here is reported as skipped (`-`), never as passed.
 | `contract` `live` `job` `e2e` `eval` | any failing `*.<type>.test.ts` suite (or any test under `e2e/`) |
 | `drift` | an app schema that no migration recorded |
 | `contract-diff` | a breaking change to a published action without a version bump |
-| `budgets` | per-route JS bytes or LCP over the declared limit |
+| `budgets` | per-route JS bytes or LCP over the declared limit, and a route that reads a live hook with no island to receive the rows (`X_LIVE_ROUTE_NO_ISLAND`) |
 | `manifest` | the manifest differs from what the code produces, or cannot be generated |
 | `roadmap` | a milestone status marker out of sync, or a shipped milestone naming no verifiable artifact |
 

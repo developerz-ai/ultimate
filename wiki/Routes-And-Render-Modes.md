@@ -222,6 +222,20 @@ See [I18n](I18n), [Timezones and dates](Timezones-And-Dates), [Money](Money).
 
 One `<Image>` shape, one capability contract, stated once — in [`docs/idea/07-rendering-seo.md` → Image pipeline](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/07-rendering-seo.md#image-pipeline): variants, `srcset`, inlined dimensions, the blur placeholder, the `@ultimat3/core` runtime, and the `ImageTransformDriver` seam AVIF/WebP variants come from. Restating it here would let the two copies drift.
 
+## Error pages
+
+A browser that hits a failure in a production process gets the framework's error page — the
+status, the code, the request id, and nothing off the throwable. `x dev` still answers with the
+overlay, which prints the cause, the fix and the stack. Until `As of 2026-08-23` a production
+browser got `problem+json` with the internal `cause` and the author-facing `fix:` in it.
+
+| | |
+|---|---|
+| override, one per status | `apps/web/site/errors/<status>.html` — served byte for byte, read per request, exact status match only |
+| static export | `404.html` is written by `x build --target static`, the app's file if present |
+| copy | the `errors.*` keys of the i18n catalog — an app translates or overrides by declaring them |
+| footer | links to the Ultimate repository and developerz.ai; an override replaces the whole page |
+
 ## Rules
 
 - `render` and `offline` are declared on the route or defaulted by surface. Never inferred at runtime.
