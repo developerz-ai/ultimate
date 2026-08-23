@@ -2,24 +2,24 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Six majors have shipped.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Seven majors have shipped, and this page walks six of them.** 2.0.0's 33 entries were never written up here; `CHANGELOG.md` is the source for those, as it is for all of them. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 7.x → 8.0.0 | **6** | the `8.0.0` section, in order |
 | 6.x → 7.0.0 | **4** | the `7.0.0` section, in order |
 | 5.x → 6.0.0 | **7** | the `6.0.0` section, in order |
 | 4.x → 5.0.0 | **2**, over six surfaces, each a declaration that promised what the code did not do | the `5.0.0` section, in order |
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
-| 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 1.x → 7.0.0 | **81** | all six sections, oldest first |
+| 1.x → 2.0.0 | **33** | the `2.0.0` section, in order — **which this page does not yet carry**; read [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `2.0.0` section instead |
+| 1.x → 8.0.0 | **87** | the six sections below, oldest first, then `CHANGELOG.md` for 2.0.0's 33 |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 87 As of 2026-08-22 — 81 inside the section of the major that shipped it, and 6 under
-# [Unreleased], staged for the next major. A released section's count is what the table above reads.
+# 87 As of 2026-08-23 — each inside the section of the major that shipped it
 ```
 
 Each entry changes a surface the table below covers.
@@ -32,6 +32,94 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 7.x → 8.0.0, entry by entry
+
+**Six breaking entries, from one whole-repo bug sweep.** Five are compile errors the moment you
+upgrade. The sixth is a **silent** behaviour change, and it is the one to read even if nothing else
+here applies to you. No codemod.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `@ultimat3/realtime` has two entries | you import a **server** name — NATS, pg replication, the sync node, the channel hub |
+| 2 | `IdempotencyStore.settle` / `fail` take a reservation id | you call either, **or implement the interface** |
+| 3 | `pwa.installPrompt`, `auth.afterSignInPath`, `ai.modelEnv` deleted | your `app.config.ts` sets one |
+| 4 | `@ultimat3/manifest` drops `canonical` | you imported it |
+| 5 | `@ultimat3/render` drops `matchRoute` / `RouteMatch` | you imported either |
+| 6 | `SQL_CANCEL` projects its columns | you asserted on that constant's text |
+
+### 1. `@ultimat3/realtime` splits into `.` and `./server`
+
+```diff
+- import { ChannelHub, createSyncNode, LiveQueryRegistry } from '@ultimat3/realtime';
++ import { ChannelHub, createSyncNode, LiveQueryRegistry } from '@ultimat3/realtime/server';
+```
+
+Client names — `useLive`, `liveHookFor`, `LiveClient`, the offline queue, rebase, the wire protocol,
+cursors — are **unchanged on `.`**. A file importing both halves now writes both imports.
+
+Why: the single barrel carried `useLive` beside `openNatsClient`, so `bun build --target=browser` on
+an entry importing *only* the hook failed with *"Browser build cannot require() Node.js builtin:
+`stream/web`"*, out of `nats`. **The island this framework tells you to write could not be bundled.**
+
+The two barrels are **disjoint** — `./server` re-exports no client name — so which half a symbol
+lives in is checkable rather than conventional. If an import stops resolving, the name moved to
+`./server`; nothing was deleted.
+
+### 2. `IdempotencyStore.settle` and `fail` take the reservation id
+
+```diff
+- await store.settle(key, value);
++ await store.settle(key, value, reservation.record.id);
+```
+
+`reservation` is what `store.reserve(key, hash)` answered. Same shape for `fail`.
+
+**Read this if you implement the interface — it is the one silent entry in this major.** A store with
+the old two-parameter method **still compiles**, because a shorter function is assignable to a longer
+signature, and it **silently loses the fence**. Both statements now match on **id and state**, so a
+straggler from a slow first attempt can no longer overwrite a replacement reservation still in
+flight. The `fail` half was the worse one: a straggler's failure marked a *live* replacement
+`failed`, and the replacement's own settle was then fenced out.
+
+### 3. Three config fields are deleted
+
+```diff
+- pwa: { enabled: true, offline: 'runtime', installPrompt: true },
++ pwa: { enabled: true, offline: 'runtime' },
+- auth: { signInPath: '/signin', afterSignInPath: '/dashboard' },
++ auth: { signInPath: '/signin' },
+- ai: { mcp: { expose: true, path: '/mcp' }, modelEnv: 'ANTHROPIC_MODEL' },
++ ai: { mcp: { expose: true, path: '/mcp' } },
+```
+
+**There is no replacement key, because there was never a behaviour.** Each was declared, defaulted,
+merged, and read by nothing. Use `createInstallController` from `@ultimat3/pwa`, send the visitor
+from your own sign-in route, and pass `model` on the `llm()` request.
+
+`ai.modelEnv`'s own doc comment argued for its deletion: *"an intention, not a behaviour… nothing
+consumes the merged value… So the exact thing this key exists to prevent — a model string baked into
+the image — is what actually happens."*
+
+Same precedent as `JobsConfig.driver` in 5.0.0 and `realtime.heartbeatMs` in 4.0.0. All three fail at
+**typecheck only** — and an app that builds its config into a variable before passing it loses
+excess-property checking and sees no error at all. `scripts/config-readers.ts` now keeps the class out.
+
+### 4. `@ultimat3/manifest` no longer exports `canonical`
+
+Use `canonicalJson` from `@ultimat3/core`. It was the third of five copies of one serialiser;
+`manifest`'s fed `buildId` **and the contract-diff equality**, so a `-0`/`NaN`/`Date` fold could make
+a breaking API change diff as *"no change"* and ship silently.
+
+### 5. `@ultimat3/render` no longer exports `matchRoute` or `RouteMatch`
+
+Two exported route matchers existed with different precedence. `@ultimat3/http`'s trie is the live
+one; render's had zero consumers repo-wide.
+
+### 6. `SQL_CANCEL` projects its columns instead of `returning *`
+
+It fed `toJobRecord`, which does `Number(row.run_at)` — so against a text-decoding `PgExecutor` every
+timestamp came back `NaN`. Only an edit if you asserted on the constant's SQL text.
 
 ## 6.x → 7.0.0, entry by entry
 
