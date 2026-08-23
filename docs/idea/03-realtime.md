@@ -1,6 +1,8 @@
 # Realtime
 
-Three tiers, one ladder. Same mutator shape at every rung — climbing is a config change, never a rewrite.
+Three tiers, one ladder. Same mutator shape at every rung — climbing is a **declaration** change, never a rewrite.
+
+**A tier is not a config value.** It is what the app declares: a `channel()` topic is tier 1, a `live: true` query is tier 2, `persist: true` on that query is tier 3. `realtime.tier` was an `app.config.ts` key that accepted `1 | 2 | 3`, was read by nothing, and was deleted in 10.0.0 — the one config edit that major asks for ([`wiki/Upgrading.md`](../../wiki/Upgrading.md)). What remains in config is `realtime.enabled`, `realtime.transport` and `realtime.urlEnv`.
 
 ## The ladder
 

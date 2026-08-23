@@ -99,7 +99,7 @@ Yes. CI runs exactly `x verify` — no bespoke pipeline steps, because a check t
 
 ### Do I need Docker to develop?
 
-No. `x dev` uses embedded Postgres, in-process NATS, and a local directory in place of S3. `bunx create-ultimate myapp && cd myapp && x dev` — no Docker install, no `.env` scavenger hunt. The compose files exist for parity debugging and CI jobs that want real services ([Deployment](Deployment)).
+No. `x dev` uses embedded PGlite, in-process events, and a local directory in place of S3. `bunx create-ultimate myapp && cd myapp && bin/setup && x dev` — no Docker install, no `.env` scavenger hunt. `bin/setup` is `bun install` + the first migration + the seed, and is not optional: `x new` installs nothing ([Getting started](Getting-Started)). The compose files exist for parity debugging and CI jobs that want real services ([Deployment](Deployment)).
 
 ### Do I need Redis or NATS?
 
@@ -140,6 +140,19 @@ Nowhere — there is no plugin API and there has never been one, `As of 2026-08`
 ### Will you add an adapter for my host or my ORM?
 
 No. Multi-ORM means two migration stories and two sets of generated SQL for an agent to learn. Vendor deploy adapters violate the containers-only axiom. Removing an alternative is treated as a feature.
+
+### Is it overkill for a small project?
+
+No, and it is measured rather than argued. `x new` asks **0** questions (all five flags carry a
+default), writes **134** files you never edit, installs **104** packages, and reaches a running app
+in **4** commands with **0** env values supplied and nothing to install first — no Docker, no
+Postgres, no Redis, no NATS. There is no lite mode to pick, because there is no second path to pick
+between ([axiom 1](Home#the-rules-everything-else-follows)). The whole range, both ends, with the
+command behind every number: [`docs/idea/21-the-range.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/21-the-range.md).
+
+### Is it enough for a very large project?
+
+The capability answer is [`docs/idea/20-large-app-readiness.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/20-large-app-readiness.md) — graded against what a very large product needs, including what it must still build itself — and the deployment answer is [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md), rung by rung, naming where the "no app code change" invariant breaks today. What is **not** claimed: nobody has shipped a very large app on it yet, and this wiki will say so until somebody has.
 
 ### Who is it for?
 

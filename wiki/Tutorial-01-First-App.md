@@ -2,7 +2,7 @@
 
 One command scaffolds a monorepo that already runs. No Docker daemon, no database to provision, no `.env` to fill in.
 
-`As of 2026-08`. **This page documents `main`, not a published release.** Every file count, gate result and command output below was re-measured on this tree: `x new` → `bun install` → the command, in a directory outside the checkout. Rows that still describe a published version say so in their own line.
+`As of 2026-08-23`. **This page documents `main`, not a published release.** Every file count, gate result and command output below was re-measured on this tree: `x new` → `bun install` → the command, in a directory outside the checkout. Rows that still describe a published version say so in their own line.
 
 Series: **1** · [2 — first feature](Tutorial-02-First-Feature) · [3 — auth and admin](Tutorial-03-Auth-And-Admin) · [4 — jobs and realtime](Tutorial-04-Jobs-And-Realtime) · [5 — deploy free](Tutorial-05-Deploy-Free) · [6 — growing up](Tutorial-06-Growing-Up)
 
@@ -24,7 +24,7 @@ bunx create-ultimate myapp
 **Unpinned on purpose.** Pinning the tutorial to a version pins readers to a scaffold that stops matching this page on the next tag; `README.md` and `llms.txt` drop the pin for the same reason. To reproduce a specific release, add `@<version>` and read that release's tag of this page.
 
 ```text
-  125 files in /tmp/tmp.XXXXXXXX/myapp
+  136 files in /tmp/tmp.XXXXXXXX/myapp
 ✓ created myapp — next: cd myapp && bun install && x db gen "initial" && x db migrate && x dev
 ```
 
@@ -38,12 +38,12 @@ cd myapp && bun install
 
 ### Two shapes, one generator
 
-Measured on `main`, `As of 2026-08`, `x new --dry-run --json | jq '.data.files | length'`:
+Measured on `main`, `As of 2026-08-23`, `x new --dry-run --json | jq '.data.files | length'`:
 
 | Invocation | Files | `x verify` on run one |
 |---|---|---|
-| `bunx create-ultimate myapp` | 115 | 11 pass, **1 fails**, 5 skipped — the red step is `budgets`, [below](#the-one-red-step-on-run-one) |
-| `bunx create-ultimate myapp --no-example` | 91 | 10 pass, **1 fails**, 6 skipped — the same red step, one fewer route |
+| `bunx create-ultimate myapp` | 136 | 16 pass, **1 fails**, 2 skipped — `budgets` [below](#the-one-red-step-on-run-one) |
+| `bunx create-ultimate myapp --no-example` | 107 | 13 pass, **1 fails**, 5 skipped — `budgets` alone, one fewer route |
 
 `--no-example` omits the `post` feature slice and its route. Pick it when an agent is about to write the real feature anyway — [tutorial 2](Tutorial-02-First-Feature) starts there. Pick the default when you want a worked example to read.
 
@@ -53,41 +53,43 @@ Measured on `main`, `As of 2026-08`, `x new --dry-run --json | jq '.data.files |
 bunx x verify
 ```
 
-`--no-example`, verbatim, on `main` `As of 2026-08`:
+`--no-example`, verbatim, on `main` `As of 2026-08-23`:
 
 ```text
-  ✓ typecheck          19642ms
-  ✓ lint               359ms
-  ✓ boundaries         124ms
-  ✓ filesize           80ms
-  ✓ package-shape      28ms
-  ✓ errors             86ms
-  ✓ unit               2046ms  8 workers
-  - contract           0ms
+  ✓ typecheck          15746ms
+  ✓ lint               140ms
+  ✓ boundaries         21ms
+  ✓ filesize           6ms
+  ✓ package-shape      16ms
+  ✓ errors             12ms
+  ✓ unit               242ms
+  ✓ contract           116ms
   - live               0ms
   - job                0ms
   - e2e                0ms
-  ✓ eval               2907ms
-  ✓ drift              18ms
+  ✓ eval               359ms
+  ✓ drift              17ms
   - contract-diff      0ms
-  ✗ budgets            120ms
-  ✓ manifest           63ms
+  ✗ budgets            14ms
+  ✓ seo                10ms
+  ✓ i18n               11ms
+  ✓ manifest           4ms
   - roadmap            0ms
-✗ 1 of 19 steps failed — 6 skipped: contract, live, job, e2e, contract-diff, roadmap
+✗ 1 of 19 steps failed — 5 skipped: live, job, e2e, contract-diff, roadmap
 ```
 
-`-` is skipped, not passed: no `*.contract.test.ts` exists yet, so the step has nothing to check. The summary counts the two apart and names every skip, so a gate that is green because a suite does not exist says so on the one line you read. [Tutorial 2](Tutorial-02-First-Feature) turns three of those dashes into ticks.
+`-` is skipped, not passed: no live query, job or e2e test exists yet, so those steps have nothing to check. `contract` is **not** among them — the scaffold ships `apps/web/api/health.contract.test.ts`, which is what makes it a tick on run one. The summary counts skips and passes apart and names every skip, so a gate that is green because a suite does not exist says so on the one line you read. [Tutorial 2](Tutorial-02-First-Feature) turns more of those dashes into ticks.
 
 Timings are one Linux laptop, not a benchmark.
 
 ### The one red step on run one
 
-`budgets`, one finding per route with a declared budget:
+`budgets`, one finding per route with a declared budget — measured `As of 2026-08-23`:
 
 ```text
-  ✗ budgets            120ms
+  ✗ budgets            14ms
       X_BUDGET_UNMEASURED (/)
-        cause: / declares a JS and LCP budget and no build has written .x/build-stats.json in this repo
+        cause: / declares a JS budget and no build has written .x/build-stats.json in this repo
         fix:   x build --target static --json && x verify --json
 ```
 

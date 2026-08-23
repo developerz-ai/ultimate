@@ -1,40 +1,58 @@
 # Getting started
 
 ```
-bunx create-ultimate myapp && cd myapp && x dev
+bunx create-ultimate myapp && cd myapp && bin/setup && x dev
 ```
 
-Nothing to install first. No Docker daemon, no `.env` scavenger hunt, no service to provision.
+**Four commands, and `bin/setup` is one of them.** It is the scaffold's own script — `bun install`,
+`x db gen "initial"`, `x db migrate`, `x db seed` — idempotent, so re-running it after a pull is
+safe. `bunx create-ultimate myapp && cd myapp && x dev` is what this page said until 2026-08-23 and
+it does not work: `x new` writes files and installs nothing, so the app has no `node_modules`, no `x`
+of its own, and `x dev` stops on `X_BUILD_FAILED` — *"Could not resolve `@ultimat3/ui`. Maybe you
+need to `bun install`?"*
+
+No Docker daemon, no `.env` scavenger hunt, no service to provision — `.env.development` ships
+committed non-secret defaults and an empty `DATABASE_URL` means embedded PGlite.
+
+`bin/setup`, then `x dev`, measured on a fresh scaffold `As of 2026-08-23` (6.7s for setup on a warm
+Bun cache):
 
 ```
-✓ postgres    embedded, migrated, seeded         420ms
-✓ nats        in-process                           2ms
-✓ storage     ./.x/storage (S3 API)                1ms
-✓ roles       web sync worker scheduler replicator (one process, isolated)
-✓ site/       12 routes   static   0kb js
-✓ app/        3 routes    stream
-✓ mcp         ws://localhost:9229
-  http://localhost:3000        →  landing page (site/)
-  http://localhost:3000/app    →  dashboard (app/)
-  http://localhost:3000/_x     →  dev dashboard
-  ready in 1.1s
+$ bin/setup
+  packages/db/migrations/20260823155026_initial.sql
+✓ migration 20260823155026_initial generated
+✓ migrations applied
+✓ 1 seed(s): 2 inserted, 0 updated, 0 already stored
+setup complete — next: x dev
+
+$ x dev
+  roles web, sync, worker, scheduler
+  panels routes, timeline, live, jobs, db, mail, cache, policy, manifest, services, boundaries
+  manifest /path/to/myapp/x.manifest.json
+  introspect http://localhost:3000/_x
+✓ dev ready on http://localhost:3000 — /_x mounted (11 panels), db=embedded events=embedded storage=embedded mail=embedded cdn=none
 ```
+
+`replicator` is the fifth role and is **opt-in** — it takes a replication slot, which is not
+something every `x dev` should do by starting: `x dev --role web,sync,worker,scheduler,replicator`.
 
 ## What you get before writing a line
 
+Measured on a fresh scaffold, `As of 2026-08-23`.
+
 | Thing | Where | Detail |
 |---|---|---|
-| Embedded Postgres | `.x/pg` | downloaded once, migrated, seeded; no local install |
-| In-process NATS | same process | identical API to JetStream in prod |
+| Embedded Postgres | `.x/pgdata` | PGlite in-process, no local install; `bin/setup` migrates and seeds it |
+| In-process events | same process | `events=embedded`; the same seam NATS fills in prod |
 | S3 | `./.x/storage` | real S3 API surface via `Bun.s3` |
 | Mail | `/_x` inbox | captured, never sent |
-| Redis (cache tier 3) | in-process map | same interface as `Bun.redis` |
-| MCP dev server | `ws://localhost:9229` | routes, schema, policies, tests, logs, read-only SQL |
-| `/_x` dev panel | `http://localhost:3000/_x` | routes, schema, queries, live, jobs, cache, mail, errors, traces, AI, env, boundaries |
-| Landing page | `apps/web/site/` | `static`, **0kb JS**, real meta + JSON-LD |
-| Dashboard | `apps/web/app/` | `stream`, auth'd |
-| Admin app | `apps/admin/` | already exposes MCP over your actions |
-| Green gate | `x verify` | 19 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap |
+| Redis (the shared cache tier) | not started | the scaffold's `cache.tiers` is `['request-memo', 'lru']`; adding `'redis'` is what builds the shared rung |
+| `/_x` dev panel | `http://localhost:3000/_x` | 11 panels: routes, timeline, live, jobs, db, mail, cache, policy, manifest, services, boundaries |
+| MCP server | `x mcp serve` | 13 dev tools over `stdio` or `http`. **Not started by `x dev`** — `/mcp` on the dev server is 404 |
+| Landing page | `apps/web/site/page.tsx` | `render: 'static'`, `hydrate: 'never'`, `budget: { js: '0kb' }`, real meta + JSON-LD |
+| Dashboard | `apps/web/app/dashboard/page.tsx` | `render: 'ssr'`, `hydrate: 'visible'`, `budget: { js: '60kb' }`, behind `policy: { permission: 'dashboard:read' }`. **Not `stream`** — `stream` needs a hole marker the renderer does not yet have, and the template says so in its own comment |
+| Admin app | `apps/admin/` | one `ssr` page; your actions reach an agent through `mcp: { expose: true }` and `x mcp serve`, not through this app |
+| Green gate | `x verify` | 19 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap. On a fresh scaffold: red on `lint` and `budgets`, then **18 of 19** after running the `fix:` lines it printed |
 
 `x dev` runs **every role in one process** with isolation simulated, not skipped: separate ALS contexts, a real Postgres queue, real logical replication, a real SIGTERM drain on `x dev restart`. Nothing in the framework branches on `if (dev)` — only the drivers differ.
 
@@ -117,11 +135,18 @@ Rename `postId` in the action and this file fails typecheck. One rename, N error
 
 ## 3. Drive it from an agent over MCP
 
-Point any MCP client at the dev socket printed by `x dev`.
+**`x dev` does not serve MCP** — measured `As of 2026-08-23`, `GET /mcp` on the dev server answers
+404 and nothing listens on 9229. The MCP server is its own command, and it prints the bearer token
+your client must send:
 
 ```
-claude mcp add ultimate --transport ws ws://localhost:9229
+x mcp serve --transport stdio                  # a client that spawns the server
+x mcp serve --transport http --port 9229       # POST /mcp, bearer token printed at boot
 ```
+
+`stdio` and `http` are the two transports (`x help mcp`); there is no `ws` transport, and a client
+configured for one gets no connection. Register the printed URL and token with whatever MCP client
+you use.
 
 The agent now sees `publishPost` as a tool with JSON Schema from `input`, the description from `mcp.description`, and **the action's own `policy` as its authorization** — unwrapped, identical to the HTTP path. A denial is the same code in all three encodings:
 

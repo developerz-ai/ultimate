@@ -24,27 +24,39 @@ X_BUN_VERSION: bun version is below the framework floor
 ## Create an app
 
 ```
-bunx create-ultimate myapp && cd myapp && x dev
+bunx create-ultimate myapp && cd myapp && bin/setup && x dev
 ```
 
 `create-ultimate` is a thin front for `x new`. Inside an existing workspace, use `x new` directly.
 
+**`bin/setup` is not optional.** `x new` writes files and installs nothing, so `cd myapp && x dev`
+stops on `X_BUILD_FAILED` naming `bun install` (measured `As of 2026-08-23`; this page said
+otherwise until then). `bin/setup` is `bun install`, `x db gen "initial"`, `x db migrate`,
+`x db seed` — idempotent, safe to re-run.
+
+Every flag, from the registry — `bun run x -- help new`, or `x help new` in an app. There are five,
+each with a default, so **`x new` asks nothing**: an agent cannot answer a prompt and is never given
+one.
+
 | Flag | Default | Effect |
 |---|---|---|
-| `--admin` / `--no-admin` | `--admin` | generate `apps/admin/` with its MCP surface |
-| `--locale <bcp47>` | `en` | first i18n catalog + default `ctx.locale` |
-| `--tz <iana>` | `UTC` | default `ctx.tz`; every date is formatted with an explicit zone |
-| `--currency <iso>` | `USD` | default `Money.currency`; amounts stay integer minor units |
-| `--no-install` | off | scaffold only, skip `bun install` |
-| `--no-git` | off | skip `git init` and the initial commit |
-| `--yes` | off | accept every default, no prompts (the agent path) |
-| `--json` | off | machine-readable result: paths written, next commands |
+| `--dir <path>` | cwd | parent directory the app is written into |
+| `--example` / `--no-example` | `--example` | include the example feature slice; `--no-example` gives the same shape with an empty `app/` |
+| `--git` / `--no-git` | `--git` | `git init` and commit the scaffold |
+| `--dry-run` | off | print the file list, write nothing |
+| `--force` | off | write into a directory that already exists |
+| `--json` | off | machine-readable result: the directory, every path written, the git outcome |
+
+There is **no** `--admin`, `--locale`, `--tz`, `--currency`, `--no-install` or `--yes` — this table
+listed all six until 2026-08-23 and the parser refuses each with `X_CLI_BAD_FLAG`. `apps/admin/` is
+always written; locale, timezone and currency are `app.config.ts` fields you edit after scaffolding
+([Configuration](Configuration)).
 
 What `x new` writes, and who owns it afterwards:
 
 | Artifact | Author | Rule |
 |---|---|---|
-| `.env` | generated, **complete and valid** | dev secrets carry a loud `dev-only-` prefix |
+| `.env.development` | generated, **complete and valid**, committed | non-secret defaults; per-box secrets go in `.env.development.local`, which wins. Dev secrets carry a loud `dev-only-` prefix. The scaffold writes no `.env` — Bun still loads `.env`, `.env.<mode>` and `.env.local` when they exist ([`packages/core/src/env-example.ts:31`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/env-example.ts)), and `.env` is the one you never commit |
 | `.env.example` | generated from `envSchema` | never hand-edited — it is a projection of the declaration, and drift fails `x verify`. Regenerate with `x env example` |
 | `app.config.ts` | yours | the one config file; validated at boot ([Configuration](Configuration)) |
 | `x.manifest.json` | generated every build | routes, entities, actions, jobs, policies, tags, MCP tools, budgets. Never hand-edited; drift fails `x verify` |
@@ -86,7 +98,7 @@ The `fix:` is per-key and built from your own declarations ([`packages/core/src/
 |---|---|
 | Access | `env.STRIPE_KEY` is typed. A `process.env` read outside the schema is a lint error |
 | Per-role | a role requires only the keys it uses — `ROLE=worker` does not fail on a missing `VAPID` |
-| Repair | `x env example` regenerates `.env.example` from the schema; copy the keys it names into `.env`. There is **no** `x env --fix` — `x env` declares `check` and `example` and no flags, so `x env check --fix` dies at the parser with `X_CLI_BAD_FLAG` |
+| Repair | `x env example` regenerates `.env.example` from the schema; copy the keys it names into `.env.development.local` in dev, or into your platform's secret store in production. There is **no** `x env --fix` — `x env` declares `check` and `example` and no flags, so `x env check --fix` dies at the parser with `X_CLI_BAD_FLAG` |
 | CI | `x env check` runs inside `x verify`, against the schema — never against a checked-in example file |
 | Provenance | `/_x` → **Env** shows every resolved key and which source it came from |
 
@@ -117,11 +129,18 @@ Stated cost: no native-addon packages, and Bun's long-running-process maturity i
 
 ## Editor and agent setup
 
-`x dev` starts an MCP server on the dev socket (`ws://localhost:9229` by default). Point your agent at it and it stops guessing.
+The MCP server is `x mcp serve`, and **`x dev` does not start one** — measured `As of 2026-08-23`,
+`/mcp` on the dev server answers 404 and nothing listens on 9229 until this command runs. It prints
+the bearer token and the scopes the caller gets:
 
 ```
-claude mcp add ultimate --transport ws ws://localhost:9229
+x mcp serve --transport stdio                  # a client that spawns the server
+x mcp serve --transport http --port 9229       # POST /mcp; the bearer token is printed at boot
 ```
+
+`stdio` and `http` are the two transports (`x help mcp`) — there is no `ws` transport, and this page
+told readers to configure one until 2026-08-23. Register the URL and the printed token with whatever
+MCP client you use; a request without the token is answered 401 with no catalog.
 
 Thirteen tools, `As of 2026-08` — the full catalog, and the exact names to call:
 
@@ -148,7 +167,7 @@ Read tools are unrestricted in dev; write tools are scoped to branch environment
 | Task | Command |
 |---|---|
 | Framework version bump + codemods | `x upgrade` — **planned**, exits `X_NOT_IMPLEMENTED`. The shipped path is `bun update --latest && x verify`, then pin every `@ultimat3/*` to one exact version |
-| Check what a bump would change | nothing shipped does this. `x upgrade --dry-run` is worse than unimplemented: a planned command declares no flags, so it dies at the parser with `X_CLI_BAD_FLAG` instead of the honest `X_NOT_IMPLEMENTED`. Read `CHANGELOG.md` — `[Unreleased]` currently carries 30 `BREAKING —` entries ([Upgrading](Upgrading)) |
+| Check what a bump would change | nothing shipped does this. `x upgrade --dry-run` is worse than unimplemented: a planned command declares no flags, so it dies at the parser with `X_CLI_BAD_FLAG` instead of the honest `X_NOT_IMPLEMENTED`. Read `CHANGELOG.md` — `grep -c 'BREAKING —' <that section>` is the count, and it is `[Unreleased]`'s to change on any commit ([Upgrading](Upgrading)) |
 | Remove dev state (embedded PG, storage, caches) | `rm -rf .x` |
 | Remove the CLI | it ships with the app; deleting the repo is the uninstall |
 

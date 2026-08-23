@@ -9,6 +9,11 @@ Rails' philosophy — convention over configuration, generators, one blessed pat
 | **Primary: an AI agent** | one correct way, machine-readable errors, generated facts to read | no choice menus, `--json` everywhere, `x.manifest.json` emitted from code |
 | **Secondary: a tired senior engineer, via their own AI agent + AI reviewer** | no glue code, no 3am pager, no config archaeology | batteries in-box, typed env at boot, `x verify` as the only gate |
 
+**Both ends of the project range, and the same framework at each.** A homework assignment is not
+paying for a bank's infrastructure — the defaults *are* the small end — and a very large product is
+not on a toy, because the ladder, the tier boundaries and the gate are already in the beginner's
+app. The measured version of that claim, small end and large end, is [`21-the-range.md`](./21-the-range.md).
+
 Agents fail on ambiguity, not on syntax. Every "you could use A or B here" is a branch point where an agent guesses, ships, and the guess is discovered in production. Ambiguity is the tax agents pay — Ultimate's job is to not levy it.
 
 A framework optimized for agents is *also* the calmest framework for humans. The two audiences want the same thing: fewer decisions with consequences.
@@ -61,7 +66,7 @@ The same app code runs on one PaaS dyno and on a distributed cluster. Climbing i
 | pre-MVP → production | a managed Postgres URL, a cache driver | entities, actions, policies, queries, jobs, routes, tasks |
 | production → scale-out | replicas, a NATS transport, a change feed | the same, plus every test that covered them |
 
-`As of 2026-08` this is the *design*, proven at one measured point — 50k sockets through a forced restart — and not yet at the top of the ladder. [`17-scale-ladder.md`](./17-scale-ladder.md) states which rungs are real today and which are intent, including the incompatibilities that would currently break the climb.
+`As of 2026-08` this is the *design*, proven at one measured point — 50,000 sockets **reachable again** after a forced restart of one node, which is reachability and not consistency ([`14-roadmap.md`](./14-roadmap.md) carries both halves) — and not yet at the top of the ladder. [`17-scale-ladder.md`](./17-scale-ladder.md) states which rungs are real today and which are intent, including the incompatibilities that would currently break the climb.
 
 ## Design axioms
 
@@ -97,9 +102,10 @@ Each one is a permanent no, not a "later".
 ## What "done" looks like
 
 ```
-bunx create-ultimate myapp && cd myapp && x dev
+bunx create-ultimate myapp && cd myapp && bin/setup && x dev
 ```
 
-No Docker install. No `.env` scavenger hunt. Embedded Postgres, in-process NATS, S3 → local dir. A landing page in `site/` at 0kb JS, an authed dashboard in `app/` streaming, an admin app that already speaks MCP, and `x verify` green — before the first line of user code.
+`bin/setup` is `bun install`, `x db gen "initial"`, `x db migrate`, `x db seed` — the scaffold's own
+script, and not optional ([`13-dx.md`](./13-dx.md)). No Docker install. No `.env` scavenger hunt. Embedded Postgres, in-process NATS, S3 → local dir. A landing page in `site/` at 0kb JS, an authed dashboard in `app/` streaming, an admin app that already speaks MCP, and `x verify` green — before the first line of user code.
 
 Then `x build --target docker` and it runs anywhere that runs containers.

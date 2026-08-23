@@ -29,7 +29,7 @@ Rung numbers are [`../idea/17-scale-ladder.md`](../idea/17-scale-ladder.md)'s �
 | **2 — one box + Compose** | [`docker-compose.prod.yml`](../../docker/docker-compose.prod.yml), Postgres and NATS beside it or managed | `ssh` + `docker compose up -d` | the box is the availability story; a deploy is visible |
 | **3 — Kubernetes** | the Helm chart or the manifest set in [`01-kubernetes.md`](./01-kubernetes.md) | `git push` (GitOps) | a control plane, a secrets story, an on-call story |
 
-**You are on a PaaS or one box until something on this list is true.** Not before.
+**You are on a PaaS or one box until something on this list is true.** Not before. A first app and a product with paying users are the same deployment — rung 0 is a free plan with no card — and the range that spans, small end to very large, is [`../idea/21-the-range.md`](../idea/21-the-range.md).
 
 | Climb to Compose (rung 2) when | Climb to Kubernetes (rung 3) when |
 |---|---|
