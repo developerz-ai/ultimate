@@ -145,6 +145,29 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   `renderThrowable` rather than `error.message` / `String(error)` — a renderer that throws replaces
   `X_AI_PROVIDER_UNAVAILABLE` with a bare `TypeError` nothing catches by code, and it bounds a
   provider's 1MB body out of the `cause`.
+- **`X_AI_PROVIDER_UNAVAILABLE` is classified `retryable`, and it is the only one, `As of
+  2026-08-23`.** `AI_ERROR_RETRY`. It rendered `retry: "terminal"` in every problem document while
+  the gateway three lines away was backing off and trying again. `retryable`, not `retry-after`:
+  `statedDelayMs` and `@ultimat3/http`'s `retryAfterOf` read one field, `meta.retryAfterSeconds`, and
+  neither wire format here parses `Retry-After` off a 429 — so there is no time to name. The code's
+  other half, "no configured provider serves this model", is an `app.config.ts` edit and carries a
+  per-instance `retry: 'terminal'` from `AiProviderUnavailableError({ unserved: true })`; registering
+  the code is what makes that override honoured, because core reads an instance `terminal` on an
+  unregistered code as unclassified. Every other code is left UNREGISTERED rather than registered as
+  terminal: `@ultimat3/jobs` dead-letters a registered `terminal` on attempt 1, which is very likely
+  right for `X_LLM_REFUSED` and `X_AI_BUDGET_EXCEEDED` — a re-run is a second identical bill — and is
+  a change to how every app's jobs fail, so it belongs to whoever makes it on purpose.
+- **The retry SCHEDULE is core's, the retry LOOP is this package's, `As of 2026-08-23`.**
+  `backoffMs` is `@ultimat3/core`'s `backoffDelay` with `baseDelayMs`/`maxDelayMs` mapped onto
+  `base`/`max`, and `isRetryable`'s status half is core's `isRetryableStatus`. Two behaviour changes
+  came with it and both are pinned in `gateway-backoff.test.ts`: a delay is **rounded** where it was
+  floored (<=1ms), and **408, 409 and 425 are now retried** where only `429 || >= 500` was. What did
+  NOT move is `retry()`, core's executor, and the reason is the direction it fails: it stops on a
+  `terminal` classification and retries everything else, so an UNCLASSIFIED throw is retried. Every
+  value in this loop is an app `Provider`'s — a plain object with a `status`, never an
+  `UltimateError` — so adopting it would have retried a 400 three times per provider, which is the
+  one thing the loop's own comment says it must not do. `RetryPolicy` and `DEFAULT_RETRY` stay
+  declared here for a second reason: their field names are what an app writes.
 - Every non-2xx and every in-band `error` frame becomes `AiTransportError`, which carries a real
   `status` field — that field IS the gateway's retry rule. A body parsed as a message would read
   as an empty, successful answer, which is the one outcome nothing downstream can detect.

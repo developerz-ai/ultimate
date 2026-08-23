@@ -4,9 +4,10 @@
 // joiner interleaved at a named await.
 
 import { describe, expect, test } from 'bun:test';
+import type { Scheduler } from '@ultimat3/core';
 import { tag } from './tags';
 import type { CacheEntry, CacheSetOptions, CacheTier } from './tiers';
-import { createCacheStack } from './tiers';
+import { createCacheStack, DEFAULT_LOAD_DEADLINE_MS } from './tiers';
 
 /**
  * A tier that keeps the tags it was written with and evicts on them. `tiers.test.ts`'s `fakeTier`
@@ -90,5 +91,102 @@ describe('a single-flight joiner that arrives during the FILL', () => {
     const invalidated = await tier.invalidateTags([tag('feed')]);
     expect(invalidated.keys).toEqual(['k']);
     expect(await tier.get('k')).toBeUndefined();
+  });
+});
+
+// A `load()` that never settles used to hold its key for the life of the process, and every later
+// reader joined a promise nothing would resolve — a cache turned from an outage damper into the
+// outage. `load()` is the APP's function and the stack has no signal to abort it, so the deadline
+// evicts the KEY and nothing else: the wedged load keeps running, its own readers keep their
+// promise, and the next reader gets to try. The cost is one duplicate fill, never a failed read.
+describe('a wedged load does not hold its key for ever', () => {
+  interface Timer {
+    readonly schedule: Scheduler;
+    /** The delay the stack asked for, or `undefined` if it scheduled nothing. */
+    readonly ms: number | undefined;
+    fire(): void;
+  }
+
+  const controlledTimer = (): Timer => {
+    let ms: number | undefined;
+    let pending = (): void => {};
+    return {
+      schedule: (fn, delay) => {
+        ms = delay;
+        pending = fn;
+        return (): void => {
+          pending = (): void => {};
+        };
+      },
+      get ms(): number | undefined {
+        return ms;
+      },
+      fire(): void {
+        pending();
+      },
+    };
+  };
+
+  /** A macrotask turn: long enough for every queued continuation to have run. */
+  const flush = async (): Promise<void> => {
+    await new Promise<void>((done) => {
+      setTimeout(done, 0);
+    });
+  };
+
+  test('the default deadline is the one an abandoned request already gave up at', async () => {
+    const timer = controlledTimer();
+    const stack = createCacheStack([taggingTier('lru')], { schedule: timer.schedule });
+    void stack.read('feed', () => new Promise<string>(() => {}));
+    // `read` walks the ladder before it ever reaches the flight, so the timer is armed an await
+    // later than the call.
+    await flush();
+    expect(timer.ms).toBe(DEFAULT_LOAD_DEADLINE_MS);
+    // Stated as a literal too: `@ultimat3/http`'s `requestTimeoutMs` defaults to the same 30s and
+    // cache (tier 1) may not import http (tier 2) to read it, so this is the only place the two
+    // can be seen to agree.
+    expect(DEFAULT_LOAD_DEADLINE_MS).toBe(30_000);
+  });
+
+  test('loadDeadlineMs overrides it without a new config key', async () => {
+    const timer = controlledTimer();
+    const stack = createCacheStack([taggingTier('lru')], {
+      schedule: timer.schedule,
+      loadDeadlineMs: 2_500,
+    });
+    void stack.read('feed', () => new Promise<string>(() => {}));
+    await flush();
+    expect(timer.ms).toBe(2_500);
+  });
+
+  test('past the deadline the key is free, so the next reader loads instead of joining', async () => {
+    const timer = controlledTimer();
+    const stack = createCacheStack([taggingTier('lru')], { schedule: timer.schedule });
+    let loads = 0;
+    const wedged = (): Promise<string> => {
+      loads += 1;
+      return new Promise<string>(() => {});
+    };
+
+    void stack.read('feed', wedged);
+    void stack.read('feed', wedged);
+    await flush();
+    // Both joined one load: that is the stampede guard doing its job.
+    expect(loads).toBe(1);
+
+    timer.fire();
+    // Observed through a flush rather than an await, deliberately: with the key still held this
+    // read JOINS the wedged load and never settles, and awaiting it would report the defect as a
+    // five-second timeout instead of as the reader that never got its own turn.
+    let answered: string | undefined;
+    void stack
+      .read('feed', async () => 'fresh')
+      .then((value) => {
+        answered = value;
+      });
+    await flush();
+    expect(answered).toBe('fresh');
+    // The wedged load was never re-run — eviction frees the key, it does not retry the work.
+    expect(loads).toBe(1);
   });
 });

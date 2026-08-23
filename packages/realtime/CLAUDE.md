@@ -397,6 +397,34 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   liveHookFor(liveFeed)` runs at import; `registerQueries()` stamps the name later, at boot.
 - Type claims about the hook go in `type-pins.ts`, never in a `.test.ts` — `tsconfig.json` excludes
   test files, so `tsc -b` never reads one and an assertion written there can never fail.
+- **`backoffDelay` is `@ultimat3/core`'s, and `attempt + 1` is the whole of the seam** (`As of
+  2026-08-23`). A client counts its first reconnect as attempt **0** and core counts the first wait
+  as attempt **1**, so dropping the shift doubles every reconnect delay in the framework —
+  silently, and only under the load this file exists to survive.
+  `thundering-herd-core-parity.test.ts` pins it with the numbers (`[500, 1_000, 2_000, 4_000]`) and
+  with 17,280 comparisons across every jitter mode, base, cap, factor, attempt and roll.
+  `JitterMode` is core's type re-exported and `Rng` is core's `Random` — never a second spelling of
+  either. `drainPlan()` and `AcceptBudget` are NOT backoff and keep their own arithmetic: a slot in
+  a spread and a token bucket's refusal delay are different questions. `bun run flight-copies` is the
+  guard: a second curve-and-jitter function anywhere in `packages/*/src` is a build error, matched
+  on the literal shape rather than the name.
+- **The SHARED window read carries a deadline, and it frees the SLOT — it cannot cancel the read**
+  (`As of 2026-08-23`). One `definition.snapshot` that never settled pinned `entry.reading` for the
+  life of the process, and every later cold subscriber joined a promise nothing would ever resolve:
+  one wedged read took every future subscriber of that query id with it. `startRead` now races the
+  read against `entry.schedule(…, entry.readDeadlineMs)`, default `DEFAULT_READ_DEADLINE_MS` (30s),
+  injectable per entry and through `new LiveQueryRegistry({ readDeadlineMs, schedule })`. Three
+  rules, each with its own test in `query-window.test.ts` and each proven by mutation:
+  - **A race, not just an eviction.** Freeing the slot alone leaves every caller ALREADY joined
+    awaiting a promise nothing settles; they are told instead, with `X_TIMEOUT`.
+  - **`X_TIMEOUT`, not a silent empty window.** A superseded read is discarded silently because a
+    strictly better window already exists to serve from; a timed-out read has none, and serving
+    `rows: []` as the whole result set is the exact fault `live-query.ts`'s `#read` refuses. The
+    rejecting-read path (`readSnapshot`'s catch) is the shape this matches, not the superseded one.
+  - **`stale` is put back**, for `readSnapshot`'s reason: a read that did not answer must not leave
+    the window looking authoritative.
+  There is **no "off" spelling** — a shared read with no deadline is the defect itself — and a `0`,
+  negative, `NaN` or `Infinity` value falls back to the default rather than to "now".
 - The client owns its own reconnect: a closed socket arms **one** timer through the injected
   `Scheduler`, and that timer calls `connect()`. `reconnectAt` is the render half and never the
   mechanism — publishing it without arming anything is exactly the bug that shipped. Rules that
@@ -764,7 +792,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `nats-lib-client.ts` | the `nats` adapter — **the only file in the repo that imports `nats`** |
 | `nats-jetstream.ts` / `nats-kv.ts` / `nats-transport.ts` | the JetStream KV bucket, presence over it, and the production `Transport` — all three written against the port |
 | `nats-fake.ts` | an in-memory bus implementing the port — server semantics, not wire bytes; the only way to prove multi-node fanout under a sealed network |
-| `cursor.ts` / `change-buffer.ts` / `thundering-herd.ts` | reconnect — the highest-risk area |
+| `cursor.ts` / `change-buffer.ts` / `thundering-herd.ts` | reconnect — the highest-risk area. `thundering-herd.ts`'s backoff is core's, shifted 0-based to 1-based; the drain plan and the accept budget are its own |
 | `identity-map.ts` | the client's single source of truth: one row value per `(scope, id)`, its holds and its batched change notification |
 | `live-rows.ts` | one subscription's window over that map — its scope, its order, its retain/release, and `Registration` itself |
 | `local-store.ts` / `offline-queue.ts` / `rebase.ts` | tier 3 |

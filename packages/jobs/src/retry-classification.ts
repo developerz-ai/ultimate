@@ -3,12 +3,7 @@
 // The backoff arithmetic stays in ./retry — nothing here recomputes a delay `nextRetry` owns.
 
 import type { ErrorRetry } from '@ultimat3/core';
-import {
-  DEFAULT_ERROR_RETRY,
-  declaredErrorRetry,
-  isErrorRetry,
-  isUltimateError,
-} from '@ultimat3/core';
+import { classifyThrown, statedDelayMs } from '@ultimat3/core';
 import { toMs } from './clock';
 import type { Random, RetryDecision, RetryPolicy } from './retry';
 import { DEFAULT_RETRY, nextRetry } from './retry';
@@ -23,38 +18,15 @@ export interface JobRetryDecision extends RetryDecision {
 }
 
 /**
- * The classification that was DECLARED for this throw, or `undefined` when there is none.
- *
- * Deliberately not `error.retry` alone. That field is `init.retry ?? retryFor(code)` and
- * `retryFor` fails closed, so every unclassified `UltimateError` already carries `terminal` —
- * reading it would dead-letter the first attempt of every job in every app whose codes nobody has
- * classified yet. So `terminal` counts only when it can have come from somewhere: an explicit
- * per-instance override is indistinguishable from the default here, which is why an UNCLASSIFIED
- * code carrying an instance `retry: 'terminal'` is read as unclassified. Register the code
- * (`registerErrorRetry({ X_YOUR_CODE: 'terminal' })`) to have it honoured — one way, and the same
- * way every other package declares it.
+ * Core's, re-exported rather than copied — they are the readers of core's classification table and
+ * every executor in the framework has to answer them the same way. Both were declared here first
+ * and moved down a tier VERBATIM, the subtle rule included: an UNCLASSIFIED code carrying an
+ * instance `retry: 'terminal'` reads as unclassified, because a per-instance `terminal` is
+ * indistinguishable from the fail-closed default and honouring it would dead-letter the first
+ * attempt of every job in every app whose codes nobody has classified. `retry-classification.test.ts`
+ * pins that they are the same FUNCTION, not merely two functions that agree today.
  */
-export function classifyThrown(error: unknown): ErrorRetry | undefined {
-  if (!isUltimateError(error)) return undefined;
-  const retry: unknown = error.retry;
-  if (!isErrorRetry(retry)) return undefined;
-  // Anything other than the fail-closed default can only have come from the code table or from an
-  // explicit override, so it is somebody's answer either way.
-  if (retry !== DEFAULT_ERROR_RETRY) return retry;
-  return declaredErrorRetry(error.code) === undefined ? undefined : retry;
-}
-
-/**
- * The delay a `retry-after` error NAMED, in ms. `retryAfterSeconds` on the error's `meta` is the
- * framework's one spelling for it — `@ultimat3/http`'s `rateLimited` writes it and the 429's
- * `Retry-After` header renders it — so a job and an HTTP client read the same number.
- */
-export function statedDelayMs(error: unknown): number | undefined {
-  if (!isUltimateError(error)) return undefined;
-  const seconds: unknown = error.meta?.['retryAfterSeconds'];
-  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return undefined;
-  return Math.round(seconds * 1_000);
-}
+export { classifyThrown, statedDelayMs };
 
 /**
  * Retry, dead-letter, and when. `terminal` stops here on the attempt that failed — the same code

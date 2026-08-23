@@ -3,7 +3,7 @@
 // so a deployment can omit Redis (single node) or add the CDN tier without touching call
 // sites. Order is data, not control flow.
 
-import type { CacheTierName, Clock } from '@ultimat3/core';
+import type { CacheTierName, Clock, Scheduler } from '@ultimat3/core';
 import { CACHE_TIERS, systemClock } from '@ultimat3/core';
 import { CacheJitterInvalidError, CacheTtlInvalidError } from './errors';
 import type { CacheFence } from './fence';
@@ -162,6 +162,14 @@ export function sortTiers(tiers: readonly CacheTier[]): readonly CacheTier[] {
 }
 
 /**
+ * A `load()` still running at 30s has no reader left to serve: `stack.read` is on the request path,
+ * and `@ultimat3/http` abandons the request that is waiting for it at the same 30s
+ * (`requestTimeoutMs`). Stated as a literal because cache is tier 1 and http is tier 2, so the
+ * number cannot be imported — deliberately NOT a JWKS fetch's bound, which is a transport's.
+ */
+export const DEFAULT_LOAD_DEADLINE_MS = 30_000;
+
+/**
  * Every tier call here goes through `bestEffort`: a tier that refuses is a tier that did not
  * answer, never a failed business read. `load()` is the one call left unguarded — it *is* the
  * business read, and swallowing it would return `undefined` as if it were the value.
@@ -169,6 +177,17 @@ export function sortTiers(tiers: readonly CacheTier[]): readonly CacheTier[] {
 export interface CacheStackOptions {
   /** Read through `nowMs()`; the same clock a tier takes. Defaults to `systemClock`. */
   readonly clock?: Clock;
+  /**
+   * How long one `load()` may hold its key before a later reader is allowed to start its own,
+   * instead of joining a promise that may never resolve. Defaults to `DEFAULT_LOAD_DEADLINE_MS`.
+   *
+   * An option on the stack rather than an `app.config.ts` key on purpose: the ceiling belongs to
+   * whoever wrote the `load()`, not to the deployment, and a leaf key nothing reads is what
+   * `bun run scripts/config-readers.ts` exists to refuse.
+   */
+  readonly loadDeadlineMs?: number;
+  /** Injected so the deadline is provable without a test waiting one out. */
+  readonly schedule?: Scheduler;
 }
 
 export function createCacheStack(
@@ -178,7 +197,16 @@ export function createCacheStack(
   const ordered = sortTiers(tiers);
   const clock = options.clock ?? systemClock;
   // Per stack, not per module: two stacks are two ladders and must not join each other's loads.
-  const flight = createSingleFlight();
+  //
+  // The deadline frees the KEY and nothing else — `load()` is the app's function and this stack
+  // holds no signal that could abort it, so the wedged load runs on and the readers already
+  // holding its promise still get whatever it eventually answers. What eviction buys is that the
+  // NEXT reader is allowed to try. So the worst case is one duplicate fill, which the ladder's
+  // last-write-wins `set` already tolerates, against a key pinned for the life of the process.
+  const flight = createSingleFlight({
+    deadlineMs: options.loadDeadlineMs ?? DEFAULT_LOAD_DEADLINE_MS,
+    schedule: options.schedule,
+  });
 
   /** Take back what a fence refused mid-ladder: half a stale ladder is still a stale read. */
   const rollback = async (written: readonly CacheTier[], key: string): Promise<void> => {

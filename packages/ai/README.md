@@ -84,8 +84,8 @@ default store at `replicas: 6` is six ledgers of twenty million, which is a budg
 | The repair turn replays the tool call's arguments, never an empty `text` | an answer through the `respond` tool leaves `text` empty, and an empty text block is a 400 — the repair came back as `X_AI_PROVIDER_UNAVAILABLE` |
 | `reserve()` **debits** the estimate and takes a turn | three concurrent calls otherwise read the same `spent()`, all pass, and all three record against a ceiling only one of them fitted; `record` reconciles and `release` gives it back |
 | A refusal is never cached | a cached one keeps serving a classifier decision after the prompt was fixed |
-| Retries use **full jitter** | synchronised retries from N workers reproduce the rate limit |
-| A 4xx is never retried | the same body gets the same rejection and burns the budget |
+| Retries use **full jitter**, from core's one curve | synchronised retries from N workers reproduce the rate limit. `backoffMs` is `@ultimat3/core`'s `backoffDelay` with the gateway's field names mapped onto it, and the roll is `createGateway({ random })` — injectable, so the schedule is a unit test rather than a range |
+| A 4xx is never retried **except 408, 409 and 425** | the same body gets the same rejection and burns the budget — but a request the server stopped reading (408), a round a concurrent writer won (409) and a handshake that had not finished (425) are transient by construction, and core's `isRetryableStatus` is the one table that says so |
 
 ## Streaming
 
@@ -629,6 +629,14 @@ carries it, and an action facade has no `.run` of its own. So they authorize ide
 actor comes from the request context, never from the model.
 
 ## Errors
+
+**`X_AI_PROVIDER_UNAVAILABLE` carries `retry: "retryable"` in `--json`, `As of 2026-08-23`**
+(`AI_ERROR_RETRY`) — it is the one transient code here, and it told every client `terminal` while the
+gateway itself was backing off and trying again. `retryable` and not `retry-after`: that spelling
+means the responder named a time, and no provider in this package parses `Retry-After` off a 429.
+The half of the code that is NOT transient — no configured provider serves the model — carries a
+per-instance `terminal`, because that one is an `app.config.ts` edit. Every other code keeps core's
+fail-closed `terminal` default.
 
 | Code | Meaning |
 |---|---|

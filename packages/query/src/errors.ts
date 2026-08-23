@@ -1,5 +1,5 @@
 /** Every failure @ultimat3/query can produce, one subclass per stable code. */
-import { assertNever, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { assertNever, registerErrorCodes, retryForStatus, UltimateError } from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
 
 // No `docs:` on the classes below, with one exception noted at `QueryRequestFailedError`.
@@ -279,6 +279,11 @@ export class QueryRequestFailedError extends UltimateError {
     const served = text(problem.docs);
     super({
       code,
+      // The status is what says "send it again", and only where nobody has classified the code:
+      // `UltimateError` otherwise fills `retry` from `retryFor(code)`, which fails closed, so a
+      // 502 out of a typed read announced itself as `terminal` on the one field the framework
+      // promises a client never has to infer.
+      retry: retryForStatus(code, status),
       cause: text(problem.cause) ?? text(problem.detail) ?? `${name} returned HTTP ${status}`,
       fix:
         text(problem.fix) ??

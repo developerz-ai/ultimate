@@ -3,6 +3,7 @@
 // many times the work ran.
 
 import { describe, expect, test } from 'bun:test';
+import { createSingleFlight as coreSingleFlight } from '@ultimat3/core';
 import { createSingleFlight } from './single-flight';
 import type { CacheEntry, CacheSetOptions, CacheTier } from './tiers';
 import { createCacheStack } from './tiers';
@@ -305,5 +306,45 @@ describe('createCacheStack read: concurrent misses share ONE load', () => {
     await Promise.all([one.read('k', load), two.read('k', load)]);
 
     expect(runs).toBe(2);
+  });
+});
+
+// The mechanism moved down to tier 0 and this package publishes it unchanged. Identity, not
+// behaviour: four packages each had their own deduper and behavioural parity is what let them
+// drift — a copy that passes every test above is still a second thing to fix.
+describe("the mechanism is @ultimat3/core's, not a copy of it", () => {
+  test("createSingleFlight IS core's function", () => {
+    expect(createSingleFlight).toBe(coreSingleFlight);
+  });
+
+  // The one capability core adds over what this package shipped: a key held by a load that never
+  // settles is freed, so later callers start a load of their own instead of joining a promise
+  // nothing will ever resolve. The schedule is injected, so the deadline is provable without one.
+  test("an injected deadline frees a wedged key, and the timer is a test's to fire", async () => {
+    let fire = (): void => {};
+    const flight = createSingleFlight({
+      deadlineMs: 30_000,
+      schedule: (fn) => {
+        fire = fn;
+        return (): void => {
+          fire = (): void => {};
+        };
+      },
+    });
+    const wedged = deferred<string>();
+    let runs = 0;
+    const work = (): Promise<string> => {
+      runs += 1;
+      return wedged.promise;
+    };
+
+    void flight.run('k', work);
+    expect(flight.size).toBe(1);
+    fire();
+    expect(flight.size).toBe(0);
+
+    void flight.run('k', work);
+    expect(runs).toBe(2);
+    wedged.resolve('eventually');
   });
 });

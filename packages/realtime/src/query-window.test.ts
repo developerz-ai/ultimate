@@ -3,16 +3,24 @@
 // leaves the mark it was sent to clear, or the gap repair happens exactly once and never again.
 
 import { describe, expect, test } from 'bun:test';
-import { userActor } from '@ultimat3/core';
+import { isUltimateError, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import type { JsonValue, Row } from './json';
 import type { LiveQueryDefinition, SnapshotResult } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
-import { createEntry, fillWindow, type QueryEntry, refillWindowInLane } from './query-window';
+import {
+  createEntry,
+  DEFAULT_READ_DEADLINE_MS,
+  type EntryOptions,
+  fillWindow,
+  type QueryEntry,
+  refillWindowInLane,
+} from './query-window';
 import { SyncSocket, type WsLike } from './socket';
 import { decode, type Frame } from './sync-protocol';
+import type { Scheduler } from './thundering-herd';
 
 const input: JsonValue = { orgId: 'o1' };
 const rows: readonly Row[] = [{ id: 'p1', orgId: 'o1', likes: 0 }];
@@ -22,7 +30,7 @@ class PoolTimeout extends Error {
 }
 
 /** A definition whose read is driven from the test: one answer per call, in order. */
-function entryWith(snapshot: () => Promise<SnapshotResult>): QueryEntry {
+function entryWith(snapshot: () => Promise<SnapshotResult>, options?: EntryOptions): QueryEntry {
   const definition: LiveQueryDefinition = {
     name: 'liveFeed',
     entities: ['posts'],
@@ -30,8 +38,34 @@ function entryWith(snapshot: () => Promise<SnapshotResult>): QueryEntry {
     visible: () => true,
     matcher: () => ({ entities: ['posts'], match: () => ({ patches: [], refill: false }) }),
   };
-  return createEntry('liveFeed:1', definition, input, definition.matcher(input));
+  return createEntry('liveFeed:1', definition, input, definition.matcher(input), options);
 }
+
+/**
+ * The deadline, fired by the test rather than waited for. A timer this returns is armed by
+ * `startRead` and disarmed by the read that settles first, so `fire === undefined` is itself the
+ * assertion that a settled read did not leave one running.
+ */
+function fakeScheduler(): { schedule: Scheduler; fire: () => void; armed: () => boolean } {
+  let pending: (() => void) | null = null;
+  return {
+    schedule: (fn) => {
+      pending = fn;
+      return (): void => {
+        pending = null;
+      };
+    },
+    fire: () => {
+      const fn = pending;
+      pending = null;
+      fn?.();
+    },
+    armed: () => pending !== null,
+  };
+}
+
+/** A read that never answers: the pool is gone and the query is neither resolving nor rejecting. */
+const never = async (): Promise<SnapshotResult> => await new Promise<SnapshotResult>(() => {});
 
 describe('a read that never answered does not clear the staleness it was sent to clear', () => {
   test('a rejecting refill leaves the window stale, so the next change re-reads', async () => {
@@ -253,5 +287,174 @@ describe('an older read never lands on a window a newer one already replaced', (
 
     await expect(second).resolves.toEqual({ rows: fresh, lsn: '' });
     expect(entry.rows).toEqual(fresh);
+  });
+});
+
+// A read that never settles used to pin `entry.reading` for the life of the process: every later
+// cold subscriber joined a promise nothing would ever resolve, so one wedged snapshot took every
+// future subscriber of that query id with it. The deadline frees the SLOT — it cannot cancel the
+// read, and pretending otherwise would be a second, false promise.
+describe('a shared read that never answers does not pin the window forever', () => {
+  test('a later cold subscriber is not stuck behind it', async () => {
+    const clock = fakeScheduler();
+    let answer: SnapshotResult | null = null;
+    const entry = entryWith(async () => (answer === null ? await never() : answer), {
+      readDeadlineMs: 5_000,
+      schedule: clock.schedule,
+    });
+
+    const wedged = fillWindow(entry);
+    expect(entry.reading).not.toBeNull();
+    expect(clock.armed()).toBe(true);
+
+    clock.fire();
+    await expect(wedged).rejects.toThrow(/did not answer/);
+
+    // The slot is free, so the next subscriber issues its OWN read instead of joining the wedged
+    // one — which is the whole of the fix.
+    expect(entry.reading).toBeNull();
+    answer = { rows, lsn: formatLsn(4) };
+    await expect(fillWindow(entry)).resolves.toEqual({ rows, lsn: formatLsn(4) });
+  }, 1_000);
+
+  test('the window it was sent to fill is left STALE, exactly as a rejecting read leaves it', async () => {
+    const clock = fakeScheduler();
+    const entry = entryWith(never, { readDeadlineMs: 5_000, schedule: clock.schedule });
+    entry.stale = true;
+
+    const wedged = fillWindow(entry);
+    // Cleared on the way in by the read that was going to answer it.
+    expect(entry.stale).toBe(false);
+    clock.fire();
+    await expect(wedged).rejects.toThrow(/did not answer/);
+
+    // Put back, or the gap repair happens once and never again — `readSnapshot`'s rule, and a
+    // deadline is a read that did not answer by any other name.
+    expect(entry.stale).toBe(true);
+    expect(entry.rows).toEqual([]);
+  }, 1_000);
+
+  test('every caller already joined is told, not left waiting', async () => {
+    const clock = fakeScheduler();
+    const entry = entryWith(never, { readDeadlineMs: 5_000, schedule: clock.schedule });
+
+    const leader = fillWindow(entry);
+    const joiner = fillWindow(entry);
+    // One read for both — the joiner did not issue its own, which is what makes being left behind
+    // the leader's dead promise the defect it was.
+    expect(entry.generation).toBe(1);
+
+    // Subscribed BEFORE the deadline fires — every joiner rejects in the same turn, and a handler
+    // attached a line later is an unhandled rejection for one microtask.
+    const outcome = Promise.allSettled([leader, joiner]);
+    clock.fire();
+    const settled = await outcome;
+
+    expect(settled.map((one) => one.status)).toEqual(['rejected', 'rejected']);
+    for (const one of settled) {
+      const reason: unknown = one.status === 'rejected' ? one.reason : null;
+      // The CODE, not the message: `X_TIMEOUT` is what core classifies `retryable`, which is what
+      // tells a caller this is worth asking for again.
+      expect(isUltimateError(reason) ? reason.code : null).toBe('X_TIMEOUT');
+    }
+  }, 1_000);
+
+  test('a read that settles first disarms its deadline', async () => {
+    const clock = fakeScheduler();
+    const entry = entryWith(async () => ({ rows, lsn: formatLsn(4) }), {
+      readDeadlineMs: 5_000,
+      schedule: clock.schedule,
+    });
+
+    await expect(fillWindow(entry)).resolves.toEqual({ rows, lsn: formatLsn(4) });
+    // An armed timer per completed read is a leak that keeps the process alive.
+    expect(clock.armed()).toBe(false);
+    expect(entry.reading).toBeNull();
+  }, 1_000);
+
+  test('a read that answers AFTER its deadline does not clear a newer read’s slot', async () => {
+    const clock = fakeScheduler();
+    // A one-field holder, not a `let`: the only assignment is inside a callback, so control-flow
+    // analysis narrows a `let` to `null` at the call site below and refuses to call it.
+    const abandoned: { release: ((result: SnapshotResult) => void) | null } = { release: null };
+    const entry = entryWith(
+      async () =>
+        await new Promise<SnapshotResult>((resolve) => {
+          abandoned.release ??= resolve;
+        }),
+      { readDeadlineMs: 5_000, schedule: clock.schedule },
+    );
+
+    const wedged = fillWindow(entry);
+    clock.fire();
+    await expect(wedged).rejects.toThrow(/did not answer/);
+
+    // A newer read takes the slot the deadline freed.
+    const second = fillWindow(entry);
+    const held = entry.reading;
+    expect(held).not.toBeNull();
+    expect(entry.generation).toBe(2);
+
+    // The abandoned read finally answers. Identity, never presence: it must not clear the slot the
+    // newer read holds, or every subscriber after it joins a promise nothing answers for.
+    abandoned.release?.({ rows, lsn: formatLsn(1) });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(entry.reading).toBe(held);
+
+    abandoned.release = null;
+    void second;
+  }, 1_000);
+
+  // The rule the deadline makes load-bearing rather than merely careful. It is NOT reachable
+  // through the deadline itself — `done` hangs off the RACED promise, which settles once, so an
+  // abandoned read never calls it a second time — and it is reachable through the forced path,
+  // which is the one place two reads of one entry are in flight together.
+  test('a read that settles after a newer one started does not clear the newer one’s slot', async () => {
+    const clock = fakeScheduler();
+    const gate: ((result: SnapshotResult) => void)[] = [];
+    const entry = entryWith(
+      async () =>
+        await new Promise<SnapshotResult>((resolve) => {
+          gate.push(resolve);
+        }),
+      { readDeadlineMs: 5_000, schedule: clock.schedule },
+    );
+
+    const older = fillWindow(entry);
+    // The change stream skipped a sequence, so the next caller forces its own read rather than
+    // joining one issued before the gap.
+    entry.stale = true;
+    const newer = fillWindow(entry);
+    const held = entry.reading;
+    expect(entry.generation).toBe(2);
+    expect(held).not.toBeNull();
+
+    gate[0]?.({ rows: [], lsn: '' });
+    await older;
+    // Identity, never presence: presence hands the newer read's joiners a slot the entry no longer
+    // answers for, and every subscriber arriving after it issues a read that was already in flight.
+    expect(entry.reading).toBe(held);
+
+    gate[1]?.({ rows, lsn: formatLsn(4) });
+    await newer;
+    expect(entry.reading).toBeNull();
+  }, 1_000);
+
+  test('a deadline that cannot mean anything falls back to the default, never to "now"', () => {
+    // `0` cannot mean both "immediately" and "never", so it means neither: a read that times out
+    // on the turn it was issued is a live query that can never answer at all.
+    for (const declared of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(entryWith(never, { readDeadlineMs: declared }).readDeadlineMs).toBe(
+        DEFAULT_READ_DEADLINE_MS,
+      );
+    }
+    expect(entryWith(never, { readDeadlineMs: 250 }).readDeadlineMs).toBe(250);
+    expect(entryWith(never).readDeadlineMs).toBe(DEFAULT_READ_DEADLINE_MS);
+  });
+
+  test('the default deadline is a number, not an absent one', () => {
+    expect(DEFAULT_READ_DEADLINE_MS).toBeGreaterThan(0);
+    expect(Number.isFinite(DEFAULT_READ_DEADLINE_MS)).toBe(true);
   });
 });

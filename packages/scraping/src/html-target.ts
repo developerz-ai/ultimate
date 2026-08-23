@@ -5,6 +5,7 @@
 // through to the network would make a green offline suite that is secretly hitting production —
 // the exact failure an offline driver exists to prevent.
 
+import type { CaptureClip } from './capture-clip';
 import type { ScrapeClock } from './clock';
 import { browserUnreachable, downloadTimeout, fixtureMissing, fixtureStale } from './error-throws';
 import { queryHtml } from './html-query';
@@ -29,6 +30,22 @@ import type {
 
 /** Deterministic bytes, so an artifact test asserts on a stable digest. Not a real PNG render. */
 const FAKE_PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/**
+ * A clipped capture answers DIFFERENT deterministic bytes, one picture per rectangle. CI has no
+ * Chrome, so the offline drivers are the only place a crop can be proved at all: a fake that
+ * answered the same eight bytes whatever the rectangle would let a driver that silently drops the
+ * clip pass every test there is. Unclipped bytes are unchanged, byte for byte.
+ */
+const clippedPng = (clip: CaptureClip): Uint8Array => {
+  const suffix = new TextEncoder().encode(
+    ` clip ${String(clip.x)},${String(clip.y)},${String(clip.width)},${String(clip.height)}`,
+  );
+  const out = new Uint8Array(FAKE_PNG.length + suffix.length);
+  out.set(FAKE_PNG);
+  out.set(suffix, FAKE_PNG.length);
+  return out;
+};
 const FAKE_PDF = new TextEncoder().encode('%PDF-1.4 offline');
 
 export type RecordingLookup = (url: string) => Promise<PageRecording | undefined>;
@@ -208,7 +225,8 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
         throw fixtureMissing(`${page.url} evaluate(${expression})`, init.source);
       return Promise.resolve(JSON.parse(answer) as unknown);
     },
-    screenshot: (_options: CaptureOptions): Promise<Uint8Array> => Promise.resolve(FAKE_PNG),
+    screenshot: (options: CaptureOptions): Promise<Uint8Array> =>
+      Promise.resolve(options.clip === undefined ? FAKE_PNG : clippedPng(options.clip)),
     pdf: (_options: CaptureOptions): Promise<Uint8Array> => Promise.resolve(FAKE_PDF),
     cookies: (): Promise<readonly ScrapeCookie[]> => Promise.resolve(session.cookies),
     session: (): Promise<SessionSnapshot> => Promise.resolve(session),

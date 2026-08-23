@@ -259,6 +259,21 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   and silently discarded a later caller's options, so an app pinning a corporate egress proxy got
   it only if it called first — the `jobs.driver` shape, with a network path as the substituted
   value. A caller that supplies options gets its own client.
+- **A wedged JWKS refresh no longer holds the shared slot for ever** (`As of 2026-08-23`).
+  `createJwksClient` single-flights its refresh through `@ultimat3/core`'s `createSingleFlight`,
+  with `deadlineMs = timeoutMs * 2` — derived, never a second invented number: `timeoutMs` bounds
+  the network leg (`AbortSignal.timeout`) and everything after it is local work on the same budget,
+  so doubling never evicts a slow-but-healthy refresh. It matters because `AbortSignal.timeout`
+  bounds only the DEFAULT transport and `options.fetch` is the app's — a `fetch` that ignores its
+  signal used to pin the slot for the life of the process, and every later `keyFor` joined a
+  promise nothing would resolve. **Eviction frees the KEY, never the work**: the wedged refresh
+  runs on and its own callers keep their promise, so the worst case is one duplicate JWKS fetch and
+  never a failed verification. `schedule` is injectable so no test waits a deadline out.
+  Its consequence is the second half and is not optional: two refreshes can now overlap and both
+  end by installing what they read, so a `createFence` generation check is what stops the one the
+  client gave up on from dropping a pre-rotation key set on top of the live one. Read
+  (`fence.generation() === issued`), never `guard` — a superseded refresh is still the honest
+  answer for the callers holding it, and only the shared cache is fenced.
 - **`verifyIdToken` checks `nbf` and `azp`.** `workload.ts` imports `ID_TOKEN_CLOCK_SKEW_MS` from
   `id-token.ts` and then enforced a bound `id-token.ts` did not: an `nbf` ten years out verified.
   `azp` is OIDC Core 3.1.3.7 step 5 — with more than one audience, `aud` naming this client says
@@ -301,8 +316,13 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   left was `http.maxInflight` (1000), about 19 GB of arenas queued. `kdf-gate.ts` bounds the width
   (8) and the waiting queue (64) and refuses past it with `X_OVERLOADED`, borrowed from http and
   listed in `AUTH_BORROWED_ERROR_CODES` — this package cannot import http, and a shed is a shed
-  whichever layer performs it. `configureKdfGate()` is the ONE install point and is deliberately
-  not a `defineAuth` key: the ceiling is a property of the machine, not of the app's auth policy.
+  whichever layer performs it. **The pool itself is `@ultimat3/core`'s `createFlightGate` since
+  2026-08-23** — the same hand-over-on-release rule, the same numbers — and the refusal stays this
+  package's through core's `overflow:` seam, so `kdfOverloaded` is still what a caller catches and
+  core's `X_FLIGHT_GATE_OVERLOADED` never leaves auth. No `subject:` is passed: it feeds only
+  `gateOverloaded`'s prose, which this gate never reaches. `configureKdfGate()` is the ONE install
+  point and is deliberately not a `defineAuth` key: the ceiling is a property of the machine, not
+  of the app's auth policy.
 - **MFA has a first leg and no second one, and the second one is not a route you can just add.**
   `login()` and `completeOAuthLogin()` throw `X_MFA_REQUIRED` before any session exists; nothing is
   written, so the only value handed over is a user id in `meta`. A `POST /auth/mfa/verify
@@ -385,7 +405,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `oauth-builtins.ts` | the three shipped IdPs, as data. Imports only the type, so no cycle |
 | `oauth-registry.ts` | the registry: `registerOAuthProvider`, `providerFor`, `oauthProviderIds` |
 | `oauth-discovery.ts` | `/.well-known/openid-configuration` → an `OAuthProvider`. One `fetch` |
-| `jwks.ts` | `crypto.subtle` signature verification, cached by `kid`. No dependency |
+| `jwks.ts` | `crypto.subtle` signature verification, cached by `kid`, one shared in-flight refresh. No dependency |
 | `workload.ts` | a workload JWT (K8s SA / SPIFFE / IMDS / RFC 8693) → a `ServiceIdentity` |
 | `revocation.ts` | per-user, per-org and before-an-instant sweeps; `disableUser` |
 | `directory.ts` | `describeUser` (allow-list projection), `listOrgUsers`, external-id lookup |
@@ -401,7 +421,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `errors.ts` | the codes this package owns and borrows, their titles, the one `registerErrorCodes()` call, `AuthError`, and every non-OAuth factory |
 | `oauth-errors.ts` | the OAuth half of those factories, and `restartAt`. Split off at the 500-line ceiling; declares no code and registers nothing |
 | `oauth-route.ts` | `oauthLogin(auth)` — the redirect out and the callback back |
-| `kdf-gate.ts` | the one bound on concurrent argon2 work, and the `X_OVERLOADED` past it |
+| `kdf-gate.ts` | the one bound on concurrent argon2 work, and the `X_OVERLOADED` past it — core's `createFlightGate` with auth's own refusal injected |
 | `email.ts` | `normaliseEmail` — the one normalisation an address gets before it is an identity key |
 | `json.ts` | reading untrusted JSON: `isRecord`, and a base64url JWT segment as an object or `null` |
 

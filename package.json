@@ -18,6 +18,7 @@
     "coverage": "bun run scripts/coverage-gate.ts --all",
     "coverage:package": "bun run scripts/coverage-gate.ts --package",
     "dead-docs-host": "bun run scripts/dead-docs-host.ts",
+    "flight-copies": "bun run scripts/flight-copies.ts",
     "dev": "bun run --filter @ultimat3/cli dev",
     "error-render": "bun run scripts/error-render.ts",
     "format": "biome format --write .",

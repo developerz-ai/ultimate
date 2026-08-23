@@ -14,6 +14,15 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | `Actor` (`user \| service \| agent \| anonymous`) | `actor.ts` |
 | acting as another actor, with an origin and a reason | `impersonate.ts` |
 | is an error worth retrying? one classification per code | `error-retry.ts` |
+| how long to wait before the next attempt — one curve, one jitter table | `backoff.ts` |
+| the retry executor and the pure decision behind it | `retry.ts` |
+| which HTTP statuses are worth repeating | `retryable-status.ts` |
+| N callers on one key are ONE run | `single-flight.ts` |
+| how many may run at once, and how many may wait | `flight-gate.ts` |
+| whether an answer still applies — `X_SUPERSEDED` | `generation-fence.ts` |
+| the five composed into one typed-client call — dedup, fence, retry, deadline, ceiling | `client-flight.ts` |
+| what a typed client puts on the wire and reads back off it | `client-wire.ts` |
+| is this `unknown` a keyed record? | `json-object.ts` |
 | typed env validated at boot | `env.ts` |
 | `.env.example` rendered from that schema, and its drift check | `env-example.ts` |
 | named environments + `ULTIMATE_ENV` resolution | `environment.ts` |
@@ -472,6 +481,69 @@ is sufficient alone — an unknown `-u-` extension value survives canonicalizati
 string, and the cap alone lets one locale evict itself under three spellings. A miss costs one
 `Intl` construction, never a wrong answer, which is what makes the bound safe. It lives here rather
 than in `@ultimat3/time` because `@ultimat3/money` needs it too and tier 1 may not import sideways.
+
+## One flight layer — wait, classify, share, bound, fence
+
+```ts
+import {
+  backoffDelay,
+  createFence,
+  createFlightGate,
+  createSingleFlight,
+  isRetryableStatus,
+} from '@ultimat3/core';
+
+// One ceiling on work whose cost is memory, one run per key, one fence over the answer.
+const gate = createFlightGate({ maxConcurrent: 8, maxQueued: 64 }, { subject: 'jwks fetches' });
+const flights = createSingleFlight({ deadlineMs: 30_000 });
+const fence = createFence('the jwks cache');
+
+export async function jwks(url: string): Promise<Response> {
+  const issued = fence.generation();
+  const answer = await gate.run(
+    async () =>
+      await flights.run(url, async () => {
+        const first = await fetch(url);
+        if (!isRetryableStatus(first.status)) return first;
+        const waitMs = backoffDelay({ attempt: 1, base: 500, max: 8_000, jitter: 'full' });
+        await new Promise<void>((wake) => {
+          setTimeout(wake, waitMs);
+        });
+        return await fetch(url);
+      }),
+  );
+  // X_SUPERSEDED if anything called bump() while the fetch was in flight.
+  fence.guard(issued);
+  return answer;
+}
+```
+
+**Eight modules, one tier-0 home** — because the framework had N copies of each and no owner:
+four backoff curves (`@ultimat3/jobs`, `@ultimat3/ai`, `@ultimat3/realtime`, and `@ultimat3/db`
+with none at all), five retryability tables — two of them byte-identical in packages that cannot
+import each other — and three separate concurrency bounds, only one of which refused past its
+queue. `error-retry.ts` declared the vocabulary (`terminal | retryable | retry-after`) and
+nothing consulted it before deciding to try again. `As of 2026-08-23`.
+
+| Export | The one answer | The question it settles |
+|---|---|---|
+| `backoffDelay({ attempt, base, max, factor?, curve?, jitter?, random? })` | one curve — `exponential \| linear \| fixed`, `full \| equal \| none` — 1-based `attempt`, clamped to `max` **before** jitter, rounded, and `0` rather than `NaN` | how long to wait. `random` is injectable, so a schedule is a unit test rather than a range |
+| `createSingleFlight({ deadlineMs?, schedule? })` → `run(key, work, join?)`, `size` | N callers on one key are ONE run | who pays for a miss. Eviction is identity-checked, so a load that settles late never drops the load that replaced it; `deadlineMs` frees the KEY a wedged load would hold forever — it never cancels the work and never rejects a joiner |
+| `createFlightGate({ maxConcurrent, maxQueued }, { subject?, overflow? })` | one bound, one queue, one refusal | how many at once. Past the queue the answer is `X_FLIGHT_GATE_OVERLOADED` (503) and never a longer queue; the slot is HANDED to a waiter, never released and re-acquired |
+| `createFence(subject)` → `generation()`, `bump()`, `guard(issued)` | whether an answer still applies | `X_SUPERSEDED` (499) and `isSuperseded(error)` — the piece nothing in the tree had. `guard` compares `!==`, never `<` |
+| `isRetryableStatus(status)`, `RETRYABLE_STATUSES` | `>= 500`, plus 408, 409, 425, 429 | which HTTP answers are worth repeating |
+| `retry(work, policy, { sleep, now?, random? })`, `retryDecision(policy, attempt, error, random?)` | the executor and the pure decision behind the classification | whether to try again at all. `createClientFlight` is its one caller in the framework; `jobs`, `ai` and `db` each keep their own loop and delegate only the arithmetic and the classification |
+| `createClientFlight({ principal?, retry?, deadlineMs?, limit?, … })` → `run(plan)`, `keyFor(url, opts?)`, `bump()`, `generation()` | the five above composed into one typed-client call | dedup, supersession, retry, one wall-clock deadline and a concurrency ceiling, for a call whose dispatch the caller supplies. `@ultimat3/action` and `@ultimat3/query` re-export it verbatim — it is one file because both are tier 3 and neither may import the other |
+| `isTransientFailure(error)` | what a CLIENT may send again | a declared `retryable`/`retry-after`, plus a dispatch that produced no response at all. It **inverts** `retryDecision`'s unclassified default on purpose: a caller's own `AbortError` and a foreign `TypeError` are terminal |
+| `traceHeaders()`, `problemOf(text)`, `retryForStatus(code, status)`, `FRAMEWORK_CODE` | what a typed client puts on the wire and reads back off it | the W3C header (nothing at all when the span context is incomplete), a total `problem+json` read, and the classification a STATUS is allowed to give when nobody declared one for the code |
+
+`retry`'s `policy.jitter` is **required** where `backoffDelay`'s defaults to `none`: a loop retrying
+without jitter IS the thundering herd, so the mode is a decision each caller makes rather than one
+it inherits without noticing. `retry` never wraps the last error — a wrapper would replace a code, a
+cause and a runnable `fix:` with the fact that something was retried, which no reader can act on.
+
+`classifyThrown` and `statedDelayMs` live in `error-retry.ts`, one import away from the table they
+read; `@ultimat3/jobs` re-exports both rather than keeping a second pair.
 
 ## One image pipeline, everywhere
 

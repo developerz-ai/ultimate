@@ -116,6 +116,13 @@ shape against a locally declared sample interface for exactly that reason.
 | the values | `env.ts` | `checkEnv().values` holds REAL secrets — anything that prints goes through `maskedEnvValues()` |
 | `.env.example` | `env-example.ts` | a projection of the schema, never hand-maintained |
 | loading `.env` | **Bun**, not us | `envFileCandidates()` documents the measured order; there is no `.env.staging` |
+| how long to wait, and whether to wait at all | `backoff.ts` + `retry.ts` | one curve and one executor; `jitter` is REQUIRED on a retry policy and defaults to `none` on the arithmetic |
+| N callers on one key | `single-flight.ts` | identity-checked eviction, optional injected deadline; `@ultimat3/cache`'s is this shape |
+| how many at once | `flight-gate.ts` | hand-over on release, refusal past `maxQueued`, injectable `overflow:` refusal |
+| whether an answer still applies | `generation-fence.ts` | `X_SUPERSEDED` / `isSuperseded`; nothing else in the tree had one |
+| which HTTP statuses are worth repeating | `retryable-status.ts` | `>= 500` plus 408, 409, 425, 429 — the two byte-identical copies' set |
+| the five above, composed into one typed-client call | `client-flight.ts` + `client-wire.ts` | `@ultimat3/action` and `@ultimat3/query` both project a typed client and are both tier 3, so neither could import the other: it shipped as a byte-identical 288-line + 85-line copy in each, policed by a `client-twin.test.ts` in both. Both packages re-export these names, so their public surface is unchanged. Declares NO code of its own — `X_SUPERSEDED`, `X_TIMEOUT` and `X_FLIGHT_GATE_OVERLOADED` are already here |
+| is this `unknown` a keyed record? | `json-object.ts` | `isJsonObject`, which was the same three terms in both those packages' `stable.ts`. A `Date` and a class instance PASS: it narrows a shape, it does not certify provenance |
 | a value that must not be printed | `secret.ts` | redacted by VALUE; `revealSecret()` is the one way out, on purpose greppable |
 | an `Intl` formatter cache | `intl-cache.ts` (`cachedFormatter`, `canonicalLocale`, `MAX_CACHED_FORMATTERS`) | a locale and a zone arrive from a request header, so the key must be canonical AND the cache bounded — never a second copy of either half |
 | the committed encrypted values | `secrets.ts` (envelope) + `secrets-store.ts` (files, `installSecrets`) | plaintext is a flat map of ENV NAMES; there is no `secrets.get()` |
@@ -192,6 +199,50 @@ read `5120kb` in `X_BUDGET_EXCEEDED` and `5mb` in the precache warning about the
 file picker, where this one must line up with a bundler's own KiB figures and must not move with the
 reader's locale. **Not mechanised** — no gate refuses a third copy, unlike `render-modes.ts` for the
 route vocabulary; a `formatBytes` reappearing in `packages/*/src` is caught by review only.
+
+The **flight layer** is the same rule over control flow rather than over a value, `As of
+2026-08-23`: `backoff.ts`, `retry.ts`, `single-flight.ts`, `flight-gate.ts`, `generation-fence.ts`
+and `retryable-status.ts` — plus `client-flight.ts` and `client-wire.ts`, which compose them into
+one typed-client call and arrived the same way the layer itself did, as two identical copies in two
+packages that may not import each other. Measured before it existed — FOUR backoff curves
+(`@ultimat3/jobs` equal-jitter, `@ultimat3/ai` full-jitter with `Math.random` inline and therefore
+untestable, `@ultimat3/realtime` 0-based-attempt full-jitter, `@ultimat3/db` none at all), FIVE
+retryability tables of which `packages/cache/src/purge-http.ts:19` and
+`packages/mail/src/driver-resend.ts:27` were byte-identical in two packages that cannot import
+each other, FOUR bounded pools and FOUR dedupers. `error-retry.ts` had declared the vocabulary and
+**nothing consulted it before retrying**; `retry()` is the executor it never had, and
+`classifyThrown` / `statedDelayMs` moved down here beside the table they read (`@ultimat3/jobs`'
+`retry-classification.ts` is that pair one tier up and can delegate to it unchanged). Nothing in
+the layer imports anything but this package, nothing runs at import time, and every source of
+non-determinism — the roll, the sleep, the clock, the timer — is injected, because a schedule
+provable only by waiting is a schedule no test pins.
+
+Two rules that are not preferences. `backoffDelay` clamps to `max` **before** jitter: capping after
+turns `full` into a distribution whose upper half is a single value at `max`, which is the
+correlation jitter exists to remove. `createFlightGate` **hands** its slot to a waiter rather than
+releasing it: decrementing first lets a caller arriving in the same tick past the ceiling while the
+waiter's continuation is still a queued microtask — `@ultimat3/auth`'s `createKdfGate` states the
+same rule, and `overflow:` is the seam that lets it keep throwing its own `X_OVERLOADED` while
+delegating the mechanism. `X_FLIGHT_GATE_OVERLOADED` is core's own code and not auth's borrowed
+one: `X_OVERLOADED` belongs to `@ultimat3/http` (tier 2), and tier 0 may not borrow upward.
+
+**`client-flight.ts` INVERTS `retryDecision`'s unclassified default, and that inversion is the
+point of it having a `transient:` parameter at all.** `retry.ts` sends a throw nobody classified
+again until the attempts run out, which is right for a job and wrong for a client: `fetch` rejects
+with a bare `TypeError` for a dead network and a `DOMException` named `AbortError` for the caller's
+own cancellation, and nothing can tell them apart from the class alone — so inheriting the default
+retries a caller's own abort. `@ultimat3/ai` and `@ultimat3/db` each declined the executor outright
+over it; this is the third refusal, and the one that keeps the executor by supplying a predicate.
+Never "simplify" it back to the default.
+
+**`ClientFlight` must stay `import type`-only in both packages' `client.ts`, and that erasure is
+the whole tree-shaking story.** `import { rpc } from '@ultimat3/action'` is 14,759 B minified for
+the browser and 20,292 B with `createClientFlight` beside it; `queryClient` is 12,755 B against
+17,912 B. A value import from `client.ts` would put `retry.ts`, `single-flight.ts`,
+`generation-fence.ts`, `flight-gate.ts` and `backoff.ts` into every caller's chunk. Measure through
+the PUBLIC specifier — `Bun.build`, `target: 'browser'`, `minify: true` — and expect ±376 B run to
+run: `Bun.build` 1.4.0 drops this package's `schema-error-codes.ts` from some builds even though
+`sideEffects` names it (issue #273), which is exactly the size of the schema error titles.
 
 `mcp-exposure.ts` is the same shape for a declaration rather than an algorithm: `isMcpExposed` is
 the ONE answer to "did this primitive opt into being an MCP tool?", asked by `action`, `query`

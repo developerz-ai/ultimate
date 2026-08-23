@@ -174,6 +174,8 @@ excess-property checking and gets **no error at all** → [Known gaps](Known-Gap
 | `defaultTtlMs` | same | `60_000` | applied when a `set` omits `ttlMs` |
 | `jitterFraction` | same | `DEFAULT_TTL_JITTER_FRACTION` | TTL spread in `[0, 1)`; `0` disables it, which is how a stampede is reproduced in a test |
 | `clock` / `rng` | same | system | injected so a jittered expiry is deterministic |
+| `loadDeadlineMs` | `createCacheStack(tiers, { … })` | `30_000` | how long one `load()` may hold its key before a later reader starts its own. Frees the KEY, never the load — the wedged call runs on. Anchored to `http`'s own request timeout: a load still running at 30 s has no reader left to serve |
+| `schedule` | same | `setTimeout` | injected so the deadline above is provable without a test waiting one out |
 
 **One vocabulary names the tiers, `As of 2026-08-23`.** `CACHE_TIERS` in [`packages/core/src/cache-vocabulary.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/cache-vocabulary.ts) is `request-memo | lru | redis | cdn`, in ladder order — it **is** `TIER_ORDER`, which is what `sortTiers` orders a stack by, not a second list that agrees with it. Until 9.0.0 there were two: the config accepted `memo | lru | shared | isr | cdn` while the ladder built `request-memo | lru | redis | cdn`, so `memo`/`request-memo` and `shared`/`redis` were one rung spelled twice and **`isr` named a rung that did not exist** — it is a `RenderMode`, not a cache tier. `bun run render-modes` refuses a second declaration on the member set, so the two cannot re-diverge.
 

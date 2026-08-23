@@ -8,9 +8,16 @@
  * output schema — row types come from the `SqlSource` its `sql:` returns — so there is nothing
  * here to rehydrate a `Date` with, and an instant reaches a caller as the ISO string
  * `JSON.stringify` wrote. A surface that formats one converts at its own edge.
+ *
+ * `ClientFlight` is a TYPE here and never a value: dedup, retry, the deadline and the fence are
+ * `@ultimat3/core`'s `client-flight.ts`, and a caller that never calls `createClientFlight` does
+ * not pay a byte for any of them — an `import type` is erased and the value import would not be.
+ * That erasure is the whole reason two islands in this repo write a bare `fetch` instead of
+ * importing a typed client.
  */
 
-import { currentSpanContext, traceparent } from '@ultimat3/core';
+import type { ClientFlight, ClientRetry, WireAnswer } from '@ultimat3/core';
+import { problemOf, traceHeaders } from '@ultimat3/core';
 import type { InferInput, StandardSchemaV1 } from '@ultimat3/schema';
 import { QueryRequestFailedError } from './errors';
 import { derivePath } from './naming';
@@ -23,10 +30,24 @@ export interface QueryClientOptions {
   readonly baseUrl: string;
   readonly fetch?: FetchLike;
   readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * Opt-in flight control for every read this client makes — `createClientFlight({ principal })`.
+   * Absent, a read is one `fetch` and nothing else, which is what every caller written before this
+   * option existed already gets.
+   */
+  readonly flight?: ClientFlight;
 }
 
 export interface QueryCallOptions {
   readonly signal?: AbortSignal;
+  /**
+   * Refuse to join an identical read already in flight. The case it exists for: this read exists
+   * BECAUSE something just changed, so an answer dispatched before the change is the wrong one.
+   * Named for `read.ts`'s `fresh`, which means the same thing one layer down — do not join.
+   */
+  readonly fresh?: boolean;
+  /** Overrides the flight's retry policy for this one read. Ignored with no `flight` installed. */
+  readonly retry?: ClientRetry;
 }
 
 /** `feed({ orgId })` with the input schema and the row type both inferred. */
@@ -107,41 +128,50 @@ async function read(
 ): Promise<unknown> {
   const search = searchOf(input);
   const url = `${base}${derivePath(name)}${search === '' ? '' : `?${search}`}`;
+  const dispatch = (signal: AbortSignal | undefined): Promise<WireAnswer> =>
+    fetchOnce(doFetch, url, options, name, signal ?? callOptions.signal);
+
+  const flight = options.flight;
+  const answer =
+    flight === undefined
+      ? await dispatch(undefined)
+      : await flight.run({
+          key: flight.keyFor(url, callOptions),
+          // A caller holding its own signal owns this read's lifecycle: it is neither shared nor
+          // aborted by a fence bump, and its signal is the only one that reaches the wire.
+          abortable: callOptions.signal === undefined,
+          ...(callOptions.retry === undefined ? {} : { retry: callOptions.retry }),
+          run: dispatch,
+        });
+  // Parsed per CALLER, never once per dispatch: N joiners of one deduped read may not be handed
+  // one mutable array between them, and the shared value is the immutable body TEXT for that
+  // reason alone.
+  return JSON.parse(answer.text) as unknown;
+}
+
+/** One dispatch. Everything above it decides how many times this happens; it decides none. */
+async function fetchOnce(
+  doFetch: FetchLike,
+  url: string,
+  options: QueryClientOptions,
+  name: string,
+  signal: AbortSignal | undefined,
+): Promise<WireAnswer> {
   const init: RequestInit = {
-    method: 'GET',
     // `traceHeaders()` before the caller's, so an explicit `traceparent` still wins. Without it a
     // service-to-service read started a fresh root trace on the other side, and "which of my
     // downstreams is slow" was unanswerable across every Ultimate-to-Ultimate hop.
     headers: { accept: 'application/json', ...traceHeaders(), ...options.headers },
-    ...(callOptions.signal === undefined ? {} : { signal: callOptions.signal }),
+    method: 'GET',
+    ...(signal === undefined ? {} : { signal }),
   };
 
   const response = await doFetch(url, init);
-  if (!response.ok)
-    throw new QueryRequestFailedError(name, response.status, await problemOf(response));
-  const body: unknown = await response.json();
-  return body;
-}
-
-/** A `traceparent` is `00-<32 hex>-<16 hex>-<2 hex>`, and nothing else may be sent as one. */
-const TRACE_ID = /^[0-9a-f]{32}$/;
-const SPAN_ID = /^[0-9a-f]{16}$/;
-
-/**
- * The current trace, as the W3C header — or nothing at all. `currentSpanContext()` answers with
- * an empty `spanId` when a request context exists but no span is active, and `00-<trace>--01` is
- * a header every collector drops, so an incomplete context sends none. In a browser there is no
- * ambient context and this is always empty, which is also what keeps a cross-origin read from
- * acquiring a CORS preflight it did not have.
- *
- * `@ultimat3/action`'s client carries the twin of this function: both are tier 3, so neither may
- * import the other — the same reason `naming.ts` is ported rather than shared.
- */
-function traceHeaders(): Record<string, string> {
-  const context = currentSpanContext();
-  if (context === undefined) return {};
-  if (!TRACE_ID.test(context.traceId) || !SPAN_ID.test(context.spanId)) return {};
-  return { traceparent: traceparent(context) };
+  // Read as TEXT once: a `Response` body is a single-use stream, so the failure path and the row
+  // path cannot both have it, and a shared answer has to be something a joiner can re-read.
+  const text = await response.text();
+  if (!response.ok) throw new QueryRequestFailedError(name, response.status, problemOf(text));
+  return { status: response.status, text };
 }
 
 /**
@@ -159,10 +189,4 @@ function searchOf(input: unknown): string {
     }
   }
   return params.toString();
-}
-
-/** `application/problem+json`, or nothing when a proxy answered instead of the app. */
-async function problemOf(response: Response): Promise<Record<string, unknown>> {
-  const body: unknown = await response.json().catch(() => null);
-  return isJsonObject(body) ? body : {};
 }

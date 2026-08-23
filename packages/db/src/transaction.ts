@@ -3,11 +3,13 @@
 // the transactional outbox is only atomic because `currentTx()` finds this store. Nesting maps
 // to SAVEPOINTs, so an inner failure never silently aborts the outer unit of work.
 
+import type { Random } from '@ultimat3/core';
 import { assert, asyncContext, nanoid } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { isolationLevelInvalid, serializationExhausted } from './errors';
 import { raw, type SqlFragment } from './sql';
 import { isRetryableState } from './sqlstate';
+import { serializationRetryDelayMs } from './transaction-backoff';
 
 export interface DbTx extends DbClient {
   readonly id: string;
@@ -56,8 +58,17 @@ export interface TransactionOptions {
    *
    * **`fn` re-runs from the top, so it must be idempotent** — the same contract `job.handle` has.
    * `onRollback` undos fire before each retry, in reverse registration order.
+   *
+   * Each re-run waits first (`transaction-backoff.ts`). A budget of 0 waits not at all.
    */
   readonly retry?: number | undefined;
+  /**
+   * The wait between attempts, and the roll behind its jitter. Injected for one reason — a schedule
+   * provable only by waiting for it is a schedule no test pins — and production passes neither.
+   * They are only ever read when `retry` is 1 or more.
+   */
+  readonly sleep?: ((ms: number) => Promise<void>) | undefined;
+  readonly random?: Random | undefined;
 }
 
 interface TxState {
@@ -263,6 +274,9 @@ export async function withTransaction<T>(
   }
 
   const attempts = (options.retry ?? 0) + 1;
+  // `Bun.sleep`, never a `node:timers` import: this is the runtime's own, and `migrate.ts` polls
+  // the advisory lock through the same call.
+  const sleep = options.sleep ?? ((ms: number): Promise<void> => Bun.sleep(ms));
   let last: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -278,6 +292,12 @@ export async function withTransaction<T>(
       // who has no budget.
       if (attempts === 1) throw error;
       last = error;
+      // Jittered, and only between attempts. Re-running instantly is what this loop did until
+      // 2026-08-23, and it is the deadlock reproduced rather than resolved: both losers wake in the
+      // same microsecond, take the same locks in the same order, and one of them loses again — so a
+      // budget of 8 was spent inside a single round trip's worth of wall clock. Nothing waits after
+      // the LAST attempt: there is nothing behind it to give the contention room for.
+      if (attempt < attempts) await sleep(serializationRetryDelayMs(attempt, options.random));
     }
   }
   throw serializationExhausted(attempts, last);

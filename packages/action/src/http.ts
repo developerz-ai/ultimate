@@ -26,11 +26,15 @@ import {
   toOperationId,
 } from './naming';
 import { admitsAnonymous, policyCapability } from './policy-gate';
+import { IDEMPOTENCY_HEADER } from './wire-headers';
 
-/** Matches `HttpConfig.buildIdHeader`; the pipeline reads it into `ctx.clientBuildId` — the
- * CLIENT's claim, never `ctx.buildId`, which is the build this process serves. */
-export const BUILD_ID_HEADER = 'x-ultimate-build';
-export const IDEMPOTENCY_HEADER = 'idempotency-key';
+/**
+ * Re-exported, never re-declared. The two strings moved to `wire-headers.ts` so `client.ts` can
+ * name them without pulling this file's server graph into a browser bundle; every importer of
+ * `./http` still reads them from here, which is what kept the move from touching a call site.
+ */
+export { BUILD_ID_HEADER, IDEMPOTENCY_HEADER } from './wire-headers';
+
 export const REPLAYED_HEADER = 'x-ultimate-replayed';
 
 /**

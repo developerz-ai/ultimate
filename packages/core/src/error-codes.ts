@@ -42,6 +42,10 @@ const CORE_CODE_TITLES = {
   X_ERROR_CODE_DUPLICATE: 'error code registered twice',
   X_ERROR_REPORTER_DSN_INVALID: 'the error monitor DSN is malformed',
   X_ERROR_RETRY_INVALID: 'error retry classification is unknown or already claimed',
+  // Core's own, and deliberately NOT `@ultimat3/http`'s `X_OVERLOADED`: that code is owned by a
+  // tier-2 package, and a tier-0 gate borrowing it upward is an import core may not make. The two
+  // read alike to an operator and the fix lines say which ceiling to widen.
+  X_FLIGHT_GATE_OVERLOADED: 'a concurrency gate is at its ceiling and its queue is full',
   X_ID_INVALID: 'value is not a valid id',
   X_IMAGE_DECODE_FAILED: 'image bytes are malformed, truncated or internally inconsistent',
   X_IMAGE_TOO_LARGE: 'image exceeds the pipeline pixel ceiling',
@@ -67,6 +71,7 @@ const CORE_CODE_TITLES = {
   X_SERVICE_DUPLICATE: 'a service name is registered twice',
   X_SERVICE_MISSING: 'service is not registered on the request context',
   X_SHUTDOWN_TIMEOUT: 'graceful shutdown exceeded its deadline',
+  X_SUPERSEDED: 'a later generation superseded this work',
   X_TELEMETRY_SAMPLER_ARG_INVALID: 'the trace sampling ratio is not a number between 0 and 1',
   // Core's, though core does not throw it — the twin of `X_ABORTED`, and `@ultimat3/http` already
   // calls it "borrowed (core's concept)" in `HTTP_BORROWED_ERROR_CODES`. A deadline that expired

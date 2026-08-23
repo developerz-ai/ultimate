@@ -2,9 +2,11 @@
 // fixes the situation — `X_DB_DRIFT` is the flagship and its rendering is byte-for-byte
 // pinned by the framework contract, so change its strings only with the contract.
 
+import type { ErrorRetry } from '@ultimat3/core';
 import {
   describeValue,
   registerErrorCodes,
+  registerErrorRetry,
   renderThrowable,
   stringField,
   UltimateError,
@@ -79,6 +81,60 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
 registerErrorCodes(
   Object.fromEntries(Object.entries(DB_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
+
+/**
+ * May a client run this again? Unclassified means `terminal` — core fails closed — and until
+ * 2026-08-23 this package classified nothing, so `X_DB_SERIALIZATION_FAILURE` reached every HTTP
+ * client carrying `retry: "terminal"` while its own `fix:` line read
+ * `withTransaction(fn, { retry: 3 })`. The document contradicted the instruction beside it.
+ *
+ * The rule, stated once: **retryable means the same call, made again, has a real chance of a
+ * different answer, with no edit in between.** A resource that frees qualifies — a lock, a
+ * connection, a serialization race, another migrator's advisory lock. A statement about the data or
+ * about this deployment's configuration does not.
+ *
+ * **Only the exceptions are listed**, which is core's own `CORE_ERROR_RETRY` shape and not
+ * `@ultimat3/scraping`'s exhaustive one, for a reason specific to this package: a REGISTERED
+ * `terminal` is read by `@ultimat3/jobs` as "dead-letter on attempt 1"
+ * (`retry-classification.ts`), where an unclassified code keeps the attempt count. Registering
+ * `X_DB_UNAVAILABLE: 'terminal'` — defensible on the client side, since four of its six throw sites
+ * are permanent config faults — would therefore dead-letter every in-flight job the moment Postgres
+ * fails over, which is the opposite of what that code means to a worker. A code that means two
+ * things to two readers stays unclassified until it is two codes.
+ */
+export const DB_ERROR_RETRY = {
+  // The canonical try-again. Postgres aborted one of two transactions precisely SO one of them can
+  // be re-run, and `withTransaction(fn, { retry })` is the framework's answer to it.
+  X_DB_SERIALIZATION_FAILURE: 'retryable',
+  // `55P03 lock_not_available` — `lock_timeout` fired while somebody else held the lock. The
+  // blocker commits or rolls back and the lock is free; nothing about the statement was refused.
+  X_DB_LOCK_TIMEOUT: 'retryable',
+  // Both halves are "no connection RIGHT NOW": the server's `53300`/`53200` and this pool's own
+  // acquire timeout. A slot frees when an in-flight unit of work finishes. Not `retry-after`, which
+  // is the spelling for a responder that NAMED a time — nothing here carries `retryAfterSeconds`,
+  // and inventing a number for `Retry-After` would be a guess presented as an answer.
+  X_DB_POOL_EXHAUSTED: 'retryable',
+  // Another migrator holds the advisory lock and will let it go when it finishes. This is the one
+  // code here a deploy pipeline reads: a `ROLE=migrate` job that exits non-zero on it should come
+  // back, which is what `backoffLimit` already does, and `terminal` said not to.
+  X_MIGRATE_CONCURRENT: 'retryable',
+} as const satisfies Readonly<Partial<Record<DbOwnedErrorCode, ErrorRetry>>>;
+
+// `Partial`, so the table may be a SUBSET — but every key is still checked against the owned set, so
+// a typo or a renamed code is a build error rather than a classification for a code nothing throws.
+//
+// Left to the fail-closed default, deliberately, each for its own reason:
+//   X_DB_UNAVAILABLE            two failures in one code — see the note above
+//   X_DB_STATEMENT_TIMEOUT      `57014`, and this package's fix for it is "add the index": an edit.
+//                               The queued-behind-a-lock case has its own code, above
+//   X_DB_UNIQUE_VIOLATION       the same row, the same constraint, the same refusal
+//   X_DB_FOREIGN_KEY_VIOLATION  the parent it names is still gone
+//   X_DB_DRIFT, X_MIGRATION_*, X_SQL_UNSAFE, X_BRANCH_EXISTS
+//                               author-time and deploy-time faults; every fix is a command or an edit
+//
+// The borrowed codes are absent for a different reason: `registerErrorRetry` refuses a code the
+// framework owns, and `X_ENV_MISSING` / `X_INVARIANT` belong to core, which classifies its own.
+registerErrorRetry(DB_ERROR_RETRY);
 
 export interface DbErrorInit {
   readonly code: DbErrorCode;

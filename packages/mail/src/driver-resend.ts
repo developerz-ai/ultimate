@@ -5,6 +5,11 @@
 import {
   ConfigInvalidError,
   EnvMissingError,
+  // The status table is core's: this package's copy and `packages/cache/src/purge-http.ts`'s were
+  // byte-identical in two packages that cannot import each other, so one was always going to be
+  // edited alone. A throttle or a transient conflict can land unchanged; every other 4xx here is a
+  // config problem no retry fixes.
+  isRetryableStatus,
   logger,
   nanoid,
   renderThrowable,
@@ -21,10 +26,6 @@ export type MailFetch = (input: string, init: RequestInit) => Promise<Response>;
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_DETAIL_LENGTH = 200;
-
-// A 4xx here means the same request, unchanged, might land: a throttle or a momentary
-// conflict. Every other 4xx is a config problem retrying cannot fix.
-const RETRYABLE_STATUSES = new Set([408, 409, 425, 429]);
 
 export interface ResendDriverOptions {
   /** Read from `RESEND_API_KEY`. A literal key in app.config.ts is a key in git. */
@@ -53,11 +54,6 @@ function requireFrom(from: string): string {
     cause: 'the resend driver was configured without a from address',
     fix: 'set mail.from in app.config.ts to a domain verified with Resend',
   });
-}
-
-/** `retryable` for a throttle or a transient conflict; everything else is a config problem. */
-function isRetryableStatus(status: number): boolean {
-  return status >= 500 || RETRYABLE_STATUSES.has(status);
 }
 
 function fixFor(status: number): string {

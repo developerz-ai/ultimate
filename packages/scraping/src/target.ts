@@ -3,6 +3,7 @@
 // lets `page-over-target.ts` be the ONE implementation of `ScrapePage` for the real browser, the
 // fixture replayer and the fake alike.
 
+import type { CaptureFraming } from './capture-clip';
 import type { ConsoleRing, NetworkRing, PageErrorRing } from './rings';
 import type { SessionSnapshot } from './session-state';
 
@@ -75,7 +76,12 @@ export interface GotoOptions {
 }
 
 /**
- * `fullPage` and nothing else. It carried a required `timeoutMs` until 2026-08 that NO driver
+ * `CaptureFraming`, under the port's own name: `fullPage` for the whole document, or a `clip` to
+ * crop to one rectangle, never both. ONE declaration for the port and the vocabulary — the two
+ * were separate copies of `{ fullPage }` and a field added to one would have reached neither the
+ * drivers nor the callers.
+ *
+ * It carried a required `timeoutMs` until 2026-08 that NO driver
  * honoured — `cdp-target.ts` read only `fullPage`, `html-target.ts` ignored the whole object —
  * so `page.screenshot({ timeout })` was a documented deadline that bounded nothing. Deleted
  * rather than implemented: the CDP port's own `screenshot({ fullPage })` has no timeout slot to
@@ -83,9 +89,7 @@ export interface GotoOptions {
  * `ScrapeClock.sleep`, which under `testClock` resolves on the first microtask and would time
  * out every capture in every test. A driver's own default is the honest bound.
  */
-export interface CaptureOptions {
-  readonly fullPage?: boolean | undefined;
-}
+export type CaptureOptions = CaptureFraming;
 
 /**
  * The port. Twelve methods, every one of them something a browser genuinely does and nothing a

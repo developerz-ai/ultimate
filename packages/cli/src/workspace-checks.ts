@@ -1,12 +1,20 @@
-// Four shape rules the gate owns: one file, one job (a hard line ceiling), every workspace
-// package shipping the same contract files, every published package's tarball matching what its
-// manifest promises, and every published package being in the root build graph. All report
-// findings — a shape rule that is only written down is not a rule (axiom 3).
+// Four shape rules the gate owns: one file, one job (a hard line ceiling on REVIEWABLE LOGIC),
+// every workspace package shipping the same contract files, every published package's tarball
+// matching what its manifest promises, and every published package being in the root build graph.
+// All report findings — a shape rule that is only written down is not a rule (axiom 3).
+//
+// The ceiling exempts a pure re-export manifest, and only that. Such a file has one job by
+// construction and its length is a function of the package's API size rather than of its
+// complexity: `@ultimat3/core`'s `src/index.ts` reached 514 lines with 513 statements and not one
+// of them logic, so the ceiling had stopped protecting anything and started refusing every new
+// public subject. `isReExportManifest` is the whole carve-out — one statement of logic in such a
+// file re-arms the ceiling on the same save, which is what keeps it from being a hole.
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, renderCauseValue } from '@ultimat3/core';
 import type { Finding } from './output';
+import { isReExportManifest } from './reexport-manifest';
 import { eachSourceFile, isGenerated } from './source-files';
 import { checkRootReferences } from './tsconfig-references';
 
@@ -30,13 +38,21 @@ export const tooLongFinding = (path: string, lines: number): Finding => ({
 export const countLines = (text: string): number =>
   text === '' ? 0 : text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
 
-/** Files are the unit of review: one file, one job, hard ceiling 500 lines. */
+/**
+ * Files are the unit of review: one file, one job, hard ceiling 500 lines of reviewable logic.
+ *
+ * The source is read before the count is judged rather than after, because the exemption is a
+ * question about CONTENTS: a 3,000-line file of re-exports is one job and a 501-line file with one
+ * statement of logic in it is not, and only reading tells them apart.
+ */
 export async function checkFileSizes(root: string): Promise<readonly Finding[]> {
   const findings: Finding[] = [];
   for await (const path of eachSourceFile(root)) {
     if (isGenerated(path)) continue;
-    const lines = countLines(await Bun.file(join(root, path)).text());
-    if (lines > LINE_CEILING) findings.push(tooLongFinding(path, lines));
+    const source = await Bun.file(join(root, path)).text();
+    const lines = countLines(source);
+    if (lines <= LINE_CEILING || isReExportManifest(source)) continue;
+    findings.push(tooLongFinding(path, lines));
   }
   return findings;
 }

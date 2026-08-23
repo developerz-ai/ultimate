@@ -144,6 +144,8 @@ export {
 } from './presence';
 export {
   createEntry,
+  DEFAULT_READ_DEADLINE_MS,
+  type EntryOptions,
   fillWindow,
   orgIdOf,
   type PendingRead,

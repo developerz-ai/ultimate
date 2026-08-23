@@ -93,7 +93,7 @@ with STARTTLS. Credentials are percent-decoded, so a password with `@` or `/` wo
 
 `RESEND_API_KEY` and a verified sending domain. Every request carries `Idempotency-Key:
 mailIdempotencyKey(message)` — a job retry after a timeout hands Resend the identical message, and
-that header is what makes it one email. 408/409/425/429 and 5xx are retryable; every other non-2xx
+that header is what makes it one email. 408/409/425/429 and 5xx are retryable (`isRetryableStatus`, `@ultimat3/core`); every other non-2xx
 is a configuration problem that retrying cannot fix.
 
 ## Framework mails

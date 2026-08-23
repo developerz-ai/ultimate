@@ -1,6 +1,17 @@
 # Error contract
 
-`packages/core` owns `UltimateError`. **Never throw a bare `Error`** — Biome fails the build on it. Every framework error carries a stable code, a cause, and an exact fix command, and renders identically in a terminal, a browser overlay, and `--json`.
+`packages/core` owns `UltimateError`. **Never throw a bare `Error`.** Every framework error carries a stable code, a cause, and an exact fix command, and renders identically in a terminal, a browser overlay, and `--json`.
+
+**This page said "Biome fails the build on it" until 2026-08-23, and it never did.** `biome.json`
+declares four `style` rules, `noExplicitAny`, two `correctness` rules and `noFloatingPromises` —
+no rule about `Error` at all, and `packages/admin/src/inert-jsx.ts`, `packages/ui/src/jsx-probe.ts`
+and `packages/cache/src/redis-fake.ts` each throw one under a green gate. What is enforced:
+
+| Where | By | Shape |
+|---|---|---|
+| a framework **test** | `bun run scripts/test-bare-error.ts`, a step of the gate's `errors` check | a per-package ratchet — 422 sites were already there. Only `throw new Error(…)`, the test stating its own verdict; a `new Error` handed to the subject as input is never reported |
+| a **scaffolded app's** shipped source | the `bare-error` guard `x new` writes into `guards/`, run inside the `boundaries` step | a throw, never a construction |
+| framework shipped source | **nothing** `As of 2026-08-23` | per axiom 3 this half is a convention. The check that should exist is the app guard's own scan pointed at `packages/*/src`, on the ratchet `test-bare-error.ts` already uses |
 
 Axiom 4: errors are instructions ([`../idea/00-thesis.md`](../idea/00-thesis.md)).
 
@@ -25,7 +36,7 @@ declaration, and `UltimateErrorJSON` beside it is what `--json` serialises.
 | `fix` | the throw site, required | **an executable command** or a one-line edit instruction | must be runnable/pasteable as written |
 | `title` | `describeErrorCode(code)` | the registry's one-line summary | so every instance of a code reads the same |
 | `docs` | `describeErrorCode(code)` | `ERROR_DOCS_URL` | **omit it at the throw site.** One URL for every code, not one per code |
-| `retry` | `retryFor(code)`, overridable per throw | `'terminal' \| 'retryable' \| 'retry-after'` | **defaults to `terminal`** — fail closed. Not a boolean |
+| `retry` | `retryFor(code)`, overridable per throw | `'terminal' \| 'retryable' \| 'retry-after'` | **defaults to `terminal`** — fail closed. Not a boolean. It has an executor as of 2026-08-23: [`20-flight-control.md`](./20-flight-control.md) |
 | `meta` | the throw site, optional | structured detail: `{ route, field, chain, actual, limit }` | consumed by `--json` and by MCP tools. Rendered through `renderMetaRecord`, so a value that would throw degrades instead |
 | `sourceError` | the throw site, optional | the underlying thrown value this error wraps | never rendered into `cause` — use `renderThrowable` for that |
 | `stack` | `Error` | the JS stack | serialised, printed only under `--verbose` |
@@ -243,6 +254,8 @@ Thrown by more than one package, or by the gate about any of them; every package
 | `X_ERROR_STATUS_INVALID` | `http` | 500 | `registerErrorStatus()` given a framework code, an out-of-range status, or a second answer for one code | map a code this app owns to a status the framework does not hold |
 | `X_NOT_IMPLEMENTED` | any | 501 | a labelled unimplemented driver path | switch to the default driver |
 | `X_INTERNAL` | `core` | 500 | a non-`UltimateError` escaped | report with the trace id |
+| `X_FLIGHT_GATE_OVERLOADED` | `core` | 503 | a `createFlightGate` is at `maxConcurrent` with its queue at `maxQueued`; `meta.retryAfterSeconds` is what `retryAfterOf` renders onto the header | retry after `Retry-After`, or widen the ceiling at the call site |
+| `X_SUPERSEDED` | `core` | 499 | `fence.guard(issued)` was handed a generation the fence has moved past | discard the answer and re-issue against `fence.generation()` |
 | `X_INPUT_INVALID` | `action` | 400 | `input` parse failed; `data.path` names the field | fix the caller's field |
 | `X_OUTPUT_INVALID` | `action` | 500 | handler returned a value the `output` schema rejects | fix the handler or the schema |
 | `X_FORBIDDEN` | `policy` | 403 | authz refused; `data.reason` is the denial reason | grant the permission or change the actor |
@@ -266,3 +279,19 @@ There is no runtime code for *formatting with no zone at all*: `FormatContext.zo
 `X_TIMEZONE_INVALID` covers the case a type cannot — a string that is not an IANA name.
 
 Package-local codes live with their subsystem: jobs in [`08-jobs-internals.md`](./08-jobs-internals.md), realtime in [`07-realtime-internals.md`](./07-realtime-internals.md), rendering/SEO/PWA in [`09-rendering-internals.md`](./09-rendering-internals.md).
+
+## The classification is read, not decorative
+
+`As of 2026-08-23` two readers consult `retry` before deciding to run work again, and both live one
+tier apart from the table they read:
+
+| Reader | Effect |
+|---|---|
+| `nextRetryForError` (`packages/jobs/src/retry-classification.ts`), wired at `execute.ts` | a `terminal` code stops on the attempt that failed — the remaining attempts are a queue slot and a provider bill. `retry-after` replaces the delay, never the ceiling |
+| `retryDecision` / `retry` (`packages/core/src/retry.ts`) | the same two rules, as a loop any caller can run |
+
+Both read `classifyThrown`, not `error.retry`, and the difference is load-bearing: `retryFor` fails
+closed, so every **unclassified** error already carries `terminal`. Reading the field would
+dead-letter the first attempt of every job in every app whose codes nobody has classified.
+Register the code to have a `terminal` honoured. Mechanism and refusals:
+[`20-flight-control.md`](./20-flight-control.md).

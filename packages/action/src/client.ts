@@ -2,15 +2,20 @@
  * Projection 3: the typed RPC client. Types come from the action map, paths from
  * the same pure derivation the server uses, so a renamed or mistyped action is a
  * compile error in a Solid component — not a 404 at runtime.
+ *
+ * `ClientFlight` is a TYPE here and never a value: the fence, the retry loop and the deadline are
+ * `@ultimat3/core`'s `client-flight.ts`, so a caller that never calls `createClientFlight` does
+ * not pay a byte for any of them — an `import type` is erased and the value import would not be.
+ * Dedup is deliberately unreachable from this file — a mutation may never join another mutation,
+ * and the way that is guaranteed is that `keyFor` is never called here.
  */
-import type { UltimateError } from '@ultimat3/core';
-import { currentSpanContext, traceparent } from '@ultimat3/core';
+import type { ClientFlight, ClientRetry, UltimateError, WireAnswer } from '@ultimat3/core';
+import { FRAMEWORK_CODE, problemOf, traceHeaders } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action } from './action';
 import { ContractDriftError, RemoteActionError, RpcFailedError } from './errors';
-import { BUILD_ID_HEADER, IDEMPOTENCY_HEADER } from './http';
 import { derivePath } from './naming';
-import { isJsonObject } from './stable';
+import { BUILD_ID_HEADER, IDEMPOTENCY_HEADER } from './wire-headers';
 
 /**
  * Loose constraint on purpose: a map of concrete `Action<In, Out>` values must be
@@ -26,6 +31,12 @@ export type ActionMap = Record<string, ActionLike>;
 export interface CallOptions {
   readonly idempotencyKey?: string;
   readonly signal?: AbortSignal;
+  /**
+   * Retry THIS call. Honoured only alongside an `idempotencyKey`, and silently narrowed to one
+   * attempt without one — a retried mutation with no key is a second write, not a second attempt,
+   * and the framework has no way to tell a lost answer from a lost request.
+   */
+  readonly retry?: ClientRetry;
 }
 
 /** `api.publishPost({ postId })` with both sides of the schema inferred. */
@@ -48,6 +59,11 @@ export interface ClientOptions {
   /** Sent on every call; a differing server build id raises X_CONTRACT_DRIFT. */
   readonly buildId?: string;
   readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * Opt-in flight control — `createClientFlight({ … })`. Absent, a call is one `fetch` and nothing
+   * else, which is what every caller written before this option existed already gets.
+   */
+  readonly flight?: ClientFlight;
 }
 
 /**
@@ -87,6 +103,9 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
     call(doFetch, base, options, name, input, callOptions) as Promise<InferOutput<TOutput>>;
 }
 
+/** One attempt, and no retry at all. What a mutation carrying no idempotency key is allowed. */
+const ONCE: ClientRetry = { attempts: 1 };
+
 async function call(
   doFetch: FetchLike,
   base: string,
@@ -95,6 +114,40 @@ async function call(
   input: unknown,
   callOptions: CallOptions,
 ): Promise<unknown> {
+  const url = `${base}${derivePath(name).path}`;
+  const body = JSON.stringify(input ?? {});
+  const dispatch = (signal: AbortSignal | undefined): Promise<WireAnswer> =>
+    postOnce(doFetch, url, body, options, name, callOptions, signal ?? callOptions.signal);
+
+  const flight = options.flight;
+  const answer =
+    flight === undefined
+      ? await dispatch(undefined)
+      : await flight.run({
+          // `undefined`, unconditionally: a mutation may never join another mutation, and the
+          // enforcement is that this file never calls `flight.keyFor`.
+          key: undefined,
+          // NEVER aborted. A fence bump and a deadline both mean "this answer no longer matters";
+          // closing the socket does not un-commit the write, it only destroys the one chance this
+          // caller had of learning whether it landed.
+          abortable: false,
+          retry: callOptions.idempotencyKey === undefined ? ONCE : (callOptions.retry ?? ONCE),
+          run: dispatch,
+        });
+  if (answer.status === 204) return undefined;
+  return JSON.parse(answer.text) as unknown;
+}
+
+/** One dispatch. Everything above it decides how many times this happens; it decides none. */
+async function postOnce(
+  doFetch: FetchLike,
+  url: string,
+  body: string,
+  options: ClientOptions,
+  name: string,
+  callOptions: CallOptions,
+  signal: AbortSignal | undefined,
+): Promise<WireAnswer> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     // Before the caller's headers, so an explicit `traceparent` still wins. Without this a
@@ -111,36 +164,16 @@ async function call(
   const init: RequestInit = {
     method: 'POST',
     headers,
-    body: JSON.stringify(input ?? {}),
-    ...(callOptions.signal === undefined ? {} : { signal: callOptions.signal }),
+    body,
+    ...(signal === undefined ? {} : { signal }),
   };
-  const response = await doFetch(`${base}${derivePath(name).path}`, init);
+  const response = await doFetch(url, init);
   assertSameBuild(options.buildId, response.headers.get(BUILD_ID_HEADER), name);
-  if (!response.ok) throw await toUltimateError(response, name);
-  if (response.status === 204) return undefined;
-  const body: unknown = await response.json();
-  return body;
-}
-
-/** A `traceparent` is `00-<32 hex>-<16 hex>-<2 hex>`, and nothing else may be sent as one. */
-const TRACE_ID = /^[0-9a-f]{32}$/;
-const SPAN_ID = /^[0-9a-f]{16}$/;
-
-/**
- * The current trace, as the W3C header — or nothing at all. `currentSpanContext()` answers with
- * an empty `spanId` when a request context exists but no span is active, and `00-<trace>--01` is
- * a header every collector drops, so an incomplete context sends none. In a browser there is no
- * ambient context and this is always empty, which is also what keeps a cross-origin GET from
- * acquiring a CORS preflight it did not have.
- *
- * `@ultimat3/query`'s client carries the twin of this function: both are tier 3, so neither may
- * import the other.
- */
-function traceHeaders(): Record<string, string> {
-  const context = currentSpanContext();
-  if (context === undefined) return {};
-  if (!TRACE_ID.test(context.traceId) || !SPAN_ID.test(context.spanId)) return {};
-  return { traceparent: traceparent(context) };
+  // Read as TEXT once: a `Response` body is a single-use stream, so the failure path and the
+  // answer path cannot both have it.
+  const text = response.status === 204 ? '' : await response.text();
+  if (!response.ok) throw toUltimateError(text, response.status, name);
+  return { status: response.status, text };
 }
 
 /**
@@ -161,31 +194,25 @@ function assertSameBuild(
 }
 
 /**
- * A framework code, spelled the one way codes are spelled. `typeof code === 'string'` alone
- * accepted `""` and `"error"` — a gateway's JSON body became an `UltimateError` whose code
- * nothing in the framework or the app declares, rendering `: ` under a humanised title.
- */
-const FRAMEWORK_CODE = /^X_[A-Z0-9]+(?:_[A-Z0-9]+)*$/;
-
-/**
  * `application/problem+json` back into the error the server threw. The code rides along
  * verbatim — carrying one is the point of the document — but it is a code this bundle may never
  * have registered, so the result is a `RemoteActionError`: marked remote-origin, and linked only
  * to a page that exists. A body naming no framework code is a proxy answering rather than the
  * app, which is what `RpcFailedError` already says.
  */
-async function toUltimateError(response: Response, name: string): Promise<UltimateError> {
-  const body: unknown = await response.json().catch(() => null);
-  if (!isJsonObject(body)) return new RpcFailedError(name, response.status);
+function toUltimateError(text: string, status: number, name: string): UltimateError {
+  // `problemOf` is total — a gateway's HTML, an empty body and a truncated stream all answer `{}`,
+  // which carries no `code` and therefore lands on `RpcFailedError` exactly as before.
+  const body = problemOf(text);
   const code = body['code'];
   if (typeof code !== 'string' || !FRAMEWORK_CODE.test(code)) {
-    return new RpcFailedError(name, response.status);
+    return new RpcFailedError(name, status);
   }
   return new RemoteActionError({
     action: name,
-    status: response.status,
+    status,
     code,
-    cause: stringOr(body['cause'] ?? body['detail'], `${name} failed with ${response.status}`),
+    cause: stringOr(body['cause'] ?? body['detail'], `${name} failed with ${status}`),
     fix: stringOr(body['fix'], `x actions describe ${name} --json`),
     // RFC-9457's `type` IS a documentation URI, so a server that sends no `docs` extension has
     // still offered one. Both travel, in preference order: `??` picked `docs` on presence alone,

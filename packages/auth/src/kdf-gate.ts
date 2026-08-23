@@ -6,6 +6,7 @@
 // what argon2id costs is MEMORY — 19 MiB per hash at the OWASP floor. The only remaining backstop
 // was `http.maxInflight` (1000), i.e. roughly 19 GB of arenas queued on one box.
 
+import { createFlightGate } from '@ultimat3/core';
 import { kdfOverloaded } from './errors';
 
 export interface KdfLimits {
@@ -27,42 +28,24 @@ export interface KdfGate {
 }
 
 /**
- * A slot is HANDED OVER on release rather than released and re-acquired: decrementing first would
- * let a caller arriving in the same tick past the ceiling while a waiter's continuation is still
- * a queued microtask, which is how a "bounded" pool goes over its bound under exactly the load it
- * exists for.
+ * The mechanism is `@ultimat3/core`'s — including the rule that made this file worth having: a
+ * slot is HANDED OVER on release rather than released and re-acquired, because decrementing first
+ * would let a caller arriving in the same tick past the ceiling while a waiter's continuation is
+ * still a queued microtask.
+ *
+ * `overflow:` is why delegating costs this package nothing: the shed stays `kdfOverloaded`, so the
+ * code an HTTP client already reads as a 503 is still `X_OVERLOADED` and core's own
+ * `X_FLIGHT_GATE_OVERLOADED` never leaves this package. `subject:` is deliberately not passed —
+ * it feeds only `gateOverloaded`'s prose, which this gate never reaches, and an option nothing
+ * reads is the defect this repo keeps re-shipping.
+ *
+ * The declared return type stays `KdfGate` rather than core's `FlightGate`: `active` and `queued`
+ * are observations no caller here has ever had, and widening a public signature is not a refactor.
  */
 export function createKdfGate(limits: KdfLimits = DEFAULT_KDF_LIMITS): KdfGate {
-  let active = 0;
-  const waiters: Array<() => void> = [];
-
-  const acquire = async (): Promise<void> => {
-    if (active < limits.maxConcurrent) {
-      active += 1;
-      return;
-    }
-    if (waiters.length >= limits.maxQueued) throw kdfOverloaded(active, waiters.length);
-    await new Promise<void>((resolve) => {
-      waiters.push(resolve);
-    });
-  };
-
-  const release = (): void => {
-    const next = waiters.shift();
-    if (next === undefined) active -= 1;
-    else next();
-  };
-
-  return {
-    async run<T>(work: () => Promise<T>): Promise<T> {
-      await acquire();
-      try {
-        return await work();
-      } finally {
-        release();
-      }
-    },
-  };
+  return createFlightGate(limits, {
+    overflow: (state) => kdfOverloaded(state.active, state.queued),
+  });
 }
 
 let gate = createKdfGate();

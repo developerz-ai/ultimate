@@ -3,7 +3,7 @@
 // The cycle with ./errors is the same deliberate one ./error-codes has: nothing here touches
 // UltimateError at module-evaluation time.
 
-import { UltimateError } from './errors';
+import { isUltimateError, UltimateError } from './errors';
 
 /**
  * `terminal` — the same call will fail the same way forever (a config fault, a validation error,
@@ -48,6 +48,16 @@ const CORE_ERROR_RETRY: ReadonlyMap<string, ErrorRetry> = new Map(
     // It is core's code — every `notImplemented()` stub in the framework raises it — so it is
     // classified once here rather than by each package that happens to throw it.
     X_NOT_IMPLEMENTED: 'terminal',
+    // A gate at its ceiling with a full queue is the canonical "not now": nothing about the work
+    // was wrong and the same call succeeds once a slot frees. `retry-after` rather than
+    // `retryable` because the refusal NAMES a delay — `retryAfterSeconds` on its `meta`, the one
+    // spelling `@ultimat3/http`'s `retryAfterOf` reads onto the header — so a caller that guesses
+    // a backoff is guessing against an answer it was already given.
+    X_FLIGHT_GATE_OVERLOADED: 'retry-after',
+    // Listed for the same reason `X_NOT_IMPLEMENTED` is, and it matters more here: superseded work
+    // re-run produces the same refusal by construction, so an UNCLASSIFIED reading would spend a
+    // job's whole retry policy proving that the world has still moved on.
+    X_SUPERSEDED: 'terminal',
   } as const),
 );
 
@@ -123,4 +133,47 @@ export function retryFor(code: string): ErrorRetry {
 /** Every classification a package or app declared, for `x errors list` and the manifest. */
 export function registeredErrorRetry(): Readonly<Record<string, ErrorRetry>> {
   return Object.fromEntries([...REGISTERED].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/**
+ * The classification that was DECLARED for this throw, or `undefined` when there is none.
+ *
+ * Deliberately not `error.retry` alone. That field is `init.retry ?? retryFor(code)` and `retryFor`
+ * fails closed, so every unclassified `UltimateError` already carries `terminal` — reading it would
+ * dead-letter the first attempt of every job in every app whose codes nobody has classified yet. So
+ * `terminal` counts only when it can have come from somewhere: an explicit per-instance override is
+ * indistinguishable from the default here, which is why an UNCLASSIFIED code carrying an instance
+ * `retry: 'terminal'` is read as unclassified. Register the code
+ * (`registerErrorRetry({ X_YOUR_CODE: 'terminal' })`) to have it honoured.
+ *
+ * Lives here rather than beside an executor because it is the reader of the table above, and every
+ * executor in the framework has to answer it the same way — `@ultimat3/jobs`' `classifyThrown` in
+ * `retry-classification.ts` is this function, one tier up, and can delegate to it unchanged.
+ */
+export function classifyThrown(error: unknown): ErrorRetry | undefined {
+  // The brand check, never `instanceof`: a duplicated module instance in the dependency tree makes
+  // `instanceof` answer false for an error this framework built.
+  if (!isUltimateError(error)) return undefined;
+  const retry: unknown = error.retry;
+  if (!isErrorRetry(retry)) return undefined;
+  // Anything other than the fail-closed default can only have come from the code table or from an
+  // explicit override, so it is somebody's answer either way.
+  if (retry !== DEFAULT_ERROR_RETRY) return retry;
+  return declaredErrorRetry(error.code) === undefined ? undefined : retry;
+}
+
+/**
+ * The delay a `retry-after` error NAMED, in ms, or `undefined` when it named none.
+ *
+ * `retryAfterSeconds` on the error's `meta` is the framework's ONE spelling for it —
+ * `@ultimat3/http`'s `rateLimited` writes it, its `retryAfterOf` renders it onto the `Retry-After`
+ * header, `@ultimat3/auth`'s `kdfOverloaded` carries it — so a retry loop and an HTTP client wait
+ * the same number. A literal key, not a constant: a computed read of a record is what
+ * `bun run proto-index` refuses, and `meta` is a caller's object.
+ */
+export function statedDelayMs(error: unknown): number | undefined {
+  if (!isUltimateError(error)) return undefined;
+  const seconds: unknown = error.meta?.['retryAfterSeconds'];
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return undefined;
+  return Math.round(seconds * 1_000);
 }

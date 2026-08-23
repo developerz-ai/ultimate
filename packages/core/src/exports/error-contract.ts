@@ -31,6 +31,7 @@ export {
 } from '../error-render';
 export type { ErrorRetry } from '../error-retry';
 export {
+  classifyThrown,
   DEFAULT_ERROR_RETRY,
   declaredErrorRetry,
   ERROR_RETRY_KINDS,
@@ -39,6 +40,7 @@ export {
   registeredErrorRetry,
   resetErrorRetry,
   retryFor,
+  statedDelayMs,
 } from '../error-retry';
 export type {
   CodedErrorInit,

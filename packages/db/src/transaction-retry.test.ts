@@ -161,3 +161,116 @@ describe('retry', () => {
     expect(client.texts).toContain('SAVEPOINT x_sp_1');
   });
 });
+
+// Until 2026-08-23 the loop re-ran with NO wait between attempts, which is the failure mode it
+// exists to fix stated twice: two transactions that deadlocked re-collide inside the same
+// microsecond, and a budget of 8 is spent in one round trip's worth of wall clock.
+describe('the wait between attempts', () => {
+  const serialization = (): unknown =>
+    driverError(
+      'statement failed: update ledger',
+      Object.assign(new Error('could not serialize access'), {
+        code: 'ERR_POSTGRES_SERVER_ERROR',
+        errno: '40001',
+      }),
+    );
+
+  /** Every wait the loop took, in order. Nothing else in this file can see one. */
+  const recorder = (): { waits: number[]; sleep: (ms: number) => Promise<void> } => {
+    const waits: number[] = [];
+    return {
+      waits,
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    };
+  };
+
+  test('nobody asked for a retry, so nothing waits — the default is untouched', async () => {
+    const { waits, sleep } = recorder();
+
+    await withTransaction(
+      async () => {
+        throw serialization();
+      },
+      { sleep },
+    ).catch(() => undefined);
+
+    // The hard constraint of the change: an app that never opted in sees no wait, ever.
+    expect(waits).toEqual([]);
+  });
+
+  test('each re-run waits, and the attempt that gives up does not', async () => {
+    const { waits, sleep } = recorder();
+
+    await withTransaction(
+      async () => {
+        throw serialization();
+      },
+      { retry: 2, sleep, random: () => 1 },
+    ).catch(() => undefined);
+
+    // Three attempts, two waits: sleeping after the last one spends a caller's deadline on a
+    // wait nothing follows.
+    expect(waits).toEqual([10, 20]);
+  });
+
+  test('a re-run that succeeds waits once, before it', async () => {
+    const { waits, sleep } = recorder();
+    let attempts = 0;
+
+    const result = await withTransaction(
+      async () => {
+        attempts += 1;
+        if (attempts < 2) throw serialization();
+        return 'committed';
+      },
+      { retry: 3, sleep, random: () => 0.5 },
+    );
+
+    expect(result).toBe('committed');
+    expect(waits).toEqual([5]);
+  });
+
+  test('a failure that is not a lost race never waits, however large the budget', async () => {
+    const { waits, sleep } = recorder();
+    const unique = driverError(
+      'statement failed: insert into users',
+      Object.assign(new Error('duplicate key'), {
+        code: 'ERR_POSTGRES_SERVER_ERROR',
+        errno: '23505',
+      }),
+    );
+
+    await withTransaction(
+      async () => {
+        throw unique;
+      },
+      { retry: 5, sleep, random: () => 1 },
+    ).catch(() => undefined);
+
+    expect(waits).toEqual([]);
+  });
+
+  test('the wait lands BETWEEN the attempts, never after the ROLLBACK of the last', async () => {
+    const order: string[] = [];
+    let attempts = 0;
+
+    await withTransaction(
+      async () => {
+        attempts += 1;
+        order.push(`attempt ${attempts}`);
+        if (attempts < 3) throw serialization();
+      },
+      {
+        retry: 3,
+        random: () => 1,
+        sleep: async (ms) => {
+          order.push(`wait ${ms}`);
+        },
+      },
+    );
+
+    expect(order).toEqual(['attempt 1', 'wait 10', 'attempt 2', 'wait 20', 'attempt 3']);
+  });
+});

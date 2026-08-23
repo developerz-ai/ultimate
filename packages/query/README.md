@@ -53,6 +53,54 @@ const [post] = await queries.publicPost({ slug }); // typed input, typed rows
 
 Both spellings run `queryClientMethodFor`, so a read has one URL however it is addressed.
 
+### Flight control — `createClientFlight`, opt-in
+
+A typed read is one `fetch` and nothing else until a `flight` is installed. With one, N concurrent
+identical reads become ONE dispatch, a fence can retire everything issued before now, and a failure
+worth sending again is sent again on `@ultimat3/core`'s one backoff curve.
+
+```ts
+import { createClientFlight, isSuperseded, queryClient } from '@ultimat3/query';
+
+declare const session: () => { userId: string };
+declare const baseUrl: string;
+type Api = { queries: Record<string, never> };
+
+const flight = createClientFlight({
+  principal: () => session().userId,   // dedup is OFF without this — see below
+  retry: { attempts: 3 },              // default is `attempts: 1`, i.e. no retry
+  deadlineMs: 10_000,
+  limit: { maxConcurrent: 6, maxQueued: 12 },
+});
+
+export const queries = queryClient<Api['queries']>({ baseUrl, flight });
+
+// A route change, a sign-out, a tenant switch: everything already issued stops being addressed
+// to anybody, and every read still open is aborted.
+flight.bump();
+```
+
+| Rule | Why it is that way |
+|---|---|
+| the dedup key is `[principal, url]`, and **no principal means no dedup** | a key that is only the URL lets one caller join another's still-open read across a sign-in or a tenant switch |
+| a caller-supplied `signal` is **never** shared | the leader owns the request, so one caller's abort would cancel every other caller's read; refcounting joiners is the "correct" fix and this is the one that cannot be wrong |
+| `{ fresh: true }` opts one read out | the case it exists for is "this read exists BECAUSE something just changed", which must not join a dispatch that left before the change did |
+| every joiner parses its own rows | what is shared is the immutable body TEXT; handing two callers one array hands each of them the other's edits |
+| a fenced answer is `X_SUPERSEDED`, never a failure | `isSuperseded(error)` is the read; a caller that cannot tell it from a refusal retries a request its own context has already replaced |
+| an **unclassified** throw is not retried | core's `retryDecision` retries anything nobody classified — a caller's own `AbortError` included. A client retries a declared `retryable`/`retry-after`, plus a dispatch that produced no response at all |
+| a deadline is `X_TIMEOUT` | core's code, already classified `retryable`, so a caller's own loop needs no table |
+
+`createClientFlight` is **`@ultimat3/core`'s**, re-exported here: it is the same object
+`@ultimat3/action` re-exports, because both packages are tier 3 and neither may import the other.
+It shipped as a byte-identical copy in each; the copies are gone and every name is importable from
+this package exactly as before.
+
+Bundle cost is why `ClientFlight` is a TYPE inside `client.ts` and never a value: importing
+`queryClient` alone from this package is **12,755 B** minified for the browser, and adding
+`createClientFlight` is **17,912 B**. A caller who wants a plain typed fetch pays for none of it.
+Expect ±376 B run to run — `Bun.build` 1.4.0 drops `@ultimat3/core`'s `schema-error-codes.ts` from
+some builds even though `sideEffects` names it (issue #273).
+
 The declaration is lifted too: `.input`, `.policy`, `.cache`, `.mcp`, `.isLive`. `sql` is not
 among them — it lives in a private store inside `read.ts`, so `sourceFor` is the only thing
 that can build a source and there is nowhere for a second authz path to hide. Something that

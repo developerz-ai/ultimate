@@ -5,6 +5,7 @@ import { testClock } from './clock';
 import { fakeBrowser, fakePage } from './driver-fake';
 import { downloadTimeout } from './error-throws';
 import { htmlTarget } from './html-target';
+import type { ScrapePage } from './page';
 import { pageOverTarget } from './page-over-target';
 import type { PageRecording } from './recording';
 import type { PageError } from './rings';
@@ -251,5 +252,90 @@ describe('unit · what a capture actually asks the driver for', () => {
     await page.pdf();
 
     expect(asked).toEqual([{ fullPage: true }, { fullPage: undefined }]);
+  });
+});
+
+// A capture's CROP rectangle. `x shot --island` photographs one component for a vision model to
+// review, and a whole-viewport picture spends the reader's scarce pixels on everything that is not
+// the component. Every assertion here runs on the offline driver, because CI has no Chrome and the
+// crop has to be provable without one.
+describe('unit · capture framing — the crop rectangle', () => {
+  const UNCLIPPED = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  const page = (): ScrapePage =>
+    fakePage('<main><p id="a">hi</p></main>', {
+      clock: testClock(),
+      timeoutMs: 1_000,
+    });
+
+  test('a caller who names no clip gets exactly the bytes that shipped before it existed', async () => {
+    expect([...(await page().screenshot())]).toEqual(UNCLIPPED);
+    expect([...(await page().screenshot({}))]).toEqual(UNCLIPPED);
+    expect([...(await page().screenshot({ fullPage: true }))]).toEqual(UNCLIPPED);
+  });
+
+  test('a clip REACHES the driver — two rectangles are two pictures', async () => {
+    const first = await page().screenshot({ clip: { x: 4, y: 8, width: 100, height: 40 } });
+    const second = await page().screenshot({ clip: { x: 4, y: 8, width: 200, height: 40 } });
+    expect([...first]).not.toEqual(UNCLIPPED);
+    expect([...first]).not.toEqual([...second]);
+  });
+
+  test('clip and fullPage together are REFUSED by name, never silently one of them', async () => {
+    // CDP ignores one of the two without saying which, so the caller gets a picture they did not
+    // ask for and no way to tell. The refusal is the whole point of the pair being illegal.
+    expect(
+      await codeOf(
+        page().screenshot({ fullPage: true, clip: { x: 0, y: 0, width: 10, height: 10 } }),
+      ),
+    ).toBe('X_SCRAPE_CAPTURE_INVALID');
+  });
+
+  test('fullPage: false alongside a clip is fine — only the CONFLICT is refused', async () => {
+    const shot = await page().screenshot({
+      fullPage: false,
+      clip: { x: 0, y: 0, width: 10, height: 10 },
+    });
+    expect(shot.byteLength).toBeGreaterThan(0);
+  });
+
+  test('a rectangle with no area is a refusal, not a blank picture that looks like a success', async () => {
+    // The reachable case: a measurement taken of a hidden element answers a zero box, and a 0x0
+    // PNG is indistinguishable from a capture that worked.
+    for (const clip of [
+      { x: 0, y: 0, width: 0, height: 10 },
+      { x: 0, y: 0, width: 10, height: 0 },
+      { x: 0, y: 0, width: -10, height: 10 },
+    ]) {
+      expect(await codeOf(page().screenshot({ clip })), JSON.stringify(clip)).toBe(
+        'X_SCRAPE_CAPTURE_INVALID',
+      );
+    }
+  });
+
+  test('a rectangle no page content can be inside is a refusal too', async () => {
+    // Entirely in negative coordinates. Knowable without asking the browser anything, unlike
+    // "outside the viewport" — see `capture-clip.ts` for why that one is not checked.
+    for (const clip of [
+      { x: -100, y: 0, width: 50, height: 50 },
+      { x: 0, y: -100, width: 50, height: 50 },
+      { x: Number.NaN, y: 0, width: 50, height: 50 },
+      { x: 0, y: 0, width: Number.POSITIVE_INFINITY, height: 50 },
+    ]) {
+      expect(await codeOf(page().screenshot({ clip })), JSON.stringify(clip)).toBe(
+        'X_SCRAPE_CAPTURE_INVALID',
+      );
+    }
+  });
+
+  test('a rectangle BELOW THE FOLD is accepted — that is the case a component crop exists for', async () => {
+    const shot = await page().screenshot({ clip: { x: 0, y: 5_000, width: 320, height: 200 } });
+    expect(shot.byteLength).toBeGreaterThan(0);
+  });
+
+  test('a PDF has no crop rectangle, and says so instead of printing the whole page', async () => {
+    expect(await codeOf(page().pdf({ clip: { x: 0, y: 0, width: 10, height: 10 } }))).toBe(
+      'X_SCRAPE_CAPTURE_INVALID',
+    );
+    expect((await page().pdf()).byteLength).toBeGreaterThan(0);
   });
 });

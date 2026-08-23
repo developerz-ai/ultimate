@@ -4,6 +4,10 @@
   "description": "The query primitive: a policy-checked read, optionally live, with cursor pagination and an incremental matcher",
   "license": "MIT",
   "type": "module",
+  "sideEffects": [
+    "./src/errors.ts",
+    "./src/registry.ts"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/developerz-ai/ultimate.git",

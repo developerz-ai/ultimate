@@ -28,7 +28,7 @@ await withTransaction(async (tx) => {
 | `sql` / `raw` / `identifier` / `literal` / `join` | fragment builders |
 | `db()` / `baseClient()` / `setDbClient()` | the ambient client; `db()` returns the open tx if any |
 | `DbTx.origin` | `As of 2026-08`: the client the transaction was **opened on** — `options.client` or `baseClient()`, never the reservation it runs statements through. `@ultimat3/entity` compares a pinned repository's client against it, so a pinned repo joins its own shard's transaction instead of being refused |
-| `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam. `{ retry: n }` (`As of 2026-08`) re-runs `fn` from the top on a `40001`/`40P01` and on nothing else — default 0, so `fn` must be idempotent before you ask for it |
+| `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam. `{ retry: n }` (`As of 2026-08`) re-runs `fn` from the top on a `40001`/`40P01` and on nothing else — default 0, so `fn` must be idempotent before you ask for it. Each re-run **waits first**, `As of 2026-08-23`: exponential from 10ms, capped at 500ms, full jitter (`@ultimat3/core`'s `backoffDelay`). A budget of 0 waits not at all |
 | `sqlState()` / `sqlStateCode()` / `isRetryableState()` / `SQLSTATE` | `As of 2026-08`: the SQLSTATE a driver error carries, and the closed table from it to a code. `Bun.SQL` puts it on `errno`; PGlite puts it on `code`; **one** reader answers for both |
 | `migrate()` / `rollback()` / `readLedger()` | the `x_migrations` ledger |
 | `statementsOf()` | `As of 2026-08`: a SQL script → the statements a driver sends one at a time. One send is one statement, so `migrate()` splits with this — a `;` inside a literal, an identifier, a dollar-quoted body or a comment is data |
@@ -315,6 +315,14 @@ Every driver failure is typed by the **SQLSTATE the server sent**, `As of 2026-0
 always on the error and nothing read it, so a `23505` from two clicks racing a signup answered
 "cannot reach the database" and paged on-call for an outage that never happened. The table
 (`sqlstate.ts`) is closed; everything outside it is still `X_DB_UNAVAILABLE`, unchanged.
+
+**Four of them carry `retry: "retryable"` in `--json`, `As of 2026-08-23`** — `DB_ERROR_RETRY`:
+`X_DB_SERIALIZATION_FAILURE`, `X_DB_LOCK_TIMEOUT`, `X_DB_POOL_EXHAUSTED`, `X_MIGRATE_CONCURRENT`.
+Each is a resource that frees, so the same call has a real chance of a different answer with no edit
+in between. Everything else keeps core's fail-closed `terminal`, and is deliberately left
+UNREGISTERED rather than registered as terminal: `@ultimat3/jobs` dead-letters a registered
+`terminal` on attempt 1, so classifying `X_DB_UNAVAILABLE` that way would dead-letter every in-flight
+job the moment Postgres fails over.
 
 | Code | Meaning |
 |---|---|

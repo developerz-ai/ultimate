@@ -8,7 +8,100 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **One flight layer, in `@ultimat3/core`.** The framework carried **four** retry engines
+  (`jobs/retry.ts`, `ai/gateway.ts`, `realtime/thundering-herd.ts`, and `db/transaction.ts`, which
+  retried on no backoff at all), with three different jitter strategies between them; **five**
+  retryability tables, two of them byte-identical
+  (`RETRYABLE_STATUSES = new Set([408, 409, 425, 429])` in both `cache/purge-http.ts` and
+  `mail/driver-resend.ts`, packages that cannot import each other); four concurrency limiters; four
+  dedup mechanisms; and sixteen independent timeout sites. `error-retry.ts` owned the *vocabulary*
+  (`terminal | retryable | retry-after`) and nothing executed it. Now: `backoff.ts` (one curve, all
+  three shapes, all three jitter modes, `random` injected), `retry.ts` (the executor that
+  vocabulary never had), `single-flight.ts`, `flight-gate.ts`, `generation-fence.ts` — which nothing
+  in the tree had — and `retryable-status.ts`. `classifyThrown` and `statedDelayMs` moved DOWN from
+  `@ultimat3/jobs` into `core/error-retry.ts`. Tier 0, so no package pays a tier edge to reach it.
+- **`X_FLIGHT_GATE_OVERLOADED`** (503, beside `X_OVERLOADED`) and **`X_SUPERSEDED`** (499, beside
+  `X_ABORTED` — the caller went away there, the caller's generation moved on here, and in both cases
+  nobody will act on the answer; deliberately not 409, which asks a client to reconcile against
+  something a fenced answer has nothing to reconcile against).
+- **`bun run flight-copies`**, a step of the gate's `unit` check. Refuses a second backoff curve —
+  matched on **shape**, a factor raised to an attempt and clamped in one expression, never on a name
+  — and any **call** to `Math.random()` in shipped source, which is what made `ai/gateway.ts` the one
+  engine of four with no test at all. A `random = Math.random` default parameter is the injectable
+  seam and is never reported. Pinned at **zero**, enforcing outright. Written because deleting three
+  copies enforces nothing: the first draft keyed on a roll named `random`/`rng`/`roll` and read
+  straight past a planted copy whose parameter was `r`, exactly as a rule spelled `RenderMode` once
+  read past `PwaRenderMode`.
+- **Deadlines on three shared reads that could previously wedge forever.** `createCacheStack`'s
+  `load()` (`DEFAULT_LOAD_DEADLINE_MS = 30_000`, anchored to `http`'s own request-timeout default,
+  because a load still running then has no reader left to serve), `@ultimat3/auth`'s JWKS refresh
+  (twice its transport timeout: `AbortSignal.timeout` bounds only the default transport, and an
+  app-injected `fetch` that ignores its signal pinned the slot for the life of the client), and
+  `@ultimat3/realtime`'s query-window read. Eviction frees the KEY — it never cancels or rejects the
+  work — so the worst case is one duplicate fetch, never a failed answer.
+- **Flight control on both typed clients, and the browser bundle cut by two thirds.**
+  `queryClient()` and `rpc()` were each one bare `fetch` — no dedup, no retry, no deadline, no
+  concurrency ceiling, no supersession fence, only a pass-through `signal`. So N concurrent reads of
+  one resource resolved in N orders and whichever landed last won, and a stale answer arriving after
+  the caller's context moved on was applied anyway, because nothing could tell "superseded" from
+  "succeeded". `createClientFlight` is now opt-in on both, composed from the tier-0 layer. Reads
+  dedup on `[principal, url]` — **no principal means no sharing**, so the unsafe configuration (one
+  caller joining another's open read across a sign-in or tenant switch) cannot be spelled. A
+  caller-supplied `signal` disqualifies sharing outright rather than refcounting joiners, because
+  not sharing cannot be wrong. **A mutation never joins another mutation, and a fence never aborts a
+  write** — closing a mutation's socket does not un-commit it. A write retries only alongside an
+  `Idempotency-Key`.
+- **`rpc` measured 42,584 B in a browser bundle and is now 14,759 B; `queryClient` 40,412 → 12,755 B.**
+  Two thirds of it was never the typed client: `client.ts` imported `BUILD_ID_HEADER` and
+  `IDEMPOTENCY_HEADER` from `./http`, which is the route projection, so `@ultimat3/http`,
+  `@ultimat3/cache`, `@ultimat3/policy` and the whole invoke runtime rode into every island calling
+  `rpc()` for the sake of two string literals. Both packages now declare honest `sideEffects` arrays
+  and the flight pipeline is `import type`-only at the call site, so it reaches a chunk only when a
+  caller writes `createClientFlight`.
+- **The client pipeline lives in `@ultimat3/core`, once.** It first shipped as a 288-line twin in
+  both typed clients, kept in step by a byte-equality test — which makes drift loud, not absent, and
+  is the defect this release is otherwise about. `client-flight.ts` and `client-wire.ts` are tier 0
+  now (a module importing only tier 0 *is* a tier 0 module), both packages re-export the same
+  objects, and `createClientFlight` from `@ultimat3/action` is `===` the one from `@ultimat3/query`
+  where it used to be a distinct copy. Two further copies of `isJsonObject` went with them.
+- `DB_ERROR_RETRY` and `AI_ERROR_RETRY`: five codes classified `retryable` that rendered
+  `retry: "terminal"` — including `X_DB_SERIALIZATION_FAILURE`, whose own `fix:` line said
+  `withTransaction(fn, { retry: 3 })` while the document beside it told every client not to retry.
+
+### Changed
+
+- **`@ultimat3/ai` retries 408, 409 and 425** in addition to `429` and `>= 500`. Every other 4xx
+  still burns the budget for nothing; those three are transient by construction. Its jittered delay
+  is now rounded rather than floored (≤1 ms), and a policy carrying `NaN` waits 0 instead of
+  producing `setTimeout(NaN)`, which fires immediately — a "backoff" that was a tight spin.
+- **`@ultimat3/db`'s `withTransaction` waits between re-runs** — exponential from 10 ms, capped at
+  500 ms, full jitter, because two callers that just deadlocked are by construction scheduled at the
+  same offset from the same event. **The default is unchanged: `retry` absent or `0` waits nothing,
+  ever**, and nothing waits after the final attempt.
+
+### Fixed
+
+- **`UltimateError.retry` now reads `retryable` on a wire failure whose status says so.**
+  `RemoteActionError`, `RpcFailedError` and `QueryRequestFailedError` previously always rendered
+  `terminal`, because `retryFor` fails closed and no code declared for them — so `--json` told every
+  client not to retry a 503. The status classifies only where nobody declared for the code: an
+  `X_NOT_IMPLEMENTED` behind a 501 stays terminal, because a status that overrode a declaration
+  would have a client hammer a config fault. Observable in `toJSON()` and to anything reading
+  `error.retry`.
+- `docs/idea/14-roadmap.md`'s milestone 2 claimed "a CRUD app driven entirely by the typed client,
+  **no hand-written fetch**". The framework's own generator falsifies it: `rpc()` pulls
+  `@ultimat3/action` into a browser chunk, so
+  `cli/src/templates/resource-form-island.ts` emits a plain `fetch` into every `x g resource` output
+  and both tracked apps do the same. Corrected, with the cost stated.
+- The same page claimed tier 3 local-first "lands in v2 as `persist: true` — a flag, not a rewrite",
+  wrong in both halves: `query()` has never accepted `persist`, and the in-memory half is ~1,000
+  lines already on the client barrel. Only the durable backing is missing.
+- `packages/testing/CLAUDE.md` claimed its micro-DOM was the tree's only one. There are two, for
+  different grammars, and they cannot be merged: `ui` is tier 4 and `testing` is tier 5.
+- `docs/architecture/11-ai-surface.md` still said "a 4xx is never retried".
+
 
 ## 11.1.0 - 2026-08-23
 

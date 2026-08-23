@@ -111,6 +111,7 @@ export type {
 export {
   assertTtl,
   createCacheStack,
+  DEFAULT_LOAD_DEADLINE_MS,
   DEFAULT_TTL_JITTER_FRACTION,
   isExpired,
   nowMs,

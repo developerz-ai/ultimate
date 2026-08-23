@@ -329,7 +329,14 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
     evaluate: (expression) => guard('evaluate', () => init.page.evaluate(expression)),
     screenshot: (options: CaptureOptions) =>
       guard('screenshot', async () => {
-        const shot = await init.page.screenshot({ fullPage: options.fullPage === true });
+        // `fullPage` is OMITTED when a clip is given rather than sent as `false`: the two are
+        // exclusive at the library too, and some builds refuse the pair on truthiness while others
+        // resolve it silently. Sending only what was asked for is the request neither can misread.
+        const shot = await init.page.screenshot(
+          options.clip === undefined
+            ? { fullPage: options.fullPage === true }
+            : { clip: options.clip },
+        );
         // Some builds answer base64 text, some answer bytes. `atob` is the one decoder both a
         // browser and Bun agree on, and it keeps this file free of a Buffer import.
         return typeof shot === 'string'

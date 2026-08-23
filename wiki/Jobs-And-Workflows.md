@@ -145,8 +145,11 @@ export const syncCrm = job({
 | `concurrency.limit` | max simultaneous runs sharing a key | one `x_job_leases` row per **held slot**, keyed `(lease_key, slot)` — the primary key is what serialises two workers reaching for the same slot. A driver with no `LeaseStore` refuses the job at worker start (`X_JOB_CONCURRENCY_UNENFORCEABLE`) rather than capping per process |
 | `rateLimit` | max starts per window per key | token bucket row, checked at claim time |
 | `queue` | named pool; the `worker` role runs one pool per config (`WORKER_QUEUES=default,integrations`) | worker pool sizing, see [Deployment](Deployment) |
-| `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'`, jittered | driver scheduler |
-| terminal failure | after `attempts`, moves to dead-letter with the full step trace | `x jobs retry <id>` replays from the failed step |
+| `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'` | driver scheduler |
+| `retry.jitter` | **equal** jitter — half fixed, half rolled — and `true` by default. Never `full`: a job that has already failed twice must not be handed a near-zero wait | driver scheduler |
+| a **`terminal`** thrown code | stops on the attempt that failed, before `attempts` is reached — the same code run again is the same answer, and the attempts left are a queue slot, a provider bill, or three more wrong passwords at a site that locks the account after three. `lastError` records `— not retried: this code is classified terminal`, so an early stop is never silent | the code's `retry` classification, `registerErrorRetry({ X_YOUR_CODE: 'terminal' })`. An **unclassified** code is unaffected |
+| a **`retry-after`** thrown code | the responder's `meta.retryAfterSeconds` replaces the delay, clamped by `maxDelay` — never the attempt count | same |
+| attempts exhausted | moves to dead-letter with the full step trace | `x jobs retry <id>` replays from the failed step |
 
 A rate-limited or concurrency-blocked job is **deferred, never dropped** — it stays queued with a later `runAt`.
 

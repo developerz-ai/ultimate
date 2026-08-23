@@ -26,6 +26,7 @@ import type { SyncSocket } from './socket';
 import { type Subscriber, SubscriberGate, type SubscriberGateOptions } from './subscriber-gate';
 import { SubscriptionBook, subscriptionKey } from './subscription-book';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
+import type { Scheduler } from './thundering-herd';
 
 export interface LiveQueryRegistryOptions extends SubscriberGateOptions {
   readonly source: ResumeSource;
@@ -40,6 +41,15 @@ export interface LiveQueryRegistryOptions extends SubscriberGateOptions {
    * a `WindowLock` and a fanout target each — until the process dies.
    */
   readonly maxEntries?: number;
+  /**
+   * How long one entry's SHARED snapshot read may hold its slot. Defaults to
+   * `DEFAULT_READ_DEADLINE_MS`. Without it a `definition.snapshot` that never settles pinned the
+   * slot for the life of the process and every later cold subscriber joined a promise nothing
+   * would resolve — one wedged read taking every future subscriber of that query id with it.
+   */
+  readonly readDeadlineMs?: number;
+  /** Injected so that deadline is provable without waiting for one. Production uses `setTimeout`. */
+  readonly schedule?: Scheduler;
 }
 
 /**
@@ -384,7 +394,10 @@ export class LiveQueryRegistry {
         knob: 'maxEntries',
       });
     }
-    const created = createEntry(qid, definition, input, definition.matcher(input));
+    const created = createEntry(qid, definition, input, definition.matcher(input), {
+      readDeadlineMs: this.#options.readDeadlineMs,
+      schedule: this.#options.schedule,
+    });
     this.#entries.set(qid, created);
     return created;
   }

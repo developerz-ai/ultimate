@@ -3,7 +3,9 @@ import {
   declaredErrorRetry,
   describeErrorCode,
   ERROR_DOCS_URL,
+  isRetryableStatus,
   listErrorCodes,
+  RETRYABLE_STATUSES,
   retryFor,
 } from '@ultimat3/core';
 import { nextRetryForError } from '@ultimat3/jobs';
@@ -134,5 +136,59 @@ describe('unit · docs', () => {
       expect(describeErrorCode(code).docs, code).toBe(ERROR_DOCS_URL);
       expect(describeErrorCode(code).title, code).toBe(SCRAPE_ERROR_TITLES[code]);
     }
+  });
+});
+
+// The HTTP leg's per-status override, asserted on the RENDERED error rather than on the instance:
+// `toJSON()` is what `--json`, a job row's `lastError` and the queue's dead-letter record carry, and
+// an assertion on the instance passes while the wire shape says something else.
+describe('unit · the HTTP leg reads core`s ONE retryability table', () => {
+  const policy = { attempts: 5, backoff: 'exponential' } as const;
+
+  const renderedRetry = (status: number): unknown => {
+    const json: unknown = JSON.parse(
+      JSON.stringify(httpFailed('https://api.test/x', status, 'no')),
+    );
+    return (json as { readonly retry: unknown }).retry;
+  };
+
+  // Derived from core's set, never hand-listed: a status core adds later must not need an edit here
+  // to be honoured on this leg — that divergence is the defect this test exists for.
+  test('every status core calls retryable is retryable here too', () => {
+    for (const status of RETRYABLE_STATUSES) {
+      expect(renderedRetry(status), String(status)).toBe('retryable');
+      expect(isRetryableStatus(status), String(status)).toBe(true);
+    }
+  });
+
+  test('408, 409 and 425 keep their attempts — a transient 4xx is not a dead letter', () => {
+    // The three this leg answered `terminal` on while `@ultimat3/cache`, `@ultimat3/mail` and
+    // `@ultimat3/ai` all answered `retryable` for the same status, as of the same commit.
+    for (const status of [408, 409, 425, 429]) {
+      expect(renderedRetry(status), String(status)).toBe('retryable');
+      const decision = nextRetryForError(policy, 1, httpFailed('https://api.test/x', status, 'no'));
+      expect(decision.retry, String(status)).toBe(true);
+      expect(decision.stoppedBy, String(status)).toBeUndefined();
+    }
+  });
+
+  test('a 4xx that is the request`s own fault is still terminal on the attempt that threw it', () => {
+    for (const status of [400, 401, 403, 404, 410, 422, 451]) {
+      expect(renderedRetry(status), String(status)).toBe('terminal');
+      const decision = nextRetryForError(policy, 1, httpFailed('https://api.test/x', status, 'no'));
+      expect(decision.retry, String(status)).toBe(false);
+      expect(decision.stoppedBy, String(status)).toBe('terminal');
+    }
+  });
+
+  test('5xx is retryable whole, and a non-2xx below 400 keeps the code`s registered answer', () => {
+    for (const status of [500, 502, 503, 504, 599]) {
+      expect(renderedRetry(status), String(status)).toBe('retryable');
+    }
+    // A 304 is the reachable sub-400 non-ok (`responseOver`'s `ok` is 200-299, and `fetch` follows
+    // redirects), and no table in the framework classifies it. Left as this code's registered
+    // `retryable` — the override exists to name a PERMANENT 4xx, and an early dead-letter on a
+    // status nobody has characterised is the expensive direction of that guess.
+    expect(renderedRetry(304)).toBe('retryable');
   });
 });

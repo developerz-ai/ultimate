@@ -220,7 +220,9 @@ export const syncCrm = job({
 | `concurrency.limit` | lease-count check at claim: `COUNT(*) WHERE state='running' AND concurrency_key = $k` inside the claim transaction | row is **deferred** — `run_at = now() + jitter`, still queued |
 | `rateLimit` | token bucket row in `x_rate_buckets`, refilled by elapsed time, decremented at claim | deferred with `run_at = bucket.next_refill` |
 | `queue` | named pool; `WORKER_QUEUES=default,integrations` selects pools per replica | a queue with no worker is visible in `x jobs ls --json`, not silently stalled |
-| `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'`, jittered, in the driver scheduler | after `attempts`, dead-letter with the full step trace |
+| `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'`, in the driver scheduler. The curve is `@ultimat3/core`'s `backoffDelay` since 2026-08-23; what stays here is `DurationInput` (`'30s'`), the `DEFAULT_RETRY` fallbacks, and this package's public `jitter: boolean` | after `attempts`, dead-letter with the full step trace |
+| `retry.jitter` | **equal** jitter — half fixed, half rolled — and `true` by default. Never `full`: a job that has already failed twice must not be handed a near-zero wait | a burst of failures retries spread out rather than in lockstep |
+| the thrown code's `retry` classification | `nextRetryForError` (`packages/jobs/src/retry-classification.ts`), read at `execute.ts` before the attempt count | a **`terminal`** code stops on the attempt that failed — the remaining attempts are a queue slot and a provider bill. `retry-after` replaces the delay, clamped by `maxDelay`, never the ceiling. An **unclassified** code takes exactly the path it took before the reader existed |
 | Dead letter | `state='dead'`, steps retained | `x jobs retry <id>` replays **from the failed step**, memo intact |
 
 A limited job is **deferred, never dropped**. Dropping is a data-loss decision disguised as backpressure.

@@ -7,7 +7,7 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | [`00-conventions.md`](./00-conventions.md) | File layout, naming, export surface, LOC ceilings — the rules Biome and `x verify` enforce. |
 | [`01-package-map.md`](./01-package-map.md) | 29 packages, 6 tiers, one reason to change each. What every package owns and must never do. |
 | [`02-boundaries.md`](./02-boundaries.md) | Tier violations are build errors. `scripts/boundaries.ts` resolves the transitive chain and prints it. |
-| [`03-request-lifecycle.md`](./03-request-lifecycle.md) | 18 ordered stages and why each sits where it does. ALS context, so no layer threads `actor`. |
+| [`03-request-lifecycle.md`](./03-request-lifecycle.md) | 14 ordered stages, four phases, and why each sits where it does. ALS context, so no layer threads `actor`. |
 | [`04-error-contract.md`](./04-error-contract.md) | `UltimateError`: one object, three renderings. Every error carries an executable `fix:`. |
 | [`05-type-chain.md`](./05-type-chain.md) | DB column → entity → action → OpenAPI → client → component. Rename a field, count the compile errors. |
 | [`06-data-layer.md`](./06-data-layer.md) | Entities, repos, tenancy. Cursor pagination only. Migrations that cannot lie. |
@@ -24,6 +24,7 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | [`17-uploads.md`](./17-uploads.md) | Signed direct upload: who signs, who verifies, where bytes land, and what sweeps the orphans. |
 | [`18-observer-seam.md`](./18-observer-seam.md) | The two funnels every statement passes through, attribution, and why an uninstalled diagnostic costs production one branch. |
 | [`19-cutting-a-major.md`](./19-cutting-a-major.md) | One `wiki/Upgrading.md` section per major, written when the first breaking change lands. What `CHANGELOG.md` owns, what the wiki owns, and which of the three rules nothing enforces. |
+| [`20-flight-control.md`](./20-flight-control.md) | One backoff curve, one retry executor, one gate, one single-flight, one fence — tier 0. The four engines they replaced, what changed on purpose, and the four adoptions that were refused. |
 
 ## Start here
 
@@ -61,6 +62,7 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | Queues, steps, cron | [`08`](./08-jobs-internals.md) | `jobs`, `time` |
 | Render modes, islands, ISR, cache fanout | [`09`](./09-rendering-internals.md) | `render`, `cache`, `seo`, `pwa` |
 | i18n, theming, timezones, money | [`10`](./10-cross-cutting.md) | `i18n`, `ui`, `time`, `money` |
+| Retry, backoff, concurrency, dedup | [`20`](./20-flight-control.md) | `core` + `jobs`, `realtime`, `ai`, `db`, `cache`, `mail`, `auth` |
 | MCP, prompts, manifest | [`11`](./11-ai-surface.md) | `mcp`, `ai`, `manifest` |
 | Roles, drain, skew | [`13`](./13-topology-runtime.md) | `cli`, `http`, `jobs`, `realtime` |
 | Runners, fixtures, the gate | [`14`](./14-testing-internals.md) | `testing`, `cli` |
@@ -72,7 +74,8 @@ A convention that isn't a build error doesn't exist. What actually fails, and wh
 | Gate | Fails on | Doc |
 |---|---|---|
 | `tsc` | any error; `any` is banned outright | [`05`](./05-type-chain.md) |
-| Biome | bare `Error`, default exports, raw hex, hardcoded strings, dates without a zone | [`00`](./00-conventions.md), [`10`](./10-cross-cutting.md) |
+| Biome | `any`, default exports, non-null assertions, a value-import of a type, an unused import or variable, a floating promise — the eight rules `biome.json` declares on top of the `recommended` preset, plus the formatter. **Not** bare `Error`, raw hex, hardcoded strings or a zoneless date: this row claimed all four until 2026-08-23 and `biome.json` declares no rule for any of them | [`00`](./00-conventions.md), [`04`](./04-error-contract.md), [`10`](./10-cross-cutting.md) |
+| errors | an empty or unrunnable `fix:`, a code with no `wiki/Error-Codes.md` row, a test reporting its verdict with a bare `Error` | [`04`](./04-error-contract.md) |
 | boundaries | tier violations, `site/` → `app/`, routes → DB, services → HTTP | [`02`](./02-boundaries.md) |
 | six test types | any failure; a flake **is** a failure | [`14`](./14-testing-internals.md) |
 | migration drift | schema ≠ migrations ≠ catalog | [`06`](./06-data-layer.md) |
