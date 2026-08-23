@@ -86,6 +86,25 @@ describe('entity facts', () => {
     );
   });
 
+  // Both directions, because `diffInvariants` already states why: "a rule that quietly stopped
+  // being enforced is what a reviewer of a data migration most needs to see." `diffColumns`
+  // implemented only the tightening half, so a column dropping NOT NULL reported nothing at all.
+  test('a column that loses NOT NULL is additive, and reported', () => {
+    const loosened = diff(withColumn('authorId', { nullable: true }));
+    expect(loosened.hasBreaking).toBe(false);
+    const change = loosened.additive.find(
+      (c) => c.path === 'entities.post.columns.authorId.nullable',
+    );
+    expect(change?.detail).toBe('became nullable');
+  });
+
+  test('a column that gains NOT NULL is still breaking', () => {
+    const tightened = diff(withColumn('note', { nullable: false }));
+    expect(
+      tightened.breaking.find((c) => c.path === 'entities.post.columns.note.nullable')?.detail,
+    ).toBe('became NOT NULL');
+  });
+
   test('an unchanged entity reports nothing of its own', () => {
     expect(diff(post()).changes.filter((c) => c.path.startsWith('entities.'))).toEqual([]);
   });

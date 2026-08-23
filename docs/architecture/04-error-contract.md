@@ -11,21 +11,35 @@ throw new UltimateError({
   code: 'X_DB_DRIFT',
   cause: 'table "posts" has column "publish_at" not present in any migration',
   fix: 'x db gen "add publish_at"',
-  docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
 });
 ```
 
-| Field | Required | Contents | Rule |
+Three fields at the throw site. Everything else is resolved from the registry —
+`UltimateErrorInit` in [`packages/core/src/errors.ts`](../../packages/core/src/errors.ts) is the
+declaration, and `UltimateErrorJSON` beside it is what `--json` serialises.
+
+| Field | Where it comes from | Contents | Rule |
 |---|---|---|---|
-| `code` | yes | `X_` + SCREAMING_SNAKE | stable forever once shipped |
-| `cause` | yes | what was observed, with the concrete identifiers | names the table, file, route, key — never "invalid input" |
-| `fix` | yes | **an executable command** or a one-line edit instruction | must be runnable/pasteable as written |
-| `docs` | derived | `https://ultimate.dev/errors/<code>` | generated from `code`; overridable, never hand-typed |
-| `title` | derived | the registry's one-line summary for the code | so every instance of a code reads the same |
-| `data` | no | structured detail: `{ route, field, chain, actual, limit }` | consumed by `--json` and by MCP tools |
-| `httpStatus` | no | default 500; `X_FORBIDDEN` → 403, `X_INPUT_INVALID` → 422 | set in the registry, not at the throw site |
-| `retryable` | no | boolean | drives job retry and client backoff decisions |
-| `source` | auto | package + file + stage | filled from the ALS context |
+| `code` | the throw site, required | `X_` + SCREAMING_SNAKE | stable forever once shipped |
+| `cause` | the throw site, required | what was observed, with the concrete identifiers | names the table, file, route, key — never "invalid input" |
+| `fix` | the throw site, required | **an executable command** or a one-line edit instruction | must be runnable/pasteable as written |
+| `title` | `describeErrorCode(code)` | the registry's one-line summary | so every instance of a code reads the same |
+| `docs` | `describeErrorCode(code)` | `ERROR_DOCS_URL` | **omit it at the throw site.** One URL for every code, not one per code |
+| `retry` | `retryFor(code)`, overridable per throw | `'terminal' \| 'retryable' \| 'retry-after'` | **defaults to `terminal`** — fail closed. Not a boolean |
+| `meta` | the throw site, optional | structured detail: `{ route, field, chain, actual, limit }` | consumed by `--json` and by MCP tools. Rendered through `renderMetaRecord`, so a value that would throw degrades instead |
+| `sourceError` | the throw site, optional | the underlying thrown value this error wraps | never rendered into `cause` — use `renderThrowable` for that |
+| `stack` | `Error` | the JS stack | serialised, printed only under `--verbose` |
+
+**`ERROR_DOCS_URL` is the whole docs story: one constant, one page.** There is no per-code URL
+because there is no per-code **anchor** — codes live in `wiki/Error-Codes.md` as table rows, and a
+row has no fragment to link to, so `#X_DB_DRIFT` would be a second dead declaration rather than a
+fix for the first. `ERROR_DOCS_BASE` and `errorDocsUrl(code)` are deleted; the
+`https://ultimate.dev/errors/<code>` links they built answered **404, host included**, on every
+error the framework ever threw. `As of 2026-08-23`.
+
+**HTTP status is not a field on the error.** `@ultimat3/http` owns the mapping: `registerErrorStatus`
+declares it and `statusFor(code)` resolves it, so a tier-0 error carries no opinion about a
+transport it cannot import. Default 500; `X_FORBIDDEN` → 403, `X_INPUT_INVALID` → 422.
 
 `cause` and `fix` are the two fields that decide whether an agent closes the loop unaided. An error with a vague cause and a `fix` like "check your configuration" is worse than no error — it consumes a turn and teaches nothing.
 
@@ -41,7 +55,7 @@ throw new UltimateError({
 | Ownership | each package declares its own codes in `src/errors.ts` and subclasses `UltimateError` |
 | Borrowing | a package that throws another's code names it in `<PKG>_BORROWED_ERROR_CODES` and titles it nowhere. That line is the machine-readable half: it is how `framework.manifest.json` attributes `X_NOT_IMPLEMENTED` to `core` and not to the eleven packages that throw it |
 | Uniqueness | one code, one meaning, one package. `x verify` fails on a code declared in two packages |
-| Reuse | reuse an existing code rather than minting a near-synonym; add a `rule`/`kind` field in `data` to discriminate (see `X_BOUNDARY_VIOLATION` in [`02-boundaries.md`](./02-boundaries.md)) |
+| Reuse | reuse an existing code rather than minting a near-synonym; add a `rule`/`kind` field in `meta` to discriminate (see `X_BOUNDARY_VIOLATION` in [`02-boundaries.md`](./02-boundaries.md)) |
 
 ## Three renderings, one source
 
@@ -64,44 +78,58 @@ Two-space indent, aligned labels, no stack trace unless `--verbose`. The stack i
 │ cause  table "posts" has column "publish_at" not present   │
 │        in any migration                                    │
 │ fix    x db gen "add publish_at"            [copy]         │
-│ docs   ultimate.dev/errors/X_DB_DRIFT                      │
-│ where  packages/entity/src/drift.ts:64 · stage: boot       │
+│ docs   github.com/developerz-ai/ultimate/wiki/Error-Codes  │
+│ route  GET /posts                                          │
 └────────────────────────────────────────────────────────────┘
 ```
 
-**The identical strings a terminal shows.** The overlay adds a copy button and a source link; it never rewords, summarizes, or prettifies the text. Same words in both places means an agent reading a screenshot and an agent reading stdout reach the same conclusion.
+**The identical strings a terminal shows.** The overlay adds a copy button and a docs link and, when the error came out of a request, the method and path; it never rewords, summarizes, or prettifies the text. The labels are protocol strings, not decoration — [`packages/http/src/overlay.ts`](../../packages/http/src/overlay.ts) says so in its own header. Same words in both places means an agent reading a screenshot and an agent reading stdout reach the same conclusion.
 
 ### `--json`
 
+`UltimateError#toJSON()`, verbatim:
+
 ```json
 {
-  "ok": false,
-  "error": {
-    "code": "X_DB_DRIFT",
-    "title": "schema differs from migrations",
-    "cause": "table \"posts\" has column \"publish_at\" not present in any migration",
-    "fix": "x db gen \"add publish_at\"",
-    "docs": "https://ultimate.dev/errors/X_DB_DRIFT",
-    "retryable": false,
-    "source": { "package": "@ultimat3/entity", "file": "src/drift.ts", "stage": "boot" },
-    "data": { "table": "posts", "column": "publish_at" }
-  }
+  "code": "X_DB_DRIFT",
+  "title": "schema differs from migrations",
+  "cause": "table \"posts\" has column \"publish_at\" not present in any migration",
+  "fix": "x db gen \"add publish_at\"",
+  "docs": "https://github.com/developerz-ai/ultimate/wiki/Error-Codes",
+  "retry": "terminal",
+  "meta": { "table": "posts", "column": "publish_at" },
+  "stack": "…"
 }
 ```
 
-Over HTTP the same object is the problem+json body, with `httpStatus` as the status code and `type` set to `docs`. MCP tool errors carry the same object. One serializer in `core`, four consumers.
+**There is no `source`, `site` or `stage` field on the error**, and no `data` — `meta` is the one
+structured slot. `x errors explain <CODE> --json` does answer a `site: { at, line }`, and that is
+the **CLI** locating a throw site in the tree, not something the thrown error carried:
+
+```sh
+bun run x -- errors explain X_DB_DRIFT --json
+# {"ok":true,"command":"errors","summary":"X_DB_DRIFT — schema differs from migrations",
+#  "data":{"code":"X_DB_DRIFT","cause":"…","fix":"…","docs":"…",
+#          "site":{"at":"@ultimat3/cli/src/drift.ts","line":182}}}
+```
+
+Run it rather than quoting the site: `X_DB_DRIFT` is raised at four call sites and the command
+picks one, so both the file and the line move under an unrelated edit. `As of 2026-08-23`.
+
+Over HTTP the same fields become the problem+json body, with `statusFor(code)` as the status code and RFC-9457 `type` set to `docs`. MCP tool errors carry the same object. One serializer in `core`, four consumers.
 
 ## Adding a code
 
 | # | Step | File |
 |---|---|---|
-| 1 | Confirm no existing code fits (discriminate with `data` if it nearly does) | `packages/*/src/errors.ts` |
-| 2 | Add the code + `title` + `httpStatus` + `retryable` to your package registry | `packages/<pkg>/src/errors.ts` |
+| 1 | Confirm no existing code fits (discriminate with `meta` if it nearly does) | `packages/*/src/errors.ts` |
+| 2 | Add the code + `title` to your package's `registerErrorCodes()` call | `packages/<pkg>/src/errors.ts` |
 | 3 | Write the `fix` as a command you have actually run | same |
-| 4 | Add a test that asserts the code **and** that `fix` is non-empty | `packages/<pkg>/src/errors.test.ts` |
-| 5 | Add the code's row to the error reference — the `errors` step requires it | `wiki/Error-Codes.md` |
-| 6 | If cross-cutting, add a row to the table below | `docs/architecture/04-error-contract.md` |
-| 7 | Verify: uniqueness at registration, `fix` shape and docs coverage in the `errors` step | `x verify` |
+| 4 | Classify it with `registerErrorRetry({ X_YOUR_CODE: 'retryable' })` **only** if it is not terminal — `terminal` is the default and the safe one | same |
+| 5 | Add a test that asserts the code **and** that `fix` is non-empty | `packages/<pkg>/src/errors.test.ts` |
+| 6 | Add the code's row to the error reference — the `errors` step requires it | `wiki/Error-Codes.md` |
+| 7 | If cross-cutting, add a row to the table below | `docs/architecture/04-error-contract.md` |
+| 8 | Verify: uniqueness at registration, `fix` shape and docs coverage in the `errors` step | `x verify` |
 
 ```ts
 // packages/entity/src/errors.ts — one file per package, no codes declared inline

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import type { PushPayload, PushSubscriptionRecord, Translate } from './push';
 import {
   pushSource,
@@ -55,8 +56,22 @@ describe('subscription lifecycle', () => {
 
   test('410 means gone, an elapsed expiry means expired', () => {
     expect(subscriptionState(record, 410)).toBe('gone');
-    expect(subscriptionState(record, 201, 500)).toBe('active');
-    expect(subscriptionState(record, 201, 2_000)).toBe('expired');
+    expect(subscriptionState(record, 201, frozenClock(500))).toBe('active');
+    expect(subscriptionState(record, 201, frozenClock(2_000))).toBe('expired');
+  });
+
+  // This package's CLAUDE.md states `Determinism | no Date.now()` without qualification, and an
+  // injectable default is still the ONE reader of the wall clock in it. Every other "now" in the
+  // framework's tier-4 packages is a `Clock`, so this one is too.
+  test('now arrives as a Clock, and advancing it is what expires a subscription', () => {
+    const clock = frozenClock(999);
+    expect(subscriptionState(record, 201, clock)).toBe('active');
+    clock.advance(1);
+    expect(subscriptionState(record, 201, clock)).toBe('expired');
+  });
+
+  test('a dead subscription is gone whatever the clock says', () => {
+    expect(subscriptionState(record, 404, frozenClock(0))).toBe('gone');
   });
 });
 

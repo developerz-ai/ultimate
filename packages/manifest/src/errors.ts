@@ -28,7 +28,12 @@ registerErrorCodes(
   ),
 );
 
-const docsFor = (code: ManifestErrorCode): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
+// which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
+// `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE ROW,
+// which has no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x
+// answered 404, host included, on every error it has ever thrown; restating the replacement here
+// would be the same constant in eight places waiting to drift again.
 
 /**
  * The committed `x.manifest.json` no longer matches the code. Drift means an agent reading
@@ -40,7 +45,6 @@ export class ManifestDriftError extends UltimateError {
       code: 'X_MANIFEST_DRIFT',
       cause: `${input.path} is stale: ${summarize(input.differences)}`,
       fix: 'x manifest',
-      docs: docsFor('X_MANIFEST_DRIFT'),
     });
   }
 }
@@ -54,7 +58,6 @@ export class ManifestBreakingError extends UltimateError {
         `${input.changes.length} breaking change(s) from ${input.from} to ${input.to} ` +
         `with no major version bump: ${summarize(input.changes)}`,
       fix: 'bump the major version in app.config.ts, or restore the removed contract',
-      docs: docsFor('X_MANIFEST_BREAKING'),
     });
   }
 }
@@ -69,7 +72,6 @@ export class AgentsMdMissingError extends UltimateError {
       code: 'X_AGENTS_MD_MISSING',
       cause: `${input.path} does not exist`,
       fix: `create ${input.path} by hand: stack, commands, conventions. Keep it short; facts live in x.manifest.json`,
-      docs: docsFor('X_AGENTS_MD_MISSING'),
     });
   }
 }
@@ -81,7 +83,6 @@ export class AgentsMdTooLargeError extends UltimateError {
       code: 'X_AGENTS_MD_TOO_LARGE',
       cause: `${input.path} is ${input.bytes}B, over the ${input.maxBytes}B budget`,
       fix: 'move generated facts out of AGENTS.md and let x.manifest.json carry them',
-      docs: docsFor('X_AGENTS_MD_TOO_LARGE'),
     });
   }
 }

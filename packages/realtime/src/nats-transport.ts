@@ -222,7 +222,9 @@ export class NatsTransport implements Transport {
       transport: this.name,
       subject,
       code: isUltimateError(error) ? error.code : undefined,
-      error: error instanceof Error ? error.message : String(error),
+      // `renderThrowable`, never `String(error)`: this is a reporter, and a throwable that fights
+      // being read makes the report the thing that throws.
+      error: renderThrowable(error),
     });
   }
 }

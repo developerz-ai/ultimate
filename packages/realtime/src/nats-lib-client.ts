@@ -14,6 +14,7 @@
 // This header said "every failure leaves here as an `UltimateError`" until 2026-08, which a reader
 // took as a guarantee it never was.
 
+import { renderThrowable } from '@ultimat3/core';
 import { connect, Events, headers, Match, type Msg, type MsgHdrs, type NatsConnection } from 'nats';
 import { TransportUnavailableError } from './errors';
 import {
@@ -57,8 +58,13 @@ const unavailable = (target: NatsTarget, reason: string): TransportUnavailableEr
     reason: `${target.host}:${target.port} — ${reason}`,
   });
 
-const describe = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
+/**
+ * The caught value as text, for the `reason` that becomes an `X_TRANSPORT_UNAVAILABLE`. Core's
+ * total renderer and never `String(error)`: this text is built inside a `catch` block that has
+ * nothing left to answer with, and `String()` raises on a null-prototype throwable — which a
+ * library that is not this framework's may hand over.
+ */
+const describe = (error: unknown): string => renderThrowable(error);
 
 class LibNatsClient implements NatsClient {
   readonly #connection: NatsConnection;

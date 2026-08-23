@@ -34,7 +34,13 @@ export function islandRoutes(source: IslandSource): readonly Route[] {
               error: {
                 code: 'X_ROUTE_NOT_FOUND',
                 cause: `no island chunk is built at ${request.pathname} — the document that asked for it was rendered against an older build`,
-                fix: 'x build --target static --json   # then reload, so the page carries this build’s chunk URLs',
+                // No `x` citation, deliberately — `dev-lock.ts`'s shape. This route is mounted
+                // in exactly two places (`cmd-dev.ts`, `serve.ts`) and NEITHER reads `.x/static`:
+                // in `x dev` the chunks are rebuilt on the watcher tick, and in the container they
+                // were built at boot. `x build --target static` — which is what this said — writes
+                // an export directory neither process serves from, so running it changed nothing
+                // for the only two readers this line has ever had.
+                fix: 'reload the page — this process serves only the chunks it built, and the document holding this URL came from an earlier build',
               },
             },
             { status: 404 },

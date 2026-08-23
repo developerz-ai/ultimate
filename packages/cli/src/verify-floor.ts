@@ -7,7 +7,7 @@
 // all, and `join` builds the host-separator path to it.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { docsFor } from './error-codes';
+import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import type { Finding } from './output';
 import { VERIFY_STEP_NAMES } from './verify-step';
 
@@ -43,8 +43,10 @@ export function parseVerifyFloor(
   try {
     payload = JSON.parse(text);
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    return { steps: [], problems: [`it does not parse as JSON (${reason})`] };
+    // `renderThrowable`, never `error instanceof Error ? error.message : String(error)`: both halves
+    // run on a value this process did not build, and either can throw one line before the guard that
+    // was meant to make the path safe (`metrics-endpoint.ts` states the same rule over `stringField`).
+    return { steps: [], problems: [`it does not parse as JSON (${renderThrowable(error)})`] };
   }
   const steps = asRecord(payload)?.['steps'];
   if (!Array.isArray(steps)) {
@@ -92,7 +94,7 @@ export const vanishedSuiteFinding = (step: string): Finding => ({
   code: 'X_VERIFY_SUITE_VANISHED',
   cause: `${VERIFY_FLOOR_FILE} requires the ${step} step and this run found nothing for it to check`,
   fix: `x verify --json   # restore the ${step} suite, or drop "${step}" from ${VERIFY_FLOOR_FILE} in the commit that says why`,
-  docs: docsFor('X_VERIFY_SUITE_VANISHED'),
+  docs: ERROR_DOCS_URL,
   at: VERIFY_FLOOR_FILE,
 });
 
@@ -111,7 +113,7 @@ export const skippedSuiteFinding = (step: string, skipped: number): Finding => (
   code: 'X_VERIFY_SUITE_VANISHED',
   cause: `${VERIFY_FLOOR_FILE} requires the ${step} step and all ${skipped} test(s) it found skipped themselves, so nothing ran`,
   fix: `x test ${step} --json   # then set what the suite skips without, or drop "${step}" from ${VERIFY_FLOOR_FILE} in the commit that says why`,
-  docs: docsFor('X_VERIFY_SUITE_VANISHED'),
+  docs: ERROR_DOCS_URL,
   at: VERIFY_FLOOR_FILE,
 });
 
@@ -128,6 +130,6 @@ export const floorProblemFindings = (floor: VerifyFloor | undefined): readonly F
     code: 'X_CONFIG_INVALID',
     cause: `${VERIFY_FLOOR_FILE} is not a suite floor: ${problem}`,
     fix: `x verify --json   # then write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps it ran`,
-    docs: docsFor('X_CONFIG_INVALID'),
+    docs: ERROR_DOCS_URL,
     at: VERIFY_FLOOR_FILE,
   }));

@@ -32,7 +32,18 @@ by the CLI, not imported.
 
 - **No nondeterminism.** No timestamp, git sha, hostname, counter, or unsorted iteration.
   `buildManifest` is pure — it must never read a registry, a clock, or the filesystem.
-- Top-level key order in the file is fixed by `KEY_ORDER` in `emit.ts`.
+- Top-level key order in the file is fixed by `KEY_ORDER` in `emit.ts` — `as const satisfies
+  readonly (keyof Manifest)[]` AND walked by `emit.test.ts`, the treatment `ARRAY_SECTIONS` has,
+  because the annotation catches a key that is not on `Manifest` and only the walk catches one that
+  is MISSING. `manifestJson` writes those keys and no others while `contentHash` hashes the whole
+  body, so a 14th field would go into the hash and be dropped from the file — after which
+  `assertNoDrift` convicts the committed manifest as HAND_EDITED, a correct refusal with the wrong
+  diagnosis, about a file nobody touched.
+- **Every author-declared inner list is sorted**, `routes[].revalidateTags` included (`As of
+  2026-08-23`). It was the one collection `buildManifest` left in declaration order, so reordering
+  `revalidate: [tag.b, tag.a]` in a route file churned `buildId` and emitted a
+  `routes.<url>.revalidateTags` change nothing had changed. `jobs[].steps` is the one exception and
+  says so at its own declaration: steps are a sequence, not a set.
 - `buildId` = sha256 of `@ultimat3/core`'s `canonicalJson` over the body — the framework's one
   INJECTIVE form, and the same one every `diff-*.ts` equality is taken over. It was a local
   `JSON.stringify(sortKeys(v))` until 2026-08-22, exported from `index.ts` as `canonical`
@@ -98,7 +109,9 @@ by the CLI, not imported.
 - **The axis is what a change refuses, not how it reads.** Something that rejects input that was
   valid yesterday is breaking (an invariant added, a NOT NULL, a gained permission, a gained
   enforcement site, a lowered `retry.attempts`); something that accepts more is additive and
-  still reported (an invariant dropped, a permission dropped, more attempts). A removal is
+  still reported (an invariant dropped, a permission dropped, more attempts, **a column that lost
+  NOT NULL** — `diffColumns` implemented only the tightening half until 2026-08-23, so a loosened
+  column was reported as nothing at all). A removal is
   breaking on every section, including the two that fail silently: a deleted task never runs
   again and a job whose `queue` moved piles up where no worker is subscribed.
 - **Absence is evidence only where absence has a meaning.** `primaryKey`/`references` absent IS

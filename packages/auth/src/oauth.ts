@@ -4,7 +4,7 @@
 // configs are pure data and live in `oauth-registry.ts`: importing this file performs no network
 // I/O and reads no env.
 
-import { oauthStateInvalid } from './errors';
+import { oauthStateInvalid } from './oauth-errors';
 import { providerFor } from './oauth-registry';
 import { base64Url, randomToken, sha256Bytes, timingSafeEqual } from './tokens';
 

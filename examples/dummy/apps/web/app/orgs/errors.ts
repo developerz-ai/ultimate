@@ -1,5 +1,11 @@
 /** Errors the orgs feature can raise. */
 
+// No `docs:` at any construction site below. `UltimateError` fills it from
+// `describeErrorCode(code).docs`, which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for
+// every code, never one per code, because a code lives on that page in a TABLE ROW and a row has
+// no anchor. The `https://ultimate.dev/errors/<code>` links these classes built until 2026-08-23
+// answered 404, host included, on every error this app has ever thrown.
+
 import { UltimateError } from '@ultimat3/core';
 
 export class OrgNotFound extends UltimateError {
@@ -10,7 +16,6 @@ export class OrgNotFound extends UltimateError {
       fix:
         'sign out and back in so the session carries a live org; ' +
         'in a test, take the org from seed("dev") in scripts/test-setup.ts',
-      docs: 'https://ultimate.dev/errors/X_ORG_NOT_FOUND',
     });
   }
 }

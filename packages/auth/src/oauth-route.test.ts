@@ -9,7 +9,7 @@ import { MemoryAdapter } from './memory-adapter';
 import type { OAuthFetch } from './oauth-exchange';
 import { oauthCallbackPath, oauthStartPath } from './oauth-paths';
 import { registerOAuthProvider } from './oauth-registry';
-import { oauthLogin } from './oauth-route';
+import { oauthLogin, oauthRouteStatus } from './oauth-route';
 
 const NOW = new Date('2026-08-15T12:00:00.000Z');
 const SECRET = 'a'.repeat(32);
@@ -256,5 +256,156 @@ describe('oauthLogin', () => {
     // known exists. The fix is still executable for that branch — it says how to register one.
     expect(String(body['fix'])).not.toContain('acme-internal-sso');
     expect(String(body['fix'])).toContain('registerOAuthProvider');
+  });
+});
+
+/**
+ * The uniform-404 control, made real.
+ *
+ * `defineAuth` defaulted `providers` to `config.providers ?? oauthProviderIds()` — the LIVE
+ * REGISTRY — so nothing was ever "left out" and `assertEnabled`'s second branch could not fire.
+ * Past it, `oauthCredentials` threw `X_ENV_MISSING` and `problem()` published its `cause` and
+ * `fix` with a 500. So `500 = registered, 404 = not`, which is the enumeration oracle the two
+ * branches were collapsed into one answer to prevent — and the 500's cause names the app's own
+ * environment variables to whoever typed the URL.
+ */
+describe('a provider with no credentials is 404, not a 500 naming its env vars', () => {
+  const noCredentials = (): ReturnType<typeof oauthLogin> =>
+    oauthLogin(defineAuth({ adapter, clock: frozenClock(NOW), providers: ['github'] }), {
+      secret: SECRET,
+      baseUrl: 'https://app.test',
+      // No `credentials`, and an env with nothing in it: `oauthCredentials` is the thing that runs.
+      env: {},
+    });
+
+  test('the start leg answers the same 404 an unknown provider gets', async () => {
+    const response = await noCredentials().start.handle(
+      new Request('https://app.test/auth/oauth/github'),
+    );
+    const body = await bodyOf(response);
+
+    expect(response.status).toBe(404);
+    expect(body['code']).toBe('X_OAUTH_PROVIDER_UNKNOWN');
+    // The env var names are the app's configuration and never reach an anonymous caller.
+    expect(JSON.stringify(body)).not.toContain('GITHUB_CLIENT_ID');
+    expect(JSON.stringify(body)).not.toContain('GITHUB_CLIENT_SECRET');
+  });
+
+  test('the callback leg answers it too — one oracle closed on both halves', async () => {
+    const response = await noCredentials().callback.handle(
+      new Request('https://app.test/auth/oauth/github/callback?code=x&state=y'),
+    );
+    expect(response.status).toBe(404);
+    expect((await bodyOf(response))['code']).toBe('X_OAUTH_PROVIDER_UNKNOWN');
+  });
+
+  test('an app that names no providers enables none — the default is [], not the registry', () => {
+    // BREAKING: `providers` defaulted to every registered provider, so an app that declared
+    // nothing had them all on. A capability is declared, never inherited from a global registry
+    // some dependency wrote into.
+    expect(defineAuth({ adapter, clock: frozenClock(NOW) }).providers).toEqual([]);
+  });
+});
+
+/**
+ * Two DIFFERENT leaks of the same shape, and only one of them is `problem()`'s uncoded branch.
+ *
+ *  1. an ADAPTER throwing a bare `Error` mid-callback reaches `problem()` with no code, and
+ *     `publicBody` published `cause` — reproduced: `connect ECONNREFUSED 10.4.2.17:5432
+ *     (postgres://app:hunter2@db.internal/prod)` served as the 502 body to whoever typed the URL;
+ *  2. an injected `OAuthFetch` REJECTING is caught by `postForm` first and becomes a CODED
+ *     `X_OAUTH_EXCHANGE_FAILED` whose cause already carried the rendered value, so it never
+ *     reached branch 1 at all. Same disclosure, one layer earlier, on the leg that carries
+ *     `client_secret`.
+ *
+ * `publicBody`'s own comment says a stack and `meta` must never reach that reader. The field
+ * carrying the message was the exception nobody meant to make, in two places.
+ */
+describe('an internal exception is logged, never published', () => {
+  const SECRETISH = 'connect ECONNREFUSED 10.4.2.17:5432 (postgres://app:hunter2@db.internal/x)';
+
+  /** Drive both legs of a real callback and hand back the body it answered with. */
+  const callbackBody = async (
+    login: ReturnType<typeof oauthLogin>,
+  ): Promise<Record<string, unknown>> => {
+    const start = await login.start.handle(new Request('https://app.test/auth/oauth/github'));
+    const state = new URL(start.headers.get('location') ?? '').searchParams.get('state') ?? '';
+    return bodyOf(
+      await login.callback.handle(
+        new Request(`https://app.test/auth/oauth/github/callback?code=c&state=${state}`, {
+          headers: { cookie: cookiePair(start.headers.getSetCookie()[0] ?? '') },
+        }),
+      ),
+    );
+  };
+
+  test('an adapter throwing a bare Error publishes a fixed sentence, not the throw', async () => {
+    const hostile = new Proxy(adapter, {
+      get(target, prop) {
+        // REJECTED, never `throw`n from the fixture: a bare `Error` handed to the code under
+        // test is legitimate input, but `scripts/test-bare-error.ts` reads a `throw` statement in
+        // a test file as the test stating its own verdict, and a fixture must not spend the
+        // package's ratchet. The value the callback produces is identical either way.
+        if (prop === 'findAccount') return () => Promise.reject(new Error(SECRETISH));
+        const value = Reflect.get(target, prop);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const body = await callbackBody(
+      oauthLogin(defineAuth({ adapter: hostile, clock: frozenClock(NOW), providers: ['github'] }), {
+        credentials,
+        fetch: githubFetch(),
+        secret: SECRET,
+        baseUrl: 'https://app.test',
+      }),
+    );
+
+    expect(body['code']).toBe('X_OAUTH_EXCHANGE_FAILED');
+    const rendered = JSON.stringify(body);
+    expect(rendered).not.toContain('hunter2');
+    expect(rendered).not.toContain('ECONNREFUSED');
+    expect(rendered).not.toContain('10.4.2.17');
+    // Still four fields and still actionable: the `fix:` names where to look.
+    expect(Object.keys(body).sort()).toEqual(['cause', 'code', 'docs', 'fix', 'title']);
+    expect(String(body['fix'])).toContain('UltimateError');
+  });
+
+  test('a fetch that rejects is the same rule one layer earlier, on the secret-carrying leg', async () => {
+    const body = await callbackBody(
+      oauthLogin(auth, {
+        credentials,
+        secret: SECRET,
+        baseUrl: 'https://app.test',
+        // Rejected rather than thrown, for the reason above.
+        fetch: () => Promise.reject(new Error(SECRETISH)),
+      }),
+    );
+
+    expect(body['code']).toBe('X_OAUTH_EXCHANGE_FAILED');
+    const rendered = JSON.stringify(body);
+    expect(rendered).not.toContain('hunter2');
+    expect(rendered).not.toContain('ECONNREFUSED');
+    // The URL and the remedy are framework constants and stay: the failure must remain fixable.
+    expect(String(body['cause'])).toContain('https://github.com/login/oauth/access_token');
+    expect(String(body['fix'])).toContain('curl');
+  });
+});
+
+/**
+ * `OAUTH_ROUTE_STATUS[coded.code] ?? 502` is an index read on a plain object, so `Object.prototype`
+ * answers for four names nobody declared. A code of `toString` yielded a FUNCTION, handed straight
+ * to `ResponseInit.status`.
+ */
+describe('a status is looked up as an OWN key of the table', () => {
+  test('a code that collides with Object.prototype falls back to 502', () => {
+    for (const code of ['toString', 'constructor', 'hasOwnProperty', '__proto__']) {
+      expect(oauthRouteStatus(code)).toBe(502);
+    }
+  });
+
+  test('a declared code still answers its own status', () => {
+    expect(oauthRouteStatus('X_OAUTH_PROVIDER_UNKNOWN')).toBe(404);
+    expect(oauthRouteStatus('X_ACCOUNT_LOCKED')).toBe(429);
+    expect(oauthRouteStatus('X_NEVER_DECLARED')).toBe(502);
   });
 });

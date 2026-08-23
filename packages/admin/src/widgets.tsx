@@ -3,7 +3,7 @@
 // every one of those places — there is no second place to get it wrong.
 
 import { safeUrl } from '@ultimat3/core';
-import { t } from '@ultimat3/i18n';
+import { registeredLocales, t } from '@ultimat3/i18n';
 import {
   Checkbox,
   DateTime,
@@ -261,8 +261,19 @@ function ianaZones(): readonly string[] {
   return intl.supportedValuesOf?.('timeZone') ?? ['UTC'];
 }
 
+/**
+ * The locales THIS APP registered — never a bundled copy, the same rule `ianaZones` above states
+ * one line up for IANA zones.
+ *
+ * It was `['en','es','de','fr','pt','ja']`: an app registering `it` could not pick it, and an app
+ * with only `en` and `fr` was offered four locales every user-facing string of which it renders
+ * `⟦key⟧` for. `@ultimat3/i18n` is tier 1 and already imported here for `t`.
+ *
+ * No fallback, deliberately: an app with no catalog registered has no locale to offer, and
+ * inventing one is the admin declaring something the app did not. `x i18n check` refuses that app.
+ */
 function locales(): readonly string[] {
-  return ['en', 'es', 'de', 'fr', 'pt', 'ja'];
+  return registeredLocales();
 }
 
 export function Widget(input: WidgetInput): JSX.Element {

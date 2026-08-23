@@ -218,4 +218,12 @@ export function fuse(rankings: readonly (readonly SearchHit[])[], rrfK = 60): re
     .sort(byScoreDesc);
 }
 
-const byScoreDesc = (a: SearchHit, b: SearchHit): number => b.score - a.score;
+/**
+ * Score descending, then id ascending — the second key is `pg-vector-sql.ts`'s
+ * `order by f.score desc, d."id" asc`, and the two have to agree or the developer machine and the
+ * deployed app return different pages of the same search. Ties are the COMMON case in RRF: two
+ * documents that swap rank between the dense and the lexical list score identically, and a stable
+ * sort then resolves them by dense-list insertion order, which no SQL engine reproduces.
+ */
+const byScoreDesc = (a: SearchHit, b: SearchHit): number =>
+  b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);

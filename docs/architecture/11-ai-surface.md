@@ -252,6 +252,7 @@ Four members, and the gateway routes by `models.includes(model)`.
 | Retry is exponential with **full jitter** | synchronised retries from N workers reproduce the rate limit they are backing off from |
 | `isRetryable` is `429`, any `>= 500`, `ETIMEDOUT`, `ECONNRESET` | a 4xx is never retried: the same body gets the same rejection and burns the budget |
 | No provider serves the model → `X_AI_PROVIDER_UNAVAILABLE` | listing what each candidate said, or that none serves it |
+| A **locally** raised coded refusal reaches the caller verbatim | `As of 2026-08-23`. `X_AI_KEY_MISSING` and `X_AI_REQUEST_INVALID` are raised before the socket opens, so the same rejection is waiting on every candidate and every attempt — collecting one into `X_AI_PROVIDER_UNAVAILABLE` discarded its runnable `fix:` and answered the same failure differently from `stream`, which never routes through the fallback loop. Only `AiTransportError`, which **is** `X_AI_PROVIDER_UNAVAILABLE`, still collects across candidates ([`packages/ai/src/gateway.ts:205`](../../packages/ai/src/gateway.ts)) |
 
 Two hand-written providers ship — Anthropic Messages and the OpenAI chat-completions **wire format**
 (Azure, vLLM, Ollama, LiteLLM, your own gateway) — and `provider-parity.test.ts` asserts both sides

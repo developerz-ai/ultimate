@@ -5,7 +5,7 @@
 import { existsSync } from 'node:fs';
 import { chmod } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
-import { renderThrowable } from '@ultimat3/core';
+import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import { dedupe } from './cmd-generate';
 import type { CliCommand, CommandContext } from './command';
 import { MissingPositionalError } from './errors';
@@ -195,7 +195,7 @@ export const newCommand: CliCommand = {
             code: 'X_GENERATE_CONFLICT',
             cause: `${target} already exists`,
             fix: `x new ${app.kebab} --force, or choose another name`,
-            docs: 'https://ultimate.dev/errors/X_GENERATE_CONFLICT',
+            docs: ERROR_DOCS_URL,
             at: target,
           },
         ],

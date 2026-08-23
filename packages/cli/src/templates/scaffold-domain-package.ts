@@ -31,6 +31,9 @@ export type Role = (typeof ROLES)[number];
  * Never a bare Error: an agent reading the failure needs the code, the cause and the exact command
  * that resolves it. Adding across currencies is a bug in the caller's data, not a runtime hiccup,
  * so the fix names the conversion that has to happen first.
+ *
+ * No \`docs:\`: \`UltimateError\` resolves the link from the code's registered descriptor, so it has
+ * one home. A per-code URL written here is a page that does not exist.
  */
 export class ${app.pascal}CurrencyMismatchError extends UltimateError {
   constructor(input: { readonly left: string; readonly right: string }) {
@@ -38,7 +41,6 @@ export class ${app.pascal}CurrencyMismatchError extends UltimateError {
       code: '${currencyCode(app)}',
       cause: \`cannot add \${input.left} to \${input.right}: Money is only additive inside one currency\`,
       fix: \`bun test packages/domain/src/index.test.ts   # add() is defined only inside one currency — convert \${input.right} to \${input.left} before calling it\`,
-      docs: 'https://ultimate.dev/errors/${currencyCode(app)}',
     });
   }
 }

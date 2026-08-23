@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resetRegistry as resetActions } from '@ultimat3/action';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
@@ -111,7 +112,7 @@ describe('unit · x manifest', () => {
     // `x verify` reports this exact condition as X_MANIFEST_DRIFT through `assertNoDrift`;
     // X_MANIFEST_STALE is openapi.json's, which drifts on its own.
     expect(result.findings?.map((finding) => finding.code)).toEqual(['X_MANIFEST_DRIFT']);
-    expect(result.findings?.[0]?.docs).toBe('https://ultimate.dev/errors/X_MANIFEST_DRIFT');
+    expect(result.findings?.[0]?.docs).toBe(ERROR_DOCS_URL);
     expect(result.findings?.[0]?.fix).toBe('x manifest');
     expect(result.findings?.[0]?.at).toBe(MANIFEST_FILENAME);
   });

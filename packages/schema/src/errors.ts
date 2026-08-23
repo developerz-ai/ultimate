@@ -23,6 +23,10 @@ const ESCAPES: Readonly<Record<string, string>> = {
   '\b': String.raw`\b`,
   '\f': String.raw`\f`,
 };
+// `ESCAPES[char]` is a computed read on a plain object and is safe by DOMAIN, not by luck: the
+// key is whatever `CONTROL` matched, so it is exactly one control character — and no
+// `Object.prototype` member has a single-character name. Every other computed read in this file
+// goes through `Object.hasOwn`.
 const singleLine = (text: string): string =>
   text.replace(
     CONTROL,
@@ -31,6 +35,18 @@ const singleLine = (text: string): string =>
 
 /** Same well-known symbol `@ultimat3/core` brands with. Keep in sync, never rename. */
 export const ULTIMATE_ERROR_BRAND: unique symbol = Symbol.for('ultimate.error');
+
+/**
+ * The same one URL `@ultimat3/core`'s `ERROR_DOCS_URL` holds. **Keep in sync**, and read the
+ * reason there — briefly: `wiki/` is the only public documentation surface, codes live on that
+ * page in table ROWS, and a table row has no anchor, so there is no per-code URL to build.
+ *
+ * Spelled out rather than imported for the same reason `singleLine` and the brand symbol above
+ * are: `schema` and `core` are both tier 0, so `schema` may not import `core` (imports go DOWN,
+ * never sideways). Neither tier-0 package can check the copy against its source, so the pin
+ * belongs in `@ultimat3/cli` beside `single-line-pin.test.ts` — it is NOT written yet.
+ */
+const ERROR_DOCS_URL = 'https://github.com/developerz-ai/ultimate/wiki/Error-Codes';
 
 export interface SchemaErrorCodeDeclaration {
   readonly title: string;
@@ -100,7 +116,13 @@ export class SchemaError extends Error {
     // A schema cause is the one most likely to carry a hostile string: it describes the value that
     // failed validation, which is the request body.
     const code = singleLine(init.code);
-    const title = singleLine(TITLES[init.code] ?? humanize(init.code));
+    // `Object.hasOwn`, never the read alone: `init.code` is a bare string an app or a provider
+    // chose, so `TITLES['constructor']` answered with the `Object` FUNCTION and `singleLine` then
+    // called `.replace` on it — the error that reports a bad value died reporting it, and the
+    // caller got a `TypeError` in place of its own failure. Same discriminator as
+    // `@ultimat3/action`'s `IRREGULAR[word]`.
+    const declared = Object.hasOwn(TITLES, init.code) ? TITLES[init.code] : undefined;
+    const title = singleLine(declared ?? humanize(init.code));
     const cause = singleLine(init.cause);
     // The cause is in `message` for the reason `UltimateError`'s constructor gives: `message` is
     // the ONLY field a runtime prints when an error escapes uncaught — a worker log, a CI
@@ -112,7 +134,7 @@ export class SchemaError extends Error {
     this.code = code;
     this.title = title;
     this.fix = singleLine(init.fix);
-    this.docs = singleLine(init.docs ?? `https://ultimate.dev/errors/${init.code}`);
+    this.docs = singleLine(init.docs ?? ERROR_DOCS_URL);
     this.meta = init.meta;
   }
 

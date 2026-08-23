@@ -13,8 +13,22 @@ export interface Scorer {
   score(input: { output: string; expected?: string }): Promise<number> | number;
 }
 
-/** Scores outside 0..1 are a scorer bug; clamping keeps one from skewing a whole run's mean. */
-export const clampScore = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
+/**
+ * Scores outside 0..1 are a scorer bug; clamping keeps one from skewing a whole run's mean.
+ *
+ * `NaN` is the case a pair of comparisons cannot express, and it is the dangerous one: both
+ * `n < 0` and `n > 1` are false for it, so it propagated through `mean()` into `EvalResult.score`,
+ * and `regressionsAgainst`'s `now < was - tolerance` is false for `NaN` too — the run reported a
+ * pass over a number that measured nothing. The trigger is ordinary arithmetic in an app's own
+ * scorer: `output.length / expected.length` on a case that declares no `expected`.
+ *
+ * Zero rather than a throw, and rather than a new code: zero is a REGRESSION against any recorded
+ * baseline, so the scorer bug surfaces through `X_EVAL_THRESHOLD`, which already names the case
+ * that produced it. It also makes recording and gating agree — `ULTIMATE_EVAL_RECORD=1` wrote
+ * `"score": null` for a `NaN`, which `parseBaseline` then refuses as `X_EVAL_BASELINE_INVALID`.
+ */
+export const clampScore = (n: number): number =>
+  Number.isFinite(n) ? (n < 0 ? 0 : n > 1 ? 1 : n) : n > 0 ? 1 : 0;
 
 /** Exact match after trimming. The strictest and cheapest scorer; prefer it when it fits. */
 export const exact: Scorer = {
@@ -98,6 +112,10 @@ export function llmJudge(input: {
         maxTokens: input.maxTokens ?? 256,
         ...(input.judge.system !== undefined ? { system: input.judge.system } : {}),
         ...(input.judge.model !== undefined ? { model: input.judge.model } : {}),
+        // The judge prompt's hash is this scorer's NAME, and `contentHash` covers `effort` and
+        // `thinking` — so dropping either measures with a judge the name does not describe.
+        ...(input.judge.effort !== undefined ? { effort: input.judge.effort } : {}),
+        ...(input.judge.thinking !== undefined ? { thinking: input.judge.thinking } : {}),
       });
       // The judge is asked for a bare 0..1; anything else scores 0 rather than guessing.
       const parsed = Number.parseFloat(generated.text.trim());

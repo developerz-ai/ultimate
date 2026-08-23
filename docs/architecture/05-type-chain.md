@@ -161,8 +161,11 @@ const env = defineEnv({
 
 export const config = defineConfig({
   name: 'postly',
-  database: { urlEnv: 'DATABASE_URL', poolSize: 12 },
-  realtime: { enabled: true, tier: 'live-queries', transport: 'nats', urlEnv: 'NATS_URL' },
+  // `DatabaseConfig` is `{ driver, ssl }`. The URL and the pool size are read from the
+  // environment (`DATABASE_URL`, `DATABASE_POOL_MAX`), because a `urlEnv`/`poolSize` key here was
+  // read by nothing and was deleted; an excess key is a `TS2353` at the `typecheck` step.
+  database: { driver: 'postgres', ssl: true },
+  realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' },
 });
 ```
 

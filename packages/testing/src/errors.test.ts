@@ -3,7 +3,7 @@
 // registry actually reflects what TESTING_ERROR_TITLES declares.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
+import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
 import {
   FixtureUnknownError,
   fixtureUnknown,
@@ -48,7 +48,7 @@ describe(testName('unit', 'error code registry'), () => {
 
   test('every testing code documents at its own X_* url', () => {
     for (const code of TESTING_ERROR_CODES) {
-      expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
     }
   });
 });

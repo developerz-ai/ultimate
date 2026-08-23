@@ -3,7 +3,7 @@
 // happens to them once selected — a wrong file list is never a race, and a race is never a
 // selection bug.
 
-import { docsFor } from './error-codes';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
 import type { Finding } from './output';
@@ -51,7 +51,7 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
       // The reproduction has to name every input to the split, or it reruns a different file set:
       // `reproduceFor` is the one place that rule lives, shared with `x test`.
       fix: reproduceFor(shard, { workers: shards.length, type: options.type }),
-      docs: docsFor('X_TEST_SHARD_FAILED'),
+      docs: ERROR_DOCS_URL,
     });
   }
   // Only the failing shards' output: a green 8-way split would otherwise print eight summaries,

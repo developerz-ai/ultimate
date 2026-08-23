@@ -4,6 +4,7 @@
  */
 
 import { durationInvalid, scheduleInvalid } from './errors';
+import { assertLocale } from './locale';
 
 export const MS = 1;
 export const SECOND = 1000;
@@ -112,6 +113,9 @@ export function formatDuration(
   if (!Number.isInteger(maxUnits) || maxUnits < 1) {
     throw scheduleInvalid('maxUnits', maxUnits, 'at least 1');
   }
+  // Screened once, here, rather than at each of the three `Intl` constructions below — and before
+  // any of them, so a malformed tag is one refusal and never a partially built string.
+  const tag = assertLocale(locale);
   let remaining = Math.abs(Math.round(ms));
   const pieces: string[] = [];
 
@@ -121,19 +125,19 @@ export function formatDuration(
     if (count === 0) continue;
     remaining -= count * scale;
     pieces.push(
-      new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: style }).format(count),
+      new Intl.NumberFormat(tag, { style: 'unit', unit, unitDisplay: style }).format(count),
     );
   }
 
   if (pieces.length === 0) {
-    return new Intl.NumberFormat(locale, {
+    return new Intl.NumberFormat(tag, {
       style: 'unit',
       unit: 'second',
       unitDisplay: style,
     }).format(0);
   }
 
-  const joined = new Intl.ListFormat(locale, { style: 'narrow', type: 'unit' }).format(pieces);
+  const joined = new Intl.ListFormat(tag, { style: 'narrow', type: 'unit' }).format(pieces);
   return ms < 0 ? `-${joined}` : joined;
 }
 

@@ -10,6 +10,7 @@ import {
   anonymousActor,
   isUltimateError,
   logger,
+  renderThrowable,
   reportError,
   runWithContext,
   useContext,
@@ -22,6 +23,7 @@ import { eventBus } from './events';
 import type { AnyJobHandle } from './job';
 import type { JobStopReason } from './retry-classification';
 import { nextRetryForError, recordedFailure } from './retry-classification';
+import { createRunSignal } from './run-signal';
 import type { EventLookup, StepRecord } from './steps';
 import { createStepRunner, isStepSuspension } from './steps';
 import { jobRunActor } from './tenant';
@@ -100,7 +102,14 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
   // where every other body does, with no jobs-only parameter to know about. Composed with the
   // caller's signal rather than replacing it: a ctx that was already going away still is.
   const cancel = new AbortController();
-  const signal = AbortSignal.any([callerSignal(options.ctx), cancel.signal]);
+  // `createRunSignal` and never `AbortSignal.any` — the second of the two sites this package's
+  // `CLAUDE.md` states the rule as absolute for. In the worker path `callerSignal` is per-run and
+  // nothing leaks; on `@ultimat3/testing`'s job-fixture path, which calls `executeJob` directly,
+  // the caller's `ctx.signal` may be process-lifetime, and a composite cannot be undone — so every
+  // job a fixture ran left a dependent signal on it for the life of the process. Disposed in the
+  // `finally` at the bottom of the try, beside `cancel.abort`.
+  const runSignal = createRunSignal([callerSignal(options.ctx), cancel.signal]);
+  const signal = runSignal.signal;
   const ctx: Ctx = Object.freeze({
     ...options.ctx,
     signal,
@@ -178,7 +187,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
       });
     }
 
-    const message = error instanceof Error ? error.message : String(error);
+    const message = renderThrowable(error);
     // The ERROR decides too, not only the attempt count. A `terminal` code — a rotated password,
     // a schema mismatch, a permission denial — fails identically on every remaining attempt, so
     // spending them is a queue slot, a provider bill and, at a site that locks an account after
@@ -238,6 +247,9 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     // attempt already owns. The runner fences its writes on this signal. A second `abort()` keeps
     // the first reason, so a timed-out run still reports the timeout, not this.
     cancel.abort(new JobAbortedError({ job: handle.name }));
+    // AFTER the abort, so the runner's fence still sees it: `dispose` stops following the sources,
+    // it never aborts, and the signal keeps whatever state the abort above left it in.
+    runSignal.dispose();
   }
 
   // Only reachable when the BODY succeeded, and settlement is deliberately outside the catch
@@ -287,9 +299,7 @@ function raceTimeout(
         job,
         timeoutMs,
         ended,
-        ...(error === undefined
-          ? {}
-          : { error: error instanceof Error ? error.message : String(error) }),
+        ...(error === undefined ? {} : { error: renderThrowable(error) }),
       });
     };
     work.then(

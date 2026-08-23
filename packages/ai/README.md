@@ -79,6 +79,7 @@ default store at `replicas: 6` is six ledgers of twenty million, which is a budg
 | A control nobody asked for is **omitted**, never defaulted | a default sent as a request is indistinguishable on the wire from one that was declared |
 | A refusal is `X_LLM_REFUSED`, not a schema failure | it is a 200 with no answer in it, and a repair turn buys the same refusal again |
 | The refusal's `alternative` is only ever a **more capable** model | registration order is most-capable-first and `moreCapableThan` walks it upward; retrying a refusal on a weaker model is the one retry that cannot help, so an unbeatable model gets no suggestion at all |
+| A local refusal is never collected into `X_AI_PROVIDER_UNAVAILABLE` | `X_AI_KEY_MISSING` and `X_AI_REQUEST_INVALID` are raised before the request leaves; retrying them across providers burns attempts on the same answer and discards the runnable `fix:`. `generate()` and `stream()` therefore answer the same misconfiguration the same way |
 | Fallback is across **providers serving one model**, never across models | a silent model swap changes what answered, what it cost and which eval baseline the answer belongs to; the gateway stamps `result.provider`, and `llm()` puts it on the span as `llm.provider`, so the fallback that does exist is never silent |
 | The repair turn replays the tool call's arguments, never an empty `text` | an answer through the `respond` tool leaves `text` empty, and an empty text block is a 400 — the repair came back as `X_AI_PROVIDER_UNAVAILABLE` |
 | `reserve()` **debits** the estimate and takes a turn | three concurrent calls otherwise read the same `spent()`, all pass, and all three record against a ceiling only one of them fitted; `record` reconciles and `release` gives it back |
@@ -451,6 +452,12 @@ describeAgents();
 //    mcp: true }]
 ```
 
+**Offered, not yet published, `As of 2026-08-23`.** Nothing in the framework reads it: `describeAgents()`
+lives at tier 4, `@ultimat3/manifest` is tier 4 too, and a sideways import is a build error — so the
+consumer has to be `@ultimat3/cli` at tier 5, and that wiring has not landed. Call it yourself and
+the rows are real; wait for `x manifest` to carry them and you will wait. Same for
+`registeredModels()`.
+
 An agent projects to an `ActionDescriptor` like any other action, and that descriptor knows nothing
 about turns or tools — so "how far can this loop, and what may it call" had no answer outside the
 source. Names are read when you ask, not when the agent was declared: `registerAction` stamps them
@@ -625,7 +632,7 @@ actor comes from the request context, never from the model.
 
 | Code | Meaning |
 |---|---|
-| `X_AI_PROVIDER_UNAVAILABLE` | every provider for the model failed; lists what each said |
+| `X_AI_PROVIDER_UNAVAILABLE` | every provider for the model was unreachable; lists what each said. A TRANSPORT failure only — a coded refusal raised before the socket opens (`X_AI_KEY_MISSING`, `X_AI_REQUEST_INVALID`) reaches the caller as itself, `As of 2026-08-23`, because the same rejection waits on every provider and every attempt and its `fix:` is the whole point of it |
 | `X_AI_BUDGET_EXCEEDED` | refused pre-flight, naming the scope and what remains |
 | `X_AI_GATEWAY_MISSING` | an `llm()` action ran before `configureAi` |
 | `X_AI_PROMPT_VERSION` | version drift, or a render missing a declared variable |

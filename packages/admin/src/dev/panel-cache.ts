@@ -30,10 +30,16 @@ export const cachePanel: DevPanel<CachePanelData> = {
       .catch((): readonly InvalidationFact[] => []);
 
     const busted = new Set(invalidations.flatMap((event) => event.busted));
-    const byKind: Record<string, number> = {};
+    // A `Map`, then `Object.fromEntries` — never `count[key] = (count[key] ?? 0) + 1` on a plain
+    // object. `dep.kind` is a plain `string` in the fact type, so `__proto__` reaches it: the read
+    // answers `Object.prototype` (so `?? 0` never fires) and the write runs the setter, which
+    // re-prototypes the record instead of adding a key and drops the row from the panel. A `Map`
+    // has no prototype chain to consult, and `fromEntries` DEFINES each key rather than assigning.
+    const counts = new Map<string, number>();
     for (const edge of graph) {
-      for (const dep of edge.dependents) byKind[dep.kind] = (byKind[dep.kind] ?? 0) + 1;
+      for (const dep of edge.dependents) counts.set(dep.kind, (counts.get(dep.kind) ?? 0) + 1);
     }
+    const byKind = Object.fromEntries(counts);
 
     return {
       graph,

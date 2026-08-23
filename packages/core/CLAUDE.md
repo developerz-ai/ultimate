@@ -12,6 +12,7 @@ is a change to every package.
 | A value a CALLER supplied | `describeValue()` — shape, never content. `renderCauseValue` is safe against throwing, not against leaking |
 | Reading a caught value | `renderThrowable()` / `isThrownError()` / `stringField()`; never `error.message`, `error instanceof Error` or `typeof error.code === 'string'` directly — the probe throws before the renderer runs |
 | New code | add to `CORE_CODE_TITLES` in `error-codes.ts`, else the title is auto-humanised |
+| Where an error points | `ERROR_DOCS_URL` — one constant, never a per-code URL. `docs:` is omitted at every construction site and resolved from the registry |
 | Time | take a `Clock`; `Date.now()` / `new Date()` only inside `clock.ts` |
 | Context | never thread `ctx` as a parameter — `useContext()` |
 | A value ambient across an `await` | `asyncContext<T>(subject)` from `async-context.ts`, in **every** package — never `new AsyncLocalStorage` |
@@ -276,9 +277,16 @@ in a different trace, which is worse than no span because it looks authoritative
 including the three that open no other socket — `queue_depth` belongs to one of them.
 
 ```bash
-bun test                      # from packages/core
+bun test packages/core/src    # from the REPO ROOT, never from packages/core
 bun run typecheck
 ```
+
+**The root is not a preference.** `bunfig.toml`'s `preload = ["./scripts/test-setup.ts"]` is what
+installs `@ultimat3/testing`'s matchers, and Bun reads `bunfig.toml` from the cwd — so `bun test`
+run inside `packages/core` loads no preload and 17 tests in `secrets.test.ts` die on
+`expect(...).rejects.toBeUltimateError is not a function`, which reads as this package's failure
+and is the shell's. `.github/workflows/ci.yml`'s `package` job spawns `bun test packages/<pkg>`
+with `cwd` at the root for the same reason (`scripts/coverage-gate.ts`).
 
 `markReady()` means **bound**, and readiness means **usable** — two different facts since
 `registerReadinessCheck(name, check)`. `/readyz` is ready only when the state is `ready` AND every
@@ -347,6 +355,18 @@ the caller onto the child as `Actor.onBehalfOf`, so `actorLabel` renders
 the customer's. The non-blank-reason assert is `@ultimat3/entity`'s `crossTenant()` template
 verbatim — two escapes from the framework's default posture should not look like two things. Do
 not add a second impersonation path.
+
+**`ERROR_DOCS_URL` replaced `ERROR_DOCS_BASE` + `errorDocsUrl(code)` `As of 2026-08-23`, and it is
+a breaking change** — it lands in the next major, not in the released line. `https://ultimate.dev/errors/<code>` answered **404**, host included, on every error the
+framework has ever thrown — including the first line a new agent reads (`x --json` →
+`"docs":"https://ultimate.dev/errors/X_CLI_UNKNOWN_COMMAND"`). A dead link in every error is a
+defect under axiom 4, and it is not "not built yet": `wiki/` is the only public documentation
+surface there is. There is no per-code URL because there is no per-code ANCHOR — codes live in
+`wiki/Error-Codes.md` as TABLE ROWS, and a `#X_DB_DRIFT` fragment would be a second dead
+declaration rather than a fix for the first. So the function is gone rather than kept with an
+ignored parameter, and `descriptor()` lost its `code` parameter with it. A package constructing an
+`UltimateError` now OMITS `docs:` entirely and lets the constructor resolve the registered
+descriptor — one URL, one place, instead of the fifteen packages that each spelled the base out.
 
 Every `UltimateError` carries `retry` (`terminal | retryable | retry-after`), **defaulting to
 `terminal`** — fail closed, because a client retrying on `status >= 500` hammers `X_DB_DRIFT` and

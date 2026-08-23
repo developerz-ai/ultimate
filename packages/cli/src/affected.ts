@@ -13,7 +13,6 @@
 // directory is checkout-relative while a caller's scan yields paths relative to its own root.
 import { join, relative } from 'node:path';
 import { singleLine, UltimateError } from '@ultimat3/core';
-import { docsFor } from './error-codes';
 import { BadFlagError } from './errors';
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
@@ -193,7 +192,6 @@ export async function gitRoot(runner: Runner, cwd: string, command: string): Pro
     code: 'X_CLI_UNEXPECTED',
     cause: `x ${command} reads its diff from git and "git rev-parse --show-toplevel" exited ${result.code} in ${cwd}: ${singleLine(execOutput(result))}`,
     fix: `run x ${command} from inside a git checkout — confirm with: git rev-parse --show-toplevel`,
-    docs: docsFor('X_CLI_UNEXPECTED'),
   });
 }
 
@@ -245,7 +243,6 @@ export async function changedFiles(
       code: 'X_CLI_UNEXPECTED',
       cause: `"${failed.command.join(' ')}" exited ${failed.code} in ${options.cwd}: ${singleLine(execOutput(failed))}`,
       fix: `run it yourself to see why: ${failed.command.join(' ')}`,
-      docs: docsFor('X_CLI_UNEXPECTED'),
     });
   }
   return [...new Set(runs.flatMap((run) => paths(run.stdout)))].sort();

@@ -219,7 +219,7 @@ Derived from `bun run scripts/list-workspaces.ts --json` and each package's own 
 | 5 | [`@ultimat3/testing`](packages/testing/README.md) | Test harness: cloned template DBs per worker, frozen clock, sealed network, 6 test types |
 | 6 | [`create-ultimate`](packages/create-ultimate/README.md) | `bunx create-ultimate myapp` — scaffold an Ultimate monorepo |
 
-Tier table, executable: [`scripts/lib/tiers.ts`](scripts/lib/tiers.ts). Declared sideways edges, each earning its line: `realtime → query`, `cli → admin`, `cli → testing`, `create-ultimate → cli`. → [Package map](docs/architecture/01-package-map.md) · [Boundaries](docs/architecture/02-boundaries.md)
+Tier table, executable: [`scripts/lib/tiers.ts`](scripts/lib/tiers.ts). Declared sideways edges, each earning its line — five, `As of 2026-08-23`: `realtime → query`, `cli → admin`, `cli → scraping`, `cli → testing`, `create-ultimate → cli`. → [Package map](docs/architecture/01-package-map.md) · [Boundaries](docs/architecture/02-boundaries.md)
 
 ## What is enforced, not documented
 

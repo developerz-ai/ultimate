@@ -4,7 +4,7 @@
 // would replace `X_MIGRATION_IRREVERSIBLE`'s exact `--allow-destructive` line with `x doctor`.
 
 import { describe, expect, test } from 'bun:test';
-import { UltimateError } from '@ultimat3/core';
+import { ERROR_DOCS_URL, UltimateError } from '@ultimat3/core';
 import { stepFinding } from './db-finding';
 
 describe('stepFinding', () => {
@@ -13,7 +13,6 @@ describe('stepFinding', () => {
       code: 'X_MIGRATION_IRREVERSIBLE',
       cause: '0007_drop_posts drops a column',
       fix: 'x db migrate --allow-destructive',
-      docs: 'https://ultimate.dev/errors/X_MIGRATION_IRREVERSIBLE',
     });
     expect(stepFinding(engine, 'X_DB_MIGRATE_FAILED')).toMatchObject({
       code: 'X_MIGRATION_IRREVERSIBLE',
@@ -28,7 +27,7 @@ describe('stepFinding', () => {
       code: 'X_DB_GEN_FAILED',
       cause: 'Error: connection refused',
       fix: 'x doctor --json',
-      docs: 'https://ultimate.dev/errors/X_DB_GEN_FAILED',
+      docs: ERROR_DOCS_URL,
     });
   });
 

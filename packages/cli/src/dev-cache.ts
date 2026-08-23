@@ -20,7 +20,7 @@ import {
   resetTiers,
 } from '@ultimat3/cache';
 import type { CacheTierName } from '@ultimat3/core';
-import { CACHE_TIERS, defineConfig, logger } from '@ultimat3/core';
+import { CACHE_TIERS, defineConfig, logger, renderThrowable } from '@ultimat3/core';
 import type { Transport, TransportSubscription } from '@ultimat3/realtime/server';
 import { APP_CONFIG_EXPORT } from './app-auth';
 import { APP_CONFIG_FILE } from './app-root';
@@ -187,7 +187,7 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
       void applyBroadcast(payload);
     })
     .catch((error: unknown) => {
-      logger.warn('cache.broadcast.subscribe-failed', { error: messageOf(error) });
+      logger.warn('cache.broadcast.subscribe-failed', { error: broadcastErrorText(error) });
       return undefined;
     });
 
@@ -199,8 +199,15 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   };
 }
 
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : 'unknown error';
+/**
+ * `renderThrowable`, never `instanceof Error` + `.message`. Both run on a value this process did
+ * not build — a `Proxy` traps `getPrototypeOf` and a `message` getter can raise — and a throw here
+ * is inside the handler whose whole job is to keep the subscriber loop alive: losing it ends
+ * cross-instance cache invalidation for the process, quietly, which is the failure the loop's own
+ * `try` exists to prevent. The old form also answered `'unknown error'` for every non-`Error`
+ * throw, so a driver rejecting with a string reported nothing at all.
+ */
+export const broadcastErrorText = (error: unknown): string => renderThrowable(error);
 
 /**
  * A peer's wire tags, applied here. Never throws: a malformed frame or an undeclared tag must not
@@ -214,6 +221,6 @@ async function applyBroadcast(payload: string): Promise<void> {
     const wire = parsed.filter((value): value is string => typeof value === 'string');
     if (wire.length > 0) await receiveInvalidationBroadcast(wire);
   } catch (error) {
-    logger.warn('cache.broadcast.apply-failed', { error: messageOf(error) });
+    logger.warn('cache.broadcast.apply-failed', { error: broadcastErrorText(error) });
   }
 }

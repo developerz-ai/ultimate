@@ -11,7 +11,6 @@ import {
   stringField,
   UltimateError,
 } from '@ultimat3/core';
-import { docsFor } from './error-codes';
 import { neighbouringPort } from './flag-number';
 
 /**
@@ -44,7 +43,6 @@ export class MetricsPortInUseError extends UltimateError {
       code: 'X_PORT_IN_USE',
       cause: `the metrics port ${input.port} is already bound, so no role could open its scrape listener`,
       fix: `METRICS_PORT=${neighbouringPort(input.port)} x dev --json`,
-      docs: docsFor('X_PORT_IN_USE'),
     });
   }
 }

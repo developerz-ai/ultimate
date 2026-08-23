@@ -32,12 +32,17 @@ export const policyPanel: DevPanel<PolicyPanelData> = {
     const permissions = [...new Set(facts.map((fact) => fact.permission))].sort();
 
     const matrix = permissions.map((permission) => {
-      const byActor: Record<string, boolean> = {};
-      for (const actor of actors) {
-        byActor[actor] =
+      // `Object.fromEntries`, never `byActor[actor] = …`: an actor id is a plain string, so
+      // `__proto__` reaches the index, and the assignment ran the prototype's SETTER instead of
+      // adding a key. The cell then vanished from `Object.values(byActor)` and the permission was
+      // reported unreachable — held by nobody — while an actor held it.
+      const byActor = Object.fromEntries(
+        actors.map((actor): readonly [string, boolean] => [
+          actor,
           facts.find((fact) => fact.permission === permission && fact.actorId === actor)?.allowed ??
-          false;
-      }
+            false,
+        ]),
+      );
       return { permission, byActor };
     });
 

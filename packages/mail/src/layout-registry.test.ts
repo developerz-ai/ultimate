@@ -107,17 +107,45 @@ describe('registerLayout', () => {
     expect(cause).toContain(BASE_LAYOUT);
   });
 
-  test('registering the same name again replaces it — last writer wins', () => {
-    const name = 'test-replaced-layout';
+  // "registering the same name again replaces it — last writer wins" USED to be pinned here, and
+  // pinning it is what kept it: a second `registerLayout('base', …)` from any dependency silently
+  // re-shelled every framework mail. The rule is now the opposite and lives in
+  // `a layout name is taken once` at the bottom of this file.
+  test('one registration, one entry — a name never appears twice in the list', () => {
+    const name = 'test-single-entry-layout';
     registerLayout(name, () => '<first/>');
     expect(renderMail(mailWith(name), { name: 'Ada' }, { locale: 'en', tz: 'UTC' }).html).toBe(
       '<first/>',
     );
-    registerLayout(name, () => '<second/>');
-    expect(renderMail(mailWith(name), { name: 'Ada' }, { locale: 'en', tz: 'UTC' }).html).toBe(
-      '<second/>',
-    );
-    // One entry, not two.
     expect(registeredLayouts().filter((entry) => entry === name)).toHaveLength(1);
+  });
+});
+
+/**
+ * `layouts.set(name, layout)` — a second registration silently replaced the first, `base` included,
+ * so an app importing a package that registers `base` had every framework mail re-shelled with no
+ * error anywhere. `defineMail` refuses a duplicate id one file over (`X_MAIL_DUPLICATE`), and
+ * `@ultimat3/mcp`'s `ResourceRegistry.register` states the general rule: one package cannot answer
+ * "this name is taken" two ways.
+ */
+describe('a layout name is taken once', () => {
+  const TAKEN = 'test-taken-layout';
+  const layout = (marker: string) => (): string => `<${marker}/>`;
+
+  test('the first registration wins and the second is refused', () => {
+    registerLayout(TAKEN, layout('first'));
+    expect(() => {
+      registerLayout(TAKEN, layout('second'));
+    }).toThrow(expect.objectContaining({ code: 'X_MAIL_DUPLICATE' }));
+    // Unchanged, not replaced: a refusal that had already mutated the map would be worse than
+    // the overwrite it refused.
+    expect(layoutFor(TAKEN)?.({} as LayoutInput)).toBe('<first/>');
+  });
+
+  test("the framework's own base layout cannot be replaced", () => {
+    expect(() => {
+      registerLayout(BASE_LAYOUT, layout('hijacked'));
+    }).toThrow(expect.objectContaining({ code: 'X_MAIL_DUPLICATE' }));
+    expect(registeredLayouts()).toContain(BASE_LAYOUT);
   });
 });

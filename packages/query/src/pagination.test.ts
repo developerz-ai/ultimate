@@ -323,3 +323,80 @@ describe('a page is bounded whether or not the caller bounded it', () => {
     expect((await paginate(feed, { orgId: ORG }, { first: 10_000, ctx })).rows).toHaveLength(4);
   });
 });
+
+/**
+ * The non-push-down fallback and the order it cuts in. `isAfterKey` breaks a tie on the declared
+ * keys by `id` — it has to, or a cursor names no position — so a source that ordered its rows by
+ * the DECLARED keys alone hands the cut a tie group in an order the cut does not describe, and the
+ * cut lands in the middle of it. Rows then belong to no page at all.
+ */
+describe('the fallback slices in the order its cut assumes', () => {
+  interface Tied {
+    readonly id: string;
+    readonly orgId: string;
+    readonly createdAt: number;
+  }
+
+  // Every row but the first shares one `createdAt`, and the source serves the tie group in an
+  // order no `id` tiebreak would produce — which is exactly what a foreign source is entitled to.
+  const tied: readonly Tied[] = [
+    { id: 'd', orgId: ORG, createdAt: 20 },
+    { id: 'c', orgId: ORG, createdAt: 20 },
+    { id: 'b', orgId: ORG, createdAt: 20 },
+    { id: 'a', orgId: ORG, createdAt: 10 },
+  ];
+
+  /** A hand-written `SqlSource` with no `seek()` — the branch `sliceAfter` exists for. */
+  const withoutPushdown = (org: string): SqlSource<Tied> => {
+    const base = from<Tied>('posts', tied).where({ orgId: org }).orderBy('createdAt');
+    return { toSQL: () => base.toSQL(), execute: () => base.execute(), shape: () => base.shape() };
+  };
+
+  beforeEach(() => {
+    resetRegistry();
+    configureCursorSigning('test-secret');
+  });
+
+  const feed = () =>
+    registerQuery(
+      'tiedFeed',
+      query({
+        input: t.object({ orgId: t.uuid }),
+        policy: can('feed:read'),
+        sql: ({ orgId }) => withoutPushdown(orgId),
+      }),
+    );
+
+  test('every row appears on exactly one page across a tie group', async () => {
+    const target = feed();
+    const seen: string[] = [];
+    let after: string | undefined;
+    for (let page = 0; page < 4; page += 1) {
+      const result = await paginate(
+        target,
+        { orgId: ORG },
+        { first: 2, ctx, ...(after === undefined ? {} : { after }) },
+      );
+      seen.push(...result.rows.map((row) => row.id));
+      if (!result.hasNextPage) break;
+      after = result.endCursor ?? undefined;
+    }
+    // Under the old cut, page one served `a, d`, the cursor named `(20, d)` and `b` and `c`
+    // matched nothing after it — two rows silently absent from the whole listing.
+    expect([...seen].sort()).toEqual(['a', 'b', 'c', 'd']);
+    expect(new Set(seen).size).toBe(seen.length);
+  });
+
+  test('the pages are served in the total order the cursor arithmetic assumes', async () => {
+    const target = feed();
+    const first = await paginate(target, { orgId: ORG }, { first: 2, ctx });
+    expect(first.rows.map((row) => row.id)).toEqual(['a', 'b']);
+    const second = await paginate(
+      target,
+      { orgId: ORG },
+      { first: 2, ctx, after: first.endCursor ?? '' },
+    );
+    expect(second.rows.map((row) => row.id)).toEqual(['c', 'd']);
+    expect(second.hasNextPage).toBe(false);
+  });
+});

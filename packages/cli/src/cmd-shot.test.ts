@@ -367,6 +367,39 @@ describe('unit · which server the picture is of', () => {
     expect(existsSync(join(stateDir, DEV_LOCK_FILE))).toBe(true);
     rmSync(root, { recursive: true, force: true });
   });
+
+  /**
+   * `preflight` CLAIMS the directory — it returns holding it, never having merely looked — so the
+   * caller owes it back on a boot that throws. `cmd-dev.ts` does exactly that and says why: "the
+   * directory is CLAIMED from here down, so a boot that throws has to give it back". `x shot`
+   * discarded the `release` it was handed, so one failed `x shot` in a shell made every later
+   * `x dev` and `x shot` on that checkout refuse with `X_DEV_ALREADY_RUNNING` for a pid that had
+   * already exited.
+   */
+  test('a boot that throws gives the dev lock back, so the next command is not refused', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'x-shot-boot-'));
+    writeFileSync(join(root, 'app.config.ts'), 'export const config = {};\n');
+    const stateDir = resolveServices(root, {}).stateDir;
+
+    let thrown = 'no-throw';
+    try {
+      await devServerFor(root, {}, 0, () => Promise.reject(new TypeError('boot exploded')));
+    } catch (error) {
+      thrown = error instanceof TypeError ? error.message : 'wrong error';
+    }
+
+    // The real failure reaches the caller unchanged — a release must never replace it.
+    expect(thrown).toBe('boot exploded');
+    expect(existsSync(join(stateDir, DEV_LOCK_FILE))).toBe(false);
+
+    // And the proof that matters: the next boot is not refused by a claim nobody holds.
+    const second = await devServerFor(root, {}, 0, () =>
+      Promise.resolve({ url: 'http://localhost:9', stop: () => Promise.resolve() }),
+    );
+    expect(second.origin).toBe('booted');
+    await second.stop();
+    rmSync(root, { recursive: true, force: true });
+  });
 });
 
 describe('unit · x shot refuses before it boots anything', () => {

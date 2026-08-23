@@ -376,3 +376,32 @@ describe('toBucket', () => {
     expect(error?.fix).toContain('{ limit: 5, windowMs: 600_000 }');
   });
 });
+
+describe('the bucket table is indexed, never walked up the prototype chain', () => {
+  const limiterOver = (buckets: Record<string, Bucket>, defaultBucket = 'default') =>
+    createRateLimiter({
+      config: { enabled: true, defaultBucket, scope: 'process', buckets },
+    });
+
+  test('a name every object answers to falls through to the default bucket', async () => {
+    // `buckets` is a plain object literal, so `buckets['constructor']` reads `Object` itself and
+    // the limiter runs on a `Bucket` whose `capacity` is `undefined` — a decision about nothing.
+    const limiter = limiterOver({ default: { capacity: 2, refillPerSecond: 0 } });
+    expect((await limiter.check('k1', 'constructor')).limit).toBe(2);
+    expect((await limiter.check('k2', 'toString')).limit).toBe(2);
+    expect((await limiter.check('k3', '__proto__')).limit).toBe(2);
+  });
+
+  test('and it still runs out, rather than allowing forever', async () => {
+    const limiter = limiterOver({ default: { capacity: 1, refillPerSecond: 0 } });
+    expect((await limiter.check('caller', 'constructor')).allowed).toBe(true);
+    expect((await limiter.check('caller', 'constructor')).allowed).toBe(false);
+  });
+
+  test('a DEFAULT bucket named off the prototype falls through to the shipped floor', async () => {
+    const limiter = limiterOver({}, 'valueOf');
+    expect((await limiter.check('k', 'alsoMissing')).limit).toBe(
+      DEFAULT_RATE_LIMIT.buckets['default']?.capacity ?? 0,
+    );
+  });
+});

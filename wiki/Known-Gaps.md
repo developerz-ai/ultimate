@@ -64,7 +64,7 @@ Each of these is a defect somebody has already argued about, and the reasoning i
 | Two-platform deploy proof | milestone 11, still 🚧. All three build targets, both compose files and the Helm chart ship — and `x new` now writes the chart too. What is not demonstrated is the demo app on Compose **and** on Kubernetes from one image with a rolling restart invisible to connected clients |
 | Multi-node realtime | the forced-restart benchmarks **are** measured, on one `sync` node over `InProcessTransport` — neither run crossed NATS and neither subscribes to a live query, so no cursor, snapshot or gap-repair path is under test. Fanout, throughput and per-node socket capacity across nodes remain targets → [Realtime](Realtime) |
 | `x db studio` | planned. `X_DB_STUDIO_FAILED` is reserved and not thrown; the command exits `X_NOT_IMPLEMENTED` pointing at `x dev` → the `/_x` db panel. Keeping a `bunx drizzle-kit studio` shell-out would have meant a second schema engine for one subcommand |
-| Deferred past 2.0.0 | realtime tier 3 local-first (`persist: true`), the plugin API, multi-region replication, and the Redis/NATS **job** drivers. Each sits behind an interface that ships today and throws `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
+| Deferred, `As of 2026-08` | realtime tier 3 local-first, the plugin API, multi-region replication, and the Redis/NATS **job** drivers. Each sits behind an interface that ships today and throws `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
 
 ## Closed
 

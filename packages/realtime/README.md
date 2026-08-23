@@ -256,7 +256,7 @@ that outlasts the deploy. The design confronts it with exactly two paths and no 
 | **snapshot** | out of window, past `maxLagMs`, or past `reconnectBudget` | one bounded indexed query |
 
 A `LiveCursor` is `lsn` + result-set `digest` + last-seen `ids` + `count`. The digest is
-order-sensitive, so a re-sort is detected; the ids let a delta be re-filtered per subscriber, because
+order-sensitive and server-side (see `cursor.ts#digestOf` for why a client cannot reproduce one); the ids let a delta be re-filtered per subscriber, because
 the retained window stores **pre-policy** patches. `resumeFrom()` picks the path,
 `shouldResnapshot()` explains it, and the budget is a cost model in patch-equivalents
 (`snapshotCost: 250` = "replaying 250 patches costs a snapshot") so the expensive path is *chosen*,
@@ -348,7 +348,9 @@ wire twice by a reconnect that raced an ack.
   would put the write the server refused back on the screen. Idempotent for a key the log does not
   hold, because a denial can arrive twice and tier 2 records nothing to undo.
 - **A delta resume leaves the digest unverified** (`DIGEST_UNVERIFIED`). Only a snapshot re-establishes
-  it. `verifyDigest()` is how a client detects drift and asks for a fresh one.
+  it. The digest is the SERVER's own — nothing on the client reproduces it, and `verifyDigest()`,
+  which claimed otherwise and had no caller, is deleted (2026-08-23). What detects drift on the
+  client is the server's `desynced` mark and the re-snapshot it triggers.
 - **Backpressure drops patch frames.** That is safe *only* because a re-snapshot is cheap: the drop
   is recorded on the socket (`desynced`) and the next delivery re-snapshots rather than diverging.
 - **A dropped CHANNEL frame is not safe, and is not repaired.** A topic has no cursor, no mark and
@@ -504,10 +506,13 @@ wire twice by a reconnect that raced an ack.
   running half: one per change delivered off a relation that is not FULL, so the decisions it
   actually cost are countable rather than silent. A hard refusal at `x verify` time is the
   follow-up.
-- Tier 3's OPFS SQLite store is browser-only and throws until the browser entry ships; `MemoryLocalStore`
-  implements the full journal/rollback/replay semantics today. It holds membership and the journal;
-  the row values are the client's one `IdentityMap`, which is what a browser store has to inherit
-  rather than re-implement.
+- Tier 3's OPFS SQLite store is browser-only, is **not built**, and throws `X_NOT_IMPLEMENTED` on
+  call. `createOpfsLocalStore` is exported from `.` and stays there when it ships — there is no
+  third entry to wait for, and the refusal used to name one (`@ultimat3/realtime/browser`, a
+  subpath `exports` never declared). `MemoryLocalStore`, beside it on `.`, implements the full
+  journal/rollback/replay semantics today and is what the refusal's `fix:` names. It holds
+  membership and the journal; the row values are the client's one `IdentityMap`, which is what a
+  browser store has to inherit rather than re-implement.
 - The identity map is **per client**, in memory, and it is not a query cache: it answers "what is
   row X now", never "have I run this query before". Nothing evicts by time or size — a row lives
   exactly as long as a window or a table holds it.

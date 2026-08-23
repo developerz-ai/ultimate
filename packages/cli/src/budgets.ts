@@ -8,6 +8,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Manifest, RouteFact } from '@ultimat3/manifest';
 import { formatBytes, parseByteBudget } from '@ultimat3/render';
 import type { Finding } from './output';
@@ -75,7 +76,7 @@ function unmeasuredFinding(url: string, declared: string, built: boolean): Findi
     fix: built
       ? `x build --target static --json   # its "unmeasured" list says why ${url} could not be weighed`
       : 'x build --target static --json && x verify --json',
-    docs: 'https://ultimate.dev/errors/X_BUDGET_UNMEASURED',
+    docs: ERROR_DOCS_URL,
     at: url,
   };
 }
@@ -106,7 +107,7 @@ export function checkBudgets(
         code: 'X_BUDGET_EXCEEDED',
         cause: `${route.url} ships ${formatBytes(measured.jsBytes)} of JS over a ${formatBytes(js)} budget via ${chainOf(measured)}`,
         fix: `x routes --json to see the chain, then move the heavy import behind hydrate: 'interaction'`,
-        docs: 'https://ultimate.dev/errors/X_BUDGET_EXCEEDED',
+        docs: ERROR_DOCS_URL,
         at: route.url,
       });
     }
@@ -115,7 +116,7 @@ export function checkBudgets(
         code: 'X_BUDGET_EXCEEDED',
         cause: `${route.url} LCP ${measured.lcpMs}ms over the ${lcp}ms budget`,
         fix: `raise the budget in defineRoute, or switch render to 'isr' to serve it prebuilt`,
-        docs: 'https://ultimate.dev/errors/X_BUDGET_EXCEEDED',
+        docs: ERROR_DOCS_URL,
         at: route.url,
       });
     }

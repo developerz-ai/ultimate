@@ -8,6 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { fixProblem } from './error-contract';
 import { explainErrorCode } from './mcp-errors';
 import { parseArgs } from './parse';
@@ -24,6 +25,18 @@ import {
 const DECLARED = ['unit', 'contract', 'job', 'e2e'] as const;
 
 const parse = (text: string) => parseVerifyFloor(text, DECLARED);
+
+/**
+ * Input that hands the parse's catch a value the process did not build. `JSON.parse` over a string
+ * raises a `SyntaxError` and nothing else, so a hostile throwable only reaches that catch through
+ * the `ToString` the parse performs first — which is where the two tests below inject one.
+ */
+const thrower = (thrown: unknown): string =>
+  ({
+    toString(): string {
+      throw thrown;
+    },
+  }) as unknown as string;
 
 const withRoot = async (
   files: Readonly<Record<string, string>>,
@@ -50,6 +63,37 @@ describe('unit · the suite floor', () => {
   // never read as "nothing required": it reports, and it enforces nothing until it is fixed.
   test('a file that is not JSON enforces nothing and says why', () => {
     const floor = parse('steps: unit');
+    expect(floor.steps).toEqual([]);
+    expect(floor.problems[0]).toContain('does not parse as JSON');
+  });
+
+  // Both halves of `error instanceof Error ? error.message : String(error)` are reads on a value
+  // nothing here constructed, and each dies on its own shape — so one test per shape, or the
+  // half that still works hides the half that does not.
+  test('a null-prototype throwable is described, where String() would have thrown', () => {
+    const refused = Object.create(null) as unknown;
+    // The raw form this replaced, proven to die rather than assumed to.
+    expect(() => String(refused)).toThrow();
+
+    const floor = parse(thrower(refused));
+    expect(floor.steps).toEqual([]);
+    expect(floor.problems[0]).toContain('does not parse as JSON');
+  });
+
+  test('a proxy refusing getPrototypeOf is described, where instanceof would have thrown', () => {
+    // A `TypeError` because that is what the engine itself raises on a proxy invariant violation,
+    // so the trap stands in for a real one rather than for a convenient one.
+    const trapped = new Proxy(
+      {},
+      {
+        getPrototypeOf: (): never => {
+          throw new TypeError('this proxy answers no prototype');
+        },
+      },
+    );
+    expect(() => trapped instanceof Error).toThrow();
+
+    const floor = parse(thrower(trapped));
     expect(floor.steps).toEqual([]);
     expect(floor.problems[0]).toContain('does not parse as JSON');
   });
@@ -126,7 +170,7 @@ describe('unit · the suite floor', () => {
       expect(finding.code).toBe('X_VERIFY_SUITE_VANISHED');
       expect(finding.cause).toContain('job');
       expect(finding.fix).toContain(VERIFY_FLOOR_FILE);
-      expect(finding.docs).toBe('https://ultimate.dev/errors/X_VERIFY_SUITE_VANISHED');
+      expect(finding.docs).toBe(ERROR_DOCS_URL);
     });
 
     // "Runnable as written" is decided against this build, not by shape: everything before the `#`

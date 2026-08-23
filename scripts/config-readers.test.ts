@@ -9,15 +9,18 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  AMBIGUOUS_LIMIT,
   checkConfigReaders,
   configLeaves,
   configReaderFindingFor,
   configReaderGaps,
   configReaderInput,
+  owningPackage,
   readPattern,
 } from './config-readers';
 import {
   applyConfigReaderUnpin,
+  CONFIG_AMBIGUOUS_PINS,
   CONFIG_PINS_FILE,
   CONFIG_READER_PINS,
 } from './lib/config-reader-pins';
@@ -46,13 +49,15 @@ describe('unit · every AppConfig leaf key is derived, never listed', () => {
     expect(configLeaves(declaration)).toEqual(['name', 'roles', 'ai.mcp.expose']);
   });
 
-  test('and the real declaration yields twenty-eight, ai.mcp.path among them', () => {
+  test('and the real declaration yields twenty-seven, ai.mcp.path among them', () => {
     expect(input.leaves).toContain('ai.mcp.path');
     expect(input.leaves).toContain('jobs.visibilityTimeoutMs');
     // A vacuity FLOOR, not the surface: it says the scan reached the real `config.ts` rather than
-    // an empty parse. Thirty until `cache.driver` and `cache.urlEnv` were deleted, so it moves
-    // DOWN with a deleted key and never with an added one.
-    expect(input.leaves.length).toBeGreaterThanOrEqual(28);
+    // an empty parse. Thirty until `cache.driver` and `cache.urlEnv` were deleted, twenty-eight
+    // until `realtime.tier` went the same way — a key this rule reported as having no reader at
+    // all once `ambiguityOf` could see past nineteen bare-name collisions. It moves DOWN with a
+    // deleted key and never with an added one.
+    expect(input.leaves.length).toBeGreaterThanOrEqual(27);
   });
 
   test('a declaration this cannot parse is UNSCANNED, never a wired config', () => {
@@ -78,6 +83,112 @@ describe('unit · what counts as a read', () => {
   });
 });
 
+describe('unit · nineteen readers is the alarm, not the all-clear', () => {
+  const noisy = (count: number, key: string) =>
+    Array.from({ length: count }, (_at, index) => ({
+      path: `packages/cache/src/file-${String(index)}.ts`,
+      text: `const t = row.${key};`,
+    }));
+
+  test('a bare name matching more than the limit, with none in its own package, is reported', () => {
+    const gaps = checkConfigReaders({
+      leaves: ['realtime.tier'],
+      files: noisy(AMBIGUOUS_LIMIT + 1, 'tier'),
+      pins: {},
+    });
+    expect(gaps.map((gap) => gap.kind)).toEqual(['ambiguous']);
+    const finding = configReaderFindingFor(gaps[0] as never);
+    expect(finding.code).toBe('X_CONFIG_KEY_READER_AMBIGUOUS');
+    expect(finding.cause).toContain('packages/realtime/');
+    expect(finding.fix).toContain('CONFIG_AMBIGUOUS_PINS');
+  });
+
+  test('one hit inside the section own package settles it, however loud the rest', () => {
+    const gaps = checkConfigReaders({
+      leaves: ['realtime.tier'],
+      files: [
+        ...noisy(40, 'tier'),
+        { path: 'packages/realtime/src/socket.ts', text: 'const t = cfg.tier;' },
+      ],
+      pins: {},
+    });
+    expect(gaps).toEqual([]);
+  });
+
+  test('the qualified <section>.<key> spelt anywhere settles it too', () => {
+    const gaps = checkConfigReaders({
+      leaves: ['realtime.tier'],
+      files: [
+        ...noisy(40, 'tier'),
+        { path: 'packages/cli/src/boot.ts', text: 'const t = config.realtime.tier;' },
+      ],
+      pins: {},
+    });
+    expect(gaps).toEqual([]);
+  });
+
+  test('at or below the limit the old looseness stands — a narrow name is still evidence', () => {
+    expect(
+      checkConfigReaders({
+        leaves: ['realtime.tier'],
+        files: noisy(AMBIGUOUS_LIMIT, 'tier'),
+        pins: {},
+      }),
+    ).toEqual([]);
+  });
+
+  test('a top-level leaf has no section to qualify, and is never reported ambiguous', () => {
+    expect(checkConfigReaders({ leaves: ['name'], files: noisy(200, 'name'), pins: {} })).toEqual(
+      [],
+    );
+  });
+
+  test('a section whose package is named differently resolves through SECTION_PACKAGE', () => {
+    expect(owningPackage('database.driver')).toBe('db');
+    expect(owningPackage('theme.tokens')).toBe('ui');
+    expect(owningPackage('ai.mcp.path')).toBe('mcp');
+    expect(owningPackage('name')).toBeUndefined();
+  });
+
+  /**
+   * The rule switches itself off for any section whose owner resolves to a directory that is not
+   * there — silently, and for every key in it. Asserted against the real tree so a package rename
+   * is a failing test rather than a check that quietly stops asking.
+   */
+  test('every section this tree declares resolves to a real package directory', () => {
+    const owners = new Set(
+      input.leaves.map((leaf) => owningPackage(leaf)).filter((one) => one !== undefined),
+    );
+    expect(owners.size).toBeGreaterThan(4);
+    for (const owner of owners) {
+      expect(input.files.some((file) => file.path.startsWith(`packages/${owner}/`))).toBe(true);
+    }
+  });
+
+  test('a pin whose doubt is settled is stale, with its own cause and the unpin command', () => {
+    const gaps = checkConfigReaders({
+      leaves: ['realtime.tier'],
+      files: [{ path: 'packages/realtime/src/socket.ts', text: 'const t = cfg.tier;' }],
+      pins: {},
+      ambiguousPins: { 'realtime.tier': 'the bare name matches 19 files' },
+    });
+    expect(gaps.map((gap) => [gap.kind, gap.stale])).toEqual([['stale', 'now-qualified']]);
+    expect(configReaderFindingFor(gaps[0] as never).fix).toBe(
+      'bun run scripts/config-readers.ts --unpin realtime.tier',
+    );
+  });
+
+  test('an ambiguity pin for a key AppConfig no longer declares is stale too', () => {
+    const gaps = checkConfigReaders({
+      leaves: ['realtime.transport'],
+      files: [{ path: 'packages/realtime/src/socket.ts', text: 'const t = cfg.transport;' }],
+      pins: {},
+      ambiguousPins: { 'realtime.tier': 'deleted with the key it excused' },
+    });
+    expect(gaps.map((gap) => [gap.leaf, gap.stale])).toEqual([['realtime.tier', 'key-deleted']]);
+  });
+});
+
 describe('unit · the ratchet', () => {
   /**
    * The four this tree reds on with the pins removed, spelled out. It was five: `cache.urlEnv` was
@@ -87,7 +198,9 @@ describe('unit · the ratchet', () => {
    * pinned, which is what a ratchet that may only shrink looks like from one release to the next.
    */
   test('unpinned, this tree reports exactly the four keys nothing in packages/*/src reads', () => {
-    const gaps = checkConfigReaders({ ...input, pins: {} });
+    const gaps = checkConfigReaders({ ...input, pins: {}, ambiguousPins: {} }).filter(
+      (gap) => gap.kind === 'unread',
+    );
     expect(gaps.map((gap) => gap.leaf).sort()).toEqual([
       'defaultCurrency',
       'defaultTimeZone',
@@ -105,6 +218,13 @@ describe('unit · the ratchet', () => {
       'realtime.urlEnv',
       'theme.defaultMode',
     ]);
+  });
+
+  test('the ambiguity pins are exactly this tree reds, with nothing spare', () => {
+    const gaps = checkConfigReaders({ ...input, pins: {}, ambiguousPins: {} }).filter(
+      (gap) => gap.kind === 'ambiguous',
+    );
+    expect(gaps.map((gap) => gap.leaf).sort()).toEqual(Object.keys(CONFIG_AMBIGUOUS_PINS).sort());
   });
 
   test('every pin carries a sentence naming a reader — a blank one is a waiver', () => {

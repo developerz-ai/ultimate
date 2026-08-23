@@ -3,7 +3,12 @@
 // humanised fallback — so only a test can tell "registered" from "silently degraded".
 
 import { describe, expect, test } from 'bun:test';
-import { type CoreErrorCode, describeErrorCode, hasErrorCode } from '../error-codes';
+import {
+  type CoreErrorCode,
+  describeErrorCode,
+  ERROR_DOCS_URL,
+  hasErrorCode,
+} from '../error-codes';
 import { UltimateError } from '../errors';
 import {
   ImageDecodeFailedError,
@@ -34,7 +39,7 @@ describe('registration', () => {
   });
 
   test.each(CODES)('%s has a docs URL', (code) => {
-    expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
+    expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
   });
 });
 
@@ -90,7 +95,7 @@ describe('every image error', () => {
       title: 'the built-in image pipeline cannot read or write this format',
       cause: 'encoding webp is not built in',
       fix: 'request png or jpeg',
-      docs: 'https://ultimate.dev/errors/X_IMAGE_UNSUPPORTED',
+      docs: ERROR_DOCS_URL,
     });
   });
 });

@@ -5,7 +5,7 @@
 
 import { singleLine, stringField } from '@ultimat3/core';
 import { formatIssues } from '@ultimat3/schema';
-import { auditToolCall, outcomeForCode } from './audit';
+import { auditToolCall, outcomeForCode, outcomeForResult } from './audit';
 import { McpScopeDeniedError } from './errors';
 import type { AnyMcpTool, McpCaller, McpToolResult, McpVerbClass, ToolListEntry } from './registry';
 import { ToolRegistry } from './registry';
@@ -202,12 +202,16 @@ export class McpServer {
       return errorResponse(id, INTERNAL_ERROR, `tool "${name}" failed unexpectedly`);
     }
 
-    // A tool may answer `isError` itself (admin renders its own denial): still outcome 3.
+    // A tool may answer `isError` itself (admin renders its own denial). Outcome 3 unless it
+    // NAMED the code it refused with, in which case the same classifier a thrown error goes
+    // through decides — a tool's own argument check is not a denial a prober drove.
     auditToolCall({
       tool: name,
-      outcome: result.isError === true ? 'policy-denied' : 'ok',
+      outcome: outcomeForResult(result),
       caller,
+      ...(result.code === undefined ? {} : { code: result.code }),
     });
+    // `code` is audit-only and never reaches the wire: it is already inside the rendered body.
     const payload: Record<string, unknown> = { content: result.content };
     if (result.isError === true) payload['isError'] = true;
     return resultResponse(id, payload);

@@ -3,7 +3,14 @@
 // Content type, etag and user metadata live in a sidecar under `.meta/`: a POSIX file has
 // nowhere to keep them, and `get` must round-trip exactly what `put` was handed.
 
-import { type Clock, isLocal, resolveEnvironment, stringField, systemClock } from '@ultimat3/core';
+import {
+  type Clock,
+  isLocal,
+  type ResolveEnvironmentOptions,
+  resolveEnvironment,
+  stringField,
+  systemClock,
+} from '@ultimat3/core';
 import {
   DEFAULT_CONTENT_TYPE,
   etagOf,
@@ -52,9 +59,17 @@ export const STORAGE_SIGNING_SECRET_KEY = 'STORAGE_SIGNING_SECRET';
  * Reads the environment, not a driver instance: this is the same question `x doctor` asks about
  * the cursor secret, and a disk handed an explicit `signingSecret` in `app.config.ts` never
  * consults the variable at all.
+ *
+ * `env` is core's own slot, so this half of the guard reads the SAME table its other half does:
+ * `dev-runtime.ts` asks `!isLocal({ env }) && usesDevStorageSecret({ env })`, and an embedding
+ * caller (`serveApp({ env })`, a test fixture) whose `env` is not `process.env` used to get one
+ * answer about the boot and one about the process — for the decision of whether a disk may be
+ * signed with the published development key. Defaulted to `process.env`, so a bare call is
+ * unchanged.
  */
-export function usesDevStorageSecret(): boolean {
-  const configured = process.env[STORAGE_SIGNING_SECRET_KEY];
+export function usesDevStorageSecret(options?: Pick<ResolveEnvironmentOptions, 'env'>): boolean {
+  const source = options?.env ?? (process.env as Record<string, string | undefined>);
+  const configured = source[STORAGE_SIGNING_SECRET_KEY];
   return configured === undefined || configured === '' || configured === DEV_SIGNING_SECRET;
 }
 
@@ -66,6 +81,21 @@ export interface LocalDriverOptions {
   /** Route prefix the dev server serves signed URLs from. */
   readonly baseUrl?: string | undefined;
   readonly clock?: Clock | undefined;
+  /**
+   * The environment table this DISK belongs to — the boot's, which is not always the process's.
+   * Core's own slot (`ResolveEnvironmentOptions['env']`), narrowed to that one field because the
+   * `fallback` beside it is a question this constructor never asks.
+   *
+   * It exists because the guard and the thing it guards have to read one table. `x doctor` and
+   * `dev-runtime.ts` ask `!isLocal({ env }) && usesDevStorageSecret({ env })` about the boot; the
+   * constructor below is what actually decides whether this disk signs with the published
+   * development key, and while it read `process.env` an embedding caller (`serveApp({ env })`, a
+   * test fixture) got the verdict from one table and the behaviour from another — in the
+   * dangerous direction, a production boot signing with a key published in this repo.
+   *
+   * Defaults to `process.env`, so a bare `localDriver({ root })` is unchanged.
+   */
+  readonly env?: ResolveEnvironmentOptions['env'];
   /**
    * Ceiling on ONE server-side `put()`, because `put()` buffers the whole body. Defaults to the
    * upload policy's ceiling — the same number for the same fact. The dev disk enforces it for
@@ -143,12 +173,17 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
   // the first upload.
   // The published literal counts as no secret at all, whichever way it arrives: an env var or an
   // `app.config.ts` that pasted it in signs exactly as weakly as the fallback does.
-  const supplied = options.signingSecret ?? process.env[STORAGE_SIGNING_SECRET_KEY];
+  // One table for all three reads — the secret, the environment test and the environment the
+  // refusal names. Splitting them is how the guard and the disk came to answer about two
+  // different processes.
+  const env = options.env ?? (process.env as Record<string, string | undefined>);
+  const supplied = options.signingSecret ?? env[STORAGE_SIGNING_SECRET_KEY];
   const configured =
     supplied === undefined || supplied === '' || supplied === DEV_SIGNING_SECRET
       ? undefined
       : supplied;
-  if (configured === undefined && !isLocal()) throw signingSecretMissing(resolveEnvironment());
+  if (configured === undefined && !isLocal({ env }))
+    throw signingSecretMissing(resolveEnvironment({ env }));
   const secret = configured ?? DEV_SIGNING_SECRET;
 
   const filePath = (key: string): string => `${root}/${key}`;

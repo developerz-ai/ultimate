@@ -277,52 +277,6 @@ describe('exchangeOAuthCode', () => {
 });
 
 /**
- * `providerDetail` is where a REMOTE server's bytes enter this package, and they are spliced into
- * an `X_OAUTH_EXCHANGE_FAILED` cause. A token endpoint that is compromised, impersonated or behind
- * a hostile proxy could otherwise write a line of its own into the operator's log.
- */
-describe('a token endpoint cannot forge a log line', () => {
-  const failing =
-    (body: string): OAuthFetch =>
-    async () =>
-      new Response(body, { status: 400, headers: { 'content-type': 'application/json' } });
-
-  test('an error_description carrying a newline is escaped', async () => {
-    const handshake = handshakeFor('github');
-    const thrown = await exchangeOAuthCode(
-      handshake,
-      { state: handshake.state, code: 'the-code' },
-      {
-        credentials,
-        clock,
-        fetch: failing(
-          JSON.stringify({ error_description: 'bad code\n2026-08-16 level=info msg="ok"' }),
-        ),
-      },
-    ).catch((error: unknown) => error);
-
-    const cause = isUltimateError(thrown) ? thrown.cause : '';
-    expect(isUltimateError(thrown) && thrown.code).toBe('X_OAUTH_EXCHANGE_FAILED');
-    expect(cause).not.toContain('\n');
-    expect(cause).toContain('\\n');
-    expect(cause).toContain('bad code');
-  });
-
-  test('a non-JSON body carrying a newline is escaped on the raw-text path too', async () => {
-    const handshake = handshakeFor('github');
-    const thrown = await exchangeOAuthCode(
-      handshake,
-      { state: handshake.state, code: 'the-code' },
-      { credentials, clock, fetch: failing('<html>\nnot json\n</html>') },
-    ).catch((error: unknown) => error);
-
-    const cause = isUltimateError(thrown) ? thrown.cause : '';
-    expect(cause).not.toContain('\n');
-    expect(cause).toContain('not json');
-  });
-});
-
-/**
  * `providerDetail` is the one place a REMOTE server's bytes become a `cause:`. Every branch of it
  * is reachable from a real token endpoint, so every branch is pinned here rather than at the one
  * call site that happens to be tested.

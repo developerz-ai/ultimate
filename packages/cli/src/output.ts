@@ -2,7 +2,7 @@
 // and the JSON renderer are projections of it, so `--json` can never drift from the terminal
 // output (axiom 4). The human renderer owns the canonical 3-line error format.
 
-import { renderThrowable, singleLine, stringField } from '@ultimat3/core';
+import { ERROR_DOCS_URL, renderThrowable, singleLine, stringField } from '@ultimat3/core';
 import { msg } from './messages';
 
 export interface Finding {
@@ -107,7 +107,7 @@ export function findingFrom(value: unknown): Finding {
     code: 'X_CLI_UNEXPECTED',
     cause: renderThrowable(value),
     fix: 'x doctor --json',
-    docs: 'https://ultimate.dev/errors/X_CLI_UNEXPECTED',
+    docs: ERROR_DOCS_URL,
   };
 }
 

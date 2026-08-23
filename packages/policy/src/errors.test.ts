@@ -4,7 +4,15 @@
 // visible from the cause, which is why `message` alone is never the assertion.
 
 import { describe, expect, test } from 'bun:test';
-import { forbidden, permissionUnknown } from './errors';
+import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
+import {
+  forbidden,
+  POLICY_ERROR_CODES,
+  POLICY_ERROR_TITLES,
+  permissionUnknown,
+  policyMissing,
+  roleRedefined,
+} from './errors';
 import { allow, and, can, deny, not, or } from './policy';
 
 describe('forbidden()', () => {
@@ -78,5 +86,32 @@ describe('permissionUnknown()', () => {
     expect(error.cause).toContain('"billing:wirte"');
     expect(error.cause).toContain('3 known');
     expect(error.cause).not.toContain('post:publish');
+  });
+});
+
+// `PolicyError` passes no `docs:`, so the link is whatever the registry resolved: one page for
+// every code, declared once in `@ultimat3/core`. Pinned against the constant and never a literal —
+// a hand-copied URL is how the dead `https://ultimate.dev/errors/<code>` host survived every suite
+// in the tree, with the code interpolated into a fragment no page has ever had an anchor for.
+describe('docs', () => {
+  test('a constructed policy error points at the one page, never a per-code URL', () => {
+    const errors = [
+      forbidden('post:publish', 'no'),
+      policyMissing('publishPost'),
+      roleRedefined('admin', 'a.ts', 'b.ts'),
+      permissionUnknown('billing:write', ['post:publish']),
+    ];
+    for (const error of errors) {
+      expect(error.docs).toBe(ERROR_DOCS_URL);
+      expect(error.docs).not.toContain(error.code);
+    }
+  });
+
+  test('and every owned code is registered with its title and that same link', () => {
+    for (const code of POLICY_ERROR_CODES) {
+      expect(hasErrorCode(code)).toBe(true);
+      expect(describeErrorCode(code).title).toBe(POLICY_ERROR_TITLES[code]);
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
+    }
   });
 });

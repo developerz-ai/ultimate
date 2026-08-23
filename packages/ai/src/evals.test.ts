@@ -7,7 +7,9 @@ import { RECORD_ENV, writeBaseline } from './eval-baseline';
 import { defineEval, describeEvals, promptsWithoutEvals, resetEvals } from './evals';
 import { createGateway } from './gateway';
 import { definePrompt, resetPrompts } from './prompt';
+import type { GenerateRequest, Provider } from './provider';
 import { EchoProvider } from './provider';
+import type { Scorer } from './scorers';
 import { exact } from './scorers';
 
 const temporary: string[] = [];
@@ -150,6 +152,96 @@ describe('unit · the gate is the drop, not the absolute score', () => {
     expect(result.regressions).toEqual([{ case: 'bad', baseline: 1, score: 0 }]);
     expect(result.passed).toBe(false);
     await expect(evaluation.assert(gateway)).rejects.toMatchObject({ code: 'X_EVAL_THRESHOLD' });
+  });
+});
+
+// The scorer is an APP's function, so its arithmetic is not the framework's to trust. A `NaN`
+// escaping `clampScore` propagated through `mean()` into `EvalResult.score`, and every comparison
+// in `regressionsAgainst` is false for `NaN` — so the gate reported `passed: true` over a run that
+// measured nothing, which is the one outcome an eval exists to prevent.
+describe('unit · a scorer that answers NaN cannot report a pass', () => {
+  /** The ordinary trigger: a ratio whose denominator a case is allowed to make zero. */
+  const ratio: Scorer = {
+    name: 'length-ratio',
+    score: ({ output, expected }) => output.length / (expected ?? '').length,
+  };
+
+  test('a non-finite case score fails against a recorded baseline', async () => {
+    const prompt = classify();
+    // The model answered nothing for a case that declares no `expected` — 0 / 0.
+    const gateway = gatewayWith({ 'Classify: great product': '' });
+    const baseline = await recorded({
+      eval: 'ratio',
+      prompt: 'classify-sentiment@1.0.0',
+      promptHash: 'older',
+      score: 0.95,
+      cases: { nameless: 0.95 },
+    });
+
+    const evaluation = defineEval({
+      name: 'ratio',
+      prompt,
+      baseline,
+      tolerance: 0.05,
+      scorers: [ratio],
+      // No `expected`, so the scorer divides by zero.
+      cases: [{ name: 'nameless', vars: { text: 'great product' } }],
+    });
+
+    const result = await evaluation.run(gateway);
+    expect(Number.isFinite(result.score)).toBe(true);
+    expect(result.passed).toBe(false);
+    // Both halves of the gate see it: the run mean and the case itself.
+    expect(result.regressions.map((r) => r.case).sort()).toEqual(['nameless', 'overall']);
+
+    let thrown: { code?: unknown } | undefined;
+    try {
+      await evaluation.assert(gateway);
+    } catch (error) {
+      thrown = error as { code?: unknown };
+    }
+    expect(thrown?.code).toBe('X_EVAL_THRESHOLD');
+  });
+});
+
+// The baseline is filed under the prompt's content hash, and `contentHash` covers `thinking`. An
+// eval that does not SEND it measures a configuration the hash does not describe.
+describe('unit · the eval sends the whole prompt configuration', () => {
+  test('effort and thinking both reach the provider', async () => {
+    const prompt = definePrompt<{ text: string }>({
+      id: 'thinking-prompt',
+      version: '1.0.0',
+      template: 'Classify: {{text}}',
+      effort: 'low',
+      thinking: 'disabled',
+    });
+    const seen: GenerateRequest[] = [];
+    const echo = new EchoProvider();
+    const recording: Provider = {
+      name: 'recording',
+      get models() {
+        return echo.models;
+      },
+      generate(request) {
+        seen.push(request);
+        return echo.generate(request);
+      },
+      stream: (request) => echo.stream(request),
+    };
+
+    const evaluation = defineEval({
+      name: 'thinking',
+      prompt,
+      baseline: await unrecorded(),
+      tolerance: 0.05,
+      scorers: [exact],
+      cases: [{ name: 'one', vars: { text: 'great' }, expected: 'Classify: great' }],
+    });
+    await evaluation.run(createGateway({ providers: [recording] }));
+
+    expect(seen.length).toBe(1);
+    expect(seen[0]?.effort).toBe('low');
+    expect(seen[0]?.thinking).toBe('disabled');
   });
 });
 

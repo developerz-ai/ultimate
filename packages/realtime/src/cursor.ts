@@ -105,15 +105,21 @@ export function makeCursor(
   };
 }
 
-/** FNV-1a over `id:row` pairs in result order — order-sensitive, so a re-sort is detected. */
+/**
+ * FNV-1a over `id:row` pairs in result order — order-sensitive, so a re-sort is detected.
+ *
+ * **Server-side only, and it is not reproducible by a client.** `verifyDigest()` used to sit here
+ * and was DELETED (2026-08-23): it was documented as "how a client detects drift", had no caller
+ * outside its own test, and could not have had one. Three reasons, any one of them fatal.
+ * `canonicalJson` tags a `Date` as `Date(<epoch>)` while the client holds the ISO string
+ * `JSON.stringify` sent it. A delta-resumed cursor carries `DIGEST_UNVERIFIED`, so the check
+ * answered `false` for every cursor a delta produced — which is the only state drift can be
+ * detected in. And `identity-map.ts` MERGES columns across queries on purpose, so a client's row
+ * for one id is legitimately a superset of the row any single snapshot sent: an app with two reads
+ * over one entity would have reported permanent drift.
+ */
 export function digestOf(rows: readonly Row[]): string {
   return fnv1a(rows.map((row) => `${row.id}:${canonicalJson(row)}`).join(';'));
-}
-
-/** Client-side drift check: a mismatch after delta resumes is a request for a fresh snapshot. */
-export function verifyDigest(cursor: LiveCursor, rows: readonly Row[]): boolean {
-  if (cursor.digest === DIGEST_UNVERIFIED) return false;
-  return cursor.digest === digestOf(rows);
 }
 
 export function shouldResnapshot(

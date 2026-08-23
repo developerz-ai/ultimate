@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { createServer, defineHttpConfig } from '@ultimat3/http';
 import { clearRoutes, defineRoute, island, registerRoute } from '@ultimat3/render';
 import { appRoutes } from './dev-render';
+import { fixProblem } from './error-contract';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands } from './island-bundle';
 import { islandRoutes } from './island-routes';
@@ -85,7 +86,16 @@ describe('islands over HTTP', () => {
     expect(response.status).toBe(404);
     const body = (await response.json()) as { error?: { code?: string; fix?: string } };
     expect(body.error?.code).toBe('X_ROUTE_NOT_FOUND');
-    expect(body.error?.fix).toContain('x build');
+    const fix = body.error?.fix ?? '';
+    // NOT `x build --target static`, which is what this said and what this test used to accept.
+    // This route is mounted in exactly two places — `cmd-dev.ts` and `serve.ts` — and NEITHER
+    // reads `.x/static`: `x dev` rebuilds the chunks on the watcher tick and the container built
+    // them at boot, so running that command changes nothing for either process and the reader is
+    // left where they started. `dev-lock.ts`'s shape instead: the concrete act, no citation.
+    expect(fix).not.toContain('x build');
+    expect(fix).toMatch(/reload/i);
+    // Still a fix the contract accepts — an instruction with no command is legal, advice is not.
+    expect(fixProblem(fix)).toBeUndefined();
   });
 
   test('a page with no island serves no runtime at all — the 0kb baseline is the default', async () => {

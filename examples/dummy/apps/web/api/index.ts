@@ -31,6 +31,10 @@ import * as orgJobs from '../app/orgs/jobs';
 // installed wherever this module has run, including tests.
 import '../app/orgs/service';
 import * as postActions from '../app/posts/actions';
+// A backfill IS a job — `backfill()` is a factory over `job()` — so it registers in the `jobs`
+// list and nowhere else. It carries its own `name`, unlike a plain job whose export name becomes
+// its queue key, because a sweep's name is a durable key the `x_backfills` ledger already holds.
+import * as postBackfills from '../app/posts/backfills/post-excerpts';
 import * as postJobs from '../app/posts/jobs';
 import * as postQueries from '../app/posts/live';
 // A mutator IS an action, so it registers as one: the optimistic local twin rides on the same
@@ -46,7 +50,7 @@ export const api = defineApi({
   actions: [postActions, orgActions, settingsActions, contactActions],
   mutators: [postMutators, settingsMutators],
   queries: [postQueries],
-  jobs: [postJobs, orgJobs, digestJobs, contactJobs],
+  jobs: [postJobs, postBackfills, orgJobs, digestJobs, contactJobs],
   tasks: [scheduledTasks],
 });
 

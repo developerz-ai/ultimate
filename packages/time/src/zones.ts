@@ -4,9 +4,10 @@
  * is no offset table to keep in sync and no `date-fns-tz` dependency.
  */
 
-import { cachedFormatter, canonicalLocale } from '@ultimat3/core';
+import { cachedFormatter } from '@ultimat3/core';
 import { timezoneInvalid } from './errors';
 import type { Instant } from './instant';
+import { assertLocale } from './locale';
 import { canonicalTimeZone } from './zone-canonical';
 
 /** An IANA identifier: `Europe/Berlin`, `Asia/Kathmandu`, `UTC`. Never `CET`, never `+01:00`. */
@@ -118,9 +119,10 @@ export function zoneAbbrev(
   style: 'short' | 'long' | 'shortOffset' | 'longOffset' = 'short',
 ): string {
   const canonical = assertTimeZone(zone);
-  // A tag `Intl` cannot parse falls through unchanged, exactly as in `format.ts`: this decides a
-  // cache key, never whether a locale is acceptable.
-  const tag = canonicalLocale(locale) ?? locale;
+  // Both arguments arrive from a request header on the path this function exists for, so a tag
+  // `Intl` cannot parse is refused with a code exactly as an unknown zone is — `X_LOCALE_INVALID`,
+  // the same one `describeCron` and every formatter in `format.ts` raise.
+  const tag = assertLocale(locale);
   // The one `Intl` construction in this package that escaped the shared cache: it built a formatter
   // per call on the caller's raw zone and locale, so an `x-timezone` an app renders a label from
   // paid for a fresh `Intl.DateTimeFormat` every time and an unknown one escaped as a `RangeError`.

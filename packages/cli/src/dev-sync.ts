@@ -2,7 +2,7 @@
 // Split from `dev-roles.ts` because it is the one role with an authenticator, a presence registry
 // and a listener of its own — and because that file is the boot's index, not its detail.
 
-import { createContext, logger } from '@ultimat3/core';
+import { createContext, logger, UltimateError } from '@ultimat3/core';
 import { listQueries } from '@ultimat3/query';
 import {
   ChannelHub,
@@ -15,7 +15,42 @@ import {
   SocketRegistry,
 } from '@ultimat3/realtime/server';
 import type { StartRolesOptions } from './dev-roles';
+import { neighbouringPort, PORT_RANGE } from './flag-number';
 import { syncAuthenticator } from './sync-authenticator';
+
+/**
+ * Beside its one thrower rather than in `errors.ts`, which is at 461 of the 500-line ceiling —
+ * the arrangement `db-seed.ts` and `metrics-endpoint.ts` already take. The code is
+ * `X_PORT_INVALID`, this package's own: "the port asked for is not one" is what it already means,
+ * and a second code for the same fact is the synonym the registry exists to prevent.
+ */
+class SyncPortUnavailableError extends UltimateError {
+  constructor(input: { port: number }) {
+    super({
+      code: 'X_PORT_INVALID',
+      cause: `the sync role binds PORT + 1, and PORT=${input.port} is the top of the range — it would ask for ${input.port + 1}, which is not a TCP port`,
+      fix: `x dev --port ${neighbouringPort(input.port)}   # leaves ${PORT_RANGE.max} free for the sync node`,
+      meta: { port: input.port },
+    });
+  }
+}
+
+/**
+ * The port the sync node listens on. `PORT + 1`, and `0` stays `0` — the kernel picks, and adding
+ * one to it would pick a specific port instead.
+ *
+ * REFUSED at the top of the range, never clamped. `PORT_RANGE.max` is 65535 and `portValue`
+ * accepts it, so `x dev --port 65535` handed `Bun.serve` 65536 and the bare `RangeError` reached
+ * the terminal as `X_CLI_UNEXPECTED` with `fix: x doctor --json`. Clamping to 65534 would be worse
+ * than refusing: `PORT + 1` is the rule `docker/docker-compose.prod.yml` publishes `3001:3001`
+ * from and `docker/helm` derives `PORT = .port - 1` from, so a node quietly on `PORT - 1` is a
+ * socket nothing else in the deployment computes.
+ */
+export function syncPortFor(port: number): number {
+  if (port === 0) return 0;
+  if (port >= PORT_RANGE.max) throw new SyncPortUnavailableError({ port });
+  return port + 1;
+}
 
 /** What `startRoles` holds on to: where the node listens, and how to take it down. */
 export interface RunningSync {
@@ -97,7 +132,7 @@ export async function startSync(options: StartRolesOptions): Promise<RunningSync
   });
   await node.start();
   try {
-    const listener = listenSyncNode(node, { port: options.port === 0 ? 0 : options.port + 1 });
+    const listener = listenSyncNode(node, { port: syncPortFor(options.port) });
     return {
       url: listener.url,
       stop: async () => {

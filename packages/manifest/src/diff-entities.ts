@@ -96,9 +96,17 @@ function diffColumns(
         detail: `${column.type} -> ${next.type}`,
       });
     }
-    if (column.nullable && !next.nullable) {
-      // Tightening nullability rejects rows that were valid a moment ago.
-      changes.push({ kind: 'breaking', path: `${at}.nullable`, detail: 'became NOT NULL' });
+    if (column.nullable !== next.nullable) {
+      // Both directions, the axis this file's header declares and `diffInvariants` already
+      // implements: tightening rejects rows that were valid a moment ago, loosening only widens
+      // what the table accepts — and a constraint that quietly stopped being enforced is what a
+      // reviewer of a data migration most needs to see. Only the tightening half was here, so
+      // dropping NOT NULL reported nothing at all.
+      changes.push(
+        next.nullable
+          ? { kind: 'additive', path: `${at}.nullable`, detail: 'became nullable' }
+          : { kind: 'breaking', path: `${at}.nullable`, detail: 'became NOT NULL' },
+      );
     }
     changes.push(...diffKey(at, 'primaryKey', keyOf(column), keyOf(next)));
     changes.push(...diffKey(at, 'references', column.references, next.references));

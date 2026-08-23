@@ -34,7 +34,7 @@ describe('@ultimat3/schema public surface', () => {
   test('`nullableSchema` admits null and still validates the inner schema', () => {
     const coverUrl = nullableSchema(t.url);
     expect(coverUrl.parse(null)).toBeNull();
-    expect(coverUrl.parse('https://ultimate.dev')).toBe('https://ultimate.dev');
+    expect(coverUrl.parse('https://app.test/cover.png')).toBe('https://app.test/cover.png');
     expect(() => coverUrl.parse('nope')).toThrow(/X_VALIDATION_FAILED/);
     // Null is a value the column holds; omission is `optionalSchema`, not this.
     expect(() => coverUrl.parse(undefined)).toThrow(/X_VALIDATION_FAILED/);

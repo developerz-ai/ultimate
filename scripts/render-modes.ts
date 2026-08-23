@@ -20,6 +20,7 @@ import { TEST_TYPES } from '@ultimat3/testing';
 import { parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { isCode, isTestPath, lineOf } from './lib/source-scan';
 
 const SCRIPT = 'render-modes';
 
@@ -169,17 +170,6 @@ const AS_CONST =
 const TYPED_ARRAY =
   /^[\t ]*(?:export )?(?:declare )?const ([A-Za-z_$][\w$]*)\s*:\s*(?:readonly\s+)?[\w$.]+\[\]\s*=\s*\[([^\]]*)\];/gm;
 
-const lineOf = (text: string, index: number): number => text.slice(0, index).split('\n').length;
-
-/**
- * Whether the declaration `decl` found at `index` is CODE, asked of `maskLiterals`' output — where
- * a string's contents are blanked and every offset is preserved, so the keyword survives exactly
- * when it was never inside one. `@ultimat3/cli`'s scaffold templates emit route source as strings,
- * and reading one of those as a declaration invents a finding no edit can clear.
- */
-const isCode = (masked: string, index: number, decl: string): boolean =>
-  masked[index + (decl.length - decl.trimStart().length)] !== ' ';
-
 const membersOf = (body: string): readonly string[] =>
   [...body.matchAll(LITERAL)].map((match) => match[2] as string);
 
@@ -288,12 +278,10 @@ export function checkVocabulary(files: readonly SourceFile[]): readonly Finding[
  */
 export const SOURCE_GLOB = 'packages/*/src/**/*.{ts,tsx}';
 
-const isTest = (path: string): boolean => /\.(test|spec)\.tsx?$/.test(path);
-
 export async function readSources(root: string): Promise<readonly SourceFile[]> {
   const files: SourceFile[] = [];
   for await (const path of new Bun.Glob(SOURCE_GLOB).scan({ cwd: root })) {
-    if (isTest(path) || path.includes('/dist/')) continue;
+    if (isTestPath(path) || path.includes('/dist/')) continue;
     files.push({ at: path, text: await Bun.file(`${root}/${path}`).text() });
   }
   return files.sort((a, b) => a.at.localeCompare(b.at));

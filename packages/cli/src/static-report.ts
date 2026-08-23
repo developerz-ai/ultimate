@@ -48,6 +48,19 @@ export type SkippedRoute = RouteFacts & {
   readonly why: string;
 };
 
+/**
+ * A route that declared a budget and could not be rendered here, and what stopped it.
+ *
+ * Declared HERE and not in `prerender.ts`, though `prerenderSite` is what fills it: this file is
+ * the report's shape and `prerender.ts` imports it, so the other direction is a cycle. `prerender`
+ * re-exports the name for its own callers.
+ */
+export type UnmeasuredRoute = {
+  /** The DECLARED path, as `X_BUDGET_UNMEASURED`'s `at:` spells it, so the two rows join. */
+  readonly path: string;
+  readonly reason: string;
+};
+
 /** One HTML file in the artifact, and the declared route that produced it. */
 export type EmittedPage = {
   readonly route: string;
@@ -62,6 +75,15 @@ export type StaticReport = {
   readonly buildId: string;
   readonly emitted: readonly EmittedPage[];
   readonly skipped: readonly SkippedRoute[];
+  /**
+   * Every budgeted route this build could not weigh, with the reason. `X_BUDGET_UNMEASURED`'s own
+   * `fix:` cites this list by name — `x build --target static --json # its "unmeasured" list says
+   * why` — and until it was written here the list existed only on the in-process `PrerenderReport`
+   * and reached no `x` command's output at all: `cmd-build.ts` discards a successful subprocess's
+   * stdout. A `fix:` naming a key nothing prints is axiom 4 inverted at the step meant to unblock
+   * the reader.
+   */
+  readonly unmeasured: readonly UnmeasuredRoute[];
 };
 
 /**
@@ -139,6 +161,9 @@ const isSkipped = (value: unknown): value is SkippedRoute =>
   typeof value['why'] === 'string' &&
   inDomain(SKIP_REASONS, value['reason']);
 
+const isUnmeasured = (value: unknown): value is UnmeasuredRoute =>
+  isRecord(value) && typeof value['path'] === 'string' && typeof value['reason'] === 'string';
+
 const isEmitted = (value: unknown): value is EmittedPage =>
   isRecord(value) &&
   typeof value['route'] === 'string' &&
@@ -152,13 +177,20 @@ const isEmitted = (value: unknown): value is EmittedPage =>
  */
 export function parseStaticReport(value: unknown): StaticReport | undefined {
   if (!isRecord(value)) return undefined;
-  const { target, out, buildId, emitted, skipped } = value;
+  const { target, out, buildId, emitted, skipped, unmeasured } = value;
   if (target !== 'static' || typeof out !== 'string' || typeof buildId !== 'string') {
     return undefined;
   }
   if (!Array.isArray(emitted) || !emitted.every(isEmitted)) return undefined;
   if (!Array.isArray(skipped) || !skipped.every(isSkipped)) return undefined;
-  return { target, out, buildId, emitted, skipped };
+  // OPTIONAL on the way in, total on the way out. `.x/` survives a checkout of an older commit,
+  // and a report written before this field existed has to read as "nothing unmeasured" — refusing
+  // it would answer `X_BUDGET_UNMEASURED` for every route on a build that had weighed them all.
+  // Present and malformed is still no report, exactly as a malformed skip row is.
+  if (unmeasured !== undefined && (!Array.isArray(unmeasured) || !unmeasured.every(isUnmeasured))) {
+    return undefined;
+  }
+  return { target, out, buildId, emitted, skipped, unmeasured: unmeasured ?? [] };
 }
 
 export async function writeStaticReport(root: string, report: StaticReport): Promise<string> {
@@ -198,7 +230,9 @@ export async function removeStaticReport(root: string): Promise<void> {
 export function staticReportData(report: StaticReport | undefined): Record<string, JsonValue> {
   // Never `{ ...report }`: `out` is an absolute build path and `buildId` is this run's, neither of
   // which the inventory is about — `data` already carries `artifact` and the build's own id.
-  return report === undefined ? {} : { emitted: report.emitted, skipped: report.skipped };
+  return report === undefined
+    ? {}
+    : { emitted: report.emitted, skipped: report.skipped, unmeasured: report.unmeasured };
 }
 
 /**
@@ -209,6 +243,10 @@ export function renderStaticReport(report: StaticReport): readonly string[] {
   const rows: readonly (readonly string[])[] = [
     ...report.emitted.map((page) => ['emitted', page.route, page.file]),
     ...report.skipped.map((route) => ['skipped', route.route, route.why]),
+    // The same three columns, so the terminal and `--json` carry the same three lists. A route
+    // whose budget could not be weighed is invisible in `emitted` and, when it also rendered, in
+    // `skipped` too — and it is the row `X_BUDGET_UNMEASURED` sends its reader here to read.
+    ...report.unmeasured.map((route) => ['unmeasured', route.path, route.reason]),
   ];
   const widths = [0, 1].map((index) =>
     Math.max(...rows.map((row) => (row[index] ?? '').length), 0),

@@ -7,10 +7,10 @@
 
 import type { Clock } from '@ultimat3/core';
 import { renderCauseValue } from '@ultimat3/core';
-import { oauthStateInvalid, oauthTokenInvalid, restartAt } from './errors';
 import { decodeJwtSegment } from './json';
 import { type IdTokenKeys, verifyJwtSignature } from './jwks';
 import type { OAuthProvider, OAuthProviderId } from './oauth';
+import { oauthStateInvalid, oauthTokenInvalid, restartAt } from './oauth-errors';
 import { providerFor } from './oauth-registry';
 import { timingSafeEqual } from './tokens';
 
@@ -21,6 +21,13 @@ export interface IdTokenClaims {
   readonly sub: string;
   readonly exp: number;
   readonly iat?: number | undefined;
+  /** Not-before. Checked with the same skew `workload.ts` allows, from the same constant. */
+  readonly nbf?: number | undefined;
+  /**
+   * Authorised party — the client this token was minted FOR. OIDC Core 3.1.3.7 step 5: with more
+   * than one audience, `aud` naming this client is not evidence the token is addressed to it.
+   */
+  readonly azp?: string | undefined;
   readonly nonce?: string | undefined;
   readonly email?: string | undefined;
   /** Google sends a boolean, Apple a `"true"` string. Both mean the same thing. */
@@ -75,6 +82,8 @@ export function decodeIdToken(provider: OAuthProviderId, idToken: string): IdTok
   }
   // `exactOptionalPropertyTypes`: an absent claim must be absent, not present-and-undefined.
   const iat = payload['iat'];
+  const nbf = payload['nbf'];
+  const azp = stringOrUndefined(payload['azp']);
   const verified = payload['email_verified'];
   const nonce = stringOrUndefined(payload['nonce']);
   const email = stringOrUndefined(payload['email']);
@@ -85,6 +94,8 @@ export function decodeIdToken(provider: OAuthProviderId, idToken: string): IdTok
     sub,
     exp,
     ...(typeof iat === 'number' ? { iat } : {}),
+    ...(typeof nbf === 'number' ? { nbf } : {}),
+    ...(azp === undefined ? {} : { azp }),
     ...(nonce === undefined ? {} : { nonce }),
     ...(email === undefined ? {} : { email }),
     ...(typeof verified === 'boolean' || typeof verified === 'string'
@@ -167,10 +178,33 @@ export async function verifyIdToken(input: VerifyIdTokenInput): Promise<IdTokenC
     );
   }
 
-  if (claims.exp * 1000 + ID_TOKEN_CLOCK_SKEW_MS <= input.clock.now().getTime()) {
+  // OIDC Core 3.1.3.7 steps 4-5. With more than one audience, `aud` naming this client says only
+  // that the token MENTIONS it — the authorised party is what says it was minted for it. Without
+  // this, a token an OP issued for another client that also lists ours verified here.
+  if (audience.length > 1 && claims.azp !== input.clientId) {
+    throw oauthTokenInvalid(
+      provider.id,
+      'the token names several audiences and its azp is not this client',
+      `ask ${provider.id} for a token whose azp is ${provider.clientIdEnv}'s client id, or one with a single aud`,
+    );
+  }
+
+  const nowMs = input.clock.now().getTime();
+  if (claims.exp * 1000 + ID_TOKEN_CLOCK_SKEW_MS <= nowMs) {
     throw oauthTokenInvalid(
       provider.id,
       'the token is already expired',
+      `sync this host's clock (\`timedatectl status\`), then ${restartAt(provider.id)}`,
+    );
+  }
+
+  // The bound `workload.ts` already checks, with the same skew, from THIS FILE's constant — it
+  // imports `ID_TOKEN_CLOCK_SKEW_MS` from here and then enforced a limit here did not. An `nbf`
+  // ten years out verified.
+  if (claims.nbf !== undefined && claims.nbf * 1000 - ID_TOKEN_CLOCK_SKEW_MS > nowMs) {
+    throw oauthTokenInvalid(
+      provider.id,
+      'the token is not valid yet',
       `sync this host's clock (\`timedatectl status\`), then ${restartAt(provider.id)}`,
     );
   }

@@ -202,7 +202,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   provider, so it is unrepresentable rather than discouraged. An app that wants it wraps
   `signInWithOAuth`.
 - **The OAuth route paths are not configurable.** `oauth-paths.ts` imports nothing and is
-  read by both `errors.ts` and `oauth-route.ts`, so a `fix:` line naming
+  read by both `oauth-errors.ts` and `oauth-route.ts`, so a `fix:` line naming
   `GET /auth/oauth/<provider>` cannot outlive the route again — which is exactly what it did
   through 1.2.0, when the library functions shipped with no route to mount them in. Every
   "start over" fix is built from `restartAt(provider)`.
@@ -214,9 +214,60 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   implementation of the open-redirect check and a second copy is one that drifts.
 - The handshake cookie is cleared on **every** callback outcome, success and failure alike:
   the code it authorised is spent either way.
-- Refresh is **not implemented**. `AuthAccount` persists `refreshToken` and `expiresAt`, and
-  nothing reads them yet — the session is the framework's own credential and does not depend
-  on the provider token.
+- Refresh is **not implemented**, and the framework therefore **stores no provider token** (`As of
+  2026-08-23`). `accountFor` (`oauth-login.ts`) writes `accessToken: null, refreshToken: null`:
+  nothing in this package ever read either column back — `oauth-profile.ts` uses the token from the
+  exchange, in flight — while `tables.ts`'s header promised "no column holds a plaintext secret".
+  Declared and never wired, the deletion this repo already ran for `jobs.driver`, except this one
+  turned a database dump into a set of usable third-party credentials. The COLUMNS and the
+  `AuthAccount` fields both stay: the type is the documented adapter seam, and an app that
+  deliberately stores tokens implements `linkAccount` itself. `expiresAt` is still written.
+- **`defineAuth({ providers })` defaults to `[]`**, never the live registry (`As of 2026-08-23`,
+  BREAKING). It was `oauthProviderIds()`, so nothing was ever "left out" and the uniform-404 the
+  option exists for could not fire — while a registry any dependency writes into decided which
+  login endpoints the app served. Name what you enabled.
+- **A provider with no credentials answers the SAME 404 an unknown one does.** Past `assertEnabled`,
+  `oauthCredentials` threw `X_ENV_MISSING` and the route published a 500 carrying the app's own env
+  var names, so `500 = registered here, 404 = not` re-opened the oracle one request later.
+  `credentialsFor` (`oauth-route.ts`) catches it on BOTH legs, logs the real cause under
+  `auth.oauth.credentials_missing`, and re-throws `oauthProviderUnknown`.
+- **Nothing this package does not own reaches a published `cause:`.** Both legs of the OAuth flow
+  are anonymous by definition and `publicBody` serialises `cause`. Two paths carried an internal
+  message into it and both now log instead: an uncoded throw from an adapter (`uncoded()` in
+  `oauth-route.ts` → `auth.oauth.uncoded_failure`) and a rejecting `OAuthFetch`
+  (`postForm` → `auth.oauth.token_fetch_failed`). The `POST /token` leg also reads its response
+  body as `providerDetail(response, 'coded-only')` — that request carries `client_secret`, and an
+  echoing endpoint put 38 of 42 characters of it into a 502 body. `error`/`error_description` still
+  come through; userinfo, discovery and jwks keep the raw fallback, because their requests carry
+  no secret.
+- **`x_users.mfa_secret` is a PLAINTEXT secret and `tables.ts` now says so, column by column.** A
+  TOTP seed is symmetric, so a digest cannot verify a code; encrypting it needs a key-management
+  seam this package does not have. **Deferred deliberately** — `mfa.ts`'s "a database dump is not a
+  permanent MFA bypass" is true of the recovery CODES and not of the seed.
+- **`issueVerification`/`consumeVerification` normalise too** — the fourth identity door.
+  `putVerification` upserts on `(purpose, identifier)` and `adapter.ts` promises a new token
+  invalidates the previous one; that promise was per SPELLING, so N live reset tokens for one
+  address could be held at once by varying the case, and each is a password.
+- **`providerJwks` memoises only the DEFAULT client.** The memo was keyed on the provider id alone
+  and silently discarded a later caller's options, so an app pinning a corporate egress proxy got
+  it only if it called first — the `jobs.driver` shape, with a network path as the substituted
+  value. A caller that supplies options gets its own client.
+- **`verifyIdToken` checks `nbf` and `azp`.** `workload.ts` imports `ID_TOKEN_CLOCK_SKEW_MS` from
+  `id-token.ts` and then enforced a bound `id-token.ts` did not: an `nbf` ten years out verified.
+  `azp` is OIDC Core 3.1.3.7 step 5 — with more than one audience, `aud` naming this client says
+  only that the token MENTIONS it. Both only narrow what is accepted.
+- **A success clears the ACCOUNT bucket and nothing else.** `recordSuccess(ipKey(ip))` used to run
+  on every login and deleted the whole address bucket, which made it inert against the attack it
+  exists for: a stuffing run never spends `maxAttempts` guesses on one account, so
+  `4 wrong + 1 login to an account the attacker owns, repeat` never locked. Measured: 5 guesses to
+  `X_ACCOUNT_LOCKED` without the reset, 160 and unlocked with it. The cost is a shared NAT
+  accumulating failures, which is what `windowMs` bounds and what `X_ACCOUNT_LOCKED`'s `fix:`
+  already names the manual escape for.
+- **`MemoryAdapter.createUser` enforces the two UNIQUE constraints `BuiltinAdapter` leans on** —
+  `x_users.email` and `x_users.external_id`, `authUniqueViolation` (`X_AUTH_WRITE_FAILED`). It is
+  what `x new` scaffolds and what every test runs against, so the duplicate path was only ever
+  exercised against the permissive half of the seam: two `register()` calls at one address made two
+  rows, and the second was unreachable forever. `adapter-parity.test.ts` pins both halves.
 - The new `AuthAdapter` members are OPTIONAL (`findUserByExternalId`, `listUsersByOrg`,
   `deleteSessionsForUser`, `deleteSessionsForOrg`, `deleteSessionsCreatedBefore`). A required
   member is a breaking change to every third-party adapter; the callers throw
@@ -329,6 +380,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `oauth-login.ts` | profile → account link → session. `completeOAuthLogin` is the entry point |
 | `oauth-login-fixture.ts` | the adapter, clock and profile the three `oauth-login*` suites share. Off `index.ts` |
 | `oauth-paths.ts` | the one declaration of where the two routes live. Imports nothing |
+| `errors.ts` | the codes this package owns and borrows, their titles, the one `registerErrorCodes()` call, `AuthError`, and every non-OAuth factory |
+| `oauth-errors.ts` | the OAuth half of those factories, and `restartAt`. Split off at the 500-line ceiling; declares no code and registers nothing |
 | `oauth-route.ts` | `oauthLogin(auth)` — the redirect out and the callback back |
 | `kdf-gate.ts` | the one bound on concurrent argon2 work, and the `X_OVERLOADED` past it |
 | `email.ts` | `normaliseEmail` — the one normalisation an address gets before it is an identity key |

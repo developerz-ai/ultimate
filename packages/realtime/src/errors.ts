@@ -128,16 +128,20 @@ registerErrorCodes(
   ),
 );
 
-const DOCS_BASE = 'https://ultimate.dev/errors/';
-
-/** Base for every realtime error: fills `docs` from the code so no call site can forget it. */
+/**
+ * Base for every realtime error. No `docs:` — `UltimateError` fills it from
+ * `describeErrorCode(code).docs`, which is `@ultimat3/core`'s `ERROR_DOCS_URL`: one page for every
+ * code, never one per code, because `wiki/` is the framework's only public documentation surface
+ * and a code lives there in a TABLE ROW, which has no anchor. The
+ * `https://ultimate.dev/errors/<code>` links this class built until 9.x answered 404, host
+ * included, on every error it has ever thrown — including the ones `toWireError` puts on the wire.
+ */
 export class RealtimeError extends UltimateError {
   constructor(opts: { code: RealtimeErrorCode; cause: string; fix: string }) {
     super({
       code: opts.code,
       cause: opts.cause,
       fix: opts.fix,
-      docs: `${DOCS_BASE}${opts.code}`,
     });
   }
 }

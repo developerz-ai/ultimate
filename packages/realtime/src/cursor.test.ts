@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { type Clock, frozenClock } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { formatLsn } from './changefeed';
-import { defaultReconnectBudget, digestOf, makeCursor, resumeFrom, verifyDigest } from './cursor';
+import { defaultReconnectBudget, digestOf, makeCursor, resumeFrom } from './cursor';
 import { CursorStaleError } from './errors';
 import type { Row, RowPatch } from './json';
 
@@ -53,7 +53,9 @@ describe('cursor resume', () => {
     if (result.kind !== 'snapshot') throw new Error('unreachable');
     expect(result.rows).toEqual(snapshotRows);
     expect(result.cursor.lsn).toBe(formatLsn(500));
-    expect(verifyDigest(result.cursor, snapshotRows)).toBe(true);
+    // The digest is the server's own — `verifyDigest()` was deleted because nothing on the client
+    // can reproduce one (`cursor.ts#digestOf`). What a snapshot must still do is seat it.
+    expect(result.cursor.digest).toBe(digestOf(snapshotRows));
   });
 
   test('a cursor whose gap fell out of the retained window re-snapshots', async () => {

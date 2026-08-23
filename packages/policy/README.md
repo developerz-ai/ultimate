@@ -118,6 +118,12 @@ error shape; allowed returns `undefined`.
 
 Adding a fifth surface means adding an adapter here **and nothing else**.
 
+`enforce(surface, policy, args)` dispatches over that table with `Object.hasOwn`, and a surface
+with no adapter is `X_POLICY_SURFACE_UNKNOWN`. Not a formality: the table is an object literal, so
+it inherits `Object.prototype` — `enforce('valueOf' as Surface, …)` used to call
+`Object.prototype.valueOf` with the table as its receiver and return a truthy value, so an authz
+dispatch failed **closed with a `SurfaceDenial` no caller could read**.
+
 ## Permissions and roles
 
 `definePermissions(['post:publish', ...])` gives a typed set; augmenting
@@ -170,7 +176,8 @@ it never turns an allowed request into a 500.
 
 ## Errors
 
-`X_FORBIDDEN` · `X_POLICY_MISSING` · `X_PERMISSION_UNKNOWN` · `X_ROLE_REDEFINED`
+`X_FORBIDDEN` · `X_POLICY_MISSING` · `X_PERMISSION_UNKNOWN` · `X_POLICY_SURFACE_UNKNOWN` ·
+`X_ROLE_REDEFINED`
 
 A missing policy is a **type** error, not a throw: `ActionDef.policy` is required, so an action
 without one does not compile. `policyMissing()` stays for a declaration site that cannot say it

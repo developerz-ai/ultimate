@@ -126,13 +126,15 @@ export function milestoneRow(markdown: string, n: number): MilestoneRow | undefi
   return { n, status, title: (cells[3] ?? '').replaceAll('*', '').trim() };
 }
 
-const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` line, deliberately. This file used to build `https://ultimate.dev/errors/<code>`,
+// a host that answered 404 on every error the framework ever threw; `UltimateError`'s constructor
+// now resolves the registered descriptor from `ERROR_DOCS_URL` in `@ultimat3/core`, and a `Finding`
+// that omits the field inherits that instead of hard-coding a second, wrong answer.
 
 const missingFileFinding = (): Finding => ({
   code: 'X_ROADMAP_FILE_MISSING',
   cause: `${ROADMAP_FILE} does not exist, so no milestone status or shipped artifact can be checked`,
   fix: `git checkout -- ${ROADMAP_FILE}`,
-  docs: docs('X_ROADMAP_FILE_MISSING'),
   at: ROADMAP_FILE,
 });
 
@@ -140,7 +142,6 @@ const missingStatusFinding = (n: number): Finding => ({
   code: 'X_ROADMAP_STATUS_MISSING',
   cause: `milestone ${n} has no row in the milestone table, or its row's status cell holds neither ${STATUS_MARK.shipped} nor ${STATUS_MARK['in-progress']}`,
   fix: `edit ${ROADMAP_FILE}: put "${STATUS_MARK.shipped}" or "${STATUS_MARK['in-progress']}" in the second cell of the row starting "| ${n} |", then: bun run scripts/roadmap.ts --json`,
-  docs: docs('X_ROADMAP_STATUS_MISSING'),
   at: ROADMAP_FILE,
 });
 
@@ -148,7 +149,6 @@ const unverifiedFinding = (row: MilestoneRow, missing: readonly string[]): Findi
   code: 'X_ROADMAP_MILESTONE_UNVERIFIED',
   cause: `milestone ${row.n} ("${row.title}") is marked ${STATUS_MARK.shipped} but ${missing.join(', ')} ${missing.length === 1 ? 'does' : 'do'} not exist`,
   fix: `git checkout -- ${missing.join(' ')} — or edit ${ROADMAP_FILE} and put "${STATUS_MARK['in-progress']}" in the status cell of the row starting "| ${row.n} |"`,
-  docs: docs('X_ROADMAP_MILESTONE_UNVERIFIED'),
   at: ROADMAP_FILE,
 });
 
@@ -156,7 +156,6 @@ const untrackedFinding = (row: MilestoneRow): Finding => ({
   code: 'X_ROADMAP_MILESTONE_UNTRACKED',
   cause: `milestone ${row.n} ("${row.title}") has a row in ${ROADMAP_FILE} but scripts/roadmap.ts declares no artifacts for it, so its status marker verifies nothing`,
   fix: `add a "${row.n}: [...]" entry to REQUIRED_ARTIFACTS in scripts/roadmap.ts naming the paths that row's "Ships" column promises — an empty list is the deliberate answer for a milestone that ships nothing yet — then: bun run scripts/roadmap.ts --json`,
-  docs: docs('X_ROADMAP_MILESTONE_UNTRACKED'),
   at: ROADMAP_FILE,
 });
 

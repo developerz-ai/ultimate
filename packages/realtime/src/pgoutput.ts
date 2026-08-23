@@ -1,12 +1,13 @@
-import { renderThrowable } from '@ultimat3/core';
 // Decodes pgoutput logical-replication messages (protocol version 1, Postgres >= 12) into typed
-// PgOutputMessage values, and the postgres text-format values inside each tuple into JsonValue.
-// Pure byte decoding: no sockets, no I/O. A decoder instance owns the per-connection relation
-// cache that later Insert/Update/Delete/Truncate messages reference by oid.
+// PgOutputMessage values. Pure byte decoding: no sockets, no I/O. A decoder instance owns the
+// per-connection relation cache that later Insert/Update/Delete/Truncate messages reference by oid.
+//
+// What a tuple's TEXT means is `pg-values.ts`'s: this file frames messages, that one owns the type
+// catalogue that turns postgres' text into the value a repository row holds.
 
 import { ReplicationProtocolError } from './errors';
-import type { JsonObject, JsonValue } from './json';
 import { ByteReader, pgTimestampToEpochMs } from './pg-bytes';
+import { decodeValue, type PhysicalRow } from './pg-values';
 
 export interface PgColumn {
   /** part of the replica identity key — set by the `flags & 1` bit. */
@@ -40,77 +41,17 @@ export type PgOutputMessage =
       readonly commitAt: number;
     }
   | { readonly kind: 'relation'; readonly relation: PgRelation }
-  | { readonly kind: 'insert'; readonly relation: PgRelation; readonly after: JsonObject }
+  | { readonly kind: 'insert'; readonly relation: PgRelation; readonly after: PhysicalRow }
   | {
       readonly kind: 'update';
       readonly relation: PgRelation;
-      readonly before: JsonObject | null;
-      readonly after: JsonObject;
+      readonly before: PhysicalRow | null;
+      readonly after: PhysicalRow;
     }
-  | { readonly kind: 'delete'; readonly relation: PgRelation; readonly before: JsonObject }
+  | { readonly kind: 'delete'; readonly relation: PgRelation; readonly before: PhysicalRow }
   | { readonly kind: 'truncate'; readonly relations: readonly PgRelation[] }
   /** origin / type / logical message — decoded far enough to be skipped safely. */
   | { readonly kind: 'other'; readonly tag: string };
-
-/**
- * Postgres sends every value as text (we never negotiate binary). Decoding depends on the
- * column's type oid — the wire gives us nothing else to go on, so this switch is the one place
- * that type catalogue is encoded.
- */
-function decodeValue(typeOid: number, text: string): JsonValue {
-  switch (typeOid) {
-    case 16: // bool
-      return text === 't';
-
-    case 20: {
-      // int8: only safe as a number if it round-trips exactly; otherwise keep the digits —
-      // a rounded bigint is a worse lie than a string that still parses correctly downstream.
-      const asNumber = Number(text);
-      return Number.isSafeInteger(asNumber) ? asNumber : text;
-    }
-
-    case 21: // int2
-    case 23: // int4
-    case 26: // oid
-      return Number(text);
-
-    case 700: // float4
-    case 701: // float8
-      // JSON has no literal for these three, so the text form survives the round trip instead of
-      // silently becoming a number `JSON.stringify` would otherwise turn into `null`.
-      if (text === 'NaN' || text === 'Infinity' || text === '-Infinity') return text;
-      return Number(text);
-
-    case 1700: // numeric — exactness beats convenience; money is never a float here.
-      return text;
-
-    case 114: // json
-    case 3802: {
-      // jsonb
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(text);
-      } catch (cause) {
-        throw new ReplicationProtocolError({
-          stage: 'value',
-          detail: `type oid ${typeOid} carried invalid json: ${renderThrowable(cause)}`,
-        });
-      }
-      return parsed as JsonValue;
-    }
-
-    case 1082: // date
-    case 1114: // timestamp
-    case 1184: // timestamptz
-      return text; // an ISO-ish string; never a `Date` — the row must stay JSON.
-
-    case 17: // bytea — the `\x...` text form, as-is.
-      return text;
-
-    default: // text, varchar, uuid, enum, and everything else not called out above.
-      return text;
-  }
-}
 
 /**
  * Int16 ncolumns + that many columns. Every tuple kind (insert's new row, update/delete's old
@@ -118,7 +59,7 @@ function decodeValue(typeOid: number, text: string): JsonValue {
  * `'u'` standing in for the columns a key-only tuple leaves out — so the column count always
  * matches the relation, and only the per-column byte tells us whether a value is actually there.
  */
-function decodeTupleData(reader: ByteReader, relation: PgRelation): JsonObject {
+function decodeTupleData(reader: ByteReader, relation: PgRelation): PhysicalRow {
   const count = reader.int16();
   if (count !== relation.columns.length) {
     throw new ReplicationProtocolError({
@@ -129,7 +70,9 @@ function decodeTupleData(reader: ByteReader, relation: PgRelation): JsonObject {
     });
   }
 
-  const row: JsonObject = {};
+  // Null-prototype: `column.name` is off the WIRE, so a column literally named `__proto__` set
+  // the prototype of every row this decoder built. `Object.create(null)` has no prototype to set.
+  const row: PhysicalRow = Object.create(null) as PhysicalRow;
   for (const column of relation.columns) {
     const kind = reader.tag();
     if (kind === 'n') {
@@ -256,7 +199,7 @@ export class PgOutputDecoder {
   #decodeUpdate(reader: ByteReader): PgOutputMessage {
     const relation = this.#relationOrThrow(reader.int32());
     let marker = reader.tag();
-    let before: JsonObject | null = null;
+    let before: PhysicalRow | null = null;
     if (marker === 'K' || marker === 'O') {
       before = decodeTupleData(reader, relation);
       marker = reader.tag();

@@ -8,9 +8,9 @@
 
 import type { Clock } from '@ultimat3/core';
 import { renderThrowable, systemClock } from '@ultimat3/core';
-import { oauthExchangeFailed, oauthTokenInvalid } from './errors';
 import { decodeJwtSegment, isRecord } from './json';
 import type { OAuthProvider } from './oauth';
+import { oauthExchangeFailed, oauthTokenInvalid } from './oauth-errors';
 import type { OAuthFetch } from './oauth-exchange';
 import { base64UrlBytes } from './tokens';
 
@@ -200,8 +200,19 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
 const clients = new Map<string, JwksKeySource>();
 
 /**
- * The provider's own key set, built once per provider id. Memoised because the cache is the point:
- * a client rebuilt per request refetches the key set per request.
+ * The provider's own key set. The DEFAULT client is built once per provider id — memoised because
+ * the cache is the point: a client rebuilt per request refetches the key set per request.
+ *
+ * A caller that SUPPLIES options gets a client built with them, and is not served the memo. The
+ * memo was keyed on the provider id alone, so the second caller's `fetch`, `clock`, `ttlMs` and
+ * `timeoutMs` were silently discarded: an app pinning a corporate egress proxy got it only if it
+ * happened to call first, and nothing said otherwise. That is the `jobs.driver` shape — a key read
+ * once and thereafter ignored — except the value quietly substituted here is a network path.
+ *
+ * Not cached by option identity, deliberately: `fetch` and `clock` are functions and objects, so
+ * any canonical key over them either collides (two different proxies, one entry) or never hits.
+ * A bespoke client is a bespoke client; `createJwksClient` is what it is, and its own cache still
+ * works for as long as the caller holds it.
  */
 export function providerJwks(
   provider: OAuthProvider,
@@ -214,10 +225,11 @@ export function providerJwks(
       `register ${provider.id} with an explicit jwksUri, or read its id token only through exchangeOAuthCode()`,
     );
   }
-  const existing = clients.get(provider.id);
+  const bespoke = options !== undefined && Object.keys(options).length > 0;
+  const existing = bespoke ? undefined : clients.get(provider.id);
   if (existing !== undefined) return existing;
   const client = createJwksClient({ ...options, provider: provider.id, jwksUri: provider.jwksUri });
-  clients.set(provider.id, client);
+  if (!bespoke) clients.set(provider.id, client);
   return client;
 }
 

@@ -7,7 +7,7 @@
 
 import { describeValue } from '@ultimat3/core';
 import { ReplicationProtocolError } from './errors';
-import type { JsonObject, JsonValue } from './json';
+import type { PhysicalRow, PhysicalValue } from './pg-values';
 
 /** `org_id` -> `orgId`, `published_at` -> `publishedAt`. The inverse of `@ultimat3/entity`'s `snake()`. */
 export function camel(column: string): string {
@@ -24,7 +24,7 @@ interface FoldedMoney {
   readonly property: string;
   /** The physical columns the fold consumed, in declaration order — named together on a collision. */
   readonly columns: readonly string[];
-  readonly value: JsonObject;
+  readonly value: PhysicalRow;
 }
 
 /**
@@ -73,7 +73,7 @@ function moneyMinor(column: string, value: number | string): number {
  * `/^\d+$/` and not `Number(value)`: `Number('')` is 0, and 0 means whole units — the one value
  * an empty column must never decode to. The same guard `parseScale` uses.
  */
-function moneyScale(column: string, value: JsonValue): number {
+function moneyScale(column: string, value: PhysicalValue): number {
   const digits = typeof value === 'string' && /^\d+$/.test(value);
   const scale = typeof value === 'number' ? value : digits ? Number(value) : Number.NaN;
   if (Number.isSafeInteger(scale) && scale >= 0) return scale;
@@ -100,7 +100,7 @@ function moneyScale(column: string, value: JsonValue): number {
  * string that *is* one), and everything else is reported as shape. The scale column is matched by
  * name the same way and carries the same risk, so it renders through here too.
  */
-function shownNumber(value: JsonValue): string {
+function shownNumber(value: PhysicalValue): string {
   if (typeof value === 'number') return `"${value}"`;
   if (typeof value !== 'string') return describeValue(value);
   const numeric = value.trim() !== '' && Number.isFinite(Number(value));
@@ -119,7 +119,7 @@ function shownNumber(value: JsonValue): string {
  * column of its own: the fold consumes it whenever the group folds.
  */
 function foldMoney(
-  physical: Readonly<Record<string, JsonValue>>,
+  physical: Readonly<Record<string, PhysicalValue>>,
   name: string,
 ): FoldedMoney | null {
   const prefix = moneyPrefix(name);
@@ -171,8 +171,8 @@ function claim(taken: Map<string, string>, property: string, column: string): vo
  * property is camelCase, and money is one property over the columns `<p>_minor`/`<p>_currency`
  * and the nullable `<p>_scale`.
  */
-export function entityRow(physical: Readonly<Record<string, JsonValue>>): JsonObject {
-  const row: JsonObject = {};
+export function entityRow(physical: Readonly<Record<string, PhysicalValue>>): PhysicalRow {
+  const row: PhysicalRow = {};
   // Column order in is key order out; a folded money property lands wherever its earliest member
   // (whichever of the three the source happened to emit first) would otherwise have sat.
   const consumed = new Set<string>();

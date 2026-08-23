@@ -61,6 +61,14 @@ registerErrorCodes(
   Object.fromEntries(Object.entries(ENTITY_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
 
+/**
+ * Base for every error this package throws. No `docs:` — `UltimateError` fills it from
+ * `describeErrorCode(code).docs`, which is `@ultimat3/core`'s `ERROR_DOCS_URL`: one page for every
+ * code, never one per code, because `wiki/` is the framework's only public documentation surface
+ * and a code lives there in a TABLE ROW, which has no anchor. The
+ * `https://ultimate.dev/errors/<code>` links this class built until 9.x answered 404, host
+ * included, on every refusal it has ever raised.
+ */
 export class EntityError extends UltimateError {
   override readonly name = 'EntityError';
 
@@ -69,7 +77,6 @@ export class EntityError extends UltimateError {
       code: init.code,
       cause: init.cause,
       fix: init.fix,
-      docs: `https://ultimate.dev/errors/${init.code}`,
     });
   }
 }

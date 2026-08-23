@@ -57,7 +57,7 @@ export { describeUser, findUserByExternalId, listOrgUsers } from './directory';
 // The one normalisation an address gets before it is an identity key. Public because an app
 // writing its own `AuthAdapter`, or its own login route, has to key exactly the way this does.
 export { normaliseEmail } from './email';
-export type { AuthErrorCode, AuthThrowCode, OAuthExchangeFailure } from './errors';
+export type { AuthErrorCode, AuthThrowCode } from './errors';
 export {
   AUTH_BORROWED_ERROR_CODES,
   AUTH_ERROR_CODES,
@@ -68,28 +68,18 @@ export {
   authLimiterNotShared,
   authLimiterPolicyMismatch,
   authNotImplemented,
+  authUniqueViolation,
   authWriteFailed,
-  emailVerifiedNotStored,
   forbidden,
   kdfOverloaded,
   mfaRequired,
   mfaRequiredUnenforceable,
   mfaSecretInvalid,
-  oauthAccountNotLinked,
-  oauthDenied,
-  oauthExchangeFailed,
-  oauthLinkingDisabled,
-  oauthProviderDuplicate,
-  oauthProviderUnknown,
-  oauthStateInvalid,
-  oauthTokenInvalid,
   passwordWeak,
-  restartAt,
   sessionExpired,
   sessionUnknown,
   unauthenticated,
 } from './errors';
-
 export { currentActor, requireActor } from './guards';
 export type { IdTokenClaims, VerifyIdTokenInput } from './id-token';
 export {
@@ -180,6 +170,21 @@ export {
 } from './oauth-cookie';
 export type { DiscoverOAuthProviderInput } from './oauth-discovery';
 export { discoverOAuthProvider, discoveryUrl } from './oauth-discovery';
+// The OAuth half of the same contract, split out of `errors.ts` at the 500-line ceiling. Every
+// name below was exported from `./errors` before the split and is exported here after it.
+export type { OAuthExchangeFailure } from './oauth-errors';
+export {
+  emailVerifiedNotStored,
+  oauthAccountNotLinked,
+  oauthDenied,
+  oauthExchangeFailed,
+  oauthLinkingDisabled,
+  oauthProviderDuplicate,
+  oauthProviderUnknown,
+  oauthStateInvalid,
+  oauthTokenInvalid,
+  restartAt,
+} from './oauth-errors';
 export type {
   OAuthClientCredentials,
   OAuthExchangeOptions,

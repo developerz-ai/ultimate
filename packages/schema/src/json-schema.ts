@@ -75,10 +75,19 @@ const FORMAT_MAP: Readonly<Record<string, string>> = Object.freeze({
   cursor: 'ultimate-cursor',
 });
 
+/**
+ * `Object.hasOwn`, never the read alone: `node.format` comes from a schema PROVIDER's IR, so
+ * `FORMAT_MAP['constructor']` answered with the `Object` function and `?? node.format` could not
+ * rescue it — `JSON.stringify` then dropped `format` from the published document in silence.
+ * Same discriminator as `@ultimat3/action`'s `BY_FORMAT[node.format]`, one package up.
+ */
+const publishedFormat = (format: string): string =>
+  Object.hasOwn(FORMAT_MAP, format) ? (FORMAT_MAP[format] ?? format) : format;
+
 function stringNode(node: SchemaNode): JsonSchema {
   return {
     type: 'string',
-    ...(node.format === undefined ? {} : { format: FORMAT_MAP[node.format] ?? node.format }),
+    ...(node.format === undefined ? {} : { format: publishedFormat(node.format) }),
     ...(node.minLength === undefined ? {} : { minLength: node.minLength }),
     ...(node.maxLength === undefined ? {} : { maxLength: node.maxLength }),
     ...(node.pattern === undefined ? {} : { pattern: node.pattern }),

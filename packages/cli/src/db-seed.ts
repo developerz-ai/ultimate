@@ -12,7 +12,6 @@ import type { Environment } from '@ultimat3/core';
 import { UltimateError } from '@ultimat3/core';
 import type { Driver, Seed, SeedTier } from '@ultimat3/entity';
 import { isSeed, SEED_TIERS, seedTiersFor } from '@ultimat3/entity';
-import { docsFor } from './error-codes';
 import { BadFlagError } from './errors';
 import type { Finding, JsonValue } from './output';
 import { findingFrom } from './output';
@@ -49,7 +48,6 @@ export class SeedUnknownError extends UltimateError {
       // A dry run, never a bare `x db seed`: the command that answers "which seeds are there" must
       // not be the command that writes them.
       fix: 'x db seed --dry-run --json',
-      docs: docsFor('X_DECLARATION_UNKNOWN'),
     });
   }
 }
@@ -75,7 +73,6 @@ export class SeedEnvironmentError extends UltimateError {
       code: 'X_SEED_ENVIRONMENT',
       cause: `seed "${input.seed}" is tier ${input.tier} and ULTIMATE_ENV resolved ${input.environment}, where x db seed runs ${input.tiers.join(', ')} — ULTIMATE_SEED_TIER=${input.tier} says this deploy takes it anyway`,
       fix: `x db seed ${input.seed} --tier ${input.tier} --json`,
-      docs: docsFor('X_SEED_ENVIRONMENT'),
     });
   }
 }

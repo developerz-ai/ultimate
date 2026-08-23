@@ -1,7 +1,7 @@
 /** The public surface of @postly/db. Explicit — never `export *`. */
 
 export type { Db } from './client';
-export { db } from './client';
+export { db, driver, selectDriver } from './client';
 export { DbError, TenantMissing } from './errors';
 export type { Comment } from './schema/comments';
 export { COMMENT_MAX, comments } from './schema/comments';

@@ -3,8 +3,8 @@
 // cmd-test.ts because a printed reproduction is only true if it carries every input to the split —
 // that rule is this file's, and argv parsing is that one's.
 
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { AffectedSelection } from './affected';
-import { docsFor } from './error-codes';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
 import { msg } from './messages';
@@ -137,7 +137,7 @@ const failureOf = (shard: Shard, code: number, plan: ReproduceOptions): Finding 
   code: 'X_TEST_SHARD_FAILED',
   cause: `shard ${shard.index} of ${plan.workers} exited ${code} (${shard.files.length} file(s))`,
   fix: reproduceFor(shard, plan),
-  docs: docsFor('X_TEST_SHARD_FAILED'),
+  docs: ERROR_DOCS_URL,
 });
 
 export async function runShards(options: RunShardsOptions): Promise<CommandResult> {

@@ -34,7 +34,6 @@ export {
   type ResumeSource,
   resumeFrom,
   shouldResnapshot,
-  verifyDigest,
 } from './cursor';
 // ---- errors: one vocabulary for both halves, because every code reaches the wire ---------------
 export {

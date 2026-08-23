@@ -100,6 +100,21 @@ describe('readSse', () => {
     expect(cancelled).toBe(true);
   });
 
+  // The cap is on the UNTERMINATED remainder — its own doc says so, and so does the refusal it
+  // raises ("without completing one SSE frame"). Measured against the whole decode buffer instead,
+  // a busy provider that lands a megabyte of perfectly framed deltas in one read is refused for a
+  // rule it did not break, after the frames it completed were already sitting in the buffer.
+  test('a megabyte of COMPLETE frames in one read is delivered, not refused', async () => {
+    const payload = 'y'.repeat(1_000);
+    const count = Math.ceil(MAX_FRAME_CHARS / payload.length) + 50;
+    const body = streamOf([`data: ${payload}\n\n`.repeat(count)]);
+
+    const frames = await collect(body);
+    expect(frames.length).toBe(count);
+    expect(frames[0]?.data).toBe(payload);
+    expect(frames.at(-1)?.data).toBe(payload);
+  });
+
   test('refuses a peer that never completes a frame instead of buffering it forever', async () => {
     // No boundary is ever sent, so every read succeeds and nothing else in the pipeline can ever
     // interrupt the growth — a read deadline included.

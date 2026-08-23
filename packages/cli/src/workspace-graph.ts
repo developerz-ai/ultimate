@@ -4,6 +4,7 @@
 // for `tsc` and is invisible to bun, to `--filter` ordering and to any change-detection tool.
 
 import { join } from 'node:path';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest, isVendored } from './source-files';
 import { maskLiterals } from './ts-scan';
@@ -184,7 +185,7 @@ export const unreadableWorkspaceFinding = (path: string): Finding => ({
   code: 'X_APP_PACKAGE_INVALID',
   cause: `${path} is claimed by the root "workspaces" globs and supplies no readable "name"`,
   fix: `repair the JSON and the "name" in ${path}, or drop its directory from "workspaces" in package.json`,
-  docs: 'https://ultimate.dev/errors/X_APP_PACKAGE_INVALID',
+  docs: ERROR_DOCS_URL,
   at: path,
 });
 
@@ -198,7 +199,7 @@ export const undeclaredWorkspaceDepFinding = (
   // The exact line to paste, at the version the target really carries: a `workspace:*` range would
   // resolve and then fail `checkLockstep`, which compares a sibling pin against the version.
   fix: `add "${to.name}": "${to.version ?? '0.0.0'}" to "dependencies" in ${from.dir}/package.json`,
-  docs: 'https://ultimate.dev/errors/X_WORKSPACE_DEP_UNDECLARED',
+  docs: ERROR_DOCS_URL,
   at: `${from.dir}/package.json`,
 });
 

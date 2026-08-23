@@ -7,8 +7,8 @@
 
 import type { Clock } from '@ultimat3/core';
 import { EnvMissingError, systemClock } from '@ultimat3/core';
-import { oauthStateInvalid } from './errors';
 import type { OAuthHandshake, OAuthProviderId } from './oauth';
+import { oauthStateInvalid } from './oauth-errors';
 import { hasOAuthProvider } from './oauth-registry';
 import { type RequestLike, readCookie } from './session';
 import { base64Url, timingSafeEqual } from './tokens';

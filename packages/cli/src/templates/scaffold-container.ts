@@ -197,6 +197,18 @@ services:
     deploy: { replicas: 1 } # scales on concurrent websockets, no sticky sessions — pinned by the port
     # The sync role binds PORT + 1. PORT is unset here, so it is 3000 and this listens on 3001.
     ports: ['3001:3001']
+    # ...which is why the image's own HEALTHCHECK cannot be inherited here. It fetches $PORT —
+    # 3000 — and this role never binds it, so the container reports \`unhealthy\` from
+    # \`start_period\` onward and never recovers, and anything gated on \`sync: service_healthy\`
+    # would never start. Literal 3001 rather than an expression, for the same reason \`ports:\`
+    # above is literal: PORT is unset in this file, and two ways of saying one number drift.
+    # \`docker/helm\` states the same rule as \`PORT = .port - 1\`.
+    healthcheck:
+      test: ['CMD', 'bun', '--eval', "fetch('http://127.0.0.1:3001/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 3
 
   worker:
     <<: *image

@@ -12,6 +12,7 @@
 | `zone-canonical.ts` | one zone, one key: `canonicalTimeZone` — the casing/alias collapse every cache keys on |
 | `zoned.ts` | `toZoned` / `fromZoned` + gap and overlap policies. Everything depends on this. |
 | `format.ts` | `Intl` rendering. Every function takes `locale` **and** `zone`. |
+| `locale.ts` | `assertLocale` — the ONE screen a caller-supplied BCP 47 tag passes before `Intl` |
 | `duration.ts` | `'2h30m'` ⇄ ms |
 | `cron.ts` | barrel over the three cron modules — the only one `index.ts` re-exports |
 | `cron-parse.ts` | field grammar → `CronExpression`. Non-integer, non-name tokens are rejected. |
@@ -43,8 +44,20 @@
   (`Japan` → `Asia/Tokyo`, `GB` → `Europe/London`) and that is the point: the slashed spelling is
   the one that survives being a formatter-cache key. **Breaking at 6.0.0.** `zones.test.ts` pins
   one named case per refused name, so an ICU bump that reopens one names it.
+- **A malformed locale tag is `X_LOCALE_INVALID` at EVERY entry point, `As of 2026-08-23`** —
+  `formatDateTime`, `formatDate`, `formatTime`, `formatWithOffset`, `formatRange`, `formatRelative`,
+  `formatDuration` and `zoneAbbrev`, not `describeCron` alone. Each of the other eight passed the
+  caller's raw string to an `Intl` constructor, so `formatRelative(at, { locale: 'en_US', … })` died
+  as a bare, uncoded `RangeError` several frames from the `Accept-Language` header it came out of —
+  a code that has shipped since 1.0, with a runnable `fix:`, thrown by exactly one of nine callers.
+  `format.ts` argued the pass-through decided "a cache key, never whether a locale is acceptable",
+  which is true of the cache and was not an argument for letting the tag through. **Breaking at
+  9.x.** `assertLocale` (`locale.ts`) is the one screen and it VALIDATES AND CANONICALIZES in one
+  step — `Intl.getCanonicalLocales` runs the same structural check `supportedLocalesOf` throws on
+  and hands back the spelling the cache keys on, so there is no second question to ask. Well-formed
+  but unknown to ICU (`zz`) is **not** refused: `Intl` falls back, and so must a rendered page.
 - **Never cache an `Intl` formatter on a raw caller string.** A zone and a locale both arrive from
-  a request header, so the key must be canonical (`canonicalTimeZone` for a zone, `canonicalLocale`
+  a request header, so the key must be canonical (`canonicalTimeZone` for a zone, `assertLocale`
   for a locale) and the cache must be bounded (`cachedFormatter`). **`cachedFormatter`,
   `MAX_CACHED_FORMATTERS` and `canonicalLocale` are `@ultimat3/core`'s as of 2.0.0**, not this
   package's: `@ultimat3/money` hit the identical unbounded-`Map`-on-a-header bug and tier 1 may not

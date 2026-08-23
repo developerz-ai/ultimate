@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { DevHost } from './dev-server';
 import { DEV_SCOPES, devTools } from './dev-server';
 import type { QueryRows } from './query-limits';
@@ -63,7 +64,7 @@ function fakeHost(database: DatabaseTarget): { host: DevHost; ran: string[] } {
             code,
             cause: 'schema differs from migrations',
             fix: 'x db gen "add column"',
-            docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
+            docs: ERROR_DOCS_URL,
           }
         : undefined,
     async verify() {

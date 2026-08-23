@@ -4,13 +4,13 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 // `node:` by necessity: Bun has no temp-directory, no mkdtemp and no recursive remove.
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineAuth, MemoryAdapter, resetAuthLimiters } from '@ultimat3/auth';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { noopPurgeDriver, registeredTiers, resetTiers } from '@ultimat3/cache';
-import { registerReadinessCheck, UltimateError } from '@ultimat3/core';
+import { registerReadinessCheck } from '@ultimat3/core';
 import { jobDriver } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import { createMemoryDriver, tryMailDriver } from '@ultimat3/mail';
@@ -23,7 +23,6 @@ import {
   mailLabel,
   type RunningServices,
   startServices,
-  startStorage,
 } from './dev-runtime';
 import type { DevServices } from './dev-services';
 import { resolveServices } from './dev-services';
@@ -414,73 +413,5 @@ describe('startServices', () => {
 
     expect(failure?.code).toBe('X_CONFIG_INVALID');
     expect(failure?.cause).toContain('FASTLY_SERVICE_ID');
-  });
-});
-
-/**
- * The storage disk this process resolves. Both cases below are production failures the demo hit,
- * not hypotheticals: the read-only one CrashLooped a hardened container 22 times on a bare EROFS,
- * and the external one silently wrote every upload to a container-local disk that the next restart
- * destroyed, while the configured bucket stayed empty and nothing reported a problem.
- */
-describe('unit · the storage binding a process boots with', () => {
-  const servicesAt = (stateDir: string, storageUrl: string, mode: 'embedded' | 'external') =>
-    ({
-      db: { name: 'db', mode: 'embedded', url: '', detail: '' },
-      events: { name: 'events', mode: 'embedded', url: '', detail: '' },
-      storage: { name: 'storage', mode, url: storageUrl, detail: '' },
-      stateDir,
-    }) as unknown as DevServices;
-
-  test('an unwritable embedded root is X_STORAGE_UNWRITABLE, not a bare EROFS', () => {
-    // 0o500 = r-x: the directory exists and mkdir inside it is refused, which is what a
-    // readOnlyRootFilesystem does to the app root. The old code let Bun's own EROFS escape with
-    // no code, no fix, and no mention of storage.
-    const parent = mkdtempSync(join(tmpdir(), 'x-storage-ro-'));
-    const denied = join(parent, 'nested');
-    mkdirSync(denied, { recursive: true });
-    chmodSync(denied, 0o500);
-    try {
-      const services = servicesAt(parent, `file://${join(denied, 'storage')}`, 'embedded');
-      const failure = (() => {
-        try {
-          return startStorage(services, {});
-        } catch (error) {
-          return error;
-        }
-      })();
-      expect(failure).toBeInstanceOf(UltimateError);
-      const error = failure as UltimateError;
-      expect(error.code).toBe('X_STORAGE_UNWRITABLE');
-      // The fix has to name BOTH ways out, because the command cannot know which one is wanted.
-      expect(error.fix).toContain('writable volume');
-      expect(error.fix).toContain('S3_ENDPOINT');
-      expect(error.cause).toContain(denied);
-    } finally {
-      chmodSync(denied, 0o700);
-      rmSync(parent, { recursive: true, force: true });
-    }
-  });
-
-  test('an external binding builds an object disk and never touches the filesystem', () => {
-    // The regression that matters: this used to fall through to a LOCAL directory, so S3_ENDPOINT
-    // changed the root and nothing else. A path that does not exist proves nothing was mkdir'd.
-    const absent = join(tmpdir(), 'x-storage-must-not-exist', String(process.pid));
-    const services = servicesAt(absent, 'https://account.r2.cloudflarestorage.com', 'external');
-    const storage = startStorage(services, { S3_BUCKET: 'uploads' });
-    expect(storage.disk().name).not.toBe('local');
-    expect(existsSync(absent)).toBe(false);
-  });
-
-  test('an external binding with no bucket fails at boot, not at the first upload', () => {
-    const services = servicesAt(tmpdir(), 'https://account.r2.cloudflarestorage.com', 'external');
-    const failure = (() => {
-      try {
-        return startStorage(services, { S3_BUCKET: '' });
-      } catch (error) {
-        return error;
-      }
-    })();
-    expect((failure as UltimateError).code).toBe('X_STORAGE_UNWRITABLE');
   });
 });

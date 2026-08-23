@@ -187,6 +187,17 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   typo is a compile error; `error-map.test.ts` pins that with a `@ts-expect-error`. Read it by a
   code the framework did not mint through `statusFor()`, which goes via the file-local `BY_CODE`
   view and keeps `Object.hasOwn`.
+- **A problem document's `type` and its `docs` are two different questions, `As of 2026-08-23`.**
+  Both used to be `https://ultimate.dev/errors/<code>` — one string, twice, and a host that
+  answers **404** on every 4xx and 5xx this package has ever rendered. `docs` is now core's
+  `ERROR_DOCS_URL`, one wiki page for every code, and it is never spelled here: a construction site
+  omits `docs:` and `UltimateError` resolves it. `type` did NOT follow it there. It is RFC 9457's
+  primary identifier for the problem KIND — a client switches on it — so collapsing it onto one
+  page would have given a 422 and a 403 the same identifier. `problemTypeFor(code)` answers
+  `urn:ultimate:error:<CODE>`: per code, stable, and a URN has no host to rot. `finalize.ts`'s
+  `lastResort` spells its one `type` as a literal because that function calls nothing, and
+  `pipeline-finalize.test.ts` pins the literal against `problemTypeFor('X_INTERNAL')` so the two
+  cannot drift. Never assert either value as a copied string — import the constant.
 - Statuses live in `error-map.ts` only. No other file writes a status number. The framework's
   table (`ERROR_STATUS`) is closed; an app declares its own codes' statuses with
   `registerErrorStatus()`, which refuses a code the framework already holds. Without that half,

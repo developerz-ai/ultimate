@@ -49,17 +49,28 @@ function narrowTenant(
   throw new VectorScopeWidenedError({ store, held: base, requested: next });
 }
 
+/**
+ * A `Map`, never a `Record`, because every key here is a CALLER's string — an app's metadata field
+ * name, chosen by whoever wrote the policy. An object gets it wrong in both directions:
+ *   - reading `merged['constructor']` answers the `Object` function off the prototype chain, so
+ *     `held === undefined` is false and `held.includes(value)` is a bare `TypeError` raised inside
+ *     a path whose only contract is `X_VECTOR_SCOPE_WIDENED`;
+ *   - writing `merged['__proto__'] = [...]` runs `Object.prototype`'s setter rather than creating
+ *     the key, so the rule the caller declared is absent from `Object.entries` and the derived
+ *     scope comes out WIDER than the one that was asked for.
+ * `Object.fromEntries` defines own properties, so the object handed back has neither hazard.
+ */
 function narrowAllow(
   base: Readonly<Record<string, readonly string[]>> | undefined,
   next: Readonly<Record<string, readonly string[]>> | undefined,
 ): Readonly<Record<string, readonly string[]>> | undefined {
   if (next === undefined) return base;
-  const merged: Record<string, readonly string[]> = { ...(base ?? {}) };
+  const merged = new Map<string, readonly string[]>(Object.entries(base ?? {}));
   for (const [key, values] of Object.entries(next)) {
-    const held = merged[key];
-    merged[key] = held === undefined ? values : values.filter((value) => held.includes(value));
+    const held = merged.get(key);
+    merged.set(key, held === undefined ? values : values.filter((value) => held.includes(value)));
   }
-  return merged;
+  return Object.fromEntries(merged);
 }
 
 /** Whether one stored row survives the scope. The in-memory twin of the SQL conditions. */
@@ -70,7 +81,11 @@ export function scopeAdmits(
 ): boolean {
   if (scope.tenant !== undefined && scope.tenant !== tenant) return false;
   return Object.entries(scope.allow ?? {}).every(([key, values]) => {
-    const value = metadata[key];
+    // Own properties only, for the reason `narrowAllow` uses a `Map`: `key` is a caller's string
+    // and a metadata bag is a caller's object. This half already failed CLOSED — an inherited
+    // member is never one of the allowed strings — but relying on that is relying on the value
+    // types, not on the rule, and the rule is that a caller's string is never an object key.
+    const value = Object.hasOwn(metadata, key) ? metadata[key] : undefined;
     return value !== undefined && values.includes(value);
   });
 }

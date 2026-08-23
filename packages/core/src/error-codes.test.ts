@@ -3,7 +3,13 @@
 // declares, because an unregistered code still renders — as a humanised guess nobody wrote.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { describeErrorCode, errorCodeSnapshot, hasErrorCode, resetErrorCodes } from './error-codes';
+import {
+  describeErrorCode,
+  ERROR_DOCS_URL,
+  errorCodeSnapshot,
+  hasErrorCode,
+  resetErrorCodes,
+} from './error-codes';
 
 // The registry is process-global, every package fills it once at import time, and bun shares one
 // process across files — so the reset below would strip whatever ran before this file and leave
@@ -25,5 +31,26 @@ describe('the codes core owns', () => {
     expect(describeErrorCode('X_CURSOR_SECRET_DEV').title).toBe(
       'cursors are signed with the shipped development key',
     );
+  });
+});
+
+describe('ERROR_DOCS_URL', () => {
+  // `https://ultimate.dev/errors/<code>` answered 404 on every error the framework has ever
+  // thrown, including the first line a new agent reads. `wiki/` is the only public documentation
+  // surface there is, and codes live in TABLE ROWS there — so there is no per-code anchor, and a
+  // per-code fragment would be a second dead declaration rather than a fix for the first.
+  test('is the wiki page, with no per-code fragment to be dead', () => {
+    expect(ERROR_DOCS_URL).toBe('https://github.com/developerz-ai/ultimate/wiki/Error-Codes');
+    expect(ERROR_DOCS_URL).not.toContain('ultimate.dev');
+    expect(ERROR_DOCS_URL).not.toContain('#');
+  });
+
+  test('every code core declares points at it, and none carries a dead host', () => {
+    resetErrorCodes();
+    for (const code of ['X_ABORTED', 'X_CONFIG_INVALID', 'X_INTERNAL', 'X_TIMEOUT']) {
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
+    }
+    // A code nobody registered gets the humanised fallback, and its docs must not be dead either.
+    expect(describeErrorCode('X_NOBODY_REGISTERED_THIS').docs).toBe(ERROR_DOCS_URL);
   });
 });

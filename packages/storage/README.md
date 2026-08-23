@@ -113,6 +113,12 @@ any key with a `maxBytes` and `contentType` of their choosing, which `acceptSign
 trusts over the app's own `uploadPolicy`. Setting `STORAGE_SIGNING_SECRET=$DEV_SIGNING_SECRET`, or
 pasting the literal into `signingSecret`, is refused exactly as an unset variable is. `usesDevStorageSecret()` is the
 `x doctor` probe for it, the twin of core's `usesDevCursorSecret()`.
+
+Both read **one table**, and `env` is how a caller says which. `localDriver({ root, env })` reads
+the secret, the environment test and the environment the refusal names off that table;
+`usesDevStorageSecret({ env })` reads it off the same one. Both default to `process.env`, so a bare
+call is unchanged — pass `env` wherever the boot's environment is not the process's (`serveApp({ env })`,
+a test fixture), or the guard answers about one process and the disk signs according to another.
 Verification is constant-time, checks the signature *before* the expiry (a forged URL never
 learns it was merely late), takes a `Clock` so tests freeze time, and returns
 `{ ok: false, reason }` rather than throwing — `malformed | unsafe-key | signature-mismatch |

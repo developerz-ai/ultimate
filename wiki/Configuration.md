@@ -85,7 +85,7 @@ Wiring the three instead would have needed a tier-0 → tier-1 read the tier tab
 | `rateLimit` | `Partial<AuthRateLimitPolicy>` | `scope: 'shared'` must be matched by a `limiter` that says the same, or `defineAuth` refuses at boot rather than at 3am on the first spray |
 | `limiter` / `orgLimiter` | `AuthLimiter` | omitted means one process' worth of state, i.e. `maxAttempts × N` for N replicas |
 | `mfa` | `Partial<AuthMfaPolicy>` | `required` is typed `false` and cannot be set true: both credential paths branch on `user.mfaSecret`, so a user who never enrolled would be locked out for good |
-| `providers` | `OAuthProviderId[]` | |
+| `providers` | `OAuthProviderId[]` | **defaults to `[]`**, `As of 2026-08-23` — an empty list is "no OAuth", and every `/auth/oauth/<id>` answers `X_OAUTH_PROVIDER_UNKNOWN`. Never the live registry: that would let any dependency that calls `registerOAuthProvider` turn on a login route this app never enabled |
 | `link` | `OAuthLinkPolicy` | defaults to `'verified-email'` |
 
 There is no `auth.passkeys` and no `auth.trustedOrigins` in either place `As of 2026-08-22`.
@@ -105,16 +105,28 @@ There is no `jobs.retry` object, no `jobs.visibilityTimeout` and no `jobs.retent
 
 ## `realtime`
 
-`RealtimeConfig` is four fields and no more `As of 2026-08-19` ([`packages/core/src/config.ts:86`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)):
+`RealtimeConfig` is three fields and no more `As of 2026-08-23` ([`packages/core/src/config.ts:123`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)):
 
 | field | type | default | notes |
 |---|---|---|---|
 | `realtime.enabled` | `boolean` | `false` | off unless the app turns it on |
-| `realtime.tier` | `'channels' \| 'live-queries' \| 'local-first'` | `'channels'` | **names, not numbers**. `channels` and `live-queries` ship; `local-first` is not in 4.0.0 ([Realtime](Realtime)) |
 | `realtime.transport` | `'memory' \| 'nats' \| 'redis'` | `'memory'` | `memory` = in-process, single node, dev and small deploys. `redis` type-checks and is never built — `selectTransport` resolves in-process or NATS only |
 | `realtime.urlEnv` | `string` | — | the **env key name**, never a URL. Required unless `memory`; missing → `X_CONFIG_INVALID` |
 
 At runtime the transport is chosen by `NATS_URL` rather than by this field — the config documents intent, the env decides ([`17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md)).
+
+**`realtime.tier` is gone**, `As of 2026-08-23` — the same shape as `jobs.driver` and
+`realtime.heartbeatMs` before it. It accepted
+`'channels' | 'live-queries' | 'local-first'`, defaulted to `'channels'` — and **nothing
+read it**: no comparison, no branch, no dereference anywhere in `packages/*/src`. The only code
+that touches `config.realtime` reads `.transport` and `.urlEnv`. So an app declaring
+`tier: 'local-first'` got exactly what an app declaring `tier: 'channels'` got, and this page
+documented per-value semantics the framework never had. Which realtime tier you are on is decided
+by what you **declare** — a `channel()` topic, a `live: true` query, a local store — never by a
+config key → [Realtime](Realtime). **Delete `tier:` from the `realtime` block in `app.config.ts`**;
+that is the whole migration, and it is a typecheck fix rather than a runtime one, for the reason
+the `heartbeatMs` paragraph below gives. `bun run scripts/config-readers.ts` is the ratchet that
+now refuses the next one.
 
 **`realtime.heartbeatMs` is gone**, `As of 2026-08-19`. It was declared here with a default of
 15 000 and read by nothing; the socket beat is the client's `new LiveClient({ heartbeatMs })` —
@@ -126,7 +138,7 @@ runtime. It fails at `x verify`'s `typecheck` step as `TS2353`, excess property 
 `Input<RealtimeConfig>` — and an app that builds its config into a variable before passing it loses
 excess-property checking and gets **no error at all** → [Known gaps](Known-Gaps).
 
-**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08-19`, and never were — `RealtimeConfig` is `{ enabled, tier, transport, urlEnv }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure, not a silent no-op, because the input type is `Input<RealtimeConfig>` and an unknown key is an excess property. The caps and the ring are **constructor options**, passed where the node is built:
+**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08-19`, and never were — `RealtimeConfig` is `{ enabled, transport, urlEnv }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure, not a silent no-op, because the input type is `Input<RealtimeConfig>` and an unknown key is an excess property. The caps and the ring are **constructor options**, passed where the node is built:
 
 | Option | Where | Default | Effect |
 |---|---|---|---|

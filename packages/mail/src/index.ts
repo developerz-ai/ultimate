@@ -55,6 +55,7 @@ export {
   MailError,
   mailCredentialMissing,
   mailDuplicate,
+  mailLayoutDuplicate,
   sendFailed,
   templateUnknown,
   textMissing,

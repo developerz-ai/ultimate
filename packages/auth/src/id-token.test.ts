@@ -129,9 +129,16 @@ describe('verifyIdToken', () => {
   });
 
   test('aud may be an array, and must contain this handshake client id', async () => {
+    // `azp` is required alongside a SECOND audience now (OIDC Core 3.1.3.7 step 5) — see the
+    // describe block at the bottom of this file. A single-element array asks nothing extra.
     expect(
-      await asyncCodeOf(() => verify(unsignedJwt(googleClaims({ aud: ['other', 'client-id'] })))),
+      await asyncCodeOf(() =>
+        verify(unsignedJwt(googleClaims({ aud: ['other', 'client-id'], azp: 'client-id' }))),
+      ),
     ).toBe('did-not-throw');
+    expect(await asyncCodeOf(() => verify(unsignedJwt(googleClaims({ aud: ['client-id'] }))))).toBe(
+      'did-not-throw',
+    );
     expect(await asyncCodeOf(() => verify(unsignedJwt(googleClaims({ aud: 'another-app' }))))).toBe(
       'X_OAUTH_TOKEN_INVALID',
     );
@@ -195,5 +202,60 @@ describe('a forged iss cannot forge a log line', () => {
     expect(error?.cause).toContain('\\n');
     // Still readable: the operator can see which issuer was presented.
     expect(error?.cause).toContain('evil.test');
+  });
+});
+
+/**
+ * Two bounds this file did not check, and one of them its own sibling checks FROM THIS FILE'S
+ * CONSTANT: `workload.ts` imports `ID_TOKEN_CLOCK_SKEW_MS` from here and then refuses an `nbf` in
+ * the future, while `verifyIdToken` accepted one ten years out. `azp` is OIDC Core 3.1.3.7 step 5:
+ * with more than one audience, the authorised party is what says this token was minted FOR this
+ * client rather than merely mentioning it.
+ *
+ * Both only ever narrow what is accepted; nothing that verified before stops verifying.
+ */
+describe('verifyIdToken checks the bounds its sibling already checks', () => {
+  test('an nbf in the future is refused, past the same skew workload.ts allows', async () => {
+    const notYet = unsignedJwt(googleClaims({ nbf: seconds(10 * 365 * 24 * 3_600_000) }));
+    expect(await asyncCodeOf(() => verify(notYet))).toBe('X_OAUTH_TOKEN_INVALID');
+  });
+
+  test('an nbf inside the clock skew still verifies — two servers rarely agree on the second', async () => {
+    const barely = unsignedJwt(googleClaims({ nbf: seconds(30_000) }));
+    await expect(verify(barely)).resolves.toMatchObject({ sub: '108122122550' });
+  });
+
+  test('an nbf in the past is ordinary and verifies', async () => {
+    await expect(
+      verify(unsignedJwt(googleClaims({ nbf: seconds(-60_000) }))),
+    ).resolves.toBeTruthy();
+  });
+
+  test('a non-numeric nbf is not a bound and is ignored, exactly as workload.ts ignores it', async () => {
+    await expect(verify(unsignedJwt(googleClaims({ nbf: 'soon' })))).resolves.toBeTruthy();
+  });
+
+  test('multiple audiences without a matching azp are refused', async () => {
+    // `aud` includes this client, so the audience check passes — and passed alone, which is what
+    // made the second audience free: a token minted FOR another party that merely names this one.
+    const foreign = unsignedJwt(
+      googleClaims({ aud: ['client-id', 'other-client'], azp: 'other-client' }),
+    );
+    expect(await asyncCodeOf(() => verify(foreign))).toBe('X_OAUTH_TOKEN_INVALID');
+
+    const absent = unsignedJwt(googleClaims({ aud: ['client-id', 'other-client'] }));
+    expect(await asyncCodeOf(() => verify(absent))).toBe('X_OAUTH_TOKEN_INVALID');
+  });
+
+  test('multiple audiences WITH a matching azp verify', async () => {
+    const ours = unsignedJwt(
+      googleClaims({ aud: ['client-id', 'other-client'], azp: 'client-id' }),
+    );
+    await expect(verify(ours)).resolves.toMatchObject({ azp: 'client-id' });
+  });
+
+  test('a single audience needs no azp — the audience already names one party', async () => {
+    await expect(verify(unsignedJwt(googleClaims({ aud: 'client-id' })))).resolves.toBeTruthy();
+    await expect(verify(unsignedJwt(googleClaims({ aud: ['client-id'] })))).resolves.toBeTruthy();
   });
 });

@@ -374,7 +374,10 @@ describe('a round that fails says what to do about it', () => {
     const failed = spy.mock.calls.find((call) => call[0] === 'jobs.scheduler.tick-failed');
     spy.mockRestore();
 
-    expect(failed?.[1]).toEqual({ error: 'socket hang up' });
+    // `renderThrowable`'s form: the throwable's own name beside its message, and nothing an
+    // `UltimateError` would have carried. `String(error)` is what a null-prototype throwable
+    // raises on, from a catch block with nothing left to answer with.
+    expect(failed?.[1]).toEqual({ error: 'Error: socket hang up' });
   });
 });
 

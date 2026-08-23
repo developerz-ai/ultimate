@@ -122,6 +122,10 @@ Commands: \`bun test\`, \`bunx tsc --noEmit -p tsconfig.json\`.
     {
       path: 'src/errors.ts',
       contents: `// The X_* codes owned by @ultimat3/${name}. Each names the exact change that resolves it.
+//
+// No \`docs:\` line, and that is deliberate: \`UltimateError\`'s constructor resolves the registered
+// descriptor, whose default is \`ERROR_DOCS_URL\` in @ultimat3/core. A URL written out here is a
+// second answer to a question core already answers, and the last one went stale host and all.
 import { UltimateError } from '@ultimat3/core';
 
 export const ${upper(name)}_ERROR_CODES = ['X_${upper(name)}_INVALID'] as const;
@@ -134,7 +138,6 @@ export class ${Name}InvalidError extends UltimateError {
       code: 'X_${upper(name)}_INVALID',
       cause: input.cause,
       fix: input.fix,
-      docs: 'https://ultimate.dev/errors/X_${upper(name)}_INVALID',
     });
   }
 }

@@ -143,6 +143,39 @@ describe('a handler that throws is audited as failed, and the throw is not swall
     return { thrown, audit };
   };
 
+  /**
+   * `String(error)` on a caught value. A `catch` binding is annotated by nobody, so it can hold
+   * anything an app's handler threw — and three of the four total-rendering forms raise on a real
+   * value. `Object.create(null)` has no `Symbol.toPrimitive`, no `toString` and no `valueOf`, so
+   * `String(it)` is `TypeError: No default value`, thrown from INSIDE the catch block that owes
+   * the auditor an entry. Reproduced: ZERO audit entries, and the caller received the TypeError
+   * rather than what the handler threw. The control (`new Error('boom')`) wrote one entry.
+   *
+   * Two defects, one line: the value was rendered at all, and it was rendered BEFORE
+   * `audit.append` — so a throw in the renderer skipped the append entirely.
+   */
+  const hostile: AdminAction = {
+    name: 'post.hostile',
+    permission: 'post:publish',
+    entity: 'post',
+    async handle(): Promise<never> {
+      // A prototype-less object is what a JSON round trip through a worker can produce, and it
+      // is the cheapest value that defeats every implicit string conversion.
+      throw Object.create(null) as never;
+    },
+  };
+
+  test('a thrown value with no prototype is still audited, and still re-thrown as itself', async () => {
+    const { thrown, audit } = await run(hostile);
+    const entries = audit.entries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.outcome).toBe('failed');
+    expect(entries[0]?.reason).toBe('admin.error.action-failed');
+    // The caller gets what the handler threw — never a TypeError raised by the audit path.
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect(Object.getPrototypeOf(thrown)).toBeNull();
+  });
+
   test('the caller gets the ORIGINAL error, not a decision object', async () => {
     const { thrown } = await run(boom);
     // Rethrown untouched: a handler's failure is the app's error, with the app's own stack.

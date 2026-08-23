@@ -1,5 +1,5 @@
 // The X_* codes owned by @ultimat3/cli, and nothing else: the two lists, their titles, the one
-// registration call and `docsFor`. Every code names the exact command that resolves it, because
+// registration call. Every code names the exact command that resolves it, because
 // the CLI is the surface an agent reads first — a failure here has to be actionable without a doc
 // lookup or a second round-trip. The classes that throw these codes live in `./errors`.
 import { registerErrorCodes } from '@ultimat3/core';
@@ -217,4 +217,11 @@ registerErrorCodes(
   Object.fromEntries(Object.entries(CLI_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
 
-export const docsFor = (code: CliErrorCode): string => `https://ultimate.dev/errors/${code}`;
+// This file exports NO `docsFor(code)`, and adding one back is the defect. A CLI error passes no
+// `docs:` at all — `UltimateError` fills it from `describeErrorCode(code).docs`, which is
+// `@ultimat3/core`'s `ERROR_DOCS_URL`: one page for every code, never one per code, because `wiki/`
+// is the framework's only public documentation surface and a code lives there in a TABLE ROW, which
+// has no anchor. A `Finding` is a plain object with no constructor to fill it, so it carries
+// `ERROR_DOCS_URL` imported from core — the same constant, not a second copy of it. The
+// `https://ultimate.dev/errors/<code>` links `docsFor` built until 9.x answered 404, host included,
+// on every error the CLI has ever thrown.

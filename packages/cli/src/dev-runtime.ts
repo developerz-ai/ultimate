@@ -186,8 +186,14 @@ export function startStorage(services: DevServices, env: Env, override?: Storage
   // missing" from a helper the operator never configured. Not an outright ban on the local disk in
   // production: a single-node Compose deploy on a mounted volume WITH a real secret is a rung on
   // the scale ladder, and refusing it would be a deploy-shape decision, not a security fix.
-  if (!isLocal() && usesDevStorageSecret()) {
-    throw new LocalDiskUnsafeError({ environment: resolveEnvironment(), root });
+  // `{ env }` on ALL THREE, never the ambient `process.env`: this function is HANDED the boot's
+  // environment and reads `S3_BUCKET` off it one branch above, so a guard asking a second source
+  // could answer `development` for a process booting as `production` — or, with
+  // `usesDevStorageSecret({ env })` left bare, refuse a boot whose own env carries a real
+  // `STORAGE_SIGNING_SECRET` because the PROCESS does not. Which environment, whether a secret
+  // exists, and the name the message prints are one question about one table.
+  if (!isLocal({ env }) && usesDevStorageSecret({ env })) {
+    throw new LocalDiskUnsafeError({ environment: resolveEnvironment({ env }), root });
   }
   try {
     mkdirSync(root, { recursive: true });
@@ -198,7 +204,9 @@ export function startStorage(services: DevServices, env: Env, override?: Storage
       `mount a writable volume at ${root}, or set S3_ENDPOINT and S3_BUCKET to use object storage instead`,
     );
   }
-  return defineStorage({ disks: { local: localDriver({ root }) }, default: 'local' });
+  // The guard three lines up reads `env`; so must the disk it guards. Otherwise the boot's
+  // environment decides whether signing is allowed and the process's decides what key is used.
+  return defineStorage({ disks: { local: localDriver({ root, env }) }, default: 'local' });
 }
 
 /**

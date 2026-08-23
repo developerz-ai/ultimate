@@ -2,6 +2,11 @@
 // `registry-leak-guard.ts` owns WHEN. A snapshot rather than a reset to defaults, because what a
 // module declares at MODULE scope evaluates once per `bun test` process — a neighbour's clear is
 // permanent and there is no second evaluation left to redo it.
+//
+// FOUR registries, out of roughly nine that publish a `clear*`/`reset*`. The missing ones and what
+// each still needs are tabulated in `registry-leak-guard.ts` beside `RegistrySample` — every one of
+// them needs a RESTORE in its owning package first, the way `restorePermissions` / `restoreRoles`
+// were added to `@ultimat3/policy` for the two rows below.
 
 import type { Catalog, Locale, LocaleConfig } from '@ultimat3/i18n';
 import {

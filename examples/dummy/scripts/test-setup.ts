@@ -13,9 +13,10 @@ import '@ultimat3/testing/preload';
 // page could call a handler instead of the typed client. The preload is outside both, runs once
 // for the whole suite, and is already where the app says what its tests need.
 import '../apps/web/api';
+import { driver as appDriver } from '@postly/db';
 import { assert, userActor } from '@ultimat3/core';
 import type { Driver, EntityCore, Repo, Seed } from '@ultimat3/entity';
-import { defaultDriver, seedId } from '@ultimat3/entity';
+import { seedId } from '@ultimat3/entity';
 import { defineFixtures } from '@ultimat3/testing';
 
 /** Every seeded row carries an id; the rest of the columns are the entity's business. */
@@ -74,18 +75,20 @@ const capturingDriver = (base: Driver, rows: Map<string, SeedRow>): Driver => {
 };
 
 /**
- * A fresh graph per call, in the driver the APP reads through. `database()` resolves
- * `defaultDriver()` when a call names none, which is what `@postly/db`'s `db` does — so a seed run
- * against a driver of its own writes rows nothing else in the process can see, and every action,
- * job and query under test reads an empty table. It failed three suites away as
- * `X_ORG_NOT_FOUND`, as a policy denial on a null `row:`, and as a `posts.authorId` invariant.
+ * A fresh graph per call, in the driver the APP reads through — imported from `@postly/db`, not
+ * rebuilt here. A seed run against a driver of its own writes rows nothing else in the process can
+ * see, and every action, job and query under test reads an empty table. It failed three suites
+ * away as `X_ORG_NOT_FOUND`, as a policy denial on a null `row:`, and as a `posts.authorId`
+ * invariant. It read `defaultDriver()` until 2026-08-23, which agreed with the app only for as
+ * long as the app named no driver at all (#270).
  *
  * `reset?.()` first, because that driver is process-wide: fresh is now something this call has to
- * do rather than something a new object gives it for free.
+ * do rather than something a new object gives it for free. Postgres has no `reset`, and the
+ * optional call is the whole of the difference.
  */
 const handleFor = (seed: Seed): SeedHandle => {
   const rows = new Map<string, SeedRow>();
-  const driver = defaultDriver();
+  const driver = appDriver;
   driver.reset?.();
   const ready = seed.run({ driver: capturingDriver(driver, rows) });
 

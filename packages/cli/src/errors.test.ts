@@ -3,6 +3,7 @@
 // the embedded disk — so what is pinned is the two lines a reader acts on: `cause` and `fix`.
 
 import { describe, expect, test } from 'bun:test';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { requireBunVersion } from './app-root';
 import { BunVersionError, LocalDiskUnsafeError, VerifyFailedError } from './errors';
 import { thrownBy } from './thrown-by';
@@ -14,7 +15,7 @@ describe('VerifyFailedError', () => {
     expect(error.cause).toBe('3 verify step(s) failed: typecheck, drift, unit');
     // The per-step fixes live on the step findings; this one has to reach them.
     expect(error.fix).toBe('x verify --json');
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_VERIFY_FAILED');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
 

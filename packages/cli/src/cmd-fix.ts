@@ -3,7 +3,7 @@
 // (`docs/architecture/02-boundaries.md`) — a caller runs the printed edit, or the generated
 // `git mv`, itself.
 
-import { nearestName } from '@ultimat3/core';
+import { ERROR_DOCS_URL, nearestName } from '@ultimat3/core';
 import { appImportGraph, readAppSources } from './app-boundaries';
 import { requireAppRoot } from './app-root';
 import type { BoundaryCut } from './boundary-cuts';
@@ -17,8 +17,6 @@ export type { BoundaryCut };
 export { planBoundaryCuts };
 
 export const FIX_SUBCOMMANDS = ['boundary'] as const;
-
-const docsUrl = (code: string): string => `https://ultimate.dev/errors/${code}`;
 
 /**
  * Accept either an app-root-relative path or a suffix that matches exactly one scanned file —
@@ -81,7 +79,7 @@ const findingForCut = (cut: BoundaryCut): Finding => ({
   code: cut.code,
   cause: cut.cause,
   fix: cut.edit,
-  docs: docsUrl(cut.code),
+  docs: ERROR_DOCS_URL,
   at: cut.at,
 });
 

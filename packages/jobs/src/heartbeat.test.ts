@@ -99,7 +99,9 @@ describe('a renewal that lands holds the lease', () => {
     harness.heartbeat.stop();
 
     // Said out loud, because a queue that cannot be reached is worth knowing about...
-    expect(failed[0]?.[1]).toMatchObject({ jobId: 'job-1', error: 'connection reset' });
+    // `renderThrowable`'s form, `Name: message` — a caught value is rendered totally, never
+    // through `String(error)`, which raises on a null-prototype throwable inside a `catch`.
+    expect(failed[0]?.[1]).toMatchObject({ jobId: 'job-1', error: 'Error: connection reset' });
     // ...but the lease is still this worker's: nobody else can claim the job yet.
     expect(harness.heartbeat.lost()).toBe(false);
     expect(lostCount('emails')).toBeUndefined();
@@ -145,7 +147,7 @@ describe('a lease that lapses is named', () => {
     const lost = error.mock.calls.filter((call) => call[0] === 'jobs.lease.lost');
     error.mockRestore();
 
-    expect(lost[0]?.[1]).toMatchObject({ jobId: 'job-1', error: 'connection reset' });
+    expect(lost[0]?.[1]).toMatchObject({ jobId: 'job-1', error: 'Error: connection reset' });
     expect(lostCount('emails')).toBe(1);
   });
 

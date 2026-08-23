@@ -113,6 +113,23 @@ import. The CLI wires it.
   terminal. `server.ts` renders it; the test pins it against `format()`, never a literal.
 - Every outcome is audited via `audit.ts`, hidden included, at `warn`. Never log arguments
   or row data — a denial reason naming a row is a leak wearing an audit line's clothes.
+- **A tool that renders its OWN `isError` result may NAME the code it refused with**
+  (`McpToolResult.code`), and `outcomeForResult` sends it through the same `outcomeForCode` a
+  THROWN error goes through. Audit-only: `server.ts` never puts it on the wire, because the code is
+  already inside the rendered body. Without it every self-rendered refusal was `policy-denied` at
+  `warn` — so `@ultimat3/admin`'s `X_ADMIN_INVALID` (a client mistyping an argument the published
+  JSON Schema could not have refused: admin publishes a `type` per field and nothing else) sat in
+  the bucket this package's enumeration alert watches. `X_ADMIN_INVALID` is `ARGUMENT_CODES`;
+  `X_INPUT_INVALID` deliberately stays `failed`, because a projected action publishes its WHOLE
+  schema and input this server already validated failing inside it means the two have drifted.
+  A result naming no code keeps the conservative `policy-denied`.
+- **A `--` comment ends at the first CR *or* LF, because that is Postgres' own boundary set**
+  (`readonly-sql.ts`). `non_newline` is `[^\n\r]`, so a bare CR ends the comment for the SERVER
+  and did not for this scanner: `select 1;--\rupdate members set role='admin'` was one statement
+  with no mutating keyword to all five layer-3 checks at once — the statement split, the read-leader
+  check, the write-keyword scan, the forbidden-call scan and the `FOR UPDATE` regex all read the
+  stripped form — and `verbatim()` handed the caller's bytes back to run. `endOfLineComment` is the
+  lexer's set, never one character of it, the same shape `skipSingleQuoted` already had.
 - `security.test.ts` and `app-security.test.ts` are the executable contract for all of the
   above — the first over hand-built tools (each gate in isolation), the second over what an app
   actually declares (`defineAppMcp` projecting real actions and queries). Extend them, never
@@ -191,6 +208,17 @@ import. The CLI wires it.
 - `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs
   (`X_MCP_QUERY_REJECTED` / `X_MCP_NOT_BRANCH_DB` — one code each, because they want different
   next commands).
+- `pg_notify` and the server-control / replication families are banned for the reason every other
+  family is: the same ban already exists in another spelling. `notify`/`listen`/`unlisten` are
+  WRITE KEYWORDS, so `pg_notify()` is `NOTIFY` as a call the keyword scan cannot see;
+  `pg_cancel_backend`/`pg_terminate_backend` establish that server control belongs, so
+  `pg_reload_*`, `pg_rotate_*`, `pg_switch_*`, `pg_promote` and `pg_wal_replay_*` join them; and
+  `pg_logical_slot_get_changes` is `nextval`'s argument exactly — it advances a slot's confirmed
+  position, a write with no keyword that no `ROLLBACK` undoes — which brings `pg_create_*`,
+  `pg_drop_*`, `pg_replication_*` and `pg_logical_*` with it. `pg_file_*` is the writing half of
+  `pg_read_*`. `txid_current`/`pg_current_xact_id` ASSIGN a transaction id a rollback does not
+  return. The catalog VIEWS beside them (`pg_replication_slots`, `pg_stat_replication`) are read
+  `from` and never called, so the call scan never sees them.
 - Banned SQL functions are matched as a **prefix of a CALLED function name**, so the family is the
   unit and a spelling nobody wrote down is refused rather than admitted — an exact-name list let
   `pg_sleep_for` past a ban on `pg_sleep`, and `set_config` past `SET`, which is already a write

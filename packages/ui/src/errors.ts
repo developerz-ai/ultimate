@@ -30,7 +30,6 @@ export class UiError extends UltimateError {
       code: init.code,
       cause: init.cause,
       fix: init.fix,
-      docs: `https://ultimate.dev/errors/${init.code}`,
     });
   }
 }

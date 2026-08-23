@@ -3,7 +3,7 @@
 // Apart from `worker.ts` because the claim loop's question is "may I start this one?" — which job
 // holds which slot, and who gives it back, is bookkeeping of its own.
 
-import { logger } from '@ultimat3/core';
+import { logger, renderThrowable } from '@ultimat3/core';
 import type { ClaimedJob } from './driver';
 import { getJob } from './job';
 import type { HeldLease, LeaseStore } from './leases';
@@ -121,7 +121,7 @@ export function createFleetSlots(options: FleetSlotOptions): FleetSlots {
         logger.warn('jobs.worker.lease-release-failed', {
           workerId: options.workerId,
           jobId,
-          error: error instanceof Error ? error.message : String(error),
+          error: renderThrowable(error),
         });
       });
     },

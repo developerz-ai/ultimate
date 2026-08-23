@@ -2,6 +2,7 @@
 // repo feeds it findings it could not produce on its own. Split from the step list so a step
 // implementation can live beside the code it checks without importing the list.
 
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
 import type { Finding } from './output';
@@ -106,7 +107,7 @@ export function fromExec(result: ExecResult, finding: Omit<Finding, 'docs'>): St
   if (result.ok) return { ok: true, findings: [], output: execOutput(result) };
   return {
     ok: false,
-    findings: [{ ...finding, docs: `https://ultimate.dev/errors/${finding.code}` }],
+    findings: [{ ...finding, docs: ERROR_DOCS_URL }],
     output: execOutput(result),
   };
 }

@@ -9,7 +9,7 @@
 // The shapes are declared structurally rather than imported: `@ultimat3/http` is a
 // sibling tier, and jobs/realtime/mcp are higher tiers that import this package.
 
-import { forbidden } from './errors';
+import { forbidden, surfaceUnknown } from './errors';
 import { codeOf, type EvaluateArgs, evaluate, type PolicyEvaluation, reasonOf } from './evaluate';
 import type { Policy } from './policy';
 
@@ -121,12 +121,27 @@ const adapters: Readonly<Record<Surface, Adapter>> = {
   mcp: enforceMcp,
 };
 
-/** Dispatcher for code that is generic over surfaces (the action projector). */
+/** The surfaces that have an adapter, derived from the table so the two cannot disagree. */
+const SURFACES: readonly string[] = Object.keys(adapters);
+
+/**
+ * Dispatcher for code that is generic over surfaces (the action projector).
+ *
+ * `Object.hasOwn` and not a truthiness check on `adapters[surface]`: the table is an object
+ * literal, so it inherits `Object.prototype`, and `enforce('valueOf' as Surface, …)` called
+ * `Object.prototype.valueOf` with `adapters` as its receiver — a truthy return, so the call failed
+ * CLOSED, and the adapter table typed as a `SurfaceDenial`, so nothing downstream could say what
+ * was denied. Every in-repo caller passes a literal; a config-driven table, a surface name off the
+ * wire or a JS host does not, and this is a public authz entry point.
+ */
 export const enforce = <I, R = unknown>(
   surface: Surface,
   policy: Policy<I, R>,
   args: EvaluateArgs<I, R>,
-): SurfaceDenial | undefined => adapters[surface](policy, args);
+): SurfaceDenial | undefined => {
+  if (!Object.hasOwn(adapters, surface)) throw surfaceUnknown(surface, SURFACES);
+  return adapters[surface](policy, args);
+};
 
 /** For call sites that would rather throw than branch. Same decision, same reason. */
 export const assertAllowed = <I, R = unknown>(

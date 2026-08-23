@@ -183,6 +183,10 @@ async function runEval<V extends PromptVars>(
       ...(input.prompt.system !== undefined ? { system: input.prompt.system } : {}),
       ...(input.prompt.model !== undefined ? { model: input.prompt.model } : {}),
       ...(input.prompt.effort !== undefined ? { effort: input.prompt.effort } : {}),
+      // `thinking` too, and not because it is tidy: `contentHash` covers it, so the baseline is
+      // filed under a hash describing a configuration the measurement did not use. `llm()` and
+      // `agent()` have always sent both.
+      ...(input.prompt.thinking !== undefined ? { thinking: input.prompt.thinking } : {}),
     });
     const perScorer: Record<string, number> = {};
     for (const scorer of input.scorers) {

@@ -1,7 +1,9 @@
 import { afterAll, describe, expect, test } from 'bun:test';
+import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { integer, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
 import { clearRegistry } from './registry';
+import { viewFor } from './view';
 
 const posts = entity('view_test_posts', {
   columns: {
@@ -110,5 +112,64 @@ describe('$view()', () => {
         'x entities describe view_test_posts',
       );
     }
+  });
+});
+
+/**
+ * A `~standard` validator answers with `issues`; it does not throw. The two lines that built the
+ * issue message read the caught value directly — `error instanceof Error ? error.message :
+ * String(error)` — and BOTH halves are reads a throwable can refuse: `instanceof` consults
+ * `getPrototypeOf`, `String()` runs the value's own coercion. So a null-prototype throwable out of
+ * a column parser raised a second, uncatchable `TypeError` from inside the validator, in place of
+ * the rejection the caller asked for. `renderThrowable` is total.
+ */
+describe('a projection rejected by a throwable that fights being read', () => {
+  const viewOver = (thrown: unknown): StandardSchemaV1<unknown, { readonly title: string }> =>
+    viewFor<{ title: string }, 'title'>(
+      'view_test_hostile',
+      {
+        title: {
+          ...text(),
+          $parse: (): never => {
+            throw thrown;
+          },
+        },
+      },
+      ['title'],
+    );
+
+  test('a null-prototype throwable becomes an issue, never a second throw', () => {
+    const result = viewOver(Object.assign(Object.create(null), { detail: 'no coercion for you' }))[
+      '~standard'
+    ].validate({ title: 'anything' });
+    expect(result).not.toBeInstanceOf(Promise);
+    expect(result instanceof Promise ? [] : (result.issues ?? [])).toHaveLength(1);
+  });
+
+  test('a Proxy that refuses every read becomes an issue too', () => {
+    const hostile = new Proxy(
+      {},
+      {
+        get: (): never => {
+          throw new TypeError('no reads');
+        },
+        getPrototypeOf: (): never => {
+          throw new TypeError('no prototype either');
+        },
+      },
+    );
+    const result = viewOver(hostile)['~standard'].validate({ title: 'anything' });
+    expect(result).not.toBeInstanceOf(Promise);
+    const message = result instanceof Promise ? '' : (result.issues?.[0]?.message ?? '');
+    expect(message.length).toBeGreaterThan(0);
+  });
+
+  test('an ordinary Error still says what it said, and names its kind', () => {
+    const result = viewOver(new TypeError('title is not a string'))['~standard'].validate({
+      title: 'anything',
+    });
+    const message = result instanceof Promise ? '' : (result.issues?.[0]?.message ?? '');
+    expect(message).toContain('title is not a string');
+    expect(message).toContain('TypeError');
   });
 });

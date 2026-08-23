@@ -5,7 +5,7 @@
 import { describeErrorCode, hasErrorCode, listErrorCodes } from '@ultimat3/core';
 import type { ErrorExplanation } from '@ultimat3/mcp';
 import type { CliErrorCode } from './error-codes';
-import { CLI_ERROR_CODES, docsFor } from './error-codes';
+import { CLI_ERROR_CODES } from './error-codes';
 import { codeFixes, codeFixScan } from './error-fixes';
 
 /**
@@ -214,7 +214,7 @@ export function explainErrorCode(code: string): ErrorExplanation | undefined {
     code,
     cause: described.title,
     fix: cli ? CLI_FIXES[code] : projectedFix(code),
-    docs: cli ? docsFor(code) : described.docs,
+    docs: described.docs,
   };
 }
 

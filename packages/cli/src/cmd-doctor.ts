@@ -4,7 +4,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { tryResolveEnvironment, usesDevCursorSecret } from '@ultimat3/core';
+import { ERROR_DOCS_URL, tryResolveEnvironment, usesDevCursorSecret } from '@ultimat3/core';
 import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/storage';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
@@ -49,12 +49,10 @@ export interface DoctorProbe {
   snapshots(): Promise<readonly Finding[]>;
 }
 
-const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
-
 const finding = (code: string, cause: string, fix: string, at?: string): Finding =>
   at === undefined
-    ? { code, cause, fix, docs: docs(code) }
-    : { code, cause, fix, docs: docs(code), at };
+    ? { code, cause, fix, docs: ERROR_DOCS_URL }
+    : { code, cause, fix, docs: ERROR_DOCS_URL, at };
 
 export const OFFLINE_FALLBACK = 'apps/web/app/offline.tsx';
 

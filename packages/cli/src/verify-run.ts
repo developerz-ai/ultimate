@@ -2,7 +2,7 @@
 // `cmd-verify.ts` because `x build` and the MCP host run the gate without going through the
 // command: what a run means — never bail early, count what actually ran — belongs to neither.
 
-import { renderThrowable } from '@ultimat3/core';
+import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import { msg } from './messages';
 import type { CommandResult, Finding, StepResult } from './output';
 import {
@@ -139,6 +139,6 @@ function findingOf(error: unknown, step: string): Finding {
     code: 'X_VERIFY_FAILED',
     cause: `step "${step}" threw: ${cause}`,
     fix: 'x verify --json',
-    docs: 'https://ultimate.dev/errors/X_VERIFY_FAILED',
+    docs: ERROR_DOCS_URL,
   };
 }

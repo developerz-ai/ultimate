@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "33f8db03cc16884c",
+  "buildId": "3f34c09902c27ec4",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -2083,6 +2083,26 @@
       "queue": "default",
       "retry": {
         "attempts": 5,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "post-excerpts",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "force": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
         "backoff": "exponential"
       },
       "steps": []

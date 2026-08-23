@@ -93,8 +93,12 @@ registerErrorRetry({
   X_BACKFILL_APPLIED: 'terminal',
 });
 
-/** Shared with `backfill-errors.ts`, which holds the seven `X_BACKFILL_*` classes. */
-export const docsFor = (code: JobErrorCode): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` on any class below, here or in `backfill-errors.ts`. `UltimateError` fills it from
+// `describeErrorCode(code).docs`, which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every
+// code, never one per code, because `wiki/` is the framework's only public documentation surface
+// and a code lives there in a TABLE ROW, which has no anchor. The `docsFor` that stood here built
+// `https://ultimate.dev/errors/<code>`, which answered 404, host included, on every job failure
+// this package has ever put in a dead-letter row.
 
 /** An enqueue collided with a live job holding the same idempotency key under `onConflict: 'error'`. */
 export class JobDuplicateError extends UltimateError {
@@ -103,7 +107,6 @@ export class JobDuplicateError extends UltimateError {
       code: 'X_JOB_DUPLICATE',
       cause: `job "${input.job}" already queued as ${input.existingId} with idempotencyKey "${input.idempotencyKey}"`,
       fix: 'pass onConflict: "dedupe" to enqueue, or make idempotencyKey narrower',
-      docs: docsFor('X_JOB_DUPLICATE'),
     });
   }
 }
@@ -124,7 +127,6 @@ export class JobNameTakenError extends UltimateError {
       code: 'X_JOB_DUPLICATE',
       cause: `two ${input.kind}s claim the name "${input.name}"`,
       fix: `x jobs ls --json names the one already seated; rename the other's export, or its "name:" if it declares one — a ${input.kind} name is a durable queue key and is globally unique`,
-      docs: docsFor('X_JOB_DUPLICATE'),
     });
   }
 }
@@ -151,7 +153,6 @@ export class JobRowStatusUnknownError extends UltimateError {
         `${input.table}.${input.column} holds "${input.value}", which this build does not know — ` +
         `it reads ${input.known.join(', ')}`,
       fix: `x jobs show --json   # then drain the older workers: a status this build cannot read was almost certainly written by a newer deploy`,
-      docs: docsFor('X_JOB_ROW_STATUS_UNKNOWN'),
     });
   }
 }
@@ -175,7 +176,6 @@ export class ActionJobUnbridgedError extends UltimateError {
       code: 'X_ACTION_JOB_UNBRIDGED',
       cause: `export "${input.export}" is the action projection "${input.job}", which is not a job handle and cannot be registered as one`,
       fix: `wrap it: agentJob(${input.export}, { name: '${input.export}', tenant, retry }) from @ultimat3/ai — that composes job() and returns a handle the queue accepts`,
-      docs: docsFor('X_ACTION_JOB_UNBRIDGED'),
     });
   }
 }
@@ -187,7 +187,6 @@ export class StepDuplicateError extends UltimateError {
       code: 'X_STEP_DUPLICATE',
       cause: `job "${input.job}" used step name "${input.step}" twice in one run`,
       fix: `rename one of them, e.g. step.run('${input.step}-2', ...) — step names are the replay key`,
-      docs: docsFor('X_STEP_DUPLICATE'),
     });
   }
 }
@@ -201,7 +200,6 @@ export class JobTimeoutError extends UltimateError {
           ? `job "${input.job}" exceeded its ${input.timeoutMs}ms timeout`
           : `job "${input.job}" step "${input.step}" exceeded its ${input.timeoutMs}ms timeout`,
       fix: `raise timeout on the job definition, or split the work into step.run() calls`,
-      docs: docsFor('X_JOB_TIMEOUT'),
     });
   }
 }
@@ -225,7 +223,6 @@ export class JobAbortedError extends UltimateError {
           ? `job "${input.job}" was cancelled — this attempt no longer owns the run`
           : `job "${input.job}" was cancelled before step "${input.step}" could be recorded`,
       fix: 'add throwIfAborted(ctx) before expensive work, or pass fetch(url, { signal: ctx.signal }) — the queue re-runs the job, so stop at the deadline instead of running past it',
-      docs: docsFor('X_ABORTED'),
     });
   }
 }
@@ -237,7 +234,6 @@ export class JobMaxAttemptsError extends UltimateError {
       code: 'X_JOB_MAX_ATTEMPTS',
       cause: `job "${input.job}" failed ${input.attempts} times, last error: ${input.lastError}`,
       fix: `x jobs retry ${input.jobId}`,
-      docs: docsFor('X_JOB_MAX_ATTEMPTS'),
     });
   }
 }
@@ -248,7 +244,6 @@ export class DriverUnavailableError extends UltimateError {
       code: 'X_DRIVER_UNAVAILABLE',
       cause: `jobs driver "${input.driver}" is unavailable: ${input.cause}`,
       fix: input.fix,
-      docs: docsFor('X_DRIVER_UNAVAILABLE'),
     });
   }
 }
@@ -263,7 +258,6 @@ export class IdempotencyRequiredError extends UltimateError {
       code: 'X_IDEMPOTENCY_REQUIRED',
       cause: `job "${input.job}" has no idempotencyKey — at-least-once delivery would run it twice`,
       fix: `add idempotencyKey: (input) => \`${input.job}:\${input.id}\` to the job definition`,
-      docs: docsFor('X_IDEMPOTENCY_REQUIRED'),
     });
   }
 }
@@ -290,7 +284,6 @@ export class JobTenantRequiredError extends UltimateError {
       // tenant, and the pass opens the cross-tenant scope for exactly that declaration. Half the
       // callers of this code arrive through `backfill()`, which forwards its `tenant` to `job()`.
       fix: `add tenant: (input) => input.orgId to job("${input.job}") — or tenant: 'none', which declares NO org: right for a job that touches no tenant-scoped table, and the spelling a backfill() uses to sweep every tenant`,
-      docs: docsFor('X_JOB_TENANT_REQUIRED'),
     });
   }
 }
@@ -307,7 +300,6 @@ export class LeaseLostError extends UltimateError {
       code: 'X_JOB_LEASE_LOST',
       cause: `job "${input.job}" (${input.jobId}) is no longer claimed by this worker — it was cancelled, or its visibility lease lapsed and the queue re-delivered it`,
       fix: `x jobs show ${input.jobId} --json`,
-      docs: docsFor('X_JOB_LEASE_LOST'),
     });
   }
 }
@@ -325,7 +317,6 @@ export class JobSlotLostError extends UltimateError {
       code: 'X_JOB_SLOT_LOST',
       cause: `job "${input.job}" (${input.jobId}) no longer holds fleet concurrency slot ${input.slot} — its lease expired and another worker took it`,
       fix: `x jobs show ${input.jobId} --json`,
-      docs: docsFor('X_JOB_SLOT_LOST'),
     });
   }
 }
@@ -344,7 +335,6 @@ export class JobNotCancellableError extends UltimateError {
           ? `no job ${input.jobId} exists in this queue`
           : `job ${input.jobId} is "${input.state}" and only a job that has not finished can be cancelled`,
       fix: `x jobs ls --state running --json`,
-      docs: docsFor('X_JOB_NOT_CANCELLABLE'),
     });
   }
 }
@@ -356,7 +346,6 @@ export class CancelUnsupportedError extends UltimateError {
       code: 'X_JOB_NOT_CANCELLABLE',
       cause: `the "${input.driver}" jobs driver cannot cancel a single job`,
       fix: 'call setJobDriver(createPgDriver()) at boot — only the pg driver implements introspect.cancel — then: x jobs cancel <id> --json',
-      docs: docsFor('X_JOB_NOT_CANCELLABLE'),
     });
   }
 }
@@ -373,7 +362,6 @@ export class ConcurrencyUnenforceableError extends UltimateError {
       code: 'X_JOB_CONCURRENCY_UNENFORCEABLE',
       cause: `${input.jobs.join(', ')} declare concurrency and the "${input.driver}" jobs driver has no lease store, so the cap would hold per process and the fleet would run concurrency x replicas`,
       fix: `remove concurrency from job("${input.jobs[0] ?? 'the job'}"), or call setJobDriver(createPgDriver()) at boot — the pg driver is the one with a lease store`,
-      docs: docsFor('X_JOB_CONCURRENCY_UNENFORCEABLE'),
     });
   }
 }
@@ -385,7 +373,6 @@ export class OutboxNoTxError extends UltimateError {
       code: 'X_OUTBOX_NO_TX',
       cause: `ctx.jobs.enqueue(${input.job}) ran outside a transaction with outbox: 'required'`,
       fix: 'wrap the call in ctx.tx(async (tx) => ...), or enqueue with { outbox: false }',
-      docs: docsFor('X_OUTBOX_NO_TX'),
     });
   }
 }
@@ -396,7 +383,6 @@ export class JobsNotImplementedError extends UltimateError {
       code: 'X_NOT_IMPLEMENTED',
       cause: `${input.feature} is declared but not implemented in @ultimat3/jobs`,
       fix: input.fix,
-      docs: docsFor('X_NOT_IMPLEMENTED'),
     });
   }
 }

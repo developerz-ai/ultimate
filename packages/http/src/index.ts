@@ -29,9 +29,11 @@ export {
   DEFAULT_STATUS,
   ERROR_STATUS,
   factsOf,
+  problemTypeFor,
   registerErrorStatus,
   renderErrorLines,
   resetErrorStatus,
+  retryAfterOf,
   statusFor,
   toProblem,
 } from './error-map';

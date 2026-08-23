@@ -15,7 +15,7 @@ import { reviveSortKey, serializeSortValue } from './cursor-value';
 import type { Query, SourceOptions } from './query';
 import { queryHash, queryName, sourceFor } from './query';
 import type { QueryShape, SeekKey } from './shape';
-import { seekKeyOf } from './shape';
+import { compareRows, seekKeyOf, totalOrder } from './shape';
 import type { SqlSource } from './source';
 import { isAfterKey } from './source';
 
@@ -70,7 +70,7 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
   const window = args.first + 1;
   const source: SqlSource<object> = base.seek === undefined ? base : base.seek(after, window);
   const executed = await source.execute();
-  const scoped = base.seek === undefined ? sliceAfter(executed, after, shape) : executed;
+  const scoped = base.seek === undefined ? inTotalOrder(executed, after, shape) : executed;
   // The source came from this query's own `sql()`, so its rows are TRow.
   const rows = scoped.slice(0, args.first) as unknown as readonly TRow[];
   const last = rows[rows.length - 1];
@@ -92,12 +92,26 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
  * looks equivalent and is not: the row can be gone by the next request, `findIndex` answers -1,
  * and every row from the top comes back as page two. Under a delete between two pages that is a
  * silent restart, which is the failure keyset pagination exists to make impossible.
+ *
+ * **It SORTS first, and that half was missing.** `isAfterKey` breaks a tie on the declared keys by
+ * `id` — it has to, or the cut is not a position at all — while a foreign `SqlSource` ordered its
+ * rows by the DECLARED keys alone. So a tie group arrived in an order the cut does not describe,
+ * and the cut fell in the middle of it: page one served `a(10), d(20)`, the cursor named `(20, d)`,
+ * and rows `b(20)` and `c(20)` matched no page in the listing. Rows VANISH — silently, and only
+ * where two rows share a sort key.
+ *
+ * `Builder` has always done this: `execute()` sorts by `servedOrder()`, which appends `id` once a
+ * read asked to be seekable. This is that rule applied to the path a `Builder` does not take, and
+ * it is the ordering the cursor arithmetic already assumes on both sides. Reachable only for a
+ * hand-written `SqlSource` with no `seek()` — the branch this whole function exists for.
  */
-function sliceAfter(
+function inTotalOrder(
   rows: readonly object[],
   after: SeekKey | null,
   shape: QueryShape,
 ): readonly object[] {
-  if (after === null) return rows;
-  return rows.filter((row) => isAfterKey(row, after, shape.orderBy));
+  const keys = totalOrder(shape.orderBy);
+  const ordered = [...rows].sort((left, right) => compareRows(left, right, keys));
+  if (after === null) return ordered;
+  return ordered.filter((row) => isAfterKey(row, after, shape.orderBy));
 }

@@ -33,6 +33,33 @@ describe('metricsText', () => {
     expect(lines).toContain('text_duration_seconds_count 3');
   });
 
+  test('the le series ascends and its counts never go down', () => {
+    // Prometheus and OpenMetrics both reject a non-monotonic `le` series, and a scrape that is
+    // rejected is a metric that does not exist. The order comes from the declared bounds, which
+    // is why `histogram()` refuses a set that is not strictly ascending.
+    const latency = histogram('text_monotonic_seconds', { bounds: [0.5, 1, 5] });
+    for (const observed of [0.4, 0.7, 3, 9]) latency.record(observed);
+
+    const series = metricsText()
+      .split('\n')
+      .filter((line) => line.startsWith('text_monotonic_seconds_bucket'))
+      .map((line) => {
+        const [, le, count] = /le="([^"]+)"} (\d+)$/.exec(line) ?? [];
+        return { le: Number(le === '+Inf' ? Number.POSITIVE_INFINITY : le), count: Number(count) };
+      });
+
+    expect(series.map((entry) => entry.le)).toEqual([0.5, 1, 5, Number.POSITIVE_INFINITY]);
+    expect(series.map((entry) => entry.count)).toEqual([1, 2, 3, 4]);
+    for (let index = 1; index < series.length; index += 1) {
+      expect((series[index] as { le: number }).le).toBeGreaterThan(
+        (series[index - 1] as { le: number }).le,
+      );
+      expect((series[index] as { count: number }).count).toBeGreaterThanOrEqual(
+        (series[index - 1] as { count: number }).count,
+      );
+    }
+  });
+
   test('escapes quotes, backslashes and newlines in label values', () => {
     counter('text_escapes_total').add(1, { route: 'a"b\\c\nd' });
     expect(metricsText()).toContain('text_escapes_total{route="a\\"b\\\\c\\nd"} 1');

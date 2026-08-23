@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { ModernFormat } from './images';
 import {
   IMAGE_QUERY_KEYS,
   parseImageQuery,
@@ -22,6 +23,19 @@ describe('responsiveImage', () => {
     expect(image.sources.map((source) => source.type)).toEqual(['image/avif', 'image/webp']);
     expect(image.sources[0]?.srcset).toContain(`${IMAGE_QUERY_KEYS.format}=avif`);
     expect(image.img.srcset).not.toContain(`${IMAGE_QUERY_KEYS.format}=`);
+  });
+
+  test('a format the MIME table does not carry gets image/<format>, never a prototype member', () => {
+    // `MIME_TYPES[format]` walked the prototype, so `formats: ['constructor']` rendered
+    // `<source type="function Object() { [native code] }">`. The type attribute is the whole
+    // point of a `<source>`: a browser reads it to decide whether to fetch the candidate.
+    const image = responsiveImage(INPUT, {
+      formats: ['constructor', 'toString'] as unknown as readonly ModernFormat[],
+    });
+    expect(image.sources.map((source) => source.type)).toEqual([
+      'image/constructor',
+      'image/toString',
+    ]);
   });
 
   test('never upscales past the intrinsic width', () => {

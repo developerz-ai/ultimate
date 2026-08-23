@@ -295,6 +295,31 @@ describe('every collection is sorted by its own key', () => {
     ]);
   });
 
+  // `revalidateTags` is an author-declared SET, exactly like an action's `cacheInvalidates`, and it
+  // was the one inner collection `buildManifest` left in declaration order — so reordering
+  // `revalidate: [tag.b, tag.a]` in a route file churned `buildId` and emitted a change diff.
+  test('a route’s revalidateTags are sorted, so reordering the declaration is not a change', () => {
+    const one = buildManifest({
+      ...sources,
+      routes: [{ url: '/posts/[slug]', render: 'isr', revalidateTags: ['post', 'feed', 'author'] }],
+    });
+    const other = buildManifest({
+      ...sources,
+      routes: [{ url: '/posts/[slug]', render: 'isr', revalidateTags: ['feed', 'author', 'post'] }],
+    });
+
+    expect(one.routes[0]?.revalidateTags).toEqual(['author', 'feed', 'post']);
+    expect(manifestJson(one)).toBe(manifestJson(other));
+    expect(diffManifest(one, other).changes).toEqual([]);
+  });
+
+  test('a route that declares no tags keeps the key absent, never an empty array', () => {
+    // `exactOptionalPropertyTypes`: an explicit `undefined` is a different answer from no key,
+    // and `emit.ts` writes what it is given.
+    const manifest = buildManifest({ ...sources, routes: [{ url: '/', render: 'static' }] });
+    expect('revalidateTags' in (manifest.routes[0] ?? {})).toBe(false);
+  });
+
   test('reversing the input changes nothing about the output bytes', () => {
     const reversed: ManifestSources = {
       ...pairs,

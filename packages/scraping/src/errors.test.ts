@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { declaredErrorRetry, listErrorCodes, retryFor } from '@ultimat3/core';
+import {
+  declaredErrorRetry,
+  describeErrorCode,
+  ERROR_DOCS_URL,
+  listErrorCodes,
+  retryFor,
+} from '@ultimat3/core';
 import { nextRetryForError } from '@ultimat3/jobs';
 import { authFailed, httpFailed, pageCrashed, watchdogStopped, wedged } from './error-throws';
 import {
@@ -101,6 +107,32 @@ describe('unit · the classification is load-bearing, not documentation', () => 
   test('every code this package classifies is registered — a table entry is not enough', () => {
     for (const code of SCRAPE_OWNED_ERROR_CODES) {
       expect(declaredErrorRetry(code), code).toBe(SCRAPE_ERROR_RETRY[code]);
+    }
+  });
+});
+
+// `ScrapeError` passes no `docs:`, so the link is whatever the registry resolved: one page for
+// every code, declared once in `@ultimat3/core`. Pinned against the constant and never a literal —
+// a hand-copied URL is how the dead `https://ultimate.dev/errors/<code>` host survived every suite
+// in the tree, with the code interpolated into a fragment no page has ever had an anchor for.
+describe('unit · docs', () => {
+  test('a constructed scrape error points at the one page, never a per-code URL', () => {
+    const errors = [
+      authFailed('shop.test', 'no cookie'),
+      httpFailed('https://api.test/x', 429, 'slow'),
+      pageCrashed('https://shop.test'),
+      wedged('https://shop.test', 30_000),
+    ];
+    for (const error of errors) {
+      expect(error.docs).toBe(ERROR_DOCS_URL);
+      expect(error.docs).not.toContain(error.code);
+    }
+  });
+
+  test('and every owned code resolves to that same link through the registry', () => {
+    for (const code of SCRAPE_OWNED_ERROR_CODES) {
+      expect(describeErrorCode(code).docs, code).toBe(ERROR_DOCS_URL);
+      expect(describeErrorCode(code).title, code).toBe(SCRAPE_ERROR_TITLES[code]);
     }
   });
 });

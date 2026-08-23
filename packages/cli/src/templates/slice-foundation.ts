@@ -19,10 +19,7 @@ import { policyFiles } from './policy';
  */
 export type SliceModule = 'entity' | 'policy' | 'errors';
 
-/** The feature's own code, derived once. The `docs:` URL used to be the literal
- * `.../X_NOT_FOUND` beside a `code:` of `X_INVOICE_NOT_FOUND`, so following the link from a real
- * failure landed on a different code's page — the same interpolation `error-codes.ts`'s `docsFor`
- * already does for every framework code. */
+/** The feature's own code, derived once. */
 const notFoundCode = (feature: NameSet): string =>
   `X_${feature.kebab.toUpperCase().split('-').join('_')}_NOT_FOUND`;
 
@@ -41,13 +38,14 @@ const errorsSource = (feature: NameSet): string => {
 
 import { UltimateError } from '@ultimat3/core';
 
+// No \`docs:\`. \`UltimateError\` resolves it from the code's registered descriptor, so the link has
+// one home; a per-code URL written here is a page that does not exist.
 export class ${feature.pascal}NotFoundError extends UltimateError {
   constructor(input: { id: string }) {
     super({
       code: '${errorCode}',
       cause: \`no ${feature.kebab} with id \${input.id}\`,
       fix: 'x queries list --json, then pass an id the ${feature.kebab} read returns',
-      docs: 'https://ultimate.dev/errors/${errorCode}',
     });
   }
 }

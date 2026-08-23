@@ -6,7 +6,7 @@ import { type AuditLog, memoryAuditLog } from './audit';
 import type { AdminActor, AdminAuthz } from './authz';
 import type { CrudCtx } from './crud';
 import { permissionsForOperation } from './crud';
-import { AdminActionDuplicateError } from './errors';
+import { AdminActionDuplicateError, AdminPagePathInvalidError } from './errors';
 import { adminNav, type NavGroup, type NavItem, type NavOptions, visibleNav } from './nav';
 import { type AdminCustomPage, type AdminPageComponent, pageNavItems, pageRoutes } from './pages';
 import type { AdminOperation } from './permissions';
@@ -126,6 +126,37 @@ function resourceRoutes(basePath: string, resource: AdminResource): readonly Adm
 }
 
 /**
+ * One URL, one claimant — checked across RESOURCES, which was the last claim on an admin path
+ * that nothing verified.
+ *
+ * `adminRouteFor` resolves by `.find()`, so two resources declaring one `path:` produced eight
+ * routes over four paths and the second resource's four screens were simply unreachable: the app
+ * booted, the dashboard rendered, and nothing said so. That is the identical argument
+ * `assertUniqueActionNames` below makes for a duplicate action name, and the one `pages.ts` makes
+ * for a page shadowing a generated route — the same `taken` set, one step earlier.
+ *
+ * Every generated path is collected, not just the list root: `/posts` and `/posts/:id` are two
+ * claims and a resource colliding on either is the same broken route table.
+ */
+function assertUniqueResourcePaths(basePath: string, resources: readonly AdminResource[]): void {
+  const claimed = new Map<string, string>();
+  for (const resource of resources) {
+    for (const route of resourceRoutes(basePath, resource)) {
+      const owner = claimed.get(route.path);
+      if (owner !== undefined) {
+        throw new AdminPagePathInvalidError({
+          subject: 'resource',
+          path: route.path,
+          cause: `is already claimed by the resource "${owner}", so "${resource.name}" would be unreachable there`,
+          fix: `give one of them its own path: resources: { ${resource.name}: { path: '${resource.path}-2' } }`,
+        });
+      }
+      claimed.set(route.path, resource.name);
+    }
+  }
+}
+
+/**
  * One `AdminAction.name`, one handler. The name is the MCP tool name (`admin.action.<name>`), the
  * default label key (`admin.action.<name>`) AND the key `callAdminTool` resolves a handler by, so
  * two actions sharing it dispatch to whichever `.find()` reached first — a call that succeeds
@@ -182,6 +213,7 @@ export function defineAdmin(input: DefineAdminInput): AdminApp {
     ...pageNavItems(pages),
   ];
   const nav = adminNav(resources, { ...navOptions, extra });
+  assertUniqueResourcePaths(basePath, resources);
   const generated: AdminRoute[] = [
     {
       path: basePath,

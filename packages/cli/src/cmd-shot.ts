@@ -164,6 +164,17 @@ const intFlag = (
     fallback,
   );
 
+/**
+ * How `devServerFor` starts a scratch server. A parameter with a default rather than a direct
+ * call, for the reason every `Runner` in this package is one: the failure path below — a boot that
+ * throws, and the lock it has to hand back — is otherwise only reachable by breaking a real app.
+ */
+export type BootDevServer = (input: {
+  readonly root: string;
+  readonly port: number;
+  readonly env: Readonly<Record<string, string | undefined>>;
+}) => Promise<{ readonly url: string; stop(): Promise<void> }>;
+
 export interface ShotServer {
   readonly url: string;
   /** Which server the picture is of. Reported, because the two have different failure modes. */
@@ -272,6 +283,7 @@ export async function devServerFor(
   root: string,
   env: Readonly<Record<string, string | undefined>>,
   port: number,
+  boot: BootDevServer = (input) => startDev(input),
 ): Promise<ShotServer> {
   const services = resolveServices(root, env);
   const file = Bun.file(lockPath(services.stateDir));
@@ -281,13 +293,21 @@ export async function devServerFor(
       return { url: lock.url, origin: 'reused', stop: () => Promise.resolve() };
     }
   }
-  await preflight({
+  const { release } = await preflight({
     stateDir: services.stateDir,
     port,
     hostname: DEV_BINDING.hostname,
     embeddedDb: services.db.mode === 'embedded',
   });
-  const dev = await startDev({ root, port, env });
+  // The directory is CLAIMED from here down — `preflight` returns holding it, never having merely
+  // looked — so a boot that throws has to give it back. `cmd-dev.ts` states the same rule at the
+  // same seam. Without it one failed `x shot` refused every later `x dev` and `x shot` on this
+  // checkout, naming a pid that had already exited. The original error is re-thrown untouched: a
+  // teardown must never replace the failure it is cleaning up after.
+  const dev = await boot({ root, port, env }).catch((error: unknown) => {
+    release();
+    throw error;
+  });
   await writeLock(services.stateDir, {
     pid: process.pid,
     port,

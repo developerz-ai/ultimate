@@ -205,6 +205,13 @@ through to `fetch`. Method resolution stays ours so a 405 still carries problem+
 One `factsOf()` feeds three renderings — terminal, `application/problem+json`, dev
 overlay — so the `code`/`cause`/`fix` strings can never diverge.
 
+A problem document's `type` and `docs` answer different questions and are two different
+values. `type` is `problemTypeFor(code)` — `urn:ultimate:error:X_BODY_INVALID`, the RFC-9457
+identifier a client switches on, per code, with no host to resolve or rot. `docs` is
+`@ultimat3/core`'s `ERROR_DOCS_URL`, one wiki page for every code, because a code lives there
+in a table row and a table row has no anchor. Assert against `problemTypeFor` and
+`ERROR_DOCS_URL`, never against a copy of either string.
+
 ## Boundaries
 
 Tier 2. Imports `@ultimat3/core` and `@ultimat3/schema` only. Authentication and

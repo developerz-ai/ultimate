@@ -5,7 +5,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { renderCauseValue } from '@ultimat3/core';
+import { ERROR_DOCS_URL, renderCauseValue } from '@ultimat3/core';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated } from './source-files';
 import { checkRootReferences } from './tsconfig-references';
@@ -14,13 +14,11 @@ export const LINE_CEILING = 500;
 
 export const PACKAGE_FILES = ['README.md', 'CLAUDE.md', 'tsconfig.json', 'src/index.ts'] as const;
 
-const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
-
 export const tooLongFinding = (path: string, lines: number): Finding => ({
   code: 'X_FILE_TOO_LONG',
   cause: `${path} is ${lines} lines, over the ${LINE_CEILING} line ceiling`,
   fix: `split ${path}: one file, one responsibility`,
-  docs: docs('X_FILE_TOO_LONG'),
+  docs: ERROR_DOCS_URL,
   at: path,
 });
 
@@ -49,7 +47,7 @@ export const missingFileFinding = (dir: string, file: string, scaffolder: boolea
   fix: scaffolder
     ? `bun run scripts/new-package.ts ${dir} --only ${file}`
     : `add packages/${dir}/${file}, shaped like the one in a sibling package`,
-  docs: docs('X_PACKAGE_SHAPE'),
+  docs: ERROR_DOCS_URL,
   at: `packages/${dir}/${file}`,
 });
 
@@ -68,7 +66,7 @@ export const badVersionFinding = (dir: string, found: unknown): Finding => ({
   // this finding with a TypeError from inside the gate.
   cause: `packages/${dir}/package.json has no semver "version" (found ${renderCauseValue(found)})`,
   fix: `set a semver "version" in packages/${dir}/package.json, then: bun run verify`,
-  docs: docs('X_PACKAGE_SHAPE'),
+  docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
 
@@ -103,7 +101,7 @@ export const versionSkewFinding = (dir: string, found: string, expected: string)
   code: 'X_RELEASE_VERSION_SKEW',
   cause: `packages/${dir} is at ${found}, not the lockstep version ${expected}`,
   fix: `bun run scripts/release.ts --version ${expected}`,
-  docs: docs('X_RELEASE_VERSION_SKEW'),
+  docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
 
@@ -116,7 +114,7 @@ export const pinSkewFinding = (
   code: 'X_RELEASE_VERSION_SKEW',
   cause: `packages/${dir} pins ${dep} at ${range}, not the lockstep version ${expected}`,
   fix: `bun run scripts/release.ts --version ${expected}`,
-  docs: docs('X_RELEASE_VERSION_SKEW'),
+  docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
 
@@ -167,7 +165,7 @@ export const missingPublishedFileFinding = (dir: string, entry: string): Finding
   code: 'X_PACKAGE_SHAPE',
   cause: `packages/${dir}/package.json ships "${entry}" in "files", but packages/${dir}/${entry} does not exist`,
   fix: `add packages/${dir}/${entry}, or drop "${entry}" from "files" in packages/${dir}/package.json`,
-  docs: docs('X_PACKAGE_SHAPE'),
+  docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
 
@@ -175,7 +173,7 @@ export const publishesTestsFinding = (dir: string): Finding => ({
   code: 'X_PACKAGE_SHAPE',
   cause: `packages/${dir}/package.json does not exclude ${TEST_EXCLUSION} from "files"`,
   fix: `add "${TEST_EXCLUSION}" to "files" in packages/${dir}/package.json, after "src"`,
-  docs: docs('X_PACKAGE_SHAPE'),
+  docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
 
@@ -196,7 +194,7 @@ export const buildArtifactsFinding = (dir: string, count: number): Finding => ({
   code: 'X_PACKAGE_SHAPE',
   cause: `packages/${dir}/src/ contains ${count} build artifacts (.d.ts, .js, .map files)`,
   fix: `find packages/${dir}/src ${SWEEP_PREDICATE} -delete`,
-  docs: docs('X_PACKAGE_SHAPE'),
+  docs: ERROR_DOCS_URL,
   at: `packages/${dir}/src/`,
 });
 
@@ -209,7 +207,7 @@ export const noFilesAllowlistFinding = (dir: string): Finding => ({
   code: 'X_PACKAGE_SHAPE',
   cause: `packages/${dir}/package.json publishes with no "files" allowlist, so the tarball carries whatever is in the directory`,
   fix: `add "files": ["src", "${TEST_EXCLUSION}", "README.md", "LICENSE"] to packages/${dir}/package.json`,
-  docs: docs('X_PACKAGE_SHAPE'),
+  docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
 

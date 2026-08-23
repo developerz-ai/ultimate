@@ -69,7 +69,11 @@ describe('defineAuth', () => {
   test('fills every unset policy from its default and freezes the result', () => {
     const auth = defineAuth({ adapter: new MemoryAdapter() });
     expect(auth.mfa).toEqual({ issuer: 'Ultimate', required: false });
-    expect(auth.providers.length).toBeGreaterThan(0);
+    // `[]`, not the live registry: an app that names no providers serves no OAuth routes. It used
+    // to inherit every id `registerOAuthProvider` had written, so `defineAuth({ providers })`'s
+    // own purpose — the uniform 404 for a provider this app left out — could never fire, and a
+    // dependency decided which login endpoints the app answered.
+    expect(auth.providers).toEqual([]);
     expect(Object.isFrozen(auth)).toBe(true);
   });
 
@@ -367,5 +371,89 @@ describe('the tenant bucket', () => {
     // Five attempts shared by a whole tenant is a denial of service against that tenant.
     expect(auth.orgRateLimit.maxAttempts).toBe(5 * ORG_ATTEMPT_FACTOR);
     expect(auth.rateLimit.maxAttempts).toBe(5);
+  });
+});
+
+/**
+ * The per-IP bucket, and the one line that made it inert.
+ *
+ * `recordSuccess(ipKey(ip))` on a successful login DELETED the whole bucket — while the three
+ * lines immediately below it argue the opposite for the tenant bucket ("one member signing in
+ * successfully must not clear the count a broken integration is running up beside them"). That
+ * argument applies verbatim to a shared source address, which is what the IP bucket is FOR.
+ *
+ * The attack it enabled: four wrong guesses, one successful login against an account the attacker
+ * owns, repeat. A credential-stuffing run never spends `maxAttempts` guesses on one account, so
+ * the per-account bucket never fires — the IP bucket was the only one that could see the pattern,
+ * and every success wiped it. Measured before the fix: 5 guesses to `X_ACCOUNT_LOCKED` without
+ * the reset, 160 and still unlocked with it.
+ *
+ * The trade is a shared NAT accumulating failures, which is what `windowMs` exists to bound.
+ */
+describe('a success does not clear the address that produced the failures', () => {
+  const IP = '203.0.113.7';
+  const sprayAuth = (): Auth =>
+    defineAuth({
+      adapter: new MemoryAdapter(),
+      clock: frozenClock(1_700_000_000_000),
+      password: { minLength: 12, params: FAST_PARAMS },
+      // A high org cap so the tenant bucket cannot be what refuses; this is about the IP one.
+      rateLimit: { maxAttempts: 5, orgMaxAttempts: 10_000, windowMs: 900_000 },
+    });
+
+  test('a spray interleaved with the attacker’s own successful logins still locks the address', async () => {
+    const auth = sprayAuth();
+    await register(auth, { email: 'mine@evil.test', password: PASSWORD });
+    const victims = ['a@corp.test', 'b@corp.test', 'c@corp.test', 'd@corp.test'];
+    for (const victim of victims) {
+      await register(auth, { email: victim, password: PASSWORD });
+    }
+
+    // Four wrong guesses, each against a DIFFERENT account, so no account bucket ever passes 1.
+    for (const victim of victims) {
+      const failure = await caught(() =>
+        login(auth, { email: victim, password: 'wrong-password-entirely', ip: IP }),
+      );
+      expect(failure?.code).toBe('X_UNAUTHENTICATED');
+    }
+
+    // The reset move: sign in to an account the attacker controls, from the same address. It is
+    // still ALLOWED here — the bucket holds 4 of 5 — which is what made it a usable escape.
+    await login(auth, { email: 'mine@evil.test', password: PASSWORD, ip: IP });
+
+    // Guess five fills the bucket; guess six is refused, and refused by the ADDRESS. With the
+    // reset in place this loop ran 160 times and never locked.
+    const codes: (string | undefined)[] = [];
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      codes.push(
+        (
+          await caught(() =>
+            login(auth, { email: 'a@corp.test', password: 'wrong-password-entirely', ip: IP }),
+          )
+        )?.code,
+      );
+    }
+    expect(codes).toEqual(['X_UNAUTHENTICATED', 'X_ACCOUNT_LOCKED']);
+    // The address, not the account: `a@corp.test` has two failures of its own against a cap of 5.
+    const locked = await caught(() =>
+      login(auth, { email: 'mine@evil.test', password: PASSWORD, ip: IP }),
+    );
+    expect(locked?.cause).toContain(IP);
+  });
+
+  test('the ACCOUNT window is still cleared by a success — a typo must not cost a lockout', async () => {
+    const auth = sprayAuth();
+    await register(auth, { email: 'ada@corp.test', password: PASSWORD });
+    // No `ip` at all, so only the account bucket is in play.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await caught(() => login(auth, { email: 'ada@corp.test', password: 'typo' }));
+    }
+    await login(auth, { email: 'ada@corp.test', password: PASSWORD });
+    // Four more would exceed 5 in the window if the success had not cleared it.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      expect(
+        (await caught(() => login(auth, { email: 'ada@corp.test', password: 'typo' })))?.code,
+      ).toBe('X_UNAUTHENTICATED');
+    }
   });
 });

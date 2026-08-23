@@ -13,6 +13,7 @@ import {
 } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import type { RequestContext } from './context';
+import { problemTypeFor } from './error-map';
 import { recoverWith } from './finalize';
 import type { ServerHooks } from './hooks';
 import { createPipeline } from './pipeline';
@@ -386,5 +387,10 @@ describe("recoverWith's own fallback is inside the guard", () => {
     // The `fix` names where the swallowed renderer failure went, because this document cannot
     // carry it: an instruction that stops at "something failed" is not one.
     expect(body['fix']).toContain('pipeline.problem_failed');
+    // `lastResort` spells its `type` as a literal, because it calls nothing — this is what keeps
+    // that literal equal to what every other problem document carries. It shipped
+    // `https://ultimate.dev/errors/X_INTERNAL`, a host that answers 404, until 9.x.
+    expect(body['type']).toBe(problemTypeFor('X_INTERNAL'));
+    expect(body['type']).not.toContain('ultimate.dev');
   });
 });

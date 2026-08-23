@@ -16,7 +16,7 @@ import { allow } from '@ultimat3/policy';
 import type { AiFetch } from './fetch-seam';
 import { createGateway } from './gateway';
 import { llm } from './llm';
-import { modelSpec } from './models';
+import { DEFAULT_MODEL, modelSpec, registerModel, resetModels } from './models';
 import { OPENAI_MODEL_IDS, registerOpenAiModels } from './openai-models';
 import { openAiProvider } from './openai-provider';
 import { definePrompt } from './prompt';
@@ -90,7 +90,9 @@ async function collect(chunks: AsyncIterable<StreamChunk>): Promise<StreamChunk[
 }
 
 beforeEach(() => {
-  // `resetModels()` in another suite clears the whole registry, this provider's specs included.
+  // `resetModels()` first, so a model one test registers is not still in the catalogue for the
+  // next one; then this provider's specs, which that reset clears along with everything else.
+  resetModels();
   registerOpenAiModels();
   resetAiRuntime();
 });
@@ -287,6 +289,48 @@ describe('streaming', () => {
     const result = await openai.generate(request({ maxTokens }));
     expect(calls[0]?.body['stream']).toBe(true);
     expect(result.text).toBe('ok');
+  });
+
+  // The transport decision has to be taken against THIS provider's model. `modelOf` says so and
+  // says why — "never the framework's `DEFAULT_MODEL`, which names a Claude id no OpenAI-format
+  // endpoint serves" — but the `requiresStreaming` call above it passed the raw request, so a
+  // request that names no model was sized against `claude-opus-5`'s ceiling.
+  test('a request naming no model is sized against this endpoint, not against a Claude id', async () => {
+    // A company gateway's own model, with a ceiling below the streaming threshold — which is the
+    // only shape that can tell the two answers apart, since every built-in tops out at 128k.
+    const SMALL = 'internal-small-8k';
+    registerModel({
+      id: SMALL,
+      family: 'internal',
+      contextWindow: 64_000,
+      maxOutput: 8_000,
+      inputPerMillion: { minor: 100, currency: 'USD' },
+      outputPerMillion: { minor: 500, currency: 'USD' },
+      cacheMinimumTokens: 1_024,
+      reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
+    });
+    expect(modelSpec(SMALL).maxOutput).toBeLessThan(STREAM_ONLY_MAX_TOKENS);
+    expect(modelSpec(DEFAULT_MODEL).maxOutput).toBeGreaterThan(STREAM_ONLY_MAX_TOKENS);
+
+    const calls: Call[] = [];
+    const openai = openAiProvider({
+      apiKey: KEY,
+      models: [SMALL],
+      fetch: fakeFetch(calls, () => jsonResponse(completion({ content: 'ok' }))),
+    });
+
+    // No `model` on the request, so `modelOf` falls back to this provider's first — whose ceiling
+    // clamps the completion to 8k and keeps it on the ordinary transport.
+    const result = await openai.generate({
+      messages: [{ role: 'user', content: 'ship it' }],
+      maxTokens: 64_000,
+    });
+
+    // `accept` is the transport, stated on the wire: the streaming path asks for an event stream.
+    expect(calls[0]?.headers['accept']).toBe('application/json');
+    expect(calls[0]?.body['stream']).toBeUndefined();
+    expect(calls[0]?.body['model']).toBe(SMALL);
+    expect(result.model).toBe(SMALL);
   });
 });
 

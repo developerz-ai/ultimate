@@ -105,7 +105,12 @@ registerErrorRetry({
   X_OVERLOADED: 'retry-after',
 });
 
-const docsFor = (code: HttpErrorCode): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` below. `UltimateError` fills it from `describeErrorCode(code).docs`, which is
+// `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
+// `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE
+// ROW, which has no anchor. The `https://ultimate.dev/errors/<code>` links this file built until
+// 9.x answered 404, host included — and this package put them in `type` AND `docs` of every
+// problem document, so the dead link was on every 4xx and 5xx an app has ever served.
 
 /** Base class for every error this package throws. Never throw a bare `Error`. */
 export class HttpError extends UltimateError {
@@ -126,7 +131,6 @@ export class HttpError extends UltimateError {
       code: init.code,
       cause: init.cause,
       fix: init.fix,
-      docs: docsFor(init.code),
       ...(init.meta === undefined ? {} : { meta: init.meta }),
     });
   }

@@ -173,7 +173,9 @@ describe('Relation + Insert', () => {
       big_number: '9223372036854775807',
       amount: '12345.6789',
       meta: { a: 1, b: [true, null] },
-      created_at: '2026-08-09T12:00:00+00:00',
+      // A `Date`, not the text postgres wrote: `timestamp()` reads back as one through the
+      // repository, and a live row that is not a repository row is what `pg-values.ts` exists for.
+      created_at: new Date('2026-08-09T12:00:00.000Z'),
       note: null,
     });
     expect('note' in insertMessage.after).toBe(true);

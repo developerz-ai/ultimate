@@ -4,6 +4,7 @@
 // should not have to guess which of 29 packages holds the answer, and it must never be handed a
 // URL: `node_modules` already contains every doc, because the published artifact IS the source.
 
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { DocEntry, DocHit } from '@ultimat3/manifest';
 import { nearestTopics, scanInstalledDocs, searchDocs } from '@ultimat3/manifest';
 import type { CliCommand, CommandContext } from './command';
@@ -22,7 +23,7 @@ const unresolvedFinding = (): Finding => ({
   code: 'X_CLI_UNEXPECTED',
   cause: '@ultimat3/core does not resolve from the installed CLI, so no docs could be read',
   fix: 'bun install && x doctor --json',
-  docs: 'https://ultimate.dev/errors/X_CLI_UNEXPECTED',
+  docs: ERROR_DOCS_URL,
   at: import.meta.dir,
 });
 

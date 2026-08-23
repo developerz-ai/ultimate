@@ -5,6 +5,9 @@
 
 // `node:fs`, and unavoidable: Bun has no synchronous stdout write of its own.
 import { writeSync } from 'node:fs';
+// The one import beyond `node:fs`, and it costs nothing here: `create-ultimate` reaches this
+// module through `@ultimat3/cli`'s barrel, which has already evaluated core.
+import { stringField } from '@ultimat3/core';
 
 /**
  * Write to stdout and be certain it arrived, even if the next statement exits the process.
@@ -29,7 +32,10 @@ function writeTo(fd: 1 | 2, line: string): void {
     try {
       written += writeSync(fd, buffer, written, buffer.length - written);
     } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== 'EAGAIN') throw cause;
+      // `stringField`, never a cast plus a property read — the rule `metrics-endpoint.ts` states
+      // and `caught-value-reads.test.ts` enforces. Here it is also the difference between
+      // rethrowing and an infinite loop: a `code` that cannot be read must not read as `EAGAIN`.
+      if (stringField(cause, 'code') !== 'EAGAIN') throw cause;
     }
   }
 }

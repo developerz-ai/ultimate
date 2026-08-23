@@ -6,6 +6,7 @@
 // Bun ships no path API. `posix` does the specifier arithmetic (an app-relative route file is
 // POSIX by construction), `join`/`basename` the filesystem side.
 import { basename, join, posix, relative, sep } from 'node:path';
+import { renderThrowable } from '@ultimat3/core';
 import { ISLAND_EXTENSION, IslandInvalidError, islandModuleId } from '@ultimat3/render';
 import { contentHash } from '@ultimat3/render/server';
 import { IslandBuildFailedError } from './errors';
@@ -118,11 +119,38 @@ async function buildOne(root: string, file: string): Promise<IslandChunk> {
  * import or syntax error, and flattening them is what puts the line number in the cause instead of
  * the word "Bundle failed".
  */
-function describeBuildError(error: unknown): string {
-  if (error instanceof AggregateError) {
-    return error.errors.map((one: unknown) => String(one)).join('; ');
+export function describeBuildError(error: unknown): string {
+  // `renderThrowable`, never `instanceof` + `.message` + `String()`. All three run on a value this
+  // process did not build — a `Proxy` traps `getPrototypeOf`, a `message` getter can raise, and
+  // `String()` throws outright on a Symbol — and what comes back is carried in
+  // `IslandBuildFailedError.logs`, which `errors.ts` interpolates straight into a `cause:`. That
+  // is a cross-file hop neither `scripts/catch-render.ts` nor `scripts/error-render.ts` can
+  // follow: a throw here loses the whole refusal and replaces it with a TypeError about reporting.
+  //
+  // The AggregateError branch stays, and it is the reason this function exists: `Bun.build` packs
+  // one entry per unresolved import or syntax error into `errors`, and flattening them is what
+  // puts a line number in the cause instead of the words "Bundle failed". `stringField` decides
+  // whether the value really is that shape, because `instanceof` is a question a Proxy answers.
+  const aggregate = aggregatedErrors(error);
+  if (aggregate !== undefined && aggregate.length > 0) {
+    return aggregate.map((one: unknown) => renderThrowable(one)).join('; ');
   }
-  return error instanceof Error ? error.message : String(error);
+  return renderThrowable(error);
+}
+
+/**
+ * `value.errors`, read the way `@ultimat3/core`'s `stringField` reads a string field: narrowed
+ * first, dereferenced inside a `try`, `undefined` for anything else. `instanceof AggregateError`
+ * is a question a `Proxy` answers with its own `getPrototypeOf` trap, so it is not a check.
+ */
+function aggregatedErrors(value: unknown): readonly unknown[] | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  try {
+    const held: unknown = (value as Record<string, unknown>)['errors'];
+    return Array.isArray(held) ? held : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export interface BuildIslandsOptions {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { singleLine } from '@ultimat3/core';
+import { ERROR_DOCS_URL, singleLine } from '@ultimat3/core';
 import { msg } from './messages';
 import type { CommandResult, StepResult, UltimateErrorShape } from './output';
 import {
@@ -130,12 +130,12 @@ describe('unit · renderUltimateError', () => {
     }) as UltimateErrorShape;
 
   test('the head is the code and its summary, and every contract line follows', () => {
-    expect(renderUltimateError(error({ docs: 'https://ultimate.dev/errors/X_DB_DRIFT' }))).toBe(
+    expect(renderUltimateError(error({ docs: ERROR_DOCS_URL }))).toBe(
       [
         'X_DB_DRIFT: schema differs from migrations',
         '  cause: table "posts" has column "publish_at" not present in any migration',
         '  fix:   x db gen "add publish_at"',
-        '  docs:  https://ultimate.dev/errors/X_DB_DRIFT',
+        `  docs:  ${ERROR_DOCS_URL}`,
       ].join('\n'),
     );
   });

@@ -3,6 +3,12 @@
  * `memberOf` is `@postly/core`'s and every service asks it the same question.
  */
 
+// No `docs:` at any construction site below. `UltimateError` fills it from
+// `describeErrorCode(code).docs`, which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for
+// every code, never one per code, because a code lives on that page in a TABLE ROW and a row has
+// no anchor. The `https://ultimate.dev/errors/<code>` links these classes built until 2026-08-23
+// answered 404, host included, on every error this app has ever thrown.
+
 import { UltimateError } from '@ultimat3/core';
 
 /**
@@ -24,7 +30,6 @@ export class NotAMember extends UltimateError {
       fix:
         'read the membership row with memberById(orgId, id) from apps/web/app/orgs/repo.ts, ' +
         'then build the actor with actorFor(member)',
-      docs: 'https://ultimate.dev/errors/X_ORG_NOT_A_MEMBER',
     });
   }
 }
@@ -46,7 +51,6 @@ export class ActorUnresolved extends UltimateError {
         'the request actor carries no `member`/`org` fact, so app/ has no member row to render — ' +
         'an anonymous, job or agent actor reads exactly the same way',
       fix: 'mint the request actor with postlyActor({ member, org }) from apps/web/shared/actor.ts',
-      docs: 'https://ultimate.dev/errors/X_ACTOR_UNRESOLVED',
     });
   }
 }

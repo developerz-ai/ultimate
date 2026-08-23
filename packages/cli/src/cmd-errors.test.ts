@@ -3,6 +3,7 @@
 // invented one is refused instead of explained.
 
 import { describe, expect, test } from 'bun:test';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { ERRORS_SUBCOMMANDS, errorsCommand } from './cmd-errors';
 import type { CommandContext } from './command';
 import { exec } from './exec';
@@ -49,13 +50,13 @@ describe('unit · x errors explain', () => {
     const data = record(result.data);
     expect(data['code']).toBe('X_DB_DRIFT');
     expect(data['cause']).toBe('schema differs from migrations');
-    expect(data['docs']).toBe('https://ultimate.dev/errors/X_DB_DRIFT');
+    expect(data['docs']).toBe(ERROR_DOCS_URL);
     expect(String(data['fix'])).toStartWith('x db gen ');
     expect(String(data['fix'])).not.toBe('x verify --json');
     expect(result.lines).toEqual([
       '  cause: schema differs from migrations',
       `  fix:   ${String(data['fix'])}`,
-      '  docs:  https://ultimate.dev/errors/X_DB_DRIFT',
+      `  docs:  ${ERROR_DOCS_URL}`,
     ]);
     // Reads every installed package's source once: `REPO_SCAN_TIMEOUT_MS`'s value as a literal,
     // for the reason `error-catalog.test.ts` repeats it too.

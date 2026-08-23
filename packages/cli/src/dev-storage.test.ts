@@ -293,6 +293,13 @@ describe('unit · dev storage · conditional and range parsing', () => {
     expect(parseByteRange('bytes=10-', 10)).toBe('unsatisfiable');
     expect(parseByteRange('bytes=4-2', 10)).toBe('unsatisfiable');
     expect(parseByteRange('bytes=0-', 0)).toBe('unsatisfiable');
+    // A SUFFIX against a zero-byte object. The non-suffix branch already answered this through
+    // `start >= size`; the suffix branch had no such test, so `bytes=-5` on an empty object
+    // answered `{ start: 0, end: -1 }` and the route rendered `content-range: bytes 0--1/0` with
+    // status 206. RFC 9110 requires 416 — nothing satisfies a range over no bytes at all.
+    expect(parseByteRange('bytes=-5', 0)).toBe('unsatisfiable');
+    expect(parseByteRange('bytes=-1', 0)).toBe('unsatisfiable');
+    expect(parseByteRange('bytes=-99', 0)).toBe('unsatisfiable');
     // Multi-range and nonsense are ignored, not refused: the whole object is a valid answer.
     expect(parseByteRange('bytes=0-1,4-5', 10)).toBeUndefined();
     expect(parseByteRange('items=0-1', 10)).toBeUndefined();

@@ -3,7 +3,7 @@
 // assertion is on the VALUE the admin would save, not on the string that was typed.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { registerCatalog } from '@ultimat3/i18n';
+import { registerCatalog, registeredLocales } from '@ultimat3/i18n';
 import type { AdminField } from './fields';
 import {
   byComponent,
@@ -18,6 +18,9 @@ import type { WidgetContext } from './widget-value';
 import { Widget } from './widgets';
 
 registerCatalog('en', { 'admin.invoice.field.total': 'Total (probe)' });
+// A locale the framework's bundled list never named. The locale picker must offer it — and must
+// not offer the five this app did not register, which it would render as `⟦key⟧` for.
+registerCatalog('it', { 'admin.invoice.field.total': 'Totale (probe)' });
 
 beforeAll(installFactory);
 afterAll(restoreFactory);
@@ -241,17 +244,26 @@ describe('the pickers read the runtime, not a bundled copy', () => {
     expect(edited.emitted).toEqual([['tz', 'Asia/Tokyo']]);
   });
 
-  test('the locale picker offers the framework locales', () => {
-    const edited = edit({ widget: 'locale-picker', type: 'locale', name: 'locale' }, 'es');
+  /**
+   * `return ['en','es','de','fr','pt','ja']` — a bundled six-locale list, one line under a comment
+   * forbidding exactly that for IANA zones. An app registering `it` could not pick it; an app with
+   * only `en` was offered five locales every string of which renders `⟦key⟧`. The registry is the
+   * runtime's own answer, and `@ultimat3/i18n` is tier 1 — downward from here, already imported
+   * for `t`.
+   */
+  test('the locale picker offers the locales this app registered, and only those', () => {
+    const edited = edit({ widget: 'locale-picker', type: 'locale', name: 'locale' }, 'it');
     const select = one(byComponent(edited.control, 'Select'), '<Select>');
-    expect((select.props['options'] as { value: string }[]).map((o) => o.value)).toEqual([
-      'en',
-      'es',
-      'de',
-      'fr',
-      'pt',
-      'ja',
-    ]);
+    const values = (select.props['options'] as { value: string }[]).map((option) => option.value);
+
+    // Compared to the REGISTRY, never to a literal: a list written out here would be the same
+    // defect one file over, and would go stale the first time this suite registered a locale.
+    expect(values).toEqual([...registeredLocales()]);
+    expect(values).toContain('it');
+    // A locale code is an identifier an operator must recognise, so it is not translated — the
+    // same rule the zone picker above states.
+    const options = select.props['options'] as { value: string; label: string }[];
+    expect(options.every((option) => option.value === option.label)).toBe(true);
   });
 });
 

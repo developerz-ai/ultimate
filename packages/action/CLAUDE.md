@@ -262,9 +262,12 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   `ActionDeniedError` re-uses the policy decision's — and then says so, because the browser
   bundle never registered it: `name` marks it in a stack, `meta.origin: 'remote'` marks it in
   `--json`, the overlay and the error reporter. **It never synthesizes a docs URL.**
-  `https://ultimate.dev/errors/X_SIGNUP_CLOSED` for an app-declared code is a 404 dressed as
+  a `…/errors/X_SIGNUP_CLOSED` invented for an app-declared code is a 404 dressed as
   documentation; the link is the server's own `docs`/`type` when it sent an `http(s)` one, this
-  build's registered link when `hasErrorCode` knows the code, otherwise `ERROR_DOCS_BASE`. The
+  build's registered link when `hasErrorCode` knows the code, otherwise `ERROR_DOCS_URL`. Those
+  last two agree by construction now that core resolves every code to one URL — `hasErrorCode`
+  still separates them only for a package that declared its own `docs:`, which is why the branch
+  stays. The
   code must be `X_SCREAMING_SNAKE` to be taken at all — `typeof code === 'string'` accepted `""`
   from a gateway — and anything else is `RpcFailedError`, which is what that code means.
   `docs` and `type` travel to `remoteDocs` as an ordered pair, not `docs ?? type`: preference is

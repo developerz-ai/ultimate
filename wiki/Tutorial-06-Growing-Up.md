@@ -141,7 +141,7 @@ Named rather than left to be discovered:
 | a custom-metrics adapter, which the chart's HPAs need and the framework never ships | 3–4 |
 | `x logs` planned — `X_NOT_IMPLEMENTED`, with `x dev` → the `/_x` timeline panel as its fix | any |
 | Redis and NATS **job** drivers throw `X_NOT_IMPLEMENTED` | any |
-| realtime tier 3 (local-first, `persist: true`), the plugin API, multi-region replication | not in 4.0.0 |
+| realtime tier 3 (local-first, `persist: true`), the plugin API, multi-region replication | **not shipped**, `As of 2026-08` |
 
 Each sits behind an interface that ships today and fails loudly, rather than pretending to work. The full list, with a workaround per row: [Known gaps](Known-Gaps).
 

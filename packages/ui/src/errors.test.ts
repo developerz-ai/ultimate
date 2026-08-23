@@ -2,7 +2,7 @@
 // standard URL, and each factory must actually throw the code it claims to own.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
+import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
 import {
   invalidBrandTokenError,
   invalidThemeError,
@@ -27,9 +27,13 @@ describe('UI_ERROR_CODES', () => {
     expect(hasErrorCode(UI_ERROR_CODES.invalidValue)).toBe(true);
   });
 
-  test('every code documents at the standard docs URL', () => {
+  // Asserted against core's constant, never a literal: a hand-copied URL is exactly how the dead
+  // `https://ultimate.dev/errors/<code>` host survived every suite in the tree. There is ONE page
+  // and no per-code anchor, so the code must NOT appear in the link.
+  test('every code documents at the one page core declares', () => {
     for (const code of Object.values(UI_ERROR_CODES)) {
-      expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
+      expect(describeErrorCode(code).docs).not.toContain(code);
     }
   });
 });

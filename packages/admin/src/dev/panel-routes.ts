@@ -29,10 +29,12 @@ export const routesPanel: DevPanel<RoutesPanelData> = {
   questionKey: 'dev.panel.routes.question',
   async data(sources): Promise<RoutesPanelData> {
     const routes = await sources.routes();
-    const byRenderMode: Record<string, number> = {};
-    for (const route of routes) {
-      byRenderMode[route.render] = (byRenderMode[route.render] ?? 0) + 1;
-    }
+    // A `Map`, then `Object.fromEntries`. See `panel-cache.ts` for why the plain-object counter is
+    // wrong: an inherited name reads a prototype value instead of `undefined`, and `__proto__`
+    // writes through the setter rather than adding a key.
+    const counts = new Map<string, number>();
+    for (const route of routes) counts.set(route.render, (counts.get(route.render) ?? 0) + 1);
+    const byRenderMode = Object.fromEntries(counts);
     return {
       routes: [...routes].sort((a, b) => a.path.localeCompare(b.path)),
       byRenderMode,

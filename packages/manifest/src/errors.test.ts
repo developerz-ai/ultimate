@@ -4,7 +4,7 @@
 // for every developer and every agent reading the gate.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
+import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
 import { MANIFEST_ERROR_CODES, MANIFEST_ERROR_TITLES } from './errors';
 
 describe('MANIFEST_ERROR_TITLES', () => {
@@ -32,7 +32,7 @@ describe('registration', () => {
 describe('docs', () => {
   test('every code resolves to its canonical docs page', () => {
     for (const code of MANIFEST_ERROR_CODES) {
-      expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
     }
   });
 });

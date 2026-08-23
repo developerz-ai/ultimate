@@ -43,6 +43,14 @@ carries a duplicate of these titles and registers them unconditionally, so every
 real titles just by importing core. Add a code here **and** update that duplicate in the same
 change — `schema-error-codes-pin.test.ts` in `@ultimat3/cli` fails the build if they disagree.
 
+`ERROR_DOCS_URL` in `errors.ts` is the third deliberate tier-0 duplicate, beside `singleLine` and
+`ULTIMATE_ERROR_BRAND` — one URL, spelled out, because `SchemaError` cannot import
+`@ultimat3/core`'s constant. There is no per-code URL anywhere in the framework: codes live in
+`wiki/Error-Codes.md` as table ROWS and a table row has no anchor, so
+`https://ultimate.dev/errors/<code>` was a 404 on every error and was deleted `As of 2026-08-23`. Change it
+here and in `packages/core/src/error-codes.ts` in the same edit. **There is no pin test yet** —
+one belongs in `@ultimat3/cli` beside `single-line-pin.test.ts`, which may legally import both.
+
 `MoneyValue` in `money-value.ts` — its own file, because it is the only builtin whose *shape* other
 packages alias — is the framework's **one** declaration of a money value. Tier 0 is
 the only tier every package may import, and `@ultimat3/money`'s `Money` and `@ultimat3/entity`'s

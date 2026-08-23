@@ -4,7 +4,7 @@
 
 // Bun ships no path-join primitive, and `.env.example` is written app-root-relative.
 import { join } from 'node:path';
-import { checkEnv, ENV_EXAMPLE_PATH, maskedEnvValues } from '@ultimat3/core';
+import { checkEnv, ENV_EXAMPLE_PATH, ERROR_DOCS_URL, maskedEnvValues } from '@ultimat3/core';
 import { ENV_SCHEMA_EXPORT, envExampleFor, loadEnvSchema } from './app-env';
 import { APP_CONFIG_FILE, requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
@@ -54,7 +54,7 @@ async function checkProcessEnv(ctx: CommandContext): Promise<CommandResult> {
     code: 'X_ENV_MISSING',
     cause: `${issue.key} is ${issue.reason} (expected ${issue.expected})`,
     fix: issue.fix,
-    docs: 'https://ultimate.dev/errors/X_ENV_MISSING',
+    docs: ERROR_DOCS_URL,
     at: ENV_EXAMPLE_PATH,
   }));
   return {

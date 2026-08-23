@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { contentHash, definePrompt, getPrompt, resetPrompts } from './prompt';
+import { contentHash, definePrompt, describePrompts, getPrompt, resetPrompts } from './prompt';
 
 afterEach(() => {
   resetPrompts();
@@ -62,6 +62,24 @@ function capture(fn: () => unknown): { code?: unknown; cause?: unknown } {
   }
   throw new Error('expected the call to throw');
 }
+
+// `output` is DECLARATIVE. It is hashed into `ref` and published by `describePrompts()`, and it is
+// never sent on the wire — structured output is the `respond` tool `llm()` projects from the
+// ACTION's own `output`, and a second path through `output_config.format` would be the ambiguity
+// axiom 1 refuses. The doc claimed the second path existed "when the caller opts in"; there is no
+// opt-in and nothing writes that field.
+describe('unit · a prompt output schema is declared, not transmitted', () => {
+  const shape = { type: 'object', properties: { verdict: { type: 'string' } } } as const;
+
+  test('declaring one moves the hash, so editing it needs a version bump', () => {
+    expect(contentHash({ ...base, output: shape })).not.toBe(contentHash(base));
+  });
+
+  test('describePrompts publishes it verbatim', () => {
+    definePrompt({ ...base, output: shape });
+    expect(describePrompts()[0]?.output).toEqual(shape);
+  });
+});
 
 describe('rendering', () => {
   test('variables are substituted and the ref identifies the artifact', () => {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { bodyInvalid } from './errors';
 import {
   applyCacheHeaders,
@@ -43,7 +44,7 @@ describe('problem()', () => {
     expect(body['fix']).toBe(
       'x routes --json   # find /posts, then send a body matching its input schema',
     );
-    expect(body['docs']).toBe('https://ultimate.dev/errors/X_BODY_INVALID');
+    expect(body['docs']).toBe(ERROR_DOCS_URL);
     expect(body['status']).toBe(422);
     expect(body['instance']).toBe('/posts');
     expect(body['requestId']).toBe('req-7');

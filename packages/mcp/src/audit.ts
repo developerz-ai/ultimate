@@ -36,11 +36,46 @@ export type McpOutcome =
  * entry classified a code no build can produce — and every real denial that reached it still had
  * to be recognised by one of the other two.
  */
-const DENIAL_CODES: ReadonlySet<string> = new Set(['X_FORBIDDEN', 'X_UNAUTHENTICATED']);
+const DENIAL_CODES: ReadonlySet<string> = new Set([
+  'X_ADMIN_DENIED',
+  'X_FORBIDDEN',
+  'X_UNAUTHENTICATED',
+]);
+
+/**
+ * Codes that mean the CALLER got the arguments wrong, in a way the published JSON Schema could
+ * not have refused. `X_ADMIN_INVALID` is the case: `@ultimat3/admin` publishes a `type` per field
+ * and nothing else, so an entity's own rules are the first thing a value meets, and a mistyped
+ * `admin.create` is a client misreading a schema — `invalid-args`, at `info`.
+ *
+ * `X_INPUT_INVALID` deliberately stays OUT: a projected action publishes its whole schema, so
+ * input this server already validated failing inside the action means the two have drifted, and
+ * that wants a human.
+ */
+const ARGUMENT_CODES: ReadonlySet<string> = new Set(['X_ADMIN_INVALID']);
 
 /** Classify a code a tool threw. Denials are outcome 3; everything else wants a human. */
 export function outcomeForCode(code: string): McpOutcome {
-  return DENIAL_CODES.has(code) ? 'policy-denied' : 'failed';
+  if (DENIAL_CODES.has(code)) return 'policy-denied';
+  return ARGUMENT_CODES.has(code) ? 'invalid-args' : 'failed';
+}
+
+/**
+ * Classify a result a tool RENDERED rather than threw.
+ *
+ * A tool may answer `isError` itself — `@ultimat3/admin` does, so the model reads code/cause/fix
+ * instead of a transport failure — and that answer used to be audited `policy-denied` at `warn`
+ * whatever it refused for. So a malformed `admin.create` landed in the bucket this file exists to
+ * make alertable: every refusal a prober can drive. A result that NAMES its code goes through
+ * `outcomeForCode`, the same classifier a thrown one goes through; one that names none keeps the
+ * conservative reading, because a tool cannot be assumed to have refused for a benign reason.
+ */
+export function outcomeForResult(result: {
+  readonly isError?: boolean;
+  readonly code?: string;
+}): McpOutcome {
+  if (result.isError !== true) return 'ok';
+  return result.code === undefined ? 'policy-denied' : outcomeForCode(result.code);
 }
 
 export interface McpAuditEntry {

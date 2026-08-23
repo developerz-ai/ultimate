@@ -109,6 +109,40 @@ describe('request context', () => {
     });
   });
 
+  test('useService refuses a prototype member rather than handing back Object.prototype', () => {
+    // `useService(row.serviceKey)` travels as data. A raw index on a `{}`-prototyped object is
+    // never `undefined` for these names, so the guard above it could not see them and the
+    // caller's first method call was a bare TypeError several frames away.
+    const ctx = createContext({ services: { mail: { send: () => true } } });
+    runWithContext(ctx, () => {
+      for (const name of [
+        'constructor',
+        'toString',
+        'valueOf',
+        'hasOwnProperty',
+        'isPrototypeOf',
+        'propertyIsEnumerable',
+        'toLocaleString',
+        '__proto__',
+      ]) {
+        expect(() => useService(name)).toThrow(/X_SERVICE_MISSING/);
+      }
+    });
+  });
+
+  test('a service explicitly installed under a prototype name still resolves', () => {
+    // The refusal above must be about OWNERSHIP, not about the name: an app that installs a
+    // service called `constructor` gets it back.
+    const service = { send: () => true };
+    const ctx = createContext({ services: { constructor: service } });
+    runWithContext(ctx, () => {
+      // The type argument is the caller's, exactly as app code writes it: `useService<T>` has no
+      // inference site, so leaving it off resolves `T` to `unknown` and the comparison below has
+      // nothing to compare against.
+      expect(useService<typeof service>('constructor')).toBe(service);
+    });
+  });
+
   test('a service may not shadow a context field', () => {
     // An app is free to call a service `logger`; the context's own logger still wins, and the
     // service stays reachable by name. Otherwise naming a service would change what `ctx` means.

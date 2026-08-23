@@ -32,25 +32,25 @@ export const GATED_APPS: readonly GatedApp[] = [
     reference: './examples/dummy',
     expectedRed: {
       typecheck:
-        '138 errors as of `bunx tsc -b --pretty false`, ALL of them inside examples/dummy ' +
-        '(its own packages/ included) as of the TypeScript 7 bump. The one that used to leak ' +
-        'through project refs — packages/mcp/src/transport-stdio.ts:35, a ReadableStream missing ' +
-        '[Symbol.asyncIterator] — is GONE: TS 7 ships that lib declaration, so the compiler bump ' +
-        'closed it rather than any edit here. NOT the builder-method/tenancy-escape-hatch pair this ' +
-        'line used to blame: the posts repo was rewritten onto the real @ultimat3/entity surface ' +
-        'and the query client landed, which is what took the count from 227 to here. What ' +
-        'remains: apps/web/app/orgs/repo.ts still chains the same phantom .update().returning() ' +
-        '/ .insert().returning() the posts repo used to; every *.contract/.live/.job.test.ts ' +
-        'calling `seed`/`actorFor` has no type augmentation for the fixtures ' +
-        'scripts/test-setup.ts wires in only at runtime; `Actor` is missing `memberId`/`tz` ' +
-        "(named, not new, in this app's own CLAUDE.md); and a scatter of UI prop drift " +
-        '(`SpaceStep`, `DateTimeFormatter`) plus a Date/Instant brand mismatch on every toZoned ' +
-        'call in packages/core/src/digest-schedule.ts. The count moved 136 → 137 with ' +
-        'previousDigestAt and its digestPreview caller, which are two more instances of those ' +
-        'same two classes, not new ones. 137 → 138 is the TS 7 bump alone, and it added no new ' +
-        'class either — the WHOLE file breaks down as TS2339 ×68, TS2322 ×30, TS2345 ×29 and a ' +
-        "tail of 11, which is the same set the lines above describe. Still the data-substrate work's to close",
+        'RE-MEASURED 2026-08-23: 117 errors, down from the 138 this line claimed and nobody ' +
+        're-ran. Method, because the number is not comparable without it: `bunx tsc -p ' +
+        'examples/dummy/tsconfig.json --pretty false --tsBuildInfoFile <scratch>` — the app is a ' +
+        'composite project with no `references`, so it compiles alone and writes no dist anywhere. ' +
+        'The breakdown is TS2339 x65, TS2322 x23, TS2345 x21 and a tail of 8, which is the same ' +
+        'four classes the 138 broke into (x68/x30/x29/x11) and no new one: apps/web/app/orgs/repo.ts ' +
+        'still chains the phantom .update().returning() / .insert().returning(); every ' +
+        '*.contract/.live/.job.test.ts calling `seed`/`actorFor` has no type augmentation for the ' +
+        'fixtures scripts/test-setup.ts wires in only at runtime; `Actor` is missing ' +
+        "`memberId`/`tz` (named, not new, in this app's own CLAUDE.md); and a scatter of UI prop " +
+        'drift plus a Date/Instant brand mismatch on every toZoned call in ' +
+        'packages/core/src/digest-schedule.ts. NOT "ALL of them inside examples/dummy", which is ' +
+        'what this line said and what the re-measurement disproves: ONE error lands in ' +
+        "packages/http/src/context.ts:154 (TS2739, RequestContext missing `posts`/`orgs`) — the app's " +
+        'own module augmentation of `RequestContext` reaching back into the package that declares ' +
+        'it. Still the data-substrate work to close',
       e2e:
+        'RE-MEASURED 2026-08-23 and UNCHANGED — `bun test apps/web/e2e/offline-feed.e2e.test.ts` ' +
+        'from the app root answers 0 pass, 6 fail. ' +
         'X_TEST_FIXTURE_UNAVAILABLE on all 6 tests: the `page` fixture is declared and nothing in ' +
         'this process drives it, so not one of them reaches a built page. NOT the data substrate ' +
         'this line used to blame — no repo, no query and no migration is involved in the failure. ' +

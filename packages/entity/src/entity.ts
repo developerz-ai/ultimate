@@ -3,6 +3,7 @@
 // (the typed db handle, migrations, cache tags, the admin UI, the manifest) is projected from
 // this one call.
 
+import { renderThrowable } from '@ultimat3/core';
 import { describeValue, type StandardSchemaV1 } from '@ultimat3/schema';
 import { entityNow } from './clock';
 import { assertColumnName, bindColumn, columnName, moneyColumns } from './column';
@@ -284,9 +285,13 @@ export const entity = <const C extends ColumnMap>(
           try {
             return { value: parse(value) };
           } catch (error) {
-            return {
-              issues: [{ message: error instanceof Error ? error.message : String(error) }],
-            };
+            // `renderThrowable`, never `error instanceof Error ? error.message : String(error)`:
+            // both halves of that read the caught value directly. `instanceof` consults
+            // `getPrototypeOf` and `String()` runs the value's own coercion, so a `Proxy` or a
+            // null-prototype throwable raised a SECOND, uncatchable `TypeError` out of the
+            // validator — where a rejection belongs. A column parser is app-reachable and an
+            // app's `$parse` may throw anything at all.
+            return { issues: [{ message: renderThrowable(error) }] };
           }
         },
       },

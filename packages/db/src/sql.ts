@@ -135,6 +135,13 @@ export function identifier(name: string): SqlFragment {
  * A quoted string literal. Postgres utility statements (`CREATE DATABASE`, `COMMENT ON`) reject
  * bound parameters, so this is the only place a value may be inlined — and it escapes quotes.
  * Never reach for it in a query: `sql` binds parameters there.
+ *
+ * The doubling is only an escape while `standard_conforming_strings` is `on`, which has been the
+ * server default since 9.1: with it OFF, a backslash escapes the quote that follows and a value
+ * ending in one closes the literal early. So this is safe for framework-supplied names — a
+ * database, a schema, a comment this repo writes — and is NOT an escape for untrusted text under
+ * an arbitrary server configuration. Nothing passes it caller input today; if something must,
+ * bind a parameter instead, or send `E''`-style quoting from a statement that can take one.
  */
 export function literal(value: string): SqlFragment {
   return raw(`'${value.replaceAll("'", "''")}'`);

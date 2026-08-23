@@ -186,6 +186,11 @@ export function srcsetFor(
   return widths.map((width) => `${urlFor(input.src, width, format)} ${width}w`).join(', ');
 }
 
+/** The declared MIME type, else the conventional `image/<format>`. Own keys only. */
+function mimeTypeFor(format: string): string {
+  return Object.hasOwn(MIME_TYPES, format) ? (MIME_TYPES[format] as string) : `image/${format}`;
+}
+
 export function responsiveImage(
   input: ImageInput,
   options: ResponsiveImageOptions = {},
@@ -196,7 +201,10 @@ export function responsiveImage(
   const formats = options.formats ?? FORMAT_ORDER;
 
   const sources: ImageSourceSet[] = formats.map((format) => ({
-    type: MIME_TYPES[format] ?? `image/${format}`,
+    // `Object.hasOwn`, never a bare index: `MIME_TYPES` is a `{}`-prototyped literal, so an
+    // unlisted format spelled `constructor` or `toString` rendered a function into the one
+    // attribute a browser reads to decide whether to fetch the candidate at all.
+    type: mimeTypeFor(format),
     srcset: srcsetFor(input, widths, format, urlFor),
     sizes,
   }));

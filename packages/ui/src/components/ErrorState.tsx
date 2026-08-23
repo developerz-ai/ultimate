@@ -2,7 +2,7 @@
 // code, cause, fix. Identical text in the CLI, the overlay, and `--json` is the
 // whole point of the error contract — this component must not paraphrase.
 
-import { isUltimateError, renderCauseValue } from '@ultimat3/core';
+import { describeErrorCode, isUltimateError, renderCauseValue } from '@ultimat3/core';
 import type { JSX } from 'solid-js';
 import { cx } from '../cx';
 import { UI_KEYS } from '../i18n-keys';
@@ -44,15 +44,18 @@ export function errorParts(error: unknown): ErrorParts {
   // blank tree. Laundering it through a local `message` is exactly what `scripts/error-render.ts`
   // says it cannot see, which is why this one shipped.
   const message = error instanceof Error ? error.message : renderCauseValue(error);
+  // Title and docs come from core's registry, never a hand-copy: this screen must read exactly
+  // as `x errors explain X_INTERNAL` does, and there is one docs URL for every code.
+  const described = describeErrorCode('X_INTERNAL');
   return {
     code: 'X_INTERNAL',
-    title: 'unexpected internal framework error',
+    title: described.title,
     cause: message,
     // No command can name a throw site the framework never saw typed. The one repair is at the
     // throw itself, which is also the repo's own rule — never a bare Error — so the fix says that
     // rather than sending the reader to a log that holds the same message this screen already has.
     fix: 'throw an UltimateError subclass where this failed — new UltimateError({ code, cause, fix }) — so this screen renders that code and its fix instead of X_INTERNAL',
-    docs: 'https://ultimate.dev/errors/X_INTERNAL',
+    docs: described.docs,
   };
 }
 

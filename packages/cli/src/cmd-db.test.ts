@@ -8,6 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { entity, uuid } from '@ultimat3/entity';
 // Its own entry point, not the barrel: this helper is the one thing in `@ultimat3/testing` that
 // value-imports `@ultimat3/entity`, and off the barrel it loaded the entity registry into every
@@ -235,13 +236,13 @@ describe('unit · the post-migrate report renders the pinned contract output', (
         code: 'X_DB_DRIFT',
         cause: 'table "posts" has column "hotfix" not present in any migration',
         fix: 'x db gen "add hotfix"',
-        docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
+        docs: ERROR_DOCS_URL,
       },
       {
         code: 'X_DB_DRIFT',
         cause: 'table "comments" is declared by migrations but does not exist',
         fix: 'x db migrate',
-        docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
+        docs: ERROR_DOCS_URL,
       },
     ]);
   });

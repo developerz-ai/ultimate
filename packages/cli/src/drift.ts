@@ -11,6 +11,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { describeEntities } from '@ultimat3/entity';
 import { countDeclaredEntities } from './app-entities';
 import { loadApp } from './app-load';
@@ -181,7 +182,7 @@ export async function checkSourceDrift(
         code: 'X_DB_DRIFT',
         cause: 'packages/db has a schema but no migration recorded it',
         fix: 'x db gen "initial"',
-        docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
+        docs: ERROR_DOCS_URL,
         at: MIGRATIONS_DIR,
       },
     ];
@@ -192,7 +193,7 @@ export async function checkSourceDrift(
       code: 'X_DB_DRIFT',
       cause: `schema hashes to ${current}, newest migration ${latest.file} recorded ${latest.hash}`,
       fix: 'x db gen "describe the change"',
-      docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
+      docs: ERROR_DOCS_URL,
       at: `${DB_PACKAGE}/src`,
     },
   ];

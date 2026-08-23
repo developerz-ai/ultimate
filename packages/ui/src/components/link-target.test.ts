@@ -17,8 +17,8 @@ describe('linkTarget', () => {
   });
 
   test('an http(s) URL is kept and is external', () => {
-    expect(linkTarget('https://ultimate.dev')).toEqual({
-      href: 'https://ultimate.dev',
+    expect(linkTarget('https://app.test')).toEqual({
+      href: 'https://app.test',
       external: true,
     });
   });
@@ -28,8 +28,8 @@ describe('linkTarget', () => {
   });
 
   test('mailto and tel are kept, and are not "external" in the new-tab sense', () => {
-    expect(linkTarget('mailto:ada@ultimate.dev')).toEqual({
-      href: 'mailto:ada@ultimate.dev',
+    expect(linkTarget('mailto:ada@app.test')).toEqual({
+      href: 'mailto:ada@app.test',
       external: false,
     });
   });

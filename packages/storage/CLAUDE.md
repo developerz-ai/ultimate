@@ -154,6 +154,16 @@ Gotchas:
   may be `NODE_ENV`'s, never a variable the process did not set. `usesDevStorageSecret()` is the
   `x doctor` predicate, mirroring core's `usesDevCursorSecret()`; it reads the env var, so a disk
   handed an explicit `signingSecret` is outside its question.
+- **`localDriver({ env })` and `usesDevStorageSecret({ env })` are ONE question about ONE table**
+  (`As of 2026-08-23`). The predicate learned core's `env` slot first, so `dev-runtime.ts`'s guard
+  — `!isLocal({ env }) && usesDevStorageSecret({ env })` — asked about the BOOT while the
+  constructor it guards still read `process.env` for the secret, for `isLocal()` and for the
+  environment its refusal names. An embedding caller whose env is not the process's (`serveApp({ env })`,
+  a test fixture) got the verdict from one table and the behaviour from another, in the dangerous
+  direction: a production boot with no secret, launched from a development shell that has one,
+  signing every grant with the published literal. All three reads now come off `options.env ??
+  process.env`, so a bare `localDriver({ root })` is unchanged and additive. `driver-local.test.ts`
+  pins it by mutation — reverting any one read to `process.env` fails.
 - **The mounted read half is `@ultimat3/cli`'s `dev-storage.ts`, not this package.** `GET
   /_storage/:disk/*key` gates on `@ultimat3/policy`'s `evaluate()` (`storage:read`), which is tier
   2 and unreachable from here — so a "serve this object" helper in this package could only ever be

@@ -46,7 +46,12 @@ registerErrorCodes(
   Object.fromEntries(Object.entries(PWA_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
 
-const docsFor = (code: PwaErrorCode): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
+// which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
+// `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE ROW,
+// which has no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x
+// answered 404, host included, on every error it has ever thrown; restating the replacement here
+// would be the same constant in eight places waiting to drift again.
 
 /** No `app/offline.tsx`. You cannot ship a PWA that has nothing to show offline. */
 export class PwaNoOfflineFallbackError extends UltimateError {
@@ -56,7 +61,6 @@ export class PwaNoOfflineFallbackError extends UltimateError {
       code: PwaNoOfflineFallbackError.code,
       cause,
       fix,
-      docs: docsFor(PwaNoOfflineFallbackError.code),
     });
   }
 }
@@ -69,7 +73,6 @@ export class PwaIconMissingError extends UltimateError {
       code: PwaIconMissingError.code,
       cause,
       fix,
-      docs: docsFor(PwaIconMissingError.code),
     });
   }
 }
@@ -82,7 +85,6 @@ export class PwaManifestInvalidError extends UltimateError {
       code: PwaManifestInvalidError.code,
       cause,
       fix,
-      docs: docsFor(PwaManifestInvalidError.code),
     });
   }
 }
@@ -95,7 +97,6 @@ export class BuildIdMissingError extends UltimateError {
       code: BuildIdMissingError.code,
       cause,
       fix,
-      docs: docsFor(BuildIdMissingError.code),
     });
   }
 }
@@ -108,7 +109,6 @@ export class SwScopeInvalidError extends UltimateError {
       code: SwScopeInvalidError.code,
       cause,
       fix,
-      docs: docsFor(SwScopeInvalidError.code),
     });
   }
 }
@@ -125,7 +125,6 @@ export class PwaStrategyExhaustedError extends UltimateError {
       code: PwaStrategyExhaustedError.code,
       cause: `no cached response and the network failed for "${input.cacheName}"`,
       fix: 'pass options.fallback to staleWhileRevalidate(request, env, options), or set pwa.offline.fallback in app.config.ts',
-      docs: docsFor(PwaStrategyExhaustedError.code),
     });
   }
 }
@@ -144,7 +143,6 @@ export class PwaSyncFlushFailedError extends UltimateError {
       code: PwaSyncFlushFailedError.code,
       cause,
       fix,
-      docs: docsFor(PwaSyncFlushFailedError.code),
     });
   }
 }
@@ -157,7 +155,6 @@ export class PwaSyncIncompleteError extends UltimateError {
       code: PwaSyncIncompleteError.code,
       cause,
       fix,
-      docs: docsFor(PwaSyncIncompleteError.code),
     });
   }
 }
@@ -170,7 +167,6 @@ export class NotImplementedError extends UltimateError {
       code: NotImplementedError.code,
       cause,
       fix,
-      docs: docsFor(NotImplementedError.code),
     });
   }
 }

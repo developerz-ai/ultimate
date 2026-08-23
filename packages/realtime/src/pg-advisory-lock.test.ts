@@ -75,6 +75,9 @@ describe('tryAcquire', () => {
       user: 'repluser',
       database: 'app',
       application_name: `ultimate-replicator-lock:${KEY}`,
+      // Every session `PgConnection` opens pins its output formats, replication or not: one
+      // session shape, not two. `pg-connection.test.ts` is where that string is asserted.
+      options: '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3',
     });
   });
 

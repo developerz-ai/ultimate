@@ -5,6 +5,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import {
   describeErrorCode,
+  ERROR_DOCS_URL,
   errorCodeSnapshot,
   hasErrorCode,
   registerErrorCodes,
@@ -59,7 +60,7 @@ describe('CacheDriverUnavailableError', () => {
     expect(err.cause).toContain('redis');
     expect(err.cause).toContain('ECONNREFUSED');
     expect(err.fix).toBe('start redis or set CACHE_REDIS_URL');
-    expect(err.docs).toBe('https://ultimate.dev/errors/X_CACHE_DRIVER_UNAVAILABLE');
+    expect(err.docs).toBe(ERROR_DOCS_URL);
     expect(EVERY_CODE).toContain(err.code);
   });
 });
@@ -127,7 +128,7 @@ describe('CachePurgeFailedError', () => {
     expect(err.cause).toContain('HTTP 401');
     expect(err.cause).toContain('Provided credentials are missing or invalid');
     expect(err.fix).toBe('set FASTLY_API_TOKEN in .env.production');
-    expect(err.docs).toBe('https://ultimate.dev/errors/X_CACHE_PURGE_FAILED');
+    expect(err.docs).toBe(ERROR_DOCS_URL);
     expect(EVERY_CODE).toContain(err.code);
   });
 
@@ -143,6 +144,31 @@ describe('CachePurgeFailedError', () => {
     });
 
     expect(err.meta).toEqual({ driver: 'cloudflare', retryable: true, status: 429 });
+  });
+
+  // `errorRetry()` is the one question a retry loop asks, and it read `terminal` for a purge that
+  // provably lands — `meta.retryable: true` beside `retry: 'terminal'` is one error contradicting
+  // itself on the wire. Per-instance, because the same code covers a 401 and a 429.
+  test('retry agrees with meta.retryable, on the instance and in toJSON', () => {
+    const retryable = new CachePurgeFailedError({
+      driver: 'cloudflare',
+      detail: 'rate limited',
+      status: 429,
+      retryable: true,
+      fix: 'bust fewer tags per write',
+    });
+    const terminal = new CachePurgeFailedError({
+      driver: 'fastly',
+      detail: 'Provided credentials are missing or invalid',
+      status: 401,
+      retryable: false,
+      fix: 'set FASTLY_API_TOKEN in .env.production',
+    });
+
+    expect(retryable.retry).toBe('retryable');
+    expect(terminal.retry).toBe('terminal');
+    expect(retryable.toJSON().retry).toBe('retryable');
+    expect(terminal.toJSON().retry).toBe('terminal');
   });
 
   test('a failure with no status omits it rather than inventing one', () => {
@@ -219,7 +245,7 @@ describe('registration', () => {
 describe('docs', () => {
   test('every code resolves to its canonical docs page', () => {
     for (const code of CACHE_ERROR_CODES) {
-      expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
     }
   });
 });

@@ -78,13 +78,28 @@ export function denied(
   return { allowed: false, permission, reason, trace };
 }
 
-/** Every permission must hold. The first denial wins, and carries its own reason. */
+/**
+ * Every permission must hold. The first denial wins, and carries its own reason.
+ *
+ * An EMPTY list is refused, never granted. `permissions[length - 1] ?? ''` used to fall through to
+ * `allowed('')`, so a declared-but-empty gate opened for every actor, anonymous included — and the
+ * decision it returned named no permission at all. `visibleNav` hands an author's
+ * `item.permissions` straight here, so `permissions: []` on a nav item was that gate. `pages.ts`
+ * already refuses an empty page list at declaration time (`X_ADMIN_PAGE_UNGUARDED`); this is the
+ * same rule at the seam every surface shares, which is where the ones that never pass through
+ * `defineAdmin` are decided.
+ */
 export function decideAll(
   authz: AdminAuthz,
   permissions: readonly string[],
   actor: AdminActor,
   subject?: AdminSubject,
 ): AdminDecision {
+  if (permissions.length === 0) {
+    return denied('', 'admin.policy.none-declared', [
+      'no permission was declared for this surface, so there is nothing to satisfy',
+    ]);
+  }
   const trace: string[] = [];
   for (const permission of permissions) {
     const decision = authz.decide(
@@ -108,7 +123,13 @@ export function isAllowed(
 }
 
 const impliedBy = (permission: string): readonly string[] => {
-  // Widened: `permission` is any string at runtime, so the lookup really can miss.
+  // `Object.hasOwn` first, never the bare index read. `permission` is any string at runtime and
+  // the table is a plain object, so the read consulted the PROTOTYPE CHAIN: an app that merges
+  // untrusted JSON (the ordinary prototype-pollution shape) could give any granted permission an
+  // `implies` the spec table never declared, and `expandPermissions` walks it. Fourth instance of
+  // the class in the framework, after i18n's catalog lookup, schema's `coerce` and mcp's
+  // `validate-args`. The cast was the tell that the key is not known to be a member.
+  if (!Object.hasOwn(ADMIN_PERMISSION_SPEC, permission)) return [];
   const spec: { readonly implies: readonly string[] } | undefined =
     ADMIN_PERMISSION_SPEC[permission as AdminPermission];
   return spec?.implies ?? [];

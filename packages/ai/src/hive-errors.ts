@@ -4,9 +4,13 @@
 // duplicate can surface.
 
 import { UltimateError } from '@ultimat3/core';
-import type { AiErrorCode } from './errors';
 
-const docsFor = (code: AiErrorCode): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
+// which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
+// `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE ROW,
+// which has no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x
+// answered 404, host included, on every error it has ever thrown; restating the replacement here
+// would be the same constant in eight places waiting to drift again.
 
 /**
  * `split` handed back an empty list, so the hive fanned out to nobody and would have reported a
@@ -23,7 +27,6 @@ export class HiveEmptyError extends UltimateError {
       code: 'X_HIVE_EMPTY',
       cause: `the hive over "${input.member}" split into 0 members, so no member ran`,
       fix: `return at least one member input from the hive's split() over "${input.member}", or skip the hive call when the source is empty — a hive reporting 0 ok and 0 failed cannot be told apart from one whose query returned no rows`,
-      docs: docsFor('X_HIVE_EMPTY'),
       meta: { member: input.member },
     });
   }

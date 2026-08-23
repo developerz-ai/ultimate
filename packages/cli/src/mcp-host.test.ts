@@ -3,6 +3,7 @@
 // Driven against a fake `DevHost` so nothing here boots a database.
 
 import { describe, expect, test } from 'bun:test';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { createRecordingClient, READONLY_ROLE } from '@ultimat3/db';
 import type { DatabaseTarget, DevHost, JsonRpcResponse, McpServer, ToolArgs } from '@ultimat3/mcp';
 import { createMcpServer, devTools, resolveQueryLimits } from '@ultimat3/mcp';
@@ -317,7 +318,7 @@ describe('unit · errors.explain', () => {
     await loadCodeFixes();
     const explained = explainErrorCode('X_DB_DRIFT');
     expect(explained?.cause).toBe('schema differs from migrations');
-    expect(explained?.docs).toBe('https://ultimate.dev/errors/X_DB_DRIFT');
+    expect(explained?.docs).toBe(ERROR_DOCS_URL);
     expect(explained?.fix).toStartWith('x db gen ');
     expect(explained?.fix).toContain('X_DB_DRIFT is raised at ');
     // Reads every installed package's source once: `REPO_SCAN_TIMEOUT_MS`'s value, as a literal,

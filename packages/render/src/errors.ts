@@ -54,7 +54,12 @@ registerErrorCodes(
   Object.fromEntries(Object.entries(RENDER_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
 
-const docsFor = (code: RenderErrorCode): string => `https://ultimate.dev/errors/${code}`;
+// No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
+// which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
+// `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE ROW,
+// which has no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x
+// answered 404, host included, on every error it has ever thrown; restating the replacement here
+// would be the same constant in eight places waiting to drift again.
 
 /** A render mode's invariant was violated at registration (see `modes.ts`). */
 export class RouteModeInvalidError extends UltimateError {
@@ -64,7 +69,6 @@ export class RouteModeInvalidError extends UltimateError {
       code: RouteModeInvalidError.code,
       cause,
       fix,
-      docs: docsFor(RouteModeInvalidError.code),
     });
   }
 }
@@ -77,7 +81,6 @@ export class RouteOfflineMissingError extends UltimateError {
       code: RouteOfflineMissingError.code,
       cause,
       fix,
-      docs: docsFor(RouteOfflineMissingError.code),
     });
   }
 }
@@ -90,7 +93,6 @@ export class RouteMetaMissingError extends UltimateError {
       code: RouteMetaMissingError.code,
       cause,
       fix,
-      docs: docsFor(RouteMetaMissingError.code),
     });
   }
 }
@@ -107,7 +109,6 @@ export class RouteUnnormalizedError extends UltimateError {
       code: RouteUnnormalizedError.code,
       cause,
       fix,
-      docs: docsFor(RouteUnnormalizedError.code),
     });
   }
 }
@@ -120,7 +121,6 @@ export class RouteDuplicateError extends UltimateError {
       code: RouteDuplicateError.code,
       cause,
       fix,
-      docs: docsFor(RouteDuplicateError.code),
     });
   }
 }
@@ -138,7 +138,6 @@ export class RouteFileInvalidError extends UltimateError {
       code: RouteFileInvalidError.code,
       cause,
       fix,
-      docs: docsFor(RouteFileInvalidError.code),
     });
   }
 }
@@ -151,7 +150,6 @@ export class SurfaceBoundaryError extends UltimateError {
       code: SurfaceBoundaryError.code,
       cause,
       fix,
-      docs: docsFor(SurfaceBoundaryError.code),
     });
   }
 }
@@ -164,7 +162,6 @@ export class BudgetExceededError extends UltimateError {
       code: BudgetExceededError.code,
       cause,
       fix,
-      docs: docsFor(BudgetExceededError.code),
     });
   }
 }
@@ -177,7 +174,6 @@ export class PrerenderFailedError extends UltimateError {
       code: PrerenderFailedError.code,
       cause,
       fix,
-      docs: docsFor(PrerenderFailedError.code),
     });
   }
 }
@@ -190,7 +186,6 @@ export class RouteLoadInvalidError extends UltimateError {
       code: RouteLoadInvalidError.code,
       cause,
       fix,
-      docs: docsFor(RouteLoadInvalidError.code),
     });
   }
 }
@@ -207,7 +202,6 @@ export class IslandInvalidError extends UltimateError {
       code: IslandInvalidError.code,
       cause,
       fix,
-      docs: docsFor(IslandInvalidError.code),
     });
   }
 }
@@ -224,7 +218,6 @@ export class IslandPropsInvalidError extends UltimateError {
       code: IslandPropsInvalidError.code,
       cause,
       fix,
-      docs: docsFor(IslandPropsInvalidError.code),
     });
   }
 }
@@ -242,7 +235,6 @@ export class IslandNotHydratedError extends UltimateError {
       code: IslandNotHydratedError.code,
       cause,
       fix,
-      docs: docsFor(IslandNotHydratedError.code),
     });
   }
 }
@@ -259,7 +251,6 @@ export class RouteLoadFailedError extends UltimateError {
       code: RouteLoadFailedError.code,
       cause,
       fix,
-      docs: docsFor(RouteLoadFailedError.code),
     });
   }
 }

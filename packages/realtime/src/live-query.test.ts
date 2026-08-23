@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { type Actor, userActor } from '@ultimat3/core';
+import { type Actor, ERROR_DOCS_URL, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import type { ChangeEvent } from './changefeed';
 import { formatLsn } from './changefeed';
@@ -163,7 +163,7 @@ describe('live queries', () => {
     expect(error.cause).toContain('liveFed');
     expect(error.fix).toContain('x queries list');
     expect(error.fix).not.toContain('redeploy');
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_LIVE_QUERY_UNKNOWN');
+    expect(error.docs).toBe(ERROR_DOCS_URL);
     // The registry is not read back to a socket that has not been allowed anything yet.
     expect(error.cause).not.toContain('liveFeed');
   });

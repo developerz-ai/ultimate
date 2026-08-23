@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import {
   describeErrorCode,
+  ERROR_DOCS_URL,
   errorCodeSnapshot,
   hasErrorCode,
   listErrorCodes,
@@ -42,9 +43,7 @@ describe('UltimateError', () => {
       ].join('\n'),
     );
     expect(error.format().split('\n')).toHaveLength(3);
-    expect(error.format({ docs: true }).split('\n')[3]).toBe(
-      '  docs:  https://ultimate.dev/errors/X_DB_DRIFT',
-    );
+    expect(error.format({ docs: true }).split('\n')[3]).toBe(`  docs:  ${ERROR_DOCS_URL}`);
     resetErrorCodes();
   });
 
@@ -58,7 +57,7 @@ describe('UltimateError', () => {
 
     expect(json['code']).toBe('X_CONFIG_INVALID');
     expect(json['title']).toBe('app.config.ts is invalid');
-    expect(json['docs']).toBe('https://ultimate.dev/errors/X_CONFIG_INVALID');
+    expect(json['docs']).toBe(ERROR_DOCS_URL);
     expect(json['cause']).toBe('defaultLocale "de" is not in locales');
     expect(json['fix']).toBe('edit app.config.ts');
     expect(json['meta']).toEqual({ field: 'defaultLocale' });

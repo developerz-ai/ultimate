@@ -59,6 +59,47 @@ describe('renderToHtml', () => {
     const Loop = (): unknown => h(Loop, null);
     expect(renderToHtml(h(Loop, null))).rejects.toThrow(/renders itself/);
   });
+
+  // The bound was on `renderNode` alone, so it only held for the ELEMENT path. `unwrap` recurses
+  // through arrays and thunks with no check of its own, and both are reachable from a component's
+  // children — so a cycle there escaped `renderToHtml` (on the `./server` barrel, and what
+  // `dev-render.ts` calls for a raw tree) as a bare `RangeError` with no code and no fix.
+  describe('the depth bound holds on every recursion, not only on elements', () => {
+    const coded = async (work: Promise<unknown>): Promise<{ code?: unknown; fix?: unknown }> => {
+      try {
+        await work;
+      } catch (error) {
+        return error as { code?: unknown; fix?: unknown };
+      }
+      return expect.unreachable('the cyclic tree rendered');
+    };
+
+    test('an array that contains itself is X_PRERENDER_FAILED, not a RangeError', async () => {
+      const cycle: unknown[] = [];
+      cycle.push(cycle);
+      const failure = await coded(renderToHtml(h(() => h('div', null, cycle), null)));
+      expect(failure.code).toBe('X_PRERENDER_FAILED');
+      expect(typeof failure.fix).toBe('string');
+    });
+
+    test('a thunk that returns itself is X_PRERENDER_FAILED too', async () => {
+      const self = (): unknown => self;
+      const failure = await coded(renderToHtml(h('div', null, self)));
+      expect(failure.code).toBe('X_PRERENDER_FAILED');
+    });
+
+    test('a cycle handed straight to renderToHtml is caught at the top of the walk', async () => {
+      const cycle: unknown[] = [];
+      cycle.push(cycle);
+      expect((await coded(renderToHtml(cycle))).code).toBe('X_PRERENDER_FAILED');
+    });
+
+    test('a deep but finite tree still renders', async () => {
+      let node: unknown = 'leaf';
+      for (let i = 0; i < 50; i += 1) node = h('div', null, [node]);
+      expect(await renderToHtml(node)).toContain('leaf');
+    });
+  });
 });
 
 describe('renderComponent', () => {

@@ -1,7 +1,8 @@
 /**
- * The posts feature's reads. `liveFeed` is subscribable, so the feed renders from the device's own
- * copy when the network is gone — the durable client store is `realtime.tier: 'local-first'` in
- * `app.config.ts`, declared once for the whole app rather than per query. `publicPost` is a plain
+ * The posts feature's reads. `liveFeed` is `live: true`, so the feed is pushed a patch per change
+ * over the socket instead of polling. It is NOT offline: the durable client store — `persist: true`
+ * over OPFS SQLite — has not shipped, `As of 2026-08`, so a disconnected client keeps whatever the
+ * in-memory store last held and nothing survives a reload. `publicPost` is a plain
  * cached read: the public blog does not need a socket.
  *
  * `t` comes from @ultimat3/query, not @ultimat3/schema: a query file imports one package.

@@ -19,11 +19,14 @@ export interface ErrorCodeEntry extends ErrorCodeDescriptor {
   readonly code: string;
 }
 
-export const ERROR_DOCS_BASE = 'https://ultimate.dev/errors/';
-
-export function errorDocsUrl(code: string): string {
-  return `${ERROR_DOCS_BASE}${code}`;
-}
+/**
+ * Where an error sends its reader. One URL for every code, and deliberately not one per code:
+ * `wiki/` is the framework's only public documentation surface, codes live there in TABLE ROWS,
+ * and a table row has no anchor — so a `#X_DB_DRIFT` fragment would land on the page top while
+ * declaring a target that does not exist. The `https://ultimate.dev/errors/<code>` links this
+ * shipped until 9.x answered 404, host included, on every error the framework has ever thrown.
+ */
+export const ERROR_DOCS_URL = 'https://github.com/developerz-ai/ultimate/wiki/Error-Codes';
 
 /** Codes owned by `@ultimat3/core`. Every other package calls `registerErrorCodes()`. */
 const CORE_CODE_TITLES = {
@@ -75,13 +78,13 @@ const CORE_CODE_TITLES = {
 
 export type CoreErrorCode = keyof typeof CORE_CODE_TITLES;
 
-function descriptor(code: string, declaration: ErrorCodeDeclaration): ErrorCodeDescriptor {
-  return Object.freeze({ title: declaration.title, docs: declaration.docs ?? errorDocsUrl(code) });
+function descriptor(declaration: ErrorCodeDeclaration): ErrorCodeDescriptor {
+  return Object.freeze({ title: declaration.title, docs: declaration.docs ?? ERROR_DOCS_URL });
 }
 
 export const CORE_ERROR_CODES: Readonly<Record<CoreErrorCode, ErrorCodeDescriptor>> = Object.freeze(
   Object.fromEntries(
-    Object.entries(CORE_CODE_TITLES).map(([code, title]) => [code, descriptor(code, { title })]),
+    Object.entries(CORE_CODE_TITLES).map(([code, title]) => [code, descriptor({ title })]),
   ) as Record<CoreErrorCode, ErrorCodeDescriptor>,
 );
 
@@ -105,7 +108,7 @@ export function registerErrorCodes(codes: Readonly<Record<string, ErrorCodeDecla
     });
   }
   for (const [code, declaration] of Object.entries(codes)) {
-    registry.set(code, descriptor(code, declaration));
+    registry.set(code, descriptor(declaration));
   }
 }
 
@@ -117,7 +120,7 @@ function humanize(code: string): string {
 export function describeErrorCode(code: string): ErrorCodeDescriptor {
   const known = registry.get(code);
   if (known !== undefined) return known;
-  return descriptor(code, { title: humanize(code) });
+  return descriptor({ title: humanize(code) });
 }
 
 export function hasErrorCode(code: string): boolean {

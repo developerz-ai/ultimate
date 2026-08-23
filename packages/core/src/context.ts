@@ -200,7 +200,10 @@ export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
 /** Resolve a late-bound service. Throws `X_SERVICE_MISSING` rather than returning undefined. */
 export function useService<T>(name: string): T {
   const ctx = useContext();
-  const service = ctx.services[name];
+  // Own keys only, and the SAME read the cause below lists. A raw index walks the prototype, so
+  // `useService('constructor')` answered with the `Object` function and the caller's first method
+  // call was a bare `TypeError` frames away — which is the failure this function exists to name.
+  const service = Object.hasOwn(ctx.services, name) ? ctx.services[name] : undefined;
   if (service === undefined) {
     throw new UltimateError({
       code: 'X_SERVICE_MISSING',

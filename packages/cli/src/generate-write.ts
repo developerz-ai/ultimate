@@ -7,6 +7,7 @@
 // app root, and `node:path` is the only API that resolves one. `node:fs` for the exists check.
 import { existsSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { GenerateJsonInvalidError, ScaffoldPathEscapeError } from './errors';
 import { mergeJsonDeep } from './json-merge';
 import type { Finding } from './output';
@@ -125,7 +126,7 @@ async function planJsonMerge(
         code: 'X_GENERATE_CONFLICT',
         cause: `${file.path} exists but is not a JSON object, so its keys cannot be merged`,
         fix: `edit ${file.path} by hand until it parses as a JSON object, or delete it and re-run x g`,
-        docs: 'https://ultimate.dev/errors/X_GENERATE_CONFLICT',
+        docs: ERROR_DOCS_URL,
         at: file.path,
       },
     };
@@ -178,7 +179,7 @@ function planFile(
         // when run, and a `fix:` is copied and pasted verbatim. Same construction as
         // `generate-kinds.ts`'s `assertSurfaceSupported`.
         fix: `${invocation} --force   # overwrites ${file.path}, or pass a different name`,
-        docs: 'https://ultimate.dev/errors/X_GENERATE_CONFLICT',
+        docs: ERROR_DOCS_URL,
         at: file.path,
       },
     };

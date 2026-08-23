@@ -5,14 +5,22 @@
 import { assert } from '@ultimat3/core';
 import type { ForeignKeyDescription } from './introspect';
 
-/** `pg_constraint.confdeltype`. The catalog's vocabulary; a description holds the rule's name. */
-const CATALOG_RULES: Readonly<Record<string, string>> = {
-  a: 'no action',
-  c: 'cascade',
-  r: 'restrict',
-  n: 'set null',
-  d: 'set default',
-};
+/**
+ * `pg_constraint.confdeltype`. The catalog's vocabulary; a description holds the rule's name.
+ *
+ * A `Map`, because `raw` is a catalog string on every read: an object literal answered
+ * `CATALOG_RULES['constructor']` with the `Object` FUNCTION, which left this `string | null`
+ * function returning one into `compareForeignKeys`.
+ */
+const CATALOG_RULES: ReadonlyMap<string, string> = new Map(
+  Object.entries({
+    a: 'no action',
+    c: 'cascade',
+    r: 'restrict',
+    n: 'set null',
+    d: 'set default',
+  }),
+);
 
 /**
  * One `on delete` vocabulary for both sides. The catalog spells the rule as a single character and
@@ -25,7 +33,7 @@ const CATALOG_RULES: Readonly<Record<string, string>> = {
  */
 export function onDeleteRule(raw: string | null): string | null {
   if (raw === null) return null;
-  const named = CATALOG_RULES[raw] ?? raw.toLowerCase();
+  const named = CATALOG_RULES.get(raw) ?? raw.toLowerCase();
   return named === 'no action' ? null : named;
 }
 

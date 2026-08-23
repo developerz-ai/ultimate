@@ -3,7 +3,7 @@
 // step that failed. Its own module because `cmd-db.ts` and `cmd-db-branch.ts` both need it and
 // neither may import the other.
 
-import { renderThrowable } from '@ultimat3/core';
+import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import type { Finding } from './output';
 import { findingFrom, isUltimateErrorShape } from './output';
 
@@ -24,5 +24,5 @@ export const stepFinding = (error: unknown, code: string): Finding =>
         // a TypeError raised while reporting it.
         cause: renderThrowable(error),
         fix: 'x doctor --json',
-        docs: `https://ultimate.dev/errors/${code}`,
+        docs: ERROR_DOCS_URL,
       };

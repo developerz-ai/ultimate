@@ -3,18 +3,29 @@
 // the framing and the pgoutput decode live next door; what is decided here is *ordering*, because
 // the lsn is the only authority the pipeline has.
 
-import { type Clock, logger, systemClock } from '@ultimat3/core';
+import { type Clock, logger, renderThrowable, systemClock } from '@ultimat3/core';
 import type { ChangeEvent, ChangeOp, PgLogicalReplicationOptions } from './changefeed';
 import { ReplicationProtocolError } from './errors';
-import { isRow, type JsonObject, type Row } from './json';
+import { isRow, type Row } from './json';
 import { ByteReader, ByteWriter, epochMsToPgTimestamp, printLsn } from './pg-bytes';
 import { PgConnection } from './pg-connection';
 import { entityRow } from './pg-entity-row';
 import { assertIdentifier, preflight } from './pg-preflight';
 import { bunPgStream, parsePgUrl } from './pg-socket';
+import type { PhysicalRow } from './pg-values';
 import { PgOutputDecoder, type PgOutputMessage, type PgRelation } from './pgoutput';
 
 const DEFAULT_STATUS_INTERVAL_MS = 10_000;
+
+/**
+ * Consecutive standby-status writes that may fail before the stream is declared dead.
+ *
+ * Three, at the default 10s interval, is 30s — inside postgres' own 60s `wal_sender_timeout`, so
+ * the replicator gives up at roughly the same moment the server would. It is a constant and not an
+ * option because it is a fraction of `statusIntervalMs`, and a second knob is a second number that
+ * can disagree with the one it is a fraction of.
+ */
+const MAX_CONFIRM_FAILURES = 3;
 
 /** `r` — the standby status update, the only frontend message a walsender listens for. */
 const STANDBY_STATUS = 0x72;
@@ -33,6 +44,13 @@ export interface ReplicationStreamStats {
    * be alerted on. Inserts never count: there is no `before` to be partial.
    */
   readonly partialBefore: number;
+  /**
+   * Standby-status writes that have failed in a row without one landing in between. It is the half
+   * of a broken stream the delivery count cannot show: the read side goes on delivering while
+   * `confirmed_flush_lsn` stops advancing, so WAL accumulates on the primary with nothing else
+   * reporting it. Reset by the first confirm that lands.
+   */
+  readonly confirmFailures: number;
   /**
    * Why the pump stopped, or `null` while it is live. The read loop cannot throw into a caller —
    * nothing awaits it — so this is the one place `/readyz` and a test can see that it died at all.
@@ -92,6 +110,7 @@ export class PgReplicationStream {
   #skipped = 0;
   #replayed = 0;
   #partialBefore = 0;
+  #confirmFailures = 0;
   #failure: string | null = null;
 
   constructor(options: PgLogicalReplicationOptions) {
@@ -115,6 +134,7 @@ export class PgReplicationStream {
       skipped: this.#skipped,
       replayed: this.#replayed,
       partialBefore: this.#partialBefore,
+      confirmFailures: this.#confirmFailures,
       failure: this.#failure,
     };
   }
@@ -163,8 +183,9 @@ export class PgReplicationStream {
     // A restart that kept the last death in `stats()` reports a live stream as failed, and the
     // supervisor that reads it never sees the replicator come back.
     this.#failure = null;
+    this.#confirmFailures = 0;
     this.#timer = setInterval(() => {
-      void this.#confirm();
+      void this.#confirmOnTimer();
     }, this.#options.statusIntervalMs ?? DEFAULT_STATUS_INTERVAL_MS);
     // A pending timer must not be what keeps `x dev` alive after the app is done with it.
     this.#timer.unref?.();
@@ -276,7 +297,7 @@ export class PgReplicationStream {
         }
       }
     } catch (failure) {
-      await this.#die(failure instanceof Error ? failure.message : String(failure));
+      await this.#die(renderThrowable(failure));
     }
   }
 
@@ -312,8 +333,8 @@ export class PgReplicationStream {
   async #deliver(
     op: ChangeOp,
     relation: PgRelation,
-    oldTuple: JsonObject | null,
-    newTuple: JsonObject | null,
+    oldTuple: PhysicalRow | null,
+    newTuple: PhysicalRow | null,
     handlers: ReplicationStreamHandlers,
   ): Promise<void> {
     const transaction = this.#transaction;
@@ -360,8 +381,46 @@ export class PgReplicationStream {
   }
 
   /**
+   * The TIMER's confirm, and the one call that may not reject. `void this.#confirm()` handed the
+   * rejection to nobody: `#confirm` awaits `#writing`, which rejects the moment the socket is gone,
+   * and no package in this repo installs an `unhandledRejection` handler, so Bun ends the process —
+   * an uncoded `TypeError` reaching the operator with no code and no `fix:`, and exit code 1 on an
+   * otherwise clean shutdown.
+   *
+   * Worse than the crash was the silence before it: `stats().failure` stayed `null`, so `/readyz`
+   * reported the replicator live while `confirmed_flush_lsn` stopped advancing and WAL piled up on
+   * the primary. A run of failures is now a death, the same way `#drain`'s catch is — the four
+   * things `#die` owns go together or not at all.
+   */
+  async #confirmOnTimer(): Promise<void> {
+    try {
+      await this.#confirm();
+      // Consecutive, not cumulative: one confirm that lands means the walsender is being told
+      // where we are, and a lifetime count would eventually kill a healthy stream.
+      this.#confirmFailures = 0;
+    } catch (failure) {
+      this.#confirmFailures += 1;
+      logger.warn('replication confirm failed', {
+        slot: this.#options.slot,
+        consecutive: this.#confirmFailures,
+        error: renderThrowable(failure),
+      });
+      const consecutive = this.#confirmFailures;
+      if (consecutive >= MAX_CONFIRM_FAILURES) {
+        await this.#die(
+          `${consecutive} standby status updates failed in a row — ` +
+            `the slot is not being confirmed: ${renderThrowable(failure)}`,
+        );
+      }
+    }
+  }
+
+  /**
    * Tell the walsender how far we got. Serialized behind one chain because the timer and the read
    * loop both reach it, and two interleaved writes would frame one another's bytes.
+   *
+   * It still RAISES: `stop()` and the keepalive reply both await it and both need the answer. Only
+   * the timer, which awaits nothing, goes through `#confirmOnTimer` above.
    */
   async #confirm(connection: PgConnection | null = this.#connection): Promise<void> {
     if (connection === null || !connection.inCopyBoth) return;
@@ -375,16 +434,21 @@ export class PgReplicationStream {
       .int64(at)
       .uint8(0)
       .finish();
-    this.#writing = this.#writing.then(
-      () => connection.sendCopyData(payload),
-      () => undefined,
-    );
-    await this.#writing;
+    // The chain SERIALIZES writes; it does not decide them. Putting the rejection handler on the
+    // chain itself meant the confirm after a failed one resolved without writing anything —
+    // `.then(send, () => undefined)` runs the second handler and hands back its `undefined`, so
+    // every other standby status update after the first failure was a no-op that reported success.
+    // A run of failures could then never be seen, because the run never got past one.
+    const attempt = this.#writing.then(() => connection.sendCopyData(payload));
+    // What the NEXT caller queues behind is this attempt settled either way; what THIS caller
+    // awaits is the attempt itself, because it is the only one entitled to its outcome.
+    this.#writing = attempt.catch(() => undefined);
+    await attempt;
   }
 }
 
 /** A physical tuple becomes the row the matcher's predicates are written against, or nothing. */
-function toRow(relation: PgRelation, physical: JsonObject | null): Row | null {
+function toRow(relation: PgRelation, physical: PhysicalRow | null): Row | null {
   if (physical === null) return null;
   const row = entityRow(physical);
   // A bigserial id decodes as a number inside `Number.isSafeInteger` range and as text outside it,

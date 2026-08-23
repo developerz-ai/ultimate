@@ -6,6 +6,9 @@
  * is a real bug that users report as "the app is broken".
  */
 
+import type { Clock } from '@ultimat3/core';
+import { systemClock } from '@ultimat3/core';
+
 export interface VapidConfig {
   readonly publicKey: string;
   /** `mailto:` or an https URL — required by the spec, checked by every push service. */
@@ -30,13 +33,21 @@ export interface PushSubscriptionRecord {
 
 export type SubscriptionState = 'active' | 'expired' | 'gone';
 
-/** A 404/410 from the push service means the subscription is dead — delete it, don't retry. */
+/**
+ * A 404/410 from the push service means the subscription is dead — delete it, don't retry.
+ *
+ * `clock`, never `Date.now()`: this package's boundary says `Determinism | no Date.now()` without
+ * qualification, and an injectable default is still a wall-clock read living in the module. Every
+ * other "now" in the framework goes through a `Clock`, so a caller freezing time freezes this too
+ * rather than having to know that one function takes epoch milliseconds instead.
+ */
 export function subscriptionState(
   record: PushSubscriptionRecord,
   lastStatus: number | null,
-  now = Date.now(),
+  clock: Clock = systemClock,
 ): SubscriptionState {
   if (lastStatus === 404 || lastStatus === 410) return 'gone';
+  const now = clock.now().getTime();
   if (record.expirationTime !== null && record.expirationTime <= now) return 'expired';
   return 'active';
 }

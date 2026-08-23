@@ -8,6 +8,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { DESTRUCTIVE_MARKER, generateMigration } from '@ultimat3/db';
 import { APP_CONFIG_FILE } from './app-root';
 import { VERIFY_STEPS } from './cmd-verify';
@@ -45,7 +46,7 @@ describe('unit · the destructive rail', () => {
     expect(finding?.at).toBe(`${MIGRATIONS_DIR}/0002_drop_body.sql`);
     expect(finding?.cause).toContain('alter table "post" drop column "body"');
     expect(finding?.fix).toContain(DESTRUCTIVE_MARKER);
-    expect(finding?.docs).toBe('https://ultimate.dev/errors/X_MIGRATION_DESTRUCTIVE');
+    expect(finding?.docs).toBe(ERROR_DOCS_URL);
   });
 
   test('the marker clears the file', async () => {

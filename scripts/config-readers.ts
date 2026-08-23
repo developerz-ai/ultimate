@@ -12,20 +12,30 @@
 // WHAT COUNTS AS A READ: the key as a property access (`config.cache.driver`, `cfg.driver`) or as a
 // destructured binding (`const { driver } = cache`), in any shipped file of any package except the
 // declaration itself. Deliberately loose about WHOSE property it is — a package takes `CacheConfig`
-// as a parameter and reads `cfg.driver`, so demanding the fully qualified path would report every
-// key in the file. The looseness only ever HIDES a dead key whose name collides with an unrelated
-// property; it never invents one, which is the direction a check may be wrong in.
+// as a parameter and reads `cfg.driver`, so demanding the fully qualified path would report
+// nineteen of the twenty-eight leaf keys as dead. Measured, not guessed at.
+//
+// AND THAT LOOSENESS IS THE THIRTEENTH INSTANCE OF THE DEFECT ABOVE. This header used to argue the
+// looseness was safe because it "only ever HIDES a dead key whose name collides with an unrelated
+// property" — which is the whole defect, conceded in a comment. `realtime.tier` is read by nothing
+// (a type, a field, a default and a scaffold template, and no reader anywhere) and NINETEEN files
+// matched the bare `tier`, `packages/policy/src/surfaces.ts` on the words `tier,` in its own file
+// header. So the rule built to catch a dead key reported `✓` over one. `ambiguityOf` is the answer:
+// when the bare name matches more than `AMBIGUOUS_LIMIT` files, none of them inside the section's
+// own package and none spelling the qualified `<section>.<key>`, the reader set is not evidence and
+// says so — `X_CONFIG_KEY_READER_AMBIGUOUS`. Nineteen readers should always have been the alarm.
 //
 // WHAT IT CANNOT SEE: a key whose only legitimate reader is APP code (`config.defaultCurrency` in a
 // price view). Those are pinned with the sentence saying so, which is the difference between a
 // waiver and a decision.
 //
 //   bun run scripts/config-readers.ts [--json]
-//   bun run scripts/config-readers.ts --unpin <leaf>[,<leaf>]   # shrink the ratchet
+//   bun run scripts/config-readers.ts --unpin <leaf>[,<leaf>]   # shrink either ratchet
 
 import { flagList, parseScriptArgs } from './lib/args';
 import {
   applyConfigReaderUnpin,
+  CONFIG_AMBIGUOUS_PINS,
   CONFIG_PINS_FILE,
   CONFIG_READER_PINS,
 } from './lib/config-reader-pins';
@@ -85,19 +95,71 @@ export const readPattern = (leaf: string): RegExp => {
   return new RegExp(`\\.${key}\\b|(?<![\\w$.])${key}\\s*[,}]`);
 };
 
+/**
+ * The QUALIFIED form — `realtime.tier`, `config.realtime.tier`, `cfg . realtime . tier` — which is
+ * the only conclusive evidence text can offer. Undefined for a top-level leaf, which has no section
+ * to qualify it with.
+ *
+ * Measured 2026-08-23 across all 28 leaves: this pattern matches in ZERO files for 19 of them,
+ * `database.driver` and `jobs.concurrency` included — a package takes `CacheConfig` as a parameter
+ * and reads `cfg.driver`, so demanding this form would report nineteen live keys as dead. It is
+ * therefore a POSITIVE signal only: a match silences the ambiguity rule below, and a miss says
+ * nothing on its own.
+ */
+export const qualifiedPattern = (leaf: string): RegExp | undefined => {
+  const parts = leaf.split('.');
+  if (parts.length < 2) return undefined;
+  const [section, key] = parts.slice(-2) as [string, string];
+  return new RegExp(`(?<![\\w$])${section}\\s*\\.\\s*${key}(?![\\w$])`);
+};
+
+/**
+ * The package a section's keys belong to, where the two names differ. Two rows, and both are
+ * asserted against the real package list by this rule's own test — a rename that made a row resolve
+ * to nothing would silently switch the ambiguity check off for every key in that section, which is
+ * the failure mode this whole rule exists to remove one level up.
+ */
+export const SECTION_PACKAGE: Readonly<Record<string, string>> = { database: 'db', theme: 'ui' };
+
+/** `realtime.tier` -> `realtime`; `ai.mcp.path` -> `mcp`; a top-level leaf -> undefined. */
+export const owningPackage = (leaf: string): string | undefined => {
+  const parts = leaf.split('.');
+  if (parts.length < 2) return undefined;
+  const section = parts.at(-2) as string;
+  return Object.hasOwn(SECTION_PACKAGE, section) ? SECTION_PACKAGE[section] : section;
+};
+
+/**
+ * How many unrelated files may match a bare leaf name before the match stops being evidence.
+ *
+ * Eight, measured. `realtime.tier` had NINETEEN matching files and not one of them in
+ * `packages/realtime/` — `@ultimat3/cache`'s `CacheTier` and `@ultimat3/query`'s read-tier
+ * vocabulary account for most, and `packages/policy/src/surfaces.ts` matched on the words `tier,`
+ * in its FILE-HEADER PROSE while importing only `./errors`, `./evaluate` and `./policy`. The key
+ * was read by nothing and this rule printed `✓`. The header above called the looseness safe because
+ * it "only ever HIDES a dead key whose name collides with an unrelated property"; hiding a dead key
+ * is the entire defect this rule exists for, so the sentence conceded the check away.
+ *
+ * Eight is where the four suspects separate from the twenty-four keys that have a hit inside their
+ * own package: every leaf with a real reader has at least one, and the four that do not
+ * (`realtime.tier` 19, `theme.tokens` 24, `pwa.enabled` 10, `realtime.enabled` 10) are the ones a
+ * human should look at. Lowering it is a pin table with more rows, never a weaker rule.
+ */
+export const AMBIGUOUS_LIMIT = 8;
+
 export interface ConfigSource {
   readonly path: string;
   readonly text: string;
 }
 
-export type ConfigReaderGapKind = 'unread' | 'stale' | 'unscanned';
+export type ConfigReaderGapKind = 'unread' | 'ambiguous' | 'stale' | 'unscanned';
 
 /**
  * The two ways a pin stops holding. One kind and one code, because the repair is the same edit
  * either way (`--unpin <leaf>`) — but the CAUSE has to say which, or the finding for a key that no
  * longer exists reads as a key that gained a reader.
  */
-export type StaleCause = 'now-read' | 'key-deleted';
+export type StaleCause = 'now-read' | 'key-deleted' | 'now-qualified';
 
 export interface ConfigReaderGap {
   readonly kind: ConfigReaderGapKind;
@@ -105,12 +167,38 @@ export interface ConfigReaderGap {
   readonly reason?: string;
   /** Set on `stale` only. */
   readonly stale?: StaleCause;
+  /** Set on `ambiguous` only: how many files matched the bare leaf, and two that plainly do not read it. */
+  readonly readers?: number;
+  readonly colliding?: readonly string[];
 }
 
 export interface ConfigReaderInput {
   readonly leaves: readonly string[];
   readonly files: readonly ConfigSource[];
   readonly pins: Readonly<Record<string, string>>;
+  /** The second table: leaves whose bare-name evidence is known to be worthless, each with why. */
+  readonly ambiguousPins?: Readonly<Record<string, string>>;
+}
+
+/**
+ * Whether a leaf's "reader" set is evidence at all. Three conditions, all of them necessary:
+ * no qualified `<section>.<key>` anywhere, no bare match inside the section's OWN package, and
+ * more than `AMBIGUOUS_LIMIT` bare matches outside it. A top-level leaf has no owning package and
+ * is never asked — stated rather than silently skipped, and the honest limit of this rule.
+ */
+export function ambiguityOf(
+  leaf: string,
+  files: readonly ConfigSource[],
+): { readonly readers: number; readonly colliding: readonly string[] } | undefined {
+  const owner = owningPackage(leaf);
+  if (owner === undefined) return undefined;
+  const qualified = qualifiedPattern(leaf);
+  if (qualified !== undefined && files.some((file) => qualified.test(file.text))) return undefined;
+  const bare = readPattern(leaf);
+  const hits = files.filter((file) => bare.test(file.text));
+  if (hits.some((file) => file.path.startsWith(`packages/${owner}/`))) return undefined;
+  if (hits.length <= AMBIGUOUS_LIMIT) return undefined;
+  return { readers: hits.length, colliding: hits.slice(0, 2).map((file) => file.path) };
 }
 
 /** The ratchet: an unread leaf must be pinned with a reason, and a pin that gained a reader must go. */
@@ -124,14 +212,37 @@ export function checkConfigReaders(input: ConfigReaderInput): readonly ConfigRea
     ];
   }
   const gaps: ConfigReaderGap[] = [];
+  const ambiguousPins = input.ambiguousPins ?? {};
   const read = new Set<string>();
+  const ambiguous = new Map<
+    string,
+    { readonly readers: number; readonly colliding: readonly string[] }
+  >();
   for (const leaf of input.leaves) {
     const pattern = readPattern(leaf);
     if (input.files.some((file) => pattern.test(file.text))) read.add(leaf);
+    const doubt = ambiguityOf(leaf, input.files);
+    if (doubt !== undefined) ambiguous.set(leaf, doubt);
   }
   for (const leaf of input.leaves) {
-    if (read.has(leaf) || leaf in input.pins) continue;
+    if (read.has(leaf) || Object.hasOwn(input.pins, leaf)) continue;
     gaps.push({ kind: 'unread', leaf });
+  }
+  for (const [leaf, doubt] of ambiguous) {
+    if (Object.hasOwn(ambiguousPins, leaf) || Object.hasOwn(input.pins, leaf)) continue;
+    gaps.push({ kind: 'ambiguous', leaf, readers: doubt.readers, colliding: doubt.colliding });
+  }
+  // The ambiguity table ratchets in both directions too: a leaf that gained a qualified reader, or
+  // one `AppConfig` no longer declares, leaves a row that would excuse the next collision for free.
+  const declaredLeaves = new Set(input.leaves);
+  for (const [leaf, reason] of Object.entries(ambiguousPins)) {
+    if (ambiguous.has(leaf)) continue;
+    gaps.push({
+      kind: 'stale',
+      leaf,
+      reason,
+      stale: declaredLeaves.has(leaf) ? 'now-qualified' : 'key-deleted',
+    });
   }
   // A pin outlives its key as easily as it outlives its reader: `read` only ever holds current
   // leaves, so a pin whose `AppConfig` member was DELETED matched nothing here and stayed green
@@ -151,12 +262,31 @@ const unreadFinding = (gap: ConfigReaderGap): Finding => ({
   at: CONFIG_FILE,
 });
 
+/**
+ * The alarm the old rule could not raise: nineteen files "read" `realtime.tier` and nothing did.
+ * It is deliberately NOT `X_CONFIG_KEY_UNREAD` — this rule does not know the key is dead, it knows
+ * the evidence that it is alive is worthless, and a finding that overstates what it measured is a
+ * finding an agent learns to argue with.
+ */
+const ambiguousFinding = (gap: ConfigReaderGap): Finding => ({
+  code: 'X_CONFIG_KEY_READER_AMBIGUOUS',
+  cause: `${String(gap.readers ?? 0)} files in packages/*/src match the bare name "${gap.leaf.split('.').at(-1) ?? ''}" and none of them is in packages/${owningPackage(gap.leaf) ?? '?'}/, and no file spells the qualified ${gap.leaf} — ${(gap.colliding ?? []).join(', ')} match on unrelated properties, so this key has no evidence of a reader at all`,
+  fix: `read ${gap.leaf} through its section in packages/${owningPackage(gap.leaf) ?? '?'}/src so the qualified path appears in source, or delete it from ${CONFIG_FILE} and from defaults(); to keep it deliberately, add it to CONFIG_AMBIGUOUS_PINS in ${CONFIG_PINS_FILE} with the sentence naming the reader`,
+  at: CONFIG_FILE,
+});
+
+const STALE_CAUSE: Readonly<Record<StaleCause, (gap: ConfigReaderGap) => string>> = {
+  'key-deleted': (gap) =>
+    `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and ${CONFIG_FILE} no longer declares it — the pin outlived its key, so it records a debt that cannot come due`,
+  'now-read': (gap) =>
+    `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and now has a reader — the pin would let the next dead key in beside it`,
+  'now-qualified': (gap) =>
+    `${gap.leaf} is pinned as a key whose bare-name readers are not evidence ("${gap.reason ?? ''}") and a file now spells the qualified ${gap.leaf}, or one of its own package's files reads it — the doubt is settled and the row would excuse the next collision for free`,
+};
+
 const staleFinding = (gap: ConfigReaderGap): Finding => ({
   code: 'X_CONFIG_READER_PIN_STALE',
-  cause:
-    gap.stale === 'key-deleted'
-      ? `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and ${CONFIG_FILE} no longer declares it — the pin outlived its key, so it records a debt that cannot come due`
-      : `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and now has a reader — the pin would let the next dead key in beside it`,
+  cause: STALE_CAUSE[gap.stale ?? 'now-read'](gap),
   fix: `bun run scripts/config-readers.ts --unpin ${gap.leaf}`,
   at: CONFIG_PINS_FILE,
 });
@@ -170,6 +300,7 @@ const unscannedFinding = (gap: ConfigReaderGap): Finding => ({
 
 const FINDINGS: Readonly<Record<ConfigReaderGapKind, (gap: ConfigReaderGap) => Finding>> = {
   unread: unreadFinding,
+  ambiguous: ambiguousFinding,
   stale: staleFinding,
   unscanned: unscannedFinding,
 };
@@ -186,7 +317,12 @@ export async function configReaderInput(root: string): Promise<ConfigReaderInput
     if (path.includes('.test.') || path === CONFIG_FILE) continue;
     files.push({ path, text: await Bun.file(`${root}/${path}`).text() });
   }
-  return { leaves: configLeaves(declaration), files, pins: CONFIG_READER_PINS };
+  return {
+    leaves: configLeaves(declaration),
+    files,
+    pins: CONFIG_READER_PINS,
+    ambiguousPins: CONFIG_AMBIGUOUS_PINS,
+  };
 }
 
 export const configReaderGaps = async (root: string): Promise<readonly ConfigReaderGap[]> =>

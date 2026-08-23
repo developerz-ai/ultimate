@@ -97,4 +97,46 @@ describe('providerJwks', () => {
     // A client rebuilt per request refetches the key set per request, which is the bug.
     expect(providerJwks(provider)).toBe(providerJwks(provider));
   });
+
+  /**
+   * The memo keyed on the provider id ALONE, so the second caller's options were silently
+   * discarded: an app pinning a corporate egress proxy through `fetch` got it only if it happened
+   * to call first. That is the `jobs.driver` shape — a key read once and thereafter ignored, with
+   * no error and no warning, and the value it silently substitutes is a network path.
+   *
+   * A caller that supplies options gets a client built with them. Only the DEFAULT client is
+   * shared, which is what the memo was for.
+   */
+  test('a caller that supplies options gets its own client, never the first caller’s', async () => {
+    const provider = registerOAuthProvider({
+      id: 'jwks-options-op',
+      authorizeUrl: 'https://op.test/authorize',
+      tokenUrl: 'https://op.test/token',
+      userInfoUrl: 'https://op.test/userinfo',
+      userEmailsUrl: null,
+      issuers: ['https://op.test'],
+      jwksUri: 'https://op.test/jwks',
+      scopes: ['openid'],
+      usesPkce: true,
+      usesNonce: true,
+      clientIdEnv: 'JWKS_OPTIONS_OP_CLIENT_ID',
+      clientSecretEnv: 'JWKS_OPTIONS_OP_CLIENT_SECRET',
+    });
+
+    // The default client first, so the memo is warm before anyone asks for a proxied one.
+    const shared = providerJwks(provider);
+
+    const asked: string[] = [];
+    const viaProxy = providerJwks(provider, {
+      fetch: (url) => {
+        asked.push(String(url));
+        return Promise.resolve(Response.json({ keys: [] }));
+      },
+    });
+
+    expect(viaProxy).not.toBe(shared);
+    // And it is actually used: the proxied client's own `fetch` is the one that runs.
+    await viaProxy.keyFor('kid-1', 'RS256').catch(() => undefined);
+    expect(asked).toEqual(['https://op.test/jwks']);
+  });
 });

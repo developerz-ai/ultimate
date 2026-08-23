@@ -9,7 +9,6 @@ import {
   renderFixLiteral,
   UltimateError,
 } from '@ultimat3/core';
-import { oauthStartPath } from './oauth-paths';
 
 /** Codes this package declares and owns. `X_UNAUTHENTICATED` is auth's; http only borrows it. */
 export const AUTH_OWNED_ERROR_CODES = [
@@ -95,11 +94,12 @@ export class AuthError extends UltimateError {
     fix: string;
     meta?: Readonly<Record<string, unknown>> | undefined;
   }) {
+    // No `docs:`: `UltimateError` fills it from `describeErrorCode(code).docs`. The
+    // `https://ultimate.dev/errors/<code>` link this built until 9.x answered 404, host and all.
     super({
       code: init.code,
       cause: init.cause,
       fix: init.fix,
-      docs: `https://ultimate.dev/errors/${init.code}`,
       meta: init.meta,
     });
   }
@@ -216,176 +216,6 @@ export const mfaRequiredUnenforceable = (): AuthError =>
     fix: 'drop required from defineAuth({ mfa }) and gate it in your own sign-in handler, which is where the enrolment route lives: if (user.mfaSecret === null) send them to enrolTotp(auth, { account: user.email }) instead of createSession(auth.sessions, ...)',
   });
 
-/**
- * The `fix:` quotes `oauthStartPath` rather than a hand-written path. That is not tidiness: this
- * line shipped naming `GET /auth/oauth/<provider>` while `@ultimat3/auth` mounted no route at all,
- * so every caller who followed it hit a 404. One declaration, read by the mount and by the fix,
- * is what stops that recurring — `oauthLogin()` cannot move without moving this sentence.
- */
-export const oauthStateInvalid = (provider: string, part: string): AuthError =>
-  new AuthError({
-    code: 'X_OAUTH_STATE_INVALID',
-    cause: `${provider} callback rejected: ${part}`,
-    fix: `${restartAt(provider)} — a callback URL is single-use`,
-    meta: { provider },
-  });
-
-/** The one phrase every "start over" fix is built from, so none of them can name a dead route. */
-export const restartAt = (provider: string): string =>
-  `restart the flow at GET ${oauthStartPath(provider)}`;
-
-/**
- * The provider came back with `error=` and no code — almost always the user pressing Cancel.
- * A separate code from `X_OAUTH_EXCHANGE_FAILED` on purpose: nothing was exchanged, nothing is
- * misconfigured, and folding the single commonest non-success outcome of a login into the code
- * that means "the client secret is wrong" makes both unreadable in a log and pages the wrong person.
- */
-export const oauthDenied = (
-  provider: string,
-  reason: string,
-  description: string | null,
-): AuthError =>
-  new AuthError({
-    code: 'X_OAUTH_DENIED',
-    // `reason` and `description` are query parameters off the callback URL — whatever the browser
-    // was redirected with, newlines and quotes included. `renderCauseValue` renders them as JSON
-    // string literals, so a forged `error_description` cannot forge a second log line or break the
-    // sentence around it. Both are already `string` by type: this is escaping, not throw-safety.
-    cause: `${provider} declined the authorization: ${renderCauseValue(reason)}${
-      description === null ? '' : ` (${renderCauseValue(description)})`
-    }`,
-    fix: `${restartAt(provider)} and approve the ${provider} consent screen`,
-    meta: { provider, reason },
-  });
-
-/**
- * A URL segment naming a provider no `registerOAuthProvider` call has claimed, or one that is but
- * was left out of `defineAuth({ providers })`. One refusal for both: which of the two it is
- * describes the app's configuration to an unauthenticated caller, and the fix is the same sentence
- * either way.
- *
- * **`supported` is the CALLER's to scope, because the two callers have two audiences.**
- * `oauth-route.ts` passes `BUILTIN_OAUTH_PROVIDER_IDS` — its reader is an anonymous stranger who
- * typed a URL, and the three built-ins are a framework constant already in the public docs, while
- * the live registry holds whatever internal OP this deployment registered. `providerFor()` passes
- * `oauthProviderIds()` — its reader is a developer holding a stack trace, and there the full list
- * is exactly what makes the fix runnable. Neither ever passes `defineAuth({ providers })`: naming
- * what this deployment turned on is the disclosure the shared refusal exists to prevent.
- *
- * The fix names `registerOAuthProvider` first so it stays executable for the branch the narrowed
- * list cannot cover — a segment nothing registered cannot be added to `providers` at all, so
- * "add it" alone was an instruction that could not be followed.
- *
- * The segment itself is a URL path the caller typed, so it goes through `renderCauseValue` in the
- * sentence and `renderFixLiteral` in the command — a fix has to parse after a hostile value lands
- * in it.
- */
-export const oauthProviderUnknown = (provider: string, supported: readonly string[]): AuthError =>
-  new AuthError({
-    code: 'X_OAUTH_PROVIDER_UNKNOWN',
-    cause: `no oauth provider is mounted at ${renderCauseValue(oauthStartPath(provider))}`,
-    fix: `registerOAuthProvider({ id: ${renderFixLiteral(provider, '<id>')} }) if it is not built in, then add that id to defineAuth({ providers: [...] }) — known here: ${supported.map((id) => `'${id}'`).join(', ')}`,
-    meta: { provider },
-  });
-
-/**
- * Two `registerOAuthProvider` calls claiming one id. A silent replacement would let whichever
- * module imported second decide where every login for that id goes — including which `issuers`
- * an id token may claim — so the second registration refuses at boot instead.
- */
-export const oauthProviderDuplicate = (provider: string): AuthError =>
-  new AuthError({
-    code: 'X_OAUTH_PROVIDER_DUPLICATE',
-    cause: `an oauth provider is already registered as ${renderCauseValue(provider)}, so the second registration would silently replace the first`,
-    fix: `give one of them a different id, or delete the duplicate registerOAuthProvider({ id: ${renderFixLiteral(provider, '<id>')} }) call`,
-    meta: { provider },
-  });
-
-export interface OAuthExchangeFailure {
-  readonly provider: string;
-  /**
-   * Which leg of the server-to-server conversation failed. `discovery` and `jwks` are the two
-   * boot/verification legs an enterprise OP adds: reading `/.well-known/openid-configuration`,
-   * and reading the key set an id token's signature is checked against.
-   */
-  readonly stage: 'token' | 'userinfo' | 'discovery' | 'jwks';
-  readonly detail: string;
-  readonly status?: number | undefined;
-  readonly fix: string;
-}
-
-/**
- * Deliberately specific, unlike every credential error above it. This one describes a
- * conversation between two servers — naming the stage, the provider and its own status
- * discloses nothing about any user, and is the difference between a fixable misconfiguration
- * and a shrug.
- */
-export const oauthExchangeFailed = (failure: OAuthExchangeFailure): AuthError =>
-  new AuthError({
-    code: 'X_OAUTH_EXCHANGE_FAILED',
-    cause:
-      `${failure.provider} ${failure.stage} request failed` +
-      `${failure.status === undefined ? '' : ` with HTTP ${failure.status}`}: ${failure.detail}`,
-    fix: failure.fix,
-    meta: {
-      provider: failure.provider,
-      stage: failure.stage,
-      ...(failure.status === undefined ? {} : { status: failure.status }),
-    },
-  });
-
-/**
- * The address is proven to the provider, and an account that never proved it already holds it.
- * Naming that is not account enumeration — this caller just demonstrated they own the address —
- * and staying silent would leave them with a login that fails forever and no way out.
- *
- * The address itself rides in `meta`, never in `cause`: a log pipeline can redact a field by
- * key, and cannot redact an address that was already interpolated into a sentence.
- */
-export const oauthAccountNotLinked = (provider: string, email: string): AuthError =>
-  new AuthError({
-    code: 'X_UNAUTHENTICATED',
-    cause: `an account holds this ${provider} address but never verified it, so ${provider} may not claim it`,
-    fix: `sign in with that account's password and confirm the email-verify link, then retry ${provider}`,
-    meta: { provider, email },
-  });
-
-/**
- * `link: 'never'` and a local account already holds the address. Same code and same disclosure
- * rule as `oauthAccountNotLinked` — the caller proved to the provider that the address is theirs,
- * so naming the collision is not enumeration — and the address rides in `meta`, never in `cause`.
- */
-export const oauthLinkingDisabled = (provider: string, email: string): AuthError =>
-  new AuthError({
-    code: 'X_UNAUTHENTICATED',
-    cause: `an account already holds this address and defineAuth({ link: 'never' }) forbids ${provider} from claiming it`,
-    fix: "sign in with that account's own credentials, or set link: 'verified-email' in defineAuth to let a provider-verified address claim a locally-verified account",
-    meta: { provider, email },
-  });
-
-/**
- * `CreateUserInput` carries no `emailVerifiedAt`, so a provider-verified address takes a second
- * write. Falling back to the unstamped row would mint a session for a user every later login
- * reads as unverified — the exact state `resolveUser` refuses to link a provider to — so the
- * flow fails closed on an adapter that loses the stamp instead of half-succeeding.
- */
-export const emailVerifiedNotStored = (provider: string, userId: string): AuthError =>
-  new AuthError({
-    code: 'X_NOT_IMPLEMENTED',
-    cause: `the adapter returned no row for new user ${userId}, so the ${provider}-verified address was never stamped verified`,
-    fix: 'return the updated row from AuthAdapter.updateUser — MemoryAdapter.updateUser is the reference implementation',
-    meta: { provider, userId },
-  });
-
-/** The token arrived, and is not one this handshake can trust: wrong `iss`, `aud`, or expired. */
-export const oauthTokenInvalid = (provider: string, reason: string, fix: string): AuthError =>
-  new AuthError({
-    code: 'X_OAUTH_TOKEN_INVALID',
-    cause: `${provider} id token rejected: ${reason}`,
-    fix,
-    meta: { provider },
-  });
-
 export const passwordWeak = (reasons: readonly string[]): AuthError =>
   new AuthError({
     code: 'X_PASSWORD_WEAK',
@@ -411,6 +241,9 @@ export const accountLocked = (key: string, retryAfterSeconds: number): AuthError
     // escaping, not throw-safety.
     cause: `${renderCauseValue(key)} is locked out for another ${retryAfterSeconds}s after repeated failures`,
     fix: `wait ${retryAfterSeconds}s — or clear this one bucket: auth.limiter.recordSuccess(${renderFixLiteral(key, '<key>')}), auth.orgLimiter for an org: key — or raise defineAuth({ rateLimit })`,
+    // `kdfOverloaded`'s shape: `@ultimat3/http`'s `retryAfterOf` reads exactly this field. `key`
+    // stays out — `cause`/`fix` escape it on purpose and `meta` is read by surfaces that do not.
+    meta: { retryAfterSeconds },
   });
 
 /** One shape for every api-key rejection: unknown, revoked, expired and wrong all look alike. */
@@ -434,6 +267,25 @@ export const authWriteFailed = (operation: string, table: string): AuthError =>
     cause: `${operation} returned no row from ${table}, so the write cannot be confirmed`,
     fix: `x db migrate   # then, if ${table} is already there: x dev, and read it in the db panel at /_x`,
     meta: { operation, table },
+  });
+
+/**
+ * A write the table's own UNIQUE constraint refuses. Same code as the write above, because it is
+ * the same failure to an operator — the row is not there and the caller must not assume it is —
+ * and the cause says which of the two happened.
+ *
+ * `MemoryAdapter` enforced neither `x_users.email` nor `x_users.external_id`, while `BuiltinAdapter`
+ * leans on both: two `register()` calls at one address made TWO rows in memory, and the second was
+ * unreachable forever because `findUserByEmail` returns the first. That adapter is what `x new`
+ * scaffolds and what every test runs against, so the duplicate path was only exercised against the
+ * permissive half of the seam.
+ */
+export const authUniqueViolation = (operation: string, table: string, column: string): AuthError =>
+  new AuthError({
+    code: 'X_AUTH_WRITE_FAILED',
+    cause: `${operation} would add a second ${table} row with the same ${column}, which that column's unique constraint refuses`,
+    fix: `look the row up first and update it — findUserByEmail(normaliseEmail(email)) — or write a different ${column}`,
+    meta: { operation, table, column },
   });
 
 /**

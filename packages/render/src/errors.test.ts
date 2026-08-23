@@ -2,7 +2,7 @@
 // the standard URL — the same contract `x errors explain <CODE>` relies on for every package.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
+import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
 import { RENDER_ERROR_CODES, RENDER_ERROR_TITLES } from './errors';
 
 describe('render error titles', () => {
@@ -19,7 +19,7 @@ describe('render error titles', () => {
 
   test('every code documents at the standard docs URL', () => {
     for (const code of RENDER_ERROR_CODES) {
-      expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
+      expect(describeErrorCode(code).docs).toBe(ERROR_DOCS_URL);
     }
   });
 });

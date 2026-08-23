@@ -13,7 +13,7 @@
 // in step with the work and decides where a resumed pass restarts, while the `x_backfills` row is
 // a report an operator reads and the record that a completed name has already been swept.
 
-import { appVersion, assert, logger, resolveEnvironment } from '@ultimat3/core';
+import { appVersion, assert, logger, renderThrowable, resolveEnvironment } from '@ultimat3/core';
 import type { BatchIterator } from '@ultimat3/entity';
 import type { BackfillDefinition, BackfillInput, BackfillReport } from './backfill';
 import { BackfillStalledError } from './backfill-errors';
@@ -101,7 +101,7 @@ async function markFailed(
   } catch (error) {
     logger.warn('jobs.backfill.ledger-failed', {
       runId,
-      error: error instanceof Error ? error.message : String(error),
+      error: renderThrowable(error),
     });
   }
 }

@@ -66,7 +66,7 @@ export const config = defineConfig({
   cache: { tiers: ['request-memo', 'lru'] },
   jobs: { queues: ['social-media-clone-default'], concurrency: 4 },
   // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
-  realtime: { enabled: true, tier: 'live-queries', transport: 'memory' },
+  realtime: { enabled: true, transport: 'memory' },
   pwa: { enabled: true, offline: 'runtime' },
   ai: { mcp: { expose: true, path: '/mcp' } },
 });

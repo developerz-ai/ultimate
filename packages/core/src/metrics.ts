@@ -195,6 +195,31 @@ function finite(name: string, value: number): number {
   return value;
 }
 
+/**
+ * Bounds are strictly ascending finite numbers, refused at DECLARATION like `maxSeries` beside it.
+ * `record` takes the first bound an observation fits, and the exposition format emits one
+ * cumulative `le` series per bound in array order — so `[1, 0.5, 5]` both counted observations
+ * into a bucket that was not theirs and rendered a non-monotonic `le` series that Prometheus and
+ * OpenMetrics each reject. Two wrong numbers, neither visible from the other, and nothing at the
+ * call site to notice: the observations themselves were all valid.
+ */
+function assertBounds(name: string, bounds: readonly number[] | undefined): void {
+  if (bounds === undefined) return;
+  const bad = bounds.findIndex((bound, index) => {
+    const previous = index === 0 ? Number.NEGATIVE_INFINITY : (bounds[index - 1] as number);
+    return !Number.isFinite(bound) || bound <= previous;
+  });
+  if (bad === -1) return;
+  const repaired = [...new Set(bounds.filter((bound) => Number.isFinite(bound)))].sort(
+    (left, right) => left - right,
+  );
+  throw new MetricNameInvalidError({
+    cause: `${name} declared bounds [${bounds.map((bound) => String(bound)).join(', ')}], which are not strictly ascending finite numbers — [${String(bad)}] is ${String(bounds[bad])}`,
+    fix: `sort the bounds and drop the duplicates: histogram('${name}', { bounds: [${repaired.join(', ')}] })`,
+    meta: { metric: name, bounds: bounds.map((bound) => String(bound)), at: bad },
+  });
+}
+
 function declare(name: string, kind: MetricKind, options: GaugeOptions & HistogramOptions) {
   if (!METRIC_NAME_RE.test(name)) {
     throw new MetricNameInvalidError({
@@ -203,6 +228,7 @@ function declare(name: string, kind: MetricKind, options: GaugeOptions & Histogr
       meta: { name },
     });
   }
+  assertBounds(name, options.bounds);
   const existing = instruments.get(name);
   if (existing !== undefined) {
     if (existing.descriptor.kind !== kind) {

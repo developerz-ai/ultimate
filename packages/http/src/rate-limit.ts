@@ -326,9 +326,16 @@ export const createRateLimiter = (options: {
   const store = options.store ?? memoryRateLimitStore();
   const clock = options.clock ?? systemClock;
   const now = (): number => clock.now().getTime();
+  // `Object.hasOwn`, never `buckets[name]` — the same read `error-map.ts`'s `statusFor` and
+  // `naming.ts` already take for a table of this shape. `buckets` is a plain object literal, so it
+  // holds every name on `Object.prototype`: `rateLimit: 'constructor'` read `Object` itself out of
+  // it, and a `Bucket` whose `capacity` is `undefined` is a limiter that decides nothing. Author-
+  // controlled, and still the one form — a table indexed by a name is indexed through `hasOwn`.
+  const declared = (name: string): Bucket | undefined =>
+    Object.hasOwn(options.config.buckets, name) ? options.config.buckets[name] : undefined;
   const bucketFor = (name: string): Bucket =>
-    options.config.buckets[name] ??
-    options.config.buckets[options.config.defaultBucket] ??
+    declared(name) ??
+    declared(options.config.defaultBucket) ??
     DEFAULT_RATE_LIMIT.buckets['default'] ?? { capacity: 60, refillPerSecond: 1 };
 
   const check: RateLimiter['check'] = (key, bucketName, cost = 1) =>

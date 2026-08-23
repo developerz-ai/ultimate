@@ -474,7 +474,7 @@ $ x verify --json
   {"name":"budgets","ok":false,"durationMs":812,"skipped":false,"findings":[
     {"code":"X_BUDGET_EXCEEDED","cause":"site/pricing ships 61kb of JS, over the 40kb budget",
      "fix":"x fix boundary site/pricing/page.tsx",
-     "docs":"https://ultimate.dev/errors/X_BUDGET_EXCEEDED","at":"site/pricing"}]}],
+     "docs":"https://github.com/developerz-ai/ultimate/wiki/Error-Codes","at":"site/pricing"}]}],
  "data":{"failed":["budgets"],"skipped":["e2e","contract-diff","roadmap"],"durationMs":11153}}
 ```
 
@@ -559,10 +559,21 @@ before the upgrade starts — the chart renders `repository:tag` with no digest 
 
 **An unknown `--method` is refused, never defaulted.** `x deploy --method helmm` is
 `X_CLI_UNKNOWN_COMMAND` listing `compose, helm`; it used to run the six-step Compose plan and report
-`method: "compose"` back to an operator who asked for a Helm upgrade. `--critical` is carried into
-`--json` output and nothing else acts on it today. Errors: `X_DEPLOY_FAILED` (a step exited
-non-zero — its `fix:` is that step's exact command), `X_CLI_BAD_FLAG` (a digest-pinned `--image`
-under `--method helm`), `X_CLI_UNKNOWN_COMMAND`, `X_CLI_UNEXPECTED`.
+`method: "compose"` back to an operator who asked for a Helm upgrade.
+
+**There is no `--critical` flag**, `As of 2026-08-23`. It was deleted; the parser answers
+`X_CLI_BAD_FLAG` and lists the seven flags `deploy` does declare. It parsed, it was echoed into the
+plan JSON as `critical: <bool>`, and no file in `packages/` read that field — so it changed nothing
+about what the command did, on either method
+([`packages/cli/src/cmd-deploy.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/cmd-deploy.ts)
+says so where it used to be declared). It is not coming back: the framework force-reloads nothing
+and no longer pretends to →
+[`docs/architecture/13-topology-runtime.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/architecture/13-topology-runtime.md).
+The flag list this build ships is `x help --json`, never this page.
+
+Errors: `X_DEPLOY_FAILED` (a step exited non-zero — its `fix:` is that step's exact command),
+`X_CLI_BAD_FLAG` (a digest-pinned `--image` under `--method helm`, or a flag `deploy` does not
+declare), `X_CLI_UNKNOWN_COMMAND`, `X_CLI_UNEXPECTED`.
 
 `X_MIGRATE_CONCURRENT` **is thrown**, `As of 2026-08`. `ROLE=migrate` takes the migration lock by a
 **bounded** `pg_try_advisory_lock` poll on one pinned session — one try per 500ms against a 60s
@@ -735,7 +746,7 @@ The output is a `CommandResult` like every other command's: `findings`, not a `c
 $ x doctor --json
 {"ok":false,"command":"doctor","summary":"1 finding(s)","findings":[{"code":"X_DB_DRIFT",
   "cause":"packages/db has a schema but no migration recorded it",
-  "fix":"x db gen \"initial\"","docs":"https://ultimate.dev/errors/X_DB_DRIFT",
+  "fix":"x db gen \"initial\"","docs":"https://github.com/developerz-ai/ultimate/wiki/Error-Codes",
   "at":"packages/db/migrations"}],"data":{"count":1,"codes":["X_DB_DRIFT"]}}
 ```
 
@@ -966,8 +977,14 @@ The [Error codes](Error-Codes) table, programmatically. Runs outside an app: tri
 $ x errors explain X_CURSOR_INVALID --json
 {"ok":true,"command":"errors","summary":"X_CURSOR_INVALID — pagination cursor is malformed…",
  "data":{"code":"X_CURSOR_INVALID","cause":"pagination cursor is malformed, tampered with or from
- another query","fix":"x verify --json","docs":"https://ultimate.dev/errors/X_CURSOR_INVALID"}}
+ another query","fix":"drop the cursor and request the first page again (after: null)",
+ "docs":"https://github.com/developerz-ai/ultimate/wiki/Error-Codes",
+ "site":{"at":"@ultimat3/core/src/cursor.ts","line":26}}}
 ```
+
+`site` is the CLI locating a throw site in the tree — it is **not** a field the thrown error
+carries. A code raised at more than one site gets one of them, named in the `fix` line; run the
+command rather than quoting the line. `docs` is `ERROR_DOCS_URL`, the same URL for every code.
 
 `list` enumerates every registered code, and names under `data.unavailable` any package this process could not import — a list silently missing codes is worse than one that says which. An unregistered code is `X_ERROR_CODE_UNKNOWN` with the nearest real code as its fix; the command never invents an explanation.
 

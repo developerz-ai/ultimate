@@ -35,6 +35,15 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   **The array alone would have fixed the build** and is not why the split exists: tree-shaking is
   a bundler's discretion, `export * from` or a namespace import defeats it, and "the client entry
   cannot reach the bus" is a contract rather than an optimisation.
+- **Two entries means a specifier naming a third does not resolve, and a `fix:` is pasted.**
+  `local-store.ts`'s `X_NOT_IMPLEMENTED` told the caller to import `createOpfsLocalStore` from
+  `@ultimat3/realtime/browser` — a subpath `exports` has never declared — so the one instruction
+  the refusal carried ended in a module-resolution failure, in the package whose own rules cite
+  axiom 4. Its alternative, `persist: false` on the query, was the same defect twice: `query()`
+  does not accept `persist` either. `fix-specifier.test.ts` is the build error — every
+  `@ultimat3/realtime/<subpath>` written in shipped source must be a key of `exports`, comments
+  included, because a comment naming a subpath that does not exist is the next fix line's source.
+  It cannot see WHICH names a fix promises, so the OPFS one is pinned by name beside it.
 - **`@ultimat3/realtime/server` needs its own `paths` entry in `tsconfig.base.json`**, beside
   `@ultimat3/admin/dev`'s. `@ultimat3/*` maps `realtime/server` to `packages/realtime/server/src`,
   which does not exist, and the root program has no `node_modules/@ultimat3` symlink to fall back
@@ -259,6 +268,21 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   whose non-key columns happen to be NULL sends the bytes a FULL one does, so counting absent keys
   would undercount exactly the rows a policy is most likely to misjudge. A hard refusal in the
   `x verify` step is the follow-up and lives in `@ultimat3/cli`.
+- **The replication session pins its own output formats, `As of 2026-08-23`.** Postgres sends every
+  WAL value as TEXT and `pg-values.ts` reads a `timestamptz` by matching postgres' ISO spelling,
+  keeping the raw text when it does not match — deliberately, because a wrong instant is worse than
+  a string. That makes the SERVER's `DateStyle` load-bearing: `SQL`, `German` or `Postgres` sends
+  every timestamp down the fallback, the shared window holds `Date`s while the patch holds text,
+  `compareValues` falls to string comparison, and one edit to one column jumps its row to the top
+  of every `orderBy('createdAt','desc')` feed for every subscriber — the exact defect the decode
+  exists to close, re-opened by a GUC. `pg-connection.ts` therefore sends
+  `options: '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3'` in the startup
+  packet, byte for byte what postgres' own logical-replication client sends
+  (`libpqwalreceiver.c`) — which is why a walsender accepts it. On **every** session this class
+  opens, not only the replicating one: one session shape is one thing to reason about, and the
+  advisory-lock connection is the same class. A server that refuses one answers `ErrorResponse` at
+  startup, so the replicator fails to boot with the server's own words rather than mis-sorting a
+  feed behind a warning nobody reads. `pg-connection.test.ts` pins the packet.
 - A change lsn is `<16 hex commit position><8 hex row position in that transaction>`. Never order by
   either half alone: the commit lsn repeats within a transaction, and per-record WAL positions are
   not monotonic across transactions. Never make it depend on wall time, the entity list or a process
@@ -716,9 +740,14 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 ## Commands
 
 ```
-bun test                                  # from packages/realtime
+bun test packages/realtime/src            # from the REPO ROOT, never from packages/realtime
 bun run typecheck
 ```
+
+**The root is not a preference.** `bunfig.toml`'s preload installs `@ultimat3/testing`'s matchers
+and Bun reads `bunfig.toml` from the cwd, so `bun test` inside this directory loads none and six
+tests fail on a missing matcher — this package's suite reading red for the shell it was run in.
+CI's `package` job spawns `bun test packages/<pkg>` with `cwd` at the root for the same reason.
 
 Changing a frame shape means adding a fixture to `sync-protocol.test.ts` — the round-trip test
 fails if a kind has no fixture — and bumping `PROTOCOL_VERSION` **when the change makes an old

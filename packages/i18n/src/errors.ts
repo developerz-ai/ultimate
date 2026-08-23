@@ -34,7 +34,6 @@ export class I18nError extends UltimateError {
       code: init.code,
       cause: init.cause,
       fix: init.fix,
-      docs: `https://ultimate.dev/errors/${init.code}`,
     });
   }
 }

@@ -12,7 +12,7 @@ export const auth = defineAuth({
   session: { absoluteTtlMs: 30 * 864e5, idleTtlMs: 7 * 864e5 },
   password: { minLength: 12 },
   mfa: { issuer: 'Acme' },                // the authenticator app's name; `required` only as `false`
-  providers: ['github', 'google'],
+  providers: ['github', 'google'],       // REQUIRED to serve any OAuth route — the default is []
   link: 'verified-email',                 // the default; `'never'` is the only other value
 });
 
@@ -223,7 +223,7 @@ registerOAuthProvider(await discoverOAuthProvider({ id: 'bigco-sso', issuer: 'ht
 | `providerFor(id)` | the provider, or throws `X_OAUTH_PROVIDER_UNKNOWN` — never `undefined` |
 | `hasOAuthProvider(id)` | whether the id is registered |
 | `BUILTIN_OAUTH_PROVIDER_IDS` | the three shipped ids — the only list an **anonymous** refusal names |
-| `oauthProviderIds()` | every registered id, live — `defineAuth({ providers })` defaults to it |
+| `oauthProviderIds()` | every registered id, live. **NOT** what `defineAuth({ providers })` defaults to — that is `[]`, so an app names what it enabled |
 
 `discoverOAuthProvider` refuses a document with no `jwks_uri`: without a key set there is nothing
 to check an id token's signature against, and the token-endpoint TLS exemption below is a thing a
@@ -644,7 +644,7 @@ An api key's scopes become **exactly** the agent actor's scopes — never the ow
 | `X_OAUTH_STATE_INVALID` | state, nonce or PKCE verifier did not match |
 | `X_OAUTH_EXCHANGE_FAILED` | the provider refused the exchange, or returned no usable identity |
 | `X_OAUTH_TOKEN_INVALID` | the id token failed its signature, issuer, audience or expiry check, or no key in the published set matched its `kid` |
-| `X_OAUTH_PROVIDER_UNKNOWN` | the URL named a provider nothing registered, or one `defineAuth({ providers })` did not enable — the route's refusal lists only the three built-ins, never your registry |
+| `X_OAUTH_PROVIDER_UNKNOWN` | the URL named a provider nothing registered, one `defineAuth({ providers })` did not enable, or one whose `*_CLIENT_ID`/`*_CLIENT_SECRET` are unset — all three answer 404 with the same body, because telling an anonymous caller which is which describes this deployment for free. The real reason is logged. The refusal lists only the three built-ins, never your registry |
 | `X_OAUTH_PROVIDER_DUPLICATE` | two `registerOAuthProvider` calls claimed one id — at boot, never at a login |
 | `X_OAUTH_DENIED` | the user pressed Cancel, or the provider declined — `403`, never a `502` |
 | `X_PASSWORD_WEAK` | strength check rejected the password |

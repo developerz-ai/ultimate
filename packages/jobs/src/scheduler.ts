@@ -13,7 +13,7 @@
 // round rather than opening a second one over the same `lastFiredAt`.
 
 import type { Clock } from '@ultimat3/core';
-import { isUltimateError, logger, onShutdown } from '@ultimat3/core';
+import { isUltimateError, logger, onShutdown, renderThrowable } from '@ultimat3/core';
 import { instant, nextCronOccurrence } from '@ultimat3/time';
 import { nowMs } from './clock';
 import type { JobDriver } from './driver';
@@ -26,7 +26,7 @@ import { registeredTasks } from './task';
  * stable code to search on and the `fix:` to run, not a sentence.
  */
 function failureFields(error: unknown): Record<string, unknown> {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = renderThrowable(error);
   return isUltimateError(error)
     ? { error: message, code: error.code, cause: error.cause, fix: error.fix }
     : { error: message };

@@ -4,8 +4,9 @@
  * because "the server's timezone" is never the answer to "what time is it for the user".
  */
 
-import { cachedFormatter, canonicalLocale } from '@ultimat3/core';
+import { cachedFormatter } from '@ultimat3/core';
 import { differenceMs, type Instant } from './instant';
+import { assertLocale } from './locale';
 import { isoDateInZone } from './zoned';
 import { assertTimeZone, type TimeZone } from './zones';
 
@@ -120,7 +121,7 @@ const RELATIVE_UNITS: readonly [Intl.RelativeTimeFormatUnit, number][] = [
 /** `in 3 days` / `2 hours ago`, picking the largest unit that fits. */
 export function formatRelative(at: Instant, options: FormatRelativeOptions): string {
   const delta = differenceMs(options.now, at);
-  const formatter = new Intl.RelativeTimeFormat(options.locale, {
+  const formatter = new Intl.RelativeTimeFormat(assertLocale(options.locale), {
     numeric: options.numeric ?? 'auto',
     style: options.style ?? 'long',
   });
@@ -176,16 +177,18 @@ export function ordinal(value: number): string {
 const cache = new Map<string, Intl.DateTimeFormat>();
 
 /**
- * Bounded, and keyed on a zone `assertTimeZone` and a locale `canonicalLocale` have both already
+ * Bounded, and keyed on a zone `assertTimeZone` and a locale `assertLocale` have both already
  * canonicalized — `Accept-Language` sends `EN-us` and `en-US` for one locale, and each spelling
  * used to mint its own permanent entry. The bound stays: an unknown `-u-` extension value survives
  * canonicalization as a distinct string, so only the cap keeps this key space finite.
  *
- * A tag `Intl` cannot parse falls through unchanged, so the `Intl.DateTimeFormat` constructor
- * still raises it — this seam decides a cache key, never whether a locale is acceptable.
+ * A tag `Intl` cannot parse is refused here as `X_LOCALE_INVALID`, the same code `describeCron`
+ * has always raised. It used to fall through unchanged so the `Intl.DateTimeFormat` constructor
+ * raised a bare `RangeError` instead — one package answering "is this locale acceptable" two ways,
+ * and the answer a caller could act on was the one seven of the eight entry points did not give.
  */
 function formatterFor(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-  const tag = canonicalLocale(locale) ?? locale;
+  const tag = assertLocale(locale);
   const key = `${tag}|${JSON.stringify(options)}`;
   return cachedFormatter(cache, key, () => new Intl.DateTimeFormat(tag, options));
 }

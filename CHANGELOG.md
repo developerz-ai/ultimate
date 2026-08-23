@@ -10,6 +10,235 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 Nothing yet.
 
+## 10.0.0 - 2026-08-23
+
+A correctness sweep. Twelve parallel audits over every package, `scripts/`, the docs and both tracked
+apps; every finding below was reproduced before it was fixed, and every fix ships a test proven by
+mutation. Nineteen breaking changes, each one deleting or correcting a DECLARATION that promised
+something the code did not do — the same shape 4.0.0 and 9.0.0 ran, applied to what was left.
+
+Four rules this repo has always stated and never enforced are now build errors. That is the part
+worth reading: a convention that is not a build error does not exist (axiom 3), and every defect
+class below had been fixed by hand before and come back.
+
+### Added
+
+- **`bun run secret-compare`** — refuses `===` / `!==` / `.includes()` where an operand names a
+  secret. `packages/auth/CLAUDE.md` has always said "Never `===` on a secret" and nothing checked:
+  all twelve `timingSafeEqual` sites in `@ultimat3/auth` were mutated to `===` and the suite stayed
+  green at **432 pass / 0 fail**. A unit test cannot assert constant-time behaviour, which is
+  exactly why this needs a static gate. A ratchet at 53 sites across 14 packages — and `auth` is
+  not on it, because its twelve comparisons were already right.
+- **`bun run proto-index`** — refuses a computed member read on a plain object literal typed
+  `Record<…>` where the key is data. `TABLE[name]` answering an `Object.prototype` member instead
+  of `undefined` has been found and fixed **thirteen times across four sweeps**, documented verbatim
+  at `packages/storage/src/storage.ts:45-50`, and it kept coming back. A ratchet at 102 reads.
+- **`bun run node-imports`** — refuses a `node:` import with no `why:` comment. The Bun-only
+  non-negotiable has always had two halves and only the first was read: 146 of the 238 files that
+  import a builtin said nothing. A ratchet.
+- **`bun run dead-docs-host`** — refuses a string literal building a URL on `ultimate.dev`. Pinned
+  at **zero**: no package is excused.
+- `problemTypeFor(code)`, exported from `@ultimat3/http`.
+- `ERROR_DOCS_URL`, exported from `@ultimat3/core`.
+- `X_POLICY_SURFACE_UNKNOWN`, owned by `@ultimat3/policy`.
+- `retryAfterOf(error)`, exported from `@ultimat3/http`.
+- `examples/dummy` now demonstrates `backfill()` and `definePolicy()`, and reads from a real
+  database — see Fixed.
+
+### Changed
+
+- **BREAKING — `ERROR_DOCS_BASE` and `errorDocsUrl(code)` are deleted; `ERROR_DOCS_URL` replaces
+  both.** `https://ultimate.dev/errors/<code>` answered **HTTP 404**, host included, on every error
+  the framework has ever thrown — including the first line a new agent reads. A dead link in every
+  error is a defect under axiom 4, and this is not "not built yet": `wiki/` is the only public
+  documentation surface there is. One URL, not one per code, because codes live on that page in
+  **table rows** and a row has no anchor — a `#X_DB_DRIFT` fragment would be a second dead
+  declaration rather than a fix for the first. The function is gone rather than kept with an ignored
+  parameter. **Migration:** omit `docs:` when constructing an `UltimateError` and let the
+  constructor resolve the registry.
+
+- **BREAKING — an `application/problem+json` document's `type` is `urn:ultimate:error:<CODE>`.**
+  It was `https://ultimate.dev/errors/<CODE>`, so `type` and `docs` carried the same dead link on
+  every 4xx and 5xx. They are now two values because they answer two questions: `type` is RFC 9457's
+  identifier for the problem KIND — per code, so a client can switch on it, and a URN so it has no
+  host left to rot — while `docs` is the one wiki page. **Migration:** match `problemTypeFor(code)`,
+  or the `code` member, which is unchanged.
+
+- **BREAKING — every `@ultimat3/time` formatter refuses a malformed locale with
+  `X_LOCALE_INVALID`.** Eight entry points passed the caller's raw tag to an `Intl` constructor, so
+  `formatRelative(at, { locale: 'en_US' })` died as a bare, uncoded `RangeError` several frames from
+  the `Accept-Language` header it came from. `X_LOCALE_INVALID` has shipped since 1.0 with a runnable
+  `fix:` and `describeCron` was its only thrower — one package answering "is this locale acceptable"
+  two ways. A well-formed but unknown tag (`zz`) is still **not** refused; `Intl` falls back and so
+  does the framework.
+
+- **BREAKING — `realtime.tier` and the `RealtimeTier` type are deleted.** The key accepted
+  `'channels' | 'live-queries' | 'local-first'`, defaulted, was documented with per-value semantics,
+  and was set by both tracked apps and every scaffolded app — and **nothing read it**. No comparison,
+  no branch, no dereference. So `tier: 'local-first'` bought exactly what `'channels'` bought, and
+  what it advertised — a durable local store — does not exist. The thirteenth instance of the
+  `jobs.driver` defect, and the dangerous direction: silent, and shaped like a capability. Which
+  tier an app is on is decided by what it **declares** — a `channel()` topic, a `live: true` query,
+  a local store — never by a config key. **Migration:** delete `tier:` from `realtime` in
+  `app.config.ts`. It is a `TS2353`, not a runtime failure.
+
+- **BREAKING — the WAL decoder returns the values a repository row holds, not Postgres' own text.**
+  `PgOutputDecoder` decoded a `timestamptz` as `'2026-08-09 12:00:00+00'`, a `text[]` as `'{a,b}'`
+  and a `bytea` as `'\x0102'`, while the shared live window holds rows `@ultimat3/entity` parsed.
+  `compareValues` normalises a `Date` to its epoch, so `String(1786…) < String("2026-…")` and **an
+  edit to ANY column of ANY row jumped that row to the top of every `orderBy('createdAt','desc')`
+  feed for every subscriber**, carrying the raw string into the window; `post.tags.map(...)` threw on
+  the first patch. Invisible to the whole suite by construction — `setRowObserver` emits already-parsed
+  rows, so only a real walsender diverges, and the parity test handed the same object to both sides.
+  A wire **convergence**, not a break. `PgOutputMessage.after`/`before` and `entityRow`'s return
+  widen to `PhysicalRow`.
+
+- **BREAKING — a delta resume no longer seats a pre-policy cursor.** `resumeFrom` advanced across the
+  RETAINED patch list, which is pre-policy by design. A subscriber reconnecting inside the retain
+  window gained the id of every row inserted for every OTHER actor while it was away, and then
+  received a `delete` frame carrying another tenant's row id — the leak `subscriber-gate` exists to
+  close, re-opened one layer up.
+
+- **BREAKING — `verifyDigest()` is deleted from `@ultimat3/realtime`.** Documented as "how a client
+  detects drift", no caller, and it could not have had one: a delta-resumed cursor carries
+  `DIGEST_UNVERIFIED` so the check answered `false` for every cursor drift can occur in, and
+  `identity-map.ts` merges columns across queries by design, so any app with two reads over one
+  entity would have reported permanent drift. Drift is detected by the server's `desynced` mark.
+
+- **BREAKING — `defineAuth({ providers })` defaults to `[]`, not the live OAuth registry.** Nothing
+  was ever "left out", so the uniform 404 the option exists for could never fire — while a registry
+  any dependency writes into decided which `/auth/oauth/<id>` endpoints an app served. With the
+  credentials fix below, this closed an enumeration oracle: 500 meant registered, 404 meant not, and
+  the 500 published the app's own `*_CLIENT_ID` / `*_CLIENT_SECRET` names.
+
+- **BREAKING — `@ultimat3/auth` no longer persists provider access or refresh tokens.**
+  `x_accounts.access_token` and `refresh_token` held live third-party credentials in the clear under
+  a `tables.ts` header promising "no column holds a plaintext secret", and **nothing ever read either
+  one back**. Now written `null`. The type and the DDL are unchanged.
+
+- **BREAKING — an id token naming several audiences requires a matching `azp`**, and an `nbf` in the
+  future is refused with the skew `id-token.ts` already exported to `workload.ts`. Both only narrow.
+
+- **BREAKING — `MemoryAdapter.createUser` enforces `x_users`' two UNIQUE constraints.** It is what
+  `x new` scaffolds and what every test runs against, so the duplicate path was exercised only
+  against the permissive half of the seam: two `register()` calls at one address made two rows, and
+  the second was unreachable forever.
+
+- **BREAKING — two admin resources may not claim one `path:`.** A duplicate produced eight routes
+  over four paths with the second resource's four screens silently unreachable. Refused at
+  `defineAdmin`.
+
+- **BREAKING — `registerLayout(name, layout)` refuses a name already taken.** `layouts.set` answered
+  whichever ran last, `base` included, so a dependency could silently re-shell every framework mail.
+
+- **BREAKING — `assertReadOnly` (`@ultimat3/admin/dev`) returns a `ReadOnlyVerdict`**, not
+  `string | null`. `assertReadOnlyQuery` documents that what it returns is what the caller must
+  execute; the panel discarded it and ran the textarea's bytes.
+
+- **BREAKING — `@ultimat3/ai`'s `generate()` no longer collects a LOCAL refusal into
+  `X_AI_PROVIDER_UNAVAILABLE`.** `X_AI_KEY_MISSING` and `X_AI_REQUEST_INVALID` reach the caller with
+  their own runnable `fix:`. Collecting one discarded the instruction and made `generate()` and
+  `stream()` answer one misconfiguration two ways. Transport failures still collect across providers.
+
+- **BREAKING — `@ultimat3/render`'s graph-based island budget API is removed** — `routeJsBytes`,
+  `graphFor`, `checkBudget`, `checkBudgets`, `assertBudget` and their types. Every one was exported
+  from the barrel and called by nothing; the budget gate that runs measures the emitted document.
+  `parseByteBudget`, `defaultIslandBudget` and `islandModuleIds` are unchanged.
+
+- **BREAKING — `@ultimat3/pwa`'s `routeRules` orders by specificity, wildcards last.** The emitted
+  `sw.js` changes for any app with a dynamic route above a static sibling. The emitted `ruleFor` returns the first pattern that matches and the order was
+  alphabetical: `:` and `*` sort before every letter, so `/posts/:id` shadowed `/posts/new` and a
+  single `/*` shadowed the whole table — every `PRECACHE_MANIFEST` entry downloaded at install and
+  never looked up. **Migration:** regenerate `sw.js`.
+
+- **BREAKING — `subscriptionState(record, lastStatus, clock?)` takes a `Clock`** where it took epoch
+  milliseconds. Every other "now" in a tier-4 package comes from a `Clock`.
+
+- **BREAKING — `StaticReport` gained a required `unmeasured` field.** Parsing stays backward
+  compatible; hand-constructing one does not.
+
+### Fixed
+
+- **`Gateway.stream()` resolved the provider between `reserve()` and the `try/finally` that releases
+  it**, so a registered model no configured provider serves debited the estimate onto the
+  `BudgetStore` and never credited it back. `MemoryBudgetStore` is per process and never expires, so
+  **five refused streams spent an org's entire ceiling with nothing ever sent**, and every later call
+  was `X_AI_BUDGET_EXCEEDED` for the life of the process. (#319)
+- **`readonly-sql` ended a `--` comment at `\n` only.** Postgres' lexer defines `non_newline` as
+  `[^\n\r]`, so a CR terminated the comment for the server and not for the scanner, hiding the
+  payload from all four layer-3 checks at once. `BEGIN READ ONLY` catches an `update`; it does not
+  catch `select pg_advisory_lock(42)`, whose **session** lock survives `ROLLBACK` and outlives the
+  read on a pooled connection — the exact breach the `pg_advisory_*` ban exists for, bypassed by two
+  bytes. `pg_notify` and the replication/server-control family are now banned too. (#316)
+- **A successful login cleared the per-IP failure bucket**, so one credential the attacker owns bought
+  unlimited credential stuffing: 4 guesses, 1 login, repeat — 160 guesses from one address against a
+  5-attempt limit, never locked. The three lines below it already argued the opposite for the org
+  bucket. (#317)
+- **The OAuth callback published uncoded internal exception text to an unauthenticated caller** —
+  connection strings and bind passwords included — on two independent paths, only one of which the
+  first repro reached. The token-endpoint body is no longer reflected either; that request carries
+  `client_secret`. (#318)
+- **`diffRows` threw on a `money()` column**, so every `adminUpdate` on a money-bearing entity failed
+  with an uncoded `TypeError` **after** `repo.update()` committed, landing zero audit entries — in
+  the package whose contract is "if it isn't logged, it didn't happen". `crud.ts` also never audited
+  a repo failure at all, while both its siblings do and each states the rule. (#321)
+- **`assertHeaderSafe` never checked `to` and `cc`**, which become `To:` and `Cc:`. A CRLF-bearing
+  address was refused by SMTP, accepted by Resend, and accepted by the memory driver in dev — the
+  exact split that file exists to prevent. (#322)
+- **`clampScore` did not clamp `NaN`**, so a scorer dividing by zero produced `score = NaN`, no
+  regression, and `assert()` reporting a pass over a run that measured nothing. (#319)
+- **`x db gen --allow-destructive` emitted a migration Postgres refuses** — `drop table` with no
+  preceding FK drop, and tables ordered alphabetically rather than by dependency, failing at
+  `SQLSTATE 2BP01` during `ROLE=migrate` with a `down` that cannot restore.
+- **`useService()` walked the prototype chain**, returning the `Object` function typed as `T` instead
+  of throwing `X_SERVICE_MISSING` — from the function whose whole purpose is naming that failure.
+  Twelve more instances of the same class fixed across `schema`, `ai`, `ui`, `db`, `cache`, `seo`,
+  `http`, `auth` and `admin`.
+- **`RingChangeBuffer.since()` answered "covered" for a window it never held**, so a client
+  reconnecting inside `maxLagMs` folded a partial patch list onto a stale window with nothing marked
+  desynced — permanently divergent on a healthy socket. (#320)
+- **`SyncSocket.send` discarded `WsLike.send`'s return**, so a frame the runtime dropped read as
+  delivered and the subscriber's cursor advanced past a patch that never left. (#320)
+- **A replication stream whose standby-status writes all failed reported itself healthy**, leaked
+  unhandled rejections, and exited non-zero on a clean shutdown, while `confirmed_flush_lsn` stopped
+  advancing and WAL accumulated on the primary. A second defect in the same function made every
+  confirm after a failed one a silent no-op that reported success. (#320)
+- **`X_CACHE_PURGE_FAILED` answered "may I retry?" two contradictory ways in one envelope** —
+  `"retry": "terminal"` beside `"meta": { "retryable": true }` for a purge that provably can land.
+- **`@ultimat3/jobs` composed `AbortSignal.any` onto signals it does not own** at the two sites left
+  after `run-signal.ts` shipped: a `backfill()` at `batch: 1000` over 5M rows held 5,000 dependent
+  signals on one run's signal.
+- **`X_ACCOUNT_LOCKED` (429) told a caller to come back and never said when.** `retry-after` was set
+  for `X_RATE_LIMITED` alone; a handler raising it from its own limiter was answered `retry-after: 0`.
+- **`@ultimat3/query`'s non-push-down pagination fallback cut a tie group in an order the cut does not
+  describe** — reproduced with four rows where two matched **no page in the listing**.
+- **`routeRules` ordering, `decideAll([])` answering allowed, the `interaction` hydration runtime
+  leaking one unhandled rejection and one retained `Event` per click, `renderToHtml`'s depth bound
+  guarding only the element path, `readSse` measuring its cap against the whole buffer, a
+  `background-sync` flush against a `null` body, and a suffix `Range` on a zero-byte object
+  answering 206** — each fixed with a failing-first test.
+- **`examples/dummy` had never read a row from a real database** — `database()` named no driver, so
+  every process got its own `memoryDriver` while the README advertised embedded Postgres. (#270)
+- **`x new` scaffolded a `sync` service whose healthcheck named a port it never binds**, so the
+  container was `unhealthy` from `start_period` onward forever — the shape blocking milestone 11's
+  rolling-restart proof. Fixed in the template and in all three committed compose files, and now
+  pinned by a sixth `compose-parity` rule that derives the port from `syncPortFor` rather than from
+  the file's own `ports:`.
+- **`X_BUDGET_UNMEASURED`'s `fix:` named an `"unmeasured"` list no command emitted**, and the
+  budget-measuring render ran with no request context, so an `app/` route reading `useContext()`
+  failed the entire build.
+- **`scripts/lib/workspaces.ts` read every manifest with an unchecked cast and no `catch`**, so one
+  malformed `package.json` threw a bare `SyntaxError` with no path, no code and no `fix:` out from
+  under every release tool. (#281)
+- **Five copies of `lineOf` / `isCode` / `isTest` across `scripts/`, two of them behaviourally
+  divergent on `.d.ts` handling.** One home, one semantics. (#282)
+- Three guards that reported `✓` over the defect they exist to catch: `config-readers` matching a
+  bare leaf token (19 phantom readers for a dead key), `version-stamps` requiring a `v` prefix (zero
+  stamps seen in the most-read file in the repo), and `catch-render` unable to follow a caught value
+  into a `trace:` or across a file boundary.
+- Root `CLAUDE.md` had stated **7.0.0** for two majors. It now states no version at all — every
+  status row is a runnable command, the shape `README.md` and `llms.txt` have used since 2026-08-20.
+
 ## 9.0.0 - 2026-08-23
 
 ### Changed

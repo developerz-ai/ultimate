@@ -113,8 +113,13 @@ class OpenAiProvider implements Provider {
    * open socket past the HTTP timeout and fails after the completion was generated and billed.
    */
   async generate(request: GenerateRequest): Promise<GenerateResult> {
-    if (requiresStreaming(request)) return this.assemble(request);
+    // Resolved BEFORE the transport question is asked. `requiresStreaming` clamps `maxTokens` to
+    // the model's `maxOutput`, and its own fallback for an absent model is the framework's
+    // `DEFAULT_MODEL` — a Claude id no OpenAI-format endpoint serves. Sized against that, a
+    // request naming no model was measured against somebody else's ceiling, seventy lines above
+    // `modelOf`'s comment saying this provider never does that.
     const model = this.modelOf(request);
+    if (requiresStreaming({ ...request, model })) return this.assemble(request);
     const response = await this.send(
       chatCompletionBody({ request, model, stream: false }),
       false,
