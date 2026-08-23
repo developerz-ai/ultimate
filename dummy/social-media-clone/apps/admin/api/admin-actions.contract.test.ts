@@ -14,9 +14,16 @@ import { appRoutes, devHooks, loadApp } from '@ultimat3/cli';
 import type { Pipeline } from '@ultimat3/http';
 import { createPipeline, createRouter, defineHttpConfig } from '@ultimat3/http';
 import { beforeAll, contractTest, expect } from '@ultimat3/testing';
-import { admin } from '../app/admin/admin';
 import { usersAdminRepo } from '../app/admin/repo';
 import { ADMIN_ACTION_ROUTE } from '../shared/action-route';
+
+// Loaded after `@ultimat3/render/server` has installed its `.tsx` loader, and never statically:
+// `admin.ts` statically imports `pages/ops.tsx`. A static import compiles that `.tsx` before
+// the plugin exists, so it is cached against `React.createElement` and every later render in
+// the process dies with `React is not defined`. The rule is enforced by `apps/admin/static-tsx-
+// imports.test.ts`, which explains the whole mechanism.
+await import('@ultimat3/render/server');
+const { admin } = await import('../app/admin/admin');
 
 const ROOT = resolve(import.meta.dir, '../../..');
 const ORIGIN = 'http://app.test';
