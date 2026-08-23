@@ -40,6 +40,16 @@ const migrationFiles = async (): Promise<readonly string[]> => {
   return names.sort();
 };
 
+// The hook below is a WASM compile plus an initdb plus every committed migration, and bun's
+// default 5s per test is a bound on a TEST — nobody chose it for this. Measured on this file
+// `As of 2026-08-22`: 2.8s on an idle machine and 6.3s with the gate's six unit shards on four
+// cores, which is how the second migration landing turned a green shard into a hook timeout that
+// only CI could see. The cost is the boot — the statements are ~70ms a file — so the next
+// migration moves this by nothing. Same reasoning and same shape as `THREE_PGLITE_BOOTS_MS` in
+// the framework's own packages/db/src/pglite-branch.test.ts: stated here, generous on purpose,
+// and it exists to catch a hang rather than to police a boot.
+const PGLITE_BOOT_AND_MIGRATE_MS = 60_000;
+
 beforeAll(async () => {
   client = createPgliteClient();
   // The ambient client `postgresDriver()` resolves through. Same install `startServices` performs.
@@ -57,7 +67,7 @@ beforeAll(async () => {
       await client.execute(raw(statement));
     }
   }
-});
+}, PGLITE_BOOT_AND_MIGRATE_MS);
 
 afterAll(async () => {
   setDbClient(undefined);
