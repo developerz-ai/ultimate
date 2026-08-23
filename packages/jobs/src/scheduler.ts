@@ -3,8 +3,10 @@
 //
 // Exactly one node dispatches per tick, enforced by leader election. Multi-node that is an
 // EXPIRING LEASE ROW in `x_scheduler_leader` (`createPgLeaseLeader`), never an advisory lock: an
-// advisory lock is session-scoped and dies with the pooled connection that took it, which hands
-// leadership to a second node while the first is still dispatching. Two schedulers
+// advisory lock is held by the SESSION, not by this process — it outlives every transaction and is
+// released only by an explicit unlock, the pool's reset on release, or the connection dying, and
+// the next round may run on a different connection. So a node can neither renew it nor prove it
+// still holds one, and leadership passes to a second node while the first is still dispatching. Two schedulers
 // double-enqueue every task; the idempotency key would absorb it, but leader election means
 // the queue never sees the duplicate at all. One ROUND at a time is the same rule inside one
 // process: the loop re-arms on the round it just finished, and any other caller joins that
@@ -43,7 +45,7 @@ export interface LeaderElection {
 }
 
 /** Single-node default: always the leader. Multi-node uses `createPgLeaseLeader()` — never
- * `createPgLeader()`, whose advisory lock dies with the pooled connection that took it. */
+ * `createPgLeader()`, whose advisory lock is owned by a pooled session this process cannot name. */
 export function soleLeader(): LeaderElection {
   return {
     acquire: () => Promise.resolve(true),

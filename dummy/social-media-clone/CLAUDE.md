@@ -10,11 +10,11 @@ infer from the code.
 `bun run ../../scripts/reference-app-gate.ts` re-derives the verdict, rather than trusting the
 sentence below it.
 
-| Pinned step | Why |
+| Pinned step | Red today, and the repair |
 |---|---|
 | `boundaries` | `X_BOUNDARY_SITE_TO_APP` ×3 — `apps/web/site/feed/page.tsx` reaching `apps/web/app/posts/service.ts`. The static feed needs a query, not the authed service |
-| `budgets` | `X_BUDGET_UNMEASURED` on every route declaring one, because no `.x/build-stats.json` has ever existed here — closed by running `x build` ahead of the gate |
-| `drift` | `X_DB_DRIFT`, and it was **vacuously green** before, not a regression: `checkSourceDrift` used to hash only the source text under `packages/db/src`, and now hashes the entity registry with it. Closed by a deliberate `x db gen "reconcile foreign key rules"`, never by re-recording the `.hash` sidecar |
+| `budgets` | `X_BUDGET_UNMEASURED` on every route declaring one, because no `.x/build-stats.json` has ever existed here — repaired by running `x build` ahead of the gate, never by dropping the `budget:` |
+| `drift` | `X_DB_DRIFT` — still red, and it was **vacuously green** before rather than a regression: `checkSourceDrift` used to hash only the source text under `packages/db/src`, and now hashes the entity registry with it. Repaired by a deliberate `x db gen "reconcile foreign key rules"` reviewed by the app owner, never by re-recording the `.hash` sidecar. Until that runs, the pin stays and this step must keep failing |
 
 `examples/dummy` has its own table; neither app's pins excuse the other's red step. Turn a pinned step green and you must
 delete its pin in the same change

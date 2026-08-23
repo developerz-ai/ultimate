@@ -45,7 +45,7 @@ endpoints return a body — never a bare `200 OK`.
 | `/healthz` | "is this process alive?" | the lifecycle is `stopped`. **Ignores the readiness checks, deliberately** — a database outage that failed liveness fleet-wide would restart every pod into the same outage, cold | liveness probe | **restart the container** |
 | `/readyz` | "should traffic come here?" | starting, draining, stopped, or any registered check answers `failing` | readiness probe, LB | **remove from rotation** |
 
-The body is `HealthReport` plus the role. `checks` is a **map**, not an array, and carries no value:
+The body is `HealthReport` plus the role. `checks` is a **map** of check name → `ok` or `failing`, never an array — "alert on check failures BY CHECK NAME" is not writable against a boolean:
 
 ```json
 { "state": "ready", "ready": true, "uptimeMs": 41230, "inflight": 3,
@@ -63,8 +63,10 @@ role with a genuine absence of dependencies does not have to invent a check to b
 | `n > 0` | every entry `ok` | every dependency this process owns answered |
 | `n > 0` | any `failing` | not a 200: 503, and the body names the failing check |
 
-Two checks are registered, both by `startServices` (`packages/cli/src/dev-runtime.ts`), so `x dev`
-and a container report identically:
+`startServices` (`packages/cli/src/dev-runtime.ts`) registers **at most two, and the count is
+conditional**: `database` always, `transport` only when the transport can lose a connection. `x dev`
+over the in-process bus reports `registered: 1`; a NATS-backed container reports `2`, which is the
+body above. Read the name, never the number:
 
 | Check | Registered when | Reads |
 |---|---|---|
@@ -145,9 +147,10 @@ Result: a rolling restart produces a wide flat load curve instead of a spike.
 | jobs, per row | `FOR UPDATE SKIP LOCKED` at claim | the claim transaction | none — a locked row is skipped, not waited on |
 
 The scheduler is the one that cannot use an advisory lock, and it is the executor that decides it:
-`@ultimat3/jobs` is handed a **pool**, and a session-scoped grant dies the moment the connection goes
-back. It shipped as `pg_try_advisory_lock` and every node read itself as leader, so a rolling update
-double-fired every task. `@ultimat3/realtime` solves the same problem the other way — `PgAdvisoryLock`
+`@ultimat3/jobs` is handed a **pool**, and a session-scoped grant is owned by the backend rather than
+by the process: it outlives every transaction, and whether it survives the connection's return is
+the pool's reset policy, not the caller's. Neither ending elects anybody. It shipped as
+`pg_try_advisory_lock` and a rolling update double-fired every task. `@ultimat3/realtime` solves the same problem the other way — `PgAdvisoryLock`
 owns its connection — because that package holds a wire protocol and jobs does not.
 
 A crashed leader's lease is reclaimed by expiry, with nothing to clean up. That is the one property

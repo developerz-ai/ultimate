@@ -25,7 +25,7 @@ The `--json` form is the same content as the terminal form. Paste the JSON into 
 | `X_CONFIG_INVALID` at load | `app.config.ts` field invalid — `defaultLocale` not in `locales`, `db.pool < 1`, non-IANA `timeZone`, `realtime.transport` set without `realtime.urlEnv` | `x config show --json`, then edit the field named in `cause` |
 | `X_ROLE_INVALID` | `ROLE` is not one of `web sync worker scheduler migrate replicator all` | fix the env var on that service |
 | `X_BUN_VERSION` | below the Bun 1.3 floor | upgrade Bun |
-| Container starts then loops | `/readyz` failing, not `/healthz` — the `database` check is the one that fails in practice | `curl /readyz` and read `checks`, a map of name → `ok`/`failing`. Read `registered` with it: `0` means nothing was checked, so the 200 meant only that the socket was bound |
+| Container starts then loops | `/readyz` failing, not `/healthz` — a registered check answers `failing`, and which one is in the body | `curl /readyz` and read `checks`, a map of name → `ok`/`failing`: `database` is registered always, `transport` whenever it can report a connection, so a disconnected NATS node fails on that one. Read `registered` with it: `0` means nothing was checked, so the 200 meant only that the socket was bound |
 | Config edits have no effect | you edited a per-environment file that does not exist — config is **one file** | put the difference in an env var ([Configuration](Configuration)) |
 
 ## Database

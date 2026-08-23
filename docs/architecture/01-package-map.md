@@ -48,7 +48,7 @@ Every row states what moving the package **down** would legalise, never why its 
 | `policy` | `entity → policy`, `http → policy` and `auth → policy` become ordinary downward imports, and "never a second authz path" goes back to being prose. All three mirror what they need of policy structurally instead; `@ultimat3/action` is the one package that wires `evaluate()` in |
 | `pwa` | `render → pwa`, so the service-worker generator joins the static bundle graph — axiom 6 |
 | `render` | `pwa → render`, so `packages/pwa/CLAUDE.md`'s "never import render" — the rule keeping `PwaRoute` a structural view rather than a re-export of the route table — has nothing enforcing it |
-| `scraping` | nothing, and that is the point: tier 5 reserves room for `recover: 'agent'` to import `@ultimat3/ai` (tier 4), which a package at tier 4 could not do. The declared `cli → scraping` edge is the price |
+| `scraping` | `cli → scraping` becomes an ordinary downward import, and the sideways row above it goes. Tier 5 buys the other direction and is why that row is paid instead: it reserves room for `recover: 'agent'` to import `@ultimat3/ai` (tier 4), which a package at 4 could not do |
 | `ui` | `render → ui`, so the static bundle graph reaches the design system — axiom 6 again. Its floor is tier 2 |
 
 `bun run boundaries --json` re-derives the whole set; nothing here is a number to keep in step by hand. **No package moved when the rule landed**: every row was a sentence that package's own `CLAUDE.md` already carried.

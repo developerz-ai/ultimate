@@ -4,13 +4,16 @@
 // deploy that rolls four services and then exits X_DEPLOY_FAILED on `no such service`, which is
 // exactly the state both tracked apps were in until 2026-08-22.
 //
-// Four rules, each recording a defect that shipped: a missing role, a `backfill` with no
+// Five rules, each recording a defect that shipped: a missing role, a `backfill` with no
 // `entrypoint:` (the image's ENTRYPOINT reads ROLE and PORT only, so argv is discarded and the
-// service serves HTTP as `web`), a role that starts beside `migrate` instead of after it, and a
+// service serves HTTP as `web`), a role that starts beside `migrate` instead of after it, a
 // healthcheck invoking `/app/x` — a path only the framework's distroless CLI image carries, so the
-// service it guards never becomes healthy and everything gated on it never starts.
+// service it guards never becomes healthy and everything gated on it never starts — and a role that
+// INHERITS the image's `/readyz` probe while opening no HTTP socket, which is the same ending
+// reached from the other direction: `unhealthy` forever, on a port the role never binds.
 
 import { describe, expect, test } from 'bun:test';
+// `join` builds the host-separator paths to ROOT and each compose file; Bun ships no path join.
 import { join } from 'node:path';
 import { planDeploy, planNewApp } from '@ultimat3/cli';
 import { YAML } from 'bun';
@@ -71,14 +74,27 @@ const roleServices = (table: Readonly<Record<string, Service>>): readonly string
     .filter(([name, service]) => name === 'backfill' || roleOf(service) !== undefined)
     .map(([name]) => name);
 
-/** `depends_on` is a map of conditions or a bare list; only the map can express "has exited 0". */
+/**
+ * `depends_on` is a map of conditions or a bare list, and only the map can express "has exited 0".
+ * The LIST FORM IS REFUSED for that reason: `depends_on: [migrate]` is `service_started`, which
+ * `docker compose up -d` satisfies the moment the migrator's container exists — so the role it
+ * guards can serve against a schema whose migration is still running, which is the whole defect
+ * this rule exists to catch. Accepting it here would have passed exactly that file.
+ */
 const waitsForMigrate = (service: Service): boolean => {
   const dependsOn = service['depends_on'];
-  if (Array.isArray(dependsOn)) return dependsOn.includes('migrate');
   if (!isRecord(dependsOn)) return false;
   const gate = dependsOn['migrate'];
   return isRecord(gate) && gate['condition'] === 'service_completed_successfully';
 };
+
+/**
+ * The two roles that construct an HTTP server (`startRoles`, packages/cli/src/dev-roles.ts). Every
+ * other role gets the metrics listener and nothing else, so the image's `/readyz` HEALTHCHECK is a
+ * fetch to a port it never binds. `backfill` carries no ROLE and is one of them — it overrides the
+ * entrypoint and exits.
+ */
+const HTTP_ROLES: readonly string[] = ['web', 'sync'];
 
 /** The healthcheck argv, whichever of the two shapes it was written in. */
 const healthcheckArgv = (service: Service): readonly string[] => {
@@ -87,6 +103,19 @@ const healthcheckArgv = (service: Service): readonly string[] => {
   const test = healthcheck['test'];
   if (typeof test === 'string') return [test];
   return Array.isArray(test) ? test.filter((word): word is string => typeof word === 'string') : [];
+};
+
+/**
+ * A service that declares its own probe, in either legal shape: `disable: true` for a run-once
+ * container, or a `test:` naming something other than the endpoint it does not serve. Inheriting
+ * the image's is what this answers `false` for.
+ */
+const overridesImageProbe = (service: Service): boolean => {
+  const healthcheck = service['healthcheck'];
+  if (!isRecord(healthcheck)) return false;
+  if (healthcheck['disable'] === true) return true;
+  const argv = healthcheckArgv(service);
+  return argv.length > 0 && !argv.some((word) => word.includes('/readyz'));
 };
 
 /** The roles `x deploy --method compose` rolls, in order, read off the plan rather than restated. */
@@ -102,7 +131,7 @@ for (const at of shipped.sort()) {
   files.push({ at, table: services(await Bun.file(join(ROOT, at)).text(), at) });
 }
 
-// The file `x new` writes, held to the same four rules from the planner rather than from disk — it
+// The file `x new` writes, held to the same five rules from the planner rather than from disk — it
 // is the reference shape the three above are copies of, and a regression there ships in a tarball.
 const scaffolded = planNewApp({ name: 'probe', example: true }).find(
   (file) => file.path === COMPOSE_FILE,
@@ -150,6 +179,19 @@ describe('the compose files agree with the deploy plan', () => {
         expect(
           early,
           `${at}: ${early.join(', ')} start beside migrate, not after it, so a replica can serve against a schema it does not ship`,
+        ).toEqual([]);
+      });
+
+      test('a role that opens no HTTP socket overrides the image /readyz probe', () => {
+        const inherited = roleServices(table).filter((name) => {
+          const service = table[name] ?? {};
+          // `backfill` declares no ROLE — its own name is the process shape, and it serves nothing.
+          const role = roleOf(service) ?? name;
+          return !HTTP_ROLES.includes(role) && !overridesImageProbe(service);
+        });
+        expect(
+          inherited,
+          `${at}: ${inherited.join(', ')} inherit the image's /readyz HEALTHCHECK and bind no HTTP port, so each reports unhealthy for its whole life — probe METRICS_PORT /metrics, or declare healthcheck: { disable: true } on a run-once service`,
         ).toEqual([]);
       });
 

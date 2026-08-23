@@ -52,8 +52,10 @@ ENV NODE_ENV=production \\
 # own port mapping, its load balancer and every health probe alike.
 EXPOSE 3000
 
-# Every role serves /healthz and /readyz. /readyz flips to 503 on SIGTERM *before* the socket
-# closes, so a rolling restart drains in-flight work instead of dropping it.
+# The probe for the roles that SERVE HTTP — \`web\` and \`sync\`. /readyz flips to 503 on SIGTERM
+# *before* the socket closes, so a rolling restart drains in-flight work instead of dropping it.
+# Every other role opens the scrape listener alone and never binds $PORT, so each one overrides
+# this in docker/docker-compose.prod.yml rather than reporting \`unhealthy\` for its whole life.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 CMD \\
   bun --eval "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 
@@ -120,6 +122,22 @@ x-image: &image
   depends_on:
     db: { condition: service_healthy }
 
+# The image's own HEALTHCHECK fetches \`/readyz\` on $PORT, and only \`web\` and \`sync\` open an HTTP
+# socket — every other role gets the scrape listener and nothing else. A service that inherits that
+# probe is fetching a port it never binds: it reports \`unhealthy\` for its whole life and anything
+# gated on it never starts. Probes follow the role here, exactly as they do in \`docker/helm\`.
+x-metrics-probe: &metrics-probe
+  test: ['CMD', 'bun', '--eval', "fetch('http://127.0.0.1:'+(process.env.METRICS_PORT||9090)+'/metrics').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+  interval: 10s
+  timeout: 3s
+  start_period: 30s
+  retries: 3
+
+# Run-once services exit. A probe against an exited container reports \`unhealthy\` forever, and
+# nothing waits on their health — \`service_completed_successfully\` is what the others gate on.
+x-run-once-probe: &run-once-probe
+  disable: true
+
 services:
   db:
     image: postgres:17-alpine
@@ -138,6 +156,7 @@ services:
     <<: *image
     environment: [ROLE=migrate]
     restart: 'no'
+    healthcheck: *run-once-probe
 
   # Run-once, AFTER the new version serves. Deliberately NOT part of the release gate: a slow
   # UPDATE there holds the deploy open against a database still serving the previous version.
@@ -158,6 +177,7 @@ services:
       # listing this last would only look like "after". The image's HEALTHCHECK is what makes it true.
       web: { condition: service_healthy }
     restart: 'no'
+    healthcheck: *run-once-probe
 
   web:
     <<: *image
@@ -184,6 +204,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    healthcheck: *metrics-probe
     deploy: { replicas: 1 } # scales on queue depth
 
   scheduler:
@@ -193,8 +214,10 @@ services:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
     # Fixed 1. Leadership is an EXPIRING LEASE ROW in \`x_scheduler_leader\` (dev-roles.ts,
-    # driver-pg-ddl.ts), NOT an advisory lock: an advisory lock is session-scoped and dies with a
-    # pooled connection. A second instance is harmless but idle.
+    # driver-pg-ddl.ts), NOT an advisory lock: that grant belongs to the session, not to the
+    # process — it outlives every transaction and no pooled node can renew it or prove it still
+    # holds one. A second instance is harmless but idle.
+    healthcheck: *metrics-probe
     deploy: { replicas: 1 }
 
 volumes:

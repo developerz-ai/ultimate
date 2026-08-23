@@ -20,11 +20,28 @@ x-image: &image
   restart: unless-stopped
   stop_grace_period: 30s # SIGTERM → drain in-flight requests, jobs, and sockets
 
+# The image's own HEALTHCHECK fetches `/readyz` on $PORT, and only `web` and `sync` open an HTTP
+# socket — every other role gets the scrape listener and nothing else. A service that inherits that
+# probe is fetching a port it never binds: it reports `unhealthy` for its whole life and anything
+# gated on it never starts. Probes follow the role here, exactly as they do in the Helm chart.
+x-metrics-probe: &metrics-probe
+  test: ['CMD', 'bun', '--eval', "fetch('http://127.0.0.1:'+(process.env.METRICS_PORT||9090)+'/metrics').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+  interval: 10s
+  timeout: 3s
+  start_period: 30s
+  retries: 3
+
+# Run-once services exit. A probe against an exited container reports `unhealthy` forever, and
+# nothing waits on their health — `service_completed_successfully` is what the others gate on.
+x-run-once-probe: &run-once-probe
+  disable: true
+
 services:
   migrate:
     <<: *image
     environment: [ROLE=migrate]
     restart: 'no'
+    healthcheck: *run-once-probe
 
   # Run-once, AFTER the new version serves — the last of `x deploy`'s six steps, and the one this
   # file had no service for: the deploy rolled four roles and then exited X_DEPLOY_FAILED on
@@ -43,6 +60,7 @@ services:
       # image's own HEALTHCHECK (`/readyz`) is what makes "after the new version serves" true.
       web: { condition: service_healthy }
     restart: 'no'
+    healthcheck: *run-once-probe
 
   web:
     <<: *image
@@ -70,6 +88,7 @@ services:
     environment: [ROLE=worker]
     depends_on:
       migrate: { condition: service_completed_successfully }
+    healthcheck: *metrics-probe
     deploy: { replicas: 2 } # scales on queue depth
 
   scheduler:
@@ -78,8 +97,9 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
     # Fixed 1. Leadership is an EXPIRING LEASE ROW in `x_scheduler_leader`, not an advisory lock:
-    # an advisory lock is session-scoped and dies with a pooled connection. A second instance is
-    # harmless but idle.
+    # that grant belongs to the session, not to this process — it outlives every transaction and no
+    # pooled node can renew it or prove it still holds one. A second instance is harmless but idle.
+    healthcheck: *metrics-probe
     deploy: { replicas: 1 }
 
   replicator:
@@ -87,4 +107,5 @@ services:
     environment: [ROLE=replicator]
     depends_on:
       migrate: { condition: service_completed_successfully }
+    healthcheck: *metrics-probe
     deploy: { replicas: 1 } # exactly 1 per database — it owns the replication slot

@@ -19,7 +19,7 @@ ROLE=replicator myapp
 | `web` | SSR + static + RPC (actions/queries over HTTP) | **RPS** | behind CDN, stateless, N replicas, no local state |
 | `sync` | live queries + fanout over WebSockets | **concurrent connections** | stateless, **no sticky sessions** — a client may reconnect to any node |
 | `worker` | jobs + steps | **queue depth** | one pool per named queue; `WORKER_QUEUES=default,integrations` |
-| `scheduler` | cron dispatch → enqueue only | **fixed 1** | leader election is an expiring row in `x_scheduler_leader` (`createPgLeaseLeader`), never an advisory lock — that grant is session-scoped and dies when a pooled connection returns. A second instance is a warm standby, not a duplicate |
+| `scheduler` | cron dispatch → enqueue only | **fixed 1** | leader election is an expiring row in `x_scheduler_leader` (`createPgLeaseLeader`), never an advisory lock — that grant belongs to the **session**, not to the process: it outlives every transaction on the connection and is released only by an explicit unlock, the pool's reset on release, or the connection dying — so a node can neither renew it nor prove it still holds one. A second instance is a warm standby, not a duplicate |
 | `migrate` | run-once, pre-deploy | n/a | waits up to 60s for the migration lock while another version's migration is in flight, then refuses (`X_MIGRATE_CONCURRENT`) — bounded, so a wedged predecessor fails the deploy rather than hanging it |
 | `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock and exits if held |
 
@@ -32,16 +32,16 @@ Rules that keep this honest:
 
 ## Health endpoints
 
-Every role exposes both, on every replica.
+**`web` and `sync` are the only roles that serve them**, `As of 2026-08-22`, and both do on every
+replica: they are the two that construct an HTTP server. `worker`, `scheduler` and `replicator` open
+the metrics listener alone and are probed on `/metrics`.
 
 | Endpoint | Answers | 503 when | Consumer |
 |---|---|---|---|
 | `/healthz` | "is this process alive?" | the lifecycle is `stopped`; the readiness checks are ignored on purpose | liveness probe → restart |
 | `/readyz` | "should traffic come here?" | starting, **draining**, stopped, or a registered check answers `failing` | readiness probe → remove from rotation |
 
-**`web` and `sync` are the only roles that serve them**, `As of 2026-08-22`: they are the two that construct an HTTP server. `worker`, `scheduler` and `replicator` open the metrics listener alone and are probed on `/metrics`.
-
-Two checks are registered — `database` always, `transport` only when the transport can report a connection (NATS can; the in-process bus cannot) — and **no per-role check exists**. This table claimed five, including a `scheduler` standby reporting not-ready, and none of them was ever wired.
+At most two checks are registered — `database` always, `transport` only when the transport can report a connection (NATS can; the in-process bus cannot), so `registered` is `1` under `x dev` and `2` on a NATS-backed node — and **no per-role check exists**. This table claimed five, including a `scheduler` standby reporting not-ready, and none of them was ever wired.
 
 Both return `{ ...HealthReport, role }` — `state`, `ready`, `uptimeMs`, `inflight`, `buildId`, `checks` as a **map** of name → `ok`/`failing`, and `registered`. Never a bare `200 OK` with no body. `registered: 0` is the state the pair could not otherwise express: an empty registry is still ready, so a 200 there means no more than "the socket is bound" ([`13-topology-runtime.md`](../architecture/13-topology-runtime.md#healthz-vs-readyz)).
 

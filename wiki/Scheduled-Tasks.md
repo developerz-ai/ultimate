@@ -95,9 +95,9 @@ Fixed **1**. Cron dispatch only.
 
 | Property | Behavior |
 |---|---|
-| Leader election | an **expiring lease row** in `x_scheduler_leader` (`createPgLeaseLeader`), never `pg_try_advisory_lock` — that grant is session-scoped and dies the moment a pooled connection goes back, so every node would read itself as leader. Whoever holds an unexpired row dispatches |
+| Leader election | an **expiring lease row** in `x_scheduler_leader` (`createPgLeaseLeader`), never `pg_try_advisory_lock` — that grant belongs to the **session**, not to the process: it outlives every transaction, survives or dies by the pool's reset policy on release, and either way no node can renew it or prove it still holds one. A stranded lock nobody can release and a lock silently dropped mid-round are both wrong for election. Whoever holds an unexpired row dispatches |
 | Renewal | `acquire()` **is** the renewal, asked every round — tick 1s, lease TTL `DEFAULT_LEADER_TTL_MS` = 30s. A node that stops renewing loses the lease by expiry, with nothing to clean up |
-| Second instance | a warm standby, not a duplicate. It acquires nothing and dispatches nothing |
+| Second instance | a warm standby, not a duplicate. It calls `acquire()` every round like the leader does; while another node holds an unexpired row it acquires nothing and dispatches nothing, and the round after that row expires it takes the row and becomes the leader |
 | Leadership lost | logged once as `jobs.scheduler.leadership-lost`; the node keeps polling and takes over on the first round after the holder's lease expires. **The process does not exit** — the `replicator` role is the one that does (`X_REPLICATOR_SLOT_HELD`), because two replicators double-deliver while two schedulers cannot both hold the row |
 | `/readyz` on the standby | there is none. `ROLE=scheduler` binds the metrics port only (`/metrics`, `METRICS_PORT`, default 9090) and no HTTP server, so liveness is that endpoint — the probe [`docs/ops/01-kubernetes.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/01-kubernetes.md) declares. Nothing routes request traffic to a scheduler in the first place |
 | Missed tick (leader down, node paused, clock jump) | **fires late rather than being skipped** |

@@ -119,8 +119,12 @@ export interface JobDriver {
   saveStep(id: JobId, name: string, result: unknown): Promise<void>;
   loadSteps(id: JobId): Promise<Record<string, unknown>>;
   sleepUntil(id: JobId, at: Date): Promise<void>;
+  /** Fleet-wide slot counting. Optional on the type, required by any job declaring `concurrency`. */
+  readonly leases?: LeaseStore;
 }
 ```
+
+`leases` is the one optional member that **refuses** rather than degrades: without it a driver can only hold `concurrency.limit` per process, so `createWorker().start()` throws `X_JOB_CONCURRENCY_UNENFORCEABLE` naming every job that declared one. Every other absent member is a capability the worker runs without.
 
 Switching is a config line in `app.config.ts` plus a migration of in-flight rows (`x jobs drain --to redis`). Because `saveStep` / `loadSteps` are driver methods, step persistence works identically on all three.
 
@@ -135,7 +139,7 @@ export const nightlyDigest = task({
 });
 ```
 
-A `task` only enqueues. The `scheduler` role is a fixed single instance elected by an expiring row in `x_scheduler_leader` — never an advisory lock, which is session-scoped and dies with a pooled connection; a missed tick fires late rather than being skipped, and the enqueued job's idempotency key absorbs a double-fire during leader handover.
+A `task` only enqueues. The `scheduler` role is a fixed single instance elected by an expiring row in `x_scheduler_leader` — never an advisory lock, whose grant belongs to the session rather than to the process — it outlives every transaction on the connection and is released only by an explicit unlock, the pool's reset on release, or the connection dying; a missed tick fires late rather than being skipped, and the enqueued job's idempotency key absorbs a double-fire during leader handover.
 
 ## Observability
 
