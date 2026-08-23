@@ -1,0 +1,1101 @@
+{
+  "tables": [
+    {
+      "schema": "public",
+      "name": "blocks",
+      "columns": [
+        {
+          "name": "blocked_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "blocker_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 2
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 3
+        }
+      ],
+      "primaryKey": ["blocker_id", "blocked_id"],
+      "indexes": [
+        {
+          "name": "blocks_blocker_id_idx",
+          "columns": ["blocker_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "blocks_blocked_id_idx",
+          "columns": ["blocked_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "blocks_blocked_id_fkey",
+          "columns": ["blocked_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        },
+        {
+          "name": "blocks_blocker_id_fkey",
+          "columns": ["blocker_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "comments",
+      "columns": [
+        {
+          "name": "author_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "body",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 2
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 3
+        },
+        {
+          "name": "deleted_at",
+          "dataType": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "position": 4
+        },
+        {
+          "name": "id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()",
+          "position": 5
+        },
+        {
+          "name": "post_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 6
+        }
+      ],
+      "primaryKey": ["id"],
+      "indexes": [
+        {
+          "name": "comments_post_id_idx",
+          "columns": ["post_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "comments_author_id_idx",
+          "columns": ["author_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "comments_post_id_created_at_id_idx",
+          "columns": ["post_id", "created_at", "id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "comments_author_id_fkey",
+          "columns": ["author_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        },
+        {
+          "name": "comments_post_id_fkey",
+          "columns": ["post_id"],
+          "referencedTable": "posts",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "conversations",
+      "columns": [
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 1
+        },
+        {
+          "name": "id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()",
+          "position": 2
+        },
+        {
+          "name": "kind",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 3
+        },
+        {
+          "name": "title",
+          "dataType": "text",
+          "nullable": true,
+          "default": null,
+          "position": 4
+        }
+      ],
+      "primaryKey": ["id"],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    {
+      "schema": "public",
+      "name": "credentials",
+      "columns": [
+        {
+          "name": "password_hash",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "updated_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 2
+        },
+        {
+          "name": "user_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()",
+          "position": 3
+        }
+      ],
+      "primaryKey": ["user_id"],
+      "indexes": [
+        {
+          "name": "credentials_user_id_idx",
+          "columns": ["user_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "credentials_user_id_fkey",
+          "columns": ["user_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "friendships",
+      "columns": [
+        {
+          "name": "addressee_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 2
+        },
+        {
+          "name": "requester_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 3
+        },
+        {
+          "name": "responded_at",
+          "dataType": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "position": 4
+        },
+        {
+          "name": "status",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 5
+        }
+      ],
+      "primaryKey": ["requester_id", "addressee_id"],
+      "indexes": [
+        {
+          "name": "friendships_requester_id_idx",
+          "columns": ["requester_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "friendships_addressee_id_idx",
+          "columns": ["addressee_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "friendships_addressee_id_status_idx",
+          "columns": ["addressee_id", "status"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "friendships_addressee_id_fkey",
+          "columns": ["addressee_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        },
+        {
+          "name": "friendships_requester_id_fkey",
+          "columns": ["requester_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "likes",
+      "columns": [
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 1
+        },
+        {
+          "name": "post_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 2
+        },
+        {
+          "name": "user_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 3
+        }
+      ],
+      "primaryKey": ["post_id", "user_id"],
+      "indexes": [
+        {
+          "name": "likes_post_id_idx",
+          "columns": ["post_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "likes_user_id_idx",
+          "columns": ["user_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "likes_user_id_created_at_idx",
+          "columns": ["user_id", "created_at"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": "desc"
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "likes_post_id_fkey",
+          "columns": ["post_id"],
+          "referencedTable": "posts",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        },
+        {
+          "name": "likes_user_id_fkey",
+          "columns": ["user_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "media",
+      "columns": [
+        {
+          "name": "bytes",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "content_type",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 2
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 3
+        },
+        {
+          "name": "height",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null,
+          "position": 4
+        },
+        {
+          "name": "id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()",
+          "position": 5
+        },
+        {
+          "name": "key",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 6
+        },
+        {
+          "name": "kind",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 7
+        },
+        {
+          "name": "owner_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 8
+        },
+        {
+          "name": "post_id",
+          "dataType": "uuid",
+          "nullable": true,
+          "default": null,
+          "position": 9
+        },
+        {
+          "name": "state",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 10
+        },
+        {
+          "name": "width",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null,
+          "position": 11
+        }
+      ],
+      "primaryKey": ["id"],
+      "indexes": [
+        {
+          "name": "media_post_id_idx",
+          "columns": ["post_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "media_owner_id_idx",
+          "columns": ["owner_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "media_key_key",
+          "columns": ["key"],
+          "unique": true,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "media_created_at_idx",
+          "columns": ["created_at"],
+          "unique": false,
+          "primary": false,
+          "where": "state = 'pending'",
+          "order": null
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "media_owner_id_fkey",
+          "columns": ["owner_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        },
+        {
+          "name": "media_post_id_fkey",
+          "columns": ["post_id"],
+          "referencedTable": "posts",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "messages",
+      "columns": [
+        {
+          "name": "author_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "body",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 2
+        },
+        {
+          "name": "conversation_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 3
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 4
+        },
+        {
+          "name": "id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()",
+          "position": 5
+        }
+      ],
+      "primaryKey": ["id"],
+      "indexes": [
+        {
+          "name": "messages_conversation_id_idx",
+          "columns": ["conversation_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "messages_author_id_idx",
+          "columns": ["author_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "messages_conversation_id_created_at_id_idx",
+          "columns": ["conversation_id", "created_at", "id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": "desc"
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "messages_author_id_fkey",
+          "columns": ["author_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        },
+        {
+          "name": "messages_conversation_id_fkey",
+          "columns": ["conversation_id"],
+          "referencedTable": "conversations",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "notifications",
+      "columns": [
+        {
+          "name": "actor_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 2
+        },
+        {
+          "name": "id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()",
+          "position": 3
+        },
+        {
+          "name": "kind",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 4
+        },
+        {
+          "name": "read_at",
+          "dataType": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "position": 5
+        },
+        {
+          "name": "subject_id",
+          "dataType": "uuid",
+          "nullable": true,
+          "default": null,
+          "position": 6
+        },
+        {
+          "name": "user_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 7
+        }
+      ],
+      "primaryKey": ["id"],
+      "indexes": [
+        {
+          "name": "notifications_user_id_idx",
+          "columns": ["user_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "notifications_actor_id_idx",
+          "columns": ["actor_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "notifications_user_id_created_at_idx",
+          "columns": ["user_id", "created_at"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": "desc"
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "notifications_actor_id_fkey",
+          "columns": ["actor_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        },
+        {
+          "name": "notifications_user_id_fkey",
+          "columns": ["user_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "participants",
+      "columns": [
+        {
+          "name": "conversation_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "joined_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 2
+        },
+        {
+          "name": "last_read_at",
+          "dataType": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "position": 3
+        },
+        {
+          "name": "user_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 4
+        }
+      ],
+      "primaryKey": ["conversation_id", "user_id"],
+      "indexes": [
+        {
+          "name": "participants_conversation_id_idx",
+          "columns": ["conversation_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "participants_user_id_idx",
+          "columns": ["user_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "participants_conversation_id_fkey",
+          "columns": ["conversation_id"],
+          "referencedTable": "conversations",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        },
+        {
+          "name": "participants_user_id_fkey",
+          "columns": ["user_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "posts",
+      "columns": [
+        {
+          "name": "audience",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "author_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 2
+        },
+        {
+          "name": "body",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 3
+        },
+        {
+          "name": "comment_count",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null,
+          "position": 4
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 5
+        },
+        {
+          "name": "deleted_at",
+          "dataType": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "position": 6
+        },
+        {
+          "name": "id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()",
+          "position": 7
+        },
+        {
+          "name": "like_count",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null,
+          "position": 8
+        },
+        {
+          "name": "media_count",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null,
+          "position": 9
+        },
+        {
+          "name": "published_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 10
+        },
+        {
+          "name": "updated_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 11
+        }
+      ],
+      "primaryKey": ["id"],
+      "indexes": [
+        {
+          "name": "posts_author_id_idx",
+          "columns": ["author_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "posts_author_id_published_at_idx",
+          "columns": ["author_id", "published_at"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": "desc"
+        },
+        {
+          "name": "posts_published_at_idx",
+          "columns": ["published_at"],
+          "unique": false,
+          "primary": false,
+          "where": "audience = 'public'",
+          "order": "desc"
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "posts_author_id_fkey",
+          "columns": ["author_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "sessions",
+      "columns": [
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 1
+        },
+        {
+          "name": "expires_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "position": 2
+        },
+        {
+          "name": "id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()",
+          "position": 3
+        },
+        {
+          "name": "token_hash",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 4
+        },
+        {
+          "name": "user_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 5
+        }
+      ],
+      "primaryKey": ["id"],
+      "indexes": [
+        {
+          "name": "sessions_user_id_idx",
+          "columns": ["user_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "sessions_token_hash_key",
+          "columns": ["token_hash"],
+          "unique": true,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "sessions_expires_at_idx",
+          "columns": ["expires_at"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "sessions_user_id_fkey",
+          "columns": ["user_id"],
+          "referencedTable": "users",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "users",
+      "columns": [
+        {
+          "name": "avatar_key",
+          "dataType": "text",
+          "nullable": true,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "bio",
+          "dataType": "text",
+          "nullable": true,
+          "default": null,
+          "position": 2
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 3
+        },
+        {
+          "name": "deleted_at",
+          "dataType": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "position": 4
+        },
+        {
+          "name": "display_name",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 5
+        },
+        {
+          "name": "email",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 6
+        },
+        {
+          "name": "handle",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 7
+        },
+        {
+          "name": "id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()",
+          "position": 8
+        },
+        {
+          "name": "locale",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 9
+        },
+        {
+          "name": "role",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 10
+        },
+        {
+          "name": "suspended",
+          "dataType": "boolean",
+          "nullable": false,
+          "default": null,
+          "position": 11
+        },
+        {
+          "name": "tz",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 12
+        },
+        {
+          "name": "updated_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 13
+        }
+      ],
+      "primaryKey": ["id"],
+      "indexes": [
+        {
+          "name": "users_handle_key",
+          "columns": ["handle"],
+          "unique": true,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "users_email_key",
+          "columns": ["email"],
+          "unique": true,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "users_created_at_idx",
+          "columns": ["created_at"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": "desc"
+        }
+      ],
+      "foreignKeys": []
+    }
+  ]
+}
