@@ -16,6 +16,12 @@ import type { Finding } from './output';
 export const BUILD_STATS_FILE = join('.x', 'build-stats.json');
 
 export interface RouteStats {
+  /**
+   * The route's DECLARED path — `/blog/:slug`, never `/blog/hello`. `checkBudgets` looks a row up
+   * by `route.url` off the manifest, which is the pattern, so a row keyed by a filled path is a
+   * row nothing can find: every dynamic static route read as `X_BUDGET_UNMEASURED`. A route that
+   * prerenders many pages contributes ONE row, holding its heaviest.
+   */
   readonly path: string;
   readonly jsBytes: number;
   /**

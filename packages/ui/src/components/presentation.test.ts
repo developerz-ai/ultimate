@@ -130,12 +130,21 @@ describe('the presentational primitives', () => {
 
   describe('Avatar', () => {
     test('initials are the first letters of the first two words, and never ASCII-only', () => {
-      expect(initialsOf('Ada Lovelace King')).toBe('AL');
-      expect(initialsOf('  mira  ')).toBe('M');
-      expect(initialsOf('Ólafur Þór')).toBe('ÓÞ');
+      expect(initialsOf('Ada Lovelace King', 'en')).toBe('AL');
+      expect(initialsOf('  mira  ', 'en')).toBe('M');
+      expect(initialsOf('Ólafur Þór', 'en')).toBe('ÓÞ');
       // A grapheme past the BMP must not be sliced in half by a `[0]` on the string.
-      expect(initialsOf('𝔄da')).toBe('𝔄');
-      expect(initialsOf('')).toBe('');
+      expect(initialsOf('𝔄da', 'en')).toBe('𝔄');
+      expect(initialsOf('', 'en')).toBe('');
+    });
+
+    // `toLocaleUpperCase()` with no argument reads the RUNTIME's default locale, which is a
+    // server's `LANG` and a browser's UI language — never the request's. This package has no
+    // ambient locale by rule (`date-time-view.ts`), and Turkish is where the absence is visible:
+    // dotted `i` uppercases to `İ`, so a Turkish member's chip read `I` on a server in Ireland.
+    test('the case fold is the caller’s locale, never the runtime’s', () => {
+      expect(initialsOf('istanbul', 'tr')).toBe('İ');
+      expect(initialsOf('istanbul', 'en')).toBe('I');
     });
 
     test('with no image it renders hidden initials and the name as text', () => {

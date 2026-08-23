@@ -136,6 +136,12 @@ html[data-theme="light"] { ${block('light')} }
 html[data-theme="dark"] { ${block('dark')} }
 ${SHELL_LAYOUT}`;
   });
+  // A rejected import (a transient resolution failure) must not be memoised, or `/_x` is
+  // unstyled for the life of the process — the `jwks.ts` inflight pattern.
+  stylePromise = stylePromise.catch((error: unknown) => {
+    stylePromise = undefined;
+    throw error;
+  });
   return stylePromise;
 }
 

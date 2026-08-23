@@ -8,6 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import { dedupe } from './cmd-generate';
 import type { CliCommand, CommandContext } from './command';
+import { invocationOf } from './command';
 import { AppNameIsPathError, MissingPositionalError } from './errors';
 import type { Runner } from './exec';
 import { msg } from './messages';
@@ -187,14 +188,19 @@ export const newCommand: CliCommand = {
       throw new MissingPositionalError({
         command: 'new',
         positional: 'name',
-        example: 'x new myapp',
+        // Never the literal `x new`: this command is also the whole of `bunx create-ultimate`,
+        // which runs BEFORE `x` exists — so the one instruction the reader was given named a
+        // binary they had not installed yet.
+        example: `${invocationOf(ctx, 'new')} myapp`,
       });
     }
     // Before `names()`, which is what makes this reachable at all: it slugifies a path into one
     // kebab-case directory name, so `/srv/apps/shop` becomes `srv-apps-shop` inside the cwd and
     // the scaffold lands somewhere nobody asked for. `--dir` is the flag that takes a path.
     const path = appNamePath(raw);
-    if (path !== undefined) throw new AppNameIsPathError({ name: raw, ...path });
+    if (path !== undefined) {
+      throw new AppNameIsPathError({ name: raw, invocation: invocationOf(ctx, 'new'), ...path });
+    }
     const app = names(raw);
     const target = resolve(parentDir(ctx.cwd, flagString(ctx.args, 'dir')), app.kebab);
     const options: NewAppOptions = { name: raw, example: ctx.args.flags.get('example') !== false };

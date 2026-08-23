@@ -47,7 +47,10 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | Guard | Answer |
 |---|---|
 | a body past `bodyLimitBytes` | read through the stream and abandoned the instant the running total crosses the limit — `content-length` or not, multipart included — as `X_BODY_INVALID` |
-| a request carrying an identity on an `auth: 'public'` route | `cache-control: private`, never `s-maxage`; an anonymous one is shared-cacheable and keyed `vary: accept-language, cookie` |
+| a request carrying an identity on an `auth: 'public'` route | `cache-control: private`, never `s-maxage`; an anonymous one is shared-cacheable and keyed `vary: accept-language, cookie, x-timezone`. **Whatever the handler wrote**, `As of 2026-08-23`: the `cache-headers` stage REVIEWS a declared `cache-control` instead of standing down, because `@ultimat3/render`'s `ssrHeaders` offers every page without a `policy` to a CDN for 30s. An `immutable` answer is left alone — a content-addressed body is a function of its URL |
+| a 5xx nobody declared a status for | the code, the request id and a `fix:`; never the exception's own text. `error-page.ts` locked the browser out of it, and the problem document handed the same string to an agent — a driver's DSN, the row Postgres rejected. The real text goes to the log and the error report. `dev: true` renders it in full |
+| a `security.csp.extend` key that is not a CSP token, or a source carrying `;`, `,` or a space | `X_CSP_DIRECTIVE_INVALID` at `defineHttpConfig` — `{ 'x; script-src *': [] }` is a second directive nobody declared |
+| a repeated form field | a LIST, exactly as a repeated query parameter is. One collector for query, urlencoded and multipart; `Object.fromEntries` kept the last value, so a checkbox group reached the schema as one string |
 | a cross-origin request from an origin the allow-list refuses | no `access-control-allow-origin`, but always `vary: origin`, so a shared cache never answers an allowed origin out of the refusal's slot |
 | `cors.origins: ['*']` with `credentials: true` | `X_CORS_CONFIG_INVALID` at `defineHttpConfig`, because a browser accepts that pair from nobody |
 | `?next=` carrying anything but a same-origin path | the fallback — including a value whose TAB/CR/LF a browser strips back into `//evil.test` |

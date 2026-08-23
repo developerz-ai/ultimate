@@ -1,6 +1,8 @@
-// The worker's SIGTERM registration: exactly one hook while it runs, none once it has stopped.
-// A hook per `start()` retains the driver of a worker that is already gone, and the next
-// process-wide drain runs every one of them against a queue connection that is already closed.
+// The worker's SIGTERM registration: exactly one PAIR of hooks while it runs — `accept` (stop
+// claiming, and return) and `close` (wait out what is held, close the driver) — and none once it
+// has stopped. A hook per `start()` retains the driver of a worker that is already gone, and the
+// next process-wide drain runs every one of them against a queue connection that is already
+// closed.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Ctx, createContext, drain, resetLifecycle, shutdownHookCount } from '@ultimat3/core';
@@ -43,12 +45,15 @@ afterEach(() => {
   resetLifecycle();
 });
 
-describe('the worker holds one shutdown hook, and only while it runs', () => {
-  test('start registers one, stop hands it back', async () => {
+describe('the worker holds its two shutdown hooks, and only while it runs', () => {
+  test('start registers the pair, stop hands both back', async () => {
     const worker = createWorker({ driver: closingDriver().driver, context });
 
     worker.start();
-    expect(shutdownHookCount()).toBe(1);
+    // Two, in two phases, for the reason `sync-listen.ts` registers two: one hook doing both
+    // spends the whole drain budget in `accept`, where every other role's "stop taking work" is
+    // still waiting its turn.
+    expect(shutdownHookCount()).toBe(2);
 
     await worker.stop();
     // Before the fix `onShutdown`'s unregister was discarded, so this stayed 1 for the life of
@@ -56,15 +61,15 @@ describe('the worker holds one shutdown hook, and only while it runs', () => {
     expect(shutdownHookCount()).toBe(0);
   });
 
-  test('a restarted worker still holds one, not one per start', async () => {
+  test('a restarted worker still holds one pair, not one per start', async () => {
     const worker = createWorker({ driver: closingDriver().driver, context });
 
     worker.start();
     await worker.stop();
     worker.start();
     // The `start()` guard reads 'running', so a stopped worker starts again — and registered a
-    // second hook on top of the first, each retaining its own copy of this closure.
-    expect(shutdownHookCount()).toBe(1);
+    // second pair on top of the first, each retaining its own copy of this closure.
+    expect(shutdownHookCount()).toBe(2);
 
     await worker.stop();
     expect(shutdownHookCount()).toBe(0);
@@ -141,7 +146,7 @@ describe('the worker holds one shutdown hook, and only while it runs', () => {
     worker.start();
 
     expect((await worker.stats()).state).toBe('draining');
-    expect(shutdownHookCount()).toBe(1);
+    expect(shutdownHookCount()).toBe(2);
 
     release();
     await stopped;

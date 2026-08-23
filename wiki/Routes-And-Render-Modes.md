@@ -71,6 +71,20 @@ A mode outside a surface's allowed set is a build error, not a runtime fallback.
 
 **`spa` was the fifth mode and was deleted in 6.0.0.** It served `<body><div id="x-root"></div></body>` for the framework's whole history — 200, correct headers, blank page — because `renderSpa` preloaded a `chunks` array no build ever produced and never read the route's component. `render: 'spa'` is now `X_ROUTE_MODE_INVALID` at `defineRoute` time; the migration is one line, `render: 'ssr'`, in [Upgrading](Upgrading).
 
+## What a mode's headers are, and who has the last word
+
+A render mode states the mode's **intent**; `@ultimat3/http`'s `cache-headers` stage makes the final answer. `As of 2026-08-23` that stage REVIEWS a `cache-control` the mode already wrote instead of standing down, which is what made the rule below reachable for a page at all.
+
+| The request | What it gets, whatever the mode wrote |
+|---|---|
+| anonymous | the mode's own intent, plus the key dimensions it forgot: `vary: accept-language, cookie, x-timezone` |
+| carrying an identity | `private, max-age=0` — never `public`, never `s-maxage`. `meta.auth` is only `'public' \| 'required'`, so the page that greets a signed-in visitor by name is a `'public'` route whose own header offered it to a CDN for 30 seconds |
+| a content-addressed URL (`immutable`) | left alone. `immutable` asserts the body is a function of the URL, which is what an island chunk is |
+
+**An `isr` entry is keyed by the negotiated locale.** The store key is `isrKey(url, locale)` — pathname, the reserved `__x_locale` parameter, then the query with its params sorted. Without it, an app shipping two locales served visitor 2 the document rendered for visitor 1, for the whole TTL, and told the CDN to do the same. The time zone is deliberately **not** a dimension — a locale set is declared and bounded, a zone list is not — so a date on an `isr` page belongs in a zone the page itself names, or the page belongs in `ssr`.
+
+**A page with an island is admitted to its own CSP by hash.** The hydration runtime is an inline `<script type="module">`, and `script-src` admits it as one of the seven bodies `HYDRATE_RUNTIME_BODIES` enumerates, hashed at boot. Hashes and not a nonce because a `render: 'static'` page is a file on disk. An app that adds its own inline script — `themeScript()` is the one the framework exports — has to admit it the same way: `http.security.csp.extend['script-src'] = [cspHashSource(body)]` in `app.config.ts`.
+
 ## One declaration of the vocabulary, at tier 0
 
 `As of 2026-08` the three closed sets a route is declared in — `RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES` — are declared **once**, in `@ultimat3/core`, with each union derived from its array so the pair cannot disagree.

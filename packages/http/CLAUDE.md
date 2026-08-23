@@ -84,12 +84,28 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   TLS-terminating ingress would be refused. **`mode: 'token'` is deliberately NOT shipped** — a
   double-submit token needs a cookie issuer and a form-field helper at tier 4/5, and a half-built
   token mode is worse than an honest `'origin' | 'off'`.
+- **An unclassified 5xx tells the CALLER nothing off the throwable** (`As of 2026-08-23`).
+  `error-page.ts` has always shown a browser the status, the code and the request id and said so in
+  its header; `toProblem` rendered `facts.cause`, which for a 500 nobody classified falls through to
+  the exception's own `message` — a driver's DSN, the row Postgres rejected, an absolute path. One
+  condition, two audiences, and they disagreed. The discriminator is a code nobody declared a status
+  for, plus `X_INTERNAL` itself: core's `toError()` wraps a caught value into an `InternalError`
+  whose cause is `renderCauseValue(value)`, so the framework's own word for "unclassified" is where
+  the leak arrives. `toProblem(error, { dev })` is the seam and `dev` DEFAULTS TO FALSE: the
+  `error-map` stage is the one call site that can see the config, and every degraded `problem()` in
+  the tail must stay opaque. The real text is not lost — it is the log field and the error report,
+  both keyed by the request id the caller was given.
 - **A rejected value is a log FIELD, never part of the message.** `logger.emit()` redacts `bound`,
   `contextFields` and `fields` — and never `msg` — so `logger.error(\`${code}: ${cause}\`)` in the
   `error-map` stage wrote a rejected password verbatim into the log store, at 4xx, which is logged
   and not reported and therefore kept for the full retention. The message is the CODE alone. The
   other half is `@ultimat3/schema`'s `describeValue` (shape, never content) and it is the
   load-bearing one; this half is what makes the value redactable at all.
+- **A repeated field is a LIST, in all three parsers.** `collectFields` in `request.ts` is the one
+  collector for the query, `application/x-www-form-urlencoded` and `multipart/form-data`. The last
+  two were `Object.fromEntries`, which keeps the LAST value: a checkbox group posting `tags` three
+  times reached the body schema as one string, while the query parser three functions up had built
+  an array for the same shape since it shipped.
 - **A rejected BODY is not a log field either — `bodyInvalid`'s `issues` may name only what the
   framework chose** (`As of 2026-08-19`). `request.ts` built `could not parse ${type}: ${String(error)}`,
   and the runtime's `SyntaxError` quotes the token it choked on: a `POST` of
@@ -120,6 +136,17 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   goes through the same capped bytes (re-parsed by `Response.formData()` off the announced
   boundary) rather than being handed to the runtime as an unbounded stream, which is what left it
   with no byte guard at all when the length was undeclared.
+- **The `cache-headers` stage is the ONE owner of the final cache answer, `As of 2026-08-23`.** It
+  used to apply the actor-aware default only when nothing had set a header — and every page route
+  in every app sets one, because `@ultimat3/render`'s `ssrHeaders` writes
+  `public, max-age=0, s-maxage=30, stale-while-revalidate=300` for any route that declares no
+  `policy`, which is exactly what `x g route --surface app` scaffolds. So the rule below was
+  unreachable for the surface it was written for. A render mode states the MODE's intent; this
+  stage decides, and `offersSharedCache` is the discriminator: a shared answer for an identified
+  request becomes `PRIVATE_CACHE`, an anonymous one gains `SHARED_CACHE_VARY`. `immutable` is left
+  alone in both directions — it asserts the body is a function of the URL, which is what a
+  content-addressed island chunk is, and demoting those would re-download every chunk on every
+  navigation for every signed-in user.
 - **The cache default reads the ACTOR, not just the route, and `vary` is added and never set.**
   `meta.auth` is only `'public' | 'required'`, so the page that greets a signed-in visitor by name
   is a `'public'` route: keying the default off the route alone put that visitor's personalised
@@ -127,6 +154,23 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   an anonymous one stays shared-cacheable and carries `vary: accept-language, cookie`. Both halves
   are required — either alone leaves the hole. `addVary` (`response.ts`) is how the `response`
   stage merges CORS's `vary: origin` into the cache stage's key instead of replacing it.
+- **A `security.csp.extend` entry is refused at `defineHttpConfig` unless it can only emit the
+  directive it names.** A directive name and a source both go into the header VERBATIM and the
+  header's own separators are `;` and ` `, so `extend: { 'x; script-src *': [] }` was not one badly
+  named directive — it was a second directive nobody declared, widening the one this package locks
+  down hardest. `X_CSP_DIRECTIVE_INVALID`, at boot, because there is no encoding for a CSP source
+  and escaping one at emission time is not a repair. `buildCsp` builds through a **`Map`** for the
+  other half of the same class: `directives[name]` was a computed read of an object literal keyed by
+  a caller-chosen name, so `extend: { toString: [...] }` spread a function off `Object.prototype`
+  and threw a bare `TypeError` at boot. `proto-index` cannot see it — `baseline()` is what produces
+  the object.
+- **`config.drainTimeoutMs` is `number | null`, and `null` is the default** (`As of 2026-08-23`).
+  `createServer` calls `configureLifecycle({ deadlineMs })` only when an app DECLARED one. It used
+  to call it unconditionally with a value `defineHttpConfig` had defaulted to 15s, so an app that
+  wrote `configureLifecycle({ deadlineMs: 600_000 })` — the edit `X_SHUTDOWN_TIMEOUT`'s own `fix:`
+  prints — had it silently reverted by the next line of boot, in every process that serves web.
+  "Nobody said" and "the app said 15 seconds" are different claims and only one of them may move a
+  process-global deadline.
 - **`cors.origins: ['*']` with `credentials: true` is refused at `defineHttpConfig`.** No browser
   accepts that pair, and `allowedOrigin` answering `null` for it meant the natural "open it up"
   edit emitted no CORS headers at all, silently, on every request — with `DEFAULT_CORS.credentials`

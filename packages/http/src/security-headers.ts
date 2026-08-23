@@ -3,6 +3,7 @@
 // config change. Inline style is admitted by sha256 hash, never `'unsafe-inline'`: a prerendered
 // document is a file on disk, so no per-response nonce can reach it, but its body is fixed.
 
+import { cspDirectiveInvalid } from './errors';
 import { OVERLAY_STYLE } from './overlay-style';
 
 export interface SecurityConfig {
@@ -72,12 +73,42 @@ const baseline = (config: SecurityConfig): Record<string, readonly string[]> => 
   'object-src': ["'none'"],
 });
 
-export const buildCsp = (config: SecurityConfig): string => {
-  const directives = baseline(config);
-  for (const [name, sources] of Object.entries(config.csp.extend)) {
-    directives[name] = [...(directives[name] ?? []), ...sources];
+/** A CSP directive name, per the grammar. Lowercase because that is what this file emits. */
+const DIRECTIVE_NAME = /^[a-z][a-z0-9-]*$/;
+
+/**
+ * A source expression may not carry one of the header's own separators. Checked and never escaped:
+ * there is no encoding for a CSP source, so the only total answer is refusing the value.
+ */
+const SOURCE_DELIMITER = /[\s;,]/;
+
+/**
+ * Refuse an `extend` entry that would emit something other than the directive it names. Called
+ * from `defineHttpConfig`, beside `assertCorsConfig`, so the refusal lands at boot rather than on
+ * the first response — and never per request, where this runs for every header built.
+ */
+export const assertCspExtend = (extend: Readonly<Record<string, readonly string[]>>): void => {
+  for (const [name, sources] of Object.entries(extend)) {
+    if (!DIRECTIVE_NAME.test(name)) throw cspDirectiveInvalid('a csp directive name', name);
+    for (const source of sources) {
+      if (SOURCE_DELIMITER.test(source)) {
+        throw cspDirectiveInvalid(`a source of ${name}`, source);
+      }
+    }
   }
-  const parts = Object.entries(directives).map(([name, sources]) => `${name} ${sources.join(' ')}`);
+};
+
+export const buildCsp = (config: SecurityConfig): string => {
+  // A `Map`, never the record: `directives[name]` was a computed read of an object LITERAL keyed
+  // by a name the caller chose, so `extend: { toString: [...] }` read a FUNCTION off
+  // `Object.prototype` and the spread beside it threw a bare `TypeError` at boot — and
+  // `directives['__proto__'] = […]` would have run the prototype setter instead of adding a
+  // directive. `proto-index` cannot see either, because `baseline()` is what produces the object.
+  const directives = new Map<string, readonly string[]>(Object.entries(baseline(config)));
+  for (const [name, sources] of Object.entries(config.csp.extend)) {
+    directives.set(name, [...(directives.get(name) ?? []), ...sources]);
+  }
+  const parts = [...directives].map(([name, sources]) => `${name} ${sources.join(' ')}`);
   if (config.csp.reportUri !== null) parts.push(`report-uri ${config.csp.reportUri}`);
   return parts.join('; ');
 };

@@ -213,6 +213,9 @@ back in a `finally`, and releasing twice is a no-op.
 
 The accept budget bounds the accept **rate**; `maxConnections` bounds the **count**, and they are
 two different attacks — 500 accepts/s held open with one keepalive each is 1.8M sockets an hour.
+Both the count and `/readyz` are re-asked **after** `authenticate` resolves and immediately before
+`server.upgrade`: awaiting app code is awaiting a token service, and a restart storm parks every
+client of a dead node in there at once, each having passed a cap the node has since filled.
 The frame budget is per socket and checked at the top of the frame router, before anything a frame
 can reach: a subscribe frame is a database read, a presence write and a fleet-wide publish, and one
 authenticated socket is the cheapest foothold there is.
@@ -422,6 +425,11 @@ wire twice by a reconnect that raced an ack.
   keeps its patch stream**. The `close` phase is `drain()` then `stop()`. Registered with no phase it
   all landed in `close`, and until that ran the node went on upgrading new websockets onto a process
   that was going away. Both hooks are unregistered by the listener's `stop()`.
+- **`drain()` resolves once the presence leaves have LANDED**, not once they have been started —
+  in bounded chunks of sockets, so a node holding tens of thousands does not open a write per topic
+  per socket in one go. Started and not waited for, the process could exit with them still on the
+  wire, and every other node would render every drained member for a full TTL: the rolling-restart
+  double vision the leave exists to prevent.
 - **A full presence frame is capped** at `maxMembers` (256) and carries `total`, so a 5,000-person
   room renders "and 4,744 others" instead of shipping 5,000 members to every joiner. The set itself
   is never capped — the sweep differences it — and one node per topic runs that sweep, elected

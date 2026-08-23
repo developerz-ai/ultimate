@@ -43,6 +43,7 @@ export type {
 export {
   createIsrController,
   DEFAULT_ISR_MAX_ENTRIES,
+  ISR_LOCALE_PARAM,
   invalidateAndRevalidate,
   isrKey,
   memoryIsrStore,

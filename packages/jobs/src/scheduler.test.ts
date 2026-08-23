@@ -365,3 +365,46 @@ describe('scheduler', () => {
     expect(((await driver.introspect?.list()) ?? []).length).toBe(0);
   });
 });
+
+describe('leadership is re-asserted inside the round, not only on entry', () => {
+  test('a lease that expires mid-walk stops the round at the task it reached', async () => {
+    const clock = fakeClock(T0);
+    const driver = createMemoryDriver({ clock });
+    const tasks = ['alpha', 'beta', 'gamma'].map((name) =>
+      task({ name, cron: '0 3 * * *', tz: 'UTC', enqueue: () => [[sendDigest, {}]] }),
+    );
+    let acquires = 0;
+    let heldUntil = Number.POSITIVE_INFINITY;
+    // A lease-backed election (`createPgLeaseLeader`) expires on a wall clock, not on a round
+    // boundary: node B takes it at 31s while this node is still walking its own task list.
+    const expiring: LeaderElection = {
+      acquire: () => {
+        acquires += 1;
+        return Promise.resolve(acquires <= heldUntil);
+      },
+      release: () => Promise.resolve(),
+    };
+    const scheduler = createScheduler({
+      driver,
+      clock,
+      cron: dailyAt3,
+      tasks,
+      leader: expiring,
+    });
+
+    await scheduler.tick(); // Arms all three.
+    clock.advance(4 * 3_600_000);
+    // Enough for the round's own check and the first task, and nothing after it.
+    heldUntil = acquires + 2;
+    const dispatched = await scheduler.tick();
+
+    // Asked once per round, this node dispatched all three occurrences while node B — which took
+    // the lease at task one — dispatched them too. The idempotency key only absorbs a duplicate
+    // while the first job is still LIVE (`SQL_ENQUEUE`'s conflict index is partial), so the
+    // handler runs twice for every occurrence a retried or finished job no longer covers.
+    expect(dispatched.map((entry) => entry.task)).toEqual(['alpha']);
+    expect(((await driver.introspect?.list()) ?? []).length).toBe(1);
+    // The two it never reached keep their watermark, so the node that holds the lease fires them.
+    expect((await scheduler.tick()).length).toBe(0);
+  });
+});

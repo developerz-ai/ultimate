@@ -194,12 +194,38 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - The scheduler's key is occurrence-scoped (`task:occurrenceMs:jobKey`) and `task.enqueue()`'s
   is the job's plain key. Deliberate: the first stops two schedulers double-firing a tick, the
   second is a manual run with no occurrence to scope to.
-- **One shutdown hook per worker, and `stop()` is what hands it back.** `start()` keeps the
-  unregister `onShutdown` returns; the teardown releases it in a `finally`, so a close that threw
-  still gives it up. Discarding it was a hook per `start()` — the `start()` guard reads a
-  standstill, so start -> stop -> start stacked a second registration retaining a stopped
-  worker's driver, and the next process-wide drain ran all of them. `start()` refuses while
-  draining for the same reason: a claim loop back on a driver the drain is about to close.
+- **TWO shutdown hooks per worker — one per PHASE — and `stop()` is what hands both back**
+  (`As of 2026-08-23`). `accept` is `stopAccepting()`: flip the state, clear the poll timer, return.
+  `close` is the teardown: wait out the rounds and the in-flight jobs, close the driver.
+
+  It was ONE hook, at `accept`, doing all of it — so a single 10-minute job spent the entire drain
+  deadline inside the phase whose whole purpose is to be over immediately, and every hook behind it
+  was invoked with **0 ms** left: `@ultimat3/http`'s "stop listening" and `listenSyncNode`'s
+  `stopAccepting` are both `accept` hooks, so the pod went on serving requests and upgrading
+  websockets for the whole of the drain the load balancer had already been told about. Reproduced —
+  4 hooks started, none finished.
+
+  `start()` keeps both unregisters; the teardown releases them in a `finally`, so a close that threw
+  still gives them up. Discarding them was a hook per `start()` — the `start()` guard reads a
+  standstill, so start -> stop -> start stacked a second registration retaining a stopped worker's
+  driver, and the next process-wide drain ran all of them. `start()` refuses while draining for the
+  same reason: a claim loop back on a driver the drain is about to close.
+- **A claimed job is counted with core's `beginWork()`, so the DRAIN does the waiting**
+  (`As of 2026-08-23`). The wait for in-flight jobs belongs to the phase between `accept` and
+  `inflight`, which exists for exactly this and is where `@ultimat3/http` already puts a request —
+  not to a hook, where one role's work starves every other role's teardown. `/readyz`'s `inflight`
+  becomes truthful on a worker node as a consequence.
+- **The teardown's wait is BOUNDED on the SIGTERM path and unbounded on a manual `stop()`**
+  (`As of 2026-08-23`). The `close` hook is handed `ShutdownReason.deadlineAt` and passes it to
+  `settleAllBy` (`drain-wait.ts`); a manual `stop()` passes nothing and waits as long as its
+  jobs take, because a caller that asked has no budget to spend. Nothing in JS can kill a body that
+  ignores `ctx.signal`, so the unbounded version was a teardown that never returned: the driver was
+  never closed, `state` never left `'draining'`, and the memoised `stopping` promise every later
+  `stop()` joins never settled — `x dev`'s role rollback awaits that promise. Abandoning the wait
+  costs a lapsed lease and a job the queue delivers again, which is what at-least-once already
+  promises; `jobs.worker.drain-abandoned` names it, with the `configureLifecycle({ deadlineMs })`
+  raise as its fix. **A worker always REACHES `'stopped'`**, which is what makes `stop()`'s
+  `state === 'stopped'` early return an answer rather than a wedge.
 - **One teardown, joined.** `stop()` shares the in-flight teardown promise, so a SIGTERM landing
   on a manual stop waits out the same in-flight jobs instead of closing the driver underneath
   it. The promise is cleared as it settles, so a worker that started again tears down again
@@ -222,6 +248,13 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   and the role claims nothing again for the life of the process, with `jobs.worker.tick-failed` and
   a climbing `queue_depth` as the only symptoms. The `catch` releases the lease and rethrows; the
   claimed row goes back to the queue by its visibility timeout, as it does for any round that dies.
+
+  `fleetSlots.release(jobId)` is AWAITED in the settle's `.finally`, never `void`ed: the slot is a
+  DELETE in `x_job_leases`, so a fire-and-forget one was still on the wire when the teardown's
+  `allSettled` returned and `driver.close()` took the connection out from under it — the row then
+  held its slot for a full TTL, and a `concurrency: 1` job was unclaimable by the pod replacing this
+  one for a whole visibility window after every deploy. `release` swallows its own failures, so
+  awaiting it cannot turn a finished job into a rejected one.
 
   `LeaseStore.renew` answering `false` means the row is another holder's — two runs live under a cap
   of one — and it was discarded by `.catch(noop)`. It now stops the timer, logs
@@ -316,10 +349,14 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   waits that round out BEFORE `leader.release()` — a lock handed back mid-dispatch promotes a
   standby onto an occurrence this node is still enqueueing for, which is the double-fire leader
   election exists to prevent — and the round re-reads the drain state before each task, so "stop
-  dispatching" means this round too. Same hook rules as the worker: one `onShutdown` at the
-  `accept` phase while it runs, handed back in the teardown's `finally` so a `release()` that
-  threw still gives it up, `isLeader` cleared there too because a lock this process could not
-  hand back is never treated as still held.
+  dispatching" means this round too. Same hook rules as the worker, `As of 2026-08-23`: **TWO**
+  `onShutdown` registrations — `accept` stops dispatching and returns, `close` waits the round out
+  and releases the lease under the deadline it is handed (`settleAllBy`) — both handed back in the
+  teardown's `finally` so a `release()` that threw still gives them up, `isLeader` cleared there
+  too because a lock this process could not hand back is never treated as still held. **An
+  ABANDONED round does not release**: it is still enqueueing, so handing the lock over is that same
+  double-fire delivered by the shutdown, and a lease row expiring on its own is the safe end —
+  `jobs.scheduler.drain-abandoned` is the line that says so.
 - **`backfill()` is a FACTORY over `job()`, never a ninth primitive.** Same rule `llm()` follows
   in `@ultimat3/ai`: a new capability arrives as a factory over an existing primitive, so a
   backfill inherits `.enqueue()`, the retry policy, the cancellation, the dead-letter path and
@@ -363,6 +400,14 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   the CHANGELOG, `CLAUDE.md` and `x g backfill`'s generated source all say the handler must be
   idempotent. Never invert it: checkpointing first would report a page as swept that nobody wrote,
   and a lost page is unrecoverable where a repeated one is the handler's problem.
+- **A REPLAYED batch writes no ledger row** (`As of 2026-08-23`). `ledger.progress` sits outside
+  `step.run` — it has to, the ledger is not transactional with the steps — so a resumed pass
+  re-issued one `x_backfills` UPDATE per already-completed batch before it read a single new row:
+  4,800 statements on a 5M-row sweep killed at batch 4,800, on every attempt, inside the visibility
+  lease the heartbeat is renewing. The flag is set INSIDE the step body, because that is the only
+  thing that can tell a replay from a run — `step.run` answers the same shape either way. Nothing is
+  lost: the value is ABSOLUTE, so the first batch that does run reports every replayed one behind
+  it, and `finish` writes the total regardless.
 - **`x_backfills` is what has already been SWEPT, and the step checkpoints are where a pass
   resumes. Never the other way round.** The ledger row (`backfill-ledger.ts`) is a report an
   operator reads and the record that a completed name is done; the checkpoints are written in step
@@ -528,7 +573,11 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   branch. `jobs.lease.lost` at error plus `recordLeaseLost(queue)` is the one signal meaning the
   queue re-delivered a job this process was still running, so a false one is a page for a
   non-event, and the window widens exactly when the pool is slow. Re-read the flag AFTER every
-  await and inside the reporter, the way `settleWithin`'s `decided` does in core.
+  await and inside the reporter, the way `settleWithin`'s `decided` does in core. **The interval is
+  `unref`ed**, like all three of `sync-node.ts`'s: it is armed from inside a job run, so a drain
+  that ABANDONS the worker's hook leaves the run — and this timer — with nobody left to call
+  `stop()`, and a refed interval is then the one thing holding a drained process open until the
+  kubelet's SIGKILL.
 - **`stepTimeout` and `eventPoll` are DECLARED on the job, and `execute.ts` is the only place they
   are forwarded** (`As of 2026-08`). `StepRunnerOptions` carried both, `withStepTimeout`
   implemented the ceiling and `steps.test.ts` exercised it by building a runner BY HAND — while the
@@ -617,11 +666,18 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **`x jobs cancel` binds to `cancelJob(driver, id, reason?)`, which REFUSES rather than answering
   a silent no-op.** An operator cancelling a 40M-row sweep has to know whether they stopped it or
   missed it, so a finished job is `X_JOB_NOT_CANCELLABLE` and a driver with no `cancel` is too.
-- **The scheduler asks `leader.acquire()` EVERY round, not only while it thinks it is not the
-  leader.** A lease-backed election expires, so `acquire()` is its renewal and a cached
-  `isLeader = true` would keep dispatching past a lease another node already took. `soleLeader`
-  answers true every time and `createPgLeader` holds its grant behind an internal flag, so the
-  extra call is a no-op for both — the flag also stops Postgres refcounting a second advisory
+- **The scheduler asks `leader.acquire()` EVERY round AND before EVERY task in it, not only while
+  it thinks it is not the leader.** A lease-backed election expires, so `acquire()` is its renewal
+  and a cached `isLeader = true` would keep dispatching past a lease another node already took.
+  Per-task as well as per-round `As of 2026-08-23`: a round walks its tasks serially with an enqueue
+  per job, so a 30s lease and a slow queue leave the tail of the walk running under a lease node B
+  already holds — and **the occurrence key does not absorb that**, because `SQL_ENQUEUE`'s conflict
+  target is the PARTIAL index over the live states, so a second dispatch landing after that
+  occurrence's job completed or dead-lettered inserts a new row and the handler runs twice. Argued
+  from the index definition, not reproduced — `stillLeading()` is the one place the question is
+  asked and `break` is the answer, the same shape the drain's `dispatching()` check already had.
+  `soleLeader` answers true every time and `createPgLeader` holds its grant behind an internal flag,
+  so the extra calls are a no-op for both — the flag also stops Postgres refcounting a second advisory
   grant that `release()`'s single unlock would never hand back.
 - **`createPgLeader` is correct only on a DEDICATED connection and boot has a pool.** A
   session-level `pg_try_advisory_lock` is released when its connection returns to the pool, so
@@ -707,6 +763,7 @@ picture from the other side.
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
 | `renewal-timer.ts` | the interval a renewal runs on, and the `stopped()` latch every branch after an await re-reads |
 | `worker.ts` | `worker` role, claim loop, drain |
+| `drain-wait.ts` | the drain's wait, shared by both roles: everything a teardown holds, settled — or abandoned at the budget the `close` hook was handed |
 | `worker-run.ts` | one claimed job, wired: its heartbeat, its slot renewal, its run signal and its span, started together and handed back in one `finally` |
 | `run-signal.ts` | the signal ONE run is cancelled by — composition that can be handed back, and that the worker can abort itself |
 | `worker-fleet-slots.ts` | the fleet slot an in-flight job holds — take, renew, hand back. The claim loop asks "may I start this one?"; this answers it across the fleet |

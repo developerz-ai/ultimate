@@ -1,7 +1,9 @@
 // The scheduler's lifecycle: ONE dispatch round at a time, a `stop()` that waits that round out
-// before the advisory lock goes back, and exactly one shutdown hook while it runs. Two rounds
-// over one `lastFiredAt` re-mark the watermark and report occurrences they never enqueued; a lock
-// released mid-dispatch hands the next node an occurrence this one is still firing.
+// before the advisory lock goes back, and exactly one PAIR of shutdown hooks while it runs —
+// `accept` (stop dispatching, and return) and `close` (wait the round out, release the lease).
+// Two rounds over one `lastFiredAt` re-mark the watermark and report occurrences they never
+// enqueued; a lock released mid-dispatch hands the next node an occurrence this one is still
+// firing. The budget those two phases share is `scheduler-drain-budget.test.ts`.
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
@@ -241,6 +243,10 @@ describe('the scheduler drains before the lock goes back', () => {
     const counting = countingLeader(() => gate.held);
     const gated = gatedDriver();
     const scheduler = await armed(gated.driver, clock, counting.leader);
+    // What arming already spent. The lease is re-asserted before every task as well as on entry
+    // (`stillLeading`), so a fixed number here would be a count of the fixture's task list rather
+    // than of what happens after the drain — which is the only thing this test is about.
+    const beforeDrain = counting.acquires();
 
     const stopped = scheduler.stop('deploy');
     await Bun.sleep(1);
@@ -253,7 +259,7 @@ describe('the scheduler drains before the lock goes back', () => {
 
     expect(await scheduler.tick()).toEqual([]);
     expect(gated.enqueues()).toBe(0);
-    expect(counting.acquires()).toBe(1);
+    expect(counting.acquires()).toBe(beforeDrain);
   });
 
   test('a stop landing mid-round stops the tasks that round has not reached', async () => {
@@ -381,8 +387,8 @@ describe('a round that fails says what to do about it', () => {
   });
 });
 
-describe('the scheduler holds one shutdown hook, and only while it runs', () => {
-  test('start registers one, stop hands it back, a restart still holds one', async () => {
+describe('the scheduler holds its two shutdown hooks, and only while it runs', () => {
+  test('start registers the pair, stop hands both back, a restart still holds one pair', async () => {
     const scheduler = createScheduler({
       driver: createMemoryDriver(),
       tasks: [nightly],
@@ -390,12 +396,14 @@ describe('the scheduler holds one shutdown hook, and only while it runs', () => 
     });
 
     scheduler.start();
-    expect(shutdownHookCount()).toBe(1);
+    // Two, in two phases: one hook doing both spends the whole drain budget in `accept`, where
+    // every other role's "stop taking work" is still queued behind it.
+    expect(shutdownHookCount()).toBe(2);
     await scheduler.stop();
     expect(shutdownHookCount()).toBe(0);
 
     scheduler.start();
-    expect(shutdownHookCount()).toBe(1);
+    expect(shutdownHookCount()).toBe(2);
     await scheduler.stop();
     expect(shutdownHookCount()).toBe(0);
   });
@@ -458,7 +466,7 @@ describe('the scheduler holds one shutdown hook, and only while it runs', () => 
 
     const stopped = scheduler.stop('deploy');
     scheduler.start();
-    expect(shutdownHookCount()).toBe(1);
+    expect(shutdownHookCount()).toBe(2);
 
     gate.open();
     await stopped;

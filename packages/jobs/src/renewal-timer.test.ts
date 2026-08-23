@@ -75,3 +75,29 @@ describe('unit · a renewal that raises', () => {
     errors.mockRestore();
   });
 });
+
+describe('unit · the renewal interval never holds the process open', () => {
+  test('the timer is unrefed, so an abandoned renewal cannot outlive the drain', () => {
+    // A heartbeat or a fleet-slot renewal is registered from inside a job run, and a drain that
+    // ABANDONS its hook leaves that run — and this interval — with nobody left to stop it. A
+    // refed interval is then the one thing keeping a process the kubelet is waiting on alive,
+    // until SIGKILL. `sync-node.ts` unrefs all three of its timers for the same reason.
+    const real = globalThis.setInterval;
+    let created: ReturnType<typeof setInterval> | undefined;
+    const spy = spyOn(globalThis, 'setInterval').mockImplementation(((
+      handler: () => void,
+      ms: number,
+    ) => {
+      created = real(handler, ms);
+      return created;
+    }) as unknown as typeof setInterval);
+
+    try {
+      const timer = startRenewalTimer(60_000, () => undefined);
+      expect(created?.hasRef()).toBe(false);
+      timer.stop();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

@@ -90,3 +90,54 @@ describe('the grant is recorded before the socket exists, not after', () => {
     expect(target.granted.size).toBe(0);
   });
 });
+
+describe('the connection cap is re-asked after authenticate, not only before it', () => {
+  test('ten upgrades parked in a token service cannot all land on a node that holds two', async () => {
+    // The interleaving a restart storm produces: every client of a node that just died dials this
+    // one at once, and each request parks inside `authenticate` — a token service round trip —
+    // having passed the cap check while the node still held nothing. Read once, the cap decides
+    // about a socket count that is already history, and the node ends up with as many sockets as
+    // there were parked requests. `ready` was re-asked here from the start and the count was not,
+    // which is the same staleness the comment above it describes.
+    let sockets = 0;
+    let release = (): void => undefined;
+    const parked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const server: UpgradeTarget = {
+      upgrade(): boolean {
+        // Bun runs `websocket.open` synchronously inside this call and `open` is where the node
+        // does `sockets.add`, so the count moves with no await in between — which is what makes a
+        // recheck on the line above it sound.
+        sockets += 1;
+        return true;
+      },
+    };
+    const deps: UpgradeDeps = {
+      path: '/_x/sync',
+      buildId: 'build-1',
+      maxConnections: 2,
+      accept: new AcceptBudget({ perSecond: 1_000, burst: 1_000, clock: frozenClock(0) }),
+      rng: () => 0.5,
+      ready: () => true,
+      socketCount: () => sockets,
+      newSocketId: () => `sock-${sockets}`,
+      authenticate: async (): Promise<SyncGrant> => {
+        await parked;
+        return { actor: alice };
+      },
+      onGranted: () => undefined,
+      onUngranted: () => undefined,
+    };
+
+    const upgrades = Array.from({ length: 10 }, () => handleUpgrade(deps, request, server));
+    release();
+    const answers = await Promise.all(upgrades);
+
+    expect(sockets).toBe(2);
+    // The other eight are told to come back, with the same delay a full node always attaches.
+    const shed = answers.filter((answer) => answer?.status === 503);
+    expect(shed.length).toBe(8);
+    expect(shed[0]?.headers.get('retry-after-ms')).not.toBeNull();
+  });
+});

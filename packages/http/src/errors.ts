@@ -23,6 +23,7 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_NO_REQUEST',
   'X_ERROR_STATUS_INVALID',
   'X_CORS_CONFIG_INVALID',
+  'X_CSP_DIRECTIVE_INVALID',
   'X_RATE_LIMIT_NOT_SHARED',
   'X_RATE_LIMIT_BUCKET_CONFLICT',
   'X_RATE_LIMIT_BUCKET_UNBOUND',
@@ -75,6 +76,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_NO_REQUEST: 'the inbound request is not in scope here',
   X_ERROR_STATUS_INVALID: 'an error code cannot be mapped to that status',
   X_CORS_CONFIG_INVALID: 'the cors config can never produce a working response',
+  X_CSP_DIRECTIVE_INVALID: 'a csp extension would emit something other than the directive it names',
   X_RATE_LIMIT_NOT_SHARED: 'the rate limit is declared fleet-wide and the store is per-process',
   X_RATE_LIMIT_BUCKET_CONFLICT: 'a route and the config declare different numbers for one bucket',
   X_RATE_LIMIT_BUCKET_UNBOUND: 'the installed limiter cannot enforce a bucket a route declares',
@@ -288,6 +290,20 @@ export const corsConfigInvalid = (reason: string): HttpError =>
     code: 'X_CORS_CONFIG_INVALID',
     cause: `cors config rejected: ${reason}`,
     fix: "in app.config.ts set http.cors.credentials: false, or replace http.cors.origins: ['*'] with the exact origins allowed to call this app",
+  });
+
+/**
+ * At `defineHttpConfig`. A directive name and a source both go into the header VERBATIM, and the
+ * header's own separators are `;` and ` ` — so `extend: { 'x; script-src *': [] }` is not one
+ * badly named directive, it is a second directive nobody declared, widening the one this
+ * framework locks down hardest. Refused where it is written rather than escaped where it is
+ * emitted: there is no encoding for a CSP directive, so the only total answer is not to have one.
+ */
+export const cspDirectiveInvalid = (where: string, value: string): HttpError =>
+  new HttpError({
+    code: 'X_CSP_DIRECTIVE_INVALID',
+    cause: `${where} is not a csp token: ${JSON.stringify(value)}`,
+    fix: 'in app.config.ts write one http.security.csp.extend entry per directive, each source its own array element — a directive name is [a-z][a-z0-9-]*, and no source may contain a space, a comma or a semicolon',
   });
 
 export const routeConflict = (path: string, detail: string): HttpError =>

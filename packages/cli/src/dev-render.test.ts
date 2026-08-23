@@ -117,6 +117,27 @@ describe('unit · x dev renders the app routes', () => {
     expect(third).toContain('rendered http://dev.test/pricing?page=3');
   });
 
+  test('two locales are two ISR documents, never one', async () => {
+    // The document is rendered with `<html lang>` and every `t()` in the request's own locale, so
+    // a key without it served visitor 2 the document negotiated for visitor 1 — for the whole TTL,
+    // and `s-maxage` told the CDN to do the same. `examples/dummy` ships en + es and three `isr`
+    // routes, so this was every one of them.
+    //
+    // ONE server for both requests, for the reason the query test above gives: `serve()` builds a
+    // fresh `IsrController` per call, so two servers could never observe a cache hit at all.
+    register({ file: 'apps/web/site/pricing/page.tsx', render: 'isr', revalidate: { ttl: '5m' } });
+    const server = serve();
+    const langOf = async (locale: string): Promise<string> => {
+      const response = await server.fetch(
+        new Request('http://dev.test/pricing', { headers: { 'accept-language': locale } }),
+      );
+      return /<html lang="(?<lang>[^"]*)"/.exec(await response.text())?.groups?.['lang'] ?? '';
+    };
+
+    expect(await langOf('es')).toBe('es');
+    expect(await langOf('en')).toBe('en');
+  });
+
   test('a dynamic segment reaches meta as a param, matched by the router', async () => {
     register({ file: 'apps/web/site/blog/[slug]/page.tsx', render: 'ssr' });
     const body = await (await get('/blog/hello-world')).text();

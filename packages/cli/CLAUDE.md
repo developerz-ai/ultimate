@@ -563,6 +563,7 @@ hand-written layout and `readMigrations` skips it — read as a migration it sor
 | `otlp-export.ts` | the exporters `OTEL_EXPORTER_OTLP_ENDPOINT` switches on, and their drain hooks |
 | `dev-render.ts` | one HTTP route per registered `route`, through render's own mode function |
 | `style-csp.ts` | the `style-src` sha256 of every inline `<style>` the web role serves |
+| `script-csp.ts` | the `script-src` sha256 of every inline `<script>` it serves — the hydration runtime, from `@ultimat3/render`'s own `HYDRATE_RUNTIME_BODIES` |
 | `dev-assets.ts` | the image pipeline's only HTTP surface: `/icons/*` and `/media/*` |
 | `favicon.ts` | `/favicon.ico`: the app's own file, and the bytes the framework answers with when there is none |
 | `dev-hooks.ts` | the pipeline's `authorize` seam, decided from the app's own `Policy` objects |
@@ -676,6 +677,23 @@ missing.
 | `prerender.ts` | build first, write the chunks into the export, then measure |
 | `budgets.ts` | `measureDocumentJs` weighs `data-x-entry` as well as `<script src>` |
 
+**A stats row is keyed by the route's DECLARED path, and holds its heaviest page**
+(`As of 2026-08-23`). `checkBudgets` looks a route up by `route.url` off the manifest, which is the
+pattern (`/blog/:slug`), and `prerenderSite` pushed `artifact.path` — the filled one
+(`/blog/hello`). So no dynamic static route had ever been weighed: each was `X_BUDGET_UNMEASURED`
+and `X_BUDGET_EXCEEDED` could not fire for the whole class. The heaviest page and not the first,
+because a budget is a ceiling and the page that breaks it is the one the route answers for; the
+report's `emitted` list still names every filled path.
+
+**Both halves of the CSP are computed at boot, `As of 2026-08-23`.** `style-csp.ts` was alone, and
+the hydration runtime is emitted INLINE in every document carrying an island — so with
+`script-src 'self' 'wasm-unsafe-eval'` no island booted in any container. `x dev` sends the policy
+report-only (`dev: true`), which is exactly why nobody saw it: the page hydrated on a laptop and
+never in the image. `startWeb` extends both directives; the property is pinned end to end by
+`dev-roles-script-csp.test.ts`, which parses a served document, hashes every executable inline
+script in it and asserts the response's own `script-src` names each one — with `dev: false`, the
+only mode in which the policy can block anything.
+
 **One `Bun.build` per island, never one call with N entry points**, and `splitting: false`. The
 island's `src` is a string, so no import edge reaches it and the page's graph stays the page's
 (axiom 6) — a shared chunk would put that number back behind a graph walk, and the budget compares
@@ -781,6 +799,22 @@ releases what core's lifecycle never learned about — the embedded Postgres, th
 watcher — *after* the drain, so an in-flight request still has the database it opened against.
 Ctrl-C is therefore the same three phases production runs, not a kill that leaves `.x/pgdata`
 locked by a process that no longer exists.
+
+**The release runs INSIDE the drain's own deadline, `As of 2026-08-23`, and it is the same
+deadline.** `drain()` ABANDONS a hook that overruns `ShutdownReason.deadlineAt` — the process is
+meant to exit without it — and `release` re-enters the very same teardown one call later:
+`app.stop()` → `startRoles().stop()` → `worker.stop()`, memoised in the package that owns it, so
+awaiting it is awaiting the promise the drain just walked away from. Unbounded, that hung past
+`terminationGracePeriodSeconds` and the kubelet SIGKILLed a process that had already drained
+cleanly. The budget is the hook's own `reason.deadlineAt`, not a stopwatch of ours, so there is one
+number and not two; an overrun is logged as `X_SHUTDOWN_TIMEOUT` and a REJECTION still rejects,
+because `dispatch` awaits the hold inside its own `try`.
+
+**`options.exit` has exactly one caller: `runRole` in `serve.ts`.** `bin.ts` ends in
+`process.exit(code)`, so `x dev` and `x mcp` need nothing; `apps/web/server.ts` — which is what a
+container runs — has no such line, and one non-unref'd interval anywhere in the app then holds an
+event loop with nothing left to do. A function rather than a boolean because `process.exit` inside
+a library is untestable, and the caller is the one that knows.
 
 Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 

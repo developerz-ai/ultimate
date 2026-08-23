@@ -141,6 +141,24 @@ describe('installRetentionSweep', () => {
     expect(await runSweep()).toEqual({ swept: [], removed: 0 });
   });
 
+  test('a stopped boot does not disarm the boot that replaced it', async () => {
+    // Two runtimes in one process — a test harness, `x shot`'s scratch server beside the one it
+    // photographs. The slot is module scope by design (the job registry is process-wide too), so
+    // the release has to check that it is still ITS slot: the first boot's disposer emptied the
+    // second boot's targets and its hourly sweep then deleted nothing, forever, silently.
+    installAuthLimiter(4);
+    const releaseFirst = installRetentionSweep(stubStores());
+    installRetentionSweep(stubStores());
+
+    releaseFirst();
+
+    expect((await runSweep()).swept.map((sweep) => sweep.name)).toEqual([
+      'x_idempotency',
+      'x_rate_limit',
+      'x_auth',
+    ]);
+  });
+
   test('a second boot in the same process re-declares what a reset took out', () => {
     installRetentionSweep(stubStores());
     resetJobs();

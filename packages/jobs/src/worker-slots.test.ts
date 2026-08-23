@@ -9,6 +9,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimOptions, JobDriver } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import { job, resetJobs } from './job';
+import { createMemoryLeaseStore, type LeaseStore } from './leases';
 import { createWorker } from './worker';
 
 const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
@@ -178,5 +179,60 @@ describe('a slot refills when its own job settles, not when the batch does', () 
     parked.open();
     await first;
     expect((await worker.tick()).map((execution) => execution.job)).toEqual(['jobB']);
+  });
+});
+
+describe('the fleet slot is handed back before the driver goes', () => {
+  test('a drain waits for the slot DELETE, not just for the job', async () => {
+    const trace: string[] = [];
+    const parked = gate();
+    const started = gate();
+    job({
+      tenant: 'none',
+      name: 'cappedJob',
+      concurrency: 1,
+      input: passthrough<Record<string, never>>(),
+      idempotencyKey: () => 'capped:1',
+      retry: { attempts: 1, jitter: false },
+      run: async () => {
+        started.open();
+        await parked.passed;
+      },
+    });
+
+    const base = createMemoryDriver();
+    const store = createMemoryLeaseStore();
+    const leases: LeaseStore = {
+      ...store,
+      // A slot release is a DELETE in `x_job_leases` — a round trip, not a map delete.
+      async release(lease): Promise<void> {
+        await Bun.sleep(5);
+        trace.push('slot:released');
+        await store.release(lease);
+      },
+    };
+    const driver: JobDriver = {
+      ...base,
+      leases,
+      async close(): Promise<void> {
+        trace.push('driver:closed');
+        await base.close();
+      },
+    };
+    const worker = createWorker({ driver, context, pollIntervalMs: 1 });
+    await enqueue(driver, 'cappedJob', 'default');
+
+    worker.start();
+    await started.passed;
+    const stopped = worker.stop('deploy');
+    parked.open();
+    await stopped;
+
+    // `void fleetSlots.release(...)` left the DELETE on the wire while the teardown's
+    // `allSettled` returned and the connection closed under it: the row then held its slot for a
+    // whole TTL, so a `concurrency: 1` job was unclaimable by the pod replacing this one for a
+    // full visibility window after every deploy.
+    expect(trace).toEqual(['slot:released', 'driver:closed']);
+    expect(await store.held('job:cappedJob')).toBe(0);
   });
 });

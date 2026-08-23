@@ -6,6 +6,7 @@
  */
 
 import type { HydrateStrategy } from '@ultimat3/core';
+import { HYDRATE_STRATEGIES } from '@ultimat3/core';
 import { escapeAttribute, escapeJsonContent } from './html';
 
 export interface IslandDirective {
@@ -85,7 +86,10 @@ export function emitIslandAttributes(directive: IslandDirective): string {
 export function emitIslandProps(directive: IslandDirective): string {
   if (directive.props === undefined || directive.strategy === 'never') return '';
   return (
-    `<script type="application/json" data-x-props="${directive.islandId}">` +
+    // The id goes through the SAME escaper every other attribute in this file does. Safe today —
+    // `islandModuleId` reduces to `[a-z0-9-]` — which is exactly why it costs nothing to route it
+    // now, rather than after an id starts being derived from something an author did not type.
+    `<script type="application/json" data-x-props="${escapeAttribute(directive.islandId)}">` +
     `${escapeJsonContent(JSON.stringify(directive.props))}</script>`
   );
 }
@@ -170,16 +174,51 @@ const RUNTIME_PARTS: Readonly<Record<Exclude<HydrateStrategy, 'never'>, string>>
 };
 
 /**
+ * Emission order, and the order the subsets below are enumerated in. Derived from core's one
+ * declaration of the vocabulary, never restated: a second literal of this set is what
+ * `bun run render-modes` refuses, and it refuses it on the MEMBERS, not on the name.
+ */
+const RUNTIME_ORDER: readonly Exclude<HydrateStrategy, 'never'>[] = HYDRATE_STRATEGIES.filter(
+  (strategy): strategy is Exclude<HydrateStrategy, 'never'> => strategy !== 'never',
+);
+
+/**
+ * The TEXT of the runtime script for exactly these strategies — the body a CSP `script-src` hash
+ * is taken over. Split out of `hydrateRuntime` so the served document and the policy that admits
+ * it read one function: a second copy of this concatenation is a hash that stops matching the
+ * moment the runtime changes, and the failure it produces is an island that never boots on a page
+ * that otherwise looks correct.
+ */
+const runtimeBody = (needed: ReadonlySet<Exclude<HydrateStrategy, 'never'>>): string =>
+  [
+    RUNTIME_PRELUDE,
+    ...RUNTIME_ORDER.filter((strategy) => needed.has(strategy)).map(
+      (strategy) => RUNTIME_PARTS[strategy],
+    ),
+  ].join('\n');
+
+/**
+ * Every body `hydrateRuntime` can emit: one per non-empty subset of the three strategies, seven in
+ * all, deterministic. A policy that admits inline script by HASH has to enumerate them before the
+ * socket opens — the alternative is a per-response nonce, which a `render: 'static'` page (a file
+ * on disk) can never receive. Enumerated rather than derived from the route table because the
+ * runtime is a function of the SET a document needs, and a table read at boot cannot answer for
+ * a document assembled later.
+ */
+export const HYDRATE_RUNTIME_BODIES: readonly string[] = Array.from(
+  { length: 2 ** RUNTIME_ORDER.length - 1 },
+  (_unused, index) =>
+    runtimeBody(new Set(RUNTIME_ORDER.filter((_s, bit) => (((index + 1) >> bit) & 1) === 1))),
+);
+
+/**
  * Emit only the runtime the page's islands actually use. A page of `never` islands gets
  * the empty string — an unused strategy must not cost a byte.
  */
 export function hydrateRuntime(directives: readonly IslandDirective[]): string {
   const needed = requiredStrategies(directives);
   if (needed.size === 0) return '';
-  const parts = (['idle', 'visible', 'interaction'] as const)
-    .filter((strategy) => needed.has(strategy))
-    .map((strategy) => RUNTIME_PARTS[strategy]);
-  return `<script type="module">${RUNTIME_PRELUDE}\n${parts.join('\n')}</script>`;
+  return `<script type="module">${runtimeBody(needed)}</script>`;
 }
 
 /** Rough emitted size of the hydration runtime for a page, for the budget check. */

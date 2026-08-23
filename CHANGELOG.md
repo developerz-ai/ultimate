@@ -60,6 +60,59 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- **The `worker` role drains in two phases, and its wait is bounded.** `accept` stops claiming and
+  returns; `close` waits out the in-flight jobs — now counted with `beginWork()`, so the drain's own
+  in-flight phase does the waiting — and closes the driver under the deadline the hook is handed.
+  One `accept` hook doing all of it spent the whole budget before `@ultimat3/http`'s "stop
+  listening" and `listenSyncNode`'s "stop upgrading" had been invoked at all: 4 hooks started, none
+  finished. Behaviour change: a job that outruns `configureLifecycle({ deadlineMs })` is now
+  abandoned (`jobs.worker.drain-abandoned`) and the queue redelivers it, where the teardown used to
+  hang forever with the driver open. Raise the budget past your slowest job.
+- **The `scheduler` role drains the same way.** `accept` stops dispatching, `close` waits the round
+  out and hands the lease back under the deadline. An ABANDONED round deliberately keeps the lease
+  and lets it expire: releasing under a live dispatch promotes a standby onto the occurrence this
+  node is still enqueueing for, which is the double-fire leader election exists to prevent.
+- **A `sync` node's `drain()` waits for its presence leaves to land**, in bounded chunks of sockets,
+  before it releases and closes the hub. Started and never awaited, the process could exit with them
+  on the wire and every other node rendered every drained member for a full TTL — the rolling-restart
+  double vision the leave exists to prevent. `drain()` now resolves later by one bus round trip.
+- **The scheduler re-asserts leadership before EVERY task, not once per round.** A 30s lease and a
+  serial walk leave the tail of the round dispatching under a lease another node already took, and
+  the occurrence key does not absorb it: `SQL_ENQUEUE`'s conflict target is partial over the live
+  states, so a duplicate landing after that job finished inserts a new row and the handler runs twice.
+- **BREAKING — `@ultimat3/render`: `isrKey(url, locale)` takes the negotiated locale as a required
+  second argument, and it is part of the store key.** An app with more than one locale was serving
+  the first visitor's document to every later one for the whole TTL, and telling the CDN to do the
+  same; `vary: accept-language` is emitted now.
+- **BREAKING — `@ultimat3/render`: `IsrStore` gains a required `markStale(path)` member.** A custom
+  store implements it in place; `set()` means "just generated" and orders eviction — `markStale`
+  through `set` refreshed the stalest pages' position. Regeneration also samples a cache fence, so a
+  bust landing mid-render is no longer erased by pre-write HTML (a tag-only route served it forever).
+- **BREAKING — `@ultimat3/http`: `config.drainTimeoutMs` is `number | null`, default `null`.**
+  `createServer` no longer calls `configureLifecycle` unless the app declared one, so
+  `configureLifecycle({ deadlineMs })` — the remedy `X_SHUTDOWN_TIMEOUT` prints — is no longer
+  reverted to 15 s at boot.
+- **BREAKING — `@ultimat3/http`: an unclassified 5xx problem document no longer carries the
+  exception's own text in `title` / `detail` / `cause`.** A `pg` message quoting the rejected row,
+  a driver message quoting the DSN, went to any non-HTML client in production. `dev: true` is
+  unchanged; the text stays on the log and error-report path. `code`, `fix` and `requestId` remain.
+- **BREAKING — `@ultimat3/http`: a request carrying an identity gets `private, max-age=0` even when
+  the handler declared a shared `cache-control`** (`immutable` excepted), and every shared response
+  varies on `cookie` and `x-timezone`. An ungated `ssr` page — the shape `x g route --surface app`
+  scaffolds — answered `public, s-maxage=30` with a signed-in name in the body. The `cache-headers`
+  stage is the one owner; a render mode states intent.
+- **BREAKING — `@ultimat3/ui`: `initialsOf(name, locale)` takes a required locale.** `<Avatar>`
+  upper-cased against the host's ambient locale (`İ` on a `tr` server, `I` in the browser).
+- **The framework's CSP admits its own hydration runtime in production.** `script-src` was
+  `'self' 'wasm-unsafe-eval'` with no hash, while the runtime is an inline module — report-only in
+  `x dev`, enforced in a container, so no island ever booted after deploy. `startWeb` now hashes the
+  seven runtime bodies (`HYDRATE_RUNTIME_BODIES`) into `script-src`, as it already did for styles.
+- **`holdUntilShutdown` reaches the exit.** The one production `installSignalHandlers` call was
+  `exit: false` and `release()` re-awaited the teardown the drain had just abandoned, so an overrun
+  wedged the process until the kubelet's SIGKILL — the job lease lapsed and another worker re-ran it.
+  `release()` runs under the drain's remaining budget; `runRole` passes the exit.
+- `X_CSP_DIRECTIVE_INVALID` — `security.csp.extend` with a malformed directive name or source is
+  refused at `defineHttpConfig`; `{ toString: [...] }` threw a bare `TypeError` at boot.
 - **BREAKING — `RetryPolicy`, `DEFAULT_RETRY`, `retryDelayMs`, `shouldRetry` and
   `BackgroundSyncOptions.retry` are deleted (`@ultimat3/pwa`).** This package schedules no retry
   and never did: the one-shot `sync` handler rejects and the PLATFORM decides when to wake it
@@ -87,6 +140,34 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`maxConnections` is re-asked after `authenticate` resolves**, beside the readiness recheck that
+  already was. Read once, the cap decided against a socket count that was already history: a restart
+  storm parks every client of a dead node in the token service at once, and `maxConnections: 2` with
+  ten parked upgrades took ten sockets — reproduced, `upgraded 10, shed 0`.
+- **A worker's fleet slot is released before the driver closes.** `void fleetSlots.release(...)` left
+  the `x_job_leases` DELETE on the wire when the teardown returned, so the row held its slot for a
+  full TTL and a `concurrency: 1` job was unclaimable by the replacement pod for one visibility
+  window after every deploy.
+- **A lease/slot renewal interval is `unref`ed.** Armed from inside a job run, a refed one was the
+  single thing holding a drained process open — past every phase of the shutdown, until SIGKILL —
+  once the drain abandoned the hook that would have stopped it.
+- **A replayed backfill batch writes no ledger row.** `ledger.progress` sits outside `step.run`, so a
+  resumed pass re-issued one `x_backfills` UPDATE per already-completed batch before reading a single
+  new row — 4,800 statements on a 5M-row sweep killed at batch 4,800, on every attempt, inside the
+  visibility lease. The value is absolute, so the first batch that runs reports everything behind it.
+- A dynamic `static` route was always `X_BUDGET_UNMEASURED`: the prerender recorded the filled path
+  (`/blog/hello`) and the budget looked up the pattern (`/blog/:slug`). One row per route, heaviest
+  page wins.
+- A urlencoded or multipart body collapsed a repeated field (`tags` ×3 → `'c'`) where the query
+  parser built an array; one collector now serves all three.
+- `bunx create-ultimate` with no name told the reader to run `x new myapp` — `x` is by definition
+  not installed yet; the fix line names the invocation used.
+- `examples/dummy`'s island-bytes test pinned byte equality on an island whose graph reaches a
+  `sideEffects`-declared module, which Bun 1.4.0's tree-shaker drops about one build in sixty
+  (#273, #276); the classification is now derived from each island's import graph, equality is
+  asserted on the pure ones and a documented band on the rest.
+- `/_x` stayed unstyled for the process life after one transient `@ultimat3/ui` import failure;
+  the rejection is no longer memoised.
 - `x new <name>` was lint-red on run one whenever the name sorted after `ultimat3`: every
   template emitted the `@<app>/…` import above `@ultimat3/…`, the only order Biome's
   `organizeImports` accepts for names a–t. `sortedImports` orders every emitted block;

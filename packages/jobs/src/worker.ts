@@ -5,6 +5,7 @@
 
 import type { Clock, Ctx } from '@ultimat3/core';
 import {
+  beginWork,
   logger,
   onShutdown,
   recordJob,
@@ -13,6 +14,7 @@ import {
   uuid,
 } from '@ultimat3/core';
 import { nowMs } from './clock';
+import { settleAllBy } from './drain-wait';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { DEFAULT_QUEUE, DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
 import { ConcurrencyUnenforceableError } from './errors';
@@ -113,8 +115,12 @@ export function createWorker(options: WorkerOptions): Worker {
   const rounds = new Set<Promise<unknown>>();
   let state: WorkerStats['state'] = 'idle';
   let loop: ReturnType<typeof setTimeout> | undefined;
-  /** The `onShutdown` registration this worker holds while it runs. Handed back by `stop()`. */
-  let releaseShutdownHook: (() => void) | undefined;
+  /**
+   * The two `onShutdown` registrations this worker holds while it runs, both handed back by
+   * `stop()`. Two, because they answer different questions in different PHASES — the split
+   * `listenSyncNode` and `@ultimat3/http` already have.
+   */
+  let releaseShutdownHooks: (() => void)[] = [];
   /** The teardown in flight, so a second `stop()` joins it instead of running a second one. */
   let stopping: Promise<void> | undefined;
   let processed = 0;
@@ -262,6 +268,10 @@ export function createWorker(options: WorkerOptions): Worker {
           continue;
         }
 
+        // The claimed job is the process's in-flight work, counted where the DRAIN can see it:
+        // core's own in-flight wait sits between `accept` and `inflight` and exists for exactly
+        // this. Counted nowhere, the worker had to wait for its own jobs inside a hook.
+        const finishWork = beginWork();
         const running = runClaimed(job)
           .then((execution) => {
             if (execution.outcome === 'completed') processed += 1;
@@ -276,9 +286,20 @@ export function createWorker(options: WorkerOptions): Worker {
             if (label !== null) recordJob(queue, label);
             return execution;
           })
-          .finally(() => {
+          .finally(async () => {
             lease.release();
-            void fleetSlots.release(job.id);
+            // AWAITED, never `void`: the slot is a row in `x_job_leases`, so the DELETE was still
+            // on the wire when the teardown's `allSettled` returned and `driver.close()` took the
+            // connection out from under it — a `concurrency: 1` job unclaimable by the pod
+            // replacing this one for a whole visibility window after every deploy. `release`
+            // swallows its own failures, so awaiting it cannot reject a job that finished; the
+            // `finally` is for the one that could, because a lost `finishWork()` is an in-flight
+            // count that never returns to zero and a drain that waits out its whole budget.
+            try {
+              await fleetSlots.release(job.id);
+            } finally {
+              finishWork();
+            }
           });
 
         started.push(running);
@@ -348,18 +369,42 @@ export function createWorker(options: WorkerOptions): Worker {
     }, pollIntervalMs);
   };
 
-  const teardown = async (reason: string): Promise<void> => {
+  /**
+   * The whole of the `accept` phase: stop taking work, and nothing else. Synchronous on purpose —
+   * a phase whose job is to be over before the load balancer's next health check must not contain
+   * a wait, and the hook behind this one is somebody else's "stop listening".
+   */
+  const stopAccepting = (): void => {
+    if (state === 'stopped') return;
     state = 'draining';
     if (loop !== undefined) clearTimeout(loop);
     loop = undefined;
+  };
+
+  const teardown = async (reason: string, deadlineAt?: number): Promise<void> => {
+    stopAccepting();
     logger.info('jobs.worker.draining', { workerId, reason, inFlight: inFlight.size });
     try {
       // Stop claiming, finish what we hold, then close. Anything else re-runs work on deploy.
       // Rounds first: one that passed the guard before the flag flipped is still awaiting its
       // `claim()`, and the jobs it starts join `inFlight` after any snapshot taken here — so a
       // drain that waited on `inFlight` alone closed the driver under a job that had just begun.
-      await Promise.allSettled([...rounds]);
-      await Promise.allSettled([...inFlight]);
+      //
+      // Both waits share ONE deadline on the SIGTERM path (`undefined` on a manual stop, which
+      // waits as long as its jobs take). Nothing can kill a body that ignores `ctx.signal`, so an
+      // unbounded wait here is a teardown that never ends: driver never closed, state never past
+      // 'draining', and the memoized `stopping` every later `stop()` joins never settling.
+      // Abandoning costs a lapsed lease and a redelivered job — at-least-once, as promised.
+      const rounded = await settleAllBy([...rounds], deadlineAt);
+      const drained = (await settleAllBy([...inFlight], deadlineAt)) && rounded;
+      if (!drained) {
+        logger.warn('jobs.worker.drain-abandoned', {
+          workerId,
+          reason,
+          inFlight: inFlight.size,
+          fix: 'raise the drain budget past the slowest job — configureLifecycle({ deadlineMs: 600_000 }) — and set terminationGracePeriodSeconds to at least as many seconds',
+        });
+      }
       await options.driver.close?.();
     } finally {
       // Whatever the close did, this worker is done: a state left at 'draining' is a drain that
@@ -369,19 +414,22 @@ export function createWorker(options: WorkerOptions): Worker {
       // through a driver already closed — and keeps this closure, its driver and its in-flight
       // set alive with it.
       state = 'stopped';
-      releaseShutdownHook?.();
-      releaseShutdownHook = undefined;
+      for (const release of releaseShutdownHooks) release();
+      releaseShutdownHooks = [];
     }
   };
 
-  const stop = async (reason = 'stop'): Promise<void> => {
+  const stop = async (reason = 'stop', deadlineAt?: number): Promise<void> => {
+    // Answered immediately once this worker is done: the teardown always REACHES 'stopped' (its
+    // waits are bounded and the state is set in a `finally`), so a caller landing after an
+    // abandoned drain gets an answer rather than joining a promise that never settles.
     if (state === 'stopped') return;
     // One teardown, joined rather than repeated: a SIGTERM landing on a manual stop must wait out
     // the same in-flight work, not close the driver a second time underneath it. Cleared as it
     // settles, so a worker that started again tears down again instead of joining a promise that
     // settled a lifetime ago. A close that threw still stopped this worker — the failure is the
     // caller's to see on the promise it awaited, not a teardown to run twice.
-    stopping ??= teardown(reason).finally(() => {
+    stopping ??= teardown(reason, deadlineAt).finally(() => {
       stopping = undefined;
     });
     await stopping;
@@ -407,13 +455,22 @@ export function createWorker(options: WorkerOptions): Worker {
       }
       state = 'running';
       logger.info('jobs.worker.started', { workerId, queues });
-      // 'accept' phase: stop claiming before core waits on in-flight jobs. The unregister is
-      // kept, never discarded: `stop()` hands it back, so start -> stop -> start holds ONE hook
-      // rather than one per start, each retaining the driver of a worker that is already gone.
+      // TWO hooks, for the two phases that answer two questions. `accept` stops claiming and
+      // returns, so every hook behind it — the HTTP server's "stop listening", the sync node's
+      // "stop upgrading" — runs while the budget is still whole; one hook doing both spent all of
+      // it in the phase whose whole purpose is to be quick. `close` waits out what this worker
+      // holds and closes the driver, bounded by the deadline the hook is handed.
+      //
+      // Both unregisters are kept, never discarded: `stop()` hands them back, so
+      // start -> stop -> start holds one pair rather than one per start, each retaining the
+      // driver of a worker that is already gone.
       if (options.drainOnShutdown !== false) {
-        releaseShutdownHook = onShutdown(`jobs.worker.${workerId}`, () => stop('SIGTERM'), {
-          phase: 'accept',
-        });
+        releaseShutdownHooks = [
+          onShutdown(`jobs.worker.${workerId}.accept`, stopAccepting, { phase: 'accept' }),
+          onShutdown(`jobs.worker.${workerId}`, (reason) => stop('SIGTERM', reason.deadlineAt), {
+            phase: 'close',
+          }),
+        ];
       }
       schedule();
     },

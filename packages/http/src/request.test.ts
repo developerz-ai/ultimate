@@ -327,6 +327,28 @@ describe('bodyRaw() — content-type dispatch', () => {
     expect(await req.bodyRaw()).toEqual({ a: '1', b: '2' });
   });
 
+  // A checkbox group posts its name once per checked box. `Object.fromEntries` kept the LAST one,
+  // so `tags` × 3 reached the body schema as one string — the query parser three files up has
+  // built a list for the same shape since it shipped, and the two disagreed about one request.
+  test('a repeated urlencoded field is a list, exactly as the query parser builds one', async () => {
+    const { req } = build('https://example.com/x?tags=a&tags=b', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'tags=a&tags=b&tags=c&single=1',
+    });
+    expect(await req.bodyRaw()).toEqual({ tags: ['a', 'b', 'c'], single: '1' });
+    expect(req.queryRaw()['tags']).toEqual(['a', 'b']);
+  });
+
+  test('a repeated multipart field is a list too — one collector, three sources', async () => {
+    const form = new FormData();
+    form.append('tags', 'a');
+    form.append('tags', 'b');
+    form.append('single', '1');
+    const { req } = build('https://example.com/x', { method: 'POST', body: form });
+    expect(await req.bodyRaw()).toEqual({ tags: ['a', 'b'], single: '1' });
+  });
+
   test('text/plain returns the raw decoded string', async () => {
     const { req } = build('https://example.com/x', {
       method: 'POST',

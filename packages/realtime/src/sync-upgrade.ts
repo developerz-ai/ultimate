@@ -101,12 +101,21 @@ export async function handleUpgrade(
       );
     }
   }
-  // Asked again, because `authenticate` is app code and awaiting it is awaiting a token service: a
-  // request that passed the check above can be parked there when SIGTERM lands, and the `accept`
-  // phase is over by the time it gets here. Upgrading then is the one socket that phase exists to
-  // refuse — the load balancer has already been told this node is out, so nothing takes it over. No
-  // second `tryAccept()`: that budget was spent above.
-  if (!deps.ready()) return shed(deps);
+  // BOTH facts asked again, because `authenticate` is app code and awaiting it is awaiting a token
+  // service: everything this request read above is history by the time it gets here.
+  //
+  // `ready`, because SIGTERM can land while the request is parked and the `accept` phase is over
+  // by now — upgrading then is the one socket that phase exists to refuse, on a node the load
+  // balancer has already been told is out.
+  //
+  // The socket COUNT, for the same reason and it was the half that was missing: a restart storm
+  // dials every client of a dead node at this one at once, each parked in the token service having
+  // passed the cap while the node still held nothing — so a node capped at 2 accepted as many
+  // sockets as there were parked requests, and `maxConnections` bounded nothing that a herd could
+  // reach. Sound because there is no await between this line and `server.upgrade`, and the count
+  // moves INSIDE it: Bun runs `websocket.open` synchronously there, which is where `sockets.add`
+  // runs. No second `tryAccept()`: that budget was spent above.
+  if (!deps.ready() || deps.socketCount() >= deps.maxConnections) return shed(deps);
   const data: WsData = {
     socketId: deps.newSocketId(),
     clientBuildId: url.searchParams.get('build') ?? deps.buildId,

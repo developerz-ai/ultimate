@@ -3,7 +3,9 @@
 // listen path is covered by e2e/server.e2e.test.ts, which is opt-in.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
+  configureLifecycle,
   drain,
+  drainDeadlineMs,
   inflightCount,
   lifecycleState,
   resetLifecycle,
@@ -14,6 +16,32 @@ import { memoryRateLimitStore, type RateLimitStore } from './rate-limit';
 import { json, text } from './response';
 import type { Route } from './router';
 import { createServer } from './server';
+
+describe('the drain budget', () => {
+  // `configureLifecycle({ deadlineMs })` is what `X_SHUTDOWN_TIMEOUT`'s own `fix:` line tells an
+  // operator to write. `createServer` then called `configureLifecycle` unconditionally with
+  // `drainTimeoutMs`, which `defineHttpConfig` DEFAULTED to 15s — so the remedy was reverted by
+  // the next line of boot, silently, in every process that serves web.
+  test('an app-declared lifecycle deadline survives createServer', () => {
+    configureLifecycle({ deadlineMs: 600_000 });
+    createServer({
+      routes: [],
+      role: 'web',
+      config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
+    });
+    expect(drainDeadlineMs()).toBe(600_000);
+  });
+
+  test('declaring http.drainTimeoutMs IS declaring the budget, and it still wins', () => {
+    configureLifecycle({ deadlineMs: 600_000 });
+    createServer({
+      routes: [],
+      role: 'web',
+      config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0, drainTimeoutMs: 5_000 }),
+    });
+    expect(drainDeadlineMs()).toBe(5_000);
+  });
+});
 
 const routes: readonly Route[] = [
   {

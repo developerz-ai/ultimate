@@ -13,6 +13,9 @@ export interface CreateAppOptions {
 export async function createApp(options: CreateAppOptions): Promise<number> {
   return dispatch({
     argv: ['new', ...options.argv],
+    // What the caller actually typed, so every `fix:` `x new` would have written names a command
+    // that runs HERE. `bunx`, not `npx`: this package is Bun-only and its `bin` needs a Bun.
+    invocation: 'bunx create-ultimate',
     cwd: options.cwd,
     env: Bun.env,
     bunVersion: Bun.version,

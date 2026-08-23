@@ -30,6 +30,7 @@ import { errorPageHook } from './error-pages';
 import { BadFlagError, PortInvalidError, RuntimeDriverSplitError } from './errors';
 import { DEFAULT_METRICS_PORT, startMetricsEndpoint } from './metrics-endpoint';
 import type { RuntimeOverrides } from './runtime-overrides';
+import { inlineScriptSources } from './script-csp';
 import { inlineStyleSources } from './style-csp';
 
 /** The roles `x dev` starts when `--role` names none, in boot order. */
@@ -274,8 +275,17 @@ function startWeb(options: StartRolesOptions): ServerHandle {
       // Hashes, never `'unsafe-inline'`: a `render: 'static'` page is a file on disk, so
       // nothing can stamp a per-response nonce into it, but its body is fixed and a hash is a
       // function of that body. Read after `loadApp` — importing the app IS what registered them.
+      // BOTH directives, and the script half is the one that was missing: the hydration runtime
+      // is emitted inline in every document that carries an island, so `script-src 'self'` meant
+      // no island booted anywhere the policy is enforced — which is every container, and never
+      // `x dev`, where it is report-only.
       security: {
-        csp: { extend: { 'style-src': inlineStyleSources(options.inlineStyles ?? []) } },
+        csp: {
+          extend: {
+            'style-src': inlineStyleSources(options.inlineStyles ?? []),
+            'script-src': inlineScriptSources(),
+          },
+        },
       },
     }),
   }).start();

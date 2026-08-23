@@ -213,6 +213,17 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   other node renders for a full TTL. During a **rolling restart** that is every room showing each
   user twice for up to 30s, beside the same client's reconnection under a new socket id. One
   `evict(socket, code, reason)`, and every path that ends a socket without a callback takes it.
+- **A `drain()` WAITS for the presence leaves it started; a `close` callback cannot** (2026-08-23).
+  `teardown` returns those promises as well as `detach`ing them: Bun's `close` callback is
+  synchronous, so there the detach is the whole of it — but a drain has no callback behind it and
+  is the one path that can wait. It did not: `release()`, `hub.close()` and the process's exit all
+  ran under N·M in-flight KV writes, so every other node rendered every drained member for a full
+  TTL — the same rolling-restart double vision `evict` exists to prevent, reached the long way
+  round. `evictInChunks` (`drain-evictions.ts`) evicts `DRAIN_EVICT_CHUNK` sockets, waits out what
+  they started, then takes the next: one synchronous loop over 50,000 sockets opens a quarter of a
+  million writes on one connection at the exact moment the fleet is already restarting.
+  `allSettled`, never `all` — a leave that fails is a member left to its TTL, which is what the
+  write meant when nobody waited for it at all, and it must not hold up the sockets behind it.
 - **The idle sweep exists, is armed by `start()`, and its budget is an APPLICATION one.**
   `SocketRegistry.sweepIdle` had no caller for as long as it existed, so `touch()`, `idleFor` and
   the 120s default decided nothing and `idleTimeoutMs` was unreachable from `createSyncNode`. The
@@ -587,12 +598,20 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   what releases the change subscription carrying them. `drain()` + `stop()` are the `close` phase.
   Registered with no phase, both landed in `close` and the node upgraded new websockets until the
   very end. `listenSyncNode` unregisters both on `stop()`.
-- **Readiness is asked twice, because `authenticate` is app code with an await in it.** A request
-  that passed the check at the top of `handleUpgrade` can be parked in a token service when SIGTERM
-  lands, and the `accept` phase is over by the time it reaches `server.upgrade` — one more socket on
-  a node the load balancer has already stopped routing to, so nothing takes it over. `ready` and the
-  socket count are therefore **functions** on `UpgradeDeps`, not values read once. The recheck sheds
-  with the same 503 + `retry-after-ms` and takes no second `tryAccept()`: that budget was spent.
+- **Readiness AND the connection cap are asked twice, because `authenticate` is app code with an
+  await in it.** A request that passed the checks at the top of `handleUpgrade` can be parked in a
+  token service when SIGTERM lands, and the `accept` phase is over by the time it reaches
+  `server.upgrade` — one more socket on a node the load balancer has already stopped routing to, so
+  nothing takes it over. `ready` and the socket count are therefore **functions** on `UpgradeDeps`,
+  not values read once.
+  **`socketCount()` was the half that was read once and never re-asked** (2026-08-23), which is the
+  same staleness with a worse blast radius: a restart storm dials every client of a dead node at
+  this one at once and each parks in the token service having passed the cap while the node still
+  held nothing, so `maxConnections: 2` with ten parked upgrades took **ten** sockets — reproduced,
+  `upgraded 10, shed 0`. Sound because there is no await between the recheck and `server.upgrade`,
+  and the count moves INSIDE it: Bun runs `websocket.open` synchronously there, which is where
+  `sockets.add` runs. The recheck sheds with the same 503 + `retry-after-ms` and takes no second
+  `tryAccept()`: that budget was spent.
 - **A client `send` that returned is not an acknowledgement.** A browser `WebSocket.send` on a
   CLOSING socket discards the frame and returns normally, so a drained mutation is `inflight` until
   the server settles it or `requeueInflight` returns it. Only `pending` is sendable, `drain()` is one
@@ -754,6 +773,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `sync-frames.ts` | what a RECEIVED frame does to server state — the node's inbound surface, and the mirror of `client-frames.ts` |
 | `sync-upgrade.ts` | the node's HTTP surface: `/healthz`, `/readyz`, load shedding, and the authenticated upgrade — `WsData` and `UpgradeTarget` are declared with the decision that builds them |
 | `sync-listen.ts` | binding a node to `Bun.serve` and to the shutdown hook — the only `Bun.serve` in the package |
+| `drain-evictions.ts` | evicting every socket a drain holds, in bounded chunks, and waiting out the presence leaves each eviction started |
 | `query-window.ts` | the shared pre-policy window per query id: built once, read once for N subscribers, and replaced when it is known to be wrong |
 | `client-frames.ts` | what a RECEIVED frame does to client state, and `ClientFrameTarget` — the only inbound surface the client exposes. The mirror of `sync-frames.ts` |
 | `client-harness-fixture.ts` | the injected socket + scheduler + harness both client suites drive. Excluded from the tarball |

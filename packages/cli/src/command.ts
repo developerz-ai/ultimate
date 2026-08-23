@@ -13,7 +13,19 @@ export interface CommandContext {
   readonly runner: Runner;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly bunVersion: string;
+  /**
+   * How this process was invoked, up to and including the subcommand — `x new`, or
+   * `bunx create-ultimate` when `create-ultimate` is the entry point. Read by a `fix:` line, which
+   * is a command the reader is meant to RUN: `create-ultimate`'s whole reason to exist is running
+   * before `x` is installed, so `x new myapp` was an instruction nobody in that process could
+   * follow. Absent means the default below — a caller that builds a context by hand owes nothing.
+   */
+  readonly invocation?: string;
 }
+
+/** What `ctx.invocation` means when nobody said: the binary, then the subcommand they typed. */
+export const invocationOf = (ctx: CommandContext, command: string): string =>
+  ctx.invocation ?? `x ${command}`;
 
 export interface CliCommand {
   readonly spec: CommandSpec;

@@ -206,6 +206,13 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       skipped.push(skippedRoute(facts, 'no-prerender-paths'));
       continue;
     }
+    // One stats row per ROUTE, holding its heaviest page. `checkBudgets` looks a route up by
+    // `route.url`, which is the manifest's DECLARED pattern (`/blog/:slug`), and this pushed the
+    // FILLED path (`/blog/hello`) — so no dynamic static route has ever been weighed: every one
+    // was `X_BUDGET_UNMEASURED` and `X_BUDGET_EXCEEDED` could not fire for the whole class. The
+    // heaviest page and not the first, because a budget is a ceiling: the page that breaks it is
+    // the one the route has to answer for. `pages` below still names every filled path.
+    let heaviest: RouteStats | undefined;
     for (const artifact of artifacts) {
       const file = join(options.out, artifact.outputPath);
       const bytes = await Bun.write(file, artifact.html);
@@ -220,12 +227,14 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       // declared budget against bytes that exist on disk rather than against a graph's estimate.
       const measured = await measureDocumentJs(artifact.html, options.out);
       const chain = heaviestSource(islands, measured.entries);
-      routes.push({
-        path: artifact.path,
+      if (heaviest !== undefined && heaviest.jsBytes >= measured.jsBytes) continue;
+      heaviest = {
+        path: entry.path,
         jsBytes: measured.jsBytes,
         ...(chain === undefined ? {} : { heaviestChain: chain }),
-      });
+      };
     }
+    if (heaviest !== undefined) routes.push(heaviest);
   }
   const stats = await writeBuildStats(options.root, { routes });
   // Written LAST and by the same call that writes the stats, so an app whose `prerender.ts` does

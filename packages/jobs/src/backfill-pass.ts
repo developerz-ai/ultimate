@@ -223,6 +223,12 @@ export async function backfillPass<Row>(
       try {
         for (let index = 0; ; index += 1) {
           const stepName = `${STEP_PREFIX}${index}`;
+          /**
+           * Whether this batch's BODY ran, or whether the runner served its checkpoint from
+           * storage. Only the body can be asked: `step.run` answers the same shape either way,
+           * which is the whole point of a replay — so the flag is set inside it.
+           */
+          let swept = false;
           const checkpoint = asCheckpoint(
             await step.run(stepName, async (signal): Promise<Checkpoint> => {
               // INSIDE the body, which is the whole of it: a completed step is served from storage
@@ -237,6 +243,7 @@ export async function backfillPass<Row>(
               const next = await iteration.pull.next();
               if (next.done === true) return { cursor: null, rows: 0 };
               await definition.handle({ rows: next.value, ctx, signal, index });
+              swept = true;
               return { cursor: iteration.batches.cursor, rows: next.value.length };
             }),
             stepName,
@@ -248,8 +255,14 @@ export async function backfillPass<Row>(
           // whose last write is `finish` either way.
           if (checkpoint.rows > 0) {
             batches += 1;
-            // Absolute, so a replayed batch reports the position it reported the first time.
-            await ledger?.progress(runId, { rows, cursor });
+            // Only for a batch this attempt actually SWEPT. A replayed checkpoint runs no body and
+            // touches no row, so writing here re-issued one `x_backfills` UPDATE per completed
+            // batch before a resumed pass read a single new row — 4,800 statements on a 5M-row
+            // sweep killed at batch 4,800, on every attempt, inside the visibility lease the
+            // heartbeat is renewing. Nothing is lost by skipping them: the value is ABSOLUTE, so
+            // the first batch that does run reports every replayed one behind it, and `finish`
+            // writes the total whatever happens.
+            if (swept) await ledger?.progress(runId, { rows, cursor });
           }
           if (cursor === null) break;
         }
