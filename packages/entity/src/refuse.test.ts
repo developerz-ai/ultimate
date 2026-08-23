@@ -1,0 +1,199 @@
+// Single responsibility: every refusal a column or an invariant DECLARATION raises hands back an
+// edit that repairs it. The defect this pins (issue #290): all 30 of them emitted
+// `x entities describe column --json`, which answers `X_DECLARATION_UNKNOWN` — no entity is named
+// `column`, and at declaration time there is no entity at all. A fix line that raises a second
+// error is worse than none, because the reader debugs the wrong subsystem.
+
+import { describe, expect, test } from 'bun:test';
+import { UltimateError } from '@ultimat3/core';
+import { t } from '@ultimat3/schema';
+import {
+  boolean,
+  enumerated,
+  integer,
+  locale,
+  money,
+  text,
+  timestamp,
+  tz,
+  url,
+  uuid,
+} from './columns';
+import { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
+import { invariantColumns } from './expr';
+
+const refusal = (
+  run: () => unknown,
+  label = 'refusal',
+): { code: string; cause: string; fix: string } => {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof UltimateError)
+      return { code: error.code, cause: error.cause, fix: error.fix };
+    return expect.unreachable(`${label}: not an UltimateError`);
+  }
+  return expect.unreachable(`${label}: nothing was refused`);
+};
+
+const columns = { slug: text(), title: text() };
+const c = invariantColumns<typeof columns>('refuse_test_posts', Object.keys(columns));
+
+/**
+ * `sameAs`'s refusal in `expr.ts` has no thunk here because no call can reach it: `eq` dispatches
+ * to it only under `isColumnExpr(other)`, which IS `terms.has(other)`, so the `terms.get(other)`
+ * below it never answers `undefined`. It carries a repaired fix line anyway — the branch is a
+ * narrowing TypeScript needs, and an unreachable fix that is wrong is still one nobody may copy —
+ * and it is counted here so the total below still pins every site.
+ */
+const UNREACHABLE_SITES = 1;
+
+/**
+ * Every site that refuses through `refuseColumn` or `refuseInvariant`, one thunk each. The count
+ * is asserted against the SOURCE below, so a refusal added without a case here fails this file
+ * rather than shipping the next unfollowable fix line.
+ */
+const SITES: readonly (readonly [string, () => unknown])[] = [
+  ['uuid value', () => uuid().$parse('nope')],
+  ['text value', () => text().$parse(1)],
+  ['integer value', () => integer().$parse(1.5)],
+  ['boolean value', () => boolean().$parse('yes')],
+  ['timestamp value', () => timestamp().$parse('nope')],
+  ['enumerated value', () => enumerated(['draft', 'live']).$parse('gone')],
+  ['url value', () => url().$parse('/settings')],
+  ['tz declaration', () => tz(['CET'])],
+  ['tz value', () => tz(['UTC']).$parse('Mars/Olympus')],
+  ['locale declaration', () => locale(['english!'])],
+  ['locale value', () => locale(['en']).$parse('fr')],
+  ['money not an object', () => money().$parse(12)],
+  ['money minor not a number', () => money().$parse({ minor: 'lots', currency: 'EUR' })],
+  ['money minor a float', () => money().$parse({ minor: 12.34, currency: 'EUR' })],
+  ['money minor past 2^53', () => money().$parse({ minor: 9007199254740994, currency: 'EUR' })],
+  ['money currency', () => money().$parse({ minor: 1234, currency: 'euro' })],
+  ['money scale', () => money().$parse({ minor: 1234, currency: 'EUR', scale: 99 })],
+  ['column name', () => text().column('Created At')],
+  ['column default', () => json(t.object({ a: t.string })).default({ a: 'x' })],
+  ['json value', () => json(t.object({ seats: t.number })).$parse({ seats: 'four' })],
+  ['bigint past 2^53', () => bigint().$parse(9007199254740994)],
+  ['bigint digits', () => bigint().$parse('1.5')],
+  ['decimal precision without scale', () => decimal({ precision: 18 })],
+  ['decimal precision range', () => decimal({ precision: 0, scale: 0 })],
+  ['decimal scale range', () => decimal({ precision: 5, scale: 9 })],
+  ['decimal value', () => decimal().$parse({})],
+  ['decimal too many places', () => decimal({ precision: 5, scale: 2 }).$parse('1.234')],
+  ['decimal does not fit', () => decimal({ precision: 5, scale: 2 }).$parse('1234.00')],
+  ['date invalid', () => date().$parse(new Date('nope'))],
+  ['date format', () => date().$parse('nope')],
+  ['bytes value', () => bytes().$parse('nope')],
+  ['array value', () => arrayOf(text()).$parse('nope')],
+  ['invariant matches flags', () => c.slug.matches(/^a+$/g)],
+];
+
+/** A fix is an instruction: a call to paste, a command to run, or an edit naming a file. */
+const ACTIONABLE = /\b[A-Za-z_$][\w$.]*\(|(?:^|[\s;|&("'`])x\s+[a-z]|\b(?:bun|bunx)\b/;
+
+describe('unit · every column and invariant refusal hands back an edit', () => {
+  test('none cites a command that names no entity', () => {
+    for (const [label, run] of SITES) {
+      const { code, fix } = refusal(run, label);
+      expect(code, label).toBe('X_INVARIANT_VIOLATED');
+      expect(fix, label).not.toContain('x entities describe column');
+      expect(fix, label).not.toContain('x entities describe invariant');
+    }
+  });
+
+  test('none is empty, a placeholder, or advice with nothing to run', () => {
+    for (const [label, run] of SITES) {
+      const { fix } = refusal(run, label);
+      expect(fix.trim(), label).not.toBe('');
+      expect(fix, label).not.toMatch(/<[a-z][a-z ]*>/);
+      expect(ACTIONABLE.test(fix), `${label}: ${fix}`).toBe(true);
+    }
+  });
+
+  test('none leaks the value it refused — a column message reaches the log line', () => {
+    expect(refusal(() => uuid().$parse('hunter2-the-password')).fix).not.toContain('hunter2');
+    expect(refusal(() => money().$parse({ minor: 12.34, currency: 'EUR' })).fix).not.toContain(
+      '12.34',
+    );
+  });
+
+  test('the repair carries the numbers the author wrote, not a generic one', () => {
+    expect(refusal(() => decimal({ precision: 5, scale: 9 })).fix).toContain(
+      'decimal({ precision: 5, scale: 2 })',
+    );
+    expect(refusal(() => decimal({ precision: 5, scale: 2 }).$parse('1.234')).fix).toContain(
+      'decimal({ precision: 6, scale: 3 })',
+    );
+    expect(refusal(() => decimal({ precision: 5, scale: 2 }).$parse('1234.00')).fix).toContain(
+      'decimal({ precision: 6, scale: 2 })',
+    );
+    expect(
+      refusal(() => money().$parse({ minor: 1234, currency: 'EUR', scale: 99 })).fix,
+    ).toContain('scale: 6');
+  });
+
+  /**
+   * The pasted predicate must not carry the flag the refusal is about: `.test()` under `g` or `y`
+   * advances `lastIndex`, so a rule copied from the fix line would answer differently for the
+   * second row than for the first. It shipped as `/…/${pattern.flags}` — the author's flags,
+   * verbatim, including the stateful one.
+   */
+  test('the matches() predicate it hands back is stateless', () => {
+    expect(refusal(() => c.slug.matches(/^a+$/gy)).fix).toContain(
+      'matches((value) => /^a+$/.test(value))',
+    );
+    expect(refusal(() => c.slug.matches(/^a+$/gm)).fix).toContain(
+      'matches((value) => /^a+$/m.test(value))',
+    );
+  });
+});
+
+/**
+ * Code only. A whole-line comment naming `invariantViolated('column', …)` is prose ABOUT the
+ * defect — `refuse.ts`'s own header is exactly that — and reading it as a call site would make
+ * documenting the rule the way to break it.
+ */
+const codeOf = (source: string): string =>
+  source
+    .split('\n')
+    .filter((line) => !/^\s*(?:\/\/|\*|\/\*)/.test(line))
+    .join('\n');
+
+const sourceOf = async (file: string): Promise<string> =>
+  codeOf(await Bun.file(`${import.meta.dir}/${file}`).text());
+
+const sources = async (): Promise<readonly (readonly [string, string])[]> => {
+  const files: [string, string][] = [];
+  for await (const file of new Bun.Glob('*.ts').scan({ cwd: import.meta.dir })) {
+    if (file.endsWith('.test.ts')) continue;
+    files.push([file, await sourceOf(file)]);
+  }
+  return files;
+};
+
+describe('unit · the fix line cannot regress to a lookup', () => {
+  /**
+   * The mechanical half. A string LITERAL in the entity-name position is exactly the defect:
+   * every honest caller passes a value (`entity.$name`, `table`, `name`), and a literal is
+   * someone inventing an entity that `x entities describe` will not find.
+   */
+  test('no invariantViolated() call names its entity with a literal', async () => {
+    const offenders: string[] = [];
+    for (const [file, source] of await sources()) {
+      for (const match of source.matchAll(/invariantViolated\(\s*(['"`])/g)) {
+        offenders.push(`${file}: invariantViolated(${match[1] ?? ''}…`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test('every refusal site has a case above', async () => {
+    let sites = 0;
+    for (const [file, source] of await sources()) {
+      if (file === 'refuse.ts') continue;
+      sites += [...source.matchAll(/\brefuse(?:Column|Invariant)\(/g)].length;
+    }
+    expect(sites).toBe(SITES.length + UNREACHABLE_SITES);
+  });
+});

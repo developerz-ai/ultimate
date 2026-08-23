@@ -152,8 +152,38 @@ defineAuth({
 Both limiters share one table: the keys are prefixed (`account:`, `ip:`, `org:`) and every limit
 travels as a statement parameter, so the tenant bucket's wider allowance cannot leak into the
 account bucket's. It reports `maxKeys: undefined` — there is no in-process table to bound — and
-neither table forgets on its own: `limiter.purgeExpired()` from a `task` drops failures past the
-window and lockouts that have expired, both measured against the injected clock.
+neither table forgets on its own.
+
+**An app does not have to write any of that, `As of 2026-08-22`.** The boot fills a seam and every
+`defineAuth` in the process picks it up:
+
+```ts
+import { configureAuthLimiters, type PgExecutor, postgresAuthLimiter } from '@ultimat3/auth';
+import type { Clock } from '@ultimat3/core';
+
+declare const bootExecutor: PgExecutor;
+declare const bootClock: Clock;
+
+// In the HOST, before the app's modules import.
+configureAuthLimiters((policy) =>
+  postgresAuthLimiter({ executor: bootExecutor, clock: bootClock, policy }),
+);
+```
+
+A **factory** and not a limiter, because the host runs before the app: `defineAuth` compares what a
+limiter enforces against what the app declared, so a limiter built at boot on the framework
+defaults would be `X_AUTH_LIMITER_POLICY_MISMATCH` for every app that tuned its numbers. The
+factory is called once per bucket, with the resolved policy, so the two halves cannot disagree.
+Precedence is `defineAuth({ limiter })` → the installed factory → `createAuthLimiter`, and
+`resetAuthLimiters()` puts the per-process default back. `@ultimat3/cli`'s `startServices` calls it
+on every boot, so a scaffolded app gets a fleet-wide lockout with nothing to remember.
+
+Neither table forgets on its own, and `purgeAuthLimits()` is the framework's reader for that:
+it drops failures past the window and lockouts that have expired, measured against the clock the
+host handed the limiter, and it sweeps only the WIDEST window installed — a sweep on a narrower
+one deletes failures another limiter is still counting, which hands a sprayer its attempts back.
+`@ultimat3/jobs`' `purge()` job is what calls it hourly; `x dev` and every role container declare
+that sweep at boot.
 
 ## Providers are a registry, not a union
 

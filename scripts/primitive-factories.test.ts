@@ -148,13 +148,14 @@ describe('unit · every primitive factory in the tree has a row in PRIMITIVE_FAC
    * The six that ship, asserted as a SET rather than derived from the scan — otherwise the two
    * tests above are a scan agreeing with itself, and a scan that found nothing would pass both.
    */
-  test('the six shipped rows, spelled out, so a scan that finds nothing cannot pass', () => {
+  test('the seven shipped rows, spelled out, so a scan that finds nothing cannot pass', () => {
     expect(PRIMITIVE_FACTORIES.map((row) => `${row.pkg}.${row.factory}:${row.kind}`)).toEqual([
       '@ultimat3/ai.agent:action',
       '@ultimat3/ai.agentJob:job',
       '@ultimat3/ai.hive:action',
       '@ultimat3/ai.llm:action',
       '@ultimat3/jobs.backfill:job',
+      '@ultimat3/jobs.purge:job',
       '@ultimat3/scraping.scrape:job',
     ]);
     expect(declared).toHaveLength(PRIMITIVE_FACTORIES.length);

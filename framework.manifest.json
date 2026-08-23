@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "8afe892c286166f41a07cf8cf14f119a41f0cdd6bb82c6e390e4f5fc6c2e1554",
+  "buildId": "0d82c6ab198a48b30e28ef56e3c59a1263ebaef28e9812026381110e90188539",
   "tiers": {
     "0": [
       "core",
@@ -904,6 +904,11 @@
     },
     {
       "code": "X_DOC_MIGRATION_COUNT_STALE",
+      "owner": "scripts",
+      "at": "scripts/changelog-check.ts"
+    },
+    {
+      "code": "X_DOC_MIGRATION_SECTION_MISSING",
       "owner": "scripts",
       "at": "scripts/changelog-check.ts"
     },

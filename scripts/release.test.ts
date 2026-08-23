@@ -149,10 +149,16 @@ describe('promoteUnreleased', () => {
   });
 
   test('the promoted file passes the changelog gate rules, tagged', () => {
+    // The heading as well as the row: `changelog-check` asserts both, because a row pointing at a
+    // section that does not exist is what let `1.x → 2.0.0` promise a walkthrough for six releases.
     const upgrading = [
       '| From → to | Breaking entries | Read |',
       '|---|---|---|',
       '| 1.x → 2.0.0 | **1** | the `2.0.0` section, in order |',
+      '',
+      '## 1.x → 2.0.0, entry by entry',
+      '',
+      '- the one entry',
     ].join('\n');
     expect(
       checkChangelog({ changelog: promote(changelog), upgrading, taggedVersion: '2.0.0' }),

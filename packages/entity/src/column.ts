@@ -7,6 +7,7 @@
 // physical name even though two schema modules import each other in a cycle.
 
 import { invariantViolated } from './errors';
+import { refuseColumn } from './refuse';
 import type {
   AnyColumn,
   Column,
@@ -140,10 +141,10 @@ const literal = (value: unknown): ColumnDefault => {
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
     return { kind: 'value', value };
   }
-  throw invariantViolated(
-    'column',
+  return refuseColumn(
     'default',
-    `a default must be a literal; got ${typeof value}. For an instant use timestamp().defaultNow()`,
+    `a default must be a literal; got ${typeof value}`,
+    ".default('draft'), .default(0) or .default(false) — a literal the DDL can carry; for an instant use timestamp().defaultNow(), and a computed default belongs in the insert",
   );
 };
 
@@ -205,10 +206,10 @@ export const makeColumn = <T, Optional extends boolean>(
  */
 export const assertColumnName = (name: string): string => {
   if (!/^[a-z_][a-z0-9_$]*$/.test(name) || name.length > 63) {
-    throw invariantViolated(
-      'column',
+    refuseColumn(
       'column-name',
       `"${name}" is not a physical column name: lower-case letters, digits and underscores, at most 63 of them`,
+      ".column('created_at') — lower-case letters, digits and underscores, at most 63 of them",
     );
   }
   return name;

@@ -4,6 +4,7 @@
 // boot installs, only backed by embedded drivers.
 
 import { mkdirSync } from 'node:fs';
+import { configureAuthLimiters, postgresAuthLimiter, resetAuthLimiters } from '@ultimat3/auth';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { isNoopPurgeDriver, selectPurgeDriver } from '@ultimat3/cache';
 import {
@@ -11,6 +12,7 @@ import {
   registerReadinessCheck,
   renderThrowable,
   resolveEnvironment,
+  systemClock,
 } from '@ultimat3/core';
 import type { RateLimitStore } from '@ultimat3/http';
 import { postgresRateLimitStore } from '@ultimat3/http';
@@ -28,6 +30,7 @@ import { selectTransport } from '@ultimat3/realtime/server';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
 import { startCacheTiers } from './dev-cache';
+import { installRetentionSweep } from './dev-purge';
 import type { DevDbClient } from './dev-queue';
 import { pgExecutorFor, startQueue } from './dev-queue';
 import type { DevServices, Env } from './dev-services';
@@ -288,9 +291,31 @@ export async function startServices(
   const bus: TransportSelection = selectTransport(env);
   const queue = await startQueue(services, overrides);
   const { db, jobs, outbox, events } = queue;
+  // The same executor the jobs driver, the outbox, the event bus and the idempotency store run
+  // on — one pool, one `Bun.sql` that does NOT satisfy `PgExecutor` (`Bun.sql.query` is
+  // `undefined`), one wrapper.
+  const executor = pgExecutorFor(db);
+  const rateLimitStore = postgresRateLimitStore({ executor });
   // Boot is a sequence of external resources, and every step after the first can reject — the
   // queue is already up, so from here an unwind must release it exactly like everything after it.
   const started: (() => void | Promise<void>)[] = [() => queue.stop()];
+  // Where failed sign-ins are counted, installed BEFORE `loadApp` for the reason the idempotency
+  // store is: `defineAuth` is the app's call and it runs when the app's modules import, so a seam
+  // filled afterwards is one every app would have to fill itself. A FACTORY and not a limiter —
+  // the app declares `maxAttempts`/`windowMs`/`lockoutMs` and this boot has not read them yet, so
+  // a limiter built here would be refused by `assertAuthLimiterPolicy` on any app that tuned one.
+  //
+  // Until this line every deployment the framework produces counted lockouts per POD, while
+  // `x new` scaffolds `replicas: 2` and `docker/helm` runs three — `maxAttempts × N` guesses per
+  // account, and a lockout one replica established invisible to the rest.
+  configureAuthLimiters((policy) => postgresAuthLimiter({ executor, clock: systemClock, policy }));
+  started.push(() => resetAuthLimiters());
+  // The hourly sweep over the three framework tables this boot is responsible for. Every one of
+  // them ships a `purgeExpired()` that nothing called, so every row written was a row kept —
+  // `x_rate_limit` takes one upsert per request the web role serves, assets included.
+  started.push(
+    installRetentionSweep({ idempotency: queue.idempotency, rateLimit: rateLimitStore }),
+  );
   // One readiness check per resource this boot OWNS, released with it. Nothing in the tree
   // registered one, so `/readyz` was `markReady()` alone — "this process bound a socket" — and
   // `packages/http/src/server.ts` calls that BEFORE `Bun.serve`, while `dev-roles.ts` calls it
@@ -343,12 +368,12 @@ export async function startServices(
       storage,
       mail,
       mailDetail: selection.detail,
+      // Built above, beside the auth limiter factory and the retention sweep that purges its
+      // table: three readers of one executor, resolved once. `startWeb` is what an override
+      // replaces it at.
+      rateLimitStore,
       // The env key that selected the bus — or the honest answer that no env key did, because a
       // boot line reading `NATS_URL` over a transport the host handed in is a lie a script parses.
-      // The same executor the jobs driver, the outbox, the event bus and the idempotency store
-      // run on — one pool, one `Bun.sql` that does NOT satisfy `PgExecutor` (`Bun.sql.query` is
-      // `undefined`), one wrapper. `startWeb` is what an override replaces it at.
-      rateLimitStore: postgresRateLimitStore({ executor: pgExecutorFor(db) }),
       transportDetail: overrides?.transport === undefined ? bus.detail : 'runtime override',
       presenceTtlMs: bus.presenceTtlMs,
       purge,

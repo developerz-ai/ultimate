@@ -11,6 +11,11 @@
 // service it guards never becomes healthy and everything gated on it never starts — and a role that
 // INHERITS the image's `/readyz` probe while opening no HTTP socket, which is the same ending
 // reached from the other direction: `unhealthy` forever, on a port the role never binds.
+//
+// A sixth rule covers the OTHER compose file, `docker-compose.dev.yml`: every published port binds
+// a loopback address. A dev stack ships its credentials in the file, so Docker's short form
+// `'5432:5432'` — which binds 0.0.0.0 and writes DNAT rules a host firewall does not stop — hands
+// an authenticated Postgres to everyone on the café wifi.
 
 import { describe, expect, test } from 'bun:test';
 // `join` builds the host-separator paths to ROOT and each compose file; Bun ships no path join.
@@ -23,6 +28,9 @@ const ROOT = join(import.meta.dir, '..');
 
 /** The one path a compose deploy resolves, in the framework and in an app alike. */
 const COMPOSE_FILE = 'docker/docker-compose.prod.yml';
+
+/** Its development counterpart — never deployed, always credentialled, and so the loopback rule. */
+const DEV_COMPOSE_FILE = 'docker/docker-compose.dev.yml';
 
 /**
  * `APP_ROOTS` rather than the two directory names: a third tracked app would otherwise ship an
@@ -131,19 +139,71 @@ for (const at of shipped.sort()) {
   files.push({ at, table: services(await Bun.file(join(ROOT, at)).text(), at) });
 }
 
-// The file `x new` writes, held to the same five rules from the planner rather than from disk — it
-// is the reference shape the three above are copies of, and a regression there ships in a tarball.
-const scaffolded = planNewApp({ name: 'probe', example: true }).find(
-  (file) => file.path === COMPOSE_FILE,
-);
-// `GeneratedFile.contents` is text OR bytes (an icon is bytes), and a compose file that arrived as
-// bytes is a scaffold defect rather than an empty table to check quietly.
-const scaffoldedSource = typeof scaffolded?.contents === 'string' ? scaffolded.contents : undefined;
-expect(scaffoldedSource, `x new writes no ${COMPOSE_FILE}, or writes it as bytes`).toBeString();
+/** One `x new`, read twice: the planner is deterministic and the prod and dev files both come off it. */
+const SCAFFOLD = planNewApp({ name: 'probe', example: true });
+
+/**
+ * The compose file `x new` writes, held to the same rules from the planner rather than from disk —
+ * it is the reference shape the tracked apps' copies come from, and a regression there ships in a
+ * tarball. `GeneratedFile.contents` is text OR bytes (an icon is bytes), and a compose file that
+ * arrived as bytes is a scaffold defect rather than an empty table to check quietly.
+ */
+const scaffoldedCompose = (path: string): string => {
+  const contents = SCAFFOLD.find((file) => file.path === path)?.contents;
+  const source = typeof contents === 'string' ? contents : undefined;
+  expect(source, `x new writes no ${path}, or writes it as bytes`).toBeString();
+  return source ?? '';
+};
+
 files.push({
   at: `x new → ${COMPOSE_FILE}`,
-  table: services(scaffoldedSource ?? '', COMPOSE_FILE),
+  table: services(scaffoldedCompose(COMPOSE_FILE), COMPOSE_FILE),
 });
+
+/** The dev stacks, on the same glob: the framework's, both tracked apps' and the scaffold's. */
+const shippedDev = [DEV_COMPOSE_FILE, `${APP_ROOTS}/*/${DEV_COMPOSE_FILE}`].flatMap((glob) => [
+  ...new Bun.Glob(glob).scanSync({ cwd: ROOT }),
+]);
+
+const devFiles: { readonly at: string; readonly table: Readonly<Record<string, Service>> }[] = [];
+for (const at of shippedDev.sort()) {
+  devFiles.push({ at, table: services(await Bun.file(join(ROOT, at)).text(), at) });
+}
+devFiles.push({
+  at: `x new → ${DEV_COMPOSE_FILE}`,
+  table: services(scaffoldedCompose(DEV_COMPOSE_FILE), DEV_COMPOSE_FILE),
+});
+
+/**
+ * The host interface a published port binds, or `undefined` for the short form — which is Docker's
+ * way of writing `0.0.0.0`. Three shapes are legal: `'5432:5432'`, `'127.0.0.1:5432:5432'` and the
+ * long form `{ host_ip, published, target }`. IPv6 arrives bracketed (`'[::1]:5432:5432'`), so the
+ * host cannot be taken as the first colon-separated field.
+ */
+const hostIpOf = (entry: unknown): string | undefined => {
+  if (isRecord(entry)) {
+    const hostIp = entry['host_ip'];
+    return typeof hostIp === 'string' && hostIp !== '' ? hostIp : undefined;
+  }
+  if (typeof entry !== 'string') return undefined; // `ports: [5432]` — a bare number, so 0.0.0.0.
+  if (entry.startsWith('[')) return entry.slice(1, entry.indexOf(']'));
+  const fields = entry.split(':');
+  // `<host>:<published>:<target>` is the only form carrying a host; two fields is host:container.
+  return fields.length >= 3 ? fields.slice(0, -2).join(':') : undefined;
+};
+
+/** 127.0.0.0/8 and ::1, plus the name that resolves to them. Anything else reaches the LAN. */
+const isLoopback = (host: string): boolean =>
+  host === '::1' || host === 'localhost' || /^127\.\d+\.\d+\.\d+$/.test(host);
+
+/** Every `ports:` entry of every service, tagged with the service that published it. */
+const publishedPorts = (
+  table: Readonly<Record<string, Service>>,
+): readonly { readonly service: string; readonly entry: unknown }[] =>
+  Object.entries(table).flatMap(([service, definition]) => {
+    const ports = definition['ports'];
+    return Array.isArray(ports) ? ports.map((entry) => ({ service, entry })) : [];
+  });
 
 describe('the compose files agree with the deploy plan', () => {
   test('the glob found the framework file, both tracked apps and the scaffold', () => {
@@ -204,6 +264,29 @@ describe('the compose files agree with the deploy plan', () => {
           `${at}: ${wrong.join(', ')} probe /app/x, which only the framework's CLI image carries — the service never becomes healthy and everything gated on it never starts`,
         ).toEqual([]);
       });
+    });
+  }
+});
+
+describe('every dev compose publishes only to loopback', () => {
+  test('the glob found the framework file, both tracked apps and the scaffold', () => {
+    // A glob matching nothing agrees with the rule below it.
+    expect(shippedDev).toContain(DEV_COMPOSE_FILE);
+    expect(devFiles.length).toBeGreaterThanOrEqual(4);
+  });
+
+  for (const { at, table } of devFiles) {
+    test(`${at} binds every published port to 127.0.0.1`, () => {
+      const open = publishedPorts(table)
+        .filter(({ entry }) => {
+          const host = hostIpOf(entry);
+          return host === undefined || !isLoopback(host);
+        })
+        .map(({ service, entry }) => `${service}: ${Bun.inspect(entry)}`);
+      expect(
+        open,
+        `${at} publishes ${open.join(', ')} on 0.0.0.0 while shipping the credentials in the same file, so anyone on the café wifi has an authenticated database — Docker publishes by writing DNAT rules, which a host firewall does not stop. Write the long form '127.0.0.1:<port>:<port>' and reach it from another machine through a tunnel (ssh -L)`,
+      ).toEqual([]);
     });
   }
 });

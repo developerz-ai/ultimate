@@ -91,20 +91,21 @@ describe('the eight primitives', () => {
  */
 describe('PRIMITIVE_FACTORIES', () => {
   test('lists every shipped factory, each over one of the eight kinds', () => {
-    expect(PRIMITIVE_FACTORIES).toHaveLength(6);
+    expect(PRIMITIVE_FACTORIES).toHaveLength(7);
     for (const entry of PRIMITIVE_FACTORIES) {
       expect(PRIMITIVE_KINDS).toContain(entry.kind);
       expect(entry.pkg.startsWith('@ultimat3/')).toBe(true);
     }
   });
 
-  test('names the six the framework ships, and no factory is listed twice', () => {
+  test('names the seven the framework ships, and no factory is listed twice', () => {
     expect(PRIMITIVE_FACTORIES.map((entry) => `${entry.pkg}#${entry.factory}`)).toEqual([
       '@ultimat3/ai#agent',
       '@ultimat3/ai#agentJob',
       '@ultimat3/ai#hive',
       '@ultimat3/ai#llm',
       '@ultimat3/jobs#backfill',
+      '@ultimat3/jobs#purge',
       '@ultimat3/scraping#scrape',
     ]);
   });

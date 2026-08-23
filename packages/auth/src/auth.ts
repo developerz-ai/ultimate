@@ -8,6 +8,7 @@ import { t } from '@ultimat3/schema';
 import type { AuthAdapter, AuthSession, AuthUser } from './adapter';
 import { normaliseEmail } from './email';
 import { mfaRequired, mfaRequiredUnenforceable, sessionUnknown } from './errors';
+import { installedAuthLimiter } from './limiter-install';
 import type { OAuthProviderId } from './oauth';
 import { oauthProviderIds } from './oauth-registry';
 import {
@@ -171,7 +172,13 @@ export function defineAuth(config: AuthConfigInput): Auth {
   const session: SessionPolicy = { ...DEFAULT_SESSION_POLICY, ...config.session };
   const password: PasswordPolicy = { ...DEFAULT_PASSWORD_POLICY, ...config.password };
   const rateLimit: AuthRateLimitPolicy = { ...DEFAULT_AUTH_RATE_LIMIT, ...config.rateLimit };
-  const limiter = config.limiter ?? createAuthLimiter(clock, rateLimit);
+  // Three answers in precedence order, and the middle one is why the seam exists: what this call
+  // passed, then what the HOST installed (`configureAuthLimiters`, filled by the boot that owns
+  // the database connection), then one process' worth of state. Without the middle arm a
+  // scaffolded app had to remember to build a shared limiter itself, which is the opposite of
+  // what this framework promises — and `x new` scaffolds two replicas.
+  const limiter =
+    config.limiter ?? installedAuthLimiter(rateLimit) ?? createAuthLimiter(clock, rateLimit);
   assertAuthLimiterPolicy(rateLimit, limiter);
   // The tenant bucket is a noisy-neighbour cap, not a credential-guessing allowance, so an app
   // that declares `scope: 'shared'` for its LOCKOUT is not also required to ship a shared limiter
@@ -179,7 +186,8 @@ export function defineAuth(config: AuthConfigInput): Auth {
   // throughput ceiling and discloses nothing. An INJECTED org limiter is still compared, because
   // then the app has made a claim about what it enforces and `Auth.orgRateLimit` reports it.
   const orgLimits = orgRateLimit(rateLimit);
-  const orgLimiter = config.orgLimiter ?? createAuthLimiter(clock, orgLimits);
+  const orgLimiter =
+    config.orgLimiter ?? installedAuthLimiter(orgLimits) ?? createAuthLimiter(clock, orgLimits);
   if (config.orgLimiter !== undefined) assertAuthLimiterPolicy(orgLimits, config.orgLimiter);
   // Read through a widened local on purpose: the field's type is the literal `false`, so this
   // branch is unreachable from TypeScript and reachable from every JS caller and every config

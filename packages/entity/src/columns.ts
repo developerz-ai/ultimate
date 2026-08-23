@@ -19,7 +19,7 @@ import {
   makeColumn,
   makeTimestamp,
 } from './column';
-import { invariantViolated } from './errors';
+import { refuseColumn } from './refuse';
 import type {
   Column,
   ColumnMap,
@@ -30,10 +30,6 @@ import type {
   TimestampColumn,
   UuidColumn,
 } from './types';
-
-const reject = (rule: string, detail: string): never => {
-  throw invariantViolated('column', rule, detail);
-};
 
 /**
  * The rejected value, rendered as its SHAPE and never its content — `@ultimat3/schema`'s
@@ -60,7 +56,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const parseUuid = (value: unknown): string =>
   typeof value === 'string' && UUID.test(value)
     ? value
-    : reject('format', `expected a uuid, ${got(value)}`);
+    : refuseColumn(
+        'format',
+        `expected a uuid, ${got(value)}`,
+        'newId() mints a uuid v7, and a reference carries the exact id the target row was inserted with — a natural key that is not a uuid is text(), a legacy int8 key is bigint()',
+      );
 
 /**
  * The one place a brand is applied. A brand is a compile-time tag with no runtime witness, so
@@ -101,7 +101,13 @@ export const text = (options: TextOptions = {}): Column<string> =>
   column<string>(
     'text',
     (value) =>
-      typeof value === 'string' ? value : reject('type', `expected a string, ${got(value)}`),
+      typeof value === 'string'
+        ? value
+        : refuseColumn(
+            'type',
+            `expected a string, ${got(value)}`,
+            'String(value) at the call site when this really is text — a number column is integer(), an exact decimal is decimal(), a structured payload is json(schema)',
+          ),
     options.max === undefined
       ? {}
       : { length: options.max, check: (name) => `char_length(${name}) <= ${options.max}` },
@@ -111,12 +117,22 @@ export const integer = (): Column<number> =>
   column<number>('integer', (value) =>
     typeof value === 'number' && Number.isSafeInteger(value)
       ? value
-      : reject('type', `expected a safe integer, ${got(value)}`),
+      : refuseColumn(
+          'type',
+          `expected a safe integer, ${got(value)}`,
+          'Math.trunc(value) for a float and Number(value) for a numeric string — a count past ±2^53 is bigint(), a fractional value is decimal()',
+        ),
   );
 
 export const boolean = (): Column<boolean> =>
   column<boolean>('boolean', (value) =>
-    typeof value === 'boolean' ? value : reject('type', `expected a boolean, ${got(value)}`),
+    typeof value === 'boolean'
+      ? value
+      : refuseColumn(
+          'type',
+          `expected a boolean, ${got(value)}`,
+          "value === 'true' at the call site for a text flag, and boolean().nullable() when the column has a third state",
+        ),
   );
 
 const parseInstant = (value: unknown): Date => {
@@ -125,7 +141,11 @@ const parseInstant = (value: unknown): Date => {
     const parsed = new Date(value);
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
-  return reject('format', `expected a UTC instant, ${got(value)}`);
+  return refuseColumn(
+    'format',
+    `expected a UTC instant, ${got(value)}`,
+    'new Date(value) at the call site — timestamp() stores an instant; a calendar date with no clock is date(), and an elapsed span is integer()',
+  );
 };
 
 /** Always `timestamptz`. UTC storage is not a per-table decision. */
@@ -151,7 +171,11 @@ export const enumerated = <const V extends readonly string[]>(values: V): Column
     (value) =>
       typeof value === 'string' && allowed.has(value)
         ? value
-        : reject('enum', `expected one of ${values.join(' | ')}, ${got(value)}`),
+        : refuseColumn(
+            'enum',
+            `expected one of ${values.join(' | ')}, ${got(value)}`,
+            'store one of the values enumerated() declares, or add the new variant to that list and run x db gen "extend the enum check" — the values are a CHECK constraint, so the table moves with them',
+          ),
     { values, check: oneOf(values) },
   );
 };
@@ -172,7 +196,11 @@ export const url = (): Column<string> =>
           // fall through to the shared rejection so the error names the rule
         }
       }
-      return reject('format', `expected an absolute http(s) URL, ${got(value)}`);
+      return refuseColumn(
+        'format',
+        `expected an absolute http(s) URL, ${got(value)}`,
+        'prefix the value with https:// — url() stores an absolute http(s) URL; a path, a template or a mailto: address is text()',
+      );
     },
     { check: (name) => `${name} ~ '^https?://'` },
   );
@@ -192,7 +220,13 @@ export const url = (): Column<string> =>
  */
 export const tz = <const Z extends readonly string[]>(zones: Z): Column<Z[number]> => {
   for (const zone of zones) {
-    if (!isValidTimeZone(zone)) reject('iana-tz', `${zone} is not an IANA time zone`);
+    if (!isValidTimeZone(zone)) {
+      refuseColumn(
+        'iana-tz',
+        `${zone} is not an IANA time zone`,
+        "tz(['Europe/Bucharest']) — an IANA region/city name. An abbreviation (CET, EST) or an offset (+02:00) carries no DST rule; Intl.supportedValuesOf('timeZone') lists every name this accepts",
+      );
+    }
   }
   const allowed = new Set<string>(zones);
   return column<Z[number]>(
@@ -200,7 +234,11 @@ export const tz = <const Z extends readonly string[]>(zones: Z): Column<Z[number
     (value) =>
       typeof value === 'string' && allowed.has(value)
         ? value
-        : reject('iana-tz', `expected one of ${zones.join(' | ')}, ${got(value)}`),
+        : refuseColumn(
+            'iana-tz',
+            `expected one of ${zones.join(' | ')}, ${got(value)}`,
+            'store one of the zones tz() declares, or add it to that list and run x db gen "extend the time zone check" — the zones are a CHECK constraint',
+          ),
     { values: zones, check: oneOf(zones) },
   );
 };
@@ -209,7 +247,13 @@ const BCP47 = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 
 export const locale = <const L extends readonly string[]>(locales: L): Column<L[number]> => {
   for (const tag of locales) {
-    if (!BCP47.test(tag)) reject('bcp-47', `${tag} is not a BCP-47 language tag`);
+    if (!BCP47.test(tag)) {
+      refuseColumn(
+        'bcp-47',
+        `${tag} is not a BCP-47 language tag`,
+        "locale(['en', 'en-GB', 'pt-BR']) — a 2-3 letter language, then optional subtags after a hyphen",
+      );
+    }
   }
   const allowed = new Set<string>(locales);
   return column<L[number]>(
@@ -217,7 +261,11 @@ export const locale = <const L extends readonly string[]>(locales: L): Column<L[
     (value) =>
       typeof value === 'string' && allowed.has(value)
         ? value
-        : reject('bcp-47', `expected one of ${locales.join(' | ')}, ${got(value)}`),
+        : refuseColumn(
+            'bcp-47',
+            `expected one of ${locales.join(' | ')}, ${got(value)}`,
+            'store one of the tags locale() declares, or add it to that list and run x db gen "extend the locale check" — the tags are a CHECK constraint',
+          ),
     { values: locales, check: oneOf(locales) },
   );
 };
@@ -240,19 +288,25 @@ const parseMinor = (value: unknown): number => {
       ? Number(value)
       : value;
   if (typeof minor !== 'number' || !Number.isFinite(minor)) {
-    return reject('money-minor-units', `expected integer minor units, ${got(value)}`);
+    return refuseColumn(
+      'money-minor-units',
+      `expected integer minor units, ${got(value)}`,
+      "pass integer minor units — { minor: 1234, currency: 'EUR' } is 12.34 EUR; a formatted amount is text() and an exact decimal is decimal()",
+    );
   }
   if (!Number.isInteger(minor)) {
-    return reject(
+    return refuseColumn(
       'money-minor-units',
       `got the float ${minor}; money is integer minor units — 12.34 EUR is 1234, not 12.34`,
+      "Math.round() at the call site decides the rounding, or name the precision instead: { minor: 1250000, currency: 'EUR', scale: 6 } is 1.25 EUR at six decimal places",
     );
   }
   if (!Number.isSafeInteger(minor)) {
-    return reject(
+    return refuseColumn(
       'money-minor-units',
       `${String(value)} is past ±2^53 and no JS number holds it exactly — money is minor units ` +
-        'inside that range; store the overflow in its own column or split the amount',
+        'inside that range',
+      "split the amount across rows, or hold the digits beside it in a bigint() column — money()'s minor is a number so JSON.stringify carries it, and no JS number holds this one exactly",
     );
   }
   return minor;
@@ -267,7 +321,11 @@ const parseMinor = (value: unknown): number => {
 const parseCurrency = (value: unknown): string =>
   isCurrencyCode(value)
     ? value
-    : reject('iso-4217', `expected a 3-letter ISO-4217 code, ${got(value)}`);
+    : refuseColumn(
+        'iso-4217',
+        `expected a 3-letter ISO-4217 code, ${got(value)}`,
+        "pass money() a 3-letter uppercase ISO-4217 code — { minor: 1234, currency: 'EUR' }; a symbol or a currency name is not one",
+      );
 
 /**
  * The decimal exponent `minor` counts in, when it is not the currency's own. `undefined` and `0`
@@ -279,15 +337,20 @@ const parseScale = (value: unknown): number => {
   const scale = typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value;
   return isMoneyScale(scale)
     ? scale
-    : reject(
+    : refuseColumn(
         'money-scale',
         `expected a whole number of decimal places between 0 and ${MAX_MONEY_SCALE}, ${got(value)}`,
+        `omit scale for the currency's own minor unit, or pass money() a whole number of decimal places from 0 to ${MAX_MONEY_SCALE} — { minor: 1250000, currency: 'EUR', scale: 6 }`,
       );
 };
 
 const parseMoney = (value: unknown): MoneyValue => {
   if (typeof value !== 'object' || value === null) {
-    return reject('money', `expected { minor, currency }, ${got(value)}`);
+    return refuseColumn(
+      'money',
+      `expected { minor, currency }, ${got(value)}`,
+      "{ minor: 1234, currency: 'EUR' } — money() is always both parts; a bare amount is integer() or decimal(), and a formatted string is text()",
+    );
   }
   const input: Partial<MoneyInput> = value;
   return {

@@ -49,6 +49,10 @@ const GOOD_UPGRADING = `# Upgrading
 grep -cE '^(- \\*\\*|### )BREAKING —' CHANGELOG.md
 # 2 As of 2026-08
 \`\`\`
+
+## 1.x → 2.0.0, entry by entry
+
+The section the row above sends the reader to.
 `;
 
 const kinds = (changelog: string, upgrading: string, taggedVersion?: string): readonly string[] =>
@@ -137,6 +141,25 @@ describe('the rules, each proved against the fixture that breaks it', () => {
     expect(kinds(misfiled, GOOD_UPGRADING)).not.toContain('total');
   });
 
+  // The 2.0.0 failure, exactly: a row naming a section the page has never carried. The row is
+  // present and its count is right, so every other rule in this file passes over it — which is how
+  // it survived six releases. Deleting the HEADING alone is the whole mutation.
+  test('a row whose section the page does not carry', () => {
+    const rowOnly = GOOD_UPGRADING.replace('## 1.x → 2.0.0, entry by entry\n', '');
+    expect(kinds(GOOD_CHANGELOG, rowOnly)).toEqual(['missing-section']);
+    // Not reported as a missing ROW, and not as a stale count: the row is there and reads 2.
+    expect(kinds(GOOD_CHANGELOG, rowOnly)).not.toContain('missing-row');
+    expect(kinds(GOOD_CHANGELOG, rowOnly)).not.toContain('count');
+  });
+
+  test('a section heading that names the version some other way does not satisfy the rule', () => {
+    const renamed = GOOD_UPGRADING.replace(
+      '## 1.x → 2.0.0, entry by entry',
+      '## Migrating to 2.0.0',
+    );
+    expect(kinds(GOOD_CHANGELOG, renamed)).toContain('missing-section');
+  });
+
   test('a stale per-major count', () => {
     expect(kinds(GOOD_CHANGELOG, GOOD_UPGRADING.replace('**2** | the', '**3** | the'))).toContain(
       'count',
@@ -206,6 +229,7 @@ describe('findings', () => {
       'count',
       'unknown-section',
       'missing-row',
+      'missing-section',
       'total',
       'unscanned',
     ];

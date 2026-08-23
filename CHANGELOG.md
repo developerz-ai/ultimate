@@ -8,7 +8,68 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **BREAKING — `@ultimat3/pwa` drops the forced-reload half of `version-skew`:** `updateSignal`,
+  `updatePolicy`, `DEFAULT_GRACE_MS` and the types `ForceReason`, `UpdatePolicy`,
+  `UpdatePolicyInput`, `UpdateSignalInput`; `AppUpdateAvailable` narrows to `{ type, to }`, losing
+  `from`, `forced` and `deadlineAt`.
+
+  Nothing performed the reload they described, and **no runtime could have called them**: the two
+  places holding both build ids are `@ultimat3/http` (tier 2) and `@ultimat3/realtime` (tier 3),
+  both *below* `pwa` (tier 4), and imports only go down. Wiring it would have meant inverting a tier
+  or writing a third copy of skew detection. The service worker emitted 2 of the 5 declared fields;
+  the other three were produced by nothing.
+
+  Delete the call. Read `useConnection().updateAvailable` from `@ultimat3/realtime`, or compare the
+  worker's posted `to` with `detectSkew`, and render your own affordance. Forcing a reload is not a
+  capability this framework has — and `x deploy --critical`, which was documented as the wire for
+  it, was itself deleted back in 4.0.0.
+
+### Added
+
+- **A seam that makes the shared auth limiter installable** — `configureAuthLimiters(factory)` /
+  `resetAuthLimiters()` / `purgeAuthLimits()` in `@ultimat3/auth`, wired from the boot, with
+  `@ultimat3/cli` gaining the `@ultimat3/auth` dependency edge it never had. `postgresAuthLimiter`
+  shipped in 8.0.0 and **could not be installed by anything**, so account lockouts stayed per-pod
+  while `x new` scaffolds `replicas: 2`. Proven against real Postgres: pod B's `login()` with the
+  correct password previously succeeded under a lockout pod A had established.
+
+  It holds a **factory**, not a limiter, because `defineAuth` refuses a limiter whose numbers differ
+  from the app's declaration and the boot runs before `loadApp` — so any app that tuned
+  `maxAttempts` would have failed at boot with `X_AUTH_LIMITER_POLICY_MISMATCH`.
+
+- **`purge()` — a job factory that sweeps expired rows**, and the boot task that runs it hourly.
+  `x_idempotency`, `x_rate_limit` and `x_auth_failures`/`x_auth_lockouts` each shipped a
+  `purgeExpired()` that **nothing called**, so every row written was a row kept — and `x_rate_limit`
+  takes one write per HTTP request the web role serves, assets included.
+
+  A factory over `job()`, never a ninth primitive. `purgeAuthLimits()` sweeps only the **widest**
+  window: sweeping the narrowest would delete failures a wider limiter is still counting, letting a
+  password sprayer buy attempts back from the cleanup job.
+
+### Fixed
+
+- **34 column refusals told the reader to run a command that raises a different error.** `reject()`
+  emitted `fix: x entities describe column --json`, and no entity is named `column` — so following
+  the fix answered `X_DECLARATION_UNKNOWN`. Every one now emits an edit to paste. `x entities
+  describe` **is** a real command, so no citation check could see it; the guard is a source scan
+  refusing a literal entity name in `invariantViolated`.
+
+  One of them was not merely unrunnable but **wrong**: `matches()`'s refusal pasted the author's
+  regex flags verbatim — including the `g` the refusal is about — and `.test()` advances
+  `lastIndex`, so the suggested predicate's verdict depended on the previous row.
+
+- **`x new` scaffolded a dev compose publishing Postgres, NATS and MinIO on `0.0.0.0`** with the
+  credentials in the file, handing anyone on the same network an authenticated database. The
+  framework's own dev compose binds loopback and explains why — it had this right for itself and
+  generated the wrong thing for every user. **It had already shipped into both tracked apps.**
+  `compose-parity.test.ts` now refuses a published port that is not loopback.
+
+- **`wiki/Upgrading.md` promised a `1.x → 2.0.0` walkthrough it has never carried** — 2.0.0 is the
+  largest major this project has shipped (33 entries) and the only one with no section. Written, all
+  33. `changelog-check` now asserts the **heading** exists and not just the table row
+  (`X_DOC_MIGRATION_SECTION_MISSING`); verifying the row is how the promise survived six releases.
 
 ## 8.0.0 - 2026-08-23
 

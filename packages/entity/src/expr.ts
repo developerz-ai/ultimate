@@ -9,6 +9,7 @@
 // does not know this rule — silently pretending it reached Postgres would be worse.
 
 import { invariantViolated } from './errors';
+import { refuseInvariant } from './refuse';
 import type { ColumnMap } from './types';
 
 export type Row = Readonly<Record<string, unknown>>;
@@ -93,12 +94,13 @@ const literal = (value: unknown): string =>
 const matchOperator = (pattern: RegExp): string => {
   const flags = pattern.flags.replaceAll('i', '');
   if (flags !== '') {
-    throw invariantViolated(
-      'invariant',
+    // The pasted predicate drops `g` and `y`: `.test()` under either advances `lastIndex`, so the
+    // rule would stop being a function of the row — the same reason the CHECK cannot carry them.
+    refuseInvariant(
       'matches',
       `/${pattern.source}/${pattern.flags} carries the flag${flags.length === 1 ? '' : 's'} ` +
-        `"${flags}", which Postgres has no operator for — drop it and fold the behaviour into ` +
-        `the pattern, or pass a function instead: matches((value) => /${pattern.source}/${pattern.flags}.test(value)), which is app-only and reports sql: null`,
+        `"${flags}", which Postgres has no operator for`,
+      `drop the flag and fold the behaviour into the pattern, or pass a predicate instead: matches((value) => /${pattern.source}/${pattern.flags.replaceAll(/[gy]/g, '')}.test(value)) — app-only, and it reports sql: null. Never g or y in that predicate: .test() advances lastIndex, so one row's verdict depends on the row before it`,
     );
   }
   return pattern.ignoreCase ? '~*' : '~';
@@ -213,8 +215,15 @@ const part = (term: Term, key: string): ColumnExpr =>
   });
 
 const sameAs = (left: Term, other: ColumnExpr): Expr => {
-  const right = terms.get(other);
-  if (right === undefined) throw invariantViolated('invariant', 'eq', 'not a column expression');
+  // `??` rather than an `if`: `eq` reaches here only past `isColumnExpr(other)`, which IS
+  // `terms.has(other)`, so this refusal is unreachable and exists to narrow `right` off the map.
+  const right =
+    terms.get(other) ??
+    refuseInvariant(
+      'eq',
+      'not a column expression',
+      "pass a column of the same c — c.total.eq(c.subtotal) — or compare against a value: c.total.eq(0). A column of another entity cannot appear in this table's CHECK",
+    );
   return check(
     [left.path, right.path],
     `${left.label} must equal ${right.label}`,

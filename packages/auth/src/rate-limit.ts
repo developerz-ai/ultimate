@@ -85,6 +85,13 @@ export interface AuthLimiter {
   recordSuccess(key: string): Promise<void>;
   lockedUntil(key: string): Promise<Date | null>;
   reset(): Promise<void>;
+  /**
+   * Drop every expired row this limiter is keeping, and answer how many went. Optional because a
+   * limiter that bounds itself has nothing to sweep — `createAuthLimiter` evicts on write, so it
+   * omits this and `purgeAuthLimits()` skips it. A limiter backed by a table declares it, and
+   * that is what makes the framework's purge job able to reach one without knowing it is Postgres.
+   */
+  purgeExpired?(): Promise<number>;
 }
 
 /** What `createAuthLimiter` returns: the interface, plus the bound it keeps, observable. */

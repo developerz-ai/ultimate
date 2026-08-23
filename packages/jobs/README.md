@@ -298,6 +298,45 @@ the new pods serve, puts the sweeps on the queue and exits, and a slow UPDATE ne
 open against a database still serving the previous build. `--all` isolates per name and continues
 past a failure, so one wedged cleanup cannot block every later one forever.
 
+## Retention sweeps are jobs too
+
+`purge()` is the **second factory over `job()`**, and it exists because three framework stores
+shipped a `purgeExpired()` with no caller — `x_idempotency`, `x_rate_limit` and the auth pair each
+kept every row they ever took. `x_rate_limit` takes one upsert per HTTP request the web role
+serves, assets included, so its growth follows total traffic and not traffic that hit a limit.
+
+```ts
+import { DEFAULT_PURGE_CRON, purge, task } from '@ultimat3/jobs';
+
+declare const store: { purgeExpired(nowMs: number): Promise<number> };
+
+export const sweep = purge({
+  name: 'x.purge',
+  // Read once per ATTEMPT, never captured: a host declares the sweep at boot, and some of the
+  // stores behind it are built later.
+  targets: () => [{ name: 'x_rate_limit', purgeExpired: (nowMs) => store.purgeExpired(nowMs) }],
+});
+
+export const hourly = task({
+  name: 'x.purge.hourly',
+  cron: DEFAULT_PURGE_CRON,
+  tz: 'UTC',
+  enqueue: () => [[sweep, {}]],
+});
+```
+
+| Rule | Why |
+|---|---|
+| `PurgeTarget` is structural | the stores live in `@ultimat3/action`, `@ultimat3/http` and `@ultimat3/auth`; importing them would put the HTTP pipeline on this package's graph |
+| one `step.run` per target | a killed attempt resumes at the table it stopped on, not at the first |
+| one clock reading per pass | `postgresRateLimitStore.purgeExpired(nowMs)` needs the CALLER's clock — the server's read a 20,000,000-second refill against a frozen one and deleted a live bucket |
+| at least once is safe here | a replayed delete removes rows that are already gone, and a row a purge deleted answers exactly as one that was never there |
+| two targets under one name | `X_INVARIANT`, before the first delete — `step.run` would raise `X_STEP_DUPLICATE` after one table was already empty |
+
+`@ultimat3/cli`'s boot declares both halves over the three tables it owns, so an app gets the sweep
+without writing any of the above. It needs a `worker` to run it and a `scheduler` to fire it: a
+deployment with neither has no background work at all, and this is one more thing it does not do.
+
 ## The deadline cancels
 
 A job's `timeout` aborts `ctx.signal` **before** it fails the attempt, because the nack that

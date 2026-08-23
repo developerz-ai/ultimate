@@ -334,6 +334,29 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   jumps over a page the live iteration never read. A checkpoint READ back is checked rather than
   trusted — `step.run` replays it through an unchecked `as T`, and an absent cursor is not `null`,
   so the pass would silently reopen the source at the top and walk the whole table again.
+- **`purge()` is a FACTORY over `job()` too, and it is the ONE caller every `purgeExpired()` in
+  the framework was missing** (`As of 2026-08-22`). Three stores shipped one —
+  `postgresIdempotencyStore` (`x_idempotency`), `postgresRateLimitStore` (`x_rate_limit`) and
+  `postgresAuthLimiter` (`x_auth_failures`/`x_auth_lockouts`) — each documented as "an app runs
+  this from a `task`", and a task only ENQUEUES, so there was no job for one to enqueue and every
+  row written was a row kept. `x_rate_limit` takes one upsert per HTTP request the web role serves,
+  assets included.
+
+  `PurgeTarget` is STRUCTURAL (`{ name, purgeExpired(nowMs) }`) for the reason `PgExecutor` is: two
+  of those three packages are below this one and one is beside it, and a sweep that needed their
+  types would put the HTTP pipeline on this package's import graph. `targets()` is a THUNK, read
+  once per attempt: a host declares the sweep at boot and the auth limiter does not exist yet —
+  `defineAuth` builds it when the app's modules import. One table per `step.run`, so a killed
+  attempt resumes at the table it stopped on; a purge is idempotent by nature, so the replay that
+  at-least-once guarantees deletes rows that are already gone. **One clock reading for the whole
+  pass**, handed to every target: `postgresRateLimitStore.purgeExpired(nowMs)` requires the
+  CALLER's clock, and reading the server's computed a 20,000,000-second refill against a frozen
+  test clock and deleted a bucket holding 0 of 4 tokens — a free limit reset, handed out by the
+  cleanup. Two targets under one name are refused (`X_INVARIANT`) before the first delete rather
+  than discovered as `X_STEP_DUPLICATE` after one table is already empty.
+
+  It declares no schedule of its own: `DEFAULT_PURGE_CRON` is the hourly cron a host's `task()`
+  uses, and `@ultimat3/cli`'s `dev-purge.ts` is the one that declares both halves at boot.
 - **`handle` is AT LEAST ONCE, and the ordering that makes it so is deliberate.** The body runs
   inside the step and the record is written after it returns, so an attempt killed, cancelled or
   lease-expired between the two hands that page to the next attempt — which is why the doc comment,
@@ -687,6 +710,7 @@ picture from the other side.
 | `worker-run.ts` | one claimed job, wired: its heartbeat, its slot renewal, its run signal and its span, started together and handed back in one `finally` |
 | `run-signal.ts` | the signal ONE run is cancelled by — composition that can be handed back, and that the worker can abort itself |
 | `worker-fleet-slots.ts` | the fleet slot an in-flight job holds — take, renew, hand back. The claim loop asks "may I start this one?"; this answers it across the fleet |
+| `purge.ts` | `purge()` — a factory over `job()`: the retention sweep, its structural target seam and the hourly cron a host schedules it on |
 | `task.ts` | the `task()` primitive + registry + the handle's surface + `registerTask` |
 | `scheduler.ts` | `scheduler` role: the dispatch round, catch-up, leader election, the drain |
 | `limits.ts` | per-tenant / per-queue / global concurrency + rate |

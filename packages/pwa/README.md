@@ -38,13 +38,14 @@ and the app dies with a blank screen and no error anyone can act on.
 | Client → server | every SW-proxied request carries `x-ultimate-build` |
 | Retention | `retentionPlan(deploys, keep)` keeps the last N deploys' assets alive (default 3) |
 | Stale client | gets `AppUpdateAvailable`, never a 404 |
-| Forced reload | only for `forceOn` reasons, only after `graceMs` (default 6h) |
+| Forced reload | none. This package never navigates a client — the app decides what to do with the message |
 | Preview deploys | cache names are `x-<kind>-<buildId>`, so a branch build cannot poison production |
 
 ```ts
-detectSkew(clientBuildId, serverBuildId);   // 'current' | 'stale' | 'unknown'
-updateSignal({ clientBuildId, serverBuildId, policy: updatePolicy() });
-// → { type: 'AppUpdateAvailable', from, to, forced, deadlineAt }
+// The generated worker posts this to every page it controls, on activation — and this is the
+// whole message, which `version-skew.test.ts` holds the interface to.
+// { type: 'AppUpdateAvailable', to: BUILD_ID }
+detectSkew(clientBuildId, message.to); // 'current' | 'stale' | 'unknown'
 ```
 
 `unknown` means no id was sent — a first load or a crawler — and is never treated as stale.
@@ -87,7 +88,7 @@ capability nothing implements.
 | `generateServiceWorker` | `sw.js` from the route table; deterministic for identical input |
 | `strategyFor`, `MODE_STRATEGY`, `cacheFirst`, … | the four strategies + the mapping table |
 | `buildPrecacheManifest` | precache entries (url + content-hash revision), size warnings |
-| `buildId`, `detectSkew`, `retentionPlan`, `updatePolicy`, `updateSignal` | version skew |
+| `buildId`, `detectSkew`, `retentionPlan` | version skew |
 | `generateWebManifest` | the manifest + `theme-color` metas for both schemes |
 | `planIcons`, `requireSourceIcon`, `maskableSafeZone` | icons and splashes from one source |
 | `BuiltinImagePipeline` | renders that plan: one square PNG per entry, deterministic |

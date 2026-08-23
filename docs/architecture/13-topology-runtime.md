@@ -208,7 +208,7 @@ Skew handling during a rolling deploy:
 | `ROLE=migrate` must exit 0 before new `web`/`sync` start | a `web` replica whose build ID does not match the applied migration reports not-ready |
 | Migrations are additive across one deploy | old and new code run simultaneously during a rollout; a destructive change needs two deploys |
 | Skew is observable | `x status --json` reports the build-ID distribution of connected clients |
-| No forced reload without a grace period | no exception ships `As of 2026-08`. `x deploy --critical` was deleted in 4.0.0 — it recorded the intent in the plan JSON and nothing acted on it — and `updateSignal` — the function that would compute a forced deadline — has **no runtime caller anywhere in the repo**. The grace default is 6h, not 30m, and a forced deadline is `now`, not a countdown |
+| No forced reload, at all | **`As of 2026-08-23` the framework force-reloads nothing, and no longer pretends to.** `x deploy --critical` was deleted in 4.0.0 (it recorded the intent in the plan JSON and nothing acted on it); 9.0.0 deleted the other half — `updateSignal`, `updatePolicy` and the three `AppUpdateAvailable` fields no producer emitted. Not deferred: **unwireable**, because the two runtimes that hold both build ids sit BELOW `pwa` in the tier table (`http` 2, `sync` 3, `pwa` 4) and imports only go down, so any caller would have inverted a tier or written a third copy of skew detection. Notification ships and is complete — the worker posts `{ type: 'AppUpdateAvailable', to }` and `useConnection().updateAvailable` reads it |
 
 ## Codes
 

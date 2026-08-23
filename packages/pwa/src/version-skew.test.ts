@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { BuildIdMissingError } from './errors';
-import type { Deploy } from './version-skew';
+import { generateServiceWorker } from './service-worker';
+import type { AppUpdateAvailable, Deploy } from './version-skew';
 import {
+  APP_UPDATE_AVAILABLE,
   buildId,
   cacheNamespace,
   detectSkew,
   retentionPlan,
-  updatePolicy,
-  updateSignal,
 } from './version-skew';
 
 describe('buildId', () => {
@@ -62,45 +62,24 @@ describe('retentionPlan', () => {
   });
 });
 
-describe('update policy and the AppUpdateAvailable signal', () => {
-  test('a stale client is signalled, not 404ed', () => {
-    const signal = updateSignal({
-      clientBuildId: 'b1',
-      serverBuildId: 'b2',
-      policy: updatePolicy(),
-      now: 1_000,
-    });
-    expect(signal).toEqual({
-      type: 'AppUpdateAvailable',
-      from: 'b1',
-      to: 'b2',
-      forced: false,
-      deadlineAt: null,
-    });
-  });
+/**
+ * The emitted worker is the ONE producer of this message, so its object literal is the message's
+ * real shape. Read back out of the source rather than restated, because a second hand-written copy
+ * of the field list is what let the declaration and the producer drift apart in the first place.
+ */
+function postedUpdateFields(): readonly string[] {
+  const { source } = generateServiceWorker([], { offline: { fallback: '/offline' } }, 'b2');
+  const fields = /c\.postMessage\(\{(?<fields>[^}]*)\}\)/.exec(source)?.groups?.['fields'];
+  if (fields === undefined) expect.unreachable('the activate block posts no message literal');
+  return fields.split(',').map((pair) => pair.slice(0, pair.indexOf(':')).trim());
+}
 
-  test('a current or unknown client gets no signal', () => {
-    const policy = updatePolicy();
-    expect(updateSignal({ clientBuildId: 'b2', serverBuildId: 'b2', policy })).toBe(null);
-    expect(updateSignal({ clientBuildId: null, serverBuildId: 'b2', policy })).toBe(null);
-  });
-
-  test('a security patch forces a reload once the grace period has passed', () => {
-    const policy = updatePolicy({ graceMs: 60_000, forceOn: ['security'] });
-    expect(policy.shouldForce('security', 30_000)).toBe(false);
-    expect(policy.shouldForce('security', 90_000)).toBe(true);
-    expect(policy.shouldForce('never', 90_000)).toBe(false);
-
-    const forced = updateSignal({
-      clientBuildId: 'b1',
-      serverBuildId: 'b2',
-      policy,
-      reason: 'security',
-      staleForMs: 90_000,
-      now: 5_000,
-    });
-    expect(forced?.forced).toBe(true);
-    expect(forced?.deadlineAt).toBe(5_000);
+describe('AppUpdateAvailable is the message the service worker posts, and no more', () => {
+  test('every field the interface declares is on the literal the activate block emits', () => {
+    // `Required<>` is the build error behind this rule: a field added to the interface — optional
+    // or not — stops compiling here until the generated worker actually posts it.
+    const message = { type: APP_UPDATE_AVAILABLE, to: 'b2' } satisfies Required<AppUpdateAvailable>;
+    expect([...postedUpdateFields()].sort()).toEqual(Object.keys(message).sort());
   });
 });
 

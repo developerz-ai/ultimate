@@ -535,6 +535,7 @@ hand-written layout and `readMigrations` skips it — read as a migration it sor
 | `dev-queue.ts` | the db + queue pair alone, and the one place that takes every ambient accessor back |
 | `dev-runtime.ts` | start the rest on top of it and install the remaining accessors (storage, mail, transport) |
 | `dev-cache.ts` | which cache tiers this process reads through, and the cross-instance invalidation hop |
+| `dev-purge.ts` | the hourly retention sweep: which framework tables this boot owns, the `purge()` job over them and the `task` that fires it |
 | `dev-sync.ts` | the `sync` role: its live-query registry, who is dialling it, and the socket it owns |
 | `runtime-overrides.ts` | the one field a host hands the framework a driver through |
 | `sync-authenticator.ts` | the app's HTTP authenticator, seen as the sync node's |
@@ -602,6 +603,8 @@ relay draining it.
 | the durable scheduler | `pgSchedulerState` + `createPgLeaseLeader` in `startRoles` | a watermark forgotten on restart, and every replica its own leader |
 | the Postgres event bus | `dev-queue.ts` | `step.waitForEvent` forgot every correlation on restart |
 | the shared idempotency store | `dev-queue.ts` | a retry on another replica charged the card twice |
+| the shared auth limiter | `configureAuthLimiters` in `startServices` | account lockouts counted per POD, so N replicas granted `maxAttempts × N` guesses |
+| the retention sweep | `dev-purge.ts`, declared in `startServices` | three `purgeExpired()` with no caller — every row `x_idempotency`, `x_rate_limit` and `x_auth_*` ever took was kept |
 | the cache tiers | `dev-cache.ts` | only the CDN tier was registered; memo, LRU and Redis had zero callers |
 | WebSocket authentication | `dev-sync.ts` | `actorId: null` on every socket — realtime was single-tenant by wiring |
 | OTLP export | `otlp-export.ts` | the chart set the variable and no code read it |
@@ -769,9 +772,12 @@ Promoting it to `x verify`'s `boundaries` host check is one line in `scripts/ver
 rule over names. Two stronger rules were measured and rejected: "the read must not be a property
 initializer" reports six flags, five of which work (`x db --allow-destructive`, `x jobs --queue`);
 "the summary must match the behaviour" is undecidable. So the flag's summary now says what it does,
-and forcing a reload stays what it always was — `@ultimat3/pwa`'s `updateSignal({ reason:
-'security' })`, which `As of 2026-08` has **no runtime caller anywhere**, in that package or
-outside it. Wiring the flag means giving that function a caller first.
+and forcing a reload is **not a thing this framework does**, `As of 2026-08-23`. `updateSignal`
+had no runtime caller for four majors and 9.0.0 deleted it rather than wiring it: `pwa` is tier 4
+and the two runtimes holding both build ids — `http` (2) and `sync` (3) — are below it, so no
+legal import could ever have reached the function. A deploy command has no channel to a running
+client regardless; the plan is `docker compose up` or `helm upgrade`. What ships is notification:
+`useConnection().updateAvailable` from `@ultimat3/realtime`.
 
 ## Planned commands are commands
 

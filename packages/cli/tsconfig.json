@@ -18,6 +18,9 @@
       "path": "../ai"
     },
     {
+      "path": "../auth"
+    },
+    {
       "path": "../cache"
     },
     {
