@@ -9,7 +9,7 @@ import { beforeAll, expect, test } from 'bun:test';
 // renders ⟦key⟧ — which the last assertion is what checks for.
 import '@social-media-clone/i18n';
 import { createContext, runWithContext, userActor } from '@ultimat3/core';
-import { renderComponent } from '@ultimat3/render';
+import { renderComponent } from '@ultimat3/render/server';
 
 const FILE = 'apps/web/app/dashboard/page.tsx';
 

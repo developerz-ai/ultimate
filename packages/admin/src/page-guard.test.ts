@@ -29,7 +29,7 @@ import type { AdminPageProps } from './pages';
 // Dynamic, and for the reason `detail-render.test.ts` states: `@ultimat3/render`'s `Bun.plugin`
 // is the JSX factory these views compile through, and a plugin only transforms modules loaded
 // after it. Nothing else in this package may reach `page-guard.tsx` statically.
-await import('@ultimat3/render');
+await import('@ultimat3/render/server');
 const { AdminPageDenied, guardedPage } = await import('./page-guard');
 
 registerCatalog('en', {

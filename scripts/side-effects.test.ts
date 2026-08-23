@@ -285,8 +285,9 @@ describe('this repository', () => {
     ]);
     expect(measured.get('packages/i18n')).toEqual(['src/errors.ts', 'src/framework.ts']);
     expect(measured.get('packages/money')).toEqual(['src/errors.ts']);
-    // `index.ts` calls `installRenderLoader()` — the barrel itself is the side effect here.
-    expect(measured.get('packages/render')).toEqual(['src/errors.ts', 'src/index.ts']);
+    // `server.ts` calls `installRenderLoader()` — the BUILD-TIME barrel is the side effect here,
+    // and `index.ts` (the client half) is inert, which is what lets it bundle for a browser.
+    expect(measured.get('packages/render')).toEqual(['src/errors.ts', 'src/server.ts']);
     expect(measured.get('packages/time')).toEqual(['src/errors.ts']);
     expect(measured.get('packages/ui')).toEqual(['src/errors.ts']);
   });

@@ -4,7 +4,7 @@
 // element renders unclassed, and `Bun.build` reports `success: true` with no log.
 
 import { renderThrowable, UltimateError } from '@ultimat3/core';
-import { loadStylesheet } from '@ultimat3/render';
+import { loadStylesheet } from '@ultimat3/render/server';
 import type { BunPlugin } from 'bun';
 import { IslandBuildFailedError } from './errors';
 

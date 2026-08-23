@@ -18,7 +18,7 @@ import {
 import type { NavGroup } from './nav';
 import { adminBranding, type ThemeTokenRef, themeAttributes } from './theme';
 
-await import('@ultimat3/render');
+await import('@ultimat3/render/server');
 const { AdminLayout } = await import('./layout');
 
 registerCatalog('en', {

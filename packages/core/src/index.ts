@@ -32,6 +32,7 @@ export {
 export { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
 export { assert, assertNever, type InvariantOptions, invariant } from './assert';
 export { type AsyncContext, asyncContext } from './async-context';
+export { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 export { canonicalJson, fingerprint } from './canonical-json';
 export { type Clock, type FrozenClock, frozenClock, systemClock } from './clock';
 export type {
@@ -42,7 +43,6 @@ export type {
   AppConfigOverlay,
   AuthConfig,
   CacheConfig,
-  CacheTier,
   DatabaseConfig,
   JobsConfig,
   McpConfig,

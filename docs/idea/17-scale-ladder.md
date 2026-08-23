@@ -60,7 +60,7 @@ The framework does not hide these, and three of them touch a seam it owns. `As o
 | **Memory ceiling**, typically 512MB | one process running every role at once | Rung 0 is one `web` service. Live queries at any size want their own process — that is rung 1, and the reason the ladder exists |
 | **A free database that expires** after a fixed window on some platforms | everything | A migration ledger and `x db` are the same on a paid instance; changing `DATABASE_URL` is the whole migration |
 
-**When rung 0 is enough:** almost always, for longer than feels right. One process, one managed Postgres, `cache.tiers: ['memo', 'lru']`, `realtime.transport: 'memory'` — the `x new` defaults — serve a real product with real users, and every one of those defaults is what an unset variable already means.
+**When rung 0 is enough:** almost always, for longer than feels right. One process, one managed Postgres, `cache.tiers: ['request-memo', 'lru']`, `realtime.transport: 'memory'` — the `x new` defaults — serve a real product with real users, and every one of those defaults is what an unset variable already means.
 
 ## Rung 1 — one service per role, one shared cache
 
@@ -132,9 +132,9 @@ Every scale component, and exactly what to swap.
 | Embedded dev DB | `@ultimat3/db` · `PgliteClient` | `createPgliteClient()` | — | unset `DATABASE_URL` | shipped, `x dev` only |
 | Repository | `@ultimat3/entity` · `Repo`, `Driver` | `postgresRepo()`; `memoryRepo()` for tests | — | — | shipped |
 | Pool sizing | `@ultimat3/db` · `POOL_PROFILES` | per-`ROLE` max / statement timeout / idle timeout | — | `ROLE` | shipped |
-| Cache, per-request | `@ultimat3/cache` · `CacheTier` | request memo | `cache.tiers: ['memo']` | — | shipped |
+| Cache, per-request | `@ultimat3/cache` · `CacheTier` | request memo | `cache.tiers: ['request-memo']` | — | shipped |
 | Cache, per-process | `@ultimat3/cache` · `CacheTier` | LRU | `cache.tiers: ['lru']` | — | shipped |
-| Cache, cross-node | `@ultimat3/cache` · `CacheTier`, `RedisLike` | `createRedisTier()` over `Bun.redis` | `cache.driver: 'redis'`, `cache.tiers: ['shared']`, `cache.urlEnv` | `REDIS_URL` | shipped |
+| Cache, cross-node | `@ultimat3/cache` · `CacheTier`, `RedisLike` | `createRedisTier()` over `Bun.redis` | `cache.driver: 'redis'`, `cache.tiers: ['redis']`, `cache.urlEnv` | `REDIS_URL` | shipped |
 | Cache, edge | `@ultimat3/cache` · `CacheTier` | CDN headers + purge (Cloudflare, Fastly, HTTP) | `cache.tiers: ['cdn']` | purge-provider env | shipped |
 | Job queue | `@ultimat3/jobs` · `JobDriver` (`enqueue`/`claim`/`ack`/`nack`/`heartbeat`/`stats`) | `createPgDriver()`; `setJobDriver()` installs it | **none** — `jobs.driver` was deleted in 5.0.0 and `setJobDriver()` is the only switch | `DATABASE_URL` | shipped |
 | Job queue, Redis | same interface | `createRedisDriver()` — Streams + consumer groups + `XAUTOCLAIM` | none; `setJobDriver(createRedisDriver())` | `REDIS_URL` | **interface-complete stub, throws `X_NOT_IMPLEMENTED`** |

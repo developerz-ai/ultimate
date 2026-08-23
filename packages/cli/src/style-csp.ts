@@ -4,7 +4,8 @@
 // stylesheet the document no longer carries — and the CSP would block the framework's own CSS.
 
 import { cspHashSource } from '@ultimat3/http';
-import { SURFACES, stylesFor } from '@ultimat3/render';
+import { SURFACES } from '@ultimat3/render';
+import { stylesFor } from '@ultimat3/render/server';
 
 /**
  * Call AFTER `loadApp`. One hash per distinct body: `stylesFor` is what `dev-render.ts` puts in

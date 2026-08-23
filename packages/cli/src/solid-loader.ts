@@ -7,7 +7,7 @@
 // `tsc` compiles this file inside ITS program, where a `.d.ts` sitting in this directory is
 // not included and its `declare module` never applies. `tsc -b` proves it in this repo.
 import { transformAsync } from '@babel/core';
-import { contentHash } from '@ultimat3/render';
+import { contentHash } from '@ultimat3/render/server';
 import solidPreset from 'babel-preset-solid';
 import type { BunPlugin } from 'bun';
 import { IslandBuildFailedError } from './errors';

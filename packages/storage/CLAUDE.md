@@ -32,6 +32,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `signed-url.ts` | HMAC over the constraint tuple, constant-time verify |
 | `upload.ts` | magic-byte sniff + size/allowlist/checksum policy |
 | `image.ts` | deterministic variant keys; byte path over core's pipeline (png/jpeg encode only) |
+| | `VARIANT_FORMATS` — what a variant KEY can carry — and NOT `IMAGE_FORMATS`, which is core's and means what core can PROBE. See below |
 | | `variantKey` is the cache identity `@ultimat3/cli`'s `/media/*` route looks a variant up by — derived, never stored, so a request that misses transforms once and every later one is a disk read |
 | `storage.ts` | `defineStorage` + module-level `storage()` / `disk()` |
 | `grant.ts` | `grantUpload` — the ONE way a presigned PUT is minted; the client never names a key |
@@ -169,7 +170,21 @@ Gotchas:
   in `beforeEach`.
 - `image.ts` owns no pixels: core's `transformImageBytes`/`blurDataUrl` are the only scaler.
   Its image failures (`X_IMAGE_UNSUPPORTED`, `X_IMAGE_DECODE_FAILED`) surface unwrapped —
-  wrapping them in a `StorageError` would give one failure two codes.
+  wrapping them in a `StorageError` would give one failure two codes. `variantKey` now RAISES
+  core's `imageUnsupported()` as well as passing them through, for that same reason.
+- **`VARIANT_FORMATS` is this package's format vocabulary, and `IMAGE_FORMATS` is core's.** Until
+  9.0.0 both packages exported `IMAGE_FORMATS` **and** `ImageFormat` from their own barrels over
+  different sets (core: `png|jpeg|webp|avif|gif|svg`, what it can PROBE; storage: `avif|webp|jpeg|png`),
+  so a caller narrowing on storage's held a type saying `gif` and `svg` could not occur and a
+  `probeImage()` value that was one — and `variantKey('photos/hero.gif', { format })` minted
+  `photos/hero@full.undefined`, a well-formed writable key naming a file nothing can serve. The set
+  is now a strict subset **by the compiler**: `as const satisfies readonly ImageFormat[]`, so a
+  member core cannot name is a build error here. `isVariantFormat` takes `string` on purpose, so
+  `probeImage(bytes).format` narrows through it with no cast. `avif` is in the set and `gif`/`svg`
+  are not because the question is what a variant KEY can carry, never what core can transform —
+  core decodes `gif` perfectly well, and naming this set `TRANSFORMABLE_FORMATS` would have been
+  the same lie one rename later. `scripts/render-modes.ts` holds the `IMAGE_FORMATS` row (`by:
+  'name'`) and `image.test.ts` fails the day either core name reappears in `src/index.ts`.
 - `transformImage()` must encode at exactly `fitDimensions()`'s size, and passes `format`
   explicitly (`?? 'webp'`, which then rejects): bytes that disagree with the `variantKey`
   extension, or with the `width`/`height` `@ultimat3/seo` inlined, are the layout shift the

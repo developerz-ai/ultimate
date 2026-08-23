@@ -7,14 +7,13 @@ import { createServer, defineHttpConfig } from '@ultimat3/http';
 import type { RegisterRouteInput, RenderMode, RouteComponent } from '@ultimat3/render';
 import {
   clearRoutes,
-  clearStylesheets,
   defineRoute,
   h,
-  loadStylesheet,
   RENDER_MODES,
   registerRoute,
   SURFACE_SPECS,
 } from '@ultimat3/render';
+import { clearStylesheets, loadStylesheet } from '@ultimat3/render/server';
 import { appRoutes } from './dev-render';
 
 const BUILD_ID = 'build-under-test';

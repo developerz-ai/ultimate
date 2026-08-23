@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { CacheTierName } from './cache-vocabulary';
 import { type AppConfig, defineConfig } from './config';
 import { isUltimateError, type UltimateError } from './errors';
 
@@ -126,6 +127,51 @@ describe('defineConfig', () => {
     expect(causeOf(() => defineConfig({ name: 'myapp', cache: { driver: 'redis' } }))).toContain(
       'cache.urlEnv',
     );
+  });
+});
+
+// The BUILD error half — `cache: { tiers: ['isr'] }` no longer compiling — lives in `type-pins.ts`
+// for the reason stated below: `tsconfig.json` excludes `*.test.ts`. This is the RUNTIME half,
+// which is what an untyped config file or an 8.0.0 app compiled against the old union reaches.
+describe('cache tiers name rungs the ladder can actually build', () => {
+  /** An 8.0.0 spelling arriving from a config file nothing typechecked. */
+  const legacy = (tiers: readonly string[]): (() => AppConfig) => {
+    const cache = { tiers: tiers as readonly CacheTierName[] };
+    return () => defineConfig({ name: 'myapp', cache });
+  };
+
+  test('defaults to the two process-local rungs, under the ladder own names', () => {
+    // `['memo', 'lru']` until 2026-08-22, and `memo` is a rung `sortTiers` places at -1.
+    expect(defineConfig({ name: 'myapp' }).cache.tiers).toEqual(['request-memo', 'lru']);
+  });
+
+  test('accepts every name the ladder orders by', () => {
+    const tiers: readonly CacheTierName[] = ['request-memo', 'lru', 'redis', 'cdn'];
+    expect(defineConfig({ name: 'myapp', cache: { tiers } }).cache.tiers).toEqual(tiers);
+  });
+
+  test("refuses 'isr' — the value 8.0.0 accepted and no tier could serve", () => {
+    // Observed before the fix: `defineConfig` returned `tiers: ['isr']` and threw nothing, so the
+    // app booted believing it had asked for a cache rung that does not exist.
+    expect(legacy(['isr'])).toThrow(/cache.tiers contains "isr"/);
+  });
+
+  test('refuses both renamed spellings, and names the rename in the fix', () => {
+    let caught: unknown;
+    try {
+      legacy(['memo', 'lru', 'shared'])();
+    } catch (thrown) {
+      caught = thrown;
+    }
+    if (!isUltimateError(caught)) return expect.unreachable('defineConfig accepted a dead tier');
+    expect(caught.code).toBe('X_CONFIG_INVALID');
+    // Both, in one throw: a validator reporting only the first costs an operator two deploys.
+    expect(caught.cause).toContain('"memo"');
+    expect(caught.cause).toContain('"shared"');
+    expect(caught.fix).toContain('memo becomes request-memo');
+    expect(caught.fix).toContain('shared becomes redis');
+    // Still ends in a command that can be pasted.
+    expect(caught.fix.endsWith('x verify')).toBe(true);
   });
 });
 

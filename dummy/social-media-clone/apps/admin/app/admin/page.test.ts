@@ -17,7 +17,7 @@ import { beforeAll, expect, test } from 'bun:test';
 import '@social-media-clone/i18n';
 import { seedDemo } from '@social-media-clone/db';
 import { createContext, runWithContext, userActor } from '@ultimat3/core';
-import { renderComponent } from '@ultimat3/render';
+import { renderComponent } from '@ultimat3/render/server';
 import { ADMIN_ACTION_ROUTE } from '../../shared/action-route';
 
 const FILE = 'apps/admin/app/admin/page.tsx';

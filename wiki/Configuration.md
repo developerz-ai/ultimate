@@ -150,7 +150,7 @@ excess-property checking and gets **no error at all** → [Known gaps](Known-Gap
 | `cache.driver` | `'memory' \| 'redis'` | `'memory'` | `'redis'` **requires** `cache.urlEnv`, or `X_CONFIG_INVALID` at boot |
 | `cache.urlEnv` | `string` | — | the env **key name**, never a URL |
 | `cache.defaultTtlMs` | `number` | `60000` | milliseconds, not a duration string |
-| `cache.tiers` | `CacheTier[]` | `['memo', 'lru']` | `'memo' \| 'lru' \| 'shared' \| 'isr' \| 'cdn'`; order is fixed regardless of listing order |
+| `cache.tiers` | `CacheTierName[]` | `['memo', 'lru']` | `'memo' \| 'lru' \| 'shared' \| 'isr' \| 'cdn'`; order is fixed regardless of listing order |
 
 **The per-tier byte caps and TTLs are constructor options, not config** — the same shape as the realtime caps above. `cache.memo.maxBytes`, `cache.lru.maxBytes`, `cache.redis.*` and `cache.ttl.*` are not fields and never were; writing one is `TS2353`, excess property on `Input<CacheConfig>`.
 
@@ -161,7 +161,7 @@ excess-property checking and gets **no error at all** → [Known gaps](Known-Gap
 | `jitterFraction` | same | `DEFAULT_TTL_JITTER_FRACTION` | TTL spread in `[0, 1)`; `0` disables it, which is how a stampede is reproduced in a test |
 | `clock` / `rng` | same | system | injected so a jittered expiry is deterministic |
 
-**Two vocabularies name the tiers and no code maps one onto the other, `As of 2026-08-22`.** `CacheTier` — the config union this table documents — is `memo | lru | shared | isr | cdn` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). `TIER_ORDER`, which is what `sortTiers` actually orders a stack by, is `request-memo | lru | redis | cdn` ([`packages/cache/src/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cache/src/tiers.ts)). `memo`/`request-memo` and `shared`/`redis` are the same rung spelled twice, and `isr` appears in the config union and in no `TierName`. Read the order off `TIER_ORDER`; the config union is what `defineConfig` accepts.
+**One vocabulary names the tiers, `As of 2026-08-23`.** `CACHE_TIERS` in [`packages/core/src/cache-vocabulary.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/cache-vocabulary.ts) is `request-memo | lru | redis | cdn`, in ladder order — it **is** `TIER_ORDER`, which is what `sortTiers` orders a stack by, not a second list that agrees with it. Until 9.0.0 there were two: the config accepted `memo | lru | shared | isr | cdn` while the ladder built `request-memo | lru | redis | cdn`, so `memo`/`request-memo` and `shared`/`redis` were one rung spelled twice and **`isr` named a rung that did not exist** — it is a `RenderMode`, not a cache tier. `bun run render-modes` refuses a second declaration on the member set, so the two cannot re-diverge.
 
 ### CDN purge
 

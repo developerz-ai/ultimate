@@ -16,7 +16,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { h, renderToHtml } from '@ultimat3/render';
+import { h } from '@ultimat3/render';
+import { renderToHtml } from '@ultimat3/render/server';
 import { For, Index, Show } from 'solid-js';
 
 interface Row {

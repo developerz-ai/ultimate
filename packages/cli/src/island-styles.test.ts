@@ -7,7 +7,11 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // root that may not exist without a branch.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { clearStylesheets, compileStylesheet, registeredStylesheets } from '@ultimat3/render';
+import {
+  clearStylesheets,
+  compileStylesheet,
+  registeredStylesheets,
+} from '@ultimat3/render/server';
 import { buildIslands } from './island-bundle';
 
 const ROOT = join(import.meta.dir, '..', '.island-styles-fixture');

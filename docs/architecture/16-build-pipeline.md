@@ -9,7 +9,7 @@ Companion to [`09-rendering-internals.md`](./09-rendering-internals.md), which c
 `x dev`, `x build --target static`, `apps/web/server.ts` and `bun test` all load a page module the same way. There is no "bundled" behaviour separate from "dev" behaviour, because there is no bundler.
 
 ```
-import '@ultimat3/render'      → installRenderLoader()   (module-loader.ts)
+import '@ultimat3/render/server' → installRenderLoader() (module-loader.ts)
   Bun.plugin onLoad /\.tsx$/   → Bun.Transpiler(jsx: react, jsxFactory: __xh)
                                  + `import { h as __xh, Fragment as __xFragment }`
   Bun.plugin onLoad /\.s?css$/ → sass.compileString → scoped class map + CSS registry

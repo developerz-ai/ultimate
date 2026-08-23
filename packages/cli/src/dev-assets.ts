@@ -15,8 +15,8 @@ import type { IconPlan } from '@ultimat3/pwa';
 import { BuiltinImagePipeline, PwaIconMissingError, planIcons } from '@ultimat3/pwa';
 import type { ImageQuery, ImageTransformDriver } from '@ultimat3/seo';
 import { builtinImageDriver, DEFAULT_WIDTHS, parseImageQuery } from '@ultimat3/seo';
-import type { ImageFormat, ImageTransform, Storage } from '@ultimat3/storage';
-import { IMAGE_FORMATS, isTenantScoped, variantKey } from '@ultimat3/storage';
+import type { ImageTransform, Storage, VariantFormat } from '@ultimat3/storage';
+import { isTenantScoped, isVariantFormat, variantKey } from '@ultimat3/storage';
 import {
   AUTHORIZED_OBJECT_CACHE,
   assertReadableKey,
@@ -87,14 +87,11 @@ const imageResponse = (bytes: Uint8Array, contentType: string, cache: CacheHint)
 const mediaCache = (key: string): CacheHint =>
   isTenantScoped(key) ? AUTHORIZED_OBJECT_CACHE : IMMUTABLE_IMAGE;
 
-const isImageFormat = (value: string): value is ImageFormat =>
-  (IMAGE_FORMATS as readonly string[]).includes(value);
-
 /**
  * `exactOptionalPropertyTypes` makes an explicit `undefined` a different answer from an absent
  * key, and `variantKey` reads presence — so a spread, never an assignment.
  */
-function storageTransform(query: ImageQuery, format: ImageFormat | undefined): ImageTransform {
+function storageTransform(query: ImageQuery, format: VariantFormat | undefined): ImageTransform {
   return {
     ...(query.width === undefined ? {} : { width: query.width }),
     ...(format === undefined ? {} : { format }),
@@ -117,7 +114,7 @@ async function transformedVariant(
   // A format storage cannot name has no variant key, so it cannot be cached. The driver refuses
   // it with core's `X_IMAGE_UNSUPPORTED`; refusing it here too would give one bad URL two codes.
   const format =
-    query.format !== undefined && isImageFormat(query.format) ? query.format : undefined;
+    query.format !== undefined && isVariantFormat(query.format) ? query.format : undefined;
   const cacheable = query.format === undefined || format !== undefined;
   const cached = cacheable ? variantKey(key, storageTransform(query, format)) : undefined;
   // The SOURCE key decides the posture, not the variant's: `variantKey` keeps the source's prefix,

@@ -11,32 +11,29 @@ import type { Ctx } from '@ultimat3/core';
 import type { RouteMeta as HttpRouteMeta, Route, RouteParams } from '@ultimat3/http';
 import { asCtx, html, stream } from '@ultimat3/http';
 import { currentLocale } from '@ultimat3/i18n';
-import type {
-  IslandCollector,
-  IsrController,
-  RenderResult,
-  RouteData,
-  RouteEntry,
-} from '@ultimat3/render';
+import type { IslandCollector, RenderResult, RouteData, RouteEntry } from '@ultimat3/render';
 import {
-  contentHash,
   createIslandCollector,
-  createIsrController,
   headFromMeta,
   hydrateRuntime,
-  isrKey,
   metaContextFor,
-  ROOT_ELEMENT_ID,
-  renderComponent,
   renderHead,
-  renderSsr,
   routeDataFor,
   routeEntries,
   seoRenderers,
+} from '@ultimat3/render';
+import type { IsrController } from '@ultimat3/render/server';
+import {
+  contentHash,
+  createIsrController,
+  isrKey,
+  ROOT_ELEMENT_ID,
+  renderComponent,
+  renderSsr,
   staticHeaders,
   streamResult,
   stylesFor,
-} from '@ultimat3/render';
+} from '@ultimat3/render/server';
 
 /**
  * Specifier → built chunk URL, bound to the route file the specifier is written relative to.

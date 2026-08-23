@@ -34,6 +34,17 @@ Tier 1. Tagged caching + THE invalidation graph.
 - One graph. `graph.ts` exports functions over module state and **no constructor** — do not
   add one, do not add a second registry anywhere else.
 - Tag order is `TIER_ORDER`, never registration order. `sortTiers()` enforces it.
+- **The rung NAMES are `@ultimat3/core`'s (`CACHE_TIERS`); the ladder is this package's.**
+  `TierName` is an alias of core's `CacheTierName` and `TIER_ORDER` IS `CACHE_TIERS` — the same
+  array object, which `tier-vocabulary.test.ts` asserts by identity. Tier 0 owns the spelling
+  because `app.config.ts`'s `cache.tiers` names the same rungs and core is the only place a tier-0
+  declaration and this package can both see. It was spelled twice until 2026-08-22 (issue #293):
+  config accepted `memo | lru | shared | isr | cdn`, so `cache: { tiers: ['isr'] }` typechecked and
+  selected nothing, and `sortTiers` would have placed either unknown name at `-1` — AHEAD of the
+  request memo. Adding a rung is an edit to `packages/core/src/cache-vocabulary.ts` plus a factory
+  here; `scripts/render-modes.ts` refuses a second declaration of the set anywhere in `packages/*/src`.
+  **`isr` is not and never was a tier** — it is a `RenderMode`; the `'isr'` in `invalidate.ts` is an
+  ISR ROUTE queued for regeneration (`DependentKind = 'isr-route'`), which is a different subject.
 - **`bestEffort()` is public, and it is the only sanctioned way to swallow a cache refusal.** A
   store outside this package that wraps its own `try/catch` degrades invisibly, and a second
   failure log nobody reads is what this bounded one exists to prevent. Its label is `TierLabel` —

@@ -19,7 +19,7 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 88 As of 2026-08 — 87 inside the section of the major that shipped it, and 1 under
+# 91 As of 2026-08 — 87 inside the section of the major that shipped it, and 4 under
 # [Unreleased], staged for the next major. A released section's count is what the table above reads.
 ```
 

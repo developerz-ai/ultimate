@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { cspHashSource } from '@ultimat3/http';
-import { clearStylesheets, loadStylesheet, stylesFor } from '@ultimat3/render';
+import { clearStylesheets, loadStylesheet, stylesFor } from '@ultimat3/render/server';
 import { inlineStyleSources } from './style-csp';
 
 const SITE = '/srv/demo/apps/web/site/page.module.scss';

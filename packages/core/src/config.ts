@@ -2,6 +2,10 @@
 // defaults, validated eagerly, and composable so a big app can split it across `config/*.ts`
 // without inventing a second config mechanism.
 
+// Same rule for the same reason: `app.config.ts` CONSUMES the cache tier names, it does not own
+// them. Declaring them here is what let `cache.tiers` and the ladder `@ultimat3/cache` orders by
+// drift into two vocabularies with no map between them (issue #293).
+import { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 import { ConfigInvalidError } from './errors';
 import { ROLES, type Role } from './roles';
 // `app.config.ts` CONSUMES the route vocabulary; it does not own it. Declaring `OfflineStrategy`
@@ -11,7 +15,6 @@ import type { OfflineStrategy } from './route-vocabulary';
 import { isIanaZoneName } from './time-zone-name';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
-export type CacheTier = 'memo' | 'lru' | 'shared' | 'isr' | 'cdn';
 export type RealtimeTier = 'channels' | 'live-queries' | 'local-first';
 export type RealtimeTransport = 'memory' | 'nats' | 'redis';
 
@@ -70,11 +73,20 @@ export interface DatabaseConfig {
   readonly ssl: boolean;
 }
 
+/**
+ * No `CacheTier`. It was a SECOND spelling of the ladder — `memo | lru | shared | isr | cdn`
+ * against `@ultimat3/cache`'s `request-memo | lru | redis | cdn` — with nothing mapping one onto
+ * the other, so `cache: { tiers: ['isr'] }` typechecked and selected nothing. Deleted 2026-08-22
+ * in favour of `CacheTierName`, which is the ladder's own names and the only ones `sortTiers` can
+ * place. It was also the second exported type called `CacheTier` in the tree; the other is
+ * `@ultimat3/cache`'s tier INTERFACE, which is the one every implementation names.
+ */
 export interface CacheConfig {
   readonly driver: 'memory' | 'redis';
   readonly urlEnv: string | undefined;
   readonly defaultTtlMs: number;
-  readonly tiers: readonly CacheTier[];
+  /** Order is fixed by `TIER_ORDER`; listing order here selects rungs, it does not rank them. */
+  readonly tiers: readonly CacheTierName[];
 }
 
 export interface JobsConfig {
@@ -219,7 +231,12 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
     pwa: { enabled: false, offline: 'network-only', backgroundSync: false, push: false },
     roles: [...ROLES],
     database: { driver: 'postgres', ssl: false },
-    cache: { driver: 'memory', urlEnv: undefined, defaultTtlMs: 60_000, tiers: ['memo', 'lru'] },
+    cache: {
+      driver: 'memory',
+      urlEnv: undefined,
+      defaultTtlMs: 60_000,
+      tiers: ['request-memo', 'lru'],
+    },
     jobs: {
       queues: [`${name}-default`],
       concurrency: 8,
@@ -244,10 +261,21 @@ const BASE_FIX = 'edit app.config.ts to fix the fields named in cause, then run:
 const TIMEZONE_FIX =
   "set defaultTimeZone to an Area/Location name, or UTC — list every accepted one with bun -e \"console.log(Intl.supportedValuesOf('timeZone').join('\\n'))\" — where a legacy single-label name swaps mechanically (Japan → Asia/Tokyo, GB → Europe/London, Universal → UTC), while an abbreviation or numeric offset (CET, EST5EDT, +01:00) carries no DST rule and has no replacement, so name the city whose clock you mean (Europe/Paris, America/New_York)";
 
+/**
+ * Appended only when a tier name is what failed, and it names the rename rather than the rule: the
+ * three refused spellings are the ones 8.0.0 accepted, and two of them have a mechanical
+ * replacement while `isr` has none — it is a `RenderMode`, and no cache tier ever served it.
+ */
+const CACHE_TIER_FIX =
+  "in app.config.ts, rewrite cache.tiers with the rung names the ladder serves — request-memo, lru, redis, cdn — where memo becomes request-memo and shared becomes redis, and isr is dropped: it is a render mode, so move it to render: 'isr' on the routes that want it";
+
 function validate(config: AppConfig): void {
   const issues: string[] = [];
   // Zero or one entry: the zone's own remedy, carried only when the zone is what failed.
   const zoneFix: string[] = [];
+  // Same shape, and it exists for the upgrade: an 8.0.0 app carrying `['memo', 'shared']` in an
+  // untyped config file reaches here rather than the compiler, and needs the new spelling.
+  const tierFix: string[] = [];
 
   if (!NAME_RE.test(config.name)) {
     issues.push(`name "${config.name}" must match ${String(NAME_RE)}`);
@@ -280,13 +308,21 @@ function validate(config: AppConfig): void {
   if (config.cache.driver === 'redis' && config.cache.urlEnv === undefined) {
     issues.push('cache.driver "redis" requires cache.urlEnv');
   }
+  // A rung the ladder cannot build is the defect this key had: `sortTiers` places a name by its
+  // index in `CACHE_TIERS`, and a name missing from it sorts to `-1` — AHEAD of the request memo.
+  // So an unknown tier is refused at boot rather than silently ignored or silently placed first.
+  for (const tier of config.cache.tiers) {
+    if (CACHE_TIERS.includes(tier)) continue;
+    issues.push(`cache.tiers contains "${tier}", which is not one of ${CACHE_TIERS.join(', ')}`);
+    if (tierFix.length === 0) tierFix.push(CACHE_TIER_FIX);
+  }
 
   if (issues.length > 0) {
     throw new ConfigInvalidError({
       cause: issues.join('; '),
       // The generic instruction goes LAST so the fix line still ends in a command that can be
       // pasted — a trailing `.` after `x verify` is a command nobody can run.
-      fix: [...zoneFix, BASE_FIX].join('. '),
+      fix: [...zoneFix, ...tierFix, BASE_FIX].join('. '),
       meta: { issues },
     });
   }

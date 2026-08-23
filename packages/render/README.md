@@ -321,7 +321,29 @@ never flushed into an island that did not mount. `ISLAND_MOUNTED_ATTRIBUTE` and
 from, exported for the same reason: anything waiting for hydration has to wait at least this long,
 and a second copy of the number is a settle that shoots early and calls a healthy page broken.
 
+## Two entry points
+
+`@ultimat3/render` is the **client** half — the `route` primitive, the JSX factory, islands,
+hydration, `<head>`, the route table. It bundles for the browser, and
+`scripts/browser-barrel.test.ts` builds it that way and asserts it.
+
+`@ultimat3/render/server` is the **build-time** half — the `.tsx`/`.scss` Bun loaders and the
+render pipeline. It imports `sass` and `node:url`, so it never reaches a browser bundle.
+
+The two are **disjoint**: no name is on both, and a file needing both imports both. That is the
+price of the split and it is the point of it — a single barrel could not be bundled for the
+browser at all, because `node:url`'s browser polyfill exports neither `fileURLToPath` nor
+`pathToFileURL` and the build fails at link time. No `sideEffects` value fixes that (measured:
+`false`, `[]` and an array naming only `errors.ts` all fail identically) — only not importing it
+does.
+
+**Importing `@ultimat3/render/server` installs the `.tsx`/`.scss` loaders**, once, as a module
+side effect. Anything that loads an app's source — `x dev`, `x build`, `server.ts`, a test that
+`await import()`s a `page.tsx` — reaches it before the module it loads.
+
 ## Public API
+
+`†` marks a name on `@ultimat3/render/server`.
 
 | Export | Owns |
 |---|---|
@@ -330,9 +352,11 @@ and a second copy of the number is a settle that shoots early and calls a health
 | `MODE_SPECS`, `assertModeShape`, `assertModeInvariants` | the mode invariant table |
 | `registerRoute`, `describeRoutes`, `routeFor`, `routePathFromFile` | the route table |
 | `checkSurfaceBoundary`, `assertSurfaceBoundary`, `surfaceOf` | the hard boundary |
-| `renderStatic`, `enumeratePrerender` | build-time render, content hashing |
-| `createIsrController`, `invalidateAndRevalidate` | SWR + single-flight + tag triggers |
-| `renderSsr`, `streamResult` | the per-request modes |
+| `renderStatic`†, `enumeratePrerender`† | build-time render, content hashing |
+| `createIsrController`†, `invalidateAndRevalidate`† | SWR + single-flight + tag triggers |
+| `renderSsr`†, `streamResult`† | the per-request modes |
+| `renderToHtml`†, `renderComponent`†, `stylesFor`† | the server JSX writer and the surface's css |
+| `installRenderLoader`†, `compileStylesheet`† | the `.tsx`/`.scss` loaders, installed on import |
 | `emitIslandAttributes`, `hydrateRuntime` | the four hydration strategies |
 | `ISLAND_MOUNTED_ATTRIBUTE`, `ISLAND_FAILED_ATTRIBUTE`, `IDLE_HYDRATE_TIMEOUT_MS` | what hydration looks like from outside the page |
 | `graphFor`, `checkBudget`, `assertBudget` | two bundle graphs, per-route budgets |

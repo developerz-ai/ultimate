@@ -27,7 +27,7 @@ export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {
   'theme.defaultMode':
     "read by an app's own root layout when it decides the initial `data-theme`. `@ultimat3/ui` takes the mode as a prop and never reaches for config — SUSPECT: no tracked app reads it either, so this row is the weakest of the five and is a candidate for deletion in the next major.",
   'cache.urlEnv':
-    "SUSPECT, and pinned only because deleting it is breaking: `config.ts` VALIDATES it (`cache.driver \"redis\" requires cache.urlEnv`) and nothing reads its VALUE — `packages/cli/src/dev-cache.ts:44` reads the literal `env['REDIS_URL']`. That is `database.urlEnv`'s defect verbatim, which 5.0.0 deleted for exactly this reason: setting `urlEnv: 'MY_REDIS'` makes nothing read `MY_REDIS`.",
+    "SUSPECT, and pinned only because deleting it is breaking: `config.ts` VALIDATES it (`cache.driver \"redis\" requires cache.urlEnv`) and nothing reads its VALUE — `packages/cli/src/dev-cache.ts:92` reads the literal `env['REDIS_URL']`. That is `database.urlEnv`'s defect verbatim, which 5.0.0 deleted for exactly this reason: setting `urlEnv: 'MY_REDIS'` makes nothing read `MY_REDIS`.",
   'realtime.urlEnv':
     'SUSPECT, the same defect as `cache.urlEnv`: validated by `config.ts` (`realtime.transport "nats" requires realtime.urlEnv`), value read by nobody — `packages/cli/src/dev-services.ts:38` and `cmd-jobs.ts:73` read the literal `env[\'NATS_URL\']`.',
 };

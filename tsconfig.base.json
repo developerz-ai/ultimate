@@ -9,6 +9,7 @@
     "paths": {
       "@ultimat3/admin/dev": ["./packages/admin/src/dev/index.ts"],
       "@ultimat3/realtime/server": ["./packages/realtime/src/server.ts"],
+      "@ultimat3/render/server": ["./packages/render/src/server.ts"],
       "@ultimat3/ui/icons/*": ["./packages/ui/src/icons/glyphs/*"],
       "@ultimat3/*": ["./packages/*/src"]
     },

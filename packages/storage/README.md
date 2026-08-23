@@ -235,13 +235,22 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 | `X_STORAGE_QUARANTINED` | `promoteAttachment` on a key nothing has released from `pending/quarantine/` |
 | `X_NOT_IMPLEMENTED` | S3 user metadata / cache-control; `serverSideEncryption` on either driver |
 | `X_ENV_MISSING` | core's: S3 credential env vars, or a `localDriver` built outside development where neither `signingSecret` nor `STORAGE_SIGNING_SECRET` holds a secret other than the published `DEV_SIGNING_SECRET` |
-| `X_IMAGE_UNSUPPORTED` | core's: an `avif` encode, or a source no built-in decoder reads |
+| `X_IMAGE_UNSUPPORTED` | core's: an `avif` encode, a source no built-in decoder reads, or a `variantKey` format no variant can carry |
 | `X_IMAGE_DECODE_FAILED` | core's: truncated or corrupt image bytes |
 
 ## Images
 
 `variantKey()`, `srcsetDescriptors()`, `fitDimensions()` are pure — `@ultimat3/seo` builds
 `srcset` from them without decoding a byte.
+
+**`VARIANT_FORMATS` / `VariantFormat` are what a variant KEY can carry** — `avif`, `webp`, `jpeg`,
+`png` — and this package exports no `IMAGE_FORMATS` and no `ImageFormat`. Those two names are
+`@ultimat3/core`'s, over the six formats it can PROBE (`png`, `jpeg`, `webp`, `avif`, `gif`,
+`svg`). Until 9.0.0 both packages exported both names over different sets, so a caller narrowing on
+storage's held a type saying `gif` and `svg` could not occur and a `probeImage()` value that was
+one. `isVariantFormat(format)` takes a `string`, so a probed format narrows through it with no
+cast, and `variantKey()` refuses anything else with core's `X_IMAGE_UNSUPPORTED` instead of minting
+`photos/hero@full.undefined`.
 
 `transformImage()` and `blurPlaceholder()` are real, over `@ultimat3/core`'s pipeline, which is
 `Bun.Image` — no `sharp`, no dependency. **It encodes `png`, `jpeg` and `webp`** — so the default

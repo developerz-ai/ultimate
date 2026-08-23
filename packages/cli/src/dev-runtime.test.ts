@@ -4,7 +4,7 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 // `node:` by necessity: Bun has no temp-directory, no mkdtemp and no recursive remove.
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineAuth, MemoryAdapter, resetAuthLimiters } from '@ultimat3/auth';
@@ -59,6 +59,24 @@ const fakeSmtp = (): MailDriver => ({
  * seven eighths of this file's runtime.
  */
 const root = mkdtempSync(join(tmpdir(), 'x-dev-boot-'));
+
+/**
+ * A root whose `app.config.ts` NAMES the rungs a case is about. The ladder is the app's
+ * declaration now, never the environment's: before 9.0.0 a `FASTLY_*` credential added a `cdn`
+ * tier the config never asked for, so these two cases passed by asserting the defect. A boot with
+ * no config gets `defaults()`, which is `request-memo` + `lru` — correct, and not what they mean.
+ */
+function rootDeclaring(tiers: readonly string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), 'x-dev-tiers-'));
+  // A plain object, not `defineConfig(...)`: this directory is outside the workspace, so it cannot
+  // resolve `@ultimat3/core`, and `loadCacheTiers` reads the shape structurally rather than
+  // requiring the builder. What is under test is that the boot reads the DECLARATION at all.
+  writeFileSync(
+    join(dir, 'app.config.ts'),
+    `export const config = { name: 'tiers', cache: { tiers: ${JSON.stringify(tiers)} } };\n`,
+  );
+  return dir;
+}
 
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });
@@ -217,7 +235,8 @@ describe('startServices', () => {
     'a CDN credential registers the cdn tier, and stopping releases it',
     async () => {
       resetTiers();
-      const runtime = await startServices(resolveServices(root, {}), {
+      const cdnRoot = rootDeclaring(['request-memo', 'lru', 'cdn']);
+      const runtime = await startServices(resolveServices(cdnRoot, {}), {
         FASTLY_API_TOKEN: 'fastly-token',
         FASTLY_SERVICE_ID: 'svc_1',
       });
@@ -267,7 +286,8 @@ describe('startServices', () => {
     'a transport that will not close still releases the tier, the mail driver and the queue',
     async () => {
       resetTiers();
-      const runtime = await startServices(resolveServices(root, {}), {
+      const cdnRoot = rootDeclaring(['request-memo', 'lru', 'cdn']);
+      const runtime = await startServices(resolveServices(cdnRoot, {}), {
         SMTP_URL: 'smtps://user:pass@mail.postly.test:465',
         MAIL_FROM: 'Postly <no-reply@postly.test>',
         FASTLY_API_TOKEN: 'fastly-token',

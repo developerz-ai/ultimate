@@ -20,7 +20,7 @@ import {
   migrate,
 } from '@ultimat3/db';
 import type { Route } from '@ultimat3/http';
-import { createIsrController } from '@ultimat3/render';
+import { createIsrController } from '@ultimat3/render/server';
 import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { loadApp } from './app-load';

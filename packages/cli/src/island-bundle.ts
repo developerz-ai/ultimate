@@ -6,12 +6,8 @@
 // Bun ships no path API. `posix` does the specifier arithmetic (an app-relative route file is
 // POSIX by construction), `join`/`basename` the filesystem side.
 import { basename, join, posix, relative, sep } from 'node:path';
-import {
-  contentHash,
-  ISLAND_EXTENSION,
-  IslandInvalidError,
-  islandModuleId,
-} from '@ultimat3/render';
+import { ISLAND_EXTENSION, IslandInvalidError, islandModuleId } from '@ultimat3/render';
+import { contentHash } from '@ultimat3/render/server';
 import { IslandBuildFailedError } from './errors';
 import { solidProductionPlugin } from './island-solid-production';
 import { islandStylesPlugin } from './island-styles';

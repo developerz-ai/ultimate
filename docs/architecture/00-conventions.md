@@ -37,7 +37,7 @@ Imports only go down, so a sideways need becomes a copy, and a copy drifts **sil
 | Upward | re-export from each package whose API takes it, so a consumer needs one import |
 | Never | restate the members. `bun run scripts/render-modes.ts --json` matches on the **literal set**, not the name — the copy that did the damage was called `PwaRenderMode` |
 
-Two shared members is a copy; one is a coincidence and stays silent. The margin is measured, not guessed: the highest innocent overlap in this repo is **1** (`CacheTier` holds `isr`, `StrategyName` holds `network-only`, `ChangeFreq` holds `never`), `As of 2026-08`.
+Two shared members is a copy; one is a coincidence and stays silent. The margin is measured, not guessed: the highest innocent overlap in this repo is **1** (`StrategyName` holds `network-only`, `ChangeFreq` holds `never`) — `CacheTier` was this example's third entry until 9.0.0 unified it with `TIER_ORDER`, which is the point: an innocent overlap and a copy are told apart by the count, and the copy eventually gets found, `As of 2026-08`.
 
 Details: [`02-boundaries.md`](02-boundaries.md).
 

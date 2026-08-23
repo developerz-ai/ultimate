@@ -11,6 +11,13 @@ import { localeConfig } from '@ultimat3/i18n';
 import type { ErrorCodeFact } from '@ultimat3/manifest';
 import { registerQueries } from '@ultimat3/query';
 import { isRouteConfig, pageComponentOf, registerRoute } from '@ultimat3/render';
+// For the SIDE EFFECT, and it is this module's to hold: importing `@ultimat3/render/server`
+// installs the `.tsx`/`.scss` Bun plugin, a plugin only transforms modules loaded AFTER it, and
+// every app module below is loaded by the dynamic `import()` in this file. Before the render
+// barrel split it came free with the line above; after it, the only other path to `/server` from
+// here is six hops through `error-contract` → `fix-command` → the command registry, which is an
+// accident one refactor away from compiling every app's `.tsx` to `React.createElement`.
+import '@ultimat3/render/server';
 import { collectDeclaredCodes } from './error-contract';
 import type { Finding } from './output';
 import { findingFrom } from './output';

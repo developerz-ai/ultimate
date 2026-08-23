@@ -3,11 +3,41 @@
 // `<img srcset>` from `srcsetDescriptors()` without decoding a byte, and when it does need the
 // bytes, `transformImage()` returns exactly the size `fitDimensions()` already promised.
 
-import { blurDataUrl, probeImage, transformImageBytes } from '@ultimat3/core';
+import {
+  blurDataUrl,
+  type ImageFormat,
+  imageUnsupported,
+  probeImage,
+  transformImageBytes,
+} from '@ultimat3/core';
 import { assertSafeKey, keyExtname } from './path';
 
-export const IMAGE_FORMATS = ['avif', 'webp', 'jpeg', 'png'] as const;
-export type ImageFormat = (typeof IMAGE_FORMATS)[number];
+/**
+ * The formats a stored VARIANT can be minted in — a strict subset of the ones `@ultimat3/core`
+ * can PROBE, and a different question from them. `satisfies readonly ImageFormat[]` is the whole
+ * derivation: a member core cannot name is a compile error here, so this can never become a
+ * second vocabulary the way it was one until 9.0.0 (both packages exported `IMAGE_FORMATS` and
+ * `ImageFormat`, over different sets, from their own barrels — so a caller narrowing on storage's
+ * held a type saying `gif` and `svg` could not occur and a `probeImage()` value that was one).
+ *
+ * NOT "the formats storage can transform": core decodes `gif` perfectly well. This set is what a
+ * variant KEY can carry, which is why `avif` is in it (key and `srcset` math only — asking for
+ * its bytes rejects with core's `X_IMAGE_UNSUPPORTED`) and `gif` and `svg` are not.
+ */
+export const VARIANT_FORMATS = [
+  'avif',
+  'webp',
+  'jpeg',
+  'png',
+] as const satisfies readonly ImageFormat[];
+export type VariantFormat = (typeof VARIANT_FORMATS)[number];
+
+/**
+ * Takes `string`, so `probeImage(bytes).format` narrows through it without a cast. That is the
+ * whole point: the answer for `gif` is `false`, and it used to be unaskable.
+ */
+export const isVariantFormat = (format: string): format is VariantFormat =>
+  (VARIANT_FORMATS as readonly string[]).includes(format);
 
 /** `cover` fills the box and crops the overflow; `contain` fits inside it, no crop. */
 export type ImageFit = 'cover' | 'contain';
@@ -15,7 +45,7 @@ export type ImageFit = 'cover' | 'contain';
 export interface ImageTransform {
   readonly width?: number | undefined;
   readonly height?: number | undefined;
-  readonly format?: ImageFormat | undefined;
+  readonly format?: VariantFormat | undefined;
   /** 1-100. Omitted means the format default (`DEFAULT_QUALITY`). */
   readonly quality?: number | undefined;
   readonly fit?: ImageFit | undefined;
@@ -29,7 +59,7 @@ export interface ImageSize {
 export const DEFAULT_QUALITY = 80;
 export const DEFAULT_SRCSET_WIDTHS = [320, 640, 960, 1280, 1920] as const;
 
-const FORMAT_EXTENSIONS: Readonly<Record<ImageFormat, string>> = {
+const FORMAT_EXTENSIONS: Readonly<Record<VariantFormat, string>> = {
   avif: 'avif',
   webp: 'webp',
   jpeg: 'jpg',
@@ -43,7 +73,19 @@ const FORMAT_EXTENSIONS: Readonly<Record<ImageFormat, string>> = {
 export function variantKey(sourceKey: string, transform: ImageTransform): string {
   const safe = assertSafeKey(sourceKey);
   const stem = safe.slice(0, safe.length - keyExtname(safe).length);
-  const format = transform.format ?? 'webp';
+  // `string`, not `VariantFormat`: a format off a query string or through an `as` reaches here as
+  // any string core can probe, and indexing FORMAT_EXTENSIONS with `gif` minted
+  // `photos/hero@full.undefined` — a well-formed, writable key naming a file nothing can serve.
+  // Core's code, not a storage one: one bad format is one failure, and seo and the dev asset
+  // route already report it as X_IMAGE_UNSUPPORTED.
+  const format: string = transform.format ?? 'webp';
+  if (!isVariantFormat(format)) {
+    throw imageUnsupported(
+      `"${format}" is not a format a stored variant can be minted in`,
+      `variantKey('${safe}', { format: 'webp' }) — one of ${VARIANT_FORMATS.join(', ')}; a ${format} source is served as-is, it has no variant`,
+      { format, key: safe },
+    );
+  }
   const parts: string[] = [];
   if (transform.width !== undefined) parts.push(`w${transform.width}`);
   if (transform.height !== undefined) parts.push(`h${transform.height}`);
@@ -63,7 +105,7 @@ export interface SrcsetDescriptor {
 
 export interface SrcsetOptions {
   readonly widths?: readonly number[] | undefined;
-  readonly format?: ImageFormat | undefined;
+  readonly format?: VariantFormat | undefined;
   readonly quality?: number | undefined;
   /** Intrinsic size of the source. Widths above it are dropped — upscaling is never useful. */
   readonly intrinsic?: ImageSize | undefined;

@@ -46,7 +46,7 @@ Add it when there is more than one web replica **and** a measured cross-replica 
 
 ```ts
 // app.config.ts
-cache: { driver: 'redis', tiers: ['memo', 'lru', 'shared'], urlEnv: 'REDIS_URL' },
+cache: { driver: 'redis', tiers: ['memo', 'lru', 'redis'], urlEnv: 'REDIS_URL' },
 ```
 
 Read order is memo → LRU → shared → origin, and a tier is never consulted for a request whose `policy` has not already passed. Adding one changes where a value is found, never how it is asked for.

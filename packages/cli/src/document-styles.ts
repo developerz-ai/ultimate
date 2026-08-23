@@ -5,7 +5,8 @@
 // apart from the styling nobody sees missing. A silent failure is exactly what axiom 3 exists for.
 
 import type { Surface } from '@ultimat3/render';
-import { routeEntries, stylesFor } from '@ultimat3/render';
+import { routeEntries } from '@ultimat3/render';
+import { stylesFor } from '@ultimat3/render/server';
 import type { Finding } from './output';
 
 /** The stylesheet an app is expected to own, named in the fix so it is one edit, not a hunt. */

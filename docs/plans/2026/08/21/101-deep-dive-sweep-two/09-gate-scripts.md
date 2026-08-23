@@ -92,6 +92,14 @@
   spelled-out number adjacent to a step list, and any run of ≥5 known step names treated as a list
   claiming completeness.
 
+- **`render-modes`' `AS_CONST` regex does not read `as const satisfies …`, found 2026-08-23.** It
+  requires the declaration to end `as const;`. `packages/storage/src/image.ts`'s `VARIANT_FORMATS`
+  ends `as const satisfies readonly ImageFormat[];` — the *safest* form, since the `satisfies` is
+  what makes a re-divergence a compile error — and the scanner does not read it as a literal set at
+  all. So the very shape that fixes #299 is invisible to the guard added for #299. The barrel test
+  catches the harmful half (the export), but the regex should widen to accept a `satisfies` clause
+  after `as const`.
+
 ## Tests
 - Each script above has a `.test.ts` beside it asserting against `repoRoot()` (the pattern `changelog-check.test.ts` uses); the lockfile one additionally runs against a fixture lock carrying an `i18n` and an `examples/x` block.
 - `scripts/gate-steps.test.ts` — a fixture `llms.txt` stating 18 → `kind: 'count'`; "16 of 18" under gate context → reported.

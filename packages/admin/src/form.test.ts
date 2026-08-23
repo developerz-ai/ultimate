@@ -19,7 +19,7 @@ import {
 import type { AdminResource } from './resource';
 import type { ValidationIssue } from './validate';
 
-await import('@ultimat3/render');
+await import('@ultimat3/render/server');
 const { AdminForm } = await import('./form');
 
 registerCatalog('en', {
