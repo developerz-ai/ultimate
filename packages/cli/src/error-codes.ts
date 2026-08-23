@@ -26,6 +26,10 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_ERROR_FIX_PATH_MISSING',
   'X_ERROR_CODE_UNDOCUMENTED',
   'X_ERROR_CODE_UNREGISTERED',
+  // The third: a `code:` the scan cannot read at all. `const STALE = 'X_…'` in another file and
+  // `code: STALE` here is invisible to every reader of the code set, and silence there is
+  // permissive — the DRYer the author, the less the gate sees (#277).
+  'X_ERROR_CODE_UNRESOLVED',
   // Reported as `Finding`s rather than thrown, and unregistered until now because of it — so
   // `x errors explain X_TYPECHECK_FAILED` refused a code `x verify` had just printed. A finding
   // carries an `X_*` code to the same reader a throw does; the registry is what makes that code
@@ -171,6 +175,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_ERROR_FIX_PATH_MISSING: "an error's fix line cites a file this repository does not have",
   X_ERROR_CODE_UNDOCUMENTED: 'a shipped error code has no row in the error reference',
   X_ERROR_CODE_UNREGISTERED: 'the error reference documents a code no package registers',
+  X_ERROR_CODE_UNRESOLVED: 'an error code is written as a name this repository cannot resolve',
   X_STORAGE_UNWRITABLE: 'the storage disk this process needs cannot be written to',
   X_STORAGE_SECRET_DEV: 'upload grants would be signed with the shipped development key',
   X_CLI_UNEXPECTED: 'the CLI itself failed',

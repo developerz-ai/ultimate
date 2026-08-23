@@ -13,8 +13,8 @@ import { citedPathProblem, FILE_TOKEN_PATTERN } from './fix-path';
 import { scanFixSites } from './fix-scan';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
-import type { CodeSite, FixSite } from './ts-scan';
-import { isCodeRegistry, scanBorrowedCodes, scanCodes } from './ts-scan';
+import type { CodeSite, FixSite, UnresolvedCodeSite } from './ts-scan';
+import { isCodeRegistry, scanBorrowedCodes, scanCodeDeclarations, scanCodes } from './ts-scan';
 
 /** Advice, not instruction. The list is the one in `docs/architecture/04-error-contract.md`. */
 export const BANNED_PHRASES: readonly RegExp[] = [
@@ -257,6 +257,40 @@ export async function collectDeclaredCodes(root: string): Promise<readonly CodeS
     }
   }
   return [...sites.values()].map(([site]) => site).sort((a, b) => a.code.localeCompare(b.code));
+}
+
+/**
+ * A `code:` this scan could not turn into a code. Its own finding rather than a silent skip, which
+ * is the whole of #277: `const STALE = 'X_DOC_PACKAGE_GRAPH_STALE'` and then `code: STALE` is the
+ * DRY thing to write, `scripts/package-map-graph.ts` wrote it, and the code went into no manifest,
+ * demanded no row on the reference, was exempt from `bun run gate-codes` and could not be explained
+ * — every reader silent, and every one of them permissive. Resolution closes the same-file case;
+ * this closes the rest, because a scanner that reads only what it likes enforces only what it sees.
+ */
+const unresolvedCodeFinding = (site: UnresolvedCodeSite): Finding => ({
+  code: 'X_ERROR_CODE_UNRESOLVED',
+  cause: `the code at ${site.at}:${site.line} is the name ${site.name}, and no module-scope const in that file gives it a value — so the manifest, the reference page and "x errors explain" are all blind to whatever code it holds`,
+  fix: `write the X_* code as a string literal at ${site.at}:${site.line}, or declare it as a module-scope const in that same file`,
+  docs: ERROR_DOCS_URL,
+  at: `${site.at}:${site.line}`,
+});
+
+/**
+ * The other half of `collectDeclaredCodes`, on its own walk rather than folded into that one: this
+ * asks whether a file's codes are READABLE, and the collector's callers — `x manifest`, the gate's
+ * `errors` step, `bun run gate-codes` — want the codes and not the findings. It runs wherever
+ * source does, with no reference page to check against, which is why it is not a host check.
+ */
+export async function checkErrorCodeResolution(root: string): Promise<readonly Finding[]> {
+  const findings: Finding[] = [];
+  for await (const source of eachSourceFile(root)) {
+    if (isTest(source) || isGenerated(source)) continue;
+    const text = await Bun.file(join(root, source)).text();
+    for (const site of scanCodeDeclarations(text, source).unresolved) {
+      findings.push(unresolvedCodeFinding(site));
+    }
+  }
+  return findings;
 }
 
 /**

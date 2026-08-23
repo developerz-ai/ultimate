@@ -8,7 +8,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`X_ERROR_CODE_UNRESOLVED`, and a `code:` may now be a name.** `scanCodes` matched
+  `code\s*[:=]\s*'X_…'` — a string literal — so `const STALE = 'X_…'` followed by `code: STALE`,
+  which is what a DRY author writes, was a declaration to nobody: no manifest row, no wiki row
+  demanded, nothing for `bun run gate-codes`, and `x errors explain` answering
+  `X_ERROR_CODE_UNKNOWN` for a code the build throws. Silent, in the permissive direction (#277).
+  `scanCodeDeclarations` is now the one pass: it resolves the identifier against the same file's
+  module-scope consts and reports every name it cannot resolve as `X_ERROR_CODE_UNRESOLVED`.
+  Cross-file resolution is refused deliberately. Measured over the framework and both tracked apps:
+  **0 findings**, enforcing outright with no pin table; the code set moved 554 → 555, nothing else.
 
 ## 11.0.0 - 2026-08-23
 

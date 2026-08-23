@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "f6bfdcf5f2e0615e8531b1c9d60c3e8a04fbf110aa795f9bdbe92c55cb9dbc55",
+  "buildId": "5b52f74d10e4bc05a75bcf720448df6b9d9e39c491b9ce6c4b7964a63d18287f",
   "tiers": {
     "0": [
       "core",
@@ -1024,6 +1024,11 @@
     },
     {
       "code": "X_ERROR_CODE_UNREGISTERED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_ERROR_CODE_UNRESOLVED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },

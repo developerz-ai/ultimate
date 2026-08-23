@@ -256,6 +256,33 @@ that named the code in its `<PKG>_BORROWED_ERROR_CODES`. The docs check reads it
 framework's own `framework.manifest.json`, because a second scanner over a narrower file set is a
 manifest that claims completeness it does not have.
 
+**A `code:` is a literal, a module-scope const in the same file, or a finding** — `As of 2026-08-23`,
+and until then it was a literal or silence. `scanCodes` matched `code\s*[:=]\s*'X_…'`, so
+`const STALE = 'X_DOC_PACKAGE_GRAPH_STALE'` followed by `code: STALE` — the DRY thing to write, and
+what `scripts/package-map-graph.ts` really wrote — was a declaration to nobody: no manifest row, no
+row demanded on `wiki/Error-Codes.md`, no entry for `bun run gate-codes`, and `x errors explain`
+answering `X_ERROR_CODE_UNKNOWN` for a code the build throws. Silent, and in the **permissive**
+direction: the DRYer the author, the less the gate saw (#277).
+
+`scanCodeDeclarations` is that one pass, and it returns both halves. It resolves the identifier
+against the module-scope consts of the **same file** — anchored at column 0, which is what makes it
+module scope without a parser — and reports every name it cannot resolve as `X_ERROR_CODE_UNRESOLVED`
+rather than skipping it, which is the whole point: a scanner that reads only what it likes enforces
+only what it sees. `scanCodes` is its `.sites`, so the manifest, the docs check, `bun run gate-codes`
+and `x errors explain` (through `scanCodeFixSites`, which resolves the same way) cannot see different
+sets. Cross-file resolution was **refused** even though `fix-imports.ts` already does the harder
+version for `fix:`: it would make the scan async for every caller, and the finding is the better
+answer anyway — one file holds both the code and its only spelling.
+
+Three shapes are deliberately not judged, each measured over the framework and both tracked apps
+before the rule shipped. A name that resolves to something that is **not** a code is an answer, not
+a gap (`const STATUS_NOT_FOUND = 404` in `@ultimat3/realtime`'s NATS fake, the one live instance). A
+**table read** is not judged — `SEO_ERROR_CODES.metaMissing` is how `@ultimat3/seo` and
+`@ultimat3/ui` raise all 18 of their codes, and the registry those literals live in already declares
+them. A **lowercase** name is not judged: 164 sit at a `code:` position in this tree and every one is
+a type annotation (`readonly code: string`) or a re-raise (`code: opts.code`). Measured on all three
+roots: **0 findings**, so it enforces outright with no pin table.
+
 An empty `fix`, or a `fix` that says `check` / `make sure` / `try` / `see the docs` and names no
 command, call or file path, is `X_ERROR_FIX_INVALID`. A declared code the host's error reference
 does not name is `X_ERROR_CODE_UNDOCUMENTED` — `wiki/Error-Codes.md` here, nothing in a generated

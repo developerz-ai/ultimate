@@ -24,7 +24,7 @@ import { checkBudgets, readBuildStats } from './budgets';
 import { checkDestructiveMigrations } from './db-destructive';
 import { checkDocumentStyles, documentSurfaces } from './document-styles';
 import { checkSourceDrift } from './drift';
-import { checkErrorFixReport } from './error-contract';
+import { checkErrorCodeResolution, checkErrorFixReport } from './error-contract';
 import { guardFindings } from './guards';
 import { catalogFindings } from './i18n-registration';
 import { liveRouteFindings } from './live-routes';
@@ -125,7 +125,15 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // it does not have. "checked 412, could not read 27" is what a reader can act on.
     async run(ctx) {
       const report = await checkErrorFixReport(ctx.root);
-      const findings = [...report.findings, ...(await hostFindings(ctx, 'errors'))];
+      // The third rule on this step, and the one that is about the code rather than the fix: a
+      // `code:` reached through a name nothing in its own file declares is a code no reader of the
+      // set can see — not the manifest, not the reference page's coverage rule, not
+      // `x errors explain`. It runs here because it needs source and nothing else (#277).
+      const findings = [
+        ...report.findings,
+        ...(await checkErrorCodeResolution(ctx.root)),
+        ...(await hostFindings(ctx, 'errors')),
+      ];
       return {
         ...fromFindings(findings),
         output: msg('cli.verify.fixCoverage', {
