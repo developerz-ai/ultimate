@@ -2,10 +2,29 @@
 // read once for N subscribers, and how one that is known to be wrong is replaced. The authz
 // decision is never here — `live-query.ts` owns that, once per subscriber, over what this returns.
 
+import { WindowReadTimeoutError } from './errors';
 import type { JsonValue, Row } from './json';
 import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
 import type { IncrementalMatcher, SubscriptionShape } from './matcher-bridge';
+import type { Scheduler } from './thundering-herd';
+import { timeoutScheduler } from './thundering-herd';
 import { WindowLock } from './window-lock';
+
+/**
+ * How long the SHARED read may hold the slot before it is released. On by default and with no
+ * "off" spelling: a shared read with no deadline is exactly the defect this closes — one
+ * `definition.snapshot` that never settles pinned `entry.reading` for the life of the process and
+ * every later cold subscriber joined a promise nothing would resolve. A caller that wants a longer
+ * one names a bigger number.
+ */
+export const DEFAULT_READ_DEADLINE_MS = 30_000;
+
+export interface EntryOptions {
+  /** Non-finite or non-positive falls back to the default — `0` cannot mean both "now" and "never". */
+  readonly readDeadlineMs?: number | undefined;
+  /** Injected so a deadline is provable without waiting for one. */
+  readonly schedule?: Scheduler | undefined;
+}
 
 export interface QueryEntry {
   readonly qid: string;
@@ -40,6 +59,8 @@ export interface QueryEntry {
   generation: number;
   /** The generation of the newest read whose rows are in `rows`. `0` before the first one lands. */
   applied: number;
+  readonly readDeadlineMs: number;
+  readonly schedule: Scheduler;
 }
 
 /**
@@ -57,6 +78,7 @@ export function createEntry(
   definition: LiveQueryDefinition,
   input: JsonValue,
   matcher: IncrementalMatcher,
+  options?: EntryOptions,
 ): QueryEntry {
   return {
     qid,
@@ -83,6 +105,8 @@ export function createEntry(
     reading: null,
     generation: 0,
     applied: 0,
+    readDeadlineMs: usableDeadline(options?.readDeadlineMs),
+    schedule: options?.schedule ?? timeoutScheduler,
   };
 }
 
@@ -145,15 +169,54 @@ function applyRead(entry: QueryEntry, pending: PendingRead, result: SnapshotResu
   if (result.lsn > entry.lsn) entry.lsn = result.lsn;
 }
 
-/** Publishes the in-flight read, and clears it as it settles — the share is per read, not a cache. */
+function usableDeadline(declared: number | undefined): number {
+  if (declared === undefined) return DEFAULT_READ_DEADLINE_MS;
+  return Number.isFinite(declared) && declared > 0 ? declared : DEFAULT_READ_DEADLINE_MS;
+}
+
+/**
+ * Publishes the in-flight read, and clears it as it settles — the share is per read, not a cache.
+ *
+ * The deadline frees the SLOT. It cannot cancel the read — nothing here can, and pretending
+ * otherwise would be a second, false promise — so the abandoned read runs to completion with
+ * nobody listening, and the next caller issues its own instead of joining a corpse.
+ */
 function startRead(entry: QueryEntry): PendingRead {
   // Cleared here rather than when the read lands: the read about to be issued is the one that
   // answers the staleness, so a second caller must join it instead of forcing another.
   entry.stale = false;
   entry.generation += 1;
-  const reading: PendingRead = { generation: entry.generation, result: readSnapshot(entry) };
+
+  const read = readSnapshot(entry);
+  let expire: () => void = noop;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    // Assigned synchronously — a Promise executor runs before the constructor returns — so `done`
+    // can never fire against the placeholder and leave a timer armed.
+    expire = entry.schedule(() => {
+      // The same restoration `readSnapshot`'s catch makes, and for the same reason: a read that
+      // did not answer must not leave the window looking authoritative. Unconditional even when a
+      // NEWER read already holds the slot, which can only cost one extra read — over-reading is
+      // safe here and under-reading is the divergence `stale` exists to prevent.
+      entry.stale = true;
+      reject(new WindowReadTimeoutError({ qid: entry.qid, afterMs: entry.readDeadlineMs }));
+    }, entry.readDeadlineMs);
+  });
+
+  const reading: PendingRead = {
+    generation: entry.generation,
+    // A race, not just an eviction: freeing the slot alone would leave every caller ALREADY joined
+    // awaiting a promise nothing settles. `Promise.race` subscribes to both, so a read that
+    // rejects AFTER losing the race is still handled and never surfaces as an unhandled rejection.
+    result: Promise.race([read, deadline]),
+  };
   entry.reading = reading;
+
   const done = (): void => {
+    // An armed timer per completed read keeps the process alive and is a leak in its own right.
+    expire();
+    // Identity, never presence — the rule the deadline makes load-bearing rather than merely
+    // careful: a read that answers after its deadline released the slot must not clear whatever
+    // holds it now, or that newer read's joiners share a promise the entry no longer answers for.
     if (entry.reading === reading) entry.reading = null;
   };
   void reading.result.then(done, done);
@@ -185,3 +248,5 @@ export function orgIdOf(input: JsonValue): string | null {
   const value = input['orgId'];
   return typeof value === 'string' ? value : null;
 }
+
+const noop = (): void => undefined;

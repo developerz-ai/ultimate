@@ -207,6 +207,25 @@ test('500 is retryable', async () => {
   expect(metaOf(error)?.['status']).toBe(500);
 });
 
+// The status table this driver reads is `@ultimat3/core`'s, and it used to be a private copy
+// here that was byte-identical to `packages/cache/src/purge-http.ts`'s. The four tests above pin
+// four statuses; this pins the WHOLE table through the driver, so the table moving down a tier is
+// a change no status can survive silently.
+test('every status maps to the same retryable verdict the private table gave', async () => {
+  const retryable = [408, 409, 425, 429, 500, 502, 503, 504, 599];
+  const terminal = [400, 401, 402, 403, 404, 410, 413, 422, 451, 499];
+
+  for (const status of [...retryable, ...terminal]) {
+    const { fetch } = fetchStub(errorResponse(status, { message: 'nope' }));
+    const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+    const error = await caught(driver.send(messageFixture()));
+    expect({ status, retryable: metaOf(error)?.['retryable'] }).toEqual({
+      status,
+      retryable: retryable.includes(status),
+    });
+  }
+});
+
 test('401 is not retryable and the fix names RESEND_API_KEY', async () => {
   const { fetch } = fetchStub(
     errorResponse(401, { message: 'Invalid API key', name: 'authentication_error' }),

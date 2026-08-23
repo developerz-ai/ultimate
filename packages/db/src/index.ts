@@ -61,6 +61,7 @@ export {
   branchExists,
   branchNameInvalid,
   DB_ERROR_CODES,
+  DB_ERROR_RETRY,
   DB_ERROR_TITLES,
   DbError,
   dbDrift,

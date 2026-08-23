@@ -21,6 +21,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `http.ts` | route projection (`enforcedBy: 'handler'`) + OpenAPI operation |
 | `openapi.ts` | deterministic OpenAPI 3.1 document |
 | `client.ts` | typed RPC client (browser-safe: no server imports) |
+| — | opt-in flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, re-exported from `src/index.ts`. There is no local copy and must not be one |
+| `wire-headers.ts` | `BUILD_ID_HEADER` + `IDEMPOTENCY_HEADER`, and nothing else. Their own module so `client.ts` can name them without importing `http.ts` |
 | `mcp-tool.ts` | MCP descriptor, same `invoke` |
 | `job-handle.ts` | the `.job()` projection: an action as a queueable payload. **Not** consumed by `@ultimat3/jobs` — see Invariants |
 | `contract-test.ts` | assertions `x g action` emits |
@@ -35,7 +37,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `audit.ts` | the audit seam: `AuditRecord`, `AuditSink`, the memory sink, the installed-sink store |
 | `audit-gate.ts` | **the only** file that calls a sink, and where the two failure policies live |
 | `type-pins.ts` | compile-time assertions `tsc` checks — what the erased view projects, and why `client()` is not part of it |
-| `naming.ts`, `validate.ts`, `json-schema.ts`, `stable.ts` | pure helpers. `stable.ts` is the DOCUMENT serializer only — the hash form is `@ultimat3/core`'s `canonicalJson`/`fingerprint` |
+| `naming.ts`, `validate.ts`, `json-schema.ts`, `stable.ts` | pure helpers. `stable.ts` is the DOCUMENT serializer plus a re-export of core's `isJsonObject` — the hash form is `@ultimat3/core`'s `canonicalJson`/`fingerprint` |
 
 ## Invariants
 
@@ -435,6 +437,62 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   same-named helpers overwrite each other with no `X_ACTION_DUPLICATE` to raise. The type does the
   same filter, so `rpc<Api['actions']>()` offers only what registered.
 - `rpc` is the only name for the map-wide typed client. There is no `createClient` alias.
+- **Flight control is `@ultimat3/core`'s, and this package RE-EXPORTS it.** `client-flight.ts` and
+  `client-wire.ts` shipped here and in the other tier-3 client package as byte-identical copies —
+  288 and 85 lines — kept in step by a `client-twin.test.ts` in each. A test that makes drift LOUD
+  is not the same as a file that cannot drift, and this package's own thesis is that duplication is
+  the defect. Both files import nothing but tier 0, which was always the argument for where they
+  belong; the one blocker was `isJsonObject`, now `@ultimat3/core`'s `json-object.ts`, re-exported
+  from `./stable` here. `createClientFlight`, `DEFAULT_CLIENT_RETRY`, `isTransientFailure`,
+  `isSuperseded`, `ClientFlight`, `ClientFlightOptions`, `ClientRetry`, `FlightKeyOptions`,
+  `FlightPlan` and `WireAnswer` are all still importable from `@ultimat3/action` — the same names,
+  and now literally the same objects the other package exports. Never re-declare one here; the
+  fix for anything wrong with the pipeline is an edit in `packages/core/src/client-flight.ts`.
+- **Every mechanism underneath the flight is `@ultimat3/core`'s, the pipeline included.**
+  `createSingleFlight` for dedup, `createFence`/`isSuperseded` for supersession, `createFlightGate`
+  for the ceiling, `retry` + `backoffDelay` for the schedule, `isRetryableStatus` for the status
+  table, `X_TIMEOUT` for the deadline — and `createClientFlight`, which composes them. This package
+  declares NO new error code for any of it; never add a second curve, a second fence or a private
+  retry loop here, and `bun run flight-copies` is what says so.
+- **`isTransientFailure` INVERTS `retryDecision`'s unclassified default, and the inversion must
+  survive** (`As of 2026-08-23`). `retryDecision` sends a throw nobody classified again until the
+  attempts run out; `@ultimat3/ai` and `@ultimat3/db` each refused the executor outright over it.
+  The client keeps the executor and supplies a predicate instead: a declared
+  `retryable`/`retry-after`, plus a dispatch that produced no response at all (`fetch` rejecting
+  with a plain `TypeError`), and nothing else — a caller's own `AbortError` and a foreign value are
+  terminal. The loop is stopped by RESOLVING to a private sentinel rather than by throwing, so the
+  original value still reaches the caller unwrapped, which is the property `retry`'s own header
+  promises. It lives in `packages/core/src/client-flight.ts` now; the tests that pin it from this
+  side still drive it through this package's own client.
+- **`ClientFlight` is a TYPE inside `client.ts` and never a value.** That erasure is the entire
+  tree-shaking story: `rpc` alone is 14,759 B minified for the browser and `queryClient` alone is
+  12,755 B, against 20,292 B / 17,912 B with `createClientFlight` imported beside them — ±376 B run
+  to run, which is `Bun.build` 1.4.0 dropping core's `schema-error-codes.ts` (issue #273). A caller
+  who wants a plain typed fetch must not pay for the fence, the dedup map or the retry loop —
+  `packages/cli/src/templates/resource-form-island.ts` and `examples/dummy`'s contact-sales island
+  both write a bare `fetch` today because that bill used to be unavoidable. Never import
+  `createClientFlight` for a VALUE from `client.ts` — `ClientFlight` and `ClientRetry` are
+  `import type` from `@ultimat3/core` and must stay that way.
+- **The `sideEffects` array is what makes the barrel shakable, and it is load-bearing** (`As of
+  2026-08-23`). Declaring nothing meant a bundler had to assume every module ran at import, so
+  `import { rpc } from '@ultimat3/action'` was 43,104 B and `import { queryClient } from
+  '@ultimat3/query'` was 40,859 B — three times the deep-import cost, through the ONLY specifier
+  the `exports` map offers. The arrays are the ones `bun run scripts/side-effects.ts --explain
+  --json` measures, and they must stay that: `errors.ts` runs `registerErrorCodes` at import in both
+  packages, and query's `registry.ts` runs `registerPrimitiveRegistrar('query', …)` — drop either
+  and a bundled app loses its error titles or throws `X_REGISTRAR_MISSING`. Never `false`.
+- **A retried mutation is gated on an `Idempotency-Key`, and the gate is silent narrowing rather
+  than a refusal** (`As of 2026-08-23`). `CallOptions.retry` is honoured only alongside
+  `idempotencyKey`; without one the call is narrowed to a single attempt. A second POST with no key
+  is a second WRITE, and nothing at this seam can tell a lost answer from a lost request. A refusal
+  was the other candidate and was rejected: `retry:` may be set once on the flight for a whole
+  client, and turning every keyless call in an app into a thrown error would make the flight
+  un-installable. `client-flight.test.ts` pins both halves, and the header on every attempt.
+- **A fence never aborts a write, and `client.ts` never calls `flight.keyFor`.** The first because
+  closing a mutation's socket does not un-commit it — it only destroys the one chance the caller had
+  of learning whether it landed, so `abortable: false` is unconditional and the caller still gets
+  `X_SUPERSEDED` for the ANSWER. The second is how "a mutation may never join another mutation" is
+  enforced: there is no dedup path to reach from here, even with a principal installed.
 - **`registerAction` guards the derived PATH as well as the name.** `X_ACTION_DUPLICATE` only ever
   asked about the name, so `archiveOrder` and `archiveOrders` — one route, by `pluralize`'s
   deliberate "a trailing `s` is already plural" rule — both registered and both projected: the

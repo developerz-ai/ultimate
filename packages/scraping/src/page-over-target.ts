@@ -7,6 +7,7 @@ import type { Secret } from '@ultimat3/core';
 import { isSecret, revealSecret } from '@ultimat3/core';
 import type { ActionabilityState } from './actionability';
 import { awaitActionable } from './actionability';
+import { assertCaptureFraming } from './capture-clip';
 import type { ScrapeClock } from './clock';
 import { deadline } from './clock';
 import { hostBlocked, secretExposed, selectorMissing } from './error-throws';
@@ -22,7 +23,13 @@ import type {
 import type { RobotsGate } from './robots';
 import type { ScrapeSecrets } from './secrets';
 import { safeHtml } from './secrets';
-import type { ElementSnapshot, ScrapeCookie, ScrapeDownloadFile, ScrapeTarget } from './target';
+import type {
+  CaptureOptions,
+  ElementSnapshot,
+  ScrapeCookie,
+  ScrapeDownloadFile,
+  ScrapeTarget,
+} from './target';
 import { ROOT_SELECTOR } from './target';
 
 export interface PageContext {
@@ -187,7 +194,14 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
     // in object storage, forever. Refused rather than masked — a mask over pixels is a guess
     // about layout, and `page.html()` already gives a redacted artifact that is exact.
     if (state.tainted) throw secretExposed(kind, target.url());
-    const request = { fullPage: options?.fullPage };
+    // The ONE place a capture request is built, so the framing rule is checked once for every
+    // driver rather than three times with three chances to disagree. After the secret guard, which
+    // is the stronger refusal: a tainted page must not be told its rectangle is fine.
+    assertCaptureFraming(kind, options ?? {});
+    const request: CaptureOptions = {
+      fullPage: options?.fullPage,
+      ...(options?.clip === undefined ? {} : { clip: options.clip }),
+    };
     return kind === 'screenshot' ? target.screenshot(request) : target.pdf(request);
   };
   return {

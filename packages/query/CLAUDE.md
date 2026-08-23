@@ -18,6 +18,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `http.ts` | route projection (`GET /_x/query/<kebab>`, `enforcedBy: 'handler'`) |
 | `mcp-tool.ts` | MCP read descriptor, same `sourceFor` |
 | `client.ts` | typed read client (browser-safe: no server imports) |
+| — | opt-in flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, re-exported from `src/index.ts`. There is no local copy and must not be one |
 | `naming.ts` | export name → `/_x/query/<kebab>`. Pure string math. **Paths only** — no tool name |
 | `registry.ts` | export-name registration, `describeQueries()`, and the `registerPrimitiveRegistrar('query', …)` announcement |
 | `live.ts` | `LiveQuery` descriptor + cursor arithmetic |
@@ -162,6 +163,50 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - `registry.ts` announces `registerQueries` in core's registrar table at import. That is how
   `defineApi({ queries })` in `@ultimat3/action` registers a read without importing this package
   sideways. Never remove the announcement: `defineApi` would then throw `X_REGISTRAR_MISSING`.
+- **Flight control is `@ultimat3/core`'s, and this package RE-EXPORTS it.** `client-flight.ts` and
+  `client-wire.ts` shipped here and in the other tier-3 client package as byte-identical copies —
+  288 and 85 lines — kept in step by a `client-twin.test.ts` in each. A test that makes drift LOUD
+  is not the same as a file that cannot drift, and this package's own thesis is that duplication is
+  the defect. Both files import nothing but tier 0, which was always the argument for where they
+  belong; the one blocker was `isJsonObject`, now `@ultimat3/core`'s `json-object.ts`, re-exported
+  from `./stable` here. `createClientFlight`, `DEFAULT_CLIENT_RETRY`, `isTransientFailure`,
+  `isSuperseded`, `ClientFlight`, `ClientFlightOptions`, `ClientRetry`, `FlightKeyOptions`,
+  `FlightPlan` and `WireAnswer` are all still importable from `@ultimat3/query` — the same names,
+  and now literally the same objects the other package exports. Never re-declare one here; the
+  fix for anything wrong with the pipeline is an edit in `packages/core/src/client-flight.ts`.
+- **Every mechanism underneath the flight is `@ultimat3/core`'s, the pipeline included.**
+  `createSingleFlight` for dedup, `createFence`/`isSuperseded` for supersession, `createFlightGate`
+  for the ceiling, `retry` + `backoffDelay` for the schedule, `isRetryableStatus` for the status
+  table, `X_TIMEOUT` for the deadline — and `createClientFlight`, which composes them. This package
+  declares NO new error code for any of it; never add a second curve, a second fence or a private
+  retry loop here, and `bun run flight-copies` is what says so.
+- **`isTransientFailure` INVERTS `retryDecision`'s unclassified default, and the inversion must
+  survive** (`As of 2026-08-23`). `retryDecision` sends a throw nobody classified again until the
+  attempts run out; `@ultimat3/ai` and `@ultimat3/db` each refused the executor outright over it.
+  The client keeps the executor and supplies a predicate instead: a declared
+  `retryable`/`retry-after`, plus a dispatch that produced no response at all (`fetch` rejecting
+  with a plain `TypeError`), and nothing else — a caller's own `AbortError` and a foreign value are
+  terminal. The loop is stopped by RESOLVING to a private sentinel rather than by throwing, so the
+  original value still reaches the caller unwrapped, which is the property `retry`'s own header
+  promises. It lives in `packages/core/src/client-flight.ts` now; the tests that pin it from this
+  side still drive it through this package's own client.
+- **`ClientFlight` is a TYPE inside `client.ts` and never a value.** That erasure is the entire
+  tree-shaking story: `rpc` alone is 14,759 B minified for the browser and `queryClient` alone is
+  12,755 B, against 20,292 B / 17,912 B with `createClientFlight` imported beside them — ±376 B run
+  to run, which is `Bun.build` 1.4.0 dropping core's `schema-error-codes.ts` (issue #273). A caller
+  who wants a plain typed fetch must not pay for the fence, the dedup map or the retry loop —
+  `packages/cli/src/templates/resource-form-island.ts` and `examples/dummy`'s contact-sales island
+  both write a bare `fetch` today because that bill used to be unavoidable. Never import
+  `createClientFlight` for a VALUE from `client.ts` — `ClientFlight` and `ClientRetry` are
+  `import type` from `@ultimat3/core` and must stay that way.
+- **The `sideEffects` array is what makes the barrel shakable, and it is load-bearing** (`As of
+  2026-08-23`). Declaring nothing meant a bundler had to assume every module ran at import, so
+  `import { rpc } from '@ultimat3/action'` was 43,104 B and `import { queryClient } from
+  '@ultimat3/query'` was 40,859 B — three times the deep-import cost, through the ONLY specifier
+  the `exports` map offers. The arrays are the ones `bun run scripts/side-effects.ts --explain
+  --json` measures, and they must stay that: `errors.ts` runs `registerErrorCodes` at import in both
+  packages, and query's `registry.ts` runs `registerPrimitiveRegistrar('query', …)` — drop either
+  and a bundled app loses its error titles or throws `X_REGISTRAR_MISSING`. Never `false`.
 - Policy runs per subscriber for live queries. Never cache a decision across actors.
 - The matcher patches from `QueryShape`, never from SQL text.
 - `paginate` has no `offset` parameter and must never grow one, and it is reachable **only** as
@@ -304,7 +349,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   date window shared one live query id. The hash form tags a `Date`, a `Map` and a `Set`
   (`Date(<epoch>)`, `Map(…)`, `Set(…)`) beside the bare `NaN` / `±Infinity` / `-0` tokens it
   already emitted, all for the reason a bare token exists: `'null'` collided with JSON `null` and
-  `String(-0)` is `"0"`. `stable.ts` keeps `isJsonObject`/`columnOf` and nothing else. Ordinary
+  `String(-0)` is `"0"`. `stable.ts` keeps `columnOf` and a re-export of core's `isJsonObject` —
+  that predicate went down to tier 0 the same way, when `client-wire.ts` did. Ordinary
   inputs are byte-identical, so the durable-key cost is confined to reads whose input carries a
   `Date`, a `Map` or a `Set`: those cursors answer `X_CURSOR_INVALID` once, and their cache entries
   are cold once. `query-hash.test.ts` is the pin, at `queryHash` and at `cacheKeyFor`.

@@ -4,7 +4,14 @@
 // budgeted, and cost-accounted in integer minor units. Everything an app does with a model
 // goes through here, so budgets and accounting cannot be bypassed by a stray fetch.
 
-import { isUltimateError, renderThrowable, stringField } from '@ultimat3/core';
+import type { Random } from '@ultimat3/core';
+import {
+  backoffDelay,
+  isRetryableStatus,
+  isUltimateError,
+  renderThrowable,
+  stringField,
+} from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import type { BudgetLimits, BudgetStore } from './budget';
 import { BudgetLedger, currentBudget, estimateSpend, withBudget } from './budget';
@@ -22,6 +29,13 @@ export interface GatewayCache {
   set(key: string, value: string): Promise<void> | void;
 }
 
+/**
+ * A gateway's retry budget. NOT core's `RetryPolicy`, and deliberately still its own declaration:
+ * these three field names are what an app writes in `createGateway({ retry })`, so renaming them
+ * onto `base`/`max`/`jitter` would break every caller for no behaviour. What WAS a duplicate is the
+ * arithmetic, and that is gone — `backoffMs` is core's `backoffDelay` with this shape mapped onto
+ * it, so there is one curve in the framework and one place a jitter bug can live.
+ */
 export interface RetryPolicy {
   /** Total attempts including the first. */
   readonly attempts: number;
@@ -45,6 +59,13 @@ export interface CreateGatewayInput {
   readonly defaultModel?: ModelId;
   /** Overridable so a test can run backoff without waiting. */
   sleep?(ms: number): Promise<void>;
+  /**
+   * The roll behind the backoff's jitter. Injectable for the same reason `sleep` is, and it was the
+   * half that was missing: `Math.random()` read inline made this gateway's retry SCHEDULE provable
+   * only by observing a range, so nothing asserted it and a jitter bug here would have shipped
+   * green. Production never passes one.
+   */
+  readonly random?: Random | undefined;
 }
 
 export interface Gateway {
@@ -64,11 +85,14 @@ class GatewayImpl implements Gateway {
   private readonly config: CreateGatewayInput;
   private readonly retry: RetryPolicy;
   private readonly sleep: (ms: number) => Promise<void>;
+  /** Left `undefined` rather than defaulted, so `backoffDelay` owns the one fallback to `Math.random`. */
+  private readonly random: Random | undefined;
 
   constructor(config: CreateGatewayInput) {
     this.config = config;
     this.retry = config.retry ?? DEFAULT_RETRY;
     this.sleep = config.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.random = config.random;
   }
 
   scope<T>(input: { actorKey?: string; orgKey?: string }, fn: () => Promise<T>): Promise<T> {
@@ -172,6 +196,7 @@ class GatewayImpl implements Gateway {
       throw new AiProviderUnavailableError({
         model,
         attempts: this.config.providers.map((p) => `${p.name}: does not serve ${model}`),
+        unserved: true,
       });
     }
     return provider;
@@ -194,7 +219,11 @@ class GatewayImpl implements Gateway {
     const candidates = this.config.providers.filter((p) => p.models.includes(model));
     const failures: string[] = [];
     if (candidates.length === 0) {
-      throw new AiProviderUnavailableError({ model, attempts: [`no provider serves ${model}`] });
+      throw new AiProviderUnavailableError({
+        model,
+        attempts: [`no provider serves ${model}`],
+        unserved: true,
+      });
     }
 
     for (const provider of candidates) {
@@ -221,7 +250,7 @@ class GatewayImpl implements Gateway {
           // too — a provider's 1MB body is not a cause.
           failures.push(`${provider.name}#${attempt}: ${renderThrowable(error)}`);
           if (!isRetryable(error) || attempt === this.retry.attempts) break;
-          await this.sleep(backoffMs(this.retry, attempt));
+          await this.sleep(backoffMs(this.retry, attempt, this.random));
         }
       }
     }
@@ -229,15 +258,37 @@ class GatewayImpl implements Gateway {
   }
 }
 
-/** Full jitter: a uniform pick from [0, exponential], capped. */
-export function backoffMs(policy: RetryPolicy, attempt: number): number {
-  const ceiling = Math.min(policy.baseDelayMs * 2 ** (attempt - 1), policy.maxDelayMs);
-  return Math.floor(Math.random() * ceiling);
+/**
+ * Full jitter: a uniform pick from [0, exponential], capped BEFORE the roll.
+ *
+ * The arithmetic is core's `backoffDelay` — this is the mapping from the gateway's own field names
+ * onto it, and nothing else. Two things came with the delegation and neither is cosmetic: the
+ * result is ROUNDED where this floored it (a shift of at most 1ms, and the same rounding
+ * `@ultimat3/jobs` and `@ultimat3/realtime` already use), and a policy carrying a `NaN` — which is
+ * what `Number(process.env.…)` answers for an unset variable — waits 0 instead of handing
+ * `setTimeout` a `NaN` it fires on the next tick, i.e. a backoff that is a tight spin.
+ */
+export function backoffMs(policy: RetryPolicy, attempt: number, random?: Random): number {
+  return backoffDelay({
+    attempt,
+    base: policy.baseDelayMs,
+    max: policy.maxDelayMs,
+    curve: 'exponential',
+    jitter: 'full',
+    random,
+  });
 }
 
 /**
  * Retryable = the request was well formed and the provider was momentarily unable. A 400 is
  * never retried: the same body produces the same rejection and only burns the budget.
+ *
+ * The status half is core's `isRetryableStatus`, which is WIDER than the `429 || >= 500` this
+ * gateway shipped: 408, 409 and 425 join it. Each is transient by construction — the server gave up
+ * waiting for a body it never fully read, a concurrent writer won the round, the handshake was not
+ * finished — so not retrying them was a gap rather than a policy, and one narrower table in one
+ * package was how it stayed invisible. The `code` branch has no equivalent in core and stays here:
+ * that table is HTTP status only, and a socket that timed out never produced one.
  */
 export function isRetryable(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
@@ -247,7 +298,7 @@ export function isRetryable(error: unknown): boolean {
   // to answer with — so it fails closed rather than raising.
   try {
     const e = error as { status?: unknown; code?: unknown };
-    if (typeof e.status === 'number') return e.status === 429 || e.status >= 500;
+    if (typeof e.status === 'number') return isRetryableStatus(e.status);
     return e.code === 'ETIMEDOUT' || e.code === 'ECONNRESET';
   } catch {
     return false;

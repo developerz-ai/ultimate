@@ -313,6 +313,24 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   `stop`, `JobExecution` carries `stopReason`, and `recordedFailure` appends the terminal verdict to
   the nack's `error` — `lastError` is the ONE failure field a row has, so without it `x jobs show`
   renders a dead letter at attempt 1 of 5 as a silent early stop.
+- **The backoff arithmetic is `@ultimat3/core`'s, and `retry.ts` is the option names over it**
+  (`As of 2026-08-23`). `backoffDelayMs` is `backoffDelay({ curve, jitter, base, max, attempt })`
+  with this package's spellings applied on the way in — `DurationInput` through `toMs`, the
+  `DEFAULT_RETRY` fallbacks, and `jitter: boolean` mapped to `'equal' | 'none'`. **EQUAL, never
+  `full`**: `jitter: true` here has meant half-fixed-half-random since it shipped, and `full`
+  would hand a job that already failed twice a near-zero wait. The public `RetryPolicy`,
+  `DEFAULT_RETRY` and `retrySchedule()` are unchanged — a declared `retry: { attempts: 5 }` is
+  durable API — and `BackoffStrategy` is now an ALIAS of core's `BackoffCurve` rather than a second
+  spelling of the same three names. `retry-core-parity.test.ts` is the pin: 13,824 comparisons
+  across every curve, base, cap, attempt and roll, plus the 1-based attempt and the clamp-before-
+  jitter. Never re-derive a delay here — four packages shipped four curves, which is why core has
+  one — `bun run flight-copies` is the guard, and it refuses a second curve-and-jitter function
+  anywhere in `packages/*/src`, matched on the literal shape rather than the name.
+- **`classifyThrown` / `statedDelayMs` are core's, RE-EXPORTED, not copied** (`As of 2026-08-23`).
+  They moved down to `packages/core/src/error-retry.ts` beside the table they read.
+  `retry-classification.test.ts` pins them by IDENTITY (`toBe`), not by agreement: two functions
+  that answer alike today are two that can drift, and the rule that must never drift is the one
+  above — an unregistered code carrying `terminal` reads as UNCLASSIFIED.
 - **The claim loop re-arms on the PASS, never on the jobs.** A slot belongs to its own job and is
   free the moment it settles, so `claimRound` starts what it claimed and returns the promises —
   ending the pass on `Promise.allSettled([...inFlight])` made the pool as slow as its slowest
@@ -757,7 +775,7 @@ picture from the other side.
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
 | `driver-memory.ts` | `x dev` / tests |
 | `driver-redis.ts`, `driver-nats.ts` | honest `X_NOT_IMPLEMENTED` stubs |
-| `retry.ts` | backoff arithmetic, dead-letter decision |
+| `retry.ts` | the dead-letter decision, and this package's option names over core's `backoffDelay` — no curve of its own |
 | `retry-classification.ts` | the OTHER half of that decision: what the thrown error says, and the stop reason the row and the log carry |
 | `execute.ts` | `executeJob` — one claimed job run and settled, and the run's deadline/cancel |
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |

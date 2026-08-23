@@ -196,6 +196,7 @@ wire.
 | live subscriptions per socket | 128 | `new LiveQueryRegistry({ maxPerSocket })` | `X_SUBSCRIPTION_LIMIT` |
 | live subscriptions per tenant | unset | `new LiveQueryRegistry({ maxPerTenant, tenantOf })` — **both**, or it arms nothing | `X_SUBSCRIPTION_LIMIT` |
 | distinct `(query, input)` pairs per node | 10,000 | `new LiveQueryRegistry({ maxEntries })` | `X_SUBSCRIPTION_LIMIT` |
+| how long one entry's SHARED snapshot read may hold its slot | 30s | `new LiveQueryRegistry({ readDeadlineMs })` | `X_TIMEOUT`, to that read's caller AND every subscriber joined to it |
 | channel topics per socket | 64 | `new ChannelHub({ maxTopicsPerSocket })` | `X_SUBSCRIPTION_LIMIT` |
 | distinct channel topics per node | 10,000 | `new ChannelHub({ maxTopicsPerNode })` | `X_SUBSCRIPTION_LIMIT` |
 | outbound bytes buffered on one socket | 1 MiB | `createSyncNode({ maxBufferedBytes })` | the frame is dropped and `send` answers `false` |
@@ -543,7 +544,11 @@ wire twice by a reconnect that raced an ack.
 `X_REPLICATION_FAILED` · `X_REPLICATION_PROTOCOL` · `X_REPLICATOR_SLOT_HELD` ·
 `X_LIVE_CLIENT_MISSING` · `X_LIVE_SERVER_RENDER` · `X_LIVE_QUERY_UNKNOWN` ·
 `X_LIVE_REPLICA_IDENTITY` ·
-`X_SOCKET_UNAUTHENTICATED` · `X_SOCKET_AUTH_UNAVAILABLE` · `X_NOT_IMPLEMENTED`
+`X_SOCKET_UNAUTHENTICATED` · `X_SOCKET_AUTH_UNAVAILABLE` · `X_NOT_IMPLEMENTED` ·
+`X_TIMEOUT`
+
+`X_NOT_IMPLEMENTED` and `X_TIMEOUT` are **borrowed** from `@ultimat3/core`, which owns and titles
+them — `REALTIME_BORROWED_ERROR_CODES`. Everything else on that list is realtime's own.
 
 Topics deny by default: a topic with no matching guard is forbidden. An authz hole is not a config
 option someone forgot to set.

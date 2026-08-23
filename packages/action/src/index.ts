@@ -8,6 +8,32 @@
  */
 
 /**
+ * Flight control for the typed client, and OPT-IN by construction: `client.ts` names `ClientFlight`
+ * as a TYPE only, so a caller that never mentions `createClientFlight` pays nothing for the fence,
+ * the dedup map or the retry loop. Every mechanism underneath is `@ultimat3/core`'s — one fence,
+ * one flight map, one gate, one backoff curve for the whole framework — and so is the pipeline
+ * itself: it shipped as a byte-identical copy here and in `@ultimat3/query`, and
+ * two tier-3 packages may not import each other, so the one copy lives at tier 0.
+ *
+ * Re-exported rather than re-declared, so every name is importable from this package exactly as
+ * before. `isSuperseded` is core's too: reading a fenced answer is the point of installing a
+ * flight, and it should not cost a second import.
+ */
+export type {
+  ClientFlight,
+  ClientFlightOptions,
+  ClientRetry,
+  FlightKeyOptions,
+  FlightPlan,
+  WireAnswer,
+} from '@ultimat3/core';
+export {
+  createClientFlight,
+  DEFAULT_CLIENT_RETRY,
+  isSuperseded,
+  isTransientFailure,
+} from '@ultimat3/core';
+/**
  * `toBucket` is `@ultimat3/http`'s — http owns `Bucket` and the limiter maths, and `action` and
  * `query` are the same tier, so a copy in either is a second answer for the other. Re-exported
  * here, not re-implemented, so an action file still reaches it through one import.

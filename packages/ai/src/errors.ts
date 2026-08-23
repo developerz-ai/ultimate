@@ -74,11 +74,23 @@ registerErrorCodes(
 
 /** Every configured provider refused or errored. Carries what each one said. */
 export class AiProviderUnavailableError extends UltimateError {
-  constructor(input: { model: string; attempts: readonly string[] }) {
+  constructor(input: {
+    model: string;
+    attempts: readonly string[];
+    /**
+     * True when no configured provider LISTS this model — a fact about `app.config.ts`, not about
+     * the moment. It is the same code because a caller cannot act differently on it, and it carries
+     * a per-instance `terminal` because a worker CAN: retrying it burns a whole policy proving the
+     * configuration is still what it was. The call site states the fact; the class decides the
+     * classification, so the retry vocabulary stays in one file.
+     */
+    readonly unserved?: boolean;
+  }) {
     super({
       code: 'X_AI_PROVIDER_UNAVAILABLE',
       cause: `no provider could serve model "${input.model}" (${input.attempts.join(' | ')})`,
       fix: 'check ai.providers in app.config.ts and the provider API key env var',
+      retry: input.unserved === true ? 'terminal' : undefined,
     });
   }
 }

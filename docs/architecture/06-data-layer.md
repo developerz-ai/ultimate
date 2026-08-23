@@ -124,8 +124,8 @@ Defense in depth, because a single missed `WHERE` is a data breach.
 
 | Layer | Mechanism | Failure |
 |---|---|---|
-| 1. Context | `ctx.tenantId` set once, at stage 7 of the pipeline ([`03-request-lifecycle.md`](./03-request-lifecycle.md)) | a repo call with no tenant in context throws `X_NO_CONTEXT` |
-| 2. Repo | every generated statement injects `tenant_col = $ctx.tenantId` | a hand-written repo query without the filter fails a static check in `x verify` |
+| 1. Context | the org rides on `ctx.actor`, and **no pipeline stage sets a tenant**. This row said `ctx.tenantId` was "set once, at stage 7" until 2026-08-23 and every part of that was false: `Ctx` ([`packages/core/src/context.ts`](../../packages/core/src/context.ts)) has no `tenantId` field, there is no tenant stage, and the refusal is not `X_NO_CONTEXT`. Believing it means believing the request pipeline filters your rows — it does not | `X_TENANCY_UNSCOPED`, raised by [`packages/entity/src/tenancy.ts`](../../packages/entity/src/tenancy.ts) when a tenant-scoped query reaches the driver with no org predicate |
+| 2. Repo | `scopedPlan` appends the org predicate to every generated statement; `ORG_COLUMN` is `orgId` and a column literally named that is inferred without `.tenant()` | a hand-written repo query without the filter fails a static check in `x verify` |
 | 3. Write guard | insert/update stamps the tenant from context, refuses a mismatching literal (`tenancyRowMismatch`) | `X_TENANCY_ACTOR_MISMATCH` |
 | 4. Plan guard | a plan built with no org predicate, or one naming a tenant the actor does not act as | `X_TENANCY_UNSCOPED` / `X_TENANCY_ACTOR_MISMATCH` — one code for the predicate and the row, because it is one mistake in two places |
 | 5. Postgres RLS | optional, opt-in per entity; policy uses a session variable set on checkout | last line of defense for raw SQL and admin sessions |
@@ -201,6 +201,38 @@ base64url(JSON [scope, id, key]) "." hmac-sha256(body, secret)[0:32]
 | Signed, not encrypted | the client already holds the rows the cursor points at. Tamper-evidence, not authorization: policy still runs per page |
 | Opaque | never parsed, extended or built by hand on either side of the wire |
 | Admin tables | `@ultimat3/admin` catches `X_CURSOR_INVALID` and renders page one — a stale bookmark should not be an error page for an operator |
+
+## Serializable retry
+
+`withTransaction(fn, options)` re-runs `fn` **only** after a `40001` (serialization failure) or a
+`40P01` (deadlock), and only when the caller asked for it. `retry` is extra attempts after the
+first, default `0`.
+
+| Rule | Detail |
+|---|---|
+| Opt in wherever `isolation: 'serializable'` is set | under SERIALIZABLE a serialization failure is normal traffic, not an exception. Until the option existed, a team choosing it for ledger correctness saw those surface to the user as "cannot reach the database" with no way to write their own retry — nothing distinguished a `40001` from a dead socket |
+| `fn` re-runs **from the top and must be idempotent** | the same contract `job.handle` has. `onRollback` undos fire before each retry, in reverse registration order |
+| Every other failure is raised on the first attempt | a constraint, a timeout, a dead socket or a throw from `fn` is a failure re-running cannot change, and retrying would turn one error into `retry + 1` of them |
+| `retry: 0` raises the driver's own `X_DB_SERIALIZATION_FAILURE` | its `fix:` is `withTransaction(fn, { retry: 8 })` — the instruction the caller needs. Wrapping it would answer "raise your budget" to someone who has no budget |
+| A budget that is not a whole number `>= 0` is refused at the call | `attempts = retry + 1` turned a `NaN` — what `Number(process.env.DB_RETRY)` answers for an unset variable — into a loop whose body never ran, so `fn` was called **zero** times and the caller got "lost its race on all 0 attempts" for a transaction that was never begun |
+| `retry` inside another `withTransaction` is refused | a nested scope is a `SAVEPOINT`, and measured against Postgres 17 a `40001` aborts the **whole** transaction: the `ROLLBACK TO SAVEPOINT` that would start attempt two answers `25P01`. The retry has to own the `BEGIN` |
+
+**Each re-run waits first, as of 2026-08-23.** Exponential from 10 ms, capped at 500 ms, **full**
+jitter, between attempts only — never after the last one, because there is nothing behind it to
+give the contention room for. **The default is unchanged: `retry` absent or `0` waits nothing.**
+Re-running instantly is what this loop did until then, and it is the deadlock reproduced rather
+than resolved: both losers wake in the same microsecond, take the same locks in the same order, and
+one of them loses again — so a budget of 8 was spent inside a single round trip's worth of wall
+clock.
+
+The constants are `TRANSACTION_RETRY_BACKOFF` in
+[`packages/db/src/transaction-backoff.ts`](../../packages/db/src/transaction-backoff.ts) and the
+curve is `@ultimat3/core`'s ([`20-flight-control.md`](./20-flight-control.md)). `base: 10` because
+the winner is already committing and one round trip to a Postgres on the same network is under
+2 ms — a provider-outage base would put a `retry: 8` budget seconds past the deadline of the request
+it is serving. `max: 500` because this loop holds a connection on a request's critical path; a
+minute-long ceiling belongs to a queue, where nobody is waiting on the other end. `sleep` and
+`random` are injectable and production passes neither.
 
 ## Transactional outbox
 
@@ -282,6 +314,7 @@ The short version of why not transaction-rollback isolation: the outbox commits,
 | `X_MIGRATION_CONFLICT` | the ledger disagrees with this build — an applied migration's checksum changed | `x db gen "<followup>"` |
 | `X_MIGRATION_IRREVERSIBLE` | generating this plan would drop rows the `down` cannot restore | `x db gen "<name>" --allow-destructive` |
 | `X_MIGRATION_DESTRUCTIVE` | a committed `up` destroys data and does not say so | add `-- destructive: true` to the migration file |
+| `X_DB_SERIALIZATION_FAILURE` | the transaction lost its serialization race, and either nobody asked for a retry or the budget ran out | `raise the retry budget — withTransaction(fn, { retry: 8 })` — or cut the contention: narrow what the transaction reads, or drop to `isolation: 'repeatable read'` |
 | `X_MIGRATE_CONCURRENT` | another migrator holds the advisory lock | `psql "$DATABASE_URL" -c "select pid, state from pg_stat_activity join pg_locks using (pid) where locktype = 'advisory'"` — terminate the wedged backend, then `x db migrate` |
 | `X_TENANCY_ACTOR_MISMATCH` | a predicate, row or patch named a tenant other than the actor's | drop the `orgId` argument, or `crossTenant('<why>', fn)` |
 | `X_TENANCY_UNSCOPED` | a tenant-scoped plan has no org predicate | `scopedPlan('<entity>', tenantColumn, '<op>', plan)` |

@@ -6,8 +6,8 @@
 // unverified JWT with the right `iss`, `aud` and a victim's `sub` is a full account takeover with
 // no credential, so a signature check has to exist before those doors are opened.
 
-import type { Clock } from '@ultimat3/core';
-import { renderThrowable, systemClock } from '@ultimat3/core';
+import type { Clock, Scheduler } from '@ultimat3/core';
+import { createFence, createSingleFlight, renderThrowable, systemClock } from '@ultimat3/core';
 import { decodeJwtSegment, isRecord } from './json';
 import type { OAuthProvider } from './oauth';
 import { oauthExchangeFailed, oauthTokenInvalid } from './oauth-errors';
@@ -43,7 +43,23 @@ export type IdTokenKeys = 'token-endpoint-tls' | JwksKeySource;
 /** Short enough that a rotated key set is picked up on its own; a new `kid` refreshes early. */
 export const DEFAULT_JWKS_TTL_MS = 10 * 60 * 1000;
 
+/** One client is one key set, so the flight has exactly one key and its name is never read. */
+const REFRESH_KEY = 'jwks';
+
 const DEFAULT_TIMEOUT_MS = 10_000;
+
+/**
+ * How much longer than the TRANSPORT's own bound one refresh may hold the shared slot, before a
+ * later caller is allowed to start its own instead of joining it.
+ *
+ * Derived from `timeoutMs` rather than a second unrelated number, because the two answer the same
+ * question at two layers: `timeoutMs` is the network leg (`AbortSignal.timeout` below), and
+ * everything after it — reading the body, importing one `CryptoKey` per published JWK — is local
+ * work on the same budget. Doubling gives that second half as much wall clock as the first, so a
+ * slow-but-healthy refresh is never evicted, while a `fetch` that IGNORES its signal (which
+ * `options.fetch` is app-supplied and free to do) is let go of at twice its own stated bound.
+ */
+const JWKS_DEADLINE_FACTOR = 2;
 
 export interface JwksClientOptions {
   /** Named in every refusal this client throws. */
@@ -55,6 +71,8 @@ export interface JwksClientOptions {
   readonly clock?: Clock | undefined;
   readonly ttlMs?: number | undefined;
   readonly timeoutMs?: number | undefined;
+  /** Injected so the refresh deadline is provable without a test waiting one out. */
+  readonly schedule?: Scheduler | undefined;
 }
 
 const importParams = (alg: JwtAlgorithm): RsaHashedImportParams | EcKeyImportParams =>
@@ -94,22 +112,29 @@ const algorithmOf = (jwk: Record<string, unknown>): JwtAlgorithm | null => {
 export function createJwksClient(options: JwksClientOptions): JwksKeySource {
   const clock = options.clock ?? systemClock;
   const ttlMs = options.ttlMs ?? DEFAULT_JWKS_TTL_MS;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let keys = new Map<string, CryptoKey>();
   let fetchedAtMs = Number.NEGATIVE_INFINITY;
   // When the last UNKNOWN-`kid` refresh ran, tracked apart from `fetchedAtMs` because that field
   // is reset by every fetch, ordinary ones included — so gating the early refresh on it would let
   // an attacker's own refresh authorise the next one.
   let lastMissRefreshMs = Number.NEGATIVE_INFINITY;
-  let inflight: Promise<Map<string, CryptoKey>> | null = null;
+  // Two refreshes can overlap once the deadline below can evict one, and BOTH end by installing
+  // what they read. Without this, the later-settling of the two wins — so a refresh the client
+  // already gave up on could drop a pre-rotation key set on top of the live one, and every login
+  // against the new `kid` would start missing again. Read, never `guard`: a superseded refresh is
+  // still the honest answer for the callers holding it, and only the shared cache is fenced.
+  const fence = createFence('the published jwks key set');
 
   const fetchKeys = async (): Promise<Map<string, CryptoKey>> => {
+    const issued = fence.bump();
     const doFetch: OAuthFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
     let response: Response;
     try {
       response = await doFetch(options.jwksUri, {
         method: 'GET',
         headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       throw oauthExchangeFailed({
@@ -145,19 +170,30 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
         .catch(() => null);
       if (key !== null) next.set(`${kid}:${alg}`, key);
     }
-    keys = next;
-    fetchedAtMs = clock.now().getTime();
+    if (fence.generation() === issued) {
+      keys = next;
+      fetchedAtMs = clock.now().getTime();
+    }
     return next;
   };
 
   // One in-flight refresh shared by every concurrent caller: a cold cache under load is otherwise
   // one outbound request per request in flight, against the IdP, at exactly the worst moment.
-  const load = async (): Promise<Map<string, CryptoKey>> => {
-    inflight ??= fetchKeys().finally(() => {
-      inflight = null;
-    });
-    return await inflight;
-  };
+  //
+  // The deadline is why this is `@ultimat3/core`'s and not a local `inflight ??=`. A refresh that
+  // never settles used to hold the slot for the life of the process, and every later caller joined
+  // a promise nothing would resolve — `AbortSignal.timeout` bounds only the DEFAULT transport, and
+  // `options.fetch` is the app's. Eviction frees the KEY and nothing else: the wedged refresh keeps
+  // running, its own callers keep their promise, and the fence above stops its late answer from
+  // landing in the cache. So the worst case is one duplicate JWKS fetch, never a failed
+  // verification — which is what makes a deadline here a fix rather than a risk.
+  const flight = createSingleFlight({
+    deadlineMs: timeoutMs * JWKS_DEADLINE_FACTOR,
+    schedule: options.schedule,
+  });
+
+  const load = async (): Promise<Map<string, CryptoKey>> =>
+    await flight.run(REFRESH_KEY, fetchKeys);
 
   const lookup = (current: Map<string, CryptoKey>, kid: string | null, alg: JwtAlgorithm) => {
     if (kid !== null) return current.get(`${kid}:${alg}`) ?? null;
@@ -180,7 +216,7 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
       // cannot shed it, because `auth` is pipeline stage 6 and `rate-limit` is stage 7. So the
       // early refresh is rate-limited by the same TTL as the ordinary one — which is what the
       // docstring above always promised. Set BEFORE the await so concurrent callers that pass the
-      // gate together still coalesce into the one `inflight` fetch.
+      // gate together still coalesce into the one shared refresh.
       const earlyRefresh = !known && !stale && nowMs >= lastMissRefreshMs + ttlMs;
       if (earlyRefresh) lastMissRefreshMs = nowMs;
       if (stale || earlyRefresh) current = await load();

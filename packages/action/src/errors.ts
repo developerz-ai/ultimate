@@ -9,6 +9,7 @@ import {
   ERROR_DOCS_URL,
   hasErrorCode,
   registerErrorCodes,
+  retryForStatus,
   UltimateError,
 } from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
@@ -280,6 +281,11 @@ export class RemoteActionError extends UltimateError {
       cause: failure.cause,
       fix: failure.fix,
       docs: remoteDocs(failure.code, failure.docs),
+      // The status is what says "send it again", and only where nobody has classified the code
+      // this build may never have heard of. `UltimateError` otherwise fills `retry` from
+      // `retryFor(code)`, which fails closed — so a 503 out of a typed call announced itself as
+      // `terminal` on the one field the framework promises a client never has to infer.
+      retry: retryForStatus(failure.code, failure.status),
       meta: { origin: 'remote', action: failure.action, status: failure.status },
     });
     this.status = failure.status;
@@ -293,6 +299,7 @@ export class RpcFailedError extends UltimateError {
       code: 'X_RPC_FAILED',
       cause: `${name} returned HTTP ${status} without a problem+json body`,
       fix: `check the gateway in front of the app, then: x actions describe ${name} --json`,
+      retry: retryForStatus('X_RPC_FAILED', status),
     });
   }
 }

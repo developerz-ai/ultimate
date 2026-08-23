@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "74cdd712ed50853b9f7b19fe5aa766128a4cfb2addf1de956eb71e1a10b5584e",
+  "buildId": "b4465fcd3b203162b97e1c67f1345fa2a487afce34b798bee195d1f5ff5193ac",
   "tiers": {
     "0": [
       "core",
@@ -1143,6 +1143,21 @@
       "at": "packages/flags/src/errors.ts"
     },
     {
+      "code": "X_FLIGHT_GATE_OVERLOADED",
+      "owner": "core",
+      "at": "packages/core/src/error-codes.ts"
+    },
+    {
+      "code": "X_FLIGHT_RANDOM_UNINJECTED",
+      "owner": "scripts",
+      "at": "scripts/flight-copies.ts"
+    },
+    {
+      "code": "X_FLIGHT_SECOND_CURVE",
+      "owner": "scripts",
+      "at": "scripts/flight-copies.ts"
+    },
+    {
       "code": "X_FORBIDDEN",
       "owner": "policy",
       "at": "packages/policy/src/errors.ts"
@@ -2268,6 +2283,11 @@
       "at": "packages/scraping/src/errors.ts"
     },
     {
+      "code": "X_SCRAPE_CAPTURE_INVALID",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
       "code": "X_SCRAPE_CDP_ATTACH_FAILED",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
@@ -2646,6 +2666,11 @@
       "code": "X_SUBSCRIPTION_LIMIT",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_SUPERSEDED",
+      "owner": "core",
+      "at": "packages/core/src/error-codes.ts"
     },
     {
       "code": "X_SURFACE_BOUNDARY",

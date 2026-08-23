@@ -203,7 +203,7 @@ Derived from `bun run scripts/list-workspaces.ts --json` and each package's own 
 
 | Tier | Package | Owns |
 |---|---|---|
-| 0 | [`@ultimat3/core`](packages/core/README.md) | Ultimate's foundation: errors, context, env, config, clock, ids, logging, telemetry, lifecycle |
+| 0 | [`@ultimat3/core`](packages/core/README.md) | Ultimate's foundation: errors, context, env, config, clock, ids, logging, telemetry, lifecycle, and the flight layer — one backoff curve, one retry executor, one concurrency gate |
 | 0 | [`@ultimat3/schema`](packages/schema/README.md) | Ultimate's validation seam: Standard Schema interface, the `t` namespace, JSON Schema output |
 | 1 | [`@ultimat3/cache`](packages/cache/README.md) | Tagged caching: request memo, LRU, Redis, CDN — one invalidation graph |
 | 1 | [`@ultimat3/db`](packages/db/README.md) | Postgres access, transactions, migrations and drift detection |

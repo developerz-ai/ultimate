@@ -67,7 +67,14 @@ a reader arriving while another's load is running joins it instead of issuing it
 ends as the load settles, rejection included, so one failure is never held as a permanent one. A
 feed cached for 60s and read 8,000×/s otherwise sends ~1,600 identical queries to Postgres at every
 TTL boundary, because the write only lands after `load()` resolves. The primitive is
-`createSingleFlight()` if you need it elsewhere; the stack holds one per stack. A joiner shares the
+`createSingleFlight()` if you need it elsewhere — `@ultimat3/core`'s, re-exported here unchanged;
+the stack holds one per stack.
+A `load()` that never settles does **not** hold its key for ever: past `loadDeadlineMs`
+(`DEFAULT_LOAD_DEADLINE_MS`, 30s — the point at which `http.requestTimeoutMs` already abandoned the
+request that was waiting for it) the key is freed and the next reader loads for itself. Eviction
+frees the key and never the work, so the readers already holding that load still get its answer,
+and the cost is one duplicate fill — `createCacheStack(tiers, { loadDeadlineMs: 5_000 })` for a
+tighter ceiling on a fast origin. A joiner shares the
 leader's **write** as well as its load, so it contributes to it: tags union, TTLs take the shortest.
 Without that the entry landed carrying only the leader's tags and the joiner's invalidation never
 fired.

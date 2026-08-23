@@ -138,6 +138,23 @@ Tier 1. Tagged caching + THE invalidation graph.
   `realtime`'s `entry.reading`). The share ends as the load settles — a REJECTED load must clear
   its entry too, or one origin failure becomes a permanent cached rejection. One `SingleFlight` per
   stack, never a module-level map: two stacks are two ladders.
+  **The mechanism is `@ultimat3/core`'s since 2026-08-23** — this file's shape verbatim, one tier
+  down, because four packages each grew a deduper and only copies can drift. `single-flight.ts`
+  stays as the door, so `createSingleFlight`, `SingleFlight` and `FlightJoin` are still exported
+  from `@ultimat3/cache` unchanged; `single-flight.test.ts` pins the delegation by IDENTITY, since
+  behavioural parity is exactly what let the four copies drift in the first place.
+- **A wedged `load()` no longer holds its key for ever** (`As of 2026-08-23`). It used to: every
+  later reader of that key joined a promise nothing would resolve, so a cache stopped damping an
+  outage and became one. `createCacheStack` passes `deadlineMs: DEFAULT_LOAD_DEADLINE_MS` (30s;
+  `loadDeadlineMs` overrides it, `schedule` injects the timer). The number is `@ultimat3/http`'s
+  `requestTimeoutMs` default written out — a `load()` still running at 30s has no reader left to
+  serve, because the request waiting on it was abandoned at the same instant — and it is a literal
+  because cache is tier 1 and http is tier 2. **Eviction frees the KEY and nothing else**: `load()`
+  is the app's function and this stack holds no signal to abort it, so the wedged load runs on and
+  its own readers still get its answer. The cost is one duplicate fill, which the ladder's
+  last-write-wins `set` already tolerates. Not an `app.config.ts` key on purpose — the ceiling
+  belongs to whoever wrote the `load()`, and `bun run scripts/config-readers.ts` refuses a leaf
+  key nothing reads.
 - **A joiner shares the leader's WRITE, so it contributes to it** (`FlightJoin`, merged by
   `mergeSetOptions` in `set-options.ts`). Keyed on `key` alone and read late, the entry used to land
   carrying only the leader's tags: the joiner's tag reached nothing, so the invalidation it declared
@@ -251,7 +268,12 @@ Tier 1. Tagged caching + THE invalidation graph.
   `assertPurgeableKeys` refuses either **before** the request — a split key is purged successfully
   and clears nothing, which is the one CDN failure no later read can catch.
 - `retryable` on `X_CACHE_PURGE_FAILED` is derived, never guessed: 408/409/425/429 and 5xx, plus
-  any request that never got a status. That table lives in `purge-http.ts` and is edited there.
+  any request that never got a status. The table is **`@ultimat3/core`'s** `isRetryableStatus`
+  (`retryable-status.ts`), `As of 2026-08-23`, and is edited there — `purge-http.ts` re-exports it
+  so both drivers still read "what a failure means" off the shared HTTP half, the same door
+  `@ultimat3/auth`'s `tokens.ts` gives `timingSafeEqual`. It was a private `RETRYABLE_STATUSES`
+  here that was byte-identical to `packages/mail/src/driver-resend.ts`'s, in two packages that
+  cannot import each other, so one copy was always going to be edited alone.
   **It reaches `error.retry` too, `As of 2026-08-23`** — `CachePurgeFailedError` passes
   `retry: input.retryable ? 'retryable' : 'terminal'`. Without it the constructor fell back to
   `retryFor('X_CACHE_PURGE_FAILED')`, this package registers no retry class, and the default is
@@ -284,9 +306,9 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `memo.ts` | request memo over the ALS ctx (WeakMap, no lifecycle) |
 | `lru.ts` | byte-budgeted LRU (linked list + map + tag index) |
 | `redis.ts` | `Bun.redis` tier, build-namespaced keys, hash-tagged buckets, one script call per tag |
-| `single-flight.ts` | one in-flight `load()` per key, shared by every concurrent miss |
+| `single-flight.ts` | the door onto `@ultimat3/core`'s `createSingleFlight` — one in-flight `load()` per key, shared by every concurrent miss. No implementation of its own since 2026-08-23 |
 | `cdn.ts` | `Cache-Control`/`Surrogate-Key` emission, the `PurgeDriver` seam, `noopPurgeDriver` |
-| `purge-http.ts` | the HTTP half both remote drivers share: one POST, retryable table, batching, key guard |
+| `purge-http.ts` | the HTTP half both remote drivers share: one POST, batching, key guard, and core's retryable table re-exported |
 | `purge-fastly.ts` | `fastlyPurgeDriver`: surrogate-key batch purge, `purge_all` |
 | `purge-cloudflare.ts` | `cloudflarePurgeDriver`: cache-tag purge, `purge_everything` |
 | `purge-env.ts` | `selectPurgeDriver`: which edge an environment purges, and nothing else |

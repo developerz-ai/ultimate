@@ -60,6 +60,7 @@ export {
   TopicForbiddenError,
   TransportProtocolError,
   TransportUnavailableError,
+  WindowReadTimeoutError,
 } from './errors';
 // ---- the client hooks --------------------------------------------------------------------------
 export {

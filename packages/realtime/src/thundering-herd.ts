@@ -6,13 +6,20 @@
 //   2. backoffDelay() — the client's own jittered retry, for failures nobody scheduled
 //   3. AcceptBudget   — the receiving node's token bucket, so recovery sheds instead of collapsing
 
-import { type Clock, systemClock } from '@ultimat3/core';
+import {
+  type Clock,
+  backoffDelay as coreBackoffDelay,
+  type JitterMode,
+  type Random,
+  systemClock,
+} from '@ultimat3/core';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 /** Injected so tests are deterministic and `local` mutators stay replayable. */
-export type Rng = () => number;
+export type Rng = Random;
 
-export type JitterMode = 'full' | 'equal' | 'none';
+/** Core's, re-exported under this package's name — never a second copy of the same three modes. */
+export type { JitterMode };
 
 export interface BackoffPolicy {
   readonly baseMs: number;
@@ -32,21 +39,28 @@ export const defaultBackoff: BackoffPolicy = {
   jitter: 'full',
 };
 
-/** Attempt is 0-based. Result is always in `[0, maxMs]`. */
+/**
+ * Attempt is 0-BASED. Result is always in `[0, maxMs]`.
+ *
+ * The arithmetic is core's, and `attempt + 1` is the WHOLE of the seam: a client counts its first
+ * reconnect as attempt 0 and core counts the first wait as attempt 1, so dropping the shift would
+ * double every reconnect delay in the framework — silently, and only under the load this file
+ * exists to survive. `thundering-herd-core-parity.test.ts` pins the numbers.
+ */
 export function backoffDelay(
   attempt: number,
   policy: BackoffPolicy = defaultBackoff,
   rng: Rng = Math.random,
 ): number {
-  const ceiling = Math.min(policy.maxMs, policy.baseMs * policy.factor ** Math.max(0, attempt));
-  switch (policy.jitter) {
-    case 'none':
-      return Math.round(ceiling);
-    case 'equal':
-      return Math.round(ceiling / 2 + (rng() * ceiling) / 2);
-    case 'full':
-      return Math.round(rng() * ceiling);
-  }
+  return coreBackoffDelay({
+    attempt: attempt + 1,
+    base: policy.baseMs,
+    max: policy.maxMs,
+    factor: policy.factor,
+    curve: 'exponential',
+    jitter: policy.jitter,
+    random: rng,
+  });
 }
 
 /**

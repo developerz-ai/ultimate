@@ -3,7 +3,8 @@
 // a browser is rendered through core's `renderThrowable`, which is the rule `bun run error-render`
 // enforces.
 
-import { renderThrowable, UltimateError } from '@ultimat3/core';
+import { isRetryableStatus, renderThrowable, UltimateError } from '@ultimat3/core';
+import type { CaptureClip } from './capture-clip';
 import { ScrapeError } from './errors';
 
 /**
@@ -230,14 +231,29 @@ export const secretExposed = (artifact: string, url: string): ScrapeError =>
     meta: { artifact, url },
   });
 
-/** A non-2xx from the HTTP leg. 4xx below 429 is terminal; everything else may be tried again. */
+/**
+ * A non-2xx from the HTTP leg. The per-instance override that `errors.ts` reserves for this code:
+ * the code is registered `retryable`, and only a PERMANENT status downgrades an instance.
+ *
+ * Which 4xx are permanent is `@ultimat3/core`'s `isRetryableStatus` and not this package's opinion.
+ * Scraping had the framework's fifth copy of that table and it had drifted: `status !== 429` alone
+ * made a 408, a 409 and a 425 terminal here while `cache`, `mail` and `ai` all called them
+ * retryable — and terminal is not documentation, it dead-letters the run on the attempt that threw
+ * it (`packages/jobs/src/retry-classification.ts`), so a scrape burned a five-attempt policy on one
+ * request timeout. Nothing about a SCRAPE argues for a different answer: the statuses that could,
+ * 401 and 403, are permanent in core's table too and stay terminal here.
+ *
+ * The 4xx window stays because it is the range this override speaks for. A sub-400 non-ok — a 304
+ * is the reachable one — keeps the code's registered `retryable`: an early dead-letter on a status
+ * no table in the framework classifies is the expensive way to guess.
+ */
 export const httpFailed = (url: string, status: number, body: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_HTTP_FAILED',
     cause: `${url} answered ${String(status)}: ${body}`,
     fix: 'confirm the endpoint the browser leg calls is the one this request names — page.network() lists every URL the page actually fetched',
     meta: { url, status },
-    retry: status >= 400 && status < 500 && status !== 429 ? 'terminal' : 'retryable',
+    retry: status >= 400 && status < 500 && !isRetryableStatus(status) ? 'terminal' : 'retryable',
   });
 
 /**
@@ -305,4 +321,36 @@ export const scrapeNotImplemented = (feature: string, fix: string): UltimateErro
     cause: `${feature} is declared and not implemented in @ultimat3/scraping`,
     fix,
     meta: { feature },
+  });
+
+/**
+ * The crop rectangle's three refusals, one code. Each is a caller's DECLARATION being impossible
+ * rather than a site behaving badly, so each names the edit that fixes it — and the alternative in
+ * every case is a picture that looks like a successful capture and is not of what was asked for.
+ */
+const clipText = (clip: CaptureClip): string =>
+  `${String(clip.width)}x${String(clip.height)} at ${String(clip.x)},${String(clip.y)}`;
+
+export const captureFramingConflict = (clip: CaptureClip): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_CAPTURE_INVALID',
+    cause: `this capture names both fullPage: true and clip ${clipText(clip)}, and a browser silently honours one of them without saying which`,
+    fix: 'drop fullPage — a clip is already the whole request — or drop clip to photograph the whole page',
+    meta: { clip: { ...clip }, fullPage: true },
+  });
+
+export const captureClipEmpty = (clip: CaptureClip, reason: string): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_CAPTURE_INVALID',
+    cause: `the clip ${clipText(clip)} ${reason}, so the capture would answer a blank picture that reads as a success`,
+    fix: "measure the element first — page.query('<selector>') answers a box with a positive width and height — and pass that rectangle as clip",
+    meta: { clip: { ...clip } },
+  });
+
+export const captureClipOnPdf = (clip: CaptureClip): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_CAPTURE_INVALID',
+    cause: `page.pdf() was given the clip ${clipText(clip)} and a PDF has no crop rectangle — the print engine paginates the whole document`,
+    fix: 'call page.screenshot({ clip }) for one component, or page.pdf() with no clip for the document',
+    meta: { clip: { ...clip } },
   });

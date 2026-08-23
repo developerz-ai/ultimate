@@ -32,8 +32,13 @@ export const REALTIME_OWNED_ERROR_CODES = [
  * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s, and `X_FORBIDDEN` — thrown by the surface denials this
  * package renders — is `@ultimat3/policy`'s. Neither is titled here: the owner writes the one title
  * every surface renders, and a copy kept alongside it is a copy that goes stale unnoticed.
+ *
+ * `X_TIMEOUT` is core's too — titled in `CORE_CODE_TITLES` and classified `retryable` there, which
+ * is what a blown deadline owes a caller. Borrowed rather than owned for the same reason
+ * `@ultimat3/http` borrows it (`HTTP_BORROWED_ERROR_CODES`): the concept is core's, and a title
+ * registered here would throw `X_ERROR_CODE_DUPLICATE` at import.
  */
-export const REALTIME_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
+export const REALTIME_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED', 'X_TIMEOUT'] as const;
 
 /**
  * The two codes an authz **decision** carries. Everything else a gate throws — a rule that reached
@@ -403,6 +408,24 @@ export class SocketAuthUnavailableError extends RealtimeError {
       code: 'X_SOCKET_AUTH_UNAVAILABLE',
       cause: `authenticate() raised instead of deciding who a connecting socket is: ${args.detail}`,
       fix: 'x doctor --json',
+    });
+  }
+}
+
+/**
+ * The shared window read for one live query id blew its deadline.
+ *
+ * Freeing the slot alone would leave every caller ALREADY joined to that read waiting on a promise
+ * nothing will ever settle, so they are TOLD instead — the same answer this file's other
+ * non-answering read gives, and the reason `fillWindow` needed no new branch to carry it. The read
+ * itself is not cancellable from here and this does not pretend to have stopped it.
+ */
+export class WindowReadTimeoutError extends RealtimeError {
+  constructor(args: { qid: string; afterMs: number }) {
+    super({
+      code: 'X_TIMEOUT',
+      cause: `the shared snapshot read for live query "${args.qid}" did not answer within ${args.afterMs}ms, so the window slot it held was released`,
+      fix: 'x doctor --json   # then raise readDeadlineMs on the live query registry, or fix the snapshot read that stopped answering',
     });
   }
 }

@@ -12,6 +12,25 @@
 // `connect({ browserWSEndpoint })`, headless Chrome 150): the WebSocket upgrade Playwright's
 // `connectOverCDP` cannot do under Bun works here, which is why this is the intended library.
 
+/**
+ * The library's screenshot options, restated here rather than shared with `CaptureClip`.
+ *
+ * This file is the shape of somebody ELSE's object, and importing this package's own vocabulary
+ * into it would make a puppeteer call signature depend on a scraping type — the direction this
+ * seam exists to forbid. The two shapes are structurally identical, so a `CaptureClip` passes
+ * where this is expected and no cast is needed anywhere.
+ */
+export interface CdpScreenshotOptions {
+  readonly fullPage?: boolean;
+  /** CSS pixels, page coordinates. Set INSTEAD of `fullPage`, never beside it. */
+  readonly clip?: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+}
+
 export interface CdpRequestLike {
   url(): string;
   resourceType(): string;
@@ -34,7 +53,7 @@ export interface CdpPageLike {
   click(selector: string): Promise<void>;
   type(selector: string, text: string): Promise<void>;
   select(selector: string, ...values: string[]): Promise<string[]>;
-  screenshot(options: { readonly fullPage?: boolean }): Promise<Uint8Array | string>;
+  screenshot(options: CdpScreenshotOptions): Promise<Uint8Array | string>;
   pdf(options?: Record<string, unknown>): Promise<Uint8Array>;
   setRequestInterception(enabled: boolean): Promise<void>;
   /**

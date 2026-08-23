@@ -18,12 +18,15 @@ export type {
   ScrapeAuth,
 } from './auth';
 export { burnSession, createPrompt, ensureAuthenticated, restorableSession } from './auth';
+export type { CaptureClip, CaptureFraming } from './capture-clip';
+export { assertCaptureFraming } from './capture-clip';
 export type {
   CdpBrowserLike,
   CdpFrameLike,
   CdpLauncherLike,
   CdpPageLike,
   CdpRequestLike,
+  CdpScreenshotOptions,
 } from './cdp-port';
 export { parseSnapshots, snapshotExpression } from './cdp-snapshot';
 export type { CdpTargetInit } from './cdp-target';

@@ -29,6 +29,7 @@ export const SCRAPE_OWNED_ERROR_CODES = [
   'X_SCRAPE_REMOTE_REQUIRED',
   'X_SCRAPE_RECOVER_REFUSED',
   'X_SCRAPE_SECRET_EXPOSED',
+  'X_SCRAPE_CAPTURE_INVALID',
   'X_SCRAPE_HTTP_FAILED',
   'X_SCRAPE_BODY_TOO_LARGE',
   'X_SCRAPE_AUTH_FAILED',
@@ -77,6 +78,7 @@ export const SCRAPE_ERROR_TITLES: Readonly<Record<ScrapeOwnedErrorCode, string>>
   X_SCRAPE_REMOTE_REQUIRED: 'this driver needs a cdpUrl and was given none',
   X_SCRAPE_RECOVER_REFUSED: 'the recovery hook declined to recover this failure',
   X_SCRAPE_SECRET_EXPOSED: 'an artifact would have carried a secret this run typed',
+  X_SCRAPE_CAPTURE_INVALID: 'the capture names a framing no picture can be taken with',
   X_SCRAPE_HTTP_FAILED: 'the site answered the HTTP leg with a non-2xx status',
   X_SCRAPE_BODY_TOO_LARGE: 'the HTTP response body passed its byte cap',
   X_SCRAPE_AUTH_FAILED: 'the credentials were rejected',
@@ -112,9 +114,12 @@ export const SCRAPE_ERROR_RETRY = {
   // persisted identity re-trips it every time: the flagged cookies are the thing being refused,
   // so the retry has to arrive as somebody else or it is arithmetic, not a retry.
   X_SCRAPE_BLOCKED: 'retryable',
-  // Non-2xx is transient far more often than not (429, 502, a deploy). A 4xx that is genuinely
-  // permanent is thrown with a per-instance `terminal` override, which `UltimateError` supports —
-  // one code, and the throw site decides, because the same status is both at different sites.
+  // Non-2xx is transient far more often than not (408, 429, 502, a deploy). A 4xx that is
+  // genuinely permanent is thrown with a per-instance `terminal` override, which `UltimateError`
+  // supports — one code, and the throw site decides, because the same status is both at different
+  // sites. WHICH 4xx are permanent is not decided here: `httpFailed` reads core's
+  // `isRetryableStatus`, the framework's one table, so this leg cannot drift from `cache`, `mail`
+  // and `ai` again — it had, on 408, 409 and 425.
   X_SCRAPE_HTTP_FAILED: 'retryable',
   // Everything below is terminal, and each one is listed rather than left to the default so that
   // deleting a line is a visible decision.
@@ -135,6 +140,11 @@ export const SCRAPE_ERROR_RETRY = {
   // A declaration error, raised by `scrape()` before any attempt exists — there is no run to
   // retry, and the same definition would refuse identically forever.
   X_SCRAPE_YIELD_HISTORY_MISSING: 'terminal',
+  // A declaration error too, and the early dead letter is the CORRECT answer here: the rectangle
+  // is the caller's own literal, attempt 2 passes the identical one, and a retry is a browser
+  // launch and a login for no chance of a different verdict. Refused before any driver runs, so
+  // there is no half-done capture to resume.
+  X_SCRAPE_CAPTURE_INVALID: 'terminal',
   // TERMINAL where its sibling `X_SCRAPE_WEDGED` is retryable, and the difference IS the reason
   // the two codes are separate. A wedge is the site or the browser being slow — the definition of
   // "run it again and it may go differently". This is the guard's own loop dying on code the

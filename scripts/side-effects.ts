@@ -38,7 +38,6 @@ export const PINS_FILE = 'scripts/side-effects.ts';
  * `--explain` prints what this tree measures for each; `--unpin` removes the entries that now hold.
  */
 export const SIDE_EFFECTS_UNDECLARED: readonly string[] = [
-  'packages/action',
   'packages/admin',
   'packages/ai',
   'packages/auth',
@@ -55,7 +54,6 @@ export const SIDE_EFFECTS_UNDECLARED: readonly string[] = [
   'packages/mcp',
   'packages/policy',
   'packages/pwa',
-  'packages/query',
   'packages/schema',
   'packages/scraping',
   'packages/seo',

@@ -15,11 +15,12 @@ export const DEFAULT_PURGE_TIMEOUT_MS = 10_000;
 const MAX_DETAIL_LENGTH = 200;
 
 // A 4xx here means the same request, unchanged, might land: a throttle or a momentary conflict.
-// Every other 4xx is a credential or a plan, which no retry fixes.
-const RETRYABLE_STATUSES = new Set([408, 409, 425, 429]);
-
-export const isRetryableStatus = (status: number): boolean =>
-  status >= 500 || RETRYABLE_STATUSES.has(status);
+// Every other 4xx is a credential or a plan, which no retry fixes. The table itself is
+// `@ultimat3/core`'s — this line and `packages/mail/src/driver-resend.ts`'s were byte-identical in
+// two packages that cannot import each other, so one of them was always going to be edited alone.
+// Re-exported rather than imported twice, so both purge drivers still read "what a failure means"
+// off the shared HTTP half — the same door `@ultimat3/auth`'s `tokens.ts` gives `timingSafeEqual`.
+export { isRetryableStatus } from '@ultimat3/core';
 
 /**
  * A bare reference to `globalThis.fetch` risks "Illegal invocation" on some hosts; closing over

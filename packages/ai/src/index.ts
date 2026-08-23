@@ -58,6 +58,7 @@ export {
   VectorDimMismatchError,
   VectorScopeWidenedError,
 } from './errors';
+export { AI_ERROR_RETRY } from './errors-retry';
 export type { EvalBaseline, Regression } from './eval-baseline';
 export {
   baselinePath,

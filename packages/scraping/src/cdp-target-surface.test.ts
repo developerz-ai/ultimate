@@ -4,7 +4,7 @@
 // event-payload rules (restored storage, request method, console level).
 
 import { describe, expect, test } from 'bun:test';
-import type { CdpBrowserLike, CdpFrameLike, CdpPageLike } from './cdp-port';
+import type { CdpBrowserLike, CdpFrameLike, CdpPageLike, CdpScreenshotOptions } from './cdp-port';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';
 import { scrapeTimeout } from './error-throws';
@@ -108,8 +108,13 @@ const rich = (
       calls.push(`select ${selector} ${values.join('|')}`);
       return Promise.resolve(values);
     },
-    screenshot: (shotOptions: { readonly fullPage?: boolean }) => {
-      calls.push(`screenshot fullPage=${String(shotOptions.fullPage)}`);
+    screenshot: (shotOptions: CdpScreenshotOptions) => {
+      const clip = shotOptions.clip;
+      calls.push(
+        clip === undefined
+          ? `screenshot fullPage=${String(shotOptions.fullPage)}`
+          : `screenshot fullPage=${String(shotOptions.fullPage)} clip=${String(clip.x)},${String(clip.y)},${String(clip.width)},${String(clip.height)}`,
+      );
       return Promise.resolve(
         options.screenshotBase64 === true ? btoa('PNG') : new Uint8Array([1, 2, 3]),
       );
@@ -220,6 +225,18 @@ describe('unit · capture', () => {
     const shot = await (await targetOver(fixture)).screenshot({});
     expect([...shot]).toEqual([1, 2, 3]);
     expect(fixture.calls).toContain('screenshot fullPage=false');
+  });
+
+  test('a clip is forwarded to the library VERBATIM, and fullPage is not sent beside it', async () => {
+    // The pair is exclusive at the library too: some builds refuse it and some silently pick one,
+    // so the request carries only what was asked for. `x shot --island` is the caller.
+    const fixture = rich();
+    const shot = await (await targetOver(fixture)).screenshot({
+      clip: { x: 12, y: 34, width: 300, height: 180 },
+    });
+    expect([...shot]).toEqual([1, 2, 3]);
+    expect(fixture.calls).toContain('screenshot fullPage=undefined clip=12,34,300,180');
+    expect(fixture.calls.join('|')).not.toContain('fullPage=true');
   });
 
   test('pdf comes straight off the page', async () => {

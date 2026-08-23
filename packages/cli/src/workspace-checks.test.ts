@@ -100,6 +100,37 @@ describe('unit · the file-size ceiling', () => {
     expect(paths.some((path) => path?.includes('node_modules'))).toBe(false);
   });
 
+  /**
+   * The carve-out, at the seam that enforces it. A barrel's length is a function of the package's
+   * API size, and `@ultimat3/core`'s reached 514 lines of nothing but re-exports — so the ceiling
+   * had stopped measuring complexity there and started refusing every new public subject.
+   */
+  test('a long pure re-export manifest is exempt, and one line of logic re-arms the ceiling', async () => {
+    const barrel = await mkdtemp(join(tmpdir(), 'ultimate-workspace-checks-barrel-'));
+    try {
+      const reExports = `${Array.from(
+        { length: LINE_CEILING + 20 },
+        (_unused, index) => `export { name${index} } from './name${index}';`,
+      ).join('\n')}\n`;
+      await Bun.write(join(barrel, 'packages/big/src/index.ts'), reExports);
+      await Bun.write(
+        join(barrel, 'packages/big/src/almost.ts'),
+        `${reExports}export const LIMIT = 1;\n`,
+      );
+      await Bun.write(join(barrel, 'packages/big/src/logic.ts'), lines(LINE_CEILING + 1));
+
+      const paths = (await checkFileSizes(barrel)).map((finding) => finding.at);
+
+      expect(paths).not.toContain('packages/big/src/index.ts');
+      // The same file, one declaration longer. Without this the exemption would be a hole a value
+      // could be parked in, which is the one thing that would make it worse than raising the number.
+      expect(paths).toContain('packages/big/src/almost.ts');
+      expect(paths).toContain('packages/big/src/logic.ts');
+    } finally {
+      await rm(barrel, { recursive: true, force: true });
+    }
+  });
+
   test('every finding names the file it is about in its fix', async () => {
     for (const finding of await checkFileSizes(dir)) {
       expect(finding.fix).toContain(finding.at ?? '');

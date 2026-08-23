@@ -137,6 +137,41 @@ that would start attempt two answers `25P01 ROLLBACK TO SAVEPOINT can only be us
 blocks`. There is nothing to retry into, and an author who believes they hold a budget they do not
 is worse off than one who is told.
 
+**A re-run waits first, `As of 2026-08-23`, and the default still waits not at all.** The loop had
+NO backoff: two transactions that deadlocked woke in the same microsecond, took the same locks in
+the same order, and one of them lost again — so a `retry: 8` budget was spent inside one round
+trip's worth of wall clock, which is the deadlock reproduced rather than resolved.
+`transaction-backoff.ts` is the schedule: `@ultimat3/core`'s `backoffDelay`, exponential from
+**10ms**, capped at **500ms**, **full** jitter. The constants are contention's, not an outage's — the
+winner of the race is already committing, and this loop holds a connection on a request's critical
+path, so ai's 500ms base and jobs' one-second base would turn a recovered transaction into a
+timed-out one. Full jitter because the two callers whose retries must not re-collide are, by
+construction, scheduled at the same offset from the same event. Nothing waits when `retry` is 0 or
+absent, and nothing waits after the LAST attempt. `{ sleep, random }` on `TransactionOptions` are
+the injection seams and production passes neither.
+
+**Four codes are classified `retryable`, and the terminal ones are deliberately NOT classified,
+`As of 2026-08-23`.** `DB_ERROR_RETRY` registers `X_DB_SERIALIZATION_FAILURE`, `X_DB_LOCK_TIMEOUT`,
+`X_DB_POOL_EXHAUSTED` and `X_MIGRATE_CONCURRENT` — each is a resource that frees. Before it, this
+package classified nothing, so `X_DB_SERIALIZATION_FAILURE` rendered `retry: "terminal"` in every
+problem document while its own `fix:` line read `withTransaction(fn, { retry: 3 })`.
+
+The half that needs the argument is the codes left OUT. Core's shape (`CORE_ERROR_RETRY` lists only
+the exceptions) rather than `@ultimat3/scraping`'s exhaustive one, because a REGISTERED `terminal` is
+not the same as an unclassified code: `@ultimat3/jobs`' `nextRetryForError` dead-letters the first on
+attempt 1 and keeps the attempt count for the second. `X_DB_UNAVAILABLE: 'terminal'` is defensible
+for an HTTP client — four of its six throw sites are permanent config faults — and would dead-letter
+every in-flight job the moment Postgres fails over. A code that means two things to two readers stays
+unclassified until it is two codes. `errors-retry.test.ts` asserts the absence, so adding one is a
+failing test first.
+
+**What did NOT move down is core's `retry()` executor.** It stops on a `terminal` classification and
+retries everything else, so an UNCLASSIFIED throw is retried — and the value caught here is a raw
+driver error carrying a SQLSTATE, which core cannot see and nobody classified. Adopting it would
+have re-run `fn` on a unique violation, a statement timeout and a throw from `fn` itself.
+`isRetryableState` stays the guard, `40001`/`40P01` stays this package's Postgres knowledge, and only
+the arithmetic is core's.
+
 **`BEGIN` re-derives its isolation level from the closed set, `As of 2026-08-23`.** `BEGIN` takes
 no parameters, so `beginStatement` is one of the two statements here built as TEXT — and the level
 was `options.isolation.toUpperCase()` spliced into it. The TYPE is not the guard: the value reaches

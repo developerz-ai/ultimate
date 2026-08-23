@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
+  classifyThrown,
   DEFAULT_ERROR_RETRY,
   declaredErrorRetry,
   isErrorRetry,
@@ -7,6 +8,7 @@ import {
   registeredErrorRetry,
   resetErrorRetry,
   retryFor,
+  statedDelayMs,
 } from './error-retry';
 import { errorRetry, isUltimateError, UltimateError } from './errors';
 
@@ -174,5 +176,65 @@ describe('X_TIMEOUT', () => {
     const error = new UltimateError({ code: 'X_TIMEOUT', cause: 'c', fix: 'f' });
     expect(error.title).toBe('operation exceeded its deadline');
     expect(error.title).not.toBe('timeout');
+  });
+});
+
+describe('classifyThrown', () => {
+  const coded = (code: string, retry?: 'terminal' | 'retryable' | 'retry-after'): UltimateError =>
+    new UltimateError({
+      code,
+      cause: 'a dependency answered badly',
+      fix: 'x doctor --json',
+      retry,
+    });
+
+  test('answers undefined for anything that is not an Ultimate error', () => {
+    expect(classifyThrown(new TypeError('foreign'))).toBeUndefined();
+    expect(classifyThrown('X_DRAINING')).toBeUndefined();
+    expect(classifyThrown(undefined)).toBeUndefined();
+  });
+
+  test("reads the framework's own table", () => {
+    expect(classifyThrown(coded('X_DRAINING'))).toBe('retryable');
+    expect(classifyThrown(coded('X_NOT_IMPLEMENTED'))).toBe('terminal');
+    expect(classifyThrown(coded('X_SUPERSEDED'))).toBe('terminal');
+    expect(classifyThrown(coded('X_FLIGHT_GATE_OVERLOADED'))).toBe('retry-after');
+  });
+
+  test('an unclassified code reads as unclassified, instance `terminal` included', () => {
+    expect(classifyThrown(coded('X_APP_UNKNOWN'))).toBeUndefined();
+    expect(classifyThrown(coded('X_APP_UNKNOWN', 'terminal'))).toBeUndefined();
+    // Anything OTHER than the fail-closed default can only have been somebody's answer.
+    expect(classifyThrown(coded('X_APP_UNKNOWN', 'retryable'))).toBe('retryable');
+  });
+
+  test('a registered classification is honoured', () => {
+    registerErrorRetry({ X_APP_REGISTERED: 'terminal' });
+    expect(classifyThrown(coded('X_APP_REGISTERED'))).toBe('terminal');
+  });
+});
+
+describe('statedDelayMs', () => {
+  const withMeta = (meta: Record<string, unknown> | undefined): UltimateError =>
+    new UltimateError({
+      code: 'X_APP_THROTTLED',
+      cause: 'throttled',
+      fix: 'x doctor --json',
+      meta,
+    });
+
+  test("reads retryAfterSeconds, the framework's one spelling, in ms", () => {
+    expect(statedDelayMs(withMeta({ retryAfterSeconds: 7 }))).toBe(7_000);
+    expect(statedDelayMs(withMeta({ retryAfterSeconds: 0 }))).toBe(0);
+    expect(statedDelayMs(withMeta({ retryAfterSeconds: 1.5 }))).toBe(1_500);
+  });
+
+  test('answers undefined when nothing usable was stated', () => {
+    expect(statedDelayMs(withMeta(undefined))).toBeUndefined();
+    expect(statedDelayMs(withMeta({}))).toBeUndefined();
+    expect(statedDelayMs(withMeta({ retryAfterSeconds: '7' }))).toBeUndefined();
+    expect(statedDelayMs(withMeta({ retryAfterSeconds: -1 }))).toBeUndefined();
+    expect(statedDelayMs(withMeta({ retryAfterSeconds: Number.NaN }))).toBeUndefined();
+    expect(statedDelayMs(new TypeError('foreign'))).toBeUndefined();
   });
 });

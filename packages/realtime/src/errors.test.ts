@@ -46,6 +46,8 @@ const ADDED_SINCE = [
   'X_FRAME_RATE_LIMIT',
   'X_LIVE_REPLICA_IDENTITY',
   'X_LIVE_SERVER_RENDER',
+  // Borrowed from core, not owned: the shared window read's deadline is the first thrower.
+  'X_TIMEOUT',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */

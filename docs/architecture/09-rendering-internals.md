@@ -162,7 +162,7 @@ A route declaring `revalidate: { tags: [tag.post] }` and rendering `/blog/hello`
 cache: { invalidates: [tag.post, tag.feed] },
 ```
 
-Fanout is enqueued in the same transaction as the write and executed post-commit (stage 14 of [`03-request-lifecycle.md`](./03-request-lifecycle.md)):
+Fanout is enqueued in the same transaction as the write and executed post-commit — the pipeline's `commit` stage this line cited until 2026-08-23 never existed, and stage 14 is `response`:
 
 | # | Destination | Mechanism | Timing |
 |---|---|---|---|

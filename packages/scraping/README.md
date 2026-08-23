@@ -108,6 +108,29 @@ same reason — a third-party driver that could omit it would be silent about er
 Entries are built with `pageErrorEntry()`, which truncates at `MAX_PAGE_ERROR_CHARS`: the ring
 bounds the count, and one `Maximum call stack size exceeded` is thousands of frames.
 
+### A picture of ONE component
+
+`page.screenshot({ clip: { x, y, width, height } })` crops to a rectangle in the page's own
+coordinate space — the space `getBoundingClientRect()` answers in. It exists because the reader of
+a scrape's screenshot is increasingly a vision model, whose pixels are the scarce resource: a
+whole-viewport picture spends them on everything that is not the component under review.
+
+| Framing | Answer |
+|---|---|
+| neither | the viewport, exactly as before the clip existed — byte for byte |
+| `fullPage: true` | the whole document |
+| `clip` | that rectangle |
+| **both** | `X_SCRAPE_CAPTURE_INVALID` — a browser honours one of the two without saying which |
+| `clip` with no area, or entirely in negative coordinates | `X_SCRAPE_CAPTURE_INVALID` — a blank picture that reads as a successful capture is the failure this exists to remove |
+| `clip` on `page.pdf()` | `X_SCRAPE_CAPTURE_INVALID` — a print engine paginates the document and has no crop |
+
+A rectangle **below the fold is accepted**. It is not checked against a viewport: this package
+neither sets nor reads one, and a component under the fold is the case a component crop is for.
+
+The offline drivers honour it, so the crop is provable with no Chrome — `fakeBrowser()` answers
+different deterministic bytes per rectangle, which is what lets a component screenshot be tested
+on a machine with no browser — the case CI is.
+
 ## What it owns
 
 | Module | Owns |
@@ -121,6 +144,7 @@ bounds the count, and one `Maximum call stack size exceeded` is thousands of fra
 | `auth.ts` / `session-state.ts` | acquire → persist → reuse → validate → burn |
 | `expect.ts` | the silent-green alarm |
 | `watchdog.ts` | the wedge and zombie discipline |
+| `capture-clip.ts` | the one framing rule — crop, whole page, or a refusal — checked before any driver sees it |
 | `errors.ts` / `error-throws.ts` | this package's `X_*` codes and their retry classification |
 
 ## Extending it — there is no plugin API, and none is needed

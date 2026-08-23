@@ -206,7 +206,7 @@ recover: async ({ page, failure, attempt }) => { /* return true to re-run the bo
 |---|---|
 | `X_SCRAPE_CDP_ATTACH_FAILED`, `X_SCRAPE_BROWSER_UNREACHABLE` | the browser, not the page |
 | `X_SCRAPE_TIMEOUT`, `X_SCRAPE_WEDGED`, `X_SCRAPE_DOWNLOAD_TIMEOUT` | a moment, not a property of the site |
-| `X_SCRAPE_HTTP_FAILED` | 429, 502, a deploy — transient far more often than not |
+| `X_SCRAPE_HTTP_FAILED` | 408, 409, 425, 429, any 5xx, a deploy — transient far more often than not. **Which 4xx are permanent is `@ultimat3/core`'s `isRetryableStatus`, not this package's**, `As of 2026-08-23`: a private copy here called 408 and 425 terminal while the rest of the framework called them retryable, and a terminal classification dead-letters the run on the attempt that failed rather than spending its declared `attempts` |
 | `X_SCRAPE_BLOCKED` | retryable **and it burns the session first**: retrying a block on the same flagged cookies re-trips it every time |
 
 Everything else is terminal, including `X_SCRAPE_SELECTOR_MISSING` (the markup changed), `X_SCRAPE_OUTPUT_INVALID` (the rows are the wrong shape), `X_SCRAPE_YIELD_COLLAPSED` and `X_SCRAPE_SECRET_EXPOSED`.

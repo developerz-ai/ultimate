@@ -116,6 +116,38 @@ export const client = rpc<Api['actions']>({ baseUrl: '/' });
 declaration with no codegen step. `Api` is imported as a **type only**, which is what keeps
 a page's module graph free of any edge to a feature's implementation.
 
+### Flight control — `createClientFlight`, opt-in
+
+Same object as `@ultimat3/query`'s, installed the same way (`rpc({ baseUrl, flight })`), and the
+write half is the half made of refusals:
+
+| Rule | Why |
+|---|---|
+| a mutation **never** joins another mutation | `client.ts` never calls `flight.keyFor`, so there is no dedup path to reach; two writes are two writes |
+| a fence bump **never** aborts a write | closing the socket does not un-commit it, it only destroys the one chance this caller had of learning whether it landed. The caller still gets `X_SUPERSEDED` — the answer is retired, the request is not |
+| `retry` is honoured only alongside an `idempotencyKey` | a retried POST without one is a second write. Without a key the call is narrowed to a single attempt, silently and by construction |
+| the same `Idempotency-Key` rides every attempt | that is what makes the retry a retry rather than a duplicate |
+
+```ts
+declare const api: { charge: (input: { orderId: string }, options?: {
+  idempotencyKey?: string; retry?: { attempts: number };
+}) => Promise<unknown> };
+declare const orderId: string;
+
+await api.charge({ orderId }, { idempotencyKey: `charge:${orderId}`, retry: { attempts: 3 } });
+```
+
+`createClientFlight` is **`@ultimat3/core`'s**, re-exported here: it is the same object
+`@ultimat3/query` re-exports, because both packages are tier 3 and neither may import the other.
+It shipped as a byte-identical copy in each; the copies are gone and every name is importable from
+this package exactly as before.
+
+Importing `rpc` alone from this package is **14,759 B** minified for the browser; adding
+`createClientFlight` is **20,292 B**. `ClientFlight` is a TYPE inside `client.ts` and never a
+value, which is what keeps the second number off the first caller's bill. Expect ±376 B run to
+run — `Bun.build` 1.4.0 drops `@ultimat3/core`'s `schema-error-codes.ts` from some builds even
+though `sideEffects` names it (issue #273), which is the size of the schema error titles.
+
 ## Path derivation
 
 First camelCase word is the verb; the rest is the resource, last word pluralized,

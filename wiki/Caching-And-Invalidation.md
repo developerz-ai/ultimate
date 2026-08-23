@@ -87,6 +87,17 @@ There is exactly one fan-out entry point in the implementation (`invalidateTags(
 
 The write side holds the same rule one layer up: a fan-out that refuses outright — a tag no entity declared, `X_CACHE_TAG_UNKNOWN` — is absorbed rather than raised: one `action.invalidate.failed` error line, entries live until their TTL, and the caller keeps the write it already made. A replayed idempotent call (`idempotent: true` + a repeated `Idempotency-Key`) busts nothing at all: no handler ran, and the first call already did.
 
+**N concurrent misses on one key are ONE `load()`.** The stack holds a single-flight map, per stack
+rather than per module — two stacks are two ladders and must not join each other's loads. A `load()`
+may hold its key for `loadDeadlineMs`, default **30 s**, after which a later reader is allowed to
+start its own instead of joining a promise that may never resolve. The deadline frees the **key**
+and nothing else: `load()` is your function and the stack holds no signal that could abort it, so
+the wedged load runs on and the readers already holding its promise still get whatever it answers.
+Worst case is one duplicate fill, which the ladder's last-write-wins `set` already tolerates —
+against a key pinned for the life of the process. 30 s because `@ultimat3/http` abandons the request
+waiting on that read at the same bound; a load still running past it has no reader left to serve.
+`As of 2026-08-23`. Set it per stack: `createCacheStack(tiers, { loadDeadlineMs })`.
+
 The read ladder keeps the same rule with no report to hand back: a tier that throws on `get`, `set` or `del` is a tier that did not answer, so the walk continues and the source is still returned. A value too large for the in-process LRU (`X_CACHE_TOO_LARGE`) costs the entry, never the read. Every absorbed refusal lands in a bounded log — `recentTierFailures()`, last 100, newest first, carrying the tier, the operation, the key and the `X_*` code — plus one `cache.tier.failed` warn. The one call left to throw is the load itself: it *is* the business read.
 
 ## Failure modes removed

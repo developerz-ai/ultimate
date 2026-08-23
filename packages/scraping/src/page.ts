@@ -8,6 +8,7 @@
 
 import type { Secret } from '@ultimat3/core';
 import type { ActionabilityState } from './actionability';
+import type { CaptureFraming } from './capture-clip';
 import type { ConsoleLine, NetworkEntry, PageError } from './rings';
 import type { SessionSnapshot } from './session-state';
 import type { ElementSnapshot, ScrapeCookie, ScrapeDownloadFile } from './target';
@@ -64,10 +65,13 @@ export interface ScrapeFrame {
   frame(nameOrSelector: string): ScrapeFrame;
 }
 
-/** `fullPage` only. `timeout` is gone with the port's — see `CaptureOptions` for why. */
-export interface CaptureRequest {
-  readonly fullPage?: boolean | undefined;
-}
+/**
+ * `fullPage`, or a `clip` — never both. `timeout` is gone with the port's; see `CaptureOptions`.
+ *
+ * A clip is what makes a capture reviewable by a vision model: the whole viewport spends the
+ * reader's scarce pixels on everything that is not the component under review.
+ */
+export type CaptureRequest = CaptureFraming;
 
 export interface DownloadRequest {
   readonly timeout?: number | undefined;

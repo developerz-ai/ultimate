@@ -60,6 +60,10 @@ export const ERROR_STATUS = {
   // back immediately, which is the load it was shed to avoid.
   X_DRAINING: 503,
   X_OVERLOADED: 503,
+  // Core's flight gate refusing past `maxQueued` is the same answer one tier down: it carries
+  // `retryAfterSeconds` in `meta`, which `stages.ts` renders onto `Retry-After`, so a caller that
+  // already handles a shed request needs no second branch for a refused one.
+  X_FLIGHT_GATE_OVERLOADED: 503,
   // 403 and never 401: the caller IS authenticated — that is what makes the forged write work —
   // so a 401 would send a signed-in user to a sign-in page they are already past.
   X_CSRF_BLOCKED: 403,
@@ -227,6 +231,11 @@ export const ERROR_STATUS = {
   X_NOT_IMPLEMENTED: 501,
   X_TIMEOUT: 504,
   X_ABORTED: 499,
+  // The twin of `X_ABORTED`, and it answers the same because the outcome is the same: the caller
+  // went away there, the caller's generation moved on here, and in both cases nobody will act on
+  // the answer. Deliberately not 409 — that spelling asks the client to reconcile and try again,
+  // and a fenced answer has nothing to reconcile against.
+  X_SUPERSEDED: 499,
   X_INTERNAL: 500,
   // The keys are LITERAL — deliberately not `Readonly<Record<string, number>>`, which is what the
   // annotation used to say. This table is the closed one, so `ERROR_STATUS.X_QUERY_NOT_PAGABLE`

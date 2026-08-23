@@ -73,3 +73,100 @@ describe('createKdfGate', () => {
     expect(DEFAULT_KDF_LIMITS.maxConcurrent).toBeLessThanOrEqual(16);
   });
 });
+
+// The refusal is the whole of what a caller sees when the gate sheds, and `createKdfGate`
+// delegates its mechanism to `@ultimat3/core`'s `createFlightGate` — which carries a refusal of
+// its own (`X_FLIGHT_GATE_OVERLOADED`). These pin the three facts that must survive that: the
+// code stays this package's borrowed `X_OVERLOADED`, the counts are the ones read at the instant
+// of the shed, and `retryAfterSeconds` is still in `meta` for the host to put on the header.
+describe('the shed refusal, whoever performs the queueing', () => {
+  /** Fills `maxConcurrent` + `maxQueued`, then returns the refusal the next caller gets. */
+  const shedOf = async (limits: {
+    maxConcurrent: number;
+    maxQueued: number;
+  }): Promise<{ refusal: AuthError; release: () => Promise<void> }> => {
+    const gate = createKdfGate(limits);
+    const blocker = deferred();
+    const held = Array.from({ length: limits.maxConcurrent + limits.maxQueued }, async () =>
+      gate.run(async () => await blocker.promise),
+    );
+    // A microtask turn, so every queued caller is parked in the waiter list before the shed.
+    await Promise.resolve();
+    try {
+      await gate.run(async () => undefined);
+    } catch (error) {
+      if (error instanceof AuthError) {
+        return {
+          refusal: error,
+          release: async (): Promise<void> => {
+            blocker.resolve();
+            await Promise.all(held);
+          },
+        };
+      }
+    }
+    blocker.resolve();
+    await Promise.all(held);
+    return expect.unreachable('the gate accepted a caller past its own queue bound');
+  };
+
+  test('the code is X_OVERLOADED, never the gate mechanism its own', async () => {
+    const { refusal, release } = await shedOf({ maxConcurrent: 2, maxQueued: 3 });
+    expect(refusal.code).toBe('X_OVERLOADED');
+    await release();
+  });
+
+  test('the counts are the running and queued totals at the instant of the shed', async () => {
+    const { refusal, release } = await shedOf({ maxConcurrent: 2, maxQueued: 3 });
+    expect(refusal.meta?.['active']).toBe(2);
+    expect(refusal.meta?.['queued']).toBe(3);
+    expect(refusal.cause).toBe('2 password hashes are already running and 3 more are queued');
+    await release();
+  });
+
+  test('retryAfterSeconds rides in meta, because this package cannot reach a header', async () => {
+    const { refusal, release } = await shedOf({ maxConcurrent: 1, maxQueued: 1 });
+    expect(refusal.meta?.['retryAfterSeconds']).toBe(1);
+    expect(refusal.fix).toContain('configureKdfGate(');
+    await release();
+  });
+
+  // A slot handed to a waiter, never released and re-acquired: decrementing first lets a caller
+  // arriving in the same tick past the ceiling while the waiter's continuation is still a queued
+  // microtask. Two waiters and a latecomer racing one freed slot is where that shows.
+  test('a freed slot goes to the waiter, not to a caller arriving in the same tick', async () => {
+    /** A macrotask turn: long enough for every queued continuation to have run. */
+    const flush = async (): Promise<void> => {
+      await new Promise<void>((done) => {
+        setTimeout(done, 0);
+      });
+    };
+    const gate = createKdfGate({ maxConcurrent: 1, maxQueued: 8 });
+    const first = deferred();
+    const second = deferred();
+    const order: string[] = [];
+
+    const held = gate.run(async () => {
+      order.push('held');
+      await first.promise;
+    });
+    await Promise.resolve();
+    const waiter = gate.run(async () => {
+      order.push('waiter');
+      await second.promise;
+    });
+    await Promise.resolve();
+
+    first.resolve();
+    // The latecomer arrives in the tick the slot frees; the waiter is ahead of it either way.
+    const latecomer = gate.run(async () => {
+      order.push('latecomer');
+    });
+    await flush();
+    expect(order).toEqual(['held', 'waiter']);
+
+    second.resolve();
+    await Promise.all([held, waiter, latecomer]);
+    expect(order).toEqual(['held', 'waiter', 'latecomer']);
+  });
+});

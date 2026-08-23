@@ -4,6 +4,9 @@
   "description": "The action primitive: one declaration projected to route, OpenAPI, client, MCP tool, job handle, tests",
   "license": "MIT",
   "type": "module",
+  "sideEffects": [
+    "./src/errors.ts"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/developerz-ai/ultimate.git",

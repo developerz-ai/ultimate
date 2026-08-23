@@ -144,7 +144,8 @@ $ x verify
 | # | Check | Fails on | Why here |
 |---|---|---|---|
 | 1 | typecheck | any error; `any` is banned by lint, not tolerated by a cast | fastest signal, and everything downstream assumes types hold |
-| 2 | lint (Biome) | formatting, `any`, default exports, bare `Error`, raw hex, hardcoded strings | seconds, and it catches the cross-cutting rules before an expensive test run |
+| 2 | lint (Biome) | formatting, `any`, default exports, non-null assertions, a value-import of a type, an unused import or variable, a floating promise. **Not** bare `Error`, raw hex or a hardcoded string — this cell claimed all three until 2026-08-23 and `biome.json` declares no rule for any of them | seconds, and it catches the coding contract before an expensive test run |
+| 2a | **errors** | an empty or unrunnable `fix:`, a declared code with no `wiki/Error-Codes.md` row, a test reporting its own verdict with a bare `Error`, an `unknown` rendered into a `cause:`/`fix:` | the half lint was mis-credited with. [`04-error-contract.md`](./04-error-contract.md) |
 | 3 | **import boundaries** | `site/` → `app/`, routes → DB, services → HTTP, framework tier violations | an import-scan pass; a boundary break invalidates the bundle-graph assumptions the later budget check depends on |
 | 3a | file size | a source file over 500 lines | a file read; one file, one job is cheapest to check before anything runs |
 | 3b | package shape | a workspace package missing `README.md`, `CLAUDE.md`, `tsconfig.json`, `src/index.ts` | four `stat` calls, and every later step assumes the package is navigable |

@@ -68,7 +68,7 @@ Decided **2026-08**, when the Postgres entity driver needed a home. `db` imports
 
 | Package | Tier | Responsibility (one line) | Owns | Must never |
 |---|---|---|---|---|
-| `core` | 0 | `UltimateError`, ALS request context, ids, build ID, typed env, the image pipeline | the error base + code registry, `ctx` shape, cross-tier interface types, the logger, the one decode/resize/encode path | import any `@ultimat3/*`; do I/O beyond `process.env` and stdout |
+| `core` | 0 | `UltimateError`, ALS request context, ids, build ID, typed env, the image pipeline, the flight layer | the error base + code registry, `ctx` shape, cross-tier interface types, the logger, the one decode/resize/encode path, the one backoff curve and the one concurrency gate ([`20-flight-control.md`](./20-flight-control.md)) | import any `@ultimat3/*`; do I/O beyond `process.env` and stdout |
 | `schema` | 0 | Standard Schema façade; the dependency-free builtin provider exposed as `t`; JSON Schema emit | `t`, `parse`, `toJsonSchema`, `configureSchemaProvider()` — the swap point a third-party adapter plugs into | know about HTTP, DB, or locales; ship an adapter for ArkType, Zod or Valibot |
 | `i18n` | 1 | translator, catalog flattening, locale negotiation, loud misses | `t()`, catalog format, `⟦key⟧` rendering, plural selection via CLDR | read a request object; format money |
 | `money` | 1 | integer minor units with an attached currency | `Money`, arithmetic, `allocate`, ISO exponent table, `Intl` formatting | floats; cross-currency arithmetic; a bare number as a total |

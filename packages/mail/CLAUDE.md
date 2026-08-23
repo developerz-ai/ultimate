@@ -51,8 +51,13 @@
   while its own `cause` said retrying cannot help. `errors.test.ts` asserts it through the QUEUE's
   `nextRetryForError`, never against the table.
   `stage` is the `SendStage` union in `errors.ts`; a new step goes there first.
-  The transient set is 4xx over SMTP, and 408/409/425/429 + 5xx over HTTP — that HTTP set
-  lives in `RETRYABLE_STATUSES` (`driver-resend.ts`) and is edited there, never restated.
+  The transient set is 4xx over SMTP, and 408/409/425/429 + 5xx over HTTP — the HTTP half is
+  `isRetryableStatus` in **`@ultimat3/core`** (`retryable-status.ts`), `As of 2026-08-23`, and is
+  edited there. It was a private `RETRYABLE_STATUSES` in `driver-resend.ts` that was byte-identical
+  to `packages/cache/src/purge-http.ts`'s, in two packages that cannot import each other — so one
+  of the two was always going to be edited alone. Never restate it here.
+  `driver-resend.test.ts`'s "every status maps to the same retryable verdict" pins the whole table
+  through the driver, so the answer cannot move under this package without a failing test.
 - A transport is selected from the environment by `selectMailDriver`, never from an `app.config.ts`
   field — nothing loads that file's contents at runtime, so a `mail:` config block would be a
   setting no boot could read. Two credentials at once is refused, not resolved: mail leaving by

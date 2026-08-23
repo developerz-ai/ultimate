@@ -32,8 +32,27 @@ export {
 export { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
 export { assert, assertNever, type InvariantOptions, invariant } from './assert';
 export { type AsyncContext, asyncContext } from './async-context';
+export type { BackoffCurve, BackoffOptions, JitterMode, Random } from './backoff';
+export { backoffDelay } from './backoff';
 export { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 export { canonicalJson, fingerprint } from './canonical-json';
+/**
+ * Flight control for a typed client, and OPT-IN by construction: `@ultimat3/action`'s and
+ * `@ultimat3/query`'s `client.ts` each name `ClientFlight` as a TYPE only, so a caller that never
+ * mentions `createClientFlight` pays nothing for the fence, the dedup map or the retry loop.
+ * Both packages re-export these names unchanged; this is the one copy.
+ */
+export type {
+  ClientFlight,
+  ClientFlightOptions,
+  ClientRetry,
+  FlightKeyOptions,
+  FlightPlan,
+} from './client-flight';
+export { createClientFlight, DEFAULT_CLIENT_RETRY, isTransientFailure } from './client-flight';
+/** What a typed client puts on the wire. `retryForStatus` is what fills a failure's `retry`. */
+export type { WireAnswer } from './client-wire';
+export { FRAMEWORK_CODE, problemOf, retryForStatus, traceHeaders } from './client-wire';
 export { type Clock, type FrozenClock, frozenClock, systemClock } from './clock';
 export type {
   AiConfig,
@@ -127,6 +146,7 @@ export type {
 export {
   CORE_ERROR_CODES,
   ConfigInvalidError,
+  classifyThrown,
   DEFAULT_ERROR_RETRY,
   declaredErrorRetry,
   describeErrorCode,
@@ -157,6 +177,7 @@ export {
   retryFor,
   SCHEMA_ERROR_CODE_TITLES,
   singleLine,
+  statedDelayMs,
   stringField,
   toUltimateError,
   ULTIMATE_ERROR_BRAND,
@@ -369,7 +390,16 @@ export {
   writeMasterKeyFile,
   writeSecretsFile,
 } from './exports/secrets';
+export type {
+  FlightGate,
+  FlightGateLimits,
+  FlightGateOptions,
+  FlightGateState,
+} from './flight-gate';
+export { createFlightGate, gateOverloaded } from './flight-gate';
 export { formatBytes } from './format-bytes';
+export type { GenerationFence } from './generation-fence';
+export { createFence, isSuperseded } from './generation-fence';
 export type { Brand, Id } from './ids';
 export {
   isSpanId,
@@ -424,6 +454,7 @@ export {
 } from './image/raster';
 export { impersonate, impersonationReason, isImpersonating } from './impersonate';
 export { cachedFormatter, canonicalLocale, MAX_CACHED_FORMATTERS } from './intl-cache';
+export { isJsonObject } from './json-object';
 export type {
   HealthPayload,
   HealthReport,
@@ -480,12 +511,17 @@ export {
 } from './registrar';
 export type { Err, Ok, Result } from './result';
 export { err, isErr, isOk, map, mapErr, ok, tryCatch, unwrap, unwrapOr } from './result';
+export type { RetryDecision, RetryDeps, RetryPolicy, RetryStopReason } from './retry';
+export { retry, retryDecision } from './retry';
+export { isRetryableStatus, RETRYABLE_STATUSES } from './retryable-status';
 export type { ResolveRoleOptions, Role, RoleInfo, ScalingSignal } from './roles';
 export { DEFAULT_ROLE, isRole, ROLE_INFO, ROLES, resolveRole } from './roles';
 export type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
 export { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from './route-vocabulary';
 export { safeUrl, URL_ATTRIBUTES } from './safe-url';
 export { defineService, resetServices, type ServiceFactory } from './service';
+export type { FlightJoin, Scheduler, SingleFlight, SingleFlightOptions } from './single-flight';
+export { createSingleFlight } from './single-flight';
 export { timingSafeEqual } from './timing-safe-equal';
 export {
   frameworkVersion,
