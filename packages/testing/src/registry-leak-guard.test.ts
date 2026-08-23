@@ -248,6 +248,88 @@ afterAll(() => {
 });
 `;
 
+/**
+ * #312's shape, which the fixtures above cannot reach: the declaring module is pulled in by a
+ * DYNAMIC import inside a test body — what `loadApp()` does — so it evaluates AFTER the importing
+ * file's baseline was sampled. Its keys therefore read as "registered by this file", and a restore
+ * to the baseline takes them out. Nothing can put them back: the other file's `import('./declare')`
+ * is a cache hit.
+ *
+ * Both fixtures are identical so the assertion cannot depend on which one bun runs first — the
+ * second to run is the victim either way.
+ */
+const LATE_DECLARE = `import { registerCatalog } from '${I18N}';
+
+registerCatalog('en', {
+  'probe.title': 'Probe',
+  // An app OVERRIDING a framework base string, which is what \`defineCatalogs()\` does to
+  // \`errors.notFound.title\`. Reverting this to the inherited value renders the framework's own
+  // copy with no \`⟦…⟧\` anywhere to show the app's was taken away.
+  'errors.notFound.title': 'Nothing here',
+});
+`;
+
+const lateLoadFixture = (name: string): string => `import { expect, test } from 'bun:test';
+import { catalogFor } from '${I18N}';
+
+test('${name} reads what a module declared on its one and only evaluation', async () => {
+  await import('./late-declare');
+  expect(catalogFor('en')['probe.title']).toBe('Probe');
+  expect(catalogFor('en')['errors.notFound.title']).toBe('Nothing here');
+});
+`;
+
+describe('a declaration made after the baseline, in one process', () => {
+  test('a catalog registered by a dynamically imported module reaches the next file', async () => {
+    const { output, exitCode } = await runFixtures({
+      'late-declare.ts': LATE_DECLARE,
+      'loader.test.ts': lateLoadFixture('loader'),
+      'reader.test.ts': lateLoadFixture('reader'),
+    });
+
+    expect(output).toContain('2 pass');
+    expect(output).not.toContain('1 fail');
+    expect(exitCode).toBe(0);
+  }, 30_000);
+});
+
+/**
+ * The repair and the report in one file, because they are the two halves most easily traded for
+ * each other: a restore loose enough to let an app's catalog through must not also let a cache tag
+ * through. This file leaks a tag AND declares a catalog late, and both verdicts have to hold.
+ */
+const LEAKY_LATE_DECLARER = `import { expect, test } from 'bun:test';
+import { declareTags, knownTags } from '${CACHE}';
+
+test('declares a catalog late and a fixture tag it never puts back', async () => {
+  await import('./late-declare');
+  declareTags(['leakyfixture']);
+  expect(knownTags()).toContain('leakyfixture');
+});
+`;
+
+describe('repairing a catalog does not stop the guard reporting a tag', () => {
+  test('the same file is repaired for its neighbour and still named as the leaker', async () => {
+    const { output, exitCode } = await runFixtures({
+      'late-declare.ts': LATE_DECLARE,
+      'aleaky.test.ts': LEAKY_LATE_DECLARER,
+      'breader.test.ts': lateLoadFixture('reader'),
+    });
+
+    // The repair: the neighbour still reads the catalog the leaker's dynamic import declared.
+    // `1 fail` is not the assertion — the guard's own `afterAll` throw is counted as one, which is
+    // the point of the run. What must not appear is a failing case in the READER.
+    expect(output).toContain('2 pass');
+    expect(output).not.toContain('(fail) reader');
+    // The report, undiminished: the tag is still a leak and the run still fails over it.
+    expect(exitCode).not.toBe(0);
+    expect(output).toContain('X_TEST_REGISTRY_LEAK');
+    expect(output).toContain('aleaky.test.ts');
+    expect(output).toContain('leakyfixture');
+    expect(output).not.toContain('breader.test.ts" left');
+  }, 30_000);
+});
+
 describe('the restore, across files, in one process', () => {
   // Not writable as an ordinary test: the leak only exists BETWEEN files of one process, and the
   // module cache is what makes it unrepairable from inside the victim. `registry-snapshot.test.ts`

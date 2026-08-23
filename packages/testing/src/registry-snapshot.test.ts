@@ -23,12 +23,20 @@ import {
 } from '../../policy/src/roles';
 import { captureProcessRegistries, restoreProcessRegistries } from './registry-snapshot';
 
-/** Every test here mutates process globals; each one hands them back the way it found them. */
+/**
+ * Every test here mutates process globals; each one hands them back the way it found them.
+ *
+ * `resetCatalogs()` first, and only here: the restore deliberately KEEPS a key nothing can
+ * re-register, so a test that declares `brand.name` would otherwise leave it declared for every
+ * test after it in this file. Dropping the app layer before the restore makes each case hermetic
+ * without asking the subject to behave differently than it does at a real file boundary.
+ */
 const around = (body: () => void): void => {
   const outer = captureProcessRegistries();
   try {
     body();
   } finally {
+    resetCatalogs();
     restoreProcessRegistries(outer);
   }
 };
@@ -102,18 +110,88 @@ describe('captureProcessRegistries / restoreProcessRegistries', () => {
       expect(roleDeclarationSites()['editor']).toBe(declaredAt);
     }));
 
-  test('a catalog registered after the capture is gone, and one captured is back', () =>
+  test('a catalog the file cleared is back, key for key', () =>
     around(() => {
       resetCatalogs();
       registerCatalog('en', flattenCatalog({ nav: { home: 'Home' } }));
       const snapshot = captureProcessRegistries();
 
       resetCatalogs();
+      expect(catalogFor('en')['nav.home']).toBeUndefined();
+
+      restoreProcessRegistries(snapshot);
+
+      expect(catalogFor('en')['nav.home']).toBe('Home');
+    }));
+
+  /**
+   * #312. `loadApp()` inside a test body dynamically imports the app's i18n package, and
+   * `defineCatalogs()` there runs at MODULE scope — once per `bun test` process. So a restore
+   * that DROPS those keys is unrepairable going forward: the next file's own `import` is a cache
+   * hit that registers nothing, and `t('brand.name')` renders `⟦brand.name⟧` for the rest of the
+   * run. Observed before this: `undefined`.
+   */
+  test('a key first declared after the capture survives — no second evaluation can re-add it', () =>
+    around(() => {
+      resetCatalogs();
+      const snapshot = captureProcessRegistries();
+
+      registerCatalog('en', flattenCatalog({ brand: { name: 'Nimbus' } }));
+
+      restoreProcessRegistries(snapshot);
+
+      expect(catalogFor('en')['brand.name']).toBe('Nimbus');
+    }));
+
+  test('a locale first registered after the capture survives with it', () =>
+    around(() => {
+      resetCatalogs();
+      const snapshot = captureProcessRegistries();
+
       registerCatalog('fr', flattenCatalog({ nav: { home: 'Accueil' } }));
 
       restoreProcessRegistries(snapshot);
 
-      expect(registeredLocales()).toEqual(['en']);
+      expect(registeredLocales()).toContain('fr');
+      expect(catalogFor('fr')['nav.home']).toBe('Accueil');
+    }));
+
+  /**
+   * An OVERRIDE registered after the capture survives too, and it has to: an app's
+   * `defineCatalogs()` overriding a framework base string is the same one-time module-scope
+   * declaration as a new key. `dummy/social-media-clone` overrides `admin.denied.body`, and
+   * reverting it rendered `@ultimat3/i18n`'s own `This account is missing {permission}` where the
+   * app's copy belongs — with no `⟦…⟧` anywhere to show that anything had been lost.
+   */
+  test('an override registered after the capture survives — an app outranks the base layer', () =>
+    around(() => {
+      resetCatalogs();
+      registerCatalog('en', flattenCatalog({ nav: { home: 'Home' } }));
+      const snapshot = captureProcessRegistries();
+
+      registerCatalog('en', flattenCatalog({ nav: { home: 'Accueil' } }));
+
+      restoreProcessRegistries(snapshot);
+
+      expect(catalogFor('en')['nav.home']).toBe('Accueil');
+    }));
+
+  /**
+   * The cost of that, named: a file that clobbers an inherited key owns the cleanup, and the
+   * cleanup is the same `resetCatalogs()` the restore is built to repair around. This is the
+   * documented idiom, asserted — not a hole left to prose.
+   */
+  test('a file that clears its own layer hands back exactly what it inherited', () =>
+    around(() => {
+      resetCatalogs();
+      registerCatalog('en', flattenCatalog({ nav: { home: 'Home' } }));
+      const snapshot = captureProcessRegistries();
+
+      registerCatalog('en', flattenCatalog({ nav: { home: 'CLOBBERED' } }));
+      resetCatalogs();
+
+      restoreProcessRegistries(snapshot);
+
       expect(catalogFor('en')['nav.home']).toBe('Home');
     }));
 
