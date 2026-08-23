@@ -128,6 +128,22 @@ export function parseMigrationTable(text: string): readonly MigrationRow[] {
   return rows;
 }
 
+/**
+ * The versions wiki/Upgrading.md actually WALKS, read off its `## … → X.Y.Z, entry by entry`
+ * headings. A row is a promise and a heading is the thing promised, and until 2026-08-23 this rule
+ * read only the row: `1.x → 2.0.0` pointed at a `2.0.0` section the page had never carried, through
+ * six releases, under a green gate. Anchored on the heading's own shape rather than on the row's
+ * target so that renaming the section is the failure it is.
+ */
+export function parseUpgradeSections(text: string): ReadonlySet<string> {
+  const walked = new Set<string>();
+  for (const line of text.split('\n')) {
+    const version = /^## .*→ (\d+\.\d+\.\d+), entry by entry\s*$/.exec(line)?.[1];
+    if (version !== undefined) walked.add(version);
+  }
+  return walked;
+}
+
 /** The `# <n>` the fenced `grep -cE` in wiki/Upgrading.md promises the reader they will see. */
 export function parseDerivedTotal(text: string): { line: number; claimed: number } | undefined {
   const lines = text.split('\n');
@@ -150,6 +166,9 @@ export type ChangelogGapKind =
   // is what picks the `fix:` line.
   | 'unknown-section'
   | 'missing-row'
+  // A row exists and the section it names does not. Distinct from `missing-row` because the edit is
+  // the walkthrough itself, and distinct from `unknown-section`, which is about CHANGELOG.md.
+  | 'missing-section'
   | 'total'
   | 'unscanned';
 
@@ -244,15 +263,29 @@ export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
     });
   }
 
-  // A major with no row is the 6.0.0 failure one step earlier: released, and no upgrade guide.
+  // A major with no row is the 6.0.0 failure one step earlier: released, and no upgrade guide. A
+  // major with a row and no SECTION is the same failure wearing the row as cover, which is how
+  // 2.0.0 — the largest major this project has shipped — went six releases with no walkthrough.
+  const walked = parseUpgradeSections(input.upgrading);
   for (const section of sections) {
     const major = /^(\d+)\.0\.0$/.exec(section.version)?.[1];
     if (major === undefined || Number.parseInt(major, 10) < FIRST_MIGRATABLE_MAJOR) continue;
-    if (single.some((row) => row.target === section.version)) continue;
+    const hasRow = single.some((row) => row.target === section.version);
+    if (!hasRow) {
+      gaps.push({
+        kind: 'missing-row',
+        at: `${UPGRADING_PATH}:1`,
+        detail: `${section.version} is a released major and no row sends the reader to its section`,
+      });
+    }
+    // One edit per finding. A major with NEITHER a row nor a heading is one problem, and reporting
+    // it as both hands the reader two fixes whose first steps contradict — write the row, write the
+    // section. `missing-section` is the row-present case, which is what its own code documents.
+    if (!hasRow || walked.has(section.version)) continue;
     gaps.push({
-      kind: 'missing-row',
+      kind: 'missing-section',
       at: `${UPGRADING_PATH}:1`,
-      detail: `${section.version} is a released major and no row sends the reader to its section`,
+      detail: `${section.version} is a released major and the page carries no \`→ ${section.version}, entry by entry\` heading, so the reader is sent to a section that does not exist`,
     });
   }
 
@@ -297,6 +330,16 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       // The row does not exist, so there is no count to set — the edit is to write the row. A
       // literal path, never an interpolation: the fix-line rule reads these statically.
       fix: 'add a row to the summary table in wiki/Upgrading.md for the version the cause names, whose third cell reads "the `X.Y.Z` section, in order", then rerun: bun run scripts/changelog-check.ts --json',
+      at: UPGRADING_PATH,
+    };
+  }
+  if (gap.kind === 'missing-section') {
+    return {
+      code: 'X_DOC_MIGRATION_SECTION_MISSING',
+      cause: `${gap.at} ${gap.detail}`,
+      // A literal path, never an interpolation: the fix-line rule reads these statically.
+      // No angle brackets: a fix line is pasted, and the test holds every one of them to that.
+      fix: 'write the walkthrough in wiki/Upgrading.md under a heading of the form "## 1.x → 2.0.0, entry by entry" naming the version the cause names, one subsection per entry of that section of CHANGELOG.md, then rerun: bun run scripts/changelog-check.ts --json',
       at: UPGRADING_PATH,
     };
   }

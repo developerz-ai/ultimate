@@ -12,12 +12,8 @@ import { describeValue, formatIssues, type StandardSchemaV1, validate } from '@u
 import { isPlainDate, type PlainDate, plainDateUtc } from '@ultimat3/time';
 import { arrayElementRefused, isRefusedElement } from './array-element';
 import { column } from './column';
-import { invariantViolated } from './errors';
+import { refuseColumn } from './refuse';
 import type { AnyColumn, Column, ColumnMeta } from './types';
-
-const reject = (rule: string, detail: string): never => {
-  throw invariantViolated('column', rule, detail);
-};
 
 /** The rejected value as its SHAPE, never its content — `columns.ts` explains why at length. */
 const got = (value: unknown): string => `got ${describeValue(value)}`;
@@ -42,9 +38,10 @@ export const json = <T>(schema: StandardSchemaV1<unknown, T>): Column<T> =>
     if (result.issues === undefined) return result.value;
     // The ISSUES, never the value: `formatIssues` renders path + message, and a column rejection
     // reaches the caller and the log line where a value has no key left to redact.
-    return reject(
+    return refuseColumn(
       'json',
       `does not match the column's schema — ${formatIssues(result.issues).join('; ')}`,
+      'correct the key the cause names, or widen the schema this column was declared with — json(t.object({ seats: t.number })) validates on the way in and on the way back',
     );
   });
 
@@ -67,14 +64,19 @@ export const bigint = (): Column<string> =>
     if (typeof value === 'number') {
       return Number.isSafeInteger(value)
         ? String(value)
-        : reject(
+        : refuseColumn(
             'bigint',
-            `${String(value)} is past ±2^53, where a JS number is no longer exact — pass the digits as a string`,
+            `${String(value)} is past ±2^53, where a JS number is no longer exact`,
+            "quote the digits — bigint() takes and returns a decimal string, so pass '9007199254740993' rather than a number literal",
           );
     }
     return typeof value === 'string' && DIGITS.test(value)
       ? value
-      : reject('bigint', `expected whole digits, ${got(value)}`);
+      : refuseColumn(
+          'bigint',
+          `expected whole digits, ${got(value)}`,
+          'String(value) when it is already whole digits — a fractional value is decimal({ precision: 18, scale: 8 }) and an amount is money()',
+        );
   });
 
 export interface DecimalOptions {
@@ -96,14 +98,26 @@ export interface DecimalOptions {
 export const decimal = (options: DecimalOptions = {}): Column<string> => {
   const { precision, scale } = options;
   if ((precision === undefined) !== (scale === undefined)) {
-    reject('numeric', 'precision and scale are declared together — numeric(18, 8), or neither');
+    refuseColumn(
+      'numeric',
+      'precision and scale are declared together — numeric(18, 8), or neither',
+      'decimal({ precision: 18, scale: 8 }) — both keys together, or decimal() for an unbounded numeric',
+    );
   }
   if (precision !== undefined && scale !== undefined) {
     if (!Number.isInteger(precision) || precision < 1 || precision > 1000) {
-      reject('numeric', `precision must be 1..1000, ${got(precision)}`);
+      refuseColumn(
+        'numeric',
+        `precision must be 1..1000, ${got(precision)}`,
+        'decimal({ precision: 18, scale: 8 }) — precision is the TOTAL digit count, from 1 to 1000',
+      );
     }
     if (!Number.isInteger(scale) || scale < 0 || scale > precision) {
-      reject('numeric', `scale must be 0..precision, ${got(scale)}`);
+      refuseColumn(
+        'numeric',
+        `scale must be 0..precision, ${got(scale)}`,
+        `decimal({ precision: ${precision}, scale: ${Math.min(2, precision)} }) — scale counts the digits AFTER the point and cannot exceed precision`,
+      );
     }
   }
   const shape = /^-?\d+(\.\d+)?$/;
@@ -112,21 +126,28 @@ export const decimal = (options: DecimalOptions = {}): Column<string> => {
     (value) => {
       const text = typeof value === 'number' ? decimalOfNumber(value) : value;
       if (typeof text !== 'string' || !shape.test(text)) {
-        return reject('numeric', `expected a decimal number, ${got(value)}`);
+        return refuseColumn(
+          'numeric',
+          `expected a decimal number, ${got(value)}`,
+          "pass the digits as a string — decimal() holds an exact decimal, so write '1.25'; a float is taken only where String(value) is already exact",
+        );
       }
       const digits = text.replace('-', '').split('.');
       const fraction = digits[1]?.length ?? 0;
       if (scale !== undefined && fraction > scale) {
-        return reject(
+        return refuseColumn(
           'numeric',
           `${text} has ${fraction} decimal places and the column stores ${scale} — Postgres would round it, silently`,
+          `Number(value).toFixed(${scale}) at the call site decides the rounding, or widen the column to decimal({ precision: ${(precision ?? fraction) + fraction - scale}, scale: ${fraction} }) and run x db gen "widen the numeric"`,
         );
       }
-      if (
-        precision !== undefined &&
-        (digits[0] ?? '').replace(/^0+(?=\d)/, '').length > precision - (scale ?? 0)
-      ) {
-        return reject('numeric', `${text} does not fit numeric(${precision}, ${scale ?? 0})`);
+      const whole = (digits[0] ?? '').replace(/^0+(?=\d)/, '').length;
+      if (precision !== undefined && whole > precision - (scale ?? 0)) {
+        return refuseColumn(
+          'numeric',
+          `${text} does not fit numeric(${precision}, ${scale ?? 0})`,
+          `widen the column — decimal({ precision: ${whole + (scale ?? 0)}, scale: ${scale ?? 0} }) — and run x db gen "widen the numeric": what overflows is the digits BEFORE the point`,
+        );
       }
       return text;
     },
@@ -157,12 +178,20 @@ export const date = (): Column<PlainDate> =>
   column<PlainDate>('date', (value) => {
     if (value instanceof Date) {
       return Number.isNaN(value.getTime())
-        ? reject('date', `expected a calendar date, ${got(value)}`)
+        ? refuseColumn(
+            'date',
+            `expected a calendar date, ${got(value)}`,
+            "pass a Date built from a real value — new Date('2026-08-22'); new Date(undefined) and a failed parse both produce the Invalid Date this refuses",
+          )
         : plainDateUtc(value);
     }
     return isPlainDate(value)
       ? value
-      : reject('date', `expected a YYYY-MM-DD calendar date, ${got(value)}`);
+      : refuseColumn(
+          'date',
+          `expected a YYYY-MM-DD calendar date, ${got(value)}`,
+          "pass '2026-08-22' or a Date — date() stores a calendar date with no clock and no zone; an instant is timestamp()",
+        );
   });
 
 /**
@@ -174,7 +203,11 @@ export const date = (): Column<PlainDate> =>
 export const bytes = (): Column<Uint8Array> =>
   column<Uint8Array>('bytea', (value) => {
     if (!(value instanceof Uint8Array)) {
-      return reject('bytea', `expected bytes, ${got(value)}`);
+      return refuseColumn(
+        'bytea',
+        `expected bytes, ${got(value)}`,
+        "Buffer.from(value, 'base64') for base64 and new TextEncoder().encode(value) for text — bytes() stores a Uint8Array; a structured payload is json(schema)",
+      );
     }
     // Already the plain form: the overwhelmingly common case, and it costs one prototype read.
     return Object.getPrototypeOf(value) === Uint8Array.prototype ? value : new Uint8Array(value);
@@ -193,7 +226,13 @@ export const arrayOf = <T>(element: Column<T>): Column<readonly T[]> => {
   return column<readonly T[]>(
     'array',
     (value) => {
-      if (!Array.isArray(value)) return reject('array', `expected an array, ${got(value)}`);
+      if (!Array.isArray(value)) {
+        return refuseColumn(
+          'array',
+          `expected an array, ${got(value)}`,
+          'wrap it — [value] — or drop arrayOf() and declare the element column on its own when the table holds one scalar',
+        );
+      }
       return value.map((member) => element.$parse(member));
     },
     { element: element as AnyColumn },

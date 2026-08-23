@@ -120,6 +120,10 @@ export {
   kdfGate,
   resetKdfGate,
 } from './kdf-gate';
+export type { AuthLimiterFactory } from './limiter-install';
+// `installedAuthLimiter` is deliberately absent: `defineAuth` is the one reader, and a second
+// caller building limiters out of band would be a second answer to where failures are counted.
+export { configureAuthLimiters, purgeAuthLimits, resetAuthLimiters } from './limiter-install';
 export { MemoryAdapter } from './memory-adapter';
 export type {
   EnrolTotpInput,

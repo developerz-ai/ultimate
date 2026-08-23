@@ -742,6 +742,21 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   first would turn one statement into two and change what the code under test issues — so a count is
   reported and a consumer re-reads. It is NOT a second change-feed path: `selectChangeFeed` still
   decides what a real node reads, and this is never in that decision.
+- **A refusal raised before any entity exists carries an EDIT, never a lookup** — `refuse.ts`,
+  `As of 2026-08-22`. Both `reject()` helpers called `invariantViolated('column', rule, detail)`,
+  whose fix is `x entities describe <entityName> --json`, so 34 column and invariant refusals
+  emitted `x entities describe column --json` — which answers `X_DECLARATION_UNKNOWN`, because no
+  entity is named `column` and at declaration time there is no entity at all. A fix line that
+  raises a second, unrelated error is worse than none: the reader debugs the wrong subsystem, and
+  an agent follows it literally. So the fix is a PARAMETER — `refuseColumn(rule, detail, fix)` —
+  and every site names the column form the author should have written, the shape
+  `arrayElementRefused` already had. **`invariantViolated`'s entity name is a value, never a
+  literal**, and `refuse.test.ts` scans this package's source for one; it also holds every refusal
+  to naming a call or a command, carrying no `<placeholder>`, and having a case in its own table,
+  so a refusal added without a repair is a failing test. **The two builders construct their
+  `EntityError` inline** rather than delegating to a shared one, because `fix-scan.ts` reads a fix
+  literal only at a call site whose callee builds the error itself — a wrapper would take all 34
+  fix lines back out of `x verify`'s `errors` step (measured: `checked` 1040 -> 1071).
 - Never throw a bare `Error` — use `errors.ts`.
 - Tests restore the process-global registry in `afterAll` (`clearRegistry()`): a leaked registry
   breaks an unrelated package's tests, as it did in `@ultimat3/policy`.
@@ -754,6 +769,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `column.ts` / `columns.ts` | the chain + property-key binding; the blessed builders; `columnName`/`moneyColumns`, the ONE physical-name resolver; `narrowMoney`, the one write-side narrowing both drivers run |
 | `columns-data.ts` | the wide vocabulary an existing schema needs: `json`, `decimal`, `date`, `bigint`, `bytes`, `arrayOf` |
 | `array-element.ts` | which element kinds `arrayOf()` refuses, and the one-line edit that repairs each |
+| `refuse.ts` | `refuseColumn`/`refuseInvariant` — the refusals raised before any entity exists, each carrying the EDIT that repairs it |
 | `expr.ts` / `invariants.ts` | the `invariants: (c) => …` rule language; bind + `toSql()` DDL |
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
 | `view.ts` | `$view(keys)` — the row projection an action names as its `output` |

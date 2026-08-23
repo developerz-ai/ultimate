@@ -113,6 +113,13 @@ export const entityDuplicate = (name: string, existingTable: string): EntityErro
     fix: `x entities list --json   # then rename one of the two entity({ name }) declarations`,
   });
 
+/**
+ * The entity name is a VALUE, never a literal — `entity.$name`, `table`, the `name` `entity()` was
+ * given. A literal is an entity that does not exist, and this fix then hands the reader
+ * `x entities describe column --json`, which answers `X_DECLARATION_UNKNOWN` (issue #290). A
+ * refusal raised before any entity exists belongs in `refuse.ts`, where the caller supplies the
+ * edit; `refuse.test.ts` fails on a literal here.
+ */
 export const invariantViolated = (
   entityName: string,
   invariantName: string,

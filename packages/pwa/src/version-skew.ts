@@ -5,7 +5,9 @@
  *
  *   immutable build id per deploy → the client sends it on every request →
  *   old builds' assets are retained for N deploys → a stale client gets
- *   `AppUpdateAvailable`, never a 404 → forced reload only after a grace period.
+ *   `AppUpdateAvailable`, never a 404.
+ *
+ * The app decides what to do with that message. This package never navigates a client.
  */
 
 import { BuildIdMissingError } from './errors';
@@ -115,73 +117,23 @@ export function detectSkew(
   return clientBuildId === serverBuildId ? 'current' : 'stale';
 }
 
-export type ForceReason = 'security' | 'breaking-protocol' | 'never';
-
-export interface UpdatePolicyInput {
-  /** How long a stale client may keep running before the reload is forced. */
-  readonly graceMs?: number;
-  readonly forceOn?: readonly ForceReason[];
-}
-
-export interface UpdatePolicy {
-  readonly graceMs: number;
-  readonly forceOn: readonly ForceReason[];
-  shouldForce(reason: ForceReason, staleForMs: number): boolean;
-}
-
-export const DEFAULT_GRACE_MS = 6 * 60 * 60 * 1000;
-
-export function updatePolicy(input: UpdatePolicyInput = {}): UpdatePolicy {
-  const graceMs = input.graceMs ?? DEFAULT_GRACE_MS;
-  const forceOn = input.forceOn ?? ['security'];
-  return {
-    graceMs,
-    forceOn,
-    // A security patch still respects the grace window; it just does not wait forever.
-    shouldForce: (reason, staleForMs) => forceOn.includes(reason) && staleForMs >= graceMs,
-  };
-}
-
 /**
- * The client-side contract. The SW posts this to every controlled page; the app shows an
- * unobtrusive "refresh to update" affordance and reloads on the user's terms — unless
- * `forced`, in which case it reloads at `deadlineAt`.
+ * The client-side contract, and the whole of it: what the generated worker posts to every page it
+ * controls on activation. The page compares `to` against its own `BUILD_ID_META` — `detectSkew`
+ * is that comparison — and renders its own "refresh to update" affordance.
+ *
+ * It declared `from`, `forced` and `deadlineAt` too, for a forced reload after a grace period that
+ * NOTHING performed: `updateSignal`/`updatePolicy` computed the three and had no runtime caller,
+ * and `x deploy --critical`, the flag that was to have set the reason, was removed in 4.0.0 for
+ * being read by nobody. The two runtimes that hold both build ids cannot call into this package
+ * anyway — `http`'s `ctx.clientBuildId` (tier 2) and `sync`'s `update-available` frame (tier 3)
+ * are both BELOW `pwa`, and imports only go down. `version-skew.test.ts` holds this interface to
+ * the literal the worker emits, so the two can no longer differ.
  */
 export interface AppUpdateAvailable {
   readonly type: 'AppUpdateAvailable';
-  readonly from: string;
+  /** The build the worker that posted this was generated for. */
   readonly to: string;
-  readonly forced: boolean;
-  /** Epoch milliseconds after which the client reloads itself. Null when not forced. */
-  readonly deadlineAt: number | null;
 }
 
 export const APP_UPDATE_AVAILABLE = 'AppUpdateAvailable' as const;
-
-export interface UpdateSignalInput {
-  readonly clientBuildId: string | null | undefined;
-  readonly serverBuildId: string;
-  readonly policy: UpdatePolicy;
-  readonly reason?: ForceReason;
-  readonly staleForMs?: number;
-  readonly now?: number;
-}
-
-/** Null when the client is current or unknown — no signal, no nag. */
-export function updateSignal(input: UpdateSignalInput): AppUpdateAvailable | null {
-  const state = detectSkew(input.clientBuildId, input.serverBuildId);
-  if (state !== 'stale') return null;
-
-  const reason = input.reason ?? 'never';
-  const staleForMs = input.staleForMs ?? 0;
-  const forced = input.policy.shouldForce(reason, staleForMs);
-  const now = input.now ?? Date.now();
-
-  return {
-    type: APP_UPDATE_AVAILABLE,
-    from: String(input.clientBuildId),
-    to: input.serverBuildId,
-    forced,
-    deadlineAt: forced ? now : null,
-  };
-}

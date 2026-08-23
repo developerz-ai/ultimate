@@ -40,6 +40,7 @@
     "@ultimat3/action": "8.0.0",
     "@ultimat3/admin": "8.0.0",
     "@ultimat3/ai": "8.0.0",
+    "@ultimat3/auth": "8.0.0",
     "@ultimat3/cache": "8.0.0",
     "@ultimat3/core": "8.0.0",
     "@ultimat3/db": "8.0.0",

@@ -175,9 +175,12 @@ export const deployCommand: CliCommand = {
       // `critical: <bool>`, and no file in `packages/` read that field — so the flag changed
       // nothing about what `x deploy` did, on either method. `flag-reads.ts`'s
       // `X_CLI_FLAG_UNREAD` passed it, because that gate proves a flag is READ and this one was:
-      // into a field with no reader. Forcing a reload is `@ultimat3/pwa`'s
-      // `updateSignal({ reason: 'security' })`, which has no runtime caller either; a flag that
-      // triggers it is a change in that package, and this was not it.
+      // into a field with no reader. It is not coming back: `@ultimat3/pwa`'s
+      // `updateSignal({ reason: 'security' })`, the call it was to have triggered, is **deleted**
+      // as of 9.0.0 for having had no runtime caller of its own, and nothing in the framework
+      // force-navigates a client. A deploy also has no channel to one — the plan is
+      // `docker compose up` / `helm upgrade`, and the client's build id is read by `http` (tier 2)
+      // and `sync` (tier 3), neither of which may import a tier-4 package to act on it.
     ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {

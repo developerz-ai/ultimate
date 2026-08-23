@@ -2,7 +2,7 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Seven majors have shipped, and this page walks six of them.** 2.0.0's 33 entries were never written up here; `CHANGELOG.md` is the source for those, as it is for all of them. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Seven majors have shipped, and this page walks all seven** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
@@ -12,14 +12,15 @@
 | 4.x → 5.0.0 | **2**, over six surfaces, each a declaration that promised what the code did not do | the `5.0.0` section, in order |
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
-| 1.x → 2.0.0 | **33** | the `2.0.0` section, in order — **which this page does not yet carry**; read [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `2.0.0` section instead |
-| 1.x → 8.0.0 | **87** | the six sections below, oldest first, then `CHANGELOG.md` for 2.0.0's 33 |
+| 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
+| 1.x → 8.0.0 | **87** | all seven sections, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 87 As of 2026-08-23 — each inside the section of the major that shipped it
+# 88 As of 2026-08 — 87 inside the section of the major that shipped it, and 1 under
+# [Unreleased], staged for the next major. A released section's count is what the table above reads.
 ```
 
 Each entry changes a surface the table below covers.
@@ -409,6 +410,276 @@ Ten `BREAKING —` entries, all from one bug sweep. Each was a documented surfac
 | `SeedContext.insert` skips a stored row instead of overwriting it | expect `skipped`, not an overwrite. `upsert` is the verb for a row the table keys |
 
 `cachedFormatter` and `canonicalLocale` moved from `@ultimat3/time` to `@ultimat3/core` and are re-exported from `time`, so **no import breaks** — it is listed here because the move is real, not because it costs an edit.
+
+## 1.x → 2.0.0, entry by entry
+
+**Thirty-three `BREAKING —` entries — the largest major this project has shipped, and the first one semver covered.** Written up here `As of 2026-08`; the page carried a row pointing at this section for six releases and never carried the section. Full rationale per entry in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `2.0.0` section — the numbers below are that section's own order. No codemod.
+
+Two things are not compile errors and are the ones to read first: the **seven behaviour changes** under *Start here*, and the **one migration** every app with a `money()` column owes.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `x db branch` takes a verb | you ever ran the bare-name form, which created a database |
+| 2 | `x new` writes no migration | you scaffold a new app, or your app carries a hand-written `0000_initial.sql` |
+| 3 | an MCP tool is named by its export name, verbatim | you read a tool name off `openapi.json`, `describe().mcp.tool` or `.tool().name` |
+| 4 | `selectMailDriver` refuses with no mail credential | you send mail from `staging` or `production` |
+| 5 | a lapsed fleet slot cannot be renewed by its holder | a job run outlives its slot lease |
+| 6 | `@ultimat3/query` ships no read-cache seam of its own | you called `setReadCache`, `invalidateQueryTags`, or imported `ReadCache` |
+| 7 | `@ultimat3/auth` drops `requireRole` / `requireScope` | you gate a route with either |
+| 8 | `@ultimat3/db` drops `readOnly()` and its four companions | you imported any of them |
+| 9 | `@ultimat3/seo` drops the performance-budget surface | you imported `checkBudgets`, `parseBytes`, a `Budget*` type, or set `RouteRecord.budget` |
+| 10 | `@ultimat3/seo` drops `renderLd` | you called it |
+| 11 | seven zone and locale helpers are gone | you imported `attachTimeZone`, `timeZoneOf`, `attachLocale`, `localeOf`, `negotiateLocale`, `isValidTimeZone` or `resolveTimeZone` |
+| 12 | `@ultimat3/seo` drops `renderHeadTags` | you called it |
+| 13 | a derived `BudgetLedger` bills its parent | you already sit at an `llm()` budget ceiling — no signature changed |
+| 14 | `idempotencyKeyFor` takes the actor, required and third | you call it, **or** you hold idempotency records written before the deploy |
+| 15 | `Idempotency-Key` is enforced at 255 characters | a client sends a longer key |
+| 16 | `@ultimat3/action`'s `fingerprint` is SHA-256/16 | you enqueue an action job across the deploy boundary |
+| 17 | `markReady()` throws `X_LIFECYCLE_DRAINED` after a drain | a test or a process drains and then starts a role |
+| 18 | a drain is bounded at 25s, and a hook that outruns it is abandoned | your drain legitimately takes longer |
+| 19 | `cacheKeyFor` takes a fourth, required `authority` | you call it directly |
+| 20 | the query fingerprint is SHA-256/16 hex | you hold cursors minted before the deploy |
+| 21 | `semantic.remember` refuses a TTL the tiers refuse | you passed a non-finite or negative lease |
+| 22 | `OutboxRelay.stop()` returns `Promise<void>` | you await teardown, or implement the interface |
+| 23 | `TierFailure.tier` is `TierLabel` | you `switch` over it with no `default` |
+| 24 | `hello` carries no cursors | you build a `hello` frame by hand, or read `FRAME_LIMITS.resume` |
+| 25 | three more `@ultimat3/realtime` surfaces move | you call `qidOf`, read a mutation's `status` after a drain, or implement `SyncNode` |
+| 26 | four projection changes — what a value becomes when it leaves the process | you have a `money()` column (**a migration**), read `schema.nullable`, pass an unclonable `.default`, or take a nested object as `query({ input })` |
+| 27 | `EPOCH` is gone; call `epoch()` | you imported it, or declare a 6-field cron |
+| 28 | `job()` and `backfill()` require a `tenant` | you declare any job or backfill |
+| 29 | one `resolveEnvironment`, and it is `@ultimat3/core`'s | you imported seo's, or wrote `'preview'` |
+| 30 | the NATS wire client is `nats@2.29.3`, behind the same transport seam | you imported a hand-rolled NATS name, or faked a byte stream in a test |
+| 31 | `@ultimat3/cli` exports `checkSourceDrift`, not `checkDrift` | you imported the CLI's |
+| 32 | `invariants` is a function, and `invariant()` takes a built expression | you declare an entity with invariants |
+| 33 | the framework's version is a call, not a constant | you imported `FRAMEWORK_VERSION`, `DEFAULT_SERVER_INFO` or `CLI_VERSION` |
+
+### Start here — entries 4, 5, 13, 15, 17, 18 and 21 change behaviour with nothing failing to compile
+
+| # | What changes | What you do |
+|---|---|---|
+| 4 | with neither `SMTP_URL` nor `RESEND_API_KEY`, `staging` and `production` install a driver that rejects every send with `X_MAIL_CREDENTIAL_MISSING`. `development` and `test` are unchanged, and an app that sends no mail still boots — the refusal is on the send, not at boot | set one of the two env keys in every environment that sends. The SMTP `Message-ID`, and so `SendResult.id`, is now content-derived and stable across attempts of one send |
+| 5 | `SQL_LEASE_RENEW` fences on `expires_at > now()` as well as `holder`, matching the memory store. A run whose slot lapsed is cancelled with `X_JOB_SLOT_LOST` instead of running on uncapped past `job.concurrency` | nothing, unless a handler holds a slot longer than its lease — raise the lease, or shorten the run. This is what the documented contract already said and what `x dev` already did |
+| 13 | a derived ledger bills its parent, so a call that used to slip past a `request` ceiling can throw `X_AI_BUDGET_EXCEEDED`, and `gateway.spent()` returns a larger — correct — number | raise the ceiling, or accept the refusal. Listed as breaking because it is observable to an app already at its limit, even though it makes *"derive can only tighten"* true for the first time |
+| 15 | `Idempotency-Key` is enforced at 255 characters. The OpenAPI operation published `maxLength: 255` all along and nothing checked it | shorten the key. A client sending longer keys worked by accident and now gets a 400 |
+| 17 | `markReady()` throws `X_LIFECYCLE_DRAINED` on a drained lifecycle instead of declining in silence | call `resetLifecycle()` between a drain and the next start — which is what three test files were already doing by hand. A process that drains and then starts a role now fails at the mistake rather than binding a socket that answers 503 forever |
+| 18 | a drain is bounded at **25s** by default and a hook that outruns it is **abandoned, not stopped** — it is still running when the process exits. `drainDeadlineMs()` returns a `number` always, and `remainingBudget()` is a `number` rather than `number \| undefined` | if your drain legitimately takes longer, say so — and move the pair together, or you have only relocated the kill |
+| 21 | `semantic.remember` puts its TTL through `assertTtl` like every other write, with `jitterFraction: 0` | pass a finite, non-negative lease. It used to compute `ttlMs` itself and hand a tier a value no other write path can produce |
+
+Entry 18's pair, both sides or neither:
+
+```ts
+configureLifecycle({ deadlineMs: 600_000 });   // and terminationGracePeriodSeconds >= 600
+```
+
+`jobs` and `realtime` are the two roles that most need a bound and declared none, so before 2.0.0 they drained unbounded — a worker pod holding a long job past `terminationGracePeriodSeconds` is `SIGKILL`ed by the kubelet mid-statement, which is the failure the deadline exists to prevent.
+
+### 26. What a value becomes when it leaves the process — and the one migration
+
+A `money()` property is **three** physical columns, not two: `<p>_minor`, `<p>_currency` and the new `<p>_scale`. **Every existing app needs a migration** — without the column, every read of that table names a column it does not have.
+
+```sql
+alter table "<t>" add column "<p>_scale" integer check (<p>_scale is null or (<p>_scale >= 0 and <p>_scale <= 15));
+```
+
+Byte-for-byte what `generateMigration`'s `columnClause` emits. `NULL` is the right value for every existing row: it means *the currency's own minor unit*, which is what those rows always meant, where `0` would mean whole units. `examples/dummy/packages/db/migrations/0002_money_scale.sql` is the worked example, hand-written because `x db gen` answers `X_MIGRATION_SNAPSHOT_MISSING` in an app whose `0001` records no snapshot.
+
+The other three projections in the same entry:
+
+| Was | Now |
+|---|---|
+| `t.nullable(x)` emitted `{ …converted, nullable: true }` | `{ anyOf: [<converted>, { type: 'null' }], …annotations }`. `nullable` is an OpenAPI 3.0 keyword no later draft defines, so every validating consumer rejected `null`. A hand-written consumer reading `schema.nullable` reads `schema.anyOf` instead |
+| `.default(value)` accepted any value | a default `structuredClone` refuses — a function, a class instance, a `Proxy` — throws `X_SCHEMA_DEFAULT_UNSHAREABLE` at the **first import of the file that declares it**. Pass a plain value, or a factory the handler calls |
+| `query({ input })` accepted any schema | an input that cannot survive a query string is refused at `query()` with `X_QUERY_INPUT_UNENCODABLE`, in the declaring file. A read is `GET /_x/query/<name>`, so its input is characters: flatten the nested object, or make it an `action` |
+
+### Entries 6, 14, 16 and 20 — state that does not survive the deploy boundary
+
+No edit for most apps, and each is a one-time cost worth knowing before it is a support ticket.
+
+| # | What goes cold, or re-runs | Why, and what to do |
+|---|---|---|
+| 6 | a cached query is cold once | `@ultimat3/query` no longer ships its own read-cache seam. Removed: `setReadCache`, `getReadCache`, `invalidateQueryTags`, `MemoryReadCache`, `DEFAULT_READ_CACHE_MAX_BYTES`, and the types `ReadCache` and `ReadCacheEntry`; `DEFAULT_READ_CACHE_TTL_MS` stays. A Redis deployment's read path changes in **both** directions — it was the Redis tier alone, so every cached read was a network round trip; it is now read-down/promote-up across `request-memo → lru → redis`, and concurrent misses of one key share a single load |
+| 14 | an in-flight idempotency record is unreachable | the stored key's shape changed with the signature, so on the shared Postgres store a retry crossing the deploy boundary finds no record and **re-runs the handler**, inside the 24h window. `truncate x_idempotency` after deploying makes that state honest rather than half-reachable. The memory store dies with its process and is unaffected |
+| 16 | an action job does not dedupe against its pre-deploy row | `@ultimat3/action`'s `fingerprint` is SHA-256/16, so `job-handle.ts`'s dedupe key `action:<name>:<fingerprint>` changed. Action idempotency itself is unaffected in practice, because the key changed too |
+| 20 | a cursor minted before the deploy is rejected once | the query fingerprint is SHA-256/16 hex where it was FNV-1a/32 — 4×10⁹ values, brute-forceable offline in seconds, and a fingerprint here is a **sharing key over client-chosen input**. The canonical form is unchanged, so only the hash moved; `X_CURSOR_INVALID`'s `fix:` is already *request the first page again* |
+
+An app that installed its own read cache registers it where every other cached surface already took one:
+
+```diff
+- setReadCache(myCache);
+- invalidateQueryTags(tags);
++ registerTier(myTier);        // from @ultimat3/cache
++ invalidateTags(tags);        // literally the same call
+```
+
+A process that registers no tier reads **uncached** rather than filling a store no fan-out can see.
+
+### Entries 1 and 2 — the CLI
+
+`x db branch` takes a verb. The argument *was* the branch name and the dispatcher fell through to it, so `x db branch ls` — the `fix:` line the planned `x branch` command hands out — cloned the database into one called `ls`. A stray database is not a typo an agent can see: it is a copy of production-shaped data with a name nobody will recognise a week later.
+
+```diff
+- x db branch feat-new-billing
++ x db branch create feat-new-billing
+```
+
+| Verb | What it does |
+|---|---|
+| `x db branch create <name>` | the old bare-name form, said out loud |
+| `x db branch ls` | name, location, created-at, size |
+| `x db branch drop <name>` | what only `dropBranch('<name>', { force: true })` could do before |
+
+Every verb is itself a legal branch name, so verb-first is the only shape where a name cannot be read as a subcommand. A word outside that set is `X_CLI_UNKNOWN_COMMAND`, and its `fix:` hands your own word back inside the command that still creates it. `drop` takes no confirmation flag deliberately — it may only remove what `ls` shows. `branchSql` is removed with the `psql` shell-out it was the text for; an external clone now runs through `@ultimat3/db`'s `createBranch()`, which is what makes `ls` work at all — the old path wrote the database and no marker comment, so every branch the CLI made was invisible to the only lister the framework has. Branches created by the old path carry no marker and are listed and dropped by neither.
+
+`x new` writes no migration: `packages/db/migrations/0000_initial.sql` and its `.hash` are gone from the scaffold, and `x db gen` is that directory's single writer (axiom 1). A hand-written first migration could not carry the `.snapshot.json` only the generator produces. **A scaffold that declares an entity is therefore red on `x verify`'s `drift` step until the first generate runs, and that is correct behaviour:**
+
+```sh
+x db gen "initial"
+x db migrate
+```
+
+`bin/setup` runs both for you, generating only when the directory holds no `.sql`.
+
+### 3. An MCP tool is named by its export name, verbatim, on every surface
+
+`snake_case` tool names are gone, and so is `toToolName`. One primitive was reachable under one name and published under another — the **served** name has only ever been the export name, while three *publishers* spelled the same tool `publish_post`. So an agent handed `openapi.json` called `tools/call { name: "publish_post" }` and got ToolNotFound: the catalog it was given was the wrong one.
+
+| Was | Now |
+|---|---|
+| `publishPost.tool().name` → `'publish_post'` | `'publishPost'` |
+| `openapi.json` → `"x-ultimate": { "mcpTool": "publish_post" }` | `"mcpTool": "publishPost"` |
+| `publishPost.describe().mcp.tool` → `'publish_post'` | `'publishPost'` |
+| `import { toToolName } from '@ultimat3/action'` / `'@ultimat3/query'` | removed from both — there is no derivation left to call |
+
+Nothing that *worked* moves: a `tools/call`, a `scopes:` entry and a `visibleTo` list were already spelled verbatim, and a snake_case `scopes:` entry was already `X_MCP_SCOPE_UNKNOWN` at boot. What moves is everything read off the published contract — run `x manifest` to regenerate `openapi.json`, then re-point any agent prompt, saved tool allowlist, generated client or test that took its tool name from `x-ultimate.mcpTool`, `describe().mcp.tool` or `.tool().name`. `x.manifest.json` is unaffected: its `mcp` fact never carried a tool name.
+
+### Entries 27, 29, 31 and 33 — renamed, one import each
+
+```diff
+- import { EPOCH } from '@ultimat3/time';
++ import { epoch } from '@ultimat3/time';        // 27 — call it: epoch()
+
+- import { resolveEnvironment } from '@ultimat3/seo';
++ import { resolveEnvironment } from '@ultimat3/core';   // 29
+
+- import { checkDrift } from '@ultimat3/cli';
++ import { checkSourceDrift } from '@ultimat3/cli';      // 31 — same signature, same findings
+
+- import { FRAMEWORK_VERSION } from '@ultimat3/core';
++ import { frameworkVersion } from '@ultimat3/core';     // 33 — call it: frameworkVersion()
+```
+
+| # | Why the spelling had to move |
+|---|---|
+| 27 | `EPOCH` was one shared mutable `Date` exported from a tier-1 package, so any consumer calling `EPOCH.setUTCFullYear(...)` corrupted it for every other consumer in the process, permanently and silently. A `Date` cannot be frozen — `Object.freeze` does not close `setTime` — so it could not be fixed in place. `instant()` also returned the caller's own object and now does not, and `describeCron` **refuses** a 6-field expression with `X_CRON_NOT_DESCRIBABLE` where it used to return a wrong sentence |
+| 29 | the name existed in `@ultimat3/core` and `@ultimat3/seo` with different parameters and different return unions — the axiom-1 violation the 1.1.0 notes named and deferred. Core's takes an options object, `resolveEnvironment({ env })`, and **throws** `X_ENVIRONMENT_INVALID` on a typo'd `ULTIMATE_ENV`; `tryResolveEnvironment()` is the caller that must answer rather than fail |
+| 31 | two functions named `checkDrift` answered two different questions. `@ultimat3/db`'s keeps its name and its meaning — the live database against the ledger. The CLI's is the entity source hashed against what `x db gen` recorded, no database. Nothing an app writes calls either |
+| 33 | read at module scope, the version resolved before `main` in every process that imported core, so `x build --target binary` produced an executable that threw at import. `@ultimat3/mcp`'s `DEFAULT_SERVER_INFO` becomes `defaultServerInfo()` and `@ultimat3/cli`'s `CLI_VERSION` becomes `cliVersion()` for the same reason — a constant holding the result is the module-scope read again, one import away |
+
+Entry 29 also renames one environment across seo's surface. `isIndexable()` and `RobotsConfig.environment` take core's `Environment`, so `'staging'` is accepted and `'preview'` is a compile error; **no `robots.txt` body changes**, because neither spelling was ever indexable and only the `# environment:` comment line moves.
+
+```diff
+- buildRobots({ environment: 'preview' })
++ buildRobots({ environment: 'staging' })
+- import type { SeoEnvironment } from '@ultimat3/seo';
++ import type { Environment } from '@ultimat3/core';
+```
+
+### 30. The NATS wire client is `nats@2.29.3`, and the transport seam did not move
+
+`@ultimat3/realtime` hand-rolled the protocol — framing, parser, PING/PONG, TLS upgrade, inbox muxing and reconnect, 1,019 LOC plus a 431-line fake nats-server to test it. All of it is deleted, on [`docs/idea/18-build-vs-wrap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/18-build-vs-wrap.md)'s criterion: own what must join the transaction, context and error machinery; wrap a wire protocol with a dominant maintained client, because an agent knows that client's semantics from training and can never know a reimplementation. `nats` is the first external runtime dependency any `@ultimat3/*` package has taken, pinned exact, importable from exactly one file.
+
+`Transport`, `NatsTransport`, `NatsTransportOptions` and `selectTransport` are the same seam and cost no edit. The test seam moved up one level, from an injected byte stream to an injected client:
+
+```diff
+- new NatsTransport({ url, bucket, open: (target) => Promise.resolve(stream) });
++ new NatsTransport({ url, bucket, connect: fakeNatsConnect(broker) });
+```
+
+| Direction | Names |
+|---|---|
+| removed | `NatsConnection`, `NatsConnectionOptions`, `NatsConnectOptions`, `NatsProtocolParser`, `NatsOperation`, `NatsServerInfo`, `NatsStream`, `natsStreamOver`, `bunNatsStream`, `FakeNatsServer`, `fakeNatsStream` |
+| added | `NatsClient`, `NatsConnect`, `NatsClientOptions`, `NatsRequestOptions`, `NatsRequestManyOptions`, `openNatsClient`, `FakeNatsBroker`, `fakeNatsConnect` |
+| unchanged, moved to `nats-client.ts` | `NatsHeaders`, `NatsMessage`, `NatsMessageHandler`, `NatsSubscription`, `NatsTarget`, `parseNatsUrl` |
+
+The JetStream KV layer stays ours: this client's KV abstraction expresses neither per-message TTL nor a batch `multi_last` direct get.
+
+### Entries 7–12 and 24 — deleted because nothing read them
+
+Every one had zero callers in the framework and in both tracked apps. In each case the edit is *delete the import*, and the replacement — where there is one — is named beside it.
+
+| # | Gone | Instead |
+|---|---|---|
+| 7 | `requireRole` / `requireScope` (`@ultimat3/auth`) | declare the rule as a `Policy` — `can('admin:access')`. They decided a 403 outside `@ultimat3/policy`, so a route gated that way reported `policy: null` in `x routes`, in `framework.manifest.json` and in `openapi.json`, and `x policy list` reported its permission unenforced. `requireActor` / `currentActor` stay — those assert *authentication* |
+| 8 | `readOnly()`, `assertReadOnly()`, `inspectStatement()`, `MutationVerdict`, `ReadOnlyOptions`, `readonlyViolation()` (`@ultimat3/db`); `X_READONLY_VIOLATION` is retired | `readOnly(db()).query(f)` → `readOnlyQuery(text, { role: await ensureReadOnlyRole() })`, which reports which defences engaged. The deleted lexer judged statement keywords and nothing else, so `select pg_sleep(60)` and `select pg_read_file('/etc/passwd')` both read as reads |
+| 9 | `checkBudgets`, `assertBudgets`, `parseBytes`, `DEFAULT_BUDGET`, `BUDGET_UNITS`, the four `Budget*` types, `budgetExceeded()`, `RouteBudget`, `RouteRecord.budget` (`@ultimat3/seo`); `X_SEO_BUDGET_EXCEEDED` is retired | nothing to call — the gate that runs is `@ultimat3/cli`'s, raising `@ultimat3/render`'s `X_BUDGET_EXCEEDED`. seo is tier 1 and cannot see a build's bytes, so it was never the package that could answer. The retired code's row moves under *Reserved codes* so an old log line still resolves |
+| 10 | `renderLd` (`@ultimat3/seo`) | `ld.*` and `meta.ld` — `renderMeta` already emits one `<script type="application/ld+json">` per node, and an app calling both emitted its graph twice |
+| 11 | `attachTimeZone`, `timeZoneOf` (`@ultimat3/time`), `attachLocale`, `localeOf` (`@ultimat3/i18n`), `negotiateLocale`, `isValidTimeZone`, `resolveTimeZone` (`@ultimat3/http`) | write the zone with `createContext({ tz })` or `withChildContext({ tz })`, read it with `currentTimeZone()`, and take the other three from the packages that own them. `HttpConfig.locale` and `HttpConfig.tz` hold header and cookie **names** only |
+| 12 | `renderHeadTags` (`@ultimat3/seo`) | `renderHead(headFromMeta(meta, seoRenderers()))`. It escaped `</` and nothing else and had no caller, while `renderHead` — the path every `x dev` and every build takes — escaped nothing at all: two serializers, the unused one weaker and the used one vulnerable. It could not borrow render's escapers, because `xml.ts` escapes **into** entities, which is right for XML and exactly wrong inside a raw-text element |
+| 24 | `HelloFrame.resume` and `FRAME_LIMITS.resume` | drop the key. A cursor rides its own `subscribe` frame, which is where resume was always decided — the node replied `resume: []` and read the field from nobody, so every reconnect shipped each cursor twice, up to 512 ids per subscription, during the exact restart storm the herd bound exists to flatten |
+
+`PROTOCOL_VERSION` was deliberately **not** bumped for entry 24: `decode` builds a whitelist, so a new node drops an old client's `resume` and an old node reads a new client's omission as the empty list it always received. Both skews are readable, and bumping would refuse every in-flight client on a rolling deploy to buy nothing — the version guards incompatibility, not novelty.
+
+Entry 11 also brings a stricter zone rule with it: `CET`, `EST5EDT`, `+01:00` and `''` are refused, and a resolved zone comes back canonically spelled, so one zone is one formatter-cache key. The supported locale set and fallback are `defineCatalogs({ locales, default })`; the fallback zone is `configureTime({ defaultZone })`. `TimeZoneSources` gains `cookie`, and the default order is `user, cookie, query, header` — explicit before inferred.
+
+### Entries 19 and 28 — a required argument, because an optional one is one a call site can forget
+
+```diff
+- cacheKeyFor(name, input, tags)
++ cacheKeyFor(name, input, tags, readAuthority(ctx.actor, 'actor'))
+```
+
+`readAuthority(actor, scope)` is the only thing that produces the value, and `'actor'` keeps 1.2.0 behaviour for a per-caller read. The forgotten authority is a cross-tenant read, which is why it is positional and required rather than an option with a default. Entry **14** is the same argument on `idempotencyKeyFor(name, input, actor)`, where the forgotten one is a cross-actor replay.
+
+Entry 28 puts one new line on every `job()` and every `backfill()`:
+
+```diff
+  export const notifySubscribers = job({
+    input: t.object({ postId: t.uuid, orgId: t.uuid }),
+    idempotencyKey: ({ postId }) => `notify:${postId}`,
++   tenant: ({ orgId }) => orgId,
+    retry: { attempts: 5, backoff: 'exponential' },
+    async run({ input, ctx }) { /* … */ },
+  });
+```
+
+A definition with no `tenant` is `X_JOB_TENANT_REQUIRED` at declaration. `tenant: 'none'` is the other legal answer and means the **opposite thing on each side of the factory**: on a `job()` it declares the body touches no tenant-scoped table, because every scoped read then fails closed with `X_TENANCY_ACTOR_ORG_REQUIRED`; on a `backfill()` — which forwards `tenant` verbatim — it is how a sweep declares it spans every tenant, and `backfillPass` opens the bounded `crossTenant` scope for it, never the author.
+
+In the same slice, on the read primitive, a bare boolean policy bypass gains a reason:
+
+```diff
+- sourceFor(target, input, { ctx, enforce: false })
++ sourceFor(target, input, { ctx, unenforced: 'explain returns no rows' })
+```
+
+The reason is required, a blank one is refused before the source is built, and one `query.policy.unenforced` audit line is written at `debug`.
+
+### Entries 22, 23, 25 and 32 — types, and anything implementing an interface structurally
+
+| # | Was | Now |
+|---|---|---|
+| 22 | `OutboxRelay.stop()` returned `void` | `Promise<void>`. It cleared the timer and returned *underneath* the pass in flight, so a role shutdown that awaited it resumed while a publish and its `markPublished` were still running — a torn write against a closing pool. Callers ignoring the return value keep compiling and keep the old race |
+| 23 | `TierFailure.tier` was `TierName` | `TierLabel = TierName \| 'query-read'`, because `@ultimat3/query`'s read tier degrades through the same `bestEffort` wrapper and had nowhere to report as. A `switch` over it needs a `'query-read'` arm |
+| 25 | `qidOf(name, input)` was `<name>:<fnv1a 32-bit>` | `<name>:<first 16 hex of SHA-256>`. A `qid` is a **sharing** key — a hit hands back the seated window, carrying the first subscriber's input and rows — and input is client-chosen, so 32 bits is a collision found offline in seconds and one client served out of another's window. A rolling deploy costs one bounded snapshot per subscription |
+| 25 | `queue.drain(send)` marked each mutation `acked` when `send` resolved | a drained mutation stays `inflight` until the server settles it with `ack`/`fail` or `requeueInflight()` returns it. `DrainReport.remaining` is now what is still **sendable**; a UI rendering *unsynced* should read `pending()`, which is unchanged and still counts both |
+| 25 | `SyncNode` had one teardown, `stop()` | it also declares `stopAccepting()`, called by the SIGTERM `accept` phase — additive for a `createSyncNode` caller, **breaking** for anything implementing the interface structurally. `SyncNode.websocket` no longer carries `publishToSelf` |
+| 32 | `invariants: [ invariant(name, (c) => …) ]` | `invariants: (c) => [ invariant(name, …) ]` — see the diff below |
+
+`SyncSocket.subscribeTopic` / `unsubscribeTopic` no longer call Bun's `ws.subscribe` / `ws.unsubscribe` either: every channel message is one filtered `send` per socket through `SocketRegistry.deliver`, because a native publish cannot be refused per socket, cannot report the frame it dropped and cannot mark a subscriber desynced.
+
+Entry 32 is mechanical — move the `[` to after `(c) => `, drop each `(c) =>` inside `invariant()`, drop every `!`:
+
+```diff
+- invariants: [
+-   invariant('post_title_not_blank', (c) => c.title!.trimmed().minLength(1)),
+-   invariant('post_price_non_negative', (c) => c.price!.minor.atLeast(0)),
+- ],
++ invariants: (c) => [
++   invariant('post_title_not_blank', c.title.trimmed().minLength(1)),
++   invariant('post_price_non_negative', c.price.minor.atLeast(0)),
++ ],
+```
+
+The defect it fixes is why every generated entity needed a `!`: `InvariantColumns` was an index-signature type, so under `noUncheckedIndexedAccess` every `c.title` was `ColumnExpr | undefined`. It is now a mapped type over the declared columns, so `c.title` is a `ColumnExpr` and `c.titel` is `TS2551: Property 'titel' does not exist … Did you mean 'title'?`. `unique()` and `satisfies()` take `keyof C & string`, so a typo in a column *list* is caught too. `indexes[].where` is unchanged — it was already a callback, and its `c` is now typed too.
 
 ## What semver covers
 

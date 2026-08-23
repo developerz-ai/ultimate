@@ -5,11 +5,13 @@
 // a driver over a closed socket.
 
 import {
+  type PostgresIdempotencyStore,
   postgresIdempotencyStore,
   resetIdempotency,
   SQL_IDEMPOTENCY_TABLE,
   setIdempotencyStore,
 } from '@ultimat3/action';
+import { SQL_AUTH_LIMIT_TABLES } from '@ultimat3/auth';
 import type { DbClient, PgliteClient, PostgresClient, SqlFragment } from '@ultimat3/db';
 import {
   createPgliteClient,
@@ -50,6 +52,13 @@ export interface RunningQueue {
   readonly outbox: OutboxStore;
   /** The `x_job_events` bus a `step.waitForEvent` resumes from. Durable, not per-process. */
   readonly events: EventBus;
+  /**
+   * The `x_idempotency` store this boot installed behind `idempotent: true`. Returned for the
+   * reason `outbox` is: the retention sweep over that table is a ROLE's work, not the queue's,
+   * and it has to sweep the store that was INSTALLED — a second one built beside it would purge
+   * on the default window even where this boot had configured another.
+   */
+  readonly idempotency: PostgresIdempotencyStore;
   stop(): Promise<void>;
 }
 
@@ -86,17 +95,25 @@ export function pgExecutorFor(client: DbClient): PgExecutor {
  * applied statement by statement. Safe to split on `;`: every constant is fixed, with no semicolon
  * inside a literal, and each package's own SQL test is where that stays true.
  *
- * `SQL_IDEMPOTENCY_TABLE` and `SQL_RATE_LIMIT_TABLE` are here and not in `@ultimat3/action` or
- * `@ultimat3/http` because a package that holds no database dependency cannot apply its own schema
+ * `SQL_IDEMPOTENCY_TABLE`, `SQL_RATE_LIMIT_TABLE` and `SQL_AUTH_LIMIT_TABLES` are here and not in
+ * `@ultimat3/action`, `@ultimat3/http` or `@ultimat3/auth` because a package that holds no
+ * database dependency cannot apply its own schema
  * — the same reason `SQL_JOBS_TABLE` is applied here. Each one absent is the same failure at a
  * different door: a retried `POST /api/payments/charge` charges the card twice, and the FIRST
  * request a `rateLimitStore` deployment serves dies on a missing `x_rate_limit` relation. The
  * table is installed whether or not this boot passes `runtime.rateLimitStore` — `create table if
  * not exists` on an unused table costs one round trip at boot, and a store installed later must
- * not be the thing that discovers the schema was never applied.
+ * not be the thing that discovers the schema was never applied. The auth pair is the strongest
+ * case for that rule: `defineAuth` builds its limiter when the APP's modules import, which is
+ * after this, so the first failed sign-in would otherwise be what discovers the missing relation.
  */
 async function applySchema(client: DevDbClient): Promise<void> {
-  for (const ddl of [SQL_JOBS_TABLE, SQL_IDEMPOTENCY_TABLE, SQL_RATE_LIMIT_TABLE]) {
+  for (const ddl of [
+    SQL_JOBS_TABLE,
+    SQL_IDEMPOTENCY_TABLE,
+    SQL_RATE_LIMIT_TABLE,
+    SQL_AUTH_LIMIT_TABLES,
+  ]) {
     for (const statement of ddl.split(';')) {
       if (statement.trim().length > 0) await client.execute(raw(statement));
     }
@@ -146,8 +163,16 @@ async function startJobs(client: DevDbClient, overrides?: RuntimeOverrides): Pro
   );
   const events = createPgEventBus({ executor });
   setEventBus(events);
-  setIdempotencyStore(postgresIdempotencyStore({ executor }));
-  return { db: client, jobs: driver, outbox, events, stop: () => releaseQueue(client, driver) };
+  const idempotency = postgresIdempotencyStore({ executor });
+  setIdempotencyStore(idempotency);
+  return {
+    db: client,
+    jobs: driver,
+    outbox,
+    events,
+    idempotency,
+    stop: () => releaseQueue(client, driver),
+  };
 }
 
 /**

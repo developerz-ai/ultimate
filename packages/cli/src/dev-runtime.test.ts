@@ -7,9 +7,10 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { defineAuth, MemoryAdapter, resetAuthLimiters } from '@ultimat3/auth';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { noopPurgeDriver, registeredTiers, resetTiers } from '@ultimat3/cache';
-import { UltimateError } from '@ultimat3/core';
+import { registerReadinessCheck, UltimateError } from '@ultimat3/core';
 import { jobDriver } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import { createMemoryDriver, tryMailDriver } from '@ultimat3/mail';
@@ -288,6 +289,36 @@ describe('startServices', () => {
       expect(registeredTiers()).toHaveLength(0);
       expect(tryMailDriver()).toBeUndefined();
       expect(jobDriver()).toBeUndefined();
+    },
+    { timeout: 60_000 },
+  );
+
+  /**
+   * The `try` used to open eight steps below `started`, so the auth limiter factory, the retention
+   * sweep and this readiness check all ran outside the unwind — a throw from any of them skipped
+   * `release(started)` entirely and `x dev` exited holding the PGlite lock, the pool and the
+   * ambient accessors it had just installed. `registerReadinessCheck` is the concrete trigger: it
+   * refuses a duplicate name, which is what a second boot in one process presents it with.
+   */
+  test(
+    'a boot that fails before the transport dial still releases the queue and the limiter',
+    async () => {
+      resetTiers();
+      // A process that already owns the name this boot registers.
+      const releaseName = registerReadinessCheck('database', () => true);
+      try {
+        await expect(startServices(resolveServices(root, {}), {})).rejects.toBeUltimateError(
+          'X_READINESS_CHECK_DUPLICATE',
+        );
+        // Both read back through the accessor a later boot inherits — asserting the rejection
+        // proves nothing about what was released. `'process'` is the answer when no factory is
+        // installed; a leaked one answers `'shared'` over a pool this boot has already closed.
+        expect(jobDriver()).toBeUndefined();
+        expect(defineAuth({ adapter: new MemoryAdapter() }).limiter.policy.scope).toBe('process');
+      } finally {
+        releaseName();
+        resetAuthLimiters();
+      }
     },
     { timeout: 60_000 },
   );

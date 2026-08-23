@@ -47,24 +47,6 @@ export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
     why: 'the row records that no forced-reload exception ships, and names the deleted flag as one of the two things that never acted on it',
   },
   {
-    path: 'docs/idea/08-pwa-offline.md',
-    cites: 'x deploy --critical',
-    kind: 'absent',
-    why: 'milestone 5 is "designed, not wired", and the flag is cited as the half that was deleted rather than wired',
-  },
-  {
-    path: 'wiki/PWA-And-Offline.md',
-    cites: 'x deploy --critical',
-    kind: 'absent',
-    why: 'the sentence is "there is no deploy flag for this" — naming the removed one is what makes it answerable for a reader who remembers it',
-  },
-  {
-    path: 'wiki/Troubleshooting.md',
-    cites: 'x deploy --critical',
-    kind: 'absent',
-    why: 'the symptom row sends the reader to updateSignal() and names the flag only to say it never set anything and is now gone',
-  },
-  {
     path: 'wiki/Upgrading.md',
     cites: 'x deploy --critical',
     kind: 'absent',

@@ -49,6 +49,10 @@ const GOOD_UPGRADING = `# Upgrading
 grep -cE '^(- \\*\\*|### )BREAKING —' CHANGELOG.md
 # 2 As of 2026-08
 \`\`\`
+
+## 1.x → 2.0.0, entry by entry
+
+The section the row above sends the reader to.
 `;
 
 const kinds = (changelog: string, upgrading: string, taggedVersion?: string): readonly string[] =>
@@ -137,6 +141,25 @@ describe('the rules, each proved against the fixture that breaks it', () => {
     expect(kinds(misfiled, GOOD_UPGRADING)).not.toContain('total');
   });
 
+  // The 2.0.0 failure, exactly: a row naming a section the page has never carried. The row is
+  // present and its count is right, so every other rule in this file passes over it — which is how
+  // it survived six releases. Deleting the HEADING alone is the whole mutation.
+  test('a row whose section the page does not carry', () => {
+    const rowOnly = GOOD_UPGRADING.replace('## 1.x → 2.0.0, entry by entry\n', '');
+    expect(kinds(GOOD_CHANGELOG, rowOnly)).toEqual(['missing-section']);
+    // Not reported as a missing ROW, and not as a stale count: the row is there and reads 2.
+    expect(kinds(GOOD_CHANGELOG, rowOnly)).not.toContain('missing-row');
+    expect(kinds(GOOD_CHANGELOG, rowOnly)).not.toContain('count');
+  });
+
+  test('a section heading that names the version some other way does not satisfy the rule', () => {
+    const renamed = GOOD_UPGRADING.replace(
+      '## 1.x → 2.0.0, entry by entry',
+      '## Migrating to 2.0.0',
+    );
+    expect(kinds(GOOD_CHANGELOG, renamed)).toContain('missing-section');
+  });
+
   test('a stale per-major count', () => {
     expect(kinds(GOOD_CHANGELOG, GOOD_UPGRADING.replace('**2** | the', '**3** | the'))).toContain(
       'count',
@@ -155,6 +178,17 @@ describe('the rules, each proved against the fixture that breaks it', () => {
       '## 3.0.0 - 2026-08-19\n\nA major.\n\n## 2.0.0 - 2026-08-17',
     );
     expect(kinds(third, GOOD_UPGRADING)).toContain('missing-row');
+  });
+
+  // One edit per finding. With no row there is no heading either, so the loop reported BOTH — and
+  // the two fixes contradict on their first step: write the row, write the section. `missing-section`
+  // is the row-present case, and `toEqual` is what holds the pair to one finding.
+  test('a major with no row is not also reported as a missing section', () => {
+    const third = GOOD_CHANGELOG.replace(
+      '## 2.0.0 - 2026-08-17',
+      '## 3.0.0 - 2026-08-19\n\nA major.\n\n## 2.0.0 - 2026-08-17',
+    );
+    expect(kinds(third, GOOD_UPGRADING)).toEqual(['missing-row']);
   });
 
   test('1.0.0 has nothing to migrate from, so it needs no row', () => {
@@ -206,6 +240,7 @@ describe('findings', () => {
       'count',
       'unknown-section',
       'missing-row',
+      'missing-section',
       'total',
       'unscanned',
     ];

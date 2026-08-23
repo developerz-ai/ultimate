@@ -48,7 +48,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `maxKeys` is **not** compared: it bounds one process' table, so a shared limiter has no opinion
   on it. The point is that `Auth.rateLimit` is what an operator reads as "what this deployment
   enforces", so an injected limiter may not quietly enforce something else. Nothing here reads the
-  environment to guess a replica count. `defineAuth({ limiter })` is the one install point.
+  environment to guess a replica count.
 - **`postgresAuthLimiter` is the shared limiter, and a row per FAILURE is what makes it correct**
   (`As of 2026-08`). `assertAuthLimiterPolicy` refused a per-process limiter under
   `scope: 'shared'` and there was nothing else to pass, so the declaration was unsatisfiable while
@@ -71,6 +71,34 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   declared structurally
   even though this package already depends on `@ultimat3/db`: the connection is the HOST's, so the
   limiter takes the pool the boot opened rather than opening a second one.
+- **`configureAuthLimiters` is the HOST's install point and it takes a FACTORY, not a limiter**
+  (`As of 2026-08`). `defineAuth({ limiter })` is still the app's, and it still wins; what was
+  missing is that `postgresAuthLimiter` shipped with **nowhere a host could install it from**.
+  `defineAuth` is the APP's call and the app does not know which pool this process opened —
+  `@ultimat3/cli`'s `startServices` resolves that long before `loadApp` imports a single app
+  module — so a scaffolded app got a per-POD lockout while `x new` scaffolds `replicas: 2` and
+  `docker/helm` runs three: `maxAttempts × N` guesses per account, and a lockout one replica
+  established invisible to the rest.
+
+  A **factory** because the boot cannot know the app's numbers. `assertAuthLimiterPolicy` compares
+  what a limiter enforces against what the app declared, so a limiter built at boot on
+  `DEFAULT_AUTH_RATE_LIMIT` is `X_AUTH_LIMITER_POLICY_MISMATCH` for every app that tuned one. The
+  factory is called with the RESOLVED policy, once per bucket, so the two halves cannot disagree —
+  and the comparison still runs on what comes back, so a factory that ignores its argument is
+  refused exactly as an injected limiter is. Precedence: `config.limiter` → the installed factory →
+  `createAuthLimiter`. `installedAuthLimiter` is deliberately NOT in `src/index.ts`, for the reason
+  `registerJob` is not in `@ultimat3/jobs`': a second caller building limiters out of band is a
+  second answer to where failures are counted.
+
+  `purgeAuthLimits()` is the other half, and it exists because `PostgresAuthLimiter.purgeExpired()`
+  had **no caller anywhere** — every failure row and every dead lockout was kept forever. It sweeps
+  only the **widest** window among the limiters the factory built: they all write the same two
+  tables, so a sweep measured on a narrower window deletes failures a wider limiter is still
+  counting, which is a sprayer buying attempts back from the cleanup job. No `nowMs` argument —
+  a limiter built through the seam holds the clock its host handed it, and that is the clock every
+  `at_ms` in those tables was written from. `AuthLimiter.purgeExpired` is OPTIONAL so
+  `createAuthLimiter` can keep bounding itself; a limiter with no table declares nothing.
+
 - **`normaliseEmail` is the ONE normalisation, it lives ABOVE the `AuthAdapter` seam, and no
   adapter may fold case** (`As of 2026-08`). `MemoryAdapter` lowercased and trimmed on both
   `findUserByEmail` and `createUser`; `BuiltinAdapter` issues `where email = $1` against a plain
@@ -283,6 +311,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
 | `rate-limit.ts` | per-ip, per-account and per-org buckets, lockout, scope check, `loginFailed()` |
 | `rate-limit-postgres.ts` | the SHARED limiter: two tables, a row per failure, over a structural `PgExecutor` |
+| `limiter-install.ts` | the host's one install point for that limiter — the factory, what it built, and the purge over it |
 | `oauth.ts` | `OAuthProvider`, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
 | `oauth-builtins.ts` | the three shipped IdPs, as data. Imports only the type, so no cycle |
 | `oauth-registry.ts` | the registry: `registerOAuthProvider`, `providerFor`, `oauthProviderIds` |

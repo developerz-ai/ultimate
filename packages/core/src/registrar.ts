@@ -59,6 +59,7 @@ export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
       { factory: 'hive', pkg: '@ultimat3/ai', kind: 'action' },
       { factory: 'llm', pkg: '@ultimat3/ai', kind: 'action' },
       { factory: 'backfill', pkg: '@ultimat3/jobs', kind: 'job' },
+      { factory: 'purge', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'scrape', pkg: '@ultimat3/scraping', kind: 'job' },
     ] satisfies readonly PrimitiveFactory[]
   ).map((entry) => Object.freeze(entry)),

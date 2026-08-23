@@ -137,17 +137,18 @@ export {
   staleWhileRevalidate,
   strategyFor,
 } from './strategies';
+// The forced-reload half of this module is gone as of 9.0.0 — `updateSignal`, `updatePolicy`,
+// `DEFAULT_GRACE_MS`, `ForceReason`, `UpdatePolicy`, `UpdatePolicyInput`, `UpdateSignalInput`.
+// It computed `forced`/`deadlineAt` for a client-side reload no code in the framework performed,
+// from a caller that never existed. What remains is what runs: an id, a comparison, a retention
+// plan, and the message the generated worker really posts.
 export type {
   AppUpdateAvailable,
   BuildIdInput,
   Deploy,
   DeployChannel,
-  ForceReason,
   RetentionPlan,
   SkewState,
-  UpdatePolicy,
-  UpdatePolicyInput,
-  UpdateSignalInput,
 } from './version-skew';
 export {
   APP_UPDATE_AVAILABLE,
@@ -156,9 +157,6 @@ export {
   BUILD_ID_META,
   buildId,
   cacheNamespace,
-  DEFAULT_GRACE_MS,
   detectSkew,
   retentionPlan,
-  updatePolicy,
-  updateSignal,
 } from './version-skew';

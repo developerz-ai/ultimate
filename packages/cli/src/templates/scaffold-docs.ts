@@ -137,27 +137,34 @@ exec bunx x verify "$@"
 const composeDev = (
   app: NameSet,
 ): string => `# Optional: x dev needs none of this. Use it when you want the real Postgres/NATS/MinIO locally.
+#
+# Every published port binds 127.0.0.1, not 0.0.0.0. This stack ships its credentials in the file,
+# as a dev stack reasonably does — so the short form \`'5432:5432'\` would put an authenticated
+# database and an open object store on every interface this machine has, including the café wifi.
+# Docker publishes a port by writing DNAT rules, so a host firewall does not stop it. To reach this
+# stack from another machine, put a tunnel in front of it (\`ssh -L\`) rather than widening the bind;
+# production topology is docker-compose.prod.yml, and it is a different file for a reason.
 services:
   db:
     image: postgres:17-alpine
     environment:
       POSTGRES_PASSWORD: ${app.kebab}
       POSTGRES_DB: ${app.kebab}
-    ports: ['5432:5432']
+    ports: ['127.0.0.1:5432:5432']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres']
       interval: 5s
   nats:
     image: nats:2-alpine
     command: ['-js']
-    ports: ['4222:4222']
+    ports: ['127.0.0.1:4222:4222']
   s3:
     image: minio/minio
     command: ['server', '/data']
     environment:
       MINIO_ROOT_USER: ${app.kebab}
       MINIO_ROOT_PASSWORD: ${app.kebab}-dev
-    ports: ['9000:9000']
+    ports: ['127.0.0.1:9000:9000']
 `;
 
 /** Docs, shims and container files for a new app, in the order a reader meets them. */

@@ -221,6 +221,14 @@ export { DEFAULT_OUTBOX_CLAIM_LEASE_MS } from './outbox-lease';
 export type { PgOutboxOptions } from './outbox-pg';
 export { createPgOutboxStore } from './outbox-pg';
 
+export type {
+  PurgeDefinition,
+  PurgeInput,
+  PurgeReport,
+  PurgeSweep,
+  PurgeTarget,
+} from './purge';
+export { DEFAULT_PURGE_CRON, purge } from './purge';
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
 export { backoffDelayMs, DEFAULT_RETRY, nextRetry, retrySchedule } from './retry';
 export type { JobRetryDecision, JobStopReason } from './retry-classification';

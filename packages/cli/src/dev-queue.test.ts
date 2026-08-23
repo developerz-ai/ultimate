@@ -5,6 +5,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
+import { getIdempotencyStore } from '@ultimat3/action';
 import { raw, setDbClient } from '@ultimat3/db';
 import { jobDriver, resetJobDriver } from '@ultimat3/jobs';
 import type { RunningQueue } from './dev-queue';
@@ -50,13 +51,28 @@ describe('startQueue', () => {
     BOOT_TIMEOUT_MS,
   );
 
+  // The store the retention sweep has to purge is the one the boot INSTALLED — a second one built
+  // beside it would sweep on the default window even where this boot had configured another.
+  test(
+    'hands back the shared idempotency store it installed',
+    async () => {
+      const queue = await startQueue(resolveServices(ROOT, {}));
+      running = queue;
+      expect(queue.idempotency.scope).toBe('shared');
+      expect(getIdempotencyStore()).toBe(queue.idempotency);
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
   // Asked of the DATABASE, never of the constant list `applySchema` iterates — a list this test
   // restated would pass on the day the boot stopped applying one of them. `x_rate_limit` is the
   // one that was missing: `postgresRateLimitStore` was installable through
   // `runtime.rateLimitStore` while nothing had ever created its relation, so the FIRST request a
-  // shared-limit deployment served was the thing that discovered it.
+  // shared-limit deployment served was the thing that discovered it. The auth pair is the same
+  // failure one door along: `defineAuth` builds its limiter when the APP's modules import, which
+  // is after this boot, so the first failed sign-in would be what found the missing relation.
   test(
-    'applies every framework table the boot owns, x_rate_limit included',
+    'applies every framework table the boot owns, x_rate_limit and the auth pair included',
     async () => {
       const queue = await startQueue(resolveServices(ROOT, {}));
       running = queue;
@@ -69,6 +85,8 @@ describe('startQueue', () => {
       expect(tables).toContain('x_jobs');
       expect(tables).toContain('x_idempotency');
       expect(tables).toContain('x_rate_limit');
+      expect(tables).toContain('x_auth_failures');
+      expect(tables).toContain('x_auth_lockouts');
     },
     BOOT_TIMEOUT_MS,
   );
