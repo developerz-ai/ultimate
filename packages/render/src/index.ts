@@ -57,6 +57,7 @@ export {
   DEFAULT_REPLAY_EVENTS,
   emitIslandAttributes,
   emitIslandProps,
+  HYDRATE_RUNTIME_BODIES,
   hydrateRuntime,
   hydrateRuntimeBytes,
   IDLE_HYDRATE_TIMEOUT_MS,

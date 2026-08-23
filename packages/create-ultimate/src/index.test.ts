@@ -21,11 +21,21 @@ describe('unit · create-ultimate', () => {
     expect(payload.data.files).toContain('apps/web/site/page.tsx');
   });
 
-  test('a missing name fails with the exact command that fixes it', async () => {
+  // The fix line is a command the reader is meant to RUN, and this package's whole reason to exist
+  // is running before `x` does. `x new myapp` was an instruction nobody in this process could
+  // follow: the binary it names is the one they have not installed yet.
+  test('a missing name is fixed by the command the caller actually typed', async () => {
     const { code, out } = await capture(['--json']);
     expect(code).toBe(1);
     const payload = JSON.parse(out) as { findings: { code: string; fix: string }[] };
     expect(payload.findings[0]?.code).toBe('X_CLI_BAD_FLAG');
-    expect(payload.findings[0]?.fix).toBe('x new myapp');
+    expect(payload.findings[0]?.fix).toBe('bunx create-ultimate myapp');
+  });
+
+  test('a path where a name goes names the same invocation', async () => {
+    const { code, out } = await capture(['/srv/apps/shop', '--json']);
+    expect(code).toBe(1);
+    const payload = JSON.parse(out) as { findings: { code: string; fix: string }[] };
+    expect(payload.findings[0]?.fix).toBe('bunx create-ultimate shop --dir /srv/apps');
   });
 });

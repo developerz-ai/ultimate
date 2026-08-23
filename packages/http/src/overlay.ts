@@ -68,6 +68,9 @@ export const renderOverlay = (error: unknown, meta: OverlayMeta = {}): string =>
   const problem = toProblem(error, {
     ...(meta.requestId === undefined ? {} : { requestId: meta.requestId }),
     ...(meta.path === undefined ? {} : { instance: meta.path }),
+    // The overlay is rendered on the dev branch and nowhere else (`stages.ts`), and its whole job
+    // is showing the developer the cause a production caller may not see.
+    dev: true,
   });
   const where = `${meta.method ?? ''} ${meta.path ?? ''}`.trim();
   return `<style>${OVERLAY_STYLE}</style>

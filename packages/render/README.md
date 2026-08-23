@@ -363,7 +363,7 @@ side effect. Anything that loads an app's source — `x dev`, `x build`, `server
 | `renderSsr`†, `streamResult`† | the per-request modes |
 | `renderToHtml`†, `renderComponent`†, `stylesFor`† | the server JSX writer and the surface's css |
 | `installRenderLoader`†, `compileStylesheet`† | the `.tsx`/`.scss` loaders, installed on import |
-| `emitIslandAttributes`, `hydrateRuntime` | the four hydration strategies |
+| `emitIslandAttributes`, `hydrateRuntime`, `HYDRATE_RUNTIME_BODIES` | the four hydration strategies, and every body the runtime script can hold — a host hashes that list into `script-src`, because the runtime is emitted inline and no `render: 'static'` file can receive a nonce |
 | `ISLAND_MOUNTED_ATTRIBUTE`, `ISLAND_FAILED_ATTRIBUTE`, `IDLE_HYDRATE_TIMEOUT_MS` | what hydration looks like from outside the page |
 | `parseByteBudget`, `defaultIslandBudget` | the `'40kb'` budget grammar, and the ceiling a declared island earns |
 | `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script |

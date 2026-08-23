@@ -11,7 +11,7 @@ import {
   type TimeZoneConfig,
 } from './locale';
 import { type RateLimitConfig, resolveRateLimitConfig } from './rate-limit';
-import { DEFAULT_SECURITY, type SecurityConfig } from './security-headers';
+import { assertCspExtend, DEFAULT_SECURITY, type SecurityConfig } from './security-headers';
 
 export interface HttpConfig {
   readonly port: number;
@@ -56,8 +56,18 @@ export interface HttpConfig {
    * retries multiply the load.
    */
   readonly maxInflight: number;
-  /** How long SIGTERM waits for in-flight requests before hard-stopping. */
-  readonly drainTimeoutMs: number;
+  /**
+   * How long SIGTERM waits for in-flight requests before hard-stopping, or `null` when this app
+   * has not said and core's own deadline stands.
+   *
+   * `null` and not a 15s default, because the two are different claims and only one of them may
+   * reach `configureLifecycle`. `createServer` applied the resolved number unconditionally, so an
+   * app that had already written `configureLifecycle({ deadlineMs: 600_000 })` — the edit
+   * `X_SHUTDOWN_TIMEOUT`'s own `fix:` line prints — had it silently reverted by the next line of
+   * boot, in every process that serves web. Declaring this key IS declaring the drain budget for
+   * the whole process; leaving it out is declining to.
+   */
+  readonly drainTimeoutMs: number | null;
   readonly locale: LocaleConfig;
   readonly tz: TimeZoneConfig;
   readonly cors: CorsConfig;
@@ -123,6 +133,11 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
   // Refused here, not on the first request: "trust the header" and "know which entry of it" are
   // one declaration, and half of it is a header the caller writes.
   if (trustProxy && input.trustedProxyHops === undefined) throw trustProxyUnset();
+  const csp = { ...DEFAULT_SECURITY.csp, reportOnly: dev, ...input.security?.csp };
+  // Beside `assertCorsConfig`, and for its reason: a merged value is the only one that can be
+  // judged, and a directive name that is not a token would otherwise be a bare `TypeError` out of
+  // the first response's header build — or worse, a second directive nobody declared.
+  assertCspExtend(csp.extend);
   return {
     port: input.port ?? Number.parseInt(env('PORT') ?? '3000', 10),
     hostname: input.hostname ?? env('HOSTNAME') ?? '0.0.0.0',
@@ -138,16 +153,12 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
     // two, so a rolling restart cannot be held open by work started just before SIGTERM.
     requestTimeoutMs: input.requestTimeoutMs ?? 30_000,
     maxInflight: input.maxInflight ?? 1_000,
-    drainTimeoutMs: input.drainTimeoutMs ?? 15_000,
+    drainTimeoutMs: input.drainTimeoutMs ?? null,
     locale: { ...DEFAULT_LOCALE_CONFIG, ...input.locale },
     tz: { ...DEFAULT_TZ_CONFIG, ...input.tz },
     cors,
     csrf: { ...DEFAULT_CSRF, ...input.csrf },
-    security: {
-      ...DEFAULT_SECURITY,
-      ...input.security,
-      csp: { ...DEFAULT_SECURITY.csp, reportOnly: dev, ...input.security?.csp },
-    },
+    security: { ...DEFAULT_SECURITY, ...input.security, csp },
     rateLimit: resolveRateLimitConfig(input.rateLimit),
   };
 };

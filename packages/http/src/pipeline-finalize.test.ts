@@ -255,9 +255,12 @@ describe('a recover stage that throws', () => {
     expect(response.status).toBe(500);
     const body = await bodyOf(response);
     expect(body['code']).toBe('X_INTERNAL');
-    expect(body['cause']).toContain('undefined is not a function');
-    // The framework's report goes out before the app's hook, so the monitor still holds it.
+    // The CALLER is told the code and the request id and nothing off the throwable — an
+    // unclassified 500's `cause` is the exception's own message. The OPERATOR still gets it:
+    // the framework's report goes out before the app's hook, so the monitor holds the real text.
+    expect(body['cause']).not.toContain('undefined is not a function');
     expect(reporter.events).toHaveLength(1);
+    expect((reporter.events[0] as ErrorReport).cause).toContain('undefined is not a function');
   });
 
   test('a hook that throws on a request that also cannot be finished still answers', async () => {
@@ -329,7 +332,8 @@ describe('a throwable that fights being read', () => {
     expect(response.status).toBe(500);
     const body = await bodyOf(response);
     expect(body['code']).toBe('X_INTERNAL');
-    expect(body['cause']).toContain('undefined is not a function');
+    expect(body['cause']).not.toContain('undefined is not a function');
+    expect((reporter.events[0] as ErrorReport).cause).toContain('undefined is not a function');
   });
 
   test('an onError hook throwing a Proxy that traps getPrototypeOf still answers', async () => {
@@ -353,8 +357,11 @@ describe('a throwable that fights being read', () => {
     expect(response.headers.get('content-type')).toContain('application/problem+json');
     const body = await bodyOf(response);
     expect(body['code']).toBe('X_INTERNAL');
-    expect(body['cause']).toBe('a object that cannot be rendered');
+    // The rendering that must not throw still happens — it happens on the LOG and REPORT path,
+    // which is where an unclassified 500's own text goes now.
+    expect(body['cause']).not.toContain('cannot be rendered');
     expect(reporter.events).toHaveLength(1);
+    expect((reporter.events[0] as ErrorReport).cause).toContain('cannot be rendered');
   });
 });
 

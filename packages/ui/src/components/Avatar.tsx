@@ -5,6 +5,7 @@
 import { safeUrl } from '@ultimat3/core';
 import type { JSX } from 'solid-js';
 import { cx } from '../cx';
+import { useUi } from '../theme/context';
 import styles from './Avatar.module.scss';
 import type { Size } from './variants';
 
@@ -21,16 +22,24 @@ export interface AvatarProps {
 
 const PX: Readonly<Record<string, number>> = { xs: 20, sm: 24, md: 32, lg: 40, xl: 64 };
 
-/** First letters of the first two words — locale-safe, no ASCII assumptions. */
-export function initialsOf(name: string): string {
+/**
+ * First letters of the first two words — locale-safe, no ASCII assumptions.
+ *
+ * `locale` is REQUIRED, exactly as it is on `dateTimeView`: a bare `toLocaleUpperCase()` reads the
+ * RUNTIME's default locale, which is a server's `LANG` and a browser's UI language, and never the
+ * request's. Turkish is where the absence shows — dotted `i` uppercases to `İ` — and this package
+ * has no ambient locale to fall back on by rule.
+ */
+export function initialsOf(name: string, locale: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean).slice(0, 2);
   return words
     .map((word) => [...word][0] ?? '')
     .join('')
-    .toLocaleUpperCase();
+    .toLocaleUpperCase(locale);
 }
 
 export function Avatar(props: AvatarProps): JSX.Element {
+  const ui = useUi();
   const px = (): number => PX[props.size ?? 'md'] ?? 32;
 
   return (
@@ -46,7 +55,7 @@ export function Avatar(props: AvatarProps): JSX.Element {
     >
       {props.src === undefined ? (
         <span aria-hidden="true" class={styles['initials']}>
-          {initialsOf(props.name)}
+          {initialsOf(props.name, ui.locale)}
         </span>
       ) : (
         <img

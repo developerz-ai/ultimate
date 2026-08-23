@@ -3,7 +3,7 @@
 // whole drain rather than the signal alone, and awaiting it twice releases once.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { drain, onShutdown, resetLifecycle } from '@ultimat3/core';
+import { configureLifecycle, drain, onShutdown, resetLifecycle } from '@ultimat3/core';
 import { dbUnavailable } from '@ultimat3/db';
 import { holdUntilShutdown } from './hold';
 
@@ -81,6 +81,38 @@ describe('holdUntilShutdown', () => {
 
     expect(released).toBe(1);
   });
+
+  // The whole shutdown is bounded by ONE budget, and `release` is inside it. `drain()` ABANDONS a
+  // hook that overruns the deadline — core's design — and `release` here re-enters the same
+  // teardown: `app.stop()` -> `startRoles().stop()` -> `worker.stop()`, memoised in the package
+  // that owns it, so awaiting it is awaiting the promise that was just abandoned. Unbounded, the
+  // container hung past `terminationGracePeriodSeconds` and the kubelet SIGKILLed it — which is
+  // the failure the deadline exists to prevent, arriving one call after the deadline worked.
+  test('a release that never settles still ends the hold, at the drain’s own deadline', async () => {
+    configureLifecycle({ deadlineMs: 50 });
+    const hold = holdUntilShutdown('probe', () => new Promise<void>(() => {}));
+    const held = hold();
+    void drain('SIGTERM');
+
+    await held;
+    expect(true).toBe(true);
+  }, 5_000);
+
+  test('the exit the caller supplied is reached, even then', async () => {
+    // `apps/web/server.ts` is the one entry point with nothing above it to exit: `bin.ts` ends in
+    // `process.exit(code)` and a container's `runRole` does not. A non-unref’d interval anywhere
+    // in the app then holds an event loop that has nothing left to do.
+    configureLifecycle({ deadlineMs: 50 });
+    const codes: number[] = [];
+    const hold = holdUntilShutdown('probe', () => new Promise<void>(() => {}), {
+      exit: (code) => codes.push(code),
+    });
+    const held = hold();
+    void drain('SIGTERM');
+    await held;
+
+    expect(codes).toEqual([0]);
+  }, 5_000);
 
   test('a release that fails rejects the hold rather than exiting 0 over it', async () => {
     // `dispatch` awaits the hold inside its own try, so a database that would not close is a

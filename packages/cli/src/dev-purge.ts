@@ -112,9 +112,15 @@ function declareSweep(): void {
  * background work at all, and this is one more thing it does not do.
  */
 export function installRetentionSweep(stores: RetentionStores): () => void {
-  installed = retentionTargets(stores);
+  const mine = retentionTargets(stores);
+  installed = mine;
   declareSweep();
   return () => {
-    installed = [];
+    // Only if the slot is still OURS. Two runtimes can share one process — a test harness, or
+    // `x shot`'s scratch server beside the one it photographs — and a boot that installed after
+    // this one owns the slot now: emptying it there would leave the LIVE boot's hourly sweep
+    // deleting nothing, forever, with no error anywhere. Same rule, and the same comment, as
+    // `installedRevalidator` in `@ultimat3/render`'s ISR controller.
+    if (installed === mine) installed = [];
   };
 }

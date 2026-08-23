@@ -8,6 +8,7 @@ import {
   DEFAULT_REPLAY_EVENTS,
   emitIslandAttributes,
   emitIslandProps,
+  HYDRATE_RUNTIME_BODIES,
   hydrateRuntime,
   hydrateRuntimeBytes,
   IDLE_HYDRATE_TIMEOUT_MS,
@@ -228,5 +229,48 @@ describe('IDLE_HYDRATE_TIMEOUT_MS', () => {
     const html = hydrateRuntime([directive({ strategy: 'idle' })]);
     const timeouts = [...html.matchAll(/timeout:(\d+)/g)].map((match) => Number(match[1]));
     expect(timeouts).toEqual([IDLE_HYDRATE_TIMEOUT_MS]);
+  });
+});
+
+describe('emitIslandProps', () => {
+  test('the island id is escaped, exactly as every other attribute in this file is', () => {
+    const tag = emitIslandProps(directive({ islandId: 'x1" onload="alert(1)', props: { a: 1 } }));
+    expect(tag).toContain('data-x-props="x1&quot; onload=&quot;alert(1)"');
+    expect(tag).not.toContain('onload="alert(1)"');
+  });
+});
+
+describe('HYDRATE_RUNTIME_BODIES', () => {
+  const STRATEGIES = ['idle', 'visible', 'interaction'] as const;
+
+  /** Every non-empty subset of the three strategies, as the directives a page would carry. */
+  const subsets = (): readonly (readonly IslandDirective[])[] =>
+    Array.from({ length: 2 ** STRATEGIES.length - 1 }, (_unused, index) =>
+      STRATEGIES.filter((_s, bit) => ((((index + 1) as number) >> bit) & 1) === 1).map((strategy) =>
+        directive({ strategy }),
+      ),
+    );
+
+  test('holds the body of every runtime hydrateRuntime can emit', () => {
+    // The CSP hashes these at boot. A body the enumeration misses is a `script-src` that blocks
+    // the runtime for that page — no island boots, and the document itself looks correct.
+    const emitted = subsets().map((directives) =>
+      hydrateRuntime(directives)
+        .replace(/^<script type="module">/, '')
+        .replace(/<\/script>$/, ''),
+    );
+    for (const body of emitted) expect(HYDRATE_RUNTIME_BODIES).toContain(body);
+    expect(HYDRATE_RUNTIME_BODIES).toHaveLength(emitted.length);
+  });
+
+  test('admits no body that no page can emit', () => {
+    const emitted = new Set(
+      subsets().map((directives) =>
+        hydrateRuntime(directives)
+          .replace(/^<script type="module">/, '')
+          .replace(/<\/script>$/, ''),
+      ),
+    );
+    for (const body of HYDRATE_RUNTIME_BODIES) expect(emitted.has(body)).toBe(true);
   });
 });

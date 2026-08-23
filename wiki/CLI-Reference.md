@@ -107,7 +107,7 @@ Deployment artifacts are part of the scaffold — an app is deployable the momen
 
 The framework repo's own `docker/helm` carries two templates the scaffold does not — `pdb.yaml` and `servicemonitor.yaml`. Neither ships in an npm tarball, so copying them is a `git clone` of this repo, not an install.
 
-`bunx create-ultimate myapp` is the same generator without a global install. Errors: `X_GENERATE_CONFLICT` (the directory exists — `fix` is the same command with `--force`), `X_CLI_BAD_FLAG` (no name given), `X_BUN_VERSION`.
+`bunx create-ultimate myapp` is the same generator without a global install — and it says so in its own refusals, `As of 2026-08-23`: a `fix:` line is a command the reader is meant to RUN, and `x new myapp` named a binary they have not installed yet. Errors: `X_GENERATE_CONFLICT` (the directory exists — `fix` is the same command with `--force`), `X_CLI_BAD_FLAG` (no name given, or a path where a name goes), `X_BUN_VERSION`.
 
 ## x dev
 

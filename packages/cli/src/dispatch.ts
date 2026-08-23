@@ -31,6 +31,13 @@ export interface DispatchOptions {
    * it cannot produce. `bin.ts` passes the real fd 2.
    */
   readonly writeError?: (line: string) => void;
+  /**
+   * How the caller invoked this process, up to and including the subcommand — passed straight to
+   * `CommandContext.invocation` and read by the `fix:` lines that quote a whole command back.
+   * `create-ultimate` is the one caller that supplies it, because it is the one entry point whose
+   * name is not `x`.
+   */
+  readonly invocation?: string;
 }
 
 /**
@@ -122,6 +129,7 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     runner: options.runner ?? exec,
     env: options.env,
     bunVersion: options.bunVersion,
+    ...(options.invocation === undefined ? {} : { invocation: options.invocation }),
   };
 
   try {

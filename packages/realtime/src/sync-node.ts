@@ -7,6 +7,7 @@
 import { type Clock, logger, markReady, reportError, systemClock, uuid } from '@ultimat3/core';
 import type { ChannelHub, Topic } from './channel';
 import { detach } from './detach';
+import { evictInChunks } from './drain-evictions';
 import { isClientFault } from './errors';
 import type { Transport, TransportSubscription } from './fanout';
 import type { LiveQueryRegistry } from './live-query';
@@ -187,8 +188,12 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
    * Everything one socket held, released once. Bun's `close` callback runs it, and so does a
    * revoked grant — a socket this node closes itself gets no callback in a unit test, and in
    * production the second run is the no-op every step here already is.
+   *
+   * Returns the presence leaves it started, which is the only step here that is not over when this
+   * function returns: `close` is a SYNCHRONOUS Bun callback and cannot await one, so the promise is
+   * both detached (that path has nobody to wait for it) and handed back (the drain does).
    */
-  const teardown = (socket: SyncSocket): void => {
+  const teardown = (socket: SyncSocket): readonly Promise<unknown>[] => {
     options.registry.unsubscribeSocket(socket.id);
     const topics = [...socket.topics] as Topic[];
     for (const name of topics) options.hub.unsubscribe(socket, name);
@@ -197,9 +202,17 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     // A closed socket is a leave, said now rather than left to TTL: everyone else would otherwise
     // keep rendering a member who is provably gone for the rest of its window. The write is on the
     // bus and the close callback is synchronous, so it cannot be awaited here.
+    const leaves: Promise<unknown>[] = [];
     if (presence) {
-      for (const name of topics) detach(presence.leave(name, socket.id), 'presence.leave', name);
+      for (const name of topics) {
+        const leave = presence.leave(name, socket.id);
+        // Detached as well as returned: `detach` attaches the reporting catch, so a caller that
+        // awaits this later is awaiting a promise whose rejection is already handled.
+        detach(leave, 'presence.leave', name);
+        leaves.push(leave);
+      }
     }
+    return leaves;
   };
 
   /**
@@ -208,9 +221,9 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
    * because dropping the socket from the table is three of `teardown`'s five steps and the two it
    * misses are the ones another node can see.
    */
-  const evict = (socket: SyncSocket, code: number, reason: string): void => {
+  const evict = (socket: SyncSocket, code: number, reason: string): readonly Promise<unknown>[] => {
     socket.close(code, reason);
-    teardown(socket);
+    return teardown(socket);
   };
 
   /**
@@ -460,9 +473,12 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       // five steps, and the two they skip are the ones the rest of the fleet can see. A drained
       // socket that never left its presence set is a member every other node renders for a full
       // TTL — during a rolling restart, beside the same client's reconnection under a new id —
-      // and its live subscriptions stay in the registry, so `entry.subscribers` never empties and
-      // the matcher, the shared window and the retained ring are pinned for the process's life.
-      for (const socket of [...sockets.all()]) evict(socket, CLOSE.goingAway, 'drain');
+      // and its live subscriptions stay in the registry, so `entry.subscribers` never empties.
+      //
+      // AWAITED, in chunks: a leave is a write to the shared set, so a drain that merely started
+      // them released, closed the hub and let the process exit with N·M writes still on the wire —
+      // which is that same full-TTL double vision, reached the long way round.
+      await evictInChunks([...sockets.all()], (socket) => evict(socket, CLOSE.goingAway, 'drain'));
       // Released once the sockets are gone rather than at the top: a client is entitled to its
       // patches for the whole grace window, and it is entitled to them *before* the hub the
       // fanout writes through is closed.

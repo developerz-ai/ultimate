@@ -5,7 +5,13 @@
 import { describe, expect, test } from 'bun:test';
 import { OVERLAY_STYLE } from './overlay-style';
 import type { SecurityConfig } from './security-headers';
-import { buildCsp, cspHashSource, DEFAULT_SECURITY, securityHeaders } from './security-headers';
+import {
+  assertCspExtend,
+  buildCsp,
+  cspHashSource,
+  DEFAULT_SECURITY,
+  securityHeaders,
+} from './security-headers';
 
 const directive = (csp: string, name: string): string =>
   csp.split('; ').find((part) => part.startsWith(`${name} `)) ?? `${name} <absent>`;
@@ -89,6 +95,54 @@ describe('cspHashSource()', () => {
 
   test('a single changed byte is a different source — the point of hashing the body', () => {
     expect(cspHashSource('a{color:red}')).not.toBe(cspHashSource('a{color:red} '));
+  });
+});
+
+describe('buildCsp() over a caller-supplied directive name', () => {
+  const withExtend = (extend: Readonly<Record<string, readonly string[]>>): SecurityConfig => ({
+    ...DEFAULT_SECURITY,
+    csp: { ...DEFAULT_SECURITY.csp, extend },
+  });
+
+  // `directives[name]` is a computed read of an object literal keyed by DATA, so every name on
+  // `Object.prototype` answered a function: `[...(directives['toString'] ?? []), ...sources]`
+  // spread a function and threw a bare `TypeError` — out of `createServer`, at boot, with no code
+  // and no fix. `proto-index` cannot see it: `directives` comes from `baseline()`.
+  test('a prototype member is an ordinary directive name, never a function', () => {
+    const csp = buildCsp(withExtend({ toString: ["'none'"] }));
+    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
+    expect(csp).toContain("toString 'none'");
+  });
+
+  test('an extended directive still holds the baseline sources it widens', () => {
+    const csp = buildCsp(withExtend({ 'script-src': ["'sha256-abc'"] }));
+    expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval' 'sha256-abc'");
+  });
+});
+
+describe('assertCspExtend()', () => {
+  // A `;` in a name or a source is a whole SECOND directive: `extend: { 'x; script-src *': [] }`
+  // silently widened the one directive this file exists to lock down. Refused at
+  // `defineHttpConfig`, before the socket opens, the same shape `X_CORS_CONFIG_INVALID` takes.
+  test('a directive name that is not a CSP token is refused', () => {
+    expect(() => assertCspExtend({ 'x; script-src *': ["'self'"] })).toThrow(
+      /X_CSP_DIRECTIVE_INVALID/,
+    );
+  });
+
+  test('a source carrying a delimiter is refused, whatever the directive', () => {
+    expect(() => assertCspExtend({ 'script-src': ["'self'; object-src *"] })).toThrow(
+      /X_CSP_DIRECTIVE_INVALID/,
+    );
+  });
+
+  test('the sources the framework itself computes pass', () => {
+    expect(() =>
+      assertCspExtend({
+        'script-src': [cspHashSource('alert(1)')],
+        'img-src': ['https://cdn.test'],
+      }),
+    ).not.toThrow();
   });
 });
 

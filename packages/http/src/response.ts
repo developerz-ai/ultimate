@@ -1,5 +1,6 @@
 // Response constructors. Every response in the framework is built here so that
 // content types, charsets and cache semantics are decided once instead of per route.
+import { TIMEZONE_HEADER } from '@ultimat3/time';
 import { toProblem } from './error-map';
 
 type HeaderSource = { readonly headers?: HeadersInit | undefined } | undefined;
@@ -73,11 +74,21 @@ export interface RedirectIntent {
  */
 export const problem = (
   error: unknown,
-  meta: { instance?: string; requestId?: string; headers?: Record<string, string> } = {},
+  meta: {
+    instance?: string;
+    requestId?: string;
+    headers?: Record<string, string>;
+    /**
+     * `config.dev`. Absent means NOT dev: a degraded path that cannot see the config must not be
+     * the one that reveals an unclassified 500's text, and the stage that can see it passes it.
+     */
+    dev?: boolean;
+  } = {},
 ): Response => {
   const document = toProblem(error, {
     ...(meta.instance === undefined ? {} : { instance: meta.instance }),
     ...(meta.requestId === undefined ? {} : { requestId: meta.requestId }),
+    ...(meta.dev === undefined ? {} : { dev: meta.dev }),
   });
   return new Response(JSON.stringify(document), {
     status: document.status,
@@ -134,6 +145,16 @@ export const addVary = (response: Response, values: readonly string[]): Response
   return response;
 };
 
+/**
+ * The request dimensions a SHARED copy of a response is keyed on. `cookie` because every session
+ * in this framework travels in one; `accept-language` and the time-zone header because both are
+ * ambient inputs to a server render — they become `ctx.locale` and `ctx.tz`, which is what
+ * `@ultimat3/ui` formats every date with — so the body is a function of them and a cache that
+ * ignores one hands the next visitor the previous one's document. One list, two readers: the hint
+ * this file applies, and the `cache-headers` stage for a shared `cache-control` a handler wrote.
+ */
+export const SHARED_CACHE_VARY: readonly string[] = ['accept-language', 'cookie', TIMEZONE_HEADER];
+
 /** Mutates the response headers in place — responses are per-request, never shared. */
 export const applyCacheHeaders = (response: Response, hint: CacheHint): Response => {
   response.headers.set('cache-control', cacheControl(hint));
@@ -142,11 +163,10 @@ export const applyCacheHeaders = (response: Response, hint: CacheHint): Response
   }
   // `cookie` is not optional on the shared path. A `public` response is stored by a CDN under the
   // URL, and every session in this framework travels in a cookie — so without it the first
-  // signed-in render of a public page is what every later visitor is served.
-  return addVary(
-    response,
-    hint.vary ?? (hint.mode === 'public' ? ['accept-language', 'cookie'] : []),
-  );
+  // signed-in render of a public page is what every later visitor is served. `SHARED_CACHE_VARY`
+  // rather than a literal: the stage that reviews a handler's own `cache-control` adds the same
+  // dimensions, and two lists is one of them missing the key that mattered.
+  return addVary(response, hint.vary ?? (hint.mode === 'public' ? SHARED_CACHE_VARY : []));
 };
 
 export const withHeaders = (response: Response, headers: Record<string, string>): Response => {

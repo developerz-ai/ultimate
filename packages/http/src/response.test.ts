@@ -80,7 +80,9 @@ describe('cache headers', () => {
       tags: ['post:1', 'feed'],
     });
     expect(response.headers.get('x-cache-tags')).toBe('post:1,feed');
-    expect(response.headers.get('vary')).toBe('accept-language, cookie');
+    // Every ambient input a server render reads, in `SHARED_CACHE_VARY`'s own order: `ctx.tz`
+    // comes off a header too, and a date formatted in it is as visitor-specific as the locale.
+    expect(response.headers.get('vary')).toBe('accept-language, cookie, x-timezone');
   });
 
   // Without `cookie` in the key, a shared cache stores one visitor's signed-in render of a public

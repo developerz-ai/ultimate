@@ -93,8 +93,12 @@ export const createServer = (options: ServerOptions): ServerHandle => {
         }),
   });
 
-  // The one HTTP-owned knob feeds core's deadline, so there is a single drain budget.
-  configureLifecycle({ deadlineMs: config.drainTimeoutMs });
+  // The one HTTP-owned knob feeds core's deadline, so there is a single drain budget — and only
+  // when this app DECLARED it. Unconditional, with `defineHttpConfig` defaulting the number, this
+  // line reverted `configureLifecycle({ deadlineMs: 600_000 })` — the edit `X_SHUTDOWN_TIMEOUT`'s
+  // own `fix:` prints — back to 15s on every boot that serves web, silently. "Nobody said" and
+  // "the app said 15 seconds" are different claims and `null` is what keeps them apart.
+  if (config.drainTimeoutMs !== null) configureLifecycle({ deadlineMs: config.drainTimeoutMs });
 
   let server: BunServer | undefined;
   let unregister: (() => void) | undefined;

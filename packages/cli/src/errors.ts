@@ -60,11 +60,14 @@ export class MissingPositionalError extends UltimateError {
  * invocation the caller meant — built from what they typed, never a placeholder.
  */
 export class AppNameIsPathError extends UltimateError {
-  constructor(input: { name: string; parent: string; base: string }) {
+  constructor(input: { name: string; parent: string; base: string; invocation?: string }) {
+    // The invocation the caller typed, not the literal `x new`: the same command is the whole of
+    // `bunx create-ultimate`, which runs before `x` is installed.
+    const invocation = input.invocation ?? 'x new';
     super({
       code: 'X_CLI_BAD_FLAG',
-      cause: `"x new" takes a NAME and got the path "${input.name}" — it would be slugified into one directory name`,
-      fix: `x new ${quoteArg(input.base)} --dir ${quoteArg(input.parent)}`,
+      cause: `"${invocation}" takes a NAME and got the path "${input.name}" — it would be slugified into one directory name`,
+      fix: `${invocation} ${quoteArg(input.base)} --dir ${quoteArg(input.parent)}`,
     });
   }
 }

@@ -26,9 +26,9 @@ const contentTypeOf = (request: Request): string =>
  * `coerceQuery` decides whether to coerce a declared property — stops answering true for every
  * member of `Object.prototype`.
  */
-const parseQuery = (url: URL): QueryValues => {
-  const out: Record<string, string | string[]> = Object.create(null);
-  for (const [key, value] of url.searchParams) {
+const collectFields = <T>(entries: Iterable<[string, T]>): Record<string, T | T[]> => {
+  const out: Record<string, T | T[]> = Object.create(null);
+  for (const [key, value] of entries) {
     const existing = out[key];
     if (existing === undefined) out[key] = value;
     else if (Array.isArray(existing)) existing.push(value);
@@ -36,6 +36,8 @@ const parseQuery = (url: URL): QueryValues => {
   }
   return out;
 };
+
+const parseQuery = (url: URL): QueryValues => collectFields(url.searchParams);
 
 export class UltimateRequest {
   readonly raw: Request;
@@ -184,7 +186,10 @@ export class UltimateRequest {
         const form = await new Response(new Uint8Array(read.bytes), {
           headers: { 'content-type': this.raw.headers.get('content-type') ?? type },
         }).formData();
-        return Object.fromEntries(form);
+        // `collectFields`, never `Object.fromEntries`: a repeated name is a LIST here for the
+        // reason it is one in the query — a checkbox group posts its name once per checked box,
+        // and collapsing to the last one silently discards every other answer.
+        return collectFields(form);
       } catch (error) {
         // The parser's own message is a diagnostic, not an instruction, and it quotes the bytes
         // it choked on — so it rides in `meta`, rendered by core rather than by `String(error)`,
@@ -199,7 +204,7 @@ export class UltimateRequest {
     try {
       if (type === 'application/json' || type.endsWith('+json')) return JSON.parse(body);
       if (type === 'application/x-www-form-urlencoded') {
-        return Object.fromEntries(new URLSearchParams(body));
+        return collectFields(new URLSearchParams(body));
       }
       if (type.startsWith('text/')) return body;
     } catch (error) {

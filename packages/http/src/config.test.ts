@@ -74,7 +74,8 @@ describe('defineHttpConfig', () => {
     expect(config.trustProxy).toBe(false);
     expect(config.trustedProxyHops).toBe(0);
     expect(config.bodyLimitBytes).toBe(1_048_576);
-    expect(config.drainTimeoutMs).toBe(15_000);
+    // `null`, never a number: only an app that declared one may move core's drain deadline.
+    expect(config.drainTimeoutMs).toBeNull();
   });
 
   test('locale merges input over DEFAULT_LOCALE_CONFIG', () => {

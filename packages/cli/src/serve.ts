@@ -370,6 +370,14 @@ export async function runRole(options: ServeOptions): Promise<StartedApp> {
   }
   const app = await serveApp({ ...options, role });
   logger.info('ultimate started', { role: app.role, url: app.url, buildId: app.buildId });
-  await holdUntilShutdown('serve', () => app.stop())();
+  // `exit` because this is the one entry point with nothing above it: `bin.ts` ends in
+  // `process.exit(code)` and `apps/web/server.ts` — which is what awaits this — does not. One
+  // non-unref'd interval anywhere in the app then holds an event loop that has nothing left to do,
+  // until `terminationGracePeriodSeconds` runs out and the kubelet SIGKILLs a drained process.
+  await holdUntilShutdown('serve', () => app.stop(), {
+    exit: (code) => {
+      process.exit(code);
+    },
+  })();
   return app;
 }

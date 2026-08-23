@@ -8,6 +8,9 @@ import { defineRoute } from './route';
 
 const meta = (() => ({ title: 'T', description: 'd'.repeat(60) })) as unknown as RouteMetaFn;
 
+/** The store key for a path in this file's one locale — `isrKey` owns the derivation. */
+const isrKeyOf = (path: string): string => isrKey(new URL(`https://app.test${path}`), 'en');
+
 const postTag: CacheTag = tag('post');
 const orgTag: CacheTag = tag('org');
 
@@ -369,17 +372,108 @@ describe('the store key carries the query, and the route lookup does not', () =>
   });
 });
 
+describe('a bust that lands mid-render', () => {
+  test('is not erased by the pre-write HTML the render was already holding', async () => {
+    // `regenerate` rendered, then wrote `{ stale: false }` unconditionally. A `markStale` that
+    // landed between the two — `invalidateTags` -> the revalidator -> `markStale` — was erased by
+    // an entry built from rows read BEFORE the write, and for a tag-only route `isFresh` is then
+    // true forever: the process serves pre-write HTML for the rest of its life.
+    isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
+    const controller = createIsrController({ routes: describeRoutes });
+    controller.attach();
+
+    let release = (_html: string): void => undefined;
+    const key = isrKeyOf('/blog/a');
+    const served = controller.serve(key, async () => {
+      return await new Promise<string>((resolve) => {
+        release = resolve;
+      });
+    });
+    // The bust lands while the render above is still in flight.
+    await Promise.resolve();
+    await invalidateTags([postTag]);
+    release('<p>PRE-WRITE</p>');
+    await served;
+
+    // Present or forgotten, but never a FRESH entry holding pre-write HTML.
+    const stored = controller.store().get(key);
+    expect(stored?.html).not.toBe('<p>PRE-WRITE</p>');
+  });
+
+  test('a cold path is in the invalidation graph before its first render finishes', async () => {
+    // `registerPath` ran AFTER the render, so `revalidateByTags` could not see a path whose first
+    // render was still in flight — the window in which the bust that matters most arrives.
+    isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
+    const controller = createIsrController({ routes: describeRoutes });
+
+    let release = (_html: string): void => undefined;
+    const key = isrKeyOf('/blog/b');
+    const served = controller.serve(key, async () => {
+      return await new Promise<string>((resolve) => {
+        release = resolve;
+      });
+    });
+    await Promise.resolve();
+    expect(controller.revalidateByTags([postTag])).toEqual([key]);
+
+    release('<p>b</p>');
+    await served;
+  });
+});
+
+describe('memoryIsrStore eviction order', () => {
+  test('marking a page stale does not make it the newest — eviction is by generation', () => {
+    // `markStale` re-inserted through `set`, so the Map's iteration order — which IS the eviction
+    // order — put the STALEST page last. A tag bust therefore protected exactly the pages that
+    // most needed regenerating and evicted the freshest one instead.
+    const store = memoryIsrStore({ maxEntries: 2 });
+    const entry = (path: string): void =>
+      store.set({ path, html: path, hash: path, generatedAt: 0, ttlMs: null, stale: false });
+
+    entry('/a');
+    entry('/b');
+    store.markStale('/a');
+    entry('/c');
+
+    expect(store.paths()).toEqual(['/b', '/c']);
+  });
+
+  test('an in-place mark answers false for a page the store never held', () => {
+    expect(memoryIsrStore().markStale('/nothing')).toBe(false);
+  });
+});
+
 describe('isrKey', () => {
-  test('a bare path is its own key — no trailing `?` for a URL that had none', () => {
-    expect(isrKey(new URL('https://app.test/blog'))).toBe('/blog');
+  test('a bare path carries the locale and nothing else', () => {
+    expect(isrKey(new URL('https://app.test/blog'), 'en')).toBe('/blog?__x_locale=en');
   });
 
   test('params are SORTED, so one page is not rendered twice under two spellings', () => {
-    expect(isrKey(new URL('https://app.test/blog?b=2&a=1'))).toBe('/blog?a=1&b=2');
-    expect(isrKey(new URL('https://app.test/blog?a=1&b=2'))).toBe('/blog?a=1&b=2');
+    expect(isrKey(new URL('https://app.test/blog?b=2&a=1'), 'en')).toBe(
+      '/blog?__x_locale=en&a=1&b=2',
+    );
+    expect(isrKey(new URL('https://app.test/blog?a=1&b=2'), 'en')).toBe(
+      '/blog?__x_locale=en&a=1&b=2',
+    );
   });
 
   test('the fragment is never in the key — a browser never sends it', () => {
-    expect(isrKey(new URL('https://app.test/blog?a=1#section'))).toBe('/blog?a=1');
+    expect(isrKey(new URL('https://app.test/blog?a=1#section'), 'en')).toBe(
+      '/blog?__x_locale=en&a=1',
+    );
+  });
+
+  // The document is rendered with `<html lang>` and every `t()` in the request's own locale, so
+  // one entry per path handed visitor 2 the document negotiated for visitor 1 — and told the CDN
+  // to do the same for the whole TTL. Two locales are two documents.
+  test('two locales are two keys for one path', () => {
+    const url = new URL('https://app.test/blog/hello');
+    expect(isrKey(url, 'es')).not.toBe(isrKey(url, 'en'));
+  });
+
+  test('the key still resolves to its own route, so the TTL is the route’s', () => {
+    // `routePathOf` splits at the `?`; the locale rides in the query for exactly this reason —
+    // a prefix would make `descriptorFor` match no route and silently drop a declared ttl.
+    expect(isrKey(new URL('https://app.test/blog/hello'), 'es').split('?')[0]).toBe('/blog/hello');
   });
 });

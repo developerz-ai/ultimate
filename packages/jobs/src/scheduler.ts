@@ -6,16 +6,25 @@
 // advisory lock is held by the SESSION, not by this process — it outlives every transaction and is
 // released only by an explicit unlock, the pool's reset on release, or the connection dying, and
 // the next round may run on a different connection. So a node can neither renew it nor prove it
-// still holds one, and leadership passes to a second node while the first is still dispatching. Two schedulers
-// double-enqueue every task; the idempotency key would absorb it, but leader election means
-// the queue never sees the duplicate at all. One ROUND at a time is the same rule inside one
-// process: the loop re-arms on the round it just finished, and any other caller joins that
-// round rather than opening a second one over the same `lastFiredAt`.
+// still holds one, and leadership passes to a second node while the first is still dispatching.
+//
+// **The occurrence key is not a second line of defence, and the lease is therefore re-asserted
+// before EVERY task, not once per round.** `SQL_ENQUEUE`'s conflict target is the PARTIAL index
+// over the live states (`ready`, `delayed`, `running`, `suspended`), so a duplicate enqueue is
+// absorbed only while the first job is still one of those: a second dispatcher landing after that
+// occurrence's job completed, dead-lettered or was retried past its row inserts a NEW row, and the
+// handler runs twice. A round walks its tasks serially with an enqueue per job, so a 30s lease and
+// a slow queue leave the tail of the walk running under a lease another node already took. Argued
+// from the index definition, not reproduced — say it that way, as `outbox.ts` does for the same
+// mechanism. One ROUND at a time is the same rule inside one process: the loop re-arms on the
+// round it just finished, and any other caller joins that round rather than opening a second one
+// over the same `lastFiredAt`.
 
 import type { Clock } from '@ultimat3/core';
 import { isUltimateError, logger, onShutdown, renderThrowable } from '@ultimat3/core';
 import { instant, nextCronOccurrence } from '@ultimat3/time';
 import { nowMs } from './clock';
+import { settleAllBy } from './drain-wait';
 import type { JobDriver } from './driver';
 import type { TaskHandle, TaskJobResult } from './task';
 import { registeredTasks } from './task';
@@ -114,8 +123,11 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
   let state: 'idle' | 'running' | 'draining' | 'stopped' = 'idle';
   /** The dispatch round in flight — what a second caller joins and what `stop()` waits out. */
   let round: Promise<readonly DispatchedOccurrence[]> | undefined;
-  /** The `onShutdown` registration this scheduler holds while it runs. Handed back by `stop()`. */
-  let releaseShutdownHook: (() => void) | undefined;
+  /**
+   * The two `onShutdown` registrations this scheduler holds while it runs, both handed back by
+   * `stop()`. Two, for the phases they answer — the worker's rule, and `listenSyncNode`'s.
+   */
+  let releaseShutdownHooks: (() => void)[] = [];
   /** The teardown in flight, so a SIGTERM landing on a manual stop joins it. */
   let stopping: Promise<void> | undefined;
 
@@ -176,24 +188,31 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
   /** The drain's one question: may this scheduler still dispatch an occurrence? */
   const dispatching = (): boolean => state !== 'draining' && state !== 'stopped';
 
+  /**
+   * Asked EVERY round AND before every task in it, never only while `isLeader` is false. A
+   * lease-backed election (the one a pooled executor can use — `createPgLeaseLeader`) expires on a
+   * wall clock, so `acquire()` is also its renewal and a node that cached `isLeader = true` keeps
+   * dispatching past a lease another node has already taken. `soleLeader` answers true every time
+   * and `createPgLeader` holds its grant behind an internal flag, so the extra calls are a no-op
+   * for both.
+   */
+  const stillLeading = async (): Promise<boolean> => {
+    if (await leader.acquire()) {
+      isLeader = true;
+      return true;
+    }
+    // Demoted, or never elected. Nothing to release — a lease we no longer hold is not ours to
+    // hand back, and `teardown` reads this same flag before it calls `release()`.
+    if (isLeader) logger.warn('jobs.scheduler.leadership-lost', { at: nowMs(options.clock) });
+    isLeader = false;
+    return false;
+  };
+
   const runRound = async (): Promise<readonly DispatchedOccurrence[]> => {
     // Never take the lock a drain is on its way to releasing: a round that acquired it here
     // would still be enqueueing after `stop()` handed the occurrence to the next node.
     if (!dispatching()) return [];
-    // Asked EVERY round, not only while `isLeader` is false. A lease-backed election (the one a
-    // pooled executor can use — `createPgLeaseLeader`) expires, so `acquire()` is also its
-    // renewal, and a node that cached `isLeader = true` would keep dispatching past a lease
-    // another node has already taken. `soleLeader` answers true every time, and `createPgLeader`
-    // holds its grant internally, so this is a no-op for both.
-    const held = await leader.acquire();
-    if (!held) {
-      // Demoted, or never elected. Nothing to release — a lease we no longer hold is not ours to
-      // hand back, and `teardown` reads this same flag before it calls `release()`.
-      if (isLeader) logger.warn('jobs.scheduler.leadership-lost', { at: nowMs(options.clock) });
-      isLeader = false;
-      return [];
-    }
-    isLeader = true;
+    if (!(await stillLeading())) return [];
 
     const at = nowMs(options.clock);
     const tasks = options.tasks ?? registeredTasks();
@@ -204,6 +223,10 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
       // at the next round. A task not reached simply fires next time — its `lastFiredAt` is
       // untouched — while the occurrence this round already began is the one `stop()` waits for.
       if (!dispatching()) break;
+      // The lease, on the same rule and for the same reason the drain state is re-read: it expires
+      // on a wall clock in the middle of this walk, not between rounds. See the file header for
+      // what a second dispatcher costs — the occurrence key does NOT absorb it in general.
+      if (!(await stillLeading())) break;
       const last = await schedulerState.lastFiredAt(handle.name);
       if (last === undefined) {
         // First sight of this task: arm it, never fire retroactively for all of history.
@@ -275,10 +298,20 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
     }, tickIntervalMs);
   };
 
-  const teardown = async (reason: string): Promise<void> => {
+  /**
+   * The whole of the `accept` phase: stop dispatching, and nothing else. Synchronous on purpose —
+   * the hook behind this one is somebody else's "stop taking work", and a phase that waits is a
+   * phase that spends the budget those hooks were going to need.
+   */
+  const stopDispatching = (): void => {
+    if (state === 'stopped') return;
     state = 'draining';
     if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
+  };
+
+  const teardown = async (reason: string, deadlineAt?: number): Promise<void> => {
+    stopDispatching();
     logger.info('jobs.scheduler.draining', { reason, dispatching: round !== undefined });
     try {
       // The round this stop races runs to the end first. Releasing the lease under a
@@ -286,8 +319,24 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
       // then own the same occurrence — the exact double-fire leader election exists to prevent.
       // Settled, not awaited: a round that failed is its own caller's to see, and the lease still
       // has to go back.
-      await Promise.allSettled([round]);
-      if (isLeader) await leader.release();
+      //
+      // Bounded on the SIGTERM path, `undefined` on a manual stop: a round parked in `enqueue` on
+      // a queue that is not answering cannot be cancelled from here, and an unbounded wait is a
+      // teardown that never ends — hooks never handed back, `state` never past 'draining', and the
+      // memoised `stopping` every later `stop()` joins never settling.
+      const dispatched = await settleAllBy(round === undefined ? [] : [round], deadlineAt);
+      // A round we ABANDONED is a round still enqueueing, so the lock is deliberately NOT handed
+      // back: promoting a standby onto an occurrence this process is mid-dispatch for is the
+      // double-fire above, delivered by the shutdown. A lease row expires on its own, which is
+      // what an expiry is for — and `isLeader` is cleared below either way.
+      if (!dispatched) {
+        logger.warn('jobs.scheduler.drain-abandoned', {
+          reason,
+          fix: 'raise the drain budget past a dispatch round — configureLifecycle({ deadlineMs: 60_000 }) — and set terminationGracePeriodSeconds to at least as many seconds',
+        });
+      } else if (isLeader) {
+        await leader.release();
+      }
     } finally {
       // Whatever the release did, this scheduler is done. `isLeader` false because a lock this
       // process no longer holds — or failed to hand back — must never be re-used as if it did,
@@ -295,17 +344,20 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
       // the next process-wide drain, and keeps this closure and its driver alive with it.
       isLeader = false;
       state = 'stopped';
-      releaseShutdownHook?.();
-      releaseShutdownHook = undefined;
+      for (const release of releaseShutdownHooks) release();
+      releaseShutdownHooks = [];
     }
   };
 
-  const stop = async (reason = 'stop'): Promise<void> => {
+  const stop = async (reason = 'stop', deadlineAt?: number): Promise<void> => {
+    // Answered immediately once this scheduler is done: the teardown always REACHES 'stopped', so
+    // a caller landing after an abandoned drain gets an answer rather than joining a promise that
+    // never settles.
     if (state === 'stopped') return;
     // One teardown, joined rather than repeated — the worker's rule, for the same reason: a
     // SIGTERM landing on a manual stop must wait out the same round, not release the lock a
     // second time behind it. Cleared as it settles, so a scheduler started again stops again.
-    stopping ??= teardown(reason).finally(() => {
+    stopping ??= teardown(reason, deadlineAt).finally(() => {
       stopping = undefined;
     });
     await stopping;
@@ -317,14 +369,19 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
       // about to release, and stack a second shutdown hook on the one still running.
       if (state !== 'idle' && state !== 'stopped') return;
       state = 'running';
-      // 'accept' phase: stop dispatching before core waits on in-flight work — an occurrence
-      // enqueued during the drain is work nothing in this process is left to run. The
-      // unregister is kept, never discarded: `stop()` hands it back, so start -> stop -> start
-      // holds ONE hook rather than one per start.
+      // TWO hooks, for the two phases. `accept` stops dispatching and returns — an occurrence
+      // enqueued during the drain is work nothing in this process is left to run, and every hook
+      // behind this one still has the whole budget. `close` waits the round out and hands the
+      // lease back, bounded by the deadline it is given. Both unregisters are kept, never
+      // discarded: `stop()` hands them back, so start -> stop -> start holds one pair rather
+      // than one per start.
       if (options.drainOnShutdown !== false) {
-        releaseShutdownHook = onShutdown('jobs.scheduler', () => stop('SIGTERM'), {
-          phase: 'accept',
-        });
+        releaseShutdownHooks = [
+          onShutdown('jobs.scheduler.accept', stopDispatching, { phase: 'accept' }),
+          onShutdown('jobs.scheduler', (reason) => stop('SIGTERM', reason.deadlineAt), {
+            phase: 'close',
+          }),
+        ];
       }
       schedule();
       logger.info('jobs.scheduler.started', { tasks: (options.tasks ?? registeredTasks()).length });

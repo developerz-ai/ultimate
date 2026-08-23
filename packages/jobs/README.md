@@ -475,6 +475,24 @@ debugging a stuck queue can read and run the exact statement.
 | `worker` | `createWorker({ driver, context, queues, concurrency })` | per-queue pools, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close |
 | `scheduler` | `createScheduler({ driver, leader, state })` | one dispatch round at a time, catch-up policy, SIGTERM drain: stop dispatching → finish the round → release the lock |
 
+Both roles register the same **pair** of hooks and bound the `close` half the same way. The
+scheduler's abandoned case differs in one respect: a round still enqueueing keeps the lease rather
+than handing it back, because promoting a standby onto an occurrence this node is mid-dispatch for
+is the double-fire leader election exists to prevent. The lease row expires on its own.
+
+The worker's drain is **two shutdown hooks**, one per phase: `accept` stops claiming and returns
+immediately, `close` waits out the in-flight jobs and closes the driver. A running job is counted
+with core's `beginWork()`, so the wait for it happens in the drain's own in-flight phase rather than
+inside a hook — one hook doing all of it spends the whole `configureLifecycle({ deadlineMs })`
+budget in `accept`, where every other role's "stop taking work" is still queued behind it.
+
+**The `close` hook's wait is bounded by that same budget**, because nothing can kill a handler that
+ignores `ctx.signal`: at the deadline the worker logs `jobs.worker.drain-abandoned`, closes the
+driver and reaches `stopped`, and the job's lease lapses so the queue delivers it again — which is
+what at-least-once already promises. Raise the budget past your slowest job rather than relying on
+the wait: `configureLifecycle({ deadlineMs: 600_000 })`, with a `terminationGracePeriodSeconds` at
+least as large. A manual `await worker.stop()` has no budget and waits as long as its jobs take.
+
 `driver` and `context` are the two required keys on `WorkerOptions`; everything else defaults.
 `context: () => Ctx` supplies the ambient `Ctx` a job run executes under — the app wires its ALS
 and its tenant there, and a worker with no way to build one would run every handler as nobody.

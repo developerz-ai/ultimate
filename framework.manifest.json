@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "2bd701a95211df7cecec2326524ea5a4a4cd49f4e056bc1a10c9fbff874595dd",
+  "buildId": "68ded15e592ce59bb8f61080a731a4744208b5f6d0a99afd2844470654fa31af",
   "tiers": {
     "0": [
       "core",
@@ -701,6 +701,11 @@
       "code": "X_CRON_NOT_DESCRIBABLE",
       "owner": "time",
       "at": "packages/time/src/errors.ts"
+    },
+    {
+      "code": "X_CSP_DIRECTIVE_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
     },
     {
       "code": "X_CSRF_BLOCKED",

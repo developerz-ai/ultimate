@@ -193,3 +193,31 @@ describe('the x_backfills ledger', () => {
     expect(pass.seen.length).toBe(8);
   });
 });
+
+describe('a replayed batch writes no ledger row', () => {
+  test('a resumed pass reports only the batches it actually ran', async () => {
+    const ledger = installLedger();
+    const pass = harness({ batch: 3 });
+    pass.failOn = new Set([2]);
+    await expect(pass.run()).rejects.toThrow('batch 2 failed');
+
+    const progress = spyOn(ledger, 'progress');
+    try {
+      pass.failOn = new Set();
+      await pass.run();
+
+      // Batches 0 and 1 are served from storage without their bodies running — that is what makes
+      // a resume cheap — and the progress write sat OUTSIDE the step, so each of them re-issued an
+      // `x_backfills` UPDATE reporting a position the row already held. On a 5M-row sweep killed
+      // at batch 4,800 that is 4,800 statements before a new row is read, paid on every attempt
+      // and inside the visibility lease the heartbeat is renewing.
+      expect(progress.mock.calls.map((call) => call[1].rows)).toEqual([9, 10]);
+    } finally {
+      progress.mockRestore();
+    }
+
+    // The row still ends where the pass ended: progress is absolute, so the first batch that DOES
+    // run reports everything behind it, and `finish` writes the total either way.
+    expect((await ledger.list())[0]).toMatchObject({ status: 'completed', rows: 10 });
+  });
+});

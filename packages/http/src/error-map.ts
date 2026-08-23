@@ -38,6 +38,7 @@ export const ERROR_STATUS = {
   // Thrown while `app.config.ts` resolves, so no request is ever answered with it — the row exists
   // because a code with no status is a 500 anyway and this table is the closed one.
   X_CORS_CONFIG_INVALID: 500,
+  X_CSP_DIRECTIVE_INVALID: 500,
   // Thrown while the server is being constructed, so no request is ever answered with it either.
   // The row exists because this table is the closed one: a code missing from it is a 500 anyway,
   // and a code the framework owns must never fall through to the app's table.
@@ -424,19 +425,51 @@ export interface ProblemDocument {
   readonly requestId: string | undefined;
 }
 
+/** The title a caller gets for a failure the framework cannot name. */
+const INTERNAL_TITLE = 'unhandled server error';
+
+/**
+ * The cause a caller gets for one. An unclassified 5xx has no `cause` of its own, so `factsOf`
+ * falls through to the throwable's `message` — a driver's DSN, the row Postgres rejected, an
+ * absolute path — and `toProblem` handed it to whoever asked. `error-page.ts` locked the BROWSER
+ * out of exactly this and said so in its header; the two audiences then disagreed about one
+ * condition. The real text is not lost: the `error-map` stage logs it as a redactable FIELD and
+ * reports every 5xx to the error monitor, both keyed by the request id below.
+ */
+const INTERNAL_CAUSE =
+  'the server failed while handling this request; the details are in this process\u2019s logs and ' +
+  'error reports, under this request id';
+
+/**
+ * A 5xx nobody declared a status for — not the framework's table, not the app's
+ * `registerErrorStatus` — or one whose code is `X_INTERNAL`. That is the discriminator, and not
+ * `status >= 500` alone: a declared code has an authored cause, and blanking `X_DRAINING`'s would
+ * take away the one instruction in it.
+ *
+ * `X_INTERNAL` is in the framework's table and still belongs here, because it is the framework's
+ * own word for "nobody classified this": `factsOf` mints it for a throwable carrying no code, and
+ * core's `toError()` wraps a caught value into an `InternalError` whose cause is
+ * `renderCauseValue(value)` — the driver's message, verbatim. Nothing in an `X_INTERNAL` is
+ * actionable by the caller; the code and the request id are.
+ */
+const isUnclassifiedFailure = (code: string, status: number): boolean =>
+  status >= 500 &&
+  (code === 'X_INTERNAL' || (frameworkStatus(code) === undefined && !APP_ERROR_STATUS.has(code)));
+
 export const toProblem = (
   error: unknown,
-  meta: { instance?: string; requestId?: string } = {},
+  meta: { instance?: string; requestId?: string; dev?: boolean } = {},
 ): ProblemDocument => {
   const facts = factsOf(error);
+  const opaque = meta.dev !== true && isUnclassifiedFailure(facts.code, facts.status);
   return {
     type: problemTypeFor(facts.code),
-    title: facts.title,
+    title: opaque ? INTERNAL_TITLE : facts.title,
     status: facts.status,
-    detail: facts.cause,
+    detail: opaque ? INTERNAL_CAUSE : facts.cause,
     instance: meta.instance,
     code: facts.code,
-    cause: facts.cause,
+    cause: opaque ? INTERNAL_CAUSE : facts.cause,
     fix: facts.fix,
     docs: facts.docs,
     requestId: meta.requestId,

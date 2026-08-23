@@ -166,6 +166,34 @@ describe('x build --target static', () => {
     expect(checkBudgets(manifest, stats ?? { routes: [] })).toEqual([]);
   });
 
+  // The budget gate reads `route.url` off the manifest, which is the DECLARED pattern
+  // (`/blog/:slug`). The stats rows were keyed on `artifact.path` — the FILLED one, `/blog/hello`
+  // — so no dynamic static route has ever been weighed: every one of them was
+  // `X_BUDGET_UNMEASURED` and `X_BUDGET_EXCEEDED` was unreachable for the whole class.
+  test('a dynamic static route is weighed under the pattern the gate asks about', async () => {
+    registerRoute({
+      file: 'apps/web/site/blog/[slug]/page.tsx',
+      config: defineRoute({
+        render: 'static',
+        hydrate: 'never',
+        offline: 'precache',
+        budget: { js: '0kb' },
+        prerender: () => ['hello', 'world'],
+        meta: () => ({ title: 'Post', description: 'a prerendered post page' }),
+      }),
+    });
+
+    const out = join(ROOT, 'static');
+    const report = await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+    // Both pages are still emitted and still named by their own filled path.
+    expect(report.pages.map((page) => page.path).sort()).toEqual(['/blog/hello', '/blog/world']);
+
+    const stats = await readBuildStats(ROOT);
+    expect((stats?.routes ?? []).map((route) => route.path)).toEqual(['/blog/:slug']);
+    const { manifest } = await appManifest(ROOT);
+    expect(checkBudgets(manifest, stats ?? { routes: [] })).toEqual([]);
+  });
+
   test('a route whose render throws is reported unmeasured, never silently skipped', async () => {
     registerRoute({
       file: 'apps/web/app/broken/page.tsx',

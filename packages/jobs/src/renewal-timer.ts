@@ -39,6 +39,13 @@ export function startRenewalTimer(
         logger.error('jobs.renewal.raised', { error: renderThrowable(error) });
       });
   }, intervalMs);
+  // Never the thing keeping a drained process alive. This interval is armed from inside a job run,
+  // so a drain that ABANDONS the worker's hook leaves the run — and this timer — with nobody left
+  // to call `stop()`: refed, it holds the event loop open past every phase of the shutdown, and
+  // the kubelet's SIGKILL becomes the exit. `sync-node.ts` unrefs all three of its timers and
+  // `lifecycle-deadline.ts` its own for the same reason. A renewal is bookkeeping for work that is
+  // already over by then; nothing is lost by letting the process go.
+  timer.unref?.();
   return {
     stopped: () => stopped,
     stop(): void {

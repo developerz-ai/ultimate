@@ -9,8 +9,10 @@ import type { CacheTag, Revalidator } from '@ultimat3/cache';
 import {
   dependentsOfKind,
   invalidateTags,
+  markInvalidated,
   registerDependent,
   registerRevalidator,
+  sampleFence,
   unregisterDependent,
 } from '@ultimat3/cache';
 import { logger, renderThrowable } from '@ultimat3/core';
@@ -40,6 +42,13 @@ export interface IsrEntry {
 export interface IsrStore {
   get(path: string): IsrEntry | undefined;
   set(entry: IsrEntry): void;
+  /**
+   * Mark a held page stale IN PLACE — `false` when the store does not hold it. Its own method and
+   * not `set({ ...entry, stale: true })`, because `set` means "this page was just generated" and a
+   * store is entitled to order its eviction by that: the read-modify-write made the STALEST page
+   * the newest, so a tag bust protected exactly the pages that most needed regenerating.
+   */
+  markStale(path: string): boolean;
   delete(path: string): void;
   paths(): readonly string[];
 }
@@ -73,6 +82,14 @@ export function memoryIsrStore(options: MemoryIsrStoreOptions = {}): IsrStore {
         map.delete(oldest.value);
       }
     },
+    // In place: `map.set` on a key the Map already holds keeps its position, and that position is
+    // the eviction order. Never `delete` + `set` here — that is the bug this method exists to fix.
+    markStale: (path) => {
+      const entry = map.get(path);
+      if (entry === undefined) return false;
+      map.set(path, { ...entry, stale: true });
+      return true;
+    },
     delete: (path) => {
       map.delete(path);
     },
@@ -81,20 +98,36 @@ export function memoryIsrStore(options: MemoryIsrStoreOptions = {}): IsrStore {
 }
 
 /**
- * The ISR store key for one request URL: pathname plus the query, **params sorted**.
+ * The reserved query parameter the negotiated locale rides in. A parameter and not a prefix
+ * because `routePathOf` splits a key at its `?`: a `es:/blog` key would match no route, so
+ * `descriptorFor` would answer `undefined` and a declared `revalidate: { ttl }` would silently
+ * become tag-only. Reserved spelling, so an app's own `?locale=` stays its own dimension.
+ */
+export const ISR_LOCALE_PARAM = '__x_locale';
+
+/**
+ * The ISR store key for one request URL: pathname, the negotiated LOCALE, and the query, **params
+ * sorted**.
  *
  * Exported because deriving it is the caller's job and there may only be ONE derivation — a
  * server that keyed on `url.pathname` while the store believed it held a whole URL is the shape
  * of #171. Sorting makes `?a=1&b=2` and `?b=2&a=1` one entry rather than two renders of one page.
+ *
+ * The locale is REQUIRED, and required as an argument rather than read from the ambient context so
+ * that every call site has to answer: a document is rendered with `<html lang>` and every `t()` in
+ * the request's own locale, so one entry per path served visitor 2 the document negotiated for
+ * visitor 1 — for the whole TTL, and with `s-maxage` telling the CDN to do the same. The time zone
+ * is deliberately NOT a dimension: it is unbounded where a locale set is declared, and an `isr`
+ * page is a shared artifact, so a date on one belongs in an explicit zone the page itself names.
  *
  * A query-carrying URL therefore gets its own entry, which is correct and is not free: a crawler
  * appending `?utm_source=…` mints one entry per value. That is bounded, not unbounded —
  * `DEFAULT_ISR_MAX_ENTRIES` evicts least-recently-generated first — and a bounded cache that
  * thrashes is the right failure next to an unbounded one that answers the wrong document.
  */
-export function isrKey(url: URL): string {
-  if (url.search === '') return url.pathname;
+export function isrKey(url: URL, locale: string): string {
   const params = new URLSearchParams(url.search);
+  params.set(ISR_LOCALE_PARAM, locale);
   params.sort();
   return `${url.pathname}?${params.toString()}`;
 }
@@ -213,6 +246,19 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
 
     const descriptor = descriptorFor(path);
     const work = (async (): Promise<IsrEntry> => {
+      // BEFORE the render, not after: `revalidateByTags` reads the graph, so a bust arriving while
+      // a cold path's first render was in flight could not see the page it was invalidating —
+      // which is the window in which the bust that matters most arrives.
+      registerPath(path, descriptor);
+      // Sampled before the render for the reason `@ultimat3/cache`'s read-through fill samples
+      // before its `load()` (`tiers.ts`): the HTML below is built from rows read in the past, and
+      // a `markStale` landing in between was then ERASED by `store.set({ stale: false })`. For a
+      // tag-only route `isFresh` is true forever, so the process went on serving pre-write HTML
+      // for the rest of its life. One mechanism, not a second one grown here.
+      const fence = sampleFence({
+        key: path,
+        tags: (descriptor?.revalidateTags ?? []).map(parseWireTag),
+      });
       const html = await render(path);
       const entry: IsrEntry = {
         path,
@@ -222,8 +268,10 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
         ttlMs: parseTtlMs(descriptor?.revalidateTtl),
         stale: false,
       };
-      store.set(entry);
-      registerPath(path, descriptor);
+      // Refused, never published stale-flagged: the next request re-renders from rows that now
+      // include the write, where a stored-but-stale entry would serve this pre-write body once
+      // more before doing the same thing.
+      if (fence.isValid()) store.set(entry);
       forgetEvictedPaths();
       return entry;
     })();
@@ -234,10 +282,11 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
   }
 
   function markStale(path: string): boolean {
-    const entry = store.get(path);
-    if (entry === undefined) return false;
-    store.set({ ...entry, stale: true });
-    return true;
+    // The mark is recorded whether or not the store holds the page: a regeneration already in
+    // flight for a path this store has never held is exactly the case the fence above exists for,
+    // and `invalidateTags`' own fanout only marks the TAGS.
+    markInvalidated({ key: path });
+    return store.markStale(path);
   }
 
   return {
@@ -362,6 +411,11 @@ function toResult(entry: IsrEntry, buildId: string, servedStale = false): Render
   const headers: Record<string, string> = {
     ...staticHeaders(entry.hash, buildId),
     'cache-control': cacheControl(entry.ttlMs),
+    // The store keys on the locale; a shared cache in front of it has to as well, or the CDN
+    // repeats the bug this entry was split to fix. `ssrHeaders`' own line, for the same reason.
+    // The rest of the shared key — the cookie, the zone — is added by `@ultimat3/http`'s
+    // `cache-headers` stage, which sees the actor this function cannot.
+    vary: 'accept-language',
   };
   if (servedStale) headers['x-ultimate-isr'] = 'stale';
   return { status: 200, headers, body: entry.html };
