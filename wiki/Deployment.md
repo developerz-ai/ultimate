@@ -21,7 +21,7 @@ ROLE=replicator myapp
 | `web` | SSR + static + RPC (actions/queries over HTTP) | **RPS** | behind CDN, stateless, N replicas, no local state |
 | `sync` | live queries + fanout over WebSockets | **concurrent connections** | stateless, **no sticky sessions** — a client may reconnect to any node |
 | `worker` | jobs + steps | **queue depth** | one pool per named queue; `WORKER_QUEUES=default,integrations` |
-| `scheduler` | cron dispatch → enqueue only | **fixed 1** | Postgres advisory-lock leader election; a second instance is a warm standby, not a duplicate |
+| `scheduler` | cron dispatch → enqueue only | **fixed 1** | leader election is an expiring row in `x_scheduler_leader` (`createPgLeaseLeader`), never an advisory lock — that grant is session-scoped and the executor is a pool. A second instance is a warm standby, not a duplicate |
 | `migrate` | run-once, pre-deploy | n/a | applies migrations through the ledger and **exits**; never binds a port. Holds the migration advisory lock on one pinned session for the whole run, so overlapping deploys serialise — the second waits, polling once per 500ms for up to 60s, then exits non-zero with `X_MIGRATE_CONCURRENT` rather than hanging the rollout (`As of 2026-08`; 1.2.0 waits forever — [Known gaps](Known-Gaps)) |
 | `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock and exits if held |
 
@@ -33,20 +33,22 @@ ROLE=replicator myapp
 
 ## Health endpoints
 
-Every role exposes both, on every replica. Both return `{ ok, role, buildId, checks: [...] }` — never a bare `200 OK` with no body.
+**`web` and `sync` serve both; nothing else does.** They are the two roles that construct an HTTP server — `worker`, `scheduler` and `replicator` open the metrics listener alone, so probe those on `/metrics`. Both endpoints return a body, never a bare `200 OK`.
 
-| Endpoint | Answers | Fails when | Consumer |
+| Endpoint | Answers | 503 when | Consumer |
 |---|---|---|---|
-| `/healthz` | "is this process alive?" | event loop wedged, unhandled fatal state | liveness probe → restart |
-| `/readyz` | "should traffic come here?" | DB unreachable, NATS down, migration version mismatch, **draining** | readiness probe → remove from rotation |
+| `/healthz` | "is this process alive?" | the lifecycle is `stopped`. Ignores the readiness checks on purpose: a database outage that failed liveness fleet-wide restarts every pod into the same outage, cold | liveness probe → restart |
+| `/readyz` | "should traffic come here?" | starting, **draining**, stopped, or any registered check answers `failing` | readiness probe → remove from rotation |
 
-| Role | `/readyz` additionally checks |
-|---|---|
-| `web` | DB pool healthy, build ID matches the migration version |
-| `sync` | replication feed lag under threshold, NATS subscribed |
-| `worker` | queue reachable, at least one pool claiming |
-| `scheduler` | holds the leader lock (a standby reports not-ready, by design) |
-| `replicator` | slot active, WAL lag under threshold |
+The body is `{ state, ready, uptimeMs, inflight, buildId, checks, registered, role }`, where `checks` is a **map** of name → `ok` / `failing`.
+
+| Registered check | When it exists | What it reads |
+|---|---|---|
+| `database` | always | the previous `db.ping()`, refreshed on read — never awaited inside the probe |
+| `transport` | only when the transport can report a connection: NATS can, the in-process bus cannot | `transport.connected` |
+| anything per-role | **never** `As of 2026-08-22` | this table used to list five — replication lag, migration-version skew, "one pool claiming", "holds the leader lock", "slot active" — and none was wired. A `scheduler` standby does not report not-ready; it serves no readiness endpoint |
+
+**`registered: 0` is a real answer, not an error.** An empty registry is still ready, so a 200 means no more than "the socket is bound" — which is what the chart's and compose's healthchecks route traffic on. Read `registered` before you trust `checks: {}`.
 
 ## Graceful drain on SIGTERM
 
@@ -67,7 +69,7 @@ SIGTERM
 | `web` | let in-flight requests and streaming responses finish; a stream past the deadline gets a typed truncation, not a socket reset |
 | `sync` | send every client a `reconnect` frame **with a per-client backoff delay** (see below), then close cleanly |
 | `worker` | finish the current step, persist it, and release the job's lease so another worker resumes at the next step — never mid-step |
-| `scheduler` | release the leader lock immediately so the standby promotes within one lock interval |
+| `scheduler` | delete the lease row immediately so the standby promotes on its next round rather than waiting out the 30s TTL |
 | `replicator` | flush the change feed to NATS up to the last confirmed LSN, then release the slot |
 
 Exceeding `DRAIN_TIMEOUT` throws `X_SHUTDOWN_TIMEOUT`; requests arriving during the drain get `X_DRAINING`.

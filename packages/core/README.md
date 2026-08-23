@@ -322,6 +322,15 @@ nothing and still reports healthy.
   once has to keep it: a discarded one is a hook per `start()`, each retaining the resource it
   was going to drain, and the next drain runs every one of them against a torn-down copy.
   `shutdownHookCount()` is the test-only probe that makes the leak assertable.
+- `registerReadinessCheck(name, check)` is what makes `/readyz` mean **usable** rather than
+  **bound**. `ReadinessCheck` is `() => boolean` and must stay synchronous — a probe that awaits its
+  dependency turns a slow dependency into a wedged endpoint and then a restart loop; keep a boolean
+  fresh and let the check read it. It returns an unregister. `HealthReport.checks` is a map of name
+  → `'ok' | 'failing'`, so "alert on check failures by check name" is writable.
+- **`HealthReport.registered` is the third state.** `checks: {}` reads identically for "every check
+  passed" and "nobody registered one", and an **empty registry is still ready** — reported, never
+  enforced, so a role with no dependency does not have to invent a check to boot. Read `registered`
+  before trusting an empty `checks`.
 - Anything that opens a socket calls `markListening(server.url.origin)` and releases it on close.
   That is what tells the sealed test network a loopback request is this process, not egress.
 

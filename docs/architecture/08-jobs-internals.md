@@ -149,8 +149,12 @@ RETURNING id, name, attempt;
 `lock_key` in `x_scheduler_leader`, holder plus expiry, and `acquire()` is also the renewal.
 
 **Not `pg_try_advisory_lock`, and that is the whole point.** An advisory lock is *session*-scoped,
-and the executor this package is handed is a **pool** — the grant dies the moment the connection
-goes back, so every node reads itself as leader and a rolling update double-fires every task.
+and the executor this package is handed is a **pool** — so the grant is held by a backend the
+process cannot name on the next round. It outlives every transaction and is released only by an
+explicit unlock, the pool's reset on release, or the connection dying, and the round after taking it
+may run on a different connection entirely. Both endings break election: a lock stranded on a
+backend nobody can release, and a lock dropped by a reset mid-round while the node still believes it
+leads — a rolling update double-fires every task.
 `createPgLeader` does not exist; `@ultimat3/realtime`'s `PgAdvisoryLock` solves the same problem by
 owning its connection, and this package holds no wire protocol, so it solves it with a row.
 

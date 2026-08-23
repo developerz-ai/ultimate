@@ -672,7 +672,7 @@ picture from the other side.
 | `scheduler-pg.ts` | `pgSchedulerState` (the durable watermark) + `createPgLeaseLeader` |
 | `events-pg.ts` | `createPgEventBus` — `step.waitForEvent` across processes |
 | `driver.ts` | `JobDriver` contract + wire records |
-| `driver-pg.ts` | default driver, real SQL constants, advisory-lock leader |
+| `driver-pg.ts` | default driver, real SQL constants, and `createPgLeader` — the advisory-lock election that is **not** what a scheduler uses; `scheduler-pg.ts` above owns the lease-row one boot wires |
 | `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` + `SQL_OUTBOX_TABLE` — the schema the driver installs. Whichever file holds the DDL is the one whose comments may carry no `;` and no `'` |
 | `driver-pg-jobs-sql.ts` | every statement returning a whole `x_jobs` row, and the `JOB_ROW_COLUMNS` projection they share. Split off at `driver-pg-sql.ts`'s size ceiling and re-exported from it |
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |

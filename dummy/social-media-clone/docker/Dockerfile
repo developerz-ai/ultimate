@@ -39,8 +39,10 @@ ENV NODE_ENV=production \
 # own port mapping, its load balancer and every health probe alike.
 EXPOSE 3000
 
-# Every role serves /healthz and /readyz. /readyz flips to 503 on SIGTERM *before* the socket
-# closes, so a rolling restart drains in-flight work instead of dropping it.
+# The probe for the roles that SERVE HTTP — `web` and `sync`. /readyz flips to 503 on SIGTERM
+# *before* the socket closes, so a rolling restart drains in-flight work instead of dropping it.
+# Every other role opens the scrape listener alone and never binds $PORT, so each one overrides
+# this in docker/docker-compose.prod.yml rather than reporting `unhealthy` for its whole life.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 CMD \
   bun --eval "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/readyz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 

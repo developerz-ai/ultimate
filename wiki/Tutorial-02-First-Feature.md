@@ -175,13 +175,21 @@ Import each primitive **file**, not the `actions/` directory — the generator w
 
 `x g resource` writes no migration and does not touch the entity export list. Two steps.
 
-**1. Export the entity.** `packages/db/src/schema.ts` is what the migration generator reads:
+**1. Export the entity.** `packages/db/src/schema.ts` is the db package's public surface — what the
+rest of the app imports a `todo` from:
 
 ```ts
 export { todo } from '@myapp/web/app/todo/entity';
 ```
 
-Now `x verify` sees drift, which is the point:
+It is **not** what the migration generator reads. `x db gen` diffs the entity **registry**
+(`describeEntities()`), and `x verify`'s `drift` step hashes that same registry alongside the text
+under `packages/db/src/**` — so the entity is already in the diff the moment its own file exists.
+`loadApp` imports every module under `apps/*/{site,app,api,shared}/**` and `packages/*/src/**`, and
+`entity()` registers on import. `examples/dummy` is the proof: it has entities, migrations and a
+green `drift` step, and no `packages/db/src/schema.ts` at all.
+Adding the export line moves the text half of the hash too, which is why the drift below is the same
+either way:
 
 ```text
   ✗ drift              2ms

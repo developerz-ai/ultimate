@@ -246,3 +246,40 @@ describe('unit · the build that must not break lint', () => {
     expect(findings[0]?.cause).toContain('x build --target static');
   });
 });
+
+describe("unit · a step the caller waived is not the loop's to judge or to fix", () => {
+  /**
+   * The waiver has to reach BOTH halves. `budgets` is the step CI permits to stay red in a fresh
+   * scaffold, and its fix is `x build --target static --json && x verify --json` — a shell pipeline
+   * `runnableFix` refuses by design. Before this, the loop skipped that fix, ran nothing, stopped on
+   * `ran.length === 0`, and reported X_SCAFFOLD_FIX_UNFOLLOWED for a scaffold doing exactly what CI
+   * asked of it. Worse, `staticBuildFindings` is gated on `green`, so the build-breaks-lint
+   * assertion — the whole point of the loop — became unreachable.
+   */
+  test('it decides nothing: the only red step is waived, so the run is green', async () => {
+    const { runner, calls } = fakeRunner([
+      table([
+        { name: 'lint', ok: true },
+        {
+          name: 'budgets',
+          ok: false,
+          findings: [fix('x build --target static --json && x verify --json')],
+        },
+      ]),
+    ]);
+    const followed = await followFixes('/tmp/app', runner, ['budgets']);
+    expect(followed.green).toBe(true);
+    expect(followed.red).toEqual([]);
+    expect(calls.filter((argv) => argv.includes('build'))).toEqual([]);
+  });
+
+  test('and an UNwaived red step is still followed, and still decides green', async () => {
+    const { runner, calls } = fakeRunner([
+      table([{ name: 'lint', ok: false, findings: [fix('bunx biome check --write .')] }]),
+      table([{ name: 'lint', ok: true }]),
+    ]);
+    const followed = await followFixes('/tmp/app', runner, ['budgets']);
+    expect(followed.green).toBe(true);
+    expect(calls.some((argv) => argv.includes('biome'))).toBe(true);
+  });
+});

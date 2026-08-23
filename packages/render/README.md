@@ -19,7 +19,7 @@ export const config = defineRoute({
   budget:     { js: '40kb', lcp: 2000 },
   load:       ({ params }) => db.posts.bySlug(params.slug),   // once per render
   meta:       ({ data, url }) => ({ title: data.title, description: data.excerpt,
-                                    og: { image: data.cover }, alternates: { canonical: url },
+                                    og: { image: data.cover }, canonical: url,
                                     ld: ld.Article(data) }),
 });
 

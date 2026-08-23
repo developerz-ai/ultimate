@@ -506,7 +506,7 @@ Seven codes because each sends the reader somewhere different. Full walkthrough:
 
 ## Scraping
 
-`@ultimat3/scraping` owns 24 codes and borrows two (`X_NOT_IMPLEMENTED`, `X_ENV_MISSING`). Every one is classified `retryable` or `terminal` **once**, in `SCRAPE_ERROR_RETRY` ([`packages/scraping/src/errors.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/scraping/src/errors.ts)), rather than re-decided by whichever `catch` saw it — a scraper's whole operational question is "was that the site being slow, or the site being different?"
+`@ultimat3/scraping` owns its codes in `SCRAPE_OWNED_ERROR_CODES` and borrows two (`X_NOT_IMPLEMENTED`, `X_ENV_MISSING`) — the count is not written here because nothing derives it, and a number in prose beside a list that grows is a number that goes stale; `bun run manifest` re-derives the owner of every code. Every one is classified `retryable` or `terminal` **once**, in `SCRAPE_ERROR_RETRY` ([`packages/scraping/src/errors.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/scraping/src/errors.ts)), rather than re-decided by whichever `catch` saw it — a scraper's whole operational question is "was that the site being slow, or the site being different?"
 
 The rule, stated once: **retryable means the same code, run again, has a real chance of a different answer.** Transport, budget and liveness faults qualify. Anything that says "the page is not the page this scraper was written against" does not — attempt 5 hammers a site with a request that cannot succeed, and on an authenticated target that is how three wrong attempts lock an account.
 

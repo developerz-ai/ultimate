@@ -35,26 +35,52 @@ Rules that keep this honest:
 
 ## `/healthz` vs `/readyz`
 
-Every role exposes both, on every replica. Both return a body — never a bare `200 OK`.
+**Only `web` and `sync` have them**, `As of 2026-08-22`. They are the two roles that construct an
+HTTP server (`packages/http/src/server.ts`, `packages/realtime/src/sync-upgrade.ts`); `worker`,
+`scheduler` and `replicator` open the metrics listener alone and are probed on `/metrics`. Both
+endpoints return a body — never a bare `200 OK`.
 
-| Endpoint | Answers | Fails when | Consumer | Effect |
+| Endpoint | Answers | 503 when | Consumer | Effect |
 |---|---|---|---|---|
-| `/healthz` | "is this process alive?" | event loop wedged, unhandled fatal state | liveness probe | **restart the container** |
-| `/readyz` | "should traffic come here?" | DB unreachable, NATS down, migration/build mismatch, **draining** | readiness probe, LB | **remove from rotation** |
+| `/healthz` | "is this process alive?" | the lifecycle is `stopped`. **Ignores the readiness checks, deliberately** — a database outage that failed liveness fleet-wide would restart every pod into the same outage, cold | liveness probe | **restart the container** |
+| `/readyz` | "should traffic come here?" | starting, draining, stopped, or any registered check answers `failing` | readiness probe, LB | **remove from rotation** |
+
+The body is `HealthReport` plus the role. `checks` is a **map** of check name → `ok` or `failing`, never an array — "alert on check failures BY CHECK NAME" is not writable against a boolean:
 
 ```json
-{ "ok": true, "role": "sync", "buildId": "8f2a1c",
-  "checks": [ { "name": "replication-lag", "ok": true, "value": "180ms" },
-              { "name": "nats", "ok": true } ] }
+{ "state": "ready", "ready": true, "uptimeMs": 41230, "inflight": 3,
+  "buildId": "8f2a1c", "checks": { "database": "ok", "transport": "ok" },
+  "registered": 2, "role": "sync" }
 ```
 
-| Role | `/readyz` additionally checks |
-|---|---|
-| `web` | DB pool healthy, build ID matches the applied migration version |
-| `sync` | replication feed lag under threshold, NATS subscribed |
-| `worker` | queue reachable, at least one pool claiming |
-| `scheduler` | holds the leader lock — a standby reports **not ready, by design** |
-| `replicator` | slot active, WAL lag under threshold |
+**`registered` is why readiness is not a boolean.** `checks: {}` reads identically for "every check
+passed" and "nobody registered one", and an empty registry is still **ready** — deliberately, so a
+role with a genuine absence of dependencies does not have to invent a check to boot.
+
+| `registered` | `checks` | What a 200 means |
+|---|---|---|
+| `0` | `{}` | no more than "the socket is bound" — which is what the chart's and compose's healthchecks route traffic on |
+| `n > 0` | every entry `ok` | every dependency this process owns answered |
+| `n > 0` | any `failing` | not a 200: 503, and the body names the failing check |
+
+`startServices` (`packages/cli/src/dev-runtime.ts`) registers **at most two, and the count is
+conditional**: `database` always, `transport` only when the transport can lose a connection. `x dev`
+over the in-process bus reports `registered: 1`; a NATS-backed container reports `2`, which is the
+body above. Read the name, never the number:
+
+| Check | Registered when | Reads |
+|---|---|---|
+| `database` | always | the previous `db.ping()`, refreshed on read — staleness is one poll period, and the poll period is the operator's own `periodSeconds` |
+| `transport` | only when the transport exposes a `connected` getter: NATS does, the in-process bus has nothing to be | `transport.connected`, synchronously |
+
+`ReadinessCheck` is `() => boolean` and must stay that way — a probe that awaits its dependency
+turns a slow dependency into a wedged endpoint and then a restart loop, which is the outage the
+probe existed to prevent.
+
+**Per-role checks are not registered by anything.** Replication lag, migration-version skew, "at
+least one pool claiming", "holds the leader lease" — this page listed all five as shipped behaviour
+until 2026-08-22 and none of them exists. A `scheduler` standby in particular does not report
+not-ready, because it serves no readiness endpoint at all.
 
 Confusing the two is the classic outage: a wedged-DB check on `/healthz` restarts every replica simultaneously during a database blip, converting a degraded read path into a total outage. Liveness must only fail for problems a restart fixes.
 
@@ -121,9 +147,10 @@ Result: a rolling restart produces a wide flat load curve instead of a spike.
 | jobs, per row | `FOR UPDATE SKIP LOCKED` at claim | the claim transaction | none — a locked row is skipped, not waited on |
 
 The scheduler is the one that cannot use an advisory lock, and it is the executor that decides it:
-`@ultimat3/jobs` is handed a **pool**, and a session-scoped grant dies the moment the connection goes
-back. It shipped as `pg_try_advisory_lock` and every node read itself as leader, so a rolling update
-double-fired every task. `@ultimat3/realtime` solves the same problem the other way — `PgAdvisoryLock`
+`@ultimat3/jobs` is handed a **pool**, and a session-scoped grant is owned by the backend rather than
+by the process: it outlives every transaction, and whether it survives the connection's return is
+the pool's reset policy, not the caller's. Neither ending elects anybody. It shipped as
+`pg_try_advisory_lock` and a rolling update double-fired every task. `@ultimat3/realtime` solves the same problem the other way — `PgAdvisoryLock`
 owns its connection — because that package holds a wire protocol and jobs does not.
 
 A crashed leader's lease is reclaimed by expiry, with nothing to clean up. That is the one property

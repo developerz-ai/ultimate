@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // A freshly scaffolded app's own `x verify`, held to a ratchet instead of waived. The CI step ran
 // `continue-on-error: true`, so the job that answers "can a stranger scaffold an app that gates"
-// could not fail on any of the 17 steps — a waiver justified by ONE pinned typecheck gap that
+// could not fail on any of the 19 steps — a waiver justified by ONE pinned typecheck gap that
 // covered all of them.
 //
 // THE RATCHET SHRINKS ITSELF, and that is the half worth stating: the `stale` rule fails the job
@@ -142,7 +142,7 @@ if (import.meta.main) {
    * outside this repo, which is the only place a gate may repair the tree it is measuring.
    */
   const follow = flagBool(args, 'fix-follow');
-  const followed = follow ? await followFixes(dir, exec) : undefined;
+  const followed = follow ? await followFixes(dir, exec, allowRed) : undefined;
   const steps = followed === undefined ? await runScaffoldGate(dir, exec) : followed.steps;
   const findings = [
     ...scaffoldFindings({ dir, steps, allowRed, declaredSteps: VERIFY_STEP_NAMES }),

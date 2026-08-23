@@ -91,7 +91,7 @@ export const nightlyDigest = task({
 | Missing `tz` | type error, then `X_CONFIG_INVALID` at boot if bypassed |
 | `'UTC'` | correct for machine work: digests, compaction, exports |
 | A civil zone | correct for user-facing schedules: "9am local" is `tz: 'Europe/Berlin'`, not `'0 7 * * *'` in UTC |
-| Leader election | one `scheduler` role, advisory lock. A task fires once per cluster, not once per pod |
+| Leader election | one `scheduler` role, holding an expiring lease row in `x_scheduler_leader` — never an advisory lock. A task fires once per cluster, not once per pod |
 | Catch-up | a missed window is logged and skipped, never replayed silently |
 
 See [Scheduled tasks](Scheduled-Tasks).

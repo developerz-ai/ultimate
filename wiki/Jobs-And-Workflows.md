@@ -142,7 +142,7 @@ export const syncCrm = job({
 
 | Control | Meaning | Enforced by |
 |---|---|---|
-| `concurrency.limit` | max simultaneous runs sharing a key | advisory lock / lease count in the driver |
+| `concurrency.limit` | max simultaneous runs sharing a key | one `x_job_leases` row per **held slot**, keyed `(lease_key, slot)` — the primary key is what serialises two workers reaching for the same slot. A driver with no `LeaseStore` refuses the job at worker start (`X_JOB_CONCURRENCY_UNENFORCEABLE`) rather than capping per process |
 | `rateLimit` | max starts per window per key | token bucket row, checked at claim time |
 | `queue` | named pool; the `worker` role runs one pool per config (`WORKER_QUEUES=default,integrations`) | worker pool sizing, see [Deployment](Deployment) |
 | `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'`, jittered | driver scheduler |
@@ -167,12 +167,16 @@ export interface JobDriver {
   stats(): Promise<readonly QueueStats[]>;
   /** The `x_backfills` ledger, when the driver ships one. `postgres` and `memory` do. */
   readonly backfills?: BackfillLedger;
+  /** Fleet-wide slot counting — the only thing that can enforce `concurrency` across replicas. */
+  readonly leases?: LeaseStore;
   readonly introspect?: JobIntrospection;
   close?(): Promise<void>;
 }
 ```
 
-The three optional members degrade rather than refuse: no `introspect` is `x jobs ls` with nothing to list, no `backfills` is a `backfill()` pass that runs with no bookkeeping, and no `close` is a driver holding nothing to hand back.
+Three of the four optional members degrade rather than refuse: no `introspect` is `x jobs ls` with nothing to list, no `backfills` is a `backfill()` pass that runs with no bookkeeping, and no `close` is a driver holding nothing to hand back.
+
+**`leases` is the one that refuses.** The in-process limiter is a fast path over one heap and is multiplied by the replica count, so a driver with no `LeaseStore` can only hold `concurrency.limit` per process. `createWorker().start()` therefore **throws `X_JOB_CONCURRENCY_UNENFORCEABLE`**, naming every registered job that declared `concurrency`, rather than logging a cap it cannot keep. `postgres` ships one; a driver you write yourself needs one before any job in the tree may declare `concurrency`.
 
 Two implementations ship in 1.0.0. Two more are **not in 4.0.0** — interface-complete stubs, so an app typechecks against them, and every method throws `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than silently dropping a job.
 

@@ -1,7 +1,12 @@
 // The `scheduler` role: one node walks every registered task's cron, dispatches the occurrences
 // it owes and enqueues their jobs. The `task` primitive it reads lives in `task.ts`.
 //
-// Exactly one node dispatches per tick, enforced by a Postgres advisory lock. Two schedulers
+// Exactly one node dispatches per tick, enforced by leader election. Multi-node that is an
+// EXPIRING LEASE ROW in `x_scheduler_leader` (`createPgLeaseLeader`), never an advisory lock: an
+// advisory lock is held by the SESSION, not by this process — it outlives every transaction and is
+// released only by an explicit unlock, the pool's reset on release, or the connection dying, and
+// the next round may run on a different connection. So a node can neither renew it nor prove it
+// still holds one, and leadership passes to a second node while the first is still dispatching. Two schedulers
 // double-enqueue every task; the idempotency key would absorb it, but leader election means
 // the queue never sees the duplicate at all. One ROUND at a time is the same rule inside one
 // process: the loop re-arms on the round it just finished, and any other caller joins that
@@ -40,7 +45,7 @@ export interface LeaderElection {
 }
 
 /** Single-node default: always the leader. Multi-node uses `createPgLeaseLeader()` — never
- * `createPgLeader()`, whose advisory lock dies with the pooled connection that took it. */
+ * `createPgLeader()`, whose advisory lock is owned by a pooled session this process cannot name. */
 export function soleLeader(): LeaderElection {
   return {
     acquire: () => Promise.resolve(true),
@@ -276,10 +281,10 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
     timer = undefined;
     logger.info('jobs.scheduler.draining', { reason, dispatching: round !== undefined });
     try {
-      // The round this stop races runs to the end first. Releasing the advisory lock under a
+      // The round this stop races runs to the end first. Releasing the lease under a
       // live dispatch hands the next node a task this one is still enqueueing for, and both
       // then own the same occurrence — the exact double-fire leader election exists to prevent.
-      // Settled, not awaited: a round that failed is its own caller's to see, and the lock still
+      // Settled, not awaited: a round that failed is its own caller's to see, and the lease still
       // has to go back.
       await Promise.allSettled([round]);
       if (isLeader) await leader.release();

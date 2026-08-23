@@ -81,7 +81,7 @@ export const dailyDigest = task({
 |---|---|
 | a task **only** enqueues | the work is durable and retryable; a cron that did the work itself loses it on a restart |
 | `tz` is required, IANA | `0 3 * * *` in `America/New_York` is a different instant before and after a DST boundary. There is no ambient default anywhere in the framework |
-| one leader | leadership is a Postgres advisory lock; a second `scheduler` is a warm standby, not a duplicate |
+| one leader | leadership is an expiring lease row in `x_scheduler_leader`, never an advisory lock — that grant belongs to the **session**, not to the process: it outlives every transaction on the connection and is released only by an explicit unlock, the pool's reset on release, or the connection dying — so a node can neither renew it nor prove it still holds one. A second `scheduler` is a warm standby, not a duplicate |
 
 ### Registration names it
 
@@ -205,7 +205,7 @@ bunx x dev --once --port 3100
 | `web` | HTTP: pages, actions, queries | RPS |
 | `sync` | live-query websockets, on `$PORT + 1` | concurrent connections — no sticky sessions |
 | `worker` | the job queue | queue depth |
-| `scheduler` | cron dispatch, enqueue only | fixed 1, advisory-lock leader |
+| `scheduler` | cron dispatch, enqueue only | fixed 1, lease-row leader (`x_scheduler_leader`) |
 | `replicator` | logical replication → change feed | 1 per database; opt in with `--role`, needs a real Postgres with `wal_level=logical` |
 
 `x dev` co-locates the first four in one process. Isolation is simulated, not skipped: separate ALS contexts, a real Postgres queue, a real SIGTERM drain.

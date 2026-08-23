@@ -78,7 +78,8 @@ export function mount(el: HTMLElement, props: ${Name}Props): void {
 `;
 };
 
-const islandStyle = (): string => `// Semantic tokens only — a raw hex here is a dark-theme bug and
+const islandStyle =
+  (): string => `// Semantic tokens only — a raw hex here is refused by the boundaries step, not by lint — a dark-theme bug and
 // a lint failure. Scoped by the island build, with the class names the server hashed.
 @use '@ultimat3/ui/tokens' as tokens;
 

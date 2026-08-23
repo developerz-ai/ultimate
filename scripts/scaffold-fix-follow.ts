@@ -86,16 +86,27 @@ const verifyOnce = async (dir: string, runner: Runner): Promise<readonly GateSte
  * touched can only produce the same table, and three identical rounds would report the round count
  * as the finding rather than the fix line that could not be followed.
  */
-export async function followFixes(dir: string, runner: Runner): Promise<FixFollowResult> {
+export async function followFixes(
+  dir: string,
+  runner: Runner,
+  allowRed: readonly string[] = [],
+): Promise<FixFollowResult> {
+  // `allowRed` is the caller's waiver, and the loop has to honour it in BOTH halves or it reports
+  // its own waiver as a failure. A step CI already permits to stay red must not decide `green`,
+  // and its fix line must not be run: `budgets` answers with
+  // `x build --target static --json && x verify --json`, a shell pipeline `runnableFix` refuses by
+  // design — so following it is a skip that ends the round, `ran.length === 0` stops the loop, and
+  // a scaffold that is doing exactly what CI asked reports X_SCAFFOLD_FIX_UNFOLLOWED.
+  const waived = (name: string): boolean => allowRed.includes(name);
   const rounds: FixFollowRound[] = [];
   let steps = await verifyOnce(dir, runner);
   for (let round = 1; round <= MAX_ROUNDS; round += 1) {
-    const red = steps === undefined ? [] : redSteps(steps);
+    const red = steps === undefined ? [] : redSteps(steps).filter((name) => !waived(name));
     if (steps !== undefined && red.length === 0) {
       return { green: true, rounds, red: [], steps };
     }
     const fixes = (steps ?? [])
-      .filter((step) => !(step.ok || step.skipped))
+      .filter((step) => !(step.ok || step.skipped) && !waived(step.name))
       .flatMap((step) => step.findings.map((finding) => finding.fix));
     const ran: string[] = [];
     const skipped: { fix: string; reason: string }[] = [];
@@ -112,7 +123,7 @@ export async function followFixes(dir: string, runner: Runner): Promise<FixFollo
     if (ran.length === 0) return { green: false, rounds, red, steps };
     steps = await verifyOnce(dir, runner);
   }
-  const red = steps === undefined ? [] : redSteps(steps);
+  const red = steps === undefined ? [] : redSteps(steps).filter((name) => !waived(name));
   return { green: red.length === 0 && steps !== undefined, rounds, red, steps };
 }
 

@@ -920,7 +920,7 @@ x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000]
 
 **`verdict.json` is the half that gates**, and the more important of the two files: a picture cannot tell you the island threw or logged. It carries the console lines, the island counts, the canvas size, the network tallies — and `blind`, which names what this capture could **not** observe. A tool that silently omits what it cannot see is worse than one that says so.
 
-`ok` is exactly two conditions: **zero console errors** and **`requestedUrl === finalUrl`**. The second matters most: a route behind `auth: 'required'` photographs the sign-in page and reports every island missing, which reads as a bug in the app when it is a bug in the capture.
+`ok` is four conditions, and `buildVerdict` in `packages/cli/src/shot-verdict.ts` is where they are decided — read it there rather than trusting a count here: **nothing logged an error**, **nothing threw**, **no island failed to mount**, and **the document photographed is the route asked for**. The island condition is new in 8.0.0: before it, every island's `mount()` could reject and the run still reported `ok: true`, "clean". The last matters most: a route behind `auth: 'required'` photographs the sign-in page and reports every island missing, which reads as a bug in the app when it is a bug in the capture.
 
 **It drives `x dev`, never the static build.** `x build --target static` prerenders `site/` only, so an `app/` route would photograph the landing page. If an `x dev` is already running on the checkout it is **reused** rather than booted over — embedded Postgres is single-writer, so a second boot is `X_DEV_ALREADY_RUNNING` and no picture is ever taken. The verdict says which happened.
 

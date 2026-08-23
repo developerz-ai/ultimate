@@ -20,6 +20,9 @@ myapp/
     ui/                   # app-specific Solid components on top of @ultimat3/ui
     mcp/                  # the app's own MCP tools (its dashboards are AI-first too)
   bin/                    # setup, dev, check — thin wrappers over `x`
+  guards/                 # one rule per file, DISCOVERED not registered — `x verify` runs
+                          #   each inside its `boundaries` step. `x new` ships four:
+                          #   bare-error, raw-colour, untranslated-string, unzoned-date
   docker/                 # Dockerfile, Dockerfile.dockerignore, both compose files, and
                           #   helm/ — the chart, 8 files. All written by `x new`
   app.config.ts           # the one config file

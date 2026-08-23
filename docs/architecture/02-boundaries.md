@@ -9,11 +9,12 @@ tier finding; a generated app's surface rules each carry their own `X_BOUNDARY_*
 ## Framework rules — this repo, `scripts/boundaries.ts`
 
 The script imports no workspace package and reads source through Bun's own transpiler, so the CI job
-that runs it needs no `bun install`. Three rules, `As of 2026-08`:
+that runs it needs no `bun install`. Four rules, `As of 2026-08-22`:
 
 | Rule | Code | Forbids | Prevents |
 |---|---|---|---|
 | the tier table over `packages/*/src` | `X_BOUNDARY_VIOLATION` | importing anything but a strictly lower tier — sideways and upward both fail, unless the edge is in `SIDEWAYS_ALLOW` | `core` depending on `render`; two packages that must be released together |
+| the tier **floor** over the same set | `X_TIER_FLOOR_UNDECLARED` · `X_TIER_FLOOR_STALE` | a package sitting above the floor its own imports allow with no reason in `FLOOR_ABOVE` — or a reason left standing for a package that has since reached its floor | a tier that reads as an enforcement and is only a habit; and a waiver protecting nothing while reading as a rule in force ([`01-package-map.md`](./01-package-map.md#floors-the-other-half-of-the-rule)) |
 | the leaf rule over a tracked app's `shared/` | `X_BOUNDARY_SHARED_LEAF` | `shared/` loading an `app/` or `site/` **module**. Naming its type is allowed | `shared/` stops being a leaf; the graph becomes bidirectional and unbudgetable |
 | the admin one-flattener rule | `X_ADMIN_FLATTENER_VIOLATION` | a second flattener beside `entity-columns.ts` | two answers to "how does a row become columns" |
 
@@ -22,9 +23,10 @@ framework source can reach. It is a boundary in the same sense: a rule this repo
 that the framework cannot know.
 
 The **executable** tier table is [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts), and the prose
-copy in the root `CLAUDE.md` must agree with it — `tier-table-drift.test.ts` asserts them row for
-row. The four declared sideways edges are `realtime → query`, `cli → admin`,
-`cli → testing` and `create-ultimate → cli`. **`schema → core` is not one of them and never was**:
+copies in the root `CLAUDE.md` and in [`01-package-map.md`](./01-package-map.md) must agree with it
+— `tier-table-drift.test.ts` asserts both, row for row. The declared sideways edges are
+`realtime → query`, `cli → admin`, `cli → scraping`, `cli → testing` and `create-ultimate → cli`;
+`SIDEWAYS_ALLOW` is the list, and **nothing checks that the prose beside it is complete**. **`schema → core` is not one of them and never was**:
 `packages/schema/src/errors.ts` states outright that schema may not import `@ultimat3/core`, because
 core's error machinery would make tier 0 a cycle.
 
@@ -96,7 +98,7 @@ Same reasoning for budgets: a failure names the *transitive import that added th
 | 3 | Scaffold | `bun run scripts/new-package.ts <name> --tier <n>` |
 | 4 | Declare deps explicitly in `package.json`, pinned at the lockstep version | `packages/<name>/package.json` |
 | 5 | If it needs a same-tier sibling: move the shared **type** down to `core`, and wire the concrete value where both are already visible — or declare the edge, with its reason | `packages/core/src/` · [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) |
-| 6 | Add its tier row to **both** copies of the table — the executable one and the prose one | [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) + root `CLAUDE.md` |
+| 6 | Add its tier row to **all three** copies — the executable one and the two prose ones `tier-table-drift.test.ts` pins. If it sits above the floor its imports allow, write its `FLOOR_ABOVE` row in the same edit or `bun run boundaries` refuses it | [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) + root `CLAUDE.md` + [`01-package-map.md`](./01-package-map.md) |
 | 7 | Add its `X_*` codes, and a row per code in the error reference | `packages/<name>/src/errors.ts` + [`wiki/Error-Codes.md`](../../wiki/Error-Codes.md) |
 | 8 | Add it to the root `tsconfig.json` `references` — `tsc -b` builds referenced projects and nothing else | root `tsconfig.json` (`X_PACKAGE_UNREFERENCED`) |
 | 9 | Prove the graph still holds | `bun run boundaries` then `bun run verify` |
@@ -104,7 +106,7 @@ Same reasoning for budgets: a failure names the *transitive import that added th
 Rules that keep the graph healthy:
 
 - A new package at tier 0 or 1 needs justification in its README — low tiers are load-bearing for everything above.
-- Never raise a package's tier to fix an import. Invert the dependency instead.
+- Never raise a package's tier to fix an import. Invert the dependency instead — and a tier raised past the floor now needs its `FLOOR_ABOVE` sentence, which has to say what moving the package back down would **legalise**.
 - A sibling pinned at a version that is not the lockstep one is `X_RELEASE_VERSION_SKEW` on the `package-shape` step. An **undeclared** dependency that resolves through hoisting is not caught by any step `As of 2026-08` — a convention, not a rule, and the check that should exist would compare each package's imports against its own `dependencies`.
 - Cycles are not detected as cycles: the tier rule makes most of them unreachable, and `tsc -b` refuses the rest at build time with its own message rather than an `X_*` code.
 

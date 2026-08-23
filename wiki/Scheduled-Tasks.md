@@ -95,13 +95,14 @@ Fixed **1**. Cron dispatch only.
 
 | Property | Behavior |
 |---|---|
-| Leader election | Postgres advisory lock. Whoever holds it dispatches |
-| Second instance | a warm standby, not a duplicate. It holds no lock and dispatches nothing |
-| `/readyz` on the standby | **reports not-ready, by design** — it must not receive traffic and must not look healthy to an autoscaler |
-| Lock lost / cannot acquire | the process exits non-zero with a typed error rather than running degraded |
+| Leader election | an **expiring lease row** in `x_scheduler_leader` (`createPgLeaseLeader`), never `pg_try_advisory_lock` — that grant belongs to the **session**, not to the process: it outlives every transaction, survives or dies by the pool's reset policy on release, and either way no node can renew it or prove it still holds one. A stranded lock nobody can release and a lock silently dropped mid-round are both wrong for election. Whoever holds an unexpired row dispatches |
+| Renewal | `acquire()` **is** the renewal, asked every round — tick 1s, lease TTL `DEFAULT_LEADER_TTL_MS` = 30s. A node that stops renewing loses the lease by expiry, with nothing to clean up |
+| Second instance | a warm standby, not a duplicate. It calls `acquire()` every round like the leader does; while another node holds an unexpired row it acquires nothing and dispatches nothing, and the round after that row expires it takes the row and becomes the leader |
+| Leadership lost | logged once as `jobs.scheduler.leadership-lost`; the node keeps polling and takes over on the first round after the holder's lease expires. **The process does not exit** — the `replicator` role is the one that does (`X_REPLICATOR_SLOT_HELD`), because two replicators double-deliver while two schedulers cannot both hold the row |
+| `/readyz` on the standby | there is none. `ROLE=scheduler` binds the metrics port only (`/metrics`, `METRICS_PORT`, default 9090) and no HTTP server, so liveness is that endpoint — the probe [`docs/ops/01-kubernetes.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/01-kubernetes.md) declares. Nothing routes request traffic to a scheduler in the first place |
 | Missed tick (leader down, node paused, clock jump) | **fires late rather than being skipped** |
 | Double fire during handover | absorbed by the enqueued job's `idempotencyKey` — the second enqueue returns the existing handle, no new row |
-| Drain on SIGTERM | registered at the `accept` phase: stop dispatching, wait out the dispatch round in flight, then release the lock — the standby promotes within one lock interval, and never onto an occurrence this node is still enqueueing for |
+| Drain on SIGTERM | registered at the `accept` phase: stop dispatching, wait out the dispatch round in flight, then delete the lease row — the standby promotes on its next round rather than waiting out the TTL, and never onto an occurrence this node is still enqueueing for |
 | Two dispatch rounds at once | impossible in one process. The timer re-arms on the round it finished, and any other caller joins that round instead of opening a second one over the same last-tick state |
 | Durable state | none in the process. Last-tick state is a Postgres row |
 

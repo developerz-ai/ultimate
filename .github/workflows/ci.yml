@@ -3,13 +3,16 @@ name: ci
 # The gate. Same steps a contributor runs locally with `bun run verify` — a check that lives only
 # in CI is a check developers cannot run. Free GitHub-hosted runners only.
 #
-# Three jobs, and each answers a question no other job answers: does the framework ship, does the
-# reference app still gate, and can a stranger scaffold an app that gates. There is deliberately no
-# separate `lint`, `typecheck`, `boundaries` or `test` job — those are steps 1, 2, 3 and 7-12 of
-# `x verify`, and running them again beside the gate is the second path axiom 1 forbids. It also
-# cost what it duplicated: the four jobs took ~2.2 runner-minutes and, because `verify` waited on
-# them through `needs`, added their slowest (~1.6 min) to the critical path before the gate could
-# start. `x verify` reports per step, so a red lint still names itself on its own line.
+# Six jobs, and each answers a question no other job answers: does the framework ship (`verify`),
+# do the tracked apps still gate (`reference-app-verify`), can a stranger scaffold an app that
+# gates (`scaffold-smoke`), do the deployable artifacts BUILD and RENDER (`container`), and is each
+# package green and above its coverage bar in isolation (`package-list` → `package`). The last two
+# each carry their own argument, above the job. There is deliberately no separate `lint`,
+# `typecheck`, `boundaries` or `test` job — those are steps of `x verify`, and running them again
+# beside the gate is the second path axiom 1 forbids. It also cost what it duplicated: the four
+# jobs took ~2.2 runner-minutes and, because `verify` waited on them through `needs`, added their
+# slowest (~1.6 min) to the critical path before the gate could start. `x verify` reports per step,
+# so a red lint still names itself on its own line.
 
 on:
   push:
@@ -132,7 +135,7 @@ jobs:
         run: bun run scripts/verify.ts --json
 
   # Both tracked apps — `examples/dummy` and the deployed `dummy/social-media-clone` — run the
-  # same 17-step gate a generated app would, and this job BLOCKS on both. Independent of `verify`:
+  # same 19-step gate a generated app would, and this job BLOCKS on both. Independent of `verify`:
   # the framework gate and the app gate are two different contracts, checked separately — a red app
   # doesn't hide a green framework or vice versa. One job, not two, because they answer the same
   # question about two directories; the script names the app in every finding.
@@ -142,7 +145,7 @@ jobs:
   # instead: every step passing today must keep passing, every step pinned in that app's
   # `expectedRed` table (scripts/lib/gated-apps.ts) must still be failing, and the moment an app's
   # `typecheck` comes off the pin it has to join the root `tsc -b` solution. The pin can only ever
-  # shrink, and when it empties the job is asserting a plain 17 of 17. Human render, not `--json`:
+  # shrink, and when it empties the job is asserting a plain 19 of 19. Human render, not `--json`:
   # the whole step table, every failing step and every fix line belong in the log for the person
   # reading a red run.
   #
@@ -184,9 +187,15 @@ jobs:
   # publish, installed the same way `bun install` installs anything. `--linker=hoisted`: Bun's
   # default isolated linker races on identical `file:` targets shared by many dependents (such as
   # `@ultimat3/core`) and intermittently fails to link a few — hoisted does not.
+  #
+  # TWO scaffolds, each run through its own fix lines, so the budget is two of everything below
+  # plus up to three extra `x verify` runs and one `x build --target static` per scaffold. 20
+  # minutes is the ceiling that covers it; the job is the slowest in this file and deliberately so
+  # — it is the only one that measures what a stranger's first ten minutes with the framework
+  # actually do.
   scaffold-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -220,10 +229,10 @@ jobs:
       #
       # LOAD-BEARING for the step below, not just additive. `x db gen` is now the ONE writer of
       # `packages/db/migrations` and a scaffold ships none, so `x verify`'s `drift` step is red
-      # until `x db gen "initial"` has run — measured: 15 of 17 with `drift` red and no db command,
-      # 16 of 17 with only `budgets` red after this step. The fix is to RUN the documented command,
-      # never to add `drift` to `--allow-red`, which would waive the step this issue exists to make
-      # honest.
+      # until `x db gen "initial"` has run — measured against the then-17-step gate: 15 of 19 with
+      # `drift` red and no db command, 16 of 19 with only `budgets` red after this step. The fix
+      # is to RUN the documented command, never to add `drift` to `--allow-red`, which would
+      # waive the step this issue exists to make honest.
       #
       # No service container. `resolveServices` (packages/cli/src/dev-services.ts) answers
       # `embedded` when `DATABASE_URL` is unset, which is PGlite on disk under `.x/` — so the whole
@@ -231,8 +240,8 @@ jobs:
       # free runner would buy nothing this app can tell apart.
       - name: first run (demoapp) — db gen, db migrate, every generator
         run: bun run scripts/scaffold-first-run.ts "${{ runner.temp }}/demoapp"
-      # BLOCKING, on a ratchet that can only shrink. `continue-on-error: true` used to make all 17
-      # steps advisory over a waiver written for exactly one of them, and the first blocking run
+      # BLOCKING, on a ratchet that can only shrink. `continue-on-error: true` used to make every
+      # step advisory over a waiver written for exactly one of them, and the first blocking run
       # proved that waiver was both stale and covering three unrelated reds. Two of the three are
       # now fixed and off this list; ONE name is left, and it is the only step a scaffolded app is
       # allowed to fail:
@@ -271,10 +280,38 @@ jobs:
       # so the catch is `typecheck` and `lint` over the files they wrote — `TS2307: Cannot find
       # module '../repo'` was invisible to every exit code in this job. It also needs the first-run
       # step's `x db gen "initial"` to have happened, or `drift` is red before it starts.
-      - name: x verify (demoapp, generated into), against the ratchet
+      #
+      # `--fix-follow` is what turns axiom 4 from a shape check into a measurement: the gate parses
+      # `x verify --json`, RUNS each printed `fix:` verbatim, re-runs, and asserts green within
+      # three rounds — then `x build --target static` and asserts `lint` is still green after it.
+      # `scripts/scaffold-fix-follow.ts` shipped that loop with no caller until this line; a fix
+      # line that reintroduces its own red passes every other check in this repo and fails the
+      # first minute of a new app.
+      - name: x verify (demoapp, generated into), against the ratchet, following its own fixes
         run: >-
           bun run scripts/scaffold-gate.ts "${{ runner.temp }}/demoapp"
-          --allow-red budgets
+          --allow-red budgets --fix-follow
+
+      # The SECOND scaffold, and the one that matters most here. `scaffold-gate.ts` takes one
+      # directory per run by design, so covering both shapes is two invocations rather than a flag.
+      # `--no-example` is an app with no islands and no example slice — 99 files against 125 — which
+      # is precisely why it stayed green through a default scaffold whose fix chain was a loop: the
+      # steps that read emitted island and feature files had nothing to read. It runs the same three
+      # preparation steps because they are the app's own documented first run, not this job's setup:
+      # without `x db gen "initial"` the `drift` step is red before the gate starts.
+      - name: x new bareapp --no-example
+        run: bun run x -- new bareapp --dir "${{ runner.temp }}" --no-example
+      - name: point bareapp's @ultimat3/* ranges at this repo's own packages
+        run: bun run scripts/scaffold-smoke-overrides.ts "${{ runner.temp }}/bareapp"
+      - name: bun install (bareapp)
+        working-directory: ${{ runner.temp }}/bareapp
+        run: bun install --linker=hoisted || bun install --linker=hoisted
+      - name: first run (bareapp) — db gen, db migrate, every generator
+        run: bun run scripts/scaffold-first-run.ts "${{ runner.temp }}/bareapp"
+      - name: x verify (bareapp, generated into), against the ratchet, following its own fixes
+        run: >-
+          bun run scripts/scaffold-gate.ts "${{ runner.temp }}/bareapp"
+          --allow-red budgets --fix-follow
 
   # The deployable artifacts, BUILT and RENDERED — not merely present.
   #
@@ -477,7 +514,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: lint
-        run: bunx biome check "packages/${{ matrix.package }}"
+      # No `lint` step. `bunx biome check packages/<pkg>` was one, and it is a strict SUBSET of the
+      # `verify` job's `biome check .` — ~30 matrix steps per push that cannot fail on their own,
+      # and the second `lint` job the rule at the top of this file forbids. What survives is the
+      # only thing this matrix answers that the gate cannot: per-package coverage, in isolation.
       - name: test + coverage
         run: bun run scripts/coverage-gate.ts --package "${{ matrix.package }}"

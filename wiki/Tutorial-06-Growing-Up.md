@@ -38,7 +38,7 @@ Same platform, same image. One service per `ROLE`. This is the rung a free tier'
 | `scheduler` | fixed at one, and **must be always-on** — a plan that sleeps it drops the cron |
 | `migrate` | run-once, before anything serves the new schema |
 
-`scheduler` leadership is a Postgres advisory lock, so a second instance is an idle standby rather than a duplicate. Its `/readyz` reports **not ready** by design.
+`scheduler` leadership is an expiring lease row in `x_scheduler_leader`, never an advisory lock — that grant belongs to the **session**, not to the process: it outlives every transaction on the connection and is released only by an explicit unlock, the pool's reset on release, or the connection dying — so a node can neither renew it nor prove it still holds one — so a second instance is an idle standby rather than a duplicate. It has no `/readyz` at all: `ROLE=scheduler` binds the metrics port only, and nothing routes request traffic to it.
 
 ### The shared cache tier
 

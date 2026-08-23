@@ -30,3 +30,11 @@ node_modules
 .env.*
 **/.env
 **/.env.*
+
+# Same shape, different file, and the one this list was missing: an `.npmrc` carries a registry auth
+# token, so any that exists here is somebody's local credential. This Dockerfile is `COPY . .` over
+# the WHOLE repo and `.github/workflows/deploy-social-demo.yml` builds it with
+# `cache-to: type=gha,mode=max` — an untracked `.npmrc` on a contributor's box would land in a layer
+# and be pushed to a cache the whole repository can read. The other three ignore files beside this
+# one have carried the line since 2026-08-19.
+**/.npmrc
