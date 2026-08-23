@@ -1,10 +1,8 @@
 /**
- * The BUILD-TIME and SERVER half of `@ultimat3/render`: the loaders that make an app's source
- * runnable, and the pipeline that turns a route into bytes. Split from `index.ts` because
- * `css-modules.ts` imports `node:url`, which Bun's browser polyfill does not export — one barrel
- * carrying both halves could not be bundled for the browser at all (axiom 6). Every name here has
- * exactly one home: this barrel re-exports NOTHING that `@ultimat3/render` exports, so a file
- * needing both halves imports both, and disjointness is a fact `server.test.ts` checks.
+ * The BUILD-TIME half of `@ultimat3/render` — the loaders and the route → bytes pipeline — split
+ * off because `css-modules.ts` imports `node:url`, whose browser polyfill exports neither name it
+ * asks for: one barrel carrying both halves could not be bundled for a browser at all (axiom 6).
+ * Disjoint from `@ultimat3/render` by construction, which `server.test.ts` checks.
  */
 
 import { installRenderLoader } from './module-loader';

@@ -152,8 +152,14 @@ const LITERAL = /(['"])([^'"]*)\1/g;
 // `^[\t ]*` and not `^`: a declaration nested in a namespace or a block is indented, and a guard
 // a newline evades is not a guard. `\s*=` for the same reason — Biome wraps a long one.
 const UNION = /^[\t ]*(?:export )?(?:declare )?type ([A-Za-z_$][\w$]*)\s*=([^;]*);/gm;
+/**
+ * `as const`, with an OPTIONAL `satisfies` clause after it — the shape
+ * `packages/storage/src/image.ts`'s `VARIANT_FORMATS` is written in, and one this rule read as no
+ * declaration at all until 2026-08-22. Deriving a subset by `satisfies readonly ImageFormat[]` is
+ * exactly what a vocabulary should do instead of copying, so the guard has to be able to SEE it.
+ */
 const AS_CONST =
-  /^[\t ]*(?:export )?(?:declare )?const ([A-Za-z_$][\w$]*)\s*=\s*\[([^\]]*)\]\s*as const;/gm;
+  /^[\t ]*(?:export )?(?:declare )?const ([A-Za-z_$][\w$]*)\s*=\s*\[([^\]]*)\]\s*as const(?:\s+satisfies[^;]*)?;/gm;
 /**
  * The same array with a TYPE ANNOTATION instead of `as const` — `const X: readonly JobState[] = […]`
  * — which is the shape `packages/cli/src/jobs-report.ts`'s `JOB_STATES` copy was written in, and

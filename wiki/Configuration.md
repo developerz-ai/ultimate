@@ -24,7 +24,9 @@ export const config = defineConfig({
   // No connection string and no pool size: both are env (`DATABASE_URL`, `DATABASE_POOL_MAX`),
   // read where the client is built, so the same image deploys to every environment.
   database: { ssl: true },
-  cache: { driver: 'redis', urlEnv: 'REDIS_URL', tiers: ['memo', 'lru', 'shared'] },
+  // The tiers ARE the selection: naming `redis` is what builds the shared rung, and it reads
+  // `REDIS_URL` — there is no second `driver` field to agree with, and no env key to name.
+  cache: { tiers: ['request-memo', 'lru', 'redis'] },
   jobs: { queues: ['postly-default'], concurrency: 8 },
   pwa: { enabled: true, offline: 'runtime' },
 });
@@ -143,14 +145,14 @@ excess-property checking and gets **no error at all** → [Known gaps](Known-Gap
 
 ## `cache`
 
-`CacheConfig` is **four flat fields**. See [Caching and invalidation](Caching-And-Invalidation).
+`CacheConfig` is **two flat fields**. See [Caching and invalidation](Caching-And-Invalidation).
 
 | field | type | default | notes |
 |---|---|---|---|
-| `cache.driver` | `'memory' \| 'redis'` | `'memory'` | `'redis'` **requires** `cache.urlEnv`, or `X_CONFIG_INVALID` at boot |
-| `cache.urlEnv` | `string` | — | the env **key name**, never a URL |
 | `cache.defaultTtlMs` | `number` | `60000` | milliseconds, not a duration string |
-| `cache.tiers` | `CacheTierName[]` | `['memo', 'lru']` | `'memo' \| 'lru' \| 'shared' \| 'isr' \| 'cdn'`; order is fixed regardless of listing order |
+| `cache.tiers` | `CacheTierName[]` | `['request-memo', 'lru']` | `'request-memo' \| 'lru' \| 'redis' \| 'cdn'`; order is fixed regardless of listing order, and a rung the environment cannot supply refuses the boot |
+| ~~`cache.driver`~~ | — | — | **Deleted in 9.0.0.** It was the second way to ask for Redis and the losing one: the ladder is built from `cache.tiers`, so `driver: 'redis'` beside `tiers: ['request-memo', 'lru']` asked for a rung nothing built. Name `redis` in `tiers` |
+| ~~`cache.urlEnv`~~ | — | — | **Deleted in 9.0.0**, `database.urlEnv`'s defect verbatim: the Redis tier reads the literal `REDIS_URL`, so `urlEnv: 'MY_REDIS'` made nothing read `MY_REDIS` |
 
 **The per-tier byte caps and TTLs are constructor options, not config** — the same shape as the realtime caps above. `cache.memo.maxBytes`, `cache.lru.maxBytes`, `cache.redis.*` and `cache.ttl.*` are not fields and never were; writing one is `TS2353`, excess property on `Input<CacheConfig>`.
 
@@ -328,7 +330,7 @@ Rules:
 |---|---|
 | Secrets are env or a mounted file | the framework never talks to a vendor secret API ([axiom 7](Home)) |
 | `env.X` reads through `defineEnv`'s schema | a declared key that is missing or malformed is `X_ENV_MISSING` at boot, every offender in one error. A `process.env` read outside the schema is a lint error, never a runtime one |
-| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale, an unknown time zone, `jobs.concurrency < 1`, a `realtime.transport` other than `memory` with no `realtime.urlEnv`, `cache.driver: 'redis'` with no `cache.urlEnv` — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), `SMTP_URL` + `RESEND_API_KEY` or a transport with no `MAIL_FROM` (`selectMailDriver`), or `REPLICATION_URL` naming a different host, port or database than `DATABASE_URL` (`selectChangeFeed`) |
+| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale, an unknown time zone, `jobs.concurrency < 1`, a `realtime.transport` other than `memory` with no `realtime.urlEnv`, a `cache.tiers` entry the environment cannot supply — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), `SMTP_URL` + `RESEND_API_KEY` or a transport with no `MAIL_FROM` (`selectMailDriver`), or `REPLICATION_URL` naming a different host, port or database than `DATABASE_URL` (`selectChangeFeed`) |
 | `X_ENV_MISSING` is one key, `X_CONFIG_INVALID` is the shape | absent or malformed key → `X_ENV_MISSING` at the `defineEnv` gate. Keys that each parse but contradict each other → `X_CONFIG_INVALID`. The two never overlap |
 | No runtime mutation | config is frozen after `defineConfig`; there is no `setConfig` |
 | Same image, all environments | only env differs. That is what makes staging a real rehearsal ([Deployment](Deployment)) |

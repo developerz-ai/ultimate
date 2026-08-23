@@ -1,13 +1,11 @@
-// The build-time barrel is not inert: importing `@ultimat3/render/server` installs the
-// `.tsx`/`.scss` Bun loader as a side effect, and that placement is the whole mechanism — a plugin
-// only transforms modules loaded AFTER it. It moved here from `@ultimat3/render` in the `"."` /
-// `"./server"` split, because the loader pulls `sass` and `node:url` and no browser bundle may.
-//
-// Every import here is DYNAMIC and the barrel comes first. A static `import` of a `.tsx` carrying
-// `<>` is resolved before the plugin exists and caches a broken fragment transform for the rest of
-// the process — which is exactly the failure the side effect exists to prevent.
+// Importing `@ultimat3/render/server` installs the `.tsx`/`.scss` loader as a side effect, and the
+// placement is the mechanism: a Bun plugin only transforms modules loaded AFTER it. So every import
+// below is DYNAMIC and the barrel comes first — a static `import` of a `.tsx` carrying `<>` is
+// resolved before the plugin exists and caches a broken fragment transform for the whole process.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+// `node:` and not `Bun.write`: Bun ships neither a temp-directory maker nor a recursive remove, and
+// this fixture needs both — a unique directory per run, deleted whole. `join` for the same reason.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -58,17 +56,19 @@ describe('importing the server barrel installs the render loader', () => {
 
   test('a .scss module loaded afterwards registers its css and exports its class map', async () => {
     const file = join(dir, 'probe.module.scss');
-    await writeFile(file, '.card { color: red; }\n');
+    // A semantic token, never a raw colour — a fixture is source too, and this one is the shape an
+    // app's own `.module.scss` has.
+    await writeFile(file, '.card { color: var(--color-text); }\n');
 
     const loaded = (await import(file)) as { default: Record<string, string> };
 
     // The default export is the scoped class map, which is what `import styles from` receives.
     expect(Object.keys(loaded.default)).toEqual(['card']);
     expect(loaded.default['card']).not.toBe('card');
-    // …and the compiled css reached the registry the document builder reads.
+    // …and the compiled css reached the registry the document builder reads, declaration intact.
     const registered = barrel.registeredStylesheets().find((sheet) => sheet.file === file);
     expect(registered?.css).toContain(loaded.default['card'] as string);
-    expect(registered?.css).toContain('red');
+    expect(registered?.css).toContain('var(--color-text)');
   });
 });
 
@@ -96,8 +96,11 @@ describe('the server barrel re-exports the modules themselves, never copies', ()
     expect(barrel.renderStatic).toBe(staticMode.renderStatic);
     expect(barrel.ROOT_ELEMENT_ID).toBe(html.ROOT_ELEMENT_ID);
 
-    // The other half of the same promise, and the one this package got wrong: `renderSpa` and
-    // `createRouter` were on a barrel with no implementation behind them.
+    // The other half of the same promise, and the one this package got wrong: three PHANTOM names
+    // — a barrel entry with no implementation behind it. Named one at a time on purpose: this is a
+    // claim about three deleted symbols, not the disjointness rule, which is a whole-surface set
+    // intersection over BOTH barrels in `index.test.ts` ('no name is exported by both') and would
+    // be a second, weaker copy of itself here.
     const surface = Object.keys(barrel);
     expect(surface).not.toContain('renderSpa');
     expect(surface).not.toContain('renderSpaShell');

@@ -1,8 +1,7 @@
-// Single responsibility: the one closed vocabulary of cache tiers — the rungs of the read ladder,
-// in read order. Tier 0 so `app.config.ts` and `@ultimat3/cache` name the same rungs; the cache
-// package owns the LADDER, this module owns only the NAMES, because tier 0 is the one place a
-// tier-0 config declaration and a tier-1 implementation can both see.
-// Deliberately not `config.ts`: `app.config.ts` CONSUMES these names, it does not own them.
+// Single responsibility: the cache tiers' NAMES, in read order — the ladder itself is
+// `@ultimat3/cache`'s. Tier 0 because that is the one place a tier-0 config declaration and a
+// tier-1 implementation can both see; not `config.ts`, because `app.config.ts` consumes these
+// names rather than owning them.
 
 /**
  * The rungs, near to far. **Order is load-bearing**: `sortTiers` in `@ultimat3/cache` orders a

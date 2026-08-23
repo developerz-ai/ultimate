@@ -15,9 +15,11 @@ export const CONFIG_PINS_FILE = 'scripts/lib/config-reader-pins.ts';
 
 /**
  * Measured 2026-08-22, on the first run: FIVE of thirty leaf keys, three of which are the
- * documented app-facing shape and two of which look exactly like `database.urlEnv` did before
- * 5.0.0 deleted it. The two are pinned rather than deleted because deleting a config key is a
- * BREAKING change and belongs to a release decision, not to the gate that found it.
+ * documented app-facing shape and two of which looked exactly like `database.urlEnv` did before
+ * 5.0.0 deleted it. `cache.urlEnv` was one of the two and is now FOUR: it was deleted with
+ * `cache.driver` in the same release that made `cache.tiers` build the ladder, which is the
+ * decision the row was waiting for. `realtime.urlEnv` is the same defect and stays pinned until
+ * a release makes the same call about `realtime.transport`.
  */
 export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {
   defaultTimeZone:
@@ -26,8 +28,6 @@ export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {
     "read by APP code and by `config.ts`'s validator (`CURRENCY_RE`). Same shape as `defaultTimeZone`: `Money` always carries its own currency, so the framework never defaults one for you.",
   'theme.defaultMode':
     "read by an app's own root layout when it decides the initial `data-theme`. `@ultimat3/ui` takes the mode as a prop and never reaches for config — SUSPECT: no tracked app reads it either, so this row is the weakest of the five and is a candidate for deletion in the next major.",
-  'cache.urlEnv':
-    "SUSPECT, and pinned only because deleting it is breaking: `config.ts` VALIDATES it (`cache.driver \"redis\" requires cache.urlEnv`) and nothing reads its VALUE — `packages/cli/src/dev-cache.ts:92` reads the literal `env['REDIS_URL']`. That is `database.urlEnv`'s defect verbatim, which 5.0.0 deleted for exactly this reason: setting `urlEnv: 'MY_REDIS'` makes nothing read `MY_REDIS`.",
   'realtime.urlEnv':
     'SUSPECT, the same defect as `cache.urlEnv`: validated by `config.ts` (`realtime.transport "nats" requires realtime.urlEnv`), value read by nobody — `packages/cli/src/dev-services.ts:38` and `cmd-jobs.ts:73` read the literal `env[\'NATS_URL\']`.',
 };

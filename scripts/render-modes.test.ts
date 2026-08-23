@@ -225,6 +225,28 @@ describe('what the scanner reads', () => {
     expect(checkVocabulary([...OWNERS, file('packages/pwa/src/a.ts', typed)])).toHaveLength(1);
   });
 
+  test('an `as const satisfies` array is a declaration — the shape a SUBSET is written in', () => {
+    // `VARIANT_FORMATS` is declared this way, and the rule read straight past it: the guard has to
+    // see the one shape a vocabulary should be narrowed in, or deriving a subset hides the copy.
+    const derived =
+      "export const VARIANTS = ['precache', 'runtime'] as const satisfies readonly Strategy[];\n";
+    const [set] = scanLiteralSets(derived);
+    expect(set?.name).toBe('VARIANTS');
+    expect(set?.members).toEqual(['precache', 'runtime']);
+    expect(checkVocabulary([...OWNERS, file('packages/pwa/src/b.ts', derived)])).toHaveLength(1);
+  });
+
+  test('and the multi-line form of it, which is how Biome writes a set of four', () => {
+    const wrapped = [
+      'export const VARIANTS = [',
+      "  'precache',",
+      "  'runtime',",
+      '] as const satisfies readonly Strategy[];',
+      '',
+    ].join('\n');
+    expect(scanLiteralSets(wrapped)[0]?.members).toEqual(['precache', 'runtime']);
+  });
+
   test('a bare array of strings is still not read — that is any list, not a vocabulary', () => {
     expect(scanLiteralSets("const PENDING = ['precache', 'runtime'];\n")).toEqual([]);
   });

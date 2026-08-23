@@ -243,8 +243,8 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 `variantKey()`, `srcsetDescriptors()`, `fitDimensions()` are pure — `@ultimat3/seo` builds
 `srcset` from them without decoding a byte.
 
-**`VARIANT_FORMATS` / `VariantFormat` are what a variant KEY can carry** — `avif`, `webp`, `jpeg`,
-`png` — and this package exports no `IMAGE_FORMATS` and no `ImageFormat`. Those two names are
+**`VARIANT_FORMATS` / `VariantFormat` are what a variant KEY can carry, `As of 2026-08`** —
+`avif`, `webp`, `jpeg`, `png` — and this package exports no `IMAGE_FORMATS` and no `ImageFormat`. Those two names are
 `@ultimat3/core`'s, over the six formats it can PROBE (`png`, `jpeg`, `webp`, `avif`, `gif`,
 `svg`). Until 9.0.0 both packages exported both names over different sets, so a caller narrowing on
 storage's held a type saying `gif` and `svg` could not occur and a `probeImage()` value that was

@@ -1,10 +1,7 @@
 /**
- * The CLIENT half of `@ultimat3/render`: the `route` primitive, the JSX factory, the island and
- * hydrate vocabulary, and the tables that describe them. Everything here bundles for a browser —
- * `scripts/browser-barrel.test.ts` builds this file and asserts it.
- *
- * The build-time half — the `.tsx`/`.scss` loaders and the render pipeline — is
- * `@ultimat3/render/server`, and the two barrels are DISJOINT: a file needing both imports both.
+ * The CLIENT half of `@ultimat3/render` — the `route` primitive, the JSX factory, islands, and the
+ * tables describing them — kept disjoint from `@ultimat3/render/server` because everything here
+ * must bundle for a browser, which the loaders cannot (axiom 6).
  */
 
 /**

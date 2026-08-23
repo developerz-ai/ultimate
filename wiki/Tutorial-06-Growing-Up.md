@@ -46,10 +46,10 @@ Add it when there is more than one web replica **and** a measured cross-replica 
 
 ```ts
 // app.config.ts
-cache: { driver: 'redis', tiers: ['memo', 'lru', 'redis'], urlEnv: 'REDIS_URL' },
+cache: { tiers: ['request-memo', 'lru', 'redis'] },
 ```
 
-Read order is memo → LRU → shared → origin, and a tier is never consulted for a request whose `policy` has not already passed. Adding one changes where a value is found, never how it is asked for.
+Read order is request-memo → LRU → redis → origin, and a tier is never consulted for a request whose `policy` has not already passed. Adding one changes where a value is found, never how it is asked for.
 
 > **Any Redis-protocol server, `As of 2026-08`.** The tier-3 invalidation script used to `DEL` keys it never declared in `KEYS`, which Dragonfly and Redis Cluster reject. Fixed: the script touches only the buckets it was handed and returns the value keys for the client to drop one at a time, the buckets carry an `{entity}` hash tag, and `invalidateTags` issues one call per tag — so every key of a call co-slots. Redis, Valkey and Dragonfly all work. Clustered deployments are **unmeasured, not unsupported**: no test in the repo runs against a real cluster node.
 

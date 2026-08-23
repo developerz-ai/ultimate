@@ -124,9 +124,6 @@ describe('defineConfig', () => {
       defineConfig({ name: 'myapp', realtime: { transport: 'nats' } }),
     );
     expect(realtime).toContain('realtime.urlEnv');
-    expect(causeOf(() => defineConfig({ name: 'myapp', cache: { driver: 'redis' } }))).toContain(
-      'cache.urlEnv',
-    );
   });
 });
 
@@ -172,6 +169,18 @@ describe('cache tiers name rungs the ladder can actually build', () => {
     expect(caught.fix).toContain('shared becomes redis');
     // Still ends in a command that can be pasted.
     expect(caught.fix.endsWith('x verify')).toBe(true);
+  });
+
+  // `driver` and `urlEnv` were the SECOND way to ask for Redis, and the losing one: the ladder is
+  // built from `tiers`, so `driver: 'redis'` beside `tiers: ['request-memo', 'lru']` — the shape
+  // `examples/dummy/app.config.ts` shipped — asked for a rung that was never built. Deleted
+  // 2026-08-22; the build error is `type-pins.ts`, this is what an untyped config file reaches.
+  test('carries no driver and no urlEnv — the tiers ARE the selection', () => {
+    const cache = defineConfig({ name: 'myapp' }).cache;
+
+    expect(Object.keys(cache).sort()).toEqual(['defaultTtlMs', 'tiers']);
+    expect('driver' in cache).toBe(false);
+    expect('urlEnv' in cache).toBe(false);
   });
 });
 

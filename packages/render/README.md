@@ -323,6 +323,8 @@ and a second copy of the number is a settle that shoots early and calls a health
 
 ## Two entry points
 
+**Split 2026-08-22, and every claim in this section holds `As of 2026-08`.**
+
 `@ultimat3/render` is the **client** half — the `route` primitive, the JSX factory, islands,
 hydration, `<head>`, the route table. It bundles for the browser, and
 `scripts/browser-barrel.test.ts` builds it that way and asserts it.

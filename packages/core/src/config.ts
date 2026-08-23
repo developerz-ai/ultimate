@@ -80,10 +80,15 @@ export interface DatabaseConfig {
  * in favour of `CacheTierName`, which is the ladder's own names and the only ones `sortTiers` can
  * place. It was also the second exported type called `CacheTier` in the tree; the other is
  * `@ultimat3/cache`'s tier INTERFACE, which is the one every implementation names.
+ *
+ * No `driver` and no `urlEnv` either, deleted 2026-08-22 and for the same reason one rung further
+ * up: `tiers` is what BUILDS the ladder (`packages/cli/src/dev-cache.ts`), so `driver: 'redis'`
+ * beside `tiers: ['request-memo', 'lru']` was a second selector that selected nothing — the shape
+ * `examples/dummy/app.config.ts` shipped. `urlEnv` was `database.urlEnv` verbatim: the Redis tier
+ * reads the literal `REDIS_URL`, so `urlEnv: 'MY_REDIS'` made nothing read `MY_REDIS`. Which rungs
+ * exist is `cache.tiers` and only that; a rung the environment cannot supply refuses the boot.
  */
 export interface CacheConfig {
-  readonly driver: 'memory' | 'redis';
-  readonly urlEnv: string | undefined;
   readonly defaultTtlMs: number;
   /** Order is fixed by `TIER_ORDER`; listing order here selects rungs, it does not rank them. */
   readonly tiers: readonly CacheTierName[];
@@ -231,12 +236,7 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
     pwa: { enabled: false, offline: 'network-only', backgroundSync: false, push: false },
     roles: [...ROLES],
     database: { driver: 'postgres', ssl: false },
-    cache: {
-      driver: 'memory',
-      urlEnv: undefined,
-      defaultTtlMs: 60_000,
-      tiers: ['request-memo', 'lru'],
-    },
+    cache: { defaultTtlMs: 60_000, tiers: ['request-memo', 'lru'] },
     jobs: {
       queues: [`${name}-default`],
       concurrency: 8,
@@ -304,9 +304,6 @@ function validate(config: AppConfig): void {
   if (config.jobs.queues.length === 0) issues.push('jobs.queues must list at least one queue');
   if (config.realtime.transport !== 'memory' && config.realtime.urlEnv === undefined) {
     issues.push(`realtime.transport "${config.realtime.transport}" requires realtime.urlEnv`);
-  }
-  if (config.cache.driver === 'redis' && config.cache.urlEnv === undefined) {
-    issues.push('cache.driver "redis" requires cache.urlEnv');
   }
   // A rung the ladder cannot build is the defect this key had: `sortTiers` places a name by its
   // index in `CACHE_TIERS`, and a name missing from it sorts to `-1` — AHEAD of the request memo.

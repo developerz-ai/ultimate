@@ -43,6 +43,26 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   (`assertRateLimitScope`'s precedent); an environment offering a rung the config does not name logs
   `cache.tier.unnamed` and builds nothing.
 
+- **BREAKING — `cache.driver` and `cache.urlEnv` are deleted.** Delete both keys; `cache.tiers` is
+  the whole selection.
+
+  ```diff
+  - cache: { driver: 'redis', urlEnv: 'REDIS_URL', tiers: ['request-memo', 'lru'] },
+  + cache: { tiers: ['request-memo', 'lru', 'redis'] },
+  ```
+
+  With the entry above making `tiers` build the ladder, `driver` became a **second selector that
+  selects nothing** — the diff's own left-hand side is what `examples/dummy/app.config.ts` shipped:
+  `driver: 'redis'` beside a tier list with no `redis` in it, so the app asked for a shared cache
+  and got two process-local rungs. `urlEnv` is `database.urlEnv` verbatim, which 5.0.0 deleted for
+  this reason: the Redis tier reads the literal `REDIS_URL`, so `urlEnv: 'MY_REDIS'` made nothing
+  read `MY_REDIS`. Both were pinned as SUSPECT by `scripts/config-readers.ts` on its first run,
+  waiting for the release decision this is.
+
+  `CacheConfig` is two fields now (`defaultTtlMs`, `tiers`), pinned in `type-pins.ts` so neither
+  comes back, and `X_CONFIG_INVALID` no longer carries a `cache.driver "redis" requires
+  cache.urlEnv` branch — a Redis rung the environment cannot supply is what refuses the boot.
+
 - **BREAKING — `@ultimat3/storage` renames `IMAGE_FORMATS`/`ImageFormat` to
   `VARIANT_FORMATS`/`VariantFormat`.** Both packages exported those two names over *different* sets,
   so a storage caller narrowing on storage's type had a type saying `gif` cannot occur and a value

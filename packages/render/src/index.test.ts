@@ -1,15 +1,12 @@
-// The CLIENT barrel, and the one property that makes it one: it re-exports the authoring
-// vocabulary and it cannot REACH the build-time half. `packages/render/src/css-modules.ts` imports
-// `node:url`, whose browser polyfill exports neither name it asks for, so a single import edge from
-// here is not a slower bundle — it is a `bun build --target=browser` that fails outright, which is
-// what shipped until the `"."` / `"./server"` split.
-//
-// The end property is asserted in `scripts/browser-barrel.test.ts`, which builds this file for the
-// browser. What is asserted HERE is the mechanism, because a bundler's tree-shake is discretion and
-// an import graph is a fact: measured, no `sideEffects` value fixes that build (`false`, `[]`, and
-// an array naming only `errors.ts` all fail identically), because the failure is at link time.
+// The client barrel cannot REACH the build-time half. Asserted on the import GRAPH and not on a
+// bundle, because a tree-shake is a bundler's discretion and an edge is a fact: one edge from here
+// to `css-modules.ts` fails `bun build --target=browser` at link time over `node:url`, and no
+// `sideEffects` value repairs it (measured: `false`, `[]`, and an array naming only `errors.ts`).
 
 import { describe, expect, test } from 'bun:test';
+// `node:` and not `Bun.file`: this walks the import graph SYNCHRONOUSLY, one module at a time
+// against a seen-set, and Bun's file API is async-only — an await per edge would make the walk a
+// promise tree rather than a loop. `join` for the same reason: Bun ships no path join.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as barrel from './index';

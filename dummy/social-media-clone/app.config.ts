@@ -63,7 +63,7 @@ export const config = defineConfig({
   // `DATABASE_URL` and the pool is sized by `DATABASE_POOL_MAX` — both read from the environment,
   // because `config.database`'s `urlEnv`/`poolSize` were read by nothing and were deleted
   // `As of 2026-08`.
-  cache: { driver: 'memory', tiers: ['request-memo', 'lru'] },
+  cache: { tiers: ['request-memo', 'lru'] },
   jobs: { queues: ['social-media-clone-default'], concurrency: 4 },
   // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
   realtime: { enabled: true, tier: 'live-queries', transport: 'memory' },

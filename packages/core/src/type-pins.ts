@@ -103,6 +103,23 @@ type _DatabaseInputCarriesNoDeadField = Assert<
 >;
 
 /**
+ * The two `config.cache` fields deleted 2026-08-22, held down for the reason the `database` three
+ * are: `cache.tiers` is what BUILDS the ladder, so `driver: 'redis'` was a second selector that
+ * selected nothing and `urlEnv` named an env key the Redis tier never reads — it reads the literal
+ * `REDIS_URL`. Re-adding either restores a knob an SRE sets, redeploys, and sees no effect from.
+ */
+type DeadCacheField = 'driver' | 'urlEnv';
+
+type _CacheConfigCarriesNoDeadField = Assert<
+  Extract<keyof CacheConfig, DeadCacheField> extends never ? true : false
+>;
+
+/** And the input side with it — `Input<CacheConfig>` is what an `app.config.ts` writes. */
+type _CacheInputCarriesNoDeadField = Assert<
+  Extract<keyof NonNullable<AppConfigInput['cache']>, DeadCacheField> extends never ? true : false
+>;
+
+/**
  * Neither id a child context may patch. `withChildContext` forwards the parent's `buildId`
  * verbatim, so `{ buildId }` on the patch was an option that read as honoured and was dropped
  * without a word — the same silent-no-op class as the three `database` fields above, one tier

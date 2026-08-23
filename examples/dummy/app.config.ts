@@ -41,7 +41,7 @@ export const config = defineConfig({
   // It used to name one and silently get two rungs, which is exactly the drift that made
   // `cache.tiers` worth reading in the first place. Add `redis` back the same commit you add a
   // `REDIS_URL`.
-  cache: { driver: 'redis', urlEnv: 'REDIS_URL', tiers: ['request-memo', 'lru'] },
+  cache: { tiers: ['request-memo', 'lru'] },
 
   jobs: { queues: ['default', 'mail', 'digest'], concurrency: 8 },
 
