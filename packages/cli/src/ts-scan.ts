@@ -161,10 +161,18 @@ export function lineIndex(text: string): (index: number) => number {
 }
 
 /**
- * Every string literal in the value expression starting at `from`, at the expression's own bracket
- * depth. Spanning the expression is what makes `cond ? 'a' : 'b'` and `table[k] ?? 'c'` checkable
- * instead of silently skipped; the depth rule is what keeps `command.join(' ')`'s separator and
- * `table['key']`'s key out — an argument is not a fix.
+ * Every string literal the value expression starting at `from` can EVALUATE TO, at the
+ * expression's own bracket depth. Spanning the expression is what makes `cond ? 'a' : 'b'` and
+ * `table[k] ?? 'c'` checkable instead of silently skipped; the depth rule is what keeps
+ * `command.join(' ')`'s separator and `table['key']`'s key out — an argument is not a fix.
+ *
+ * A ternary's CONDITION is dropped, which is the difference between reading the expression and
+ * reading every literal in it. `fix: input.slug === '' ? 'x g …' : 'x g …'` published the empty
+ * string as a fix line — `X_ERROR_FIX_INVALID`, "the fix line is empty", against source whose two
+ * real fixes are both correct — and `input.key === 'timeZone' ? … : …` published `timeZone`, a
+ * string then judged for banned phrases and cited paths that is not a fix at all. Costly enough
+ * that `@ultimat3/testing`'s island-state errors carry two classes under one code rather than one
+ * class with a ternary in it.
  */
 export function valueLiterals(
   masked: string,
@@ -173,21 +181,42 @@ export function valueLiterals(
   lineAt: (index: number) => number,
 ): readonly FixSite[] {
   const found: { value: string; index: number }[] = [];
+  // The literals of the segment being read. A segment ended by `?` is a condition and is dropped
+  // whole; one ended by `:` or by the end of the expression is a value the fix can evaluate to.
+  let segment: { value: string; index: number }[] = [];
+  const keep = (): void => {
+    found.push(...segment);
+    segment = [];
+  };
   let depth = 0;
+  /** Open `?`s still waiting for their `:`, so a `:` outside a ternary stays an ordinary char. */
+  let conditionals = 0;
   for (let i = from; i < masked.length; i += 1) {
     const ch = masked[i] as string;
     if (QUOTES.has(ch)) {
       const end = endOfLiteral(masked, i);
       // A quote that never closes is one character of code, not an empty literal to report.
       if (end === i + 1) continue;
-      if (depth === 0) found.push({ value: source.slice(i + 1, end - 1), index: i });
+      if (depth === 0) segment.push({ value: source.slice(i + 1, end - 1), index: i });
       i = end - 1;
     } else if (OPENERS.has(ch)) depth += 1;
     else if (CLOSERS.has(ch)) {
       if (depth === 0) break;
       depth -= 1;
+    } else if (depth === 0 && ch === '?') {
+      // `??` and `?.` are operators and end no segment: `input?.fix ?? 'x help'` evaluates to the
+      // literal, and dropping what came before it would drop the only answer the expression has.
+      if (masked[i + 1] === '?') i += 1;
+      else if (masked[i + 1] !== '.') {
+        segment = [];
+        conditionals += 1;
+      }
+    } else if (depth === 0 && ch === ':' && conditionals > 0) {
+      keep();
+      conditionals -= 1;
     } else if (depth === 0 && (ch === ',' || ch === ';')) break;
   }
+  keep();
   return found.map((literal) => ({
     at: '',
     line: lineAt(literal.index),

@@ -45,6 +45,13 @@ export interface PreferenceLabels {
 }
 
 export interface SettingsProps {
+  /**
+   * The banner this editor opens with. Optional and `idle` when absent, so the page passes nothing
+   * and nothing changes — it exists because `saved` and `failed` are states a REVIEWER cannot reach
+   * by clicking without a server that really fails, and `x shot --island settings --state
+   * save-failed` photographs the retry banner by declaring this prop.
+   */
+  readonly status?: SaveState;
   /** `derivePath('savePreferences')`, minted on the server: one namer for the action's path. */
   readonly endpoint: string;
   /** The request clock as a UTC instant. The preview reformats THIS, never the wall clock. */
@@ -59,7 +66,7 @@ export interface SettingsProps {
   readonly labels: PreferenceLabels;
 }
 
-type SaveState = 'idle' | 'saved' | 'failed';
+export type SaveState = 'idle' | 'saved' | 'failed';
 
 /**
  * `Intl.DateTimeFormat` with an explicit IANA zone, and not `<DateTime>` — which is what every
@@ -86,7 +93,7 @@ function Preferences(props: SettingsProps): JSX.Element {
   const [zone, setZone] = createSignal(props.timezone);
   const [theme, setTheme] = createSignal(props.theme);
   const [digestOptIn, setDigestOptIn] = createSignal(props.digestOptIn);
-  const [state, setState] = createSignal<SaveState>('idle');
+  const [state, setState] = createSignal<SaveState>(props.status ?? 'idle');
 
   /**
    * Applies before the save lands, and survives one: `system` REMOVES the attribute so the inline
@@ -101,7 +108,8 @@ function Preferences(props: SettingsProps): JSX.Element {
 
   /**
    * A plain `fetch` to the path the server minted, not the typed client: `rpc()` pulls
-   * `@ultimat3/action` into the chunk, which is 36 kB — twice this whole island. The naming rule
+   * `@ultimat3/action` into the chunk, which is 14.8 kB — still comparable to this whole
+   * island, and it was 42.6 kB until 2026-08-23. The naming rule
    * is still the framework's; only the transport is second.
    */
   const save = async (): Promise<void> => {

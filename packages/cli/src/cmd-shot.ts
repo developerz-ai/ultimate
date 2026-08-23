@@ -12,16 +12,15 @@ import type { ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
 import { DEFAULT_PAGE_TIMEOUT_MS, systemScrapeClock } from '@ultimat3/scraping';
 import { requireAppRoot } from './app-root';
 import { appBrowser, browserBinaryExists, executablePathFrom } from './browser-launcher';
-import { startDev } from './cmd-dev';
+import { islandShot, islandShotResult, refuseRouteWithIsland } from './cmd-shot-island';
 import type { CliCommand, CommandContext } from './command';
-import { clearLock, isProcessAlive, lockPath, parseLock, preflight, writeLock } from './dev-lock';
-import { DEV_BINDING } from './dev-roles';
-import { resolveServices } from './dev-services';
 import { BadFlagError, MissingPositionalError } from './errors';
 import { intFlagOr, PORT_RANGE } from './flag-number';
 import type { CommandResult } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
+import type { BootDevServer, ShotServer } from './shot-server';
+import { allowHostsFrom, devServerFor, SHOT_DIR } from './shot-server';
 import { SETTLE_POLL_MS, settleIslands } from './shot-settle';
 import type { IslandCount, ShotArtifacts } from './shot-verdict';
 import {
@@ -45,7 +44,11 @@ const DEFAULT_PORT = 0;
  */
 export const DEFAULT_SETTLE_MS = IDLE_HYDRATE_TIMEOUT_MS;
 
-export const SHOT_DIR = join('.x', 'shot');
+// Re-exported, not re-declared: `cmd-shot.test.ts` and the island path both name them, and a
+// second declaration of a path or an allow-list rule is a second answer.
+export type { BootDevServer, ShotServer };
+export { allowHostsFrom, devServerFor, SHOT_DIR };
+
 export const SHOT_IMAGE = 'shot.png';
 export const SHOT_VERDICT = 'verdict.json';
 
@@ -164,24 +167,6 @@ const intFlag = (
     fallback,
   );
 
-/**
- * How `devServerFor` starts a scratch server. A parameter with a default rather than a direct
- * call, for the reason every `Runner` in this package is one: the failure path below — a boot that
- * throws, and the lock it has to hand back — is otherwise only reachable by breaking a real app.
- */
-export type BootDevServer = (input: {
-  readonly root: string;
-  readonly port: number;
-  readonly env: Readonly<Record<string, string | undefined>>;
-}) => Promise<{ readonly url: string; stop(): Promise<void> }>;
-
-export interface ShotServer {
-  readonly url: string;
-  /** Which server the picture is of. Reported, because the two have different failure modes. */
-  readonly origin: 'booted' | 'reused';
-  stop(): Promise<void>;
-}
-
 export interface ShotRun {
   readonly route: string;
   readonly outDir: string;
@@ -274,65 +259,6 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
   }
 }
 
-/**
- * One rule, two branches: photograph the `x dev` this checkout already has, or boot a scratch one.
- * Reusing is not a convenience — embedded Postgres is a single-writer directory, so a second boot
- * on one checkout is `X_DEV_ALREADY_RUNNING` and the picture would never be taken at all.
- */
-export async function devServerFor(
-  root: string,
-  env: Readonly<Record<string, string | undefined>>,
-  port: number,
-  boot: BootDevServer = (input) => startDev(input),
-): Promise<ShotServer> {
-  const services = resolveServices(root, env);
-  const file = Bun.file(lockPath(services.stateDir));
-  if (await file.exists()) {
-    const lock = parseLock(await file.text());
-    if (lock !== null && isProcessAlive(lock.pid)) {
-      return { url: lock.url, origin: 'reused', stop: () => Promise.resolve() };
-    }
-  }
-  const { release } = await preflight({
-    stateDir: services.stateDir,
-    port,
-    hostname: DEV_BINDING.hostname,
-    embeddedDb: services.db.mode === 'embedded',
-  });
-  // The directory is CLAIMED from here down — `preflight` returns holding it, never having merely
-  // looked — so a boot that throws has to give it back. `cmd-dev.ts` states the same rule at the
-  // same seam. Without it one failed `x shot` refused every later `x dev` and `x shot` on this
-  // checkout, naming a pid that had already exited. The original error is re-thrown untouched: a
-  // teardown must never replace the failure it is cleaning up after.
-  const dev = await boot({ root, port, env }).catch((error: unknown) => {
-    release();
-    throw error;
-  });
-  await writeLock(services.stateDir, {
-    pid: process.pid,
-    port,
-    url: dev.url,
-    startedAt: new Date().toISOString(),
-  });
-  return {
-    url: dev.url,
-    origin: 'booted',
-    async stop() {
-      clearLock(services.stateDir);
-      await dev.stop();
-    },
-  };
-}
-
-/** `--allow-hosts a.com,b.com` on top of the app's own host. Empty means the app's host alone. */
-export const allowHostsFrom = (url: string, extra: string | undefined): readonly string[] => {
-  const named = (extra ?? '')
-    .split(',')
-    .map((host) => host.trim())
-    .filter((host) => host.length > 0);
-  return [new URL(url).hostname, ...named];
-};
-
 export const shotResult = (artifacts: ShotArtifacts): CommandResult => ({
   ok: artifacts.verdict.ok,
   command: 'shot',
@@ -348,8 +274,9 @@ export const shotResult = (artifacts: ShotArtifacts): CommandResult => ({
 export const shotCommand: CliCommand = {
   spec: {
     name: 'shot',
-    summary: 'photograph one route from a real browser, with a verdict a picture cannot carry',
-    usage: 'x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000] [--json]',
+    summary: 'photograph one route, or one island in a state it declares, from a real browser',
+    usage:
+      'x shot <route> | --island <name> [--state <id>] [--port 0] [--out <dir>] [--settle 2000] [--json]',
     requiresApp: true,
     flags: [
       { name: 'port', type: 'string', summary: 'dev port (0 lets the kernel pick a free one)' },
@@ -359,13 +286,31 @@ export const shotCommand: CliCommand = {
       { name: 'timeout', type: 'string', summary: 'ms one navigation may take' },
       { name: 'browser', type: 'string', summary: 'browser executable puppeteer-core launches' },
       { name: 'allow-hosts', type: 'string', summary: 'extra hosts the page may request' },
+      // A FLAG on `x shot` and never a second command: photographing a route and photographing a
+      // component are one job with two subjects, and a parallel command would be the second path
+      // axiom 1 refuses.
+      {
+        name: 'island',
+        type: 'string',
+        summary: 'photograph one island in every state it declares',
+      },
+      {
+        name: 'state',
+        type: 'string',
+        summary: 'one declared state of that island, not all of them',
+      },
     ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('shot', ctx.cwd).dir;
     // Every value read before anything boots: a typo must not cost a browser and a dev server to
     // report, which is the rule `x routes` and `x mcp` already follow.
-    const route = readRoute(ctx.args.positionals[0]);
+    const island = flagString(ctx.args, 'island');
+    const positional = ctx.args.positionals[0];
+    if (island !== undefined && island !== '' && positional !== undefined) {
+      refuseRouteWithIsland(positional, island);
+    }
+    const route = island === undefined || island === '' ? readRoute(positional) : '';
     const port = intFlag(ctx.args, 'port', PORT_RANGE.min, DEFAULT_PORT, PORT_RANGE.max);
     const settleMs = intFlag(ctx.args, 'settle', 0, DEFAULT_SETTLE_MS);
     const timeoutMs = intFlag(ctx.args, 'timeout', 1, DEFAULT_PAGE_TIMEOUT_MS);
@@ -375,11 +320,30 @@ export const shotCommand: CliCommand = {
         flag: 'browser',
         command: 'shot',
         reason: `no executable at "${executablePath}"`,
-        fix: `x shot ${route} --browser /usr/bin/chromium`,
+        fix: 'x shot / --browser /usr/bin/chromium',
       });
     }
     const out = flagString(ctx.args, 'out');
     const boot = (): Promise<ShotServer> => devServerFor(root, ctx.env, port);
+    if (island !== undefined && island !== '') {
+      return islandShotResult(
+        await islandShot({
+          root,
+          island,
+          ...(flagString(ctx.args, 'state') === undefined
+            ? {}
+            : { state: flagString(ctx.args, 'state') }),
+          ...(out === undefined ? {} : { out }),
+          settleMs,
+          timeoutMs,
+          ...(executablePath === undefined ? {} : { executablePath }),
+          ...(flagString(ctx.args, 'allow-hosts') === undefined
+            ? {}
+            : { extraHosts: flagString(ctx.args, 'allow-hosts') }),
+          boot,
+        }),
+      );
+    }
     // Resolved before the boot for the same reason: an app with no browser installed must not pay
     // an embedded Postgres to be told to run `bun add -d puppeteer-core`.
     const driver = await appBrowser({

@@ -57,6 +57,13 @@ export interface AppBrowserOptions {
   readonly root: string;
   /** `--browser`, then `PUPPETEER_EXECUTABLE_PATH`, then `CHROME_PATH`. */
   readonly executablePath?: string | undefined;
+  /**
+   * The page size this browser lays out at. A LAUNCH option and not a per-capture one, because
+   * that is the only place the shipped port has for it: `CaptureRequest` is `fullPage` alone
+   * (`packages/scraping/src/page.ts`), so the viewport IS the frame of every picture taken with
+   * this driver — which is why `x shot --island` builds one browser per declared viewport.
+   */
+  readonly viewport?: { readonly width: number; readonly height: number } | undefined;
   /** Test seam: the resolver and the loader, so a test proves the refusal without an install. */
   readonly resolve?: (specifier: string, from: string) => string;
   readonly load?: (path: string) => Promise<unknown>;
@@ -103,5 +110,10 @@ export async function appBrowser(options: AppBrowserOptions): Promise<ScrapeDriv
     launcher,
     headless: true,
     ...(options.executablePath === undefined ? {} : { executablePath: options.executablePath }),
+    // `LocalBrowserOptions.options` is passed through to `launch()` untouched, which is the seam
+    // that lets the CLI size a browser without `@ultimat3/scraping` naming a puppeteer type.
+    ...(options.viewport === undefined
+      ? {}
+      : { options: { defaultViewport: { ...options.viewport } } }),
   });
 }

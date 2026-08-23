@@ -45,7 +45,8 @@ export function mount(el: HTMLElement, props: ContactSalesProps): void {
     status.textContent = props.sendingLabel;
 
     // A plain `fetch` to the form's own `action`, not the typed client: importing
-    // `@ultimat3/action` for `rpc()` costs 36 kB in a browser bundle, which is thirty times this
+    // `@ultimat3/action` for `rpc()` costs 14.8 kB in a browser bundle (42.6 kB until 2026-08-23,
+    // two thirds of which was two header constants reaching the whole invoke runtime)
     // island. The path is still the framework's — `derivePath` minted it on the server and it is
     // in the markup — so there is no second naming rule here, only a second transport.
     void fetch(form.action, {

@@ -22,6 +22,12 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `fixture-drivers.ts` | the five it declares but a driver must build — `page` `budget` `signIn` `deploy` `subscribe` |
 | `fixture-island.ts` | `mountIsland()` — build an island, import its chunk, run its `mount`. The BUILDER is a parameter |
 | `island-dom.ts` | the micro-DOM `mountIsland` drives: what compiled Solid touches, and nothing else |
+| `island-states.ts` | the vocabulary: what a photographable island STATE is. Types and constants, importing nothing |
+| `define-island-states.ts` | `defineIslandStates()` — one manifest, validated and frozen, with every default resolved |
+| `island-states-check.ts` | the rules a declaration must satisfy, as pure functions answering a fault |
+| `island-states-pure.ts` | the guard the design rests on: a `*.island.states.ts` file reaches no browser and no bundler |
+| `island-shot-targets.ts` | the expansion — one record per PICTURE — and `islandAddress` / `parseIslandAddress`, inverses |
+| `island-states-resolve.ts` | a name a reader typed → the manifest it meant; a manifest → the island file it claims |
 | `framework-fixtures.ts` | registers both sets; the app registers only what it owns |
 | `registry-leak-guard.ts` | fails the run naming the FILE that left a process-global registry dirty, and restores the ones that can be restored at the same boundary |
 | `registry-snapshot.ts` | `captureProcessRegistries()` / `restoreProcessRegistries()` — the locale config, the catalogs, the permission set and the role map, put back as a file inherited them. A module-scope declaration evaluates once per process (`bun test` without `--isolate`, `As of 2026-08`), so a neighbour's `clearPermissions()` is otherwise permanent |
@@ -278,11 +284,87 @@ attached no handler are the same silence; the second is a bug and the first is a
 `island[Symbol.dispose]()` in an `afterAll`. Left installed it hands a fake `document` to every
 later FILE in the run.
 
+## Declaring the states an island can be photographed in
+
+A reviewer can click their way to most of a component. They cannot click their way to *the account
+is read-only*, *the workspace is over quota* or *the request failed* — so those states are declared,
+beside the island, in a file that is **pure data**:
+
+```ts
+// apps/web/app/settings/settings.island.states.ts
+import { defineIslandStates } from '@ultimat3/testing';
+
+export const settingsStates = defineIslandStates({
+  island: 'apps/web/app/settings/settings.island.tsx',
+  target: '[data-settings]',                 // what to crop to; the island's host element otherwise
+  states: [
+    {
+      id: 'over-quota',                      // a slug: it becomes the screenshot filename stem
+      title: 'the workspace is over quota',
+      note: 'you cannot reach this by clicking — billing sets the flag, not the UI',
+      props: { quota: { used: 120, limit: 100 } },
+      routes: [{ match: 'GET /api/quota', respond: { kind: 'json', body: { used: 120 } } }],
+      themes: ['dark'],                      // both, when the key is absent
+    },
+  ],
+});
+```
+
+`islandShotTargets(manifest)` expands that to one record per picture —
+`{ island, name, state, theme, viewport, target, timeZone, now, file, query }` — where `file` is
+`settings/over-quota-dark.png` and `query` is the harness address that renders exactly it.
+`parseIslandAddress` is that address's inverse, and it is **total**: an unknown theme falls back to
+`light` rather than photographing an error page.
+
+**Pure data is the constraint, not a preference.** The command that takes the pictures has to know
+the complete expected list BEFORE a browser exists, or "produced nothing and exited 0" is
+indistinguishable from success — and the harness page and this package's own guard test read the
+same file. One `import './settings.island.tsx'` makes it readable by a bundler alone, so
+`assertIslandStatesPure` refuses it (`X_TEST_ISLAND_STATES_NOT_PURE`).
+
+**And no RUNTIME import of a sibling, `As of 2026-08-23`.** The rule is the relativeness, not the
+extension: `./settings.island` resolves to `./settings.island.tsx` under Bun, and `./helpers` may
+reach the component one hop further on — a scanner reading ONE file's text can follow neither. A
+computed specifier — ``import(`./${name}.island`)`` — is refused for the same reason, because a
+specifier nothing can read is not a specifier anything may call pure.
+
+**`import type` is the one way to reach the component, and it is not an import.**
+`verbatimModuleSyntax` erases a statement that BEGINS `import type` / `export type`, so
+`import type { SettingsProps } from './settings.island'` costs the file nothing and types its props
+against the component. An inline modifier does not: `import { type X } from './y'` is emitted as
+`import {} from './y'`, which evaluates `./y`, and is refused.
+
+| A states file writes | Verdict |
+|---|---|
+| `import { defineIslandStates } from '@ultimat3/testing'` | allowed — a bare specifier |
+| `import type { Props } from './x.island'` | allowed — erased before anything evaluates |
+| `import props from './props.json' with { type: 'json' }` | allowed — a JSON module imports nothing |
+| `import { X } from './x.island'` · `./helpers` · `../shared/props` | refused — a graph this cannot follow |
+| `import { type X } from './x.island'` | refused — the statement survives erasure |
+| `import './x.island.tsx'` · `solid-js` | refused — JSX and a renderer |
+| ``await import(`./${name}.island`)`` | refused — unreadable, and unreadable is not pure |
+
+**Props are JSON or they are refused.** They ride the same `data-x-props` script tag hydration
+already uses, so a `Date`, a function or an `undefined` is not "approximately right" in the picture
+— it is a prop the component never receives. `X_TEST_ISLAND_STATE_JSON_INVALID` names the path.
+
+**The clock is pinned in the vocabulary, zone included.** `timeZone` defaults to `UTC` and `now` to
+this package's own `DEFAULT_NOW`. A harness that freezes the instant and leaves the zone ambient
+renders `12:00` on one machine and `14:00` on the next, and the review diff then says the component
+changed when only the reviewer moved.
+
+**The command that takes the pictures is not here yet.** `As of 2026-08-23` this package ships the
+vocabulary, the expansion and the refusals; the browser half is `x shot`'s.
+
 ## Errors
 
 `X_TEST_NETWORK_SEALED` `X_TEST_DB_UNAVAILABLE` `X_TEST_NONDETERMINISTIC` `X_TEST_FIXTURE_UNKNOWN`
 `X_TEST_FACTORY_TRAIT_UNKNOWN` `X_TEST_FACTORY_NOT_PERSISTED` `X_TEST_REGISTRY_LEAK`
-`X_TEST_ISLAND_NOT_BUILT` `X_TEST_ISLAND_NO_MOUNT`
+`X_TEST_ISLAND_NOT_BUILT` `X_TEST_ISLAND_NO_MOUNT` `X_TEST_ISLAND_STATES_EMPTY`
+`X_TEST_ISLAND_STATES_NOT_PURE` `X_TEST_ISLAND_STATES_MISSING_FILE` `X_TEST_ISLAND_STATES_UNKNOWN`
+`X_TEST_ISLAND_STATES_AMBIGUOUS` `X_TEST_ISLAND_STATE_ID_INVALID` `X_TEST_ISLAND_STATE_DUPLICATE`
+`X_TEST_ISLAND_STATE_JSON_INVALID` `X_TEST_ISLAND_STATE_CLOCK_INVALID`
+`X_TEST_ISLAND_STATE_STUB_INVALID`
 
 ## One process, one registry
 

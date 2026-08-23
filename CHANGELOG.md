@@ -10,6 +10,51 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **`x shot --island <name> [--state <id>]` — one component, photographed in a state you cannot
+  click to.** The framework's stated primary developer is an AI agent, and an agent could
+  photograph a *route* and nothing smaller; the states worth reviewing are the failed read, the
+  empty list, the over-quota banner, the offline fallback, and reaching those through a route needs
+  a database in that state and a session that sees it. Both halves already existed and had never
+  been joined: `mountIsland` runs a real island chunk over a micro-DOM that cannot rasterize, and
+  `page.screenshot()` drives a real browser but was reachable only for a route.
+  A **flag on `x shot`**, never a second command — `cmd-shot.ts` already owns the browser launch,
+  the dev-server reuse, the settle window and the verdict writer.
+- **The state manifest is pure data** — no JSX, no `solid-js`, no import of the component — so the
+  CLI knows the complete expected picture list *before a browser exists*. That is what makes
+  "produced nothing and exited 0" impossible: the run diffs what it owed against what landed and
+  refuses independently of the browser's own exit code. `defineIslandStates` carries `timeZone` and
+  `now`, so the framework's no-unzoned-dates rule is structural here rather than remembered — a
+  harness that freezes the instant and leaves the zone ambient renders every date in the host
+  machine's.
+- **An unstubbed request fails the run, by name.** A component whose fetch quietly hangs paints its
+  own loading branch, and the picture then shows a fixture gap dressed up as a component state.
+  Every address is sealed and every capture asserts before the shutter: host attached, target
+  visible, readiness reached (**quiet, not zero** — a deliberately-pending fixture never settles),
+  a non-zero box, a box with actual children or text, then a byte floor as backstop.
+- **A clip rectangle on `@ultimat3/scraping`'s capture port.** It was `fullPage` only, all the way
+  down to the CDP port, so every picture was the whole viewport — and the reader is a vision model
+  whose pixels are the scarce resource. `clip` and `fullPage` are mutually exclusive and the pair is
+  refused by name, because CDP silently ignores one. A rectangle merely below the fold is
+  **accepted**: this package sets and reads no viewport, and refusing it would reject the case the
+  feature exists for.
+- **The 500-line ceiling now exempts a pure re-export manifest**, detected mechanically — every
+  statement an `import`/`export` that declares nothing. `packages/core/src/index.ts` was at 496 and
+  adding six factory exports lands at 503, so no new subject could be added to core's public API at
+  all. The ceiling re-arms the instant anyone adds a line of logic; it is not a path allowlist.
+
+### Fixed
+
+- **The island purity guard answered "pure" for an impure file.** It refused `solid-js` and a
+  `.tsx` specifier, but `import { X } from './settings.island'` resolves to the `.tsx` under Bun and
+  passed. The reference app was safe only because it used `import type`, which is erased — deleting
+  one keyword would have dragged Solid into a browser-free context with the guard still green. Any
+  relative runtime specifier is now refused; `import type` is exempt in both directions, proved
+  against Bun rather than assumed.
+- `packages/cli/src/ts-scan.ts` read **every** depth-0 string literal in a `fix:` expression,
+  including a ternary's *condition*, so nine phantom fix sites across `action`, `auth`, `mcp`,
+  `entity`, `cli` and `flags` were published as fixes to check. 952 → 943 real sites.
+
+
 - **One flight layer, in `@ultimat3/core`.** The framework carried **four** retry engines
   (`jobs/retry.ts`, `ai/gateway.ts`, `realtime/thundering-herd.ts`, and `db/transaction.ts`, which
   retried on no backoff at all), with three different jitter strategies between them; **five**

@@ -29,6 +29,18 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_LIVE_NODE_UPGRADE_REFUSED',
   'X_TEST_ISLAND_NOT_BUILT',
   'X_TEST_ISLAND_NO_MOUNT',
+  // Declared here and thrown from `island-state-errors.ts`: one file has one job and this
+  // catalogue is at its ceiling, so the classes moved and the registration did not.
+  'X_TEST_ISLAND_STATES_EMPTY',
+  'X_TEST_ISLAND_STATES_NOT_PURE',
+  'X_TEST_ISLAND_STATES_MISSING_FILE',
+  'X_TEST_ISLAND_STATES_UNKNOWN',
+  'X_TEST_ISLAND_STATES_AMBIGUOUS',
+  'X_TEST_ISLAND_STATE_ID_INVALID',
+  'X_TEST_ISLAND_STATE_DUPLICATE',
+  'X_TEST_ISLAND_STATE_JSON_INVALID',
+  'X_TEST_ISLAND_STATE_CLOCK_INVALID',
+  'X_TEST_ISLAND_STATE_STUB_INVALID',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -51,6 +63,17 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_LIVE_NODE_UPGRADE_REFUSED: 'the in-process sync node refused the connection',
   X_TEST_ISLAND_NOT_BUILT: 'the island build produced no chunk for the file the test named',
   X_TEST_ISLAND_NO_MOUNT: 'an island chunk exports no mount function',
+  X_TEST_ISLAND_STATES_EMPTY: 'an island state manifest declares no states',
+  X_TEST_ISLAND_STATES_NOT_PURE:
+    'an island states file imports the component, a renderer or a sibling module',
+  X_TEST_ISLAND_STATES_MISSING_FILE: 'an island state manifest names an island that is not on disk',
+  X_TEST_ISLAND_STATES_UNKNOWN: 'no island state manifest answers to that name',
+  X_TEST_ISLAND_STATES_AMBIGUOUS: 'two island state manifests answer to one name',
+  X_TEST_ISLAND_STATE_ID_INVALID: 'an island state id is not slug-shaped',
+  X_TEST_ISLAND_STATE_DUPLICATE: 'two island states share one id',
+  X_TEST_ISLAND_STATE_JSON_INVALID: 'an island state carries a value JSON does not',
+  X_TEST_ISLAND_STATE_CLOCK_INVALID: 'an island state manifest pins a clock that is not pinnable',
+  X_TEST_ISLAND_STATE_STUB_INVALID: 'an island route stub is not "<METHOD> <pathname>"',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

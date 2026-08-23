@@ -126,6 +126,17 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   `bun test`, where nothing installs a client.
 - Tests sit next to their source: `<file>.test.ts` (unit), `.contract.test.ts`, `.live.test.ts`,
   `.job.test.ts`, `.e2e.test.ts`, `.eval.test.ts`.
+- An island that has states worth reviewing carries a sibling `<name>.island.states.ts`, and
+  `x shot --island <name> --json` photographs every one of them into `.x/shot/island/<name>/`.
+  `apps/web/app/settings/settings.island.states.ts` is the worked example: `empty-options` is what
+  the editor looks like when the preference-options read comes back empty, `save-failed` is the
+  retry banner after a write the server refused, and neither is reachable by clicking. That file is
+  PURE DATA — no JSX, no `solid-js`, and its one import is an `import type` the compiler erases,
+  because the command that takes the pictures has to know the complete expected list before a
+  browser exists. `X_TEST_ISLAND_STATES_NOT_PURE` is what an import of the component earns.
+  `SettingsProps.status` exists for this and only this: `saved` and `failed` are signal states a
+  reviewer cannot reach without a server that really fails, so the prop makes them addressable and
+  the page passes nothing.
 - Every prompt carries `<name>.evals.ts` (the cases) and `<name>.vN.baseline.json` (the recorded
   scores). A prompt with no eval fails `x verify` with `X_EVAL_MISSING`, and an eval with no
   committed baseline fails it with `X_EVAL_BASELINE_MISSING`; the gate is the drop from the

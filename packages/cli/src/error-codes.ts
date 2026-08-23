@@ -114,6 +114,13 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_SECRETS_EDIT_FAILED',
   'X_WORKSPACE_DEP_UNDECLARED',
   'X_SHOT_BROWSER_MISSING',
+  // `x shot --island` — one code per way a component's named state fails to become a picture.
+  // The last of the four is the one that gates: it is checked against the expansion computed
+  // before a browser existed, so a capture loop that swallowed a failure cannot exit 0.
+  'X_SHOT_ISLAND_STATES_EMPTY',
+  'X_SHOT_ISLAND_UNPHOTOGRAPHABLE',
+  'X_SHOT_ISLAND_UNSTUBBED_REQUEST',
+  'X_SHOT_ISLAND_MISSING',
   'X_GH_UNAVAILABLE',
   'X_GH_NOT_AUTHENTICATED',
   'X_GH_COMMAND_FAILED',
@@ -218,6 +225,10 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_SECRETS_EDIT_FAILED: 'the editor exited non-zero, so nothing was resealed',
   X_WORKSPACE_DEP_UNDECLARED: 'a workspace imports another workspace it does not declare',
   X_SHOT_BROWSER_MISSING: 'x shot found no browser library in the app',
+  X_SHOT_ISLAND_STATES_EMPTY: 'an island states file declares no manifest',
+  X_SHOT_ISLAND_UNPHOTOGRAPHABLE: 'the island never reached a state worth photographing',
+  X_SHOT_ISLAND_UNSTUBBED_REQUEST: 'the island requested something no state stub answers',
+  X_SHOT_ISLAND_MISSING: 'a declared island picture is not on disk',
   X_GH_UNAVAILABLE: 'the GitHub CLI is not runnable from here',
   X_GH_NOT_AUTHENTICATED: 'gh holds no credentials for this host',
   X_GH_COMMAND_FAILED: 'a gh invocation exited non-zero',

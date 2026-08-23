@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "b4465fcd3b203162b97e1c67f1345fa2a487afce34b798bee195d1f5ff5193ac",
+  "buildId": "b67d675b5b92006503eb9e202b0d1266755410ce00a49382457cb89c685cbf93",
   "tiers": {
     "0": [
       "core",
@@ -2518,6 +2518,26 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_SHOT_ISLAND_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SHOT_ISLAND_STATES_EMPTY",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SHOT_ISLAND_UNPHOTOGRAPHABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SHOT_ISLAND_UNSTUBBED_REQUEST",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_SHUTDOWN_TIMEOUT",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
@@ -2779,6 +2799,56 @@
     },
     {
       "code": "X_TEST_ISLAND_NOT_BUILT",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_STATE_CLOCK_INVALID",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_STATE_DUPLICATE",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_STATE_ID_INVALID",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_STATE_JSON_INVALID",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_STATE_STUB_INVALID",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_STATES_AMBIGUOUS",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_STATES_EMPTY",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_STATES_MISSING_FILE",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_STATES_NOT_PURE",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_STATES_UNKNOWN",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },
