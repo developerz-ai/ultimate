@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "342784a6b04b21b51bab02a0683ab658f166c3c0d45a6f73caa933dd9f3ab418",
+  "buildId": "2bd701a95211df7cecec2326524ea5a4a4cd49f4e056bc1a10c9fbff874595dd",
   "tiers": {
     "0": [
       "core",
@@ -1391,6 +1391,11 @@
       "code": "X_LIVE_REPLICA_IDENTITY",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_LIVE_ROUTE_NO_ISLAND",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_LIVE_ROW_UNIDENTIFIED",

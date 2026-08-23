@@ -137,6 +137,16 @@ that would start attempt two answers `25P01 ROLLBACK TO SAVEPOINT can only be us
 blocks`. There is nothing to retry into, and an author who believes they hold a budget they do not
 is worse off than one who is told.
 
+**`BEGIN` re-derives its isolation level from the closed set, `As of 2026-08-23`.** `BEGIN` takes
+no parameters, so `beginStatement` is one of the two statements here built as TEXT — and the level
+was `options.isolation.toUpperCase()` spliced into it. The TYPE is not the guard: the value reaches
+`withTransaction` from an app's config, a JSON body or a CLI flag, and
+`{ isolation: 'read committed; drop table x; --' }` became exactly that statement while a
+non-string became an uncoded `TypeError` inside a template literal. `isolationMode` is a `switch`
+over `IsolationLevel` whose `default` arm is `never` — a fourth level with no SQL beside it is a
+type error, and anything else at runtime is `X_SQL_UNSAFE` (`isolationLevelInvalid`), the code
+`branchNameInvalid` already uses for a value spliced into a statement.
+
 **The migration lock is polled, never waited on.** `pg_advisory_lock` blocks with no timeout, so a
 predecessor OOM-killed on a network partition kept its backend — and the lock — for hours while the
 new `ROLE=migrate` pod sat inside one statement printing nothing: `helm upgrade --wait` blocked on a
@@ -669,7 +679,13 @@ statement_timeout` set moments earlier, so `select 1; set statement_timeout = 0`
 while `guards` went on reporting `timeout:5000ms`. `BEGIN READ ONLY` still held, so this was a
 defeated layer reported as an engaged one rather than a write — and a guard list that lies is worse
 than a guard list that is short. `statementsOf` is the package's one splitter, so a `;` inside a
-literal, a comment or a dollar-quoted body stays data.
+literal, a comment or a dollar-quoted body stays data. **And the splice takes the splitter's
+answer, `As of 2026-08-23`** — `statements[0]`, never the caller's text with a trailing `;` chopped
+off it by a regex. That second answer only saw a `;` at the very END: `select 1; -- note` is one
+statement to the splitter and does not end in `;`, so it reached the `DECLARE` whole and Postgres
+answered `cannot insert multiple commands into a prepared statement`, uncoded, out of the path
+whose whole job is bounding the read. The uncursored path still sends the caller's text
+byte-for-byte, because it splices nothing.
 
 `readonly-role.ts` and `readonly-query.ts` are layers 1–2 of that tool's defence-in-depth: a
 `NOLOGIN` Postgres role (`ensureReadOnlyRole`) and a per-statement `BEGIN READ ONLY` + statement

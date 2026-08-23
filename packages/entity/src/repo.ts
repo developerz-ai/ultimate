@@ -413,10 +413,17 @@ export const memoryRepo = <Row>(
     },
 
     async updateWhere(filter, patch, options) {
+      const plan = updatePlan(entity, filter, patch, options, 'updateWhere');
+      // The PATCH, judged whole and before the rows are read — the same call `postgresRepo` makes
+      // before its statement exists. Inside the loop below it is judged only where a row was
+      // matched, so a patch handing rows to another tenant was refused or accepted depending on
+      // what the table happened to hold: `updateWhere(filter, { orgId: theirs })` over a filter
+      // matching nothing answered `0` here and threw there, from one call.
+      assertRowTenant(entity.$name, entity.$tenantColumn, 'updateWhere', patch);
       // `rowsOf` again, so a soft-deleted row is as unreachable here as it is through
       // `addressed()` — patching a row the app has already deleted is not an update, it is a
       // resurrection nobody asked for. `write` re-asserts the invariants on each result.
-      const found = rowsOf(updatePlan(entity, filter, patch, options, 'updateWhere'), {});
+      const found = rowsOf(plan, {});
       for (const row of found) write(Object.assign({}, row, patch), options, 'updateWhere');
       return found.length;
     },

@@ -135,10 +135,12 @@ const CATALOG = {
   'cli.manifest.wrote': 'manifest written to {path} ({routes} routes, {actions} actions)',
   'cli.mcp.serving': 'mcp {transport} serving {tools} tools',
   'cli.mcp.scopes': '  scopes {scopes}',
-  // `x db gen "initial"` is a first step, not an optional one: the scaffold writes no migration, so
-  // the app has a schema no migration records and `x verify`'s drift step says so until it runs.
-  'cli.new.done':
-    'created {name} — next: cd {name} && bun install && x db gen "initial" && x db migrate && x dev',
+  // `bin/setup` and nothing else: the scaffold ships it, `README.md` and `bin/check` both name it,
+  // and it is the only spelling that is right on a fresh clone — it installs, writes
+  // `.env.development.local`, runs `x db gen "initial"` (the scaffold writes no migration, so the
+  // drift step is red until it has), migrates and seeds. The four-command line this replaced named
+  // `x dev` off a tree where nothing had installed the CLI yet, and skipped the seed entirely.
+  'cli.new.done': 'created {name} — next: cd {name} && bin/setup && x dev',
   // The two prose lines of `x new`'s report. The `run: cd … && git init …` line beneath the second
   // one stays inline in `cmd-new.ts`: it is an instruction to paste verbatim, and a translated
   // command is a broken one — the same split `Finding.fix` already makes.

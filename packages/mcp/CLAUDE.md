@@ -12,7 +12,7 @@ import. The CLI wires it.
 |---|---|
 | `wire.ts` | JSON-RPC types, error codes, protocol version, `JsonSchema` subset |
 | `registry.ts` | catalog + the first two security outcomes (visibility, scope) |
-| `audit.ts` | one structured line per `tools/call`, outcome → level |
+| `audit.ts` | one structured line per `tools/call` and per `resources/read`, outcome → level |
 | `validate-args.ts` | JSON-Schema-subset arg validation, applies defaults |
 | `server.ts` | JSON-RPC dispatch, `classify` for rate-limit buckets |
 | `from-action.ts` | action/query → tool; the "one authz system" projection; `toolsFrom` (sweep, skips) vs `toolsListed` (written out, refuses) |
@@ -113,6 +113,14 @@ import. The CLI wires it.
   terminal. `server.ts` renders it; the test pins it against `format()`, never a literal.
 - Every outcome is audited via `audit.ts`, hidden included, at `warn`. Never log arguments
   or row data — a denial reason naming a row is a leak wearing an audit line's clothes.
+  **On both surfaces**: `mcp.tool-call.<outcome>` from `toolsCall`, `mcp.resource-read.<outcome>`
+  from `resourcesRead`, one `LEVEL` table and one field builder behind them. `resources/read`
+  emitted nothing at all until 2026-08-23, so a URI walk over the four documents that describe an
+  app's whole policy and data map left no trace while the identical walk over tool NAMES was one
+  `warn` per attempt. Two EVENTS and not one, because an alert that buckets a document read as a
+  tool call cannot tell the two walks apart. `resources/list` and `tools/list` are both silent by
+  design — each is answered pre-filtered, so it reveals only what the caller could already see.
+  `resource-security.test.ts` reads BOTH streams: core's logger puts `error` on stderr.
 - **A tool that renders its OWN `isError` result may NAME the code it refused with**
   (`McpToolResult.code`), and `outcomeForResult` sends it through the same `outcomeForCode` a
   THROWN error goes through. Audit-only: `server.ts` never puts it on the wire, because the code is

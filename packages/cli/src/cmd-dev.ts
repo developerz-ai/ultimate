@@ -199,6 +199,9 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     // declaration, and `x dev` and `serve.ts` must not be able to disagree about where the app's
     // sign-in page is.
     signInPath: await loadSignInPath(options.root),
+    // The same seam `serve.ts` passes: the app's own error page is a FILE, so the root is what
+    // `startWeb` needs to find one.
+    root: options.root,
     // The one document this process serves that the app did not write; `startRoles` covers the
     // app's own surfaces itself. `x dev` sends the policy report-only, so an uncovered `<style>`
     // here is a console report rather than a blank page — which is how this reached production.

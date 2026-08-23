@@ -127,6 +127,46 @@ describe('what the rule stays silent about, and why', () => {
   });
 });
 
+/**
+ * `SECRET_WORDS`' own comment said "whole and case-insensitive" and the pattern carried no `i`, so
+ * every SCREAMING_SNAKE credential in the tree read as an ordinary identifier — the spelling a
+ * module-scope constant actually uses. `packages/storage/src/driver-local.ts` compares a
+ * `DEV_SIGNING_SECRET` and `@ultimat3/storage` was absent from the pin table entirely.
+ */
+describe('the vocabulary reads the spelling a constant is really written in', () => {
+  test('SCREAMING_SNAKE is the same word as camelCase', () => {
+    expect(namesASecret('SESSION_SECRET')).toBe('SESSION_SECRET');
+    expect(namesASecret('WEBHOOK_SECRET')).toBe('WEBHOOK_SECRET');
+    expect(namesASecret('API_KEY')).toBe('API_KEY');
+    expect(namesASecret('CSRF_TOKEN')).toBe('CSRF_TOKEN');
+    expect(namesASecret('DEV_SIGNING_SECRET')).toBe('DEV_SIGNING_SECRET');
+    expect(names('if (supplied === DEV_SIGNING_SECRET) return;')).toEqual(['DEV_SIGNING_SECRET']);
+  });
+
+  test('a password and a one-time code are credentials the list never named', () => {
+    expect(namesASecret('password')).toBe('password');
+    expect(namesASecret('PASSWORD')).toBe('PASSWORD');
+    expect(namesASecret('input.userPassword')).toBe('userPassword');
+    expect(namesASecret('otp')).toBe('otp');
+    expect(namesASecret('OTP')).toBe('OTP');
+  });
+
+  test('an uppercase run before the suffix is still one name', () => {
+    expect(namesASecret('CSRFToken')).toBe('CSRFToken');
+  });
+
+  /**
+   * The bare-`key` exclusion is what keeps 362 `Map` keys out of the report, and case-insensitivity
+   * must not reopen it: a suffix needs a BOUNDARY in front of it — a camelCase capital or the
+   * SNAKE underscore — so `monkey` and a bare `Key` are still nothing.
+   */
+  test('and a bare key is still a Map key, in every spelling', () => {
+    expect(namesASecret('key')).toBeUndefined();
+    expect(namesASecret('Key')).toBeUndefined();
+    expect(namesASecret('monkey')).toBeUndefined();
+  });
+});
+
 describe('the operand walk', () => {
   test('reads back over a call and its arguments', () => {
     const code = 'if (sha256Hex(parsed.secret) === stored) {';

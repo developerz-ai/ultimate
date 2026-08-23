@@ -57,6 +57,8 @@ export const SECRET_SUFFIXES: readonly string[] = [
   'Signature',
   'Verifier',
   'Candidate',
+  'Password',
+  'Otp',
 ];
 
 /**
@@ -75,27 +77,40 @@ export const SECRET_WORDS: readonly string[] = [
   'digest',
   'mac',
   'state',
+  'password',
+  'otp',
 ];
 
 /**
- * `tokenHash` yes, `sortKey` yes, `key` NO.
+ * `tokenHash` yes, `sortKey` yes, `API_KEY` yes, `key` NO.
  *
- * The camelCase SUFFIX and the whole WORD, and deliberately not "contains `key`": measured, a bare
- * `key` matches 362 sites across 27 packages — a `Map` key, a sort key, a cache key, a catalog key
- * — and not one of `@ultimat3/auth`'s twelve `timingSafeEqual` call sites needs it. `keyHash` and
- * `apiKey` carry the capital. A vocabulary that reds a whole tree is a vocabulary somebody deletes,
- * and this rule only has to be narrow enough to survive.
+ * The SUFFIX behind a boundary and the whole WORD, and deliberately not "contains `key`": measured,
+ * a bare `key` matches 362 sites across 27 packages — a `Map` key, a sort key, a cache key, a
+ * catalog key — and not one of `@ultimat3/auth`'s twelve `timingSafeEqual` call sites needs it.
+ * `keyHash` and `apiKey` carry the capital, `API_KEY` carries the underscore. A vocabulary that
+ * reds a whole tree is a vocabulary somebody deletes, and this rule only has to be narrow enough to
+ * survive.
  */
-const SECRET_NAME = new RegExp(
-  `(?:${SECRET_SUFFIXES.join('|')})$|^(?:${SECRET_WORDS.join('|')})s?$`,
-  '',
+const SECRET_SUFFIX = new RegExp(
+  // camelCase, and the boundary is required: `[A-Za-z0-9]` before the capitalised suffix is what
+  // separates `apiKey` from a bare `Key`, and the capital is what separates it from `monkey`.
+  `[A-Za-z0-9](?:${SECRET_SUFFIXES.join('|')})$` +
+    // SCREAMING_SNAKE is the SAME word — `SESSION_SECRET`, `API_KEY`, `DEV_SIGNING_SECRET` — and it
+    // is the spelling a module-scope constant actually uses, which is where a signing secret lives.
+    // The underscore is that form's boundary, so `KEY` alone is still nothing.
+    `|_(?:${SECRET_SUFFIXES.map((suffix) => suffix.toUpperCase()).join('|')})$`,
 );
+
+/** The whole WORD, in any case — `secret`, `Secret`, `SECRET`, `OTP`. */
+const SECRET_WORD = new RegExp(`^(?:${SECRET_WORDS.join('|')})s?$`, 'i');
+
+const isSecretName = (name: string): boolean => SECRET_SUFFIX.test(name) || SECRET_WORD.test(name);
 
 /** Every identifier in an operand's text — `sha256Hex(parsed.secret)` gives three. */
 const IDENTIFIER = /[A-Za-z_$][\w$]*/g;
 
 export const namesASecret = (operand: string): string | undefined =>
-  [...operand.matchAll(IDENTIFIER)].map((one) => one[0]).find((name) => SECRET_NAME.test(name));
+  [...operand.matchAll(IDENTIFIER)].map((one) => one[0]).find(isSecretName);
 
 /**
  * An operand that carries no secret bytes, so the comparison against it leaks nothing: `undefined`,

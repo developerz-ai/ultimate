@@ -27,6 +27,7 @@ import { checkSourceDrift } from './drift';
 import { checkErrorFixReport } from './error-contract';
 import { guardFindings } from './guards';
 import { catalogFindings } from './i18n-registration';
+import { liveRouteFindings } from './live-routes';
 import { msg } from './messages';
 import type { Finding } from './output';
 import { findingFrom } from './output';
@@ -171,7 +172,8 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   },
   {
     name: 'budgets',
-    summary: 'per-route JS bytes and LCP, and the global style layer every document carries',
+    summary:
+      'per-route JS bytes and LCP, the global style layer every document carries, and the routes that boot nothing to receive their live rows',
     // The global-style assertion rides here rather than becoming an eighteenth step, because this
     // step already asks the one question it asks: what does the document this build emits actually
     // contain? It is also the same app load — `appManifest` fills render's stylesheet registry on
@@ -202,6 +204,10 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       return fromFindings([
         ...findings,
         ...checkDocumentStyles(documentSurfaces()),
+        // The third rider, and the same question this step already asks one level down: what
+        // JavaScript does this route's document boot? A live read with no island is a route
+        // whose answer is "none", which no suite can fail on — the page renders, at 200.
+        ...(await liveRouteFindings(ctx.root)),
         ...checkBudgets(manifest, stats),
       ]);
     },

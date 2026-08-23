@@ -2,7 +2,13 @@
 // fixes the situation — `X_DB_DRIFT` is the flagship and its rendering is byte-for-byte
 // pinned by the framework contract, so change its strings only with the contract.
 
-import { registerErrorCodes, renderThrowable, stringField, UltimateError } from '@ultimat3/core';
+import {
+  describeValue,
+  registerErrorCodes,
+  renderThrowable,
+  stringField,
+  UltimateError,
+} from '@ultimat3/core';
 import { DESTRUCTIVE_CAUSE, DESTRUCTIVE_MARKER, type DestructiveStatement } from './destructive';
 import { type DbSqlStateCode, sqlState, sqlStateCode } from './sqlstate';
 
@@ -382,6 +388,23 @@ export const branchNameInvalid = (branch: string): DbError =>
     cause: `branch name "${branch}" is not [a-z0-9_-]+`,
     fix: 'x db branch create <name>   # lowercase letters, digits, underscore and dash only',
     meta: { branch },
+  });
+
+/**
+ * An isolation level that is not one of the three. `X_SQL_UNSAFE` for the reason
+ * `branchNameInvalid` uses it: `BEGIN` takes no parameters, so the level is SPLICED into the
+ * statement text — `withTransaction(fn, { isolation: fromConfig })` with an operand TypeScript
+ * never saw is an injection, not a typo.
+ *
+ * `describeValue`, never the value: this cause is folded into a problem document and a log line,
+ * and an operand that arrived from a request body has no key left to redact once it is baked into
+ * a message. The three legal spellings are in the `fix:`, which is what the caller needs.
+ */
+export const isolationLevelInvalid = (received: unknown): DbError =>
+  new DbError({
+    code: 'X_SQL_UNSAFE',
+    cause: `an isolation level must be one of 'read committed', 'repeatable read' or 'serializable'; got ${describeValue(received)}`,
+    fix: "withTransaction(fn, { isolation: 'serializable' })   # or 'repeatable read', or 'read committed'",
   });
 
 export const dbNotImplemented = (feature: string, fix: string): DbError =>

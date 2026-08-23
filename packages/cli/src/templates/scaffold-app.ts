@@ -2,8 +2,10 @@
 // already speaks MCP, and the mobile/desktop placeholders that exist so adding them later is not
 // a restructure. Every file here is real, typed and covered — no placeholder that fails to boot.
 
+import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { apiFiles } from './scaffold-api';
+import { authFiles } from './scaffold-auth';
 import { entryFiles } from './scaffold-entries';
 import { icon } from './scaffold-icon';
 import { rolesFiles } from './scaffold-roles';
@@ -47,8 +49,10 @@ const sitePage = (
 // \`t\` in @ultimat3/i18n. That import is what puts the module holding \`defineCatalogs()\` in
 // this page's graph, so rendering a string is what registers the catalogs. A page that reached
 // past it shipped every string as \`\u27e6key\u27e7\` with \`x verify\` green (issue #249).
-import { useT } from '@${app.kebab}/i18n';
-import { defineRoute } from '@ultimat3/render';
+${sortedImports([
+  `import { useT } from '@${app.kebab}/i18n';`,
+  `import { defineRoute } from '@ultimat3/render';`,
+])}
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -126,8 +130,10 @@ const dashboardPage = (
 // as their data resolves.
 
 // \`useT()\`, not \`t\` from @ultimat3/i18n — see apps/web/site/page.tsx for why.
-import { useT } from '@${app.kebab}/i18n';
-import { defineRoute } from '@ultimat3/render';
+${sortedImports([
+  `import { useT } from '@${app.kebab}/i18n';`,
+  `import { defineRoute } from '@ultimat3/render';`,
+])}
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -323,8 +329,10 @@ const adminPage = (
 // user's agents can drive the user's product with the user's permissions.
 
 // \`useT()\`, not \`t\` from @ultimat3/i18n — see apps/web/site/page.tsx for why.
-import { useT } from '@${app.kebab}/i18n';
-import { defineRoute } from '@ultimat3/render';
+${sortedImports([
+  `import { useT } from '@${app.kebab}/i18n';`,
+  `import { defineRoute } from '@ultimat3/render';`,
+])}
 
 export const config = defineRoute({
   render: 'ssr',
@@ -377,6 +385,10 @@ export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile
     { path: 'apps/web/app/dashboard/page.tsx', contents: dashboardPage(app) },
     { path: 'apps/web/app/dashboard/page.module.scss', contents: dashboardStyle() },
     { path: 'apps/web/app/dashboard/page.test.ts', contents: dashboardTest() },
+    // The third piece of the authz story the scaffold already tells twice: the routes declare a
+    // policy and `shared/roles.ts` declares the grants, and until this file existed nothing
+    // answered "who is this?" — so every one of those routes refused every request.
+    ...authFiles(app),
     { path: 'apps/web/app/offline.tsx', contents: offlineFallback(app) },
     { path: 'apps/web/app/offline.module.scss', contents: offlineStyle() },
     // The third surface, and the one call that registers what the app declares — `scaffold-api.ts`.

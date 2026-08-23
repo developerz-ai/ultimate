@@ -83,7 +83,7 @@ $ x new myapp --dry-run --json
 {"ok":true,"command":"new","summary":"…","data":{"dir":"/home/me/myapp","files":["README.md","AGENTS.md",…],"dryRun":true}}
 ```
 
-**134 files** with the example slice, **107** with `--no-example` — measured on `main` `As of 2026-08-22`, up from 126/99 because `x new` now writes the Helm chart (8 files), `apps/web/api/index.ts`, one more test per generated action, and the example slice's form as an island (`post-form.island.tsx` plus its test, replacing one `ui/post-form.tsx`). Both numbers move the moment a template is added, and `scripts/generator-counts.ts` — a step of `x verify`'s `manifest` check — turns a stale one red on the same commit. Derive rather than quote anyway:
+**136 files** with the example slice, **109** with `--no-example` — measured on `main` `As of 2026-08-23`, up from 134/107 because the scaffold now writes `apps/web/app/auth/dev-actor.ts` and its test: `hooks.authenticate` is the only place an actor can come from, and a generated app configured none, so every route declaring a `policy:` refused every request and the boot warned `X_CONFIG_INVALID` on every start. Both numbers move the moment a template is added, and `scripts/generator-counts.ts` — a step of `x verify`'s `manifest` check — turns a stale one red on the same commit. Derive rather than quote anyway:
 
 ```bash
 x new myapp --dry-run --json | jq '.data.files | length'
@@ -447,7 +447,7 @@ is not covered by three workers.
 | `eval` | prompt scores vs. their recorded baselines, and a prompt with no eval at all |
 | `drift` | schema vs migrations |
 | `contract-diff` | published actions vs `openapi.json` |
-| `budgets` | per-route JS bytes and LCP, and the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`) |
+| `budgets` | per-route JS bytes and LCP, the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`), and every route that reads live rows with no island to receive them (`X_LIVE_ROUTE_NO_ISLAND`) |
 | `manifest` | the files an agent reads: `x.manifest.json` freshness, `.env.example`, a hand-written `AGENTS.md` that exists and is under 12kB, and `x.verify.json` naming only steps the gate runs |
 | `roadmap` | framework repo only — every `docs/idea/14-roadmap.md` milestone carries a status marker, and a milestone marked shipped still has the artifacts its own row names |
 

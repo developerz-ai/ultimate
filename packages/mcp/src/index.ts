@@ -13,8 +13,8 @@ export type {
 export { appToolPrimitive, appToolPrimitives } from './app-tool';
 export type { AppMcp, AppToolSchemas, DefineAppMcpInput } from './app-tools';
 export { defineAppMcp } from './app-tools';
-export type { McpAuditEntry, McpOutcome } from './audit';
-export { auditToolCall, outcomeForCode } from './audit';
+export type { McpAuditEntry, McpOutcome, McpResourceAuditEntry } from './audit';
+export { auditResourceRead, auditToolCall, outcomeForCode } from './audit';
 export type { CreateDevServerInput } from './dev-host';
 export { createDevServer, devHost, frameworkIntrospection } from './dev-host';
 export type {

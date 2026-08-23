@@ -41,14 +41,22 @@ export interface DevHookOptions {
    * that starts a web role — `serve.ts` included — carry a diagnostic only one of them installs.
    */
   readonly devNotices?: ServerHooks['devNotices'];
+  /**
+   * The app's own error page for a status, read off its disk. Passed for `devNotices`' reason: a
+   * hook that reached for the app root itself would make every host that starts a web role carry a
+   * path only the one that knows the root can supply.
+   */
+  readonly errorPage?: ServerHooks['errorPage'];
 }
 
 export function devHooks(options: DevHookOptions = {}): ServerHooks {
   const authenticate = configuredAuthenticator();
   const devNotices = options.devNotices;
+  const errorPage = options.errorPage;
   return {
     ...(authenticate === undefined ? {} : { authenticate }),
     ...(devNotices === undefined ? {} : { devNotices }),
+    ...(errorPage === undefined ? {} : { errorPage }),
     authorize: (route, _request, ctx): AuthzDecision => {
       // An action route never arrives here: it carries `enforcedBy: 'handler'`, so the pipeline
       // never asks. `invoke` is its one evaluation, and the only one holding the row a row-level

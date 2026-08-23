@@ -4,6 +4,15 @@
 import type { DocEntry } from './docs-scan';
 
 /**
+ * The tie-break, in CODE UNITS. Never `localeCompare`: with no locale argument it answers from the
+ * runtime's ICU default and collation version, so one corpus ranks two ways on two machines and
+ * this file's header — "the order it produces is a function of its input alone" — stops being
+ * true. `@ultimat3/jobs`' `job.ts` states the same rule for the manifest it emits; the comparator
+ * is restated rather than imported because that package is not below this one on the tier table.
+ */
+const byTopic = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
  * Words that carry no signal in a question about an API. Deliberately tiny: every word removed
  * here is a word an agent cannot search for, and `get`, `set`, `run` and `new` are all real
  * symbol names in this framework.
@@ -194,7 +203,7 @@ export function searchDocs(
     const hit = scoreEntry(entry, tokens, rationale);
     if (hit !== undefined && hit.covered >= required) hits.push(hit);
   }
-  hits.sort((a, b) => b.score - a.score || a.entry.topic.localeCompare(b.entry.topic));
+  hits.sort((a, b) => b.score - a.score || byTopic(a.entry.topic, b.entry.topic));
   return hits.slice(0, limit);
 }
 
@@ -220,6 +229,6 @@ export function nearestTopics(
     }
     if (score > 0) scored.push({ topic: entry.topic, score });
   }
-  scored.sort((a, b) => b.score - a.score || a.topic.localeCompare(b.topic));
+  scored.sort((a, b) => b.score - a.score || byTopic(a.topic, b.topic));
   return [...new Set(scored.map((item) => item.topic))].slice(0, limit);
 }

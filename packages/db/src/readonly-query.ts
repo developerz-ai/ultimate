@@ -128,7 +128,15 @@ export async function readOnlyQuery<T>(
       guards.push(`role:${options.role}`);
     }
 
-    const rows = await readRows<T>(connection, statement, fetchCount(options.maxRows), guards);
+    // Two texts, deliberately: the caller's own, sent verbatim when nothing is spliced, and the
+    // one COMMAND `statementsOf` cut out of it, which is the only text a `DECLARE` may carry.
+    const rows = await readRows<T>(
+      connection,
+      statement,
+      statements[0] ?? statement,
+      fetchCount(options.maxRows),
+      guards,
+    );
     await connection.execute(raw('ROLLBACK'));
     return { rows, guards };
   } catch (error) {
@@ -151,16 +159,25 @@ export async function readOnlyQuery<T>(
  */
 async function readRows<T>(
   connection: DbClient,
+  /** What the caller wrote. Sent byte-for-byte on the uncursored path, which splices nothing. */
   statement: string,
+  /**
+   * The one command `statementsOf` cut out of it — what may be spliced.
+   *
+   * This was `statement.trim().replace(/;\s*$/, '')`, a second answer to "where does the command
+   * end" that only saw a `;` at the very END of the text: `select 1; -- note` is ONE statement to
+   * the splitter (a chunk of pure noise is not a statement), so it passed the one-statement gate
+   * and reached the splice whole, as `DECLARE … CURSOR FOR select 1; -- note` — two commands, and
+   * `cannot insert multiple commands into a prepared statement` out of the driver with no code
+   * and no `fix:`. The splitter is the package's one answer, and this is now its only reader.
+   */
+  command: string,
   fetch: number | undefined,
   guards: string[],
 ): Promise<readonly T[]> {
-  if (fetch === undefined || !cursorable(statement)) return connection.query<T>(raw(statement));
+  if (fetch === undefined || !cursorable(command)) return connection.query<T>(raw(statement));
 
-  // A trailing `;` would close `DECLARE` before its query and turn one statement into two. An
-  // EMBEDDED one is refused up in `readOnlyQuery`, before the transaction opens.
-  const query = statement.trim().replace(/;\s*$/, '');
-  await connection.execute(raw(`DECLARE ${CURSOR_NAME} NO SCROLL CURSOR FOR ${query}`));
+  await connection.execute(raw(`DECLARE ${CURSOR_NAME} NO SCROLL CURSOR FOR ${command}`));
   const rows = await connection.query<T>(raw(`FETCH FORWARD ${fetch} FROM ${CURSOR_NAME}`));
   guards.push(`fetch:${fetch} rows`);
   return rows;

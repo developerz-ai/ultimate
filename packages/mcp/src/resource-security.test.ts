@@ -11,7 +11,7 @@
 // on a missing `x.manifest.json` is an ENOENT, and it escaped `handle()` — `serveStdio` REJECTED
 // with the raw error, zero frames written, the request unanswered and the session dead.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { agentActor, UltimateError } from '@ultimat3/core';
 import { defineAppMcp } from './app-tools';
 import type { McpCaller } from './registry';
@@ -180,6 +180,124 @@ describe('a provider that throws is answered, never escaped', () => {
   test('the next request on the same server is still served', async () => {
     await server.handle(readRequest('ultimate://enoent'), anyone);
     expect(listed(await server.handle(listRequest, anyone))).toHaveLength(3);
+  });
+});
+
+/**
+ * Every outcome is AUDITED, hidden included — the tool surface's rule, on the surface that owes
+ * the same three outcomes. `resources/read` emitted nothing at all on any of them, so the one
+ * refusal that tells a prober nothing (`not-found`, which is also `hidden`) left no trace
+ * anywhere: enumeration is a pattern across many requests, and a URI walk over the four documents
+ * that describe an app's whole policy and data map was invisible to the log the tool walk is
+ * alerted from. `resources/list` is deliberately NOT audited, exactly as `tools/list` is not: it
+ * is answered pre-filtered and reveals only what the caller may already see.
+ */
+describe('every resources/read outcome is audited, hidden included', () => {
+  const server = createMcpServer({
+    resources: [
+      doc({ uri: 'ultimate://audit-public' }),
+      doc({ uri: 'ultimate://audit-hidden', visibleTo: ['admin'] }),
+      doc({ uri: 'ultimate://audit-scoped', scope: 'report:read' }),
+      doc({
+        uri: 'ultimate://audit-broken',
+        read: () => {
+          throw new UltimateError({
+            code: 'X_MANIFEST_STALE',
+            cause: 'x.manifest.json is older than the sources',
+            fix: 'x manifest --json',
+          });
+        },
+      }),
+    ],
+  });
+
+  /**
+   * The process logger's real output — the sink production writes to, not a stand-in. BOTH
+   * streams: core's logger sends `error` to stderr and everything below it to stdout, and the
+   * `failed` outcome is the one that lands on the other one.
+   */
+  async function captureLines(run: () => Promise<unknown>): Promise<Record<string, unknown>[]> {
+    const lines: Record<string, unknown>[] = [];
+    const collect = ((chunk: string) => {
+      for (const line of String(chunk).split('\n')) {
+        if (line.trim().length > 0) lines.push(JSON.parse(line) as Record<string, unknown>);
+      }
+      return true;
+    }) as never;
+    const spies = [
+      spyOn(process.stdout, 'write').mockImplementation(collect),
+      spyOn(process.stderr, 'write').mockImplementation(collect),
+    ];
+    try {
+      await run();
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    return lines;
+  }
+
+  test('a URI walk is visible in the log, at warn, whether it misses or is hidden', async () => {
+    const missed = await captureLines(() =>
+      server.handle(readRequest('ultimate://nothing-here'), anyone),
+    );
+    expect(missed).toHaveLength(1);
+    expect(missed[0]).toMatchObject({
+      level: 'warn',
+      msg: 'mcp.resource-read.hidden',
+      surface: 'mcp',
+      resource: 'ultimate://nothing-here',
+      outcome: 'hidden',
+      actor: 'agent-1',
+    });
+
+    const hidden = await captureLines(() =>
+      server.handle(readRequest('ultimate://audit-hidden'), anyone),
+    );
+    // Absent and hidden are ONE answer on the wire, and one line in the log too.
+    expect(hidden[0]).toMatchObject({ msg: 'mcp.resource-read.hidden', outcome: 'hidden' });
+  });
+
+  test('a scope refusal names the scope it wanted', async () => {
+    const lines = await captureLines(() =>
+      server.handle(readRequest('ultimate://audit-scoped'), anyone),
+    );
+    expect(lines[0]).toMatchObject({
+      level: 'warn',
+      msg: 'mcp.resource-read.scope-denied',
+      outcome: 'scope-denied',
+      scope: 'report:read',
+      code: 'X_MCP_SCOPE_DENIED',
+    });
+  });
+
+  test('a read that succeeds is audited too, at info, with no document in the line', async () => {
+    const lines = await captureLines(() =>
+      server.handle(readRequest('ultimate://audit-public'), anyone),
+    );
+    expect(lines[0]).toMatchObject({
+      level: 'info',
+      msg: 'mcp.resource-read.ok',
+      resource: 'ultimate://audit-public',
+      outcome: 'ok',
+    });
+    // The decision, never the data it was made about.
+    expect(JSON.stringify(lines)).not.toContain('{"ok":true}');
+  });
+
+  test('a provider that throws is the one outcome that is a bug, at error', async () => {
+    const lines = await captureLines(() =>
+      server.handle(readRequest('ultimate://audit-broken'), anyone),
+    );
+    expect(lines[0]).toMatchObject({
+      level: 'error',
+      msg: 'mcp.resource-read.failed',
+      outcome: 'failed',
+      code: 'X_MANIFEST_STALE',
+    });
+  });
+
+  test('resources/list stays silent, exactly as tools/list does', async () => {
+    expect(await captureLines(() => server.handle(listRequest, anyone))).toEqual([]);
   });
 });
 

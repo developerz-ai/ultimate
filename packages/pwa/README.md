@@ -93,7 +93,7 @@ capability nothing implements.
 | `planIcons`, `requireSourceIcon`, `maskableSafeZone` | icons and splashes from one source |
 | `BuiltinImagePipeline` | renders that plan: one square PNG per entry, deterministic |
 | `requireOfflineFallback` | the mandatory offline route |
-| `backgroundSyncSource`, `retryDelayMs` | the Background Sync trigger |
+| `backgroundSyncSource`, `registerBackgroundSyncSource` | the Background Sync trigger. No retry policy: the handler rejects and the PLATFORM reschedules it |
 | `renderPushPayload`, `pushSource`, `subscribeSource` | Web Push, per-locale bodies |
 | `createInstallController`, `iosInstallGuidance` | install prompt, never on first paint |
 | `PwaStrategyExhaustedError` and the other `errors.ts` classes | the codes this package throws, catchable by an app |

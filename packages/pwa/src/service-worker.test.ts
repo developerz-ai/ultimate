@@ -251,6 +251,25 @@ describe('rule order is specificity, not the alphabet', () => {
     expect(forward.rules.map((r) => r.pattern)).toEqual(reversed.rules.map((r) => r.pattern));
     expect(forward.rules.map((r) => r.pattern)).toEqual(['^/alpha/?$', '^/beta/?$']);
   });
+
+  /**
+   * The tie-break is CODE UNITS, never `localeCompare` — this file's header promises
+   * byte-identical output for identical input, and `localeCompare` with no locale argument answers
+   * from the runtime's ICU default and collation version, so `/Posts` sorts before `/posts` here
+   * and after it on a machine with a different ICU. The same rule `@ultimat3/jobs`' `job.ts:359`
+   * states for the manifest it emits. `'/Posts'.localeCompare('/posts')` is `1`; `'/Posts' <
+   * '/posts'` is `true`.
+   */
+  test('and the tie-break is code units, so two ICU builds emit one file', () => {
+    const cased: readonly PwaRoute[] = [
+      { path: '/posts', surface: 'site', mode: 'static', offline: 'precache', revision: 'p' },
+      { path: '/Posts', surface: 'site', mode: 'static', offline: 'precache', revision: 'P' },
+    ];
+    expect(generateServiceWorker(cased, config, 'build-1').rules.map((r) => r.pattern)).toEqual([
+      '^/Posts/?$',
+      '^/posts/?$',
+    ]);
+  });
 });
 
 /**

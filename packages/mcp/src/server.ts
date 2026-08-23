@@ -5,7 +5,7 @@
 
 import { singleLine, stringField } from '@ultimat3/core';
 import { formatIssues } from '@ultimat3/schema';
-import { auditToolCall, outcomeForCode, outcomeForResult } from './audit';
+import { auditResourceRead, auditToolCall, outcomeForCode, outcomeForResult } from './audit';
 import { McpScopeDeniedError } from './errors';
 import type { AnyMcpTool, McpCaller, McpToolResult, McpVerbClass, ToolListEntry } from './registry';
 import { ToolRegistry } from './registry';
@@ -221,6 +221,11 @@ export class McpServer {
    * The same three-outcome shape `toolsCall` above applies, on the document surface. It took no
    * caller at all until 2026-08: every accepted token could list every URI and read every one of
    * them — the manifest, the OpenAPI document, the route table and the entity schema.
+   *
+   * And every outcome is AUDITED, hidden included, exactly as `toolsCall`'s are: this method
+   * emitted nothing at all, so a URI walk over those four documents was invisible while the same
+   * walk over tool names was one `warn` per attempt. `resources/list` stays silent, as
+   * `tools/list` does — it is answered pre-filtered.
    */
   private async resourcesRead(req: JsonRpcRequest, caller: McpCaller): Promise<JsonRpcResponse> {
     const id = req.id ?? null;
@@ -232,8 +237,11 @@ export class McpServer {
     const resolved = this.resources.resolve(uri, caller);
     switch (resolved.kind) {
       // OUTCOME 1. Absent AND hidden collapse to one answer with no `data`: this branch used to
-      // return `available: [...every uri]`, so one wrong guess enumerated the whole catalog.
+      // return `available: [...every uri]`, so one wrong guess enumerated the whole catalog. No
+      // `code` on the audit line either, because the wire carries none — the tool surface's
+      // `X_MCP_TOOL_UNKNOWN` is an error class this branch has no twin for.
       case 'not-found':
+        auditResourceRead({ uri, outcome: 'hidden', caller });
         return errorResponse(id, METHOD_NOT_FOUND, `resource not found: ${uri}`);
       // OUTCOME 2. The caller can already see this resource, so naming the missing scope leaks
       // nothing — and the fix travels with it, built by the error that owns the wording.
@@ -242,6 +250,13 @@ export class McpServer {
           name: uri,
           scope: resolved.scope,
           subject: 'resource',
+        });
+        auditResourceRead({
+          uri,
+          outcome: 'scope-denied',
+          caller,
+          scope: resolved.scope,
+          code: denial.code,
         });
         return errorResponse(id, INVALID_REQUEST, `missing scope: ${resolved.scope}`, {
           code: denial.code,
@@ -262,12 +277,17 @@ export class McpServer {
     try {
       const contents = await this.resources.read(uri);
       if (contents === undefined) {
+        // The resolver said `ok` and the registry then had nothing: a bug here, not a walk, so it
+        // is `failed` in the log while the caller still gets the same not-found it would have.
+        auditResourceRead({ uri, outcome: 'failed', caller });
         return errorResponse(id, METHOD_NOT_FOUND, `resource not found: ${uri}`);
       }
+      auditResourceRead({ uri, outcome: 'ok', caller });
       return resultResponse(id, { contents: [contents] });
     } catch (error) {
       const framework = asFrameworkError(error);
       if (framework !== undefined) {
+        auditResourceRead({ uri, outcome: 'failed', caller, code: framework.code });
         return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`, {
           code: framework.code,
           cause: framework.cause,
@@ -276,6 +296,7 @@ export class McpServer {
       }
       // No internals: a provider's own message names a path, a query or a host the caller has no
       // business seeing, exactly as a failing tool's does.
+      auditResourceRead({ uri, outcome: 'failed', caller });
       return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`);
     }
   }

@@ -8,7 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import { dedupe } from './cmd-generate';
 import type { CliCommand, CommandContext } from './command';
-import { MissingPositionalError } from './errors';
+import { AppNameIsPathError, MissingPositionalError } from './errors';
 import type { Runner } from './exec';
 import { msg } from './messages';
 import type { CommandResult } from './output';
@@ -116,7 +116,8 @@ export interface WrittenApp {
  * a migration whose snapshot never existed is what made the app's first two database commands
  * refuse each other — `x db migrate` naming `x db gen`, and `x db gen` refusing a sidecar version
  * control never had. The consequence is deliberate: `x verify`'s `drift` step is red on a pristine
- * scaffold until `x db gen "initial"` runs, which is what `cli.new.done` tells the author to do.
+ * scaffold until `x db gen "initial"` runs — which `bin/setup` does, and which is what
+ * `cli.new.done` tells the author to run.
  */
 export async function writeNewApp(target: string, options: NewAppOptions): Promise<WrittenApp> {
   const files = planNewApp(options);
@@ -128,6 +129,24 @@ export async function writeNewApp(target: string, options: NewAppOptions): Promi
 function parentDir(cwd: string, dirFlag: string | undefined): string {
   if (dirFlag === undefined) return cwd;
   return isAbsolute(dirFlag) ? dirFlag : join(cwd, dirFlag);
+}
+
+/**
+ * The `--dir`/name split of a positional that is really a path, or `undefined` when it is a name.
+ *
+ * Separator-agnostic: a Windows path pasted into a shell here is the same mistake, and `\` is not
+ * a character any app name may hold either.
+ */
+export function appNamePath(raw: string): { parent: string; base: string } | undefined {
+  if (!/[\\/]/.test(raw)) return undefined;
+  const trimmed = raw.replace(/[\\/]+$/, '');
+  const segments = trimmed.split(/[\\/]+/).filter((segment) => segment.length > 0);
+  const base = segments.at(-1) ?? 'myapp';
+  const parent = trimmed.slice(0, trimmed.lastIndexOf(base)).replace(/[\\/]+$/, '');
+  // `x new ./shop` and `x new shop/` both name the directory the caller is already in; `/shop`
+  // names the root, which is a directory and not "here".
+  if (parent !== '' && parent !== '.') return { parent, base };
+  return { parent: /^[\\/]/.test(trimmed) ? '/' : '.', base };
 }
 
 export const newCommand: CliCommand = {
@@ -143,7 +162,7 @@ export const newCommand: CliCommand = {
       {
         // The summary carries the default and the negation because the page has to answer "which
         // one do I get if I type neither": the usage line offered `--no-example`, this table said
-        // `--example`, and `default: true` is a field only `--json` renders. 134 files against 107.
+        // `--example`, and `default: true` is a field only `--json` renders. 136 files against 109.
         name: 'example',
         type: 'boolean',
         summary: 'include the example feature slice (default: on; --no-example for an empty app/)',
@@ -171,6 +190,11 @@ export const newCommand: CliCommand = {
         example: 'x new myapp',
       });
     }
+    // Before `names()`, which is what makes this reachable at all: it slugifies a path into one
+    // kebab-case directory name, so `/srv/apps/shop` becomes `srv-apps-shop` inside the cwd and
+    // the scaffold lands somewhere nobody asked for. `--dir` is the flag that takes a path.
+    const path = appNamePath(raw);
+    if (path !== undefined) throw new AppNameIsPathError({ name: raw, ...path });
     const app = names(raw);
     const target = resolve(parentDir(ctx.cwd, flagString(ctx.args, 'dir')), app.kebab);
     const options: NewAppOptions = { name: raw, example: ctx.args.flags.get('example') !== false };

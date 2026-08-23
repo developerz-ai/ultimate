@@ -96,6 +96,16 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   whole contract exists to prevent. `parseImageQuery` never validates `f` against real format
   names; that refusal stays `image-driver.ts`'s `X_IMAGE_UNSUPPORTED`, so one bad URL never
   carries two codes.
+- **`xml.ts` drops what XML 1.0 cannot represent, `As of 2026-08-23`.** The C0 controls other than
+  tab, LF and CR, plus U+FFFE and U+FFFF, are removed in `escapeXml`, `escapeAttribute` and
+  `cdata` — so `xmlElement`, `attributes`, every sitemap and every feed inherit it. Dropped and not
+  escaped, because there is no escape: `&#1;` is illegal in XML 1.0 for exactly the reason the raw
+  byte is. It has to happen in the escaper rather than at each call site, because ONE such byte in
+  ONE `FeedItem` title makes the whole document not well-formed and a reader answers with "invalid
+  XML" instead of the 49 items it could have parsed — and a scraped title, a paste out of a word
+  processor and a `\x00` a `text` column stored without complaint each produce one. Never widen the
+  class to the surrogate range: an astral character is a legal PAIR, and half of one is worse than
+  the byte the rule exists for.
 - **A feed date never throws and never lies.** `feed-dates.ts` is the only place a feed timestamp
   is parsed or formatted; `buildFeed` resolves every date once, so no builder ever sees a string it
   has to parse. An item date that will not parse is **absent** — the element is omitted (Atom's

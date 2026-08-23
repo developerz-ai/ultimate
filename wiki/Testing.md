@@ -298,7 +298,7 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 | `eval` | a prompt scoring below its committed baseline, or a prompt with no eval at all |
 | `drift` | schema differs from migrations, or a migration is not reversible-or-marked |
 | `contract-diff` | a breaking change to a published action/query without a version bump |
-| `budgets` | per-route JS bytes and LCP |
+| `budgets` | per-route JS bytes and LCP; a live hook on a route with no island is `X_LIVE_ROUTE_NO_ISLAND` |
 | `seo` | an indexable `site/` route with no title, or no description a search result can render |
 | `i18n` | a key missing from a locale's catalog, or a catalog no module ever registered |
 | `manifest` | `x.manifest.json` / `openapi.json` differ from what the code produces, or `AGENTS.md` is missing or over its byte cap |

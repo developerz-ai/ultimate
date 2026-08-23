@@ -2,6 +2,7 @@
 // that resolves it — the codes themselves, their titles and their registration are `./error-codes`,
 // so a package importing a class does not pull the table and vice versa.
 import { UltimateError } from '@ultimat3/core';
+import { quoteArg } from './shell-quote';
 
 /** An unknown command or subcommand. Carries a suggestion so the retry is one keystroke away. */
 export class UnknownCommandError extends UltimateError {
@@ -43,6 +44,27 @@ export class MissingPositionalError extends UltimateError {
       code: 'X_CLI_BAD_FLAG',
       cause: `"x ${input.command}" needs a <${input.positional}> positional and got none`,
       fix: input.example,
+    });
+  }
+}
+
+/**
+ * `x new /srv/apps/shop` — a PATH where a NAME goes.
+ *
+ * `names()` slugifies whatever it is given, so the separators became hyphens and the whole path
+ * turned into ONE directory inside the cwd: `x new /tmp/probe/vision` wrote `tmp-probe-vision`
+ * into the current directory and `git init`-ed it there. Nothing failed, and the app the caller
+ * asked for did not exist.
+ *
+ * `--dir` is the flag that takes a path, so the two are one flag apart and the fix is the
+ * invocation the caller meant — built from what they typed, never a placeholder.
+ */
+export class AppNameIsPathError extends UltimateError {
+  constructor(input: { name: string; parent: string; base: string }) {
+    super({
+      code: 'X_CLI_BAD_FLAG',
+      cause: `"x new" takes a NAME and got the path "${input.name}" — it would be slugified into one directory name`,
+      fix: `x new ${quoteArg(input.base)} --dir ${quoteArg(input.parent)}`,
     });
   }
 }

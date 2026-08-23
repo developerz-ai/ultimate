@@ -210,11 +210,19 @@ const inputSchema = (tool: AdminMcpTool): JsonSchema => ({
 
 /**
  * `caller.actor` is whatever `resolveToken` returned, so the identity the tool runs as is the
- * one the session authenticated as — id and roles are all authz reads.
+ * one the session authenticated as — id, roles and the TENANT are the authz reads.
+ *
+ * `orgId` rides the whole way or an org-scoped rule cannot fire: this hop rebuilt an `AdminActor`
+ * from id and roles alone, so every `AdminAuthz` decision over `POST /mcp` was evaluated with
+ * `actor.orgId === undefined` while the same app's UI path saw the real org — and
+ * `adminList`/`adminSearch` add no tenant predicate of their own. Absent stays ABSENT rather than
+ * becoming an explicit `undefined` key: `policy-bridge.ts` hands it to `userActor`, where
+ * "single-tenant app" and "we dropped it" must not be the same value by accident.
  */
 const adminActorOf = (caller: McpCaller): AdminActor => ({
   id: caller.actor.id,
   roles: caller.actor.roles,
+  ...(caller.actor.orgId === undefined ? {} : { orgId: caller.actor.orgId }),
 });
 
 /**
@@ -343,9 +351,17 @@ export function adminMcp(opts: AdminMcpOptions): AppMcp {
       const actor = await opts.actor({ token });
       // `kind: 'agent'` — the same actor shape an agent gets everywhere else, so a policy
       // that distinguishes agents from people keeps working on this surface.
+      //
+      // `orgId` is carried because this is the FIRST of the two hops between the app's resolver
+      // and an authz decision (`adminActorOf` is the second): dropped here, the tenant is gone
+      // before any tool, catalog filter or child context can see it, and nothing downstream can
+      // put it back.
       return actor === null
         ? null
-        : { actor: agentActor({ id: actor.id, roles: actor.roles ?? [] }), scopes: new Set() };
+        : {
+            actor: agentActor({ id: actor.id, roles: actor.roles ?? [], orgId: actor.orgId }),
+            scopes: new Set(),
+          };
     },
   });
 }

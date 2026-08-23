@@ -37,6 +37,20 @@ export interface ServerHooks {
    * a production process never calls it; `x dev` is the only host that supplies one.
    */
   readonly devNotices?: (ctx: RequestContext) => readonly OverlayNotice[];
+  /**
+   * The app's OWN error page for a status, served byte for byte, or `undefined` to render the
+   * framework's. A seam and not a config value because the answer lives on a disk this package
+   * cannot see: `@ultimat3/cli` reads `apps/web/site/errors/<status>.html`, per request, so a file
+   * dropped into a running server takes effect without a restart — the rule `/favicon.ico`
+   * already follows for the same class of file.
+   *
+   * Consulted only on the production HTML path: a dev process answers a browser with the overlay,
+   * and an agent gets the problem document in both.
+   */
+  readonly errorPage?: (
+    status: number,
+    ctx: RequestContext,
+  ) => Promise<string | undefined> | string | undefined;
 }
 
 export type Authenticator = NonNullable<ServerHooks['authenticate']>;

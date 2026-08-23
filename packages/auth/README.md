@@ -445,7 +445,7 @@ an adapter implementation, not a dependency of this package.
 | Driver | Use |
 |---|---|
 | `BuiltinAdapter` | Postgres via `@ultimat3/db`; takes an injected `DbClient` |
-| `MemoryAdapter` | `x new` before a database exists, and every test in this package |
+| `MemoryAdapter` | `x new` before a database exists, and every test in this package. `new MemoryAdapter(clock)` — `systemClock` by default — stamps every instant it writes |
 | your own | implement `AuthAdapter`; DDL in `tables.ts` shows what the columns mean |
 
 **An adapter stores and matches the address it is handed — it never folds case.** `x_users.email`

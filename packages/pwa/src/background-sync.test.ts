@@ -7,11 +7,8 @@ import { describeErrorCode } from '@ultimat3/core';
 import {
   backgroundSyncSource,
   DEFAULT_FLUSH_ENDPOINT,
-  DEFAULT_RETRY,
   registerBackgroundSyncSource,
-  retryDelayMs,
   SYNC_TAG,
-  shouldRetry,
 } from './background-sync';
 import { PwaSyncFlushFailedError, PwaSyncIncompleteError } from './errors';
 
@@ -64,9 +61,41 @@ describe('backgroundSyncSource', () => {
 
     // A rejected flush is reproducible against the endpoint the SW just called.
     expect(source).toContain("'curl -i -X POST '+FLUSH_ENDPOINT");
-    // A partial flush is the outbox worker's business, or the retry ceiling's.
+    // A partial flush is the outbox worker's business: run the role that drains it.
     expect(source).toContain('x dev --role sync');
-    expect(source).toContain('pwa.backgroundSync.retry.maxAttempts in app.config.ts');
+  });
+
+  /**
+   * The partial-flush fix told the reader to raise `pwa.backgroundSync.retry.maxAttempts in
+   * app.config.ts`, a key `PwaConfig` has never carried — `backgroundSync` is a BOOLEAN
+   * (`packages/core/src/config.ts`) — so the one instruction a developer sees in devtools pointed
+   * at an edit that cannot be made. `wiki/Error-Codes.md:430` had it right the whole time, and
+   * `scripts/doc-config-keys.ts` reads `docs/**` and `wiki/**` only, never a key spelled inside a
+   * string this package EMITS, which is why nothing caught it.
+   */
+  test('and names no config key, because there is no retry knob to raise', () => {
+    const source = backgroundSyncSource();
+
+    expect(source).not.toContain('app.config.ts');
+    expect(source).not.toContain('backgroundSync.retry');
+  });
+
+  /**
+   * `SYNC_MAX_ATTEMPTS` shipped in every `sw.js` and was read by nothing: `flushOutbox` counts no
+   * attempts, and the retry schedule is the platform's own. Same defect
+   * `scripts/config-readers.ts` mechanised one realm further in — a knob an author sets and no
+   * code honours — so it is asserted here, in the realm that script cannot see.
+   */
+  test('every constant the worker declares is one the worker reads', () => {
+    const source = backgroundSyncSource();
+    const declared = [...source.matchAll(/const ([A-Z][A-Z0-9_]*)=/g)].map(
+      (match) => match[1] as string,
+    );
+
+    expect(declared.length).toBeGreaterThan(0);
+    expect(
+      declared.filter((name) => (source.match(new RegExp(`\\b${name}\\b`, 'g')) ?? []).length < 2),
+    ).toEqual([]);
   });
 
   test('the emitted class exposes code, cause, fix and docs, like every other Ultimate error', () => {
@@ -163,26 +192,6 @@ describe('the emitted flushOutbox, executed', () => {
       code: PwaSyncFlushFailedError.code,
       name: 'PwaSyncError',
     });
-  });
-});
-
-describe('retryDelayMs', () => {
-  test('doubles per attempt and stops at the ceiling', () => {
-    expect(retryDelayMs(1)).toBe(DEFAULT_RETRY.baseDelayMs);
-    expect(retryDelayMs(3)).toBe(DEFAULT_RETRY.baseDelayMs * 4);
-    expect(retryDelayMs(DEFAULT_RETRY.maxAttempts)).toBeLessThanOrEqual(DEFAULT_RETRY.maxDelayMs);
-  });
-
-  test('an attempt below one or past the ceiling is clamped, never negative or unbounded', () => {
-    expect(retryDelayMs(0)).toBe(DEFAULT_RETRY.baseDelayMs);
-    expect(retryDelayMs(99)).toBe(retryDelayMs(DEFAULT_RETRY.maxAttempts));
-  });
-});
-
-describe('shouldRetry', () => {
-  test('stops at the attempt ceiling', () => {
-    expect(shouldRetry(DEFAULT_RETRY.maxAttempts - 1)).toBe(true);
-    expect(shouldRetry(DEFAULT_RETRY.maxAttempts)).toBe(false);
   });
 });
 

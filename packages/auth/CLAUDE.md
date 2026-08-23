@@ -98,6 +98,13 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   a limiter built through the seam holds the clock its host handed it, and that is the clock every
   `at_ms` in those tables was written from. `AuthLimiter.purgeExpired` is OPTIONAL so
   `createAuthLimiter` can keep bounding itself; a limiter with no table declares nothing.
+  **What the seam RETAINS is one limiter per window, `As of 2026-08-23`** — a `Map` keyed by
+  `windowMs`, because the widest window is the only thing a purge reads. It was a list appended to
+  on every `installedAuthLimiter` call, two per `defineAuth`, trimmed by nothing: a process that
+  redefines auth (`x dev`'s reload, a test file, a host building one `Auth` per app) held every
+  limiter it ever built and the store behind each. `installedLimiterCount()` is the only
+  observation of that growth — a purge sweeps exactly one limiter however many are held — and it
+  is not exported from `src/index.ts`.
 
 - **`normaliseEmail` is the ONE normalisation, it lives ABOVE the `AuthAdapter` seam, and no
   adapter may fold case** (`As of 2026-08`). `MemoryAdapter` lowercased and trimmed on both
@@ -268,6 +275,17 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   what `x new` scaffolds and what every test runs against, so the duplicate path was only ever
   exercised against the permissive half of the seam: two `register()` calls at one address made two
   rows, and the second was unreachable forever. `adapter-parity.test.ts` pins both halves.
+  **A NULL is not a value to either index, `As of 2026-08-23`**: a Postgres unique index is NULLS
+  DISTINCT, so `external_id` constrains only the rows that carry one — the check was
+  `!== undefined`, and `oauth-login.ts` binds `grants.externalId ?? null` for every first-time
+  OAuth user, so the SECOND such signup on a `MemoryAdapter` app failed with `X_AUTH_WRITE_FAILED`
+  against a constraint production does not have.
+- **`MemoryAdapter` takes a `Clock`, and every instant it stamps comes from it** —
+  `new MemoryAdapter(clock)`, defaulting to `systemClock`, so the no-argument construction every
+  test already writes is unchanged. `takeVerification` stamped `consumedAt` with the record's
+  own `createdAt` — the moment the link was ISSUED — where `BuiltinAdapter` writes
+  `consumed_at = now()`, the moment it was REDEEMED: a redemption an hour later and one a second
+  later recorded the identical instant, and a frozen test clock could not move either.
 - The new `AuthAdapter` members are OPTIONAL (`findUserByExternalId`, `listUsersByOrg`,
   `deleteSessionsForUser`, `deleteSessionsForOrg`, `deleteSessionsCreatedBefore`). A required
   member is a breaking change to every third-party adapter; the callers throw

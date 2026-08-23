@@ -36,6 +36,44 @@ describe('escapeXml', () => {
   });
 });
 
+// XML 1.0 has no way to write these AT ALL — not raw, and not as `&#1;`, which is illegal too
+// (`Char` excludes them, and a numeric reference is a `Char`). So the only thing an emitter can do
+// with one is drop it. One byte of a scraped title, a paste out of a Word document or a `\x00` a
+// database column happily stored makes the WHOLE feed not well-formed, and a feed reader answers
+// that with "invalid XML" rather than with the item it could not parse.
+describe('a character XML 1.0 cannot represent', () => {
+  const CONTROL = String.fromCharCode(1);
+  const NUL = String.fromCharCode(0);
+
+  test('escapeXml drops it instead of emitting it verbatim', () => {
+    expect(escapeXml(`a${CONTROL}b`)).toBe('ab');
+    expect(escapeXml(`a${NUL}b`)).toBe('ab');
+    // The three C0 characters XML 1.0 DOES allow are not touched: a description holds newlines.
+    expect(escapeXml('a\tb\nc\rd')).toBe('a\tb\nc\rd');
+    // The two non-characters at the end of the BMP are illegal for the same reason.
+    const nonCharacters = `a${String.fromCharCode(0xfffe)}b${String.fromCharCode(0xffff)}c`;
+    expect(escapeXml(nonCharacters)).toBe('abc');
+    // A character above the BMP is a surrogate PAIR and perfectly legal — dropping half of one
+    // would be worse than the byte this rule exists for.
+    expect(escapeXml('a👍b')).toBe('a👍b');
+  });
+
+  test('escapeAttribute drops it too, so an attribute cannot break the document either', () => {
+    expect(escapeAttribute(`a${CONTROL}b`)).toBe('ab');
+    expect(attributes({ href: `x${NUL}y` })).toBe(' href="xy"');
+  });
+
+  test('xmlElement inherits it, which is what a <title> is built out of', () => {
+    expect(xmlElement('title', `Q${CONTROL}1 results`)).toBe('<title>Q1 results</title>');
+  });
+
+  test('cdata inherits it as well — CDATA suspends markup, never the character rule', () => {
+    expect(cdata(`<p>a${CONTROL}b</p>`)).toBe('<![CDATA[<p>ab</p>]]>');
+    // And the escape it already had is untouched.
+    expect(cdata('a]]>b')).toBe('<![CDATA[a]]]]><![CDATA[>b]]>');
+  });
+});
+
 describe('escapeAttribute', () => {
   test('escapes & < > " but not the apostrophe', () => {
     expect(escapeAttribute('&')).toBe('&amp;');

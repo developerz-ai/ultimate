@@ -19,6 +19,10 @@ afterEach(() => {
   resetMetrics();
 });
 
+/** The two control characters the series key used to be built out of, named rather than pasted. */
+const PAIR_SEPARATOR = String.fromCharCode(1);
+const SEPARATOR = String.fromCharCode(0);
+
 const pointsOf = (name: string) =>
   collectMetrics().metrics.find((metric) => metric.descriptor.name === name)?.points ?? [];
 
@@ -32,6 +36,33 @@ describe('counter', () => {
     const points = pointsOf('test_requests_total');
     expect(points).toHaveLength(2);
     expect(points.find((point) => point.attributes['method'] === 'GET')?.value).toBe(3);
+  });
+
+  // Two label sets are two series, and the KEY is what decides that. It was the sorted pairs
+  // joined by control characters — U+0000 between a key and its value, U+0001 between pairs — so
+  // a VALUE carrying those bytes spells another label set exactly: `{ a: 'b\u0001c\u0000d' }` is
+  // byte-for-byte the key of `{ a: 'b', c: 'd' }`. The point lands on whichever series arrived
+  // first, carrying ITS attributes, so an exported point is attributed to labels the caller never
+  // passed. An attribute value is app data — a topic, a queue name, a route.
+  test('an attribute value carrying the separators is not another label set', () => {
+    const collide = `b${PAIR_SEPARATOR}c${SEPARATOR}d`;
+    const served = counter('test_separator_total');
+    served.add(1, { a: 'b', c: 'd' });
+    served.add(5, { a: collide });
+
+    const points = pointsOf('test_separator_total');
+    // Observed before the fix: one point, value 6, attributed to `{ a: 'b', c: 'd' }`.
+    expect(points).toHaveLength(2);
+    expect(points.find((point) => point.attributes['c'] === 'd')?.value).toBe(1);
+    expect(points.find((point) => point.attributes['a'] === collide)?.value).toBe(5);
+  });
+
+  test('and attribute ORDER still does not, which is the property the key exists for', () => {
+    const served = counter('test_order_total');
+    served.add(1, { a: 'b', c: 'd' });
+    served.add(2, { c: 'd', a: 'b' });
+
+    expect(pointsOf('test_order_total')).toEqual([{ attributes: { a: 'b', c: 'd' }, value: 3 }]);
   });
 
   test('refuses to go down — that is a gauge', () => {

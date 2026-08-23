@@ -65,10 +65,6 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
     count: 4,
     reason: 'MIME header and encoding tables keyed by a union this package declares.',
   },
-  mcp: {
-    count: 1,
-    reason: '`audit.ts:126` picks a log level from a table keyed by a tool outcome.',
-  },
   pwa: {
     count: 1,
     reason: '`strategies.ts:66` maps a route `RenderMode` to a caching strategy.',

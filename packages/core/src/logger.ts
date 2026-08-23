@@ -1,6 +1,7 @@
 // Single responsibility: structured JSON logging. One line per event, machine-readable by
 // default because the primary reader is an agent tailing `x logs --json`.
 
+import { assert } from './assert';
 import { type Clock, systemClock } from './clock';
 import { renderCauseValue } from './error-render';
 import { isUltimateError } from './errors';
@@ -244,8 +245,29 @@ function envLevel(): LogLevel {
     : 'info';
 }
 
+/**
+ * The level this logger enforces, refused when it is not one.
+ *
+ * `LEVEL_WEIGHT[level]` on anything else is `undefined`, and every `weight < undefined` is false —
+ * so the threshold failed OPEN and the logger emitted every line at every level. That is a `trace`
+ * stream out of a production process from one typo, which is the direction this read must never
+ * fail in. `LOG_LEVELS`, the same list `envLevel()` filters `LOG_LEVEL` through, because a level
+ * is typed here and arrives untyped: an `app.config.ts` value, a JSON file, a CLI flag.
+ */
+function resolveLevel(declared: LogLevel): LogLevel {
+  assert(
+    (LOG_LEVELS as readonly unknown[]).includes(declared),
+    // `renderCauseValue`, never `JSON.stringify`: it raises on a bigint and on a cycle, and a
+    // level that arrived from a config file can be either — the refusal must not be replaced by
+    // a `TypeError` from building its own message.
+    `${renderCauseValue(declared)} is not a log level`,
+    `pass one of ${LOG_LEVELS.join(', ')} to createLogger({ level })`,
+  );
+  return declared;
+}
+
 export function createLogger(options?: LoggerOptions): Logger {
-  const level = options?.level ?? envLevel();
+  const level = options?.level === undefined ? envLevel() : resolveLevel(options.level);
   const bound = options?.fields ?? {};
   const clock = options?.clock ?? systemClock;
   const writer = options?.writer ?? defaultWriter;

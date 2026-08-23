@@ -2,6 +2,7 @@
 // database exists and the one every test in this package runs against — the same interface
 // Postgres and Better Auth implement, so a flow that works here works there or the seam is wrong.
 
+import { type Clock, systemClock } from '@ultimat3/core';
 import type {
   AuthAccount,
   AuthAdapter,
@@ -21,11 +22,21 @@ const verificationKey = (purpose: string, identifier: string): string => `${purp
 
 export class MemoryAdapter implements AuthAdapter {
   readonly name = 'memory';
+  readonly #clock: Clock;
   readonly #users = new Map<string, AuthUser>();
   readonly #sessions = new Map<string, AuthSession>();
   readonly #accounts = new Map<string, AuthAccount>();
   readonly #verifications = new Map<string, AuthVerification>();
   readonly #apiKeys = new Map<string, AuthApiKeyRecord>();
+
+  /**
+   * The clock every instant this adapter stamps comes from — one argument, because a stamp is a
+   * fact about WHEN a call happened and a test that cannot move it can only assert a range.
+   * Defaults to `systemClock`, so `new MemoryAdapter()` is what it always was.
+   */
+  constructor(clock: Clock = systemClock) {
+    this.#clock = clock;
+  }
 
   /**
    * Exact match, because `BuiltinAdapter` issues `where email = $1` against a plain `text ...
@@ -59,7 +70,17 @@ export class MemoryAdapter implements AuthAdapter {
       if (existing.email === input.email) {
         throw authUniqueViolation('createUser', 'x_users', 'email');
       }
-      if (input.externalId !== undefined && existing.externalId === input.externalId) {
+      // `!= null` in one predicate, spelled out: a Postgres unique index is NULLS DISTINCT, so
+      // `external_id text unique` constrains only the rows that CARRY a value and admits
+      // unlimited NULLs. `!== undefined` alone made a second account with no external id collide
+      // with the first — and `oauth-login.ts` hands over `grants.externalId ?? null` for every
+      // first-time OAuth user, so the second such signup failed against a constraint production
+      // does not have.
+      if (
+        input.externalId !== undefined &&
+        input.externalId !== null &&
+        existing.externalId === input.externalId
+      ) {
         throw authUniqueViolation('createUser', 'x_users', 'external_id');
       }
     }
@@ -216,7 +237,10 @@ export class MemoryAdapter implements AuthAdapter {
     // Before the write, never after: a wrong guess that consumed the row would be an
     // unauthenticated way to kill the victim's live link, which is the Postgres adapter's rule too.
     if (!timingSafeEqual(tokenHash, record.tokenHash)) return null;
-    const consumed: AuthVerification = { ...record, consumedAt: new Date(record.createdAt) };
+    // The moment it was REDEEMED, which is what `consumed_at = now()` writes on the Postgres
+    // side. This was `new Date(record.createdAt)` — the moment it was ISSUED — so every window
+    // measured from the stamp read a redemption as having happened at issue time.
+    const consumed: AuthVerification = { ...record, consumedAt: this.#clock.now() };
     this.#verifications.set(key, consumed);
     return consumed;
   }

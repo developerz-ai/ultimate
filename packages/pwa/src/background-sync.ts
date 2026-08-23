@@ -20,36 +20,19 @@ import { BUILD_ID_HEADER } from './version-skew';
 
 export const SYNC_TAG = 'x-outbox';
 
-export interface RetryPolicy {
-  readonly maxAttempts: number;
-  readonly baseDelayMs: number;
-  readonly maxDelayMs: number;
-}
-
-export const DEFAULT_RETRY: RetryPolicy = Object.freeze({
-  maxAttempts: 6,
-  baseDelayMs: 1_000,
-  maxDelayMs: 5 * 60 * 1000,
-});
-
 /**
- * Deterministic exponential backoff — no jitter here on purpose: the Background Sync
- * scheduler already spreads wake-ups across clients, and a deterministic delay is
- * testable and reproducible in a bug report.
+ * `retry` was removed 2026-08-23, with `RetryPolicy`, `DEFAULT_RETRY`, `retryDelayMs` and
+ * `shouldRetry`: **this package schedules no retry and never did.** The one-shot `sync` handler
+ * rejects, and the PLATFORM decides when to wake it again — `flushOutbox` counts no attempts and
+ * has nowhere to apply a delay. Of the policy only `maxAttempts` ever reached the worker, as a
+ * `SYNC_MAX_ATTEMPTS` constant nothing read; the two exported functions were called by their own
+ * test and by nothing else. Same rule as `PwaConfig.installPrompt` and `JobsConfig.driver`
+ * (`packages/core/src/config.ts`): a knob that produces neither a build error nor a runtime effect
+ * is worse than no knob, because an author sets it, ships, and nothing changes.
  */
-export function retryDelayMs(attempt: number, policy: RetryPolicy = DEFAULT_RETRY): number {
-  const clamped = Math.max(1, Math.min(attempt, policy.maxAttempts));
-  return Math.min(policy.baseDelayMs * 2 ** (clamped - 1), policy.maxDelayMs);
-}
-
-export function shouldRetry(attempt: number, policy: RetryPolicy = DEFAULT_RETRY): boolean {
-  return attempt < policy.maxAttempts;
-}
-
 export interface BackgroundSyncOptions {
   /** Endpoint `@ultimat3/realtime` exposes to flush the outbox. */
   readonly flushEndpoint?: string;
-  readonly retry?: RetryPolicy;
 }
 
 export const DEFAULT_FLUSH_ENDPOINT = '/_x/outbox/flush';
@@ -86,11 +69,9 @@ class PwaSyncError extends Error{
  */
 export function backgroundSyncSource(options: BackgroundSyncOptions = {}): string {
   const endpoint = options.flushEndpoint ?? DEFAULT_FLUSH_ENDPOINT;
-  const retry = options.retry ?? DEFAULT_RETRY;
   return `
 const SYNC_TAG=${JSON.stringify(SYNC_TAG)};
 const FLUSH_ENDPOINT=${JSON.stringify(endpoint)};
-const SYNC_MAX_ATTEMPTS=${retry.maxAttempts};
 ${SYNC_ERROR_CLASS}
 async function flushOutbox(){
   const res=await fetch(FLUSH_ENDPOINT,{method:'POST',headers:{${JSON.stringify(BUILD_ID_HEADER)}:BUILD_ID}});
@@ -98,7 +79,7 @@ async function flushOutbox(){
   // ||{} rather than a default inside the catch: json() on a 200 body of null RESOLVES with null,
   // so the catch never fires and body.remaining raised inside waitUntil instead of refusing coded.
   const body=(await res.json().catch(()=>null))||{};
-  if(body.remaining>0)throw new PwaSyncError(${JSON.stringify(PwaSyncIncompleteError.code)},'outbox flush at '+FLUSH_ENDPOINT+' left '+body.remaining+' mutation(s) queued','x dev --role sync   # drain the outbox, or raise pwa.backgroundSync.retry.maxAttempts in app.config.ts');
+  if(body.remaining>0)throw new PwaSyncError(${JSON.stringify(PwaSyncIncompleteError.code)},'outbox flush at '+FLUSH_ENDPOINT+' left '+body.remaining+' mutation(s) queued','x dev --role sync   # run the role that drains the outbox; the browser reschedules this sync on its own');
 }
 self.addEventListener('sync',(event)=>{
   if(event.tag!==SYNC_TAG)return;

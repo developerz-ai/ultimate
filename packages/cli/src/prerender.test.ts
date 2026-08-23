@@ -8,6 +8,7 @@ import { useContext } from '@ultimat3/core';
 import { clearRoutes, defineRoute, island, registerRoute, routeEntries } from '@ultimat3/render';
 import { appManifest } from './app-manifest';
 import { checkBudgets, readBuildStats } from './budgets';
+import { errorPageSource, STATIC_ERROR_PAGE } from './error-pages';
 import { faviconBytes } from './favicon';
 import { isPrerenderable, prerenderSite } from './prerender';
 import { readStaticReport } from './static-report';
@@ -84,6 +85,25 @@ describe('x build --target static', () => {
     // no `toEqual` overload — the bytes are what this asserts, never the buffer they sit on.
     expect(new Uint8Array(written)).toEqual(new Uint8Array((await faviconBytes(ROOT)).bytes));
     expect(written.length).toBeGreaterThan(0);
+  });
+
+  // Same rule, one document further: a static host answers a path that matches no file with
+  // `404.html` off the export root, and an artifact without one hands the visitor the host's
+  // default page — which is not this app's, in any language, with no way back to it.
+  test('the export carries a 404 page, and the app can override it', async () => {
+    registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
+    const out = join(ROOT, 'static');
+    await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+
+    const page = await Bun.file(join(out, STATIC_ERROR_PAGE)).text();
+    expect(page).toStartWith('<!doctype html>');
+    expect(page).toContain('Page not found');
+    expect(page).toContain('https://github.com/developerz-ai/ultimate');
+
+    const own = '<!doctype html><title>ours</title>Gone fishing';
+    await Bun.write(join(ROOT, errorPageSource(404)), own);
+    await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+    expect(await Bun.file(join(out, STATIC_ERROR_PAGE)).text()).toBe(own);
   });
 
   test('the written file is the document the dev server serves, with the route metadata in it', async () => {

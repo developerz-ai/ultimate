@@ -1,6 +1,8 @@
-// The dev overlay's stylesheet, split from the document that carries it so `security-headers.ts`
-// can hash it into the CSP without importing the renderer — and so the hash is computed from the
-// one copy of the text, never from a constant that drifted away from what the `<style>` holds.
+// The stylesheet of every document this package renders — the dev overlay and the production
+// error page — split from both so `security-headers.ts` can hash it into the CSP without importing
+// a renderer, and so the hash is computed from the one copy of the text rather than from a constant
+// that drifted away from what the `<style>` holds. ONE stylesheet and not two: a second inline body
+// is a second `style-src` hash, and the page that shipped without one renders unstyled.
 
 // Token definitions live here and nowhere else; every rule below uses var().
 export const OVERLAY_STYLE = `
@@ -40,4 +42,10 @@ a { color: var(--x-accent); }
    card exists to show would sit on top of their own causes. */
 .notices dl { grid-template-columns: 14rem 1fr; }
 .notices dt { overflow-wrap: anywhere; }
+/* The production error page's three rules. The status is the one number a visitor reads first, so
+   it leads at display size in the muted role — never the danger role, which the overlay's h1 owns
+   and which says "a defect" rather than "this page moved". */
+.status { font-size: 2.5rem; line-height: 1.1; margin: 0; color: var(--x-muted); }
+.lede { margin: .25rem 0 1rem; }
+footer { display: flex; flex-wrap: wrap; gap: 1rem; color: var(--x-muted); }
 `;

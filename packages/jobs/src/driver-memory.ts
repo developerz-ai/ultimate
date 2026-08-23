@@ -83,6 +83,22 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
     jobs.set(id, { ...existing, ...patch, updatedAt: nowMs(clock) });
   };
 
+  /**
+   * `update`, plus the lease columns `SQL_ACK`/`SQL_NACK` set to `null`.
+   *
+   * A settlement RELEASES the claim, and a `Partial<JobRecord>` cannot say so: both fields are
+   * optional, so `visibleAt: undefined` would keep the key and `{ ...existing }` keeps the value.
+   * Left stamped, a `done` row still named the worker that finished it and carried that attempt's
+   * lease deadline — which `x jobs show` prints, and which is the very pair the claim scan's
+   * lease-expiry branch reads to decide a row was abandoned.
+   */
+  const settle = (id: string, patch: Partial<JobRecord>): void => {
+    const existing = jobs.get(id);
+    if (existing === undefined) return;
+    const { visibleAt: _visibleAt, claimedBy: _claimedBy, ...released } = existing;
+    jobs.set(id, { ...released, ...patch, updatedAt: nowMs(clock) });
+  };
+
   const introspect: JobIntrospection = {
     job(jobId) {
       return Promise.resolve(jobs.get(jobId));
@@ -215,7 +231,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
     // would otherwise overwrite a row it no longer owns.
     ack(jobId: string): Promise<void> {
       if (jobs.get(jobId)?.state !== 'running') return Promise.resolve();
-      update(jobId, { state: 'done' });
+      settle(jobId, { state: 'done' });
       return Promise.resolve();
     },
 
@@ -241,7 +257,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
         attempt: counts ? record.attempt : Math.max(0, record.attempt - 1),
         ...(nackOptions.error === undefined ? {} : { lastError: nackOptions.error }),
       };
-      update(jobId, patch);
+      settle(jobId, patch);
       return Promise.resolve();
     },
 

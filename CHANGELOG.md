@@ -22,6 +22,27 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `x errors explain` already imported at run time (#283). In an app that did not depend on them,
   41 documented codes answered `X_ERROR_CODE_UNKNOWN` while the wiki promised they resolved.
   `error-catalog.test.ts` now derives the importable set from `package.json`.
+- **Error pages a browser can read, and an app can override.** A production process answered a
+  browser's 404 or 500 with `problem+json` — carrying the internal `cause` and the author-facing
+  `fix:`. Now a request that accepts HTML gets the framework's error page: status, code, request
+  id, nothing off the throwable, a footer linking the Ultimate repository and developerz.ai. Copy
+  is the catalog's `errors.*` keys, declared since 1.0 and read by nothing until now. Override one
+  per status with `apps/web/site/errors/<status>.html`, served byte for byte and read per request;
+  `x build --target static` writes `404.html`. `x dev` keeps the overlay.
+- **`X_LIVE_ROUTE_NO_ISLAND`** — a route whose module graph reaches a live hook and declares no
+  island (or `hydrate: 'never'`) can never receive a row; the `budgets` step now refuses it at
+  build time instead of a 500 on first request (#271's second half). `examples/dummy`'s `/feed` is
+  now a real island that connects, subscribes by name and renders the snapshot.
+- **`x new` scaffolds a development authenticator** (`apps/web/app/auth/dev-actor.ts`, installed
+  in `development` only), so a fresh app no longer boots with `X_CONFIG_INVALID: 7 route(s)
+  declare auth: 'required' and no authenticator is configured` and `/dashboard` opens. A deploy
+  still warns until the app issues sessions. `@ultimat3/http` joins the scaffold's dependencies —
+  it was absent.
+- **`docs/idea/21-the-range.md`** — who Ultimate is for, homework to very large, measured at the
+  small end (`x new` asks 0 questions, 136 files, 4 commands to a running app) and anchored at the
+  large end (the gate, the tiers, the ladder, the realtime numbers), with the model-cost axis
+  stated: enforced conventions and errors-as-instructions matter more with a cheap model.
+  Linked, never restated, from `README.md`, `wiki/Home.md`, `llms.txt`, the FAQ and ops.
 - **A server render gets a live client instead of a 500.** With no DOM, every `@ultimat3/realtime`
   hook falls back to `serverRenderLiveClient()` — `loading`, no rows, no subscription — so a page
   whose body reads a live query renders its loading branch on the server and the browser takes
@@ -37,8 +58,73 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   ±377 B flap is Bun 1.4.0's tree-shaker racing on a `sideEffects`-declared module, reproduced
   with no plugins; the recipe is in the test header.
 
+### Changed
+
+- **BREAKING — `RetryPolicy`, `DEFAULT_RETRY`, `retryDelayMs`, `shouldRetry` and
+  `BackgroundSyncOptions.retry` are deleted (`@ultimat3/pwa`).** This package schedules no retry
+  and never did: the one-shot `sync` handler rejects and the PLATFORM decides when to wake it
+  again. Only `maxAttempts` ever reached the worker, as a `SYNC_MAX_ATTEMPTS` constant nothing
+  read, and the emitted `X_PWA_SYNC_INCOMPLETE` fix told the reader to raise
+  `pwa.backgroundSync.retry.maxAttempts` — a key `PwaConfig` has never carried, because
+  `backgroundSync` is a boolean. Delete the import; there is nothing to replace it with, and
+  `wiki/Error-Codes.md` already said so.
+- `@ultimat3/mcp` audits the resource surface: `auditResourceRead` / `McpResourceAuditEntry`, log
+  event `mcp.resource-read.<outcome>` for hidden, scope-denied, ok and failed — an enumeration alert
+  should match `mcp.tool-call.*` **and** `mcp.resource-read.*`. `resources/list` stays silent, as
+  `tools/list` does: a pre-filtered list reveals nothing the caller cannot already read.
+- Admin over MCP carries the operator's `orgId` to every authz decision and into the ambient
+  actor; it was dropped at both hops, so an org-scoped rule could not fire and entity tenancy
+  derived no predicate (26 of 26 decisions measured with `orgId` absent).
+- `bun run secret-compare` reads names case-insensitively, as its comment always claimed:
+  `SESSION_SECRET`, `API_KEY`, `CSRF_TOKEN`, `password`, `otp` were invisible to it. The suffix
+  rule requires a boundary so a bare `key` stays out. Two new pins (`storage`, a published dev
+  literal; `core`, a PNG magic number).
+- Every sort that is projected into a committed artifact is a code-unit compare: the service
+  worker's route table, the precache manifest, `docs-search`'s tie-break and `docs-scan`'s corpus
+  were `localeCompare`, an ICU property the file headers' byte-identical promise denied.
+- The memory job driver clears `visibleAt` / `claimedBy` on ack and nack, as `SQL_ACK` / `SQL_NACK`
+  do; `x jobs show` under `x dev` reported a settled job as still leased.
+
 ### Fixed
 
+- `x new <name>` was lint-red on run one whenever the name sorted after `ultimat3`: every
+  template emitted the `@<app>/…` import above `@ultimat3/…`, the only order Biome's
+  `organizeImports` accepts for names a–t. `sortedImports` orders every emitted block;
+  `generate-format.test.ts` now scaffolds `zebra-demo` through the real Biome.
+- `x new /abs/path` slugified the path into a directory inside the current repository and
+  `git init`ed it. It is refused with the invocation meant: `x new <name> --dir <path>`.
+- One documented first run: `x new`'s closing line said `bun install && x db gen … && x dev`
+  while the scaffold's own README and CI say `bin/setup`. Eight doc pages told readers
+  `cd myapp && x dev`, which fails on `X_BUILD_FAILED` because `x new` installs nothing — every
+  one now says `bin/setup`. `wiki/Installation.md` listed six `x new` flags that do not exist.
+- Docs falsified against 10.0.0 and corrected: `realtime.tier` (deleted — tier 3 is
+  `persist: true` on a query), `ServeOptions.runtime`, the jobs driver seam, the shared
+  rate-limit store, the `x dev` transcript, `.x/pgdata`, the tutorial's file and step counts.
+- The memory entity driver answered `eq null` / `neq null` / `in [null]` differently from Postgres
+  for a column the row never named — reachable through the repo/seed seam and, always, through a
+  NULL money column's parts. Absent and NULL are now one value to every predicate, as the file's
+  own header promised.
+- `memoryRepo.updateWhere` judged a cross-tenant patch per merged row, so a filter matching zero
+  rows answered `0` where Postgres throws `X_TENANCY_ROW_MISMATCH`. The patch is judged first,
+  on both drivers.
+- `MemoryAdapter.createUser` refused a second user with `externalId: null`, which every OAuth
+  sign-up without an external-id grant passes — the second first-time OAuth user on a memory-backed
+  app failed `X_AUTH_WRITE_FAILED`. `x_users.external_id` is `text unique`, NULLS DISTINCT, and the
+  adapter now agrees. `takeVerification` stamped `consumedAt` with the issue time; it reads a clock
+  — **`new MemoryAdapter(clock?)`**, defaulting to the system clock.
+- `beginStatement` interpolated `options.isolation` into `raw()` SQL; the three levels are now
+  re-derived from the closed set and anything else is `X_SQL_UNSAFE`.
+- `readOnlyQuery('select 1; -- note')` passed the one-statement guard and then emitted
+  `DECLARE … CURSOR FOR select 1; -- note`, an uncoded driver error. The cursor splices the
+  splitter's own first statement.
+- `createLogger({ level: 'verbose' })` built a logger that failed **open** (every level emitted).
+  An unknown level is refused at construction; `LOG_LEVEL` from the environment is still filtered.
+- `seriesKey` in `@ultimat3/core` metrics was not injective across attribute values carrying the
+  pair separators; two label sets could merge into one series.
+- `escapeXml` left XML-1.0-illegal control characters verbatim, so one byte in a feed item's title
+  made the whole document not well-formed; they are stripped in element text, attributes and CDATA.
+- `defineAuth()` retained two limiters per call for the life of the process; one per distinct
+  window is kept.
 - `srcsetFor` in `@ultimat3/ui` emitted a variant `src` holding whitespace or a leading/trailing
   comma verbatim, which the browser parses as a different URL and drops in silence; it is now
   `X_UI_INVALID_VALUE`.

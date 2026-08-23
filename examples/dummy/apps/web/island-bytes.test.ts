@@ -11,8 +11,11 @@
 // here. It does NOT pin Bun's tree-shaker, which is not reproducible in 1.4.0: measured
 // 2026-08-23, roughly one browser build in seventy drops `@ultimat3/core`'s
 // `schema-error-codes.ts` — a module core's own `sideEffects` array NAMES — costing 377 B and
-// every `@ultimat3/schema` error title in that chunk. This app's two islands cannot flip that way
-// and that is why they are the fixture: neither graph reaches a `sideEffects`-declared module.
+// every `@ultimat3/schema` error title in that chunk. This app's three islands cannot flip that
+// way and that is why they are the fixture: no graph reaches a `sideEffects`-declared module.
+// `feed.island.tsx` joined them on 2026-08-23 and was measured before it did — 12 consecutive
+// browser builds, one size (42,714 B), and `registerErrorCodes` absent from the chunk, which is
+// what says `schema-error-codes.ts` is not in its graph however the tree-shaker feels that run.
 //
 // Both imports are public package specifiers, the same rule `settings.island.test.ts` follows.
 
@@ -43,6 +46,6 @@ beforeAll(async () => {
 test('buildIslands is byte-reproducible, so an island URL is content-addressed and stable', () => {
   // Not empty: an app that discovered no island would satisfy equality by having nothing to
   // compare, which is the vacuous green this whole file is an argument against.
-  expect(first.split('\n')).toHaveLength(2);
+  expect(first.split('\n')).toHaveLength(3);
   expect(second).toBe(first);
 });

@@ -49,6 +49,11 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_STORAGE_SECRET_DEV',
   'X_MANIFEST_STALE',
   'X_BUDGET_UNMEASURED',
+  // The other half of #271, and the half no runtime can raise: a route reads a live hook and boots
+  // no module in a browser, so its rows have nowhere to arrive and the page renders its loading
+  // branch forever, at 200. Only this package can see it — `@ultimat3/realtime` cannot see a route
+  // and `@ultimat3/render` may not import realtime.
+  'X_LIVE_ROUTE_NO_ISLAND',
   'X_BUILD_FAILED',
   'X_BUILD_ENTRY_MISSING',
   'X_DEPLOY_FAILED',
@@ -179,6 +184,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_RELEASE_VERSION_SKEW: 'a workspace is not at the lockstep version',
   X_MANIFEST_STALE: 'openapi.json is stale',
   X_BUDGET_UNMEASURED: 'a route declares a budget the build never measured',
+  X_LIVE_ROUTE_NO_ISLAND: 'a route reads live rows and boots nothing that could receive them',
   X_BUILD_FAILED: 'x build failed',
   X_BUILD_ENTRY_MISSING: "the build target's entry file is not in the app",
   X_DEPLOY_FAILED: 'a deploy step failed',

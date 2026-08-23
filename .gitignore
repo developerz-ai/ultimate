@@ -102,3 +102,6 @@ packages/cli/.prerender-fixture/
 undefined/
 .serve-fixture/
 .dev-hold-fixture/
+.error-pages-fixture/
+.live-routes-fixture/
+.roles-error-page-fixture/

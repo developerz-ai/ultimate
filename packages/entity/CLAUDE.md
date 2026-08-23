@@ -60,7 +60,13 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   wrapped into a one-element list for the SQL and refused in memory — 0 rows against one driver, 1
   against the other, from a call `andWhere(column, op, value: unknown)` compiles), and a list
   carrying a NULL emits `(col in (…) or col is null)` — `col = null` is UNKNOWN, so the null row
-  the caller listed was the one row Postgres left out while memory included it.
+  the caller listed was the one row Postgres left out while memory included it. **A column the row
+  never NAMED is NULL**, `As of 2026-08-23`: the table holds NULL whether a row spelled it out or
+  omitted it, so `eq`, `neq` and `in` read the row side through `isNull` exactly as `is-null` and
+  the ordering guard already did — `===` made the two rows different, and `eq null` skipped the
+  absent one, `in [null]` missed it and `neq null` answered it, each the opposite of the same
+  predicate in production. A `money()` column holding NULL reaches this with no hand-built row at
+  all: `valueAt(row, 'price.minor')` has nothing to read, whatever `$parse` produced.
 - **The Postgres driver is proved against a real Postgres, not only against a recording client.**
   `pg-driver.live.test.ts` runs the whole chain — `entity()` -> `$describe()` ->
   `generateMigration()` -> a live server -> `postgresDriver()` -> decoded row — and skips when no
@@ -354,9 +360,14 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   or a filter alone never addresses a row on a tenant-scoped entity — another tenant's id reads as
   `X_NOT_FOUND`, never as their row. That bounds WHICH rows a write touches; it cannot bound what
   they become, and `insert`/`insertAll`/`upsertAll` build no plan at all. So the VALUE is judged as
-  well, by `assertRowTenant` (`tenancy.ts`) at the four seams every write passes: `memoryRepo`'s
-  `write()` plus its `insertAll`/`upsertAll` batch loops, and `postgresRepo`'s `writeRows()`,
-  `update` and `updateWhere`. A row or patch naming another tenant is `X_TENANCY_ACTOR_MISMATCH` —
+  well, by `assertRowTenant` (`tenancy.ts`) at the seams every write passes: `memoryRepo`'s
+  `write()` plus its `insertAll`/`upsertAll` batch loops and its `updateWhere`, and
+  `postgresRepo`'s `writeRows()`, `update` and `updateWhere`. **A filtered update judges the PATCH,
+  before it reads a row** — `As of 2026-08-23`, in both drivers. `memoryRepo` judged the merged
+  rows inside its loop, and a loop over no rows judges nothing, so
+  `updateWhere(filter, { orgId: theirs })` over a filter matching nothing answered `0` in memory
+  and `X_TENANCY_ACTOR_MISMATCH` in Postgres: whether the guard fired depended on what the table
+  held rather than on what the caller asked for. A row or patch naming another tenant is `X_TENANCY_ACTOR_MISMATCH` —
   the same code the read path throws, because it is the same mistake in a different argument.
   Rules, none optional. **Refuse, never stamp**: a row that names no tenant is left alone and the
   column's `NOT NULL` answers it. Filling one in from the actor would change the column list

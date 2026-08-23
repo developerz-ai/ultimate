@@ -5,6 +5,7 @@
 // declaration here would hand back the unguarded second way in that seam exists to close.
 
 import { catalogJson } from './catalog-json';
+import { sortedImports } from './imports';
 import { catalogPath, resolveLocales } from './locales';
 import type { GeneratedFile } from './naming';
 import { camel, kebab, pascal } from './naming';
@@ -47,15 +48,18 @@ const catalogImport = (module: string | undefined): string =>
 /**
  * The two imports, in the order biome's organize-imports wants — which DEPENDS on the app's scope
  * and cannot be hardcoded either way. An app catalog (`@myapp/i18n`) sorts BEFORE
- * `@ultimat3/admin`; the fallback `@ultimat3/i18n` sorts AFTER it. Emitting one fixed order makes
- * every generated admin page a lint error in exactly one of the two cases, and each case is
- * covered by a different job — the fallback by `templates`' own linter test, the app-scoped one
- * only by `scaffold-smoke`, which runs the generators against a real scaffold.
+ * `@ultimat3/admin`; the fallback `@ultimat3/i18n` sorts AFTER it, and `@zebra/i18n` after that.
+ * Emitting one fixed order makes every generated admin page a lint error in one of those cases.
+ *
+ * `sortedImports` is this sort, moved to `templates/imports.ts` so the four scaffold sites that
+ * had the same mix and none of the fix share it — `x new zebra` was four `organizeImports` errors
+ * on its first `x verify`.
  */
 const pageImports = (module: string | undefined): string =>
-  [`import type { AdminCustomPage, AdminPageProps } from '@ultimat3/admin';`, catalogImport(module)]
-    .sort((a, b) => (a.slice(a.indexOf("'")) < b.slice(b.indexOf("'")) ? -1 : 1))
-    .join('\n');
+  sortedImports([
+    `import type { AdminCustomPage, AdminPageProps } from '@ultimat3/admin';`,
+    catalogImport(module),
+  ]);
 
 /** `useT()` is per render, so the component binds it in its own body. */
 const translatorBinding = (module: string | undefined): string =>
