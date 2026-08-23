@@ -270,14 +270,18 @@ export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
   for (const section of sections) {
     const major = /^(\d+)\.0\.0$/.exec(section.version)?.[1];
     if (major === undefined || Number.parseInt(major, 10) < FIRST_MIGRATABLE_MAJOR) continue;
-    if (!single.some((row) => row.target === section.version)) {
+    const hasRow = single.some((row) => row.target === section.version);
+    if (!hasRow) {
       gaps.push({
         kind: 'missing-row',
         at: `${UPGRADING_PATH}:1`,
         detail: `${section.version} is a released major and no row sends the reader to its section`,
       });
     }
-    if (walked.has(section.version)) continue;
+    // One edit per finding. A major with NEITHER a row nor a heading is one problem, and reporting
+    // it as both hands the reader two fixes whose first steps contradict — write the row, write the
+    // section. `missing-section` is the row-present case, which is what its own code documents.
+    if (!hasRow || walked.has(section.version)) continue;
     gaps.push({
       kind: 'missing-section',
       at: `${UPGRADING_PATH}:1`,

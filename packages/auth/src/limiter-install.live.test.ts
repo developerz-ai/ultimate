@@ -167,7 +167,14 @@ describeLive('live · postgres · the installed auth limiter', () => {
   });
 
   test('purgeAuthLimits answers 0 once the host has released its limiters', async () => {
-    await pod();
+    const podA = await pod();
+    for (let i = 0; i < 3; i += 1) {
+      await login(podA, { email: EMAIL, password: 'wrong-password-here' }).catch(() => undefined);
+    }
+    clock.advance(300_001);
+    // Four sweepable rows exist right now — the test above answers 4 in exactly this state — so a
+    // `resetAuthLimiters` that kept `built` sweeps them and this reads 4. Without the arrangement
+    // the assertion held whether or not the pool was released.
     resetAuthLimiters();
     expect(await purgeAuthLimits()).toBe(0);
   });

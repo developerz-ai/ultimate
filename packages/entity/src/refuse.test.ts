@@ -92,6 +92,18 @@ const SITES: readonly (readonly [string, () => unknown])[] = [
 /** A fix is an instruction: a call to paste, a command to run, or an edit naming a file. */
 const ACTIONABLE = /\b[A-Za-z_$][\w$.]*\(|(?:^|[\s;|&("'`])x\s+[a-z]|\b(?:bun|bunx)\b/;
 
+/**
+ * A method name with nothing to its left. `toFixed(2)` shipped that way: the name does not resolve
+ * at all, so an agent pasting it got a `ReferenceError` instead of a repaired value — and
+ * `ACTIONABLE` above accepts it, because a call is what it looks for.
+ */
+const UNBOUND_METHOD =
+  /(?:^|[\s;|&("'`[{])(?:toFixed|toPrecision|toLocaleString|toLocaleDateString|padStart|padEnd|slice|replace|replaceAll|trim|test|encode)\s*\(/;
+
+/** A transform with nothing to transform: `Math.round()` answers `NaN`, and it also shipped. */
+const OPERANDLESS =
+  /\b(?:Math\.[A-Za-z]+|Number|String|Boolean|BigInt|parseInt|parseFloat)\s*\(\s*\)/;
+
 describe('unit · every column and invariant refusal hands back an edit', () => {
   test('none cites a command that names no entity', () => {
     for (const [label, run] of SITES) {
@@ -109,6 +121,31 @@ describe('unit · every column and invariant refusal hands back an edit', () => 
       expect(fix, label).not.toMatch(/<[a-z][a-z ]*>/);
       expect(ACTIONABLE.test(fix), `${label}: ${fix}`).toBe(true);
     }
+  });
+
+  /**
+   * A call in a fix line is something to PASTE, so it needs its receiver and its operand. Both
+   * fragments this pins really shipped, and `ACTIONABLE` accepted both — an agent that followed
+   * either repaired nothing and then debugged the wrong subsystem, which is this file's own defect
+   * one level down from the command it already refuses.
+   */
+  test('every call it hands back carries its receiver and its operand', () => {
+    for (const [label, run] of SITES) {
+      const { fix } = refusal(run, label);
+      expect(UNBOUND_METHOD.test(fix), `${label}: ${fix}`).toBe(false);
+      expect(OPERANDLESS.test(fix), `${label}: ${fix}`).toBe(false);
+    }
+  });
+
+  test('and the two that shipped broken now name the value they convert', () => {
+    // Rounding a decimal is the caller's decision and `decimal()` holds a STRING, so the repair
+    // has to end in one; the minor-unit repair carries the ×100 or it converts nothing.
+    expect(refusal(() => decimal({ precision: 5, scale: 2 }).$parse('1.234')).fix).toContain(
+      'Number(value).toFixed(2)',
+    );
+    expect(refusal(() => money().$parse({ minor: 12.34, currency: 'EUR' })).fix).toContain(
+      'Math.round(amount * 100)',
+    );
   });
 
   test('none leaks the value it refused — a column message reaches the log line', () => {

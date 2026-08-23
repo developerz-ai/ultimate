@@ -298,7 +298,7 @@ const parseMinor = (value: unknown): number => {
     return refuseColumn(
       'money-minor-units',
       `got the float ${minor}; money is integer minor units — 12.34 EUR is 1234, not 12.34`,
-      "Math.round() at the call site decides the rounding, or name the precision instead: { minor: 1250000, currency: 'EUR', scale: 6 } is 1.25 EUR at six decimal places",
+      "{ minor: Math.round(amount * 100), currency: 'EUR' } at the call site converts the major-unit amount and decides the rounding, or name the precision instead: { minor: 1250000, currency: 'EUR', scale: 6 } is 1.25 EUR at six decimal places",
     );
   }
   if (!Number.isSafeInteger(minor)) {

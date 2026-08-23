@@ -138,7 +138,7 @@ export const decimal = (options: DecimalOptions = {}): Column<string> => {
         return refuseColumn(
           'numeric',
           `${text} has ${fraction} decimal places and the column stores ${scale} — Postgres would round it, silently`,
-          `toFixed(${scale}) at the call site decides the rounding, or widen the column to decimal({ precision: ${(precision ?? fraction) + fraction - scale}, scale: ${fraction} }) and run x db gen "widen the numeric"`,
+          `Number(value).toFixed(${scale}) at the call site decides the rounding, or widen the column to decimal({ precision: ${(precision ?? fraction) + fraction - scale}, scale: ${fraction} }) and run x db gen "widen the numeric"`,
         );
       }
       const whole = (digits[0] ?? '').replace(/^0+(?=\d)/, '').length;

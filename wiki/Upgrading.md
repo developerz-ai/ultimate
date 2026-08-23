@@ -2,7 +2,7 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Seven majors have shipped, and this page walks all seven** — 2.0.0's 33 entries joined it `As of 2026-08-23`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Seven majors have shipped, and this page walks all seven** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
@@ -13,13 +13,13 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 1.x → 8.0.0 | **87** | the seven sections below, oldest first |
+| 1.x → 8.0.0 | **87** | all seven sections, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 88 As of 2026-08-23 — 87 inside the section of the major that shipped it, and 1 under
+# 88 As of 2026-08 — 87 inside the section of the major that shipped it, and 1 under
 # [Unreleased], staged for the next major. A released section's count is what the table above reads.
 ```
 
@@ -413,7 +413,7 @@ Ten `BREAKING —` entries, all from one bug sweep. Each was a documented surfac
 
 ## 1.x → 2.0.0, entry by entry
 
-**Thirty-three `BREAKING —` entries — the largest major this project has shipped, and the first one semver covered.** Written up here `As of 2026-08-23`; the page carried a row pointing at this section for six releases and never carried the section. Full rationale per entry in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `2.0.0` section — the numbers below are that section's own order. No codemod.
+**Thirty-three `BREAKING —` entries — the largest major this project has shipped, and the first one semver covered.** Written up here `As of 2026-08`; the page carried a row pointing at this section for six releases and never carried the section. Full rationale per entry in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `2.0.0` section — the numbers below are that section's own order. No codemod.
 
 Two things are not compile errors and are the ones to read first: the **seven behaviour changes** under *Start here*, and the **one migration** every app with a `money()` column owes.
 

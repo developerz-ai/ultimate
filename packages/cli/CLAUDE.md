@@ -772,7 +772,7 @@ Promoting it to `x verify`'s `boundaries` host check is one line in `scripts/ver
 rule over names. Two stronger rules were measured and rejected: "the read must not be a property
 initializer" reports six flags, five of which work (`x db --allow-destructive`, `x jobs --queue`);
 "the summary must match the behaviour" is undecidable. So the flag's summary now says what it does,
-and forcing a reload is **not a thing this framework does**, `As of 2026-08-23`. `updateSignal`
+and forcing a reload is **not a thing this framework does**, `As of 2026-08`. `updateSignal`
 had no runtime caller for four majors and 9.0.0 deleted it rather than wiring it: `pwa` is tier 4
 and the two runtimes holding both build ids — `http` (2) and `sync` (3) — are below it, so no
 legal import could ever have reached the function. A deploy command has no channel to a running

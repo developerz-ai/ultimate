@@ -183,12 +183,17 @@ export function defineAuth(config: AuthConfigInput): Auth {
   // The tenant bucket is a noisy-neighbour cap, not a credential-guessing allowance, so an app
   // that declares `scope: 'shared'` for its LOCKOUT is not also required to ship a shared limiter
   // for this one — per replica it approximates to `orgMaxAttempts × replicas`, which is a
-  // throughput ceiling and discloses nothing. An INJECTED org limiter is still compared, because
-  // then the app has made a claim about what it enforces and `Auth.orgRateLimit` reports it.
+  // throughput ceiling and discloses nothing. Only the LOCAL fallback is exempt, and exempting it
+  // is what buys that: `createAuthLimiter` always reports `'process'`, which is the one arm the
+  // scope check would refuse. A limiter somebody else supplied — injected by the app or built by
+  // the host's factory — is compared exactly as the general bucket's is, because a factory that
+  // ignores the policy it was handed otherwise enforces numbers the app never declared while
+  // `Auth.orgRateLimit` reports the app's. That asymmetry was the whole defect: the same factory
+  // is refused for one bucket and trusted for the other.
   const orgLimits = orgRateLimit(rateLimit);
-  const orgLimiter =
-    config.orgLimiter ?? installedAuthLimiter(orgLimits) ?? createAuthLimiter(clock, orgLimits);
-  if (config.orgLimiter !== undefined) assertAuthLimiterPolicy(orgLimits, config.orgLimiter);
+  const suppliedOrgLimiter = config.orgLimiter ?? installedAuthLimiter(orgLimits);
+  const orgLimiter = suppliedOrgLimiter ?? createAuthLimiter(clock, orgLimits);
+  if (suppliedOrgLimiter !== undefined) assertAuthLimiterPolicy(orgLimits, suppliedOrgLimiter);
   // Read through a widened local on purpose: the field's type is the literal `false`, so this
   // branch is unreachable from TypeScript and reachable from every JS caller and every config
   // parsed out of JSON — the same split `invariantColumns()` keeps its Proxy behind a compile

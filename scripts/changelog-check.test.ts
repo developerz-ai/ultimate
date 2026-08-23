@@ -180,6 +180,17 @@ describe('the rules, each proved against the fixture that breaks it', () => {
     expect(kinds(third, GOOD_UPGRADING)).toContain('missing-row');
   });
 
+  // One edit per finding. With no row there is no heading either, so the loop reported BOTH — and
+  // the two fixes contradict on their first step: write the row, write the section. `missing-section`
+  // is the row-present case, and `toEqual` is what holds the pair to one finding.
+  test('a major with no row is not also reported as a missing section', () => {
+    const third = GOOD_CHANGELOG.replace(
+      '## 2.0.0 - 2026-08-17',
+      '## 3.0.0 - 2026-08-19\n\nA major.\n\n## 2.0.0 - 2026-08-17',
+    );
+    expect(kinds(third, GOOD_UPGRADING)).toEqual(['missing-row']);
+  });
+
   test('1.0.0 has nothing to migrate from, so it needs no row', () => {
     expect(kinds(GOOD_CHANGELOG, GOOD_UPGRADING)).not.toContain('missing-row');
   });

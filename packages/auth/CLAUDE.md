@@ -72,7 +72,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   even though this package already depends on `@ultimat3/db`: the connection is the HOST's, so the
   limiter takes the pool the boot opened rather than opening a second one.
 - **`configureAuthLimiters` is the HOST's install point and it takes a FACTORY, not a limiter**
-  (`As of 2026-08-22`). `defineAuth({ limiter })` is still the app's, and it still wins; what was
+  (`As of 2026-08`). `defineAuth({ limiter })` is still the app's, and it still wins; what was
   missing is that `postgresAuthLimiter` shipped with **nowhere a host could install it from**.
   `defineAuth` is the APP's call and the app does not know which pool this process opened —
   `@ultimat3/cli`'s `startServices` resolves that long before `loadApp` imports a single app

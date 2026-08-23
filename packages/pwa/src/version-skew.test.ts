@@ -1,3 +1,8 @@
+// Single responsibility: the version-skew vocabulary a deploy is built on — the build id, the three
+// skew states, what retention keeps, and the cache namespace. Plus the one contract the framework
+// cannot typecheck: the `AppUpdateAvailable` message is emitted as SOURCE by the service-worker
+// generator, so its shape and its discriminant are read back out of that source, never restated.
+
 import { describe, expect, test } from 'bun:test';
 import { BuildIdMissingError } from './errors';
 import { generateServiceWorker } from './service-worker';
@@ -67,11 +72,16 @@ describe('retentionPlan', () => {
  * real shape. Read back out of the source rather than restated, because a second hand-written copy
  * of the field list is what let the declaration and the producer drift apart in the first place.
  */
-function postedUpdateFields(): readonly string[] {
+function postedUpdateMessage(): Readonly<Record<string, string>> {
   const { source } = generateServiceWorker([], { offline: { fallback: '/offline' } }, 'b2');
   const fields = /c\.postMessage\(\{(?<fields>[^}]*)\}\)/.exec(source)?.groups?.['fields'];
   if (fields === undefined) expect.unreachable('the activate block posts no message literal');
-  return fields.split(',').map((pair) => pair.slice(0, pair.indexOf(':')).trim());
+  const posted: Record<string, string> = {};
+  for (const pair of fields.split(',')) {
+    const at = pair.indexOf(':');
+    posted[pair.slice(0, at).trim()] = pair.slice(at + 1).trim();
+  }
+  return posted;
 }
 
 describe('AppUpdateAvailable is the message the service worker posts, and no more', () => {
@@ -79,7 +89,14 @@ describe('AppUpdateAvailable is the message the service worker posts, and no mor
     // `Required<>` is the build error behind this rule: a field added to the interface — optional
     // or not — stops compiling here until the generated worker actually posts it.
     const message = { type: APP_UPDATE_AVAILABLE, to: 'b2' } satisfies Required<AppUpdateAvailable>;
-    expect([...postedUpdateFields()].sort()).toEqual(Object.keys(message).sort());
+    expect(Object.keys(postedUpdateMessage()).sort()).toEqual(Object.keys(message).sort());
+  });
+
+  // The field NAMES alone are satisfied by `{ type: 'Other', to: BUILD_ID }`, and a consumer that
+  // switches on the constant then ignores every update this worker sends — the discriminant is the
+  // one field whose value is the contract, so it is read as a value and not as a key.
+  test('the discriminant it emits is the constant consumers switch on', () => {
+    expect(postedUpdateMessage()['type']).toBe(JSON.stringify(APP_UPDATE_AVAILABLE));
   });
 });
 

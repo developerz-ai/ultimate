@@ -8,7 +8,7 @@ import { defineAuth } from './auth';
 import { configureAuthLimiters, purgeAuthLimits, resetAuthLimiters } from './limiter-install';
 import { MemoryAdapter } from './memory-adapter';
 import type { AuthLimiter, AuthRateLimitPolicy } from './rate-limit';
-import { createAuthLimiter } from './rate-limit';
+import { createAuthLimiter, DEFAULT_AUTH_RATE_LIMIT } from './rate-limit';
 
 /** A limiter that answers nothing and counts its sweeps — the store behind it is not the subject. */
 function tableLimiter(
@@ -89,6 +89,32 @@ describe('configureAuthLimiters', () => {
     );
   });
 
+  test('and refused for the TENANT bucket, not only the general one', () => {
+    // Honours the general policy and ignores the tenant one, so this refusal can only come from
+    // the second comparison. Until it ran, the installed org limiter enforced whatever the host
+    // built while `Auth.orgRateLimit` reported what the app declared — one factory, refused for
+    // one bucket and trusted for the other.
+    configureAuthLimiters((policy) =>
+      tableLimiter(policy.maxAttempts === 100 ? { ...policy, maxAttempts: 5 } : policy, 0),
+    );
+    expect(codeOf(() => defineAuth({ adapter: adapter() }))).toBe('X_AUTH_LIMITER_POLICY_MISMATCH');
+  });
+
+  test('the LOCAL fallback is the one arm the tenant bucket still exempts', () => {
+    // A shared LOCKOUT with no factory installed: the tenant bucket falls back to
+    // `createAuthLimiter`, which always reports `'process'`. Comparing that arm would refuse an
+    // app whose only claim is about the lockout — a per-replica `orgMaxAttempts` is a throughput
+    // ceiling and discloses nothing — so the exemption is the fallback's, never a supplied
+    // limiter's.
+    const shared: AuthRateLimitPolicy = { ...DEFAULT_AUTH_RATE_LIMIT, scope: 'shared' };
+    const auth = defineAuth({
+      adapter: adapter(),
+      rateLimit: { scope: 'shared' },
+      limiter: tableLimiter(shared, 0),
+    });
+    expect(auth.orgLimiter.policy.scope).toBe('process');
+  });
+
   test('an explicitly passed limiter still wins over the installed factory', () => {
     let calls = 0;
     configureAuthLimiters((policy) => {
@@ -145,15 +171,19 @@ describe('purgeAuthLimits', () => {
   });
 
   test('a second install forgets what the first built', async () => {
-    let first: (AuthLimiter & { readonly sweeps: () => number }) | undefined;
+    // Every limiter the first factory built is REACHABLE here — the collector holds the same
+    // instances the factory returned. Returning a second, different limiter made both assertions
+    // below hold whether or not `configureAuthLimiters` released the previous pool.
+    const first: (AuthLimiter & { readonly sweeps: () => number })[] = [];
     configureAuthLimiters((policy) => {
-      first ??= tableLimiter(policy, 4);
-      return tableLimiter(policy, 4);
+      const limiter = tableLimiter(policy, 4);
+      first.push(limiter);
+      return limiter;
     });
     defineAuth({ adapter: adapter() });
     // The next boot's pool is a different pool; a purge through the closed one is not a sweep.
     configureAuthLimiters((policy) => tableLimiter(policy, 0));
     expect(await purgeAuthLimits()).toBe(0);
-    expect(first?.sweeps() ?? 0).toBe(0);
+    expect(first.filter((limiter) => limiter.sweeps() > 0)).toEqual([]);
   });
 });

@@ -298,31 +298,38 @@ export async function startServices(
   const rateLimitStore = postgresRateLimitStore({ executor });
   // Boot is a sequence of external resources, and every step after the first can reject — the
   // queue is already up, so from here an unwind must release it exactly like everything after it.
+  // Which is why the `try` opens on the NEXT line and not eight steps further down: it did, and
+  // the steps above it registered process-wide state (`configureAuthLimiters`, the `purge()` job
+  // and its `task`) that throws on a name a previous boot in this process left in the registry —
+  // `X_JOB_NAME_TAKEN`, outside the unwind, so `x dev` exited holding the PGlite lock, the pool
+  // and the ambient accessors. Nothing may be pushed onto `started` from outside this block.
   const started: (() => void | Promise<void>)[] = [() => queue.stop()];
-  // Where failed sign-ins are counted, installed BEFORE `loadApp` for the reason the idempotency
-  // store is: `defineAuth` is the app's call and it runs when the app's modules import, so a seam
-  // filled afterwards is one every app would have to fill itself. A FACTORY and not a limiter —
-  // the app declares `maxAttempts`/`windowMs`/`lockoutMs` and this boot has not read them yet, so
-  // a limiter built here would be refused by `assertAuthLimiterPolicy` on any app that tuned one.
-  //
-  // Until this line every deployment the framework produces counted lockouts per POD, while
-  // `x new` scaffolds `replicas: 2` and `docker/helm` runs three — `maxAttempts × N` guesses per
-  // account, and a lockout one replica established invisible to the rest.
-  configureAuthLimiters((policy) => postgresAuthLimiter({ executor, clock: systemClock, policy }));
-  started.push(() => resetAuthLimiters());
-  // The hourly sweep over the three framework tables this boot is responsible for. Every one of
-  // them ships a `purgeExpired()` that nothing called, so every row written was a row kept —
-  // `x_rate_limit` takes one upsert per request the web role serves, assets included.
-  started.push(
-    installRetentionSweep({ idempotency: queue.idempotency, rateLimit: rateLimitStore }),
-  );
-  // One readiness check per resource this boot OWNS, released with it. Nothing in the tree
-  // registered one, so `/readyz` was `markReady()` alone — "this process bound a socket" — and
-  // `packages/http/src/server.ts` calls that BEFORE `Bun.serve`, while `dev-roles.ts` calls it
-  // before `sync`, `worker` and `scheduler` start. The chart's `readinessProbe` and the container
-  // healthcheck both route on it, so a replica whose pool was gone kept taking traffic.
-  started.push(probedReadinessCheck('database', () => db.ping()));
   try {
+    // Where failed sign-ins are counted, installed BEFORE `loadApp` for the reason the idempotency
+    // store is: `defineAuth` is the app's call and it runs when the app's modules import, so a seam
+    // filled afterwards is one every app would have to fill itself. A FACTORY and not a limiter —
+    // the app declares `maxAttempts`/`windowMs`/`lockoutMs` and this boot has not read them yet, so
+    // a limiter built here would be refused by `assertAuthLimiterPolicy` on any app that tuned one.
+    //
+    // Until this line every deployment the framework produces counted lockouts per POD, while
+    // `x new` scaffolds `replicas: 2` and `docker/helm` runs three — `maxAttempts × N` guesses per
+    // account, and a lockout one replica established invisible to the rest.
+    configureAuthLimiters((policy) =>
+      postgresAuthLimiter({ executor, clock: systemClock, policy }),
+    );
+    started.push(() => resetAuthLimiters());
+    // The hourly sweep over the three framework tables this boot is responsible for. Every one of
+    // them ships a `purgeExpired()` that nothing called, so every row written was a row kept —
+    // `x_rate_limit` takes one upsert per request the web role serves, assets included.
+    started.push(
+      installRetentionSweep({ idempotency: queue.idempotency, rateLimit: rateLimitStore }),
+    );
+    // One readiness check per resource this boot OWNS, released with it. Nothing in the tree
+    // registered one, so `/readyz` was `markReady()` alone — "this process bound a socket" — and
+    // `packages/http/src/server.ts` calls that BEFORE `Bun.serve`, while `dev-roles.ts` calls it
+    // before `sync`, `worker` and `scheduler` start. The chart's `readinessProbe` and the container
+    // healthcheck both route on it, so a replica whose pool was gone kept taking traffic.
+    started.push(probedReadinessCheck('database', () => db.ping()));
     // Dialled here rather than at selection: an unreachable bus must fail at `x dev`, not on the
     // first change nobody receives, and the socket is a resource the unwind below has to release.
     // A supplied transport is already connected and is NOT closed here: whoever built it owns its
