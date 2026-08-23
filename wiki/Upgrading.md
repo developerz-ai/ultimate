@@ -6,6 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 8.x → 9.0.0 | **5** | the `9.0.0` section, in order |
 | 7.x → 8.0.0 | **6** | the `8.0.0` section, in order |
 | 6.x → 7.0.0 | **4** | the `7.0.0` section, in order |
 | 5.x → 6.0.0 | **7** | the `6.0.0` section, in order |
@@ -13,7 +14,7 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 1.x → 8.0.0 | **87** | all seven sections, oldest first |
+| 1.x → 9.0.0 | **92** | all seven sections, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
@@ -33,6 +34,96 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 8.x → 9.0.0, entry by entry
+
+**Five breaking entries, from closing the ten findings the 8.0.0 sweep filed rather than absorbed.**
+Four are compile errors the moment you upgrade. The fifth changes what your cache ladder *is*, at
+runtime, and it is the one to read even if nothing else here applies. No codemod.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `@ultimat3/render` splits into `.` and `./server` | you import a build-time name, or relied on importing the barrel to install the `.tsx` loader |
+| 2 | `cache.tiers` names the ladder's own rungs, and is now read | your `app.config.ts` sets `cache.tiers` — **runtime behaviour changes even if it compiles** |
+| 3 | `@ultimat3/storage` renames `IMAGE_FORMATS` / `ImageFormat` | you imported either |
+| 4 | `@ultimat3/pwa` drops the forced-reload half of `version-skew` | you called `updateSignal` or `updatePolicy` |
+| 5 | `@ultimat3/core` replaces `CacheTier` with `CacheTierName` | you named the type |
+
+### 1. `@ultimat3/render` splits into `.` and `./server`
+
+```diff
+- import { defineRoute, renderToHtml } from '@ultimat3/render';
++ import { defineRoute } from '@ultimat3/render';
++ import { renderToHtml } from '@ultimat3/render/server';
+```
+
+55 names moved: the render pipeline (`renderToHtml`, `renderSsr`, `renderStatic`, `renderStreamHtml`,
+the ISR controller) and the loaders (`installRenderLoader`, `compileStylesheet`, `stylesFor`,
+`transformTsx`). `.` keeps the authoring vocabulary — `defineRoute`, `h`, `Fragment`, `island`,
+`hydrate*`, the registry, the mode tables.
+
+**Second, easily-missed half: importing `@ultimat3/render` no longer installs the `.tsx`/`.scss`
+loader.** `@ultimat3/render/server` does. A test that did `await import('@ultimat3/render')` before
+loading a page module must now import `/server`.
+
+Why: `bun build --target=browser` on the barrel failed outright — *"Browser polyfill for module
+`node:url` doesn't have a matching export named `fileURLToPath`"*, out of `css-modules.ts`. The
+island this framework tells you to write could not be bundled.
+
+### 2. `cache.tiers` names the ladder's rungs, and the ladder is now that declaration
+
+```diff
+- cache: { tiers: ['memo', 'lru', 'shared', 'isr'] }
++ cache: { tiers: ['request-memo', 'lru', 'redis'] }
+```
+
+`memo` → `request-memo`, `shared` → `redis`, and **delete `isr`** — it is a `RenderMode`, and the
+routes that want it declare `render: 'isr'`. It named a cache rung that never existed.
+
+**Read this even if your config already compiles.** The key was previously read by *nothing*:
+`startCacheTiers` registered memo + lru unconditionally, redis on `REDIS_URL`, cdn on a purge
+credential. An app declaring `tiers: ['request-memo']` measurably got
+`['request-memo', 'lru', 'redis', 'cdn']`. Now the ladder is the declaration, which means:
+
+- naming a rung the environment cannot supply **refuses the boot** — `redis` without `REDIS_URL`,
+  `cdn` without a purge credential — rather than quietly building a shorter ladder
+- an environment offering a rung the config does not name logs `cache.tier.unnamed` and builds nothing
+
+If you relied on the old always-on `lru`, or on `REDIS_URL` adding a tier your config never
+mentioned, **name it**.
+
+### 3. `@ultimat3/storage` renames its image vocabulary
+
+```diff
+- import { IMAGE_FORMATS, type ImageFormat } from '@ultimat3/storage';
++ import { VARIANT_FORMATS, type VariantFormat } from '@ultimat3/storage';
+```
+
+Both packages exported those two names over **different sets**, so a storage caller narrowing on
+storage's type had a type saying `gif` cannot occur and a value from core's probe that was one. If
+you were probing rather than minting variants, the six-format set is `IMAGE_FORMATS` from
+`@ultimat3/core` — which is what you actually had.
+
+`variantKey()` also now refuses a format outside `VARIANT_FORMATS` instead of returning a key ending
+`.undefined`.
+
+### 4. `@ultimat3/pwa` drops the forced-reload half of `version-skew`
+
+Removed: `updateSignal`, `updatePolicy`, `DEFAULT_GRACE_MS`, and the types `ForceReason`,
+`UpdatePolicy`, `UpdatePolicyInput`, `UpdateSignalInput`. `AppUpdateAvailable` narrows to
+`{ type, to }`, losing `from`, `forced` and `deadlineAt`.
+
+Nothing performed the reload they described, and no runtime could have called them: `@ultimat3/http`
+(tier 2) and `@ultimat3/realtime` (tier 3) both sit *below* `pwa` (tier 4). **Forcing a reload is not
+a capability this framework has.** Notification is, and is complete — read
+`useConnection().updateAvailable`, or compare the worker's posted `to` with `detectSkew`, and render
+your own affordance.
+
+### 5. `CacheTier` → `CacheTierName` in `@ultimat3/core`
+
+The type behind entry 2. `@ultimat3/cache` still exports a `CacheTier` — it is the tier *interface*,
+a different thing, and it is unchanged. The two sharing one name is what made a type error about
+`CacheTier` unreadable.
 
 ## 7.x → 8.0.0, entry by entry
 

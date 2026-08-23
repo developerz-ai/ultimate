@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 9.0.0 - 2026-08-23
+
 ### Changed
 
 - **BREAKING â€” `@ultimat3/render` splits into `.` (client) and `./server` (build-time).**
@@ -139,6 +143,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   largest major this project has shipped (33 entries) and the only one with no section. Written, all
   33. `changelog-check` now asserts the **heading** exists and not just the table row
   (`X_DOC_MIGRATION_SECTION_MISSING`); verifying the row is how the promise survived six releases.
+
+### Commits
+
+- fix(testing): restoring a registry must repair a clear, never undo a registration (#313)
+- fix(demo): six test files statically imported a .tsx, and the gate could not see it (#311)
+- fix(demo): reconcile the foreign key rules the app's entities have always declared (#310)
+- fix: the last three findings, all breaking, and a config key nothing read (#309)
+- fix: six of the ten findings the 8.0.0 sweep escaped rather than absorbed (#307)
+- docs(plans): close deep-dive sweep two â€” all 12 slices merged, 8.0.0 published (#306)
 
 ## 8.0.0 - 2026-08-23
 
