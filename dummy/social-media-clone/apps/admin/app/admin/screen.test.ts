@@ -9,7 +9,14 @@ import { beforeAll, expect, test } from 'bun:test';
 import '@social-media-clone/i18n';
 import { seedDemo } from '@social-media-clone/db';
 import { createContext, runWithContext, userActor } from '@ultimat3/core';
-import { resourceScreen } from './screen';
+
+// Loaded after `@ultimat3/render/server` has installed its `.tsx` loader, and never statically:
+// `screen.ts` reaches `admin.ts`, which imports `pages/ops.tsx`. A static import compiles that
+// `.tsx` before the plugin exists, so it is cached against `React.createElement` and every
+// later render in the process dies with `React is not defined`. The rule is enforced by
+// `apps/admin/static-tsx-imports.test.ts`, which explains the whole mechanism.
+await import('@ultimat3/render/server');
+const { resourceScreen } = await import('./screen');
 
 /** `users` lists handle, displayName, role, suspended, createdAt — in that order. */
 const SUSPENDED = 3;

@@ -24,8 +24,15 @@ import {
 } from '@ultimat3/admin';
 import { assert } from '@ultimat3/core';
 import { seedId } from '@ultimat3/entity';
-import { admin } from './admin';
 import { adminPolicies } from './policy';
+
+// Loaded after `@ultimat3/render/server` has installed its `.tsx` loader, and never statically:
+// `admin.ts` statically imports `pages/ops.tsx`. A static import compiles that `.tsx` before
+// the plugin exists, so it is cached against `React.createElement` and every later render in
+// the process dies with `React is not defined`. The rule is enforced by `apps/admin/static-tsx-
+// imports.test.ts`, which explains the whole mechanism.
+await import('@ultimat3/render/server');
+const { admin } = await import('./admin');
 
 const MARA = seedId('user:mara');
 const TENANCY = seedId('post:tenancy');
