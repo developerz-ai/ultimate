@@ -213,9 +213,29 @@ describe('liveHookFor', () => {
     }
   });
 
+  /**
+   * In a BROWSER. Bun's test process has no DOM, and with no DOM a missing registration is a
+   * server render rather than a bug — `hooks.ts`'s `live()`, the same rule `@ultimat3/ui`'s
+   * `solid()` follows. The case below is the other side of that probe.
+   */
   test('a bound hook called with no client registered is X_LIVE_CLIENT_MISSING, not a default', () => {
     const liveFeed = registerQuery('liveFeed', declareFeed({ live: true }));
     const useLiveFeed = liveHookFor(liveFeed);
-    expect(codeOf(() => useLiveFeed({ orgId: 'o1' }))).toBe('X_LIVE_CLIENT_MISSING');
+    Object.assign(globalThis, { document: {}, window: {} });
+    try {
+      expect(codeOf(() => useLiveFeed({ orgId: 'o1' }))).toBe('X_LIVE_CLIENT_MISSING');
+    } finally {
+      Reflect.deleteProperty(globalThis, 'document');
+      Reflect.deleteProperty(globalThis, 'window');
+    }
+  });
+
+  /** A typed projection server-renders like every other hook: loading, and no throw. */
+  test('and on the server it answers the loading state the page renders its fallback for', () => {
+    const liveFeed = registerQuery('liveFeedSsr', declareFeed({ live: true }));
+    const useLiveFeed = liveHookFor(liveFeed);
+    const feed = useLiveFeed({ orgId: 'o1' });
+    expect(feed()).toEqual([]);
+    expect(feed.state()).toBe('loading');
   });
 });

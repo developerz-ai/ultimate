@@ -7,7 +7,7 @@
 // stops catching the typo that makes a subscription match nothing.
 
 import type { Query } from '@ultimat3/query';
-import type { LiveHandle, Unsubscribe } from './client';
+import type { LiveClient, LiveClientLike, LiveHandle, Unsubscribe } from './client';
 import type { LiveRows } from './hooks';
 import type { LiveQueryHook, LiveQuerySource } from './query-hook';
 
@@ -70,3 +70,14 @@ export type _LiveRowsIsDisposable = Assert<[LiveRows] extends [Disposable] ? tru
 
 /** `channel.subscribe()`'s return must stay both callable and `Disposable`. */
 export type _UnsubscribeIsDisposable = Assert<[Unsubscribe] extends [Disposable] ? true : false>;
+
+/**
+ * The hook seam takes `LiveClientLike`, not `LiveClient` — a structural shape, so the server
+ * render's client can satisfy it without dragging the connection lifecycle into every island that
+ * calls `useLive` (measured: 8,368 B → 26,571 B). This is what keeps the two in step: a member
+ * `hooks.ts` needs and `LiveClient` stops providing fails HERE, at the build, rather than at the
+ * one app that registered a real client.
+ */
+export type _LiveClientSatisfiesTheHookSeam = Assert<
+  [LiveClient] extends [LiveClientLike] ? true : false
+>;

@@ -18,12 +18,8 @@ import {
   uiContext,
   useUi,
 } from './context';
-import {
-  clearSolidRuntime,
-  type SolidContext,
-  type SolidRuntime,
-  setSolidRuntime,
-} from './solid-adapter';
+import { clearSolidRuntime, setSolidRuntime } from './runtime-slot';
+import type { SolidContext, SolidRuntime } from './solid-adapter';
 
 /** Bun's test process has no DOM, so a browser is what has to be faked, never a server. */
 function withDom<T>(fn: () => T): T {

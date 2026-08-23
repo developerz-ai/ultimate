@@ -63,13 +63,72 @@ beforeEach(() => {
   clearLiveClient();
 });
 
+/**
+ * Bun's test process has no DOM, so a BROWSER is what has to be faked, never a server — the same
+ * shape `@ultimat3/ui`'s `solid-adapter.test.ts` uses, because the rule under test is the same
+ * one: a missing registration means two different things on the two sides of that probe.
+ */
+function withDom<T>(fn: () => T): T {
+  Object.assign(globalThis, { document: {}, window: {} });
+  try {
+    return fn();
+  } finally {
+    Reflect.deleteProperty(globalThis, 'document');
+    Reflect.deleteProperty(globalThis, 'window');
+  }
+}
+
 describe('the ambient client', () => {
-  test('every hook names itself in X_LIVE_CLIENT_MISSING before registration', () => {
+  test('every hook names itself in X_LIVE_CLIENT_MISSING before registration, IN A BROWSER', () => {
+    withDom(() => {
+      expect(hasLiveClient()).toBe(false);
+      expect(codeOf(() => useLive(liveFeed, null))).toBe('X_LIVE_CLIENT_MISSING');
+      expect(codeOf(() => useConnection())).toBe('X_LIVE_CLIENT_MISSING');
+      expect(codeOf(() => useMutation(likePost))).toBe('X_LIVE_CLIENT_MISSING');
+      expect(codeOf(() => useMutationQueue())).toBe('X_LIVE_CLIENT_MISSING');
+    });
+  });
+
+  /**
+   * The other side of that probe, and the whole of issue #271: a page whose body reads a live
+   * query answered 500 on its first request, because no server render can register a socket
+   * client. It renders now — and renders its LOADING branch, which is what hydration replaces.
+   */
+  test('a server render gets a client instead of a throw, and it says loading', () => {
     expect(hasLiveClient()).toBe(false);
-    expect(codeOf(() => useLive(liveFeed, null))).toBe('X_LIVE_CLIENT_MISSING');
-    expect(codeOf(() => useConnection())).toBe('X_LIVE_CLIENT_MISSING');
-    expect(codeOf(() => useMutation(likePost))).toBe('X_LIVE_CLIENT_MISSING');
-    expect(codeOf(() => useMutationQueue())).toBe('X_LIVE_CLIENT_MISSING');
+    const feed = useLive(liveFeed, null);
+    expect(feed()).toEqual([]);
+    expect(feed.state()).toBe('loading');
+    expect(feed.cursor()).toBeNull();
+    // Not `offline`: a banner about this visitor's connectivity, server-rendered into a document
+    // being delivered to them, would flash on every page and vanish on hydrate.
+    expect(useConnection().offline).toBe(false);
+    expect(useConnection().updateAvailable).toBeNull();
+    expect(useMutation(likePost).pending).toBe(0);
+    expect(useMutationQueue().pending).toBe(0);
+    expect(useMutationQueue().failed).toBe(0);
+  });
+
+  test('and it stays absent from hasLiveClient(), so a static fallback still knows', () => {
+    useConnection();
+    expect(hasLiveClient()).toBe(false);
+  });
+
+  /** Unsubscribing a subscription that was never opened is a teardown, never a refusal. */
+  test('a server render can dispose the handle it was given', () => {
+    const feed = useLive(liveFeed, null);
+    expect(() => feed.unsubscribe()).not.toThrow();
+    expect(() => feed[Symbol.dispose]()).not.toThrow();
+  });
+
+  test('a write during a server render is refused, never queued and never dropped', async () => {
+    const mutate = useMutation(likePost);
+    expect(
+      await mutate({ postId: 'p1' }).then(
+        () => 'resolved',
+        (error: unknown) => (error instanceof UltimateError ? error.code : String(error)),
+      ),
+    ).toBe('X_LIVE_SERVER_RENDER');
   });
 
   test('registration is a toggle, so a test case never inherits the previous one', async () => {

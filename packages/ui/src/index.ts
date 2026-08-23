@@ -220,13 +220,11 @@ export {
 } from './theme/inline-script';
 export type { UiProviderProps } from './theme/provider';
 export { UiProvider } from './theme/provider';
+// The slot is its own module so that registering a runtime does not drag `errors.ts` — and with it
+// @ultimat3/core's error registry — into an island chunk. `barrel-bytes.test.ts` holds the ceiling.
+export { clearSolidRuntime, hasSolidRuntime, setSolidRuntime } from './theme/runtime-slot';
 export type { Accessor, Setter, SolidContext, SolidRuntime } from './theme/solid-adapter';
-export {
-  clearSolidRuntime,
-  hasSolidRuntime,
-  setSolidRuntime,
-  solid,
-} from './theme/solid-adapter';
+export { solid } from './theme/solid-adapter';
 export type { ThemeEnv } from './theme/theme';
 // --- theme -------------------------------------------------------------------
 export {

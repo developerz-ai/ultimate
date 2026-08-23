@@ -3,15 +3,16 @@
 // accessor is a closure over the `SignalFactory` the registered `LiveClient` was built with, and
 // every hook resolves that client through one ambient seam rather than a context per surface.
 
-import type { LiveClient, LiveHandle, LiveQueryRef, MutatorRef } from './client';
+import type { LiveClientLike, LiveHandle, LiveQueryRef, MutatorRef } from './client';
 import { LiveClientMissingError } from './errors';
 import type { JsonValue, Row } from './json';
 import type { LocalTx } from './local-store';
 import type { ConflictStrategy } from './rebase';
+import { serverRenderLiveClient } from './server-render-client';
 
 /** What `setLiveClient` holds. The version signal is the queue's only reactive handle — see below. */
 interface Registered {
-  readonly client: LiveClient;
+  readonly client: LiveClientLike;
   /** Read to subscribe, bumped to invalidate: `OfflineQueue` stores plain arrays, not signals. */
   readonly version: () => number;
   readonly bump: () => void;
@@ -22,7 +23,7 @@ interface Registered {
 let registered: Registered | null = null;
 
 /** Register once, in the app entry, before the first render. One app, one socket, one client. */
-export function setLiveClient(client: LiveClient): void {
+export function setLiveClient(client: LiveClientLike): void {
   // The previous registration's listener goes with it. The client outlives `setLiveClient` — a hot
   // reload, a test's next case, an app that re-registers after signing in — so a discarded
   // unsubscribe is a listener nothing can reach, bumping a signal nothing renders, once per
@@ -50,9 +51,41 @@ export function hasLiveClient(): boolean {
   return registered !== null;
 }
 
+/**
+ * A DOM is the whole of the question — the same probe and the same rule `@ultimat3/ui`'s `solid()`
+ * follows, and deliberately the same words. With a DOM, a hook reaching for a client nobody
+ * registered is a real bug: the app entry forgot `setLiveClient`, and every live query on the page
+ * is dead. Without one there is no socket a client could have been registered FOR — that is a
+ * server render, and `serverRenderLiveClient()` is an honest account of it rather than a
+ * degradation of a working path. Never widen this to "no client, never throw": that is the silent
+ * feed-that-never-loads the split exists to prevent.
+ */
+function hasDom(): boolean {
+  return typeof document !== 'undefined' && typeof window !== 'undefined';
+}
+
+/**
+ * The server render's registration, built once. Deliberately NOT written to `registered`:
+ * `hasLiveClient()` must keep answering `false` on the server, because that is the guard a
+ * component with a static fallback already uses to decide it is being server-rendered
+ * (`examples/dummy`'s `update-banner.tsx`).
+ */
+let serverSide: Registered | null = null;
+
+function serverRegistration(): Registered {
+  if (serverSide !== null) return serverSide;
+  const client = serverRenderLiveClient();
+  // The version signal never moves, and nothing on the server can move it: one pass, no queue,
+  // no ack — so `bump` and `release` are the no-ops that fact makes them.
+  const [version] = client.signal<number>(0);
+  serverSide = { client, version, bump: () => undefined, release: () => undefined };
+  return serverSide;
+}
+
 function live(hook: string): Registered {
-  if (registered === null) throw new LiveClientMissingError({ hook });
-  return registered;
+  if (registered !== null) return registered;
+  if (hasDom()) throw new LiveClientMissingError({ hook });
+  return serverRegistration();
 }
 
 // ---- useLive ------------------------------------------------------------------------------------

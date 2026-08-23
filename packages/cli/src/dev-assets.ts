@@ -23,6 +23,7 @@ import {
   authorizeStorageRead,
   STORAGE_READ_PERMISSION,
 } from './dev-storage';
+import { faviconRoute } from './favicon';
 
 /**
  * The one source image every generated icon derives from. `x new` scaffolds it, `x doctor` checks
@@ -254,6 +255,11 @@ export function assetRoutes(options: AssetRoutesOptions): readonly Route[] {
     handler: async (request: UltimateRequest, ctx: RequestContext): Promise<Response> =>
       mediaResponse(request, ctx, options.storage, options.images),
   });
+  // Mounted here rather than in `serve.ts` and `cmd-dev.ts` separately: this is the one route set
+  // both served surfaces already compose, and a favicon that answers on a laptop and 404s in the
+  // container is the dev/prod difference this package's own rule forbids. `favicon.ts` owns what
+  // the answer IS — this file only says the app's asset surface is where it hangs.
+  routes.push(faviconRoute(options.root));
 
   return routes;
 }

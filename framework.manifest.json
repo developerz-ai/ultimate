@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "648e9aa0328a298b38a70cafb8f31197c55a3928340c7bd635edefe5d5222823",
+  "buildId": "342784a6b04b21b51bab02a0683ab658f166c3c0d45a6f73caa933dd9f3ab418",
   "tiers": {
     "0": [
       "core",
@@ -1028,6 +1028,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_ERROR_FIX_PATH_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ERROR_RENDER_UNSAFE",
       "owner": "scripts",
       "at": "scripts/error-render.ts"
@@ -1389,6 +1394,11 @@
     },
     {
       "code": "X_LIVE_ROW_UNIDENTIFIED",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_LIVE_SERVER_RENDER",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
     },

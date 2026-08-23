@@ -81,13 +81,23 @@ Client names — `useLive`, `liveHookFor`, `LiveClient`, `OfflineQueue`, `Rebase
 | wire | `.` | `PROTOCOL_VERSION`, `encode`, `decode`, `Frame` |
 | halves | both | `LiveClient` on `.`; `createSyncNode` / `listenSyncNode` (`sync` role) on `./server` |
 | a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
-| hooks | `.` | `setLiveClient`, `useLive`, `useConnection`, `useMutation`, `useMutationQueue` |
+| hooks | `.` | `setLiveClient`, `useLive`, `useConnection`, `useMutation`, `useMutationQueue`, `hasLiveClient` |
+| the server render's client | `.` | `serverRenderLiveClient` — what a hook falls back to with no DOM; `LiveClientLike` is the shape both it and `LiveClient` satisfy |
 | the typed projection | `.` | `liveHookFor` — one query bound to one named hook |
 
 ## The four hooks
 
 Register the client once, in the app entry. Every hook reads it from there — no hook takes a client
-argument, and one that runs before the registration is `X_LIVE_CLIENT_MISSING`, never a default.
+argument, and one that runs **in a browser** before the registration is `X_LIVE_CLIENT_MISSING`,
+never a default.
+
+**A server render is not a missing registration.** With no DOM there is no socket a client could
+have been registered for, so every hook falls back to `serverRenderLiveClient()`: `useLive` answers
+`state() === 'loading'` with no rows, `useConnection()` reports online, both queue counts are `0`,
+and `mutate` / `drain` refuse with `X_LIVE_SERVER_RENDER`. The page renders its own loading branch
+and a hydrating island takes over. `hasLiveClient()` still answers `false` there, which is what a
+component with a static fallback is asking. `useLive` in a page BODY is not made live by this — a
+page component never runs in a browser; put the live half in an `island()`.
 
 ```ts
 setLiveClient(new LiveClient({ signal: createSignal, connect, buildId, store, queue }));
@@ -523,7 +533,8 @@ wire twice by a reconnect that raced an ack.
 `X_PROTOCOL_VERSION` · `X_CURSOR_STALE` ·
 `X_REBASE_CONFLICT` · `X_TRANSPORT_UNAVAILABLE` · `X_TRANSPORT_PROTOCOL` ·
 `X_REPLICATION_FAILED` · `X_REPLICATION_PROTOCOL` · `X_REPLICATOR_SLOT_HELD` ·
-`X_LIVE_CLIENT_MISSING` · `X_LIVE_QUERY_UNKNOWN` · `X_LIVE_REPLICA_IDENTITY` ·
+`X_LIVE_CLIENT_MISSING` · `X_LIVE_SERVER_RENDER` · `X_LIVE_QUERY_UNKNOWN` ·
+`X_LIVE_REPLICA_IDENTITY` ·
 `X_SOCKET_UNAUTHENTICATED` · `X_SOCKET_AUTH_UNAVAILABLE` · `X_NOT_IMPLEMENTED`
 
 Topics deny by default: a topic with no matching guard is forbidden. An authz hole is not a config

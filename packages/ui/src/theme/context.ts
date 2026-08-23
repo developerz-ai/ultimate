@@ -14,7 +14,8 @@ import {
 } from '@ultimat3/i18n';
 import { currentTimeZone, type TimeZone } from '@ultimat3/time';
 import type { Theme } from '../tokens/tokens';
-import { hasSolidRuntime, type SolidContext, type SolidRuntime, solid } from './solid-adapter';
+import { hasSolidRuntime } from './runtime-slot';
+import { type SolidContext, type SolidRuntime, solid } from './solid-adapter';
 
 export type { Direction };
 

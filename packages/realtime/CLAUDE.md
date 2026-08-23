@@ -27,6 +27,14 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   type-only export leaves no runtime entry). `errors.ts` is deliberately whole on `.`: every code
   reaches the wire through `toWireError`, so a client must be able to name any of them, and the
   module is already in the client graph via `sync-protocol`.
+- **`errors.ts` is the code TABLE plus the client-reachable refusals; two neighbours hold the rest,
+  and every name is still exported from `./errors`** (2026-08-23, at the 500-line ceiling).
+  `realtime-error.ts` holds the base class alone and `replication-errors.ts` the four Postgres ones
+  — the only codes no browser can reach. The base needs its own module rather than a re-export:
+  `extends` runs at module evaluation and imports hoist above it, so a `replication-errors` that
+  imported the base back out of `errors.ts` would read it in its temporal dead zone. Neither
+  neighbour runs anything at import, which is what keeps `sideEffects` naming `errors.ts` alone
+  true — `registerErrorCodes()` stays there, unconditional, and `bun run side-effects` is the check.
 - **`sideEffects` is the ARRAY `["./src/errors.ts"]`, never `false` and never absent.** Absent was
   what made the failure above unrecoverable — with no field a bundler must assume every module has
   effects, so nothing was tree-shaken and `nats` came along with `useLive`. Measured, not guessed:
@@ -325,6 +333,38 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - One registered `LiveClient` per app (`setLiveClient`), and every hook reads it through that seam —
   no hook takes a client argument, and an unregistered one is `X_LIVE_CLIENT_MISSING`, never a
   lazily-constructed default.
+- **A DOM is the whole of the question, and it decides what "no client" MEANS** (2026-08-23, issue
+  #271). Deliberately the same rule, the same probe and the same words as `@ultimat3/ui`'s
+  `solid()`: with a DOM, a hook that finds no registration is a real bug — the app entry forgot
+  `setLiveClient` and every live query on the page is dead — so it stays `X_LIVE_CLIENT_MISSING`.
+  Without one there is no socket a client could have been registered *for*; that is a **server
+  render**, and it gets `serverRenderLiveClient()`. Before it, a page whose whole body read a live
+  query could not server-render at all: `useConnection()` threw and the route answered 500, and the
+  existing `hasLiveClient()` guard could not help — it only serves a component that already has a
+  static fallback written. `hasLiveClient()` still answers **false** on the server, on purpose,
+  because that is exactly what such a component is asking.
+- **The server client serves the first render and opens no socket, so it holds nothing per
+  request.** One instance per process, and that is only safe because `useLive` on it registers
+  nothing: a client that kept a registration per call would grow by one entry per request forever
+  and pin a row window with each. `state()` is **`loading`**, never `offline` and never `live` — the
+  rows arrive over a socket this render does not have, so the page's own loading fallback is what
+  the document carries. `offline` would be read as a settled answer (`state() !== 'loading'` is the
+  gate a page writes), so an empty result set would render "you have no posts" for a feed that has
+  some. `connected` is `true` for the mirror-image reason: `useConnection().offline` is a banner
+  about this visitor's connectivity, and the request being served is the proof it is up. Everything
+  that can only mean "talk to the socket" — `mutate`, `drain` — refuses with
+  `X_LIVE_SERVER_RENDER`, because a dropped mutation looks exactly like one that happened.
+- **The hook seam takes `LiveClientLike`, not the `LiveClient` class, and that is a measurement.**
+  A value import of the class from `hooks.ts` put the whole connection lifecycle — heartbeat, topic
+  book, mutation sender, wire protocol, backoff — into every island that calls `useLive`: a
+  `useLive`-only browser chunk went **8,368 B → 26,571 B**. Against the structural shape it is
+  9,356 B, and the ~1 kB is the server client and its refusal. `type-pins.ts`
+  (`_LiveClientSatisfiesTheHookSeam`) is what keeps the two in step.
+- **A server render that renders is not a live page.** A page component never runs in a browser —
+  only an `island()` module does — so `useLive` in a page body server-renders its loading branch and
+  nothing replaces it unless that route ships an island that registers a client. The server client
+  removes the 500; it does not make a page live, and it must never be described as if it did.
+  `examples/dummy`'s `/feed` is exactly that state and its own header says so.
 - Anything a component reads is a **getter or an accessor**, never a value snapshotted at hook time:
   a plain field cannot re-render. `MutatorLike.local` is declared with method syntax so an
   `@ultimat3/action` `Mutator` assigns with no cast — a function-typed property would not.

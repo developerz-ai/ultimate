@@ -313,7 +313,7 @@ Two more facts about the set, both `As of 2026-08`:
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
-| `--name` | string | — | migration or branch name, or the backfill to filter the ledger by, when you would rather not pass it positionally |
+| `--name` | string | — | migration or branch name, or the backfill to filter the ledger by. Under `backfill --list` it is the **only** spelling of that filter: a positional there is a pass target in every other shape and is refused with `X_CLI_BAD_FLAG` rather than silently dropped |
 | `--allow-destructive` | boolean | `false` | let `gen` emit a DROP whose `down` cannot restore the rows. `X_MIGRATION_IRREVERSIBLE`'s own `fix:` line names it |
 | `--list` | boolean | `false` | `backfill`: print the ledger |
 | `--pending` | boolean | `false` | `backfill`: declared minus completed, judged in this `ULTIMATE_ENV`. Non-zero exit when anything is unswept |

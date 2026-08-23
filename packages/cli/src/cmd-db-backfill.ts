@@ -27,6 +27,7 @@ import type { CommandResult } from './output';
 import { findingFrom } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
+import { quoteArg } from './shell-quote';
 
 /** Which of the four questions an invocation asked. `pass` is `<name>` and `--all` both. */
 type BackfillShape = 'list' | 'pending' | 'pass';
@@ -73,11 +74,23 @@ function readShape(args: ParsedArgs): { readonly shape: BackfillShape; readonly 
   // `--name` is a FILTER under `--list` and a target everywhere else, so it selects a shape only
   // where `--list` is absent. Two spellings of one target are still two, and are refused.
   const target = list ? undefined : (positional ?? named);
+  // Under `--list` the positional is DROPPED by the line above, and until 2026-08 nothing said so:
+  // `x db backfill cleanup --list` printed the whole ledger and reported `ok: true` while the
+  // operator had named one sweep. `--name` is the filter's one spelling here, so this is a refusal
+  // and not a second reading of the argument — the same rule every other shape in this function
+  // follows, and the same argv one flag over (`--pending cleanup`) has always been refused.
+  if (list && positional !== undefined) {
+    return refuseShape(
+      'name',
+      `x db backfill --list filters the ledger with --name, so the positional "${positional}" selects nothing — it is a pass target in every other shape`,
+      `x db backfill --list --name ${quoteArg(positional)} --json`,
+    );
+  }
   if (!list && positional !== undefined && named !== undefined) {
     return refuseShape(
       'name',
       `x db backfill names two backfills ("${positional}" and "${named}") — a pass sweeps the positional or --name, never both`,
-      `x db backfill ${positional} --write --json`,
+      `x db backfill ${quoteArg(positional)} --write --json`,
     );
   }
   const asked = [

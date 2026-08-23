@@ -21,6 +21,9 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_JOB_UNKNOWN',
   'X_FIX_TARGET_UNKNOWN',
   'X_ERROR_FIX_INVALID',
+  // The second half of the same contract: X_ERROR_FIX_INVALID means the fix is not an instruction,
+  // this one means it is one and cites a file that is not there. Two conditions, two repairs.
+  'X_ERROR_FIX_PATH_MISSING',
   'X_ERROR_CODE_UNDOCUMENTED',
   'X_ERROR_CODE_UNREGISTERED',
   // Reported as `Finding`s rather than thrown, and unregistered until now because of it — so
@@ -160,6 +163,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_JOB_UNKNOWN: 'the queue holds no job with this id',
   X_FIX_TARGET_UNKNOWN: 'the named file is not one of the app source files',
   X_ERROR_FIX_INVALID: "an error's fix line is not a runnable instruction",
+  X_ERROR_FIX_PATH_MISSING: "an error's fix line cites a file this repository does not have",
   X_ERROR_CODE_UNDOCUMENTED: 'a shipped error code has no row in the error reference',
   X_ERROR_CODE_UNREGISTERED: 'the error reference documents a code no package registers',
   X_STORAGE_UNWRITABLE: 'the storage disk this process needs cannot be written to',

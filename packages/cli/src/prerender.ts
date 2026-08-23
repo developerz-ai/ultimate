@@ -13,6 +13,7 @@ import { appManifest } from './app-manifest';
 import type { RouteStats } from './budgets';
 import { measureDocumentJs, writeBuildStats } from './budgets';
 import { routeDocument } from './dev-render';
+import { FAVICON_PATH, faviconBytes } from './favicon';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands, writeIslands } from './island-bundle';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
@@ -127,6 +128,13 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // behind it, so the artifact carries every byte the browser will ask for.
   const islands = await buildIslands(options.root);
   await writeIslands(islands, options.out);
+  // Same rule, one asset further: a browser asks for `/favicon.ico` on the first page it loads,
+  // and a static export has no route to answer it — so the bytes the served surfaces would have
+  // returned go into the artifact instead of leaving a 404 in every visitor's console.
+  await Bun.write(
+    join(options.out, FAVICON_PATH.slice(1)),
+    (await faviconBytes(options.root)).bytes,
+  );
 
   // Every render below goes through `routeDocument`, which is the function a REQUEST reaches — and
   // a request arrives inside `runWithContext`, installed by the HTTP pipeline (`dev-render.ts`).

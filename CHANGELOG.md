@@ -8,7 +8,42 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`/favicon.ico` is answered on every served surface.** `x dev`, `x serve` and the static export
+  all carry a favicon: the app's own `apps/web/site/favicon.ico` when one exists, otherwise a
+  32×32 default the framework draws itself. Every scaffolded app 404'd on it before (#272), and a
+  permanent console error trains the reader to ignore console errors.
+- **`X_ERROR_FIX_PATH_MISSING`** — a `fix:` that cites a file path or glob this tree does not have
+  is now refused by the `errors` step, beside the `x <command>` rule (#274). `X_UI_RUNTIME_MISSING`
+  named a line no generator wrote and passed every gate since it shipped; 117 path citations read,
+  zero offenders under the rule as it ships.
+- `@ultimat3/cli` declares `@ultimat3/flags` and `@ultimat3/money` as dependencies, which
+  `x errors explain` already imported at run time (#283). In an app that did not depend on them,
+  41 documented codes answered `X_ERROR_CODE_UNKNOWN` while the wiki promised they resolved.
+  `error-catalog.test.ts` now derives the importable set from `package.json`.
+- **A server render gets a live client instead of a 500.** With no DOM, every `@ultimat3/realtime`
+  hook falls back to `serverRenderLiveClient()` — `loading`, no rows, no subscription — so a page
+  whose body reads a live query renders its loading branch on the server and the browser takes
+  over on hydrate (#271). `mutate()` / `drain()` there are **`X_LIVE_SERVER_RENDER`**, a new code;
+  `X_LIVE_CLIENT_MISSING` now means a *browser* with no registration. `LiveClientLike` is the
+  structural seam the hooks read — a subclass would have put the `LiveClient` class on the island
+  graph (8,368 B → 26,571 B, measured).
+- **`@ultimat3/ui`'s Solid-runtime slot is its own module** (`theme/runtime-slot.ts`), so an
+  island that only calls `setSolidRuntime` no longer carries `@ultimat3/core`'s error registry:
+  5,719 B → 72 B (#275). Component subpath exports were measured and refused — the barrel and a
+  deep import emit byte-identical chunks; `barrel-bytes.test.ts` pins both facts.
+- `buildIslands` byte reproducibility is pinned on `examples/dummy`'s real islands (#273). The
+  ±377 B flap is Bun 1.4.0's tree-shaker racing on a `sideEffects`-declared module, reproduced
+  with no plugins; the recipe is in the test header.
+
+### Fixed
+
+- `srcsetFor` in `@ultimat3/ui` emitted a variant `src` holding whitespace or a leading/trailing
+  comma verbatim, which the browser parses as a different URL and drops in silence; it is now
+  `X_UI_INVALID_VALUE`.
+- `x db backfill <name> --list` silently dropped the positional and listed the whole ledger with
+  `ok: true`. It is now `X_CLI_BAD_FLAG`, with `--name` as the fix.
 
 ## 10.0.0 - 2026-08-23
 

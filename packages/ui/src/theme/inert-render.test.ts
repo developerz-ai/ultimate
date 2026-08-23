@@ -36,7 +36,7 @@ import { Toast } from '../components/Toast';
 import { Toolbar } from '../components/Toolbar';
 import { UI_ERROR_CODES } from '../errors';
 import { UiProvider } from './provider';
-import { clearSolidRuntime } from './solid-adapter';
+import { clearSolidRuntime } from './runtime-slot';
 
 // --- the inert factory ---------------------------------------------------------------------
 // A local copy of `@ultimat3/render`'s `h` + `renderToHtml`, ~30 lines of it. This package may

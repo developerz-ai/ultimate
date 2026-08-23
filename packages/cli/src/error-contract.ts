@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { citedCommandProblem, loadCommandCatalog } from './fix-command';
 import { createHelperResolver } from './fix-imports';
+import { citedPathProblem, FILE_TOKEN_PATTERN } from './fix-path';
 import { scanFixSites } from './fix-scan';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
@@ -38,7 +39,9 @@ export const COMMAND_TOKENS: readonly RegExp[] = [
   /(?:^|[\s;|&("'`])x\s+[a-z][a-z-]*/,
   /\b(?:bun|bunx|npm|npx|node|git|docker|kubectl|helm|psql|curl|openssl|biome|tsc)\b/,
   /\b[A-Za-z_$][\w$]*\(/,
-  /[\w.@-]*\/[\w.@-]+\.(?:ts|tsx|js|json|md|toml|yaml|yml|css|scss|sql)\b/,
+  // Built from `fix-path.ts`'s extension list, because the token that makes a fix count as an
+  // instruction is exactly the token `citedPathProblem` then has to resolve.
+  new RegExp(FILE_TOKEN_PATTERN),
   /\b(?:app\.config\.ts|package\.json|tsconfig\.json|bunfig\.toml|\.env(?:\.[\w.-]+)?)\b/,
 ];
 
@@ -63,6 +66,19 @@ const fixFinding = (site: FixSite, problem: string): Finding => ({
   code: 'X_ERROR_FIX_INVALID',
   cause: problem,
   fix: `rewrite the fix at ${site.at}:${site.line} as a command to run, a call to paste, or an edit naming a file`,
+  docs: ERROR_DOCS_URL,
+  at: `${site.at}:${site.line}`,
+});
+
+/**
+ * Its own code, not `X_ERROR_FIX_INVALID`: that one means the fix is not an instruction, and this
+ * one means it IS one and points at nothing. The repairs are different — rewrite the sentence
+ * versus correct the path — and one code for both would hand two readers the same wrong edit.
+ */
+const pathFinding = (site: FixSite, problem: string): Finding => ({
+  code: 'X_ERROR_FIX_PATH_MISSING',
+  cause: `the fix at ${site.at}:${site.line} ${problem}`,
+  fix: `correct the path in the fix at ${site.at}:${site.line} to one this repo holds, or create the file it names`,
   docs: ERROR_DOCS_URL,
   at: `${site.at}:${site.line}`,
 });
@@ -110,7 +126,14 @@ export async function checkErrorFixReport(root: string): Promise<ErrorFixReport>
       // resolve, and reading `<value>` as one would be a finding nobody can act on.
       const fix = staticFix(site.fix);
       const problem = fixProblem(site.fix) ?? citedCommandProblem(fix, catalog);
-      if (problem !== undefined) findings.push(fixFinding(site, problem));
+      if (problem !== undefined) {
+        findings.push(fixFinding(site, problem));
+        continue;
+      }
+      // Third rule, and the one nothing resolved: a fix that names a file this repo does not have.
+      // Reported only where the first two hold — a line already being rewritten needs one finding.
+      const missing = await citedPathProblem(fix, root);
+      if (missing !== undefined) findings.push(pathFinding(site, missing));
     }
   }
   return { findings, checked, unreadable };

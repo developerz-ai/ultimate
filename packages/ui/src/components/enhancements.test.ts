@@ -6,8 +6,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { UI_KEYS } from '../i18n-keys';
 import { byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import type { SolidContext, SolidRuntime } from '../theme/solid-adapter';
-import { clearSolidRuntime, setSolidRuntime } from '../theme/solid-adapter';
 import type { Theme, ThemeEnv } from '../theme/theme';
 import { InfiniteScroll } from './InfiniteScroll';
 import { ThemeToggle } from './ThemeToggle';

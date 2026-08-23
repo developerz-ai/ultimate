@@ -8,6 +8,7 @@ import { useContext } from '@ultimat3/core';
 import { clearRoutes, defineRoute, island, registerRoute, routeEntries } from '@ultimat3/render';
 import { appManifest } from './app-manifest';
 import { checkBudgets, readBuildStats } from './budgets';
+import { faviconBytes } from './favicon';
 import { isPrerenderable, prerenderSite } from './prerender';
 import { readStaticReport } from './static-report';
 
@@ -67,6 +68,22 @@ describe('x build --target static', () => {
     expect(report.skipped.map((route) => route.route)).toEqual(['/dashboard']);
     // A stream route on disk would be a shell nothing can ever fill — the file must not exist.
     expect(await Bun.file(join(out, 'dashboard/index.html')).exists()).toBe(false);
+  });
+
+  // A static export is served with no process behind it, so every byte the browser asks for has to
+  // be IN the artifact — the same rule the island chunks above follow. Without it the export 404s
+  // on the one request every browser makes unprompted.
+  test('the export carries a favicon, so the served surfaces and the artifact agree', async () => {
+    registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
+    const out = join(ROOT, 'static');
+    await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+
+    const written = await Bun.file(join(out, 'favicon.ico')).bytes();
+    // Both sides re-wrapped: `Bun.file().bytes()` answers `Uint8Array<ArrayBuffer>` and
+    // `faviconBytes` answers `Uint8Array<ArrayBufferLike>`, which is a different type argument and
+    // no `toEqual` overload — the bytes are what this asserts, never the buffer they sit on.
+    expect(new Uint8Array(written)).toEqual(new Uint8Array((await faviconBytes(ROOT)).bytes));
+    expect(written.length).toBeGreaterThan(0);
   });
 
   test('the written file is the document the dev server serves, with the route metadata in it', async () => {

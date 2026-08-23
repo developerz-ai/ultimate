@@ -33,6 +33,7 @@ import { backoffDelay, defaultBackoff, timeoutScheduler } from './thundering-her
  */
 export type {
   ClientSocket,
+  LiveClientLike,
   LiveClientOptions,
   LiveHandle,
   LiveQueryRef,

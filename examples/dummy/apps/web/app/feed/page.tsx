@@ -3,8 +3,15 @@
  * `useLive`'s socket subscription, not a resolving promise, so the loading gate below is the live
  * query's own `state()`, a plain reactive read.
  *
- * `useLive` returns a signal backed by the persisted local store, which is why this page is
- * readable in a tunnel and why a like taken offline is still here when the tunnel ends.
+ * **This page server-renders its LOADING branch and nothing replaces it yet** (`As of 2026-08-23`,
+ * issue #271). Two halves are missing and each is the other's precondition: this route declares no
+ * `island()`, so no module of it ever runs in a browser, and nothing in this app calls
+ * `setLiveClient()`, so there is no socket for `useLive` to subscribe on. What changed is only that
+ * the page RENDERS: `@ultimat3/realtime` hands a server render its own client — first render, no
+ * subscription — instead of throwing `X_LIVE_CLIENT_MISSING` and answering 500. The claim this
+ * header used to make, that the rows come from a persisted local store and survive a tunnel, is
+ * about the shape this page is meant to take: the live body in a `feed.island.tsx`, registering a
+ * `LiveClient` in its `mount()`, the way `/settings` puts its editor in one.
  */
 
 import { useT } from '@postly/i18n';

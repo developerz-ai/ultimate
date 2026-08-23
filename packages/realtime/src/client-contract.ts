@@ -55,6 +55,29 @@ export interface MutatorRef<T extends TableMap = TableMap> {
   readonly conflict?: ConflictStrategy;
 }
 
+/**
+ * What the HOOKS need a client to be — every member `hooks.ts` reads, and not one more.
+ *
+ * A structural interface rather than the `LiveClient` class, and the reason is measured: a value
+ * import of that class from the hook seam put the whole connection lifecycle (heartbeat, topic
+ * book, mutation sender, wire protocol, backoff) into every island that calls `useLive`, taking a
+ * `useLive`-only browser chunk from 8,368 B to 26,571 B. The server render's client
+ * (`server-render-client.ts`) satisfies this and imports no lifecycle at all, so the browser pays
+ * nothing for a shape only the server uses. `type-pins.ts` pins that `LiveClient` still satisfies
+ * it, so a member added there and not here is a build error rather than a hook that cannot see it.
+ */
+export interface LiveClientLike<T extends TableMap = TableMap> {
+  readonly signal: SignalFactory;
+  readonly queue: OfflineQueue | undefined;
+  readonly connected: boolean;
+  readonly reconnectAt: () => number | null;
+  readonly appUpdateAvailable: () => string | null;
+  useLive<R extends Row>(query: LiveQueryRef, input: JsonValue): LiveHandle<R>;
+  mutate(mutator: MutatorRef<T>, input: JsonValue, key?: string): Promise<void>;
+  drain(): Promise<void>;
+  onQueueChange(listener: () => void): () => void;
+}
+
 export interface LiveClientOptions<T extends TableMap = TableMap> {
   readonly signal: SignalFactory;
   /** Called for every connect attempt; returning a fresh socket keeps reconnect logic here. */

@@ -7,8 +7,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { FakeElement, type InstalledDom, installFakeDom, keydown } from '../fake-dom';
 import { attachRef, byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import type { SolidContext, SolidRuntime } from '../theme/solid-adapter';
-import { clearSolidRuntime, setSolidRuntime } from '../theme/solid-adapter';
 import { Dialog } from './Dialog';
 import { Drawer } from './Drawer';
 import { Menu } from './Menu';
