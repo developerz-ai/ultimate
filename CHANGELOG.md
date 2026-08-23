@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 11.2.0 - 2026-08-23
+
 ### Added
 
 - **`x shot --island <name> [--state <id>]` â€” one component, photographed in a state you cannot
@@ -147,6 +151,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   different grammars, and they cannot be merged: `ui` is tier 4 and `testing` is tier 5.
 - `docs/architecture/11-ai-surface.md` still said "a 4xx is never retried".
 
+### Commits
+
+- feat(cli): x shot --island photographs one component in a state you cannot click to (#334) (#336)
+- feat(core): one flight layer, and the four copies collapse onto it (#332 #333) (#335)
 
 ## 11.1.0 - 2026-08-23
 
