@@ -53,6 +53,17 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_WORKSPACE_DEP_UNDECLARED:
     'x verify --json   # the package-shape finding carries the dependency line to add',
   X_SHOT_BROWSER_MISSING: 'bun add -d puppeteer-core',
+  // The four island-capture codes. Each one's real repair is an edit to the app's own states file
+  // or component, which no command can perform — so each names the command that REPRODUCES it with
+  // the file and the reason attached, which is the runnable half.
+  X_SHOT_ISLAND_STATES_EMPTY:
+    'x help shot --json   # then export the manifest from the states file the cause names',
+  X_SHOT_ISLAND_UNPHOTOGRAPHABLE:
+    'x help shot --json   # the cause names the assertion that did not hold; --settle buys the slow ones more time',
+  X_SHOT_ISLAND_UNSTUBBED_REQUEST:
+    'x help shot --json   # the cause lists every request the state must answer under routes',
+  X_SHOT_ISLAND_MISSING:
+    'x help shot --json   # every absent picture carries its own named refusal in the run above',
   X_GH_UNAVAILABLE: 'gh auth login   # install first from https://cli.github.com',
   X_GH_NOT_AUTHENTICATED: 'gh auth login',
   X_GH_COMMAND_FAILED: 'x ci --json   # the finding carries the gh invocation that failed',

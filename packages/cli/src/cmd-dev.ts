@@ -38,7 +38,9 @@ import { intFlagOr, PORT_RANGE } from './flag-number';
 import { holdUntilShutdown } from './hold';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands } from './island-bundle';
+import { islandHarnessRoutes } from './island-harness-route';
 import { islandRoutes } from './island-routes';
+import { loadIslandStates } from './island-states-load';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
@@ -181,6 +183,15 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     // The chunks the documents below name. Mounted before the app's routes for the reason
     // `/icons` and `/media` are: a page route must not be able to shadow an asset URL.
     ...islandRoutes(() => state.islands),
+    // `x shot --island`'s harness, in the `/_x` dev namespace so no app route can shadow it. It
+    // lives here rather than in a second server because everything it needs is in THIS process:
+    // the built chunks, the app's stylesheet registry, and the one embedded Postgres a checkout
+    // may have. The states are read per REQUEST — an author editing a state and re-running the
+    // command must not need a restart to see it.
+    ...islandHarnessRoutes({
+      islands: () => state.islands,
+      states: () => loadIslandStates(options.root),
+    }),
     ...appRoutes({ buildId, resolveIsland: (file) => state.islands.resolverFor(file) }),
   ];
 

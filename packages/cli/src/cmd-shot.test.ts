@@ -433,6 +433,36 @@ describe('unit · x shot refuses before it boots anything', () => {
     ]);
   });
 
+  /**
+   * `--island` and a route positional are two subjects and one command, and the refusal comes
+   * FIRST — ahead of `readRoute`, ahead of the browser, ahead of any boot. A reader who typed both
+   * has a belief about which one runs and half of them would be wrong, so neither is preferred.
+   */
+  test('--island and a route positional are refused by name, before anything is resolved', async () => {
+    const error = await thrownBy(() =>
+      shotCommand.run(contextFor(['shot', '/dash', '--island', 'settings'])),
+    );
+    expect([error['code'], error['fix']]).toEqual([
+      'X_CLI_BAD_FLAG',
+      'x shot --island settings --json',
+    ]);
+    expect(existsSync(join(root, '.x'))).toBe(false);
+  });
+
+  /**
+   * `--island` alone must NOT go through `readRoute`, which refuses a missing positional. This
+   * app declares no states, so the refusal is the one that names that — and it lands before the
+   * browser resolves, which is what `.x` staying absent proves.
+   */
+  test('--island alone skips the route positional entirely', async () => {
+    const error = await thrownBy(() =>
+      shotCommand.run(contextFor(['shot', '--island', 'settings'])),
+    );
+    expect(error['code']).toBe('X_CLI_BAD_FLAG');
+    expect(String(error['cause'])).toContain('declares no island states');
+    expect(existsSync(join(root, '.x'))).toBe(false);
+  });
+
   // The whole point of resolving the browser first: an app with none must not pay an embedded
   // Postgres boot to be told to run one install command.
   test('an app with no puppeteer-core is told to install it, and nothing is started', async () => {

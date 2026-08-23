@@ -46,6 +46,15 @@ const ENTRY_POINT = /^apps\/[^/]+\/(?:server|prerender)\.tsx?$/;
  */
 const CLIENT_ENTRY_POINT = /\.island\.tsx$/;
 
+/**
+ * A `*.island.states.ts` is read by a TOOL, not by the server: `x shot --island` loads it, the
+ * harness route loads it, and a guard test loads it. It registers no primitive and it imports
+ * `@ultimat3/testing`, so importing it here would put the test-support package in the module graph
+ * of every `x dev`, every `x build` and every gate step that loads the app — the same rule the
+ * client entry point above follows, for the same reason (axiom 6).
+ */
+const STATES_FILE = /\.island\.states\.ts$/;
+
 export interface LoadedApp {
   readonly root: string;
   /** App-root-relative POSIX paths of every module that imported, sorted. */
@@ -88,7 +97,9 @@ export async function loadApp(root: string): Promise<LoadedApp> {
     for await (const absolute of new Bun.Glob(pattern).scan({ cwd: root, absolute: true })) {
       if (absolute.includes('node_modules') || absolute.includes('.test.')) continue;
       const file = relative(root, absolute).split(sep).join('/');
-      if (ENTRY_POINT.test(file) || CLIENT_ENTRY_POINT.test(file)) continue;
+      if (ENTRY_POINT.test(file) || CLIENT_ENTRY_POINT.test(file) || STATES_FILE.test(file)) {
+        continue;
+      }
       let module: Record<string, unknown>;
       try {
         module = (await import(absolute)) as Record<string, unknown>;

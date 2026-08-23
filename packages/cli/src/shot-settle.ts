@@ -1,7 +1,8 @@
-// When a shot may be TAKEN: the two rules that decide whether the page has finished hydrating,
-// separated from both the command that drives a browser and the verdict that judges what came
-// back. Plain values and an injected sleep, so the whole loop is proved with neither.
+// When a shot may be TAKEN: the rules that decide whether the page has finished, separated from
+// both the command that drives a browser and the verdict that judges what came back. Plain values
+// and an injected sleep, so every loop here is proved with neither.
 
+import type { IslandReadiness } from './island-verdict';
 import type { IslandCount } from './shot-verdict';
 
 /**
@@ -47,6 +48,35 @@ export async function settleIslands(
   let answer = await probe();
   let waited = 0;
   while (!islandsSettled(answer) && waited < options.windowMs) {
+    // At least 1ms, or a `pollMs` of zero is a loop with no exit while the window stands.
+    const step = Math.max(1, Math.min(options.pollMs, options.windowMs - waited));
+    await sleep(step);
+    waited += step;
+    answer = (await probe()) ?? answer;
+  }
+  return answer;
+}
+
+/**
+ * Read the harness's readiness until the page goes QUIET or the window runs out.
+ *
+ * Quiet and not idle, which is the whole rule: the page's own watcher sets `ready` after N
+ * consecutive frames in which no request started and none settled, so a state whose fixture is
+ * deliberately `pending` still reaches it. Waiting for nothing in flight would hang on exactly the
+ * state an author declared on purpose, and a fixed sleep would photograph whatever a slow machine
+ * had painted by then.
+ *
+ * A `null` answer never overwrites a real one, for `settleIslands`' reason: `null` is "the page
+ * answered no probe", and a probe that fails once must not turn a ready page into an unready one.
+ */
+export async function settleReadiness(
+  probe: () => Promise<IslandReadiness | null>,
+  options: SettleOptions,
+): Promise<IslandReadiness | null> {
+  const sleep = options.sleep ?? ((ms: number): Promise<void> => Bun.sleep(ms));
+  let answer = await probe();
+  let waited = 0;
+  while (answer?.ready !== true && waited < options.windowMs) {
     // At least 1ms, or a `pollMs` of zero is a loop with no exit while the window stands.
     const step = Math.max(1, Math.min(options.pollMs, options.windowMs - waited));
     await sleep(step);

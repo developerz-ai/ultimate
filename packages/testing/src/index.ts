@@ -23,6 +23,10 @@ export {
 // `test` is OURS (fixture-injecting); everything else passes through. Re-exported so an app
 // test has one import line, and so `expect` carries this package's matchers already installed.
 export { afterAll, afterEach, beforeAll, beforeEach, describe, expect } from 'bun:test';
+// The island-state vocabulary. Pure data by design: a `*.island.states.ts` file is read by the
+// command that photographs the states, by the harness page and by a guard test — none of which has
+// a bundler, and only one of which has a browser.
+export { defineIslandStates } from './define-island-states';
 export type { DeterminismOptions, DeterminismSnapshot } from './determinism';
 // `captureDeterminism` + `restoreCapturedDeterminism` are the pair a NESTED install needs;
 // `restoreDeterminism` uninstalls outright and hands the real clock and the real `Math.random`
@@ -115,6 +119,68 @@ export type { AppHandle, AppOptions, BootedApp } from './harness';
 export { describeApp, testApp } from './harness';
 // Type-only: the micro-DOM is the fixture's to build, and a test only ever names what it handed back.
 export type { FakeElement, FakeNode, FakeText } from './island-dom';
+export type { IslandAddress, IslandShotTarget } from './island-shot-targets';
+export {
+  isIslandTheme,
+  islandAddress,
+  islandShotFile,
+  islandShotPlan,
+  islandShotTargets,
+  parseIslandAddress,
+} from './island-shot-targets';
+// The file an error tells the reader to edit — the island's own name with `.states.ts` where
+// `.tsx` was. Exported so the command that takes the pictures names the same file the refusal does.
+export { islandStatesFile } from './island-state-errors';
+export type {
+  IslandRouteStub,
+  IslandState,
+  IslandStateDecl,
+  IslandStatesDecl,
+  IslandStatesManifest,
+  IslandStubResponse,
+  IslandTheme,
+  IslandViewport,
+} from './island-states';
+export {
+  DEFAULT_ISLAND_THEME,
+  DEFAULT_ISLAND_VIEWPORT,
+  ISLAND_SHOT_TIME_ZONE,
+  ISLAND_STATES,
+  ISLAND_THEMES,
+  isIslandStatesManifest,
+  islandStatesName,
+} from './island-states';
+export type { JsonFault } from './island-states-check';
+export {
+  isPinnedInstant,
+  isStateId,
+  isStubMatch,
+  isTimeZone,
+  jsonFault,
+  slugifyStateId,
+} from './island-states-check';
+export type {
+  IslandFaultKind,
+  IslandStatesFault,
+  ModuleEdge,
+} from './island-states-pure';
+export {
+  assertIslandStatesPure,
+  importSpecifiers,
+  impureSpecifier,
+  islandStatesFault,
+  islandStatesImportFault,
+  moduleEdges,
+} from './island-states-pure';
+export {
+  assertIslandFiles,
+  assertUniqueIslandStates,
+  findIslandStates,
+  islandStatesMatching,
+  islandStatesNames,
+  missingIslandFiles,
+  normalizeIslandName,
+} from './island-states-resolve';
 export type { LiveConnection, LiveNodeHandle, LiveNodeOptions } from './live-node';
 export { createLiveNode } from './live-node';
 export type { LiveReplicator, LiveReplicatorOptions } from './live-replicator';

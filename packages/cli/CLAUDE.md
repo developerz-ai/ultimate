@@ -167,12 +167,72 @@ change, and CI does not install one.
 | | Reaches for | Never |
 |---|---|---|
 | `x shot <route>` | `x dev` on a scratch port, plus the app's own `puppeteer-core` through `@ultimat3/scraping` | the static build — `--target static` prerenders `site/` only, so an `app/` route would photograph the landing page |
+| `x shot --island <name>` | the same server and the same browser, plus the app's own `*.island.states.ts` | a second command — photographing a route and photographing a component are one job with two subjects, and `--island` with a route positional is refused by name |
 | `x pr review\|resolve\|reply` | `gh api graphql`, through the injected `Runner` | `gh pr view --comments`, which shows *issue* comments and not the line-anchored threads that carry the findings |
 | `x ci` | `gh run view --log-failed`, one call | a per-job log fetch — the run and all its jobs come back together |
 
 **`verdict.json` names its own blind spots, and that is the design.** `x shot` reports what it could
 not observe alongside what it did. A capture tool that silently omits what it cannot see is worse
 than one that says so, because the omission reads as a clean result.
+
+### `--island` photographs ONE component in a state nobody can click to
+
+A failed read, an empty list, over-quota, read-only: the states a reviewer most needs to see are the
+ones a running app will not produce on request. `--island` takes them, one address at a time.
+
+| File | Job |
+|---|---|
+| `island-states-load.ts` | discover `*.island.states.ts`, prove each pure, import it, check the set |
+| `island-harness.ts` | the document that mounts ONE island over `data-x-entry` / `data-x-props` |
+| `island-harness-script.ts` | what runs before the chunk does: the sealed network, the pinned clock, the readiness watch |
+| `island-harness-route.ts` | `GET /_x/island`, mounted by `x dev` |
+| `island-shot.ts` | the capture loop, the assertions before each shutter, the missing-shot gate |
+| `island-verdict.ts` | the per-state verdict — a PNG cannot say the component threw or logged |
+| `cmd-shot-island.ts` | the flags, and the one browser per declared viewport |
+
+The vocabulary is **`@ultimat3/testing`'s**, not this package's: `defineIslandStates`,
+`islandShotTargets`, `islandAddress` / `parseIslandAddress`, `findIslandStates`,
+`assertIslandStatesPure`. `cli → testing` is a declared sideways edge and `cli → scraping` is
+another, which is what makes `@ultimat3/cli` the only package that can hold both the mount half and
+the screenshot half.
+
+**The expected picture list exists before a browser does.** `loadIslandStates` → `findIslandStates`
+→ `islandShotTargets` is a pure expansion off files on disk, and the run ends by diffing it against
+what actually landed (`missingShots`, `X_SHOT_ISLAND_MISSING`). That diff is the point of the whole
+design: a loop that swallowed every failure would otherwise report a clean run with no pictures in
+it, and "produced nothing and exited 0" is the one outcome a reader cannot tell from success.
+
+**An unstubbed request FAILS the run.** The page's own seal replaces `fetch`, `WebSocket`,
+`EventSource` and `XMLHttpRequest` before the island's chunk is imported, answers the state's
+`routes` and publishes everything else on `window.__xShot.unstubbed`; the capture refuses on a
+non-empty list with `X_SHOT_ISLAND_UNSTUBBED_REQUEST`, naming each method and path. A component
+whose fetch quietly hangs paints its own loading branch, and the picture then shows a fixture gap
+dressed up as a real component state. `@ultimat3/testing`'s `sealNetwork()` is not reusable here:
+it patches THIS process's `globalThis.fetch` and the component runs in the page's realm.
+
+**Readiness is quiet, not idle.** Fonts ready, then N consecutive animation frames with an unchanged
+network-ACTIVITY counter — never "nothing in flight", which never comes for a state whose fixture is
+deliberately `pending`, and never a fixed sleep, which photographs whatever a slow machine painted.
+
+**Eight assertions before a shutter opens** (`photographFault`), each naming a fact the picture would
+have hidden rather than shown: no probe, not the harness, no host element, a mount that REJECTED, a
+mount that never finished, a page that never went quiet, a zero-sized box, a box with no children
+and no text. Then a byte floor as a backstop. Every one of them otherwise comes out as a plausible
+image of the wrong thing.
+
+**One session per picture, and that is not an optimisation to collapse.** `page.console()` and
+`page.pageErrors()` are bounded rings over the whole SESSION, so a shared one files state A's
+console errors under state B — and per-state attribution is the half of the artifact that gates.
+
+**The picture is the VIEWPORT, not a crop.** `@ultimat3/scraping`'s `CaptureRequest` is `fullPage`
+alone, so there is no clip rectangle to ask for; the framing knob is the state's own `viewport`,
+passed to `launch()` as `defaultViewport` through `LocalBrowserOptions.options`. That is why there
+is one browser per declared viewport, memoised. The verdict names it as a blind spot rather than
+implying a crop it did not perform.
+
+**`loadApp` does not import a states file**, for the reason it does not import an island: it
+registers no primitive, and importing it would put `@ultimat3/testing` in the server module graph of
+every `x dev`, every `x build` and every gate step that loads the app (axiom 6).
 
 **`x shot` reuses a running `x dev` rather than booting a second one.** Embedded Postgres is
 single-writer, so a second boot is `X_DEV_ALREADY_RUNNING` and no picture is ever taken. A reused

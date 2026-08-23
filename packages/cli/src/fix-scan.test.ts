@@ -23,6 +23,35 @@ describe('scanFixes', () => {
     expect(fixes("({ fix: input.fix ?? 'x help' })")).toEqual(['x help']);
   });
 
+  /**
+   * A ternary's CONDITION is not a fix, and every literal in it used to be read as one. The two
+   * shapes measured in `@ultimat3/testing`'s island-state errors: `input.slug === ''` published an
+   * EMPTY fix line — `X_ERROR_FIX_INVALID`, "the fix line is empty", against source whose two real
+   * fixes are both fine — and `input.key === 'timeZone'` published `timeZone` as a fix, a string
+   * that is judged for banned phrases and cited paths and is not a fix line at all.
+   *
+   * It is the reason `island-state-errors.ts` carries two classes under one code where one class
+   * with a ternary would do. Both branches still count; only the test does not.
+   */
+  test('a literal in a ternary condition is not a fix line', () => {
+    expect(fixes("({ fix: input.key === 'timeZone' ? 'x doctor' : 'x verify --json' })")).toEqual([
+      'x doctor',
+      'x verify --json',
+    ]);
+    expect(fixes("({ fix: input.slug === '' ? 'x doctor' : 'x verify --json' })")).toEqual([
+      'x doctor',
+      'x verify --json',
+    ]);
+    // A chain, right-associative: every condition dropped, every branch kept.
+    expect(fixes("({ fix: a === 'p' ? 'x a' : b === 'q' ? 'x b' : 'x c' })")).toEqual([
+      'x a',
+      'x b',
+      'x c',
+    ]);
+    // A `?.` and a `??` are not ternaries — the `?` in each must not eat the value before it.
+    expect(fixes("({ fix: input?.fix ?? 'x help' })")).toEqual(['x help']);
+  });
+
   // The bug this guards: every literal in the expression used to count, so `.join(' ')`'s
   // separator and `TABLE['key']`'s key were reported as empty and vague fix lines.
   test('ignores literals nested inside a call or an index', () => {

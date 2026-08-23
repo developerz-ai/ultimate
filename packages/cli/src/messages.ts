@@ -196,6 +196,20 @@ const CATALOG = {
   'cli.shot.verdict': '  verdict  {path}',
   'cli.shot.blind.status':
     'HTTP response status is not observed — the port records requests, never responses',
+  // `--island`. A component capture reports per STATE, so the summary counts pictures and the
+  // lines name one state each; nothing here restates a fact `--json` does not carry.
+  'cli.shot.island.ok':
+    '{island} clean — {pictures} picture(s), every one mounted, nothing logged and nothing threw',
+  'cli.shot.island.failed':
+    '{island}: {taken} of {expected} declared picture(s) taken — verdict.json names each refusal',
+  'cli.shot.island.state': '  {state}  {theme}  {width}x{height}  {file}',
+  'cli.shot.island.missing': '  missing  {file} — no picture was taken for this declared state',
+  'cli.shot.island.picture': '  pictures {path}',
+  'cli.shot.island.verdict': '  verdict  {path}',
+  'cli.shot.island.blind.crop':
+    'the picture is the viewport, not a crop — the browser port takes no clip rectangle, so a state sizes its own frame with viewport',
+  'cli.shot.island.blind.locale':
+    'toLocaleString() on a Date resolves its zone inside the engine — only an explicit timeZone is pinned by this harness',
   'cli.ci.failed':
     '{failed} of {runs} workflow run(s) on {branch} failed — {findings} finding(s) recovered from the log',
   'cli.ci.green': 'every one of {runs} workflow run(s) on {branch} passed',
