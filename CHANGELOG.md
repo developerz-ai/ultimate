@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 11.1.0 - 2026-08-23
+
 ### Added
 
 - **`X_ERROR_CODE_UNRESOLVED`, and a `code:` may now be a name.** `scanCodes` matched
@@ -19,6 +23,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   module-scope consts and reports every name it cannot resolve as `X_ERROR_CODE_UNRESOLVED`.
   Cross-file resolution is refused deliberately. Measured over the framework and both tracked apps:
   **0 findings**, enforcing outright with no pin table; the code set moved 554 â†’ 555, nothing else.
+
+### Commits
+
+- fix(cli): a code declared behind a same-file constant is a declaration, and one behind anything else is a finding (#277) (#330)
 
 ## 11.0.0 - 2026-08-23
 
