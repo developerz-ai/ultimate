@@ -4,6 +4,20 @@ Owns: the `route` primitive, the four render modes, the route table, the surface
 islands + budgets, hydration directives, `<head>` merge, **the server JSX runtime and the two Bun
 loaders that make an app's `.tsx` and `.scss` runnable**.
 
+**Two entry points, disjoint, split 2026-08-22** — the same `"."` / `"./server"` shape
+`@ultimat3/realtime` took, for the same reason. `"."` (`index.ts`) is the CLIENT half and BUNDLES
+for the browser; `"./server"` (`server.ts`) is the build-time half — `css-modules`,
+`module-loader`, `render-html`, `render-isr`, `render-ssr`, `render-static`, `render-stream` — and
+does not. `css-modules.ts` imports `fileURLToPath`/`pathToFileURL` from `node:url`, which Bun's
+browser polyfill exports NEITHER of, so the single barrel was not a fat bundle, it was a
+`bun build --target=browser` that FAILED at link time on any app entry that reached this package.
+Measured: no `sideEffects` value repairs it (`false`, `[]`, an array naming only `errors.ts` — all
+fail identically), which is where this split differs from realtime's, where the array alone was
+enough. Only not importing the module does. Never re-export a name from both barrels: disjointness
+is what makes "which half does this live in" a mechanical fact, and `index.test.ts` asserts both
+the empty name intersection AND that `index.ts`'s transitive runtime import graph reaches none of
+the seven modules above. `scripts/browser-barrel.test.ts` holds the end property, both directions.
+
 `island()` is a **factory over the route's own `hydrate`**, not a ninth primitive and not a
 second render mode — the same rule `llm()` and `backfill()` follow. It adds no key to
 `defineRoute`.
@@ -68,7 +82,7 @@ for the mirror-image reason, keeping `render → pwa` refused. Never `cli` (upwa
 | Responses | return `RenderResult`. `@ultimat3/http` builds the `Response`. |
 | Solid | no `solid-js` import anywhere in this package — `type-pins.tsx` satisfies its `JSX.Element` structurally, through `jsxImportSource`, and never names it. The JSX factory in `jsx.ts` builds inert nodes — it is not a Solid renderer and must never become one. The client half runs in an island chunk, which `@ultimat3/cli`'s `solid-loader.ts` compiles with `babel-preset-solid`: Solid's reactivity is a COMPILE-time contract, so nothing this package could inject would substitute for it. `router-client.ts` was the one file built on that premise ("inject primitives") and it never had a caller. |
 | Root element | `ROOT_ELEMENT_ID` (`render-html.ts`), the id every document's body wraps its component in. It was `SPA_ROOT_ID` in `render-spa.ts`, naming a mode that never used it and that no longer exists. |
-| The loaders | `module-loader.ts` installs them at `index.ts` module scope, once. A plugin only affects modules loaded after it, so a second install point is a page that renders in one entry point and not another. |
+| The loaders | `module-loader.ts` installs them at **`server.ts`** module scope, once — `index.ts` until the barrel split, and it cannot be there again: the client barrel would carry `sass` and `node:url`. A plugin only affects modules loaded after it, so a second install point is a page that renders in one entry point and not another. Anything that loads an app's `.tsx` reaches `@ultimat3/render/server` first, which is why `packages/cli/src/app-load.ts` imports it for the side effect and nothing else. |
 | `<head>` baseline | `documentBaseline()` in `head.ts` — charset, viewport, `color-scheme` — merged FIRST so a route can still override any of them. Absent until `As of 2026-08`, and the missing `viewport` is why every deployed app rendered zoomed-out on a phone whatever its CSS said. |
 | Escaping | `html.ts` only, and that now includes `render-stream.ts` (`holeMarker`'s attribute, and `revealChunk`'s `$X(...)` argument via `JSON.stringify` — an id containing `")` closed the call and ran the rest) and `head.ts`'s `themeScript` (`storageKey`/`attribute` as JS string LITERALS). All author-controlled today — the identical status `emitIslandAttributes` had before the last sweep. `render-spa.ts` was the third entry here and went with the mode. A second escaper is how one of them ends up missing a character, and a missing character in an attribute is an injection. `escapeAttribute` itself is `@ultimat3/seo`'s (tier 1), re-exported by `html.ts` rather than reimplemented — the copy that lived here was the second escaper this row forbids, and `pwa/CLAUDE.md` already named seo's as the one. `head.ts` and `hydrate.ts` each had a private copy; both now import — `escapeAttribute` for every attribute value (`emitIslandAttributes` interpolated all five of its own raw until 2026-08, while this row already claimed otherwise) and `escapeJsonContent` for a JSON script body. |
 | Script and style CONTENT | never emitted raw. Three rules, one choice: HTML text (`escapeText`), raw text for code (`escapeRawTextContent`: `</` → `<\/`, `<!--` → `<\!--`), and the total JSON rule for a `type` ending in `json` (`escapeJsonContent`: `<`, `>`, `&`, U+2028/9 → `\uXXXX`, still valid JSON). `meta.ld` is built from route data, and it was emitted VERBATIM until `As of 2026-08` — a title could close the element. Never HTML-escape a script body: a character reference is not decoded there, so `&lt;` corrupts the code AND leaves the hole. |

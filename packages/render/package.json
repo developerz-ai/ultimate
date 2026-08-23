@@ -6,7 +6,7 @@
   "type": "module",
   "sideEffects": [
     "./src/errors.ts",
-    "./src/index.ts"
+    "./src/server.ts"
   ],
   "repository": {
     "type": "git",
@@ -18,7 +18,8 @@
     "provenance": true
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
   },
   "files": [
     "src",

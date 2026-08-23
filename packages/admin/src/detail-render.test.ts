@@ -29,7 +29,7 @@ import type { AdminResource } from './resource';
  * before any module has evaluated. Importing render first, then the view, is what an app's
  * `server.ts` does in the same order and for the same reason.
  */
-await import('@ultimat3/render');
+await import('@ultimat3/render/server');
 const { AdminDetail } = await import('./detail');
 
 registerCatalog('en', {

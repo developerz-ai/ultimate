@@ -10,7 +10,7 @@ import { beforeAll, expect, test } from 'bun:test';
 // tree renders `⟦key⟧` — which is exactly what the last assertion here is checking for.
 import '@social-media-clone/i18n';
 import { useI18n } from '@ultimat3/i18n';
-import { renderComponent } from '@ultimat3/render';
+import { renderComponent } from '@ultimat3/render/server';
 
 const FILE = 'apps/web/site/page.tsx';
 

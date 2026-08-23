@@ -10,6 +10,75 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- **BREAKING — `@ultimat3/render` splits into `.` (client) and `./server` (build-time).**
+
+  ```diff
+  - import { defineRoute, renderToHtml } from '@ultimat3/render';
+  + import { defineRoute } from '@ultimat3/render';
+  + import { renderToHtml } from '@ultimat3/render/server';
+  ```
+
+  `bun build --target=browser` on the barrel failed outright: *"Browser polyfill for module
+  `node:url` doesn't have a matching export named `fileURLToPath`"*, out of `css-modules.ts`. 55
+  names move to `./server` — the render pipeline (route → bytes) and the loaders. `.` keeps the
+  authoring vocabulary: `defineRoute`, `h`, `Fragment`, `island`, `hydrate*`, the registry, the mode
+  tables. **Importing `@ultimat3/render` no longer installs the `.tsx`/`.scss` loader** —
+  `@ultimat3/render/server` does.
+
+  Worth recording because it differs from `@ultimat3/realtime`'s split in 8.0.0: there, the
+  `sideEffects` array alone fixed the build. **Here it does not** — measured through `false`, `[]`
+  and a populated array, all three still fail. Render's blocker is a *named import the polyfill does
+  not have*, which is a link error no tree-shaking reaches. Only not importing the module works.
+
+- **BREAKING — `cache.tiers` names the ladder's own rungs, and is finally read.** `CacheTier` in
+  `@ultimat3/core` accepted `memo | lru | shared | isr | cdn` while the cache built
+  `request-memo | lru | redis | cdn` — one rung spelled twice, twice over, and **`isr` named a rung
+  that did not exist** (it is a `RenderMode`). `memo` → `request-memo`, `shared` → `redis`, delete
+  `isr`; the type is now `CacheTierName`.
+
+  And it was **read by nothing**: `startCacheTiers` registered memo + lru unconditionally, redis on
+  `REDIS_URL`, cdn on a purge credential. Measured — an app declaring `tiers: ['request-memo']` got
+  `['request-memo', 'lru', 'redis', 'cdn']`. The ladder is now the declaration. Naming a rung the
+  environment cannot supply **refuses the boot** rather than quietly building a shorter one
+  (`assertRateLimitScope`'s precedent); an environment offering a rung the config does not name logs
+  `cache.tier.unnamed` and builds nothing.
+
+- **BREAKING — `cache.driver` and `cache.urlEnv` are deleted.** Delete both keys; `cache.tiers` is
+  the whole selection.
+
+  ```diff
+  - cache: { driver: 'redis', urlEnv: 'REDIS_URL', tiers: ['request-memo', 'lru'] },
+  + cache: { tiers: ['request-memo', 'lru', 'redis'] },
+  ```
+
+  With the entry above making `tiers` build the ladder, `driver` became a **second selector that
+  selects nothing** — the diff's own left-hand side is what `examples/dummy/app.config.ts` shipped:
+  `driver: 'redis'` beside a tier list with no `redis` in it, so the app asked for a shared cache
+  and got two process-local rungs. `urlEnv` is `database.urlEnv` verbatim, which 5.0.0 deleted for
+  this reason: the Redis tier reads the literal `REDIS_URL`, so `urlEnv: 'MY_REDIS'` made nothing
+  read `MY_REDIS`. Both were pinned as SUSPECT by `scripts/config-readers.ts` on its first run,
+  waiting for the release decision this is.
+
+  `CacheConfig` is two fields now (`defaultTtlMs`, `tiers`), pinned in `type-pins.ts` so neither
+  comes back, and `X_CONFIG_INVALID` no longer carries a `cache.driver "redis" requires
+  cache.urlEnv` branch — a Redis rung the environment cannot supply is what refuses the boot.
+
+- **BREAKING — `@ultimat3/storage` renames `IMAGE_FORMATS`/`ImageFormat` to
+  `VARIANT_FORMATS`/`VariantFormat`.** Both packages exported those two names over *different* sets,
+  so a storage caller narrowing on storage's type had a type saying `gif` cannot occur and a value
+  from core's probe that was one. The observed harm was one call further in: `variantKey()` returned
+  `photos/hero@full.undefined` — a key `assertSafeKey` accepts, so it was written to a disk and
+  served.
+
+  Storage's set is a genuine subset with a reason (what a variant *key* can carry — it even includes
+  `avif`, which core cannot encode), so it is named for that and declared
+  `as const satisfies readonly ImageFormat[]`: a member core cannot probe is now a compile error. If
+  you were probing, the six-format set is `IMAGE_FORMATS` from `@ultimat3/core`, which is what you
+  actually had.
+
+  `render-modes` now guards **seven** vocabularies, so none of these three can re-diverge.
+
+
 - **BREAKING — `@ultimat3/pwa` drops the forced-reload half of `version-skew`:** `updateSignal`,
   `updatePolicy`, `DEFAULT_GRACE_MS` and the types `ForceReason`, `UpdatePolicy`,
   `UpdatePolicyInput`, `UpdateSignalInput`; `AppUpdateAvailable` narrows to `{ type, to }`, losing

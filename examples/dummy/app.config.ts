@@ -32,7 +32,16 @@ export const config = defineConfig({
   // leave requests queueing behind a full digest run. Keep `replicas x 12` under the server's
   // `max_connections`.
 
-  cache: { driver: 'redis', urlEnv: 'REDIS_URL', tiers: ['memo', 'lru', 'shared', 'isr'] },
+  // The rung names are the ladder's own (`CACHE_TIERS`), and `isr` was never one of them: it is
+  // a RenderMode, and the routes that want it declare `render: 'isr'`.
+  //
+  // No `redis` rung, deliberately, `As of 2026-08-23`. This app has never had a Redis — there is no
+  // `.env` here, only `.env.example` — and since 9.0.0 the ladder IS this declaration: naming a rung
+  // the environment cannot supply refuses the boot rather than quietly building a shorter ladder.
+  // It used to name one and silently get two rungs, which is exactly the drift that made
+  // `cache.tiers` worth reading in the first place. Add `redis` back the same commit you add a
+  // `REDIS_URL`.
+  cache: { tiers: ['request-memo', 'lru'] },
 
   jobs: { queues: ['default', 'mail', 'digest'], concurrency: 8 },
 

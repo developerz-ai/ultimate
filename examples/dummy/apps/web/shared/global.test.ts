@@ -2,7 +2,7 @@
 // document and not one `:root` custom property, so every `rgb(var(--color-bg)/1)` the UI kit
 // emits was dropped by the browser. The page looked structurally correct and rendered unstyled.
 
-import { stylesFor } from '@ultimat3/render';
+import { stylesFor } from '@ultimat3/render/server';
 import { expect, unitTest } from '@ultimat3/testing';
 
 /**

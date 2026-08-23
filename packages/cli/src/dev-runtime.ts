@@ -4,6 +4,7 @@
 // boot installs, only backed by embedded drivers.
 
 import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { configureAuthLimiters, postgresAuthLimiter, resetAuthLimiters } from '@ultimat3/auth';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { isNoopPurgeDriver, selectPurgeDriver } from '@ultimat3/cache';
@@ -29,7 +30,7 @@ import type { Transport, TransportSelection } from '@ultimat3/realtime/server';
 import { selectTransport } from '@ultimat3/realtime/server';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
-import { startCacheTiers } from './dev-cache';
+import { loadCacheTiers, startCacheTiers } from './dev-cache';
 import { installRetentionSweep } from './dev-purge';
 import type { DevDbClient } from './dev-queue';
 import { pgExecutorFor, startQueue } from './dev-queue';
@@ -363,7 +364,13 @@ export async function startServices(
     // recomputed every cached read. Released with `resetTiers()`, which drops the whole registry:
     // this boot is the only thing that registers one, and a tier left behind would purge for a
     // process that has stopped.
-    started.push(startCacheTiers({ env, purge, transport }));
+    // The ladder is the app's declaration, never the environment's. `cache.tiers` was declared,
+    // validated and documented while NOTHING read it — so an app asking for one rung got four,
+    // and one asking for a shared tier got whatever `REDIS_URL` happened to say. `.x` is
+    // `resolveServices`' own join, so its parent is the app root: the one fact this function needs
+    // and does not already carry.
+    const tiers = await loadCacheTiers(dirname(services.stateDir));
+    started.push(startCacheTiers({ env, purge, transport, tiers }));
 
     return {
       services,

@@ -11,7 +11,7 @@ import type { AuditEntry } from './audit';
 // AFTER it. A STATIC import here transformed the view with the classic fallback and cached it, so
 // whichever of this file and `detail-render.test.ts` ran first decided whether the other could
 // render at all. Neither file may reach `detail.tsx` any other way.
-await import('@ultimat3/render');
+await import('@ultimat3/render/server');
 const { operationLabel } = await import('./detail');
 
 // Distinctive probe values, registered flat: the framework catalog owns `admin.operation.*` and

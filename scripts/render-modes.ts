@@ -4,11 +4,17 @@
 // which is how the copy called `PwaRenderMode` was caught — a rule keyed on the word `RenderMode`
 // reads straight past that one — and by NAME, which is what a vocabulary of ordinary English words
 // needs. `VOCABULARIES` is the list; `render-modes.test.ts` pins its length, so no count is written
-// here to go stale. Two known divergences are held out until a decision lands (see below).
+// here to go stale. ONE known divergence is still held out until a decision lands (see below).
 //   bun run scripts/render-modes.ts [--json]
 
 import { maskLiterals, stripComments } from '@ultimat3/cli';
-import { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
+import {
+  CACHE_TIERS,
+  HYDRATE_STRATEGIES,
+  IMAGE_FORMATS,
+  OFFLINE_STRATEGIES,
+  RENDER_MODES,
+} from '@ultimat3/core';
 import { JOB_STATES } from '@ultimat3/jobs';
 import { TEST_TYPES } from '@ultimat3/testing';
 import { parseScriptArgs } from './lib/args';
@@ -29,7 +35,7 @@ export interface Vocabulary {
   readonly at: string;
   readonly members: readonly string[];
   /**
-   * How a second declaration is recognised, and it is NOT one rule for all six.
+   * How a second declaration is recognised, and it is NOT one rule for every row.
    *
    * `members` compares the literal SET, which is what catches a copy under another name —
    * `PwaRenderMode` is why this file exists. It only works where the members are distinctive:
@@ -40,9 +46,9 @@ export interface Vocabulary {
    * reports ELEVEN sets that are legitimately related and not copies — `SERIAL_TYPES` (a subset of
    * the test types), `ENCODABLE_FORMATS` (what the static codecs write), `VERIFY_STEP_NAMES` (a
    * superset by construction). A rule reporting those is one readers learn to silence, which is
-   * this file's own stated reason for `COPY_THRESHOLD`. `name` is also what WOULD catch
-   * `IMAGE_FORMATS`, which `packages/core/src/image/probe.ts` exports under that exact name — held
-   * out below, with no row here, until the rename decision lands.
+   * this file's own stated reason for `COPY_THRESHOLD`. `name` is what catches `IMAGE_FORMATS`,
+   * which `packages/core/src/image/probe.ts` exports under that exact name and `@ultimat3/storage`
+   * exported under it too until 9.0.0 — that row is below, and it went in the day #299 landed.
    */
   readonly by: 'members' | 'name';
 }
@@ -82,24 +88,39 @@ export const VOCABULARIES: readonly Vocabulary[] = [
     members: [...TEST_TYPES],
     by: 'name',
   },
-  // TWO pairs are deliberately absent, both for the same reason: each is a genuine divergence
-  // whose resolution is a DECISION nobody has made, and a gate that reds a known-bad pair with no
-  // edit that clears it is the one thing a gate must never be.
+  // The sixth, added 2026-08-22 when issue #299's decision landed. `IMAGE_FORMATS` is core's and
+  // only core's: `packages/storage/src/image.ts` declared a four-member set under the SAME name,
+  // exported from its own barrel with `ImageFormat` spelled twice to match, so a caller narrowing
+  // on storage's held a type saying `gif` and `svg` could not occur and a `probeImage()` value
+  // that was one — `variantKey('photos/hero.gif', { format })` minted `photos/hero@full.undefined`.
+  // Storage's set is now `VARIANT_FORMATS`, the formats a stored VARIANT can be minted in, and it
+  // is a strict subset of core's by `satisfies readonly ImageFormat[]` rather than by copy.
   //
-  //   IMAGE_FORMATS — `packages/core/src/image/probe.ts` exports png|jpeg|webp|avif|gif|svg and
-  //   `packages/storage/src/image.ts` exports avif|webp|jpeg|png, under the SAME name, both from
-  //   their package barrels, with `ImageFormat` spelled twice to match. Found 2026-08-22 by this
-  //   very widening. They are different concepts — what core can PROBE against what storage can
-  //   TRANSFORM — so the fix is a rename plus a breaking barrel change, not an import.
+  // `by: 'name'` and not `members`: the members are ordinary format words, and `ENCODABLE_FORMATS`,
+  // `DECODABLE_FORMATS` and `VARIANT_FORMATS` are all legitimate subsets a member rule would report.
+  {
+    name: 'IMAGE_FORMATS',
+    at: 'packages/core/src/image/probe.ts',
+    members: [...IMAGE_FORMATS],
+    by: 'name',
+  },
+  // The seventh, added 2026-08-22 when issue #293's decision landed. `app.config.ts` accepted
+  // `CacheTier = memo | lru | shared | isr | cdn` while `@ultimat3/cache` ordered the ladder by
+  // `TierName = request-memo | lru | redis | cdn`, and nothing mapped one onto the other: two
+  // shared members — this rule's own threshold — plus `isr`, which the config accepted and no
+  // tier could serve, so `cache: { tiers: ['isr'] }` typechecked and selected nothing. The
+  // ladder's spelling won; `CacheTier` is deleted and `cache.tiers` is `CacheTierName[]`.
   //
-  //   CacheTier (`core`: memo|lru|shared|isr|cdn) against TierName (`cache`:
-  //   request-memo|lru|redis|cdn) — issue #293. Two shared members, which is this rule's own
-  //   threshold, and `isr` is accepted by config and served by nothing.
-  //
-  // Add each row the day its decision lands: import `IMAGE_FORMATS` from the package that keeps
-  // the name, then add `{ name: 'IMAGE_FORMATS', at: <winner>, members: [...IMAGE_FORMATS], by:
-  // 'name' }`. It is NOT imported above — an instruction to uncomment a row naming a binding this
-  // file does not hold is one a reader follows into a compile error.
+  // `by: 'members'` and not `name`: the two spellings never shared an identifier, so a name rule
+  // would have read straight past the divergence it exists to catch — the `PwaRenderMode` shape.
+  // The members are distinctive enough for it (`request-memo`, `redis`, `lru`, `cdn`); the one
+  // near miss in the tree is `RealtimeTransport = memory | nats | redis`, which shares exactly one.
+  {
+    name: 'CACHE_TIERS',
+    at: 'packages/core/src/cache-vocabulary.ts',
+    members: [...CACHE_TIERS],
+    by: 'members',
+  },
 ];
 
 /**
@@ -131,8 +152,14 @@ const LITERAL = /(['"])([^'"]*)\1/g;
 // `^[\t ]*` and not `^`: a declaration nested in a namespace or a block is indented, and a guard
 // a newline evades is not a guard. `\s*=` for the same reason — Biome wraps a long one.
 const UNION = /^[\t ]*(?:export )?(?:declare )?type ([A-Za-z_$][\w$]*)\s*=([^;]*);/gm;
+/**
+ * `as const`, with an OPTIONAL `satisfies` clause after it — the shape
+ * `packages/storage/src/image.ts`'s `VARIANT_FORMATS` is written in, and one this rule read as no
+ * declaration at all until 2026-08-22. Deriving a subset by `satisfies readonly ImageFormat[]` is
+ * exactly what a vocabulary should do instead of copying, so the guard has to be able to SEE it.
+ */
 const AS_CONST =
-  /^[\t ]*(?:export )?(?:declare )?const ([A-Za-z_$][\w$]*)\s*=\s*\[([^\]]*)\]\s*as const;/gm;
+  /^[\t ]*(?:export )?(?:declare )?const ([A-Za-z_$][\w$]*)\s*=\s*\[([^\]]*)\]\s*as const(?:\s+satisfies[^;]*)?;/gm;
 /**
  * The same array with a TYPE ANNOTATION instead of `as const` — `const X: readonly JobState[] = […]`
  * — which is the shape `packages/cli/src/jobs-report.ts`'s `JOB_STATES` copy was written in, and

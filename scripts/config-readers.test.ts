@@ -46,10 +46,13 @@ describe('unit · every AppConfig leaf key is derived, never listed', () => {
     expect(configLeaves(declaration)).toEqual(['name', 'roles', 'ai.mcp.expose']);
   });
 
-  test('and the real declaration yields thirty, ai.mcp.path among them', () => {
+  test('and the real declaration yields twenty-eight, ai.mcp.path among them', () => {
     expect(input.leaves).toContain('ai.mcp.path');
     expect(input.leaves).toContain('jobs.visibilityTimeoutMs');
-    expect(input.leaves.length).toBeGreaterThanOrEqual(30);
+    // A vacuity FLOOR, not the surface: it says the scan reached the real `config.ts` rather than
+    // an empty parse. Thirty until `cache.driver` and `cache.urlEnv` were deleted, so it moves
+    // DOWN with a deleted key and never with an added one.
+    expect(input.leaves.length).toBeGreaterThanOrEqual(28);
   });
 
   test('a declaration this cannot parse is UNSCANNED, never a wired config', () => {
@@ -77,15 +80,15 @@ describe('unit · what counts as a read', () => {
 
 describe('unit · the ratchet', () => {
   /**
-   * The five this tree reds on with the pins removed, spelled out. Two of them —
-   * `cache.urlEnv` and `realtime.urlEnv` — are `database.urlEnv`'s defect verbatim: `config.ts`
-   * validates that the key is PRESENT and nothing reads its VALUE, while the URL is taken from a
-   * hardcoded `env['REDIS_URL']` / `env['NATS_URL']` in `@ultimat3/cli`.
+   * The four this tree reds on with the pins removed, spelled out. It was five: `cache.urlEnv` was
+   * `database.urlEnv`'s defect verbatim — `config.ts` validated that the key was PRESENT while the
+   * URL came from a hardcoded `env['REDIS_URL']` — and it was DELETED with `cache.driver` rather
+   * than re-pinned. `realtime.urlEnv` is the same defect against `env['NATS_URL']` and is still
+   * pinned, which is what a ratchet that may only shrink looks like from one release to the next.
    */
-  test('unpinned, this tree reports exactly the five keys nothing in packages/*/src reads', () => {
+  test('unpinned, this tree reports exactly the four keys nothing in packages/*/src reads', () => {
     const gaps = checkConfigReaders({ ...input, pins: {} });
     expect(gaps.map((gap) => gap.leaf).sort()).toEqual([
-      'cache.urlEnv',
       'defaultCurrency',
       'defaultTimeZone',
       'realtime.urlEnv',
@@ -97,7 +100,6 @@ describe('unit · the ratchet', () => {
   test('and pinned, the tree is green — so the pins are exactly the reds, with nothing spare', async () => {
     expect(await configReaderGaps(repoRoot())).toEqual([]);
     expect(Object.keys(CONFIG_READER_PINS).sort()).toEqual([
-      'cache.urlEnv',
       'defaultCurrency',
       'defaultTimeZone',
       'realtime.urlEnv',
@@ -155,23 +157,23 @@ describe('unit · the ratchet', () => {
     expect(
       await applyConfigReaderUnpin(
         dir,
-        ['cache.urlEnv'],
-        [{ kind: 'unread', leaf: 'cache.urlEnv' }],
+        ['realtime.urlEnv'],
+        [{ kind: 'unread', leaf: 'realtime.urlEnv' }],
       ),
     ).toEqual([]);
-    expect(await Bun.file(path).text()).toContain("'cache.urlEnv'");
+    expect(await Bun.file(path).text()).toContain("'realtime.urlEnv'");
 
     expect(
       await applyConfigReaderUnpin(
         dir,
-        ['cache.urlEnv'],
-        [{ kind: 'stale', leaf: 'cache.urlEnv' }],
+        ['realtime.urlEnv'],
+        [{ kind: 'stale', leaf: 'realtime.urlEnv' }],
       ),
-    ).toEqual(['cache.urlEnv']);
+    ).toEqual(['realtime.urlEnv']);
     const after = await Bun.file(path).text();
-    expect(after).not.toContain("'cache.urlEnv'");
+    expect(after).not.toContain("'realtime.urlEnv'");
     // The neighbours are untouched: a wrapped reason must not take the next entry with it.
-    expect(after).toContain("'realtime.urlEnv'");
+    expect(after).toContain("'theme.defaultMode'");
     expect(after).toContain('defaultTimeZone');
   });
 

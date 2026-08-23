@@ -6,7 +6,8 @@
 import { join } from 'node:path';
 import { renderThrowable } from '@ultimat3/core';
 import type { RouteEntry } from '@ultimat3/render';
-import { renderStatic, routeEntries } from '@ultimat3/render';
+import { routeEntries } from '@ultimat3/render';
+import { renderStatic } from '@ultimat3/render/server';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import type { RouteStats } from './budgets';

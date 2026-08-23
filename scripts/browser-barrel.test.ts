@@ -395,14 +395,13 @@ describe.each([...BARRELS])('a browser bundle of @ultimat3/%s', (name) => {
 /**
  * The barrels an app's BROWSER bundle actually reaches, which is a different question from the seam
  * above and is why they are listed rather than derived: `@ultimat3/realtime`'s `"."` is its CLIENT
- * entry (`"./server"` is the other half, split 2026-08), `@ultimat3/pwa` runs in a service worker
- * and `@ultimat3/ui` is the design system. `packages/cli/src/island-bundle.ts:80` is the build that
- * consumes them — `Bun.build({ target: 'browser' })` over an app's island graph — so a barrel that
- * cannot be bundled is a `bun run build` failure in an app, not a theoretical one.
- *
- * `@ultimat3/render` is deliberately NOT here; see the pin below it.
+ * entry (`"./server"` is the other half, split 2026-08), `@ultimat3/render`'s `"."` is the same
+ * shape (split 2026-08-22, the same `"./server"` spelling), `@ultimat3/pwa` runs in a service
+ * worker and `@ultimat3/ui` is the design system. `packages/cli/src/island-bundle.ts:80` is the
+ * build that consumes them — `Bun.build({ target: 'browser' })` over an app's island graph — so a
+ * barrel that cannot be bundled is a `bun run build` failure in an app, not a theoretical one.
  */
-const CLIENT_BARRELS = ['realtime', 'pwa', 'ui'] as const;
+const CLIENT_BARRELS = ['realtime', 'render', 'pwa', 'ui'] as const;
 
 describe.each([...CLIENT_BARRELS])('the client barrel @ultimat3/%s', (name) => {
   test(
@@ -427,23 +426,21 @@ describe.each([...CLIENT_BARRELS])('the client barrel @ultimat3/%s', (name) => {
 });
 
 /**
- * A PIN on a known gap, not an endorsement of it: `@ultimat3/render`'s single `"."` barrel does NOT
- * bundle for the browser. `packages/render/src/css-modules.ts:9` imports `fileURLToPath` and
- * `pathToFileURL` from `node:url`, and Bun's browser polyfill for that module exports neither, so
- * the build FAILS rather than shipping something broken.
+ * The other half of the split, and the reason the line above is a CONTRACT rather than a bundler's
+ * discretion: `@ultimat3/render/server` still cannot be bundled for the browser, and for exactly
+ * the reason the whole `"."` barrel could not until 2026-08-22 —
+ * `packages/render/src/css-modules.ts:9` imports `fileURLToPath` and `pathToFileURL` from
+ * `node:url`, which Bun's browser polyfill exports neither of.
  *
- * That barrel mixes the build-time half (`compileStylesheet`, which also pulls `sass`;
- * `render-static`; `module-loader`) with the client half (`h`, `Fragment`, `island`, `hydrate`) —
- * exactly the shape `@ultimat3/realtime` had before its `"."` / `"./server"` split, and axiom 6
- * says the static path may not pay for the app path. The repair is that split, in
- * `packages/render`, and it is not this file's to make.
- *
- * WHEN THIS TEST REDS, render bundles: delete this test and add `'render'` to `CLIENT_BARRELS`.
+ * Non-vacuity for `'render'`'s entry in `CLIENT_BARRELS`: without this, a client barrel that
+ * bundles because someone made `css-modules.ts` browser-safe (or deleted it) would read the same
+ * as one that bundles because the build-time half is unreachable from it. It is the second that is
+ * being claimed. This test is not a pin on a gap — it reds if the two halves are ever rejoined.
  */
 test(
-  'PIN: @ultimat3/render has no browser-bundlable barrel, and the reason is node:url in css-modules',
+  'the build-time half is still unbundlable, so the client half passing means it cannot reach it',
   async () => {
-    const built = await browserBuild(barrelPath('render'));
+    const built = await browserBuild(join(repoRoot(), 'packages/render/src/server.ts'));
     expect(built.ok).toBe(false);
     expect(built.output).toContain('node:url');
     expect(built.output).toContain('css-modules.ts');

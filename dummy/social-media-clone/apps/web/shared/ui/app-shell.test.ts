@@ -11,7 +11,7 @@ import { beforeAll, expect, test } from 'bun:test';
 // tree renders ⟦key⟧, which the last assertion here is what checks for.
 import '@social-media-clone/i18n';
 import { createContext, runWithContext, userActor } from '@ultimat3/core';
-import { renderComponent } from '@ultimat3/render';
+import { renderComponent } from '@ultimat3/render/server';
 
 const FILE = 'apps/web/shared/ui/app-shell.tsx';
 

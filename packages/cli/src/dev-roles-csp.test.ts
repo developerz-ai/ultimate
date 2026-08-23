@@ -10,13 +10,8 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { cspHashSource } from '@ultimat3/http';
-import {
-  clearRoutes,
-  clearStylesheets,
-  defineRoute,
-  loadStylesheet,
-  registerRoute,
-} from '@ultimat3/render';
+import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
+import { clearStylesheets, loadStylesheet } from '@ultimat3/render/server';
 import { appRoutes } from './dev-render';
 import type { RunningRoles } from './dev-roles';
 import { selectRoles, startRoles } from './dev-roles';

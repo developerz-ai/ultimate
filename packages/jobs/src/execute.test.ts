@@ -36,6 +36,22 @@ async function until(condition: () => boolean, label: string): Promise<void> {
   throw new Error(`until timed out: ${label}`);
 }
 
+/**
+ * Work that ENDS at the cancellation rather than racing it. `Bun.sleep(40)` under a 5ms deadline
+ * is two entries on one timer queue, and a runner carrying six test shards delivered the sleep
+ * first: the attempt reported `completed`, the deadline was enforced by nobody, and the failure
+ * named scheduling instead of the behaviour under test. Nothing here can settle before the abort.
+ */
+function pastTheDeadline(signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  });
+}
+
 interface Harness {
   readonly driver: JobDriver;
   readonly claimed: ClaimedJob;
@@ -116,7 +132,7 @@ describe('a timed-out job is cancelled, not orphaned', () => {
         timeout: '5ms',
         run: async ({ ctx }) => {
           bodySignal = ctx.signal;
-          await Bun.sleep(40);
+          await pastTheDeadline(ctx.signal);
           abortedInBody = ctx.signal.aborted;
         },
       },
@@ -140,9 +156,9 @@ describe('a timed-out job is cancelled, not orphaned', () => {
     let late: Promise<unknown> | undefined;
     const harness = await claimOne({
       timeout: '5ms',
-      // The uncooperative handler: it never reads the signal and finishes its work late.
-      run: ({ step }) => {
-        late = step.run('late', () => Bun.sleep(40).then(() => 'done'));
+      // The uncooperative handler: it never reads the signal itself and its work lands late.
+      run: ({ ctx, step }) => {
+        late = step.run('late', () => pastTheDeadline(ctx.signal).then(() => 'done'));
         return late;
       },
     });
@@ -176,7 +192,10 @@ describe('a timed-out job is cancelled, not orphaned', () => {
 
   test('a body that runs past its deadline is named in the log', async () => {
     const warn = spyOn(logger, 'warn');
-    const harness = await claimOne({ timeout: '5ms', run: () => Bun.sleep(40) });
+    const harness = await claimOne({
+      timeout: '5ms',
+      run: ({ ctx }) => pastTheDeadline(ctx.signal),
+    });
 
     await harness.execute();
     await until(

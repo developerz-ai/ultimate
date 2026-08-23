@@ -1,13 +1,8 @@
-/** Public API of `@ultimat3/render`: the `route` primitive, the five modes, the table. */
-
-import { installRenderLoader } from './module-loader';
-
-// A side effect on import, deliberately: a Bun plugin only transforms modules loaded AFTER it, and
-// every consumer that will ever load a `.tsx` route or a `.scss` module imports this package first
-// (an app's route file imports `defineRoute` from here before it imports anything else it owns).
-// Any later hook — `x dev`, `x build`, `server.ts` — would each have to remember, which is four
-// places one fact can be wrong instead of none.
-installRenderLoader();
+/**
+ * The CLIENT half of `@ultimat3/render` — the `route` primitive, the JSX factory, islands, and the
+ * tables describing them — kept disjoint from `@ultimat3/render/server` because everything here
+ * must bundle for a browser, which the loaders cannot (axiom 6).
+ */
 
 /**
  * The route vocabulary is declared once, at tier 0 (`@ultimat3/core`), and re-exported here
@@ -21,8 +16,6 @@ export type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/cor
 // never had); still named here because `@ultimat3/cli`'s budget reporter reads it beside the route
 // table it prints against.
 export { formatBytes, HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
-export type { CompiledStylesheet } from './css-modules';
-export { compileStylesheet, isCssModule, isGlobalStylesheet, scopeClasses } from './css-modules';
 export { parseTtlMs } from './duration';
 export type { RenderErrorCode } from './errors';
 export {
@@ -104,15 +97,6 @@ export {
   defaultIslandBudget,
   MODE_SPECS,
 } from './modes';
-export type { Stylesheet } from './module-loader';
-export {
-  clearStylesheets,
-  installRenderLoader,
-  loadStylesheet,
-  registeredStylesheets,
-  stylesFor,
-  transformTsx,
-} from './module-loader';
 export type {
   CompiledPattern,
   RegisterRouteInput,
@@ -130,48 +114,6 @@ export {
   routeFor,
   routePathFromFile,
 } from './registry';
-export type { RenderHtmlOptions } from './render-html';
-export { ROOT_ELEMENT_ID, renderComponent, renderToHtml } from './render-html';
-export type {
-  IsrController,
-  IsrControllerOptions,
-  IsrEntry,
-  IsrRenderFn,
-  IsrServeResult,
-  IsrState,
-  IsrStore,
-  MemoryIsrStoreOptions,
-} from './render-isr';
-export {
-  createIsrController,
-  DEFAULT_ISR_MAX_ENTRIES,
-  invalidateAndRevalidate,
-  isrKey,
-  memoryIsrStore,
-} from './render-isr';
-export type { SsrOptions, SsrRenderFn, SsrRenderInput } from './render-ssr';
-export { renderSsr, ssrHeaders } from './render-ssr';
-export type { StaticArtifact, StaticBuildOptions, StaticRenderFn } from './render-static';
-export {
-  assertNoPerRequestState,
-  contentHash,
-  enumeratePrerender,
-  fillPath,
-  renderStatic,
-  staticHeaders,
-  staticResult,
-} from './render-static';
-export type { StreamHole, StreamOptions, StreamPlan } from './render-stream';
-export {
-  collectStream,
-  DEFAULT_HOLE_TIMEOUT_MS,
-  holeId,
-  holeMarker,
-  REVEAL_SCRIPT,
-  renderStreamHtml,
-  revealChunk,
-  streamResult,
-} from './render-stream';
 export type {
   LoadRequirement,
   PrerenderFn,

@@ -1,11 +1,12 @@
 // Compile-time pins for the actor-facts seam, the config surface, the request-context patch and
-// the route vocabulary.
+// the route and cache-tier vocabularies.
 // Source, not a `.test.ts`, on purpose: `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b`
 // never reads a test file and a type-level assertion written there can never fail. This module
 // emits nothing and exports nothing anybody imports — a regression is a build error.
 
 import type { Actor, ActorFactMap, FactKeysOf, FactMapOf } from './actor';
-import type { AppConfigInput, DatabaseConfig } from './config';
+import type { CacheTierName } from './cache-vocabulary';
+import type { AppConfigInput, CacheConfig, DatabaseConfig } from './config';
 import type { CtxPatch } from './context';
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
 
@@ -102,6 +103,23 @@ type _DatabaseInputCarriesNoDeadField = Assert<
 >;
 
 /**
+ * The two `config.cache` fields deleted 2026-08-22, held down for the reason the `database` three
+ * are: `cache.tiers` is what BUILDS the ladder, so `driver: 'redis'` was a second selector that
+ * selected nothing and `urlEnv` named an env key the Redis tier never reads — it reads the literal
+ * `REDIS_URL`. Re-adding either restores a knob an SRE sets, redeploys, and sees no effect from.
+ */
+type DeadCacheField = 'driver' | 'urlEnv';
+
+type _CacheConfigCarriesNoDeadField = Assert<
+  Extract<keyof CacheConfig, DeadCacheField> extends never ? true : false
+>;
+
+/** And the input side with it — `Input<CacheConfig>` is what an `app.config.ts` writes. */
+type _CacheInputCarriesNoDeadField = Assert<
+  Extract<keyof NonNullable<AppConfigInput['cache']>, DeadCacheField> extends never ? true : false
+>;
+
+/**
  * Neither id a child context may patch. `withChildContext` forwards the parent's `buildId`
  * verbatim, so `{ buildId }` on the patch was an option that read as honoured and was dropped
  * without a word — the same silent-no-op class as the three `database` fields above, one tier
@@ -141,4 +159,34 @@ type _OfflineStrategyIsItsArray = Assert<
 
 type _HydrateStrategyIsItsArray = Assert<
   Exact<HydrateStrategy, 'idle' | 'visible' | 'interaction' | 'never'>
+>;
+
+/**
+ * The cache ladder's rungs, same rule as the three above and for a defect that shipped: 8.0.0's
+ * `CacheTier` was a hand-written union in `config.ts` — `memo | lru | shared | isr | cdn` — while
+ * `@ultimat3/cache` ordered `request-memo | lru | redis | cdn`, so `cache: { tiers: ['isr'] }`
+ * typechecked and selected nothing (issue #293). Derived from `CACHE_TIERS` now, and pinned here
+ * because a `@ts-expect-error` in an excluded test file asserts nothing.
+ */
+type _CacheTierNameIsItsArray = Assert<
+  Exact<CacheTierName, 'request-memo' | 'lru' | 'redis' | 'cdn'>
+>;
+
+/**
+ * The three spellings deleted in 9.0.0 must stay deleted. `memo` and `shared` were the ladder's
+ * near and shared rungs under a second name; `isr` was never a tier at all — it is a `RenderMode`,
+ * and re-admitting it would put a rung `sortTiers` places at `-1` (AHEAD of the request memo)
+ * back within reach of `app.config.ts`.
+ */
+type DeadCacheTier = 'memo' | 'shared' | 'isr';
+
+type _CacheTiersRefuseTheOldSpellings = Assert<
+  Extract<CacheTierName, DeadCacheTier> extends never ? true : false
+>;
+
+/** And `cache.tiers` is that vocabulary, not a second one — the whole of the fix. */
+type _CacheConfigNamesTheLadder = Assert<Exact<CacheConfig['tiers'], readonly CacheTierName[]>>;
+
+type _CacheInputNamesTheLadder = Assert<
+  Exact<NonNullable<AppConfigInput['cache']>['tiers'], readonly CacheTierName[] | undefined>
 >;

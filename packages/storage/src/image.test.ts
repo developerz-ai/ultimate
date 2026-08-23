@@ -8,6 +8,7 @@ import {
   decodeImage,
   encodeImage,
   hasAlpha,
+  IMAGE_FORMATS,
   isUltimateError,
   probeImage,
 } from '@ultimat3/core';
@@ -16,13 +17,21 @@ import {
   DEFAULT_QUALITY,
   DEFAULT_SRCSET_WIDTHS,
   fitDimensions,
-  IMAGE_FORMATS,
   type ImageTransform,
+  isVariantFormat,
   srcsetDescriptors,
   transformImage,
+  VARIANT_FORMATS,
   variantKey,
 } from './image';
 import { resetStorage } from './storage';
+
+/**
+ * The caller the guard exists for: a query string, a JS consumer, an `as` that was already wrong.
+ * Before 9.0.0 this needed no cast at all — storage's own `ImageFormat` was a four-member set, so
+ * a caller could narrow a `probeImage()` value on it and be told `gif` could not occur.
+ */
+const untypedTransform = (format: string): ImageTransform => ({ format }) as ImageTransform;
 
 /** 40x20 and opaque: wide enough that `cover` and `contain` disagree about the box. */
 function opaquePng(): Uint8Array {
@@ -76,7 +85,7 @@ describe('variantKey', () => {
   });
 
   test('spells the extension per format, jpeg as jpg', () => {
-    const extensions = IMAGE_FORMATS.map((format) => variantKey('a/b.tiff', { format }));
+    const extensions = VARIANT_FORMATS.map((format) => variantKey('a/b.tiff', { format }));
     expect(extensions).toEqual(['a/b@full.avif', 'a/b@full.webp', 'a/b@full.jpg', 'a/b@full.png']);
   });
 
@@ -250,5 +259,43 @@ describe('blurPlaceholder', () => {
     const pending = blurPlaceholder(new TextEncoder().encode('not an image'));
     expect(pending).toBeInstanceOf(Promise);
     await expect(pending).rejects.toMatchObject({ code: 'X_IMAGE_UNSUPPORTED' });
+  });
+});
+
+describe('the variant vocabulary against the one core probes', () => {
+  /**
+   * The smallest bytes `probeImage` calls a GIF: the signature plus the logical screen size. It
+   * never has to decode — what is under test is the format NAME core answers with, not pixels.
+   */
+  const GIF_HEADER = Uint8Array.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 4, 0, 2, 0, 0, 0, 0]);
+  const SVG_DOC = new TextEncoder().encode(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="2"></svg>',
+  );
+
+  test('every format a variant can be minted in is one core can probe', () => {
+    const probeable: readonly string[] = IMAGE_FORMATS;
+    for (const format of VARIANT_FORMATS) expect(probeable).toContain(format);
+  });
+
+  test('a format core probes and no variant can carry is refused, never keyed', () => {
+    for (const bytes of [GIF_HEADER, SVG_DOC]) {
+      const { format } = probeImage(bytes);
+      expect(isVariantFormat(format)).toBe(false);
+      expect(() => variantKey('photos/hero.png', untypedTransform(format))).toThrow(
+        /X_IMAGE_UNSUPPORTED/,
+      );
+    }
+  });
+});
+
+describe('the barrel', () => {
+  test('re-exports neither of core`s image vocabulary names — one name, one set', async () => {
+    const source = await Bun.file(new URL('./index.ts', import.meta.url)).text();
+    // Line comments stripped: the rule is about what the package EXPORTS, and the comment beside
+    // the image block names both absent identifiers on purpose. `\b` so `ImageFit`, `ImageSize`,
+    // `ImageTransform` and `IMAGE_CONTENT_TYPES` stay legal and `VariantFormat` is not a match.
+    const exported = source.replace(/^\s*\/\/.*$/gm, '');
+    expect(exported).not.toMatch(/\bImageFormat\b/);
+    expect(exported).not.toMatch(/\bIMAGE_FORMATS\b/);
   });
 });

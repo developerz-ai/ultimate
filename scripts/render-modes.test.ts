@@ -4,7 +4,13 @@
 // that read nothing would otherwise report "no copies", the same answer a clean repo gives.
 
 import { describe, expect, test } from 'bun:test';
-import { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
+import {
+  CACHE_TIERS,
+  HYDRATE_STRATEGIES,
+  IMAGE_FORMATS,
+  OFFLINE_STRATEGIES,
+  RENDER_MODES,
+} from '@ultimat3/core';
 import { JOB_STATES } from '@ultimat3/jobs';
 import { TEST_TYPES } from '@ultimat3/testing';
 import { repoRoot } from './lib/run';
@@ -45,6 +51,8 @@ const OWNERS: readonly SourceFile[] = [
   sanctioned,
   { at: 'packages/jobs/src/driver.ts', text: asConst('JOB_STATES', JOB_STATES) },
   { at: 'packages/testing/src/test-types.ts', text: asConst('TEST_TYPES', TEST_TYPES) },
+  { at: 'packages/core/src/image/probe.ts', text: asConst('IMAGE_FORMATS', IMAGE_FORMATS) },
+  { at: 'packages/core/src/cache-vocabulary.ts', text: asConst('CACHE_TIERS', CACHE_TIERS) },
 ];
 
 const file = (at: string, text: string): SourceFile => ({ at, text });
@@ -86,15 +94,31 @@ describe('a second declaration of the vocabulary', () => {
   });
 
   test('is NOT reported for a set that merely shares one member', () => {
-    const cacheTier = "export type CacheTier = 'memo' | 'lru' | 'shared' | 'isr' | 'cdn';\n";
+    // `network-only` against OFFLINE_STRATEGIES, `never` against HYDRATE_STRATEGIES, `redis`
+    // against CACHE_TIERS: one shared member each, and three vocabularies that genuinely differ.
     const strategy = "export type StrategyName = 'cache-first' | 'network-only';\n";
+    const freq = "export type ChangeFreq = 'daily' | 'weekly' | 'never';\n";
+    const transport = "export type RealtimeTransport = 'memory' | 'nats' | 'redis';\n";
     expect(
       checkVocabulary([
         ...OWNERS,
-        file('packages/core/src/config.ts', cacheTier),
         file('packages/pwa/src/strategies.ts', strategy),
+        file('packages/seo/src/sitemap.ts', freq),
+        file('packages/core/src/config.ts', transport),
       ]),
     ).toEqual([]);
+  });
+
+  test('is reported for the cache-tier pair issue #293 shipped — two shared members', () => {
+    // `app.config.ts` accepted this union through 8.0.0 while the ladder ordered by
+    // `request-memo | lru | redis | cdn`: `lru` and `cdn` shared, which is exactly the threshold,
+    // and `isr` accepted by config and served by no tier. Before this row existed the whole
+    // divergence was invisible to the one gate built to catch it.
+    const legacy = "export type CacheTier = 'memo' | 'lru' | 'shared' | 'isr' | 'cdn';\n";
+    const findings = checkVocabulary([...OWNERS, file('packages/core/src/config.ts', legacy)]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.cause).toContain('CACHE_TIERS');
+    expect(findings[0]?.fix).toContain("import CACHE_TIERS from '@ultimat3/core'");
   });
 
   test('is not reported against the one module allowed to declare it', () => {
@@ -201,6 +225,28 @@ describe('what the scanner reads', () => {
     expect(checkVocabulary([...OWNERS, file('packages/pwa/src/a.ts', typed)])).toHaveLength(1);
   });
 
+  test('an `as const satisfies` array is a declaration — the shape a SUBSET is written in', () => {
+    // `VARIANT_FORMATS` is declared this way, and the rule read straight past it: the guard has to
+    // see the one shape a vocabulary should be narrowed in, or deriving a subset hides the copy.
+    const derived =
+      "export const VARIANTS = ['precache', 'runtime'] as const satisfies readonly Strategy[];\n";
+    const [set] = scanLiteralSets(derived);
+    expect(set?.name).toBe('VARIANTS');
+    expect(set?.members).toEqual(['precache', 'runtime']);
+    expect(checkVocabulary([...OWNERS, file('packages/pwa/src/b.ts', derived)])).toHaveLength(1);
+  });
+
+  test('and the multi-line form of it, which is how Biome writes a set of four', () => {
+    const wrapped = [
+      'export const VARIANTS = [',
+      "  'precache',",
+      "  'runtime',",
+      '] as const satisfies readonly Strategy[];',
+      '',
+    ].join('\n');
+    expect(scanLiteralSets(wrapped)[0]?.members).toEqual(['precache', 'runtime']);
+  });
+
   test('a bare array of strings is still not read — that is any list, not a vocabulary', () => {
     expect(scanLiteralSets("const PENDING = ['precache', 'runtime'];\n")).toEqual([]);
   });
@@ -234,7 +280,9 @@ describe('this repository', () => {
     for (const vocabulary of VOCABULARIES.filter((one) => one.at === VOCABULARY_MODULE)) {
       expect(names).toContain(vocabulary.name);
     }
-    expect(VOCABULARIES).toHaveLength(5);
+    // Seven: the three route sets, JOB_STATES, TEST_TYPES, IMAGE_FORMATS and CACHE_TIERS. The
+    // count is pinned so a row is added deliberately, never as a side effect of an import.
+    expect(VOCABULARIES).toHaveLength(7);
   });
 
   test('and it reads a real union whose members carry a doc comment each', async () => {

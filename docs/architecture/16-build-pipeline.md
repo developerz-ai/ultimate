@@ -9,7 +9,7 @@ Companion to [`09-rendering-internals.md`](./09-rendering-internals.md), which c
 `x dev`, `x build --target static`, `apps/web/server.ts` and `bun test` all load a page module the same way. There is no "bundled" behaviour separate from "dev" behaviour, because there is no bundler.
 
 ```
-import '@ultimat3/render'      → installRenderLoader()   (module-loader.ts)
+import '@ultimat3/render/server' → installRenderLoader() (module-loader.ts)
   Bun.plugin onLoad /\.tsx$/   → Bun.Transpiler(jsx: react, jsxFactory: __xh)
                                  + `import { h as __xh, Fragment as __xFragment }`
   Bun.plugin onLoad /\.s?css$/ → sass.compileString → scoped class map + CSS registry
@@ -35,7 +35,9 @@ routeDocument(entry, data)     → renderHead(headFromMeta(await config.meta(dat
 
 ## Why the loader installs on import
 
-`Bun.plugin` only transforms modules loaded **after** it. Every consumer that will load a `.tsx` route imports `@ultimat3/render` first — a route file's first import is `defineRoute` — so `packages/render/src/index.ts` installs it at module scope. Any later hook (`x dev`, `x build`, `server.ts`, a test preload) would be four places one fact can be wrong instead of none.
+`Bun.plugin` only transforms modules loaded **after** it, so the install is a module-scope side effect of [`packages/render/src/server.ts`](../../packages/render/src/server.ts) — every consumer that will load a `.tsx` route (`x dev`, `x build`, `server.ts`, a test that `await import()`s a page) imports `@ultimat3/render/server` before the source it loads. Any later hook would be four places one fact can be wrong instead of none.
+
+It sat on `packages/render/src/index.ts` until 9.0.0, which is what the `.` / `./server` split moved. Importing **`@ultimat3/render` no longer installs anything**: the client barrel bundles for a browser, and the loader pulls `sass` and `node:url`, whose browser polyfill exports neither name `css-modules.ts` asks for.
 
 ## Why a runtime transform instead of `tsconfig`
 

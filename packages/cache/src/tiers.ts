@@ -3,8 +3,8 @@
 // so a deployment can omit Redis (single node) or add the CDN tier without touching call
 // sites. Order is data, not control flow.
 
-import type { Clock } from '@ultimat3/core';
-import { systemClock } from '@ultimat3/core';
+import type { CacheTierName, Clock } from '@ultimat3/core';
+import { CACHE_TIERS, systemClock } from '@ultimat3/core';
 import { CacheJitterInvalidError, CacheTtlInvalidError } from './errors';
 import type { CacheFence } from './fence';
 import { markInvalidated, sampleFence } from './fence';
@@ -13,10 +13,17 @@ import { createSingleFlight } from './single-flight';
 import type { CacheTag } from './tags';
 import { bestEffort } from './tier-failures';
 
-export type TierName = 'request-memo' | 'lru' | 'redis' | 'cdn';
+/**
+ * The rungs, spelled in `@ultimat3/core` and nowhere else. Tier 0 owns the NAMES because
+ * `app.config.ts` names them too and core is the one place a tier-0 declaration and this package
+ * can both see; the ladder — order, promotion, fan-out — is still this file's. Aliased rather than
+ * re-exported under core's name so the ~30 call sites that already import `TierName` keep working:
+ * one declaration, two names, against one declaration each in two packages that disagreed.
+ */
+export type TierName = CacheTierName;
 
 /** Read order. Index in this array is the tier's distance from the request. */
-export const TIER_ORDER: readonly TierName[] = ['request-memo', 'lru', 'redis', 'cdn'];
+export const TIER_ORDER: readonly TierName[] = CACHE_TIERS;
 
 /**
  * Who a swallowed refusal is attributed to in `recentTierFailures()` and the `/_x` panel: every

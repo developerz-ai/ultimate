@@ -149,7 +149,9 @@ export const config = defineConfig({
   defaultCurrency: 'USD',
   // Env KEYS, never the value: the same image deploys to every environment. The database is
   // configured entirely from the environment — \`DATABASE_URL\` and \`DATABASE_POOL_MAX\`.
-  cache: { driver: 'memory', tiers: ['memo', 'lru'] },
+  // The tiers ARE the cache selection: add 'redis' to build the shared rung, which reads
+  // \`REDIS_URL\` and refuses the boot when it is unset.
+  cache: { tiers: ['request-memo', 'lru'] },
   jobs: { queues: ['${app.kebab}-default'], concurrency: 4 },
   // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
   realtime: { enabled: true, tier: 'live-queries', transport: 'memory' },

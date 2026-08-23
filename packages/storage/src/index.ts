@@ -97,20 +97,24 @@ export type { GrantUploadInput, UploadGrant, UploadRequest } from './grant';
 export { grantUpload } from './grant';
 export type {
   ImageFit,
-  ImageFormat,
   ImageSize,
   ImageTransform,
   SrcsetDescriptor,
   SrcsetOptions,
+  VariantFormat,
 } from './image';
+// No `ImageFormat` and no `IMAGE_FORMATS` here, deliberately: `@ultimat3/core` owns that name and
+// that set (what it can PROBE), this package owns `VARIANT_FORMATS` (what a variant can be minted
+// in), and `image.test.ts` fails the day either core name reappears in this file.
 export {
   blurPlaceholder,
   DEFAULT_QUALITY,
   DEFAULT_SRCSET_WIDTHS,
   fitDimensions,
-  IMAGE_FORMATS,
+  isVariantFormat,
   srcsetDescriptors,
   transformImage,
+  VARIANT_FORMATS,
   variantKey,
 } from './image';
 

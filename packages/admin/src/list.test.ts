@@ -23,7 +23,7 @@ import type { AdminResource } from './resource';
 
 // Loaded after `@ultimat3/render` installs its `Bun.plugin`, for the reason
 // `detail-render.test.ts` states — a plugin only transforms modules loaded after it.
-await import('@ultimat3/render');
+await import('@ultimat3/render/server');
 const { AdminList } = await import('./list');
 
 registerCatalog('en', {
