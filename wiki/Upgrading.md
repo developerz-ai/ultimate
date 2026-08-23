@@ -2,10 +2,11 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Nine majors have shipped, and this page walks all nine** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Ten majors have shipped, and this page walks all ten** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 10.x → 11.0.0 | **7** | the `11.0.0` section, in order |
 | 9.x → 10.0.0 | **19** | the `10.0.0` section, in order |
 | 8.x → 9.0.0 | **5** | the `9.0.0` section, in order |
 | 7.x → 8.0.0 | **6** | the `8.0.0` section, in order |
@@ -15,17 +16,20 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 1.x → 10.0.0 | **111** | all nine sections, oldest first |
+| 1.x → 11.0.0 | **118** | all ten sections, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 118 As of 2026-08-23 — the WHOLE file. 111 sit inside the section of the major that shipped
-# them, the sum of the nine per-major rows above; the seven more are under `[Unreleased]`,
-# breaking changes not yet released that become the next major's row when it ships.
-# Scope the count to one section to read a single row —
-#   sed -n '13,241p' CHANGELOG.md | grep -cE '^(- \*\*|### )BREAKING —'   # 19, the 10.0.0 section
+# 118 As of 2026-08-23 — the WHOLE file, and all 118 sit inside the section of the major that
+# shipped them: the sum of the ten per-major rows above. `[Unreleased]` holds none, which is what
+# a released commit looks like — a `BREAKING —` line left there at a tag is
+# X_DOC_CHANGELOG_UNRELEASED_BREAKING, and the release promotes the section rather than appending one.
+# Scope the count to one section to read a single row. The range is that section's own heading line
+# to the line before the next `## `, and `grep -n '^## ' CHANGELOG.md` prints both —
+#   sed -n '<start>,<end>p' CHANGELOG.md | grep -cE '^(- \*\*|### )BREAKING —'
+# Line numbers are deliberately not written here: every release moves them.
 # `bun run changelog-check` compares both directions: each row against its OWN section, and the
 # line above against the file.
 ```
@@ -40,6 +44,198 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 10.x → 11.0.0, entry by entry
+
+**Seven breaking entries, from a shutdown, cache and disclosure sweep.** Four are compile errors the
+moment you upgrade. Three are not — and one of those changes what a CDN is allowed to store for a
+signed-in visitor, so read entries 3, 4 and 5 even if nothing here fails to compile. **No
+`app.config.ts` key moves in this major**, so there is no config edit to start with. No codemod.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `isrKey(url, locale)` takes the negotiated locale, and it is part of the store key | you call `isrKey` — the document a multi-locale `isr` route serves changes either way |
+| 2 | `IsrStore` gains a required `markStale(path)` | you implement `IsrStore` yourself |
+| 3 | `HttpConfig.drainTimeoutMs` is `number \| null`, default `null` | you read the resolved field — and the drain budget moves 15s → 25s for an app that declared neither |
+| 4 | an unclassified 5xx problem document carries no exception text | a client reads `title` / `detail` / `cause` off a 500 |
+| 5 | a request carrying an identity gets `private, max-age=0`; every shared response varies on `cookie` and `x-timezone` | never — a CDN leak, closed. Personalised pages stop being shared-cacheable, which is the fix |
+| 6 | `initialsOf(name, locale)` takes a required locale | you call `initialsOf` directly; `<Avatar>` is unchanged |
+| 7 | `@ultimat3/pwa` deletes `RetryPolicy`, `DEFAULT_RETRY`, `retryDelayMs`, `shouldRetry` and `BackgroundSyncOptions.retry` | you imported one **from `@ultimat3/pwa`**. `@ultimat3/jobs` exports two of those names and is untouched |
+
+### Entries 1, 2, 6 and 7 — a compile error the moment you upgrade
+
+**1. Pass the negotiated locale to `isrKey`.** `TS2554`, one argument short.
+
+```diff
+- const served = await isr.serve(isrKey(url), () => renderPage(url));
++ const served = await isr.serve(isrKey(url, ctx.locale), () => renderPage(url));
+```
+
+`isrKey` is on `@ultimat3/render/server`, where 9.0.0 put it. The locale rides in a reserved query
+parameter — `__x_locale`, exported as `ISR_LOCALE_PARAM` — and not as a prefix, because `routePathOf`
+splits a key at its `?`: an `es:/blog` key matches no route, so `descriptorFor` answers `undefined`
+and a declared `revalidate: { ttl }` silently becomes tag-only.
+
+One entry per path served visitor 2 the document negotiated for visitor 1 — `<html lang>`, every
+`t()` — for the whole TTL, and `s-maxage` told the CDN to do the same. `toResult` emits
+`vary: accept-language` now for the CDN half; the rest of the shared key comes from `@ultimat3/http`'s
+`cache-headers` stage, which sees the actor this function cannot.
+
+The **time zone is deliberately not a dimension**: a locale set is declared and bounded, a zone list
+is not. A date on an `isr` page belongs in a zone the page itself names, or the page belongs in `ssr`.
+
+**2. Implement `markStale` in place.** Only a custom `IsrStore` pays this — `memoryIsrStore()` has it.
+
+```diff
+  const store: IsrStore = {
+    get: (path) => map.get(path),
+    set: (entry) => { map.delete(entry.path); map.set(entry.path, entry); },
++   markStale: (path) => {
++     const entry = map.get(path);
++     if (entry === undefined) return false;
++     map.set(path, { ...entry, stale: true });   // in place: the position IS the eviction order
++     return true;
++   },
+    delete: (path) => { map.delete(path); },
+    paths: () => [...map.keys()].sort(),
+  };
+```
+
+**Never `set({ ...entry, stale: true })`** — that read-modify-write is the defect the member exists to
+end. `set` means "this page was just generated" and a store is entitled to order eviction by exactly
+that, so marking through it made the **stalest** page the newest: a tag bust protected the pages that
+most needed regenerating.
+
+Second half, and it costs nothing: `regenerate` samples a cache fence **before** the render and does
+not store an entry the fence invalidated. A bust landing mid-render was previously erased by
+`store.set({ stale: false })`, and for a tag-only route `isFresh` is true forever — so the process
+served pre-write HTML for the rest of its life.
+
+**6. Pass the locale to `initialsOf`.** `TS2554`.
+
+```diff
+- initialsOf(member.displayName)
++ initialsOf(member.displayName, useUi().locale)
+```
+
+`<Avatar>` reads `useUi().locale` itself, so a component tree pays nothing. A bare
+`toLocaleUpperCase()` reads the **runtime's** default locale — a server's `LANG`, a browser's UI
+language, never the request's — so one Turkish name uppercased to `İ` on the server and `I` in the
+browser, out of identical props. `@ultimat3/ui` has no ambient locale to fall back on, by rule.
+
+**7. Delete the import; there is nothing to replace it with.** `TS2305`.
+
+```diff
+- import { backgroundSyncSource, DEFAULT_RETRY, type RetryPolicy } from '@ultimat3/pwa';
++ import { backgroundSyncSource } from '@ultimat3/pwa';
+
+- backgroundSyncSource({ flushEndpoint, retry: { ...DEFAULT_RETRY, maxAttempts: 5 } });
++ backgroundSyncSource({ flushEndpoint });
+```
+
+`BackgroundSyncOptions` is `{ flushEndpoint?: string }` and nothing else. This package schedules no
+retry and never did: the one-shot `sync` handler rejects and the **platform** decides when to wake it
+again. Of the policy only `maxAttempts` reached the emitted worker, as a `SYNC_MAX_ATTEMPTS` constant
+nothing read, and `X_PWA_SYNC_INCOMPLETE`'s `fix:` told the reader to raise
+`pwa.backgroundSync.retry.maxAttempts` — a key `PwaConfig` has never carried, because
+`backgroundSync` is a boolean. [Error codes](Error-Codes) already says so.
+
+**`@ultimat3/jobs` is a different package carrying two of those names.** `RetryPolicy` and
+`DEFAULT_RETRY` are still exported from it, still read by the worker, unchanged. Only pwa's copies are
+gone, and a `RetryPolicy` on a `job()` is not one of them.
+
+### Entries 3, 4 and 5 — nothing fails to compile, and a caller can see the difference
+
+**3. `drainTimeoutMs` is `number | null`, and `null` means "this app did not say".**
+
+| What the app declared | Drain deadline before | Now |
+|---|---|---|
+| nothing | 15,000ms | **25,000ms** — core's own `DEFAULT_DEADLINE_MS` |
+| `configureLifecycle({ deadlineMs: 600_000 })` | **15,000ms** — reverted by the next line of boot | 600,000ms |
+| `defineHttpConfig({ drainTimeoutMs: 5_000 })` | 5,000ms | 5,000ms |
+
+`createServer` calls `configureLifecycle({ deadlineMs })` only when the app declared one
+([`packages/http/src/server.ts:101`](https://github.com/developerz-ai/ultimate/blob/main/packages/http/src/server.ts#L101)).
+Unconditional, with `defineHttpConfig` defaulting the number, that line reverted the exact edit
+`X_SHUTDOWN_TIMEOUT`'s own `fix:` prints — silently, in every process that serves web.
+
+**Edit only if you relied on the 15s default** — write it down:
+
+```diff
+- defineHttpConfig({ rateLimit: { scope: 'process' } })
++ defineHttpConfig({ rateLimit: { scope: 'process' }, drainTimeoutMs: 15_000 })
+```
+
+The INPUT field is still `number | undefined`, so a declaration compiles unchanged. The RESOLVED
+field is `number | null`, so `const ms: number = config.drainTimeoutMs` is `TS2322` — that is the
+compile half, and it reaches only a caller that reads the merged config back.
+
+**4. An unclassified 5xx says nothing about the exception that caused it.**
+
+| Member | On a 5xx nobody classified | On a coded refusal |
+|---|---|---|
+| `type`, `status`, `code`, `fix`, `docs`, `requestId` | unchanged | unchanged |
+| `title` | `unhandled server error` | the code's own title |
+| `detail`, `cause` | one fixed sentence pointing at this process's logs, under the request id | the authored cause |
+
+"Unclassified" is `X_INTERNAL`, or a code with no row in `@ultimat3/http`'s table **and** no
+`registerErrorStatus` row — deliberately not `status >= 500`, which would have blanked `X_DRAINING`'s
+one instruction. `dev: true` is unchanged, and the text is not lost: the `error-map` stage logs it as
+a redactable field and reports every 5xx to the error monitor, both keyed by `requestId`.
+
+A `pg` message quoting the rejected row, a driver message quoting the DSN, went to any non-HTML client
+in production. `error-page.ts` had locked the browser out of exactly this, so the two audiences
+disagreed about one condition.
+
+**Edit only if a client parsed those members.** Match on `code`, correlate on `requestId`. A 5xx of
+your own that should keep its authored cause needs a status of its own — that is what makes it
+classified:
+
+```ts
+registerErrorStatus({ X_PAYMENTS_UNREACHABLE: 502 });   // from @ultimat3/http, once at boot
+```
+
+**5. A request carrying an identity is `private, max-age=0`, whatever the handler declared.**
+
+```diff
+- cache-control: public, max-age=0, s-maxage=30, stale-while-revalidate=300
++ cache-control: private, max-age=0
+```
+
+The `cache-headers` stage **reviews** a `cache-control` the handler wrote instead of standing down: a
+declaration offering the response to a shared cache (`public`, or an `s-maxage`) plus a non-anonymous
+actor is replaced. `immutable` is the one exception — it asserts the body is a function of the URL
+alone, which a content-addressed island chunk or image is, and demoting those re-downloads every
+chunk on every navigation for every signed-in user.
+
+An **anonymous** shared response is unchanged except that it now carries
+`vary: accept-language, cookie, x-timezone`. Both halves are needed: `private` for the identified
+request, `vary: cookie` for the shared one.
+
+What was happening: `ssrHeaders` offers any route without a `policy` to a CDN for 30 seconds, and
+`meta.auth` is `'public' | 'required'` — so the commonest page in any app, public but greeting you by
+name when you are signed in, is a `'public'` route whose own header said `s-maxage`. That is the shape
+`x g route --surface app` scaffolds.
+
+**No edit, and expect the shared-cache hit rate on personalised pages to go to zero** — that is the
+fix, not a regression. A route that really is a function of the URL alone says so:
+`cache-control: public, max-age=31536000, immutable`.
+
+### Fixed in the same release, and none of it costs an edit
+
+Read these if you built a workaround for one.
+
+| Fix | What stops happening |
+|---|---|
+| the framework's CSP admits its own hydration runtime in production | **no island booted after deploy, anywhere the policy is enforced.** `script-src` was `'self' 'wasm-unsafe-eval'` with no hash while the runtime is an inline module — report-only under `x dev`, enforced in a container. `startWeb` now hashes the seven `HYDRATE_RUNTIME_BODIES` into `script-src`, as it already did for styles |
+| a browser gets an error page, not `problem+json` | a 404 or a 500 rendering the internal `cause` and the author-facing `fix:` into a visitor's window. Copy is the catalog's `errors.*` keys; override per status with `apps/web/site/errors/<status>.html`, and `x dev` keeps the overlay |
+| `worker`, `scheduler` and `sync` drain in two phases, and `holdUntilShutdown` reaches the exit | one `accept` hook spending the whole budget before "stop listening" and "stop upgrading" had been invoked at all — 4 hooks started, none finished — and an overrun wedging the process until the kubelet's SIGKILL, where the job lease lapsed and another worker re-ran it. **Behaviour change**: a job outrunning `configureLifecycle({ deadlineMs })` is abandoned (`jobs.worker.drain-abandoned`) and the queue redelivers it, where the teardown used to hang forever with the driver open. Raise the budget past your slowest job |
+| a worker's fleet slot is released before the driver closes, and a renewal interval is `unref`ed | a `concurrency: 1` job unclaimable by the replacement pod for a full visibility window after every deploy, and a refed interval holding a drained process open until SIGKILL |
+| the scheduler re-asserts leadership before **every** task, not once per round | the tail of a round dispatching under a lease another node already took. The occurrence key does not absorb it: `SQL_ENQUEUE`'s conflict target is partial over the live states, so a duplicate landing after that job finished inserts a new row and the handler runs twice |
+| a replayed backfill batch writes no ledger row | 4,800 `x_backfills` UPDATEs before a resumed 5M-row sweep read a single new row, on every attempt, inside the visibility lease |
+| a server render gets a live client instead of a 500 | a page whose body reads a live query failing on the server; it renders its loading branch and the browser takes over on hydrate. `mutate()` / `drain()` there are `X_LIVE_SERVER_RENDER` |
+| `createLogger({ level: 'verbose' })` is refused at construction | an unknown level failing **open** — every level emitted |
+| one documented first run, and it is `bin/setup` | `cd myapp && x dev` failing on `X_BUILD_FAILED` because `x new` installs nothing — which eight doc pages, and `x new`'s own closing line, told the reader to do. `wiki/Installation.md` also listed six `x new` flags that do not exist |
 
 ## 9.x → 10.0.0, entry by entry
 

@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 11.0.0 - 2026-08-23
+
 ### Added
 
 - **`/favicon.ico` is answered on every served surface.** `x dev`, `x serve` and the static export
@@ -211,6 +215,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `X_UI_INVALID_VALUE`.
 - `x db backfill <name> --list` silently dropped the positional and listed the whole ledger with
   `ok: true`. It is now `X_CLI_BAD_FLAG`, with `--name` as the fix.
+
+### Commits
+
+- fix: the CSP admits its own hydration runtime, cache-control has one owner, ISR keys by locale, and the drain reaches the exit (#328)
+- docs: the range — homework to very large, measured at both ends — and fifteen pages corrected against 10.0.0 (#327)
+- fix: error pages a browser can read and an app can override, X_LIVE_ROUTE_NO_ISLAND, and two audit sweeps (tiers 0–2, 3–5) (#326)
+- fix: a server render gets a live client, fix: paths must resolve, /favicon.ico answers, and the ui runtime slot (#271 #272 #274 #275 #283) (#325)
 
 ## 10.0.0 - 2026-08-23
 
