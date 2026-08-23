@@ -19,6 +19,17 @@ export interface CodeSite extends SourceSite {
   readonly code: string;
 }
 
+export interface UnresolvedCodeSite extends SourceSite {
+  /** The identifier exactly as written at the `code:` position. */
+  readonly name: string;
+}
+
+/** One file's codes, and the names at a `code:` position this scan could not turn into one. */
+export interface CodeScan {
+  readonly sites: readonly CodeSite[];
+  readonly unresolved: readonly UnresolvedCodeSite[];
+}
+
 // `ReadonlySet`, so a consumer cannot mutate what every scan in this package reads.
 export const QUOTES: ReadonlySet<string> = new Set(["'", '"', '`']);
 export const OPENERS: ReadonlySet<string> = new Set(['(', '[', '{']);
@@ -203,25 +214,109 @@ const CODE_LITERAL = /(['"`])(X_[A-Z0-9_]+)\1/g;
 const CODE_KEY = /^[\t ]*(X_[A-Z0-9_]+)\s*:/gm;
 
 /**
+ * A `code` KEY, and never a member assignment: `found.code = SOMETHING` projects somebody else's
+ * code and declares none. The literal form above keeps its looser `\b` deliberately — a scanner
+ * that stopped collecting a code it has collected for four majors would shrink the manifest.
+ */
+const CODE_KEY_POSITION = /(?<![.\w$])code\s*[:=]\s*/g;
+
+/** Cheap enough to run on every file, so the masking pass below is paid only where it can pay. */
+const HAS_CODE_IDENTIFIER = /(?<![.\w$])code\s*[:=]\s*[A-Za-z_$]/;
+
+/** Sticky: the value expression is read at an exact offset, never out of a slice that may cut. */
+const VALUE_IDENTIFIER = /([A-Za-z_$][\w$]*)\s*([.([]?)/y;
+
+/**
+ * A module-scope `const NAME = 'X_…'`, and the names of every other module-scope const. Anchored
+ * at column 0, which is what makes it module scope without a parser: a `const` inside a function
+ * can be shadowed by another in a sibling scope, and a resolver that picked one of them would be
+ * guessing. The second set is the answer "that name IS declared here, and it is not a code" —
+ * `const STATUS_NOT_FOUND = 404` in `@ultimat3/realtime`'s NATS fake is the live instance, and a
+ * rule that reported it would be a rule the reader has to argue with.
+ */
+const CODE_CONST =
+  /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]*)?=\s*(['"`])(X_[A-Z0-9_]+)\2/gm;
+const MODULE_CONST = /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*[:=]/gm;
+
+/** House shape for a constant. A lowercase name at a `code:` is a type annotation or a re-raise. */
+const CODE_CONSTANT_NAME = /^[A-Z][A-Z0-9_]+$/;
+
+interface ModuleConstants {
+  /** Name → the code it holds. */
+  readonly codes: ReadonlyMap<string, string>;
+  /** Every module-scope const name, code-valued or not. */
+  readonly names: ReadonlySet<string>;
+}
+
+function moduleConstants(text: string): ModuleConstants {
+  const codes = new Map<string, string>();
+  const names = new Set<string>();
+  for (const match of text.matchAll(MODULE_CONST)) names.add(match[1] as string);
+  for (const match of text.matchAll(CODE_CONST)) codes.set(match[1] as string, match[3] as string);
+  return { codes, names };
+}
+
+/**
+ * The bare identifier a key's value is, or `undefined` when the value is anything else. A member
+ * read, an index and a call are all refused: `SEO_ERROR_CODES.metaMissing` is how two packages
+ * raise every code they own, the registry branch below already collects those literals, and
+ * judging the read would report eighteen working sites as broken.
+ */
+function valueIdentifier(masked: string, from: number): string | undefined {
+  VALUE_IDENTIFIER.lastIndex = from;
+  const match = VALUE_IDENTIFIER.exec(masked);
+  return match === null || match[2] !== '' ? undefined : match[1];
+}
+
+/**
  * Codes this file declares: every `code:` / `code =` throw site, plus — in a package's own code
  * registry — every entry of its code list or title table, whichever shape it uses. A registry is
  * the only place a bare `X_*` literal is a declaration; anywhere else it is a reference (an env
  * var named `X_BUILD_ID`, an HTTP status map keyed by code) and collecting it would invent a code.
+ *
+ * A `code:` written as an IDENTIFIER is resolved against the module-scope consts of the same file,
+ * and reported as `unresolved` when nothing there gives it a value (#277). Both halves matter and
+ * neither is optional: `const STALE = 'X_DOC_PACKAGE_GRAPH_STALE'` is what a DRY author writes, and
+ * a scan that skipped it silently left the code out of the manifest, out of `wiki/Error-Codes.md`'s
+ * demanded rows, out of `bun run gate-codes` and out of `x errors explain` — permissive, and quiet.
+ * The identifier half reads the MASKED text: `packages/cli/src/templates/` emits app source by the
+ * dozen inside template literals, and a `code: STALE` in one of those is text, not a declaration.
  */
-export function scanCodes(source: string, at: string): readonly CodeSite[] {
+export function scanCodeDeclarations(source: string, at: string): CodeScan {
   const text = stripComments(source);
   const lineAt = lineIndex(text);
   const sites = new Map<string, CodeSite>();
+  const unresolved: UnresolvedCodeSite[] = [];
   const add = (code: string, index: number): void => {
     if (!sites.has(code)) sites.set(code, { at, line: lineAt(index), code });
   };
   for (const match of text.matchAll(CODE_AT_KEY)) add(match[2] as string, match.index);
+  if (HAS_CODE_IDENTIFIER.test(text)) {
+    const masked = maskLiterals(source);
+    const constants = moduleConstants(text);
+    for (const key of masked.matchAll(CODE_KEY_POSITION)) {
+      const name = valueIdentifier(masked, key.index + key[0].length);
+      if (name === undefined) continue;
+      const code = constants.codes.get(name);
+      if (code !== undefined) add(code, key.index);
+      else if (!constants.names.has(name) && CODE_CONSTANT_NAME.test(name)) {
+        unresolved.push({ at, line: lineAt(key.index), name });
+      }
+    }
+  }
   if (isCodeRegistry(text)) {
     for (const match of text.matchAll(CODE_LITERAL)) add(match[2] as string, match.index);
     for (const match of text.matchAll(CODE_KEY)) add(match[1] as string, match.index);
   }
-  return [...sites.values()];
+  return { sites: [...sites.values()], unresolved };
 }
+
+/**
+ * The codes alone, for every caller that has no report to attach a finding to. One scanner, one
+ * answer: the manifest, the docs check, `bun run gate-codes` and `x errors explain` all read this.
+ */
+export const scanCodes = (source: string, at: string): readonly CodeSite[] =>
+  scanCodeDeclarations(source, at).sites;
 
 export interface CodeFixSite extends CodeSite {
   /**
@@ -250,6 +345,8 @@ function soleLiteral(
   return found.length === 1 ? found[0] : undefined;
 }
 
+const CODE_NAME = /^X_[A-Z0-9_]+$/;
+
 /**
  * Every `X_*` code paired with the `fix:` written beside it — in the SAME object literal, which is
  * the whole rule. `new UltimateError({ code, cause, fix })` is the one shape this framework raises
@@ -263,6 +360,15 @@ function soleLiteral(
 export function scanCodeFixSites(source: string, at: string): readonly CodeFixSite[] {
   const masked = maskLiterals(source);
   const lineAt = lineIndex(masked);
+  // Lazily, because most files hold no `code:` at all and stripping is a whole extra pass over
+  // the text. Same resolver `scanCodeDeclarations` reads, so `x errors explain` can never see a
+  // smaller set of throw sites than the manifest does.
+  let constants: ModuleConstants | undefined;
+  const constantCode = (name: string | undefined): string | undefined => {
+    if (name === undefined) return undefined;
+    constants ??= moduleConstants(stripComments(source));
+    return constants.codes.get(name);
+  };
   const keys = new Map<number, { readonly kind: 'code' | 'fix'; readonly from: number }>();
   for (const key of masked.matchAll(CODE_OR_FIX_KEY)) {
     keys.set(key.index, {
@@ -293,11 +399,16 @@ export function scanCodeFixSites(source: string, at: string): readonly CodeFixSi
     const scope = stack.at(-1);
     if (key === undefined || scope === undefined) continue;
     const literal = soleLiteral(masked, source, key.from, lineAt);
-    if (literal === undefined) continue;
     if (key.kind === 'fix') {
-      if (!fixes.has(scope)) fixes.set(scope, literal.fix);
-    } else if (/^X_[A-Z0-9_]+$/.test(literal.fix) && !codes.has(scope)) {
-      codes.set(scope, { at, line: literal.line, code: literal.fix });
+      if (literal !== undefined && !fixes.has(scope)) fixes.set(scope, literal.fix);
+      continue;
+    }
+    // A fix has no second reading, so it stays literal-only; a code has exactly one, which is the
+    // module-scope const its own file declares it in.
+    const code =
+      literal === undefined ? constantCode(valueIdentifier(masked, key.from)) : literal.fix;
+    if (code !== undefined && CODE_NAME.test(code) && !codes.has(scope)) {
+      codes.set(scope, { at, line: literal?.line ?? lineAt(key.from), code });
     }
   }
   return [...codes].map(([scope, site]) => {

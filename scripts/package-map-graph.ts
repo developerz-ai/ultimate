@@ -178,9 +178,10 @@ export interface PackageGraphInput {
 }
 
 const unscanned = (cause: string, fix: string, at = PACKAGE_MAP): Finding => ({
-  // Written as a literal at every site, never through a const: `scanCodes` reads a `code:` STRING
-  // and a code behind an identifier is a code the manifest, the wiki check and `bun run gate-codes`
-  // cannot see.
+  // Written as a literal at every site. This file is where the hole was found (#277): `scanCodes`
+  // read a `code:` STRING only, so a code behind an identifier was in no manifest, needed no wiki
+  // row and was invisible to `bun run gate-codes`. It now resolves a module-scope const in the
+  // same file and refuses everything else — a literal is still the form with nothing in between.
   code: 'X_DOC_PACKAGE_GRAPH_UNSCANNED',
   cause,
   fix,

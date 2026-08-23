@@ -62,6 +62,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_ERROR_CODE_UNDOCUMENTED: 'x verify --json   # the finding names the code and the missing page',
   X_ERROR_CODE_UNREGISTERED:
     'x errors list --json   # register the code in its package src/errors.ts, or move its row under "Reserved codes"',
+  X_ERROR_CODE_UNRESOLVED:
+    'x verify --json   # the finding names the file, the line and the name it could not resolve',
   X_CLI_UNEXPECTED: 'x doctor --json',
   X_TYPECHECK_FAILED: 'bunx tsc -b --pretty false',
   X_LINT_FAILED: 'bunx biome check --write .',

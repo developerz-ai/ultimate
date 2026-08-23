@@ -130,6 +130,7 @@ export {
   COMMAND_TOKENS,
   checkErrorCodeDocs,
   checkErrorCodeRegistry,
+  checkErrorCodeResolution,
   checkErrorFixes,
   checkErrorFixReport,
   collectDeclaredCodes,
@@ -283,11 +284,19 @@ export { belongsToType, discoverTests, sampleFiles } from './test-select';
 export type { ReproduceOptions, RunShardsOptions, Shard } from './test-shards';
 export { planShards, reproduceFor, runShards, shardArgs } from './test-shards';
 export { availableCpus, defaultWorkers, WORKER_CEILING } from './test-workers';
-export type { CodeFixSite, CodeSite, FixSite, SourceSite } from './ts-scan';
+export type {
+  CodeFixSite,
+  CodeScan,
+  CodeSite,
+  FixSite,
+  SourceSite,
+  UnresolvedCodeSite,
+} from './ts-scan';
 export {
   isCodeRegistry,
   maskLiterals,
   scanBorrowedCodes,
+  scanCodeDeclarations,
   scanCodeFixSites,
   scanCodes,
   stripComments,

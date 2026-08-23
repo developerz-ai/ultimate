@@ -3,6 +3,7 @@ import {
   isCodeRegistry,
   maskLiterals,
   scanBorrowedCodes,
+  scanCodeDeclarations,
   scanCodes,
   stripComments,
 } from './ts-scan';
@@ -98,6 +99,121 @@ describe('scanCodes', () => {
 
   test('deduplicates a code declared twice in one file', () => {
     expect(scanCodes("code: 'X_A'; code: 'X_A';", 'thing.ts')).toHaveLength(1);
+  });
+});
+
+// Issue #277: `const STALE = 'X_…'` and then `code: STALE` is what a DRY author writes, and the
+// scan read a string literal only — so the manifest, the wiki check and `bun run gate-codes` were
+// all blind to the code, silently and in the permissive direction. `scripts/package-map-graph.ts`
+// shipped exactly that shape. Resolution and refusal are one pass, so no reader can see less.
+describe('scanCodeDeclarations · a code behind an identifier', () => {
+  test('resolves a module-scope const declared in the same file', () => {
+    const source = ["const STALE = 'X_DOC_STALE';", "raise({ code: STALE, fix: 'x help' });"].join(
+      '\n',
+    );
+    expect(scanCodes(source, 'scripts/graph.ts')).toEqual([
+      { at: 'scripts/graph.ts', line: 2, code: 'X_DOC_STALE' },
+    ]);
+    expect(scanCodeDeclarations(source, 'scripts/graph.ts').unresolved).toEqual([]);
+  });
+
+  test('resolves it exported, annotated, and frozen with `as const`', () => {
+    const source = [
+      "export const A: string = 'X_A';",
+      "const B = 'X_B' as const;",
+      'raise({ code: A });',
+      'raise({ code: B });',
+    ].join('\n');
+    expect(
+      scanCodes(source, 'a.ts')
+        .map((site) => site.code)
+        .sort(),
+    ).toEqual(['X_A', 'X_B']);
+  });
+
+  // The whole point of the change: an identifier the scan cannot resolve is REPORTED, never
+  // skipped. Skipping it is what let a real code ship undocumented under a green gate.
+  test('an identifier no module-scope const in this file gives a value is a finding', () => {
+    const scan = scanCodeDeclarations(
+      "import { STALE } from './codes';\nraise({ code: STALE });",
+      'a.ts',
+    );
+    expect(scan.sites).toEqual([]);
+    expect(scan.unresolved).toEqual([{ at: 'a.ts', line: 2, name: 'STALE' }]);
+  });
+
+  // Measured over the framework and both tracked apps: one site, `packages/realtime/src/nats-fake.ts`,
+  // where `code: STATUS_NOT_FOUND` is a NATS status number. Resolving to a non-code is an ANSWER,
+  // so it is neither a declaration nor a finding — a rule that reported it would be argued with.
+  test('an identifier that resolves to something that is not a code is neither', () => {
+    const scan = scanCodeDeclarations(
+      'const STATUS_NOT_FOUND = 404;\nsend({ code: STATUS_NOT_FOUND });',
+      'n.ts',
+    );
+    expect(scan.sites).toEqual([]);
+    expect(scan.unresolved).toEqual([]);
+  });
+
+  // A table read is how `@ultimat3/seo` and `@ultimat3/ui` raise every one of their codes, and the
+  // registry branch already collects those literals. Judging the read would report 18 working sites.
+  test('a table read, an index and a call are not judged', () => {
+    const scan = scanCodeDeclarations(
+      [
+        'raise({ code: SEO_ERROR_CODES.metaMissing });',
+        'raise({ code: TABLE[kind] });',
+        'raise({ code: CODE_OF(row) });',
+      ].join('\n'),
+      'seo.ts',
+    );
+    expect(scan.sites).toEqual([]);
+    expect(scan.unresolved).toEqual([]);
+  });
+
+  // 164 lowercase identifiers sit at a `code:` position in this tree and every one of them is a
+  // type annotation or a re-raise — `readonly code: string`, `code: opts.code`. A code CONSTANT is
+  // SCREAMING_SNAKE by house convention, so that is the only shape the refusal is aimed at.
+  test('a type annotation and a lowercase value are not findings', () => {
+    const source = [
+      'interface Finding {',
+      '  readonly code: string;',
+      '}',
+      'raise({ code: kind });',
+    ].join('\n');
+    expect(scanCodeDeclarations(source, 'a.ts').unresolved).toEqual([]);
+  });
+
+  // A member ASSIGNMENT is a projection of somebody else's code, never a declaration of one. The
+  // resolvable site sits in the same file deliberately: without it the whole file is skipped by
+  // the cheap probe, and the rule that is really under test here never runs.
+  test('`site.code = NAME` is not a declaration and not a finding', () => {
+    const source = [
+      "const STALE = 'X_A';",
+      'raise({ code: STALE });',
+      'found.code = SOMETHING;',
+    ].join('\n');
+    const scan = scanCodeDeclarations(source, 'a.ts');
+    expect(scan.sites).toEqual([{ at: 'a.ts', line: 2, code: 'X_A' }]);
+    expect(scan.unresolved).toEqual([]);
+  });
+
+  // `packages/cli/src/templates/` emits a generated app's source by the dozen inside template
+  // literals. Read as code, a template that writes a throw site would declare the app's codes here.
+  test('a `code:` inside a template literal is text, not a declaration', () => {
+    const source = ["const STALE = 'X_A';", 'export const t = `raise({ code: STALE });`;'].join(
+      '\n',
+    );
+    const scan = scanCodeDeclarations(source, 'packages/cli/src/templates/app.ts');
+    expect(scan.sites).toEqual([]);
+    expect(scan.unresolved).toEqual([]);
+  });
+
+  test('a literal is still read, and still wins where both are written', () => {
+    const source = [
+      "const STALE = 'X_A';",
+      "raise({ code: 'X_A' });",
+      'raise({ code: STALE });',
+    ].join('\n');
+    expect(scanCodes(source, 'a.ts')).toEqual([{ at: 'a.ts', line: 2, code: 'X_A' }]);
   });
 });
 

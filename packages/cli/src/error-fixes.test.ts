@@ -90,6 +90,18 @@ describe('unit · scanCodeFixSites', () => {
     expect(scanCodeFixSites(source, 'a/src/b.ts')).toEqual([]);
   });
 
+  // The same resolution `scanCodeDeclarations` performs, in the reader `x errors explain` uses:
+  // a code the manifest can see and this scan cannot is a code the CLI refuses to explain.
+  test('resolves a code written as a module-scope const, and keeps its fix', () => {
+    const source = [
+      "const STALE = 'X_DOC_STALE';",
+      "throw new UltimateError({ code: STALE, fix: 'x verify --json' });",
+    ].join('\n');
+    expect(scanCodeFixSites(source, 'a/src/b.ts')).toEqual([
+      { at: 'a/src/b.ts', line: 2, code: 'X_DOC_STALE', fix: 'x verify --json' },
+    ]);
+  });
+
   test('a top-level assignment is not an object literal, so it pairs with nothing', () => {
     const source = [
       "const code = 'X_ONE';",
