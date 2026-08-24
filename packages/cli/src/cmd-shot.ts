@@ -11,13 +11,7 @@ import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
 import type { ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
 import { DEFAULT_PAGE_TIMEOUT_MS, systemScrapeClock } from '@ultimat3/scraping';
 import { requireAppRoot } from './app-root';
-import {
-  appBrowser,
-  browserBinaryExists,
-  cdpUrlFrom,
-  cdpUrlProblem,
-  executablePathFrom,
-} from './browser-launcher';
+import { appBrowser } from './browser-launcher';
 import { islandShot, islandShotResult, refuseRouteWithIsland } from './cmd-shot-island';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, MissingPositionalError } from './errors';
@@ -25,6 +19,7 @@ import { intFlagOr, PORT_RANGE } from './flag-number';
 import type { CommandResult } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
+import { shotBrowserChoice } from './shot-browser';
 import type { BootDevServer, ShotServer } from './shot-server';
 import { allowHostsFrom, devServerFor, SHOT_DIR } from './shot-server';
 import { SETTLE_POLL_MS, settleIslands } from './shot-settle';
@@ -325,47 +320,14 @@ export const shotCommand: CliCommand = {
     const port = intFlag(ctx.args, 'port', PORT_RANGE.min, DEFAULT_PORT, PORT_RANGE.max);
     const settleMs = intFlag(ctx.args, 'settle', 0, DEFAULT_SETTLE_MS);
     const timeoutMs = intFlag(ctx.args, 'timeout', 1, DEFAULT_PAGE_TIMEOUT_MS);
-    const cdpFlag = flagString(ctx.args, 'cdp-url');
-    const browserFlag = flagString(ctx.args, 'browser');
-    // Two flags, three rules, and the third one is what a `--json` reader can trust:
-    //
-    // Both FLAGS is not a preference to resolve — one says which Chrome to START and the other
-    // says the browser is somebody else's, so honouring either ignores what the caller typed.
-    // An exported `SCRAPE_CDP_URL` is a shell-wide default rather than a typed intent, so it is
-    // never half of that conflict; and `--browser` beside it wins, because the alternative is a
-    // flag that parses, reports nothing and silently attaches somewhere else — `flag-reads.ts`
-    // exists for exactly that class and cannot see this one, since the flag IS read.
-    if (cdpFlag !== undefined && browserFlag !== undefined) {
-      throw new BadFlagError({
-        flag: 'cdp-url',
-        command: 'shot',
-        reason:
-          '--browser names a Chrome to launch here and --cdp-url attaches to one already running',
-        fix: 'x shot / --cdp-url wss://cdp.example.com/session/abc',
-      });
-    }
-    const cdpUrl = browserFlag === undefined ? cdpUrlFrom(cdpFlag, ctx.env) : undefined;
-    const cdpProblem = cdpUrl === undefined ? undefined : cdpUrlProblem(cdpUrl);
-    if (cdpProblem !== undefined) {
-      throw new BadFlagError({
-        flag: 'cdp-url',
-        command: 'shot',
-        reason: `"${cdpUrl ?? ''}" ${cdpProblem}`,
-        fix: 'x shot / --cdp-url wss://cdp.example.com/session/abc',
-      });
-    }
-    // Not read at all when attaching: the browser is the provider's, and checking this box for a
-    // binary it will never run is how a correct remote run gets refused on a machine with no Chrome.
-    const executablePath =
-      cdpUrl === undefined ? executablePathFrom(browserFlag, ctx.env) : undefined;
-    if (executablePath !== undefined && !browserBinaryExists(executablePath)) {
-      throw new BadFlagError({
-        flag: 'browser',
-        command: 'shot',
-        reason: `no executable at "${executablePath}"`,
-        fix: 'x shot / --browser /usr/bin/chromium',
-      });
-    }
+    // Which browser this run gets — start one here, or attach to one somebody else is running.
+    // Decided by `shot-browser.ts` over plain inputs, and decided HERE, before a dev server or a
+    // provider session exists to pay for a typo.
+    const { cdpUrl, executablePath } = shotBrowserChoice({
+      cdpFlag: flagString(ctx.args, 'cdp-url'),
+      browserFlag: flagString(ctx.args, 'browser'),
+      env: ctx.env,
+    });
     const out = flagString(ctx.args, 'out');
     const boot = (): Promise<ShotServer> => devServerFor(root, ctx.env, port);
     if (island !== undefined && island !== '') {

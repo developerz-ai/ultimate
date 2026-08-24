@@ -187,6 +187,7 @@ ones a running app will not produce on request. `--island` takes them, one addre
 | `island-harness-script.ts` | what runs before the chunk does: the sealed network, the pinned clock, the readiness watch |
 | `island-harness-route.ts` | `GET /_x/island`, mounted by `x dev` |
 | `island-shot.ts` | the capture loop, the assertions before each shutter, the missing-shot gate |
+| `shot-browser.ts` | which browser a run gets — launch one here, or attach over `--cdp-url` / `SCRAPE_CDP_URL` — as three rules over plain inputs |
 | `island-verdict.ts` | the per-state verdict — a PNG cannot say the component threw or logged |
 | `cmd-shot-island.ts` | the flags, and the one browser per declared viewport |
 
