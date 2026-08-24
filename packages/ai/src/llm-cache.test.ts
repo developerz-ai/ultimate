@@ -100,6 +100,53 @@ describe('the semantic cache', () => {
     expect(seen.length).toBe(2);
   });
 
+  /**
+   * The reported symptom, and the reason this is a partition rather than a prompt fix: the model
+   * is TOLD the locale (`Write the summary in the locale {{locale}}`), so it answers correctly —
+   * and the cache then hands one reader the other's language. `lookup` is a cosine nearest
+   * neighbour, and `en` against `es` is one token in a prompt carrying a whole post: measured
+   * with this package's own `HashEmbedder`, two renderings of the reference app's summarize
+   * template differing ONLY in that token sit at **0.9986**, against a declared threshold of
+   * 0.97. No threshold an app can defend separates them — 0.999 would also lose an honest repeat.
+   */
+  test('two locales are two answers, so a summary never comes back in the wrong language', async () => {
+    const { provider, seen } = stub(ANSWER);
+    install(provider);
+    const summarize = declare(promptFor(), { cache: { semantic: { threshold: 0.5 } } });
+
+    await summarize({ postId: POST_ID }, { ctx: ctxFor('ada', 'org-a', 'es') });
+    await summarize({ postId: POST_ID }, { ctx: ctxFor('ada', 'org-a', 'en') });
+    expect(seen.length).toBe(2);
+  });
+
+  test('one locale still hits — the partition narrows, it does not disable', async () => {
+    const { provider, seen } = stub(ANSWER);
+    install(provider);
+    const summarize = declare(promptFor(), { cache: { semantic: { threshold: 0.5 } } });
+
+    await summarize({ postId: POST_ID }, { ctx: ctxFor('ada', 'org-a', 'es') });
+    await summarize({ postId: POST_ID }, { ctx: ctxFor('ada', 'org-a', 'es') });
+    expect(seen.length).toBe(1);
+  });
+
+  /**
+   * A declared `scope` answers "who may share this answer". The locale is not that question — it
+   * is part of what the answer IS, like the prompt version — so it partitions a written-down
+   * shared store too. An app that writes `scope: () => 'global'` is stating that every caller may
+   * read one another's summaries, never that a Spanish one will do for an English reader.
+   */
+  test('a written-down shared cache is still not shared ACROSS locales', async () => {
+    const { provider, seen } = stub(ANSWER);
+    install(provider);
+    const summarize = declare(promptFor(), {
+      cache: { semantic: { threshold: 0.5, scope: () => 'global' } },
+    });
+
+    await summarize({ postId: POST_ID }, { ctx: ctxFor('ada', 'org-a', 'es') });
+    await summarize({ postId: POST_ID }, { ctx: ctxFor('grace', 'org-b', 'en') });
+    expect(seen.length).toBe(2);
+  });
+
   test('a shared cache is possible, and has to be written down', async () => {
     const { provider, seen } = stub(ANSWER);
     install(provider);

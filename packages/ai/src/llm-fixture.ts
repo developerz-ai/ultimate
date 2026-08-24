@@ -84,8 +84,11 @@ export function promptFor(id?: string, version = '1.0.0'): Prompt<{ postId: stri
 }
 
 /** An authenticated caller. The default scope is derived from exactly these three fields. */
-export function ctxFor(id: string, orgId: string): Ctx {
-  return createContext({ actor: userActor({ id, orgId }) });
+export function ctxFor(id: string, orgId: string, locale?: string): Ctx {
+  return createContext({
+    actor: userActor({ id, orgId }),
+    ...(locale === undefined ? {} : { locale }),
+  });
 }
 
 let declared = 0;

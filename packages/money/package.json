@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/money",
-  "version": "11.2.0",
+  "version": "11.3.0",
   "description": "Integer minor units with an attached currency: arithmetic, allocation, rounding, Intl formatting",
   "license": "MIT",
   "type": "module",
@@ -34,7 +34,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "11.2.0",
-    "@ultimat3/schema": "11.2.0"
+    "@ultimat3/core": "11.3.0",
+    "@ultimat3/schema": "11.3.0"
   }
 }

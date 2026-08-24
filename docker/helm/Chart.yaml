@@ -9,8 +9,8 @@ type: application
 # `scripts/release.ts` rewrites both on every release through `setChartVersions` — a chart is not a
 # workspace, so the manifest loop cannot reach it and the script writes it by path instead. Never
 # hand-edit them: the chart moving on its own is how `appVersion` named an image tag nobody pushed.
-version: 11.2.0
-appVersion: "11.2.0"
+version: 11.3.0
+appVersion: "11.3.0"
 kubeVersion: ">=1.27.0-0"
 keywords: [bun, postgres, solidjs, ultimate]
 home: https://ultimate.dev

@@ -155,12 +155,16 @@ export const summarize = llm({
 | Aspect | Rule |
 |---|---|
 | Store | pgvector table, one row per (prompt version, embedded input, scope) |
-| Key | embedding of the rendered prompt + model id + **prompt version** |
+| Key | embedding of the rendered prompt + model id + **prompt version** + **request locale** |
 | Hit | cosine similarity >= `threshold`; default 0.97, never below 0.9 |
-| Scope | required — tenant-scoped by default so one org never reads another's completion |
+| Scope | optional — the calling **actor** by default, so one org never reads another's completion. Widening is written down: `scope: () => 'global'` |
 | Bypass | `temperature > 0` results are cached but flagged; `cache: false` for anything user-visible-and-unique |
 | Invalidation | participates in the same tag graph; bumping the prompt version invalidates wholesale |
 | Metrics | hit rate, tokens saved, cost saved — in `/_x` and `x ai cache --json` |
+
+**The locale is part of the key, and not part of the scope** — `As of 2026-08-24`. A prompt that takes `locale` as a var differs by one token between languages while carrying a whole document, so the two rendered prompts are near-identical to an embedder: measured over the reference app's summarize template, **0.9986**, against the `threshold: 0.97` in the snippet above. Before this, whichever language asked first was served to everyone — an English reader got the Spanish summary, and the model had done nothing wrong.
+
+No threshold fixes that, because the same number has to keep an honest repeat *above* it. So the locale sits in the unconditional half of the store key, beside the prompt version: a `scope` answers *who may share this answer*, and a locale is part of what the answer **is**. A written-down `scope: () => 'global'` is still partitioned by locale — declaring a shared store says your callers may read one another's summaries, never that a Spanish one will do for an English reader. Pages key by locale for the same reason ([ISR](Rendering)).
 
 Also cached exactly (tier 3, not semantic): embeddings themselves, keyed by content hash + model. Re-embedding unchanged text is pure waste. See [MCP and AI](MCP-And-AI).
 

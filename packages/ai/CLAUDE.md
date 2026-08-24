@@ -80,6 +80,17 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
 - Semantic scopes are separate cache INSTANCES, never a filter over a shared one — cosine
   similarity has no notion of a tenant. The instance key carries the prompt hash too, which is
   what makes a version bump invalidate the cache.
+- **The instance key carries `ctx.locale` too, `As of 2026-08-24`, and it sits with the prompt hash
+  rather than with the scope.** A prompt taking `locale` as a var — the reference app's `summarize`
+  does, and the model obeys it — differs by ONE token between languages while carrying a whole
+  document, so the two rendered prompts are neighbours: measured with this package's own
+  `HashEmbedder` over that template, **0.9986**, against the declaration's `threshold: 0.97`. The
+  Spanish summary was a hit for an English reader, and the model was never wrong — the cache was.
+  No threshold repairs it, because the same number has to keep an honest repeat above it. It is in
+  the UNCONDITIONAL half of the key because a `scope` answers "who may share this answer" and a
+  locale is part of what the answer IS: an app writing `scope: () => 'global'` is saying its
+  callers may read one another's summaries, never that a Spanish one will do. Same rule
+  `@ultimat3/render` applies to ISR.
 - **The default scope is the calling ACTOR, and `scope` receives `{ input, ctx }`** (`As of
   2026-08`). It defaulted to the literal string `'global'` and took the bare `input`, so the rule
   in the bullet above was contradicted by the very default that shipped: `cache: { semantic: { ttl:

@@ -6,6 +6,13 @@
  * carries the prompt VERSION as well — which is what makes "editing a prompt requires a version
  * bump" invalidate the cache: a bumped version reaches a different store, so an old answer cannot
  * survive a prompt edit no matter how similar the text.
+ *
+ * It carries the request LOCALE for the same structural reason, `As of 2026-08-24`. A prompt that
+ * takes `locale` as a var — the reference app's `summarize` does, and the model obeys it — differs
+ * by one token between languages while carrying a whole document, so the two renderings are
+ * neighbours: measured with this package's own `HashEmbedder` over that template, **0.9986**
+ * against a declared threshold of `0.97`. The Spanish answer was therefore a hit for an English
+ * reader. No threshold fixes it, because the same number has to keep an honest repeat above it.
  */
 
 import type { Ctx } from '@ultimat3/core';
@@ -62,6 +69,10 @@ export interface PromptCache {
  * same reason it is JSON rather than a joined string — an actor id is app data and may carry any
  * separator, and a value that can spell a boundary can spell somebody else's.
  *
+ * The locale is deliberately NOT here. This function is the DEFAULT a declaration replaces by
+ * writing its own `scope`, and the locale has to survive that — so it lives in the unconditional
+ * half of the store key, beside the prompt hash.
+ *
  * `ctx.actor` is never absent (`createContext` defaults it to `anonymousActor()`), so every
  * anonymous caller shares one partition — which is what the anonymous actor already means
  * everywhere else in the framework.
@@ -92,7 +103,14 @@ export async function openCache<TParsed>(
   const semantic = args.cache?.semantic;
   if (semantic === undefined) return undefined;
   const scope = semantic.scope?.({ input: args.input, ctx: args.ctx }) ?? actorScope(args.ctx);
-  const store = semanticCacheFor(`${args.prompt.ref}#${args.prompt.hash}::${scope}`);
+  // The locale sits with the prompt HASH and not with the scope, on purpose: a scope answers "who
+  // may share this answer" and the locale is part of what the answer IS — so a written-down
+  // `scope: () => 'global'` is still partitioned by it. An app declaring a shared store is saying
+  // its callers may read one another's summaries, never that a Spanish one will do for an English
+  // reader. `@ultimat3/render`'s ISR keys by locale for exactly this reason.
+  const store = semanticCacheFor(
+    `${args.prompt.ref}#${args.prompt.hash}@${args.ctx.locale}::${scope}`,
+  );
   const embedding = Array.from(await embedOne(aiEmbedder(), args.rendered));
   const ttlMs = semantic.ttl === undefined ? undefined : parseDuration(semantic.ttl);
   return {

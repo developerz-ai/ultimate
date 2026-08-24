@@ -8,6 +8,25 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 11.3.0 - 2026-08-24
+
+### Fixed
+
+- **`llm()`'s semantic cache answered in the wrong language.** Reported against the reference app:
+  the summary comes back in Spanish for an English reader. The model was never wrong — it is told
+  `Write the summary in the locale {{locale}}` and it obeys. The cache was: `lookup` is a cosine
+  nearest neighbour, and two renderings of one prompt differing ONLY in that token, while carrying
+  a whole post, are neighbours — measured with this package's own `HashEmbedder` over the reference
+  app's template, **0.9986**, against the declared `threshold: 0.97`. So whichever language was
+  asked for first was served to everyone. No threshold repairs it: the same number has to keep an
+  honest repeat above it. The store key now carries `ctx.locale`, in the **unconditional** half
+  beside the prompt hash rather than in the scope — a `scope` answers "who may share this answer",
+  and a locale is part of what the answer IS, so a written-down `scope: () => 'global'` is
+  partitioned by it too. `@ultimat3/render`'s ISR keys by locale for the same reason. Two failing
+  tests came first, and both go red again if the key loses the locale.
+
 ### Added
 
 - **`x shot --cdp-url <ws://…>` — photograph a route through a browser this box could not have
@@ -70,6 +89,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   statement runs and `job()` throws `X_INVARIANT`. `cli/compile-externals.ts` said Bun 1.3 is "what
   CI pins and what `docker/Dockerfile` builds on" — both moved to 1.4 on 2026-08-20, so every
   builder now takes the branch the comment describes as the other one.
+
+### Commits
+
+- feat(cli): x shot attaches to a browser it did not start (#344)
+- fix(cli): an island chunk is built to be shipped, and every Bun-stamped claim is re-measured on the pinned series (#341 #342) (#343)
 
 ## 11.2.0 - 2026-08-23
 
