@@ -162,6 +162,11 @@ every primitive declaration, where `scripts/config-readers.ts` only ever saw `Ap
   `x doctor` answered "shippable" while probing only the web port and never the database.
 - **`@ultimat3/schema` exports `charCount`**; `@ultimat3/mcp` now depends on `@ultimat3/http`.
 
+### Commits
+
+- feat: 12.0.0 — batteries for scale, and the gaps mechanised shut (#347)
+- fix(db): extension-owned relations, read replicas, and index access methods (#340) (#346)
+
 ## 11.3.0 - 2026-08-24
 
 ### Fixed
