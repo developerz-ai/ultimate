@@ -174,12 +174,23 @@ stays the only rule that reads the input. A name this server does not project is
 | HTTP | `mcpHttpRoute({ server, resolveToken })` → `POST /mcp` | `Authorization: Bearer <token>` → `Actor { kind: 'agent' }` |
 | stdio | `serveStdio({ server, caller })` | none — the peer already owns the shell |
 
-The HTTP transport exports a route *descriptor*, not a mounted handler: `@ultimat3/http`
-owns the lifecycle, and the descriptor stays drivable from a bare `Request` in a test. It
-carries `rateLimitClass(body)` because all MCP traffic is one URL — a per-route bucket would
-charge `initialize` to the write bucket and throttle an agent on its handshake.
+The HTTP transport exports a route *descriptor*, not a mounted handler: a host owns the lifecycle,
+and the descriptor stays drivable from a bare `Request` in a test. It carries
+`rateLimitClass(body)` because all MCP traffic is one URL — a per-route bucket would charge
+`initialize` to the write bucket and throttle an agent on its handshake.
 
-Reads: 120/min. Writes: 20/min. Unresolvable calls bill the write bucket (fail-closed).
+Reads: 120/min per caller. Writes: 20/min. Unresolvable calls bill the write bucket (fail-closed).
+
+**`handle` enforces those numbers itself, `As of 2026-08-24`** — they were published on the
+descriptor and applied by no mount point before that, so the ceiling was really Bun's accept rate.
+It cannot be done from outside: `rateLimitClass(body)` takes an already-parsed body and `handle` is
+the only thing that parses one. The bucket is `@ultimat3/http`'s, keyed per actor per class; over
+the limit is `429` + `Retry-After` + `X_MCP_RATE_LIMITED`.
+
+| Knob | Where | Default |
+|---|---|---|
+| the numbers | `mcpHttpRoute({ rateLimits })` · `defineAppMcp({ rateLimits })` | `MCP_RATE_LIMITS` |
+| where they are counted | `mcpHttpRoute({ rateLimitStore })` · `defineAppMcp({ rateLimitStore })` | a per-**process** memory store — N replicas behind one URL each enforce the full allowance, so a fleet passes `postgresRateLimitStore({ executor })` |
 
 ## Resources
 
@@ -214,3 +225,4 @@ inside their own handler.
 | `X_MCP_QUERY_REJECTED` | `db.query` given anything but one read-only statement |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a production or otherwise non-branch database |
 | `X_MCP_RESOURCE_DUPLICATE` | two resources claim one `ultimate://` URI — refused at registration, as a duplicate tool name is |
+| `X_MCP_RATE_LIMITED` | the caller spent its per-minute allowance for this request's class. Its own code rather than `@ultimat3/http`'s `X_RATE_LIMITED` because the KNOB differs — `rateLimits` on the route, never `rateLimit.buckets` in `app.config.ts` |

@@ -162,7 +162,7 @@ describe('useLive', () => {
     });
     expect(feed()).toEqual(rows);
     expect(feed.state()).toBe('live');
-    expect(feed.cursor()?.count).toBe(1);
+    expect(feed.cursor()?.ids).toEqual(['p1']);
 
     socket.deliver({
       type: 'patch',

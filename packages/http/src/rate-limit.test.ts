@@ -9,8 +9,9 @@ import {
   DEFAULT_RATE_LIMIT,
   memoryRateLimitStore,
   type RateLimitConfig,
-  rateLimitKey,
+  rateLimitSpends,
   resolveRateLimitConfig,
+  TENANT_SCOPE,
   toBucket,
 } from './rate-limit';
 
@@ -19,6 +20,7 @@ const limiterAt = (clock: FrozenClock, capacity: number, refillPerSecond: number
     config: {
       enabled: true,
       defaultBucket: 'default',
+      tenantBucket: null,
       scope: 'process',
       buckets: { default: { capacity, refillPerSecond } },
     },
@@ -38,6 +40,7 @@ describe('the clock is injected, never ambient', () => {
       config: {
         enabled: true,
         defaultBucket: 'default',
+        tenantBucket: null,
         scope: 'process',
         buckets: { default: { capacity: 2, refillPerSecond: 1 } },
       },
@@ -63,6 +66,7 @@ describe('the clock is injected, never ambient', () => {
       config: {
         enabled: true,
         defaultBucket: 'default',
+        tenantBucket: null,
         scope: 'process',
         buckets: { default: { capacity: 1, refillPerSecond: 1 } },
       },
@@ -248,7 +252,7 @@ describe('scope is declared, and checked once', () => {
     // Both exits are in the fix line: install a shared store, or accept per-replica limits.
     if (thrown instanceof HttpError) {
       expect(thrown.fix).toContain('rateLimitStore');
-      expect(thrown.fix).toContain("http.rateLimit.scope: 'process'");
+      expect(thrown.fix).toContain("scope: 'process'");
     }
   });
 
@@ -272,19 +276,58 @@ describe('scope is declared, and checked once', () => {
 });
 
 describe('keys', () => {
-  test('actor beats org beats ip, so one user cannot drain a tenant', () => {
-    expect(
-      rateLimitKey({ actorId: 'a1', orgId: 'o1', ip: '1.2.3.4', routeName: 'posts.create' }),
-    ).toBe('posts.create|actor:a1');
-    expect(rateLimitKey({ actorId: null, orgId: 'o1', ip: '1.2.3.4', routeName: 'r' })).toBe(
+  const NO_TENANT = { route: 'default', tenant: null } as const;
+  const keys = (
+    parts: Parameters<typeof rateLimitSpends>[0],
+    buckets: Parameters<typeof rateLimitSpends>[1] = NO_TENANT,
+  ): readonly string[] => rateLimitSpends(parts, buckets).map((spend) => spend.key);
+
+  test('the caller key is actor, then org, then ip', () => {
+    expect(keys({ actorId: 'a1', orgId: 'o1', ip: '1.2.3.4', routeName: 'posts.create' })).toEqual([
+      'posts.create|actor:a1',
+    ]);
+    expect(keys({ actorId: null, orgId: 'o1', ip: '1.2.3.4', routeName: 'r' })).toEqual([
       'r|org:o1',
-    );
-    expect(rateLimitKey({ actorId: null, orgId: null, ip: '1.2.3.4', routeName: 'r' })).toBe(
+    ]);
+    expect(keys({ actorId: null, orgId: null, ip: '1.2.3.4', routeName: 'r' })).toEqual([
       'r|ip:1.2.3.4',
-    );
-    expect(rateLimitKey({ actorId: null, orgId: null, ip: null, routeName: 'r' })).toBe(
+    ]);
+    expect(keys({ actorId: null, orgId: null, ip: null, routeName: 'r' })).toEqual([
       'r|ip:unknown',
+    ]);
+  });
+
+  // The finding this function was rewritten for: precedence used to be EXCLUSIVE, so an
+  // authenticated request never touched an org bucket and a tenant's seats were only ever limited
+  // one at a time. Two actors, one org, one shared key.
+  test('two actors in one org spend their own bucket AND the same tenant bucket', () => {
+    const tenant = { route: 'default', tenant: 'tenant' } as const;
+    expect(
+      keys({ actorId: 'a1', orgId: 'o1', ip: null, routeName: 'posts.create' }, tenant),
+    ).toEqual(['posts.create|actor:a1', `${TENANT_SCOPE}|org:o1`]);
+    expect(keys({ actorId: 'a2', orgId: 'o1', ip: null, routeName: 'posts.list' }, tenant)).toEqual(
+      ['posts.list|actor:a2', `${TENANT_SCOPE}|org:o1`],
     );
+  });
+
+  // Not `${routeName}|org:` — a per-route tenant key hands one org its whole allowance once per
+  // route, which is the same number multiplied by the route table rather than a tenant cap.
+  test('the tenant key is not scoped to the route', () => {
+    const spends = rateLimitSpends(
+      { actorId: 'a1', orgId: 'o1', ip: null, routeName: 'posts.create' },
+      { route: 'default', tenant: 'tenant' },
+    );
+    expect(spends[1]?.key).not.toContain('posts.create');
+    expect(spends[1]?.bucket).toBe('tenant');
+  });
+
+  test('no tenant bucket declared, or no org on the caller, is one key', () => {
+    expect(
+      keys({ actorId: 'a1', orgId: 'o1', ip: null, routeName: 'r' }, { route: 'r', tenant: null }),
+    ).toHaveLength(1);
+    expect(
+      keys({ actorId: 'a1', orgId: null, ip: null, routeName: 'r' }, { route: 'r', tenant: 't' }),
+    ).toHaveLength(1);
   });
 
   test('the shipped defaults keep auth endpoints far slower than reads', () => {
@@ -314,7 +357,7 @@ describe('resolveRateLimitConfig', () => {
         return thrown as HttpError;
       }
     })();
-    expect(error?.fix).toContain("http.rateLimit.scope: 'process'");
+    expect(error?.fix).toContain("scope: 'process'");
     expect(error?.fix).toContain('rateLimitStore');
   });
 
@@ -380,7 +423,7 @@ describe('toBucket', () => {
 describe('the bucket table is indexed, never walked up the prototype chain', () => {
   const limiterOver = (buckets: Record<string, Bucket>, defaultBucket = 'default') =>
     createRateLimiter({
-      config: { enabled: true, defaultBucket, scope: 'process', buckets },
+      config: { enabled: true, defaultBucket, tenantBucket: null, scope: 'process', buckets },
     });
 
   test('a name every object answers to falls through to the default bucket', async () => {

@@ -34,7 +34,10 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter |
 | `policy-gate.ts` | **the only** runtime edge to `@ultimat3/policy` (`errors.ts` takes `SurfaceDenial` as a type, which erases) |
 | `cache-gate.ts` | the post-commit bust — **the only** file that calls `invalidateTags` |
-| `audit.ts` | the audit seam: `AuditRecord`, `AuditSink`, the memory sink, the installed-sink store |
+| `audit.ts` | the audit seam: `AuditRecord`, `AuditSink`, the installed-sink store |
+| `audit-memory.ts` | the process default: a bounded ring that DROPS, and counts what it dropped |
+| `audit-postgres.ts` | the DURABLE sink — one append-only `x_audit` table, one insert per record |
+| `audit-input.ts` | what may be written DOWN: an `input` redacted through core's table and made JSON-representable on every path |
 | `audit-gate.ts` | **the only** file that calls a sink, and where the two failure policies live |
 | `type-pins.ts` | compile-time assertions `tsc` checks — what the erased view projects, and why `client()` is not part of it |
 | `naming.ts`, `validate.ts`, `json-schema.ts`, `stable.ts` | pure helpers. `stable.ts` is the DOCUMENT serializer plus a re-export of core's `isJsonObject` — the hash form is `@ultimat3/core`'s `canonicalJson`/`fingerprint` |
@@ -339,10 +342,19 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   around its own handler could ever see one. What reaches the sink is what `invoke` already holds
   (`at` from `ctx.now()`, the name, the mutator brand, the surface, the whole `ctx`, the parsed
   input, the namespaced idempotency key, `replayed`, the outcome, the failure code). What does
-  **not** ship, ever: an audit entity, a schema, a retention policy, a storage backend, a hash
-  chain, a subject index, or an opinion on what "who" means under impersonation — four apps model
-  those four ways, so by axiom 8's own test they are business convention and shipping one makes
-  three of them wrong. `result` is absent for the same reason and one more: a handler's return is
+  **not** ship, ever: an audit entity, a retention policy, a hash chain, a subject index, or an
+  opinion on what "who" means under impersonation — four apps model those four ways, so by axiom
+  8's own test they are business convention and shipping one makes three of them wrong.
+  **"a storage backend" was on that list until 2026-08-24 and is off it**, because the list was
+  answering a different question than it appeared to. What four apps model four ways is the ROW —
+  which of their own facts it carries, how long they keep it, whether it chains. Where the record
+  the FRAMEWORK already defines is put is not one of those: `x_audit`'s columns are the fields of
+  `AuditRecord` and nothing else, which is the same relationship `idempotency-postgres.ts` has to
+  `IdempotencyRecord` and `@ultimat3/http`'s `postgresRateLimitStore` to its `Bucket`. Leaving it
+  off meant the only sink that shipped was a ring that drops, so the shortest edit clearing
+  `X_AUDIT_SINK_MISSING` was `setAuditSink(memoryAuditSink())` — compliant in dev, silently
+  amnesiac in production, which `docs/idea/20-large-app-readiness.md` scores as **Ship**. An app
+  that wants columns of its own still writes its own sink; the seam is one method. `result` is absent for the same reason and one more: a handler's return is
   reachable from the handler itself, so shipping it would be this package deciding a row carries
   an after-image, which is `@ultimat3/admin`'s `diff` convention arriving one tier down.
 - **The audit vocabulary is `@ultimat3/admin`'s, shared by name and not by import.** `AuditOutcome`
@@ -353,6 +365,47 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   Unifying them means lifting the vocabulary into `@ultimat3/core` — the only tier both reach —
   and rebuilding `admin/audit.ts` on this seam. Not done here: `admin` is a shipped public API
   and its `AuditEntry` is a different shape.
+- **The memory sink DROPS, and both halves of that sentence are enforced.** It was a plain array
+  with a `push` — the one memory implementation in the framework with no cap, beside five that
+  have one (`memoryRateLimitStore`, `MemoryIdempotencyStore`, `createLimiter`,
+  `createTotpReplayGuard`, `createMemoryEventBus`) — and a record pins a whole `Ctx`, so at 50
+  audited writes a second it is 4.3M immortal records a day and the pod OOMs holding the trail it
+  was retaining. It is now a ring at `DEFAULT_MAX_AUDIT_RECORDS`, evicting the OLDEST (the
+  direction `createMemoryEventBus` evicts in: refusing new writes would answer "nothing has
+  happened since" for a process that has been serving all day). `dropped` is what makes "it drops"
+  checkable in a running process instead of a sentence in a header — a non-zero count on a real
+  deployment is the sink saying it is the wrong one. A `maxRecords` of `0`, negative or `NaN`
+  falls back to the default: there is no spelling of "no bound", because that spelling was the bug.
+- **What a DURABLE sink may write down is decided in `audit-input.ts`, and it is two rules.**
+  A record's `input` is the PARSED input, which is exactly where a password, a bearer token or a
+  card number lives, so `postgresAuditSink` redacts it through `@ultimat3/core`'s `isRedactedKey`
+  — the SAME table `defineEnv({ secret: true })` extends, never a copy of the list, because a copy
+  is how a value that is `[redacted]` in a log line becomes plaintext in a table. `isSecret`
+  redacts by VALUE beside it, for a credential travelling under a harmless name. The second rule
+  is that the answer is always JSON-representable: a `bigint`, a `NaN`, a function and a cycle all
+  become a NAMED marker rather than a throw, because `auditSettled` turns a sink throw into a
+  failed invocation for a handler that has already committed — and because `JSON.stringify` over a
+  cycle takes ~4.6s in Bun 1.4 before it raises, so leaving the detection to the serializer stalls
+  the audited path either way. `toJSON` is never called: it is app code in the frame that owes the
+  caller a record.
+- **The `Ctx` is never walked, and never will be.** `createContext` spreads every installed
+  service ONTO the context object and an HTTP surface's value is a `RequestContext` carrying the
+  request's own `Authorization` and `Cookie`, so a projection that iterated it would write an
+  app's database clients and its caller's credentials into an audit table. `postgresAuditSink`
+  reads an allow-list of framework-owned fields (`requestId`, `traceId`, `locale`, `tz`,
+  `buildId`, `role`, and the actor's `id`/`kind`/`orgId`/`onBehalfOf`) and nothing else.
+  `failure.error` is not among them — the row keeps `failure.code`, because a throwable's stack is
+  worth reading and is not worth storing, and rendering one into a column is the trap
+  `renderThrowable` exists for.
+- **`x_audit` ships no purge, and it is the only framework table that does not.**
+  `x_idempotency` and `x_rate_limit` both ship one because a stale row there is meaningless; a
+  stale audit row IS the record, and "how long" is a legal answer that is seven years for one app
+  and thirty days for the next. Shipping a `delete` would be shipping one of those answers.
+- **`SQL_AUDIT_INSERT` is positional, so its parameter order is pinned by a test and not by a
+  type.** `audit-parity.test.ts` names every column once and compares both sinks' answer for every
+  string field with a DIFFERENT value per field — two columns holding the same word cannot catch a
+  slip, and a `locale` in the `tz` slot type-checks perfectly. Proven by mutation: the first draft
+  of that test did NOT catch a swapped `locale`/`tz` and was widened until it did.
 - **A sink may not silently swallow, and the two failure policies are deliberate opposites.**
   `X_AUDIT_SINK_MISSING` is raised *before* the input parse, so an audited action nothing can
   record refuses with no committed write behind it — there is deliberately no logger-backed

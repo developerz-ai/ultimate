@@ -148,7 +148,7 @@ Every scaffolded app therefore ships, on day one:
 | Drive its own app | the app's own MCP server, already scaffolded (`ai.mcp.expose`), with **the same policy objects** as HTTP | a second authz path |
 | Run anything operational | `scripts/<resource>/<verb>.ts` + `scripts/help.ts` | improvising a throwaway script every session |
 | Know the house rules | `CLAUDE.md` + `AGENTS.md` (already scaffolded) + `.claude/agents` + `.claude/commands` | prose nobody loads |
-| Ship safely | `x verify` — one command, 19 steps, green means shippable | a checklist |
+| Ship safely | `x verify` — one command, 20 steps, green means shippable | a checklist |
 
 The `.mcp.json` is committed, secrets referenced as `${VAR}` and never inlined, and every `${VAR}`
 lands in `.env.example` in the same commit.

@@ -105,7 +105,12 @@ export const bindColumn = (column: AnyColumn, table: string, property: string): 
         'build a new column instead of sharing one between entities',
     );
   }
-  const binding: Binding = { table, property, name: columnName(property, column.$meta) };
+  // The DERIVED name too, not only a declared one: `snake(property)` lower-cases and nothing else.
+  const binding: Binding = {
+    table,
+    property,
+    name: assertColumnName(columnName(property, column.$meta)),
+  };
   bindings.set(column, binding);
   return binding;
 };
@@ -203,6 +208,15 @@ export const makeColumn = <T, Optional extends boolean>(
  * identifier. `[a-z_][a-z0-9_$]*`, which is what an unquoted Postgres identifier may be, and the
  * bound is the same 63 bytes the server truncates at — a longer one silently addresses a
  * different column.
+ *
+ * **Every physical name, not only a declared one — `As of 2026-08-24`.** `columnName` is
+ * `meta.name ?? snake(property)` and for three majors only the first branch reached here, so a
+ * PROPERTY name went into the DDL untouched: `snake()` lower-cases and does nothing else, and a
+ * column named `n" , "x" text); drop table t; --` produced a `create table` carrying a real
+ * `drop table` (measured through `generateMigration`). Quoting is not a defence against a value
+ * that can close the quote, which is what the paragraph above already said. `bindColumn` is where
+ * the derived name is checked, because that runs once per column at `entity()` rather than on
+ * every statement.
  */
 export const assertColumnName = (name: string): string => {
   if (!/^[a-z_][a-z0-9_$]*$/.test(name) || name.length > 63) {

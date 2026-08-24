@@ -4,6 +4,7 @@
 // this one call.
 
 import { renderThrowable } from '@ultimat3/core';
+import type { IndexMethod } from '@ultimat3/db';
 import { describeValue, type StandardSchemaV1 } from '@ultimat3/schema';
 import { entityNow } from './clock';
 import { assertColumnName, bindColumn, columnName, moneyColumns } from './column';
@@ -30,6 +31,21 @@ export interface IndexInit<C extends ColumnMap> {
   readonly unique?: boolean;
   /** Partial index predicate, written in the same language as an invariant. */
   readonly where?: (columns: InvariantColumns<C>) => Expr;
+  /**
+   * The access method. Omitted is `btree`, which is Postgres' own default and what every index
+   * declared before this existed is — so an entity that names none emits the statement it always
+   * emitted and nothing regenerates.
+   *
+   * `'gin'` is the one with a caller, and it is the whole point of the containment operators:
+   * measured on Postgres 16 over 20,000 rows, `tags @> …`, `tags <@ …`, `tags && …` and
+   * `data @> …` are each a Bitmap Index Scan with one and a Seq Scan without. The set is
+   * `@ultimat3/db`'s `INDEX_METHODS`, imported rather than restated — one declaration of one fact.
+   *
+   * Two Postgres rules ride with it and both are refused HERE, where the author is, rather than at
+   * `x db gen` or inside `ROLE=migrate` as the server's own syntax error: a GIN index cannot be
+   * unique and cannot order its keys.
+   */
+  readonly using?: IndexMethod;
 }
 
 export interface EntityInit<C extends ColumnMap> {
@@ -109,8 +125,87 @@ export type Entity<Row, C extends ColumnMap = ColumnMap> = EntityCore<Row, C> & 
 
 const MONEY_PARTS = new Set(['minor', 'currency']);
 
-const indexName = (table: string, columns: readonly string[], unique: boolean): string =>
-  `${table}_${columns.join('_')}_${unique ? 'key' : 'idx'}`;
+/**
+ * What separates two indexes on the SAME columns: the predicate and the direction. Eight hex
+ * characters of sha256 over both — deterministic across processes, so a name is a property of the
+ * declaration and never of the run that generated it.
+ */
+/**
+ * What separates two indexes on the SAME columns: the predicate, the direction and the ACCESS
+ * METHOD. Eight hex characters of sha256 over all three — deterministic across processes, so a
+ * name is a property of the declaration and never of the run that generated it.
+ *
+ * The method belongs here for exactly the reason `where` does. A btree on an `arrayOf()` column
+ * answers `=` and an ordering; a GIN on the same column answers `@>` / `<@` / `&&`. They are two
+ * distinct indexes, and without the method in the name both are `<table>_<cols>_idx` — where the
+ * dedup below drops one in silence (the defect this discriminator was added for) or, since that
+ * dedup is now on the whole definition, two `create index` statements share one name and the
+ * migration is `42P07`.
+ */
+const indexDiscriminator = (
+  order: string | undefined,
+  where: string | null,
+  using: string | undefined,
+): string =>
+  new Bun.CryptoHasher('sha256')
+    // The method is APPENDED only when one was declared, never as an empty field: every name this
+    // function has ever minted for a partial or ordered index is therefore unchanged by the method
+    // existing, and an index that declares no method is byte-identical to the one it was.
+    .update(`${order ?? ''}|${where ?? ''}${using === undefined ? '' : `|${using}`}`)
+    .digest('hex')
+    .slice(0, 8);
+
+/**
+ * `<table>_<columns>_idx`, plus a discriminator when — and only when — the index carries a
+ * predicate, a direction or a non-default access method.
+ *
+ * Only then, because the plain name is load-bearing in two places: `unique()` on a column is an
+ * inline column clause and Postgres names the index it creates exactly `<table>_<column>_key`, so
+ * a discriminator there would make the generator emit a second `create unique index` for an index
+ * that already exists (`42P07`); and a foreign key's own index is deduped against a hand-declared
+ * one by this name.
+ *
+ * Without it, two DIFFERENT partial indexes on one column were one name — `posts_author_id_idx`
+ * for both `where status = 'published'` and `where status = 'draft'` — and the dedup below dropped
+ * the second with no error, no warning and no drift finding, since a declared index is matched by
+ * name.
+ */
+/**
+ * `NAMEDATALEN - 1`. Postgres truncates a longer identifier and says NOTHING, so two index names
+ * sharing their first 63 bytes become one index on the server — the same silent collapse the
+ * discriminator above exists to prevent, one layer down, and invisible to a drift check comparing
+ * DECLARED names because those still differ. Bytes and not characters: 63 is what the server
+ * counts, and `.length` would stop seeing the truncation the moment a name is not ASCII.
+ */
+const MAX_IDENTIFIER_BYTES = 63;
+
+const byteLength = (value: string): number => new TextEncoder().encode(value).length;
+
+const indexName = (
+  entityName: string,
+  table: string,
+  columns: readonly string[],
+  unique: boolean,
+  order?: string | undefined,
+  where: string | null = null,
+  using?: IndexMethod | undefined,
+): string => {
+  const suffix = unique ? 'key' : 'idx';
+  const base = `${table}_${columns.join('_')}`;
+  const plain = order === undefined && where === null && using === undefined;
+  const name = plain
+    ? `${base}_${suffix}`
+    : `${base}_${indexDiscriminator(order, where, using)}_${suffix}`;
+  const bytes = byteLength(name);
+  if (bytes <= MAX_IDENTIFIER_BYTES) return name;
+  throw invariantViolated(
+    entityName,
+    'index',
+    `the index on (${columns.join(', ')}) is named "${name}", which is ${bytes} bytes — ` +
+      `Postgres truncates an identifier at ${MAX_IDENTIFIER_BYTES} and does not say so, ` +
+      'so two indexes can silently become one',
+  );
+};
 
 const defaultValue = (meta: ColumnMeta): unknown => {
   const declared = meta.default;
@@ -127,7 +222,10 @@ export const entity = <const C extends ColumnMap>(
   const entries: readonly (readonly [string, AnyColumn])[] = Object.entries(init.columns);
   for (const [property, column] of entries) bindColumn(column, name, property);
 
-  const table = init.table === undefined ? name : assertColumnName(init.table);
+  // Both branches. The declared table was checked and the fallback — which is every entity that
+  // does not rename its table — was not, so an entity NAME closed the identifier in the same way a
+  // column name could: `entity('t" (x int); drop table u; --')` emitted that `drop table` verbatim.
+  const table = assertColumnName(init.table ?? name);
   const cacheTag = `entity:${name}`;
   const softDelete = Object.hasOwn(init.columns, SOFT_DELETE_COLUMN);
   const tenantColumn = resolveTenantColumn(name, init.columns, init.tenant);
@@ -187,7 +285,11 @@ export const entity = <const C extends ColumnMap>(
         meta.kind === 'money' ? moneyColumns(property, meta).minor : columnName(property, meta),
       ];
       return [
-        { name: indexName(table, physical, meta.unique), columns: physical, unique: meta.unique },
+        {
+          name: indexName(name, table, physical, meta.unique),
+          columns: physical,
+          unique: meta.unique,
+        },
       ];
     }),
     ...(init.indexes ?? []).map((index) => {
@@ -206,18 +308,62 @@ export const entity = <const C extends ColumnMap>(
           'a partial index predicate must be expressible in SQL; a JS predicate cannot be one',
         );
       }
+      // Two rules Postgres has that a declaration can break, refused where the author wrote it.
+      // `@ultimat3/db` refuses both again at `createIndex` — that is not a duplicate, it is the
+      // guard for a description nobody built here — but its refusal lands at `x db gen` or, if a
+      // migration was already written, inside `ROLE=migrate` as the server's own syntax error with
+      // none of the entity's words in it.
+      if (index.using !== undefined && index.using !== 'btree') {
+        if (unique) {
+          throw invariantViolated(
+            name,
+            'index',
+            `the index on (${columns.join(', ')}) is unique and ${index.using}; ` +
+              `Postgres has no unique ${index.using} index — drop unique, or drop using`,
+          );
+        }
+        if (index.order !== undefined) {
+          throw invariantViolated(
+            name,
+            'index',
+            `the index on (${columns.join(', ')}) is ${index.using} and ${index.order}; ` +
+              'only a btree orders its keys — drop order, or drop using',
+          );
+        }
+      }
       return {
-        name: indexName(table, columns, unique),
+        name: indexName(name, table, columns, unique, index.order, where, index.using),
         columns,
         unique,
         ...(index.order === undefined ? {} : { order: index.order }),
         ...(where === null ? {} : { where }),
+        // Absent stays absent: `btree` written out would be a field every existing snapshot lacks,
+        // and `indexMethodOf` reads the two the same way precisely so nothing regenerates.
+        ...(index.using === undefined || index.using === 'btree' ? {} : { using: index.using }),
       };
     }),
   ];
-  // A foreign key already indexes its column; naming it again in `indexes` is not two indexes.
+  /**
+   * A foreign key already indexes its column; naming it again in `indexes` is not two indexes.
+   *
+   * On the WHOLE definition and not on the name. With the discriminator above the two rules agree
+   * exactly, so this is not a behaviour change on its own — it is which one FAILS LOUDLY if the
+   * naming is ever weakened again. Matching on the name drops the second index in silence, which
+   * is how two different partial indexes became one for three majors; matching on the definition
+   * keeps both, and two `create index` statements sharing a name is `42P07` on the next migration.
+   */
+  const identity = (index: IndexDef): string =>
+    [
+      index.name,
+      index.columns.join(','),
+      index.unique,
+      index.order ?? '',
+      index.where ?? '',
+      index.using ?? '',
+    ].join('|');
   const indexes: readonly IndexDef[] = declared.filter(
-    (index, position) => declared.findIndex((other) => other.name === index.name) === position,
+    (index, position) =>
+      declared.findIndex((other) => identity(other) === identity(index)) === position,
   );
 
   const tags = [cacheTag, ...(init.tags ?? [])];

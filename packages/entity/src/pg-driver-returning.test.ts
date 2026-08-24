@@ -10,9 +10,9 @@ import { boolean, money, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
 import type { EntityError } from './errors';
 import { invariant, MAX_ASSERTED_ROWS } from './invariants';
+import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 
 const ORG = '00000000-0000-7000-8000-0000000000a1';
 const ID = '00000000-0000-7000-8000-000000000101';

@@ -53,6 +53,12 @@ export interface AuditRecord {
    * a sink needs to write a row at all. Carried whole rather than projected into `actorId` +
    * `requestId` fields, because choosing WHICH context facts an audit row keeps is precisely the
    * convention four apps modelled four ways.
+   *
+   * **A sink that PERSISTS must project it, and `audit-postgres.ts` is where that is done.**
+   * `createContext` spreads every installed service onto this object and an HTTP surface's value
+   * is a `RequestContext` carrying the caller's `Authorization` and `Cookie`, so writing it down
+   * whole puts an app's database clients and its caller's credentials in a table. Whole here,
+   * allow-listed there — the seam hands over everything and each sink decides what it keeps.
    */
   readonly ctx: Ctx;
   /**
@@ -80,26 +86,6 @@ export interface AuditRecord {
  */
 export interface AuditSink {
   write(record: AuditRecord): Promise<void> | void;
-}
-
-/** The seam's memory implementation, for tests and `x dev`. Not a system of record. */
-export interface MemoryAuditSink extends AuditSink {
-  /** In the order `invoke` produced them. A copy — the log cannot be mutated through it. */
-  records(): readonly AuditRecord[];
-  clear(): void;
-}
-
-export function memoryAuditSink(): MemoryAuditSink {
-  const log: AuditRecord[] = [];
-  return {
-    write(record: AuditRecord): void {
-      log.push(record);
-    },
-    records: (): readonly AuditRecord[] => [...log],
-    clear: (): void => {
-      log.length = 0;
-    },
-  };
 }
 
 /**

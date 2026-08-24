@@ -4,9 +4,9 @@ import { createRecordingClient, type RecordingClient, setDbClient } from '@ultim
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { database } from './database';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { postgresDriver, postgresRepo, postgresTransactor } from './pg-driver';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 
 const orgs = entity('pg_test_orgs', {
   columns: { id: uuid().primaryKey(), slug: text({ max: 40 }).unique() },
@@ -34,19 +34,32 @@ const OTHER_ORG = '00000000-0000-7000-8000-0000000000a2';
 const ID = '00000000-0000-7000-8000-000000000101';
 const OTHER_ID = '00000000-0000-7000-8000-000000000102';
 
-/** What Bun.SQL hands back: snake_case names, int8 as a string, timestamptz as an ISO string. */
-const physical = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
-  id: ID,
-  org_id: ORG,
-  reference: 'INV-1',
-  total_minor: '129900',
-  total_currency: 'EUR',
-  paid: false,
-  note: null,
-  issued_at: '2026-01-02T03:04:05.000Z',
-  deleted_at: null,
-  ...over,
-});
+/** What Postgres prints for `(col at time zone 'UTC')::text`, from the ISO the fixture names. */
+const pgText = (iso: unknown): unknown =>
+  typeof iso === 'string' ? iso.replace('T', ' ').replace('Z', '') : iso;
+
+/**
+ * What Bun.SQL hands back: snake_case names, int8 as a string, timestamptz as an ISO string —
+ * plus `issued_at$US`, the microsecond half of the sort key every read projects beside the column
+ * itself (`seekAlias`). Bun hands a `timestamptz` back as a millisecond `Date`, so a recorded row
+ * WITHOUT that output is a row this driver's own statement never returns, and a cursor minted from
+ * it would be pinned to the wrong precision in exactly the tests meant to prove the precision.
+ */
+const physical = (over: Record<string, unknown> = {}): Record<string, unknown> => {
+  const row: Record<string, unknown> = {
+    id: ID,
+    org_id: ORG,
+    reference: 'INV-1',
+    total_minor: '129900',
+    total_currency: 'EUR',
+    paid: false,
+    note: null,
+    issued_at: '2026-01-02T03:04:05.000Z',
+    deleted_at: null,
+    ...over,
+  };
+  return { ...row, issued_at$US: pgText(row['issued_at']) };
+};
 
 const ROW: Invoice = {
   id: ID,
@@ -105,8 +118,15 @@ describe('postgresRepo() reads', () => {
       select: ['reference'],
       orderBy: [{ column: 'issuedAt', direction: 'desc' }],
     });
-    expect(lastText()).toStartWith('select "reference", "id", "issued_at" from "pg_test_invoices"');
-    expect(lastText()).toContain('order by "issued_at" desc, "id" asc');
+    // The sort key comes back TWICE: as the column, and as the microsecond text a cursor is
+    // minted from — a `Date` cannot hold the second one.
+    expect(lastText()).toStartWith(
+      'select "reference", "id", "issued_at", ("issued_at" at time zone \'UTC\')::text ' +
+        'as "issued_at$US" from "pg_test_invoices"',
+    );
+    // `id desc`, not `id asc`: the tiebreak follows the last declared direction, so the order
+    // the driver sends is one an index can be declared for.
+    expect(lastText()).toContain('order by "issued_at" desc nulls first, "id" desc nulls first');
   });
 
   test('a row from the driver is re-parsed by the column that declared it', async () => {
@@ -230,127 +250,6 @@ describe('tenancy', () => {
     await expect(repo().update(ID, {})).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
     await expect(repo().delete(ID)).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
     expect(client.statements).toHaveLength(0);
-  });
-});
-
-describe('keyset pagination', () => {
-  const page = (count: number): readonly Record<string, unknown>[] =>
-    Array.from({ length: count }, (_, index) =>
-      physical({
-        id: `00000000-0000-7000-8000-0000000002${String(index).padStart(2, '0')}`,
-        issued_at: `2026-01-0${index + 1}T00:00:00.000Z`,
-      }),
-    );
-
-  const descending = {
-    orgId: ORG,
-    limit: 3,
-    orderBy: [{ column: 'issuedAt', direction: 'desc' as const }],
-  };
-
-  test('a cursor appears only when a row past the page came back', async () => {
-    client.on('select', { rows: page(3) });
-    expect((await repo().findMany({ orgId: ORG, limit: 3 })).nextCursor).toBeNull();
-    client.on('select', { rows: page(4) });
-    expect((await repo().findMany({ orgId: ORG, limit: 3 })).nextCursor).not.toBeNull();
-  });
-
-  test('the cursor becomes a seek predicate, never an offset', async () => {
-    client.on('select', { rows: page(4) });
-    const first = await repo().findMany(descending);
-    await repo().findMany({ ...descending, cursor: first.nextCursor });
-    expect(lastText()).not.toContain('offset');
-    // `desc` on the first key and `asc` on the tie-breaking primary key: one row comparison
-    // cannot express that, which is why the seek is spelled out as an or-chain. The equality
-    // prefix is the millisecond window the cursor value stands for — see the microsecond case.
-    expect(lastText()).toContain(
-      '(("issued_at" < $2) or (("issued_at" >= $3 and "issued_at" < $4) and "id" > $5))',
-    );
-    expect(lastValues()[1]).toBeInstanceOf(Date);
-  });
-
-  /**
-   * The column is `timestamptz` (microseconds, `now()`); the cursor carries a `Date`
-   * (milliseconds). The floored value is strictly LESS than the row it was minted from, so a bare
-   * `>` returned that row again on every page boundary and a bare `<` dropped every row sharing
-   * its millisecond. Both directions are the same off-by-one gap.
-   */
-  test('a timestamp seek excludes the row it was minted from, to the microsecond', async () => {
-    // Row 3 is the page boundary — the row the cursor is minted from — and Postgres stored it
-    // with the microseconds `now()` gives every `timestamptz`.
-    const rows = [
-      ...page(2),
-      physical({
-        id: '00000000-0000-7000-8000-000000000298',
-        issued_at: '2026-08-14T10:00:00.123456Z',
-      }),
-      physical({ id: '00000000-0000-7000-8000-000000000299', issued_at: '2026-08-15T00:00:00Z' }),
-    ];
-    const ascending = {
-      orgId: ORG,
-      limit: 3,
-      orderBy: [{ column: 'issuedAt', direction: 'asc' as const }],
-    };
-
-    client.on('select', { rows });
-    const first = await repo().findMany(ascending);
-    await repo().findMany({ ...ascending, cursor: first.nextCursor });
-
-    // `>=` the next millisecond, never `>` the floored value: `.123456 > .123` is true, and the
-    // row on the page boundary would have been served again as the first row of the next page.
-    expect(lastText()).toContain('(("issued_at" >= $2) or');
-    const seekAt = lastValues()[1];
-    expect(seekAt).toBeInstanceOf(Date);
-    expect((seekAt as Date).toISOString()).toBe('2026-08-14T10:00:00.124Z');
-
-    client.on('select', { rows });
-    const firstDesc = await repo().findMany(descending);
-    await repo().findMany({ ...descending, cursor: firstDesc.nextCursor });
-    // Descending needs no shift — `< v` already means "before the whole millisecond" — but the
-    // tiebreak does, or every row inside that millisecond is skipped rather than compared by id.
-    expect(lastValues()[1]).toEqual(new Date('2026-08-14T10:00:00.123Z'));
-    expect(lastValues()[2]).toEqual(new Date('2026-08-14T10:00:00.123Z'));
-    expect(lastValues()[3]).toEqual(new Date('2026-08-14T10:00:00.124Z'));
-  });
-
-  test('a nullable sort column cannot carry a cursor', async () => {
-    const byDeletedAt = {
-      orgId: ORG,
-      limit: 3,
-      includeDeleted: true,
-      orderBy: [{ column: 'deletedAt', direction: 'asc' as const }],
-    };
-    // Refused where the cursor would be minted — on the page that has a next page — rather than
-    // on the request that tries to use it. The ordering is the author's mistake either way, and
-    // deferring it makes the page size decide whether anyone ever sees it.
-    client.on('select', { rows: page(4) });
-    await expect(repo().findMany(byDeletedAt)).rejects.toThrow(
-      /deletedAt is nullable and cannot carry a cursor/,
-    );
-  });
-});
-
-describe('parity with the in-memory driver', () => {
-  test('both drivers expose the same repository surface, bar the memory test seam', () => {
-    const postgres = Object.keys(postgresRepo(invoices)).sort();
-    const memory = Object.keys(memoryRepo(invoices)).sort();
-    // `reset()` is the one permitted difference: rows in Postgres belong to the app, and a
-    // framework that could empty them from a test helper eventually would.
-    expect(memory.filter((key) => key !== 'reset')).toEqual(postgres);
-    expect(memory).toContain('reset');
-  });
-
-  test('a cursor from memory is a seek predicate in Postgres', async () => {
-    const memory = memoryRepo(invoices, [
-      ROW,
-      { ...ROW, id: `${ID.slice(0, -1)}2`, issuedAt: new Date('2026-02-02T00:00:00.000Z') },
-    ]);
-    const first = await memory.findMany({ orgId: ORG, limit: 1 });
-    expect(first.nextCursor).not.toBeNull();
-
-    await postgresRepo(invoices).findMany({ orgId: ORG, limit: 1, cursor: first.nextCursor });
-    expect(lastText()).toContain('("id" > $2)');
-    expect(lastValues()[1]).toBe(ID);
   });
 });
 

@@ -6,9 +6,11 @@
 
 import { compareDecimalText } from '@ultimat3/core';
 import { keyOf } from './batch-read';
+import { arrayContains, arrayOverlaps, jsonContains, jsonHasKey } from './containment';
 import { kindOf, valueAt } from './cursor';
 import type { EntityCore } from './entity';
 import { EntityError } from './errors';
+import { instantMicros } from './instant';
 import type { Predicate } from './tenancy';
 import type { ColumnKind } from './types';
 
@@ -46,6 +48,25 @@ export const compareByKind = (
   left: unknown,
   right: unknown,
 ): number => {
+  // NULL is the LARGEST value, which is what `order by` means in Postgres and what `nulls last`
+  // ascending / `nulls first` descending spell out (`pg-sql.ts`'s `orderSql`, `@ultimat3/query`'s
+  // `compareValues`). Two absences are equal, so the next sort key decides — without this rule a
+  // NULL fell through to `String(left) < String(right)` and sorted as the four characters `null`,
+  // somewhere in the middle of the alphabet, which is a different listing from the one the
+  // database returns and a page boundary cut where the server cuts none.
+  if (isNull(left) || isNull(right)) {
+    return isNull(left) && isNull(right) ? 0 : isNull(left) ? 1 : -1;
+  }
+  // A `timestamptz` is compared in MICROSECONDS, which is what the column holds and what a cursor
+  // now carries (`cursor.ts`). The two sides are not the same shape and that is the point: a
+  // stored row here is a `Date` and a keyset position is a microsecond count, so a `Date`/`Date`
+  // test alone would fall through to `String(left) < String(right)` and order a page by the text
+  // of an ISO string against a decimal.
+  if (kind === 'timestamptz') {
+    const before = instantMicros(left);
+    const after = instantMicros(right);
+    if (before !== undefined && after !== undefined) return sign(before, after);
+  }
   if (left instanceof Date && right instanceof Date) return sign(left.getTime(), right.getTime());
   if (kind !== undefined && DECIMAL_TEXT.has(kind)) {
     // `undefined` when either side is not a plain decimal — that pair is not a numeric comparison,
@@ -199,5 +220,51 @@ export const matchesPredicate = <Row>(
       return isNull(actual);
     case 'is-not-null':
       return !isNull(actual);
+    // The containment half, decided by the column's DECLARED kind exactly as everything above it
+    // is: `@>` on a `jsonb` is recursive structural containment and `@>` on an array is plain
+    // element containment, and those are two different operators that happen to share a symbol.
+    // A NULL column value matches nothing, which is what the SQL answers too.
+    case 'contains':
+      return !isNull(actual) && containsBy(kind, actual, predicate.value);
+    case 'contained-by':
+      return !isNull(actual) && containsBy(kind, predicate.value, actual);
+    // `&&` is arrays only. A `jsonb` column reaching it is refused rather than guessed at: there
+    // is no `jsonb && jsonb` in Postgres, so any answer here would be one no statement can make.
+    case 'overlaps':
+      return (
+        !isNull(actual) &&
+        arrayOverlaps(
+          asArray(entity, predicate, actual),
+          asArray(entity, predicate, predicate.value),
+        )
+      );
+    case 'has-key':
+      return jsonHasKey(actual, predicate.value);
   }
+};
+
+/** `left @> right`, under the rule the LEFT column's kind decides. */
+const containsBy = (kind: ColumnKind | undefined, left: unknown, right: unknown): boolean =>
+  kind === 'jsonb'
+    ? jsonContains(left, right)
+    : arrayContains(Array.isArray(left) ? left : [left], Array.isArray(right) ? right : [right]);
+
+/**
+ * The operand of an array-only operator. A `jsonb` column here is the caller asking for an
+ * operator Postgres does not have on that type, so it is refused where they wrote it rather than
+ * answered with something the database never would.
+ */
+const asArray = <Row>(
+  entity: EntityCore<Row>,
+  predicate: Predicate,
+  value: unknown,
+): readonly unknown[] => {
+  if (kindOf(entity, predicate.column) === 'jsonb') {
+    throw new EntityError({
+      code: 'X_INVARIANT_VIOLATED',
+      cause: `${entity.$name}.${predicate.column} is jsonb, and Postgres has no && (overlaps) operator for jsonb`,
+      fix: `${entity.$name}.andWhere('${predicate.column}', 'contains', <value>)   # @> matches nested structure; && is for arrayOf() columns`,
+    });
+  }
+  return Array.isArray(value) ? value : [value];
 };

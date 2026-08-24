@@ -12,7 +12,7 @@
 // the total moved. The LIST is wrong when a step was inserted — and a list can be wrong while its
 // own count is right, which is the failure a count check alone would wave through.
 //
-// The PASSED half of `14 of 19 steps passed` is deliberately not derived: what passes depends on
+// The PASSED half of `14 of 20 steps passed` is deliberately not derived: what passes depends on
 // the repo, the app and what is skipped. Only the total is a fact about the build, and a passed
 // count above the total is the one thing that is wrong on its face.
 //
@@ -253,7 +253,7 @@ export function checkGateSteps(input: StepInput): readonly StepGap[] {
       if (HISTORICAL.test(line)) continue;
       const at = `${page.path}:${index + 1}`;
 
-      // Spans are consumed as they match, so `14 of 19 steps` is read once as a total and not a
+      // Spans are consumed as they match, so `14 of 20 steps` is read once as a total and not a
       // second time by the bare-total rule — one sentence, one finding.
       let rest = line;
       for (const match of line.matchAll(OF_TOTAL)) {

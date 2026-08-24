@@ -146,7 +146,7 @@ describe('the feed island', () => {
         { id: 'p1', title: 'First', excerpt: 'one', likeCount: 0 },
         { id: 'p2', title: 'Second', excerpt: 'two', likeCount: 3 },
       ],
-      cursor: { qid: 'q', lsn: '1', digest: 'd', ids: ['p1', 'p2'], count: 2, at: 0 },
+      cursor: { qid: 'q', lsn: '1', ids: ['p1', 'p2'], at: 0 },
     });
 
     expect(mounted.find('[data-role="loading"]')).toBeNull();
@@ -164,7 +164,7 @@ describe('the feed island', () => {
       v: PROTOCOL_VERSION,
       sid: subscribeFrame()?.sid ?? '',
       rows: [],
-      cursor: { qid: 'q', lsn: '2', digest: 'd', ids: [], count: 0, at: 0 },
+      cursor: { qid: 'q', lsn: '2', ids: [], at: 0 },
     });
 
     // `empty` only after the node has ANSWERED. Before the first snapshot the same branch says

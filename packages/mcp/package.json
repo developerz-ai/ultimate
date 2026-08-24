@@ -1,7 +1,7 @@
 {
   "name": "@ultimat3/mcp",
   "version": "11.3.0",
-  "description": "MCP server, dev tools, and the action-to-tool projection — one authz system, two surfaces",
+  "description": "MCP server, dev tools, and the action-to-tool projection \u2014 one authz system, two surfaces",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -34,6 +34,7 @@
     "@ultimat3/action": "11.3.0",
     "@ultimat3/core": "11.3.0",
     "@ultimat3/entity": "11.3.0",
+    "@ultimat3/http": "11.3.0",
     "@ultimat3/jobs": "11.3.0",
     "@ultimat3/policy": "11.3.0",
     "@ultimat3/query": "11.3.0",

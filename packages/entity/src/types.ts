@@ -6,6 +6,8 @@
 // A column carries its TypeScript type in `$parse`, which is what lets the row type be derived
 // from the column set instead of being written a second time as a hand-maintained schema.
 
+import type { IndexMethod } from '@ultimat3/db';
+
 /**
  * Postgres types the builders emit. `money` expands to `bigint` + `char(3)` (+ a nullable
  * `integer` scale); `array` expands to its element's type with `[]` after it.
@@ -268,4 +270,12 @@ export interface IndexDef {
   readonly order?: 'asc' | 'desc';
   /** Partial index predicate — a soft-deleted row is excluded with this. */
   readonly where?: string;
+  /**
+   * The access method. Absent is `btree`, which is Postgres' own default and what every index
+   * declared before this field existed is — so an entity that names none emits the statement it
+   * always emitted, byte for byte, and no app's sidecar regenerates. `@ultimat3/db` owns the
+   * closed set (`INDEX_METHODS`); redeclaring the union here would be the second declaration of
+   * one fact that this release exists to stop.
+   */
+  readonly using?: IndexMethod;
 }

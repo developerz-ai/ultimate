@@ -9,11 +9,11 @@ import { upsertPlan } from './bulk-write';
 import { money, text, timestamp, uuid } from './columns';
 import { assertSeekable, cursorFor } from './cursor';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { physicalName } from './pg-row';
 import { selectStatement } from './pg-sql';
 import { clearRegistry } from './registry';
 import { relationNamed } from './relations';
-import { memoryRepo } from './repo';
 import type { QueryPlan } from './tenancy';
 
 /** The six names every object literal answers to without ever having been given one. */

@@ -20,6 +20,27 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 ## Rules
 
 - Route `meta.auth` is required. Never default a route to public.
+- **An app declares its half of `HttpConfig` through `configureHttp()`, and the boot lays its own
+  facts over it** (`As of 2026-08-24`). Until 12.0.0 the entire tuning surface was **unreachable
+  from a shipped app**: `AppConfig` has never had an `http` key, `RuntimeOverrides` carries none,
+  and the only construction any shipped process made was one fixed literal in
+  `packages/cli/src/dev-roles.ts` passing eight boot facts — so `DEFAULT_CORS.origins` was `[]` in
+  every deployment (an SPA on `app.example.com` calling `api.example.com` could not work, ever),
+  `bodyLimitBytes` was 1 MiB for a 4 MB CSV endpoint, `requestTimeoutMs` 30s for a five-minute
+  export, and `rateLimit.buckets` was 120 burst / 2 rps for a bank and a blog alike. Fourteen
+  `fix:` lines told the reader to edit `http.<key>` in `app.config.ts`, which has never held one.
+  It is a registration and not a config key for `configureAuthenticator`'s reason, stated in
+  `hooks.ts`: `@ultimat3/core` is tier 0 and cannot hold this package's types, so an `http` block
+  on `AppConfig` would be a **second declaration** of `HttpConfigInput` in a package that can
+  never check it against this one. `AppHttpConfig` is `Omit<HttpConfigInput, BootOwnedHttpKey>`,
+  **derived, never listed**: a key the boot always overwrites (`port`, `hostname`, `dev`,
+  `buildId`, `signInPath`, `trustProxy`, `trustedProxyHops`, `rateLimit.scope`) is a type error
+  where an app writes it, rather than a value silently discarded at every boot. `mergeHttpConfig`
+  merges one level down — `security.csp.extend` per DIRECTIVE, because the app's CDN source and
+  the boot's inline-script hash are each the whole answer for something, and either alone breaks a
+  page. `type-pins.ts` holds the other half: a key on `HttpConfig` and not on `HttpConfigInput` is
+  a build error, which `scripts/config-readers.ts` cannot see — that ratchet walks `AppConfig` and
+  asks whether a key is READ, and this is the mirror question.
 - **`asCtx` is a WIDENING the compiler checks, never a cast.** `RequestContext extends Ctx`, and
   `asCtx` is the identity function. It used to be `ctx as unknown as Ctx` over an object that set
   none of `clock`, `now`, `logger`, `signal` or `services` — so `ctx.now()` threw
@@ -60,6 +81,14 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   with `AbortSignal.any`, which is what `context.ts` had documented and nothing wired — a closed
   tab held its handler, its pool slot and its vendor connection for the whole 30s. `expired` stays
   the timer's alone: it answers the SOCKET, and a caller that hung up has no socket to answer.
+  **And it leaves this process on the next hop's headers, `As of 2026-08-24`**:
+  `Deadline.deadlineAt` is published as core's `ctx.deadlineAt`, and `traceHeaders()` (tier 0, the
+  one thing both typed clients spread before the caller's own headers) sends what is LEFT as
+  `x-request-timeout-ms`. Before that the header had exactly one reader — `resolveTimeoutMs`, in
+  this file — and **zero writers anywhere in the tree**, so gateway → A (30s) → B meant a call made
+  at t=29 started B on a FRESH 30s: real work, holding a pool slot and a vendor connection, half a
+  minute after A's socket was answered `X_TIMEOUT`. A spent budget sends no header at all rather
+  than `0`, because `resolveTimeoutMs` ignores anything under 1ms and falls back to its own.
   With `requestTimeoutMs: 0` the caller's signal is handed through as-is rather than the shared
   never-aborted singleton, which every such request used to share — one `abort` listener per
   request, accumulating for the life of the process. Always `deadline.clear()` in the `finally` —
@@ -242,6 +271,14 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `lastResort` spells its one `type` as a literal because that function calls nothing, and
   `pipeline-finalize.test.ts` pins the literal against `problemTypeFor('X_INTERNAL')` so the two
   cannot drift. Never assert either value as a copied string — import the constant.
+- **`error-map.ts` answers the status; `error-facts.ts` renders the throwable** (`As of
+  2026-08-24`). One file did both and reached 501 lines, over the ceiling. The seam between
+  them is `declaredStatusFor(code)` — `number | undefined`, exported to this package only —
+  because the two questions are genuinely different: `statusFor` always answers a number, while
+  "did ANYBODY classify this code" is what decides whether a 5xx may carry the throwable's own
+  words back to the caller (`isUnclassifiedFailure`). Imports go one way, `error-facts.ts` →
+  `error-map.ts`; a status read from the facts file would be the second table this package
+  spent a release deleting.
 - Statuses live in `error-map.ts` only. No other file writes a status number. The framework's
   table (`ERROR_STATUS`) is closed; an app declares its own codes' statuses with
   `registerErrorStatus()`, which refuses a code the framework already holds. Without that half,
@@ -309,8 +346,24 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `X_INTERNAL`, built with no call that could fail in turn, and the renderer's own failure goes to
   the log as `pipeline.problem_failed` — a last resort sharing a code path with what just broke is
   not one.
+- **One request spends a LIST of rate-limit keys, and the tenant's is the second** (`As of
+  2026-08-24`). `rateLimitKey` picked ONE subject — actor > org > ip, exclusive — and `actorView`
+  answers `null` for anonymous, so `orgId` was consulted only for a caller with an org and no id:
+  **no authenticated request ever touched an org bucket**. A tenant with 8,000 seats whose
+  integration entered a retry loop therefore took 8,000 × the per-actor burst against one shared
+  pool, every bucket inside its own limit, and no number an operator could set would have refused
+  it — while `@ultimat3/jobs` has had `perTenant` since it shipped. `rateLimitSpends` answers the
+  caller's key **and** `tenant|org:<id>` when the app declared `rateLimit.tenantBucket`; the stage
+  spends them in order and stops at the first refusal, so a caller its own bucket already refused
+  costs its tenant nothing. The tenant key is deliberately NOT scoped to the route — a per-route
+  tenant bucket is the same number multiplied by the route table, which is not a cap. `null` is
+  the default because one tenant is a person and the next is five thousand seats (axiom 8), and a
+  name nothing declares is `X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN` at `defineHttpConfig`, never a
+  silent fall-through to `default`. The headers report the bucket **closest to refusing**: telling
+  a client `remaining: 99` off its own bucket while its tenant's holds 2 is a number that plans a
+  caller into a 429.
 - **The memory rate-limit store is bounded, and the eviction order is part of the guarantee.**
-  The key falls back to the connection address (`rateLimitKey`), so a scan rotating through an
+  The key falls back to the connection address (`rateLimitSpends`), so a scan rotating through an
   IPv6 /64 mints one entry per request — an unbounded map hands the flood the process. Every
   entry carries `forgetAtMs`, the instant a refilled bucket becomes indistinguishable from a
   missing one, and the sweep drops those for free. `DEFAULT_MAX_RATE_LIMIT_KEYS` is the backstop,
@@ -402,7 +455,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `stages.ts` | what each stage DOES, one entry per `StageName`, plus the stage vocabulary the other two import |
 | `finalize.ts` | the tail of that lifecycle, guarded: a throw after the handler degrades, never rejects |
 | `router.ts` | trie matcher, precedence static > param > wildcard, `path-invalid` for a segment that will not decode |
-| `error-map.ts` | code → status table + `factsOf()` |
+| `error-map.ts` | the code → status table, closed, plus the app's half (`registerErrorStatus`) |
+| `error-facts.ts` | every RENDERING of a throwable: `factsOf()`, the problem document, the three terminal lines |
 | `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices` + the app's `configureAuthenticator()` |
 | `type-pins.ts` | compile-time claims about `AuthzDecision`'s shape — source, because `tsc` never reads a `.test.ts` |
 | `overlay.ts` | the dev error page: the same code/cause/fix as the terminal, plus any notices |
@@ -421,6 +475,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `csrf.ts` | the origin proof an unsafe method from a credentialed browser must carry |
 | `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only, plus `readCookie`. It negotiates nothing |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
+| `app-config.ts` | the app's own HTTP declaration (`configureHttp`) and the layering that keeps a boot fact above it |
 
 ## Commands
 

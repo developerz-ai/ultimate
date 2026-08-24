@@ -6,6 +6,7 @@
 // still re-parse authoritatively inside their own handler; this pass exists so a wrong
 // call comes back as a structured issue list instead of a round trip.
 
+import { charCount } from '@ultimat3/schema';
 import type { JsonSchema } from './wire';
 
 export interface ArgIssue {
@@ -130,10 +131,19 @@ function string(schema: JsonSchema, input: unknown, path: string, issues: ArgIss
     issues.push({ path, message: 'must be a string' });
     return input;
   }
-  if (schema.minLength !== undefined && input.length < schema.minLength) {
+  // `charCount`, never `input.length`: JSON Schema defines these two over CODE POINTS, which is
+  // the unit `@ultimat3/schema`'s `char-count.ts` mints them in and the unit the action's own
+  // re-parse applies. In code units both directions were wrong on any astral value — `'👍a'` is
+  // 3 units and 2 points, so `min(3)` passed here and then answered `X_INPUT_INVALID` inside the
+  // handler (the silent pass this file exists to prevent), and `'👍👍'` is 4 units and 2 points,
+  // so `max(3)` refused a call the tool would have served, quoting a bound the agent obeyed with
+  // no re-parse behind it to disagree. One import rather than a second count: this package is
+  // tier 4 and `@ultimat3/schema` is tier 0, so the excuse core's private twin has is not ours.
+  const length = charCount(input);
+  if (schema.minLength !== undefined && length < schema.minLength) {
     issues.push({ path, message: `must be at least ${schema.minLength} characters` });
   }
-  if (schema.maxLength !== undefined && input.length > schema.maxLength) {
+  if (schema.maxLength !== undefined && length > schema.maxLength) {
     issues.push({ path, message: `must be at most ${schema.maxLength} characters` });
   }
   if (schema.pattern !== undefined) matchesPattern(schema, schema.pattern, input, path, issues);

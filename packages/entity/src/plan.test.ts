@@ -79,7 +79,31 @@ describe('totalOrder', () => {
   });
 
   test('appends the primary key after the caller order, never before it', () => {
+    expect(totalOrder(posts, [{ column: 'rank', direction: 'asc' }])).toEqual([
+      { column: 'rank', direction: 'asc' },
+      { column: 'id', direction: 'asc' },
+    ]);
+  });
+
+  test('the tiebreak takes the LAST declared direction, never an unconditional asc', () => {
+    // `rank desc, id asc` is a mixed-direction order, and `IndexInit.order` is ONE direction for
+    // the whole index — so the order the driver sends could not be declared as an index in this
+    // framework's own DSL, whatever the author wrote. It also costs the row-comparison seek:
+    // measured on Postgres 16, `(rank, id) < ($1, $2)` is an Index Only Scan and the or-chain the
+    // mixed order forces is a BitmapOr plus a Sort over the matched rows.
     expect(totalOrder(posts, [{ column: 'rank', direction: 'desc' }])).toEqual([
+      { column: 'rank', direction: 'desc' },
+      { column: 'id', direction: 'desc' },
+    ]);
+  });
+
+  test('a mixed order is still reachable — the caller names the key itself', () => {
+    expect(
+      totalOrder(posts, [
+        { column: 'rank', direction: 'desc' },
+        { column: 'id', direction: 'asc' },
+      ]),
+    ).toEqual([
       { column: 'rank', direction: 'desc' },
       { column: 'id', direction: 'asc' },
     ]);
@@ -163,7 +187,7 @@ describe('planFor', () => {
   test('orderBy always ends in the total order, primary key included', () => {
     expect(planFor(posts, { orderBy: [{ column: 'rank', direction: 'desc' }] }).orderBy).toEqual([
       { column: 'rank', direction: 'desc' },
-      { column: 'id', direction: 'asc' },
+      { column: 'id', direction: 'desc' },
     ]);
   });
 });
@@ -254,5 +278,49 @@ describe('updatePlan', () => {
       { column: 'id', op: 'eq', value: ID },
       { column: 'orgId', op: 'eq', value: ORG },
     ]);
+  });
+});
+
+describe('an ordering no cursor can carry', () => {
+  /**
+   * `deletedAt` is nullable, and `null > 'x'` is unknown in SQL — so a keyset seek over it drops
+   * rows from the middle of the listing. The refusal used to live in `cursorFor` alone, which runs
+   * only when a page found one row past its limit: a table with fewer rows than the page size was
+   * green forever and the first read past it in production was `X_INVARIANT_VIOLATED`. Whether an
+   * ordering can carry a position is a property of the ORDER, not of how many rows happen to be
+   * in the table, so it is decided where the plan is built.
+   */
+  test('an ordinary nullable column is NOT one — it orders, nulls last', () => {
+    // The refusal used to fire here and made `order by published_at desc` unwritable in the query
+    // language this framework documents, while `@ultimat3/query` had defined the ordering all
+    // along. What the plan carries is the direction; where the NULLs go is `orderSql`'s.
+    expect(
+      planFor(posts, { orderBy: [{ column: 'deletedAt', direction: 'desc' }] }).orderBy,
+    ).toEqual([
+      { column: 'deletedAt', direction: 'desc' },
+      { column: 'id', direction: 'desc' },
+    ]);
+  });
+
+  test('an undeclared sort column is refused when the plan is built, at any row count', () => {
+    expect(() =>
+      planFor(posts, { orderBy: [{ column: 'nope', direction: 'desc' }], limit: 20 }),
+    ).toThrow(/no column "nope"/);
+  });
+
+  test('is refused through readPlan too, so no driver can route around it', () => {
+    expect(() =>
+      readPlan(posts, { orderBy: [{ column: 'nope', direction: 'asc' }] }, 'findMany'),
+    ).toThrow(/no column "nope"/);
+  });
+
+  test('a column the entity never declared is refused with it', () => {
+    expect(() => planFor(posts, { orderBy: [{ column: 'nope', direction: 'asc' }] })).toThrow(
+      /no column "nope"/,
+    );
+  });
+
+  test('the default order — the primary key alone — is always seekable', () => {
+    expect(planFor(posts, {}).orderBy).toEqual([{ column: 'id', direction: 'asc' }]);
   });
 });

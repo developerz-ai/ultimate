@@ -2,11 +2,11 @@
 // writes a repository class per entity, and nobody can reach a table that is not in the set.
 
 import type { EntityCore } from './entity';
+import { memoryRepo } from './memory-repo';
 import type { RelatedTables } from './preload';
 import type { Table } from './query';
 import { tableFor } from './query';
 import type { Repo } from './repo';
-import { memoryRepo } from './repo';
 import { observedRepo } from './row-observer';
 
 export type EntitySet = Readonly<Record<string, EntityCore>>;

@@ -11,7 +11,14 @@
 import type { IslandComponent } from './island';
 import { island } from './island';
 import type { JsonValue } from './island-props';
-import type { LoadRequirement, RouteContext, RouteData, RouteDefinition } from './route';
+import type { RouteDescriptor } from './registry';
+import type {
+  LoadRequirement,
+  RouteBudget,
+  RouteContext,
+  RouteData,
+  RouteDefinition,
+} from './route';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
 type Assert<T extends true> = T;
@@ -99,3 +106,22 @@ export function _IslandIsAJsxComponent(): unknown {
     </ContactSales>
   );
 }
+
+/**
+ * Every key a route may declare a BUDGET for is a key the descriptor projects.
+ *
+ * Both sides are derived, so neither can move alone: `budgetJs`/`budgetLcp` on `RouteDescriptor`
+ * give `'js' | 'lcp'`, and anything `RouteBudget` declares beyond that fails this line by name.
+ * `budget.css`, `budget.cls` and `budget.tbt` were declared on the contract for four majors, were
+ * flattened away by `registerRoute`, and reached no reader anywhere — so an author writing
+ * `budget: { cls: 0.1 }` was ignored in silence while `x verify`'s `budgets` step, the one thing
+ * that exists to enforce a budget, reported green. `scripts/declaration-readers.ts` is the rule
+ * that finds the class; this is the build error that keeps THIS declaration honest.
+ */
+type BudgetKeyOf<K> = K extends `budget${infer Rest}` ? Uncapitalize<Rest> : never;
+
+type UnprojectedBudgetKey = Exclude<keyof RouteBudget, BudgetKeyOf<keyof RouteDescriptor>>;
+
+export type _EveryBudgetKeyIsProjected = Assert<
+  [UnprojectedBudgetKey] extends [never] ? true : false
+>;

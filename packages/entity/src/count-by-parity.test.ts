@@ -11,9 +11,9 @@ import { column } from './column';
 import { integer, money, text, timestamp, uuid } from './columns';
 import { MAX_GROUPS } from './count-by';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 import type { Column } from './types';
 
 /**

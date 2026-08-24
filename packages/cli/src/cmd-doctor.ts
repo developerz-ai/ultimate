@@ -5,6 +5,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, tryResolveEnvironment, usesDevCursorSecret } from '@ultimat3/core';
+import { checkDb, createPostgresClient } from '@ultimat3/db';
 import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/storage';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
@@ -15,6 +16,7 @@ import { intFlagOr, neighbouringPort, PORT_RANGE } from './flag-number';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import type { ParsedArgs } from './parse';
+import { portFree } from './port-probe';
 
 /**
  * The injection seam `runDoctor` reads instead of the environment. Not a semver surface —
@@ -40,6 +42,16 @@ export interface DoctorProbe {
   readonly production: boolean;
   exists(relativePath: string): boolean;
   portFree(port: number): Promise<boolean>;
+  /**
+   * Is the configured database reachable, and what refused? `null` is "reachable, or there is
+   * nothing external to reach" — an unset `DATABASE_URL` is embedded PGlite, which `x dev` owns
+   * and which a probe would take the single-writer lock on.
+   *
+   * Until this existed `x doctor` answered "no findings — environment is shippable" against
+   * `DATABASE_URL=postgres://nope:nope@localhost:5432/nope`, while `x db migrate` on the same env
+   * correctly answered `X_DB_UNAVAILABLE` (#F5).
+   */
+  database(): Promise<Finding | null>;
   drift(): Promise<readonly Finding[]>;
   /**
    * The other half of the migrations directory: a newest migration with no `.snapshot.json`, which
@@ -58,6 +70,39 @@ export const OFFLINE_FALLBACK = 'apps/web/app/offline.tsx';
 
 /** The port `x dev` binds by default, so the probe answers about the port the developer will use. */
 const DEFAULT_DOCTOR_PORT = 3000;
+
+/**
+ * Both ports `x dev` binds, each labelled with the role that wants it. `x dev --port 3999` printed
+ * `web listening on 3999`, then died on 4000 as `X_CLI_UNEXPECTED` with a caught `Error` rendered
+ * into its cause — and `x doctor --port 3999` answered "no findings", because it probed the web
+ * port and only the web port (#F5). The neighbouring port is not an implementation detail an
+ * operator can ignore: `docker-compose.prod.yml` publishes `3001:3001` from it and `docker/helm`
+ * derives `PORT = .port - 1` from it, so it is part of the contract `x dev` runs by.
+ *
+ * The suggested port moves BOTH: `x dev --port N` occupies N and N+1, so a free N beside a taken
+ * N+1 is still not a runnable command.
+ */
+async function portFindings(probe: DoctorProbe): Promise<readonly Finding[]> {
+  const wanted = [
+    { port: probe.port, role: 'web' },
+    { port: neighbouringPort(probe.port), role: 'sync' },
+  ] as const;
+  const findings: Finding[] = [];
+  for (const entry of wanted) {
+    if (await probe.portFree(entry.port)) continue;
+    findings.push(
+      finding(
+        'X_PORT_IN_USE',
+        `port ${entry.port} is already listening, and \`x dev --port ${probe.port}\` binds it for the ${entry.role} role`,
+        // Unchanged, and deliberately: the neighbour below the top of the range is the one port
+        // `x dev` is guaranteed to accept (`X_CLI_BAD_FLAG` otherwise), which is what
+        // `cmd-doctor.test.ts` pins by parsing this line with `x dev`'s own flag reader.
+        `x dev --port ${neighbouringPort(probe.port)}`,
+      ),
+    );
+  }
+  return findings;
+}
 
 /**
  * Ordered cheapest-first so the first failure is usually the root cause: a wrong Bun explains
@@ -120,15 +165,7 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
       ),
     );
   }
-  if (!(await probe.portFree(probe.port))) {
-    findings.push(
-      finding(
-        'X_PORT_IN_USE',
-        `port ${probe.port} is already listening`,
-        `x dev --port ${neighbouringPort(probe.port)}`,
-      ),
-    );
-  }
+  findings.push(...(await portFindings(probe)));
   // `@ultimat3/pwa`'s own codes, not CLI twins of them. `X_PWA_NO_ICON_SOURCE` and
   // `X_PWA_NO_FALLBACK` used to be declared here for the same two conditions the package already
   // names — two codes for one condition, one of them registered by nobody, so `x errors explain`
@@ -156,6 +193,8 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
       ),
     );
   }
+  const database = await probe.database();
+  if (database !== null) findings.push(database);
   findings.push(...(await probe.drift()));
   // Last, and it is why `X_CLI_UNEXPECTED`'s `fix: x doctor --json` is not a dead end on the path an
   // author reaches it from: `x db gen` throwing `X_MIGRATION_SNAPSHOT_MISSING` used to be a
@@ -176,15 +215,33 @@ export const doctorPort = (args: ParsedArgs): number =>
     DEFAULT_DOCTOR_PORT,
   );
 
-const portFree = async (port: number): Promise<boolean> => {
+/**
+ * A real `select 1` through the app's own driver, not a TCP connect: a running Postgres with the
+ * wrong credentials or a database that does not exist accepts the socket and refuses the session,
+ * which is the case an operator most needs told about before a deploy.
+ *
+ * The pool is CLOSED on every path — this command exits, and a held pool is a connection slot the
+ * next `x db migrate` cannot have.
+ */
+async function probeDatabase(url: string | undefined): Promise<Finding | null> {
+  if (url === undefined || url.trim() === '') return null;
+  const client = createPostgresClient({ url, applicationName: 'x-doctor' });
   try {
-    const server = Bun.serve({ port, fetch: () => new Response('') });
-    await server.stop(true);
-    return true;
-  } catch {
-    return false;
+    const report = await checkDb(client);
+    if (report.ok) return null;
+    // `DbHealthReport.error` is `checkDb`'s own rendering of what refused, never this file's — the
+    // caught value is `checkDb`'s to read, and it is the one function that already reads it safely.
+    return finding(
+      'X_DB_UNAVAILABLE',
+      `DATABASE_URL does not answer \`select 1\`: ${report.error ?? 'no reason reported'}`,
+      // `dbUnavailable`'s own two branches, verbatim: a second wording for one condition is two
+      // answers to "what do I do", and this one is reached first, before any command opens a pool.
+      'set DATABASE_URL to a reachable Postgres url, or run `x dev` to use the embedded PGlite',
+    );
+  } finally {
+    await client.close();
   }
-};
+}
 
 export function probeFor(cwd: string, bunVersion: string, port: number): DoctorProbe {
   const root = findAppRoot(cwd)?.dir;
@@ -204,6 +261,7 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
     production: tryResolveEnvironment() === 'production',
     exists: (relativePath) => (root === undefined ? false : existsSync(join(root, relativePath))),
     portFree,
+    database: () => probeDatabase(process.env['DATABASE_URL']),
     drift: async () => (root === undefined ? [] : checkSourceDrift(root)),
     snapshots: async () => (root === undefined ? [] : checkMigrationSnapshots(root)),
   };

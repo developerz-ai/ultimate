@@ -292,3 +292,66 @@ describe('unit · parseArgs · flags against the rest of argv', () => {
     }
   });
 });
+
+describe('unit · a default subcommand that takes the first positional', () => {
+  // `x errors X_PERMISSION_UNKNOWN --json` answered `X_CLI_UNKNOWN_COMMAND … fix: x help`, and
+  // `x help` prints `errors  an X_* code, explained` — the fix led straight back to the form that
+  // had just been refused (#F16). The declaration is per command because most commands cannot say
+  // it truthfully: `x jobs 4f2a` is ambiguous with `show`.
+  const SPEC: readonly CommandSpec[] = [
+    {
+      name: 'errors',
+      summary: 'an X_* code, explained',
+      usage: 'x errors [explain <CODE>|list]',
+      subcommands: ['explain', 'list'],
+      defaultSubcommand: 'explain',
+      defaultSubcommandTakesPositional: true,
+    },
+    {
+      name: 'jobs',
+      summary: 'the queue',
+      usage: 'x jobs [ls|show <id>]',
+      subcommands: ['ls', 'show'],
+      defaultSubcommand: 'ls',
+    },
+  ];
+
+  test('an unrecognised first word becomes the default subcommand’s argument', () => {
+    const args = parseArgs(['errors', 'X_PERMISSION_UNKNOWN', '--json'], SPEC);
+    expect(args.subcommand).toBe('explain');
+    // The word is NOT eaten: a default nobody typed leaves its positional in place.
+    expect(args.positionals).toEqual(['X_PERMISSION_UNKNOWN']);
+  });
+
+  test('a typed subcommand still consumes its own word', () => {
+    const args = parseArgs(['errors', 'explain', 'X_DB_DRIFT'], SPEC);
+    expect(args.subcommand).toBe('explain');
+    expect(args.positionals).toEqual(['X_DB_DRIFT']);
+  });
+
+  test('a near miss is still refused, with the suggestion — never read as an argument', () => {
+    const error = thrownBy(() => parseArgs(['errors', 'explan', 'X_DB_DRIFT'], SPEC));
+    expect(error).toBeInstanceOf(UnknownCommandError);
+    expect((error as UnknownCommandError).fix).toContain('errors explain');
+  });
+
+  test('a command that did not declare it keeps refusing, so x jobs <id> is never a silent ls', () => {
+    expect(thrownBy(() => parseArgs(['jobs', '4f2a9c'], SPEC))).toBeInstanceOf(UnknownCommandError);
+  });
+
+  test('the bare form is unchanged — the default runs with no positional', () => {
+    const args = parseArgs(['errors'], SPEC);
+    expect(args.subcommand).toBe('explain');
+    expect(args.positionals).toEqual([]);
+  });
+
+  // The shipped registry, not the fixture: `errors` is the ONE command that declares this today,
+  // and a second one arriving silently is a change to how every typo in it is read.
+  test('exactly one shipped command declares it', () => {
+    expect(
+      SPECS_SHIPPED.filter((spec) => spec.defaultSubcommandTakesPositional === true).map(
+        (spec) => spec.name,
+      ),
+    ).toEqual(['errors']);
+  });
+});

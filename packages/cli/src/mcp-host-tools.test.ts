@@ -193,9 +193,11 @@ describe('verify.run is the gate, run through the injected runner', () => {
 
     const failed = report.steps.filter((step) => !step.ok);
     expect(failed.map((step) => step.name)).toEqual(['manifest']);
-    // The step's OWN first finding, not a generic sentence: this is the only text the agent gets
-    // back for a red step, so it has to name the file the manifest step could not read.
-    expect(failed[0]?.detail).toBe(`${join(ROOT, 'AGENTS.md')} does not exist`);
+    // The step's OWN finding, not a generic sentence: this is the only text the agent gets back
+    // for a red step, so it has to name a file the manifest step could not read. The fixture
+    // deletes `x.manifest.json` above and ships no `AGENTS.md`, and both are findings of this one
+    // step — the absent manifest leads, because it is the fact the drift half depends on.
+    expect(failed[0]?.detail).toContain(`${MANIFEST_FILENAME} does not exist`);
     // A step that passed carries no detail — the gate's per-step text is a failure channel.
     expect(report.steps.filter((step) => step.ok && step.detail !== undefined)).toEqual([]);
 

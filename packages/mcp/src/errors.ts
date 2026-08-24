@@ -16,6 +16,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_RESOURCE_DUPLICATE',
   'X_MCP_SCOPE_UNKNOWN',
   'X_MCP_SCOPE_CONFLICT',
+  'X_MCP_RATE_LIMITED',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -33,6 +34,7 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_RESOURCE_DUPLICATE: 'two resources claim one MCP resource URI',
   X_MCP_SCOPE_UNKNOWN: 'defineAppMcp scopes a tool this server does not project',
   X_MCP_SCOPE_CONFLICT: 'two scopes claim one MCP tool',
+  X_MCP_RATE_LIMITED: "the caller has spent its allowance for this request's class",
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -289,6 +291,35 @@ export class McpNotBranchDbError extends UltimateError {
       code: 'X_MCP_NOT_BRANCH_DB',
       cause: input.cause,
       fix: input.fix,
+    });
+  }
+}
+
+/**
+ * The transport's own throttle, and its own CODE rather than `@ultimat3/http`'s `X_RATE_LIMITED`
+ * — not because the maths differ (they are the same `Bucket`, the same store and the same
+ * `rateLimitDecision`) but because the KNOB does. `X_RATE_LIMITED` tells an operator to raise
+ * `rateLimit.buckets` through `configureHttp()`, which governs the HTTP pipeline and not this route: all
+ * MCP traffic is one URL and the class comes from the parsed body, so `mcpHttpRoute` meters itself.
+ * A fix line that runs and changes nothing is worse than none — the same rule
+ * `@ultimat3/realtime`'s `SubscriptionLimitError` follows when it names the knob over the default.
+ *
+ * The bucket key names the ACTOR and never reaches the caller: a 429 is provokable by anyone
+ * holding a valid token, and an org id or an actor id in the body of one is a leak wearing a
+ * throttle's clothes.
+ */
+export class McpRateLimitedError extends UltimateError {
+  constructor(input: { verbClass: string; limit: number; retryAfterSeconds: number }) {
+    super({
+      code: 'X_MCP_RATE_LIMITED',
+      cause: `this caller has spent its ${input.limit} ${input.verbClass} requests per minute; the bucket refills in ${input.retryAfterSeconds}s`,
+      fix: `wait ${input.retryAfterSeconds}s — the Retry-After header carries the same number — or raise it where the route is built: mcpHttpRoute({ rateLimits: { ${input.verbClass}: <n> } }), or defineAppMcp({ rateLimits })`,
+      // why `meta` and not only the sentence: `transport-http.ts` writes `Retry-After` by hand, so
+      // this route is correct today. `@ultimat3/http`'s `retryAfterOf` reads the header off
+      // `meta.retryAfterSeconds` — so the day an MCP host is mounted inside that pipeline, an error
+      // carrying the number only in its prose sheds a caller with no delay to honour, which is the
+      // stampede `admit` exists to spread.
+      meta: { retryAfterSeconds: input.retryAfterSeconds },
     });
   }
 }

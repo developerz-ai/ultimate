@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import { syncPortFor } from './dev-sync';
+import { syncBindRefusal, syncPortFor } from './dev-sync';
 import { fixProblem } from './error-contract';
 import { PORT_RANGE } from './flag-number';
 
@@ -46,5 +46,34 @@ describe('unit · the port the sync node listens on', () => {
   // `PORT - 1` is a socket nothing else in the deployment computes.
   test('and the refusal is a refusal — no port is returned for it', () => {
     expect(() => syncPortFor(PORT_RANGE.max)).toThrow();
+  });
+});
+
+describe('unit · the sync node cannot bind, and says which port', () => {
+  // `x dev --port 3999` printed `web listening on 3999 … sync node ready`, then died with
+  // `X_CLI_UNEXPECTED` whose cause was `Error: Failed to start server. Is port 4000 in use?` —
+  // a caught value rendered verbatim into a refusal, under a code that means "the CLI itself
+  // failed" and a `fix: x doctor --json` that then reported the environment shippable (#F5).
+  test('a taken neighbour is X_PORT_IN_USE, not X_CLI_UNEXPECTED over a rendered Error', async () => {
+    const refusal = await syncBindRefusal(3999, 4000, async () => false);
+    expect(refusal?.code).toBe('X_PORT_IN_USE');
+    expect(refusal?.cause).toContain('4000');
+    expect(refusal?.cause).toContain('3999');
+    // Neither half of the cause may be the caught value: no `Error:` prefix, no Bun sentence.
+    expect(refusal?.cause).not.toContain('Failed to start server');
+    expect(refusal?.cause).not.toContain('Error:');
+  });
+
+  test('its fix is a command that ends the failure, never a diagnostic that missed it', async () => {
+    const refusal = await syncBindRefusal(3999, 4000, async () => false);
+    expect(refusal?.fix).toContain('x dev --port 4000');
+    expect(refusal?.fix).not.toContain('x doctor');
+    expect(fixProblem(refusal?.fix ?? '')).toBeUndefined();
+  });
+
+  // The other direction, and the one that keeps this from being a catch-all: a listener that
+  // failed for any other reason must reach the caller as the value it was.
+  test('a free port produces no refusal, so the original failure is re-thrown', async () => {
+    expect(await syncBindRefusal(3999, 4000, async () => true)).toBeUndefined();
   });
 });

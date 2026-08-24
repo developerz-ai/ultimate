@@ -1,24 +1,11 @@
-// The value domain, and the one hash this package still owns. `fnv1a` is the cursor's drift check
-// and it is NEVER a sharing key: the sharing key is `@ultimat3/core`'s `fingerprint`, which is
-// SHA-256 and twice as wide. A swap between them is invisible at a call site — 32 bits is a
-// collision anyone can find offline in seconds, and a `qid` built from one is one client served
-// out of another's window — so the difference is pinned here, beside the declaration that stayed.
+// The value domain. This package owns NO hash: `canonicalJson` and the sharing-key `fingerprint`
+// are `@ultimat3/core`'s, and the 32-bit `fnv1a` that stayed behind for `LiveCursor.digest` was
+// deleted with it (2026-08-24). The pin that used to live here — "fnv1a is never the sharing key,
+// because 32 bits is a collision anyone finds offline in seconds" — is now enforced by the module
+// not exporting one, which is the stronger form of the same rule.
 
 import { describe, expect, test } from 'bun:test';
-import { fingerprint } from '@ultimat3/core';
-import { changedColumns, fnv1a, isRow } from './json';
-
-describe('fnv1a is the drift check, and it is never a sharing key', () => {
-  test('answers 8 hex characters, so its 32 bits are visible in the value itself', () => {
-    expect(fnv1a('anything')).toMatch(/^[0-9a-f]{8}$/);
-    expect(fnv1a('a')).not.toBe(fnv1a('b'));
-  });
-
-  test('and it never agrees with the sharing key, so a call site cannot have taken the wrong one', () => {
-    expect(fnv1a('x')).not.toBe(fingerprint('x'));
-    expect(fnv1a('x').length).not.toBe(fingerprint('x').length);
-  });
-});
+import { changedColumns, isRow } from './json';
 
 describe('changedColumns is what an update patch carries', () => {
   test('answers only what moved, so a patch is not a whole row', () => {

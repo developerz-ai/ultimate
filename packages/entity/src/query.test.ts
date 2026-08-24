@@ -5,10 +5,10 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { integer, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { MAX_PAGE_SIZE } from './plan';
 import { tableFor } from './query';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 
 const posts = entity('query_test_posts', {
   columns: {
@@ -246,5 +246,85 @@ describe('writes through the table', () => {
   test('delete removes the row from the page it was on', async () => {
     await table.delete(id(0), { orgId: ORG });
     expect(await table.where({ orgId: ORG }).count()).toBe(4);
+  });
+});
+
+describe('the aggregate terminals', () => {
+  test('cover exactly the rows count() counts — the chain, never its page', async () => {
+    // 0+1+2+3+4 over this org's five rows; the other org's 99 is outside the predicate, and the
+    // page size is not part of the question.
+    const mine = table.where({ orgId: ORG }).limit(2);
+    expect(await mine.sum('likeCount')).toBe('10');
+    expect(await mine.count()).toBe(5);
+    expect(await table.where({ orgId: OTHER }).sum('likeCount')).toBe('99');
+  });
+
+  test('sum answers TEXT, because the sum of integers is not an integer', async () => {
+    // The narrowing is the caller's: `Number()` past 2^53 loses digits, and doing it here would
+    // make that loss the framework's decision on every row count that grows.
+    const total = await table.where({ orgId: ORG }).sum('likeCount');
+    expect(typeof total).toBe('string');
+  });
+
+  test('min and max answer the row’s own type', async () => {
+    const mine = table.where({ orgId: ORG });
+    expect(await mine.min('likeCount')).toBe(0);
+    expect(await mine.max('likeCount')).toBe(4);
+    expect(await mine.min('createdAt')).toEqual(AT);
+  });
+
+  test('avg is a fixed-scale decimal string, never a float', async () => {
+    // 10/5 is exact and still carries the scale, so a caller never has to guess how many digits
+    // came back; a repeating mean rounds in the one place both drivers round.
+    expect(await table.where({ orgId: ORG }).avg('likeCount')).toBe('2.000000');
+    expect(await table.where({ orgId: ORG }).andWhere('likeCount', 'lte', 2).avg('likeCount')).toBe(
+      '1.000000',
+    );
+  });
+
+  test('an empty match is null in every function, never 0', async () => {
+    const none = table.where({ orgId: ORG }).andWhere('title', 'eq', 'nothing');
+    expect(await none.sum('likeCount')).toBeNull();
+    expect(await none.avg('likeCount')).toBeNull();
+    expect(await none.min('likeCount')).toBeNull();
+    expect(await none.max('likeCount')).toBeNull();
+    // And `count()` is 0, which is the distinction: "no rows" is not "a total of nothing".
+    expect(await none.count()).toBe(0);
+  });
+
+  test('a column with no aggregate is refused on the chain that named it', async () => {
+    await expect(table.where({ orgId: ORG }).min('title')).rejects.toBeUltimateError(
+      'X_AGGREGATE_UNSUPPORTED',
+    );
+  });
+
+  test('approximateCount is refused outright on a tenant-scoped entity', async () => {
+    // The estimate is the TABLE's, and this table holds every tenant. A caller reading
+    // `where({ orgId }).approximateCount()` as "roughly how many of mine" would be handed every
+    // other tenant's rows too — so there is no scoped form of the question and no unscoped one
+    // either. One refusal, whether or not the chain named a filter: applied after tenancy instead,
+    // the unscoped call was `X_TENANCY_UNSCOPED` and the scoped one was this, which left the
+    // method declared and unreachable on every multi-tenant entity.
+    await expect(table.where({ orgId: ORG }).approximateCount()).rejects.toBeUltimateError(
+      'X_APPROXIMATE_COUNT_FILTERED',
+    );
+    await expect(table.approximateCount()).rejects.toBeUltimateError(
+      'X_APPROXIMATE_COUNT_FILTERED',
+    );
+  });
+
+  test('approximateCount answers for an unscoped table, and refuses its filters', async () => {
+    const events = entity('query_test_events', {
+      columns: { id: uuid().primaryKey(), label: text({ max: 20 }) },
+    });
+    const rows = [
+      { id: id(0), label: 'a' },
+      { id: id(1), label: 'b' },
+    ];
+    const table_ = tableFor(events, memoryRepo(events, rows));
+    expect(await table_.approximateCount()).toBe(2);
+    await expect(table_.where({ label: 'a' }).approximateCount()).rejects.toBeUltimateError(
+      'X_APPROXIMATE_COUNT_FILTERED',
+    );
   });
 });

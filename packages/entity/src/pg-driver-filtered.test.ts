@@ -9,9 +9,9 @@ import { createRecordingClient, type RecordingClient, setDbClient } from '@ultim
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 
 const orgs = entity('pg_test_orgs', {
   columns: { id: uuid().primaryKey(), slug: text({ max: 40 }).unique() },

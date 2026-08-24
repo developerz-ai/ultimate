@@ -4,10 +4,10 @@ import { integer, text, timestamp, uuid } from './columns';
 import { planScope } from './cursor';
 import { entity } from './entity';
 import { invariant } from './invariants';
+import { memoryRepo, memoryTransactor } from './memory-repo';
 import { planFor } from './plan';
 import { clearRegistry } from './registry';
 import type { FindManyArgs } from './repo';
-import { memoryRepo, memoryTransactor } from './repo';
 
 const notes = entity('repo_test_notes', {
   columns: {
@@ -212,7 +212,9 @@ describe('semantics shared with the Postgres driver', () => {
     const first = await repo.findMany(args);
     expect(first.nextCursor).not.toBeNull();
     const decoded = decodeCursor(first.nextCursor ?? '', planScope(planFor(events, args)));
-    expect(decoded.key[0]).toBe('café — piñata 🎉');
+    // `!` is the present-value tag: a cursor entry says whether it holds a value or an absence
+    // BEFORE it says what the value is, so a text column holding `null` can never be read as one.
+    expect(decoded.key[0]).toBe('!café — piñata 🎉');
     const second = await repo.findMany({
       limit: 1,
       orderBy: [{ column: 'label', direction: 'asc' }],

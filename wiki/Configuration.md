@@ -36,7 +36,7 @@ export const config = defineConfig({
 
 Everything derivable from code is **not** in this file — routes, actions, policies, jobs, tags all live in the generated `x.manifest.json`. Inspect the resolved config with `x config show --json`.
 
-`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly fourteen keys `As of 2026-08-22`: `name`, `locales`, `defaultLocale`, `defaultTimeZone`, `defaultCurrency`, `theme`, `auth`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `ai`. That type is the contract, and **every table below names only its members** — a block with no key here (`seo`, `budgets`, `mail`, `storage`, `otel`) is not an `app.config.ts` field and its section says where the real knob is instead.
+`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly fourteen keys `As of 2026-08-22`: `name`, `locales`, `defaultLocale`, `defaultTimeZone`, `defaultCurrency`, `theme`, `auth`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `ai`. That type is the contract, and **every table below names only its members** — a block with no key here (`http`, `seo`, `budgets`, `mail`, `storage`, `otel`) is not an `app.config.ts` field and its section says where the real knob is instead.
 
 ## Top level
 
@@ -65,6 +65,40 @@ There is no `url` field. The canonical origin is an env key the app reads at its
 | ~~`database.schema`~~ | — | — | **Deleted 2026-08.** Nothing emits `SET search_path`. Migration: delete the key; there is no replacement, and `entity()` tables live in `public` |
 
 Wiring the three instead would have needed a tier-0 → tier-1 read the tier table forbids. Deleting is axiom 3 applied to configuration: a value that produces neither a build error nor a runtime effect is worse than no field, because an SRE sets `poolSize: 3`, redeploys, and nothing changes.
+
+### Read replicas
+
+`As of 2026-08-24`. **Opt in twice**, and the second opt-in is the safety argument rather than an ergonomic one.
+
+| Step | What it is | Without it |
+|---|---|---|
+| 1. the pool | `DATABASE_REPLICA_URL` names a read-only standby. `defaultClient()` reads it once and builds a primary + replica client; the replica inherits the role's pool profile and `DATABASE_POOL_MAX`, so a fleet sized against `max_connections` sizes against **two** servers | one pool, statement for statement what it always was |
+| 2. the scope | `withReplicaReads(fn)` from `@ultimat3/db` — inside it, a statement that is provably a plain read may be answered by the standby | nothing routes, whatever is configured |
+
+```ts
+import { db, sql, withReplicaReads } from '@ultimat3/db';
+
+declare const id: string;
+
+await withReplicaReads(async () => {
+  await db().query(sql`select id from posts limit 20`); // -> replica
+  await db().execute(sql`insert into posts (id) values (${id})`);
+  await db().query(sql`select id from posts limit 20`); // -> primary, for the rest of the scope
+});
+```
+
+| Rule | Detail |
+|---|---|
+| read-your-writes | one write anywhere in the scope, at any depth, across any `await`, and every later read in it is the **primary's** for the rest of the scope. The flag is a mutable value on the async context, not a per-statement computation, which is what lets a write ten frames down be seen by the read after it |
+| a transaction | always the primary. `reserve()` is delegated there, so `BEGIN`, the body and `COMMIT` are one connection on one server — a `BEGIN` that landed on a standby is not a transaction, it is `25006` on the first write inside it. A `readOnly: true` transaction leaves the scope unmarked |
+| what is eligible | `select` / `table` / `values` / a read-only `with`, minus locking reads, `select … into` and the functions a standby answers instead of refusing. **Everything the classifier cannot vouch for is the primary's**, including `begin` and `set` |
+| a replica that fails | the statement is re-run on the primary — exactly-once, because only plain reads are sent there and a `25006` refusal never executed. **Three consecutive failures park it for 10 seconds**, so an outage costs 3 doubled reads rather than every read |
+| observability | `client.stats` (`replica`, `primary`, `fallbacks`, `parked`) and a `db.replica_fallback` warning per fallback |
+
+**The URL must name a read-only standby.** The server's own `25006` is the safety net under a classifier that cannot be complete; pointed at a writable node, a misroute becomes a write on the wrong server, silently.
+
+**Nothing opens the scope for you yet.** `withReplicaReads` ships first and wrapping a request in it is the app's call, so until that lands no production traffic is routed.
+
 
 ## `auth`
 
@@ -225,6 +259,63 @@ pwa: { enabled: true, offline: 'runtime' },
 | `pwa.push` | `boolean` | `false` | generates the SW handler, the subscription action and the send job |
 | ~~`pwa.installPrompt`~~ | — | — | **Deleted in 8.0.0.** Declared, defaulted and merged, and read by nothing — `@ultimat3/pwa`'s `createInstallController` is real and complete and no code ever threaded this flag into it, so both tracked apps and every scaffolded app carried a switch with no wire. Migration: delete the key and call `createInstallController` from your own affordance ([PWA and offline](PWA-And-Offline)) |
 
+## `http`
+
+**Not an `app.config.ts` block, and never was.** `AppConfigInput` has no `http` key. `@ultimat3/core` is tier 0 and cannot hold `@ultimat3/http`'s types, so an `http` block here would be a **second declaration** of `HttpConfigInput` in a package that can never check it against the real one. An app declares its half with `configureHttp()`, at module scope in a file under `apps/*/` — the same seam `configureAuthenticator()` and `defineStorage()` are, and for the same reason.
+
+Until 12.0.0 the whole tuning surface was **unreachable from a shipped app**: the only `HttpConfig` any framework-booted process built was one fixed literal inside the CLI, so `cors.origins` was `[]` in every deployment, `bodyLimitBytes` was 1 MiB for a 4 MB CSV endpoint and `rateLimit.buckets` was 120 burst / 2 rps for a bank and a blog alike. Shipped `fix:` lines across `@ultimat3/http` told the reader to edit `http.<key>` in `app.config.ts`, which has never held one — `bun run scripts/doc-config-keys.ts` is what now refuses that sentence in a doc.
+
+```ts
+// apps/web/http.ts — module scope. The app load imports every `apps/*/*.ts`, so this runs
+// before any listener binds; `apps/web/server.ts` and `prerender.ts` are entry points and
+// are deliberately NOT imported, so the call may not live in either.
+import { configureHttp, DEFAULT_RATE_LIMIT } from '@ultimat3/http';
+
+configureHttp({
+  requestTimeoutMs: 120_000,
+  bodyLimitBytes: 8 * 1_048_576,
+  maxInflight: 2_000,
+  cors: { origins: ['https://app.example.com'], credentials: true },
+  csrf: { mode: 'origin' },
+  rateLimit: {
+    // The WHOLE table, never a patch: `buckets` replaces the default one rather than merging
+    // into it, and a name nothing declares falls through to a built-in 120 / 2.
+    buckets: {
+      ...DEFAULT_RATE_LIMIT.buckets,
+      login: { capacity: 5, refillPerSecond: 0.01 },
+      tenant: { capacity: 5_000, refillPerSecond: 100 },
+    },
+    tenantBucket: 'tenant',
+  },
+});
+```
+
+| field | default | notes |
+|---|---|---|
+| `basePath` | `'/'` | stripped before matching, on a segment boundary — a mount at `/api` owns `/api` and `/api/…`, never `/apix` |
+| `bodyLimitBytes` | `1_048_576` | enforced **while** the body streams, so a `transfer-encoding: chunked` payload is cancelled the instant the running total passes it |
+| `requestTimeoutMs` | `30_000` | `0` disables. A caller may only **shorten** it, with `x-request-timeout-ms`; the framework's own typed clients send what is LEFT of the current request's budget |
+| `maxInflight` | `1_000` | `0` disables. Past it a request is shed `X_OVERLOADED` **before** any work — no route match, no auth, no body |
+| `drainTimeoutMs` | `null` | `null` means "this app has not said" and core's own deadline stands. Declaring it IS declaring the process-wide drain budget, so it overrides `configureLifecycle({ deadlineMs })` |
+| `cors` | `origins: []`, `credentials: true` | `origins: ['*']` with `credentials: true` is `X_CORS_CONFIG_INVALID` at boot — no browser accepts the pair |
+| `csrf` | `mode: 'origin'` | `'origin' \| 'off'`. `mode: 'token'` is deliberately not shipped |
+| `security` | HSTS off until https is affirmed, CSP report-only in dev | `security.csp.extend` merges **per directive** with the boot's own hashes, so admitting a CDN source does not evict the hydration runtime's and lock every island out |
+| `locale` / `tz` | header + cookie names | it decides WHERE the request's locale and zone are read from; `@ultimat3/i18n` and `@ultimat3/time` decide what they mean |
+| `rateLimit` | `enabled`, `buckets`, `defaultBucket`, `tenantBucket: null` | `scope` is boot-owned (below). `tenantBucket` names a bucket a whole tenant spends **beside** the caller's own; a name `buckets` does not declare is `X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN` at boot |
+
+**Seven keys plus `rateLimit.scope` are boot-owned, and writing one is a compile error** — `AppHttpConfig` is `Omit<HttpConfigInput, BootOwnedHttpKey | 'rateLimit'>` with `rateLimit` re-added minus `scope`, so the refusal is `TS2353` at the call and never a value silently discarded at every boot:
+
+| boot-owned key | what decides it |
+|---|---|
+| `port` / `hostname` | `PORT` and the role's binding |
+| `dev` | `x dev`, or `ULTIMATE_ENV` |
+| `buildId` | `BUILD_ID`, stamped by `x build` |
+| `signInPath` | `auth.signInPath` in `app.config.ts` |
+| `trustProxy` / `trustedProxyHops` | `TRUSTED_PROXY_HOPS` in the environment — one image runs behind an ingress in one cluster and behind nothing on a laptop, so an app that hardcoded it would be wrong in one of the two |
+| `rateLimit.scope` | the store the boot installed. A literal here would be a second declaration quietly contradicting it, and `assertRateLimitScope` compares exactly those two halves |
+
+An **embedder** that builds its own server — `createServer({ routes, config: defineHttpConfig({ … }) })` — passes the whole `HttpConfigInput`, boot-owned keys included, and owns every consequence: that is the one path on which `X_RATE_LIMIT_SCOPE_UNSET` and `X_TRUST_PROXY_UNSET` are reachable.
+
 ## `seo`
 
 **Not an `app.config.ts` block.** There is no `seo` key on `AppConfigInput`. `@ultimat3/seo`'s builders take their options at the call site, from the route that renders them:
@@ -240,15 +331,17 @@ pwa: { enabled: true, offline: 'runtime' },
 
 **Not an `app.config.ts` block.** There is no `budgets` key on `AppConfigInput` and no per-surface default table. A budget is declared **per route**, as `budget` on `defineRoute` — `RouteBudget` in [`packages/render/src/route.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/render/src/route.ts):
 
+**Two keys, `As of 2026-08-24`**, and both are optional:
+
 | field | type | notes |
 |---|---|---|
-| `budget.js` | `string` | `'40kb'` — measured from the real bundle graph, not the source size |
-| `budget.css` | `string` | |
-| `budget.lcp` | `number` | milliseconds, median of N headless runs |
-| `budget.cls` | `number` | |
-| `budget.tbt` | `number` | |
+| `budget.js` | `string` | `'40kb'` — measured from the real bundle graph, not the source size. The one budget the framework weighs: `x build --target static` writes a `jsBytes` per prerendered route into `.x/build-stats.json`, counted off the emitted document's own `<script>` tags, and the `budgets` step compares against that |
+| `budget.lcp` | `number` | milliseconds. **Published, not enforced** — it reaches `x.manifest.json` and `x routes`, and nothing in the framework produces an LCP measurement: `apps/web/prerender.ts` is the only writer of the stats file and it emits static HTML, so there is no browser in the build to observe a paint. The comparison is reachable only for an app that writes its own `lcpMs` rows, which is why `x new` no longer scaffolds an `lcp` budget |
+| ~~`budget.css`~~ | — | **Deleted in 12.0.0**, with `budget.cls` and `budget.tbt`. All three were declared on the route contract for four majors, flattened away by `registerRoute` — which projects a budget to `budgetJs` + `budgetLcp` and nothing else — and read by no consumer anywhere, so `budget: { cls: 0.1 }` was accepted, normalised, stored and ignored while `x verify`'s `budgets` step, the one thing that exists to enforce a budget, reported green. Deleted rather than wired, for `pwa.installPrompt`'s reason: the measuring half does not exist either. Migration: delete the key |
+| ~~`budget.cls`~~ | — | as above |
+| ~~`budget.tbt`~~ | — | as above. A new budget key is now a **build error** until the descriptor projects it: `_EveryBudgetKeyIsProjected` in [`packages/render/src/type-pins.tsx`](https://github.com/developerz-ai/ultimate/blob/main/packages/render/src/type-pins.tsx) derives `'js' \| 'lcp'` from `RouteDescriptor`'s own `budgetJs`/`budgetLcp`, so neither side can move alone |
 
-Every field is optional, and a declared budget with no measurement is itself a failure — the finding names the import chain that blew it, because "your bundle got bigger" is not actionable for a human or an agent. The **0 kb JS baseline on `site/`** is not a default in a table: a `site/` route off `hydrate: 'never'` with no `budget.js` is refused at registration, which is structural rather than aspirational.
+A declared budget with no measurement is itself a failure (`X_BUDGET_UNMEASURED`), never a pass — a route that clears the gate without being weighed is the false green axiom 5 exists to prevent — and the finding names the import chain that blew it, because "your bundle got bigger" is not actionable for a human or an agent. Only `render: 'static'` routes are weighed today; every other mode needs a running process. The **0 kb JS baseline on `site/`** is not a default in a table: a `site/` route off `hydrate: 'never'` with no `budget.js` is refused at registration, which is structural rather than aspirational.
 
 The precache warning is its own number and not a budget: `DEFAULT_PRECACHE_WARN_BYTES` is 5 MiB, overridable per build as `warnBytes` ([`packages/pwa/src/precache.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/pwa/src/precache.ts)).
 
@@ -324,6 +417,7 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 | `PORT` | `web`, `sync` | no — default `3000` | the TCP port the role binds. Empty, non-numeric or outside 0–65535 → `X_PORT_INVALID`, refused rather than defaulted past, because a web role that quietly bound 3000 fails the platform's health probe with nothing in the log that names the cause |
 | `ULTIMATE_ENV` | all | no — default `development` | `development \| test \| staging \| production`, read by `resolveEnvironment()`. `NODE_ENV` is a fallback only, and is never policed |
 | `DATABASE_URL` | all | yes | |
+| `DATABASE_REPLICA_URL` | all | no — unset is one pool | `As of 2026-08-24`: a read-only standby. Set it and `baseClient()` builds a primary + replica client; unset and the client is byte-identical to the single-pool one. Routing is still opt-in per scope (`withReplicaReads`), so setting it alone changes nothing — see [Read replicas](#read-replicas) |
 | `APP_URL` | `web`, `sync` | yes | the canonical origin. An app-read key, not a config field — declare it in `defineEnv` |
 | `SESSION_SECRET` | `web`, `sync` | yes | >=32 chars |
 | `WORKER_QUEUES` | `worker` | no — default `default` | comma-separated; one pool per name |
@@ -336,6 +430,7 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 | `BUILD_ID` | all | set by `x build` | content hash. Never a timestamp, never `latest` |
 | `DRAIN_TIMEOUT` | all | no — default `30s` | must be <= the orchestrator's `stop_grace_period` |
 | `LOG_LEVEL` | all | no — default `info` | `debug \| info \| warn \| error` |
+| `TRUSTED_PROXY_HOPS` | `web`, `sync` | no — unset trusts no proxy header | how many proxies **append** to `x-forwarded-for` between the client and this process: 1 for a single ingress or ALB, 2 for a CDN in front of one. Integer 1–16; anything else is `X_PORT_INVALID`, refused rather than defaulted, because reading the header at the wrong index is trusting a value the client typed. Unset means `ctx.ip` is the socket address, `ctx.peer` is `null` and no inbound `x-request-id` is echoed |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | all | no | the OTLP collector. There is no `otel` config block for it to override — see [`otel`](#otel) |
 
 Rules:

@@ -40,8 +40,8 @@ Rails' philosophy on a Bun + Postgres + SolidJS stack. Everything is one of **ei
 
 | End of the range | The claim | Measured `As of 2026-08-23` |
 |---|---|---|
-| **small** — a weekend idea, a first app | not overkill: nothing to install, nothing to choose | `x new` asks **0** questions (all five flags defaulted), writes **136** files you never edit, installs **104** packages, and reaches a running app in **4** commands with **0** env values supplied |
-| **large** — many teams, real traffic | the ladder, the tier boundaries and the 19-step gate are already in the beginner's app | the same `x verify`, the same primitives, the same image; climbing is `ROLE`, env and replica counts ([scale ladder](docs/idea/17-scale-ladder.md)) |
+| **small** — a weekend idea, a first app | not overkill: nothing to install, nothing to choose | `x new` asks **0** questions (all five flags defaulted), writes **138** files you never edit, installs **104** packages, and reaches a running app in **4** commands with **0** env values supplied |
+| **large** — many teams, real traffic | the ladder, the tier boundaries and the 20-step gate are already in the beginner's app | the same `x verify`, the same primitives, the same image; climbing is `ROLE`, env and replica counts ([scale ladder](docs/idea/17-scale-ladder.md)) |
 | **the model you can afford** | enforced conventions and executable `fix:` lines are worth *more* the cheaper the model | a fresh scaffold's gate goes from red to **18 of 19** by running the `fix:` lines it printed, bounded at three rounds, on every push in CI |
 
 → [The range, in full, with every number's command](docs/idea/21-the-range.md)
@@ -136,9 +136,9 @@ X_DB_DRIFT: schema differs from migrations
 bun run verify        # this repo. In an app: x verify
 ```
 
-**Nineteen steps, in cost order**, and the same list runs in the framework repo and in a generated app — whole, or not at all. `x verify --only <step>` runs one step for an iteration loop and announces `NOT A GATE RUN`; the gate is this command with no flag, and there is no `--skip`.
+**Twenty steps, in cost order**, and the same list runs in the framework repo and in a generated app — whole, or not at all. `x verify --only <step>` runs one step for an iteration loop and announces `NOT A GATE RUN`; the gate is this command with no flag, and there is no `--skip`.
 
-`typecheck` · `lint` · `boundaries` · `filesize` · `package-shape` · `errors` · `unit` · `contract` · `live` · `job` · `e2e` · `eval` · `drift` · `contract-diff` · `budgets` · `seo` · `i18n` · `manifest` · `roadmap`
+`typecheck` · `lint` · `boundaries` · `filesize` · `package-shape` · `errors` · `unit` · `contract` · `live` · `job` · `e2e` · `eval` · `drift` · `contract-diff` · `budgets` · `seo` · `i18n` · `policy` · `manifest` · `roadmap`
 
 The list is data, not prose — `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](packages/cli/src/verify-step.ts), and `bun run x -- verify --json` prints it with each step's verdict. **Green means shippable**; that is the whole contract.
 

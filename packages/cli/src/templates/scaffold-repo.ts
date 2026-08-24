@@ -82,6 +82,21 @@ const rootPackage = (app: NameSet, version: string): string => `{
 }
 `;
 
+/**
+ * `"incremental": true` is ONE line and it is the difference between a 4.9s typecheck and a 92s
+ * one. `x verify`'s first step is `tsc -b`, and `-b` decides "up to date?" by comparing emitted
+ * OUTPUTS against inputs — with `noEmit` and no `composite`/`references`, the output it looks for
+ * is an `app.config.js` that will never exist (`Project 'tsconfig.json' is out of date because
+ * output file 'app.config.js' does not exist`), so every run rebuilt the whole program from
+ * scratch, forever. Measured on a 166-file scaffold with no source change between runs: 92s wall
+ * / 43s user CPU without it, 4.9s / 8.8s warm with it, and the whole gate at 12s rather than
+ * 24-71s. This was the only tree in the framework without incremental typechecking — the repo
+ * root has 32 `references` and `examples/dummy/tsconfig.json` sets `composite`.
+ *
+ * The note lives HERE and not in the emitted file, for the reason `biome.json` below gives: an
+ * app author has no use for eight lines of framework archaeology in their own tsconfig, and
+ * `*.tsbuildinfo` is already in the scaffold's `.gitignore`.
+ */
 const rootTsconfig = (app: NameSet): string => `{
   "compilerOptions": {
     "target": "ES2023",
@@ -101,6 +116,7 @@ const rootTsconfig = (app: NameSet): string => `{
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "incremental": true,
     "resolveJsonModule": true,
     "jsx": "preserve",
     "jsxImportSource": "solid-js"
@@ -258,6 +274,10 @@ const SCAFFOLD_FLOOR: readonly VerifyStepName[] = [
   'eval',
   'drift',
   'budgets',
+  // Always applicable to a scaffolded app — it has an `app.config.ts`, roles and two guarded
+  // routes — so a run that reports it skipped is a gate that lost the step, not an app with
+  // nothing to check. It is the step that would have caught the 500 `x new` used to ship.
+  'policy',
   'manifest',
 ];
 

@@ -4,11 +4,16 @@
 // declared. That is the whole reason this file exists instead of a template literal per method.
 
 import { identifier, join, raw, type SqlFragment, sql } from '@ultimat3/db';
-import { columnFor, columnName } from './column';
+import type { AggregateFn } from './aggregate';
+import { AVG_SCALE } from './aggregate';
+import { columnFor } from './column';
+import { isNullableKey, kindOf } from './cursor';
 import type { EntityCore } from './entity';
 import { SOFT_DELETE_COLUMN } from './entity';
-import { allColumns, columnsOf, physicalName } from './pg-row';
+import { microsToIso, seekAlias } from './instant';
+import { allColumns, arrayLiteral, columnsOf, physicalName } from './pg-row';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
+import type { ColumnKind } from './types';
 
 /** Nothing matches. `in ()` is a syntax error in Postgres, so an empty set needs a constant. */
 const NEVER = sql`1 = 0`;
@@ -65,59 +70,187 @@ const predicateSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFr
       return sql`${column} is null`;
     case 'is-not-null':
       return sql`${column} is not null`;
+    // The containment half. The OPERAND crosses as a bound parameter in every one of them — a
+    // jsonb operand as its TEXT with the same `::text::jsonb` cast an insert cell uses (the driver
+    // seam refuses a plain object as a parameter), an array operand as the array literal
+    // `bindValues` already builds. What is written into the statement is the operator, and the
+    // operator is chosen here from a closed set of four.
+    case 'contains':
+      return containmentSql(entity, predicate, 'contains');
+    case 'contained-by':
+      return containmentSql(entity, predicate, 'contained-by');
+    case 'overlaps':
+      return containmentSql(entity, predicate, 'overlaps');
+    // The `?` OPERATOR, schema-qualified — not `jsonb_exists(col, $1)`, which is the same test and
+    // is **not indexable**. Measured on Postgres 16 over 20,000 rows with a GIN index and
+    // `enable_seqscan = off`: `data ? 'k'` plans as a Bitmap Index Scan and
+    // `jsonb_exists(data, 'k')` is a Seq Scan the planner will not convert, because an index is
+    // matched against an OPERATOR expression and a bare function call is not one. Shipping the
+    // function form would have made `has-key` the one containment operator a declared GIN index
+    // cannot serve — which is the whole reason the index is declarable.
+    //
+    // `operator(pg_catalog.?)` rather than a bare `?`: both round-trip through Bun's client today
+    // (measured), and the qualified spelling is immune to any client that reads `?` as a
+    // placeholder and to a search_path that shadows the operator. Postgres matches the index
+    // against it identically — verified in the same EXPLAIN run.
+    case 'has-key':
+      return sql`${column} operator(pg_catalog.?) ${String(predicate.value)}`;
   }
 };
 
 /**
- * A cursor's timestamp is the row's own value FLOORED: a `Date` holds milliseconds and a
- * `timestamptz` column holds microseconds, so `created_at > '…123'` is satisfied by the very row
- * at `…123456` the cursor was minted from — the same row, returned again, on every page boundary.
- * Under `desc` the same gap does the opposite and silently drops every row inside that
- * millisecond, which no `id` tiebreak can recover because the first `or` term never matched.
- *
- * So a timestamp seek compares against the millisecond WINDOW its value stands for — what
- * `date_trunc('milliseconds', …)` would say, spelled as a half-open range so the column stays
- * bare and an index can still range-scan it. `timestamptz` is the only sort kind revived as a
- * `Date` (`cursor.ts`), so the type test IS the kind test.
+ * A containment operand, cast to the column's own type. `jsonb` is the one that cannot bind as
+ * itself — the seam refuses a plain object (`X_SQL_UNSAFE`) — so it crosses as TEXT and the cast
+ * turns it back, exactly as an insert cell does; `::text::jsonb` and not `::jsonb`, because with
+ * the single cast the client JSON-encodes the string it was given and `{"a":1}` is stored as the
+ * JSON *string*.
  */
-const nextMillisecond = (value: Date): Date => new Date(value.getTime() + 1);
-
-/** Strictly past the cursor's position in this key's direction. */
-const seekAfter = (column: SqlFragment, direction: string, value: unknown): SqlFragment => {
-  if (direction === 'desc') return sql`${column} < ${value}`;
-  // `>= v + 1ms` is `trunc(col) > v`; `< v` already is `trunc(col) < v`, so only asc moves.
-  if (value instanceof Date) return sql`${column} >= ${nextMillisecond(value)}`;
-  return sql`${column} > ${value}`;
+const containmentSql = <Row>(
+  entity: EntityCore<Row>,
+  predicate: Predicate,
+  op: 'contains' | 'contained-by' | 'overlaps',
+): SqlFragment => {
+  const column = columnRef(entity, predicate.column);
+  const kind = kindOf(entity, predicate.column);
+  const operand =
+    kind === 'jsonb'
+      ? sql`${JSON.stringify(predicate.value ?? null)}::text::jsonb`
+      : sql`${arrayLiteral(predicate.value)}`;
+  if (op === 'contains') return sql`${column} @> ${operand}`;
+  if (op === 'contained-by') return sql`${column} <@ ${operand}`;
+  return sql`${column} && ${operand}`;
 };
 
-/** At the cursor's position for this key — the prefix a later key's tiebreak hangs off. */
-const seekEqual = (column: SqlFragment, value: unknown): SqlFragment =>
-  value instanceof Date
-    ? sql`(${column} >= ${value} and ${column} < ${nextMillisecond(value)})`
-    : sql`${column} = ${value}`;
+/**
+ * The bind a seek compares against, at the precision the COLUMN keeps. Every kind but one binds
+ * the revived value itself; a `timestamptz` cursor carries MICROSECONDS since the epoch
+ * (`cursor.ts`), because binding a JS `Date` is the row's own position floored to the millisecond
+ * — and the `order by` beside it sorts at microseconds, so the two ranked rows differently and a
+ * `desc` page dropped every row inside the boundary millisecond. Proven against a real server:
+ * `pg-cursor-precision.live.test.ts`.
+ *
+ * The cast is part of this template and not a `raw()` call: what crosses as a parameter is the ISO
+ * text, and `${…}::timestamptz` is what makes the server parse it as an instant rather than infer
+ * a type for it. The column stays BARE on the left, so an index can still range-scan.
+ */
+const seekBind = (kind: ColumnKind | undefined, value: unknown): SqlFragment | null => {
+  // `null` and not a bound parameter: NULL is never the VALUE being tested, it is the shape of the
+  // term. `col = $n` and `col > $n` are both unknown against a NULL bind, so binding one would
+  // answer no rows where the ordering says there are some.
+  if (value === null || value === undefined) return null;
+  return kind === 'timestamptz' && typeof value === 'bigint'
+    ? sql`${microsToIso(value)}::timestamptz`
+    : sql`${value}`;
+};
 
 /**
- * The keyset seek, spelled out rather than as a row comparison: `(a, b) > (x, y)` requires every
- * key to sort the same way, and a listing that is `published_at desc, id asc` does not.
+ * Strictly past the cursor's position in this key's direction, under the ordering `orderSql`
+ * writes — so NULL is the largest value on both sides of the comparison.
+ *
+ * `desc` is `nulls first`: a NULL cursor is at the very top, and every non-null row follows it
+ * (`is not null`); a value cursor's `< $n` already excludes the NULLs above it. `asc` is
+ * `nulls last`: the NULLs follow every value, so a value cursor has to REACH them explicitly or
+ * page two ends at the first NULL — and a NULL cursor is the end of the listing, which is why the
+ * ascending null case answers `undefined` and `seekSql` drops the whole term rather than emitting
+ * SQL that can never be true.
+ *
+ * `or col is null` only when the column can actually hold one: on a not-null column it is dead SQL
+ * the planner has to defeat before it can seek the index, on every paged read.
  */
+const seekAfter = (
+  column: SqlFragment,
+  direction: string,
+  bind: SqlFragment | null,
+  nullable: boolean,
+): SqlFragment | undefined => {
+  if (direction === 'desc') {
+    return bind === null ? sql`${column} is not null` : sql`${column} < ${bind}`;
+  }
+  if (bind === null) return undefined;
+  return nullable ? sql`(${column} > ${bind} or ${column} is null)` : sql`${column} > ${bind}`;
+};
+
+/**
+ * At the cursor's position for this key — the prefix a later key's tiebreak hangs off. `= $n` is
+ * never true of a NULL in Postgres, so an absent position is `is null`: the same pair
+ * `predicateSql` above already emits for `eq`, one page later.
+ */
+const seekEqual = (column: SqlFragment, bind: SqlFragment | null): SqlFragment =>
+  bind === null ? sql`${column} is null` : sql`${column} = ${bind}`;
+
+/**
+ * The keyset seek. Two shapes, and which one is legal is decided by the ORDER, never by taste.
+ *
+ * Every key sorting the same way is a ROW COMPARISON — `(a, b) < ($1, $2)`. That is the shape
+ * Postgres can push into a multicolumn index: measured on Postgres 16 over 20,000 rows with an
+ * index on `(org, at desc, id desc)`, the row form plans as an Index Only Scan carrying the whole
+ * seek as its Index Cond, while the or-chain below plans as a BitmapOr of two index scans plus a
+ * Sort over everything they matched.
+ *
+ * A MIXED order — `published_at desc, id asc` — has no row comparison, so it is spelled out as the
+ * or-chain instead. `totalOrder` no longer produces one by accident (the tiebreak follows the last
+ * declared key's direction), so this branch is now reached only by a caller who wrote the mixed
+ * order themselves.
+ *
+ * Either way every term is a plain comparison against a bare column, which is what carrying the
+ * cursor at the column's own precision bought: the equality class this seek cuts on is exactly the
+ * one `orderSql` sorts by, so no row can fall between the two.
+ */
+/**
+ * A row comparison `(a, b) < ($1, $2)` is legal only when the ordering it stands for is the one
+ * Postgres gives it — and a row comparison has NO null ordering: a NULL anywhere in either side
+ * makes the whole comparison unknown, so under `asc nulls last` every NULL row would be excluded
+ * from the very page the ordering puts it on. Uniform direction is therefore not enough; every key
+ * has to be a column that cannot hold a NULL.
+ */
+const rowComparable = <Row>(entity: EntityCore<Row>, orderBy: readonly SortKey[]): boolean => {
+  const [first] = orderBy;
+  if (first === undefined || orderBy.length < 2) return false;
+  return orderBy.every(
+    (entry) => entry.direction === first.direction && !isNullableKey(entity, entry.column),
+  );
+};
+
 const seekSql = <Row>(
   entity: EntityCore<Row>,
   orderBy: readonly SortKey[],
   seek: readonly unknown[],
 ): SqlFragment => {
-  const terms = orderBy.map((entry, index) => {
+  const binds = orderBy.map((entry, index) => seekBind(kindOf(entity, entry.column), seek[index]));
+  // One key is already a scalar comparison; `(("id") > ($1))` is the same plan spelled worse.
+  if (rowComparable(entity, orderBy)) {
+    const columns = join(orderBy.map((entry) => columnRef(entity, entry.column)));
+    // Not-null columns, so no bind here can be `null` — but the type says it can, and `sql`null``
+    // for one would be a seek from a position no row is after.
+    const values = join(binds.map((bind) => bind ?? sql`null`));
+    return orderBy[0]?.direction === 'desc'
+      ? sql`((${columns}) < (${values}))`
+      : sql`((${columns}) > (${values}))`;
+  }
+  const terms = orderBy.flatMap((entry, index) => {
+    const after = seekAfter(
+      columnRef(entity, entry.column),
+      entry.direction,
+      binds[index] ?? null,
+      isNullableKey(entity, entry.column),
+    );
+    // Nothing sorts after a NULL under `nulls last`, so this key's term is dead SQL — dropped
+    // rather than emitted. The remaining keys still carry the page: the equality prefix below
+    // reaches them as `col is null`.
+    if (after === undefined) return [];
     const equal = orderBy
       .slice(0, index)
-      .map((earlier, position) => seekEqual(columnRef(entity, earlier.column), seek[position]));
-    return sql`(${join(
-      [...equal, seekAfter(columnRef(entity, entry.column), entry.direction, seek[index])],
-      ' and ',
-    )})`;
+      .map((earlier, position) =>
+        seekEqual(columnRef(entity, earlier.column), binds[position] ?? null),
+      );
+    return [sql`(${join([...equal, after], ' and ')})`];
   });
-  return sql`(${join(terms, ' or ')})`;
+  // Every key NULL under an ascending order is the very end of the listing — no row follows it,
+  // and `()` is a syntax error.
+  return terms.length === 0 ? NEVER : sql`(${join(terms, ' or ')})`;
 };
 
-const conditions = <Row>(
+export const conditions = <Row>(
   entity: EntityCore<Row>,
   plan: QueryPlan,
   shape: ReadShape,
@@ -130,20 +263,60 @@ const conditions = <Row>(
   return parts.length === 0 ? sql`true` : join(parts, ' and ');
 };
 
+/**
+ * NULL's place in the ordering, WRITTEN DOWN rather than inherited from the server's default —
+ * `asc nulls last`, `desc nulls first`. Identical to `@ultimat3/query`'s `orderTerm`, deliberately:
+ * two pagination systems in one framework disagreeing about where a NULL sorts is the ambiguity
+ * axiom 1 exists to forbid, and until 2026-08-24 this package refused a nullable sort key outright
+ * rather than answer the question. Saying it out loud is also what keeps a driver whose default
+ * differs from re-opening the divergence.
+ *
+ * `raw()` is the same closed set of one word it always was — now four words instead of two, all
+ * written here and never derived from a value.
+ */
+const NULLS_LAST = raw('asc nulls last');
+const NULLS_FIRST = raw('desc nulls first');
+
 const orderSql = <Row>(entity: EntityCore<Row>, orderBy: readonly SortKey[]): SqlFragment =>
   join(
     orderBy.map(
       (entry) =>
-        sql`${columnRef(entity, entry.column)} ${raw(entry.direction === 'desc' ? 'desc' : 'asc')}`,
+        sql`${columnRef(entity, entry.column)} ${entry.direction === 'desc' ? NULLS_FIRST : NULLS_LAST}`,
     ),
   );
+
+/**
+ * The microsecond half of every `timestamptz` sort key, under an output name no entity can declare
+ * (`seekAlias`). Bun's client hands a `timestamptz` back as a JS `Date`, which is milliseconds, so
+ * the row itself CANNOT carry the value the `order by` actually sorted by — a cursor minted from
+ * it cuts the page at a position no row occupies, and every row inside the boundary millisecond is
+ * then served on no page at all.
+ *
+ * `at time zone 'UTC'` rather than a bare `::text`: the bare cast renders in the session's
+ * `TimeZone`, and a page position must not depend on a connection setting.
+ */
+const seekPrecision = <Row>(entity: EntityCore<Row>, plan: QueryPlan): readonly SqlFragment[] => {
+  const seen = new Set<string>();
+  return plan.orderBy.flatMap((entry) => {
+    if (kindOf(entity, entry.column) !== 'timestamptz') return [];
+    const physical = physicalName(entity, entry.column);
+    if (seen.has(physical)) return [];
+    seen.add(physical);
+    return [
+      sql`(${identifier(physical)} at time zone 'UTC')::text as ${identifier(seekAlias(physical))}`,
+    ];
+  });
+};
 
 /**
  * A projection always carries the primary key and the sort keys even when the caller did not
  * ask for them: without those values the page cannot produce the cursor that continues it.
  */
 const projection = <Row>(entity: EntityCore<Row>, plan: QueryPlan): SqlFragment => {
-  if (plan.select === undefined) return join(allColumns(entity).map(identifier));
+  const precise = seekPrecision(entity, plan);
+  if (plan.select === undefined) {
+    return join([...allColumns(entity).map(identifier), ...precise]);
+  }
   const wanted = new Set([
     ...plan.select,
     ...entity.$primaryKey,
@@ -153,7 +326,7 @@ const projection = <Row>(entity: EntityCore<Row>, plan: QueryPlan): SqlFragment 
     const column = columnFor(entity.$columns, property);
     return column === undefined ? [] : columnsOf(property, column);
   });
-  return join(names.map(identifier));
+  return join([...names.map(identifier), ...precise]);
 };
 
 export const selectStatement = <Row>(
@@ -204,115 +377,88 @@ export const countByStatement = <Row>(
   )} where ${conditions(entity, plan, shape)} group by ${grouped} limit ${limit}`;
 };
 
-/** `on conflict (…) do update set …`, or `do nothing` when there is nothing to overwrite. */
-export interface ConflictTarget {
-  /** Physical columns of the unique index a collision is judged against. */
-  readonly columns: readonly string[];
-  /** Physical columns a colliding row takes from the incoming one. Empty is `do nothing`. */
-  readonly set: readonly string[];
-}
-
-export interface InsertShape {
-  /** Every physical column written — one list, shared by every row of the statement. */
-  readonly columns: readonly string[];
-  /** How a collision resolves. Absent, it is the caller's error, exactly as it is for one row. */
-  readonly conflict?: ConflictTarget | undefined;
-}
-
 /**
- * The cell of a row that did not name this column. `default` is the second and last `raw()` in
- * this file and, like `asc|desc` above it, a closed set of one word: it is what makes a row inside
- * a many-row `insert` mean what the same row means on its own, where an unnamed column is simply
- * left out. The seek operator used to be a third — it is chosen in TypeScript now
- * (`seekAfter`/`seekEqual`), because a timestamp seek is not one operator.
- */
-const DEFAULT_CELL = raw('default');
-
-const conflictSql = (conflict: ConflictTarget): SqlFragment => {
-  const target = join(conflict.columns.map(identifier));
-  return conflict.set.length === 0
-    ? sql` on conflict (${target}) do nothing`
-    : sql` on conflict (${target}) do update set ${join(
-        conflict.set.map((column) => sql`${identifier(column)} = excluded.${identifier(column)}`),
-      )}`;
-};
-
-/**
- * The one column that cannot be bound as itself. A `jsonb` value is a plain object, and the
- * driver seam refuses one as a parameter (`X_SQL_UNSAFE` — `isBoundValue` takes scalars, a `Date`,
- * a `Uint8Array` and arrays of those); so `bindValues` hands over the JSON TEXT and the cell says
- * what to do with it.
+ * One aggregate over exactly the rows `countStatement` would have counted — the same predicates,
+ * the same soft-delete filter, one function more. Four outputs and always the same four names, so
+ * neither driver reads a column an entity could also have declared:
  *
- * `::text::jsonb` and not `::jsonb`, and the double cast is load-bearing rather than defensive.
- * Measured against Postgres 17.10 through Bun's `sql`: with `$1::jsonb` the server describes the
- * parameter as `jsonb`, the client JSON-ENCODES the string it was given, and `{"a":1}` is stored
- * as the JSON *string* `"{\"a\":1}"` — `jsonb_typeof` says `string`. Pinning the parameter to
- * `text` first makes the client send the characters and the server parse them, which is the one
- * spelling that stores an object.
+ * - `agg_value` — the aggregate itself, as TEXT. `::text` and never a float: `sum(bigint)` is a
+ *   `numeric` Bun would hand back as a string anyway, and pinning it makes `integer` behave the
+ *   same. `aggregate.ts` re-parses it by the column's kind.
+ * - `agg_count` — how many non-null values went in, which is what tells `null` ("no rows") from a
+ *   legitimate zero, and what `avg` divides by.
+ *
+ * `avg` is `round(avg(...), AVG_SCALE)` rather than the server's own scale, because the in-memory
+ * driver has to reach the same digits and "whatever numeric division gives you" is not a rule two
+ * implementations can share.
  */
-/** Physical names of this entity's `jsonb` columns. Resolved ONCE per statement, never per cell. */
-const jsonColumns = <Row>(entity: EntityCore<Row>): ReadonlySet<string> => {
-  const names = new Set<string>();
-  for (const [property, column] of Object.entries(entity.$columns)) {
-    if (column.$meta.kind === 'jsonb') names.add(columnName(property, column.$meta));
-  }
-  return names;
-};
-
-/**
- * `${value}`, plus the cast that column needs. The `raw()` argument is a literal written here and
- * nowhere else — the audit point that call is stays a two-word constant, never a value.
- */
-const cell = (json: ReadonlySet<string>, column: string, value: unknown): SqlFragment =>
-  json.has(column) ? sql`${value}${raw('::text::jsonb')}` : sql`${value}`;
-
-/**
- * One statement for any number of rows. A single row compiles to exactly the text it always did,
- * which is the point: `insertAll([row])` and `insert(row)` are one code path, so there is no
- * second insert builder for the two to drift apart in.
- */
-export const insertStatement = <Row>(
-  entity: EntityCore<Row>,
-  rows: readonly ReadonlyMap<string, unknown>[],
-  shape: InsertShape,
-): SqlFragment => {
-  const json = jsonColumns(entity);
-  const tuples = rows.map(
-    (row) =>
-      sql`(${join(
-        shape.columns.map((column) =>
-          row.has(column) ? cell(json, column, row.get(column)) : DEFAULT_CELL,
-        ),
-      )})`,
-  );
-  const conflict = shape.conflict === undefined ? sql`` : conflictSql(shape.conflict);
-  return sql`insert into ${identifier(entity.$table)} (${join(
-    shape.columns.map(identifier),
-  )}) values ${join(tuples)}${conflict} returning *`;
-};
-
-/**
- * `returning` is a parameter and has no default, because the three callers want three different
- * answers and the wrong one is not visible in the result: `update(id, patch)` needs the stored row,
- * a soft delete and a filtered write need a count, and `returning *` on a filtered write over a
- * whole tenant streams every matched row into the process for nobody to read. A default would make
- * that the quiet case.
- */
-export const updateStatement = <Row>(
+export const aggregateStatement = <Row>(
   entity: EntityCore<Row>,
   plan: QueryPlan,
-  values: ReadonlyMap<string, unknown>,
   shape: ReadShape,
-  returning: boolean,
+  fn: AggregateFn,
+  column: string,
 ): SqlFragment => {
-  const json = jsonColumns(entity);
-  return sql`update ${identifier(entity.$table)} set ${join(
-    [...values].map(([column, value]) => sql`${identifier(column)} = ${cell(json, column, value)}`),
-  )} where ${conditions(entity, plan, shape)}${returning ? sql` returning *` : sql``}`;
+  const target = columnRef(entity, column);
+  const value =
+    fn === 'sum'
+      ? sql`sum(${target})`
+      : fn === 'avg'
+        ? sql`round(avg(${target}), ${AVG_SCALE})`
+        : fn === 'min'
+          ? sql`min(${target})`
+          : sql`max(${target})`;
+  return sql`select ${value}::text as agg_value, count(${target}) as agg_count from ${identifier(
+    entity.$table,
+  )} where ${conditions(entity, plan, shape)}`;
 };
 
-/** Only reached when the entity has no soft-delete column, so there is no filter to apply. */
-export const deleteStatement = <Row>(entity: EntityCore<Row>, plan: QueryPlan): SqlFragment =>
-  sql`delete from ${identifier(entity.$table)} where ${conditions(entity, plan, {
-    includeDeleted: true,
-  })}`;
+/** What an aggregate comes back as. Both names are fixed, so neither can be a column's. */
+export interface AggregateRow {
+  readonly agg_value: unknown;
+  readonly agg_count: unknown;
+}
+
+/**
+ * The distinct currencies among the rows an aggregate is about to cover. A separate statement
+ * rather than a clever one: `sum(minor)` over two currencies is a number in neither, and the only
+ * honest answer is to refuse — which needs the list, not a boolean.
+ *
+ * Bounded at three, because the refusal names them and a caller with three already knows.
+ */
+export const currenciesStatement = <Row>(
+  entity: EntityCore<Row>,
+  plan: QueryPlan,
+  shape: ReadShape,
+  currencyColumn: string,
+  scaleColumn: string | null,
+): SqlFragment => {
+  const currency = identifier(currencyColumn);
+  // The SCALE is half of what makes two amounts incomparable and it is the half with no symptom:
+  // `{ minor: 5, currency: 'USD' }` is five cents and the same row at `scale: 6` is five millionths
+  // of a dollar. A table with no scale column has one unit per currency by construction.
+  const scale = scaleColumn === null ? sql`null` : identifier(scaleColumn);
+  return sql`select distinct ${currency} as group_value, ${scale} as group_scale from ${identifier(
+    entity.$table,
+  )} where ${conditions(entity, plan, shape)} and ${currency} is not null limit 3`;
+};
+
+/** One `(currency, scale)` pair the rows an aggregate covers actually use. */
+export interface MoneyUnitRow {
+  readonly group_value: unknown;
+  readonly group_scale: unknown;
+}
+
+/**
+ * The planner's own row estimate for a table — `reltuples`, which is what `ANALYZE` last wrote and
+ * what every query plan in the database is already costed against. `count(*)` walks every visible
+ * row (MVCC gives no shortcut), so on a large table it is the read that exceeds a web role's
+ * `statement_timeout`, and no index can make it cheaper: the `fix:` on that timeout tells an author
+ * to add one, and following it changes nothing.
+ *
+ * `to_regclass` rather than a name comparison, so a search_path change cannot silently answer for a
+ * different schema's table of the same name — and `-1` is what Postgres 14+ stores for a table that
+ * has never been analysed, which is an answer, not an estimate.
+ */
+export const estimateStatement = (table: string): SqlFragment =>
+  sql`select reltuples::bigint as estimate from pg_class where oid = to_regclass(${table})`;

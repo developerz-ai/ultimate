@@ -16,6 +16,8 @@ import {
   withStatementAttribution,
   withTransaction,
 } from '@ultimat3/db';
+import { aggregateColumnOf, aggregateMinor, assertOneUnit } from './aggregate';
+import { decodeAggregate } from './aggregate-decode';
 import {
   conflictKeys,
   insertChunks,
@@ -25,6 +27,7 @@ import {
 } from './bulk-write';
 import { entityNow } from './clock';
 import { coalesceFindById } from './coalesce';
+import { moneyColumns } from './column';
 import { countsFrom, groupColumnOf, groupValue, MAX_GROUPS } from './count-by';
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import type { Driver } from './database';
@@ -32,18 +35,25 @@ import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound, repoClientPinned } from './errors';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { forgetPreloaded, tagSiblings } from './jit-preload';
-import { bindValues, decodeRow, type PhysicalRow, physicalName } from './pg-row';
+import { bindValues, decodeRow, type PhysicalRow, physicalName, sortPrecision } from './pg-row';
 import {
-  type ConflictTarget,
+  type AggregateRow,
+  aggregateStatement,
   countByStatement,
   countStatement,
-  deleteStatement,
+  currenciesStatement,
+  estimateStatement,
   type GroupRow,
-  insertStatement,
+  type MoneyUnitRow,
   type ReadShape,
   selectStatement,
-  updateStatement,
 } from './pg-sql';
+import {
+  type ConflictTarget,
+  deleteStatement,
+  insertStatement,
+  updateStatement,
+} from './pg-write-sql';
 import { deletePlan, idPlan, readPlan, updatePlan } from './plan';
 import type { FindManyArgs, Repo, Transactor, UpsertArgs } from './repo';
 import type { QueryPlan } from './tenancy';
@@ -219,7 +229,8 @@ export const postgresRepo = <Row>(
           selectStatement(entity, plan, shapeOf(args, seekFrom(entity, plan)), plan.limit + 1),
         ),
       );
-      const rows = found.slice(0, plan.limit).map((row) => decodeRow(entity, row));
+      const page = found.slice(0, plan.limit);
+      const rows = page.map((row) => decodeRow(entity, row));
       // What the page leaves behind: its foreign key values, so the first `findById` for any one
       // of them resolves the key for the whole page. A `for … of` loop over these rows costs one
       // statement, not one per row — its `await` already ended the coalescing window.
@@ -229,7 +240,16 @@ export const postgresRepo = <Row>(
         rows,
         nextCursor:
           found.length > plan.limit && last !== undefined
-            ? cursorFor(entity, plan, last, idOf(last))
+            ? // Minted from the PHYSICAL row as well as the decoded one: a `timestamptz` decodes
+              // to a `Date`, and the microseconds that drops are the difference between a position
+              // the `order by` agrees with and one that cuts between two rows.
+              cursorFor(
+                entity,
+                plan,
+                last,
+                idOf(last),
+                sortPrecision(entity, plan.orderBy, page.at(-1)),
+              )
             : null,
       };
     },
@@ -375,6 +395,73 @@ export const postgresRepo = <Row>(
         op,
         rows.map((row) => [groupValue(grouped, row.group_value), Number(row.group_count)] as const),
       );
+    },
+
+    async aggregate(fn, column, args = {}) {
+      const op = fn;
+      const declared = aggregateColumnOf(entity, fn, column);
+      const plan = readPlan(entity, args, op);
+      const shape = shapeOf(args);
+      const money = declared.$meta.kind === 'money' ? moneyColumns(column, declared.$meta) : null;
+      // Money is judged BEFORE the aggregate is asked for, in its own statement: `sum(minor)` over
+      // two currencies is a number in neither, and the refusal has to name them.
+      const unit =
+        money === null
+          ? undefined
+          : assertOneUnit(
+              entity,
+              fn,
+              column,
+              (
+                await attributed(op, () =>
+                  client().query<MoneyUnitRow>(
+                    currenciesStatement(entity, plan, shape, money.currency, money.scale),
+                  ),
+                )
+              ).map((row) => ({
+                currency: String(row.group_value ?? '').trim(),
+                scale:
+                  row.group_scale === null || row.group_scale === undefined
+                    ? null
+                    : Number(row.group_scale),
+              })),
+            );
+      const row = await attributed(op, () =>
+        client().one<AggregateRow>(
+          aggregateStatement(entity, plan, shape, fn, money === null ? column : `${column}.minor`),
+        ),
+      );
+      const text = row?.agg_value;
+      if (text === null || text === undefined) return null;
+      if (money === null) return decodeAggregate(fn, declared.$meta.kind, String(text));
+      if (unit === undefined) return null;
+      return {
+        minor: aggregateMinor(entity, fn, column, String(text)),
+        currency: unit.currency,
+        ...(unit.scale === null ? {} : { scale: unit.scale }),
+      };
+    },
+
+    /**
+     * `reltuples`, the planner's own estimate — one row out of `pg_class`, constant time, and the
+     * only answer that stays constant time as the table grows. `count(*)` walks every visible row
+     * because MVCC gives it no shortcut, so past a few million it is the read that trips a web
+     * role's `statement_timeout`, and no index can help: `X_DB_STATEMENT_TIMEOUT`'s fix names one
+     * anyway, and following it changes nothing.
+     */
+    async approximateCount(args = {}) {
+      const op = 'approximateCount';
+      // Built and therefore GUARDED: tenancy still applies, and a filtered chain is refused here
+      // rather than answered with the whole table's estimate.
+      readPlan(entity, args, op);
+      const row = await attributed(op, () =>
+        client().one<{ estimate: unknown }>(estimateStatement(entity.$table)),
+      );
+      const estimate = Number(row?.estimate ?? -1);
+      // `-1` is what Postgres 14+ stores for a table nobody has analysed. That is an absence of an
+      // estimate, not an estimate of zero, and answering `0` would read exactly like an empty
+      // table to every caller.
+      return Number.isFinite(estimate) && estimate >= 0 ? estimate : null;
     },
   };
 };

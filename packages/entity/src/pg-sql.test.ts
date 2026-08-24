@@ -7,14 +7,8 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
-import {
-  countByStatement,
-  countStatement,
-  deleteStatement,
-  insertStatement,
-  selectStatement,
-  updateStatement,
-} from './pg-sql';
+import { countByStatement, countStatement, selectStatement } from './pg-sql';
+import { deleteStatement, insertStatement, updateStatement } from './pg-write-sql';
 import { clearRegistry } from './registry';
 import type { Predicate, QueryPlan } from './tenancy';
 
@@ -238,7 +232,9 @@ describe('orderSql / selectStatement shape', () => {
       SHAPE,
       50,
     );
-    expect(stmt.text).toContain('order by "title" desc, "id" asc');
+    // NULL's place is written down rather than inherited: `asc nulls last`, `desc nulls first`,
+    // the spelling `@ultimat3/query` already used. A driver whose default differs cannot reopen it.
+    expect(stmt.text).toContain('order by "title" desc nulls first, "id" asc nulls last');
   });
 
   test('limit is bound as a value, not spliced into the text', () => {

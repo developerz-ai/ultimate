@@ -18,6 +18,9 @@ export const ENTITY_OWNED_ERROR_CODES = [
   'X_N_PLUS_ONE_QUERY',
   'X_N_PLUS_ONE_WRITE',
   'X_REPO_CLIENT_PINNED',
+  'X_AGGREGATE_UNSUPPORTED',
+  'X_AGGREGATE_MIXED_CURRENCY',
+  'X_APPROXIMATE_COUNT_FILTERED',
 ] as const;
 
 /**
@@ -52,6 +55,9 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityOwnedErrorCode, string>>
   X_N_PLUS_ONE_QUERY: 'a read repeated once per row',
   X_N_PLUS_ONE_WRITE: 'a write repeated once per row',
   X_REPO_CLIENT_PINNED: 'a repository pinned to its own client cannot join the open transaction',
+  X_AGGREGATE_UNSUPPORTED: 'that column has no aggregate both drivers can answer alike',
+  X_AGGREGATE_MIXED_CURRENCY: 'an amount was aggregated across currencies',
+  X_APPROXIMATE_COUNT_FILTERED: 'an estimate was asked of a filtered chain',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the

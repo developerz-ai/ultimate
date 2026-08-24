@@ -187,6 +187,9 @@ describe('unit · the gate asks the same question the command does', () => {
       'budgets',
       'seo',
       'i18n',
+      // `policy` reads the same registries `budgets` filled — role grants and route guards — so it
+      // joined the cluster rather than paying for a second app load.
+      'policy',
       'manifest',
     ]);
   });

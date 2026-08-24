@@ -36,6 +36,7 @@ const pipelineWith = (decision?: AuthzDecision) =>
       config: {
         enabled: true,
         defaultBucket: 'default',
+        tenantBucket: null,
         scope: 'process',
         buckets: { default: { capacity: 100, refillPerSecond: 1 } },
       },

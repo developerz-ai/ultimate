@@ -10,7 +10,7 @@
 import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import { defineHttpConfig, type HttpConfigInput } from './config';
-import { retryAfterOf } from './error-map';
+import { retryAfterOf } from './error-facts';
 import { HttpError } from './errors';
 import { createPipeline } from './pipeline';
 import { rateLimited } from './rate-limit-errors';

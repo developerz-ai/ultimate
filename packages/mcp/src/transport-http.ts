@@ -1,19 +1,29 @@
 // `POST /mcp` — the HTTP transport.
 //
-// Exported as a route DESCRIPTOR rather than a mounted handler: `@ultimat3/http` owns the
-// lifecycle (ALS context, tracing, rate limiting) and mounts this, while the descriptor
-// stays drivable from a bare `Request` in a test. Two things travel with it that a generic
-// route table cannot infer:
+// Exported as a route DESCRIPTOR rather than a mounted handler: a host owns the lifecycle (ALS
+// context, tracing) and mounts this, while the descriptor stays drivable from a bare `Request` in
+// a test. Three things travel with it that a generic route table cannot infer:
 //
 //  1. `rateLimitClass(body)` — all MCP traffic is one URL, so a per-route bucket would
 //     charge `initialize` and every read to the write bucket and throttle an agent on its
 //     handshake. The server classifies each body instead.
-//  2. `authenticate` — a bearer token resolves to an Actor of kind 'agent'. An agent is
+//  2. `limits`, ENFORCED HERE since 2026-08-24 and by nothing before it. The two above were
+//     published on the descriptor and read by no mount point: `x mcp serve` runs `handle` in a
+//     bare `Bun.serve` and `defineAppMcp` returns the route to the app, so the type promised 20
+//     writes a minute and the real ceiling was Bun's accept rate. It cannot be enforced from
+//     OUTSIDE either: `rateLimitClass(body)` takes an already-parsed body and `handle` is the only
+//     thing that parses one, so a limiter above it would have to consume the request stream first.
+//     The maths, the `Bucket` and the store are `@ultimat3/http`'s — tier 2, a downward import,
+//     and never a second token bucket written here.
+//  3. `authenticate` — a bearer token resolves to an Actor of kind 'agent'. An agent is
 //     never silently upgraded to the user behind the token; policies see 'agent' and can
 //     refuse what a human would be allowed.
 
-import type { Actor } from '@ultimat3/core';
-import { readWithinLimit } from '@ultimat3/core';
+import type { Actor, Clock } from '@ultimat3/core';
+import { readWithinLimit, systemClock } from '@ultimat3/core';
+import type { RateLimitStore } from '@ultimat3/http';
+import { memoryRateLimitStore, toBucket } from '@ultimat3/http';
+import { McpRateLimitedError } from './errors';
 import type { McpCaller, McpRole, McpVerbClass } from './registry';
 import type { McpServer } from './server';
 import type { JsonRpcResponse } from './wire';
@@ -27,7 +37,10 @@ import { errorResponse, INVALID_REQUEST, PARSE_ERROR } from './wire';
  */
 export const DEFAULT_MCP_BODY_LIMIT_BYTES = 1_048_576;
 
-/** Requests per minute per token, by class. Reads are cheap; a write may run migrations. */
+/** The window every number in `MCP_RATE_LIMITS` is spent over. One minute, per class, per actor. */
+export const MCP_RATE_LIMIT_WINDOW_MS = 60_000;
+
+/** Requests per minute per caller, by class. Reads are cheap; a write may run migrations. */
 export const MCP_RATE_LIMITS: Readonly<Record<McpVerbClass, number>> = {
   read: 120,
   write: 20,
@@ -51,6 +64,17 @@ export interface McpHttpTransportInput {
   readonly path?: string;
   /** Bytes this transport will hold for one request. Defaults to `DEFAULT_MCP_BODY_LIMIT_BYTES`. */
   readonly bodyLimitBytes?: number | undefined;
+  /** Requests per minute per caller, by class. Defaults to `MCP_RATE_LIMITS`. */
+  readonly rateLimits?: Readonly<Record<McpVerbClass, number>> | undefined;
+  /**
+   * Where the buckets are counted. Defaults to a per-PROCESS memory store, which is the honest
+   * default for `x mcp serve` and a lie for N replicas behind one URL — each would enforce the
+   * full allowance on its own. A fleet passes `postgresRateLimitStore({ executor })` from
+   * `@ultimat3/http`, the same store the web role's limiter takes.
+   */
+  readonly rateLimitStore?: RateLimitStore | undefined;
+  /** The one clock the buckets refill on. Defaulted, never read inline, so a test can freeze it. */
+  readonly clock?: Clock | undefined;
 }
 
 export interface McpRouteDescriptor {
@@ -58,6 +82,7 @@ export interface McpRouteDescriptor {
   readonly path: string;
   /** Bucket for one already-parsed body. Metering only — never an authz decision. */
   rateLimitClass(body: unknown): McpVerbClass;
+  /** Requests per minute per caller, by class — what `handle` actually spends against. */
   readonly limits: Readonly<Record<McpVerbClass, number>>;
   handle(request: Request): Promise<Response>;
 }
@@ -67,11 +92,25 @@ const JSON_HEADERS = { 'content-type': 'application/json' } as const;
 export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
   const { server } = input;
   const bodyLimitBytes = input.bodyLimitBytes ?? DEFAULT_MCP_BODY_LIMIT_BYTES;
+  const limits = input.rateLimits ?? MCP_RATE_LIMITS;
+  const clock = input.clock ?? systemClock;
+  const store = input.rateLimitStore ?? memoryRateLimitStore();
+  // Built once, at construction: `toBucket` refuses an unusable pair (`X_RATE_LIMIT_INVALID`), and
+  // a number that cannot be enforced must fail where an author can act on it rather than on the
+  // first request an agent makes.
+  const readBucket = toBucket('mcpHttpRoute rateLimits.read', {
+    limit: limits.read,
+    windowMs: MCP_RATE_LIMIT_WINDOW_MS,
+  });
+  const writeBucket = toBucket('mcpHttpRoute rateLimits.write', {
+    limit: limits.write,
+    windowMs: MCP_RATE_LIMIT_WINDOW_MS,
+  });
 
   return {
     method: 'POST',
     path: input.path ?? '/mcp',
-    limits: MCP_RATE_LIMITS,
+    limits,
     rateLimitClass: (body) => server.classify(body),
 
     async handle(request: Request): Promise<Response> {
@@ -109,6 +148,27 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
         return json(errorResponse(null, PARSE_ERROR, 'request body is not valid JSON'), 400);
       }
 
+      // Metered AFTER the class is known and BEFORE the tool runs. It cannot move above the
+      // parse — the class comes out of the body — and an unauthenticated caller never reaches it,
+      // so a token nobody issued cannot spend an actor's allowance.
+      const verbClass = server.classify(body);
+      const bucket = verbClass === 'write' ? writeBucket : readBucket;
+      const decision = await store.take(
+        // `<route>|<subject>`, the shape `@ultimat3/http`'s own keys take, spelled here rather
+        // than borrowed: that package's key builder answers "actor, else org, else the connection
+        // address", a precedence with nothing to decide on this route — an unauthenticated caller
+        // was answered 401 four lines up, so there is ALWAYS an actor and never an address. The
+        // route half carries the CLASS because `read` and `write` are two allowances, and charging
+        // both to one key would let a handshake burst close the writes behind it.
+        `mcp:${verbClass}|actor:${resolved.actor.id}`,
+        bucket,
+        1,
+        clock.now().getTime(),
+      );
+      if (!decision.allowed) {
+        return throttled(verbClass, bucket.capacity, decision.retryAfterSeconds);
+      }
+
       const caller: McpCaller = {
         actor: resolved.actor,
         scopes: resolved.scopes,
@@ -141,6 +201,20 @@ export function bearerToken(request: Request): string | null {
  */
 export function isAgentActor(actor: Actor): boolean {
   return (actor as { kind?: unknown }).kind === 'agent';
+}
+
+/**
+ * The refusal, rendered the way this file's 401 and 403 already are: `{ code, cause, fix }` and an
+ * HTTP status, never a JSON-RPC envelope — the transport refused before dispatch, so there is no
+ * call to answer. `retry-after` carries the same number the `fix:` line names, because an agent
+ * reads one of the two and must not get different answers from them.
+ */
+function throttled(verbClass: McpVerbClass, limit: number, retryAfterSeconds: number): Response {
+  const error = new McpRateLimitedError({ verbClass, limit, retryAfterSeconds });
+  return new Response(JSON.stringify({ code: error.code, cause: error.cause, fix: error.fix }), {
+    status: 429,
+    headers: { ...JSON_HEADERS, 'retry-after': String(retryAfterSeconds) },
+  });
 }
 
 function notAnAgent(): Response {

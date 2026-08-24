@@ -25,6 +25,7 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_BACKFILL_UNKNOWN',
   'X_JOB_ROW_STATUS_UNKNOWN',
   'X_ACTION_JOB_UNBRIDGED',
+  'X_JOB_CLAIM_QUEUES_EMPTY',
 ] as const;
 
 /**
@@ -62,6 +63,7 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_BACKFILL_UNKNOWN: 'no declaration carries this backfill name',
   X_JOB_ROW_STATUS_UNKNOWN: 'a queue row carries a status this build does not know',
   X_ACTION_JOB_UNBRIDGED: 'an action projection was registered as a job',
+  X_JOB_CLAIM_QUEUES_EMPTY: 'a claim named no queue, and the drivers do not agree what that means',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws
@@ -383,6 +385,28 @@ export class JobsNotImplementedError extends UltimateError {
       code: 'X_NOT_IMPLEMENTED',
       cause: `${input.feature} is declared but not implemented in @ultimat3/jobs`,
       fix: input.fix,
+    });
+  }
+}
+
+/**
+ * `claim({ queues: [] })`, refused by every driver rather than answered by each.
+ *
+ * The two shipped drivers had two meanings for it — every queue on `driver-memory.ts`, the
+ * `default` queue on `driver-pg.ts` — and `ClaimOptions.queues` documented neither. Nothing reached
+ * it (`createWorker` passes exactly one queue per pass), so the divergence could only ever be found
+ * by an embedder in production, and each meaning is silently wrong in the other's deployment: one
+ * takes work this worker was never configured for, the other drains nothing and reads as an idle
+ * queue. There is no third meaning to pick — an empty list is a caller that has not said what to
+ * claim.
+ */
+export class ClaimQueuesEmptyError extends UltimateError {
+  constructor(driver: string) {
+    super({
+      code: 'X_JOB_CLAIM_QUEUES_EMPTY',
+      cause: `the ${driver} driver was asked to claim with queues: [] — an empty list names no queue, and "every queue" and "the default queue" are different deployments`,
+      fix: "pass the queue by name — driver.claim({ queues: ['default'], limit, visibilityTimeoutMs, workerId }) — or read the list from config.jobs.queues, which is what createWorker walks one queue at a time",
+      meta: { driver },
     });
   }
 }

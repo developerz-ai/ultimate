@@ -35,6 +35,25 @@ Thirteen tools `As of 2026-08` — the whole catalog, spelled exactly as they mu
 
 None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose leading keyword must be `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — necessary, never sufficient. Batches, any write keyword at statement level (a data-modifying CTE included), locking clauses (`FOR UPDATE`/`FOR SHARE`), `EXPLAIN ANALYZE`, and whole function families matched by prefix of the called name, quoted and schema-qualified spellings included — file access (`pg_read_*`, `pg_ls_*`, `lo_*`, `dblink`), locks (`pg_advisory_*`), session settings (`set_config`) and sleeps (`pg_sleep*`) — are **refused**, not discouraged — `X_MCP_QUERY_REJECTED`, enforced before the host sees the string. Its Postgres SELECT-only role is conditional on the connection's own rights; the answer's `guards` array names the defences that engaged. `db.migrate` refuses a target that is not a branch database — `X_MCP_NOT_BRANCH_DB`.
 
+
+### Rate limits on the HTTP transport
+
+**Enforced `As of 2026-08-24`.** `mcpHttpRoute` meters itself, per caller, per class, per minute. It has to: all MCP traffic is one `POST /mcp`, so the HTTP pipeline's own buckets — which key on the route — cannot tell an `initialize` handshake from a migration.
+
+| | Default | Spent by |
+|---|---|---|
+| `read` | 120 / minute | every method that is not `tools/call`, plus any tool that does not declare `destructive: true` |
+| `write` | 20 / minute | a `tools/call` naming a `destructive: true` tool, and **any call this server cannot resolve** — fail-closed, so a probing client never gets the cheap bucket |
+
+| Rule | Detail |
+|---|---|
+| Metered after the parse, before the tool | the class comes out of the body, so it cannot move above the JSON parse. An unauthenticated caller is answered `401` four lines earlier and can never spend an actor's allowance |
+| The key is the ACTOR | `mcp:<class>\|actor:<id>`, and it never reaches the caller: a 429 is provokable by anyone holding a valid token, so an actor or org id in one is a leak wearing a throttle's clothes |
+| Refusal | `X_MCP_RATE_LIMITED`, 429, with `Retry-After`. Its **own** code and not `X_RATE_LIMITED`, because that one's `fix:` names the HTTP pipeline's buckets, which do not govern this route — a fix line that runs and changes nothing is worse than none |
+| The knob | `mcpHttpRoute({ rateLimits: { read, write } })`, or `defineAppMcp({ rateLimits })` |
+| Behind N replicas | pass `rateLimitStore: postgresRateLimitStore({ executor })` as well. The default is a per-process memory store — honest for `x mcp serve`, and a lie for N replicas behind one URL, each enforcing the full allowance on its own |
+
+
 ## Every action is an MCP tool
 
 ```ts
@@ -235,12 +254,13 @@ $ x verify --json
 |---|---|---|
 | `X_MCP_TOOL_UNKNOWN` | no visible tool answers that name (role-hidden and absent are indistinguishable) | `tools/list` to read the catalog this caller may use |
 | `X_MCP_ARGS_INVALID` | arguments failed the tool's declared JSON Schema | re-read `inputSchema` from `tools/list` and resend |
-| `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope | `x token grant <scope>`, then reconnect — scopes are fixed for the life of a connection |
+| `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope | reconnect with a token whose scopes include the one `cause` names — the app's `resolveToken(token)` is what returns them — or drop that scope from `defineAppMcp({ scopes })`. Scopes are fixed for the life of a connection, so a grant takes effect on the next one. **Not** `x token grant`: that command is `PLANNED` and exits `X_NOT_IMPLEMENTED` |
 | `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool the server does not project | spell the name as one of the tools the server actually projects, or drop it from that `scopes` entry |
 | `X_MCP_SCOPE_CONFLICT` | two `scopes:` entries claim the same tool | keep the tool under the single scope a token must hold for it, and remove the other entry |
 | `X_MCP_QUERY_REJECTED` | `db.query` was not given one read-only statement | send exactly one **read-only** `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — a data-modifying CTE is not a read |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` pointed at a database that is not a branch | `x db branch create <name>   # then retry db.migrate` — point the host at the database the create reported (`DATABASE_URL=…/<source>_branch_<slug>`). The target is read from the database's own name, so a shared one can never pass |
 | `X_MCP_PROTOCOL` | malformed envelope or unsupported method — a client bug, not an authz outcome | send a JSON-RPC 2.0 body |
+| `X_MCP_RATE_LIMITED` | this caller spent its per-minute allowance for the request's class ([above](#rate-limits-on-the-http-transport)) | wait out the `Retry-After`, or raise it where the route is built: `mcpHttpRoute({ rateLimits })` / `defineAppMcp({ rateLimits })`. Never `X_RATE_LIMITED`'s buckets — they do not govern this route |
 | `X_FORBIDDEN` | the action's policy refused this actor — identical to the HTTP denial | call `policies.list` for the permission this tool enforces, then grant it to the actor's role in `apps/web/shared/policies.ts` |
 | `X_LLM_OUTPUT_INVALID` | model output failed the `output` schema twice | tighten the prompt or widen the schema; bump the prompt version |
 | `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists an action that is not MCP-exposed — refused at **declaration** | add `mcp: { expose: true, description }` to the action, or drop it from `tools` |

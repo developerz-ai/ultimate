@@ -266,37 +266,58 @@ describe('readPackageFacts', () => {
 });
 
 describe('this repository', () => {
-  test('has no package whose sideEffects field is false of it', async () => {
-    expect(await sideEffectGaps(ROOT)).toEqual([]);
-  });
+  // `readPackageFacts` walks every file of every package, so calling it once per test ran the
+  // scan three times and each one exceeded bun:test's 5s default under the gate's 8 parallel
+  // workers -- green alone, red inside `x verify`. One shared scan, and a backstop timeout that
+  // is a deadlock guard rather than a performance assertion, so the verdict is load-independent.
+  const SCAN_TIMEOUT_MS = 60_000;
+  let scan: Promise<readonly PackageFacts[]> | undefined;
+  const facts = (): Promise<readonly PackageFacts[]> => (scan ??= readPackageFacts(ROOT));
 
-  test('measures a real import-time effect in every package that declares one', async () => {
-    // Non-vacuity, against the tree rather than a fixture: the four packages swept in this change
-    // plus the two swept before it must each still be MEASURED as side-effecting, or the green
-    // above is a scan that stopped reading rather than a repo that stayed honest.
-    const facts = await readPackageFacts(ROOT);
-    const measured = new Map(facts.map((one) => [one.dir, one.effects.map((e) => e.path)]));
+  test(
+    'has no package whose sideEffects field is false of it',
+    async () => {
+      expect(await sideEffectGaps(ROOT)).toEqual([]);
+    },
+    SCAN_TIMEOUT_MS,
+  );
 
-    expect(measured.get('packages/core')).toEqual([
-      'src/context.ts',
-      'src/lifecycle-errors.ts',
-      'src/schema-error-codes.ts',
-      'src/secrets-errors.ts',
-    ]);
-    expect(measured.get('packages/i18n')).toEqual(['src/errors.ts', 'src/framework.ts']);
-    expect(measured.get('packages/money')).toEqual(['src/errors.ts']);
-    // `server.ts` calls `installRenderLoader()` — the BUILD-TIME barrel is the side effect here,
-    // and `index.ts` (the client half) is inert, which is what lets it bundle for a browser.
-    expect(measured.get('packages/render')).toEqual(['src/errors.ts', 'src/server.ts']);
-    expect(measured.get('packages/time')).toEqual(['src/errors.ts']);
-    expect(measured.get('packages/ui')).toEqual(['src/errors.ts']);
-  });
+  test(
+    'measures a real import-time effect in every package that declares one',
+    async () => {
+      // Non-vacuity, against the tree rather than a fixture: the four packages swept in this change
+      // plus the two swept before it must each still be MEASURED as side-effecting, or the green
+      // above is a scan that stopped reading rather than a repo that stayed honest.
+      const measured = new Map(
+        (await facts()).map((one) => [one.dir, one.effects.map((e) => e.path)]),
+      );
 
-  test('pins only packages that really declare nothing', async () => {
-    const silent = (await readPackageFacts(ROOT))
-      .filter((one) => one.declared === undefined)
-      .map((one) => one.dir);
+      expect(measured.get('packages/core')).toEqual([
+        'src/context.ts',
+        'src/lifecycle-errors.ts',
+        'src/schema-error-codes.ts',
+        'src/secrets-errors.ts',
+      ]);
+      expect(measured.get('packages/i18n')).toEqual(['src/errors.ts', 'src/framework.ts']);
+      expect(measured.get('packages/money')).toEqual(['src/errors.ts']);
+      // `server.ts` calls `installRenderLoader()` — the BUILD-TIME barrel is the side effect here,
+      // and `index.ts` (the client half) is inert, which is what lets it bundle for a browser.
+      expect(measured.get('packages/render')).toEqual(['src/errors.ts', 'src/server.ts']);
+      expect(measured.get('packages/time')).toEqual(['src/errors.ts']);
+      expect(measured.get('packages/ui')).toEqual(['src/errors.ts']);
+    },
+    SCAN_TIMEOUT_MS,
+  );
 
-    expect([...SIDE_EFFECTS_UNDECLARED].sort()).toEqual([...silent].sort());
-  });
+  test(
+    'pins only packages that really declare nothing',
+    async () => {
+      const silent = (await facts())
+        .filter((one) => one.declared === undefined)
+        .map((one) => one.dir);
+
+      expect([...SIDE_EFFECTS_UNDECLARED].sort()).toEqual([...silent].sort());
+    },
+    SCAN_TIMEOUT_MS,
+  );
 });

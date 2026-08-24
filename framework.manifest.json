@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d464264cad8ab213772f3dc2d7b5d1d437e7f8be71c0697a54fe9c058880737a",
+  "buildId": "b47b20e96a22119d15258358b9e6216b1791522051cd880a362fa052a4e24c1b",
   "tiers": {
     "0": [
       "core",
@@ -343,6 +343,16 @@
       "at": "packages/manifest/src/errors.ts"
     },
     {
+      "code": "X_AGGREGATE_MIXED_CURRENCY",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
+    },
+    {
+      "code": "X_AGGREGATE_UNSUPPORTED",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
+    },
+    {
       "code": "X_AI_BUDGET_EXCEEDED",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
@@ -401,6 +411,11 @@
       "code": "X_APP_PACKAGE_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_APPROXIMATE_COUNT_FILTERED",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
     },
     {
       "code": "X_ASYNC_CONTEXT_UNAVAILABLE",
@@ -828,9 +843,24 @@
       "at": "scripts/dead-docs-host.ts"
     },
     {
+      "code": "X_DECLARATION_READER_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/declaration-readers.ts"
+    },
+    {
+      "code": "X_DECLARATION_READERS_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/declaration-readers.ts"
+    },
+    {
       "code": "X_DECLARATION_UNKNOWN",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DECLARED_KEY_UNREAD",
+      "owner": "scripts",
+      "at": "scripts/declaration-readers.ts"
     },
     {
       "code": "X_DEPLOY_FAILED",
@@ -1338,6 +1368,11 @@
       "at": "packages/render/src/errors.ts"
     },
     {
+      "code": "X_JOB_CLAIM_QUEUES_EMPTY",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
       "code": "X_JOB_CONCURRENCY_UNENFORCEABLE",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
@@ -1523,6 +1558,11 @@
       "at": "packages/manifest/src/errors.ts"
     },
     {
+      "code": "X_MANIFEST_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_MANIFEST_STALE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -1549,6 +1589,11 @@
     },
     {
       "code": "X_MCP_QUERY_REJECTED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_RATE_LIMITED",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },
@@ -1974,6 +2019,11 @@
     },
     {
       "code": "X_RATE_LIMIT_STORE_UNAVAILABLE",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
+    },
+    {
+      "code": "X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN",
       "owner": "http",
       "at": "packages/http/src/errors.ts"
     },

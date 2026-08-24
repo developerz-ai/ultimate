@@ -1,5 +1,8 @@
-// The HTTP slice of `app.config.ts`. One resolver, so a value is either a locked
-// default or an explicit override — never "whatever the first caller passed".
+// The resolver every HTTP config goes through, so a value is either a locked default or an
+// explicit override — never "whatever the first caller passed". It is NOT a slice of
+// `app.config.ts`, which this file claimed for four majors while `AppConfig` has never carried an
+// `http` key: an app declares its half through `configureHttp()` (`app-config.ts`) and the boot
+// lays its own facts over it before calling this.
 import { DEFAULT_ENVIRONMENT, tryResolveEnvironment } from '@ultimat3/core';
 import { assertCorsConfig, type CorsConfig, DEFAULT_CORS } from './cors';
 import { type CsrfConfig, DEFAULT_CSRF } from './csrf';

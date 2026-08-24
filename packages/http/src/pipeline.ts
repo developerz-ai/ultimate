@@ -237,6 +237,10 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
         // address — an identity from an untrusted hop authenticates, which is worse than none.
         peer: peerIdentity(forwarded),
         signal: deadline.signal,
+        // The number behind that signal. `traceHeaders()` in core reads it off the ambient
+        // context, so every outbound hop this request makes carries what is LEFT of the budget
+        // rather than letting the next service start a fresh one of its own.
+        deadlineAt: deadline.deadlineAt,
         // The context is what app code reaches through core's ALS; without the inbound headers
         // on it, a cookie the server itself set could never be read back on the next request,
         // and `ctx.session` had no way to exist.

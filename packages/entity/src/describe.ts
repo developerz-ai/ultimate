@@ -188,6 +188,9 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
       unique: index.unique,
       where: index.where ?? null,
       order: index.order ?? null,
+      // Spread, never `?? null`: absent is what `@ultimat3/db` reads as the btree it always was,
+      // and a written-out `null` would be a field no existing snapshot carries.
+      ...(index.using === undefined ? {} : { using: index.using }),
     })),
     tags: input.tags,
     cacheTag: input.cacheTag,

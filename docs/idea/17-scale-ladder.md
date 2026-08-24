@@ -131,7 +131,8 @@ Every scale component, and exactly what to swap.
 | Rows / SQL | `@ultimat3/db` · `DbClient`, `ReservableClient` | `createPostgresClient()` over `Bun.SQL`; `setDbClient()` overrides | `database.driver`, `database.ssl` — `urlEnv`, `poolSize` and `schema` were deleted in 4.0.0, each read by nothing | `DATABASE_URL` | shipped |
 | Embedded dev DB | `@ultimat3/db` · `PgliteClient` | `createPgliteClient()` | — | unset `DATABASE_URL` | shipped, `x dev` only |
 | Repository | `@ultimat3/entity` · `Repo`, `Driver` | `postgresRepo()`; `memoryRepo()` for tests | — | — | shipped |
-| Pool sizing | `@ultimat3/db` · `POOL_PROFILES` | per-`ROLE` max / statement timeout / idle timeout | — | `ROLE` | shipped |
+| Pool sizing | `@ultimat3/db` · `POOL_PROFILES` | per-`ROLE` max / statement timeout / idle timeout | — | `ROLE`, `DATABASE_POOL_MAX` | shipped |
+| Read replicas | `@ultimat3/db` · `replicatedClient()`, `isPlainRead()`, `withReplicaReads()` | primary + standby behind one `DbClient`; a plain read inside an open scope goes to the standby, everything else and every transaction to the primary. Read-your-writes by scope, 3-failure/10s breaker back to the primary | — | `DATABASE_REPLICA_URL` | shipped `As of 2026-08-24` — the pool is env, the SCOPE is the app's, and nothing opens one yet |
 | Cache, per-request | `@ultimat3/cache` · `CacheTier` | request memo | `cache.tiers: ['request-memo']` | — | shipped |
 | Cache, per-process | `@ultimat3/cache` · `CacheTier` | LRU | `cache.tiers: ['lru']` | — | shipped |
 | Cache, cross-node | `@ultimat3/cache` · `CacheTier`, `RedisLike` | `createRedisTier()` over `Bun.redis` | `cache.tiers: ['redis']` | `REDIS_URL` | shipped |
@@ -319,6 +320,7 @@ The most valuable advice on this page.
 | your own box (rung 2) | the PaaS bill exceeds a server plus the hours to run it, or a platform limit actually blocks you |
 | NATS (rung 3) | you run more than one `sync` replica. `InProcessTransport` is correct and free at one node — and the measured 50k-socket result was taken on one node, in process |
 | the `replicator` role (rung 3) | you use live queries. The chart ships it disabled |
+| a read replica (rung 3) | the primary's CPU is read-bound and you have measured which reads. It is two opt-ins — `DATABASE_REPLICA_URL` and a `withReplicaReads` scope — and it doubles the connection arithmetic, because the standby inherits the role's pool profile and `DATABASE_POOL_MAX` |
 | Kubernetes (rung 3) | you have roughly three nodes of real workload. One 6-vCPU / 12-GiB host runs Postgres, a cache, NATS and all six roles under Compose |
 | splitting a database off (rung 4) | a database sustains >50% CPU or >75% IO utilisation, or an app needs an extension that is not safe cluster-wide, or compliance forces separation. Until then: share |
 | distributed SQL (rung 4) | you need multi-region write locality, or must survive a zone loss without a manual failover. Throughput alone is not a reason |

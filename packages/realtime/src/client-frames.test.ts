@@ -129,7 +129,6 @@ describe('a patch frame', () => {
     const cursor = handle.cursor();
     expect(cursor?.lsn).toBe(LSN_1);
     expect(cursor?.at).toBe(clock.now().getTime());
-    expect(cursor?.count).toBe(2);
     expect([...(cursor?.ids ?? [])]).toEqual(['p1', 'p2']);
     // The property all of that is for: this cursor is still resumable.
     const decision = shouldResnapshot(

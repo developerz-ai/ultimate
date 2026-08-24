@@ -8,6 +8,7 @@
 // Deliberately one function: an app author should never have to know that `ToolRegistry`,
 // `frameworkResources` and `mcpHttpRoute` exist.
 
+import type { RateLimitStore } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { AnyAppToolDefinition, AppTools } from './app-tool';
 import { appToolPrimitives } from './app-tool';
@@ -16,7 +17,7 @@ import { exposedPrimitives } from './exposed';
 import { toolsFrom, toolsListed } from './from-action';
 import type { ListedPrimitive } from './projectable';
 import { asProjectable } from './projectable';
-import type { AnyMcpTool } from './registry';
+import type { AnyMcpTool, McpVerbClass } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { toPrompts } from './resources';
 import type { McpScopes } from './scopes';
@@ -77,6 +78,18 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
   resolveToken?(token: string): Promise<ResolvedToken | null> | ResolvedToken | null;
   /** Mount path. Defaults to `/mcp`. */
   readonly path?: string;
+  /**
+   * Requests per minute per caller, by class. Defaults to `MCP_RATE_LIMITS` and is ENFORCED by the
+   * route, so this is the app's one knob over what an agent may spend here.
+   */
+  readonly rateLimits?: Readonly<Record<McpVerbClass, number>> | undefined;
+  /**
+   * Where those buckets are counted. Forwarded rather than left to the route's per-process default
+   * because an app behind N replicas has no other way to reach it — and N processes each holding
+   * their own counters enforce N x every number above, silently and only in production. The same
+   * `postgresRateLimitStore({ executor })` the web role takes.
+   */
+  readonly rateLimitStore?: RateLimitStore | undefined;
 }
 
 export interface AppMcp {
@@ -155,6 +168,8 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
           server,
           resolveToken,
           ...(input.path !== undefined ? { path: input.path } : {}),
+          ...(input.rateLimits !== undefined ? { rateLimits: input.rateLimits } : {}),
+          ...(input.rateLimitStore !== undefined ? { rateLimitStore: input.rateLimitStore } : {}),
         });
 
   return { server, tools: projected, route };

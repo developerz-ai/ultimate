@@ -13,7 +13,8 @@ import { database, memoryDriver } from './database';
 import { entity } from './entity';
 import { invariant } from './invariants';
 import { allColumns, bindValues, columnsOf, decodeRow, physicalName } from './pg-row';
-import { insertStatement, selectStatement } from './pg-sql';
+import { selectStatement } from './pg-sql';
+import { insertStatement } from './pg-write-sql';
 import { readPlan } from './plan';
 import { clearRegistry } from './registry';
 

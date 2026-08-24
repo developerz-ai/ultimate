@@ -37,6 +37,7 @@ export {
   McpNotBranchDbError,
   McpProtocolError,
   McpQueryRejectedError,
+  McpRateLimitedError,
   McpResourceDuplicateError,
   McpScopeConflictError,
   McpScopeDeniedError,
@@ -111,6 +112,7 @@ export {
   bearerToken,
   DEFAULT_MCP_BODY_LIMIT_BYTES,
   isAgentActor,
+  MCP_RATE_LIMIT_WINDOW_MS,
   MCP_RATE_LIMITS,
   mcpHttpRoute,
 } from './transport-http';

@@ -140,7 +140,12 @@ const CATALOG = {
   // `.env.development.local`, runs `x db gen "initial"` (the scaffold writes no migration, so the
   // drift step is red until it has), migrates and seeds. The four-command line this replaced named
   // `x dev` off a tree where nothing had installed the CLI yet, and skipped the seed entirely.
-  'cli.new.done': 'created {name} — next: cd {name} && bin/setup && x dev',
+  // `bin/dev`, never `x dev`: `bun install` links the binary into `./node_modules/.bin` and
+  // nowhere else, so the bare `x` this line printed is not on PATH in the shell it is pasted into
+  // (proved with `env -i PATH=… command -v x`). The scaffold's own `bin/` wrappers are the form
+  // that works from a fresh clone, and `bin/setup` already uses `bunx x` internally for this
+  // reason.
+  'cli.new.done': 'created {name} — next: cd {name} && bin/setup && bin/dev',
   // The two prose lines of `x new`'s report. The `run: cd … && git init …` line beneath the second
   // one stays inline in `cmd-new.ts`: it is an instruction to paste verbatim, and a translated
   // command is a broken one — the same split `Finding.fix` already makes.

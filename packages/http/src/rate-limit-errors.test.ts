@@ -24,9 +24,7 @@ describe('rateLimited', () => {
     expect(error.cause).not.toContain('posts.create');
     expect(error.meta?.['key']).toBe('posts.create|org:o_9fd21');
     expect(error.cause).toContain('7s');
-    expect(error.fix).toBe(
-      'retry after the Retry-After header, or raise rateLimit.buckets in app.config.ts',
-    );
+    expect(error.fix).toContain('configureHttp({ rateLimit: { buckets } })');
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { type Clock, frozenClock } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { formatLsn } from './changefeed';
-import { defaultReconnectBudget, digestOf, makeCursor, resumeFrom } from './cursor';
+import { advance, defaultReconnectBudget, makeCursor, resumeFrom } from './cursor';
 import { CursorStaleError } from './errors';
 import type { Row, RowPatch } from './json';
 
@@ -53,9 +53,9 @@ describe('cursor resume', () => {
     if (result.kind !== 'snapshot') throw new Error('unreachable');
     expect(result.rows).toEqual(snapshotRows);
     expect(result.cursor.lsn).toBe(formatLsn(500));
-    // The digest is the server's own — `verifyDigest()` was deleted because nothing on the client
-    // can reproduce one (`cursor.ts#digestOf`). What a snapshot must still do is seat it.
-    expect(result.cursor.digest).toBe(digestOf(snapshotRows));
+    // What a snapshot must seat is the id list a later delta patches — the whole of what a resume
+    // reads. `digest` used to be asserted here and was deleted with the field it described.
+    expect(result.cursor.ids).toEqual(['p1']);
   });
 
   test('a cursor whose gap fell out of the retained window re-snapshots', async () => {
@@ -91,10 +91,34 @@ describe('cursor resume', () => {
 
     expect(result.kind).toBe('snapshot');
   });
+});
 
-  test('the digest is order-sensitive, so a re-sort is detected', () => {
-    const a: Row[] = [{ id: 'p1' }, { id: 'p2' }];
-    const b: Row[] = [{ id: 'p2' }, { id: 'p1' }];
-    expect(digestOf(a)).not.toBe(digestOf(b));
+/**
+ * `digest` and `count` were written on every snapshot and read by nothing outside these tests —
+ * the same shape `verifyDigest()` was deleted for, one field down. `digestOf` ran `canonicalJson`
+ * over every row of every snapshot, so 50,000 reconnecting sockets each paid a full serialize and
+ * hash per live query for a value no client, no node and no test path consumed.
+ */
+describe('a cursor carries what a resume reads, and nothing else', () => {
+  test('makeCursor answers exactly qid, lsn, ids and at', () => {
+    const cursor = makeCursor(QID, formatLsn(1), [{ id: 'p1' }, { id: 'p2' }], 1_000);
+    expect(Object.keys(cursor).sort()).toEqual(['at', 'ids', 'lsn', 'qid']);
+  });
+
+  test('advance answers the same four, and invents no count to drift', () => {
+    const cursor = makeCursor(QID, formatLsn(1), [{ id: 'p1' }], 1_000);
+    const next = advance(cursor, [patchAt(2, 'p2')], formatLsn(2), 2_000);
+    expect(Object.keys(next).sort()).toEqual(['at', 'ids', 'lsn', 'qid']);
+  });
+
+  /**
+   * The cost half, and the one a key check cannot make: `canonicalJson` recurses, so a `digestOf`
+   * still on the snapshot path blows the stack on a row that refers to itself. A cursor that comes
+   * back is a snapshot that serialized nothing.
+   */
+  test('a snapshot serializes no row — a cycle no hash could walk still answers a cursor', () => {
+    const cyclic: Row = { id: 'p1' };
+    (cyclic as Record<string, unknown>)['self'] = cyclic;
+    expect(makeCursor(QID, formatLsn(1), [cyclic], 1_000).ids).toEqual(['p1']);
   });
 });

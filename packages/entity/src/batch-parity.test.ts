@@ -9,10 +9,10 @@ import { createRecordingClient, type RecordingClient } from '@ultimat3/db';
 import type { BatchIterator } from './batch';
 import { text, uuid } from './columns';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
 import { tableFor } from './query';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 
 const orgs = entity('batch_parity_orgs', {
   columns: { id: uuid().primaryKey(), name: text({ max: 40 }) },

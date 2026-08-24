@@ -3,6 +3,7 @@
 // test file and a claim written there can never fail. Nothing here emits or is imported — a
 // regression is a build error, the only enforcement that counts (axiom 3).
 
+import type { HttpConfig, HttpConfigInput } from './config';
 import type { AuthzDecision } from './hooks';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
@@ -46,3 +47,26 @@ export type _AuthzDenyNeedsAReason = Assert<
 export type _AuthzDenyCodeIsOptional = Assert<
   { allowed: false; reason: string } extends AuthzDecision ? true : false
 >;
+
+/**
+ * Every key of the RESOLVED config is settable on the input, so nothing this package tunes is
+ * reachable only by editing this package.
+ *
+ * The whole HTTP tuning surface was unreachable from a shipped app until 12.0.0 — one fixed
+ * literal in `@ultimat3/cli` was its only construction — and the half of that defect a rule can
+ * see is this one: a key added to `HttpConfig` and forgotten on `HttpConfigInput` has a default
+ * nobody can override, silently, forever. `scripts/config-readers.ts` cannot see it either: that
+ * ratchet walks `AppConfig` and asks whether a key is READ, and this is the mirror question — can
+ * a key be WRITTEN. A build error naming the key beats both.
+ */
+type UnsettableHttpKey = Exclude<keyof HttpConfig, keyof HttpConfigInput>;
+
+export type _EveryHttpConfigKeyIsSettable = Assert<
+  [UnsettableHttpKey] extends [never] ? true : false
+>;
+
+// There is deliberately NO second pin claiming "every settable key is app-declarable or
+// boot-owned". `AppHttpConfig` is `Omit<HttpConfigInput, BootOwnedHttpKey>`, so that union is
+// `keyof HttpConfigInput` by construction and the assertion is vacuously true whatever anyone
+// edits — a claim that cannot fail is not a claim. The derivation IS the enforcement there; this
+// file only pins what a derivation cannot say.

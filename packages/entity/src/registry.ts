@@ -3,6 +3,7 @@
 // whole domain without importing it — and what makes a duplicate name a build error rather
 // than a silent last-one-wins.
 
+import type { IndexMethod } from '@ultimat3/db';
 import { entityDuplicate } from './errors';
 import type { InvariantKind } from './invariants';
 import type { OnDelete } from './types';
@@ -72,6 +73,12 @@ export interface IndexDescription {
   readonly where: string | null;
   /** `null` is Postgres' own default (`asc`), never written out. */
   readonly order: 'asc' | 'desc' | null;
+  /**
+   * The access method, `undefined` for the `btree` every index was before this existed. Absent
+   * rather than `null`, matching `IndexDescriptionLike.using` in `@ultimat3/db`: a snapshot that
+   * predates the field and an index that declares nothing read the same, so nothing regenerates.
+   */
+  readonly using?: IndexMethod | undefined;
 }
 
 export interface EntityDescription {

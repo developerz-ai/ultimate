@@ -22,9 +22,7 @@ export {
 export {
   advance,
   CURSOR_ID_LIMIT,
-  DIGEST_UNVERIFIED,
   defaultReconnectBudget,
-  digestOf,
   type LiveCursor,
   makeCursor,
   type ReconnectBudget,
@@ -91,7 +89,6 @@ export {
 // ---- shared value domain ---------------------------------------------------------------------
 export {
   changedColumns,
-  fnv1a,
   isJsonObject,
   isRow,
   type JsonObject,

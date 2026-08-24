@@ -67,9 +67,18 @@ export type {
   AuditOutcome,
   AuditRecord,
   AuditSink,
-  MemoryAuditSink,
 } from './audit';
-export { getAuditSink, memoryAuditSink, resetAuditSink, setAuditSink } from './audit';
+export { getAuditSink, resetAuditSink, setAuditSink } from './audit';
+export { AUDIT_INPUT_MAX_DEPTH, auditableInput, UNREPRESENTABLE } from './audit-input';
+export type { MemoryAuditSink, MemoryAuditSinkOptions } from './audit-memory';
+export { DEFAULT_MAX_AUDIT_RECORDS, memoryAuditSink } from './audit-memory';
+/**
+ * The DURABLE sink, and the only one an app that must keep its trail may install. The statements
+ * are exported beside it because the table is applied the way `SQL_IDEMPOTENCY_TABLE` is — by the
+ * boot, never by an app migration.
+ */
+export type { PostgresAuditSink, PostgresAuditSinkOptions } from './audit-postgres';
+export { postgresAuditSink, SQL_AUDIT_INSERT, SQL_AUDIT_TABLE } from './audit-postgres';
 export type {
   ActionLike,
   ActionMap,

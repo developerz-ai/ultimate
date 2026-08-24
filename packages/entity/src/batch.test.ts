@@ -10,11 +10,12 @@ import { text, timestamp, uuid } from './columns';
 import { database } from './database';
 import { entity } from './entity';
 import { EntityError } from './errors';
+import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
 import { MAX_PAGE_SIZE } from './plan';
 import { tableFor } from './query';
 import { clearRegistry } from './registry';
-import { memoryRepo, type Repo } from './repo';
+import type { Repo } from './repo';
 
 const orgs = entity('batch_test_orgs', {
   columns: { id: uuid().primaryKey(), name: text({ max: 40 }) },
@@ -27,7 +28,7 @@ const posts = entity('batch_test_posts', {
       .references(() => orgs.id)
       .tenant(),
     title: text({ max: 80 }),
-    /** Nullable on purpose: an ordering no cursor can carry has to be expressible to be refused. */
+    /** Nullable on purpose: `inBatches` has to walk one, not refuse it. */
     publishedAt: timestamp().nullable(),
   },
 });
@@ -328,12 +329,25 @@ describe('refused on the chain, not one batch later', () => {
     expect(error.fix).toContain('inBatches(10)');
   });
 
-  test('an ordering no cursor can carry is refused even when one batch would have hidden it', () => {
-    // The whole result fits in one batch, so nothing would ever mint a cursor and the mistake
-    // would survive until the table grew — which is the trap this eager check exists for.
-    expect(caught(() => feed().orderBy('publishedAt').inBatches(500))).toBeUltimateError(
-      'X_INVARIANT_VIOLATED',
-    );
+  test('a nullable ordering is walked, not refused — NULL has a declared place', async () => {
+    // It used to be `X_INVARIANT_VIOLATED` here, which made `order by published_at` unwritable in
+    // the language this framework documents. `asc nulls last` is the ordering, in both drivers.
+    const rows = (await drain(feed().orderBy('publishedAt').inBatches(2))).flat();
+    expect(rows.length).toBe(SEEDED.length);
+    expect(new Set(rows.map((row) => row.id)).size).toBe(SEEDED.length);
+  });
+
+  test('an ordering no cursor can carry is still refused before the first statement', () => {
+    // What is left of the old rule: an undeclared sort column. The whole result would fit in one
+    // batch, so nothing would ever mint a cursor and the mistake would survive until the table
+    // grew — which is the trap this eager check exists for.
+    expect(
+      caught(() =>
+        feed()
+          .orderBy('nope' as 'title')
+          .inBatches(500),
+      ),
+    ).toBeUltimateError('X_INVARIANT_VIOLATED');
     expect(counted.reads()).toBe(0);
   });
 

@@ -10,6 +10,7 @@ import { CursorInvalidError, decodeCursor, encodeCursor } from '@ultimat3/core';
 import { columnFor } from './column';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
+import { instantMicros } from './instant';
 import type { QueryPlan } from './tenancy';
 import type { AnyColumn, ColumnKind } from './types';
 
@@ -89,8 +90,36 @@ export const valueAt = (row: unknown, path: string): unknown => {
     : undefined;
 };
 
-/** Stringified so the cursor is JSON; `revive` restores the type from the column's kind. */
-const serializeSortValue = (value: unknown): string => {
+/**
+ * Stringified so the cursor is JSON; `revive` restores the type from the column's kind — and the
+ * KIND decides how, never the JS type in hand, because those are two different questions on
+ * exactly the column that made this file wrong.
+ *
+ * A `timestamptz` is carried as MICROSECONDS since the epoch, not as `toISOString()`. The column
+ * holds microseconds and a `Date` holds milliseconds, so an ISO rendition of a decoded row is the
+ * row's own position FLOORED — and a seek built from a floored position ranks rows differently
+ * from the `order by` that produced them, which silently drops every row inside the boundary
+ * millisecond. Proven against a real server: `pg-cursor-precision.live.test.ts`.
+ */
+const ABSENT_MARK = '~';
+const PRESENT_MARK = '!';
+
+/**
+ * A sort value's place in the cursor is TAGGED, so absence can be told from the text that spells
+ * it: `~` alone is NULL, `!` prefixes a present value. Positional, therefore total — a `text`
+ * column holding the four characters `null` encodes as `!null` and can never be read as an absent
+ * one, which is the collision a bare sentinel value would reopen.
+ *
+ * The tag exists because a nullable sort key is legal `As of 2026-08-24` (`asc nulls last` /
+ * `desc nulls first`, `@ultimat3/query`'s spelling), and a keyset position over one has to be able
+ * to say "the boundary row had none".
+ */
+const tagged = (text: string): string => `${PRESENT_MARK}${text}`;
+
+const serializeSortValue = (kind: ColumnKind, value: unknown): string | undefined => {
+  // `undefined`, never `'0'`: a position nothing could read would decode to the epoch, which is
+  // "start from the top" wearing a signature — the one thing a cursor must never mean.
+  if (kind === 'timestamptz') return instantMicros(value)?.toString();
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'bigint') return value.toString();
   return String(value);
@@ -108,8 +137,16 @@ const serializeSortValue = (value: unknown): string => {
 // constant three lines above it.
 const reviveSortValue = (kind: ColumnKind, text: string): unknown => {
   switch (kind) {
-    case 'timestamptz':
-      return new Date(text);
+    case 'timestamptz': {
+      // Microseconds since the epoch — the precision the COLUMN keeps, which a `Date` cannot.
+      // A cursor minted before that decision carries an ISO string, so this is where it is
+      // refused: `BigInt('2026-…')` is a bare `SyntaxError` with no code and no fix.
+      const micros = instantMicros(text);
+      if (micros === undefined) {
+        throw new CursorInvalidError('its position is not a microsecond instant');
+      }
+      return micros;
+    }
     case 'bigint':
       return BigInt(text);
     case 'integer':
@@ -125,9 +162,12 @@ const reviveSortValue = (kind: ColumnKind, text: string): unknown => {
  * A keyset seek only has a total order when every sort column is present on every row —
  * `null > 'x'` is unknown in SQL and would drop rows from the middle of a listing.
  *
- * Checked when a cursor is minted as well as when one is decoded: an ordering that cannot carry
- * a position is the author's mistake, and reporting it on the *second* page hides it behind
- * whatever page size the caller happened to use.
+ * Checked where the PLAN is built (`planFor`), which is every read either driver sends, as well as
+ * when a cursor is minted and when one is decoded. The plan is the load-bearing one: `cursorFor`
+ * runs only when a page found a row past its limit, so the refusal used to depend on how many rows
+ * the table happened to hold — green on fifteen seeded rows, `X_INVARIANT_VIOLATED` on the first
+ * read past a page of twenty in production. An ordering that cannot carry a position is the
+ * author's mistake at any row count.
  */
 export const assertSeekable = <Row>(
   entity: EntityCore<Row>,
@@ -138,14 +178,27 @@ export const assertSeekable = <Row>(
     // money property named without its part — both mint a cursor nothing can decode.
     kindAt(entity, key.column);
     if (columnAt(entity, key.column).$meta.notNull) continue;
+    // An ORDINARY nullable key is orderable, `As of 2026-08-24`: NULL has a declared place
+    // (`asc nulls last` / `desc nulls first`), the cursor carries that place, and the seek reaches
+    // it. What is left is the TIEBREAK — `totalOrder` appends the primary key precisely so two
+    // rows sharing a sort value cannot straddle a page boundary, and a nullable primary-key column
+    // cannot do that job: `null = null` is unknown, so two such rows are indistinguishable to the
+    // seek and one of them is served twice or never. Reachable only through `primaryKey: [...]`,
+    // which takes the columns as declared.
+    if (!entity.$primaryKey.includes(key.column)) continue;
     throw invariantViolated(
       entity.$name,
       'cursor',
-      `${key.column} is nullable and cannot carry a cursor — order by a not-null column ` +
-        `(add .orderBy('${entity.$primaryKey[0] ?? 'id'}') or make ${key.column} not null)`,
+      `${key.column} is part of the primary key and is nullable, so no ordering can be total — ` +
+        'an ordinary nullable column orders fine (nulls last ascending, nulls first descending), ' +
+        `but the tiebreak cannot: drop .nullable() from ${key.column}`,
     );
   }
 };
+
+/** Whether a sort key may hold NULL — what decides the seek's SHAPE, not only its values. */
+export const isNullableKey = <Row>(entity: EntityCore<Row>, path: string): boolean =>
+  !columnAt(entity, path).$meta.notNull;
 
 /** Deterministic, and total over the value shapes a predicate can hold. */
 const renderValue = (value: unknown): string => {
@@ -182,17 +235,37 @@ export const planScope = (plan: QueryPlan): string => {
     .slice(0, 16);
 };
 
-/** The cursor that continues this plan after `row`. Signed by core, scoped by the plan. */
+/**
+ * The cursor that continues this plan after `row`. Signed by core, scoped by the plan.
+ *
+ * `exact` is how a driver hands over a value the DECODED row cannot hold: a `timestamptz` comes
+ * back as a `Date`, which is milliseconds, and the microseconds it dropped are the difference
+ * between a position the `order by` agrees with and one it does not. Optional because the
+ * in-memory driver stores millisecond `Date`s and therefore has nothing finer to give.
+ */
 export const cursorFor = <Row>(
   entity: EntityCore<Row>,
   plan: QueryPlan,
   row: unknown,
   id: string,
+  exact?: ReadonlyMap<string, unknown>,
 ): string => {
   assertSeekable(entity, plan.orderBy);
   return encodeCursor({
     scope: planScope(plan),
-    key: plan.orderBy.map((entry) => serializeSortValue(valueAt(row, entry.column))),
+    key: plan.orderBy.map((entry) => {
+      const value = exact?.get(entry.column) ?? valueAt(row, entry.column);
+      // A column the row never named and a stored NULL are one absence everywhere else in this
+      // package (`isNull`), and they are one position here too.
+      if (value === null || value === undefined) return ABSENT_MARK;
+      const text = serializeSortValue(kindAt(entity, entry.column), value);
+      if (text !== undefined) return tagged(text);
+      throw invariantViolated(
+        entity.$name,
+        'cursor',
+        `${entry.column} on the last row of the page holds no instant a cursor can carry`,
+      );
+    }),
     id,
   });
 };
@@ -216,7 +289,20 @@ export const seekFrom = <Row>(
       `it carries ${key.length} sort values, this order needs ${plan.orderBy.length}`,
     );
   }
-  return plan.orderBy.map((entry, index) =>
-    reviveSortValue(kindAt(entity, entry.column), String(key[index])),
-  );
+  return plan.orderBy.map((entry, index) => {
+    // `segment` and `ABSENT_MARK`, never `token` and `NULL_KEY`: both names said CREDENTIAL to
+    // `bun run secret-compare`, whose rule is that a `===` on one leaks it a byte at a time. What
+    // this compares is a page POSITION against a one-character tag, where the repair the guard
+    // names — `timingSafeEqual` — would be constant-time nonsense. The guard reads names because a
+    // unit test cannot assert timing, so the name is the thing that has to be right.
+    const segment = String(key[index]);
+    if (segment === ABSENT_MARK) return null;
+    if (!segment.startsWith(PRESENT_MARK)) {
+      // Every cursor this package mints carries a tag. An untagged one was forged past the
+      // signature or minted before nullable sort keys existed; either way the alternative is a
+      // silent restart at the top, which is the one thing a cursor may never mean.
+      throw new CursorInvalidError('a sort value carries no null-or-value tag');
+    }
+    return reviveSortValue(kindAt(entity, entry.column), segment.slice(PRESENT_MARK.length));
+  });
 };

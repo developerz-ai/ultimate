@@ -3,8 +3,8 @@ import { createContext, runWithContext, userActor, withChildContext } from '@ult
 import { text, uuid } from './columns';
 import { entity } from './entity';
 import type { EntityError } from './errors';
+import { memoryRepo } from './memory-repo';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 import {
   assertRowTenant,
   assertScoped,

@@ -3,6 +3,10 @@
 Tier 4. May import tier 0–3: `core schema i18n money time cache seo entity policy http action
 query jobs realtime`. **Never** `render manifest ai pwa ui admin testing cli`.
 
+`@ultimat3/http` is a DIRECT dependency since 2026-08-24 (`transport-http.ts`, the rate limiter) and
+was already a transitive one through `action` and `query` — declaring it added nothing to the
+install graph and made the edge readable.
+
 Same-tier data (routes, manifest, policy catalog) arrives as an **injected thunk**, never an
 import. The CLI wires it.
 
@@ -19,7 +23,7 @@ import. The CLI wires it.
 | `resources.ts` | resources + prompts, stable `ultimate://` URIs |
 | `dev-server.ts` | the 13 dev tools; depends only on an injected `DevHost` |
 | `dev-host.ts` | wires `describe*` from entity/action/query/jobs into a `DevHost` |
-| `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor |
+| `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor, and the per-caller rate limit it enforces itself |
 | `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve` |
 | `app-tools.ts` | `defineAppMcp` — a generated app's own MCP surface, one call |
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
@@ -247,6 +251,32 @@ import. The CLI wires it.
 - The caps run in the **tool**, not the host. A host that forgets them answers a million rows
   into a model's context. `guards` names the layers that engaged; a layer that could not engage
   is absent from the list, never assumed present.
+- **`MCP_RATE_LIMITS` is ENFORCED, in `handle`, and it has to be there** (2026-08-24). `limits` and
+  `rateLimitClass` were published on `McpRouteDescriptor` and read by no mount point — `x mcp serve`
+  runs `route.handle` in a bare `Bun.serve` and `defineAppMcp` hands its route to the app — so the
+  type promised 20 writes a minute while the real ceiling was Bun's accept rate: an agent looping on
+  `db.query` was never UNSAFE (the `readonly-sql` parse and `query-limits` caps hold per call) and
+  never BOUNDED. It cannot be enforced from OUTSIDE, which is why deleting the option was the wrong
+  half of the choice: `rateLimitClass(body)` takes an ALREADY-PARSED body and `handle` is the only
+  thing that parses one, so a limiter above it would have to consume the request stream first and a
+  `Request` body reads once. The maths, the `Bucket`, `toBucket`, `rateLimitKey` and the store are
+  `@ultimat3/http`'s — tier 2, a legal downward import — and **never** a second token bucket written
+  here. Metered after the parse and before dispatch; an unauthenticated caller is answered 401 first,
+  so a token nobody issued cannot spend an actor's allowance. The key is
+  `mcp:<class>|actor:<id>`, never the TOKEN: a bucket key reaches a log and an error reporter, and a
+  credential in one is a leak wearing a throttle's clothes.
+- **`X_MCP_RATE_LIMITED`, not `@ultimat3/http`'s `X_RATE_LIMITED`, and the reason is the KNOB.** The
+  enforcement is shared to the last function; only the sentence differs. `X_RATE_LIMITED`'s `fix:`
+  says to raise `rateLimit.buckets` in `app.config.ts`, which governs the HTTP pipeline and has no
+  effect on this route — an instruction that runs and changes nothing is worse than none, which is
+  the same call `@ultimat3/realtime`'s `SubscriptionLimitError` makes when it names the knob rather
+  than the default. The 429 renders `{ code, cause, fix }` plus `Retry-After`, the shape this file's
+  401 and 403 already use, never a JSON-RPC envelope: the transport refused before dispatch, so
+  there is no call to answer.
+- **A per-process store is the default and a lie for a fleet.** `mcpHttpRoute({ rateLimitStore })`
+  and `defineAppMcp({ rateLimitStore })` are the seam; N replicas on the memory store enforce N x
+  every number, silently and only in production. Forwarded through `defineAppMcp` deliberately —
+  an app that builds its route through that one call has no other way to reach it.
 - **Every authentication answer lands before `request.json()`.** A missing token, a token
   `resolveToken` rejects and a non-agent actor all return before the body is read: parsing first
   answered `400 parse error` for a malformed payload and `401` for a well-formed one under the

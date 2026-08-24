@@ -293,3 +293,44 @@ describe('stats puts a job in exactly one bucket', () => {
     expect(executor.params.map((row) => row[2])).toEqual([false, false]);
   });
 });
+
+describe('an empty queue list is not a question', () => {
+  /**
+   * The divergence this case exists for: `claim({ queues: [] })` meant EVERY queue on the memory
+   * driver (`wanted.size === 0 ||`) and the `default` queue on Postgres (`queues.length > 0 ?
+   * queues : [DEFAULT_QUEUE]`), and `ClaimOptions.queues` documented neither. Unreached through
+   * `createWorker`, which always passes exactly one queue — so the two answers could sit there
+   * indefinitely, and whichever an embedder hit first became the one it wrote its deployment
+   * against. Both drivers now refuse, which is the only answer that cannot be silently wrong in
+   * the other's deployment: claiming every queue on a shared database is a worker taking work it
+   * was never configured for, and claiming `default` is a worker that silently drains nothing.
+   */
+  const empty = { queues: [], limit: 1, visibilityTimeoutMs: 30_000, workerId: 'w1' };
+
+  test('the memory driver refuses it', async () => {
+    await expect(createMemoryDriver().claim(empty)).rejects.toThrow(/X_JOB_CLAIM_QUEUES_EMPTY/);
+  });
+
+  test('the pg driver refuses it, before it issues a statement', async () => {
+    const executor = recordingExecutor();
+    await expect(createPgDriver({ executor }).claim(empty)).rejects.toThrow(
+      /X_JOB_CLAIM_QUEUES_EMPTY/,
+    );
+    // Refused in the driver, not by the database: a statement over `any('{}')` matches no row and
+    // would have read as an idle queue.
+    expect(executor.sql).toEqual([]);
+  });
+
+  test('one named queue still claims, in both', async () => {
+    const memory = createMemoryDriver();
+    await expect(claimOne(memory)).resolves.toEqual([]);
+    const executor = recordingExecutor();
+    await createPgDriver({ executor }).claim({
+      queues: ['default'],
+      limit: 1,
+      visibilityTimeoutMs: 30_000,
+      workerId: 'w1',
+    });
+    expect(executor.params[0]?.[0]).toEqual(['default']);
+  });
+});

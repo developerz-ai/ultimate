@@ -294,7 +294,7 @@ bunx x verify
                                     ✓ budgets            0ms
                                     ✓ manifest           1ms
                                     - roadmap            0ms
-✓ 16 of 19 steps passed in 11153ms — 3 skipped: e2e, contract-diff, roadmap
+✓ 17 of 20 steps passed in 11153ms — 3 skipped: e2e, contract-diff, roadmap
 ```
 
 Three steps that were dashes in [tutorial 1](Tutorial-01-First-App) are now ticks, from renaming three files — and the summary names the three that still have nothing to run.

@@ -42,6 +42,11 @@ const members = entity('attr_members', {
   indexes: [{ on: ['orgId', 'email'], unique: true }],
 });
 
+/** Unscoped, because `approximateCount()` is a whole-TABLE estimate and refuses a scoped entity. */
+const events = entity('attr_events', {
+  columns: { id: uuid().primaryKey(), label: text({ max: 20 }) },
+});
+
 const posts = entity('attr_posts', {
   columns: {
     id: uuid().primaryKey(),
@@ -143,6 +148,8 @@ const stubEverything = (): void => {
   recorded.on('from "attr_members"', { rows: [memberRow(ANA)] });
   recorded.on('count(', { rows: [{ count: '1' }] });
   recorded.on('group by', { rows: [{ group_value: 'admin', group_count: '1' }] });
+  recorded.on('agg_value', { rows: [{ agg_value: null, agg_count: '0' }] });
+  recorded.on('reltuples', { rows: [{ estimate: '7' }] });
   recorded.on('insert into "attr_members"', { rows: [memberRow(idAt(30))] });
   // `update … set` is three statements' text here: `update`, and the soft-delete stamp both
   // `delete` and `deleteWhere` compile to — so it answers with a row AND with a count.
@@ -170,6 +177,10 @@ const calls: readonly (readonly [string, () => Promise<unknown>])[] = [
     'updateWhere',
     () => memberRepo().updateWhere({ role: 'admin' }, { role: 'owner' }, { orgId: ORG }),
   ],
+  // `aggregate` names itself by the FUNCTION, not by the method: a diagnostic reporting "50x
+  // aggregate on members" would not say which one, and `min` and `sum` are different statements
+  // with different costs. `deletedAt` because it is the one column here `min` accepts.
+  ['min', () => memberRepo().aggregate('min', 'deletedAt', { orgId: ORG })],
 ];
 
 describe('every repository method names the statement it sends', () => {
@@ -261,6 +272,18 @@ describe('a shared statement carries the pair every call it replaced would have 
 });
 
 describe('what carries no pair', () => {
+  test('approximateCount names itself, on the only kind of entity that can ask', async () => {
+    // Not in the table above: every fixture entity there is tenant-scoped, and a whole-table
+    // estimate of a tenant-scoped table is refused before a statement exists. So the method's
+    // attribution needs an unscoped entity, and this is it.
+    stubEverything();
+
+    await postgresRepo(events).approximateCount();
+
+    expect(recorded.statements).toHaveLength(1);
+    expect(pairs).toEqual([{ entity: 'attr_events', op: 'approximateCount' }]);
+  });
+
   test('hand-written SQL through the same client is unattributed', async () => {
     await client.query(sql`select now()`);
     await client.execute(sql`delete from "attr_members" where "role" = ${'ghost'}`);

@@ -74,6 +74,10 @@ export const firstRunPlan = (): readonly FirstRunStep[] => [
   })),
   { name: 'db gen generated', args: ['db', 'gen', 'generated', '--json'] },
   { name: 'db migrate (generated)', args: ['db', 'migrate', '--json'] },
+  // `bin/setup` writes the manifest and this job never runs it, so without this step the smoke app
+  // reaches `x verify` with no `x.manifest.json` and the `manifest` step reports X_MANIFEST_MISSING.
+  // `x g` refreshes an existing manifest and never creates one, by its own documented refusal.
+  { name: 'manifest', args: ['manifest', '--json'] },
 ];
 
 /** Enough of the failure to read in a CI log without the finding swallowing the step table. */

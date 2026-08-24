@@ -19,14 +19,14 @@
 // raise one. Raising a count is a hand edit, on purpose, in a review.
 
 export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
-  action: 13,
+  action: 10,
   admin: 6,
   ai: 16,
   auth: 8,
   cache: 10,
   core: 12,
   db: 5,
-  entity: 15,
+  entity: 14,
   flags: 4,
   http: 2,
   i18n: 2,

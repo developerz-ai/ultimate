@@ -14,7 +14,7 @@ describe('unit · the script catalogue', () => {
   // adding a step must be an edit here too, so no step joins the gate without somebody counting.
   test('the step count is projected from the step list, never restated', () => {
     expect(does('bun run scripts/verify.ts')).toContain(`all ${VERIFY_STEP_NAMES.length} steps`);
-    expect(VERIFY_STEP_NAMES.length).toBe(19);
+    expect(VERIFY_STEP_NAMES.length).toBe(20);
   });
 
   // The app gate is a headline command in CLAUDE.md and was absent, so an agent reading this

@@ -249,7 +249,10 @@ name-sorted, and reads no clock, env or random source — same registry ⇒ same
 ## `rateLimit:` is the enforced limit
 
 ```ts
-rateLimit: { limit: 5, windowMs: 600_000 },   // 5 held, one back every two minutes
+import type { ActionRateLimit } from '@ultimat3/action';
+
+// The `rateLimit:` key of an `action()`: 5 held, one back every two minutes.
+const rateLimit: ActionRateLimit = { limit: 5, windowMs: 600_000 };
 ```
 
 One declaration, three places it lands: the bucket the limiter runs on (named after the action,
@@ -298,6 +301,9 @@ import {
   postgresIdempotencyStore,
   setIdempotencyStore,
 } from '@ultimat3/action';
+import { db } from '@ultimat3/db';
+
+const client = db();
 
 // NOT `executor: Bun.sql` — `Bun.sql.query` is `undefined` `As of 2026-08` (it is a tagged
 // template whose positional form is `unsafe`), so that line compiles and throws on the first
@@ -348,7 +354,14 @@ A `query` has none and never will: a read has nothing to be idempotent about.
 ## `deprecated:` — a compat window, not a version
 
 ```ts
-deprecated: { since: '2026-08-01T00:00:00Z', sunset: '2026-12-31T23:59:59Z', replacedBy: 'searchOrders' },
+import type { Deprecation } from '@ultimat3/action';
+
+// The `deprecated:` key of an `action()`.
+const deprecated: Deprecation = {
+  since: '2026-08-01T00:00:00Z',
+  sunset: '2026-12-31T23:59:59Z',
+  replacedBy: 'searchOrders',
+};
 ```
 
 Four things at once: `Deprecation: @1754006400` (RFC 9745) and `Sunset: Wed, 31 Dec 2026 …`
@@ -391,9 +404,53 @@ What the framework supplies is what it genuinely knows:
 | `outcome` | `allowed` \| `denied` \| `failed` |
 | `failure` | the `X_*` code and the thrown value, on every outcome but `allowed` |
 
-What it does **not** supply: an audit entity, a schema, a retention policy, a storage backend, a
-hash chain, a subject index, or an opinion on what "who" means under impersonation. Four apps
-model those four ways; shipping one would make three of them wrong.
+What it does **not** supply: an audit entity, a retention policy, a hash chain, a subject index,
+or an opinion on what "who" means under impersonation. Four apps model those four ways; shipping
+one would make three of them wrong.
+
+### Two sinks ship, and only one of them keeps anything
+
+| Sink | Keeps | Use it for |
+|---|---|---|
+| `memoryAuditSink({ maxRecords })` | the newest `DEFAULT_MAX_AUDIT_RECORDS` (1,000) records, verbatim. **It DROPS** — `dropped` counts what it discarded | `x dev`, tests |
+| `postgresAuditSink({ executor })` | one append-only `x_audit` row per attempt. Drops nothing | anything that has to keep its trail |
+
+The memory sink is bounded because a record pins a whole `Ctx`: at 50 audited writes a second an
+unbounded array is 4.3M immortal records a day and the pod dies holding the trail it was
+retaining. The trap it names out loud is that the shortest edit clearing `X_AUDIT_SINK_MISSING`
+is `setAuditSink(memoryAuditSink())`, and nothing at that call site says the result is amnesiac.
+
+```ts
+// apps/web/server.ts — the app owns the connection, so the app installs the sink
+import { postgresAuditSink, setAuditSink } from '@ultimat3/action';
+import { db } from '@ultimat3/db';
+
+const client = db();
+setAuditSink(
+  postgresAuditSink({ executor: { query: (text, values) => client.query({ text, values }) } }),
+);
+```
+
+**The table is applied by the boot; the sink is not.** `startQueue` runs `SQL_AUDIT_TABLE` on
+every start — `x dev`, the container's `web`/`worker`, and the release-phase `ROLE=migrate` — the
+way `SQL_IDEMPOTENCY_TABLE` is applied, because a package holding no database dependency cannot
+apply its own schema. Installing a sink stays your one line, deliberately: there is no default, so
+`audit: true` with none installed keeps refusing with `X_AUDIT_SINK_MISSING` instead of recording
+into a ring. `executor` is a client that already speaks `(text, values)` — never `Bun.sql`, whose
+`.query` is `undefined`.
+
+`x_audit` carries the framework's own facts as columns — the action, the surface, the outcome,
+the actor, the correlation ids, the idempotency key — and the parsed `input` as `jsonb`, redacted
+through **core's own** `isRedactedKey` table, the one `defineEnv({ secret: true })` extends. So a
+value that renders `[redacted]` in a log line cannot be plaintext in the audit table, and a
+boxed `Secret` is redacted by value wherever its key sits. What never reaches a column: the `Ctx`
+itself (`createContext` spreads every installed service onto it, and an HTTP surface's is a
+`RequestContext` carrying the caller's `Authorization` and `Cookie`), and the thrown value behind
+a failure — the row keeps `failure.code`, never the throwable.
+
+The table has **no purge**, deliberately, and it is the one framework table that does not: a
+stale idempotency row is meaningless while a stale audit row *is* the record, and "how long" is a
+legal answer that differs per app. Pruning or partitioning `x_audit` is yours.
 
 A denial is recorded because `invoke` wraps the whole path — `guard` throws **before** `handle`,
 so nothing you could write around your own handler would ever see one. That is the reason this

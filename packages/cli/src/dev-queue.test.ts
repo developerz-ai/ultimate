@@ -87,6 +87,11 @@ describe('startQueue', () => {
       expect(tables).toContain('x_rate_limit');
       expect(tables).toContain('x_auth_failures');
       expect(tables).toContain('x_auth_lockouts');
+      // `postgresAuditSink` is installed by no boot on purpose — there is no default sink, so
+      // X_AUDIT_SINK_MISSING keeps firing — but its relation has to exist before the first app
+      // that DOES install one writes, or `audit: true` fails with `relation "x_audit" does not
+      // exist` wrapped as X_AUDIT_SINK_FAILED.
+      expect(tables).toContain('x_audit');
     },
     BOOT_TIMEOUT_MS,
   );

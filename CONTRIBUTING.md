@@ -7,7 +7,7 @@ that already works will be declined — that ambiguity is the tax agents pay.
 
 ```sh
 bin/setup      # bun version check, install, .env.development.local, git hooks
-bin/check      # the gate: 19 steps, one command, no --only and no --skip. Green = shippable
+bin/check      # the gate: 20 steps, one command, no --only and no --skip. Green = shippable
 ```
 
 Requirements: **Bun >= 1.3**. Nothing else. No Node, no Docker, no database — `x dev` runs

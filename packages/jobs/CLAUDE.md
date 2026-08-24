@@ -75,6 +75,19 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   has the table, so a column added only there reaches new installs and nothing else. Comments in
   that constant carry NO apostrophes and NO semicolons — `dev-queue.ts` splits it on `;` and
   `driver-pg-sql.test.ts` checks quote parity, neither of which can tell prose from a literal.
+- **`claim({ queues: [] })` is REFUSED by every driver, `As of 2026-08-24`.** It used to mean two
+  different things: EVERY queue on `driver-memory.ts` (`wanted.size === 0 ||`) and the `default`
+  queue on `driver-pg.ts` (`queues.length > 0 ? queues : [DEFAULT_QUEUE]`), with `ClaimOptions.queues`
+  documenting neither — so the memory driver every test in this repo runs against and the pg driver
+  production runs against answered one question two ways. Nothing reached it (`createWorker` passes
+  exactly ONE queue per pass, which is what keeps a slow queue from starving the others), so it could
+  only ever be found by an embedder, in production. Both meanings are silently wrong in the other's
+  deployment: claiming every queue is a worker taking work it was never configured for, claiming
+  `default` is a worker that drains nothing and reads as an idle queue. `assertClaimQueues` in
+  `driver.ts` is the one refusal (`X_JOB_CLAIM_QUEUES_EMPTY`), called by both drivers, and
+  `driver-memory.ts`'s `claim` is `async` so an empty list REJECTS on both rather than throwing
+  synchronously on one — a sync throw out of a method typed `Promise<…>` is itself a divergence.
+  **Breaking**: `driver-pg.test.ts` was leaning on the pg default and now names its queue.
 - **`ack` and `nack` are FENCED on `state = 'running'`, and that fence is what makes cancellation
   possible** (`As of 2026-08`). Without it the only way to stop a runaway pass was
   `UPDATE x_jobs SET state='dead'`, which the worker's next settle wrote straight over. Same fence
