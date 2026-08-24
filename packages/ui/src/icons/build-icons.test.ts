@@ -17,7 +17,7 @@ import {
   SAFE_ICON_NAME,
 } from './build-icons';
 
-/** `expect(fn).toThrow(Class)` passes in Bun 1.3.14 when `fn` merely RETURNS an error, so the
+/** `expect(fn).toThrow(Class)` passes in Bun 1.4.0 when `fn` merely RETURNS an error, so the
  * code is read off the caught value instead (issue #150). */
 function caught(run: () => unknown): { code?: unknown; cause?: unknown; fix?: unknown } {
   try {

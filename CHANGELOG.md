@@ -8,7 +8,44 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **An island chunk carried the `NODE_ENV` of the process that built it, not the one it ships
+  under.** `Bun.build` picks the `development` / `production` export condition from the build
+  process's own `NODE_ENV`, and inlines that value into app code — measured on the pinned 1.4.0:
+  unset → Solid's development build, `test` → development, `production` → production. So every
+  island built anywhere a container did not run (`x dev`, `x build` on a laptop, `bun test`) shipped
+  with `process.env.NODE_ENV === "development"` baked into the file a browser downloads, and its
+  bytes — therefore its content hash and its byte budget — depended on the box. `island-bundle.ts`
+  now pins `define: { 'process.env.NODE_ENV': '"production"' }`: an island chunk is only ever built
+  to be shipped, and `x dev` serves the same chunk the container does.
+- **`packages/cli/src/island-solid-production.ts` is deleted — 120 lines re-implementing Node's
+  conditional-exports walk to keep Solid's development build out of an island.** Its premise was
+  that `target: 'browser'` always adds the `development` condition and *"no option removes it —
+  `conditions`, `production`, `env` and `define` were each measured under Bun 1.4 and none of them
+  does"*. Three of those four still hold; `define` does not, and one line reproduces what the plugin
+  produced **byte for byte** (16,703 B for an entry importing `solid-js`, `solid-js/web` and
+  `solid-js/store`). The likely origin of the wrong measurement is that the unquoted form is a
+  silent no-op: `'process.env.NODE_ENV': 'production'` leaves the development build in place and
+  `'"production"'` does not. Axiom 1 — the plugin was a second path to what the bundler already
+  does.
+
+### Changed
+
+- **Every Bun-version-stamped claim in shipped source was re-measured on the pinned series**, which
+  is the half of the 1.3 → 1.4 move that never happened: a comment stamped `1.3.14` under a `1.4.x`
+  pin says the behaviour was last checked on a runtime nothing in the repo runs. Re-measured true
+  and restamped: `Bun.sql.query` is still `undefined` (`jobs/driver-pg.ts`), `server.upgrade()`
+  still runs `websocket.open` synchronously before returning (`realtime/sync-upgrade.ts` and two
+  tests), `expect(fn).toThrow(Class)` still passes when `fn` merely RETURNS an error (three test
+  files), and Bun's dotenv precedence is unchanged — `NODE_ENV=staging` still reads
+  `.env.development` and `test` still skips `.env.local` (`core/env-example.ts`).
+- **Two of those claims were false, and are corrected rather than restamped.** `jobs/job.test.ts`
+  said a bare `declare(0)();` expression statement "does not run at all under Bun 1.3.14 — the call
+  is elided when its value is unused"; re-measured against that exact `declare` on 1.4.0, the
+  statement runs and `job()` throws `X_INVARIANT`. `cli/compile-externals.ts` said Bun 1.3 is "what
+  CI pins and what `docker/Dockerfile` builds on" — both moved to 1.4 on 2026-08-20, so every
+  builder now takes the branch the comment describes as the other one.
 
 ## 11.2.0 - 2026-08-23
 

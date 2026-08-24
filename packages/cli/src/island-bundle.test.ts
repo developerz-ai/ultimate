@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // `node:` by necessity: Bun ships no path API, and `rm(…, { force: true })` removes a fixture
 // root that may not exist without a branch.
 import { rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import type { MountedIsland } from '@ultimat3/testing';
 import { mountIsland } from '@ultimat3/testing';
@@ -397,5 +397,67 @@ describe('unit · the bundler diagnostic a cause is built from', () => {
 
   test('a non-Error throw is not flattened to a placeholder', () => {
     expect(describeBuildError('bundle failed')).toContain('bundle failed');
+  });
+});
+
+/**
+ * A string only Solid's DEVELOPMENT core carries (`dist/dev.js`), and a string literal, so it
+ * survives minification. `dist/solid.js` does not contain it — the negative control in the first
+ * case below is what proves that, since an assertion on a string present in neither build passes
+ * against both.
+ */
+const DEV_ONLY = 'Potential Infinite Loop Detected';
+
+/** Reads the one value a chunk built on a laptop and a chunk built in the image disagreed about. */
+const ENV_ISLAND = `export function mount(el: HTMLElement): void {
+  el.textContent = process.env.NODE_ENV ?? 'unset';
+}
+`;
+
+describe('an island chunk is built to be shipped, not to match the box that built it', () => {
+  test('carries Solid production build, never the development one', async () => {
+    await write(ISLAND, NAIVE_ISLAND);
+    const chunk = (await buildIslands(ROOT, { only: ISLAND })).chunks[0];
+
+    expect(chunk?.code).not.toContain(DEV_ONLY);
+    // The negative control: the marker IS in the build an unpinned resolution reaches, so the
+    // assertion above is a real one rather than a string that appears in neither file.
+    const solid = Bun.resolveSync('solid-js/package.json', import.meta.dir);
+    expect(await Bun.file(join(dirname(solid), 'dist/dev.js')).text()).toContain(DEV_ONLY);
+  });
+
+  test('does not depend on the NODE_ENV of the process that built it', async () => {
+    await write(ISLAND, ENV_ISLAND);
+    const here = (await buildIslands(ROOT, { only: ISLAND })).chunks[0]?.url ?? '';
+
+    // A SECOND process, because `Bun.build` reads NODE_ENV once at start-up — mutating
+    // `process.env` in this one changes nothing it resolves, which is what made an in-process
+    // version of this case pass with the `define` deleted. This suite runs under `test`, the
+    // child under `production`: the two ambient modes that pick different Solid builds and
+    // inline different values, so an equal URL is the whole property.
+    const script = [
+      `const { buildIslands } = await import(${JSON.stringify(join(import.meta.dir, 'island-bundle.ts'))});`,
+      `const bundle = await buildIslands(${JSON.stringify(ROOT)}, { only: ${JSON.stringify(ISLAND)} });`,
+      `console.log(bundle.chunks[0]?.url ?? '');`,
+    ].join('\n');
+    const child = Bun.spawn(['bun', '-e', script], {
+      env: { ...process.env, NODE_ENV: 'production' },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const there = (await new Response(child.stdout).text()).trim();
+
+    expect(there).not.toBe('');
+    expect(there).toBe(here);
+  });
+
+  test("the island's own process.env.NODE_ENV is production, not the build box's", async () => {
+    await write(ISLAND, ENV_ISLAND);
+    using mounted = await mountCounter({});
+
+    // An app branching on NODE_ENV — a debug panel, a verbose logger, a mock transport — took the
+    // development branch in the file a browser downloads, because the chunk inherited the mode of
+    // whatever process ran `x build`.
+    expect(mounted.el.textContent).toBe('production');
   });
 });

@@ -11,7 +11,7 @@ import { WORKER_CEILING, WORKER_FLOOR } from './test-workers';
 const args = (value: string): ParsedArgs =>
   parseArgs(['verify', '--workers', value], [verifyCommand.spec]);
 
-/** `toThrow(Class)` passes in Bun 1.3.14 when the callee merely RETURNS an error. */
+/** `toThrow(Class)` passes in Bun 1.4.0 when the callee merely RETURNS an error. */
 const thrownBy = (run: () => unknown): unknown => {
   try {
     run();

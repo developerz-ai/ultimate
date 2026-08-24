@@ -39,7 +39,7 @@ export interface UpgradeDeps {
   readonly authenticate?: SyncAuthenticator | undefined;
   /**
    * Recorded BEFORE `server.upgrade`, because Bun runs `websocket.open` synchronously inside it
-   * (measured on bun 1.3.14) and `open` is where the node reads this grant to build the socket's
+   * (measured on bun 1.4.0) and `open` is where the node reads this grant to build the socket's
    * actor. Recorded after, every authenticated socket carried `actor: null` — the topic guard,
    * `authorize`, `visible` and the per-tenant cap all deciding about nobody — and it never
    * repaired, because the re-auth sweep only visits grants with an `expiresAt`.
