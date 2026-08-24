@@ -3,26 +3,28 @@
 // and the budget exists to make the expensive answer (a snapshot) the *chosen* one, not the
 // accidental one. See README "Reconnect is the hard part".
 
-import { type Clock, canonicalJson, systemClock } from '@ultimat3/core';
+import { type Clock, systemClock } from '@ultimat3/core';
 import { CursorStaleError } from './errors';
-import { fnv1a, type Row, type RowPatch } from './json';
+import type { Row, RowPatch } from './json';
 
 /** Ids are bounded so a cursor stays small enough to ship on every `subscribe` frame. */
 export const CURSOR_ID_LIMIT = 512;
 
-/** A digest of `''` means "not verified at this lsn" — set on every delta resume. */
-export const DIGEST_UNVERIFIED = '';
-
+/**
+ * What a resume decides from, and nothing else. `digest` and `count` were here until 2026-08-24
+ * and were written by every snapshot, encoded and validated on every `subscribe` frame, and read
+ * by nothing — the same shape `verifyDigest()` was deleted for one release earlier, one field
+ * down. `digest` cost a `canonicalJson` plus a hash over EVERY ROW of every snapshot, paid once
+ * per live query per reconnecting socket in the restart storm this package is measured on; and
+ * `count` would have been wrong had it ever gained a reader, because `advance` seeds its set from
+ * the already-truncated `ids`, so a delete of a row past `CURSOR_ID_LIMIT` never decremented it.
+ */
 export interface LiveCursor {
   readonly qid: string;
   /** Last lsn the subscriber has applied. Lexicographically comparable (see `formatLsn`). */
   readonly lsn: string;
-  /** Result-set digest at the last snapshot, or `DIGEST_UNVERIFIED` after a delta resume. */
-  readonly digest: string;
   /** Last-seen row ids, truncated at `CURSOR_ID_LIMIT`. */
   readonly ids: readonly string[];
-  /** Number of rows in the result set — survives id truncation. */
-  readonly count: number;
   readonly at: number;
 }
 
@@ -53,8 +55,7 @@ export type ResumeReason =
   | 'unknown-query'
   | 'out-of-window'
   | 'lag-exceeded'
-  | 'budget-exceeded'
-  | 'digest-unverified';
+  | 'budget-exceeded';
 
 export interface ResumeDecision {
   readonly resnapshot: boolean;
@@ -98,28 +99,9 @@ export function makeCursor(
   return {
     qid,
     lsn,
-    digest: digestOf(rows),
     ids: rows.slice(0, CURSOR_ID_LIMIT).map((r) => r.id),
-    count: rows.length,
     at: now,
   };
-}
-
-/**
- * FNV-1a over `id:row` pairs in result order — order-sensitive, so a re-sort is detected.
- *
- * **Server-side only, and it is not reproducible by a client.** `verifyDigest()` used to sit here
- * and was DELETED (2026-08-23): it was documented as "how a client detects drift", had no caller
- * outside its own test, and could not have had one. Three reasons, any one of them fatal.
- * `canonicalJson` tags a `Date` as `Date(<epoch>)` while the client holds the ISO string
- * `JSON.stringify` sent it. A delta-resumed cursor carries `DIGEST_UNVERIFIED`, so the check
- * answered `false` for every cursor a delta produced — which is the only state drift can be
- * detected in. And `identity-map.ts` MERGES columns across queries on purpose, so a client's row
- * for one id is legitimately a superset of the row any single snapshot sent: an app with two reads
- * over one entity would have reported permanent drift.
- */
-export function digestOf(rows: readonly Row[]): string {
-  return fnv1a(rows.map((row) => `${row.id}:${canonicalJson(row)}`).join(';'));
 }
 
 export function shouldResnapshot(
@@ -172,7 +154,7 @@ export async function resumeFrom<R extends Row = Row>(
   };
 }
 
-/** Advance a cursor across a delta without re-reading rows: ids are patchable, the digest is not. */
+/** Advance a cursor across a delta without re-reading rows: ids are patchable. */
 export function advance(
   cursor: LiveCursor,
   patches: readonly RowPatch[],
@@ -180,21 +162,14 @@ export function advance(
   now: number,
 ): LiveCursor {
   const ids = new Set(cursor.ids);
-  let count = cursor.count;
   for (const patch of patches) {
-    if (patch.op === 'delete') {
-      if (ids.delete(patch.id)) count -= 1;
-    } else if (patch.op === 'insert' && !ids.has(patch.id)) {
-      ids.add(patch.id);
-      count += 1;
-    }
+    if (patch.op === 'delete') ids.delete(patch.id);
+    else if (patch.op === 'insert') ids.add(patch.id);
   }
   return {
     qid: cursor.qid,
     lsn,
-    digest: DIGEST_UNVERIFIED,
     ids: [...ids].slice(0, CURSOR_ID_LIMIT),
-    count,
     at: now,
   };
 }

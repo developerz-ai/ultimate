@@ -25,7 +25,7 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 | [`18-build-vs-wrap.md`](./18-build-vs-wrap.md) | Own the integration layer, wrap the protocol layer. Verdicts: jobs BUILD, SMTP BUILD, NATS WRAP — adopted, `nats@2.29.3` at the transport seam. |
 | [`19-mechanism-not-convention.md`](./19-mechanism-not-convention.md) | Axiom 8. Mechanisms and structural conventions ship; business conventions never do. Tenancy ships, an org model does not — the app wraps. |
 | [`20-large-app-readiness.md`](./20-large-app-readiness.md) | The capability axis: what a very large app already gets, and whether a company can plug its own infrastructure in. The primitives are enterprise-grade; the dominant defect is a mechanism **built, exported, and never called by the boot** — the outbox, the scheduler watermark, the shared cache tier, WebSocket auth. |
-| [`21-the-range.md`](./21-the-range.md) | **Who it is for, and the range**: a homework assignment to a very large product, one framework, no lite mode. The small end measured (0 questions, 134 files, 4 commands, 18 of 19 gate steps after following the `fix:` lines); the large end anchored to the ladder, the tiers and the gate; and why enforced conventions pay MORE with a cheap model. |
+| [`21-the-range.md`](./21-the-range.md) | **Who it is for, and the range**: a homework assignment to a very large product, one framework, no lite mode. The small end measured (0 questions, 134 files, 4 commands, 19 of 20 gate steps after following the `fix:` lines); the large end anchored to the ladder, the tiers and the gate; and why enforced conventions pay MORE with a cheap model. |
 
 ## Reading paths
 

@@ -13,6 +13,18 @@ import {
 } from './errors';
 import type { ColumnMap } from './types';
 
+/**
+ * The predicate vocabulary, closed. The last four are the CONTAINMENT half, added 2026-08-24: a
+ * `json()` or `arrayOf()` column was declared, written and then unfilterable — the ten operators
+ * before them could compare a column to a scalar and nothing else — so an app storing either had
+ * to leave the query language for hand-written SQL, which is the one read path in this framework
+ * with no tenancy guard on it. Their meaning is Postgres', written once in `containment.ts` and
+ * read by both drivers.
+ *
+ * There is deliberately no jsonpath EXPRESSION operator beside them: `contains` already matches
+ * nested structure (`data @> '{"a":{"b":1}}'`), and a path language inside the query language
+ * would be a second way to ask one question.
+ */
 export type Operator =
   | 'eq'
   | 'neq'
@@ -23,7 +35,11 @@ export type Operator =
   | 'lte'
   | 'like'
   | 'is-null'
-  | 'is-not-null';
+  | 'is-not-null'
+  | 'contains'
+  | 'contained-by'
+  | 'overlaps'
+  | 'has-key';
 
 export interface Predicate {
   readonly column: string;
@@ -195,7 +211,7 @@ const verifyScope = (
  * every repository operation through `readPlan`, so both drivers and every read, write and count
  * pass through this one derivation.
  *
- * Runtime only. There is no build-time tenancy step in `x verify` — its 17 steps check none — and
+ * Runtime only. There is no build-time tenancy step in `x verify` — its 20 steps check none — and
  * there cannot usefully be one: the tenant is a request-time value, so a compiler could only prove
  * that some argument was passed, which is exactly the thing that was never a guarantee. That is
  * why this is the seam every plan is built through rather than a lint.

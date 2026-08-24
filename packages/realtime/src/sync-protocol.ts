@@ -14,7 +14,17 @@ import {
   type RowPatch,
 } from './json';
 
-export const PROTOCOL_VERSION = 1;
+/**
+ * **2 since 2026-08-24**, when `cursor.digest` and `cursor.count` were deleted. The version guards
+ * incompatibility, never novelty — an additive optional field (`snapshot.entity`) and a removed
+ * field read through `list()` (`hello.resume`) both stayed at 1, because `decode` is a whitelist
+ * and `list()` answers `[]` for an absent field. `cursor()` is the other kind of reader: it reads
+ * through `str`/`num`, which THROW on an absent field, so a cursor without those two is a frame a
+ * node or a client one deploy behind cannot read — in BOTH directions, since a cursor rides the
+ * client's `subscribe` and the node's `snapshot`. That is exactly what this number refuses, with
+ * one instruction instead of a per-frame "field \"digest\" must be a string".
+ */
+export const PROTOCOL_VERSION = 2;
 
 /**
  * What one frame may contain. Hard ceilings a caller cannot widen — the shape
@@ -410,12 +420,10 @@ function cursor(value: unknown): LiveCursor {
   return {
     qid: str(value, 'qid'),
     lsn: str(value, 'lsn'),
-    digest: str(value, 'digest'),
     ids: list(value, 'ids', FRAME_LIMITS.cursorIds, 'cursor.ids').map((id) => {
       if (typeof id !== 'string') throw fail('cursor.ids must be strings');
       return id;
     }),
-    count: num(value, 'count'),
     at: num(value, 'at'),
   };
 }

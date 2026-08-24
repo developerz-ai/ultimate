@@ -248,13 +248,14 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     expect(referencesOf(await walkFrom(listing, cursorOf(second)))).toEqual(['GAP-e']);
   });
 
-  test('a descending listing pages correctly through a real mixed-direction seek', async () => {
+  test('a descending listing pages correctly through a real row-comparison seek', async () => {
     const org = await newOrg('cursor-desc');
     const seeded = ['DESC-a', 'DESC-b', 'DESC-c', 'DESC-d', 'DESC-e'];
     for (const reference of seeded) await write(org, reference);
 
-    // `planFor` always appends the primary key ascending, so the plan is `reference desc, id asc`
-    // — a mixed pair no `(a, b) < (x, y)` can express, which is why `seekSql` spells it out.
+    // `totalOrder` appends the primary key in the last declared key's direction, so the plan is
+    // `reference desc, id desc` — one direction throughout, which `seekSql` sends as the row
+    // comparison `("reference", "id") < ($1, $2)`. The mixed shape is the test below.
     const listing: FindManyArgs = {
       orgId: org,
       orderBy: [{ column: 'reference', direction: 'desc' }],
@@ -269,6 +270,32 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     const walked = await walkFrom({ ...listing, orgId: tied, limit: 1 }, null);
 
     expect(walked.map((row) => row.id).sort()).toEqual([...ids].sort());
+  });
+
+  test('a mixed-direction listing pages correctly through the or-chain seek', async () => {
+    // `(a, b) < (x, y)` requires every key to sort the same way, so a caller who names the
+    // tiebreak in the other direction gets the spelled-out seek instead. Same rows, same order,
+    // one row per page so every boundary is a seek — the two shapes have to mean one thing.
+    const org = await newOrg('cursor-mixed');
+    const seeded = ['MIX-a', 'MIX-b', 'MIX-c', 'MIX-d'];
+    for (const reference of seeded) await write(org, reference);
+
+    const mixed: FindManyArgs = {
+      orgId: org,
+      orderBy: [
+        { column: 'reference', direction: 'desc' },
+        { column: 'id', direction: 'asc' },
+      ],
+      limit: 1,
+    };
+    expect(referencesOf(await walkFrom(mixed, null))).toEqual([...seeded].reverse());
+
+    // And the tie the mixed order exists for: two rows sharing a sort value, separated only by
+    // the id, with the page boundary falling between them.
+    const tied = await newOrg('cursor-mixed-tie');
+    const ids = [(await write(tied, 'MIX-TIE')).id, (await write(tied, 'MIX-TIE')).id];
+    const walked = await walkFrom({ ...mixed, orgId: tied }, null);
+    expect(walked.map((row) => row.id)).toEqual([...ids].sort());
   });
 
   test('a tampered cursor is X_CURSOR_INVALID, not a silent page one', async () => {

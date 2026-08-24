@@ -15,9 +15,9 @@ import { createRecordingClient, type RecordingClient, setDbClient } from '@ultim
 import { text, uuid } from './columns';
 import { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 
 const posts = entity('write_parity_posts', {
   columns: {

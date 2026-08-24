@@ -8,10 +8,10 @@ import { isUltimateError } from '@ultimat3/core';
 import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
 import { money, text, uuid } from './columns';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
 import { bindValues, columnsOf, decodeRow } from './pg-row';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 
 const invoices = entity('money_scale_invoices', {
   columns: {

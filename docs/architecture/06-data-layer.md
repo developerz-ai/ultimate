@@ -125,10 +125,10 @@ Defense in depth, because a single missed `WHERE` is a data breach.
 | Layer | Mechanism | Failure |
 |---|---|---|
 | 1. Context | the org rides on `ctx.actor`, and **no pipeline stage sets a tenant**. This row said `ctx.tenantId` was "set once, at stage 7" until 2026-08-23 and every part of that was false: `Ctx` ([`packages/core/src/context.ts`](../../packages/core/src/context.ts)) has no `tenantId` field, there is no tenant stage, and the refusal is not `X_NO_CONTEXT`. Believing it means believing the request pipeline filters your rows — it does not | `X_TENANCY_UNSCOPED`, raised by [`packages/entity/src/tenancy.ts`](../../packages/entity/src/tenancy.ts) when a tenant-scoped query reaches the driver with no org predicate |
-| 2. Repo | `scopedPlan` appends the org predicate to every generated statement; `ORG_COLUMN` is `orgId` and a column literally named that is inferred without `.tenant()` | a hand-written repo query without the filter fails a static check in `x verify` |
+| 2. Repo | `scopedPlan` appends the org predicate to every generated statement; `ORG_COLUMN` is `orgId` and a column literally named that is inferred without `.tenant()` | **nothing static covers hand-written SQL.** `x verify` has no tenancy step — `VERIFY_STEP_NAMES` ([`packages/cli/src/verify-step.ts`](../../packages/cli/src/verify-step.ts)) lists none, and [`tenancy.ts`](../../packages/entity/src/tenancy.ts) says so in its own comment. The tenant is a request-time value, so a compiler could only prove that *some* argument was passed. `assertScoped` is exported and calling it is **voluntary**: a hand-written `db().query(…)` that forgets the org predicate compiles, passes the gate and ships |
 | 3. Write guard | insert/update stamps the tenant from context, refuses a mismatching literal (`tenancyRowMismatch`) | `X_TENANCY_ACTOR_MISMATCH` |
 | 4. Plan guard | a plan built with no org predicate, or one naming a tenant the actor does not act as | `X_TENANCY_UNSCOPED` / `X_TENANCY_ACTOR_MISMATCH` — one code for the predicate and the row, because it is one mistake in two places |
-| 5. Postgres RLS | optional, opt-in per entity; policy uses a session variable set on checkout | last line of defense for raw SQL and admin sessions |
+| 5. Postgres RLS | **does not ship, `As of 2026-08`.** No `enable row level security`, no `create policy` and no `set_config` exists anywhere in `packages/*/src` — this row described an intended layer as a shipped one for four majors. An app that wants it writes the DDL in its own migration and grants the app role `nobypassrls` | — |
 | 6. Cache keys | query name + parsed-input fingerprint + tags, never hand-built. `As of 2026-08` the actor is **not** a part, so the tenant must be in the read's input | a `cache:` read scoped by actor rather than by input is a cross-tenant hit ([`../idea/05-caching.md`](../idea/05-caching.md)) |
 | 7. Live queries | subject includes the tenant; policy re-checked per delivered row | [`07-realtime-internals.md`](./07-realtime-internals.md) |
 
@@ -174,10 +174,10 @@ Keyset pagination is correct under concurrent writes because the cursor names a 
 | Also true | Detail |
 |---|---|
 | Cost | offset scans and discards `OFFSET` rows; page 500 costs 500× page 1. Keyset is an index seek — page 500 costs the same as page 1 |
-| Total order required | `orderBy` must end in a unique column (usually `id`), or `x verify` fails the query: a non-total order makes the cursor ambiguous |
+| Total order required, and **supplied** | a non-total order makes the cursor ambiguous, so `totalOrder` ([`plan.ts`](../../packages/entity/src/plan.ts)) appends the entity's primary key to whatever the caller declared, in the last declared key's direction. The author does not have to write `['id', 'desc']` and nothing refuses them for omitting it — the example above spells it out because that is the order the statement will run in. `@ultimat3/query` does the same for a read primitive. The one thing that IS refused is a nullable primary-key column in that position: `null = null` is unknown, so the tiebreak cannot break a tie |
 | Cursor contents | `base64url([scope, id, key])` + a truncated HMAC-SHA256 of that body. A tampered or cross-query cursor is `X_CURSOR_INVALID`, not a silent wrong page — [below](#cursor-contents) |
 | Live queries | the same total-order requirement, because the matcher needs a deterministic window ([`07-realtime-internals.md`](./07-realtime-internals.md)) |
-| UI need for page numbers | answered with an approximate count (`reltuples` or a windowed count), never by offsetting |
+| UI need for page numbers | `approximateCount()`, `As of 2026-08-24`. `count()` is an exact `count(*)` over the chain's predicate and MVCC gives it no shortcut, so past a few million rows it is the read that trips a web role's `statement_timeout` — and no index helps. `approximateCount()` is one row out of `pg_class` (`reltuples`, via `to_regclass` so a `search_path` change cannot answer for another schema's table of the same name), constant time whatever the table grows to. **The whole table, never the chain's filters**: a filtered chain is `X_APPROXIMATE_COUNT_FILTERED` rather than an estimate answering a different question than the one asked, and `null` — never `0` — when the table has never been `ANALYZE`d. `page()` still reads `limit + 1`, so "is there a next page" costs no count at all |
 
 ### Cursor contents
 
@@ -201,6 +201,29 @@ base64url(JSON [scope, id, key]) "." hmac-sha256(body, secret)[0:32]
 | Signed, not encrypted | the client already holds the rows the cursor points at. Tamper-evidence, not authorization: policy still runs per page |
 | Opaque | never parsed, extended or built by hand on either side of the wire |
 | Admin tables | `@ultimat3/admin` catches `X_CURSOR_INVALID` and renders page one — a stale bookmark should not be an error page for an operator |
+
+## Read replicas
+
+`As of 2026-08-24`. Three files in `@ultimat3/db`, and the split between them is the point: one decides *what a statement is*, one decides *what a scope has done*, and one decides *which handle it goes on*.
+
+| File | Decides |
+|---|---|
+| [`replica-route.ts`](../../packages/db/src/replica-route.ts) | whether a statement is provably a plain read. An **allow-list** — `select` / `table` / `values` / a read-only `with`, minus locking reads, `select … into` and the functions a standby answers instead of refusing. Everything it cannot vouch for, `begin` and `set` included, is the primary's |
+| [`replica-scope.ts`](../../packages/db/src/replica-scope.ts) | whether this scope has written. One mutable bit on an async context — the same shape `TxState.live` uses — so a write ten frames and three `await`s below the opener is seen by every later read |
+| [`replica-client.ts`](../../packages/db/src/replica-client.ts) | which handle the statement goes on, what happens when the replica refuses, and the counters that make both visible |
+
+**Opt in twice**, and the second one is the safety argument rather than an ergonomic one. `packages/db` cannot see a request boundary: `@ultimat3/http` opens the `Ctx` and nothing tells tier 1 when a request ended, so a write-marker keyed on `Ctx.requestId` would be a map that only grows — and any eviction policy that forgot a request that WROTE serves it a stale row, which is worse than the capacity problem replicas exist to solve. With no scope open nothing routes and the client is byte-identical to a single-pool one, so "nobody opened one" fails to today's behaviour rather than to a wrong answer.
+
+| Guarantee | Mechanism |
+|---|---|
+| read-your-writes | one write anywhere in the scope pins every later read in it to the primary. A replica is behind by an unbounded amount — streaming lag is not a number this tier can know — so "the row I just inserted" is the one question a standby is guaranteed to answer wrong |
+| a transaction is one server | `reserve()` is delegated to the primary, so `BEGIN`, the body and `COMMIT` share one connection there. `runRoot` also marks the scope written unless `readOnly: true`, because it sends through the reserved connection and never through the router |
+| a replica outage costs latency, never an answer | a failed statement is re-run on the primary — **exactly-once**, since only plain reads reach that path and a `25006` refusal never executed. Three consecutive failures park the replica for 10 seconds |
+| it is observable | `client.stats` — `replica`, `primary`, `fallbacks`, `parked` — plus a `db.replica_fallback` warning per fallback |
+
+`DATABASE_REPLICA_URL` is the pool half, read once by `defaultClient()`. It **must** name a read-only standby: the server's own `25006` is the safety net under a classifier that cannot be complete, and against a writable node a misroute becomes a write on the wrong server, silently.
+
+**Nothing opens the scope yet.** `withReplicaReads` ships first; wrapping a request in it is the app's line, so no production traffic is routed until that lands.
 
 ## Serializable retry
 

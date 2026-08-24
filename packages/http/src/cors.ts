@@ -1,5 +1,5 @@
-// CORS with a locked default: same-origin only. Cross-origin access is a decision
-// the app makes in app.config.ts, never something a route can quietly opt into.
+// CORS with a locked default: same-origin only. Cross-origin access is a decision the app makes
+// once, in `configureHttp({ cors })`, never something a route can quietly opt into.
 
 import { corsConfigInvalid } from './errors';
 

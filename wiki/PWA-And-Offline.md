@@ -146,7 +146,7 @@ All of them are `route` / `action` / `job` primitives underneath ([The eight pri
 
 ## What is checked, and where
 
-`x verify` has **no PWA step** — its 19 steps are typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap. The two PWA checks that ship run in **`x doctor`** ([`packages/cli/src/cmd-doctor.ts:129`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/cmd-doctor.ts)), and report `@ultimat3/pwa`'s own codes rather than CLI twins of them.
+`x verify` has **no PWA step** — its 20 steps are typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. The two PWA checks that ship run in **`x doctor`** ([`packages/cli/src/cmd-doctor.ts:129`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/cmd-doctor.ts)), and report `@ultimat3/pwa`'s own codes rather than CLI twins of them.
 
 | Check | Where | Fails on | `As of 2026-08` |
 |---|---|---|---|

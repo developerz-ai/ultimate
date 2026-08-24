@@ -14,7 +14,7 @@ export const rateLimited = (key: string, retryAfterSeconds: number): HttpError =
   new HttpError({
     code: 'X_RATE_LIMITED',
     cause: `the rate limit for this caller is exhausted; it refills in ${retryAfterSeconds}s`,
-    fix: 'retry after the Retry-After header, or raise rateLimit.buckets in app.config.ts',
+    fix: 'retry after the Retry-After header, or raise the bucket in configureHttp({ rateLimit: { buckets } }) at module scope in a file under apps/*/',
     meta: { key, retryAfterSeconds },
   });
 
@@ -31,7 +31,7 @@ export const rateLimitNotShared = (found: 'process' | 'disabled'): HttpError =>
       found === 'disabled'
         ? "http.rateLimit.scope is 'shared' but http.rateLimit.enabled is false, so the fleet-wide limit is enforced nowhere"
         : "http.rateLimit.scope is 'shared' but the installed store keeps its counters in this process, so each replica would enforce the full bucket on its own",
-    fix: "createServer({ routes, rateLimitStore: postgresRateLimitStore({ executor: { query: (text, values) => db().query({ text, values }) } }) }) — or set http.rateLimit.scope: 'process' in app.config.ts to accept per-replica limits",
+    fix: "createServer({ routes, rateLimitStore: postgresRateLimitStore({ executor: { query: (text, values) => db().query({ text, values }) } }) }) — or defineHttpConfig({ rateLimit: { scope: 'process' } }) to accept per-replica limits",
   });
 
 /**
@@ -56,7 +56,7 @@ const numbers = (bucket: BucketNumbers): string => `${bucket.capacity} / ${bucke
  */
 export const rateLimitBucketConflict = (input: {
   bucket: string;
-  /** `null` when the other declaration is `app.config.ts` rather than a second route. */
+  /** `null` when the other declaration is the app's `configureHttp()` rather than a second route. */
   otherRoute: string | null;
   route: string;
   other: BucketNumbers;
@@ -66,11 +66,11 @@ export const rateLimitBucketConflict = (input: {
     code: 'X_RATE_LIMIT_BUCKET_CONFLICT',
     cause: `bucket "${input.bucket}" has two declarations: ${
       input.otherRoute === null
-        ? 'http.rateLimit.buckets in app.config.ts'
+        ? 'the rateLimit.buckets the app passed to configureHttp()'
         : `route "${input.otherRoute}"`
     } says ${numbers(input.other)}, route "${input.route}" says ${numbers(input.declared)} (capacity / refill per second)${
       input.otherRoute === null
-        ? `; if ${numbers(input.other)} is what this deployment means to enforce, then the route's declaration is the half that is wrong and app.config.ts is not where to say so`
+        ? `; if ${numbers(input.other)} is what this deployment means to enforce, then the route's declaration is the half that is wrong and configureHttp() is not where to say so`
         : ''
     }`,
     // One edit, named. Two joined by "or" leaves the reader to decide which declaration is
@@ -78,7 +78,7 @@ export const rateLimitBucketConflict = (input: {
     // OpenAPI operation publishes, so a config entry duplicating it is the copy that goes stale.
     fix:
       input.otherRoute === null
-        ? `delete http.rateLimit.buckets.${input.bucket} from app.config.ts — the route's declaration is the one the OpenAPI operation publishes, so edit the numbers there if ${numbers(input.declared)} is wrong`
+        ? `delete rateLimit.buckets.${input.bucket} from the app's configureHttp() call — the route's declaration is the one the OpenAPI operation publishes, so edit the numbers there if ${numbers(input.declared)} is wrong`
         : `rename the bucket route "${input.route}" declares — one name is one limit, and "${input.bucket}" is already route "${input.otherRoute}"'s`,
   });
 
@@ -125,7 +125,23 @@ export const rateLimitScopeUnset = (): HttpError =>
     code: 'X_RATE_LIMIT_SCOPE_UNSET',
     cause:
       'http.rateLimit is enabled and the deployment has not declared http.rateLimit.scope, so the numbers below it are per replica rather than per fleet',
-    fix: "in app.config.ts set http.rateLimit.scope: 'process' if this app runs as ONE replica, or 'shared' plus createServer({ routes, rateLimitStore: postgresRateLimitStore({ executor }) }) for a fleet-wide limit",
+    fix: "defineHttpConfig({ rateLimit: { scope: 'process' } }) if this app runs as ONE replica, or scope: 'shared' plus createServer({ routes, rateLimitStore: postgresRateLimitStore({ executor }) }) for a fleet-wide limit — a process booted by x dev or apps/web/server.ts derives it from the store it installed and never declares it",
+  });
+
+/**
+ * At `defineHttpConfig`, never on the request, and the same shape as every other bucket-name
+ * refusal here: `bucketFor` resolves an unknown name to `default`, so a tenant allowance an author
+ * wrote as 5,000 would silently be the 120-burst read bucket — looser than the declaration, and
+ * visible nowhere. A whole tenant's cap is not a value to discover by watching a graph.
+ */
+export const tenantBucketUnknown = (name: string, declared: readonly string[]): HttpError =>
+  new HttpError({
+    code: 'X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN',
+    cause: `rateLimit.tenantBucket names "${name}" and rateLimit.buckets declares ${
+      declared.length === 0 ? 'no buckets' : declared.join(', ')
+    }`,
+    fix: `add ${name} to the same rateLimit.buckets — configureHttp({ rateLimit: { tenantBucket: '${name}', buckets: { ${name}: { capacity: 5000, refillPerSecond: 100 } } } }) — or drop tenantBucket to leave this app with no per-tenant allowance`,
+    meta: { bucket: name },
   });
 
 /**

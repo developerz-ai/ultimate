@@ -6,8 +6,8 @@
 import { afterAll, expect, test } from 'bun:test';
 import { text, uuid } from './columns';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 
 const posts = entity('repo_like_posts', {
   columns: { id: uuid().primaryKey(), title: text({ max: 200 }) },

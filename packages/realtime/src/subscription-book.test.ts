@@ -31,7 +31,7 @@ function subscriptionFor(socket: SyncSocket, sid: string): LiveSubscription {
       matcher: () =>
         ({ affects: () => false, apply: () => ({ patches: [], refill: false }) }) as never,
     },
-    cursor: { qid: `q:${sid}`, lsn: '', digest: '', ids: [], count: 0, at: 0 },
+    cursor: { qid: `q:${sid}`, lsn: '', ids: [], at: 0 },
   };
 }
 

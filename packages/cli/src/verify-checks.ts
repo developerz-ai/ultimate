@@ -19,6 +19,7 @@ import { checkAppBoundaries } from './app-boundaries';
 import { envExampleFindings } from './app-env';
 import { appManifest, readAppManifest } from './app-manifest';
 import { OPENAPI_FILE, openApiJson } from './app-openapi';
+import { policyFindings } from './app-permissions';
 import { APP_CONFIG_FILE } from './app-root';
 import { checkBudgets, readBuildStats } from './budgets';
 import { checkDestructiveMigrations } from './db-destructive';
@@ -266,6 +267,15 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     run: async (ctx) => fromFindings(await catalogFindings(ctx.root)),
   },
   {
+    name: 'policy',
+    summary: 'every permission this app grants or requires is one it declares',
+    // A repo with no `app.config.ts` is the framework monorepo, which declares no roles and
+    // registers no routes — SKIPPED there, never passed, for the reason `i18n` gives: a step that
+    // answers `ok` about nothing is the vacuous green these checks exist to refuse.
+    applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
+    run: async (ctx) => fromFindings(await policyFindings(ctx.root)),
+  },
+  {
     name: 'manifest',
     summary: 'the files an agent reads: generated facts, hand-written conventions, the env example',
     // No `applies`. The drift half has nothing to compare against until `x manifest` has run
@@ -283,6 +293,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     async run(ctx) {
       const agents = await checkAgentsMd(ctx.root);
       const findings = [
+        ...manifestMissingFindings(ctx.root),
         ...(await driftFindings(ctx.root)),
         ...(await envExampleFindings(ctx.root)),
         ...floorProblemFindings(await readVerifyFloor(ctx.root)),
@@ -311,6 +322,31 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     run: async (ctx) => fromFindings(await hostFindings(ctx, 'roadmap')),
   },
 ];
+
+/**
+ * The half that had never been asked: is the file there at all? `driftFindings` returns nothing
+ * when it is absent — correctly, it has nothing to compare — and `AGENTS.md` line 3 tells an agent
+ * that facts live in `x.manifest.json`, `x dev` prints its path, and `x manifest` is the only
+ * thing that writes it. Nothing ran it: after `x new`, `bin/setup` and all thirteen generators,
+ * `find . -name '*.manifest.json'` returned nothing while this step reported green (#F7).
+ *
+ * An app root, never this repo: the framework monorepo emits `framework.manifest.json` and has no
+ * `x.manifest.json` to be missing, so the `app.config.ts` is what decides — the same discriminator
+ * `drift`, `budgets`, `seo`, `i18n` and `policy` each use.
+ */
+function manifestMissingFindings(root: string): readonly Finding[] {
+  if (!existsSync(join(root, APP_CONFIG_FILE))) return [];
+  if (existsSync(join(root, MANIFEST_FILENAME))) return [];
+  return [
+    {
+      code: 'X_MANIFEST_MISSING',
+      cause: `${MANIFEST_FILENAME} does not exist, so every fact an agent reads about this app — route table, action schemas, policies, error codes — is unavailable`,
+      fix: 'x manifest',
+      docs: ERROR_DOCS_URL,
+      at: MANIFEST_FILENAME,
+    },
+  ];
+}
 
 /** `assertNoDrift` throws `X_MANIFEST_DRIFT`; a step reports, so the error becomes a finding. */
 async function driftFindings(root: string): Promise<readonly Finding[]> {

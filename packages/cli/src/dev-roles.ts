@@ -9,7 +9,13 @@
 import type { Role } from '@ultimat3/core';
 import { createContext, isRole, logger, ROLES } from '@ultimat3/core';
 import type { RateLimitStore, Route, ServerHandle, ServerHooks } from '@ultimat3/http';
-import { configuredAuthenticator, createServer, defineHttpConfig } from '@ultimat3/http';
+import {
+  configuredAuthenticator,
+  configuredHttp,
+  createServer,
+  defineHttpConfig,
+  mergeHttpConfig,
+} from '@ultimat3/http';
 import type { OutboxRelay, Scheduler, Worker } from '@ultimat3/jobs';
 import {
   createOutboxRelay,
@@ -257,37 +263,45 @@ function startWeb(options: StartRolesOptions): ServerHandle {
       ? {}
       : { middleware: options.overrides.middleware }),
     ...(store === undefined ? {} : { rateLimitStore: store }),
-    config: defineHttpConfig({
-      port: options.port,
-      dev: binding.dev,
-      buildId: options.buildId,
-      hostname: binding.hostname,
-      signInPath: options.signInPath ?? null,
-      // One declaration, never half of one: `defineHttpConfig` refuses `trustProxy` without hops.
-      ...(hops === null ? {} : { trustProxy: true, trustedProxyHops: hops }),
-      // `scope` is mandatory since @ultimat3/http made an undeclared limiter a boot error, and it
-      // is DERIVED from the store rather than hardcoded — a literal here would be a second
-      // declaration quietly contradicting the object beside it, and `assertRateLimitScope` holds
-      // the two halves together. It answered `'process'` on every real boot until `startServices`
-      // resolved a store, so the shipped chart's three `web` replicas enforced `login: { limit: 5 }`
-      // as fifteen attempts, with `x verify` green.
-      rateLimit: { scope: store?.scope ?? 'process' },
-      // Hashes, never `'unsafe-inline'`: a `render: 'static'` page is a file on disk, so
-      // nothing can stamp a per-response nonce into it, but its body is fixed and a hash is a
-      // function of that body. Read after `loadApp` — importing the app IS what registered them.
-      // BOTH directives, and the script half is the one that was missing: the hydration runtime
-      // is emitted inline in every document that carries an island, so `script-src 'self'` meant
-      // no island booted anywhere the policy is enforced — which is every container, and never
-      // `x dev`, where it is report-only.
-      security: {
-        csp: {
-          extend: {
-            'style-src': inlineStyleSources(options.inlineStyles ?? []),
-            'script-src': inlineScriptSources(),
+    // The app's own declaration UNDERNEATH, this boot's facts on top. Without the first half the
+    // entire HTTP tuning surface was unreachable from a shipped app — this literal was its only
+    // construction, so `cors.origins` stayed `[]` in every deployment (no cross-origin call could
+    // ever succeed), `bodyLimitBytes` stayed 1 MiB and `requestTimeoutMs` 30s for a bank and a
+    // blog alike. The ORDER is not a preference: `buildId`, the port, the CSP hashes of what this
+    // process emits and the scope of the store it installed are facts only the boot has.
+    config: defineHttpConfig(
+      mergeHttpConfig(configuredHttp(), {
+        port: options.port,
+        dev: binding.dev,
+        buildId: options.buildId,
+        hostname: binding.hostname,
+        signInPath: options.signInPath ?? null,
+        // One declaration, never half of one: `defineHttpConfig` refuses `trustProxy` without hops.
+        ...(hops === null ? {} : { trustProxy: true, trustedProxyHops: hops }),
+        // `scope` is mandatory since @ultimat3/http made an undeclared limiter a boot error, and it
+        // is DERIVED from the store rather than hardcoded — a literal here would be a second
+        // declaration quietly contradicting the object beside it, and `assertRateLimitScope` holds
+        // the two halves together. It answered `'process'` on every real boot until `startServices`
+        // resolved a store, so the shipped chart's three `web` replicas enforced
+        // `login: { limit: 5 }` as fifteen attempts, with `x verify` green.
+        rateLimit: { scope: store?.scope ?? 'process' },
+        // Hashes, never `'unsafe-inline'`: a `render: 'static'` page is a file on disk, so
+        // nothing can stamp a per-response nonce into it, but its body is fixed and a hash is a
+        // function of that body. Read after `loadApp` — importing the app IS what registered them.
+        // BOTH directives, and the script half is the one that was missing: the hydration runtime
+        // is emitted inline in every document that carries an island, so `script-src 'self'` meant
+        // no island booted anywhere the policy is enforced — which is every container, and never
+        // `x dev`, where it is report-only.
+        security: {
+          csp: {
+            extend: {
+              'style-src': inlineStyleSources(options.inlineStyles ?? []),
+              'script-src': inlineScriptSources(),
+            },
           },
         },
-      },
-    }),
+      }),
+    ),
   }).start();
 }
 

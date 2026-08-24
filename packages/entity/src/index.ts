@@ -3,6 +3,8 @@
 /** Re-exported so an `entity` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
+export type { AggregateFn } from './aggregate';
+export { AVG_SCALE } from './aggregate';
 export type { BatchIterator } from './batch';
 export type { MoneyColumns } from './column';
 export { columnName, moneyColumns, snake } from './column';
@@ -72,6 +74,7 @@ export {
   MAX_ASSERTED_ROWS,
   toSql,
 } from './invariants';
+export { memoryRepo, memoryTransactor } from './memory-repo';
 export type { StatementLoop } from './n-plus-one';
 export { N_PLUS_ONE_THRESHOLD, nPlusOne, preloadsFor } from './n-plus-one';
 export type { PostgresDriverOptions } from './pg-driver';
@@ -111,7 +114,6 @@ export type {
   Tx,
   UpsertArgs,
 } from './repo';
-export { memoryRepo, memoryTransactor } from './repo';
 export type { RowBulkChange, RowChange, RowChangeOp, RowObserver } from './row-observer';
 export { observedRepo, rowObserver, setRowObserver } from './row-observer';
 export type {

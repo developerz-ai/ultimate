@@ -2,6 +2,8 @@
 // listed here is an implementation detail and may change without a major bump.
 
 export type { RenderMode } from '@ultimat3/core';
+export type { AppHttpConfig, BootOwnedHttpKey } from './app-config';
+export { configuredHttp, configureHttp, mergeHttpConfig, resetHttpConfig } from './app-config';
 export { NEXT_PARAM, nextAfterSignIn, signInRedirect } from './auth-redirect';
 export type { HttpConfig, HttpConfigInput } from './config';
 export { defineHttpConfig, stripBasePath } from './config';
@@ -24,18 +26,20 @@ export type { CsrfCheckInput, CsrfConfig, CsrfMode, CsrfVerdict } from './csrf';
 export { checkCsrf, DEFAULT_CSRF, selfOrigin } from './csrf';
 export type { Deadline } from './deadline';
 export { REQUEST_TIMEOUT_HEADER, resolveTimeoutMs, startDeadline } from './deadline';
-export type { ErrorFacts, ProblemDocument } from './error-map';
+export type { ErrorFacts, ProblemDocument } from './error-facts';
+export {
+  factsOf,
+  problemTypeFor,
+  renderErrorLines,
+  retryAfterOf,
+  toProblem,
+} from './error-facts';
 export {
   DEFAULT_STATUS,
   ERROR_STATUS,
-  factsOf,
-  problemTypeFor,
   registerErrorStatus,
-  renderErrorLines,
   resetErrorStatus,
-  retryAfterOf,
   statusFor,
-  toProblem,
 } from './error-map';
 export type {
   ErrorPageAction,
@@ -107,6 +111,7 @@ export type {
   RateLimiter,
   RateLimitKeyParts,
   RateLimitScope,
+  RateLimitSpend,
   RateLimitStore,
 } from './rate-limit';
 export {
@@ -116,8 +121,9 @@ export {
   DEFAULT_RATE_LIMIT,
   memoryRateLimitStore,
   rateLimitDecision,
-  rateLimitKey,
+  rateLimitSpends,
   resolveRateLimitConfig,
+  TENANT_SCOPE,
   toBucket,
 } from './rate-limit';
 export { assertRouteBuckets, withRouteBuckets } from './rate-limit-buckets';
@@ -129,6 +135,7 @@ export {
   rateLimitNotShared,
   rateLimitScopeUnset,
   rateLimitStoreUnavailable,
+  tenantBucketUnknown,
 } from './rate-limit-errors';
 export type {
   PgExecutor,

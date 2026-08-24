@@ -75,7 +75,7 @@ bunx x verify
   ✓ i18n               11ms
   ✓ manifest           4ms
   - roadmap            0ms
-✗ 1 of 19 steps failed — 5 skipped: live, job, e2e, contract-diff, roadmap
+✗ 1 of 20 steps failed — 5 skipped: live, job, e2e, contract-diff, roadmap
 ```
 
 `-` is skipped, not passed: no live query, job or e2e test exists yet, so those steps have nothing to check. `contract` is **not** among them — the scaffold ships `apps/web/api/health.contract.test.ts`, which is what makes it a tick on run one. The summary counts skips and passes apart and names every skip, so a gate that is green because a suite does not exist says so on the one line you read. [Tutorial 2](Tutorial-02-First-Feature) turns more of those dashes into ticks.

@@ -80,6 +80,11 @@ export interface RequestContext extends Ctx {
   readonly logger: Logger;
   /** Aborted when the caller goes away or the request deadline passes. See `deadline.ts`. */
   readonly signal: AbortSignal;
+  /**
+   * The instant `signal` will fire at, or `null` with `requestTimeoutMs: 0`. Core's field: a
+   * signal can only say "already over", and an outbound hop has to say how much is LEFT.
+   */
+  readonly deadlineAt: number | null;
   readonly services: ServiceBag;
 
   // Mutable slots, each filled by exactly one pipeline stage. Kept mutable (and
@@ -135,6 +140,8 @@ export interface RequestContextInit {
   readonly logger?: Logger;
   /** The deadline/disconnect signal. Absent means a request nothing can cancel. */
   readonly signal?: AbortSignal;
+  /** `Deadline.deadlineAt` — epoch ms. Absent means this request has no budget. */
+  readonly deadlineAt?: number | null;
   readonly services?: ServiceBag;
 }
 
@@ -174,6 +181,7 @@ export const createRequestContext = (init: RequestContextInit): RequestContext =
     // context — a callback that outlived the request scope, a logger passed to a driver.
     logger: (init.logger ?? rootLogger).child({ requestId, traceId }),
     signal: init.signal ?? NEVER_ABORTED,
+    deadlineAt: init.deadlineAt ?? null,
     // Frozen and explicit. `defineService` factories are NOT installed here: core does not
     // export the installer, so the honest answer for a service nothing passed is
     // `X_SERVICE_MISSING` from `useService()` — which is what it exists to raise — rather than

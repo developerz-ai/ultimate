@@ -2,7 +2,7 @@
 // `--json` emits, so a code/cause/fix string can never differ between the three
 // surfaces. Labels here ("cause", "fix", "notices") are protocol strings from the
 // error contract, not UI copy, so they are not routed through the i18n catalog.
-import { factsOf, renderErrorLines, toProblem } from './error-map';
+import { factsOf, renderErrorLines, toProblem } from './error-facts';
 import { acceptsHtml, escapeHtml } from './html-render';
 import { OVERLAY_STYLE } from './overlay-style';
 import { html } from './response';

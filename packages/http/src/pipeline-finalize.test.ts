@@ -13,7 +13,7 @@ import {
 } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import type { RequestContext } from './context';
-import { problemTypeFor } from './error-map';
+import { problemTypeFor } from './error-facts';
 import { recoverWith } from './finalize';
 import type { ServerHooks } from './hooks';
 import { createPipeline } from './pipeline';

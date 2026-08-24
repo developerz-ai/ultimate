@@ -4,6 +4,9 @@
 // source against files on disk and was green for every string of a shipped app whose catalog
 // module nothing imported (issue #249).
 
+// why: Bun ships no path API, so `join` is the only way to reach the app's own i18n module on
+// the host's separator.
+import { join } from 'node:path';
 import type { Catalog, Extraction, ExtractReport, Locale } from '@ultimat3/i18n';
 import {
   auditCatalogs,
@@ -17,9 +20,10 @@ import {
 } from '@ultimat3/i18n';
 import { loadApp } from './app-load';
 import { auditApp } from './i18n-audit';
+import { I18N_INDEX_PATH } from './i18n-index';
 import type { Finding } from './output';
 import { findingFrom } from './output';
-import { catalogPath } from './templates/locales';
+import { CATALOG_ROOT, catalogPath } from './templates/locales';
 
 /**
  * What this check needs of a boot. The seam is injected so a fixture can be exactly "the app
@@ -75,8 +79,10 @@ export async function checkRegistration(input: RegistrationInput): Promise<Regis
   const app = await (input.load ?? loadApp)(input.root);
 
   const gaps = catalogRegistrationGaps(input.catalogs);
+  const index = await indexSource(input.root);
   const findings: Finding[] = gaps.map((gap) => ({
     ...findingFrom(catalogUnregistered(gap)),
+    ...unregisteredFix(gap.locale, index),
     at: catalogPath(gap.locale),
   }));
   let unregistered = gaps.reduce((sum, gap) => sum + gap.missing.length, 0);
@@ -102,6 +108,42 @@ export async function checkRegistration(input: RegistrationInput): Promise<Regis
     locales,
     unregisteredLocales: gaps.map((gap) => gap.locale),
     registered: registeredLocales(),
+  };
+}
+
+/**
+ * `packages/i18n/src/index.ts` as text, or `undefined` where the app has no i18n package. Read
+ * here and nowhere lower down: `@ultimat3/i18n` states that it never reads a file, and the CLI is
+ * the half that knows what an app's directories are.
+ */
+async function indexSource(root: string): Promise<string | undefined> {
+  const file = Bun.file(join(root, I18N_INDEX_PATH));
+  return (await file.exists()) ? file.text() : undefined;
+}
+
+/**
+ * `X_CATALOG_UNREGISTERED` is one code over two causes, and until now it printed one fix for both.
+ * `@ultimat3/i18n`'s is written for the app whose `defineCatalogs()` call is in a module nothing
+ * imports — "move it into packages/i18n/src/index.ts (where `x new` puts it)". For a locale added
+ * by `x i18n add` the call is ALREADY there and the locale is simply not in its `locales:` map, so
+ * that instruction names an edit with nothing to perform: an agent following it verbatim changes
+ * nothing, re-runs, and is red again, on the command whose whole job is adding a locale (#F4).
+ *
+ * The condition is narrow enough that the finding never has to be argued with — the index exists,
+ * and the locale's tag appears nowhere in it — and the replacement is a command that performs the
+ * registration rather than describing it.
+ */
+export function unregisteredFix(
+  locale: string,
+  index: string | undefined,
+): { readonly fix?: string } {
+  if (index === undefined) return {};
+  // The index is GENERATED (`i18nIndex`), so the one spelling that matters is the import it writes
+  // — `catalogs/<tag>.json`. Matching a bare tag instead would read `en` out of the word `key` and
+  // report a registered locale as unregistered, which is the direction that costs trust.
+  if (index.includes(`${CATALOG_ROOT.split('/').pop() ?? 'catalogs'}/${locale}.json`)) return {};
+  return {
+    fix: `x i18n sync ${locale}   # re-derives ${I18N_INDEX_PATH} from the catalogs on disk`,
   };
 }
 

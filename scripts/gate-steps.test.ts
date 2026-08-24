@@ -220,8 +220,12 @@ describe('the surfaces the scan reaches', () => {
     const pages = await readStepPages(repoRoot());
     const readme = pages.find((page) => page.path === 'packages/cli/README.md');
     if (readme === undefined) return expect.unreachable('packages/cli/README.md must be scanned');
-    // Drop one name from the page's own list: the run rule must now name the hole.
-    const broken = { path: readme.path, text: readme.text.replace(/ i18n manifest/, ' manifest') };
+    // Drop one name from the page's own list: the run rule must now name the hole. The neighbour is
+    // DERIVED rather than written: this fixture spelled ` i18n manifest` and silently stopped
+    // mutating anything the day `policy` was inserted between them, so the assertion below failed
+    // against a page that was correct. A literal pair here goes stale on the next inserted step.
+    const after = VERIFY_STEP_NAMES[VERIFY_STEP_NAMES.indexOf('i18n') + 1] ?? '';
+    const broken = { path: readme.path, text: readme.text.replace(` i18n ${after}`, ` ${after}`) };
     const gaps = checkGateSteps({ pages: [broken], steps: [...VERIFY_STEP_NAMES] });
     expect(gaps.some((gap) => gap.kind === 'list' && gap.detail === 'omits i18n')).toBe(true);
   });

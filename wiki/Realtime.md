@@ -184,6 +184,7 @@ Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a
 | Reconnect outside the window | one bounded snapshot query at a current LSN. Never WAL history traversal |
 | Cursor unusable and no snapshot path supplied | `X_CURSOR_STALE` |
 | Ordering | LSN is monotonic per DB, so a client can never apply an older change over a newer one |
+| What a cursor carries | `{ qid, lsn, ids, at }` and nothing else, `As of 2026-08-24`. `digest` and `count` were written by every snapshot, encoded and validated on every `subscribe` frame, and **read by nothing** — `digest` cost a canonical-JSON render plus a hash over EVERY ROW of every snapshot, paid once per live query per reconnecting socket in the restart storm this package is measured on, and `count` would have been wrong had it ever gained a reader, because `advance` seeds its set from the already-truncated `ids`. Both are deleted, and that is what moved the wire version ([below](#wire-protocol-version)) |
 
 ## Inbound frame order
 
@@ -323,6 +324,19 @@ So the drain is **server-directed**:
 
 Full drain sequence per role: [Deployment](Deployment).
 
+## Wire protocol version
+
+`PROTOCOL_VERSION` is **2** `As of 2026-08-24` ([`packages/realtime/src/sync-protocol.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/sync-protocol.ts)). A mismatch is `X_PROTOCOL_VERSION` on the frame, with one instruction, rather than a per-field decode error nobody can act on.
+
+**Clients and `sync` nodes must be redeployed together across this bump.** A cursor rides in BOTH directions — the client's `subscribe` and the node's `snapshot` — so a skew breaks resume from either side.
+
+| Skew | What happens |
+|---|---|
+| new node ← old client (v1) | `decode` refuses the frame: `X_PROTOCOL_VERSION` |
+| old node ← new client (v2) | the same, at the other end. The old node's `cursor()` reads `digest` through a `str()` that **throws on an absent field**, which is precisely why this is a version and not a silent widening |
+
+**The version guards incompatibility, never novelty.** Two earlier realtime changes deliberately did not move it: an additive optional field (`snapshot.entity`) and a removed field read through `list()` (`hello.resume`) are both readable in either direction, because `decode` builds a whitelist object and `list()` answers `[]` for an absent key. `cursor()` is the other kind of reader — `str`/`num` throw — so removing a field it reads is the one shape that needs the number.
+
 ## Build skew
 
 A client on build `A` connecting to a `sync` node on build `B` is **accepted**, then sent an `update-available` frame carrying the node's `buildId`; the socket is not killed. Skew is decided **at the upgrade**, from `?build=` against the node's own build id, and it is a property of that socket for its lifetime — a client learns about a deploy on the socket it opens against the new node, never on one it is already holding. Every `hello` on that socket re-reports the same answer, the heartbeat's included. The client's `AppUpdateAvailable` signal flips and the app renders its own update affordance. See [PWA and offline](PWA-And-Offline).
@@ -333,7 +347,7 @@ A client on build `A` connecting to a `sync` node on build `B` is **accepted**, 
 |---|---|---|
 | `X_TOPIC_FORBIDDEN` | actor may not subscribe to a tier-1 topic | `declare a guard for this topic: hub.guard('<topic>', ({ actor }) => ...)` |
 | `X_SUBSCRIPTION_LIMIT` | a socket, tenant or node reached a cap; the error names which scope refused, and which knob | `raise maxPerSocket / maxPerTenant / maxEntries on the LiveQueryRegistry (per socket, default 128), or unsubscribe unused live queries` — a **channel topic** cap answers `maxTopicsPerSocket` (64) / `maxTopicsPerNode` (10,000) on the `ChannelHub`. All constructor options, none an `app.config.ts` field |
-| `X_PROTOCOL_VERSION` | client and server disagree on the wire format, or a malformed frame | `x build && redeploy the client; the sync node sends 'update-available' before it drains` |
+| `X_PROTOCOL_VERSION` | client and server disagree on the wire format, or a malformed frame. The wire is at **2** `As of 2026-08-24` ([above](#wire-protocol-version)) — a v1 client and a v2 node cannot resume in either direction, so the two are redeployed together | `x build && redeploy the client; the sync node sends 'update-available' before it drains` |
 | `X_LIVE_QUERY_UNKNOWN` | a `subscribe` frame named a live query this node does not have | `x queries list --json` |
 | `X_CURSOR_STALE` | resume cursor cannot be honoured and no snapshot path was supplied | `pass 'snapshot' to resumeFrom() so the fallback path can re-snapshot instead of failing` |
 | `X_REBASE_CONFLICT` | `custom(merge)` returned nothing, or the base row vanished | `set conflict: 'server-wins' on the mutator, or return a row from custom(merge)` |

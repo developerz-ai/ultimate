@@ -1,25 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   configureErrorReporting,
-  ERROR_DOCS_URL,
   memoryErrorReporter,
   resetErrorReporting,
   UltimateError,
 } from '@ultimat3/core';
 import { CURRENCY_CODE_PATTERN, isCurrencyCode } from '@ultimat3/schema';
 import { defineHttpConfig } from './config';
-import {
-  ERROR_STATUS,
-  factsOf,
-  registerErrorStatus,
-  renderErrorLines,
-  resetErrorStatus,
-  statusFor,
-  toProblem,
-} from './error-map';
-import { bodyInvalid, forbidden, HTTP_ERROR_CODES, routeNotFound } from './errors';
+import { factsOf, toProblem } from './error-facts';
+import { ERROR_STATUS, registerErrorStatus, resetErrorStatus, statusFor } from './error-map';
+import { HTTP_ERROR_CODES } from './errors';
 import { createPipeline } from './pipeline';
-import { rateLimited } from './rate-limit-errors';
 import { text } from './response';
 import { createRouter, type Route } from './router';
 
@@ -159,115 +150,6 @@ describe('a code that is also a name on Object.prototype', () => {
     // so an app whose own code collided with a prototype name could never register one at all.
     registerErrorStatus({ toString: 401 });
     expect(statusFor('toString')).toBe(401);
-  });
-});
-
-describe('factsOf', () => {
-  test('keeps code, cause and fix from an UltimateError', () => {
-    const facts = factsOf(routeNotFound('GET', '/missing'));
-    expect(facts.code).toBe('X_ROUTE_NOT_FOUND');
-    expect(facts.cause).toContain('GET /missing');
-    expect(facts.fix).toContain('x routes list');
-    expect(facts.status).toBe(404);
-    expect(facts.docs).toBe(ERROR_DOCS_URL);
-  });
-
-  test('titles a borrowed code from its owning package, without repeating the code', () => {
-    // `X_FORBIDDEN` is policy's and `X_UNAUTHENTICATED` is auth's, so http holds no title for
-    // either. Reading `message` instead once produced `X_FORBIDDEN: policy denied this actor — …`
-    // as the *title*, which `renderErrorLines` then printed with the code a second time.
-    const facts = factsOf(forbidden('/x', 'not an owner'));
-    expect(facts.code).toBe('X_FORBIDDEN');
-    expect(facts.title).not.toContain('X_FORBIDDEN');
-    expect(facts.title).not.toContain('not an owner');
-    expect(renderErrorLines(forbidden('/x', 'not an owner')).split('\n')[0]).toBe(
-      `X_FORBIDDEN: ${facts.title}`,
-    );
-  });
-
-  test('gives a foreign throwable a code and a fix too', () => {
-    const facts = factsOf(new TypeError('x is not a function'));
-    expect(facts.code).toBe('X_INTERNAL');
-    expect(facts.status).toBe(500);
-    expect(facts.fix.length).toBeGreaterThan(0);
-  });
-
-  test('renders the same three lines the terminal prints', () => {
-    const lines = renderErrorLines(rateLimited('actor:1', 30)).split('\n');
-    expect(lines[0]).toStartWith('X_RATE_LIMITED:');
-    expect(lines[1]?.trim()).toStartWith('cause:');
-    expect(lines[2]?.trim()).toStartWith('fix:');
-  });
-});
-
-describe('toProblem', () => {
-  test('is RFC-9457 shaped and carries the framework contract', () => {
-    const document = toProblem(bodyInvalid('/posts', ['title: required']), {
-      instance: '/posts',
-      requestId: 'req-1',
-    });
-    expect(document.status).toBe(422);
-    // The value itself is `problem-type.test.ts`'s subject; here it is one member of the shape.
-    expect(document.type).toBe('urn:ultimate:error:X_BODY_INVALID');
-    expect(document.detail).toContain('title: required');
-    expect(document.code).toBe('X_BODY_INVALID');
-    expect(document.fix).toContain('x routes --json');
-    expect(document.instance).toBe('/posts');
-    expect(document.requestId).toBe('req-1');
-  });
-
-  test('forbidden denials stay safe to log', () => {
-    const document = toProblem(forbidden('/posts/1', 'actor does not own post'));
-    expect(document.status).toBe(403);
-    expect(document.cause).toContain('actor does not own post');
-  });
-});
-
-// `factsOf` is the framework's universal normaliser: `pipeline.ts` hands it every throwable a
-// request produced, including whatever an app's handler threw. The last fallback rendered that
-// value with `String()`, which runs its own `toString` — so the throwable that reached the 500
-// path took the 500 renderer with it and the server had nothing left to answer with.
-describe('factsOf over a throwable it does not control', () => {
-  const hostile = (): ReadonlyMap<string, unknown> =>
-    new Map<string, unknown>([
-      [
-        'a hostile toString',
-        {
-          toString: () => {
-            throw new Error('gotcha');
-          },
-        },
-      ],
-      ['a null-prototype object', Object.create(null)],
-    ]);
-
-  for (const [label, value] of hostile()) {
-    test(`still answers X_INTERNAL for ${label}`, () => {
-      let facts: ReturnType<typeof factsOf> | undefined;
-      expect(() => {
-        facts = factsOf(value);
-      }).not.toThrow();
-      expect(facts?.code).toBe('X_INTERNAL');
-      expect(facts?.status).toBe(500);
-      expect(facts?.cause.length).toBeGreaterThan(0);
-    });
-  }
-
-  test('a throwable carrying its own strings is untouched', () => {
-    expect(factsOf({ code: 'X_INTERNAL', cause: 'a', fix: 'b' }).cause).toBe('a');
-    expect(factsOf(new TypeError('x is not a function')).cause).toBe('x is not a function');
-  });
-});
-
-describe('the fix line every uncoded throwable gets', () => {
-  // Axiom 4, on the path where the reader has the least context. It used to name
-  // `x logs tail --json`, which is in `PLANNED_COMMANDS` and exits `X_NOT_IMPLEMENTED` — so the
-  // one instruction an unhandled `TypeError` gave the reader failed when they ran it. The
-  // `errors` verify step checks that a fix NAMES a command, never that the command exists.
-  test('names a command this build ships, not a planned one', () => {
-    const facts = factsOf(new TypeError('undefined is not a function'));
-    expect(facts.fix).not.toContain('x logs');
-    expect(facts.fix).toContain('x errors explain X_INTERNAL --json');
   });
 });
 
@@ -464,5 +346,64 @@ describe('the published contract and the answered status agree', () => {
       'packages/action/src/http.ts no longer publishes a status for X_IDEMPOTENCY_CONFLICT',
     ).toBeDefined();
     expect(statusFor('X_IDEMPOTENCY_CONFLICT')).toBe(Number(published));
+  });
+});
+
+// The four codes 12.0.0 minted in packages that answer requests. One test per ARGUMENT, and each
+// asserts the status: a test counting rows, or one asserting `statusFor` is a number, would pass
+// with every one of them still falling through to the 500 default.
+describe('the codes 12.0.0 added are each classified on purpose', () => {
+  // Read off `ERROR_STATUS` and never through `statusFor`, because 500 is also what a MISSING row
+  // answers — the row IS the claim here, and `statusFor` cannot tell a decision from an omission.
+  test('an aggregate no driver can answer alike is a declared 500, not an omitted one', () => {
+    expect(ERROR_STATUS.X_AGGREGATE_UNSUPPORTED).toBe(500);
+  });
+
+  // Data-dependent, not author-dependent: the rows just happened to span currencies, so a read
+  // that worked for two years starts refusing on the day a second currency lands in the table.
+  // Nothing the caller sends changes it, which is why it is not a 4xx.
+  test('an amount aggregated across currencies is the server’s 500, by decision', () => {
+    expect(ERROR_STATUS.X_AGGREGATE_MIXED_CURRENCY).toBe(500);
+  });
+
+  // One query string away from a caller: a handler that adds `.where()` from an optional filter
+  // flips `approximateCount()` into this refusal. Still 500 — `posts.count()` is the fix, and it
+  // is the author's edit, so a 400 would tell the caller to repair a request that is not wrong.
+  test('an estimate asked of a filtered chain blames the read, not the request', () => {
+    expect(ERROR_STATUS.X_APPROXIMATE_COUNT_FILTERED).toBe(500);
+  });
+
+  // The reason the three entity rows are rows at all, rather than lines in
+  // `scripts/error-map-backlog.ts`: an UNDECLARED 5xx is blanked — `toProblem` swaps its cause for
+  // the opaque internal sentence — so a pin would have answered "the server failed while handling
+  // this request" for a fault whose own `fix:` names the exact call to write instead.
+  test('a declared 500 still hands the author the instruction it was thrown with', () => {
+    const document = toProblem({
+      code: 'X_AGGREGATE_MIXED_CURRENCY',
+      cause: "invoices.sum('total') covers 2 currencies (EUR, JPY) — they have no common unit",
+      fix: "invoices.andWhere('total.currency', 'eq', 'EUR').sum('total')",
+    });
+    expect(document.status).toBe(500);
+    expect(document.cause).toContain('2 currencies');
+    expect(document.fix).toContain('andWhere');
+  });
+
+  // The one of the four that is a caller's own doing, and the only one with a second surface:
+  // `mcpHttpRoute` builds a 429 with `retry-after` by hand. A code answering 429 on one surface
+  // and 500 on another is the split this table exists to prevent.
+  test('the MCP throttle answers the 429 its own transport already writes', () => {
+    expect(statusFor('X_MCP_RATE_LIMITED')).toBe(429);
+  });
+
+  // The bytes are the seam: `@ultimat3/mcp` is tier 4 and can never be imported here, exactly as
+  // `scripts/oauth-route-status.test.ts` pins auth's statuses from outside both packages.
+  test('and that 429 is the number the MCP transport hardcodes', async () => {
+    const source = await Bun.file(`${import.meta.dir}/../../mcp/src/transport-http.ts`).text();
+    const written = /new McpRateLimitedError\([\s\S]*?status: (\d{3}),/.exec(source)?.[1];
+    expect(
+      written,
+      'packages/mcp/src/transport-http.ts no longer answers a status beside McpRateLimitedError',
+    ).toBeDefined();
+    expect(statusFor('X_MCP_RATE_LIMITED')).toBe(Number(written));
   });
 });

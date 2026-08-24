@@ -16,6 +16,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 
 ## Do not regress
 
+- **The CONTRACT and the in-memory DRIVER are two files, `As of 2026-08-24`.** `repo.ts` is
+  `Repo`, `Page`, `FindManyArgs` and `Transactor` — what `postgresRepo` implements too — and
+  `memory-repo.ts` is `memoryRepo()`. Split when `repo.ts` passed the 500-line ceiling; nothing
+  about storing rows in a `Map` belonged in the interface `pg-driver.ts` answers to.
 - **Two drivers, one meaning.** `memoryDriver()` and `postgresDriver()` share `plan.ts` (scope,
   sort order, page size), `cursor.ts` (one codec, values included) and the `Repo` contract, so a
   test that passes against memory says something about Postgres. A guard, an operator or a sort
@@ -156,11 +160,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   mutates**: a preloaded relation is written onto `{ ...row }`, because the in-memory driver
   hands back the row it stores and attaching directly would leak the relation into the table
   itself. **Preloading terminals only**: `page()`, `all()` and `one()` resolve every named
-  relation; `count()`, `countBy()` and `plan()` do not, since none reads a row to attach one to.
+  relation; `count()`, `countBy()`, the aggregate terminals and `plan()` do not, since none reads a
+  row to attach one to.
 - **Every repository method attributes the statement it sends, and each op is named exactly
   once.** `postgresRepo`'s `attributed(op, send)` wraps `findById`, `findMany`, `insert`,
-  `insertAll`, `upsertAll`, `update`, `delete`, `deleteWhere`, `updateWhere`, `count` and
-  `countBy` — every method, not a subset — through `@ultimat3/db`'s
+  `insertAll`, `upsertAll`, `update`, `delete`, `deleteWhere`, `updateWhere`, `count`, `countBy`,
+  `aggregate` and `approximateCount` — every method, not a subset — through `@ultimat3/db`'s
   `withStatementAttribution(entity.$name, op, send)`. Each method declares `const op = 'findById'`
   (or its own name) once, and that same local is what everything else downstream of it gets too:
   the plan builder (`idPlan(entity, id, options, op)`, `readPlan(entity, args, op)`,
@@ -187,6 +192,9 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   have been alone. **This is the one rule the two drivers do not share**, and not a drift:
   `memoryRepo` sends no statement, so there is nothing for a pair to name — the parity bar
   (`*-parity.test.ts`) applies to what a call *answers*, and attribution changes no answer.
+  **`aggregate` names itself by the FUNCTION, not by the method**: "50x aggregate on members" does
+  not say which one, and `min` and `sum` are different statements with different costs, so the op
+  is `'sum'`/`'avg'`/`'min'`/`'max'`.
   `pg-driver-attribution.test.ts` is the pin: a client that reads `statementAttribution()` at send
   time, one case per method — a twelfth method added without `attributed` is a failing test, not a
   review comment — plus the coalesced flush, the sibling preload, a relation's own read, a chunked
@@ -244,6 +252,18 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
   total. The cursor carries the sort **values**, not just an id — seeking by an id that was
   deleted between two requests would restart pagination at the top.
+- **The tiebreak takes the LAST DECLARED key's direction — decided 2026-08-24.** `totalOrder`
+  appended the primary key `asc` unconditionally, so `orderBy('createdAt', 'desc')` ran
+  `created_at desc, id asc`. `IndexInit.order` is ONE direction for a whole index, so that pair was
+  an order this framework's own DSL **cannot declare an index for**, whatever the author wrote. It
+  also decided the seek's shape: a mixed order has no row comparison. Measured on Postgres 16 over
+  20,000 rows with an index on `(org, at desc, id desc)` — `(at, id) < ($1, $2)` plans as an Index
+  Only Scan carrying the whole seek as one Index Cond, while the or-chain the mixed order forces
+  plans as a BitmapOr of two index scans plus a Sort over everything they matched. So `seekSql`
+  sends the **row comparison** when every key sorts the same way and the spelled-out or-chain only
+  when they do not; a caller who wants the mixed order still writes it — naming the key themselves
+  is what turns the append off — and `pg-driver-cursor.live.test.ts` walks both shapes against a
+  real server. One key stays a scalar comparison: `(("id") > ($1))` is the same plan spelled worse.
 - **`inBatches(size)` is that same page in a loop, and the loop owns it.** `batch.ts` holds no
   driver of its own: a batch is the `findMany` the chain would have sent at that position, so
   filters, tenancy, soft delete, the projection and every `preload()` mean there what they mean in
@@ -267,8 +287,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **A grouped count means one thing in both drivers, and `count-by.ts` is where that one thing is
   written.** `countBy(column)` is the aggregate a `count()` per row is the N+1 of, so both drivers
   call `groupColumnOf` before their statement exists and `countsFrom` after their rows are in — a
-  rule added to `pg-driver.ts` or to `repo.ts` alone is exactly the drift that file exists to
-  prevent. **Groupable kinds are a closed set**: `uuid`, `text`, `char`, `boolean`, `integer`,
+  rule added to `pg-driver.ts` or to `memory-repo.ts` alone is exactly the drift that file exists
+  to prevent. **Groupable kinds are a closed set**: `uuid`, `text`, `char`, `boolean`, `integer`,
   `bigint`. A `timestamptz` is a `Date`, a `jsonb` is an object and `money` is two physical columns
   — a `Map` compares a non-primitive key by identity, so any of those would file rows under a key
   no caller can look up again and the result would be a map that only ever answers `undefined`. The
@@ -297,13 +317,120 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   rows `count()` counts.
 - **The codec is `@ultimat3/core`'s, and both drivers reach it through exactly two functions**:
   `cursorFor(entity, plan, row, id)` and `seekFrom(entity, plan)` in `cursor.ts`. Both call
-  `assertSeekable`, so an ordering that cannot carry a position — a nullable key, an undeclared
-  column, a money property named without `.minor`/`.currency` — is refused when the cursor is
-  *minted*, not one page later where the page size decides whether anyone finds out. This package owns only
+  `assertSeekable`, and so does `planFor` — **the load-bearing one, `As of 2026-08-24`**. An
+  ordering that cannot carry a position — a nullable key, an undeclared column, a money property
+  named without `.minor`/`.currency` — is refused where the PLAN is built, before a statement
+  exists. Refusing it only where the cursor is minted made the refusal depend on the TABLE:
+  `cursorFor` runs only when a page found a row past its limit, so `orderBy('publishedAt', 'desc')
+  .limit(20)` over a nullable column was green on fifteen seeded rows for as long as the suite
+  existed and `X_INVARIANT_VIOLATED` on the first read past twenty in production. That file's own
+  doc comment claimed the opposite for two majors. `assertBatchable` has always judged `inBatches()`
+  this way. This package owns only
   what a cursor is *bound* to — `planScope(plan)`: the entity, its filters and its sort order,
   hashed. Not the page size (a bigger next page is the same query) and not `select` (a projection
   cannot move a row). A cursor that fails either the signature or the scope is `X_CURSOR_INVALID`;
   it must never decode to "start from the top", which is what the old codec's `null` did.
+- **A NULLABLE sort key orders, `As of 2026-08-24` — `asc nulls last` / `desc nulls first`, and
+  that is `@ultimat3/query`'s spelling read rather than invented.** It was refused outright for
+  three majors while the sibling package had defined NULL ordering all along: two pagination
+  systems in one framework disagreeing about whether a nullable column is orderable, which is the
+  ambiguity axiom 1 forbids, and it made the canonical listing in
+  [`docs/architecture/06-data-layer.md`](../../docs/architecture/06-data-layer.md) unwritable in the
+  language that page documents. Four parts. **NULL's place is WRITTEN DOWN**, never inherited from
+  the server's default, so a driver whose default differs cannot reopen the divergence. **The
+  cursor can say "absent"**: a key is one character of tag then the value — `~` alone is NULL, `!`
+  prefixes a present one — so a `text` column holding the four characters `null` encodes as `!null`
+  and can never be read as an absence, which a bare sentinel would. **The seek reaches the NULLs**:
+  descending, a NULL position is `col is not null` (every value follows it under `nulls first`);
+  ascending, a value position is `(col > $1 or col is null)` and a NULL position DROPS its own term,
+  because nothing sorts after a NULL under `nulls last` and the alternative is SQL the planner has
+  to defeat on every page. The `or col is null` is emitted only on a column that can hold one.
+  **And a nullable key has NO row comparison**: `(a, b) < ($1, $2)` is UNKNOWN when either side
+  holds a NULL, so every NULL row would be excluded from the page the ordering puts it on —
+  `rowComparable` therefore wants one direction *and* not-null columns. What is left of the old
+  refusal is the one case with no total order: a nullable PRIMARY-KEY column, reachable only
+  through `primaryKey: [...]`, where `null = null` is unknown and two such rows are one position to
+  the seek. `pg-null-order.live.test.ts` walks both directions at four page sizes with NULLs on both
+  sides of every boundary, and compares the walk against the unpaged read and against memory.
+- **The four SQL aggregates ship, and `count(*)` is no longer the only one — `As of 2026-08-24`.**
+  `sum`, `avg`, `min` and `max` are terminals beside `countBy`, over exactly the rows `count()`
+  counts. Before them, "total spend this month" meant leaving the query language for hand-written
+  SQL, which is the one read path here with no tenancy guard on it. **Never a float**: `sum` and
+  `avg` answer decimal TEXT whatever the column was (the sum of a million `integer` rows is not an
+  `integer`, and `Number()` past 2^53 loses digits), a money aggregate answers `MoneyValue` in
+  integer minor units, and `min`/`max` answer the row's own type. `null` for an empty set in every
+  one, because that is what SQL answers and a `0` would claim rows were seen. **The shared rules
+  live in `aggregate.ts`** — which kinds each function takes, the exact decimal arithmetic — with
+  `aggregate-fold.ts` the memory execution and `aggregate-decode.ts` the Postgres one, so the two
+  cannot drift. **`avg` rounds at ONE fixed scale (`AVG_SCALE`, 6), half away from zero**, computed
+  from the exact rational: `round(avg(...), 6)` in the statement and integer arithmetic in memory,
+  because "whatever numeric division gives you" is not a rule two implementations can share — the
+  first draft rescaled relatively instead of absolutely and answered `11000.000000` where the server
+  said `1.100000`, which the live parity test caught. **Refused rather than answered**: `min`/`max`
+  on `text` (ordering is the database's COLLATION there and JS code-unit order here, and a
+  comparison that cannot be made to agree is not answered twice differently), `avg` over money
+  (`X_AGGREGATE_UNSUPPORTED` — the mean of an integer number of minor units is not one, so every
+  answer would be the silent rounding `MoneyValue.scale` exists to prevent), an amount covering more
+  than one currency **or scale** (`X_AGGREGATE_MIXED_CURRENCY`, counted in its own statement before
+  the aggregate is asked for — the scale half is the one with no symptom, since `{ minor: 5,
+  currency: 'USD' }` and the same row at `scale: 6` differ by 10,000x), and a money total past
+  ±2^53 minor units. **`approximateCount()` is `reltuples`**, one row out of `pg_class`, constant
+  time — because `count(*)` walks every visible row and no index can help, which is what makes
+  `X_DB_STATEMENT_TIMEOUT`'s "add the index this statement needs" unfollowable on a large table. It
+  is the whole TABLE's number, so a filtered chain **and every tenant-scoped entity** are
+  `X_APPROXIMATE_COUNT_FILTERED`; the guard runs BEFORE tenancy, or a scoped entity had no reachable
+  call at all — unscoped it was `X_TENANCY_UNSCOPED` and scoped it was this. `null` for a table
+  nobody has analysed (`-1` in `pg_class`), which is the absence of an estimate and not an estimate
+  of zero. The in-memory driver answers the exact count and refuses the same two cases, so both
+  drivers answer one QUESTION.
+- **A `json()` or `arrayOf()` column is filterable, `As of 2026-08-24`.** `Operator` gained
+  `contains` (`@>`), `contained-by` (`<@`), `overlaps` (`&&`) and `has-key`; before them the
+  vocabulary could compare a column to a scalar and nothing else, so an app storing either had to
+  leave the query language — the unguarded path again. **The meaning is Postgres', measured rather
+  than summarised**, in `containment.ts`, read by both drivers. Three clauses are easy to state
+  wrongly and two were wrong here first: the array-contains-a-primitive exception applies **at the
+  top level only** (`'{"list":[1,2,3]}' @> '{"list":2}'` is FALSE) and **to primitives only**
+  (`'[{"a":1}]' @> '{"a":1}'` is FALSE); `&&`'s empty operand overlaps NOTHING where `@>`'s is
+  contained by everything. **`jsonb` and array `@>` are two operators sharing a symbol**: the first
+  is recursive structural containment, the second is plain element membership, because an array's
+  elements are scalars of one declared type — `arrayOf()` refuses `jsonb`, `bytea`, `money` and a
+  nested array, which is what makes that true. A `Date` element compares by its instant, never by
+  reference. **`jsonb_exists(col, $1)`, never the `?` operator**: a literal `?` is a parameter
+  placeholder to more than one client on the way to the server. **No jsonpath expression operator**
+  beside them, deliberately: `contains` already matches nested structure, and a path language
+  inside the query language is a second way to ask one question. `&&` on a `jsonb` column is
+  refused where it was written, since Postgres has no such operator and any answer would be one no
+  statement can make. **`has-key` emits the `?` OPERATOR, schema-qualified
+  (`operator(pg_catalog.?)`), and not `jsonb_exists(col, $1)`** — the two are the same test and only
+  the first is INDEXABLE: measured on Postgres 16 with a GIN index and `enable_seqscan = off`,
+  `data ? 'k'` plans as a Bitmap Index Scan and the function form is a Seq Scan the planner will not
+  convert, because an index is matched against an operator expression and a bare function call is
+  not one. The function form shipped first, on a stated fear of `?` being read as a placeholder;
+  Bun's client passes it through verbatim (measured), and the qualified spelling is immune to a
+  client that does not and to a `search_path` that shadows the operator.
+- **A GIN index is declarable — `indexes: [{ on: ['tags'], using: 'gin' }]`, `As of 2026-08-24`.**
+  Without one every containment operator above is a sequential scan, which is the whole reason they
+  needed an index at all: measured over 20,000 rows, array `@>` / `<@` / `&&` and jsonb `@>` and
+  `?` each become a Bitmap Index Scan with a GIN index and none touches it without.
+  `pg-containment.live.test.ts` explains the driver's OWN statement rather than a lookalike — the
+  `count` one, because a page's `order by "id"` plus `limit` lets a four-row table be served by the
+  primary key whatever the predicate could have used. **The closed set is `@ultimat3/db`'s
+  `INDEX_METHODS`, imported and never restated** (tier 1, downward): two members, `btree` and
+  `gin`. **Absent is `btree`** — an index that names no method emits the statement it always
+  emitted byte for byte and its snapshot entry carries no `using` at all, so nothing regenerates;
+  proven by generating twice against the first generation's own snapshot and asserting the second
+  is empty. **The METHOD joins the name discriminator**, beside `where` and `order`: a btree on an
+  `arrayOf()` column answers `=` and an ordering while a GIN on the same column answers `@>`, so
+  they are two distinct indexes that would otherwise be one name — the dedup drops one in silence,
+  or, since that dedup is on the whole definition, two `create index` statements collide as `42P07`.
+  It is appended to the hash only when declared, so every name minted before methods existed is
+  unchanged. **Two Postgres rules are refused HERE**, where the author is: a GIN index cannot be
+  unique and cannot order its keys. `@ultimat3/db`'s `createIndex` refuses both again — that is the
+  guard for a description nobody declared through `entity()`, not a duplicate — but its refusal
+  lands at `x db gen`, or inside `ROLE=migrate` as the server's own syntax error with none of the
+  entity's words in it. **`jsonb <@` is not indexable and that is Postgres', not this package's**:
+  `<@` is not in the default `jsonb_ops` operator class, so it is a sequential scan whatever index
+  is declared — pinned in the live test so a reader is not left wondering whose doing it is.
 - **A relation is a foreign key read a second way, never a second declaration.** `relations.ts`
   derives `belongsTo` from an entity's own `references()` columns and `hasMany` from the inbound
   ones; there is no `hasMany: […]` init key and adding one would put two declarations of one fact
@@ -321,7 +448,31 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   framework — including the composite unique one `upsertAll`'s `on conflict` is inferred against —
   had to be written by hand. `where` and `order` ride along for the same reason: a partial index
   emitted as a total one refuses rows the entity allows. `on: []` is refused at declaration
-  (`X_INVARIANT_VIOLATED`), where the author can see it.
+  (`X_INVARIANT_VIOLATED`), where the author can see it. **And the NAME carries the predicate and
+  the direction too, `As of 2026-08-24`** — eight hex characters of sha256 over `order` and `where`,
+  folded in as `<table>_<cols>_<hash>_idx`. Without it two DIFFERENT partial indexes on one column
+  were one name (`posts_author_id_idx` for both `where status = 'published'` and
+  `where status = 'draft'`), and the dedup below dropped the second with no error, no warning and
+  no drift finding either, since `compareTable` matches a declared index by name. **Only when the
+  index carries one of the two**: a plain index keeps `<table>_<cols>_idx`/`_key`, because
+  `unique()` on a column is an inline column clause and Postgres names the index it creates exactly
+  `<table>_<column>_key` — a discriminator there would make the generator emit a second
+  `create unique index` for an index that already exists (`42P07`). The dedup itself is on the
+  whole `IndexDef`, not on the name: a name is derived, and matching on a derived string is what
+  made two indexes indistinguishable in the first place. **And the name is bounded at 63 BYTES**
+  (`MAX_IDENTIFIER_BYTES`, `NAMEDATALEN - 1`), refused at declaration: Postgres truncates a longer
+  identifier and says nothing, so two names sharing their first 63 bytes are one index on the
+  server — the same silent collapse one layer down, and invisible to a drift check comparing
+  DECLARED names, which still differ.
+- **Every physical name is checked, including the DERIVED one — `As of 2026-08-24`, and it was a
+  DDL injection.** `columnName` is `meta.name ?? snake(property)` and only the first branch reached
+  `assertColumnName` for three majors, while `snake()` lower-cases and does nothing else. A column
+  declared as `n" , "x" text); drop table t; --` therefore produced a `create table` carrying a real
+  `drop table` — measured through `generateMigration`, not theorised — and an entity NAME did the
+  same through `table: init.table === undefined ? name : assertColumnName(init.table)`, whose
+  fallback is every entity that does not rename its table. Quoting is not a defence against a value
+  that can close the quote, which is what `assertColumnName`'s own doc comment already said. Checked
+  at `bindColumn` (once per column, at `entity()`) rather than in `columnName` (every statement).
 - **Relations reach query time through `RegistryEntry.references()`, and the DDL string is
   rendered from it.** The resolved records are the source; `ColumnDescription.references` spells
   `"<table>.<column>"` out of one for the migration generator, which is in tier 1 and cannot
@@ -488,16 +639,35 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **Nothing is interpolated into SQL.** `pg-sql.ts` binds every value through `sql` and resolves
   every identifier through the entity, so a column name can only be one the entity declared.
   `raw()` appears exactly twice, for `asc|desc` and the `default` cell of a many-row `values` list —
-  each a closed set of one word. The seek operator was the third: it is now chosen in TypeScript
-  (`seekAfter`/`seekEqual`), because a timestamp seek is not one operator.
-- **A timestamp seek compares against a millisecond WINDOW, never a bare `>`.** A cursor carries a
-  `Date` (milliseconds); the column is `timestamptz` (microseconds), so the cursor value is the
-  row's own timestamp floored. `created_at > '…123'` is therefore satisfied by the `…123456` row
-  the cursor was minted from — the same row served again on every page boundary — and `<` drops
-  every row inside that millisecond instead. Ascending seeks `>= v + 1ms`, descending keeps `< v`,
-  and an equality prefix is `>= v and < v + 1ms`: what `date_trunc('milliseconds', …)` would say,
-  spelled as a half-open range so the column stays bare and the index still range-scans. The memory
-  driver stores millisecond `Date`s, so the two drivers agree without a second rule.
+  each a closed set of one word. The seek operator was the third: it is chosen in TypeScript
+  (`seekSql`/`seekAfter`), because the seek's SHAPE is decided by the order and its bind's cast is
+  part of the template, never a `raw()` argument.
+- **A `timestamp` cursor carries MICROSECONDS, and every seek term is a plain comparison —
+  decided 2026-08-24, and it replaces the millisecond window this file described for two majors.**
+  A `timestamptz` column holds microseconds; Bun's client hands it back as a JS `Date`, which holds
+  milliseconds. The window (`>= v and < v + 1ms`, ascending `>= v + 1ms`) made the SEEK cut on
+  `date_trunc('milliseconds', col)` while the `order by` beside it still sorted on the bare column
+  at microseconds — **two different equality classes on one page**, and the rows between them were
+  served on **no page, ever**. Not a race: three rows inside one millisecond with uuid v7 ids, a
+  `desc` page of one, and the two later rows are unreachable on every subsequent page, because
+  under `desc` the boundary row always holds the largest id of its millisecond and the `id >`
+  tiebreak can never match. Reproduced against Postgres 16 before the fix and pinned by
+  `pg-cursor-precision.live.test.ts`. No predicate over `(col, id)` built from a FLOORED value can
+  be correct — the information is gone — so the precision is carried instead. Three parts, none
+  optional. **The statement asks for it**: `seekPrecision` (`pg-sql.ts`) projects
+  `(col at time zone 'UTC')::text as "<col>$US"` beside every `timestamptz` sort key, under an
+  UPPER-CASE alias no physical column name can be (`snake()` lower-cases, `assertColumnName`
+  refuses the rest). `at time zone 'UTC'` and not a bare `::text`, or a page position would depend
+  on the connection's `TimeZone`. **The cursor is minted from the PHYSICAL row**: `sortPrecision`
+  (`pg-row.ts`) reads that output, and `cursorFor`'s optional `exact` map is how a driver hands
+  over a value the decoded row cannot hold. **The seek binds an ISO instant with all six digits**:
+  `col < $1::timestamptz`, the cast in the template rather than a `raw()` call, the column bare so
+  the index still range-scans. `instant.ts` is the only place the two representations meet —
+  microseconds since the epoch, as a `bigint`, in the cursor and in `compareByKind`. The memory
+  driver stores millisecond `Date`s, which are exact in that domain, so the two drivers still agree
+  without a second rule; `nextMillisecond` and `seekEqual`'s `Date` branch are gone. A cursor
+  minted before this carries an ISO string and is `X_CURSOR_INVALID`, never a bare `SyntaxError`
+  out of `BigInt`.
 - **`MoneyValue.scale` PERSISTS, in a third physical column — decided 2026-08.** `<p>_scale integer
   null`, through `columnsOf` / `bindValues` / `moneyOf` / `parseMoney` / `describeColumn`. Until
   this branch the entity layer silently dropped it on **both** write and read: `parseMoney` rebuilt
@@ -575,7 +745,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   hole open on exactly the unauthenticated path. **Outside every request context there is no actor
   to derive from** — a script, a seed, a test harness — so the caller names the tenant itself and
   `X_TENANCY_UNSCOPED` still refuses a plan that names none. There is no build-time tenancy step in
-  `x verify` (its 19 steps check none) and the old comment in `tenancy.ts` claiming one was wrong:
+  `x verify` (its 20 steps check none) and the old comment in `tenancy.ts` claiming one was wrong:
   the tenant is a request-time value, so the seam is the enforcement.
 - **`crossTenant(reason, fn)` (`cross-tenant.ts`) is the ONE way to read across tenants**, for the
   three cases that have no single one: an admin surface over every org, background reconciliation,

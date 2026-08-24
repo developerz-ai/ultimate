@@ -94,6 +94,12 @@ export const errorsCommand: CliCommand = {
     // which names `<CODE>` and hands back a real invocation. `list` would silently print 200 rows
     // to a caller who meant to explain one — see `MissingPositionalError`'s own note.
     defaultSubcommand: 'explain',
+    // `x errors X_PERMISSION_UNKNOWN` is the form every reader tries first — `x help` prints
+    // `errors  an X_* code, explained`, which reads as exactly that — and it answered
+    // `X_CLI_UNKNOWN_COMMAND … fix: x help`, which leads back to the line that suggested it.
+    // Safe to declare here and nowhere else so far: the only thing that is not `explain` or
+    // `list` in this slot is a code, and a near miss of either is still refused (#F16).
+    defaultSubcommandTakesPositional: true,
   },
   // `async` is load-bearing: a synchronous throw would escape every caller that awaits the
   // promise this signature promises, including the dispatcher's own error path.

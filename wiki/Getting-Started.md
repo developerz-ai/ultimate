@@ -52,7 +52,7 @@ Measured on a fresh scaffold, `As of 2026-08-23`.
 | Landing page | `apps/web/site/page.tsx` | `render: 'static'`, `hydrate: 'never'`, `budget: { js: '0kb' }`, real meta + JSON-LD |
 | Dashboard | `apps/web/app/dashboard/page.tsx` | `render: 'ssr'`, `hydrate: 'visible'`, `budget: { js: '60kb' }`, behind `policy: { permission: 'dashboard:read' }`. **Not `stream`** — `stream` needs a hole marker the renderer does not yet have, and the template says so in its own comment |
 | Admin app | `apps/admin/` | one `ssr` page; your actions reach an agent through `mcp: { expose: true }` and `x mcp serve`, not through this app |
-| Green gate | `x verify` | 19 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap. On a fresh scaffold: red on `lint` and `budgets`, then **18 of 19** after running the `fix:` lines it printed |
+| Green gate | `x verify` | 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. On a fresh scaffold: red on `lint` and `budgets`, then **19 of 20** after running the `fix:` lines it printed |
 
 `x dev` runs **every role in one process** with isolation simulated, not skipped: separate ALS contexts, a real Postgres queue, real logical replication, a real SIGTERM drain on `x dev restart`. Nothing in the framework branches on `if (dev)` — only the drivers differ.
 

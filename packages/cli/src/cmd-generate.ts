@@ -11,10 +11,11 @@ import { generate } from './generate-files';
 import { GENERATORS, readKind, readName, readSurface } from './generate-kinds';
 import { containedPath, writeFiles } from './generate-write';
 import { resolveCatalogModule } from './i18n-audit';
+import { syncI18nIndex } from './i18n-index';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagBool, flagList, flagString } from './parse';
-import { CATALOG_ROOT, i18nIndex, resolveLocales } from './templates';
+import { resolveLocales } from './templates';
 
 // One import path for the generator, unchanged by the split: `index.ts`, `x new` and the scaffold
 // fixture reach the kinds, the pure file list and the writer through this module, and a second path
@@ -25,32 +26,6 @@ export type { Generator } from './generate-kinds';
 export { GENERATORS } from './generate-kinds';
 export type { WriteReport } from './generate-write';
 export { dedupe, writeFiles } from './generate-write';
-
-const I18N_INDEX_PATH = 'packages/i18n/src/index.ts';
-
-/**
- * `packages/i18n/src/index.ts` is the one module the app imports catalogs through, and it is
- * written once, at `x new` time, importing whichever locales existed then. A later `x g
- * ... --locales=es` lands `packages/i18n/catalogs/es.json` on disk, but nothing would otherwise
- * teach the index about it — the catalog file would exist with real keys in it and the app could
- * still never select that locale. Every run that wrote at least one file re-derives the FULL
- * locale set from `packages/i18n/catalogs/` — not just the locales this invocation asked for —
- * and rewrites the index to match. Bypasses `writeFiles` on purpose: this file is a projection of
- * the catalog directory, never app-authored content a conflict check should protect. An app with
- * no i18n package (deleted, or never scaffolded) is left alone.
- */
-async function syncI18nIndex(root: string): Promise<void> {
-  const indexAbsolute = containedPath(root, I18N_INDEX_PATH);
-  if (!existsSync(indexAbsolute)) return;
-  const catalogDir = containedPath(root, CATALOG_ROOT);
-  const locales: string[] = [];
-  if (existsSync(catalogDir)) {
-    for await (const entry of new Bun.Glob('*.json').scan({ cwd: catalogDir, absolute: false })) {
-      locales.push(entry.replace(/\.json$/, ''));
-    }
-  }
-  await Bun.write(indexAbsolute, i18nIndex(locales));
-}
 
 export const generateCommand: CliCommand = {
   spec: {

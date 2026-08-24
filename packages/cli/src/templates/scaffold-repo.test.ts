@@ -10,6 +10,7 @@
 // its bytes. `x new --no-example` hid all of it, which is why `scaffold-smoke` was green.
 
 import { describe, expect, test } from 'bun:test';
+import { msg } from '../messages';
 import { names } from './naming';
 import { repoFiles } from './scaffold-repo';
 
@@ -55,5 +56,69 @@ describe('unit · the biome.json x new writes', () => {
     const lines = emitted('biome.json').split('\n');
     expect(lines.filter((line) => line.trimStart().startsWith('//'))).toEqual([]);
     expect(() => JSON.parse(emitted('biome.json')) as unknown).not.toThrow();
+  });
+});
+
+describe('unit · the tsconfig.json x new writes', () => {
+  // `x verify`'s first step is `tsc -b`, which decides "up to date?" by comparing emitted OUTPUTS
+  // against inputs. With `noEmit` and no `composite`, the output it looks for is an
+  // `app.config.js` that will never exist, so a scaffolded app re-typechecked from scratch on
+  // every single run — 92s wall / 43s user CPU on 166 files with no change between runs, against
+  // 4.9s / 8.8s warm with this one line. Asserted on the PARSED config, not on the text, so a
+  // reformat of the template cannot make the assertion pass while the flag is gone.
+  test('it opts into incremental typechecking, which tsc -b cannot do without', () => {
+    const config = JSON.parse(emitted('tsconfig.json')) as {
+      readonly compilerOptions?: Readonly<Record<string, unknown>>;
+    };
+    // Bracketed: `compilerOptions` is an index signature, and `noPropertyAccessFromIndexSignature`
+    // makes the dotted read TS4111.
+    expect(config.compilerOptions?.['incremental']).toBe(true);
+  });
+
+  // The buildinfo `incremental` writes has to be ignored, or the first `git status` after a
+  // typecheck shows a file nobody wrote.
+  test('.gitignore covers the buildinfo the flag produces', () => {
+    expect(emitted('.gitignore')).toContain('*.tsbuildinfo');
+  });
+});
+
+describe('unit · the first commands a scaffold tells its author to run exist on PATH', () => {
+  // `bun install` links the `x` binary into `./node_modules/.bin` and nowhere else, so a bare
+  // `x dev` pasted into a shell is `command not found` — proved with `env -i PATH=… command -v x`.
+  // The scaffold's own `bin/` wrappers are the form that works, and `bin/setup` already used
+  // `bunx x` internally for exactly this reason.
+  //
+  // Narrow on purpose, to the two places a line is COPIED AND RUN rather than read: the executable
+  // scripts, and the README block headed "Start". A comment elsewhere saying "then x db gen" is
+  // prose about a command, and a rule that reported it would be argued with instead of obeyed.
+  const RUNNABLE = /(^|[\s&|;])x\s+[a-z]/;
+
+  const linesOf = (path: string): readonly string[] => emitted(path).split('\n');
+
+  test('no bin/ script invokes a bare `x`', () => {
+    const offenders = ['bin/setup', 'bin/dev', 'bin/check'].flatMap((path) =>
+      linesOf(path).flatMap((line, index) =>
+        RUNNABLE.test(line) && !line.includes('bunx x') && !line.trimStart().startsWith('#')
+          ? [`${path}:${index + 1}`]
+          : [],
+      ),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  test("the README's Start block runs only commands a fresh shell has", () => {
+    const lines = linesOf('README.md');
+    const open = lines.findIndex((line) => line.startsWith('```sh'));
+    const close = lines.findIndex((line, index) => index > open && line.startsWith('```'));
+    expect(open).toBeGreaterThan(-1);
+    const block = lines.slice(open + 1, close);
+    expect(block.length).toBeGreaterThan(0);
+    expect(block.filter((line) => RUNNABLE.test(line) && !line.includes('bunx x'))).toEqual([]);
+  });
+
+  test('the line `x new` prints last names a command the author can run', () => {
+    const done = msg('cli.new.done', { name: 'ledger-demo' });
+    expect(done).toContain('bin/setup');
+    expect(RUNNABLE.test(done.replace('bin/setup', ''))).toBe(false);
   });
 });

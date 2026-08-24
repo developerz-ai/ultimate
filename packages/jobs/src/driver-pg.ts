@@ -20,7 +20,7 @@ import type {
   NackOptions,
   QueueStats,
 } from './driver';
-import { DEFAULT_QUEUE } from './driver';
+import { assertClaimQueues, DEFAULT_QUEUE } from './driver';
 import type { BackfillRow, JobRow, StepRow } from './driver-pg-rows';
 import { num, toBackfillRun, toJobRecord, toStepRecord } from './driver-pg-rows';
 import {
@@ -292,9 +292,9 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
     },
 
     async claim(claimOptions: ClaimOptions): Promise<readonly ClaimedJob[]> {
-      const queues = claimOptions.queues.length > 0 ? claimOptions.queues : [DEFAULT_QUEUE];
+      assertClaimQueues('pg', claimOptions);
       const rows = await exec().query<JobRow>(SQL_CLAIM, [
-        queues,
+        claimOptions.queues,
         claimOptions.limit,
         claimOptions.workerId,
         claimOptions.visibilityTimeoutMs,

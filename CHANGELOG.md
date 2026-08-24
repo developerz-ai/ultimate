@@ -10,6 +10,158 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 Nothing yet.
 
+## 12.0.0 - 2026-08-24
+
+One sweep, in the two halves every major here has had: things **declared and never wired** are wired
+or deleted, and things that **answered the wrong thing** are corrected. The declared-and-never-wired
+half is now mechanised a second time — `scripts/declaration-readers.ts` ratchets every leaf key of
+every primitive declaration, where `scripts/config-readers.ts` only ever saw `AppConfig`.
+
+### Security
+
+- **BREAKING — every physical name is asserted at `entity()`: `[a-z_][a-z0-9_$]*`, at most 63 bytes.**
+  `columnName` is `meta.name ?? snake(property)`
+  and only the FIRST branch was validated, so a column declared
+  `n" , "x" text); drop table t; --` produced a `create table` carrying a real `drop table` —
+  measured through `generateMigration`, not theorised. `entity('t" (x int); drop table u; --')` did
+  the same through the table-name fallback. Both are asserted at declaration now
+  (`packages/entity/src/column.ts`, `entity.ts`). Found while testing an unrelated index-name guard.
+
+### Fixed
+
+- **Keyset pagination silently dropped rows.** The seek treated a whole millisecond as one equality
+  class while `ORDER BY` evaluated `timestamptz` at microsecond precision — two different equality
+  classes over one page boundary. Reproduced against Postgres 16: three rows inside one millisecond,
+  uuid-v7 ids, `orderBy('createdAt','desc').limit(1)` — the walk returned **1 of 3 rows and stopped**.
+  Under `desc` with time-ordered ids the boundary row always holds the largest id in its millisecond,
+  so every remaining row in it was dropped, every time. Invisible to the whole parity suite by
+  construction: `memoryRepo` stores millisecond `Date`s, and the pg tests asserted SQL *text* against
+  a recording client. The cursor now carries microseconds and the seek is a plain comparison;
+  `nextMillisecond` is gone.
+- **A nullable sort key was refused only when a next page existed** — green on 15 seeded rows,
+  `X_INVARIANT_VIOLATED` on the first real read in production. The check moved to plan time, and then
+  the refusal itself was mostly deleted: see Added.
+- **Two partial indexes on the same columns silently collapsed to one.** An index's identity was its
+  name and the name omitted `where` and `order`, so the second declaration was dropped with no error,
+  no warning and no drift finding.
+- **Extension-owned relations failed every deploy** (#340). A stock managed Postgres with
+  `pg_stat_statements` in `public` made `x db migrate`'s drift audit refuse terminally, and the
+  printed fix (`x db gen "add pg_stat_statements"`) asked the app to own an extension's view.
+  Introspection now excludes relations Postgres records as extension-owned (`pg_depend`,
+  `deptype = 'e'`) — ownership, not a name prefix, because an extension may install any name.
+- **The MCP argument validator counted UTF-16 code units** while the schema that minted and publishes
+  those numbers counts code points. An astral-character argument was silently passed and then refused
+  by the action's own parse, or refused outright on a bound the agent had obeyed.
+- **No HTTP request ever spent an org rate-limit bucket.** The key builder consulted `orgId` only when
+  `actorId` was null, and the anonymous actor answers `null` for both — so the branch was unreachable.
+- **`x new` scaffolded an app that served HTTP 500 on two of its three routes.** The template granted
+  `dashboard:read` and required it on a route, and nothing called `definePermissions`. A green
+  19-step gate said nothing, because the scaffold's own test asserted role *expansion* and never
+  registry *membership*.
+- **`x i18n add <locale>` wrote a file that turned the gate red, printing a fix that repaired
+  nothing** — it named an edit already made by `x new`, so an agent following it changed nothing and
+  stayed red.
+- **`x dev --port N` died on port N+1** with a caught `Error` rendered into the cause, `X_CLI_UNEXPECTED`
+  rather than a stable code, and `x doctor` answering "shippable" because it probed only the web port.
+  `x doctor` now probes both ports and the database.
+- **The gate's own verdict depended on machine load** — three `scripts/side-effects.test.ts` cases each
+  re-scanned every file of every package and timed out at 5000ms under `x verify`'s workers.
+
+### Added
+
+- **Read replicas.** `DATABASE_REPLICA_URL`, `withReplicaReads(fn)`, and read-your-writes as the rule
+  rather than an option: any write, or any `withTransaction` that is not `readOnly`, pins the rest of
+  the scope to the primary. A 3-failure/10s breaker falls back to the primary. Opt-in and byte-identical
+  when unconfigured. The boot installs both halves — until it did, `DATABASE_REPLICA_URL` was read by
+  no process at all.
+- **A durable admin audit sink.** `postgresAuditSink({ executor })`, append-only, no purge (retention
+  is the app's). `memoryAuditSink` is now a bounded ring that reports `dropped`, rather than an
+  unbounded array retaining a whole `Ctx` per record. The sink never walks the `Ctx` — a fixed
+  allow-list — and redacts `input` through core's own `isRedactedKey`.
+- **`configureHttp()`.** The entire HTTP tuning surface — CORS origins, body limit, request timeout,
+  max in-flight, rate-limit buckets — was reachable from no app config key that existed. `DEFAULT_CORS.origins`
+  is `[]`, so every cross-origin browser call was refused in every deployment, permanently, with nowhere
+  to say otherwise.
+- **Per-tenant HTTP rate limits.** A request spends a list of keys; `rateLimit.tenantBucket` caps an org.
+- **The request deadline propagates.** `traceHeaders()` sends the *remaining* budget, so a downstream
+  hop cannot start a fresh full budget after its caller has already been answered `X_TIMEOUT`.
+- **Aggregates and containment on entities.** `sum`/`avg`/`min`/`max`/`approximateCount`, and
+  `contains`/`contained-by`/`overlaps`/`has-key` so a declared `json()` or `arrayOf()` column is no
+  longer write-only from the query language. `min`/`max` on text is refused (Postgres orders by
+  collation, JS by code unit); `avg` over money is refused, naming `sum()` + `count()`.
+- **Nullable sort keys order.** `asc nulls last` / `desc nulls first`, with the null position encoded in
+  the cursor. Only a nullable primary-key column is still refused.
+- **`scripts/declaration-readers.ts`** — every leaf key of every primitive declaration needs a reader.
+  173 leaves across 18 roots, pinned at zero.
+- **A `policy` gate step**, twentieth. It is what would have caught the scaffold's 500s.
+- **MCP rate limits are enforced.** `MCP_RATE_LIMITS` was published on the descriptor and applied by
+  nobody; the real ceiling was Bun's accept rate.
+
+### Removed
+
+- **BREAKING — `LiveCursor.digest` and `LiveCursor.count`, `digestOf`, `DIGEST_UNVERIFIED` and `fnv1a`
+  are deleted from `@ultimat3/realtime`.** Every snapshot ran `canonicalJson` over every row and hashed it for a value
+  no code path read — in the reconnect storm this package is benchmarked on, that is a full
+  serialize-and-hash of every result set for nothing. `PROTOCOL_VERSION` moves 1 → 2: the fields were
+  decoded through `str()`/`num()`, which throw on absence, so removal is unreadable in both directions
+  and a version bump is what says so.
+- **BREAKING — `RouteBudget.css`, `.cls` and `.tbt` are deleted.** Declared on the route contract, projected by nothing, so
+  a declared CSS budget was silently ignored while `budgets` reported green. A type pin now makes a new
+  budget key a build error until it is projected.
+- **The four `doc-config-key-pins.ts` waivers.** That table said the repair "is a release decision, not
+  an edit to the four rows below". This is that decision; the table is empty.
+
+### Changed
+
+- **BREAKING — `claim({ queues: [] })` is refused** rather than meaning "every queue" on the memory
+  driver and "the default queue" on Postgres. Each meaning is silently wrong in the other's
+  deployment. `X_JOB_CLAIM_QUEUES_EMPTY`. The memory driver's `claim` is `async` to raise it, so a
+  caller that read its return synchronously now gets a `Promise`.
+- **BREAKING — the primary-key tiebreak takes the last declared key's direction**, so the default total order is
+  no longer mixed-direction and therefore un-indexable by this framework's own index DSL. A uniform
+  order is emitted as a row comparison — measured on PG16: `Index Only Scan`, against `BitmapOr` + `Sort`
+  for the or-chain.
+- **BREAKING — every cursor minted before 12.0.0 is `X_CURSOR_INVALID`.** A `timestamp()` sort key is
+  carried as a microsecond epoch rather than an ISO string, and every entry is tagged — `~` for an
+  absent value, `!` before a present one, so a `text` column holding the four characters `null` can
+  never be read as an absence. Both are what let the seek be a plain `<` / `>` / `=` against
+  `$n::timestamptz` instead of the `>= v and < v + 1ms` window that dropped rows. A read ordered by a
+  `timestamp()` column also carries one extra output column on the wire, `"<col>$US"` — under a name
+  no entity can declare, stripped by `decodeRow`, and visible only to a test asserting SQL text.
+- **BREAKING — an index that declares `where` or `order` is named
+  `<table>_<cols>_<hash8>_idx`.** Plain and `unique()` names are unchanged, because those are
+  load-bearing: Postgres names a column-level `unique()` index `<table>_<column>_key` itself, and a
+  foreign key's own index is deduped against a hand-declared one by that name. The discriminator is
+  what stops two different partial indexes on one column from being one name and one index. A name
+  over 63 bytes is now refused at declaration rather than truncated by the server in silence.
+- **BREAKING — `Repo` gains `aggregate(fn, column, args?)` and `approximateCount(args?)`, and
+  `ReadBuilder` gains `sum`, `avg`, `min`, `max` and `approximateCount`.** A hand-rolled `Repo` or
+  `Driver` no longer satisfies the interface.
+- **BREAKING — `Operator` gains `contains`, `contained-by`, `overlaps` and `has-key`.** An exhaustive
+  `switch` over it stops compiling until it widens.
+- **BREAKING — `introspect()` returns app tables only.** Views, materialised views, foreign tables
+  and every relation Postgres records as extension-owned are excluded before the fold, and
+  `IntrospectOptions.exclude` no longer decides the set on its own. It issues four catalog queries
+  where it issued three.
+- **BREAKING — `rateLimitKey` is deleted; `rateLimitSpends` replaces it**, because one request now
+  spends a LIST of keys — the caller's, then the tenant's — where the old builder answered `actor`
+  else `org` else `ip`, exclusively, and so never reached an org bucket at all.
+  `RateLimitConfig.tenantBucket` is a required member of the resolved config.
+- **BREAKING — `Ctx` gains a required `deadlineAt: number | null`.** A hand-written `Ctx` — a test
+  fixture, a custom host — no longer compiles. `createContext` defaults it to `null`.
+- **BREAKING — `traceHeaders()` sends the remaining request budget**, so a downstream hop is given
+  what is LEFT of its caller's deadline rather than a fresh one. A spent budget sends no header at
+  all rather than `0`, which the far side would read as "the caller asked for nothing".
+- **BREAKING — `mcpHttpRoute` and `defineAppMcp` enforce `MCP_RATE_LIMITS`** — 120 read and 20 write
+  per minute per actor, `X_MCP_RATE_LIMITED` with a `Retry-After` past it. The numbers were published
+  on the descriptor and applied by nobody, so the real ceiling was Bun's accept rate.
+- **BREAKING — `memoryAuditSink()` is a bounded ring that discards**, `DEFAULT_MAX_AUDIT_RECORDS`
+  (1,000) oldest-first, with `{ maxRecords }` to raise it. `MemoryAuditSink` gains required `size` and
+  `dropped`, so a hand-written implementer no longer compiles.
+- **BREAKING — `DoctorProbe` gains a required `database()`**, and `portFree` is called for two ports:
+  `x doctor` answered "shippable" while probing only the web port and never the database.
+- **`@ultimat3/schema` exports `charCount`**; `@ultimat3/mcp` now depends on `@ultimat3/http`.
+
 ## 11.3.0 - 2026-08-24
 
 ### Fixed

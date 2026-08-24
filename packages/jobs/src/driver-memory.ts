@@ -20,7 +20,7 @@ import type {
   NackOptions,
   QueueStats,
 } from './driver';
-import { DEFAULT_QUEUE } from './driver';
+import { assertClaimQueues, DEFAULT_QUEUE } from './driver';
 import { JobDuplicateError } from './errors';
 import type { LeaseStore } from './leases';
 import { createMemoryLeaseStore } from './leases';
@@ -194,11 +194,15 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
       return Promise.resolve({ id: record.id, runId: record.runId, deduped: false });
     },
 
-    claim(claimOptions: ClaimOptions): Promise<readonly ClaimedJob[]> {
+    // `async`, so an empty queue list REJECTS here exactly as it does on the pg driver: a
+    // synchronous throw out of a method typed `Promise<…>` is a different answer to the same
+    // question, which is the class of divergence this pair is checked for.
+    async claim(claimOptions: ClaimOptions): Promise<readonly ClaimedJob[]> {
+      assertClaimQueues('memory', claimOptions);
       const at = nowMs(clock);
       const wanted = new Set(claimOptions.queues);
       const claimable = [...jobs.values()]
-        .filter((record) => wanted.size === 0 || wanted.has(record.queue))
+        .filter((record) => wanted.has(record.queue))
         .filter((record) => {
           if (record.runAt > at) return false;
           if (record.state === 'ready' || record.state === 'delayed') return true;

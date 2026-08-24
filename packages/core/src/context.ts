@@ -52,6 +52,16 @@ export interface Ctx extends CtxServices {
   now(): Date;
   readonly logger: Logger;
   readonly signal: AbortSignal;
+  /**
+   * Epoch milliseconds this request's budget runs out at, or `null` when nothing set one.
+   *
+   * The value BEHIND `signal`, published as a number because a signal can only say "already over"
+   * — and every outbound hop needs to say how much is LEFT. Without it a service called at t=29 of
+   * a 30s budget started a fresh 30s of its own: real work, holding a pool slot and a vendor
+   * connection, for half a minute after the caller's socket was answered `X_TIMEOUT`. `null` for a
+   * job, a task and a CLI command, none of which has a caller waiting on a socket.
+   */
+  readonly deadlineAt: number | null;
   /** Late-bound services, for anything not worth a type augmentation. */
   readonly services: ServiceBag;
 }
@@ -67,6 +77,8 @@ export interface CtxInit {
   readonly clock?: Clock | undefined;
   readonly logger?: Logger | undefined;
   readonly signal?: AbortSignal | undefined;
+  /** Epoch ms. `@ultimat3/http`'s `startDeadline` is the one production writer. */
+  readonly deadlineAt?: number | undefined;
   readonly services?: ServiceBag | undefined;
 }
 
@@ -112,6 +124,7 @@ export function createContext(init: CtxInit = {}): Ctx {
     now: () => clock.now(),
     logger: base.child({ requestId, traceId: trace }),
     signal: init.signal ?? neverAborted,
+    deadlineAt: init.deadlineAt ?? null,
   };
   // A registered service (`defineService`) closes over the ctx it is built for — actor, clock,
   // tz — so it has to run HERE, against this exact call's fields, rather than once at boot and
@@ -191,6 +204,10 @@ export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
     role: patch.role ?? parent.role,
     clock: patch.clock ?? parent.clock,
     logger: patch.logger ?? parent.logger,
+    // One request, one budget: a child scope inherits the deadline for the same reason it
+    // inherits `requestId`. A patch may SHORTEN it (a step with its own budget); nothing here
+    // lengthens it, because the socket the parent is answering does not move.
+    deadlineAt: patch.deadlineAt ?? parent.deadlineAt ?? undefined,
     signal: patch.signal ?? parent.signal,
     services: { ...carried, ...(patch.services ?? {}) },
   });

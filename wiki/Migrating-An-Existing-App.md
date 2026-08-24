@@ -251,7 +251,7 @@ Two vocabularies. `columns.ts` holds the **opinionated** builders — one way to
 
 ### 1.3 There is no schema-to-entity generator
 
-No command turns a live schema into `entity()` declarations `As of 2026-08`. `introspect()` from `@ultimat3/db` is public and gives the catalog as deterministically ordered, JSON-safe output — the same reader drift detection, the admin schema view and the MCP `schema.describe` tool use:
+No command turns a live schema into `entity()` declarations `As of 2026-08`. `introspect()` from `@ultimat3/db` is public and gives the catalog as deterministically ordered, JSON-safe output — the same reader **drift detection** uses. It has exactly that one framework consumer: the `/_x` schema panel and the MCP `schema.describe` tool both answer from the **entity registry**, never from the live catalog, so what they show is what the app declared and not what the database holds.
 
 ```ts
 import { introspect } from '@ultimat3/db';
@@ -261,6 +261,8 @@ const live = await introspect();
 ```
 
 Use it as the input; write the entities.
+
+**App tables only, `As of 2026-08-24`.** `introspect()` excludes every relation Postgres records as extension-owned (`pg_depend`, `deptype = 'e'`) and everything that is not an ordinary or partitioned table — views, materialised views and foreign tables. `create extension pg_stat_statements` in `public` is the CNPG, RDS, Supabase and Neon default, and its view used to read as `unexpected-table` with `x db gen "add pg_stat_statements"` as the fix, so every deploy failed terminally and the fix would have written an extension's internal view into the app's migration set. Ownership rather than a name: a `pg_*` prefix rule covers that view and misses PostGIS's `spatial_ref_sys`. A table someone created **by hand** carries no such dependency and is still `unexpected-table`, which is the finding this phase is about.
 
 ---
 
@@ -526,7 +528,7 @@ Report to the human: which slices are complete, `x verify --json`'s result, `x d
 |---|---|
 | **Strangler fig, one shared database** | **the supported path.** Everything above assumes it |
 | **Strangler fig, two databases** | **partially.** `db()` is one global handle, so Ultimate holds exactly one of the two. The reconciliation is entirely yours |
-| **Read replica first** | **no.** No read/write split exists at any layer; pointing `DATABASE_URL` at a replica fails every write, the migration ledger's included |
+| **Read replica first** | **no, and that is unchanged by the read/write split that now ships.** `DATABASE_REPLICA_URL` + `withReplicaReads` route *plain reads* off a primary the app still holds; pointing `DATABASE_URL` itself at a replica fails every write, the migration ledger's included. A replica is a capacity tier, never a cutover step |
 | **Big bang** | technically possible, and the one that fails. Not documented here |
 
 ### One database, globally
@@ -550,7 +552,7 @@ Verified against the code, `As of 2026-08`.
 | Three column shapes have no builder | a naive `timestamp without time zone` (permanently), a native Postgres `enum` **type**, and `vector` | convert a naive timestamp to `timestamptz`; declare an enum column as `text()`; keep vectors in `PgVectorStore` |
 | A renamed column arrives under its **physical** name in a live query | `@ultimat3/realtime` rebuilds rows from physical names and cannot read `.column()` overrides across the tier boundary | do not make a renamed slice live first, or map the name in the subscriber |
 | One database globally | `db()` is a singleton | one Postgres, or a second client outside the framework |
-| No read/write split | at any layer | a replica cannot serve Ultimate |
+| ~~No read/write split~~ | **shipped `As of 2026-08-24`** — `DATABASE_REPLICA_URL` builds a primary + replica client and `withReplicaReads(fn)` is the scope inside which a plain read may leave the primary, with read-your-writes and a 3-failure/10s breaker back to it | opt in twice ([Configuration → Read replicas](Configuration#read-replicas)); the scope is the app's to open |
 | No legacy-hash verifier beyond bcrypt/argon2 | an unreadable hash is the generic credential failure — safe, silent, and it consumes lockout budget — but nothing rewrites the row | bridge the legacy login, or force a reset |
 | No SAML | permanently out of scope | an OIDC bridge in front |
 | No app-contributed raw `Route` | the HTTP surface is composed from actions, queries, assets and page routes; `configureAuthenticator()` is the only app-installed hook of that shape | express the endpoint as an `action` or a `route` |

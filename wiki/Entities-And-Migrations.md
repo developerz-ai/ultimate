@@ -245,7 +245,7 @@ await db.checkpoints.update(id, { cursor: batches.cursor });   // resume with .a
 | Position | keyset, never OFFSET — a row written mid-iteration cannot make the loop skip or repeat one. `.after(cursor)` starts it, `.cursor` is where the next batch starts, `null` once exhausted |
 | Closing | `break`, `return` and a throw all stop the next statement; `await using` is the same guarantee for a handle held in a variable, and `close()` is idempotent. One handle is one iteration — a second `for await` continues it rather than restarting the table |
 | Batch size | a whole number of rows, at least one. A chain that also called `limit()` is `X_INVARIANT_VIOLATED`: one number with two meanings, and neither reading is safe to guess |
-| Sort order | an ordering no cursor can carry — a nullable sort column — is refused at `inBatches()`, not one batch later. A result that fits in a single batch mints no cursor, so deferring it would hide the mistake until the table grew |
+| Sort order | an ordering no cursor can carry is refused at `inBatches()`, not one batch later — a result that fits in a single batch mints no cursor, so deferring it would hide the mistake until the table grew. **An ordinary nullable sort column is no longer one of them, `As of 2026-08-24`**: NULL has a written-down place (`asc nulls last` / `desc nulls first`), the cursor carries it and the seek reaches it. What is refused is a **nullable primary-key column** — the tiebreak `totalOrder` appends precisely so two rows sharing a sort value cannot straddle a page boundary, and `null = null` is unknown, so it cannot do that job. Reachable only through `primaryKey: [...]`; drop `.nullable()` from the column |
 | Tenancy | the plan's, as everywhere else: an unscoped chain is `X_TENANCY_UNSCOPED` on its first batch |
 
 ## A count per row is one grouped count
@@ -514,7 +514,7 @@ planner decision.
 | `missing-foreign-key` | no key points those columns at that table. Matched on **where the key points**, never on its name: a hand-written `constraint fk_posts_org` is the same constraint as a generated `posts_org_id_fkey` |
 | `changed-foreign-key` | new `As of 2026-08-19`. The key points where it was declared to point and one side's `on delete` rule is not the other's. Reported apart from `missing-foreign-key` because it is a different repair — the constraint is there, and what changed is what happens to the child rows. Its `fix:` is the **pair**, not `x db migrate`: a rule cannot be altered in place, `add constraint` alone is `42710` on a name already taken, and no `x db gen` diff emits either statement. Both sides go through one normalisation, so the catalog's `c` and a snapshot's `cascade` agree, and Postgres' `a` (`no action`) on every undeclared key reads as no rule |
 
-There is no separate migration tool and no "regenerate types" step. `drift` is one of `x verify`'s nineteen steps — the list, in order, is in [Testing](Testing).
+There is no separate migration tool and no "regenerate types" step. `drift` is one of `x verify`'s twenty steps — the list, in order, is in [Testing](Testing).
 
 ## Reversible or marked
 

@@ -6,9 +6,9 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { text, timestamp, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { tableFor } from './query';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 
 /** The tenant root: scoped by nobody, which is what makes it the target of a `belongsTo`. */
 const orgs = entity('preload_test_orgs', {

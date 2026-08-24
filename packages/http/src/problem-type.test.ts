@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
-import { problemTypeFor, toProblem } from './error-map';
+import { problemTypeFor, toProblem } from './error-facts';
 import { bodyInvalid, forbidden, routeNotFound } from './errors';
 
 /**

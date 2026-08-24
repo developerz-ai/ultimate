@@ -1,6 +1,8 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { generateMigration } from '@ultimat3/db';
+import { generateMigration, snapshotOf } from '@ultimat3/db';
+import { t } from '@ultimat3/schema';
 import { enumerated, integer, money, text, timestamp, uuid } from './columns';
+import { arrayOf, json } from './columns-data';
 import { entity } from './entity';
 import { invariant } from './invariants';
 import { clearRegistry, describeEntities, getEntity } from './registry';
@@ -182,7 +184,9 @@ describe('describe()', () => {
         order: null,
       },
       {
-        name: 'entity_test_posts_org_id_published_at_idx',
+        // The `647c63aa` is sha256 over the direction and the predicate, which is what separates
+        // this index from another one on the same two columns.
+        name: 'entity_test_posts_org_id_published_at_647c63aa_idx',
         columns: ['org_id', 'published_at'],
         unique: false,
         where: "status = 'published'",
@@ -195,6 +199,211 @@ describe('describe()', () => {
     const index = posts.$indexes.find((entry) => entry.columns.includes('published_at'));
     expect(index?.where).toBe("status = 'published'");
     expect(index?.order).toBe('desc');
+  });
+
+  test('two partial indexes on one column are two indexes, not one', () => {
+    // `<table>_<cols>_idx` names neither the predicate nor the direction, so both of these were
+    // `partial_posts_status_idx` and the second was dropped by the name dedup — no error, no
+    // warning, and no drift finding either, because a declared index is matched by NAME.
+    const posts = entity('entity_test_partial', {
+      columns: {
+        id: uuid().primaryKey(),
+        authorId: uuid(),
+        status: enumerated(['draft', 'published']).default('draft'),
+      },
+      indexes: [
+        { on: ['authorId'], where: (c) => c.status.eq('published') },
+        { on: ['authorId'], where: (c) => c.status.eq('draft') },
+      ],
+    });
+    expect(posts.$indexes).toHaveLength(2);
+    expect(posts.$indexes.map((index) => index.where)).toEqual([
+      "status = 'published'",
+      "status = 'draft'",
+    ]);
+    expect(new Set(posts.$indexes.map((index) => index.name)).size).toBe(2);
+    // Both reach the DDL, or the second was declared and never created.
+    const migration = generateMigration({
+      entities: [posts.$describe()],
+      name: 'create partial posts',
+      now: new Date('2026-08-24T00:00:00.000Z'),
+    });
+    expect(migration.up).toContain("where (status = 'published')");
+    expect(migration.up).toContain("where (status = 'draft')");
+  });
+
+  test('two indexes on one column in two directions are two indexes', () => {
+    const rows = entity('entity_test_ordered', {
+      columns: { id: uuid().primaryKey(), rank: integer().default(0) },
+      indexes: [
+        { on: ['rank'], order: 'asc' },
+        { on: ['rank'], order: 'desc' },
+      ],
+    });
+    expect(rows.$indexes).toHaveLength(2);
+    expect(rows.$indexes.map((index) => index.order)).toEqual(['asc', 'desc']);
+    // Two rows on the list is not enough: two `create index` statements of ONE name is `42P07`,
+    // a migration that cannot be applied at all.
+    expect(new Set(rows.$indexes.map((index) => index.name)).size).toBe(2);
+  });
+
+  test('an index with neither a predicate nor a direction keeps its plain name', () => {
+    // Load-bearing: `unique()` on a column is an inline column clause, and the server names the
+    // index it creates exactly `<table>_<column>_key`. A discriminator on THAT name would make
+    // the generator emit a second `create unique index` for an index that already exists — 42P07.
+    const rows = entity('entity_test_plain_index', {
+      columns: { id: uuid().primaryKey(), slug: text({ max: 40 }).unique(), rank: integer() },
+      indexes: [{ on: ['rank'] }],
+    });
+    expect(rows.$indexes.map((index) => index.name)).toEqual([
+      'entity_test_plain_index_slug_key',
+      'entity_test_plain_index_rank_idx',
+    ]);
+  });
+
+  test('an index name past 63 bytes is refused, not silently truncated', () => {
+    // Postgres truncates an identifier at 63 bytes and says nothing. Two long index names sharing
+    // their first 63 bytes therefore become ONE index on the server — the same silent collapse the
+    // discriminator above exists to prevent, one layer down, and invisible to a name-based drift
+    // check because the DECLARED names still differ.
+    const long = 'a'.repeat(60);
+    expect(() =>
+      entity('entity_test_long_index', {
+        columns: { id: uuid().primaryKey(), [long]: integer().default(0) },
+        indexes: [{ on: [long] }],
+      }),
+    ).toThrow(/Postgres truncates an identifier at 63/);
+  });
+
+  test('a DERIVED physical name is checked exactly as a declared one is', () => {
+    // `columnName` is `meta.name ?? snake(property)` and only the first branch was ever checked, so
+    // a property name reached the DDL untouched: a column called `n" , "x" text); drop table t; --`
+    // produced a `create table` carrying a real `drop table`. Quoting is not a defence when the
+    // value can close the quote. Measured before the fix, through `generateMigration`.
+    const evil = 'n" , "x" text); drop table t; --';
+    expect(() =>
+      entity('entity_test_evil_column', {
+        columns: { id: uuid().primaryKey(), [evil]: integer().default(0) },
+      }),
+    ).toThrow(/is not a physical column name/);
+  });
+
+  test('an entity name used as the table is checked too', () => {
+    // `table: init.table === undefined ? name : assertColumnName(init.table)` — the DECLARED table
+    // was checked and the fallback, which is every entity that does not rename its table, was not.
+    expect(() =>
+      entity('t" (x int); drop table u; --', { columns: { id: uuid().primaryKey() } }),
+    ).toThrow(/is not a physical column name/);
+  });
+
+  test('the ceiling is measured in BYTES, which is what the server truncates at', () => {
+    // 63 is NAMEDATALEN-1, counted in bytes. Every component of an index name is now a checked
+    // physical name and therefore ASCII, so the two measures coincide — but the rule is still
+    // written in bytes, because `.length` stops seeing the truncation the moment one is not.
+    expect(new TextEncoder().encode('a'.repeat(63)).length).toBe(63);
+  });
+
+  test('a declared GIN index reaches the DDL as `using gin`', () => {
+    // The whole point of the containment operators: `@>` on a `json()` or `arrayOf()` column is a
+    // sequential scan without one. Measured on Postgres 16 — array `@>`/`<@`/`&&` and jsonb `@>`
+    // all become a Bitmap Index Scan on the GIN index, and none of them touches it without.
+    const docs = entity('entity_test_gin', {
+      columns: {
+        id: uuid().primaryKey(),
+        tags: arrayOf(text({ max: 20 })),
+        data: json(t.object({ k: t.optional(t.number) })),
+      },
+      indexes: [
+        { on: ['tags'], using: 'gin' },
+        { on: ['data'], using: 'gin' },
+      ],
+    });
+    expect(docs.$indexes.map((index) => index.using)).toEqual(['gin', 'gin']);
+    const migration = generateMigration({
+      entities: [docs.$describe()],
+      name: 'create gin',
+      now: new Date('2026-08-24T00:00:00.000Z'),
+    });
+    expect(migration.up).toContain('using gin ("tags")');
+    expect(migration.up).toContain('using gin ("data")');
+  });
+
+  test('a btree index emits the statement it always emitted, byte for byte', () => {
+    // Absent is `btree`, which is Postgres' own default and what every index declared before the
+    // method existed is — so nothing regenerates and no app sidecar moves.
+    const rows = entity('entity_test_default_method', {
+      columns: { id: uuid().primaryKey(), rank: integer().default(0) },
+      indexes: [{ on: ['rank'] }],
+    });
+    expect(rows.$indexes[0]?.using).toBeUndefined();
+    expect(rows.$describe().indexes[0]?.using).toBeUndefined();
+    const migration = generateMigration({
+      entities: [rows.$describe()],
+      name: 'create btree',
+      now: new Date('2026-08-24T00:00:00.000Z'),
+    });
+    expect(migration.up).toContain(
+      'create index "entity_test_default_method_rank_idx" on "entity_test_default_method" ("rank")',
+    );
+    expect(migration.up).not.toContain('using');
+  });
+
+  test('a declared GIN round-trips through a snapshot and regenerates nothing', () => {
+    // The half that decides whether this is safe to ship into apps that already have migrations:
+    // the method has to reach the snapshot, and a second generation against that snapshot has to
+    // be EMPTY. A method the snapshot dropped would be re-created on every `x db gen` forever;
+    // one it recorded for a btree would move every existing app's sidecar.
+    const docs = entity('entity_test_gin_roundtrip', {
+      columns: { id: uuid().primaryKey(), tags: arrayOf(text({ max: 20 })) },
+      indexes: [{ on: ['tags'], using: 'gin' }, { on: ['tags'] }],
+    });
+    const described = docs.$describe();
+    const snapshot = snapshotOf([described]);
+    const recorded = snapshot.tables[0]?.indexes.map((index) => index.using);
+    expect(recorded).toEqual(['gin', undefined]);
+
+    const again = generateMigration({
+      entities: [described],
+      name: 'no-op',
+      now: new Date('2026-08-24T00:00:00.000Z'),
+      current: snapshot,
+    });
+    expect(again.up).toBe('');
+  });
+
+  test('two indexes on one column differing only in METHOD are two indexes', () => {
+    // A btree on an `arrayOf()` column answers `=` and an ordering; a GIN on the same column
+    // answers `@>`/`<@`/`&&`. They are two distinct indexes, so the method has to be part of what
+    // separates their names — otherwise both are `<table>_<cols>_idx` and either the dedup drops
+    // one in silence (the F7 defect) or two `create index` statements share a name (`42P07`).
+    const docs = entity('entity_test_two_methods', {
+      columns: { id: uuid().primaryKey(), tags: arrayOf(text({ max: 20 })) },
+      indexes: [{ on: ['tags'] }, { on: ['tags'], using: 'gin' }],
+    });
+    expect(docs.$indexes).toHaveLength(2);
+    expect(new Set(docs.$indexes.map((index) => index.name)).size).toBe(2);
+    // And the plain one keeps the name it always had.
+    expect(docs.$indexes[0]?.name).toBe('entity_test_two_methods_tags_idx');
+  });
+
+  test('a unique GIN is refused where it was written, not at migrate time', () => {
+    // Postgres has no unique GIN index, and `db` refuses it too — but that refusal fires at
+    // `x db gen`, or inside `ROLE=migrate` as the server's own syntax error. The author is here.
+    expect(() =>
+      entity('entity_test_unique_gin', {
+        columns: { id: uuid().primaryKey(), tags: arrayOf(text({ max: 20 })) },
+        indexes: [{ on: ['tags'], using: 'gin', unique: true }],
+      }),
+    ).toThrow(/no unique gin index/);
+  });
+
+  test('an ordered GIN is refused where it was written too', () => {
+    expect(() =>
+      entity('entity_test_ordered_gin', {
+        columns: { id: uuid().primaryKey(), tags: arrayOf(text({ max: 20 })) },
+        indexes: [{ on: ['tags'], using: 'gin', order: 'desc' }],
+      }),
+    ).toThrow(/only a btree orders its keys/);
   });
 
   test('an index naming no column is refused where it was written', () => {
@@ -215,7 +424,7 @@ describe('describe()', () => {
       now: new Date('2026-08-12T00:00:00.000Z'),
     });
     expect(migration.up).toContain(
-      'create index "entity_test_posts_org_id_published_at_idx" on "entity_test_posts" ' +
+      'create index "entity_test_posts_org_id_published_at_647c63aa_idx" on "entity_test_posts" ' +
         `("org_id" desc, "published_at" desc) where (status = 'published');`,
     );
   });

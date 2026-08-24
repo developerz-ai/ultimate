@@ -9,9 +9,9 @@ import { createRecordingClient, setDbClient } from '@ultimat3/db';
 import { text, timestamp, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 
 const notes = entity('clock_test_notes', {
   columns: {

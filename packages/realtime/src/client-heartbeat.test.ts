@@ -49,15 +49,10 @@ describe('the client heartbeat', () => {
       type: 'snapshot',
       v: PROTOCOL_VERSION,
       sid: decodeSid(sockets[0]),
-      rows: [{ id: 'p1' }],
-      cursor: {
-        qid: 'feed',
-        lsn: '1',
-        digest: 'sentinel-digest',
-        ids: ['p1'],
-        count: 1,
-        at: 1_000,
-      },
+      rows: [{ id: 'sentinel-row' }],
+      // The row id is the marker: it reaches the wire only inside this cursor's `ids`, on the one
+      // OUTBOUND frame that resumes from it. `digest` used to be the marker and no longer exists.
+      cursor: { qid: 'feed', lsn: '1', ids: ['sentinel-row'], at: 1_000 },
     });
 
     sockets[0]?.close(1006);
@@ -68,7 +63,7 @@ describe('the client heartbeat', () => {
     const afterBeat = (sockets[1]?.sent ?? []).slice(onOpen.length);
 
     const carrying = (raw: readonly string[]): readonly string[] =>
-      raw.filter((frame) => frame.includes('sentinel-digest'));
+      raw.filter((frame) => frame.includes('sentinel-row'));
     // Exactly one frame on the wire holds this cursor, and it is the one that decides the resume.
     expect(carrying(onOpen)).toHaveLength(1);
     expect(carrying(onOpen)[0]).toContain('"type":"subscribe"');

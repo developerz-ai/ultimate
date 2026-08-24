@@ -138,8 +138,11 @@ describe('the round trip', () => {
     const [when, likes, pinned, title, key] =
       seekFrom(posts, { ...plan, cursor: cursorFor(posts, plan, ROW, ROW.id) }) ?? [];
 
-    expect(when).toBeInstanceOf(Date);
-    expect(when instanceof Date ? when.getTime() : null).toBe(AT.getTime());
+    // A `timestamptz` revives as MICROSECONDS since the epoch, not as a `Date`: the column keeps
+    // microseconds and a `Date` keeps milliseconds, so a `Date` position is the boundary row's own
+    // value floored — a point between two rows, where `order by` cuts at neither.
+    expect(when).toBe(BigInt(AT.getTime()) * 1000n);
+    expect(typeof when).toBe('bigint');
     expect(likes).toBe(7);
     expect(pinned).toBe(true);
     expect(title).toBe('first');
@@ -212,6 +215,20 @@ describe('the refusals', () => {
     expect(caught(() => seekFrom(posts, flipped))).toBeUltimateError('X_CURSOR_INVALID');
   });
 
+  test('a cursor carrying an ISO instant is refused, never read as a bare SyntaxError', () => {
+    // The shape every cursor minted before microsecond positions existed carries. Signed and in
+    // scope, so it reaches the revival — where `BigInt('2026-…')` is a `SyntaxError` with no code
+    // and no fix, which is the one thing a refusal in this framework may not be.
+    const cursor = encodeCursor({
+      scope: planScope(BASE),
+      key: [AT.toISOString(), ROW.id],
+      id: ROW.id,
+    });
+    expect(caught(() => seekFrom(posts, { ...BASE, cursor }))).toBeUltimateError(
+      'X_CURSOR_INVALID',
+    );
+  });
+
   test('a cursor whose arity does not match the sort order is X_CURSOR_INVALID', () => {
     // Signed and in scope, so it reaches the arity guard. The alternative to the guard is a
     // missing value read as `''`, which is a position every row in the table is "after".
@@ -221,13 +238,44 @@ describe('the refusals', () => {
     );
   });
 
-  test('a nullable sort column cannot carry a cursor, and the fix names the key to use', () => {
-    // `null > 'x'` is unknown in SQL, so a nullable key drops rows out of the middle of a listing.
-    // The message has to name the primary key, or the reader has nothing to order by instead.
-    const error = caught(() => assertSeekable(posts, [{ column: 'publishedAt' }]));
-    expect(error).toBeUltimateError('X_INVARIANT_VIOLATED');
-    expect(error instanceof Error ? error.message : '').toContain(".orderBy('id')");
+  test('an ordinary nullable sort column IS seekable — NULL has a declared place', () => {
+    // It was refused outright for three majors while `@ultimat3/query` had defined the ordering
+    // all along. Two pagination systems in one framework disagreeing about whether a nullable
+    // column is orderable is the ambiguity axiom 1 forbids, and it made the canonical listing in
+    // `docs/architecture/06-data-layer.md` unrepresentable in the language it documents.
+    expect(caught(() => assertSeekable(posts, [{ column: 'publishedAt' }]))).toBeUndefined();
     expect(caught(() => assertSeekable(posts, [{ column: 'createdAt' }]))).toBeUndefined();
+  });
+
+  test('a nullable PRIMARY KEY column is still refused — the tiebreak cannot be absent', () => {
+    // The one case that genuinely has no total order: `null = null` is unknown, so two rows whose
+    // whole key vector is NULL are indistinguishable to the seek and one is served twice or never.
+    // Only reachable through `primaryKey: [...]`, which takes the columns exactly as declared.
+    const composite = entity('cursor_test_null_key', {
+      columns: {
+        id: uuid().primaryKey(),
+        label: text({ max: 20 }).nullable(),
+        note: text({ max: 20 }),
+      },
+      primaryKey: ['id', 'label'],
+    });
+    const error = caught(() => assertSeekable(composite, [{ column: 'label' }]));
+    expect(error).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(error instanceof Error ? error.message : '').toContain('drop .nullable() from label');
+    // And a nullable column that is NOT part of the key stays legal on the same entity.
+    expect(caught(() => assertSeekable(composite, [{ column: 'note' }]))).toBeUndefined();
+  });
+
+  test('a NULL position round-trips, and never as the TEXT that spells it', () => {
+    const plan: QueryPlan = { ...BASE, orderBy: by(['publishedAt', 'asc'], ['title', 'asc']) };
+    const withNull = seekFrom(posts, {
+      ...plan,
+      cursor: cursorFor(posts, plan, { ...ROW, publishedAt: null, title: 'null' }, ROW.id),
+    });
+    // First key absent, second key the four characters `null`: a bare sentinel would read them
+    // as the same position and page from the wrong end of the listing.
+    expect(withNull?.[0]).toBeNull();
+    expect(withNull?.[1]).toBe('null');
   });
 
   test('a column the entity never declared, and a money part that is not one, are refused', () => {

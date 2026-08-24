@@ -316,7 +316,9 @@ describe('pg enqueue, ack and nack', () => {
       },
     ]);
     const [claimed] = await createPgDriver({ executor, clock }).claim({
-      queues: [],
+      // Named, because an empty list is `X_JOB_CLAIM_QUEUES_EMPTY` since 12.0.0 — this test used
+      // to lean on the pg driver's private default, which is exactly the divergence that was fixed.
+      queues: ['default'],
       limit: 1,
       visibilityTimeoutMs: 30_000,
       workerId: 'worker-a',

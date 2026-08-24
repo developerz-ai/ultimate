@@ -80,7 +80,7 @@ describe('withRouteBuckets', () => {
     expect(error?.cause).toContain('120 / 2');
     expect(error?.cause).toContain('5 / 0.008');
     // Axiom 4: the fix is the edit, naming the key to delete rather than "resolve the conflict".
-    expect(error?.fix).toContain('delete http.rateLimit.buckets.contactSales');
+    expect(error?.fix).toContain('delete rateLimit.buckets.contactSales');
   });
 
   test('two routes claiming one bucket with different numbers are refused', () => {

@@ -282,6 +282,15 @@ describe('textResult / jsonResult', () => {
   // `undefined` for a handler that returns nothing, and a throw on a bigint, a cycle or a
   // `toJSON` of its own. A `ContentBlock.text` that is not a string is an invalid MCP frame, and
   // a throw here escapes the server's own catch as a bug it did not cause.
+  /**
+   * **The explicit timeout is measured, not padding.** `JSON.stringify(cycle, null, 2)` takes
+   * ~4.6s in Bun 1.4 before it throws — the whole of this test's cost, the other two values are
+   * ~0.3ms each — so on the 5000ms default it flips red under any concurrent load with nothing in
+   * the diff to explain it. The seconds belong to the runtime, not to this assertion.
+   *
+   * It is also a real property of `jsonResult`: a tool returning a cyclic value blocks the event
+   * loop for those seconds before the `isError` block is rendered. Correct, and slow.
+   */
   test('a tool result that is not JSON becomes an isError block, never a throw', () => {
     const cycle: Record<string, unknown> = {};
     cycle['self'] = cycle;
@@ -305,7 +314,7 @@ describe('textResult / jsonResult', () => {
       expect(typeof text).toBe('string');
       expect(text).toContain('not JSON');
     }
-  });
+  }, 30_000);
 
   test('a tool that returns nothing renders null, not a block with no text', () => {
     const result = jsonResult(undefined);

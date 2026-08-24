@@ -6,8 +6,11 @@
 
 import { columnFor, columnName, moneyColumns } from './column';
 import { narrowMoney } from './columns';
+import { kindOf } from './cursor';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
+import { pgInstantMicros, seekAlias } from './instant';
+import type { SortKey } from './tenancy';
 import type { AnyColumn, MoneyValue, RowPatch } from './types';
 
 export type PhysicalRow = Readonly<Record<string, unknown>>;
@@ -125,13 +128,21 @@ const arrayElement = (value: unknown): string => {
  * answers with `malformed array literal` (measured). What it accepts is the literal, so this is
  * where a JS array becomes one.
  */
+/**
+ * A JS array as the literal Postgres accepts. Exported because a containment predicate binds one
+ * too (`tags @> $1`) and building a second one there is how the two spellings drift: Bun's `sql`
+ * serialises a JS array to `x,y`, which the server answers `malformed array literal`.
+ */
+export const arrayLiteral = (value: unknown): string =>
+  `{${(Array.isArray(value) ? value : [value]).map(arrayElement).join(',')}}`;
+
 const bindable = (column: AnyColumn, value: unknown): unknown => {
   if (value === null || value === undefined) return null;
   // A plain object is not a bindable parameter (`X_SQL_UNSAFE`), so a `jsonb` value crosses as its
   // TEXT and `pg-sql.ts`'s cell casts it back — see `cellCast` for why the cast is `::text::jsonb`.
   if (column.$meta.kind === 'jsonb') return JSON.stringify(value);
   if (column.$meta.kind !== 'array' || !Array.isArray(value)) return value;
-  return `{${value.map(arrayElement).join(',')}}`;
+  return arrayLiteral(value);
 };
 
 const moneyOf = (
@@ -184,4 +195,30 @@ export const decodeRow = <Row>(entity: EntityCore<Row>, source: PhysicalRow): Ro
   }
   // Every property present was validated by the column that declared it, so this is the row.
   return row as Row;
+};
+
+/**
+ * The sort values a cursor has to be minted from when the DECODED row cannot hold them. Exactly
+ * one kind is in that position: a `timestamptz` comes back through Bun's client as a JS `Date`,
+ * which is milliseconds, while the column and the `order by` are microseconds — so a cursor minted
+ * from the decoded row cuts the page at a position no row occupies, and every row inside the
+ * boundary millisecond is served on no page at all.
+ *
+ * Keyed by the sort key PATH, because that is what `cursorFor` looks a value up by. A key the
+ * statement did not carry a precision output for is simply absent, and the decoded `Date` is the
+ * position — which is the behaviour every other kind has.
+ */
+export const sortPrecision = <Row>(
+  entity: EntityCore<Row>,
+  orderBy: readonly SortKey[],
+  source: PhysicalRow | undefined,
+): ReadonlyMap<string, unknown> => {
+  const exact = new Map<string, unknown>();
+  if (source === undefined) return exact;
+  for (const entry of orderBy) {
+    if (kindOf(entity, entry.column) !== 'timestamptz') continue;
+    const micros = pgInstantMicros(source[seekAlias(physicalName(entity, entry.column))]);
+    if (micros !== undefined) exact.set(entry.column, micros);
+  }
+  return exact;
 };

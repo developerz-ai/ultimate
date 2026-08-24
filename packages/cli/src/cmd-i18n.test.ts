@@ -54,6 +54,12 @@ async function seedApp(): Promise<string> {
     join(root, 'packages/i18n/src/index.ts'),
     [
       "import { defineCatalogs } from '@ultimat3/i18n';",
+      // The import lines matter: `i18nIndex` writes them, and they are what says a locale is
+      // REGISTERED as opposed to merely present on disk — `X_CATALOG_UNREGISTERED` branches on it
+      // to tell "the call is in a module nothing imports" from "this locale is not in the map".
+      // A stub without them is a shape no app `x new` produced has ever had.
+      "import en from '../catalogs/en.json';",
+      "import es from '../catalogs/es.json';",
       "export const catalogs = defineCatalogs({ default: 'en', locales: { en, es } });",
       '',
     ].join('\n'),
@@ -193,6 +199,8 @@ describe('unit · x i18n check', () => {
     );
     expect(finding?.at).toBe('packages/i18n/catalogs/en.json');
     expect(finding?.cause).toContain('greeting');
+    // `en` IS named by the index this fixture writes, so the cause is the package's own — a call
+    // in a module nothing imports — and the fix stays the package's own "move the call" line.
     expect(finding?.fix).toContain('defineCatalogs');
     // en (5 keys) + es (2 keys), across two locales — every one a `⟦key⟧` on a rendered page.
     expect(result.summary).toBe(msg('cli.i18n.gaps', { missing: 7, locales: 2 }));
@@ -222,6 +230,9 @@ describe('unit · x i18n sync', () => {
       added: ['extra', 'farewell', 'nav.about'],
       total: 5,
       path: 'packages/i18n/catalogs/es.json',
+      // `syncI18nIndex` runs unconditionally on a sync, so a catalog that reached disk some other
+      // way — a hand-created file, a merge — is registered by the command its own `fix:` names.
+      registered: true,
       // A real merge copies real strings, so nothing here is waiting on a human.
       placeholders: [],
     });
@@ -354,6 +365,9 @@ describe('unit · x i18n add', () => {
       from: 'en',
       keys: 5,
       path: 'packages/i18n/catalogs/fr.json',
+      // The second half of adding a locale: the index names it, so `x verify --only i18n` is
+      // green immediately instead of red with a fix naming an edit already made (#F4).
+      registered: true,
     });
 
     // Written nested, sorted, with the `nav` branch rebuilt from its two dot keys.

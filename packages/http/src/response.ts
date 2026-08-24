@@ -1,7 +1,7 @@
 // Response constructors. Every response in the framework is built here so that
 // content types, charsets and cache semantics are decided once instead of per route.
 import { TIMEZONE_HEADER } from '@ultimat3/time';
-import { toProblem } from './error-map';
+import { toProblem } from './error-facts';
 
 type HeaderSource = { readonly headers?: HeadersInit | undefined } | undefined;
 

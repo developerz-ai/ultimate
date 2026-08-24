@@ -21,38 +21,33 @@
 // imports `node:fs/promises` in `pglite-branch.ts`; the browser target elides the specifier, so the
 // module EVALUATES and the call would throw. The claim is only that nothing constructs an
 // AsyncLocalStorage while the module is being evaluated — which is the defect that shipped.
+//
+// AND NOT THAT EVERY package naming the seam is here: a package declaring a `bin` is a PROGRAM, no
+// bundler has it as an entry, and it is excluded by `lib/browser-barrel-set.ts` — which states the
+// reason and is where the set is derived. `scripts/async-context-guard.ts` is what still covers a
+// program, statically and with no bundle at all.
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  browserBarrels,
+  CLIENT_BARRELS,
+  isProgramPackage,
+  seamPackages,
+} from './lib/browser-barrel-set';
 import { repoRoot, run } from './lib/run';
 
-/** A package's own source naming the seam, either half of it. Over-approximate on purpose: a
- * mention in a comment costs one 25ms build, a missed adoption costs the browser bundle. */
-const SEAM = /\basyncContext\b|\bAsyncLocalStorage\b/;
-
 /**
- * DERIVED, never typed out — `readFileSync` because `describe.each` needs the list at collection
- * time. A hand-copied set is the defect class this whole check exists to close: a fifth package
- * adopting the seam would simply not be bundled and the suite would stay green. Measured: 2,798
- * files read in 59ms, answering the same four the hand list named, so the derivation costs nothing.
+ * DERIVED, never typed out, and it lives in `lib/browser-barrel-set.ts` because `describe.each`
+ * needs the list at COLLECTION time and the derivation has its own tests. Two halves: what a
+ * package's own source names, minus what runs as a program — a `bin` has no bundler, and
+ * `@ultimat3/cli` reaching `bun:test` through the declared `cli → testing` edge is a build that
+ * cannot succeed and is not this file's finding when it does not.
  */
-function seamPackages(root: string): readonly string[] {
-  const found = new Set<string>();
-  for (const path of new Bun.Glob('packages/*/src/**/*.{ts,tsx}').scanSync({ cwd: root })) {
-    const posix = path.split('\\').join('/');
-    // A test is in nobody's bundle — the same exemption `scripts/async-context-guard.ts` makes.
-    if (posix.includes('.test.')) continue;
-    if (!SEAM.test(readFileSync(join(root, posix), 'utf8'))) continue;
-    const name = posix.split('/')[1];
-    if (name !== undefined) found.add(name);
-  }
-  return [...found].sort();
-}
-
-const BARRELS = seamPackages(repoRoot());
+const BARRELS = browserBarrels(repoRoot());
 
 /** A browser build is ~1.3MB for `ai` and `entity`; the build IS the test, so the budget moves. */
 const BUILD_TIMEOUT_MS = 120_000;
@@ -312,35 +307,9 @@ describe('the harness can fail', () => {
 });
 
 describe('the barrel set', () => {
-  /**
-   * The derivation's own non-vacuity, and the only line here a human ever edits. A FLOOR, not a
-   * pin: a new adopter arrives by derivation and needs no entry, so this list can only ever
-   * SHRINK — and it shrinks when a package genuinely stops naming the seam, which is a fact worth
-   * one deliberate deletion. Without it a `seamPackages` that returned nothing would register zero
-   * `describe.each` blocks and the file would report "0 fail".
-   */
-  test('is derived from source and still covers every package known to touch the seam', () => {
-    for (const name of ['ai', 'core', 'db', 'entity']) expect(BARRELS).toContain(name);
-  });
-
-  /**
-   * The derivation over a tree with a known answer, so "it happens to name the right four today"
-   * and "it would name a fifth tomorrow" are separate claims. Three at once: a package that adopts
-   * the seam enters, a package that does not stays out, and a `.test.ts` counts for nobody.
-   */
-  test('a package that adopts the seam tomorrow enters the set by existing', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'ultimate-seam-'));
-    await Bun.write(
-      join(root, 'packages/adopter/src/scope.ts'),
-      "import { asyncContext } from '@ultimat3/core';\n",
-    );
-    await Bun.write(join(root, 'packages/quiet/src/index.ts'), 'export const ok = 1;\n');
-    await Bun.write(
-      join(root, 'packages/tested/src/a.test.ts'),
-      'const store = new AsyncLocalStorage();\n',
-    );
-    expect(seamPackages(root)).toEqual(['adopter']);
-  });
+  // The derivation's own tests — the floor, the synthetic trees, and why a program is excluded —
+  // live beside it in `lib/browser-barrel-set.test.ts`. What is asserted here is what a barrel in
+  // the set must DO when it is bundled, which is the only half that needs a subprocess.
 
   test('a barrel is built ONCE per run, not once per assertion', async () => {
     const name = BARRELS[0] as string;
@@ -393,15 +362,26 @@ describe.each([...BARRELS])('a browser bundle of @ultimat3/%s', (name) => {
 });
 
 /**
- * The barrels an app's BROWSER bundle actually reaches, which is a different question from the seam
- * above and is why they are listed rather than derived: `@ultimat3/realtime`'s `"."` is its CLIENT
- * entry (`"./server"` is the other half, split 2026-08), `@ultimat3/render`'s `"."` is the same
- * shape (split 2026-08-22, the same `"./server"` spelling), `@ultimat3/pwa` runs in a service
- * worker and `@ultimat3/ui` is the design system. `packages/cli/src/island-bundle.ts:80` is the
- * build that consumes them — `Bun.build({ target: 'browser' })` over an app's island graph — so a
- * barrel that cannot be bundled is a `bun run build` failure in an app, not a theoretical one.
+ * The exclusion's non-vacuity, and the one thing the derivation's own tests cannot ask: a program
+ * that names the seam is left out of the set above, and this proves the build it was left out of
+ * genuinely cannot succeed — so the exclusion is hiding no green bundle. It reds the day a program
+ * becomes browser-bundlable, which is the day the exclusion is doing more than it has to.
+ *
+ * An empty set here passes trivially, and that is honest: no program names the seam, so the
+ * exclusion is inert and there is nothing to be non-vacuous about.
  */
-const CLIENT_BARRELS = ['realtime', 'render', 'pwa', 'ui'] as const;
+test(
+  'a program left out of the set could not have been bundled anyway',
+  async () => {
+    for (const name of seamPackages(repoRoot()).filter((dir) =>
+      isProgramPackage(repoRoot(), dir),
+    )) {
+      const built = await browserBuild(barrelPath(name));
+      expect(built.ok ? `@ultimat3/${name} bundled for the browser` : '').toBe('');
+    }
+  },
+  BUILD_TIMEOUT_MS,
+);
 
 describe.each([...CLIENT_BARRELS])('the client barrel @ultimat3/%s', (name) => {
   test(

@@ -168,6 +168,24 @@ these filters, this sort order. A tampered cursor, or one taken from another lis
 `X_CURSOR_INVALID` rather than a silent page one. The page size is deliberately outside the scope:
 asking for a bigger next page is the same query.
 
+The primary key is appended as the final sort key **in the last declared key's direction**, so
+`orderBy('createdAt', 'desc')` runs `created_at desc, id desc` — one direction throughout, which is
+what `indexes: [{ on: ['createdAt', 'id'], order: 'desc' }]` can cover and what lets the seek go out
+as the row comparison `(created_at, id) < ($1, $2)`. Write the mixed order yourself
+(`.orderBy('createdAt', 'desc').orderBy('id', 'asc')`) and you get it, spelled out as an or-chain.
+
+A **nullable** sort key orders rather than being refused: `asc nulls last`, `desc nulls first` —
+written into the statement rather than inherited from the server, and the same spelling
+`@ultimat3/query` uses. `posts.orderBy('publishedAt', 'desc')` on a nullable column pages correctly
+in both drivers; the cursor carries "this row had none" as a position of its own. The one ordering
+still refused is a nullable **primary-key** column, which no tiebreak can make total.
+
+A `timestamp()` sort key is carried at the column's own **microsecond** precision, not at the
+millisecond a JS `Date` holds: the read projects the instant as text beside the column and the seek
+binds all six digits. Without it a `desc` page over rows sharing one millisecond — which
+`defaultNow()` produces routinely — served some of them on no page at all. Cursors do not survive
+that change: one minted by an older version is `X_CURSOR_INVALID`.
+
 **A page is bounded whether or not the caller bounded it.** `DEFAULT_PAGE_SIZE` (50) covers the read
 nobody sized; `MAX_PAGE_SIZE` (10,000) covers the one they did — `limit(input.pageSize)` on a number
 that arrived over the wire is the same production incident with an argument in front of it. A page
@@ -211,6 +229,101 @@ learn or to drift.
 | Closing | `break`, `return` and a throw all stop the next statement; `await using` is the same guarantee for a handle kept in a variable, and `close()` is idempotent. One handle is one iteration — a second `for await` continues it rather than restarting the table |
 | Refusals | on the chain, not one batch later: a size that is not a whole number of rows between 1 and `MAX_PAGE_SIZE` (10,000), a `limit()` on the same chain (one number, two meanings), and an ordering no cursor can carry — a nullable sort column, which a result that fits in one batch would otherwise hide until the table grew |
 | Tenancy | the plan's, as everywhere else: an unscoped chain is `X_TENANCY_UNSCOPED` on its first batch |
+
+## Aggregates
+
+```ts
+import { database, entity, integer, money, timestamp, uuid } from '@ultimat3/entity';
+
+const payments = entity('payments', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    amount: money(),
+    installments: integer().default(1),
+    paidAt: timestamp(),
+  },
+});
+// No tenant column, because an estimate is the whole TABLE's: a tenant-scoped entity is refused.
+const events = entity('events', { columns: { id: uuid().primaryKey(), at: timestamp() } });
+const db = database({ payments, events });
+declare const orgId: string;
+declare const since: Date;
+
+await db.payments.where({ orgId }).andWhere('paidAt', 'gte', since).sum('amount');
+// { minor: 128400, currency: 'EUR' }
+
+await db.payments.where({ orgId }).avg('installments'); // '2.500000'
+await db.payments.where({ orgId }).max('paidAt');       // Date | null
+await db.events.approximateCount();                     // 12_400_000 | null
+```
+
+Over exactly the rows `count()` counts — the chain's filters, its tenancy and its soft-delete
+visibility, never its page.
+
+| | |
+|---|---|
+| Never a float | `sum`/`avg` answer decimal **text** whatever the column was (the sum of a million `integer` rows is not an `integer`, and `Number()` past 2^53 loses digits); money answers `MoneyValue` in integer minor units; `min`/`max` answer the row's own type |
+| Empty set | `null` in every function, which is what SQL answers — a `0` would claim rows were seen. `count()` is `0`, and that is the distinction |
+| `avg` | one fixed scale (6 digits), rounded half away from zero from the exact rational, so both drivers land on one number |
+| Refused | `min`/`max` on `text` (ordering is the database's collation there and JS code-unit order here); `avg` over money (every answer would be a silent rounding of a fraction of a minor unit — `sum()` and `count()` instead, dividing where the rounding is a decision); an amount covering more than one currency **or scale**; a money total past ±2^53 minor units |
+| `approximateCount()` | `reltuples` out of `pg_class`, constant time, because `count(*)` walks every visible row and no index can make it cheaper. The whole **table** — a filtered chain and every tenant-scoped entity are `X_APPROXIMATE_COUNT_FILTERED`, and `null` means the table has never been analysed |
+
+## Filtering inside a json() or arrayOf() column
+
+```ts
+import { arrayOf, database, entity, json, text, uuid } from '@ultimat3/entity';
+import { t } from '@ultimat3/schema';
+
+const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    tags: arrayOf(text({ max: 40 })),
+    settings: json(t.object({ notify: t.object({ email: t.boolean }) })),
+  },
+});
+const db = database({ posts });
+
+await db.posts.andWhere('tags', 'contains', ['release']).all();
+await db.posts.andWhere('tags', 'overlaps', ['release', 'beta']).all();
+await db.posts.andWhere('settings', 'contains', { notify: { email: true } }).all();
+await db.posts.andWhere('settings', 'has-key', 'notify').all();
+```
+
+`contains` is `@>`, `contained-by` is `<@`, `overlaps` is `&&`, `has-key` is the `?` operator,
+written schema-qualified as `operator(pg_catalog.?)` — the function form `jsonb_exists(col, $1)` is
+the same test and the planner will not match a GIN index to it. Their
+meaning is Postgres', to the letter, in both drivers — including that the array-contains-a-primitive
+exception applies at the **top level only** and to **primitives only**, and that `&&`'s empty
+operand overlaps nothing where `@>`'s is contained by everything.
+
+There is no jsonpath expression operator: `contains` already matches nested structure, and a path
+language inside the query language would be a second way to ask one question. `&&` on a `jsonb`
+column is refused, because Postgres has no such operator.
+
+Declare the index those operators need, or every one of them is a sequential scan:
+
+```ts
+import { arrayOf, entity, json, text, uuid } from '@ultimat3/entity';
+import { t } from '@ultimat3/schema';
+
+export const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    tags: arrayOf(text({ max: 40 })),
+    settings: json(t.object({ notify: t.object({ email: t.boolean }) })),
+  },
+  indexes: [{ on: ['tags'], using: 'gin' }, { on: ['settings'], using: 'gin' }],
+});
+```
+
+| | |
+|---|---|
+| Methods | `btree` (the default, and what every index without `using` is) and `gin`. Omitting it emits the statement it always emitted, and regenerates nothing |
+| Served by a GIN index | array `contains` / `contained-by` / `overlaps`, and jsonb `contains` / `has-key` — measured on the planner, not assumed |
+| Not served | jsonb `contained-by`: `<@` is not in Postgres' default `jsonb_ops` operator class, so it is a sequential scan whatever you declare |
+| Refused | a unique GIN and an ordered GIN, at `entity()` — Postgres has neither, and the refusal names the edit |
+| Naming | the method is part of what separates two indexes on the same columns, so a btree and a GIN on one column are two indexes with two names |
 
 ## Counting by a column
 
@@ -558,8 +671,14 @@ every incoming row must name the acting actor's tenant. Together, the key a coll
 can only hold a value that is this actor's.
 
 ```ts
+import { crossTenant } from '@ultimat3/entity';
+
+declare const expireInvites: () => Promise<void>;
+
 // admin surfaces, background reconciliation, support tooling — greppable, and never a boolean
-await crossTenant('nightly invite expiry runs for every org', async () => { … });
+await crossTenant('nightly invite expiry runs for every org', async () => {
+  await expireInvites();
+});
 ```
 
 The scope needs the `tenancy:cross` capability on the actor (`scopes: ['tenancy:cross']`), proven

@@ -199,16 +199,17 @@ That matters because the transcript **is** the request: a loop that keeps going 
 
 | Surface | `ctx.signal` fires when |
 |---|---|
-| HTTP | the **request deadline** passes — `http.requestTimeoutMs`, or a shorter value the caller asked for with the `x-request-timeout-ms` header ([`packages/http/src/deadline.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/http/src/deadline.ts)) |
+| HTTP | the **request deadline** passes, **or the caller goes away** — the two are joined with `AbortSignal.any` ([`packages/http/src/deadline.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/http/src/deadline.ts)). The deadline is `requestTimeoutMs` (30s), or the shorter budget the caller sent as `x-request-timeout-ms` |
 | Job / `agentJob()` | the attempt times out, or the job is cancelled — `x jobs cancel <id> --reason "…"`. The worker's own `ctx` is what `agentJob` forwards, so the abort reaches the turn loop |
 | Your own code | a signal you pass: `withChildContext({ signal }, () => supportAgent(input, { ctx }))` |
 
-**A closed browser tab does not abort an in-flight agent.** `@ultimat3/http` builds `ctx.signal` from a per-request timer and never links the incoming `Request.signal`, so a disconnect is invisible to the handler. Bound the run with a deadline instead:
+**A closed browser tab DOES abort an in-flight agent, `As of 2026-08`.** `pipeline.ts` hands the inbound `Request.signal` to `startDeadline`, which joins it with the timer's controller through `AbortSignal.any` — so a disconnect unwinds the turn loop instead of paying for every remaining turn. This page said the opposite until 12.0.0, and it was true when it was written: nothing in `@ultimat3/http` read the inbound signal, so a closed tab held its handler, its pool slot and its vendor connection for the whole budget.
 
 | Want | Do |
 |---|---|
-| every agent request bounded | set `http.requestTimeoutMs` in `app.config.ts` — `ctx.signal` fires there and `X_TIMEOUT` answers the socket either way |
-| this call bounded shorter | the client sends `x-request-timeout-ms: 30000`; a caller may only **shorten** the deadline, never lengthen it |
+| every agent request bounded | call `configureHttp({ requestTimeoutMs: 120_000 })` at module scope in a file under `apps/*/` — `ctx.signal` fires there and `X_TIMEOUT` answers the socket either way |
+| this call bounded shorter | send `x-request-timeout-ms` with the milliseconds you will wait; a caller may only **shorten** the deadline, never lengthen it, and anything under 1ms falls back to the server's own budget |
+| the next hop bounded by what is LEFT | nothing — both typed clients spread `traceHeaders()` before your own headers, and it sends the **remaining** budget as `x-request-timeout-ms`. A spent budget sends no header rather than `0`, because `0` reads one hop later as "the caller asked for nothing" |
 | a run the user can actually stop | run it as a job — `agentJob()` — and cancel it by id: `x jobs cancel <id> --reason "user cancelled"` |
 
 ## Progress (`onTurn`)

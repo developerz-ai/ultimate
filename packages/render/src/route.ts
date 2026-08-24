@@ -42,14 +42,28 @@ export interface RevalidateConfig {
   readonly ttl?: string | number;
 }
 
+/**
+ * What a route promises to stay under. **Two keys, and every one of them is PROJECTED** — a key
+ * here that `RouteDescriptor` does not carry is a number an author writes and nothing can ever
+ * compare against, which `type-pins.tsx` now makes a build error.
+ *
+ * `css`, `cls` and `tbt` were three such keys and are gone in 12.0.0. `registerRoute` flattens a
+ * budget to `budgetJs` + `budgetLcp`, and every reader downstream — `x verify`'s `budgets` step,
+ * `x.manifest.json`, `x routes`, the dev dashboard — reads only those two, so `budget: { cls: 0.1 }`
+ * was accepted, normalised, stored and ignored while the gate that exists to enforce budgets
+ * reported green. Deleted rather than wired for `PwaConfig.installPrompt`'s reason: the measuring
+ * half does not exist either, and a knob that fails silently in the permissive direction is the
+ * framework's most repeated defect.
+ */
 export interface RouteBudget {
   /** `'40kb'` — measured from the real bundle graph, not the source size. */
   readonly js?: string;
-  readonly css?: string;
-  /** Milliseconds, median of N headless runs. */
+  /**
+   * Milliseconds. PUBLISHED, not enforced: it reaches `x.manifest.json` and `x routes`, and no
+   * step of the gate compares it — nothing in the framework produces an `lcp` measurement, which
+   * `packages/cli/src/templates/route.ts` states at the one place an author would write one.
+   */
   readonly lcp?: number;
-  readonly cls?: number;
-  readonly tbt?: number;
 }
 
 /**

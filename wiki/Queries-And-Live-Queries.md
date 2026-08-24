@@ -177,9 +177,13 @@ every row from a memory source and no row from a driver. A cursor across a nulla
 the defect one page later: page two stopped at the first NULL, and the rows behind it were
 unreachable. `x queries describe <name> --json` prints the SQL that says so.
 
-A nullable sort key pages correctly here. `@ultimat3/entity`'s repo cursor refuses one outright at
-mint time instead ([Entities and migrations](Entities-And-Migrations)) — two answers to the same
-question, both explicit, neither silent.
+**Both pagination systems now answer this the same way, `As of 2026-08-24`.** `@ultimat3/entity`'s
+repo cursor used to refuse a nullable sort key outright rather than answer where a NULL sorts; it
+now writes the same two orderings down (`asc nulls last` / `desc nulls first`), carries the absence
+in the cursor and reaches it in the seek. One answer, per axiom 1. What entity still refuses is
+narrower and is not about ordering: a **nullable primary-key column** used as the tiebreak —
+`null = null` is unknown, so two rows sharing a sort value are indistinguishable to the seek and one
+of them is served twice or never ([Entities and migrations](Entities-And-Migrations)).
 
 ## Request memo (tier 1) dedupe
 

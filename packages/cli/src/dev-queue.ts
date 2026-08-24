@@ -8,6 +8,7 @@ import {
   type PostgresIdempotencyStore,
   postgresIdempotencyStore,
   resetIdempotency,
+  SQL_AUDIT_TABLE,
   SQL_IDEMPOTENCY_TABLE,
   setIdempotencyStore,
 } from '@ultimat3/action';
@@ -36,11 +37,18 @@ import {
   setJobDriver,
   setJobsFacade,
 } from '@ultimat3/jobs';
+import { attachReplica, type ReplicaEnv, replicaUrlFor } from './dev-replica';
 import type { DevServices } from './dev-services';
 import type { RuntimeOverrides } from './runtime-overrides';
 
 /** Both embedded and external clients boot lazily and close explicitly. */
 export type DevDbClient = PgliteClient | PostgresClient;
+
+/** The primary this boot owns, plus the standby pool it opened — `stop()` closes both. */
+interface StartedDb {
+  readonly client: DevDbClient;
+  readonly replica: PostgresClient | undefined;
+}
 
 export interface RunningQueue {
   readonly db: DevDbClient;
@@ -62,7 +70,20 @@ export interface RunningQueue {
   stop(): Promise<void>;
 }
 
-function startDb(services: DevServices): DevDbClient {
+/**
+ * The boot's own client, and the AMBIENT one, which are deliberately not always the same object.
+ *
+ * `setDbClient` receives the replicated pair when `DATABASE_REPLICA_URL` names a standby, so an
+ * app repository reading through `db()` inside an open `withReplicaReads` scope can be served by
+ * it. Everything this file does itself — `applySchema`, the `PgExecutor` behind the queue, the
+ * outbox, `ping()`, `close()` — keeps the PRIMARY: DDL, a claim and a migration are writes by
+ * definition, and routing one would be `25006` at best.
+ *
+ * Before this, `defaultClient()` was the only composer of a replicated pair in the framework and
+ * it runs only from `baseClient()` — the client an app installed NONE for. This line installs one,
+ * so `DATABASE_REPLICA_URL` was read by no booted process at all.
+ */
+function startDb(services: DevServices, env: ReplicaEnv = process.env): StartedDb {
   const binding = services.db;
   const client =
     binding.mode === 'embedded'
@@ -70,8 +91,9 @@ function startDb(services: DevServices): DevDbClient {
         // here is a second thing to keep right when the form changes.
         createPgliteClient({ dataDir: pgliteDataDir(binding.url) })
       : createPostgresClient({ url: binding.url });
-  setDbClient(client);
-  return client;
+  const attached = attachReplica(client, replicaUrlFor(binding, env));
+  setDbClient(attached.client);
+  return { client, replica: attached.replica };
 }
 
 /**
@@ -111,6 +133,13 @@ async function applySchema(client: DevDbClient): Promise<void> {
   for (const ddl of [
     SQL_JOBS_TABLE,
     SQL_IDEMPOTENCY_TABLE,
+    // The DDL only, and deliberately NO `setAuditSink` beside `setIdempotencyStore` below: there
+    // is no default audit sink on purpose, so `X_AUDIT_SINK_MISSING` keeps firing at boot for an
+    // app that declares `audit: true` and installs none. Applying the table without installing a
+    // sink is the same call `SQL_RATE_LIMIT_TABLE` already makes — one round trip at boot on a
+    // possibly-unused table, against `postgresAuditSink` failing its first write with
+    // `relation "x_audit" does not exist`.
+    SQL_AUDIT_TABLE,
     SQL_RATE_LIMIT_TABLE,
     SQL_AUTH_LIMIT_TABLES,
   ]) {
@@ -148,7 +177,11 @@ async function applySchema(client: DevDbClient): Promise<void> {
  * `startServices` runs before `loadApp`, so the store is in place before `registerAction`
  * evaluates a `scope: 'shared'` declaration against it.
  */
-async function startJobs(client: DevDbClient, overrides?: RuntimeOverrides): Promise<RunningQueue> {
+async function startJobs(
+  client: DevDbClient,
+  replica: PostgresClient | undefined,
+  overrides?: RuntimeOverrides,
+): Promise<RunningQueue> {
   await applySchema(client);
   const executor = pgExecutorFor(client);
   const driver = overrides?.jobs ?? createPgDriver({ executor });
@@ -171,7 +204,7 @@ async function startJobs(client: DevDbClient, overrides?: RuntimeOverrides): Pro
     outbox,
     events,
     idempotency,
-    stop: () => releaseQueue(client, driver),
+    stop: () => releaseQueue(client, driver, replica),
   };
 }
 
@@ -184,7 +217,11 @@ async function startJobs(client: DevDbClient, overrides?: RuntimeOverrides): Pro
  * The facade goes with the driver for the same reason: an enqueue routed through a store bound to
  * a closed client is a staged row nothing will ever publish.
  */
-async function releaseQueue(db: DevDbClient, jobs: JobDriver | undefined): Promise<void> {
+async function releaseQueue(
+  db: DevDbClient,
+  jobs: JobDriver | undefined,
+  replica?: PostgresClient,
+): Promise<void> {
   // The idempotency store goes back to the memory default for the same reason the facade does: it
   // holds this client, and the next command in this process would reserve keys over a closed one.
   resetIdempotency();
@@ -193,6 +230,9 @@ async function releaseQueue(db: DevDbClient, jobs: JobDriver | undefined): Promi
   setDbClient(undefined);
   await jobs?.close?.();
   await db.close();
+  // After the primary, and never instead of it: a standby pool left open is a connection slot on
+  // the other server that nothing in this process can reach again.
+  await replica?.close();
 }
 
 /**
@@ -205,18 +245,18 @@ export async function startQueue(
   services: DevServices,
   overrides?: RuntimeOverrides,
 ): Promise<RunningQueue> {
-  const db = startDb(services);
+  const { client: db, replica } = startDb(services);
   try {
     // Pay the Postgres boot here, so the first request is not the slow one and a broken database
     // fails at boot rather than on some later query.
     await db.ping();
-    return await startJobs(db, overrides);
+    return await startJobs(db, replica, overrides);
   } catch (error) {
     // `db.ping()` or `startJobs` is where a broken database is supposed to fail. Without this,
     // the caller exits holding the PGlite lock and the ambient accessors, and nothing is left to
     // release them. The rejection that started the unwind is the one worth reporting.
     try {
-      await releaseQueue(db, undefined);
+      await releaseQueue(db, undefined, replica);
     } catch {
       // Cleanup noise never replaces the boot failure.
     }

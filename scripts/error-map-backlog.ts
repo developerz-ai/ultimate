@@ -203,6 +203,15 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
   ],
   // tier 3 — the worker's own vocabulary. A job runs with no socket attached; `ROLE=worker` opens
   // no HTTP port at all, so none of these is ever a response.
+  //
+  // `X_JOB_CLAIM_QUEUES_EMPTY` is here on the narrower ground the group's exception needs, because
+  // `X_JOB_ROW_STATUS_UNKNOWN` earned a 500 row by being raised "wherever a row is READ", which
+  // includes the admin dashboard. A CLAIM is not a read: every shipped caller of `driver.claim()`
+  // is off-socket — `worker.ts`'s pass, `x jobs drain` (`packages/cli/src/jobs-drain.ts`, which
+  // returns before claiming when it has no candidates) and `@ultimat3/testing`'s fixture — and all
+  // three pass the queue by name, so no shipped path can even produce the empty list. Only an
+  // embedder calling the driver directly reaches it. Delete this line and add the row the day a
+  // request claims work.
   jobs: [
     'X_BACKFILL_APPLIED',
     'X_BACKFILL_ENVIRONMENT',
@@ -213,6 +222,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_BACKFILL_UNKNOWN',
     'X_DRIVER_UNAVAILABLE',
     'X_IDEMPOTENCY_REQUIRED',
+    'X_JOB_CLAIM_QUEUES_EMPTY',
     'X_JOB_CONCURRENCY_UNENFORCEABLE',
     'X_JOB_DUPLICATE',
     'X_JOB_LEASE_LOST',

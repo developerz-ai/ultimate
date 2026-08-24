@@ -106,3 +106,40 @@ describe('toWireSchema publishes only what this server enforces', () => {
     expect(wire.properties?.['nested']?.properties?.['n']?.type).toBe('number');
   });
 });
+
+/**
+ * The same rule one level down: publishing a keyword this server enforces is not enough if the two
+ * enforcers count in different UNITS. `minLength`/`maxLength` are minted by `@ultimat3/schema`'s
+ * `charCount` — code points, which is what JSON Schema defines them over and what the action's own
+ * re-parse applies — and `validate-args.ts` read `input.length`, which is UTF-16 code units.
+ *
+ * Both directions were live, and the second is the worse one: it refuses a call the tool would have
+ * served, quoting a bound the agent obeyed, with no re-parse behind it to disagree.
+ */
+describe('the published bound and the enforced bound count the same unit', () => {
+  const verdictsAgree = (schema: ReturnType<typeof t.string.min>, value: string): void => {
+    const wire = toWireSchema(t.object({ title: schema }));
+    const mcp = validateArgs(wire, { title: value });
+    const parsed = t.object({ title: schema })['~standard'].validate({ title: value });
+    const schemaOk = !(parsed instanceof Promise) && parsed.issues === undefined;
+    expect(mcp.ok).toBe(schemaOk);
+  };
+
+  test('an astral string at the exact bound is not a silent pass', () => {
+    // '👍a' is 3 UTF-16 code units and 2 code points, so `.length` reads it as satisfying min(3)
+    // while the action's re-parse answers X_INPUT_INVALID — the silent pass this file exists for.
+    verdictsAgree(t.string.min(3).max(3), '👍a');
+  });
+
+  test('an astral string inside the bound is not refused on a bound the agent obeyed', () => {
+    // '👍👍' is 4 code units and 2 code points: max(3) admits it and `.length` refused it, with
+    // nothing downstream to correct the answer.
+    verdictsAgree(t.string.min(1).max(3), '👍👍');
+  });
+
+  test('and an ASCII string still decides the same way it always did', () => {
+    verdictsAgree(t.string.min(3).max(3), 'abc');
+    verdictsAgree(t.string.min(3).max(3), 'ab');
+    verdictsAgree(t.string.min(1).max(3), 'abcd');
+  });
+});

@@ -9,10 +9,11 @@ import { createRecordingClient, type RecordingClient, setDbClient } from '@ultim
 import { MAX_BIND_PARAMETERS } from './bulk-write';
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
 import { allColumns } from './pg-row';
 import { clearRegistry } from './registry';
-import { memoryRepo, type UpsertArgs } from './repo';
+import type { UpsertArgs } from './repo';
 
 const orgs = entity('pg_bulk_orgs', {
   columns: { id: uuid().primaryKey(), slug: text({ max: 40 }).unique() },

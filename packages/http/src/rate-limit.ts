@@ -8,6 +8,7 @@ import {
   rateLimitInvalid,
   rateLimitNotShared,
   rateLimitScopeUnset,
+  tenantBucketUnknown,
 } from './rate-limit-errors';
 
 /**
@@ -43,6 +44,19 @@ export interface RateLimitConfig {
   readonly buckets: Readonly<Record<string, Bucket>>;
   readonly defaultBucket: string;
   /**
+   * The bucket a whole TENANT spends, beside — never instead of — the caller's own, or `null` for
+   * an app with no per-tenant allowance.
+   *
+   * `null` by default because no number is defensible without being told: one tenant is a person
+   * and the next is five thousand seats, so a framework-chosen allowance would throttle a real
+   * deployment on the day it installed the framework (axiom 8). It is still the one knob that
+   * answers the failure it exists for — `rateLimitKey` was `actor > org > ip`, EXCLUSIVE, so an
+   * authenticated request never touched an org bucket at all: a tenant with 8,000 seats whose
+   * integration entered a retry loop spent 8,000 per-actor bursts against one shared pool, every
+   * one of them under its own limit, and nothing an operator could set would have refused it.
+   */
+  readonly tenantBucket: string | null;
+  /**
    * What this deployment requires of the store. `'shared'` says these numbers are the whole
    * fleet's allowance, and a per-process store then refuses to boot — because N replicas each
    * holding their own counters enforce N × every number here, silently and only in production.
@@ -61,6 +75,7 @@ export interface RateLimitConfig {
 export const DEFAULT_RATE_LIMIT: Omit<RateLimitConfig, 'scope'> = {
   enabled: true,
   defaultBucket: 'default',
+  tenantBucket: null,
   buckets: {
     default: { capacity: 120, refillPerSecond: 2 },
     // Login/signup style endpoints: slow, no burst.
@@ -78,6 +93,12 @@ export const resolveRateLimitConfig = (
   input: Partial<RateLimitConfig> | undefined,
 ): RateLimitConfig => {
   const merged = { ...DEFAULT_RATE_LIMIT, ...input };
+  // Here and not at the first request, for `assertRateLimitScope`'s reason: an unknown name falls
+  // through `bucketFor` to `default`, so a tenant allowance somebody wrote as 5,000 would silently
+  // be the 120-burst read bucket — looser than what the author declared, and invisible.
+  if (merged.tenantBucket !== null && !Object.hasOwn(merged.buckets, merged.tenantBucket)) {
+    throw tenantBucketUnknown(merged.tenantBucket, Object.keys(merged.buckets));
+  }
   if (input?.scope !== undefined) return { ...merged, scope: input.scope };
   if (!merged.enabled) return { ...merged, scope: 'process' };
   throw rateLimitScopeUnset();
@@ -275,18 +296,53 @@ export interface RateLimitKeyParts {
 }
 
 /**
- * Key precedence: actor > org > ip. An authenticated actor gets its own bucket so
- * one noisy user cannot exhaust a whole tenant's allowance, and an anonymous
- * request falls back to the connection address.
+ * The namespace the tenant allowance is counted in. Deliberately NOT the route name the caller's
+ * own key carries: a per-route tenant bucket would give one org its whole allowance once per
+ * route, which is not a tenant cap at all — it is the same number multiplied by the route table.
  */
-export const rateLimitKey = (parts: RateLimitKeyParts): string => {
+export const TENANT_SCOPE = 'tenant';
+
+/** One key and the bucket it is spent from. A request spends a LIST of these, never one. */
+export interface RateLimitSpend {
+  readonly key: string;
+  /** A name resolved against `config.rateLimit.buckets` by the limiter, never a `Bucket`. */
+  readonly bucket: string;
+}
+
+/**
+ * Every bucket one request spends, in the order it spends them.
+ *
+ * The CALLER's key first — actor > org > ip, so an authenticated actor gets its own bucket and an
+ * anonymous request falls back to the connection address — and then, when the app declared a
+ * tenant bucket and this caller has an org, that org's own key.
+ *
+ * The second entry is the finding this function was rewritten for. The precedence used to be
+ * EXCLUSIVE: `orgId` was consulted only when `actorId` was null, which `actorView` makes
+ * unreachable for every authenticated request, so no request ever touched an org bucket. A tenant
+ * with 8,000 seats therefore had 8,000 × the per-actor burst against one shared connection pool,
+ * with every individual bucket comfortably inside its limit.
+ *
+ * The caller's key is spent FIRST so a single hostile actor is refused by its own allowance before
+ * it can spend its tenant's — and, because the stage stops at the first refusal, a throttled
+ * caller costs the tenant nothing.
+ */
+export const rateLimitSpends = (
+  parts: RateLimitKeyParts,
+  buckets: { readonly route: string; readonly tenant: string | null },
+): readonly RateLimitSpend[] => {
   const subject =
     parts.actorId !== null
       ? `actor:${parts.actorId}`
       : parts.orgId !== null
         ? `org:${parts.orgId}`
         : `ip:${parts.ip ?? 'unknown'}`;
-  return `${parts.routeName}|${subject}`;
+  const spends: RateLimitSpend[] = [
+    { key: `${parts.routeName}|${subject}`, bucket: buckets.route },
+  ];
+  if (buckets.tenant !== null && parts.orgId !== null) {
+    spends.push({ key: `${TENANT_SCOPE}|org:${parts.orgId}`, bucket: buckets.tenant });
+  }
+  return spends;
 };
 
 export interface RateLimiter {

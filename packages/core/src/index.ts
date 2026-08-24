@@ -509,6 +509,11 @@ export {
   registerPrimitiveRegistrar,
   resetPrimitiveRegistrars,
 } from './registrar';
+export {
+  budgetHeaders,
+  REQUEST_TIMEOUT_HEADER,
+  remainingBudgetMs,
+} from './request-budget';
 export type { Err, Ok, Result } from './result';
 export { err, isErr, isOk, map, mapErr, ok, tryCatch, unwrap, unwrapOr } from './result';
 export type { RetryDecision, RetryDeps, RetryPolicy, RetryStopReason } from './retry';

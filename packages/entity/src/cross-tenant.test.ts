@@ -11,8 +11,8 @@ import {
 import { text, uuid } from './columns';
 import { CROSS_TENANT_SCOPE, crossTenant, crossTenantReason } from './cross-tenant';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 
 const posts = entity('cross_tenant_test_posts', {
   columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), title: text() },

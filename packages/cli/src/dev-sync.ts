@@ -16,6 +16,7 @@ import {
 } from '@ultimat3/realtime/server';
 import type { StartRolesOptions } from './dev-roles';
 import { neighbouringPort, PORT_RANGE } from './flag-number';
+import { portFree } from './port-probe';
 import { syncAuthenticator } from './sync-authenticator';
 
 /**
@@ -33,6 +34,46 @@ class SyncPortUnavailableError extends UltimateError {
       meta: { port: input.port },
     });
   }
+}
+
+/**
+ * The neighbour was already listening. `X_PORT_IN_USE` is this package's own and is exactly what
+ * `x doctor` reports for the same condition, so one taken port has one name wherever it is found.
+ *
+ * What shipped instead: `listenSyncNode`'s `Bun.serve` threw, `startSync` re-threw, and the
+ * dispatcher rendered the caught value into `X_CLI_UNEXPECTED`'s cause —
+ * `cause: Error: Failed to start server. Is port 4000 in use?`, `fix: x doctor --json`, from a
+ * command that had just printed `web listening on 3999`. Three defects in one output: an
+ * unstable code, a caught value rendered into a refusal, and a `fix:` that answered
+ * "no findings — environment is shippable" when run (#F5).
+ */
+class SyncPortInUseError extends UltimateError {
+  constructor(input: { port: number; webPort: number }) {
+    super({
+      code: 'X_PORT_IN_USE',
+      cause: `the sync role binds PORT + 1, so \`x dev --port ${input.webPort}\` needs port ${input.port} and something is already listening on it`,
+      fix: `x dev --port ${neighbouringPort(input.webPort)}   # or free port ${input.port}: lsof -nP -iTCP:${input.port} -sTCP:LISTEN`,
+      meta: { port: input.port, webPort: input.webPort },
+    });
+  }
+}
+
+/**
+ * What a failed `listenSyncNode` really was, ASKED rather than read off the caught value: the
+ * thrown thing is `Bun.serve`'s own English and interpolating it into a `cause:` is what
+ * `scripts/catch-render.ts` refuses. `undefined` means "not a taken port" and the original value
+ * is re-thrown untouched — a catch-all that renamed every listener failure would be worse than
+ * the bare one it replaced.
+ *
+ * `probe` is injected so a test can be exactly "the port was taken" without racing a real socket.
+ */
+export async function syncBindRefusal(
+  webPort: number,
+  port: number,
+  probe: (value: number) => Promise<boolean> = portFree,
+): Promise<UltimateError | undefined> {
+  if (await probe(port)) return undefined;
+  return new SyncPortInUseError({ port, webPort });
 }
 
 /**
@@ -131,8 +172,9 @@ export async function startSync(options: StartRolesOptions): Promise<RunningSync
     }),
   });
   await node.start();
+  const port = syncPortFor(options.port);
   try {
-    const listener = listenSyncNode(node, { port: syncPortFor(options.port) });
+    const listener = listenSyncNode(node, { port });
     return {
       url: listener.url,
       stop: async () => {
@@ -142,6 +184,8 @@ export async function startSync(options: StartRolesOptions): Promise<RunningSync
     };
   } catch (error) {
     await node.stop();
+    const refusal = await syncBindRefusal(options.port, port);
+    if (refusal !== undefined) throw refusal;
     throw error;
   }
 }

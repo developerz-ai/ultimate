@@ -7,6 +7,7 @@
 
 import { noopPurgeDriver } from '@ultimat3/cache';
 import { resetLifecycle } from '@ultimat3/core';
+import { resetHttpConfig } from '@ultimat3/http';
 import {
   createMemoryDriver,
   createMemoryEventBus,
@@ -64,4 +65,10 @@ export function resetDevRolesState(): void {
   resetJobsFacade();
   resetTasks();
   resetLifecycle();
+  // `configureHttp()` is a process-global registration made at MODULE scope, so one file that
+  // loads an app leaves that app's CORS origins, body limit and buckets standing for every later
+  // file in the same `bun test` process — and a scaffolded app now ships such a module
+  // (`apps/web/app/http.ts`). Nothing is broken today; this is the same rule the four resets above
+  // already follow, applied to the fifth global before it is the one that costs an afternoon.
+  resetHttpConfig();
 }

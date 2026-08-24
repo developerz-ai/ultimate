@@ -89,13 +89,16 @@ describe('unit · this tree', () => {
   });
 
   /**
-   * The allowance list's own hygiene, and the half that makes the assertion above mean something:
-   * every recorded exception still matches a citation on the page it names, so the four `http.*`
-   * rows cannot outlive the defect they record.
+   * The allowance list's own hygiene: every recorded exception still matches a citation on the page
+   * it names, so a row cannot outlive the defect it records.
+   *
+   * The list is EMPTY as of 12.0.0 and that is the goal state, not a gap in the test — the four
+   * `http.*` rows recorded one defect (`AppConfig` declared no `http` member) and 12.0.0 closed it
+   * with `configureHttp()`. So this may not assert a non-zero length: the assertion that carries the
+   * weight is `staleAllowances`, which is what refuses a row nothing earns, at any list size.
    */
   test('every recorded exception is still earned by the page it names', async () => {
     expect((await unknownConfigKeys(repoRoot())).staleAllowances).toEqual([]);
-    expect(DOC_CONFIG_KEY_ALLOWANCES.length).toBeGreaterThan(0);
     for (const one of DOC_CONFIG_KEY_ALLOWANCES) {
       expect(one.why.length).toBeGreaterThan(40);
     }

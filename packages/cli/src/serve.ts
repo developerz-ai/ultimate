@@ -28,6 +28,7 @@ import { appManifest } from './app-manifest';
 import { assetRoutes } from './dev-assets';
 import { startQueue } from './dev-queue';
 import { appRoutes } from './dev-render';
+import { replicaOverrides } from './dev-replica';
 import type { RunningRoles, WebBinding } from './dev-roles';
 import { startRoles } from './dev-roles';
 import type { RunningServices } from './dev-runtime';
@@ -317,6 +318,7 @@ async function bootRoles(boot: {
   // fixed 9090 would fail the next suite to boot beside it. An environment that names the port
   // still wins — that is the deploy talking.
   const metricsPort = metricsPortFor(options.env, port, options.metricsPort);
+  const replicaOverride = replicaOverrides(options.runtime, runtime.services.db, options.env);
   const running = await startRoles({
     roles: [role],
     port,
@@ -332,7 +334,11 @@ async function bootRoles(boot: {
     // process and `x dev` cannot answer a browser differently.
     root: options.root,
     http: CONTAINER_BINDING,
-    ...(options.runtime === undefined ? {} : { overrides: options.runtime }),
+    // The read-replica scope rides in FRONT of whatever the host supplied, or the host's own value
+    // passes through untouched. `DATABASE_REPLICA_URL` was read by no booted process before this:
+    // `defaultClient()` is the one composer of a replicated pair and it runs only when an app
+    // installed no client, which no framework boot leaves true (`dev-queue.ts`).
+    ...(replicaOverride === undefined ? {} : { overrides: replicaOverride }),
   });
   acquired.push(() => running.stop());
   return {

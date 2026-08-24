@@ -3,6 +3,7 @@
 // which rows are in scope, what the total sort order is, how big a page is. A guard only one
 // driver applies is worse than none: the test passes and production leaks another tenant's rows.
 
+import { assertSeekable } from './cursor';
 import type { EntityCore } from './entity';
 import { EntityError, invariantViolated, patchEmpty, writeUnfiltered } from './errors';
 import type { FindManyArgs, RepoOptions } from './repo';
@@ -49,19 +50,32 @@ export const singleKeyOf = <Row>(entity: EntityCore<Row>, operation: string): st
  * The primary key is always the final key — a cursor needs a total order, or two rows with the same
  * sort value straddle a page boundary.
  *
+ * The tiebreak takes the LAST DECLARED key's direction rather than an unconditional `asc`, and
+ * that is not a preference. `IndexInit.order` is ONE direction for a whole index, so
+ * `orderBy('createdAt', 'desc')` used to run `created_at desc, id asc` — an order this framework's
+ * own DSL cannot declare an index for, whatever the author wrote. It also decided the seek's
+ * shape: a mixed order has no row comparison, so the seek fell to the or-chain, which measured on
+ * Postgres 16 as a BitmapOr plus a Sort where `(created_at, id) < ($1, $2)` is an Index Only Scan.
+ * A caller who wants the mixed order still writes it — naming the key itself is what turns the
+ * append off.
+ *
  * Exported because a chain can be judged before it runs: `inBatches()` refuses an ordering that
- * cannot carry a cursor, and it has to be looking at the order the driver will send rather than at
- * the one the caller typed.
+ * cannot carry a cursor — an undeclared column, or a nullable key in the TIEBREAK, never an
+ * ordinary nullable one — and it has to be looking at the order the driver will send rather than
+ * at the one the caller typed.
  */
 export const totalOrder = <Row>(
   entity: EntityCore<Row>,
   ordered: readonly SortKey[],
-): readonly SortKey[] => [
-  ...ordered,
-  ...entity.$primaryKey
-    .filter((property) => !ordered.some((entry) => entry.column === property))
-    .map((property) => ({ column: property, direction: 'asc' as const })),
-];
+): readonly SortKey[] => {
+  const direction = ordered.at(-1)?.direction ?? 'asc';
+  return [
+    ...ordered,
+    ...entity.$primaryKey
+      .filter((property) => !ordered.some((entry) => entry.column === property))
+      .map((property) => ({ column: property, direction })),
+  ];
+};
 
 /**
  * What a page size has to be before a statement carries it: rows, whole, at least one and at most
@@ -83,8 +97,20 @@ export const assertPageSize = (entityName: string, rows: number): void => {
   });
 };
 
+/**
+ * Whether an ordering can carry a page position is a property of the ORDER, so it is decided here
+ * — where the order the driver will send is first known — and not in `cursorFor`, which runs only
+ * when a page found one row past its limit. That is what made the refusal depend on the table:
+ * `orderBy('publishedAt', 'desc').limit(20)` over a nullable column was green on fifteen seeded
+ * rows for as long as the test suite existed and `X_INVARIANT_VIOLATED` on the first read past
+ * twenty in production. `assertBatchable` has always judged `inBatches()` this way.
+ *
+ * `cursorFor` and `seekFrom` still call it: they are reached from a driver directly.
+ */
 export const planFor = <Row>(entity: EntityCore<Row>, args: FindManyArgs): QueryPlan => {
   if (args.limit !== undefined) assertPageSize(entity.$name, args.limit);
+  const orderBy = totalOrder(entity, args.orderBy ?? []);
+  assertSeekable(entity, orderBy);
   const scoped =
     args.orgId === undefined || entity.$tenantColumn === null
       ? []
@@ -92,7 +118,7 @@ export const planFor = <Row>(entity: EntityCore<Row>, args: FindManyArgs): Query
   return {
     entity: entity.$name,
     where: [...(args.where ?? []), ...scoped],
-    orderBy: totalOrder(entity, args.orderBy ?? []),
+    orderBy,
     limit: args.limit ?? DEFAULT_PAGE_SIZE,
     ...(args.cursor === undefined || args.cursor === null ? {} : { cursor: args.cursor }),
     ...(args.select === undefined ? {} : { select: args.select }),
@@ -109,7 +135,42 @@ export const readPlan = <Row>(
   entity: EntityCore<Row>,
   args: FindManyArgs,
   operation: string,
-): QueryPlan => scopedPlan(entity.$name, entity.$tenantColumn, operation, planFor(entity, args));
+): QueryPlan => {
+  const plan = planFor(entity, args);
+  // BEFORE tenancy, deliberately. Applied after, a tenant-scoped entity had no reachable call at
+  // all: unscoped it was `X_TENANCY_UNSCOPED` and scoped it was the refusal below, so the method
+  // was declared and unusable — the defect class this repo keeps re-shipping. One refusal, and it
+  // names which of the two situations the caller is in.
+  if (operation === 'approximateCount') assertEstimable(entity, plan);
+  return scopedPlan(entity.$name, entity.$tenantColumn, operation, plan);
+};
+
+/**
+ * An estimate is the TABLE's. `reltuples` knows nothing about a predicate, so a filtered chain
+ * asking for one would be answered a different question from the one it asked — and a caller
+ * reading `posts.where({ orgId }).approximateCount()` as "roughly how many of mine" would be
+ * handed every other tenant's rows too, which is the reading that matters.
+ *
+ * A TENANT-SCOPED entity is therefore refused outright, filters or none: its whole-table estimate
+ * is a number about every tenant, and a per-tenant row count is not a thing the planner holds.
+ * That refusal is not a limitation of this method, it is what the method means.
+ */
+const assertEstimable = <Row>(entity: EntityCore<Row>, plan: QueryPlan): void => {
+  if (entity.$tenantColumn !== null) {
+    throw new EntityError({
+      code: 'X_APPROXIMATE_COUNT_FILTERED',
+      cause: `${entity.$name}.approximateCount() is a whole-TABLE estimate and ${entity.$name} is scoped by ${entity.$tenantColumn} — the planner holds one number for every tenant together`,
+      fix: `${entity.$name}.count()   # the exact answer, scoped to the acting actor's tenant as every other read is`,
+    });
+  }
+  if (plan.where.length === 0) return;
+  const named = plan.where.map((each) => each.column).join(', ');
+  throw new EntityError({
+    code: 'X_APPROXIMATE_COUNT_FILTERED',
+    cause: `${entity.$name}.approximateCount() carries ${plan.where.length} predicate(s) (${named}) — the planner estimates the TABLE and knows nothing about them`,
+    fix: `${entity.$name}.count()   # the exact answer for a filtered chain; approximateCount() answers for the whole table only`,
+  });
+};
 
 /**
  * The plan for an id-addressed write. A write is a query too: without the same guard,

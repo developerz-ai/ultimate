@@ -15,9 +15,7 @@ import {
 const cursor = {
   qid: 'liveFeed:abcd1234',
   lsn: '0000000000000009',
-  digest: 'deadbeef',
   ids: ['p1', 'p2'],
-  count: 2,
   at: 1_700_000_000_000,
 };
 
@@ -104,6 +102,19 @@ describe('sync-protocol', () => {
     expect(() => decode(stale)).toThrow(ProtocolVersionError);
   });
 
+  /**
+   * **2, not 1** — moved when `cursor.digest` and `cursor.count` were deleted (2026-08-24). The
+   * reason is the DECODER, not the deletion: `hello.resume` came out at the same version because
+   * `list()` answers `[]` for an absent field, while `cursor()` reads through `str`/`num`, which
+   * THROW. So a snapshot cursor this node writes is unreadable by a client one deploy behind, and
+   * a subscribe cursor a new client writes is unreadable by a node one deploy behind — a frame
+   * unreadable in both directions, which is the one thing the version guards. A change that is
+   * genuinely additive or drops a field read through `list()` still must not move this number.
+   */
+  test('the wire is at version 2, and the number is not moved for novelty', () => {
+    expect(PROTOCOL_VERSION).toBe(2);
+  });
+
   test('a malformed frame is rejected with the same code', () => {
     expect(() => decode(JSON.stringify({ type: 'patch', v: PROTOCOL_VERSION }))).toThrow(
       ProtocolVersionError,
@@ -159,6 +170,38 @@ describe('sync-protocol', () => {
     expect('resume' in decoded).toBe(false);
   });
 
+  /**
+   * `cursor.digest` and `cursor.count` were written on every snapshot and read by nothing. The
+   * whitelist is what makes an EXTRA field harmless, and this is the test that says so — a
+   * `digest:` put back into `cursor()` fails on `'digest' in target.cursor`.
+   *
+   * It is deliberately written at the CURRENT version, not at the previous one: `str`/`num` throw
+   * on an absent field where `list` answers `[]`, so a new node's snapshot cursor is unreadable by
+   * a client one deploy behind. That is what moved `PROTOCOL_VERSION` — see the version test above.
+   */
+  test('a cursor carrying the removed digest and count decodes, and drops both', () => {
+    const legacy = JSON.stringify({
+      ...fixtures.subscribe,
+      target: {
+        kind: 'query',
+        qid: 'liveFeed',
+        input: { orgId: 'o1' },
+        cursor: { ...cursor, digest: 'deadbeef', count: 2 },
+      },
+    });
+    const decoded = decode(legacy);
+    expect(decoded).toEqual(fixtures.subscribe);
+    const target = (decoded as Extract<Frame, { type: 'subscribe' }>).target;
+    expect(target.kind).toBe('query');
+    if (target.kind !== 'query') expect.unreachable();
+    expect(target.cursor === null ? [] : Object.keys(target.cursor).sort()).toEqual([
+      'at',
+      'ids',
+      'lsn',
+      'qid',
+    ]);
+  });
+
   test('a non-numeric presence total is a malformed frame, never a count a UI would render', () => {
     expect(() => decode(JSON.stringify({ ...fixtures.presence, total: 'lots' }))).toThrow(
       ProtocolVersionError,
@@ -182,9 +225,7 @@ describe('the decoder refuses what it cannot afford', () => {
   const cursorOf = (ids: readonly string[]): Record<string, unknown> => ({
     qid: 'q1',
     lsn: '1',
-    digest: 'd',
     ids,
-    count: ids.length,
     at: 0,
   });
 

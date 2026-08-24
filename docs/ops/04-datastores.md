@@ -66,6 +66,26 @@ connections at full saturation, from one app. At `max_connections: 450` that is 
 before the shared server is the constraint. **Do the multiplication before you raise an HPA
 ceiling**, not after: an autoscaler that scales `web` to 30 asks for 600 connections on its own.
 
+### Read replicas
+
+`As of 2026-08-24`. A capacity tier, and it must never become a new way for the app to be down.
+
+| Step | Operator's half |
+|---|---|
+| the pool | `DATABASE_REPLICA_URL` on every role that reads. Unset is one pool and the client is byte-identical to what it always was |
+| the pool size | **the replica inherits the role's profile and `DATABASE_POOL_MAX`.** Redo the arithmetic above against **two** servers — a 3 `web` / 2 `sync` fleet reserves `60 + 20` on the primary *and* the same on the standby, so `max_connections` is a number each host needs |
+| the scope | `withReplicaReads(fn)` in the app. Nothing routes without it, so setting the URL alone changes no traffic |
+
+| Failure | What happens |
+|---|---|
+| the standby refuses a statement (`25006`) | re-run on the primary — exactly-once, because only plain reads are routed there and a refused statement never executed. Latency, never an error |
+| the standby is down | the first three reads pay a doubled round trip, then the breaker parks it for **10 seconds** and every read goes to the primary. It re-tries after the cooldown |
+| the URL points at a **writable** node | the safety net is gone. `25006` is what catches a statement the classifier could not vouch for; against a writable node a misroute becomes a write on the wrong server, silently. Point it at a standby or do not set it |
+| replication lag | not a number this framework reads. Read-your-writes is closed by SCOPE (one write pins the rest of the scope to the primary), not by waiting on an LSN — so a read in a *different* scope can still see a lagging standby |
+
+Watch `client.stats` (`replica`, `primary`, `fallbacks`, `parked`) and the `db.replica_fallback`
+warning. A non-zero `fallbacks` that is not a deploy is the standby telling you something.
+
 ### Pooling, and the trap under it
 
 A transaction-mode pooler hands a client a *different backend per transaction*. If the driver uses

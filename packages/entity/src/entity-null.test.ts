@@ -6,9 +6,9 @@
 import { afterAll, expect, test } from 'bun:test';
 import { enumerated, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { tableFor } from './query';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 
 const posts = entity('entity_null_posts', {
   columns: {

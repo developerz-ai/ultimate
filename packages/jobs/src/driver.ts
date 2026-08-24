@@ -9,6 +9,7 @@
 // `setJobDriver(other)` and ZERO job-code change — and that is what the interface buys.
 
 import type { BackfillLedger } from './backfill-ledger';
+import { ClaimQueuesEmptyError } from './errors';
 import type { LeaseStore } from './leases';
 import type { StepStore } from './steps';
 
@@ -104,6 +105,11 @@ export interface EnqueueResult {
 }
 
 export interface ClaimOptions {
+  /**
+   * The queues this pass may take work from, by name. **At least one, and an empty list is
+   * refused** (`X_JOB_CLAIM_QUEUES_EMPTY`) — see `assertClaimQueues`. `createWorker` passes exactly
+   * one per pass, which is what keeps a slow queue from starving the others.
+   */
   readonly queues: readonly string[];
   readonly limit: number;
   /** Lease length. A worker that dies without ack makes the job claimable again after this. */
@@ -249,3 +255,18 @@ export function jobDriver(): JobDriver | undefined {
 export function resetJobDriver(): void {
   ambient = undefined;
 }
+
+/**
+ * Every driver's `claim` opens with this, so the two cannot answer an empty list differently — and
+ * they DID: `driver-memory.ts` read it as every queue and `driver-pg.ts` as the `default` one, with
+ * this interface documenting neither. A semantic only one driver holds is a guarantee that passes
+ * CI on memory and behaves differently on the deploy that runs Postgres, which is the whole reason
+ * `driver-parity.test.ts` exists.
+ *
+ * Refused, never defaulted, for `X_RATE_LIMIT_BUCKET_CONFLICT`'s reason one package over: whichever
+ * meaning a merge picked would leave the other a deployment somebody wrote against and nothing
+ * enforces.
+ */
+export const assertClaimQueues = (driver: string, options: ClaimOptions): void => {
+  if (options.queues.length === 0) throw new ClaimQueuesEmptyError(driver);
+};

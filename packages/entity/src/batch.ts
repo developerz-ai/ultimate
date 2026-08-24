@@ -56,7 +56,8 @@ export const assertBatchable = <Row>(
   if (chain.limit !== undefined) throw limitedBatches(entity.$name, chain.limit, size);
   // The order the driver will sort by, primary key included: the cursor between two batches is
   // minted from it, and an ordering that cannot carry one fails on the batch *after* the first —
-  // where whatever size the caller happened to pass decides whether anyone ever finds out.
+  // where whatever size the caller happened to pass decides whether anyone ever finds out. A
+  // nullable column is NOT such an ordering `As of 2026-08-24`; a nullable primary-key column is.
   assertSeekable(entity, totalOrder(entity, chain.orderBy));
 };
 

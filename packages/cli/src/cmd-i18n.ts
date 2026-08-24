@@ -23,6 +23,7 @@ import {
   serializeCatalog,
   syncCatalog,
 } from './i18n-audit';
+import { syncI18nIndex } from './i18n-index';
 import {
   checkRegistration,
   loudMiss,
@@ -179,6 +180,12 @@ async function runAdd(root: string, ctx: CommandContext): Promise<CommandResult>
   const from = resolveDefaultLocale(app.defaultLocale, catalogs);
   const seeded = seedCatalog(from === undefined ? {} : (catalogs[from] ?? {}));
   await writeNewCatalog(join(root, path), locale, serializeCatalog(seeded));
+  // The second half of adding a locale, and without it this command SHIPPED A RED GATE: the file
+  // landed, `packages/i18n/src/index.ts` still said `locales: { en }`, and `x verify --only i18n`
+  // answered `X_CATALOG_UNREGISTERED` with a fix naming an edit that had already been made. Same
+  // writer `x g --locales` already uses, so a catalog on disk and a selectable locale can never be
+  // two different sets (#F4).
+  const registered = await syncI18nIndex(root);
 
   const keys = catalogKeys(seeded).length;
   return {
@@ -189,7 +196,9 @@ async function runAdd(root: string, ctx: CommandContext): Promise<CommandResult>
     command: 'i18n',
     summary: msg('cli.i18n.added', { locale, keys, from: from ?? locale }),
     findings: app.findings,
-    data: { locale, from: from ?? locale, keys, path },
+    // `registered` is false only for an app with no `packages/i18n` at all — a fact a caller has
+    // to be able to read, because it is the one case where the locale is on disk and unselectable.
+    data: { locale, from: from ?? locale, keys, path, registered },
   };
 }
 
@@ -250,6 +259,11 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
     : (catalogs[from] ?? {});
   const { merged, added } = syncCatalog(target, source);
   if (added.length > 0) await Bun.write(join(root, catalogPath(locale)), serializeCatalog(merged));
+  // Unconditional, and not only when keys moved: a catalog that reached disk some other way — a
+  // hand-created file, a `git merge` — is exactly the unregistered locale the gate refuses, and
+  // this is the command its `fix:` names. Re-deriving an index that is already correct writes the
+  // same bytes.
+  const registered = await syncI18nIndex(root);
 
   const total = catalogKeys(merged).length;
   return {
@@ -268,6 +282,7 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
       added,
       total,
       path: catalogPath(locale),
+      registered,
       // Which of `added` still need a human. Empty on a real merge, where every value is a real
       // string copied from the default locale — `--json` must be able to tell the two apart.
       placeholders: seeded ? added : [],

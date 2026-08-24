@@ -7,6 +7,7 @@ import type { GeneratedFile, NameSet } from './naming';
 import { apiFiles } from './scaffold-api';
 import { authFiles } from './scaffold-auth';
 import { entryFiles } from './scaffold-entries';
+import { httpFiles } from './scaffold-http';
 import { icon } from './scaffold-icon';
 import { rolesFiles } from './scaffold-roles';
 
@@ -401,6 +402,7 @@ export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile
     // The app's role map, beside the actor that reads it. `shared/` and not a feature folder:
     // `defineRoles()` merges, so a per-feature call is legal and is how an app ends up with no
     // answer to "which roles exist?" — see `scaffold-roles.ts`.
+    ...httpFiles(app),
     ...rolesFiles(),
     { path: 'apps/admin/package.json', contents: adminPackage(app) },
     { path: 'apps/admin/tsconfig.json', contents: tsconfig() },

@@ -4,18 +4,31 @@
 // until the process died, and SIGTERM then waited out the whole drain budget for work that would
 // never finish.
 
+import { REQUEST_TIMEOUT_HEADER, systemClock } from '@ultimat3/core';
 import type { HttpConfig } from './config';
 import { requestTimedOut } from './errors';
 
 /**
  * A caller may SHORTEN this request's deadline, never lengthen it. Honoured without trusting the
  * proxy, because the only thing it can buy an attacker is a faster 504 for their own request.
+ *
+ * The name is core's, re-exported rather than declared twice: this package READS the header and
+ * `@ultimat3/core`'s typed-client wire path WRITES it, and a second literal is a propagation that
+ * stops working the day one of the two strings is edited. Same shape as `logger.ts` re-exporting
+ * `REDACTED` — one definition, one public path.
  */
-export const REQUEST_TIMEOUT_HEADER = 'x-request-timeout-ms';
+export { REQUEST_TIMEOUT_HEADER };
 
 export interface Deadline {
   /** Aborted when the deadline passes. Handed to the context as `ctx.signal`. */
   readonly signal: AbortSignal;
+  /**
+   * Epoch ms the budget runs out at, or `null` when there is none — `ctx.deadlineAt`, and what an
+   * outbound hop subtracts `now` from. Real monotonic time (`systemClock`), never an injected
+   * clock, for the reason the drain budget is: the timer beside it runs on `setTimeout`, so a
+   * frozen clock would publish an instant the abort will not honour.
+   */
+  readonly deadlineAt: number | null;
   /** Rejects with `X_TIMEOUT` at the deadline; `undefined` when there is no deadline. */
   readonly expired: Promise<never> | undefined;
   readonly timeoutMs: number;
@@ -27,6 +40,7 @@ const NEVER_ABORTED: AbortSignal = new AbortController().signal;
 
 const NO_DEADLINE: Deadline = {
   signal: NEVER_ABORTED,
+  deadlineAt: null,
   expired: undefined,
   timeoutMs: 0,
   clear: () => undefined,
@@ -69,6 +83,8 @@ export const startDeadline = (input: {
   }
 
   const controller = new AbortController();
+  // Read BEFORE the timer is armed, so the published instant is never later than the abort.
+  const deadlineAt = systemClock.now().getTime() + timeoutMs;
   let fire: (() => void) | undefined;
   const expired = new Promise<never>((_resolve, reject) => {
     fire = () => reject(requestTimedOut(input.method, input.pathname, timeoutMs));
@@ -83,6 +99,7 @@ export const startDeadline = (input: {
   }, timeoutMs);
 
   return {
+    deadlineAt,
     // Both halves, or the doc on `ctx.signal` is half true — which it was: nothing in this package
     // read the inbound signal, so a browser closing the tab left the request holding its pool slot
     // and its vendor connection for the whole budget, for a caller that is gone. `expired` stays

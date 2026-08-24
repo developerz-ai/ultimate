@@ -99,6 +99,18 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_STORAGE_UNWRITABLE: 'x doctor --json',
   X_STORAGE_SECRET_DEV: 'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
   X_MANIFEST_STALE: 'x manifest --json',
+  // The file itself, absent. One command writes it, and `bin/setup` now runs that command — so
+  // the fix here is the same one the gate's finding carries rather than a second phrasing.
+  X_MANIFEST_MISSING: 'x manifest --json',
+  // `@ultimat3/policy`'s code, and the CLI is the surface an agent reaches it from: `x policy list`
+  // is the only thing that prints the set the permission is missing from. The declare-it half is
+  // an edit to the app's own `definePermissions([...])`, which no command can perform.
+  X_PERMISSION_UNKNOWN:
+    'x policy list --json   # then add the permission to the app definePermissions([...]) call, or fix the typo',
+  // `@ultimat3/db`'s code, reported by `x doctor`'s probe. Both branches of db's own fix are an
+  // environment edit, so the runnable half is the probe that says which one is needed.
+  X_DB_UNAVAILABLE:
+    'x doctor --json   # set DATABASE_URL to a reachable Postgres url, or unset it for embedded PGlite',
   // `--target static`, not a bare `x build`: `--target` defaults to `docker`, and only the static
   // target runs `apps/web/prerender.ts` — the one caller of `writeBuildStats`. Without the flag
   // this fix builds an image, writes no `.x/build-stats.json`, and the next `x verify` reports the

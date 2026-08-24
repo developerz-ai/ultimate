@@ -13,14 +13,47 @@ to skip.
 | the ordered request lifecycle | `pipeline.ts` |
 | typed request (params, query, body) | `request.ts` |
 | response constructors + `problem()` | `response.ts` |
-| code → status, `factsOf()` | `error-map.ts` |
+| code → status, closed table | `error-map.ts` |
+| `factsOf()`, the problem document, the terminal lines | `error-facts.ts` |
 | token-bucket limiting, `toBucket` | `rate-limit.ts` |
+| the app's own HTTP declaration, and the boot's facts over it | `app-config.ts` |
 | CORS, CSP/HSTS | `cors.ts`, `security-headers.ts` |
 | CSRF (origin proof for a credentialed write) | `csrf.ts` |
 | the request deadline and `ctx.signal` | `deadline.ts` |
 | the caller's real address behind a proxy | `forwarded.ts` |
 | the inbound request id and trace, read before the span | `correlation.ts` |
 | dev error overlay | `overlay.ts` |
+
+## What an app declares: `configureHttp()`
+
+```ts
+// apps/web/app/http.ts — module scope, imported by the app like any other module
+import { configureHttp } from '@ultimat3/http';
+
+configureHttp({
+  cors: { origins: ['https://app.example.com'], credentials: true },
+  bodyLimitBytes: 8 * 1024 * 1024,   // this API takes a 4 MB CSV
+  requestTimeoutMs: 300_000,          // and an export that really does take five minutes
+  rateLimit: {
+    tenantBucket: 'tenant',
+    buckets: { tenant: { capacity: 5_000, refillPerSecond: 100 } },
+  },
+});
+```
+
+One registration, read once by whatever process starts the web role — the same seam
+`configureAuthenticator()` is. **Breaking, `As of 2026-08-24`**: before it, the only `HttpConfig`
+any shipped process built was a fixed literal inside `@ultimat3/cli`, so none of the four values
+above could be set from an app at all — `cors.origins` was `[]` in every deployment, which refuses
+every cross-origin browser call, permanently. `AppConfig` has never carried an `http` key and does
+not gain one: `@ultimat3/core` is tier 0 and cannot hold this package's types.
+
+`AppHttpConfig` is `Omit<HttpConfigInput, BootOwnedHttpKey>` — `port`, `hostname`, `dev`,
+`buildId`, `signInPath`, `trustProxy`, `trustedProxyHops` and `rateLimit.scope` are the boot's, and
+writing one here is a **type error** rather than a value silently overwritten at the next boot.
+`mergeHttpConfig(configuredHttp(), boot)` is the layering, and it merges `security.csp.extend` per
+directive: the app's CDN source and the boot's inline-script hash are each the whole answer for
+something.
 
 ## The pipeline is the guarantee
 
@@ -57,6 +90,7 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | HSTS | emitted only when the connection is affirmatively https (`ctx.https`); never by the zero-argument default |
 | `rateLimit.scope: 'shared'` on a per-process store | `X_RATE_LIMIT_NOT_SHARED` at `createServer`, because N replicas each holding their own counters enforce N × every configured number |
 | a route's own bucket and a configured bucket of that name disagreeing | `X_RATE_LIMIT_BUCKET_CONFLICT` at `createServer`, because the loser would be a number someone read and nothing applied |
+| a `rateLimit.tenantBucket` naming a bucket nothing declares | `X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN` at `defineHttpConfig`, because the name would fall through to `default` and a whole tenant's cap would silently be the 120-burst read bucket |
 | an injected limiter that does not hold a bucket a route declares | `X_RATE_LIMIT_BUCKET_UNBOUND` at `createPipeline`, because the name would fall through to `default` — measured at 120 burst for a route declaring 5 |
 | a config that never declared `rateLimit.scope` | `X_RATE_LIMIT_SCOPE_UNSET` at `defineHttpConfig`. **Breaking, `As of 2026-08`**: `'process'` used to be the default, so "nobody asked" and "the app said one replica" were the same value while the chart runs three |
 | `trustProxy: true` with no `trustedProxyHops` | `X_TRUST_PROXY_UNSET` at `defineHttpConfig`. **Breaking, `As of 2026-08`**: `trustProxy` now defaults to `false`, and `x-forwarded-for` is read at `entries.length - hops` — never at `[0]`, which is whatever the client typed |
@@ -101,6 +135,18 @@ so nothing can be wrong.
 
 `rateLimitStore` feeds the `PipelineDeps.limiter` seam rather than sitting beside it: the bucket
 maths stays in `createRateLimiter`, so every driver agrees on the numbers.
+
+**One request spends a LIST of keys, `As of 2026-08-24`** — the caller's (`actor`, else `org`,
+else `ip`) and, when the app declared `rateLimit.tenantBucket`, that caller's tenant. The key
+builder used to pick exactly ONE subject and consult `orgId` only when there was no actor id,
+which no authenticated request ever satisfies: a tenant with 8,000 seats took 8,000 × the
+per-actor burst against one shared pool, every bucket inside its own limit, and no number an
+operator could set would have refused it. The tenant key is `tenant|org:<id>` and is deliberately
+NOT scoped to the route — a per-route tenant bucket is the same allowance once per route. The
+spend stops at the first refusal, so a caller its own bucket refused costs its tenant nothing, and
+the `ratelimit-*` headers report the bucket closest to refusing. `tenantBucket` defaults to `null`:
+one tenant is a person and the next is five thousand seats, so there is no allowance a framework
+can pick for you.
 
 **A shared store ships, `As of 2026-08`** — `postgresRateLimitStore({ executor })`, one table
 and one `insert … on conflict` per take, so N replicas count against one bucket. Until it landed,
@@ -217,7 +263,7 @@ in a table row and a table row has no anchor. Assert against `problemTypeFor` an
 
 ## Boundaries
 
-Tier 2. Imports `@ultimat3/core` and `@ultimat3/schema` only. Authentication and
-policy evaluation arrive through `ServerHooks`, declared structurally, because
-`@ultimat3/policy` is a sibling tier. There is no plugin API: `Middleware` wraps a
-handler, the pipeline is everything else.
+Tier 2. Imports `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n` and `@ultimat3/time` —
+tiers 0 and 1, which is the whole rule. Authentication and policy evaluation arrive through
+`ServerHooks`, declared structurally, because `@ultimat3/policy` is a sibling tier. There is no
+plugin API: `Middleware` wraps a handler, the pipeline is everything else.

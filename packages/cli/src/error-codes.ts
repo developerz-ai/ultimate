@@ -52,6 +52,13 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_STORAGE_UNWRITABLE',
   'X_STORAGE_SECRET_DEV',
   'X_MANIFEST_STALE',
+  // The other half of the same file, and the one that was silence: `x manifest` writes
+  // `x.manifest.json`, `AGENTS.md` tells an agent that facts live in it, `x dev` prints its path —
+  // and nothing ever ran the command, so the gate's `manifest` step reported green over a file
+  // that has never existed in any app `x new` produced. Its own code because the repair differs
+  // from both neighbours: `X_MANIFEST_DRIFT` means the committed file disagrees with the code and
+  // `X_MANIFEST_STALE` means `openapi.json` does; this one means there is nothing there at all.
+  'X_MANIFEST_MISSING',
   'X_BUDGET_UNMEASURED',
   // The other half of #271, and the half no runtime can raise: a route reads a live hook and boots
   // no module in a browser, so its rows have nowhere to arrive and the page renders its loading
@@ -146,6 +153,14 @@ export const CLI_OWNED_ERROR_CODES = [
  */
 export const CLI_BORROWED_ERROR_CODES = [
   'X_NOT_IMPLEMENTED',
+  // `@ultimat3/policy`'s, and the gate's `policy` step reports it verbatim — cause, fix and the
+  // nearest declared name all come from `permissionUnknown`. A CLI-owned twin would be a second
+  // wording for the condition `can()` already refuses at run time, and the two would drift.
+  'X_PERMISSION_UNKNOWN',
+  // `@ultimat3/db`'s, reported by `x doctor`'s database probe with that package's own two-branch
+  // fix. The CLI is the half that asks BEFORE a pool is opened; the condition and the remedy are
+  // both db's, and a CLI twin would be one unreachable database with two names.
+  'X_DB_UNAVAILABLE',
   'X_CONFIG_INVALID',
   'X_ENV_MISSING',
   'X_ENV_EXAMPLE_DRIFT',
@@ -195,6 +210,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_PACKAGE_UNREFERENCED: 'a published workspace is not in the root tsconfig build graph',
   X_RELEASE_VERSION_SKEW: 'a workspace is not at the lockstep version',
   X_MANIFEST_STALE: 'openapi.json is stale',
+  X_MANIFEST_MISSING: 'the app ships no x.manifest.json',
   X_BUDGET_UNMEASURED: 'a route declares a budget the build never measured',
   X_LIVE_ROUTE_NO_ISLAND: 'a route reads live rows and boots nothing that could receive them',
   X_BUILD_FAILED: 'x build failed',

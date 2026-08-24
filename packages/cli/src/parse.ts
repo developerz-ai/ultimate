@@ -48,6 +48,19 @@ export interface CommandSpec {
    */
   readonly defaultSubcommand?: string;
   /**
+   * Whether a first word that is NOT a subcommand is an ARGUMENT to `defaultSubcommand` rather
+   * than a misspelt one. Declared per command, never inferred, because only some commands can say
+   * it truthfully: `x errors X_PERMISSION_UNKNOWN` can only be a code, and `x jobs 4f2a` is
+   * genuinely ambiguous with `show`, so an unconditional fallback would turn `x jobs <id>` into a
+   * silent `x jobs ls` that ignores the id.
+   *
+   * `x errors X_PERMISSION_UNKNOWN --json` answered `X_CLI_UNKNOWN_COMMAND … fix: x help`, and
+   * `x help` prints `errors  an X_* code, explained` — which reads as exactly the form that was
+   * refused (#F16). A near miss is still refused with its suggestion, so `x errors explan X_FOO`
+   * does not quietly become a lookup of the code `explan`.
+   */
+  readonly defaultSubcommandTakesPositional?: boolean;
+  /**
    * A closed set the FIRST positional must come from, where the command has one. Declarative only:
    * the parser leaves positionals to the command, because `x test`'s own `readOnlyType` already
    * refuses an unknown type with the list. What this adds is a set `fix-command.ts` can resolve a
@@ -232,12 +245,16 @@ export function parseArgs(argv: readonly string[], specs: readonly CommandSpec[]
   // asking what the usage is, on every command that takes a subcommand. Help is answered by
   // `dispatch`, which needs only the command name.
   const help = flags.get('help') === true;
-  const subcommand = help ? undefined : readSubcommand(spec, positionals);
+  const resolved = help ? NO_SUBCOMMAND : readSubcommand(spec, positionals);
+  const subcommand = resolved.name;
   if (subcommand !== undefined) assertFlagsApply(spec, subcommand, given, flags);
   return {
     command: spec.name,
     subcommand,
-    positionals: subcommand === undefined ? positionals : positionals.slice(1),
+    // `consumed`, never `subcommand !== undefined`: a default subcommand the caller did not TYPE
+    // leaves its first positional in place, which is what makes `x errors X_DB_DRIFT` the same
+    // invocation as `x errors explain X_DB_DRIFT` instead of one with its argument eaten.
+    positionals: resolved.consumed ? positionals.slice(1) : positionals,
     flags,
     json: flags.get('json') === true,
     help,
@@ -278,16 +295,32 @@ function splitInline(raw: string): [string, string | undefined] {
   return [raw.slice(0, eq), raw.slice(eq + 1)];
 }
 
-function readSubcommand(spec: CommandSpec, positionals: readonly string[]): string | undefined {
+/** Which subcommand ran, and whether the caller's first positional is what named it. */
+interface ResolvedSubcommand {
+  readonly name: string | undefined;
+  readonly consumed: boolean;
+}
+
+const NO_SUBCOMMAND: ResolvedSubcommand = { name: undefined, consumed: false };
+
+function readSubcommand(spec: CommandSpec, positionals: readonly string[]): ResolvedSubcommand {
   const allowed = spec.subcommands;
-  if (allowed === undefined || allowed.length === 0) return undefined;
+  if (allowed === undefined || allowed.length === 0) return NO_SUBCOMMAND;
   const token = positionals[0];
   if (token === undefined) {
-    if (spec.defaultSubcommand !== undefined) return spec.defaultSubcommand;
+    if (spec.defaultSubcommand !== undefined) {
+      return { name: spec.defaultSubcommand, consumed: false };
+    }
     throw new MissingSubcommandError({ command: spec.name, known: allowed });
   }
-  if (allowed.includes(token)) return token;
+  if (allowed.includes(token)) return { name: token, consumed: true };
   const suggestion = nearestName(token, allowed);
+  // The declared fallback, and only past the near-miss guard: a word within `nearestName`'s edit
+  // budget of a real subcommand is a typo, and reading it as the default subcommand's argument
+  // would answer a question nobody asked.
+  if (spec.defaultSubcommandTakesPositional === true && suggestion === undefined) {
+    return { name: spec.defaultSubcommand, consumed: false };
+  }
   throw new UnknownCommandError(
     suggestion === undefined
       ? { path: `${spec.name} ${token}`, known: allowed }

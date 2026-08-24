@@ -84,6 +84,7 @@ export type {
   QueueStats,
 } from './driver';
 export {
+  assertClaimQueues,
   DEFAULT_QUEUE,
   DEFAULT_VISIBILITY_TIMEOUT_MS,
   isJobState,
@@ -134,6 +135,7 @@ export type { JobErrorCode } from './errors';
 export {
   ActionJobUnbridgedError,
   CancelUnsupportedError,
+  ClaimQueuesEmptyError,
   ConcurrencyUnenforceableError,
   DriverUnavailableError,
   IdempotencyRequiredError,

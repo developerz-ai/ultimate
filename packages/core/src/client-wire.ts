@@ -1,6 +1,7 @@
 /**
- * What a typed client puts on the wire and reads back off it: the W3C trace header, the
- * problem+json body, and the immutable answer one dispatch hands to every caller sharing it.
+ * What a typed client puts on the wire and reads back off it: the ambient call context as
+ * headers — the W3C trace and the remaining request budget — the problem+json body, and the
+ * immutable answer one dispatch hands to every caller sharing it.
  *
  * Tier 0 because `@ultimat3/action` and `@ultimat3/query` need this identical file and are both
  * tier 3, so neither may import the other — the shape `canonical-json.ts` is already here for.
@@ -11,6 +12,7 @@
 import type { ErrorRetry } from './error-retry';
 import { declaredErrorRetry } from './error-retry';
 import { isJsonObject } from './json-object';
+import { budgetHeaders } from './request-budget';
 import { isRetryableStatus } from './retryable-status';
 import { currentSpanContext, traceparent } from './telemetry';
 
@@ -30,17 +32,31 @@ const TRACE_ID = /^[0-9a-f]{32}$/;
 const SPAN_ID = /^[0-9a-f]{16}$/;
 
 /**
- * The current trace, as the W3C header — or nothing at all. `currentSpanContext()` answers with
- * an empty `spanId` when a request context exists but no span is active, and `00-<trace>--01` is
- * a header every collector drops, so an incomplete context sends none. In a browser there is no
- * ambient context and this is always empty, which is also what keeps a cross-origin call from
- * acquiring a CORS preflight it did not have.
+ * Everything this process knows about the call in flight, as headers: the W3C trace, and how much
+ * of the request budget is left. Both callers (`@ultimat3/action`'s `postOnce` and
+ * `@ultimat3/query`'s reader) spread it BEFORE the caller's own headers, so an explicit value
+ * still wins.
+ *
+ * The trace half: `currentSpanContext()` answers with an empty `spanId` when a request context
+ * exists but no span is active, and `00-<trace>--01` is a header every collector drops, so an
+ * incomplete context sends none. In a browser there is no ambient context and this is always
+ * empty, which is also what keeps a cross-origin call from acquiring a CORS preflight it did not
+ * have.
+ *
+ * The budget half is independent of it, and that is deliberate: a deadline must propagate through
+ * a hop that is not being traced. `budgetHeaders()` answers `{}` outside a request and for a
+ * context with no deadline, so a browser and a job are unchanged — the header only appears where
+ * something really is waiting on a socket.
+ *
+ * The name is the trace half's alone for one reason: renaming it means editing
+ * `packages/{action,query}/src/client.ts`, and both spell it as a value import.
  */
 export function traceHeaders(): Record<string, string> {
+  const budget = budgetHeaders();
   const context = currentSpanContext();
-  if (context === undefined) return {};
-  if (!TRACE_ID.test(context.traceId) || !SPAN_ID.test(context.spanId)) return {};
-  return { traceparent: traceparent(context) };
+  if (context === undefined) return budget;
+  if (!TRACE_ID.test(context.traceId) || !SPAN_ID.test(context.spanId)) return budget;
+  return { ...budget, traceparent: traceparent(context) };
 }
 
 /**

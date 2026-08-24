@@ -14,7 +14,7 @@ Tier 5. May import tiers 0–4. Nothing imports this except `create-ultimate`.
 | Bare subcommands | `CommandSpec.defaultSubcommand`, **declared**. The parser answered `subcommands[0]` until 1.2.0, so `x db` ran `gen` — the migration GENERATOR — because it sorted first, and `x mcp` started a server. A command with no defensible default declares none and `MissingSubcommandError` refuses the bare form; `parse.test.ts` pins the set at exactly `db` and `mcp`. Its fix is `x help <command>`. Both forms answer now: `--help` is read off the flag loop and `readSubcommand` is SKIPPED when it is set, so `x db --help`, `x mcp --help` and `x pr --help` print usage instead of exiting 1 with this same refusal — which is what they did on every command taking a subcommand until 2026-08 (`parse.test.ts` pins it across the shipped registry) |
 | Closed flag values | a flag whose values are a closed set is READ through a function that refuses the rest — `cmd-build.ts`'s `readTarget`, `cmd-deploy.ts`'s `readMethod`, `cmd-routes.ts`'s `readSurfaceFilter`, `cmd-mcp.ts`'s `isTransport`. `=== 'helm' ? 'helm' : 'compose'` made `x deploy --method helmm` a COMPOSE deploy reporting `method: "compose"`, and `--surface App` reported `0 routes` and exit 0 — a typo and an empty table rendering identically. The set is the framework's own where one exists (`SURFACES` from `@ultimat3/render`), never a list restated here |
 | App root | `CommandSpec.requiresApp`, **enforced by `dispatch.ts`** before `target.run` — the field's doc said so for 17 commands and nothing read it, so the promise was kept only by each command remembering to call `requireAppRoot` itself. Those 17 calls stay (they hand the command its root, and name subcommands the dispatcher cannot see), but the DECLARATION is what decides, ahead of any check a command makes about its own arguments; `--help` is exempt, because `target` is the help command by then |
-| Result helpers | `command.ts`'s `ok()` / `failed()` write `ok` **after** the `extra` spread: the function's name is the verdict and nothing a caller passes can overturn it. Spread last, `failed('verify', '1 of 19 steps failed', { ok: true })` answered `ok: true` and `exitCodeFor` exited **0** on it — a green CI over a red command (`command.test.ts`) |
+| Result helpers | `command.ts`'s `ok()` / `failed()` write `ok` **after** the `extra` spread: the function's name is the verdict and nothing a caller passes can overturn it. Spread last, `failed('verify', '1 of 20 steps failed', { ok: true })` answered `ok: true` and `exitCodeFor` exited **0** on it — a green CI over a red command (`command.test.ts`) |
 | I/O | only `dispatch.ts` renders or exits; commands return `CommandResult` |
 | Staying up | a command still listening when `run` resolves returns `hold` (`hold.ts`), or `bin.ts` exits out from under it |
 | `--json` | every command, no exceptions — same data as the human render |
@@ -79,6 +79,54 @@ source only: a test file's import is not judged, because `packages/*` here decla
 `devDependencies` by design and the root's hoist is what resolves them. A manifest the scan cannot
 read is its own finding rather than a silent skip — a skipped workspace is a hiding place for the
 very edge the rule is looking for.
+
+`app-permissions.ts` is the `policy` step, and it is the twentieth. Two references in the whole
+framework are bare strings nothing checks — `RoleDef.grants` and `RouteGuard.permission` — while
+`can()` calls `assertPermission` and throws `X_PERMISSION_UNKNOWN` on the first request that
+reaches the route. So `x new` shipped an app that granted `dashboard:read`, required it on
+`/dashboard` and declared it nowhere: HTTP 500 on two of its three routes, from the first `x dev`,
+under a green gate. It reads `roleDefinitions()` and `routeEntries()` after `loadApp` and reports
+each reference `isKnownPermission` refuses — **that predicate and no other**, because it is the one
+`assertPermission` uses, including its rule that an app which has declared NOTHING is not checked
+at all. A gate that disagreed with the process it gates would be worse than none. The cause and the
+`fix:` are `permissionUnknown`'s, so `@ultimat3/policy` owns both wordings; `X_PERMISSION_UNKNOWN`
+is in `CLI_BORROWED_ERROR_CODES`. Its own step rather than a rider on `budgets`, by that step's own
+test: reported there, an authz defect would hand the reader a byte budget (axiom 4). It costs no
+second app load.
+
+`dev-replica.ts` is where read-replica routing is WIRED, and it had to be wired in two places
+because it was opt-in twice. `@ultimat3/db`'s `defaultClient()` is the one composer of
+`replicatedClient(primary, replica)` from `DATABASE_REPLICA_URL`, and it runs only from
+`baseClient()` — "the client an app installed none for" — while every process the framework boots
+calls `setDbClient` in `dev-queue.ts`, so no booted process had ever read that variable. Routing
+also needs an open `withReplicaReads` scope, and nothing opened one. `startDb` now installs the
+replicated pair as the AMBIENT client while keeping the primary for everything this boot does
+itself (`applySchema`, the queue's `PgExecutor`, `ping`, `close` — DDL and a claim are writes), and
+`cmd-dev.ts` / `serve.ts` prepend one middleware frame that opens the scope per request. Both
+halves are `undefined`/empty with no replica configured, and an EMBEDDED binding never gets one:
+PGlite has no standby. Not `@ultimat3/http`'s pipeline, which would make the HTTP tier know what a
+database is; the boot is the only tier that may know about a request and a pool.
+
+`port-probe.ts` is the one `portFree`, because two commands ask it and must not disagree:
+`x doctor` reports it as a finding for BOTH ports `x dev` binds — the web port and the `PORT + 1`
+sync port, each labelled with the role that wants it — and `startSync` asks it after a failed
+`listenSyncNode` so a taken neighbour is `X_PORT_IN_USE` rather than `X_CLI_UNEXPECTED` over
+`Bun.serve`'s own English rendered into a `cause:`. It is ASKED, never read off the caught value,
+which is what `scripts/catch-render.ts` refuses; anything else the listener failed on is re-thrown
+untouched. `x doctor` also probes `DATABASE_URL` with a real `select 1` through
+`@ultimat3/db`'s `checkDb` — a TCP connect answers "reachable" for a running server with wrong
+credentials, which is the case an operator most needs told about — and reports `X_DB_UNAVAILABLE`
+with that package's own two-branch fix. An EMBEDDED binding is not probed: that lock is `x dev`'s.
+
+`i18n-index.ts` is the one writer of an app's `packages/i18n/src/index.ts`, shared by `x g` and
+`x i18n add|sync`. A catalog on disk and a SELECTABLE locale were two different sets: `x i18n add
+fr` wrote the file, exited 0, and left `x verify --only i18n` red with `X_CATALOG_UNREGISTERED`
+whose `fix:` named an edit that had already been made — an agent following it verbatim changes
+nothing and loops forever, on the command whose whole job is adding a locale. `unregisteredFix`
+(`i18n-registration.ts`) is the other half: one code over two causes, so where the index EXISTS and
+does not name the locale's own `catalogs/<tag>.json` import, the CLI substitutes a fix that
+performs the registration. The package's own "move the `defineCatalogs()` call" line still stands
+for the cause it was written for.
 
 `app-agents-md.ts` is why the `manifest` step declares no `applies` at all. The drift half needs
 a committed `x.manifest.json` to compare against, but `AGENTS.md` is required of every repo the
@@ -655,6 +703,7 @@ hand-written layout and `readMigrations` skips it — read as a migration it sor
 | `dev-assets.ts` | the image pipeline's only HTTP surface: `/icons/*` and `/media/*` |
 | `favicon.ts` | `/favicon.ico`: the app's own file, and the bytes the framework answers with when there is none |
 | `dev-hooks.ts` | the pipeline's `authorize` seam, decided from the app's own `Policy` objects |
+| `dev-replica.ts` | which boot gets a standby, and the one middleware frame that opens the read scope |
 | `dev-roles.ts` | `--role` selection plus start/stop for `web`, `sync`, `worker`, `scheduler` |
 | `dev-dashboard.ts` | the `DevSources` hooks only this process can answer, and the two CLI panels |
 | `dev-traces.ts` | core's spans → the `/_x` timeline's request traces |

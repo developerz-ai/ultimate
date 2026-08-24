@@ -19,7 +19,7 @@ import { type HttpConfig, stripBasePath } from './config';
 import { actorView, elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
 import { checkCsrf, selfOrigin } from './csrf';
-import { factsOf, retryAfterOf } from './error-map';
+import { factsOf, retryAfterOf } from './error-facts';
 import { errorPageResponse } from './error-page';
 import {
   bodyInvalid,
@@ -37,7 +37,7 @@ import { acceptsHtml } from './html-render';
 import { readCookie } from './locale';
 import { compose, type Middleware } from './middleware';
 import { overlayResponse } from './overlay';
-import { type RateLimiter, rateLimitKey } from './rate-limit';
+import { type RateLimitDecision, type RateLimiter, rateLimitSpends } from './rate-limit';
 import { rateLimited } from './rate-limit-errors';
 import type { UltimateRequest } from './request';
 import { addVary, applyCacheHeaders, problem, redirect, SHARED_CACHE_VARY } from './response';
@@ -211,23 +211,45 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
     'rate-limit': async (_request, ctx) => {
       if (!config.rateLimit.enabled) return undefined;
       const actor = actorView(ctx.actor);
-      const key = rateLimitKey({
-        actorId: actor?.id ?? null,
-        orgId: actor?.orgId ?? null,
-        ip: ctx.ip,
-        routeName: ctx.route?.meta.name ?? UNMATCHED_ROUTE,
-      });
-      const decision = await limiter.check(
-        key,
-        ctx.route?.meta.rateLimit ?? config.rateLimit.defaultBucket,
+      // A LIST, and the second entry is why: the key builder used to pick ONE subject —
+      // actor > org > ip, exclusive — so an authenticated request never touched a tenant bucket
+      // and one org's 8,000 seats each ran their own allowance against one shared pool.
+      const spends = rateLimitSpends(
+        {
+          actorId: actor?.id ?? null,
+          orgId: actor?.orgId ?? null,
+          ip: ctx.ip,
+          routeName: ctx.route?.meta.name ?? UNMATCHED_ROUTE,
+        },
+        {
+          route: ctx.route?.meta.rateLimit ?? config.rateLimit.defaultBucket,
+          tenant: config.rateLimit.tenantBucket,
+        },
       );
+      let answer: RateLimitDecision | undefined;
+      let refusedKey: string | undefined;
+      for (const spend of spends) {
+        const decision = await limiter.check(spend.key, spend.bucket);
+        // The bucket closest to refusing is the one the caller has to plan against: reporting
+        // `remaining: 99` off a per-actor bucket while the tenant's holds 2 is a number that
+        // tells a client it may proceed and then refuses its next call.
+        if (answer === undefined || decision.remaining < answer.remaining) answer = decision;
+        if (!decision.allowed) {
+          // The first refusal ends the spend, so a caller its own bucket already refused costs
+          // its tenant nothing — one noisy actor may not drain the allowance it shares.
+          answer = decision;
+          refusedKey = spend.key;
+          break;
+        }
+      }
+      if (answer === undefined) return undefined;
       // Recorded before the throw so the 429 can carry Retry-After and the
       // RateLimit-* headers rather than making the client guess.
-      ctx.rateLimit = decision;
-      for (const [name, value] of Object.entries(limiter.headers(decision))) {
+      ctx.rateLimit = answer;
+      for (const [name, value] of Object.entries(limiter.headers(answer))) {
         ctx.headers.set(name, value);
       }
-      if (!decision.allowed) throw rateLimited(key, decision.retryAfterSeconds);
+      if (refusedKey !== undefined) throw rateLimited(refusedKey, answer.retryAfterSeconds);
       return undefined;
     },
 

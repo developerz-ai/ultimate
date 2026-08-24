@@ -269,9 +269,11 @@ that outlasts the deploy. The design confronts it with exactly two paths and no 
 | **delta** | the cursor's gap is inside the retained window and inside the budget | one buffer read, zero DB work |
 | **snapshot** | out of window, past `maxLagMs`, or past `reconnectBudget` | one bounded indexed query |
 
-A `LiveCursor` is `lsn` + result-set `digest` + last-seen `ids` + `count`. The digest is
-order-sensitive and server-side (see `cursor.ts#digestOf` for why a client cannot reproduce one); the ids let a delta be re-filtered per subscriber, because
-the retained window stores **pre-policy** patches. `resumeFrom()` picks the path,
+A `LiveCursor` is `qid` + `lsn` + last-seen `ids` + `at`, and nothing else. The ids let a delta be
+re-filtered per subscriber, because the retained window stores **pre-policy** patches. It carried a
+result-set `digest` and a `count` until 2026-08-24; both were written by every snapshot and read by
+nobody, and the digest cost a canonical serialize plus a hash over every row of every snapshot —
+paid once per live query per reconnecting socket. `resumeFrom()` picks the path,
 `shouldResnapshot()` explains it, and the budget is a cost model in patch-equivalents
 (`snapshotCost: 250` = "replaying 250 patches costs a snapshot") so the expensive path is *chosen*,
 never stumbled into.
@@ -361,10 +363,11 @@ wire twice by a reconnect that raced an ack.
   the rebase log rather than retried: a denial is a decision about that intent, and replaying it
   would put the write the server refused back on the screen. Idempotent for a key the log does not
   hold, because a denial can arrive twice and tier 2 records nothing to undo.
-- **A delta resume leaves the digest unverified** (`DIGEST_UNVERIFIED`). Only a snapshot re-establishes
-  it. The digest is the SERVER's own — nothing on the client reproduces it, and `verifyDigest()`,
-  which claimed otherwise and had no caller, is deleted (2026-08-23). What detects drift on the
-  client is the server's `desynced` mark and the re-snapshot it triggers.
+- **Nothing on the client detects drift, and nothing ever did.** `verifyDigest()` claimed to and had
+  no caller (deleted 2026-08-23); the `digest` it read went with it (2026-08-24), along with the
+  `count` beside it. What detects drift is the server's `desynced` mark and the re-snapshot it
+  triggers. Removing the two fields moved `PROTOCOL_VERSION` to **2** — `cursor()` decodes through
+  readers that throw on an absent field, unlike the `list()` that made `hello.resume`'s removal free.
 - **Backpressure drops patch frames.** That is safe *only* because a re-snapshot is cheap: the drop
   is recorded on the socket (`desynced`) and the next delivery re-snapshots rather than diverging.
 - **A dropped CHANNEL frame is not safe, and is not repaired.** A topic has no cursor, no mark and

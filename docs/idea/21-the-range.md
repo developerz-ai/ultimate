@@ -52,14 +52,14 @@ makes this a documentation defect rather than a code one. Re-derive with
 
 ### The gate a beginner inherits
 
-The same 19 steps run in a scaffolded app and in this repo — `VERIFY_STEP_NAMES`
+The same 20 steps run in a scaffolded app and in this repo — `VERIFY_STEP_NAMES`
 ([`packages/cli/src/verify-step.ts:16`](../../packages/cli/src/verify-step.ts)), whole or not at all.
 On the scaffold above, `As of 2026-08-23`:
 
 | Run | Result |
 |---|---|
 | `x verify` on a fresh scaffold (`x new vision-probe`) | red on `budgets` and on `lint`; 18.2s |
-| the same, after running the `fix:` lines it printed | **18 of 19 pass**, `budgets` the one red, `contract-diff` and `roadmap` skipped |
+| the same, after running the `fix:` lines it printed | **19 of 20 pass**, `budgets` the one red, `contract-diff` and `roadmap` skipped. The run itself was measured 2026-08-23, before the `policy` step landed on 2026-08-24; its verdict here is **carried forward, not re-measured** — on the evidence that both tracked apps answer `policy` with zero findings and that `scaffold-smoke` runs the scaffold's own gate. Re-run the command below to measure it directly |
 | `x verify` on `x new alpha` | `lint` is green on run one — the red above is **name-dependent** ([`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md)): the templates emit `@<app>/…` before `@ultimat3/…`, which `organizeImports` only accepts while the name sorts first |
 
 Re-derive: `bun run scripts/scaffold-gate.ts <app dir> --allow-red budgets --fix-follow`. `budgets`
@@ -82,7 +82,7 @@ cannot retrofit cheaply.
 | declared one `policy` per operation | a fifth surface is one adapter, not a second authz system — the failure mode that killed this shape of framework before | [`02-primitives.md`](./02-primitives.md) |
 | declared an `action`, not a controller | HTTP, OpenAPI, typed client, job handle, MCP tool and tests stay in step by construction, and `contract-diff` fails the gate when they do not | [`packages/action/README.md`](../../packages/action/README.md) |
 | accepted the tier table | an import that would couple two subsystems is a build error, so a codebase with many authors cannot silently grow a cycle | `bun run boundaries`, [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) |
-| took `x verify` as the definition of done | one command, 19 steps, the same list in every app — no tribal checklist to hand a new team | [`packages/cli/src/verify-step.ts:16`](../../packages/cli/src/verify-step.ts) |
+| took `x verify` as the definition of done | one command, 20 steps, the same list in every app — no tribal checklist to hand a new team | [`packages/cli/src/verify-step.ts:16`](../../packages/cli/src/verify-step.ts) |
 | used the framework's errors | 552 `X_*` codes, each with a cause and an executable `fix:`, in the terminal, in `problem+json`, in the overlay and under `--json` | `bun run manifest` → `framework.manifest.json` |
 | ran `ROLE=web` on one box | the same image is every role; climbing is `ROLE`, env and replica counts | [`17-scale-ladder.md`](./17-scale-ladder.md) |
 | never wrote a driver | every seam takes yours — `ServeOptions.runtime` hands the boot a queue, storage, mail, transport, purge, rate-limit store or ISR store ([`packages/cli/src/runtime-overrides.ts:26`](../../packages/cli/src/runtime-overrides.ts)) | [`20-large-app-readiness.md`](./20-large-app-readiness.md) |
@@ -117,7 +117,7 @@ context, and an app whose infrastructure is already decided spends its context o
 | Not claimed | State `As of 2026-08-23` |
 |---|---|
 | that anyone has shipped a very large app on it | no adoption numbers, no production deployments, no testimonials — [`README.md`](../../README.md) says so and will until they exist |
-| that a tracked app is green | `examples/dummy` is pinned red on 4 of 19 steps, `dummy/social-media-clone` on 2 ([`scripts/lib/gated-apps.ts`](../../scripts/lib/gated-apps.ts)) |
+| that a tracked app is green | `examples/dummy` is pinned red on 4 of 20 steps, `dummy/social-media-clone` on 2 ([`scripts/lib/gated-apps.ts`](../../scripts/lib/gated-apps.ts)) |
 | that the top of the ladder is proven | milestone 11 is open: the demo app on Compose **and** Kubernetes from one image, rolling restart invisible, has not been run ([`14-roadmap.md`](./14-roadmap.md)) |
 | that offline-first is here | realtime tier 3 (local-first) has not shipped ([`03-realtime.md`](./03-realtime.md)) |
 | that the small end is free of holes | a fresh scaffold boots with `X_CONFIG_INVALID` warning that 7 policy-protected routes have no authenticator — the app supplies `configureAuthenticator()` ([`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md)) |

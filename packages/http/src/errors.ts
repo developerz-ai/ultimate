@@ -30,6 +30,7 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_RATE_LIMIT_SCOPE_UNSET',
   'X_RATE_LIMIT_INVALID',
   'X_RATE_LIMIT_STORE_UNAVAILABLE',
+  'X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN',
   'X_TRUST_PROXY_UNSET',
   'X_OVERLOADED',
   'X_CSRF_BLOCKED',
@@ -83,6 +84,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_RATE_LIMIT_SCOPE_UNSET: 'the deployment has not said where the rate limiter keeps its counters',
   X_RATE_LIMIT_INVALID: 'a declared rate limit computes to numbers the limiter cannot run on',
   X_RATE_LIMIT_STORE_UNAVAILABLE: 'the shared rate-limit store did not answer, so nothing decided',
+  X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN: 'the tenant allowance names a bucket nothing declares',
   X_TRUST_PROXY_UNSET: 'proxy headers are trusted without saying how many proxies are in front',
   X_OVERLOADED: 'in-flight requests are at the configured ceiling',
   X_CSRF_BLOCKED: 'a credentialed write arrived from an origin that is not allowed to make it',
@@ -289,7 +291,7 @@ export const corsConfigInvalid = (reason: string): HttpError =>
   new HttpError({
     code: 'X_CORS_CONFIG_INVALID',
     cause: `cors config rejected: ${reason}`,
-    fix: "in app.config.ts set http.cors.credentials: false, or replace http.cors.origins: ['*'] with the exact origins allowed to call this app",
+    fix: "call configureHttp({ cors: { credentials: false } }) at module scope in a file under apps/*/, or replace origins: ['*'] with the exact origins allowed to call this app",
   });
 
 /**
@@ -303,7 +305,7 @@ export const cspDirectiveInvalid = (where: string, value: string): HttpError =>
   new HttpError({
     code: 'X_CSP_DIRECTIVE_INVALID',
     cause: `${where} is not a csp token: ${JSON.stringify(value)}`,
-    fix: 'in app.config.ts write one http.security.csp.extend entry per directive, each source its own array element — a directive name is [a-z][a-z0-9-]*, and no source may contain a space, a comma or a semicolon',
+    fix: 'in the configureHttp({ security: { csp: { extend } } }) call write one entry per directive, each source its own array element — a directive name is [a-z][a-z0-9-]*, and no source may contain a space, a comma or a semicolon',
   });
 
 export const routeConflict = (path: string, detail: string): HttpError =>
@@ -325,7 +327,7 @@ export const trustProxyUnset = (): HttpError =>
     code: 'X_TRUST_PROXY_UNSET',
     cause:
       'http.trustProxy is true and http.trustedProxyHops is not set, so x-forwarded-for would be read from a position the client controls',
-    fix: 'in app.config.ts set http.trustedProxyHops to the number of proxies that append to x-forwarded-for — 1 for a single ingress or ALB, 2 for a CDN in front of one — or set http.trustProxy: false when this process is reached directly',
+    fix: 'set TRUSTED_PROXY_HOPS in the deployment environment to the number of proxies that append to x-forwarded-for — 1 for a single ingress or ALB, 2 for a CDN in front of one — and leave it unset for a process that is reached directly; an embedder calling defineHttpConfig itself passes { trustProxy: true, trustedProxyHops: 1 }',
   });
 
 /**
@@ -351,7 +353,7 @@ export const overloaded = (inflight: number, ceiling: number): HttpError =>
   new HttpError({
     code: 'X_OVERLOADED',
     cause: `${inflight} requests are already in flight and http.maxInflight is ${ceiling}`,
-    fix: 'retry after the Retry-After header; to serve more at once raise http.maxInflight in app.config.ts, and add replicas to match',
+    fix: 'retry after the Retry-After header; to serve more at once call configureHttp({ maxInflight: 2000 }) at module scope in a file under apps/*/, and add replicas to match',
   });
 
 /**
@@ -362,7 +364,7 @@ export const csrfBlocked = (pathname: string, reason: string): HttpError =>
   new HttpError({
     code: 'X_CSRF_BLOCKED',
     cause: `${pathname} refused a credentialed write: ${reason}`,
-    fix: "call it with an Authorization header instead of the session cookie, add the calling origin to http.cors.origins in app.config.ts, or set http.csrf.mode: 'off' if this app has no cookie session at all",
+    fix: "call it with an Authorization header instead of the session cookie, add the calling origin to configureHttp({ cors: { origins } }), or configureHttp({ csrf: { mode: 'off' } }) if this app has no cookie session at all",
   });
 
 /**
@@ -374,6 +376,6 @@ export const requestTimedOut = (method: string, pathname: string, timeoutMs: num
   new HttpError({
     code: 'X_TIMEOUT',
     cause: `${method} ${pathname} did not finish within ${timeoutMs}ms`,
-    fix: 'pass ctx.signal to every outbound call (fetch(url, { signal: ctx.signal })) and call throwIfAborted(ctx) before expensive work, or raise http.requestTimeoutMs in app.config.ts',
+    fix: 'pass ctx.signal to every outbound call (fetch(url, { signal: ctx.signal })) and call throwIfAborted(ctx) before expensive work, or call configureHttp({ requestTimeoutMs: 60_000 }) at module scope in a file under apps/*/',
     meta: { timeoutMs },
   });

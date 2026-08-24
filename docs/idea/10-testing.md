@@ -140,7 +140,7 @@ Every primitive emits a test scaffold that fails until filled in — an untested
 
 ## `x verify`
 
-The single gate. Green means shippable ([axiom 5](./00-thesis.md)). **19 steps**, in this order — `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](../../packages/cli/src/verify-step.ts) is the executable copy of the list, `VERIFY_STEPS` in [`cmd-verify.ts`](../../packages/cli/src/cmd-verify.ts) the implementations. A page stating another number fails `bun run scripts/gate-steps.ts`.
+The single gate. Green means shippable ([axiom 5](./00-thesis.md)). **20 steps**, in this order — `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](../../packages/cli/src/verify-step.ts) is the executable copy of the list, `VERIFY_STEPS` in [`cmd-verify.ts`](../../packages/cli/src/cmd-verify.ts) the implementations. A page stating another number fails `bun run scripts/gate-steps.ts`.
 
 | # | Step | Fails on |
 |---|---|---|
@@ -160,7 +160,7 @@ The single gate. Green means shippable ([axiom 5](./00-thesis.md)). **19 steps**
 | 19 | roadmap | a milestone row with no status marker, or one marked ✅ whose named artifacts are not on disk ([`14-roadmap.md`](./14-roadmap.md)) |
 
 A skipped step is never counted as a passing one. The summary carries both numbers and names the
-skips — `12 of 19 steps passed in 53224ms — 7 skipped: job, eval, drift, contract-diff, budgets, seo, i18n` —
+skips — `12 of 20 steps passed in 53224ms — 8 skipped: job, eval, drift, contract-diff, budgets, seo, i18n, policy` —
 so a green gate that is green because the suite does not exist has to say so on the one line every
 reader sees. `all 19 steps passed` means nineteen steps actually ran.
 

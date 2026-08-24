@@ -41,6 +41,14 @@ export const VERIFY_STEP_NAMES = [
   // registries that load filled. Until it existed, an app could ship every user-facing string as
   // `⟦key⟧` with `x verify` green, because nothing in the gate ever asked (issue #249).
   'i18n',
+  // Twentieth, by the same test `seo` and `i18n` each passed: a rider must ask the SAME question
+  // off the same data, and "was this import legal?" is not "does the permission this app grants
+  // and requires exist?". Reported under `budgets` it would hand the reader a byte budget for an
+  // authz defect (axiom 4). Until it existed, `x new` shipped an app that answered HTTP 500 with
+  // X_PERMISSION_UNKNOWN on two of its three routes under a green gate: `defineRoles()` accepts an
+  // undeclared grant in silence and `RouteGuard.permission` is a bare string. It costs no second
+  // app load — `budgets` already imported every module, and this reads the registries that filled.
+  'policy',
   'manifest',
   'roadmap',
 ] as const;

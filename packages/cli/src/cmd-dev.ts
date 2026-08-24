@@ -26,6 +26,7 @@ import { devDashboardRoutes, devPanels } from './dev-dashboard';
 import { clearLock, preflight, writeLock } from './dev-lock';
 import { createStatementLedger } from './dev-n-plus-one';
 import { appRoutes } from './dev-render';
+import { replicaOverrides } from './dev-replica';
 import type { RunningRoles } from './dev-roles';
 import { DEV_BINDING, DEV_ROLES, selectRoles, startRoles } from './dev-roles';
 import type { RunningServices } from './dev-runtime';
@@ -195,6 +196,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     ...appRoutes({ buildId, resolveIsland: (file) => state.islands.resolverFor(file) }),
   ];
 
+  const replicaOverride = replicaOverrides(undefined, services.db, options.env);
   const running = await startRoles({
     roles: options.roles ?? DEV_ROLES,
     port: options.port,
@@ -223,6 +225,10 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     // diagnostic to call.
     devNotices: (ctx: RequestContext): readonly OverlayNotice[] =>
       statements.repeatsFor(asCtx(ctx)).map(loopFacts).map(loopNotice),
+    // The read-replica scope, opened per request. Absent for every app that names no
+    // `DATABASE_REPLICA_URL` — which is every embedded boot by construction, since PGlite has no
+    // standby — so this key does not exist on a homework app's boot at all.
+    ...(replicaOverride === undefined ? {} : { overrides: replicaOverride }),
   });
 
   const stopWatching = watchApp(options.root, (file) => {

@@ -7,6 +7,7 @@ import { doctorCommand, doctorPort, OFFLINE_FALLBACK, probeFor, runDoctor } from
 import type { CommandContext } from './command';
 import { ICON_SOURCE } from './dev-assets';
 import { PORT_RANGE, parseIntFlag } from './flag-number';
+import type { Finding } from './output';
 import type { ParsedArgs } from './parse';
 import { parseArgs } from './parse';
 
@@ -21,6 +22,9 @@ const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   production: false,
   exists: () => true,
   portFree: async () => true,
+  // Reachable, or embedded — the probe's own `null`. A test that opened a pool would be asking
+  // about the box it runs on rather than about `runDoctor`.
+  database: async () => null,
   drift: async () => [],
   snapshots: async () => [],
   ...over,
@@ -323,3 +327,41 @@ function doctorAppRoot(): string {
   writeFileSync(join(dir, 'app.config.ts'), 'export const config = {};\n');
   return dir;
 }
+
+describe('unit · x doctor probes the whole surface x dev binds', () => {
+  // `x dev --port 3999` printed `web listening on 3999`, then died on 4000 as X_CLI_UNEXPECTED
+  // with a caught `Error` rendered into its cause — and `x doctor --port 3999` answered
+  // "no findings — environment is shippable", because it probed one port of the two (#F5).
+  test('the sync port is probed too, and the finding names the role that wants it', async () => {
+    const findings = await runDoctor(
+      probe({ port: 3999, portFree: async (port) => port !== 4000 }),
+    );
+    expect(findings.map((entry) => entry.code)).toEqual(['X_PORT_IN_USE']);
+    expect(findings[0]?.cause).toContain('port 4000');
+    expect(findings[0]?.cause).toContain('sync');
+  });
+
+  test('a taken web port still names the web role, so the two are never confused', async () => {
+    const findings = await runDoctor(
+      probe({ port: 3999, portFree: async (port) => port !== 3999 }),
+    );
+    expect(findings[0]?.cause).toContain('port 3999');
+    expect(findings[0]?.cause).toContain('web');
+  });
+
+  // `x doctor` answered "shippable" against DATABASE_URL=postgres://nope:nope@localhost:5432/nope
+  // while `x db migrate` on the same env answered X_DB_UNAVAILABLE.
+  test('an unreachable database is a finding with the same fix @ultimat3/db gives', async () => {
+    const unreachable: Finding = {
+      code: 'X_DB_UNAVAILABLE',
+      cause: 'DATABASE_URL does not answer `select 1`: connection refused',
+      fix: 'set DATABASE_URL to a reachable Postgres url, or run `x dev` to use the embedded PGlite',
+    };
+    const codesFound = await codes(probe({ database: async () => unreachable }));
+    expect(codesFound).toContain('X_DB_UNAVAILABLE');
+  });
+
+  test('an embedded database is not probed at all — that lock belongs to x dev', async () => {
+    expect(await codes(probe())).toEqual([]);
+  });
+});

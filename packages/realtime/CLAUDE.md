@@ -604,8 +604,10 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `liveQueryDefinition` keys the shared window by the qid — so keeping both correct was never the
   option; the first time either moved, every resume decision and every window lookup were keyed
   differently. `realtime -> query` is the one declared sideways edge and this package already
-  imports it. **`fnv1a` stays here**, and only it: its job is the cursor's result-set digest, where
-  a collision costs a missed re-sort and never one client served out of another's window.
+  imports it. **`fnv1a` is gone too, `As of 2026-08-24`**: it stayed for one job — the cursor's
+  result-set digest — and `LiveCursor.digest` was deleted for having no reader, so this package now
+  owns no hash at all. A 32-bit hash nothing calls is one the next caller reaches for as a sharing
+  key, which is the single thing `json.test.ts` used to pin it against.
   `live-contract.test.ts` is the pin — it reads `registry.subscriberCount(queryHash(name, input))`
   through a real subscribe, so a local derivation fails it. Cost of the move: none observable on the
   server. Every qid a node computes comes from a DECODED frame, and `JSON.parse` produces no
@@ -821,7 +823,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `policy-gate.ts` | the only authz seam |
 | `subscriber-gate.ts` | the per-subscriber pass of a definition's row policy, and its two counters — `rowsDenied` and `gateFailures`. Evaluates no policy of its own |
 | `live-contract.ts` | what a live query IS: `LiveQueryDefinition`, `SnapshotResult`, `LiveSubscription`. Four modules need the shape and none of them needs the registry that runs it. The **id** is not here and not anywhere in this package — it is `@ultimat3/query`'s `queryHash` |
-| `json.ts` | the wire's value types and `fnv1a` (drift), the one hash still owned here. The canonical form and the sharing-key hash are `@ultimat3/core`'s (`canonicalJson`, `fingerprint`) — `json.test.ts` pins that `fnv1a` is never mistakable for one |
+| `json.ts` | the wire's value types. **No hash**: the canonical form and the sharing-key hash are `@ultimat3/core`'s (`canonicalJson`, `fingerprint`), and the 32-bit `fnv1a` that stayed for `LiveCursor.digest` went with it (2026-08-24) |
 | `live-definition.ts` | the only bridge from a declared `query({ live: true })` to a registrable definition — and `policy-gate.ts`'s only caller |
 | `matcher-bridge.ts` | the only `@ultimat3/query` matcher seam — and where a patch row is narrowed to the columns the query returned |
 
@@ -846,6 +848,16 @@ the same whitelist drops an old client's copy, and a new client's omission decod
 field always held. Bumping for either refuses every in-flight client on a rolling deploy and buys
 nothing — the version guards incompatibility, not novelty. Removing a field something *does* read
 is the opposite case and bumps.
+
+**"Nothing read it" is decided by the DECODER, not by the callers — and that half is what moved
+`PROTOCOL_VERSION` to 2 (2026-08-24, BREAKING).** `hello.resume` was free because `decode` read it
+through `list()`, which answers `[]` for an absent field; `cursor.digest` and `cursor.count` were
+read through `str()` and `num()`, which **throw**. So deleting two fields no *caller* consumed
+still made the frame unreadable to a peer one deploy behind — in **both** directions, since a
+cursor rides the client's `subscribe` and the node's `snapshot`. Without the bump the skew shows up
+as a per-frame `field "digest" must be a string`, which is the same refusal with none of the
+instruction. Before claiming a removal is free, read the field's line in `decode`: a `list()` is
+free, a `str()`/`num()` is a bump.
 
 **A patch carries the result set's columns, never the table's** — `narrowRow` in
 `matcher-bridge.ts`, `As of 2026-08-20`. A `ChangeEvent` carries the whole TABLE row (that is what

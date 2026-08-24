@@ -15,7 +15,7 @@ import type { Relation } from './relations';
 import { relationNamed } from './relations';
 import type { Page, Repo, RepoOptions, UpsertArgs } from './repo';
 import type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
-import type { ColumnMap, IdOf, Insertable, RowPatch } from './types';
+import type { ColumnMap, IdOf, Insertable, MoneyValue, RowPatch } from './types';
 
 /**
  * What a preloaded relation adds to a row. `unknown` because the name is a string resolved at
@@ -59,8 +59,12 @@ export interface ReadBuilder<Row> {
    *
    * The loop closes it: `break`, `return` and a throw all stop the next statement, and
    * `await using` does the same for a handle kept in a variable. A chain that cannot carry a
-   * cursor — a nullable sort column — and a chain that also called `limit()` are refused here,
-   * not one batch later.
+   * cursor and a chain that also called `limit()` are refused here, not one batch later. An
+   * ORDINARY nullable sort column is not one of those: it orders `nulls last` ascending and
+   * `nulls first` descending, and the cursor carries that position. What is refused is a sort key
+   * that leaves the order un-total — an undeclared column, a money property named without its
+   * part, or a nullable PRIMARY-KEY column, where `null = null` is unknown and two such rows are
+   * one position to the seek (`cursor.ts`'s `assertSeekable`).
    */
   inBatches(size: number): BatchIterator<Row>;
   /** The terminal: one bounded page and the cursor that continues it. */
@@ -83,6 +87,42 @@ export interface ReadBuilder<Row> {
    * jsonb, money), and a chain matching more distinct values than one statement should answer with.
    */
   countBy<K extends keyof Row & string>(column: K): Promise<ReadonlyMap<Row[K], number>>;
+  /**
+   * The four SQL aggregates, over exactly the rows `count()` counts — the chain's filters, its
+   * tenancy and its soft-delete visibility, never its page. "Total spend this month" is
+   * `payments.where({ orgId }).andWhere('paidAt', 'gte', from).sum('amount')`, one statement,
+   * rather than a page loop or a hand-written query outside every guard this layer applies.
+   *
+   * **Never a float.** `sum` and `avg` answer decimal TEXT whatever the column was — the sum of a
+   * million `integer` rows is not an `integer` and `Number()` on it loses digits past 2^53 — and a
+   * money column answers a `MoneyValue` in integer minor units. `min`/`max` answer the row's own
+   * type, because the answer is one of the values that went in.
+   *
+   * `null` for an empty set in every one of them, which is what SQL answers: a `0` would claim
+   * rows were seen.
+   *
+   * Refused rather than answered: a kind with no aggregate the two drivers can agree on (`text`
+   * ordering is the database's collation here and JS code-unit order there), `avg` over money
+   * (every answer would be a silent rounding of a fraction of a minor unit), and an amount
+   * covering more than one currency or scale.
+   */
+  sum<K extends keyof Row & string>(
+    column: K,
+  ): Promise<(Row[K] extends MoneyValue | null ? MoneyValue : string) | null>;
+  avg<K extends keyof Row & string>(column: K): Promise<string | null>;
+  min<K extends keyof Row & string>(column: K): Promise<Row[K] | null>;
+  max<K extends keyof Row & string>(column: K): Promise<Row[K] | null>;
+  /**
+   * The planner's own row estimate for the table — `reltuples`, one row out of `pg_class`, and the
+   * only count that stays constant time as the table grows. `count()` walks every visible row
+   * because MVCC gives it no shortcut, so past a few million it is the read that trips a web
+   * role's `statement_timeout` and no index can make it cheaper.
+   *
+   * The whole TABLE, never the chain's filters — a filtered chain is `X_APPROXIMATE_COUNT_FILTERED`
+   * rather than an estimate that answers a different question than the one asked. `null` when the
+   * table has never been analysed, which is the absence of an estimate and not an estimate of zero.
+   */
+  approximateCount(): Promise<number | null>;
   /** The plan this chain describes. Safe to log — `describePlan()` elides values. */
   plan(): QueryPlan;
 }
@@ -275,6 +315,22 @@ const builder = <Source, Row>(
     },
 
     count: () => repo.count(args()),
+
+    // The one cast on each of these, and it is the same seam `countBy` and `select()` have: the
+    // driver contract is row-agnostic because a column name is a runtime string there, while the
+    // chain knows which property it just named and therefore what comes back.
+    sum: async <K extends keyof Row & string>(column: K) =>
+      (await repo.aggregate('sum', column, args())) as
+        | (Row[K] extends MoneyValue | null ? MoneyValue : string)
+        | null,
+    avg: async (column: keyof Row & string) =>
+      (await repo.aggregate('avg', column, args())) as string | null,
+    min: async <K extends keyof Row & string>(column: K) =>
+      (await repo.aggregate('min', column, args())) as Row[K] | null,
+    max: async <K extends keyof Row & string>(column: K) =>
+      (await repo.aggregate('max', column, args())) as Row[K] | null,
+
+    approximateCount: () => repo.approximateCount(args()),
 
     async countBy<K extends keyof Row & string>(column: K) {
       // The one cast on this terminal, and it is the same seam `select()` has: the driver contract

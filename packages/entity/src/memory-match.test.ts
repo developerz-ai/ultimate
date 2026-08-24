@@ -7,8 +7,8 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { integer, money, text, uuid } from './columns';
 import { bigint, decimal } from './columns-data';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
 import { clearRegistry } from './registry';
-import { memoryRepo } from './repo';
 import type { Predicate } from './tenancy';
 
 const ledger = entity('match_test_ledger', {

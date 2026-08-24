@@ -2,10 +2,11 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Ten majors have shipped, and this page walks all ten** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Eleven majors have shipped, and this page walks all eleven** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 11.x → 12.0.0 | **16**, from the widest sweep since 4.0.0 — a keyset defect that dropped rows, a name that reached the DDL unchecked, and eight interfaces that gained a member | the `12.0.0` section, in order |
 | 10.x → 11.0.0 | **7** | the `11.0.0` section, in order |
 | 9.x → 10.0.0 | **19** | the `10.0.0` section, in order |
 | 8.x → 9.0.0 | **5** | the `9.0.0` section, in order |
@@ -16,14 +17,14 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 1.x → 11.0.0 | **118** | all ten sections, oldest first |
+| 1.x → 12.0.0 | **134** | all eleven sections, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 118 As of 2026-08-23 — the WHOLE file, and all 118 sit inside the section of the major that
-# shipped them: the sum of the ten per-major rows above. `[Unreleased]` holds none, which is what
+# 134 As of 2026-08-24 — the WHOLE file, and all 134 sit inside the section of the major that
+# shipped them: the sum of the eleven per-major rows above. `[Unreleased]` holds none, which is what
 # a released commit looks like — a `BREAKING —` line left there at a tag is
 # X_DOC_CHANGELOG_UNRELEASED_BREAKING, and the release promotes the section rather than appending one.
 # Scope the count to one section to read a single row. The range is that section's own heading line
@@ -44,6 +45,337 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 11.x → 12.0.0, entry by entry
+
+**Sixteen breaking entries**, in three groups. **Eight** are compile errors the moment you upgrade
+(4, 5, 6, 8, 9, 13, 14, 16). **Four** need an action before or at the deploy and nothing fails to
+compile (1, 2, 3, 11) — every persisted pagination cursor stops working, rows sharing a sort value
+change order, one index migration, and **`sync` nodes and browser clients must ship together**. The
+last **four** are visible only to a caller at runtime (7, 10, 12, 15).
+
+**No `app.config.ts` key moves**, because the surface this major opens never had one: `AppConfig` has
+never carried an `http` member, so `configureHttp()` is an addition and not a migration — see the
+last table. No codemod: every entry names its own manual edit.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | every cursor minted before 12.0.0 is `X_CURSOR_INVALID` | you persisted a cursor — in a URL, a job payload, a client store. Nothing fails to compile |
+| 2 | the primary-key tiebreak takes the **last declared** key's direction | you depended on the order of rows sharing a sort value. Nothing fails to compile |
+| 3 | an index declaring `where` or `order` is renamed `<table>_<cols>_<hash8>_idx` | you declared one — **a migration, before the deploy** |
+| 4 | a physical column or table name must be `[a-z_][a-z0-9_$]*`, at most 63 bytes | you wrote `.column('createdAt')` or an `entity(name)` / `table` that is not lower-snake |
+| 5 | `Repo` gains `aggregate` and `approximateCount`; `ReadBuilder` gains five terminals | you implement `Repo` or `Driver` yourself |
+| 6 | `Operator` gains `contains`, `contained-by`, `overlaps`, `has-key` | you `switch` exhaustively over `Operator` |
+| 7 | `introspect()` returns app tables only | you read its output, or assert how many catalog queries it issues |
+| 8 | `rateLimitKey` is deleted; `RateLimitConfig.tenantBucket` is required | you called `rateLimitKey`, or built a full `RateLimitConfig` |
+| 9 | `Ctx` gains a required `deadlineAt` | you hand-build a `Ctx` — a test fixture, a custom host |
+| 10 | `traceHeaders()` sends the remaining request budget | never for the caller; a downstream service now receives `x-request-timeout-ms` |
+| 11 | `PROTOCOL_VERSION` 1 → 2, and five realtime exports are deleted | you imported one — and **every** deployment redeploys clients and `sync` nodes together |
+| 12 | MCP rate limits are enforced, 120 read / 20 write per minute per actor | an agent exceeded them; it was previously unmetered |
+| 13 | `memoryAuditSink()` is bounded at 1,000 and discards oldest-first | you used it as a system of record, or implement `MemoryAuditSink` |
+| 14 | `RouteBudget.css`, `.cls` and `.tbt` are deleted | you declared one — it was ignored, and now it does not compile |
+| 15 | `claim({ queues: [] })` is refused; the memory driver's `claim` is `async` | you call a `JobDriver` directly |
+| 16 | `DoctorProbe` gains a required `database()` | you implement `DoctorProbe` |
+
+### Entries 4, 5, 6, 8, 9, 13, 14 and 16 — a compile error the moment you upgrade
+
+**4. Spell every physical name lower-snake.** `X_INVARIANT_VIOLATED` at `entity()`, before any
+statement runs.
+
+```diff
+- createdAt: timestamp().column('createdAt'),
++ createdAt: timestamp().column('created_at'),
+```
+
+A **derived** name is unaffected: `columnName` is `meta.name ?? snake(property)` and `snake()`
+lower-cases, so `createdAt: timestamp()` still writes `created_at`. What changed is that the derived
+branch is now checked too — for three majors only `meta.name` was, so a property named
+`n" , "x" text); drop table t; --` put a real `drop table` inside a generated `create table`.
+Quoting is not a defence against a value that can close the quote. `entity(name)` and `table` go
+through the same assertion.
+
+**5. Implement the two new `Repo` members, or stop hand-rolling one.** `TS2739`.
+
+```diff
+  const repo: Repo<Post> = {
+    findById, findMany, insert, update, delete: remove, count, countBy,
++   aggregate: (fn, column, args) => driverAggregate(fn, column, args),
++   approximateCount: async () => null,        // `null` is "never analysed", and always legal
+  };
+```
+
+`approximateCount` may answer `null` unconditionally — that is the documented value for a table
+nobody has `ANALYZE`d, and every caller already handles it. `aggregate` cannot be stubbed the same
+way: a wrong number is worse than no number, so raise `X_AGGREGATE_UNSUPPORTED` if you will not
+implement it.
+
+**6. Widen the `switch`.** `TS2366`, or a silent fallthrough if it had a `default`.
+
+```diff
+    case 'is-not-null': return sql`${col} is not null`;
++   case 'contains':      return sql`${col} @> ${bind}`;
++   case 'contained-by':  return sql`${col} <@ ${bind}`;
++   case 'overlaps':      return sql`${col} && ${bind}`;
++   case 'has-key':       return sql`${col} ? ${bind}`;
+```
+
+The four exist so a declared `json()` or `arrayOf()` column is no longer write-only from the query
+language.
+
+**8. `rateLimitSpends` answers a LIST, not a key.** `TS2305`.
+
+```diff
+- const key = rateLimitKey(route, ctx);
+- await limiter.assert(key, bucket);
++ for (const spend of rateLimitSpends(route, ctx, config)) {
++   await limiter.assert(spend.key, spend.bucket);
++ }
+```
+
+One request spends the caller's bucket and then the tenant's, stopping at the first refusal. The old
+builder answered `actor` **else** `org` **else** `ip`, exclusively — and the anonymous actor answers
+`null` for both of the first two — so no HTTP request ever spent an org bucket. `RateLimitConfig`
+gains a required `tenantBucket: string | null`; `null` is "this app has no per-tenant allowance",
+which is the default and the previous behaviour.
+
+**9. Add `deadlineAt` to a hand-built `Ctx`.** `TS2741`.
+
+```diff
+  const ctx: Ctx = {
+    requestId, traceId, locale, tz, buildId, role, actor, now,
++   deadlineAt: null,        // null is "no deadline", which is what a job or a test has
+  };
+```
+
+`createContext({ … })` already defaults it, so only a literal pays. It is what
+`remainingBudgetMs(ctx)` reads and therefore what entry 10 propagates.
+
+**13. `memoryAuditSink()` is not a system of record.** The interface break is `TS2739` on
+`size`/`dropped`; the behaviour break is silent.
+
+```diff
+- setAuditSink(memoryAuditSink());
++ setAuditSink(postgresAuditSink({
++   executor: { query: (text, values) => db().query({ text, values }) },
++ }));
+```
+
+Past 1,000 records the memory sink drops the **oldest** on every write, so an audited action can run,
+succeed, be recorded and leave nothing behind. `{ maxRecords }` raises the bound and does not remove
+it. `dropped` is non-zero exactly when the sink is telling you it is the wrong one. `x_audit` is
+applied at boot beside the jobs, idempotency and rate-limit tables, so there is no migration to write.
+
+**14. Delete the budget key.** `TS2353`.
+
+```diff
+  budget: {
+    js: '40kb',
+-   css: '12kb',
+-   cls: 0.1,
+  },
+```
+
+There is nothing to replace them with. All three were declared on the route contract, flattened away
+by `registerRoute` — which projects a budget to `budgetJs` + `budgetLcp` and nothing else — and read
+by no consumer anywhere, so a declared CSS budget was ignored while the `budgets` step reported
+green. A new budget key is now a build error until the descriptor projects it
+(`_EveryBudgetKeyIsProjected`, `packages/render/src/type-pins.tsx`). `budget.lcp` survives and is
+**published, not enforced**: nothing in the build observes a paint.
+
+**16. Implement `DoctorProbe.database()`.** `TS2741`. Only a hand-written probe pays — `x doctor`'s
+own is unchanged.
+
+```diff
+  const probe: DoctorProbe = {
+    bunVersion, root, port, production, devCursorSecret, devStorageSecret,
++   database: () => probeDatabase(process.env['DATABASE_URL']),
+  };
+```
+
+`x doctor` answered "shippable" while probing the web port alone: a wrong password or a database that
+does not exist accepts the socket and refuses the session, which a port check cannot see. It now
+probes both ports and the database.
+
+### Entries 1, 2, 3 and 11 — do this before the deploy
+
+**1. Drop every persisted cursor.** Nothing fails to compile; a stored cursor is refused at decode
+with `X_CURSOR_INVALID`.
+
+| Where a cursor lives | Do this |
+|---|---|
+| a URL a client holds | nothing — request the first page (`after: null`) and re-mint |
+| a job payload, a resumable `inBatches()` position | re-enqueue from the start, or from a business key of your own |
+| a client store, a saved view | clear it on the version bump |
+
+Two changes make an old cursor unreadable, and both were forced by one defect. A `timestamp()` sort
+key is now carried as a **microsecond epoch** rather than an ISO string, because `ORDER BY` evaluates
+`timestamptz` at microsecond precision while the seek treated a whole millisecond as one equality
+class — two different equality classes over one page boundary. Reproduced against Postgres 16: three
+rows inside one millisecond, uuid-v7 ids, `orderBy('createdAt','desc').limit(1)` returned **1 of 3
+rows and stopped**, every time. And every entry is **tagged** — `~` for an absent value, `!` before a
+present one — so an absence can be told from the text that spells it, which is what nullable sort
+keys need.
+
+The seek is now a plain `<` / `>` / `=` against `$n::timestamptz`; `nextMillisecond` and the
+`>= v and < v + 1ms` window are gone. A read ordered by a `timestamp()` column carries one extra
+output column on the wire, `"<col>$US"` — a name no entity can declare, stripped by `decodeRow`, so
+it reaches no caller's row. **Only a test that asserts SQL text sees it**, which is exactly the suite
+that hid this defect for three majors.
+
+**2. The default total order is uniform-direction.**
+
+```diff
+- ORDER BY created_at DESC, id ASC
++ ORDER BY created_at DESC, id DESC
+```
+
+`totalOrder` appends the primary key in the **last declared** key's direction rather than always
+ascending, so `orderBy('createdAt','desc')` runs `created_at desc, id desc`. **Rows sharing a sort
+value come back in the opposite order to before**, and no page is lost either way — the seek matches
+the order it is built from.
+
+Two things follow. A mixed-direction order was un-indexable by this framework's own index DSL, so the
+default one could never be served by a declared index. And a uniform order is now emitted as a row
+comparison `(a, b) < ($1, $2)`, measured on PG16 as an `Index Only Scan` against `BitmapOr` + `Sort`
+for the or-chain. The or-chain remains for an order you wrote as mixed yourself, and for one whose
+keys are not all `NOT NULL`: a row comparison has no null ordering, so a NULL on either side makes
+the whole comparison unknown.
+
+**3. Rename the indexes that declare `where` or `order`.** A declared index is matched by name, so
+the old one is not dropped and the new one is not created until you say so.
+
+```sh
+x db gen "rename partial and ordered indexes"   # then read the emitted up/down before applying
+```
+
+```sql
+-- what the generated migration looks like, one pair per affected index
+alter index posts_author_id_idx rename to posts_author_id_9f2c1ab4_idx;
+```
+
+The discriminator is `sha256("<order>|<where>")`, first 8 hex. **Plain and `unique()` names are
+unchanged**, deliberately: Postgres names a column-level `unique()` index `<table>_<column>_key`
+itself, so a discriminator there would make the generator emit a second `create unique index` for an
+index that already exists (`42P07`), and a foreign key's own index is deduped against a hand-declared
+one by the plain name.
+
+Without it, two **different** partial indexes on one column were one name — `posts_author_id_idx` for
+both `where status = 'published'` and `where status = 'draft'` — and the second was dropped with no
+error, no warning and no drift finding. So this migration may create an index you declared years ago
+and never had. A name over 63 bytes is now refused at declaration rather than truncated by the server
+in silence.
+
+**11. Redeploy clients and `sync` nodes together.** `PROTOCOL_VERSION` moves 1 → 2 and a skewed peer
+is refused with `X_PROTOCOL_VERSION`, in **both** directions — a cursor rides the client's `subscribe`
+and the node's `snapshot`, and the deleted fields were decoded through `str()` / `num()`, which throw
+on absence. There is no rolling window in which the two versions interoperate.
+
+```diff
+- import { digestOf, DIGEST_UNVERIFIED, fnv1a } from '@ultimat3/realtime';
++ // nothing replaces them
+```
+
+`LiveCursor.digest` and `LiveCursor.count` are gone with them. Every snapshot ran `canonicalJson`
+over every row and hashed it for a value no code path read — a full serialize-and-hash of every
+result set, per live query, per reconnecting socket, in the restart storm this package is benchmarked
+on. `count` would have been wrong had it ever gained a reader: `advance` seeds its set from the
+already-truncated `ids`, so a delete past `CURSOR_ID_LIMIT` never decremented it. `@ultimat3/flags`
+and `@ultimat3/ai` keep their own `fnv1a` and are untouched.
+
+### Entries 7, 10, 12 and 15 — a caller can see the difference
+
+**7. `introspect()` returns app tables only.**
+
+| Relation | Before | Now |
+|---|---|---|
+| an ordinary or partitioned table | returned | returned |
+| a view, a materialised view, a foreign table | returned | **excluded** |
+| anything Postgres records as extension-owned (`pg_depend`, `deptype = 'e'`) | returned | **excluded** |
+| a table someone created by hand | returned | returned, and still `unexpected-table` |
+
+`IntrospectOptions.exclude` no longer decides the set on its own — it narrows what survives the rule
+above, and cannot bring an excluded relation back. **This is what makes a stock managed Postgres
+deployable**: `create extension pg_stat_statements` in `public` is the CNPG, RDS, Supabase and Neon
+default, and its view read as `unexpected-table` with `x db gen "add pg_stat_statements"` as the
+printed fix — so every deploy failed terminally and following the fix would have written an
+extension's internal view into the app's migration set. Ownership rather than a name prefix, because
+that rule covers the view and misses PostGIS's `spatial_ref_sys`.
+
+**Edit only if a test asserts the statement count**: it issues four catalog queries where it issued
+three.
+
+**10. A downstream service now receives `x-request-timeout-ms`.** No edit on the calling side —
+`traceHeaders()` is spread by both typed clients before your own headers, so an explicit value still
+wins.
+
+| Situation | Header sent |
+|---|---|
+| in a request with 12s left of its budget | `x-request-timeout-ms: 12000` |
+| in a request whose budget is spent | none — **never `0`**, which the far side reads as "the caller asked for nothing" |
+| in a job, a test, a browser | none; there is no ambient deadline |
+
+The receiving end may only be **shortened** by it: `resolveTimeoutMs` takes the minimum of its own
+configured budget and the header. Before this, a 30s gateway budget already spent to t=29 handed the
+next service a fresh 30s, so work ran for another half minute holding a pool slot and a vendor
+connection after the caller's socket had already been answered `X_TIMEOUT`.
+
+**12. MCP callers are metered.** 120 read and 20 write per minute, per actor, per class —
+`X_MCP_RATE_LIMITED`, 429, with `Retry-After`.
+
+```ts
+mcpHttpRoute({ server, resolveToken, rateLimits: { read: 600, write: 60 } });
+// or defineAppMcp({ …, rateLimits: { read: 600, write: 60 } })
+```
+
+A `tools/call` naming a `destructive: true` tool spends `write`; **so does any call this server
+cannot resolve**, fail-closed, so a probing client never gets the cheap bucket. Everything else,
+`initialize` included, spends `read` — a coarse per-route rule would have thrown an agent off on its
+handshake. The key names the actor and never reaches the caller.
+
+**Behind more than one replica, pass the store too** — the default counts per process, which is
+honest for `x mcp serve` and a lie for N replicas behind one URL, each enforcing the full allowance
+on its own:
+
+```ts
+mcpHttpRoute({ server, resolveToken, rateLimitStore: postgresRateLimitStore({ executor }) });
+```
+
+`X_MCP_RATE_LIMITED` is its own code and not `X_RATE_LIMITED` because the knob differs: that one's
+`fix:` names the HTTP pipeline's buckets, which do not govern this route, so raising them would run
+and change nothing.
+
+**15. Name the queue.** `X_JOB_CLAIM_QUEUES_EMPTY` from both drivers.
+
+```diff
+- await driver.claim({ queues: [], limit, visibilityTimeoutMs, workerId });
++ await driver.claim({ queues: ['default'], limit, visibilityTimeoutMs, workerId });
+```
+
+An empty list named no queue and meant two different things: **every** queue on the memory driver,
+**the `default` queue** on Postgres, with `ClaimOptions.queues` documenting neither. Each meaning is
+silently wrong in the other's deployment — one takes work this worker was never configured for, the
+other drains nothing and reads as an idle queue. There is no third meaning to pick.
+
+`createWorker` passes exactly one queue per pass, so only an embedder calling a driver directly is
+affected. The memory driver's `claim` is now `async` to raise the refusal, so a caller that read its
+return synchronously gets a `Promise`.
+
+### Added and fixed in the same release, and none of it costs an edit
+
+Read these if you built a workaround for one.
+
+| Change | What it means |
+|---|---|
+| **read replicas** | `DATABASE_REPLICA_URL` plus a `withReplicaReads(fn)` scope. Opt in **twice** and byte-identical when unconfigured. Read-your-writes is the rule, not an option: one write at any depth pins the rest of the scope to the primary, and a transaction is always the primary's. Three consecutive replica failures park it for ten seconds. **The URL must name a read-only standby** |
+| **`configureHttp()`** | the entire HTTP tuning surface — CORS origins, body limit, request timeout, max in-flight, rate-limit buckets — was reachable from **no app config key that existed**. `AppConfig` has never had an `http` member, so every `fix:` line naming `http.<key>` in `app.config.ts` resolved against nothing. Call it at module scope in a file under `apps/*/`. `rateLimit.scope` stays boot-owned |
+| **a durable audit sink** | `postgresAuditSink({ executor })`, append-only, no purge — retention is a legal question with a different answer per app. The row is a fixed allow-list and never a walk of the `Ctx`, which on an HTTP surface carries the caller's `Authorization` and `Cookie` |
+| **aggregates and containment** | `sum` / `avg` / `min` / `max` / `approximateCount`, and four containment operators. `min`/`max` on text is refused (Postgres orders by collation, JS by code unit); `avg` over money is refused, naming `sum()` + `count()` |
+| **nullable sort keys order** | `asc nulls last` / `desc nulls first`, with the null position carried in the cursor. Only a nullable **primary-key** column is still refused — `null = null` is unknown, so the tiebreak cannot break a tie. The refusal also moved to plan time: it used to fire only when a next page existed, so it was green on 15 seeded rows and `X_INVARIANT_VIOLATED` on the first real read |
+| **a `policy` gate step**, twentieth | every permission an app grants or requires must be one it declares. the scaffold shipped an app that answered `X_PERMISSION_UNKNOWN` on two of its three routes — status 500 — under a green gate. It skips in the framework monorepo, which declares no roles |
+| **`X_MANIFEST_MISSING`** | an app root with no `x.manifest.json` fails the `manifest` step. Nothing ever ran `x manifest`, so the file did not exist in any app `x new` produced while the step reported green. Run `x manifest` once and commit it |
+| **`scripts/declaration-readers.ts`** | every leaf key of every primitive declaration needs a reader in shipped source. 173 leaves across 18 roots, ratchet at zero |
+| MCP `minLength` / `maxLength` count code points | the validator counted UTF-16 code units while the schema that publishes those numbers counts code points, so an astral-character argument was passed and then refused by the action's own parse, or refused outright on a bound the agent had obeyed |
+| `x i18n add <locale>`, `x dev --port N` | a locale file that turned the gate red printing a fix that repaired nothing; and a dev server dying on port N+1 with a caught `Error` rendered into the cause and `X_CLI_UNEXPECTED` rather than a stable code |
 
 ## 10.x → 11.0.0, entry by entry
 
@@ -1302,6 +1634,7 @@ A client running build `A` requesting an asset from build `B` is the failure mod
 | `AppUpdateAvailable` signal | a Solid signal flips when the server reports a newer build. Your app renders its own "Update available — reload". No forced navigation, no lost form state |
 | Forced reload | **not a capability this framework has, `As of 2026-08`.** 9.0.0 deleted `updateSignal`, `updatePolicy`, `DEFAULT_GRACE_MS` and their types — they computed a grace, a `forced:` flag and a `deadlineAt`, and nothing performed the reload, nor could: `@ultimat3/http` (tier 2) and `@ultimat3/realtime` (tier 3) both sit below `pwa` (tier 4). Notification is complete — read `useConnection().updateAvailable`, or compare the worker's posted `to` with `detectSkew`, and render your own affordance. `x deploy --critical` was **removed in 4.0.0** for the same reason: echoed into the deploy plan, read by nothing |
 | Skew is observable | the `/_x` live panel reports the build-ID distribution of connected clients. `x status --json` is **planned**, not shipped |
+| The realtime **wire** is versioned separately | `PROTOCOL_VERSION` is a small integer in `@ultimat3/realtime`, `2` `As of 2026-08-24`. It is not the build id and it does not move per release: it moves only when a frame one side writes is a frame the other cannot read. A mismatch is `X_PROTOCOL_VERSION` on the frame — **clients and `sync` nodes are redeployed together across a bump**, because a cursor rides both the client's `subscribe` and the node's `snapshot`, so the skew breaks resume from either end ([Realtime](Realtime#wire-protocol-version)) |
 
 Server behavior on a stale build ID:
 

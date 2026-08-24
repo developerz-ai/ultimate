@@ -63,9 +63,9 @@ Built with [Ultimate](https://github.com/developerz-ai/ultimate). Bun-only, Post
 ## 🚀 Start
 
 \`\`\`sh
-bin/setup     # prerequisites, deps, env, the first migration, migrate, seed
-x dev         # all roles in one process, embedded Postgres, /_x mounted
-x verify      # the gate: typecheck, lint, boundaries, tests, drift, budgets
+bin/setup     # prerequisites, deps, env, the first migration, migrate, seed, the manifest
+bin/dev       # all roles in one process, embedded Postgres, /_x mounted
+bin/check     # the gate: typecheck, lint, boundaries, tests, drift, budgets
 \`\`\`
 
 \`packages/db/migrations\` starts empty and \`x db gen\` is its only writer — \`bin/setup\` runs
@@ -104,7 +104,13 @@ bunx x db migrate "$@"
 # \`postgres:\` DATABASE_URL and so dies on a clone with no Postgres — one line after reporting a
 # successful migration.
 bunx x db seed
-echo "setup complete — next: x dev"
+# The file \`AGENTS.md\` line 3 tells an agent facts live in, and \`x dev\` prints the path of. It
+# is a projection of the loaded app, so \`x new\` cannot write it — node_modules does not exist
+# yet — and nothing else ever ran the command: after \`x new\`, \`bin/setup\` and all 13
+# generators, \`find . -name '*.manifest.json'\` returned nothing while \`x verify\` reported
+# \`\u2713 manifest\`. \`x verify\`'s manifest step now refuses its absence (X_MANIFEST_MISSING).
+bunx x manifest
+echo "setup complete — next: bin/dev"
 `;
 
 const binDev = (): string => `#!/usr/bin/env bash

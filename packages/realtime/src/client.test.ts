@@ -41,7 +41,7 @@ describe('LiveClient close events', () => {
       v: PROTOCOL_VERSION,
       sid: decodeSid(sockets[1]),
       rows: [{ id: 'p1' }],
-      cursor: { qid: 'q', lsn: '1', digest: 'd1', ids: ['p1'], count: 1, at: 0 },
+      cursor: { qid: 'q', lsn: '1', ids: ['p1'], at: 0 },
     });
     expect(handle.state()).toBe('live');
 
@@ -81,7 +81,7 @@ describe('LiveClient close events', () => {
       v: PROTOCOL_VERSION,
       sid,
       rows: [{ id: 'p1', likes: 1 }],
-      cursor: { qid: 'q', lsn: '1', digest: 'd1', ids: ['p1'], count: 1, at: 0 },
+      cursor: { qid: 'q', lsn: '1', ids: ['p1'], at: 0 },
     });
     expect(handle.rows()).toEqual([{ id: 'p1', likes: 1 }]);
 
@@ -91,7 +91,7 @@ describe('LiveClient close events', () => {
       v: PROTOCOL_VERSION,
       sid,
       rows: [{ id: 'p1', likes: 99 }],
-      cursor: { qid: 'q', lsn: '0', digest: 'd0', ids: ['p1'], count: 1, at: 0 },
+      cursor: { qid: 'q', lsn: '0', ids: ['p1'], at: 0 },
     });
     expect(handle.rows()).toEqual([{ id: 'p1', likes: 1 }]);
   });
