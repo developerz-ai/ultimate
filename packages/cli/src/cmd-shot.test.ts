@@ -433,6 +433,53 @@ describe('unit · x shot refuses before it boots anything', () => {
     ]);
   });
 
+  test('a --cdp-url that is not a CDP endpoint is refused before the attach', async () => {
+    const error = await thrownBy(() =>
+      shotCommand.run(contextFor(['shot', '/', '--cdp-url', 'cdp.example.com'])),
+    );
+    expect([error['code'], error['fix']]).toEqual([
+      'X_CLI_BAD_FLAG',
+      'x shot / --cdp-url wss://cdp.example.com/session/abc',
+    ]);
+  });
+
+  /**
+   * One says which Chrome to START, the other says the browser is somebody else's. A reader who
+   * typed both has a belief about which one runs and half of them would be wrong — the same rule
+   * `--island` with a route positional follows, and for the same reason.
+   */
+  test('--browser and --cdp-url together are refused rather than ranked', async () => {
+    const error = await thrownBy(() =>
+      shotCommand.run(
+        contextFor(['shot', '/', '--browser', '/usr/bin/chromium', '--cdp-url', 'wss://x/y']),
+      ),
+    );
+    expect(error['code']).toBe('X_CLI_BAD_FLAG');
+    expect(String(error['message'])).toContain('--cdp-url');
+  });
+
+  /**
+   * An exported `SCRAPE_CDP_URL` is a shell-wide default, not a typed intent, so `--browser` beside
+   * it is an override and must run. Refusing the pair here would make one exported variable break
+   * every local capture in the session.
+   */
+  test('an exported SCRAPE_CDP_URL does not turn --browser into a conflict', async () => {
+    const error = await thrownBy(() =>
+      shotCommand.run({
+        args: parseArgs(['shot', '/', '--browser', '/no/such/chrome'], [shotCommand.spec]),
+        cwd: root,
+        runner: (command) => expect.unreachable(`x shot spawned ${command.join(' ')}`),
+        env: { SCRAPE_CDP_URL: 'wss://cdp.example.com/session/abc' },
+        bunVersion: '1.4.0',
+      }),
+    );
+    // Reached the executable check, which is the flag it was told to use.
+    expect([error['code'], error['fix']]).toEqual([
+      'X_CLI_BAD_FLAG',
+      'x shot / --browser /usr/bin/chromium',
+    ]);
+  });
+
   /**
    * `--island` and a route positional are two subjects and one command, and the refusal comes
    * FIRST — ahead of `readRoute`, ahead of the browser, ahead of any boot. A reader who typed both

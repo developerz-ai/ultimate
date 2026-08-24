@@ -166,7 +166,7 @@ change, and CI does not install one.
 
 | | Reaches for | Never |
 |---|---|---|
-| `x shot <route>` | `x dev` on a scratch port, plus the app's own `puppeteer-core` through `@ultimat3/scraping` | the static build — `--target static` prerenders `site/` only, so an `app/` route would photograph the landing page |
+| `x shot <route>` | `x dev` on a scratch port, plus the app's own `puppeteer-core` through `@ultimat3/scraping` — launching Chrome here, or **attaching** to one over `--cdp-url` / `SCRAPE_CDP_URL`, which is what every stealth provider sells and what `remoteBrowser()` has called its primary path since it shipped | the static build — `--target static` prerenders `site/` only, so an `app/` route would photograph the landing page |
 | `x shot --island <name>` | the same server and the same browser, plus the app's own `*.island.states.ts` | a second command — photographing a route and photographing a component are one job with two subjects, and `--island` with a route positional is refused by name |
 | `x pr review\|resolve\|reply` | `gh api graphql`, through the injected `Runner` | `gh pr view --comments`, which shows *issue* comments and not the line-anchored threads that carry the findings |
 | `x ci` | `gh run view --log-failed`, one call | a per-job log fetch — the run and all its jobs come back together |

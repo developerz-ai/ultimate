@@ -6,8 +6,11 @@ import { describe, expect, test } from 'bun:test';
 import { CDP_DRIVER } from '@ultimat3/scraping';
 import {
   appBrowser,
+  BROWSER_CDP_URL_VAR,
   BROWSER_PACKAGE,
   browserBinaryExists,
+  cdpUrlFrom,
+  cdpUrlProblem,
   executablePathFrom,
 } from './browser-launcher';
 
@@ -56,7 +59,7 @@ describe('unit · a missing browser is an instruction', () => {
       appBrowser({
         root: '/srv/app',
         resolve: () => '/srv/app/node_modules/puppeteer-core/lib/index.js',
-        load: () => Promise.resolve({ connect: () => undefined }),
+        load: () => Promise.resolve({ notALauncher: () => undefined }),
       }),
     );
     expect(error['code']).toBe('X_SHOT_BROWSER_MISSING');
@@ -121,5 +124,71 @@ describe('unit · which binary a run launches', () => {
   test('a named binary is checked against the filesystem', () => {
     expect(browserBinaryExists(import.meta.path)).toBe(true);
     expect(browserBinaryExists('/no/such/chrome')).toBe(false);
+  });
+});
+
+/**
+ * Attaching is what every stealth provider sells: a session created over their API answers with a
+ * `wss://` CDP endpoint, and the browser behind it is one this box could not have launched. The
+ * property under test is that the run asks the library for the method it is actually going to
+ * call — `connect` when a URL was given, `launch` when it was not — because `cdp-port.ts` declares
+ * both optional exactly so an attach-only SDK satisfies the port.
+ */
+describe('unit · a browser somebody else is running', () => {
+  const connectOnly = { connect: () => Promise.resolve({}) };
+  const launchOnly = { launch: () => Promise.resolve({}) };
+  const resolved = '/srv/app/node_modules/puppeteer-core/lib/index.js';
+
+  test('a connect-only library is accepted with a cdpUrl and refused without one', async () => {
+    const attached = await appBrowser({
+      root: '/srv/app',
+      cdpUrl: 'wss://cdp.example.com/session/abc',
+      resolve: () => resolved,
+      load: () => Promise.resolve(connectOnly),
+    });
+    expect(attached.name).toBe(CDP_DRIVER);
+
+    // The same module, no URL: this run is going to `launch()` and there is none, so it is the
+    // install instruction rather than a TypeError at a property access.
+    const error = await thrownBy(() =>
+      appBrowser({
+        root: '/srv/app',
+        resolve: () => resolved,
+        load: () => Promise.resolve(connectOnly),
+      }),
+    );
+    expect(error['code']).toBe('X_SHOT_BROWSER_MISSING');
+    expect(String(error['cause'])).toContain('exports no launch()');
+  });
+
+  test('a launch-only library is refused for an attach, naming connect()', async () => {
+    const error = await thrownBy(() =>
+      appBrowser({
+        root: '/srv/app',
+        cdpUrl: 'wss://cdp.example.com/session/abc',
+        resolve: () => resolved,
+        load: () => Promise.resolve(launchOnly),
+      }),
+    );
+    expect(error['code']).toBe('X_SHOT_BROWSER_MISSING');
+    expect(String(error['cause'])).toContain('exports no connect()');
+  });
+
+  test('the flag wins over the environment, and an empty value is not a value', () => {
+    const env = { [BROWSER_CDP_URL_VAR]: 'wss://from-env/session' };
+    expect(cdpUrlFrom('wss://from-flag/session', env)).toBe('wss://from-flag/session');
+    expect(cdpUrlFrom(undefined, env)).toBe('wss://from-env/session');
+    expect(cdpUrlFrom('', env)).toBe('wss://from-env/session');
+    expect(cdpUrlFrom(undefined, { [BROWSER_CDP_URL_VAR]: '' })).toBeUndefined();
+    expect(cdpUrlFrom(undefined, {})).toBeUndefined();
+  });
+
+  test('the scheme is judged here, so a typo costs no provider session', () => {
+    expect(cdpUrlProblem('wss://cdp.browser-use.com/abc')).toBeUndefined();
+    expect(cdpUrlProblem('ws://127.0.0.1:9222/devtools/browser/x')).toBeUndefined();
+    // A sidecar's `/json/version` endpoint is HTTP, and puppeteer resolves it to the socket itself.
+    expect(cdpUrlProblem('http://chrome:9222')).toBeUndefined();
+    expect(String(cdpUrlProblem('cdp.example.com'))).toContain('is not a URL');
+    expect(String(cdpUrlProblem('file:///tmp/x'))).toContain('has scheme "file:"');
   });
 });

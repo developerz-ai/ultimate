@@ -8,6 +8,21 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+- **`x shot --cdp-url <ws://…>` — photograph a route through a browser this box could not have
+  started.** `@ultimat3/scraping` has had `remoteBrowser({ cdpUrl })` since it shipped and calls
+  attach its **primary production path**; no CLI command could reach it, because
+  `browser-launcher.ts` only ever called `localBrowser()`. So the framework's answer to "an agent
+  cannot look at anything" needed a Chrome on the same box — which a CI runner, a distroless
+  container and every stealth provider's customer do not have. `SCRAPE_CDP_URL` is the environment
+  fallback, and it is `@ultimat3/scraping`'s own spelling rather than a second one: the package's
+  `remoteRequired` refusal already names it.
+- **A connect-only browser library is now a valid launcher.** `cdp-port.ts` declares `launch` and
+  `connect` both optional precisely so a provider SDK that can only attach satisfies the port, and
+  `launcherIn` asked every module for `launch` regardless — refusing exactly the library that
+  works. It now asks for the method the run is going to call, and names the one that was missing.
+
 ### Fixed
 
 - **An island chunk carried the `NODE_ENV` of the process that built it, not the one it ships
@@ -31,6 +46,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   does.
 
 ### Changed
+
+- **Which browser a `x shot` run gets is three rules, and each was chosen against a silent
+  failure.** Both flags together is **refused** rather than ranked — one names a Chrome to start,
+  the other says the browser is somebody else's, so honouring either ignores what was typed. An
+  exported `SCRAPE_CDP_URL` is a shell-wide default and not a typed intent, so `--browser` beside
+  it **wins**: the alternative is a flag that parses, reports nothing and quietly attaches
+  somewhere else, which is the `--critical` defect class `flag-reads.ts` exists for and cannot see
+  here, because the flag *is* read. And `--browser` is not read at all on an attach, so a correct
+  remote run is never refused for a binary it will never execute.
 
 - **Every Bun-version-stamped claim in shipped source was re-measured on the pinned series**, which
   is the half of the 1.3 → 1.4 move that never happened: a comment stamped `1.3.14` under a `1.4.x`
