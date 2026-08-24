@@ -1,6 +1,7 @@
 // Single responsibility: pin `buildSchema`'s row->description mapping (pure, no database) and
-// `introspect()`'s three-query wiring against a recording client — the shape drift detection,
-// the admin schema view and the MCP `schema.describe` tool all depend on.
+// `introspect()`'s four-query wiring against a recording client — the shape drift detection,
+// the admin schema view and the MCP `schema.describe` tool all depend on. The fourth query is
+// `nonAppRelations()`; what it excludes is pinned in `app-relation.test.ts`.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { setDbClient } from './client';
@@ -229,7 +230,7 @@ describe('findTable', () => {
 });
 
 describe('introspect', () => {
-  test('sends three catalog queries and folds their rows through buildSchema', async () => {
+  test('sends four catalog queries and folds their rows through buildSchema', async () => {
     const client = createRecordingClient();
     client.on(/information_schema\.columns/, {
       rows: [
@@ -271,7 +272,7 @@ describe('introspect', () => {
 
     const schema = await introspect({ client });
 
-    expect(client.statements).toHaveLength(3);
+    expect(client.statements).toHaveLength(4);
     const posts = findTable(schema, 'posts');
     expect(posts?.columns).toHaveLength(1);
     expect(posts?.primaryKey).toEqual(['id']);
@@ -397,7 +398,7 @@ describe('introspect', () => {
 
     const schema = await introspect();
 
-    expect(client.statements).toHaveLength(3);
+    expect(client.statements).toHaveLength(4);
     expect(schema.tables.map((t) => t.name)).toEqual(['posts']);
   });
 });

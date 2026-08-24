@@ -60,4 +60,74 @@ describe('introspect · the real embedded database', () => {
     },
     PGLITE_BOOT_MS,
   );
+
+  // Issue #340: `pg_stat_statements` in `public` made every deploy fail terminally. A recording
+  // client can pin the predicate's TEXT and nothing more — only a real catalog can say whether
+  // Postgres agrees that these relations are owned and that the app's table is not.
+  test(
+    'an extension-owned table and a view are not app schema; the app table beside them is',
+    async () => {
+      await client.execute(sql`drop view if exists introspect_report`);
+      await client.execute(sql`drop table if exists introspect_ext_owned`);
+      await client.execute(sql`drop table if exists introspect_posts`);
+      await client.execute(sql`create table introspect_posts (id uuid primary key)`);
+      await client.execute(sql`create table introspect_ext_owned (id int primary key)`);
+      await client.execute(sql`create view introspect_report as select 1 as one`);
+      // The exact row `create extension` writes for a relation it owns. Written by hand because
+      // PGlite ships no contrib extension that installs a relation, and the row — not the command
+      // that produced it — is what `nonAppRelations()` reads. `plpgsql` is the extension every
+      // database already has, so it needs no install of its own.
+      await client.execute(sql`
+        insert into pg_depend (classid, objid, objsubid, refclassid, refobjid, refobjsubid, deptype)
+        select 'pg_class'::regclass, 'introspect_ext_owned'::regclass, 0,
+               'pg_extension'::regclass, (select oid from pg_extension where extname = 'plpgsql'),
+               0, 'e'
+      `);
+
+      const schema = await introspect({ client });
+      const names = schema.tables.map((table) => table.name);
+
+      expect(names).toContain('introspect_posts');
+      expect(names).not.toContain('introspect_ext_owned');
+      expect(names).not.toContain('introspect_report');
+
+      await client.execute(sql`drop view introspect_report`);
+      // The dependency row goes first: `drop table` on an extension member is refused otherwise.
+      await client.execute(sql`
+        delete from pg_depend
+        where classid = 'pg_class'::regclass and objid = 'introspect_ext_owned'::regclass
+      `);
+      await client.execute(sql`drop table introspect_ext_owned`);
+      await client.execute(sql`drop table introspect_posts`);
+    },
+    PGLITE_BOOT_MS,
+  );
+
+  // The access method is read out of `pg_am` through `pg_class.relam`. A recording client can pin
+  // the SQL text and nothing more — only a real catalog can say that the join reaches the right
+  // row, and a query that silently returned no method at all would read as `btree` everywhere and
+  // make drift blind to exactly the case `using` exists for.
+  test(
+    'a GIN index comes back as gin, and the btree beside it as btree',
+    async () => {
+      await client.execute(sql`drop table if exists introspect_gin`);
+      await client.execute(sql`create table introspect_gin (id uuid primary key, tags jsonb)`);
+      await client.execute(
+        sql`create index introspect_gin_tags_idx on introspect_gin using gin ("tags")`,
+      );
+      await client.execute(sql`create index introspect_gin_id_idx on introspect_gin ("id")`);
+
+      const table = findTable(await introspect({ client }), 'introspect_gin');
+      const method = (name: string): string | undefined =>
+        table?.indexes.find((index) => index.name === name)?.using;
+
+      expect(method('introspect_gin_tags_idx')).toBe('gin');
+      expect(method('introspect_gin_id_idx')).toBe('btree');
+      // The primary key's index is Postgres' own, and it is a btree like any other.
+      expect(method('introspect_gin_pkey')).toBe('btree');
+
+      await client.execute(sql`drop table introspect_gin`);
+    },
+    PGLITE_BOOT_MS,
+  );
 });

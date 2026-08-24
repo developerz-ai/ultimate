@@ -2,6 +2,8 @@
 // tier 1 and may never import `entity` (tier 2), so a snapshot arrives as a parameter and every
 // part of it — a column's `on delete` rule included — crosses the seam by shape or not at all.
 
+import type { IndexMethod } from './index-method';
+
 /** Structurally assignment-compatible with `@ultimat3/entity`'s `ColumnDescription`. */
 export interface ColumnDescriptionLike {
   readonly property: string;
@@ -37,6 +39,13 @@ export interface IndexDescriptionLike {
   readonly where: string | null;
   /** `null` is Postgres' own default (`asc`), never written out. */
   readonly order: 'asc' | 'desc' | null;
+  /**
+   * The access method. Absent is `btree`, which is Postgres' own default and what every index
+   * declared before this field existed is — so a description written without it still satisfies
+   * the shape, exactly as `ColumnDescriptionLike.onDelete` does. `@ultimat3/entity` (tier 2) is
+   * the declarer; this package cannot import it, so the method crosses the seam structurally.
+   */
+  readonly using?: IndexMethod | undefined;
 }
 
 /** Structurally assignment-compatible with `@ultimat3/entity`'s `EntityDescription`. */

@@ -5,6 +5,9 @@
 
 import { type Role, renderThrowable, resolveRole } from '@ultimat3/core';
 import { statementAttribution } from './attribution';
+// Deliberate cycle, the same shape as `client.ts ⇄ transaction.ts`: nothing here is referenced at
+// module evaluation, and both sides are `function` declarations, so hoisting covers the TDZ.
+import { defaultClient } from './default-client';
 import { DbError, dbUnavailable, driverError, poolAcquireTimeout, poolMaxInvalid } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
 import { declaresLibpqOption, mergeLibpqOptions } from './libpq-options';
@@ -123,7 +126,7 @@ export const POOL_MAX_ENV = 'DATABASE_POOL_MAX';
  * rather than falling back: a fleet that ignored the number it was given is the failure the
  * variable exists to prevent, and it would only be found in `pg_stat_activity` at 3am.
  */
-function poolMaxFromEnv(): Partial<PoolProfile> {
+export function poolMaxFromEnv(): Partial<PoolProfile> {
   const raw = process.env[POOL_MAX_ENV];
   if (raw === undefined || raw.trim() === '') return {};
   const max = Number(raw);
@@ -437,10 +440,11 @@ export function setDbClient(client: DbClient | undefined): void {
  * The role default is layered under `DATABASE_POOL_MAX`, because this is the one place the process
  * builds its own client and therefore the only place an operator's value can reach one:
  * `createPostgresClient` has always taken a `profile` override and nothing in a running app passed
- * it, so `POOL_PROFILES` was the last word in a deployed image.
+ * it, so `POOL_PROFILES` was the last word in a deployed image. `default-client.ts` owns what gets
+ * built — one pool, or a primary and a replica when `DATABASE_REPLICA_URL` names one.
  */
 export function baseClient(): DbClient {
-  if (ambient === undefined) ambient = createPostgresClient({ profile: poolMaxFromEnv() });
+  if (ambient === undefined) ambient = defaultClient();
   return ambient;
 }
 

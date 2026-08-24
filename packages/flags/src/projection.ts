@@ -1,6 +1,20 @@
-// Single responsibility: the declared flags as data — one JSON-safe shape for `x flags --json`,
-// the MCP tool and the manifest, so all three answer "what is expired?" identically instead of
-// each computing it. Same rule as `listErrorCodes()`: the projection lives with the registry.
+// Single responsibility: the declared flags as data — one JSON-safe shape, so no surface has to
+// compute "what is expired?" for itself. Same rule as `listErrorCodes()`: the projection lives
+// with the registry.
+//
+// OFFERED, not published (`As of 2026-08-24`). This header used to state that `x flags --json`,
+// an MCP tool and the manifest all read it. **None of the three exists**: there is no `x flags`
+// command, `ARRAY_SECTIONS` in `@ultimat3/manifest` has no `flags` section, no MCP tool names one,
+// and `flagsReport` has zero callers outside this package's own test. `packages/flags/CLAUDE.md`
+// has always said so; only this file stated the plan as fact, which is the shape
+// `@ultimat3/ai`'s `agent-facts.ts` names — the SHAPE a surface would publish, never a row any
+// surface carries.
+//
+// And one of the three could never have been the consumer it named: a manifest is a build artefact
+// derived from SOURCE, while `allFlags()` is process-global runtime state filled by the app's own
+// imports — so in a CLI process that has not loaded the app this answers `{ flags: [], expired: []
+// }`, which is `@ultimat3/http`'s deleted `appErrorStatus()` exactly. A CLI command is the reachable
+// consumer, because `loadApp` imports the app's modules before the command runs.
 
 import type { FlagKind } from './flag';
 import { allFlags } from './registry';

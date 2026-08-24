@@ -32,6 +32,7 @@ export {
   poolProfileFor,
   setDbClient,
 } from './client';
+export { defaultClient, REPLICA_URL_ENV } from './default-client';
 export type { DestructiveKind, DestructiveStatement } from './destructive';
 export {
   DESTRUCTIVE_CAUSE,
@@ -86,6 +87,14 @@ export type { RecordedStatement, RecordingClient, StubResponse } from './fake';
 export { createRecordingClient } from './fake';
 export type { GeneratedMigration, GenerateOptions } from './generate';
 export { generateMigration, migrationStamp, slugify, snapshotOf } from './generate';
+export type { IndexMethod } from './index-method';
+export {
+  declaredMethod,
+  INDEX_METHODS,
+  indexMethodOf,
+  indexMethodSql,
+  isIndexMethod,
+} from './index-method';
 export type {
   ColumnDescription,
   ForeignKeyDescription,
@@ -142,6 +151,15 @@ export type { ReadOnlyQueryOptions, ReadOnlyQueryResult } from './readonly-query
 export { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
 export type { ReadOnlyRoleOptions } from './readonly-role';
 export { ensureReadOnlyRole, grantReadOnlySql, READONLY_ROLE } from './readonly-role';
+export type {
+  ReplicaStats,
+  ReplicatedClient,
+  ReplicatedClientOptions,
+} from './replica-client';
+export { BREAKER_COOLDOWN_MS, BREAKER_FAILURES, replicatedClient } from './replica-client';
+export { type DbNode, isPlainRead } from './replica-route';
+export type { ReplicaScope } from './replica-scope';
+export { markScopeWrote, replicaScope, withReplicaReads } from './replica-scope';
 export { snapshotJson } from './snapshot-json';
 export { parseSnapshot } from './snapshot-parse';
 export type { SqlFragment } from './sql';

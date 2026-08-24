@@ -7,6 +7,7 @@ import type { Random } from '@ultimat3/core';
 import { assert, asyncContext, nanoid } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { isolationLevelInvalid, serializationExhausted } from './errors';
+import { markScopeWrote } from './replica-scope';
 import { raw, type SqlFragment } from './sql';
 import { isRetryableState } from './sqlstate';
 import { serializationRetryDelayMs } from './transaction-backoff';
@@ -206,6 +207,11 @@ async function runNested<T>(outer: TxState, fn: (tx: DbTx) => Promise<T>): Promi
  */
 async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOptions): Promise<T> {
   const client = options.client ?? baseClient();
+  // A transaction is assumed to write unless it said otherwise, so every read AFTER it in the same
+  // `withReplicaReads` scope is the primary's. The pin below already keeps the transaction's own
+  // statements off any replica — this is about the rest of the request, which `replica-client.ts`
+  // could not otherwise see: `runRoot` sends through a reserved connection, not through the router.
+  if (options.readOnly !== true) markScopeWrote();
   // A pooled BEGIN that lands on a different physical connection than the statements after it is
   // not a transaction at all, so a reservable client pins one connection for the whole scope.
   // Held by a `using` declaration rather than a `finally`, because a `finally` only covers what

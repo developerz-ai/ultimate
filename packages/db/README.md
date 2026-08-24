@@ -13,7 +13,7 @@ boundary stays thin.
 ## Public API
 
 ```ts
-import { db, sql, raw, withTransaction, currentTx, readOnly, setDbClient } from '@ultimat3/db';
+import { db, sql, raw, withTransaction, currentTx, setDbClient } from '@ultimat3/db';
 
 const rows = await db().query<Post>(sql`select * from posts where org_id = ${orgId}`);
 
@@ -32,7 +32,11 @@ await withTransaction(async (tx) => {
 | `sqlState()` / `sqlStateCode()` / `isRetryableState()` / `SQLSTATE` | `As of 2026-08`: the SQLSTATE a driver error carries, and the closed table from it to a code. `Bun.SQL` puts it on `errno`; PGlite puts it on `code`; **one** reader answers for both |
 | `migrate()` / `rollback()` / `readLedger()` | the `x_migrations` ledger |
 | `statementsOf()` | `As of 2026-08`: a SQL script → the statements a driver sends one at a time. One send is one statement, so `migrate()` splits with this — a `;` inside a literal, an identifier, a dollar-quoted body or a comment is data |
-| `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report. `checkDrift()` is the **post-migrate verification** — the live database against the ledger: columns, declared indexes (columns, uniqueness, direction, and whether a predicate is there at all — never its text) and declared foreign keys, matched on where the key points and not on its constraint name, with the `on delete` rule compared through one normalisation `As of 2026-08-19` |
+| `withReplicaReads()` / `replicaScope()` | `As of 2026-08-24`: the scope inside which a plain read may be served by a replica — until it writes, after which every read in it is the primary's. No scope open, nothing routes |
+| `replicatedClient()` / `ReplicaStats` / `REPLICA_URL_ENV` | `As of 2026-08-24`: one `DbClient` over a primary and a standby. `baseClient()` builds one when `DATABASE_REPLICA_URL` is set and the single-pool client when it is not |
+| `INDEX_METHODS` / `IndexMethod` / `indexMethodOf()` / `indexMethodSql()` / `declaredMethod()` / `isIndexMethod()` | `As of 2026-08-24`: an index's access method — `btree` or `gin`, closed. Absent is `btree`, the live side is read open (whatever `pg_am` said), and the DDL literal is re-derived from the set rather than spliced from the input |
+| `isPlainRead()` | `As of 2026-08-24`: whether a statement may leave the primary. An allow-list — everything it cannot vouch for is the primary's |
+| `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report. `checkDrift()` is the **post-migrate verification** — the live database against the ledger: columns, declared indexes (access method `As of 2026-08-24`, columns, uniqueness, direction, and whether a predicate is there at all — never its text) and declared foreign keys, matched on where the key points and not on its constraint name, with the `on delete` rule compared through one normalisation `As of 2026-08-19` |
 | `declaredSchema()` / `expectedSchema()` | `As of 2026-08`: the schema the migrations write down, or `undefined` when the newest one carries no snapshot — never an older snapshot standing in for it |
 | `parseSnapshot()` | `As of 2026-08`: a `<id>.snapshot.json` sidecar validated to the last nested field, or `undefined`. `{"tables":[null]}` is valid JSON and is not a schema |
 | `snapshotJson()` | `As of 2026-08`: the sidecar's **bytes** — the JSON Biome would have printed, trailing newline included. The one writer of a `<id>.snapshot.json`, because `JSON.stringify(…, null, 2)` is not formatter-clean and an app's `lint` step rejected the file `x db gen` had just written |
@@ -41,7 +45,7 @@ await withTransaction(async (tx) => {
 | `generateMigration()` | `x db gen "<name>"` — reversible up/down SQL, and `destructive` for the marker the file must carry. `As of 2026-08` a foreign key is its own `alter table … add constraint`, emitted after every table statement: inline, a `references()` had to point at a table entity registration order happened to create first, and `down` had to drop them in an order it did not control. `As of 2026-08-19` a **removed** `references()` emits its `drop constraint` (it emitted nothing, and the snapshot then denied a constraint the database still held), a changed `onDelete` is a drop-and-add rebuild, and a declared `on delete` rule reaches the clause at all |
 | `destructiveStatements()` / `hasDestructiveMarker()` / `isDestructive()` / `DESTRUCTIVE_MARKER` | `As of 2026-08`: the destructive-SQL rail — does this `up` drop, truncate or retype, and does the file declare it with `-- destructive: true`? One classifier, read by `x db gen` when it writes the marker and by `x verify` when it demands one |
 | `stripSqlNoise()` | comments, literals, dollar-quoted bodies and quoted identifiers blanked **in source order**, so a reader sees the operation and not the prose. Shared by `readOnlyQuery()` and the destructive rail |
-| `introspect()` | live schema → `SchemaDescription` |
+| `introspect()` | live schema → `SchemaDescription`. **App tables only**, `As of 2026-08-24`: a relation an extension owns (`pg_depend`, `deptype = 'e'`) and anything that is not an ordinary or partitioned table are excluded before the fold, and an explicit `exclude` cannot bring them back |
 | `createBranch()` / `dropBranch()` / `reapBranches()` | copy-on-write branch databases. `As of 2026-08-19` the marker comment records the **base** as well as the instant (`ultimate:branch:<base>:<iso>`, on `BranchInfo.base`), and `reapBranches()` sweeps only branches of the database it is connected to — one Postgres hosting two Ultimate apps used to mean one app's nightly reap dropped the other's branches. A pre-3.x marker records no base and is skipped, never dropped |
 | `createPgliteClient()` / `branchPglite()` | the embedded database — Postgres in this process |
 | `ensureReadOnlyRole()` / `grantReadOnlySql()` / `READONLY_ROLE` | a `NOLOGIN`, SELECT-only Postgres role — layer 1 of `db.query`'s defence |
@@ -98,6 +102,62 @@ statement's own error. Every caller handles that failure; nothing here swallows 
 `ensureReadOnlyRole()` — otherwise a table created later is not selectable by the role, and
 layer 1 covers only what existed at grant time.
 
+## Index access methods
+
+`btree` is the default and is never written out; `gin` is what makes `@>` / `<@` / `&&` / `?` on a
+`json()` or `arrayOf()` column an index lookup rather than a sequential scan.
+
+| | |
+|---|---|
+| declared | `IndexDescriptionLike.using` — `'btree' \| 'gin'`, closed. Anything else is `X_SQL_UNSAFE` before it reaches DDL |
+| absent | `btree`, on every side, through `indexMethodOf()` — so a snapshot written before the field existed reads as what it always was |
+| emitted | `create index "posts_tags_idx" on "posts" using gin ("tags");` — and `create index "posts_tags_idx" on "posts" ("tags");` when no method was declared, byte for byte what shipped before |
+| refused | a unique GIN and an ordered GIN (`X_INVARIANT`) — Postgres has neither, and the alternative is a syntax error inside `ROLE=migrate` |
+| recorded | only when declared, so no existing sidecar is rewritten |
+| a method that moved | drop and recreate — Postgres cannot alter one in place |
+| drift | a declared GIN against a live btree is `changed-index`, and the live method is reported by the name the catalog gave it |
+
+## Read replicas
+
+Opt in twice, and the second one is why it is safe.
+
+```ts
+// 1. the pool — an environment variable, read once by baseClient()
+//    DATABASE_REPLICA_URL=postgres://reader@replica.internal:5432/app
+
+// 2. the scope — reads inside it may be served by the replica
+import { db, sql, withReplicaReads, withTransaction } from '@ultimat3/db';
+
+declare const id: string;
+
+await withReplicaReads(async () => {
+  await db().query(sql`select id from posts limit 20`); // -> replica
+  await db().execute(sql`insert into posts (id) values (${id})`);
+  await db().query(sql`select id from posts limit 20`); // -> primary, for the rest of the scope
+  await withTransaction(async (tx) => {
+    await tx.query(sql`select 1`); // -> primary, always
+  });
+});
+```
+
+| Rule | |
+|---|---|
+| unconfigured | no `DATABASE_REPLICA_URL` → one pool, statement for statement what it always was |
+| no scope | no `withReplicaReads` → nothing routes, whatever is configured |
+| read-your-writes | one write anywhere in the scope, at any depth, across any `await`, and every later read in it is the primary's |
+| a transaction | always the primary — `reserve()` is delegated there, so BEGIN, the body and COMMIT are one connection on one server. A `readOnly: true` transaction leaves the scope clean |
+| eligibility | `select` / `table` / `values` / a read-only `with`, minus locking reads, `select … into` and the functions a standby answers instead of refusing (`pg_advisory_lock`, `set_config`, `nextval`). Everything else is the primary's |
+| a replica that fails | the statement is re-run on the primary — exactly-once, because only plain reads are sent there and a `25006` refusal never executed. Three failures in a row park it for ten seconds |
+| observability | `client.stats` (`replica`, `primary`, `fallbacks`, `parked`), and a `db.replica_fallback` warning per fallback |
+
+**The URL must name a read-only standby.** The server's own `25006` refusal is the safety net under
+a classifier that cannot be complete; pointed at a writable node a misroute becomes a write on the
+wrong server, silently.
+
+**Nothing opens the scope for you yet.** `withReplicaReads` is tier 1 and ships first; wrapping a
+request in it is the app's call — or one line in the HTTP pipeline — so until that lands no
+production traffic is routed.
+
 ## The drift contract
 
 `checkDrift()` compares `introspect()` against the snapshot the newest applied migration carries —
@@ -119,8 +179,17 @@ subset, so a database that simply has not migrated yet is pending, not divergent
 table in the `x_` namespace — `x_migrations`, the queue's tables, the outbox and every
 `@ultimat3/auth` table are created by `create table if not exists` at boot and appear in no
 snapshot, so `appTables()` drops them before the diff. `introspect()` keeps its own narrower
-exclusion (the ledger alone), because the admin schema view and the MCP `schema.describe` tool
-legitimately show `x_users`.
+exclusion (the ledger alone), reserving `x_users` for a schema view that wants it.
+
+**Nor is a relation an extension owns, `As of 2026-08-24`.** `create extension pg_stat_statements`
+in `public` is the CNPG, RDS, Supabase and Neon default, and its view read as `unexpected-table`
+with `x db gen "add pg_stat_statements"` as the fix — so every deploy failed terminally and the fix
+would have written an extension's internal view into the app's migration set. `introspect()` now
+excludes every relation Postgres records as extension-owned (`pg_depend`, `deptype = 'e'`), which is
+ownership rather than a name: a `pg_*` prefix rule covers that view and misses `postgis`'
+`spatial_ref_sys`. Views, materialised views and foreign tables go with them — no snapshot records
+one, so counting them could only ever produce a finding an author has no way to clear. A table
+someone created by hand carries no such dependency and is still `unexpected-table`.
 
 Rendered output is pinned byte-for-byte:
 

@@ -118,7 +118,12 @@ what lets `policy` (tier 2) call it from inside a predicate.
 ## Open
 
 - Nothing calls `flagsReport()` yet. It is the projection an `x flags [--json]` command and an MCP
-  `flags.list` tool should read; neither exists.
+  `flags.list` tool should read; neither exists. `projection.ts`'s own header said the opposite
+  until 12.0.0 — it named the CLI, the MCP tool and the manifest as readers — and the manifest was
+  never a candidate: it is derived from SOURCE, while `allFlags()` is runtime state an app's imports
+  fill, so a manifest build would publish an empty list. That is `@ultimat3/http`'s `appErrorStatus()`,
+  deleted for the same reason. A CLI command is the one reachable consumer, because `loadApp` runs
+  first.
 
 ## Commands
 

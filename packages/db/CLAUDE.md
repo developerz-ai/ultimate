@@ -369,6 +369,56 @@ anonymous SQL, never as a `job` statement, and will keep seeing it that way unti
 own pair through `driver-pg.ts` the way `postgresRepo` now threads entity's — that is still future
 work, not something this change reaches.
 
+**An index's ACCESS METHOD is carried end to end, `As of 2026-08-24`, and it had to land here
+before `@ultimat3/entity` could declare it.** `@>` / `<@` / `&&` / `?` on a `json()` or `arrayOf()`
+column is a sequential scan without a GIN index. `IndexInit.using` on the entity side while this
+package ignored it would emit a **btree for a declared GIN index** — a declared-and-never-wired key,
+which is the defect class this release exists to eliminate and strictly worse than the missing
+capability. So the method reaches all four places or none: `createIndex` emits it, `snapshotOf`
+records it, `indexShape` rebuilds on it, and `compareIndexes` reports it.
+
+`index-method.ts` is the vocabulary, its own file for the reason `foreign-key.ts` holds
+`onDeleteRule`: a generator and a detector that disagreed about what "the default" is would report
+drift on a database that is exactly right. Four rules.
+
+**The set is closed at two — `btree` and `gin`.** `gist`, `brin`, `hash` and `spgist` are legitimate
+and are deliberately absent: nothing declares one, and each brings a rule that would have to be
+enforced with no caller to test it (`hash` and `brin` cannot be unique, `gist` needs `btree_gist` to
+be, none of the three accepts `asc`/`desc`). Adding a member later is additive; shipping four nobody
+uses is four ways for a first caller to be silently wrong.
+
+**Declared is CLOSED, live is OPEN.** `IndexDescriptionLike.using` is `IndexMethod | undefined` —
+what an entity may ask for. `IndexDescription.using` is `string | undefined` — whatever `pg_am`
+answered, `gist` and an extension's own access method included. Folding an unknown catalog name into
+`btree` would hide exactly the difference drift exists to report, so `indexMethodOf` passes the live
+side through verbatim and `declaredMethod` is the one place the open reading is narrowed back — a
+**refusal**, never a silent fall back, because its one caller is `redefineIndex`'s `down` and a
+`gist` quietly rebuilt as a btree is a rollback leaving a state no migration describes.
+
+**Absent is `btree`, on both sides, through one function.** `indexMethodOf` is that function.
+Postgres' default is written out by nobody, every index created before this existed is one, and
+every sidecar written before the field is silent about it — so `snapshotOf` records `using` only
+when one was declared. Writing `'btree'` out for every index would rewrite every sidecar in every
+app on the next `x db gen`, a diff on every file for a fact that was already true.
+
+**The literal is re-derived from the set, never spliced from the input** — `indexMethodSql` is a
+`switch` whose `default` arm is `never` and throws `indexMethodInvalid` (`X_SQL_UNSAFE`, the code
+`isolationLevelInvalid` and `branchNameInvalid` already use for a value spliced into a statement).
+The type is not the guard: this value arrives from an entity declaration, a config or a hand-edited
+snapshot, and `using ${method}` on an operand TypeScript never saw is the **identical hole** to the
+one `columnName` carried when it was `meta.name ?? snake(property)` with only the second branch
+validated — a name that closed the parenthesis and opened a second command, measured through
+`generateMigration`. `create index "x" on "t" using gin ("c") where (...)` also refuses a unique or
+an ordered GIN through core's `assert` (`X_INVARIANT`), the discipline `createIndex` already applies
+to an index naming no columns: Postgres has neither, and a syntax error inside `ROLE=migrate` fails
+the release phase with the server's words and none of the entity's.
+
+`introspect()` reads the method from `pg_am` joined through `pg_class.relam`, and
+`introspect-embedded.test.ts` is where that is pinned — a recording client can pin the SQL text and
+nothing more, and a query that silently returned no method would read as `btree` everywhere and make
+drift blind to the one case `using` exists for. Measured on PGlite: a real `using gin` index reads
+back `gin`, the btree beside it and the primary key's own index read back `btree`.
+
 **`generate.ts` reads an index, it never re-derives one.** `EntityDescriptionLike.indexes` carries
 `columns`, `unique`, `where` and `order`, and `createIndex` writes every one of them out. It used to
 carry names alone and `parseIndexName` recovered the column list from the `<table>_<a>_<b>_idx`
@@ -502,6 +552,62 @@ override — `x_migrations.app_version` and `@ultimat3/jobs`' `x_backfills.app_v
 durable columns an operator reads side by side, and `jobs` cannot import this package for the
 answer, so the key has one reader at tier 0 rather than one per writer.
 
+**Read replicas are opt-in twice, and the second opt-in is the correctness argument, `As of
+2026-08-24`.** A replica pool exists when `DATABASE_REPLICA_URL` names one (`default-client.ts`);
+a read is *offered* to it only inside `withReplicaReads(fn)` (`replica-scope.ts`). With no scope
+open nothing routes and the client is byte-identical to the single-pool one it has always been —
+which is what makes "nobody adopted it yet" today's behaviour rather than a wrong answer.
+
+The scope is what closes **read-your-writes**, and the reason it is a scope and not a request id is
+worth writing down because the request id is the obvious answer and it does not work. `Ctx.requestId`
+IS reachable from here — `@ultimat3/http`'s pipeline opens `runWithContext` around every request
+(`packages/http/src/pipeline.ts`), `withChildContext` may not change the id, and `tryUseContext()` is
+tier 0 — but nothing tells tier 1 when a request ENDED. A `Map<requestId, wrote>` therefore only
+grows, ~100 bytes a request forever, and every eviction policy that forgets a request which WROTE
+serves it a stale row on its next read. That is a data-correctness bug strictly worse than the
+capacity problem replicas exist to solve, so the marker lives on a mutable value on an async context
+(`ReplicaScope.wrote`, the same shape as `TxState.live`) whose lifetime somebody else already owns.
+
+**`withTransaction` is on the primary structurally, not by rule.** `runRoot` pins a connection
+through `reserve()`, and `replicatedClient` delegates `reserve()` to the primary and exposes it only
+when the primary has one — so BEGIN, every statement and COMMIT are one connection on one server.
+`isReservable` therefore has to keep answering about the DATABASE and not about the wrapper: a
+wrapper that always exposed `reserve` makes `runRoot` pin a client that cannot pin, and one that
+never exposed it makes `runRoot` run BEGIN, the body and COMMIT on three different pooled
+connections. What `runRoot` adds is one line — `markScopeWrote()` unless `readOnly: true` — because
+its statements go through a reservation and never through the router, so the scope could not
+otherwise see that the request has written.
+
+**`isPlainRead` is an allow-list, and that inversion is why it is not the lexer this file forbids.**
+`readonly.ts` was deleted for defaulting to PERMISSION: a 22-word deny-list that read
+`select pg_sleep(60)` as safe. This one defaults to the primary — a statement shape nobody
+anticipated costs a replica opportunity and never an answer. **`statementKind()` is not the
+authority and must not become it**: it calls `with … update … returning` a read, which is right for
+an N+1 report and catastrophic for a routing decision, and `replica-route.test.ts` asserts the
+disagreement so the two can never be collapsed. Three refusals earn their line — a locking read
+(`for update`/`for share`; a standby cannot take the row lock), `select … into` (it creates a
+table), and the functions a word boundary cannot reach (`pg_advisory_lock`, `set_config`,
+`nextval`), which a standby ANSWERS rather than refusing, so the server cannot be the safety net for
+those the way it is for a real write.
+
+**A misroute fails loudly and repairs itself; a replica outage costs latency and never an answer.**
+A statement a standby refuses (`25006`) never executed, and only `isPlainRead` statements are ever
+sent there, so re-running one on the primary is exactly-once rather than at-least-once — which is
+what makes the blanket fallback in `replica-client.ts` safe. The breaker is what stops that from
+doubling every read during an outage: three consecutive failures park the replica for ten seconds,
+counted on `Clock.monotonic()` so an NTP step cannot un-park it. `ReplicaStats` is exposed on the
+client for a test that cannot scrape, the same reason `@ultimat3/realtime` exposes
+`droppedChannelFrames`, and each fallback logs `db.replica_fallback` with `renderThrowable(error)`.
+
+**The URL must name a read-only standby**, and nothing here can check it. The `25006` refusal is the
+whole safety net under a text classifier that cannot be complete; pointed at a writable node, a
+misroute becomes a write on the wrong server with nothing anywhere to report it.
+
+**Nothing opens `withReplicaReads` per request yet.** The scope, the client and the wiring are tier
+1 and land here first; the adopter is one call in `@ultimat3/http`'s pipeline (or an app's own
+handler), and until it exists no production traffic is routed. That is the tier rule working —
+lowest tier first, consumers after — not an omission.
+
 `checkDrift()` is the **post-migrate verification** and the only drift question that needs a
 database: the live catalog against the ledger the run just wrote. It is asked where a connection is
 open — `@ultimat3/cli`'s `runMigrations`, which is `x db migrate`, `x db reset` and `ROLE=migrate`
@@ -548,7 +654,7 @@ The `fix:` is the `alter table … set not null` itself and deliberately not `x 
 never emitted one and would answer with an empty migration.
 
 `compareTable` judges **declared** indexes: one the migrations name and the catalog does not hold is
-`missing-index`, and one whose column list or uniqueness moved is `changed-index` — which is what
+`missing-index`, and one whose access method, column list or uniqueness moved is `changed-index` — which is what
 catches a composite index rebuilt with its columns the other way round while the column diff said
 `ok: true`. A live index no snapshot names is deliberately **not** reported: Postgres creates one for
 every primary key and every unique constraint, so counting those is eight findings against a correct
@@ -681,7 +787,39 @@ exists` at boot, declared by no migration and carried in no snapshot, so counted
 are eight `unexpected-table` findings against a correct database. The prefix is the rule, not a
 list, so a table a future package adds needs no second declaration here. `introspect()` keeps its
 narrower default (`x_migrations` alone) because the admin schema view and the MCP `schema.describe`
-tool legitimately show `x_users` — only drift wants the whole namespace gone.
+tool legitimately show `x_users` — only drift wants the whole namespace gone. That last sentence is
+a *reservation*, not a description, `As of 2026-08-24`: nothing outside this package imports
+`introspect()` today, and `schema.describe` (`@ultimat3/mcp`'s `dev-server.ts`) answers from the
+entity registry.
+
+**`app-relation.ts` is the other half, and it is ownership, never a name — issue #340,
+`As of 2026-08-24`.** `pg_stat_statements` is a view an extension owns, the CNPG/RDS/Supabase
+default puts it in `public` of every database, and the drift audit after `ROLE=migrate` reported it
+as `unexpected-table` with `x db gen "add pg_stat_statements"` as the fix — so every deploy of the
+demo app failed terminally for 16 hours, and following the fix would have written an extension's
+internal view into the app's migration set. `nonAppRelations(client, schema)` names what
+`introspect()` must not see, and `introspect()` merges it into `excluded` **unconditionally**: an
+explicit `exclude` replaces the `x_migrations` default, never this set, because an extension's
+relations are not app schema in any deployment and that is not a caller's to switch off.
+
+Two disqualifications, one question. **Extension ownership is read out of `pg_depend`**
+(`deptype = 'e'`, `refclassid = 'pg_extension'`) — Postgres' own record, and the only rule that
+generalises: a `pg_*` prefix would have covered the reported view and missed `postgis`'
+`spatial_ref_sys`, `timescaledb`'s catalog, and `pg_stat_statements`' own `pg_stat_statements_info`
+sibling, which is a real `relkind = 'r'` table. **A view, a materialised view and a foreign table
+are not tables**, whoever made them: measured on PGlite, a plain `create view` reaches
+`information_schema.columns` while the index query already fences on `relkind = 'r'`, so one arrived
+as a table with columns, no primary key and no indexes — a `TableDescription` that cannot be true,
+and a finding no author could clear because no snapshot records a view. Excluding by NAME is safe
+because `pg_class` names are unique within a namespace.
+
+Nothing else in the audit had the same hole. An extension cannot own a **column** of a table it does
+not own — `alter extension … add` has no `COLUMN` form — so `unexpected-column` is unreachable that
+way. **Types and enums** are never compared (`compareTable` reads nullability and existence, never
+the type). **Indexes and foreign keys** are judged on the declared side only, so an extension's
+index on an app table was already silent. `introspect-embedded.test.ts` proves the predicate against
+a real catalog by writing the exact `pg_depend` row `create extension` writes; a recording client
+can only pin the SQL text, which is what `app-relation.test.ts` does.
 
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.

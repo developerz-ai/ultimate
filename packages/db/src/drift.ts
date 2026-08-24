@@ -6,6 +6,7 @@
 import { baseClient, type DbClient } from './client';
 import { DbError } from './errors';
 import { addForeignKey, dropForeignKey, foreignKeyTarget, onDeleteRule } from './foreign-key';
+import { indexMethodOf } from './index-method';
 import {
   type ForeignKeyDescription,
   findTable,
@@ -219,6 +220,12 @@ function changedForeignKey(
  * a `desc` index rebuilt ascending by hand serves a feed's newest page off the wrong end. `asc` is
  * normalised to `null` first — `createIndex` writes `"col" asc`, which Postgres stores as
  * not-descending, so the raw values differ on every ascending index in a correct database.
+ *
+ * The **access method** is compared for the same reason and normalised the same way (`indexMethodOf`,
+ * absent = `btree`). Without it an emitter that can write `using gin` ships a btree for a declared
+ * GIN index and nothing anywhere says so — a declared-and-never-wired key, which is worse than the
+ * missing capability, and the reason `using` could not land in `@ultimat3/entity` before it landed
+ * here.
  */
 function compareIndexes(live: TableDescription, expected: TableDescription): DriftDifference[] {
   const differences: DriftDifference[] = [];
@@ -227,6 +234,17 @@ function compareIndexes(live: TableDescription, expected: TableDescription): Dri
     const counterpart = present.get(index.name);
     if (counterpart === undefined) {
       differences.push(missingIndex(live.name, index.name));
+      continue;
+    }
+    // The method first, and before the column list: a GIN index and a btree over the same column
+    // are not the same index with a detail different, they are two structures the planner uses for
+    // different operators — `@>` on a jsonb column is a sequential scan on the wrong one. Both
+    // sides go through `indexMethodOf`, so a snapshot that predates the field and an index the
+    // catalog reports as `btree` agree instead of reporting drift on a correct database.
+    if (indexMethodOf(counterpart) !== indexMethodOf(index)) {
+      differences.push(
+        changedIndex(live.name, index.name, `is a ${indexMethodOf(counterpart)} index`),
+      );
       continue;
     }
     if (counterpart.columns.join(',') !== index.columns.join(',')) {

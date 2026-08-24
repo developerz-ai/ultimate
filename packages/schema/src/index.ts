@@ -15,6 +15,12 @@ export type {
   Simplify,
 } from './builder';
 export { checkOf, fail, failWith, makeSchema, pass, VENDOR } from './builder';
+// Exported since 2026-08-24 for `@ultimat3/mcp`'s `validate-args.ts`, which enforces the very
+// `minLength`/`maxLength` this package MINTS: it counted UTF-16 code units against numbers minted
+// in code points, so an astral argument was passed silently past a bound it broke and refused
+// against a bound it met. `@ultimat3/core`'s private twin stays private — core is tier 0 and may
+// not import this package — but `mcp` is tier 4 and can, so a copy there would have no excuse.
+export { charCount } from './char-count';
 export type { QuerySource } from './coerce';
 export { coerceInput, coerceNode, coerceQuery } from './coerce';
 export { describeValue, expected } from './describe-value';

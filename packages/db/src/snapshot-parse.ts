@@ -36,13 +36,19 @@ function column(value: unknown): ColumnDescription | undefined {
 
 function index(value: unknown): IndexDescription | undefined {
   if (!isRow(value)) return undefined;
-  const { name, columns, unique, primary, where, order: direction } = value;
+  const { name, columns, unique, primary, where, order: direction, using } = value;
   if (!str(name) || !strings(columns) || !bool(unique) || !bool(primary)) return undefined;
   // Written by 1.2.0 onwards. A sidecar from before it carries neither, and the total, ascending
   // reading is what that generation actually emitted — so an older file stays readable rather
   // than being discarded whole, which would refuse to generate against every existing app.
   if (!(where === undefined || nullableStr(where))) return undefined;
   if (!(direction === undefined || order(direction))) return undefined;
+  // Any string, not the closed set. The live side of this type is the CATALOG's, which answers
+  // `gist` and an extension's own access method, and a sidecar recording one must round-trip so
+  // drift can report it — the refusal belongs at generation, where `declaredMethod` names the
+  // method and the fix, not here, where it would discard the whole snapshot without saying which
+  // field was wrong. Absent stays absent: `indexMethodOf` reads it as the btree it always was.
+  if (!(using === undefined || str(using))) return undefined;
   return {
     name,
     columns,
@@ -50,6 +56,7 @@ function index(value: unknown): IndexDescription | undefined {
     primary,
     where: where === undefined ? null : where,
     order: direction === undefined ? null : direction,
+    ...(using === undefined ? {} : { using }),
   };
 }
 
