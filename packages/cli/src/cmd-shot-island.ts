@@ -27,6 +27,7 @@ import { SHOT_DIR } from './shot-server';
 export function islandBrowser(input: {
   readonly root: string;
   readonly executablePath?: string | undefined;
+  readonly cdpUrl?: string | undefined;
 }): IslandBrowser {
   const byViewport = new Map<string, Promise<ScrapeDriver>>();
   return (viewport: IslandViewport): Promise<ScrapeDriver> => {
@@ -36,6 +37,7 @@ export function islandBrowser(input: {
     const started = appBrowser({
       root: input.root,
       ...(input.executablePath === undefined ? {} : { executablePath: input.executablePath }),
+      ...(input.cdpUrl === undefined ? {} : { cdpUrl: input.cdpUrl }),
       viewport: { width: viewport.width, height: viewport.height },
     });
     byViewport.set(key, started);
@@ -86,6 +88,8 @@ export interface IslandShotInput {
   readonly timeoutMs: number;
   readonly extraHosts?: string | undefined;
   readonly executablePath?: string | undefined;
+  /** A provider's session, or a sidecar. One attach per viewport, memoised like a launch. */
+  readonly cdpUrl?: string | undefined;
   readonly boot: () => Promise<ShotServer>;
   /** Injected by a test, so the whole path is proved on a machine with no Chrome. */
   readonly driver?: IslandBrowser | undefined;
@@ -124,6 +128,7 @@ export async function islandShot(input: IslandShotInput): Promise<IslandArtifact
       islandBrowser({
         root: input.root,
         ...(input.executablePath === undefined ? {} : { executablePath: input.executablePath }),
+        ...(input.cdpUrl === undefined ? {} : { cdpUrl: input.cdpUrl }),
       }),
     boot: input.boot,
     settleMs: input.settleMs,

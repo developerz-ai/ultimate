@@ -11,7 +11,7 @@ import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
 import type { ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
 import { DEFAULT_PAGE_TIMEOUT_MS, systemScrapeClock } from '@ultimat3/scraping';
 import { requireAppRoot } from './app-root';
-import { appBrowser, browserBinaryExists, executablePathFrom } from './browser-launcher';
+import { appBrowser } from './browser-launcher';
 import { islandShot, islandShotResult, refuseRouteWithIsland } from './cmd-shot-island';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, MissingPositionalError } from './errors';
@@ -19,6 +19,7 @@ import { intFlagOr, PORT_RANGE } from './flag-number';
 import type { CommandResult } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
+import { shotBrowserChoice } from './shot-browser';
 import type { BootDevServer, ShotServer } from './shot-server';
 import { allowHostsFrom, devServerFor, SHOT_DIR } from './shot-server';
 import { SETTLE_POLL_MS, settleIslands } from './shot-settle';
@@ -285,6 +286,11 @@ export const shotCommand: CliCommand = {
       { name: 'settle', type: 'string', summary: 'ms to wait after load before capturing' },
       { name: 'timeout', type: 'string', summary: 'ms one navigation may take' },
       { name: 'browser', type: 'string', summary: 'browser executable puppeteer-core launches' },
+      {
+        name: 'cdp-url',
+        type: 'string',
+        summary: 'attach to a browser somebody else is running (a provider session, a sidecar)',
+      },
       { name: 'allow-hosts', type: 'string', summary: 'extra hosts the page may request' },
       // A FLAG on `x shot` and never a second command: photographing a route and photographing a
       // component are one job with two subjects, and a parallel command would be the second path
@@ -314,15 +320,14 @@ export const shotCommand: CliCommand = {
     const port = intFlag(ctx.args, 'port', PORT_RANGE.min, DEFAULT_PORT, PORT_RANGE.max);
     const settleMs = intFlag(ctx.args, 'settle', 0, DEFAULT_SETTLE_MS);
     const timeoutMs = intFlag(ctx.args, 'timeout', 1, DEFAULT_PAGE_TIMEOUT_MS);
-    const executablePath = executablePathFrom(flagString(ctx.args, 'browser'), ctx.env);
-    if (executablePath !== undefined && !browserBinaryExists(executablePath)) {
-      throw new BadFlagError({
-        flag: 'browser',
-        command: 'shot',
-        reason: `no executable at "${executablePath}"`,
-        fix: 'x shot / --browser /usr/bin/chromium',
-      });
-    }
+    // Which browser this run gets — start one here, or attach to one somebody else is running.
+    // Decided by `shot-browser.ts` over plain inputs, and decided HERE, before a dev server or a
+    // provider session exists to pay for a typo.
+    const { cdpUrl, executablePath } = shotBrowserChoice({
+      cdpFlag: flagString(ctx.args, 'cdp-url'),
+      browserFlag: flagString(ctx.args, 'browser'),
+      env: ctx.env,
+    });
     const out = flagString(ctx.args, 'out');
     const boot = (): Promise<ShotServer> => devServerFor(root, ctx.env, port);
     if (island !== undefined && island !== '') {
@@ -337,6 +342,7 @@ export const shotCommand: CliCommand = {
           settleMs,
           timeoutMs,
           ...(executablePath === undefined ? {} : { executablePath }),
+          ...(cdpUrl === undefined ? {} : { cdpUrl }),
           ...(flagString(ctx.args, 'allow-hosts') === undefined
             ? {}
             : { extraHosts: flagString(ctx.args, 'allow-hosts') }),
@@ -349,6 +355,7 @@ export const shotCommand: CliCommand = {
     const driver = await appBrowser({
       root,
       ...(executablePath === undefined ? {} : { executablePath }),
+      ...(cdpUrl === undefined ? {} : { cdpUrl }),
     });
     return shotResult(
       await runShot({

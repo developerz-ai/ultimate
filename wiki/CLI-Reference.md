@@ -913,7 +913,8 @@ Three rules the set obeys:
 
 ```bash
 x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000]
-               [--timeout 30000] [--browser <path>] [--allow-hosts a.com,b.com] [--json]
+               [--timeout 30000] [--browser <path>] [--cdp-url <ws://…>]
+               [--allow-hosts a.com,b.com] [--json]
 ```
 
 **The framework's stated primary developer is an agent, and an agent cannot look at anything.** It can read a file and run a command that prints. `x shot` turns a rendered route into both.
@@ -927,6 +928,7 @@ x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000]
 | `--settle` | `2000` | matches the hydration runtime's own `requestIdleCallback` timeout |
 | `--timeout` | `30000` | one navigation |
 | `--browser` | `PUPPETEER_EXECUTABLE_PATH`, then `CHROME_PATH` | refused before anything boots if the path does not exist |
+| `--cdp-url` | `SCRAPE_CDP_URL` | **attach** to a browser somebody else is running instead of launching one here. `ws:`/`wss:`/`http:`/`https:`; anything else is refused before the attach |
 | `--allow-hosts` | the app's host only | extra hosts the page may request |
 
 **`verdict.json` is the half that gates**, and the more important of the two files: a picture cannot tell you the island threw or logged. It carries the console lines, the island counts, the canvas size, the network tallies — and `blind`, which names what this capture could **not** observe. A tool that silently omits what it cannot see is worse than one that says so.
@@ -936,6 +938,21 @@ x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000]
 **It drives `x dev`, never the static build.** `x build --target static` prerenders `site/` only, so an `app/` route would photograph the landing page. If an `x dev` is already running on the checkout it is **reused** rather than booted over — embedded Postgres is single-writer, so a second boot is `X_DEV_ALREADY_RUNNING` and no picture is ever taken. The verdict says which happened.
 
 **The framework ships no browser.** `x shot` imports `puppeteer-core` from the app and answers `X_SHOT_BROWSER_MISSING` with `bun add -d puppeteer-core` when it is absent. Playwright is not an alternative: its `connectOverCDP` cannot perform the WebSocket upgrade under Bun.
+
+**`--cdp-url` is how a run gets a browser this box could not have started**, `As of 2026-08-24`. Every stealth provider — Browser Use Cloud, Scrapfly, Browserless, Remote Browser and the CAPTCHA-solving services — sells the same shape: create a session over their API, get a `wss://` CDP endpoint back, connect to a real un-fingerprintable Chromium behind it. `@ultimat3/scraping`'s `remoteBrowser({ cdpUrl })` has called that its **primary production path** since it shipped, and until now no CLI command could reach it: `x shot` only ever called `localBrowser()`, so a CI runner or a container with no Chrome could take no picture at all.
+
+```bash
+# A provider session — the API call is theirs, the endpoint is what x shot needs
+CDP=$(curl -s -X POST https://api.example.com/v3/browsers -H "Authorization: Bearer $KEY" | jq -r .cdpUrl)
+x shot /pricing --cdp-url "$CDP" --json
+
+# A sidecar in the same compose network
+x shot /pricing --cdp-url http://chrome:9222 --json
+```
+
+Three rules decide which browser a run gets, and the third is the one worth knowing: **both flags together is refused** rather than ranked (one names a Chrome to *start*, the other says the browser is somebody else's); an exported `SCRAPE_CDP_URL` is a shell-wide default, so `--browser` beside it **wins** and launches locally; and `--browser` is not read at all on an attach, so a correct remote run is never refused for a binary it will never execute. The variable is `SCRAPE_CDP_URL` and not a name of the CLI's own because `@ultimat3/scraping`'s own refusal already tells its reader `remoteBrowser({ cdpUrl: env.SCRAPE_CDP_URL })`.
+
+**Closing an attached browser ends the remote session too** — `remoteBrowser()` calls `close()` and not `disconnect()`, deliberately: a disconnect leaves a browser somebody is billing for running until its provider times it out, and nobody attributes that bill to the run that caused it.
 
 **Never a step of `x verify`.** A gate that needs a browser goes red for reasons unrelated to the change, and CI does not install one.
 
