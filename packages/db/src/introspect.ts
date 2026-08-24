@@ -1,8 +1,9 @@
 // Single responsibility: read the live schema out of `information_schema` / `pg_catalog` into a
-// plain, sortable description. Three consumers depend on this exact shape: drift detection, the
-// generated admin dashboard's schema view, and the MCP `schema.describe` tool. Keep it JSON-safe
-// and deterministically ordered — it is diffed and it is serialised.
+// plain, sortable description — app tables only, never a relation an extension owns and never a
+// view (`app-relation.ts`). `checkDrift` is its one shipped consumer, so what it omits a deploy
+// cannot refuse over. Keep it JSON-safe and deterministically ordered: it is diffed and serialised.
 
+import { nonAppRelations } from './app-relation';
 import { type DbClient, db } from './client';
 import { sql } from './sql';
 
@@ -29,6 +30,14 @@ export interface IndexDescription {
   readonly where: string | null;
   /** `desc` only when every key column is descending; `null` is Postgres' own default. */
   readonly order: 'asc' | 'desc' | null;
+  /**
+   * The access method as `pg_am` names it — `btree`, `gin`, `gist`, or an extension's own. Read
+   * OPEN rather than as the closed set an entity may declare: the live side is whatever the
+   * catalog said, and a `gist` folded into `btree` is the difference drift exists to report.
+   * Absent means `btree` — a snapshot written before this field existed carries no method, and
+   * every index it recorded was one. `indexMethodOf()` is the one reader of that rule.
+   */
+  readonly using?: string | undefined;
 }
 
 export interface ForeignKeyDescription {
@@ -55,7 +64,13 @@ export interface SchemaDescription {
 export interface IntrospectOptions {
   readonly client?: DbClient | undefined;
   readonly schema?: string | undefined;
-  /** The ledger is framework bookkeeping, not user schema — excluded so it never reads as drift. */
+  /**
+   * The ledger is framework bookkeeping, not user schema — excluded so it never reads as drift.
+   *
+   * Replaces the default (`['x_migrations']`) rather than adding to it. It never replaces the set
+   * `nonAppRelations()` derives: an extension's relations are not app schema in any deployment,
+   * so that exclusion is not a caller's to switch off.
+   */
   readonly exclude?: readonly string[] | undefined;
 }
 
@@ -76,6 +91,7 @@ interface IndexRow {
   readonly columns: readonly string[];
   readonly predicate: string | null;
   readonly descending: boolean;
+  readonly method?: string | undefined;
 }
 
 interface ForeignKeyRow {
@@ -92,7 +108,13 @@ const byName = (a: { name: string }, b: { name: string }): number => (a.name < b
 export async function introspect(options: IntrospectOptions = {}): Promise<SchemaDescription> {
   const client = options.client ?? db();
   const schema = options.schema ?? 'public';
-  const excluded = options.exclude ?? ['x_migrations'];
+  // Asked first, and unconditionally: everything below reads `information_schema`, which admits a
+  // view and an extension's own tables alongside the app's. Merged into `excluded` rather than
+  // filtered afterwards so one deny list feeds the whole fold.
+  const excluded = [
+    ...(options.exclude ?? ['x_migrations']),
+    ...(await nonAppRelations(client, schema)),
+  ];
 
   const columns = await client.query<ColumnRow>(sql`
     select table_name, column_name, data_type, is_nullable, column_default, ordinal_position
@@ -112,16 +134,18 @@ export async function introspect(options: IntrospectOptions = {}): Promise<Schem
       ix.indisunique as is_unique,
       ix.indisprimary as is_primary,
       pg_get_expr(ix.indpred, ix.indrelid) as predicate,
+      am.amname as method,
       array_agg(a.attname order by k.ord) as columns,
       bool_and((ix.indoption[k.ord - 1] & 1) = 1) as descending
     from pg_class t
     join pg_namespace n on n.oid = t.relnamespace
     join pg_index ix on ix.indrelid = t.oid
     join pg_class i on i.oid = ix.indexrelid
+    join pg_am am on am.oid = i.relam
     cross join lateral unnest(ix.indkey::smallint[]) with ordinality as k(attnum, ord)
     join pg_attribute a on a.attrelid = t.oid and a.attnum = k.attnum
     where n.nspname = ${schema} and t.relkind = 'r' and k.ord <= ix.indnkeyatts
-    group by t.relname, i.relname, ix.indisunique, ix.indisprimary, ix.indpred, ix.indrelid
+    group by t.relname, i.relname, ix.indisunique, ix.indisprimary, ix.indpred, ix.indrelid, am.amname
     order by t.relname, i.relname
   `);
 
@@ -175,6 +199,9 @@ export function buildSchema(
         primary: row.is_primary,
         where: row.predicate,
         order: row.descending ? ('desc' as const) : null,
+        // `exactOptionalPropertyTypes`: a row with no method is a stub's, and absent must stay
+        // absent rather than becoming an explicit `undefined` a strict comparison can see.
+        ...(row.method === undefined ? {} : { using: row.method }),
       }))
       .sort(byName);
     return {

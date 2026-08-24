@@ -13,6 +13,7 @@ import type {
 } from './entity-shape';
 import { migrationIrreversible } from './errors';
 import { type ConstraintPlans, foreignKeyPlan, foreignKeysOf, type Plan } from './foreign-key-plan';
+import { declaredMethod, indexMethodOf, indexMethodSql } from './index-method';
 import {
   type ColumnDescription,
   findTable,
@@ -121,6 +122,10 @@ export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDe
           primary: false,
           where: index.where,
           order: index.order,
+          // Only when one was declared. Writing `using: 'btree'` out for every index would rewrite
+          // every sidecar in every app on the next `x db gen` — a diff on every file for a fact
+          // that was already true, which `indexMethodOf` reads out of the absence anyway.
+          ...(index.using === undefined ? {} : { using: index.using }),
         })),
         foreignKeys: foreignKeysOf(entity),
       };
@@ -154,11 +159,30 @@ function createIndex(table: string, index: IndexDescriptionLike): string {
     `index "${index.name}" on "${table}" names no columns`,
     `indexes: [{ on: ['<column>'] }]   # name the columns in the entity(), then x db gen`,
   );
+  const method = index.using ?? 'btree';
+  // Two rules Postgres has and a declaration can break, refused here rather than at migrate time:
+  // GIN supports neither a unique index nor an ASC/DESC option, and either one reaches the server
+  // as a syntax error inside `ROLE=migrate` — a release phase that fails with the server's words
+  // and none of the entity's. `X_INVARIANT` for the reason `createIndex` already uses it on an
+  // index naming no columns: a declaration this build cannot honour is refused, never reinterpreted.
+  assert(
+    method === 'btree' || !index.unique,
+    `index "${index.name}" on "${table}" is unique and ${method}; Postgres has no unique ${method} index`,
+    `indexes: [{ on: ['<column>'], using: '${method}' }]   # drop unique, or drop using`,
+  );
+  assert(
+    method === 'btree' || index.order === null,
+    `index "${index.name}" on "${table}" is ${method} and ${index.order}; only a btree orders its keys`,
+    `indexes: [{ on: ['<column>'], using: '${method}' }]   # drop order, or drop using`,
+  );
   const kind = index.unique ? 'create unique index' : 'create index';
   const direction = index.order === null ? '' : ` ${index.order}`;
   const columns = index.columns.map((column) => `"${column}"${direction}`).join(', ');
   const predicate = index.where === null ? '' : ` where (${index.where})`;
-  return `${kind} "${index.name}" on "${table}" (${columns})${predicate};`;
+  // Re-derived from the closed set, never spliced: `indexMethodSql` answers `''` for a btree, so
+  // an index that declared no method emits the statement this generator always emitted, byte for
+  // byte, and one that declared a method Postgres does not have is refused instead of built.
+  return `${kind} "${index.name}" on "${table}"${indexMethodSql(method)} (${columns})${predicate};`;
 }
 
 /**
@@ -185,7 +209,13 @@ function retypeColumn(
 
 /** The parts of an index Postgres cannot alter in place — every one of them is a rebuild. */
 function indexShape(index: IndexDescriptionLike | IndexDescription): string {
-  return JSON.stringify([[...index.columns], index.unique, index.where, index.order ?? null]);
+  return JSON.stringify([
+    [...index.columns],
+    index.unique,
+    index.where,
+    index.order ?? null,
+    indexMethodOf(index),
+  ]);
 }
 
 /**
@@ -216,6 +246,10 @@ function redefineIndex(
       unique: recorded.unique,
       where: recorded.where,
       order: recorded.order,
+      // `declaredMethod`, never a cast: `recorded` is a snapshot's, typed open because the catalog
+      // shares the shape, and a method this generator cannot emit must refuse rather than be
+      // rebuilt as a btree — a `down` that recreates the wrong structure is worse than none.
+      ...(recorded.using === undefined ? {} : { using: declaredMethod(recorded.using) }),
     }),
     `drop index "${index.name}";`,
   );

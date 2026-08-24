@@ -426,6 +426,22 @@ export const multipleStatements = (statement: string, count: number): DbError =>
     meta: { count },
   });
 
+/**
+ * An index method that is not one of the set. `X_SQL_UNSAFE` for the reason `isolationLevelInvalid`
+ * uses it: `create index … using <method>` takes no parameters, so the method is SPLICED into the
+ * statement text, and an operand TypeScript never saw is an injection rather than a typo — the
+ * identical hole a `columnName` built from an unvalidated `meta.name` carried into `create table`.
+ *
+ * `describeValue`, never the value, for the reason that one gives: this cause is folded into a
+ * problem document and a log line.
+ */
+export const indexMethodInvalid = (received: unknown): DbError =>
+  new DbError({
+    code: 'X_SQL_UNSAFE',
+    cause: `an index method must be 'btree' or 'gin'; got ${describeValue(received)}`,
+    fix: "indexes: [{ on: ['tags'], using: 'gin' }]   # or leave it out for the btree default",
+  });
+
 export const branchExists = (branch: string): DbError =>
   new DbError({
     code: 'X_BRANCH_EXISTS',

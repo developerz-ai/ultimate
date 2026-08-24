@@ -162,8 +162,12 @@ up muted and the debt invisible again. `configureFlags({ clock, reportEveryMs })
 ## Projection
 
 `flagsReport()` returns every declared flag with its kind, expiry, owner and whether it is expired,
-sorted by key, plus the expired keys lifted out. It is the one shape `x flags --json`, an MCP tool
-and the manifest should all read, so none of them recomputes "expired".
+sorted by key, plus the expired keys lifted out.
+
+**Offered, not published.** Nothing reads it yet: there is no `x flags` command, no `flags` section
+in the manifest and no MCP tool, and this file claimed all three until 12.0.0. The manifest is not a
+consumer it can ever have — a manifest is derived from source and this reads a registry an app's own
+imports fill at runtime — so the one reachable surface is a CLI command, which loads the app first.
 
 ## What it owns
 
@@ -176,7 +180,7 @@ and the manifest should all read, so none of them recomputes "expired".
 | `src/registry.ts` | `defineFlag`, key → flag, `applyFlagSnapshot` |
 | `src/runtime.ts` | the clock and the per-flag report rate limit over core's `reportError` |
 | `src/evaluate.ts` | `isEnabled()` — the one way to ask |
-| `src/projection.ts` | `flagsReport()` for the CLI, MCP and the manifest |
+| `src/projection.ts` | `flagsReport()` — the shape a CLI command would print; nothing reads it yet |
 | `src/errors.ts` | this package's X_* codes |
 
 ## Boundary
