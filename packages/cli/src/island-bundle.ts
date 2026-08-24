@@ -10,7 +10,6 @@ import { renderThrowable } from '@ultimat3/core';
 import { ISLAND_EXTENSION, IslandInvalidError, islandModuleId } from '@ultimat3/render';
 import { contentHash } from '@ultimat3/render/server';
 import { IslandBuildFailedError } from './errors';
-import { solidProductionPlugin } from './island-solid-production';
 import { islandStylesPlugin } from './island-styles';
 import { solidJsxPlugin } from './solid-loader';
 
@@ -84,12 +83,24 @@ async function buildOne(root: string, file: string): Promise<IslandChunk> {
       // classic `React.createElement` — emitted into a browser chunk that imports no React, with
       // `success: true` and no log. Every island shipped that way through five majors.
       //
-      // The other two close the same shape of failure — a wrong answer `Bun.build` reports as
-      // `success: true`: without the second, `target: 'browser'` resolves the `development`
-      // export condition and the chunk carries Solid's dev build; without the third, Bun's file
-      // loader resolves a `.module.scss` to its asset PATH, so `styles['x']` is `undefined` and
-      // every element renders unclassed.
-      plugins: [solidJsxPlugin, solidProductionPlugin, islandStylesPlugin],
+      // The second closes the same shape of failure — a wrong answer `Bun.build` reports as
+      // `success: true`: without it, Bun's file loader resolves a `.module.scss` to its asset
+      // PATH, so `styles['x']` is `undefined` and every element renders unclassed.
+      plugins: [solidJsxPlugin, islandStylesPlugin],
+      // The third one, and it is a `define` rather than the plugin this used to be: Bun selects
+      // the `development`/`production` export condition from the BUILD PROCESS's own `NODE_ENV`,
+      // and a defined `process.env.NODE_ENV` overrides it. Measured on 1.4.0, `solid-js` plus
+      // `solid-js/web` plus `solid-js/store`: unset → dev build, `test` → dev build, `production`
+      // → production build, this line → production build in all three, byte for byte.
+      //
+      // So without it a chunk built anywhere a container did not run — `x dev`, `x build` on a
+      // laptop, `bun test` — ships Solid's development build, and the island's own
+      // `process.env.NODE_ENV` reads `"development"` in the file a browser downloads.
+      //
+      // Pinned rather than inherited, because an island chunk is only ever built to be shipped:
+      // `x dev` serves the same chunk the container does, and bytes that depend on the ambient
+      // NODE_ENV are a content hash and a byte budget measured on a build nobody ships.
+      define: { 'process.env.NODE_ENV': '"production"' },
     });
   } catch (error) {
     throw new IslandBuildFailedError({ file, logs: describeBuildError(error) });

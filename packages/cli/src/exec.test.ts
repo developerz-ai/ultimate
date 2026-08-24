@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { exec } from './exec';
 
-/** Thrown values are read as data: `expect(fn).toThrow(Class)` passes in Bun 1.3.14 on a RETURN. */
+/** Thrown values are read as data: `expect(fn).toThrow(Class)` passes in Bun 1.4.0 on a RETURN. */
 const thrownBy = async (run: () => Promise<unknown>): Promise<Record<string, unknown>> => {
   try {
     await run();

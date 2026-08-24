@@ -90,10 +90,13 @@ describe('job() refuses a concurrency that can never be filled', () => {
   });
 
   /**
-   * The RESULT is returned, never discarded. `declare(0)();` as a bare expression statement does
-   * not run at all under Bun 1.3.14 — the call is elided when its value is unused, so the `catch`
-   * never fires and the assertion below reads `undefined` from an error that was never raised.
-   * That is a test which cannot fail; `void declare(0)()` or using the value both run it.
+   * The RESULT is returned, never discarded — and the reason written here was wrong. The claim was
+   * that Bun 1.3.14 ELIDES `declare(0);()` as a bare expression statement when its value is
+   * unused, leaving a test that cannot fail. Re-measured on 1.4.0 against this exact `declare`:
+   * the bare statement runs and `job()` throws `X_INVARIANT`, so no call is being elided and no
+   * engine ever could — the refusal is a side effect. Returning the value is still the right
+   * shape (it is what carries the code and the fix to the assertion), it just is not load-bearing
+   * for the reason the old comment gave.
    */
   const refusalFrom = (concurrency: number): { cause?: string; fix?: string } => {
     try {

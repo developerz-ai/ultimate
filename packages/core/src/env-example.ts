@@ -18,7 +18,7 @@ const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export const ENV_EXAMPLE_PATH = '.env.example';
 
 /**
- * What Bun loads by itself, lowest precedence first — measured against Bun 1.3, not assumed.
+ * What Bun loads by itself, lowest precedence first — measured against Bun 1.4, not assumed.
  *
  * The mode is NOT `ULTIMATE_ENV` and not even `NODE_ENV` verbatim: Bun reads `.env.production`
  * for `NODE_ENV=production`, `.env.test` for `test`, and `.env.development` for **everything

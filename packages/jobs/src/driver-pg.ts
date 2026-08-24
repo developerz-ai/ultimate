@@ -57,7 +57,7 @@ import type { StepStore } from './steps';
  * The one thing this driver needs from the DB layer, declared structurally so this package can
  * depend on no database package at all.
  *
- * **Not satisfied by `Bun.sql`** — verified against Bun 1.3.14: `Bun.sql.query` is `undefined`.
+ * **Not satisfied by `Bun.sql`** — verified against Bun 1.4.0: `Bun.sql.query` is `undefined`.
  * `Bun.sql` is a tagged template whose positional form is `unsafe`, so a `{ executor: Bun.sql }`
  * would `TypeError` on the first claim. What satisfies it is a one-line adapter over a client that
  * already speaks `(text, values)` — `@ultimat3/cli`'s `pgExecutorFor(client)` is the framework's

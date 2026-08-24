@@ -1,5 +1,5 @@
 // Ordering, not policy. Bun runs `websocket.open` SYNCHRONOUSLY inside `server.upgrade` and does
-// not return until it has (measured on bun 1.3.14), so a grant recorded on the line after the
+// not return until it has (measured on bun 1.4.0), so a grant recorded on the line after the
 // upgrade is one the socket was already built without — `actor: null` on every authenticated
 // connection, and no sweep repairs it because a grant with no `expiresAt` never expires.
 

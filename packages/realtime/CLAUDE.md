@@ -461,7 +461,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   guard `onClose` already had.
 - **The grant is recorded BEFORE `server.upgrade`, and released on the path that never opens.**
   Bun runs `websocket.open` SYNCHRONOUSLY inside `server.upgrade` and does not return until it has
-  (bun 1.3.14), and `open` is where `sync-node` reads the `GrantBook` for the socket's actor.
+  (bun 1.4.0), and `open` is where `sync-node` reads the `GrantBook` for the socket's actor.
   Recorded on the line after the upgrade — which it was — every authenticated socket on a real node
   carried `actor: null`: `ChannelHub.#authorize` denied every topic with `X_TOPIC_FORBIDDEN`,
   `authorize`/`visible` decided about nobody, `maxPerTenant` never applied and `hello.actorId` was

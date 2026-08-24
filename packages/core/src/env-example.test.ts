@@ -92,7 +92,7 @@ describe('checkEnvExample', () => {
 });
 
 describe('envFileCandidates', () => {
-  // Measured against Bun 1.3: the mode is production/test or development, never `staging`.
+  // Measured against Bun 1.4: the mode is production/test or development, never `staging`.
   test('matches what Bun actually loads, lowest precedence first', () => {
     expect(envFileCandidates('production')).toEqual(['.env', '.env.production', '.env.local']);
     expect(envFileCandidates('test')).toEqual(['.env', '.env.test']);

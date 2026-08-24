@@ -75,7 +75,7 @@ const ownFeed: LiveQueryDefinition = {
 
 /**
  * Accepts every upgrade, remembers the data the node attached — and OPENS THE SOCKET INSIDE
- * `upgrade()`, synchronously, before returning, which is what Bun does (measured on bun 1.3.14).
+ * `upgrade()`, synchronously, before returning, which is what Bun does (measured on bun 1.4.0).
  *
  * This stub returned `true` and left `open` to the test, several statements later, so the node
  * could record a socket's grant after the upgrade and still look right here: by the time a test
