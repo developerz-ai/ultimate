@@ -16,7 +16,8 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `factory-persist.ts` | `usePersister` — the one seam `create()` writes through |
 | `shared-examples.ts` | `sharedExamples` / `behavesLike` — one rule, many subjects |
 | `test-types.ts` | the six test types and their helpers |
-| `matchers.ts` | `toBeUltimateError` `toDenyPolicy` `toEmitSteps` `toMatchOpenApi` `toBeWithinBudget` `toRejectInput` |
+| `matchers.ts` | `toBeUltimateError` `toDenyPolicy` `toEmitSteps` `toMatchOpenApi` `toBeWithinBudget` `toRejectInput` `toAcceptInput` `toBeVisible` |
+| `retry.ts` | the one retry loop every waiting assertion is built from — a budget, a fixed interval, and an injectable sleep |
 | `fixtures.ts` | the registry + `test('…', ({ clock }) => …)` injection |
 | `fixture-{clock,mail,jobs,network,statements}.ts` | the five fixtures the framework builds in-process |
 | `fixture-drivers.ts` | the five it declares but a driver must build — `page` `budget` `signIn` `deploy` `subscribe` |
@@ -355,6 +356,32 @@ changed when only the reviewer moved.
 
 **The command that takes the pictures is not here yet.** `As of 2026-08-23` this package ships the
 vocabulary, the expansion and the refusals; the browser half is `x shot`'s.
+
+## The one assertion that waits
+
+```ts
+import { e2eTest, expect } from '@ultimat3/testing';
+
+e2eTest('the feed paints, and says so when the socket drops', async ({ page }) => {
+  // Retries isVisible() to a budget — 5000ms every 100ms unless you narrow it.
+  await expect(page.getByRole('heading', { name: 'Feed' })).toBeVisible();
+  await expect(page.getByText('Reconnecting')).toBeVisible({ timeout: 10_000 });
+
+  // `.not` waits for it to GO, not for one look to come back false.
+  await expect(page.getByText('Offline')).not.toBeVisible();
+});
+```
+
+| Fact | Why |
+|---|---|
+| the budget is counted in **looks**, not elapsed ms | this package freezes `Date.now()`, so a deadline read off the clock never expires. `1 + floor(timeout / interval)` |
+| a fixed interval, never a curve | the caller's deadline is the contract; a curve spends most of it waiting. The framework's one backoff curve is `@ultimat3/core`'s |
+| `interval: 0` is refused | an unbounded spin is a test that never fails — it hangs, and CI reports a runner timeout with no assertion in it |
+| a receiver with no `isVisible()` is `X_TEST_LOCATOR_EXPECTED` | the assertion is unanswerable, not false; `pass: false` would read as "the element was hidden" |
+| `timeout: 0` is the non-retrying spelling | one look, no wait — and you have to ask for it |
+
+`expect(await locator.isVisible()).toBe(true)` still works and is a **different** assertion: it
+fails on a page that simply has not painted yet.
 
 ## Errors
 

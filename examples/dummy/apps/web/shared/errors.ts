@@ -1,6 +1,10 @@
 /**
- * Errors both surfaces can raise about WHO is calling. Two, and neither belongs to a feature:
- * `memberOf` is `@postly/core`'s and every service asks it the same question.
+ * The error both surfaces raise about WHO is calling — one, and it belongs to no feature.
+ *
+ * `NotAMember` sat here beside it until 2026-08-24 and has moved DOWN to `@postly/core`, next to
+ * the `memberOf` whose `null` it refuses: `packages/mcp` needs the same refusal and a package
+ * cannot import `apps/web/shared/`. This one stays, because `ActorFacts` is an `app/` concern and
+ * nothing under `packages/` resolves them.
  */
 
 // No `docs:` at any construction site below. `UltimateError` fills it from
@@ -10,29 +14,6 @@
 // answered 404, host included, on every error this app has ever thrown.
 
 import { UltimateError } from '@ultimat3/core';
-
-/**
- * The actor carries no membership, so nothing in this app can decide about them or write a row
- * owned by them. Every surface that reaches a service is gated by a policy that already refuses
- * such an actor — this is the refusal for a caller that arrived from a job or a test instead.
- *
- * It lives here rather than in a feature because `ctx.orgs` and `ctx.posts` both need the same
- * answer, and a second class with a second code would be a second way to say one thing. The code
- * is unchanged from when it lived in `app/orgs/errors.ts`.
- */
-export class NotAMember extends UltimateError {
-  constructor(actorId: string) {
-    super({
-      code: 'X_ORG_NOT_A_MEMBER',
-      cause: `actor ${JSON.stringify(actorId)} carries no org and no membership role`,
-      // Runnable, not advice: the caller either has a membership row or does not, and this names
-      // the read that answers it. `actorFor(member)` is what a test does with the row it finds.
-      fix:
-        'read the membership row with memberById(orgId, id) from apps/web/app/orgs/repo.ts, ' +
-        'then build the actor with actorFor(member)',
-    });
-  }
-}
 
 /**
  * Raised by `useActor()` when nothing resolved the app's actor facts for this request.

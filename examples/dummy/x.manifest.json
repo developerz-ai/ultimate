@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "3f34c09902c27ec4",
+  "buildId": "0dfb8bde30e2bbbd",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -1746,61 +1746,82 @@
             "type": "object",
             "properties": {
               "minor": {
-                "type": "integer"
+                "type": "integer",
+                "description": "amount in minor units, never a float",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               "currency": {
                 "type": "string",
-                "enum": [
-                  "USD",
-                  "EUR"
-                ]
+                "pattern": "^[A-Z]{3}$"
+              },
+              "scale": {
+                "type": "integer",
+                "description": "decimal places `minor` counts; absent means the currency’s own",
+                "minimum": 0,
+                "maximum": 15
               }
             },
             "required": [
               "minor",
               "currency"
             ],
-            "additionalProperties": false
+            "additionalProperties": false,
+            "description": "integer minor units plus an ISO 4217 currency code"
           },
           "credit": {
             "type": "object",
             "properties": {
               "minor": {
-                "type": "integer"
+                "type": "integer",
+                "description": "amount in minor units, never a float",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               "currency": {
                 "type": "string",
-                "enum": [
-                  "USD",
-                  "EUR"
-                ]
+                "pattern": "^[A-Z]{3}$"
+              },
+              "scale": {
+                "type": "integer",
+                "description": "decimal places `minor` counts; absent means the currency’s own",
+                "minimum": 0,
+                "maximum": 15
               }
             },
             "required": [
               "minor",
               "currency"
             ],
-            "additionalProperties": false
+            "additionalProperties": false,
+            "description": "integer minor units plus an ISO 4217 currency code"
           },
           "nextPeriod": {
             "type": "object",
             "properties": {
               "minor": {
-                "type": "integer"
+                "type": "integer",
+                "description": "amount in minor units, never a float",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               "currency": {
                 "type": "string",
-                "enum": [
-                  "USD",
-                  "EUR"
-                ]
+                "pattern": "^[A-Z]{3}$"
+              },
+              "scale": {
+                "type": "integer",
+                "description": "decimal places `minor` counts; absent means the currency’s own",
+                "minimum": 0,
+                "maximum": 15
               }
             },
             "required": [
               "minor",
               "currency"
             ],
-            "additionalProperties": false
+            "additionalProperties": false,
+            "description": "integer minor units plus an ISO 4217 currency code"
           }
         },
         "required": [
@@ -2306,10 +2327,6 @@
       "package": "apps/web"
     },
     {
-      "code": "X_ORG_NOT_A_MEMBER",
-      "package": "apps/web"
-    },
-    {
       "code": "X_ORG_NOT_FOUND",
       "package": "apps/web"
     },
@@ -2323,6 +2340,10 @@
     },
     {
       "code": "X_BILLING_SEATS_EXCEEDED",
+      "package": "packages/core"
+    },
+    {
+      "code": "X_ORG_NOT_A_MEMBER",
       "package": "packages/core"
     },
     {

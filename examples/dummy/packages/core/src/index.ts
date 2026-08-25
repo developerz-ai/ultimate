@@ -8,14 +8,14 @@ export {
   quoteUpgrade,
   seatsRemaining,
 } from './billing';
-export type { DigestSlot } from './digest-schedule';
+export type { DigestMember, DigestSlot } from './digest-schedule';
 export {
   localDateIn,
   nextDigestAt,
   previousDigestAt,
   scheduleByOrgAndZone,
 } from './digest-schedule';
-export { CoreError, NotAnUpgrade, SeatsExceeded } from './errors';
+export { CoreError, NotAMember, NotAnUpgrade, SeatsExceeded } from './errors';
 export type { Actor, ActorLike, OwnedRecord } from './membership';
 export {
   mayAdministerOrg,

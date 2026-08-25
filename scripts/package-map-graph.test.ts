@@ -39,6 +39,30 @@ const workspace = (dir: string, deps: readonly string[]): GraphWorkspace => ({
   deps: deps.map((name) => `@ultimat3/${name}`),
 });
 
+/**
+ * A page carrying BOTH halves the rule reads — the mermaid fence and the `## Every package` table.
+ * Every arrow fixture needs the table now, because a page with no table is itself a finding: the
+ * table went unread for two majors and `scraping` fell out of it, so an absent table can no longer
+ * mean "not under test here".
+ */
+const pageWith = (
+  workspaces: readonly GraphWorkspace[],
+  body: readonly string[],
+  rows?: readonly string[],
+): string =>
+  [
+    fence('mermaid', body),
+    '',
+    '## Every package',
+    '',
+    '| Package | Tier | Responsibility |',
+    '|---|---|---|',
+    ...(rows ??
+      workspaces
+        .filter((one) => !one.private)
+        .map((one) => `| \`${one.dir}\` | ${String(one.tier)} | what it owns |`)),
+  ].join('\n');
+
 describe('what counts as an arrow', () => {
   test('prose outside the fence is not one — the page writes two wrong edges as examples', () => {
     const markdown = [
@@ -134,14 +158,28 @@ describe('what counts as an arrow', () => {
   });
 });
 
+const BACKED = [
+  workspace('render', ['cache']),
+  workspace('cache', ['core']),
+  workspace('core', []),
+];
+const PRIVATE_TOO = [
+  workspace('render', ['cache']),
+  workspace('cache', []),
+  { ...workspace('dummy', []), private: true },
+];
+const ABRIDGED = [workspace('render', ['cache', 'core', 'seo']), workspace('cache', [])];
+
 describe('the rule', () => {
-  const page = fence('mermaid', ['graph TD', '  render --> cache', '  cache --> core']);
+  const body = ['graph TD', '  render --> cache', '  cache --> core'];
 
   test('an arrow no package.json backs is X_DOC_PACKAGE_GRAPH_STALE, at its line', () => {
-    const findings = checkPackageMapGraph({
-      markdown: page,
-      workspaces: [workspace('render', ['cache']), workspace('cache', []), workspace('core', [])],
-    });
+    const workspaces = [
+      workspace('render', ['cache']),
+      workspace('cache', []),
+      workspace('core', []),
+    ];
+    const findings = checkPackageMapGraph({ markdown: pageWith(workspaces, body), workspaces });
     expect(findings).toHaveLength(1);
     expect(findings[0]?.code).toBe(STALE);
     expect(findings[0]?.at).toBe(`${PACKAGE_MAP}:4`);
@@ -151,32 +189,30 @@ describe('the rule', () => {
   test('an arrow every package.json backs is silence', () => {
     expect(
       checkPackageMapGraph({
-        markdown: page,
-        workspaces: [
-          workspace('render', ['cache']),
-          workspace('cache', ['core']),
-          workspace('core', []),
-        ],
+        markdown: pageWith(BACKED, body),
+        workspaces: BACKED,
       }),
     ).toEqual([]);
   });
 
   test('an endpoint that is no workspace names the typo rather than the dependency', () => {
+    const workspaces = [workspace('render', ['cache'])];
     const findings = checkPackageMapGraph({
-      markdown: fence('mermaid', ['graph TD', '  render --> cach']),
-      workspaces: [workspace('render', ['cache'])],
+      markdown: pageWith(workspaces, ['graph TD', '  render --> cach']),
+      workspaces,
     });
     expect(findings[0]?.cause).toContain('packages/cach is not a workspace');
   });
 
   test('a publishable package with no node is reported — scraping sat off the map', () => {
+    const workspaces = [
+      workspace('render', ['cache']),
+      workspace('cache', []),
+      { ...workspace('scraping', []), tier: 5 },
+    ];
     const findings = checkPackageMapGraph({
-      markdown: fence('mermaid', ['graph TD', '  render --> cache']),
-      workspaces: [
-        workspace('render', ['cache']),
-        workspace('cache', []),
-        { ...workspace('scraping', []), tier: 5 },
-      ],
+      markdown: pageWith(workspaces, ['graph TD', '  render --> cache']),
+      workspaces,
     });
     expect(findings).toHaveLength(1);
     expect(findings[0]?.cause).toContain('@ultimat3/scraping publishes');
@@ -186,12 +222,8 @@ describe('the rule', () => {
   test('a private workspace is not required on the graph', () => {
     expect(
       checkPackageMapGraph({
-        markdown: fence('mermaid', ['graph TD', '  render --> cache']),
-        workspaces: [
-          workspace('render', ['cache']),
-          workspace('cache', []),
-          { ...workspace('dummy', []), private: true },
-        ],
+        markdown: pageWith(PRIVATE_TOO, ['graph TD', '  render --> cache']),
+        workspaces: PRIVATE_TOO,
       }),
     ).toEqual([]);
   });
@@ -199,10 +231,121 @@ describe('the rule', () => {
   test('the reverse is deliberately not checked: a dependency need not be drawn', () => {
     expect(
       checkPackageMapGraph({
-        markdown: fence('mermaid', ['graph TD', '  render --> cache']),
-        workspaces: [workspace('render', ['cache', 'core', 'seo']), workspace('cache', [])],
+        markdown: pageWith(ABRIDGED, ['graph TD', '  render --> cache']),
+        workspaces: ABRIDGED,
       }),
     ).toEqual([]);
+  });
+});
+
+describe('the `## Every package` table, the second prose copy', () => {
+  const body = ['graph TD', '  render --> cache'];
+  const drawn = [workspace('render', ['cache']), workspace('cache', [])];
+
+  test('a publishable package with a node but NO table row is reported', () => {
+    // The exact shape that shipped: `scraping` was on the graph and absent from the table, so the
+    // presence rule beside this one passed while the table stayed wrong.
+    const workspaces = [...drawn, { ...workspace('scraping', []), tier: 5 }];
+    const findings = checkPackageMapGraph({
+      markdown: pageWith(
+        workspaces,
+        [...body, '  scraping --> core'],
+        ['| `render` | 0 | what it owns |', '| `cache` | 0 | what it owns |'],
+      ),
+      workspaces: [...workspaces, workspace('core', [])],
+    });
+    const missing = findings.filter((one) => one.cause.includes('carries no row'));
+    expect(missing).toHaveLength(2);
+    expect(missing[0]?.code).toBe(STALE);
+    expect(missing.map((one) => one.cause).join(' ')).toContain('@ultimat3/scraping publishes');
+  });
+
+  test('a row whose tier disagrees with the executable table is reported, at its line', () => {
+    const workspaces = [{ ...workspace('render', ['cache']), tier: 4 }, workspace('cache', [])];
+    const findings = checkPackageMapGraph({
+      markdown: pageWith(workspaces, body, [
+        '| `render` | 5 | what it owns |',
+        '| `cache` | 0 | what it owns |',
+      ]),
+      workspaces,
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.cause).toContain('puts render at tier 5');
+    expect(findings[0]?.cause).toContain('puts it at 4');
+    expect(findings[0]?.at).toBe(`${PACKAGE_MAP}:10`);
+  });
+
+  test('a tier cell that qualifies itself reads its number — `unlisted (6)`', () => {
+    const workspaces = [{ ...workspace('render', ['cache']), tier: 6 }, workspace('cache', [])];
+    expect(
+      checkPackageMapGraph({
+        markdown: pageWith(workspaces, body, [
+          '| `render` | unlisted (6) | what it owns |',
+          '| `cache` | 0 | what it owns |',
+        ]),
+        workspaces,
+      }),
+    ).toEqual([]);
+  });
+
+  test('a tier cell stating no number at all is reported rather than assumed', () => {
+    const findings = checkPackageMapGraph({
+      markdown: pageWith(drawn, body, [
+        '| `render` | — | what it owns |',
+        '| `cache` | 0 | what it owns |',
+      ]),
+      workspaces: drawn,
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.cause).toContain('no stated tier');
+  });
+
+  test('a row for a directory that is no workspace names the typo', () => {
+    const findings = checkPackageMapGraph({
+      markdown: pageWith(drawn, body, [
+        '| `render` | 0 | what it owns |',
+        '| `cache` | 0 | what it owns |',
+        '| `cach` | 0 | a row nothing backs |',
+      ]),
+      workspaces: drawn,
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.cause).toContain('packages/cach is not a workspace');
+  });
+
+  test('a renamed heading is UNSCANNED, never a clean page', () => {
+    // Without this the rule reads zero rows and every check above passes over nothing — which is
+    // the vacuity this file exists to refuse.
+    const findings = checkPackageMapGraph({
+      markdown: pageWith(drawn, body).replace('## Every package', '## All the packages'),
+      workspaces: drawn,
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.code).toBe(UNSCANNED);
+    expect(findings[0]?.cause).toContain('no `## Every package` table row');
+  });
+
+  test('rows under a LATER heading are not counted as package rows', () => {
+    // The table ends where the next `## ` begins; a table further down the page describes
+    // something else and must not satisfy this rule.
+    const findings = checkPackageMapGraph({
+      markdown: [
+        fence('mermaid', body),
+        '',
+        '## Every package',
+        '',
+        '| Package | Tier | Responsibility |',
+        '|---|---|---|',
+        '| `render` | 0 | what it owns |',
+        '',
+        '## Something else',
+        '',
+        '| `cache` | 0 | a row in a different table |',
+      ].join('\n'),
+      workspaces: drawn,
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.cause).toContain('@ultimat3/cache publishes');
   });
 });
 

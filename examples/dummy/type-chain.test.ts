@@ -282,6 +282,12 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     // projection and in its test's row builder, so a rename reaches it exactly as it reaches the
     // repo. Added in the same commit as the consumer, which is the discipline this list exists
     // for — a file appearing here on its own would be a hop that used to be silent.
+    //
+    // `scripts/test-setup.test.ts` joined it 2026-08-24, and it is that sentence in reverse: a hop
+    // that WAS silent became real. `SeedHandle.pick` answered `SeedRow` — an `unknown` index
+    // signature — for every label, so a seeded post's columns were untyped and this rename could
+    // not reach the fixture that writes one. It answers the entity's own row type now, keyed off
+    // the `<entity>:<name>` label, so `db.posts.insert({ excerpt })` there is a real hop.
     const touchedFiles = [
       'apps/web/app/posts/backfills/post-excerpts.job.test.ts',
       'apps/web/app/posts/backfills/post-excerpts.ts',
@@ -289,6 +295,7 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
       'apps/web/app/posts/repo.ts',
       'apps/web/app/posts/repo.test.ts',
       'packages/db/seeds/dev.ts',
+      'scripts/test-setup.test.ts',
     ];
     for (const file of touchedFiles) {
       expect(before.diagnostics.filter((d) => d.file === file)).toEqual([]);
@@ -336,7 +343,8 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     // list on purpose, in the same commit, the same discipline `KNOWN_GAPS` in
     // `packages/cli/src/scaffold-typecheck.ts` uses for pinned compiler drift.
     expect(new Set(introduced.map((d) => d.file))).toEqual(new Set(touchedFiles));
-    expect(introduced).toHaveLength(21);
+    // 22 as of 2026-08-24: 21, plus the one `scripts/test-setup.test.ts` now contributes.
+    expect(introduced).toHaveLength(22);
 
     // `entity.ts`: the view's field list no longer names a real column (hop 4).
     expect(

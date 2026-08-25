@@ -53,7 +53,7 @@ export function Page(): JSX.Element {
 
   return (
     <main class={styles.page}>
-      <Stack gap="4">
+      <Stack gap={4}>
         <h1>{t('site.offline.heading')}</h1>
         <p>{t('site.offline.body')}</p>
 

@@ -3,6 +3,7 @@
 // program in the repo has to READ this declaration — `tsconfig.tests.json` names this file — and a
 // tier-0 test cannot reach it by importing tier-5 `@ultimat3/testing`.
 
+import type { VisibleOptions } from './matcher-visible';
 import type { OpenApiLike } from './test-types';
 
 /**
@@ -23,6 +24,13 @@ export interface UltimateMatchers<T> {
   toBeWithinBudget(limit: number): T;
   toRejectInput(input: unknown): Promise<T>;
   toAcceptInput(input: unknown): Promise<T>;
+  /**
+   * The one matcher that WAITS. Retries `isVisible()` to a budget — 5000ms every 100ms unless
+   * narrowed — and `.not.toBeVisible()` waits for the element to GO rather than inverting one look.
+   * Point-in-time is `expect(await locator.isVisible()).toBe(true)`, and it is a different
+   * assertion: it fails on a page that simply has not painted yet.
+   */
+  toBeVisible(options?: VisibleOptions): Promise<T>;
 }
 
 declare module 'bun:test' {

@@ -35,7 +35,6 @@ const stubPage = (url: string): PageLike => ({
   reload: async () => undefined,
   waitForServiceWorker: async () => undefined,
   title: async () => '',
-  content: async () => '',
   url: () => url,
   evaluate: async <T>(fn: () => T) => fn(),
   locator: stubLocator,

@@ -23,7 +23,7 @@ export const PlanBadge = (props: PlanBadgeProps): JSX.Element => {
   const t = useT();
 
   return (
-    <Stack gap="1" class={styles.badge}>
+    <Stack gap={1} class={styles.badge}>
       <div class={styles.headline}>
         <Badge tone={props.plan === 'free' ? 'neutral' : 'accent'}>
           {t(`plans.${props.plan}.name`)}

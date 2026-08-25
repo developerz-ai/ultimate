@@ -6,7 +6,15 @@
  */
 
 import { DIGEST_LOCAL_HOUR } from '@postly/domain';
-import { fromZoned, toZoned } from '@ultimat3/time';
+import { fromZoned, instant, toZoned } from '@ultimat3/time';
+
+/**
+ * `toZoned` takes an `Instant` — a `Date` PROVEN valid and documented as UTC — and every caller
+ * here arrives with a plain `Date` off `ctx.now()` or a `timestamptz` column. `instant()` is the
+ * one gate: it re-checks the value and hands back a copy, so an Invalid Date becomes
+ * `X_INSTANT_INVALID` here instead of `NaN-NaN-NaN` in a digest idempotency key.
+ */
+const utc = (at: Date) => instant(at);
 
 type CalendarDay = { year: number; month: number; day: number };
 
@@ -25,8 +33,8 @@ const addDays = (day: CalendarDay, days: number): CalendarDay => {
 };
 
 /** The calendar date it is for this member right now. Used verbatim in digest idempotency keys. */
-export const localDateIn = (instant: Date, zone: string): string => {
-  const parts = toZoned(instant, zone);
+export const localDateIn = (at: Date, zone: string): string => {
+  const parts = toZoned(utc(at), zone);
   const month = String(parts.month).padStart(2, '0');
   const day = String(parts.day).padStart(2, '0');
   return `${parts.year}-${month}-${day}`;
@@ -42,7 +50,7 @@ export const localDateIn = (instant: Date, zone: string): string => {
  * to the earlier of the two.
  */
 export const nextDigestAt = (after: Date, zone: string, hour: number = DIGEST_LOCAL_HOUR): Date => {
-  const today = toZoned(after, zone);
+  const today = toZoned(utc(after), zone);
   const candidate = fromZoned({ ...toCalendarDay(today), hour, minute: 0, second: 0 }, zone);
   if (candidate.getTime() > after.getTime()) return candidate;
 
@@ -72,7 +80,7 @@ export const previousDigestAt = (
   hour: number = DIGEST_LOCAL_HOUR,
 ): Date =>
   fromZoned(
-    { ...addDays(toCalendarDay(toZoned(slot, zone)), -1), hour, minute: 0, second: 0 },
+    { ...addDays(toCalendarDay(toZoned(utc(slot), zone)), -1), hour, minute: 0, second: 0 },
     zone,
   );
 
@@ -82,12 +90,25 @@ const toCalendarDay = (parts: { year: number; month: number; day: number }): Cal
   day: parts.day,
 });
 
-/** One digest: the members of one org who share one zone, and the instant their clock reads 09:00. */
-export interface DigestSlot<T> {
-  readonly orgId: string;
-  readonly zone: string;
+/**
+ * One digest: the members of one org who share one zone, and the instant their clock reads 09:00.
+ *
+ * `zone` and `orgId` are the MEMBER's own — `T['tz']`, not `string`. A group is built by copying
+ * those two fields off a row, so widening them here threw away what the row already knew: the
+ * scheduler enqueues `zone: group.zone` into a payload whose schema is `SUPPORTED_ZONES`, and a
+ * `string` is not one of eight literals.
+ */
+export interface DigestSlot<T extends DigestMember> {
+  readonly orgId: T['orgId'];
+  readonly zone: T['tz'];
   readonly at: Date;
   readonly members: readonly T[];
+}
+
+/** The two columns a digest groups by. Structural, so `@postly/core` imports no row type. */
+export interface DigestMember {
+  readonly tz: string;
+  readonly orgId: string;
 }
 
 /** Neither half can contain a NUL, so no pair of values can collide on the joined key. */
@@ -103,12 +124,12 @@ const slotKey = (orgId: string, zone: string): string => `${orgId}\u0000${zone}`
  * calculation whether they sit in one org or fifty. Order follows `members`, so a caller that
  * reads its rows in a stable order gets stable group names to key durable steps on.
  */
-export const scheduleByOrgAndZone = <T extends { readonly tz: string; readonly orgId: string }>(
+export const scheduleByOrgAndZone = <T extends DigestMember>(
   members: readonly T[],
   after: Date,
 ): readonly DigestSlot<T>[] => {
   const slots = new Map<string, Date>();
-  const grouped = new Map<string, { orgId: string; zone: string; at: Date; members: T[] }>();
+  const grouped = new Map<string, { orgId: T['orgId']; zone: T['tz']; at: Date; members: T[] }>();
 
   for (const member of members) {
     const bucket = grouped.get(slotKey(member.orgId, member.tz));

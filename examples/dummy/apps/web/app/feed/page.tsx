@@ -98,7 +98,7 @@ export function Page(props: { readonly data: FeedActivity }): JSX.Element {
           offline: t('app.feed.offlineNotice'),
         }}
       >
-        <Skeleton rows={4} label={t('app.feed.loading')} />
+        <Skeleton lines={4} />
       </LiveFeed>
     </Layout>
   );

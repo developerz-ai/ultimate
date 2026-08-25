@@ -47,7 +47,7 @@ export function Page(): JSX.Element {
   return (
     <Layout>
       <form class={styles.form} method="post" action={CREATE_ENDPOINT}>
-        <Stack gap="4">
+        <Stack gap={4}>
           <h1>{t('posts.create')}</h1>
           <Text tone="muted">{t('app.post.draftNotice')}</Text>
 

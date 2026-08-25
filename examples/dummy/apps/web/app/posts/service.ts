@@ -3,10 +3,9 @@
  * a job, an MCP tool and the admin app all call the same functions with the same actor.
  */
 
-import { memberOf } from '@postly/core';
-import { excerptOf, type MemberId, type PostId, slugify } from '@postly/domain';
-import { type Ctx, defineService } from '@ultimat3/core';
-import { NotAMember } from '../../shared/errors';
+import { type Actor as Member, memberOf, NotAMember } from '@postly/core';
+import { excerptOf, type MemberId, type OrgId, type PostId, slugify } from '@postly/domain';
+import { defineService } from '@ultimat3/core';
 import type { CommentView, CreatePostInput, PostView } from './entity';
 import { PostNotFound } from './errors';
 import type { PostRow } from './policy';
@@ -23,7 +22,20 @@ import {
   recountLikes,
 } from './repo';
 
-export const postsService = defineService('posts', (ctx: Ctx) => {
+/**
+ * `(ctx)` with NO annotation, which is `defineService`'s own documented form and not a shortcut.
+ *
+ * A factory's parameter is `CtxFacts` — requestId, actor, locale, tz, clock, logger, signal — and
+ * deliberately NOT `Ctx`. `Ctx extends CtxServices`, and this app augments `CtxServices` with
+ * `posts` and `orgs`, so annotating `ctx: Ctx` here made the factory that BUILDS `ctx.posts`
+ * require `ctx.posts` to already exist. It compiled for as long as `ServiceFactory` took a `Ctx`;
+ * the moment it took the facts, the circularity became eight type errors — one for the parameter
+ * and four more where `this` in the returned literal collapsed to `{}` behind it.
+ *
+ * Left inferred rather than re-annotated `CtxFacts`, because an annotation can drift from the
+ * framework's signature a second time and a contextual type cannot.
+ */
+export const postsService = defineService('posts', (ctx) => {
   /**
    * Postly's identity is the MEMBERSHIP, read off the same actor every policy reads
    * (`memberOf`, `@postly/core`) — never `ctx.actor.memberId`, which core's `Actor` does not
@@ -36,24 +48,36 @@ export const postsService = defineService('posts', (ctx: Ctx) => {
   const member = memberOf(ctx.actor);
 
   /**
-   * The author of anything this actor writes. Every caller is behind a policy that already
-   * required a membership, so `null` here is broken wiring rather than a denial to re-decide —
-   * and it is the same refusal `ctx.orgs` raises, from the same class.
+   * The acting membership, or the refusal. Every caller is behind a policy that already required a
+   * membership, so `null` here is broken wiring rather than a denial to re-decide — and it is the
+   * same refusal `ctx.orgs` raises, from the same class.
    */
-  const authorId = (): MemberId => {
+  const acting = (): Member => {
     if (member === null) throw new NotAMember(ctx.actor.id);
-    return member.memberId;
+    return member;
   };
+
+  /** The author of anything this actor writes. */
+  const authorId = (): MemberId => acting().memberId;
+
+  /**
+   * The org every read and write below is scoped to. `ctx.actor.orgId` is `string | undefined` on
+   * core's `Actor` — the framework cannot know an app requires a tenant — so it typechecked
+   * nowhere an `OrgId` was wanted and, `undefined`, reached the entity layer as
+   * `X_TENANCY_ACTOR_ORG_REQUIRED` instead of the membership refusal this app owns. The membership
+   * projection is the one answer: `memberOf` already refused an actor without an org.
+   */
+  const tenantId = (): OrgId => acting().orgId;
 
   return {
     async byId(postId: PostId): Promise<PostView> {
-      const post = await byId(ctx.actor.orgId, postId);
+      const post = await byId(tenantId(), postId);
       if (!post) throw new PostNotFound(postId);
       return post;
     },
 
     async bySlug(slug: string): Promise<PostView> {
-      const post = await bySlug(ctx.actor.orgId, slug);
+      const post = await bySlug(tenantId(), slug);
       if (!post) throw new PostNotFound(slug);
       return post;
     },
@@ -61,7 +85,7 @@ export const postsService = defineService('posts', (ctx: Ctx) => {
     /** Excerpt and slug are derived, never accepted verbatim: both are load-bearing forever. */
     async createDraft(input: CreatePostInput): Promise<PostView> {
       return insertDraft({
-        orgId: ctx.actor.orgId,
+        orgId: tenantId(),
         authorId: authorId(),
         slug: input.slug ?? slugify(input.title),
         title: input.title,
@@ -77,7 +101,7 @@ export const postsService = defineService('posts', (ctx: Ctx) => {
     async publish(postId: PostId): Promise<PostView> {
       const post = await this.byId(postId);
       if (post.status === 'published') return post;
-      return markPublished(ctx.actor.orgId, postId, ctx.now());
+      return markPublished(tenantId(), postId, ctx.now());
     },
 
     /**
@@ -92,21 +116,21 @@ export const postsService = defineService('posts', (ctx: Ctx) => {
      */
     async like(postId: PostId): Promise<PostView> {
       const post = await this.byId(postId);
-      await insertLike(ctx.actor.orgId, post.id as PostId, authorId());
-      return recountLikes(ctx.actor.orgId, post.id as PostId);
+      await insertLike(tenantId(), post.id as PostId, authorId());
+      return recountLikes(tenantId(), post.id as PostId);
     },
 
     async unlike(postId: PostId): Promise<PostView> {
       const post = await this.byId(postId); // same tenancy check, same reason
-      await deleteLike(ctx.actor.orgId, post.id as PostId, authorId());
-      return recountLikes(ctx.actor.orgId, post.id as PostId);
+      await deleteLike(tenantId(), post.id as PostId, authorId());
+      return recountLikes(tenantId(), post.id as PostId);
     },
 
     /** Comments are part of the post aggregate, so they live in this service, not a fourth feature. */
     async comment(postId: PostId, body: string): Promise<CommentView> {
       const post = await this.byId(postId); // tenancy check by construction
       return insertComment({
-        orgId: ctx.actor.orgId,
+        orgId: tenantId(),
         postId: post.id as PostId,
         authorId: authorId(),
         body,

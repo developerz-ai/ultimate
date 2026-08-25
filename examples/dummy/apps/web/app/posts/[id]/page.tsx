@@ -8,7 +8,7 @@ import { useT } from '@postly/i18n';
 import { derivePath } from '@ultimat3/action';
 import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute } from '@ultimat3/render';
-import { Button, DateTime, Stack, Text } from '@ultimat3/ui';
+import { Button, DateTime, RelativeTime, Stack, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
 import type { Api } from '../../../api';
@@ -90,7 +90,7 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
   return (
     <Layout>
       <article class={styles.article}>
-        <Stack gap="4">
+        <Stack gap={4}>
           <h1>{props.data.title}</h1>
 
           <Show when={props.data.status === 'draft'}>
@@ -100,7 +100,9 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
           <p class={styles.meta}>
             {t('site.blog.by', { name: props.data.authorName })}
             <Show when={props.data.publishedAt}>
-              {(publishedAt) => <DateTime value={publishedAt()} zone={viewer.zone} format="long" />}
+              {(publishedAt) => (
+                <DateTime value={publishedAt()} timeZone={viewer.zone} dateStyle="long" />
+              )}
             </Show>
           </p>
 
@@ -137,7 +139,7 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
               {(comment) => (
                 <li>
                   <Text>{comment.body}</Text>
-                  <DateTime value={comment.createdAt} zone={viewer.zone} format="relative" />
+                  <RelativeTime value={comment.createdAt} timeZone={viewer.zone} />
                 </li>
               )}
             </For>

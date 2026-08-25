@@ -9,6 +9,9 @@
       "path": "./dummy/social-media-clone"
     },
     {
+      "path": "./examples/dummy"
+    },
+    {
       "path": "./packages/action"
     },
     {

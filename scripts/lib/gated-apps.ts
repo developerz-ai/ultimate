@@ -31,33 +31,24 @@ export const GATED_APPS: readonly GatedApp[] = [
     dir: 'examples/dummy',
     reference: './examples/dummy',
     expectedRed: {
-      typecheck:
-        'RE-MEASURED 2026-08-23: 117 errors, down from the 138 this line claimed and nobody ' +
-        're-ran. Method, because the number is not comparable without it: `bunx tsc -p ' +
-        'examples/dummy/tsconfig.json --pretty false --tsBuildInfoFile <scratch>` — the app is a ' +
-        'composite project with no `references`, so it compiles alone and writes no dist anywhere. ' +
-        'The breakdown is TS2339 x65, TS2322 x23, TS2345 x21 and a tail of 8, which is the same ' +
-        'four classes the 138 broke into (x68/x30/x29/x11) and no new one: apps/web/app/orgs/repo.ts ' +
-        'still chains the phantom .update().returning() / .insert().returning(); every ' +
-        '*.contract/.live/.job.test.ts calling `seed`/`actorFor` has no type augmentation for the ' +
-        'fixtures scripts/test-setup.ts wires in only at runtime; `Actor` is missing ' +
-        "`memberId`/`tz` (named, not new, in this app's own CLAUDE.md); and a scatter of UI prop " +
-        'drift plus a Date/Instant brand mismatch on every toZoned call in ' +
-        'packages/core/src/digest-schedule.ts. NOT "ALL of them inside examples/dummy", which is ' +
-        'what this line said and what the re-measurement disproves: ONE error lands in ' +
-        "packages/http/src/context.ts:154 (TS2739, RequestContext missing `posts`/`orgs`) — the app's " +
-        'own module augmentation of `RequestContext` reaching back into the package that declares ' +
-        'it. Still the data-substrate work to close',
       e2e:
-        'RE-MEASURED 2026-08-23 and UNCHANGED — `bun test apps/web/e2e/offline-feed.e2e.test.ts` ' +
+        'RE-MEASURED 2026-08-24 and UNCHANGED — `bun test apps/web/e2e/offline-feed.e2e.test.ts` ' +
         'from the app root answers 0 pass, 6 fail. ' +
         'X_TEST_FIXTURE_UNAVAILABLE on all 6 tests: the `page` fixture is declared and nothing in ' +
         'this process drives it, so not one of them reaches a built page. NOT the data substrate ' +
         'this line used to blame — no repo, no query and no migration is involved in the failure. ' +
+        'A SECOND defect underneath it was fixed on 2026-08-24 and did not change this count: all ' +
+        'nine assertions were `await expect(locator).toBeVisible()`, and there is no `toBeVisible` ' +
+        'matcher — `UltimateMatchers` (packages/testing/src/matcher-surface.ts) declares seven and ' +
+        'that is not one, so every one of them would have been a TypeError the moment a driver ' +
+        'made them reachable. They read `expect(await locator.isVisible()).toBe(true)` now, off ' +
+        '`LocatorLike`, which is the shipped surface. It is point-in-time where the Playwright ' +
+        'matcher retries, so a driver still owes a wait for the two assertions that follow a ' +
+        'reconnect and a new build. ' +
         'Closed by installing a browser driver in scripts/test-setup.ts',
       drift: 'migrations predate the current entity set; regenerated with the schema',
       budgets:
-        'X_BUDGET_UNMEASURED on 5 of the 8 routes that declare a `budget:`, and `.x/` is gitignored ' +
+        'X_BUDGET_UNMEASURED on 6 of the 8 routes that declare a `budget:`, and `.x/` is gitignored ' +
         'so no stats file is ever committed. `x build --target static` now COMPLETES here — the ' +
         '/offline page called useMutationQueue() at prerender with no LiveClient and took the ' +
         'whole build down, which is fixed — and it weighs 3 of the 8. The other 5 fail the ' +
@@ -65,7 +56,14 @@ export const GATED_APPS: readonly GatedApp[] = [
         '/posts/:id raise X_ENV_MISSING because APP_URL is unset so the typed client has no ' +
         'origin, and /posts/new and /settings raise X_NO_CONTEXT because the app/ shell renders ' +
         'outside a request. Closing it means running the build with APP_URL set AND giving the ' +
-        'app/ routes a request context — not merely running `x build` first, as this line used to say',
+        'app/ routes a request context — not merely running `x build` first, as this line used to say. ' +
+        'A SEVENTH finding is a real app defect and not a never-run pass: X_LIVE_ROUTE_NO_ISLAND on ' +
+        'apps/web/app/posts/ui/like-button.tsx — /posts/:id renders <LikeButton> server-side, the ' +
+        'component calls useConnection() and useMutation(), and the route declares no island(), so ' +
+        'no module of it ever runs in a browser: the like button is inert and the offline-queue ' +
+        'indicator can never appear. The repair is precedented twice in this same app (/feed, ' +
+        'which fixed exactly this in #271, and /settings) and does NOT move this pin, because the ' +
+        'six above still need APP_URL and a request context',
     } satisfies Partial<Record<VerifyStepName, string>>,
   },
   {

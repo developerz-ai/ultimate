@@ -33,7 +33,10 @@ Green means shippable. Nothing else is a gate.
 - New user-facing string → add it to **both** `packages/i18n/catalogs/en.json` and `es.json`.
   A missing key fails `x verify`; an English fallback in the Spanish catalog is worse than a
   loud `⟦key⟧`.
-- New timestamp on screen → `<DateTime zone={member.tz}>`. There is no other formatter.
+- New timestamp on screen → `<DateTime value={at} timeZone={member.tz} dateStyle="long" />`, and
+  `<RelativeTime value={at} timeZone={member.tz} />` for "3 minutes ago". There is no other
+  formatter. The prop is `timeZone` and `format` takes a FUNCTION, not a style name: this file
+  wrote `<DateTime zone=… format="long">` until 2026-08-24 and four call sites copied it.
 - New price on screen → `<Money value={plan.price}>`. Never format money by hand.
 - New action → set `mcp: { expose: true }` unless it must never be agent-callable, and say why
   in a comment if not.

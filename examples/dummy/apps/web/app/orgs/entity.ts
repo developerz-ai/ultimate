@@ -17,11 +17,6 @@ import {
 } from '@postly/domain';
 import { type Infer, t } from '@ultimat3/schema';
 
-export const MoneyView = t.object({
-  minor: t.number.int(),
-  currency: t.enumerated(...BILLING_CURRENCIES),
-});
-
 export const OrgView = t.object({
   id: t.uuid,
   slug: t.string,
@@ -48,12 +43,21 @@ export const MemberView = t.object({
 
 export type MemberView = Infer<typeof MemberView>;
 
-/** What the org is charged today, what it will pay monthly, and what was credited back. */
+/**
+ * What the org is charged today, what it will pay monthly, and what was credited back.
+ *
+ * `t.money` and never a local `t.object({ minor, currency })`: money has ONE declaration in
+ * `@ultimat3/schema` and a restatement is a second shape to keep in step — this file carried one
+ * (`MoneyView`, with `currency` narrowed to `BILLING_CURRENCIES`) and it disagreed with the
+ * `Money` every function in `@postly/core` returns, so three fields of this receipt did not
+ * typecheck against the value the service puts in them. The currency is still checked, at the one
+ * boundary that can: `assertBillingCurrency` in `@postly/domain`.
+ */
 export const UpgradeReceipt = t.object({
   org: OrgView,
-  charge: MoneyView,
-  credit: MoneyView,
-  nextPeriod: MoneyView,
+  charge: t.money,
+  credit: t.money,
+  nextPeriod: t.money,
 });
 
 export type UpgradeReceipt = Infer<typeof UpgradeReceipt>;

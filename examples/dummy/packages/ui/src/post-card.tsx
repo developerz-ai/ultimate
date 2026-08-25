@@ -34,7 +34,7 @@ export const PostCard = (props: PostCardProps): JSX.Element => {
 
   return (
     <Card class={styles.card}>
-      <Stack gap="3">
+      <Stack gap={3}>
         <Show when={props.post.status !== 'published'}>
           <Badge tone="warning">{t(`posts.status.${props.post.status}`)}</Badge>
         </Show>
@@ -48,7 +48,9 @@ export const PostCard = (props: PostCardProps): JSX.Element => {
         <div class={styles.meta}>
           <span>{t('site.blog.by', { name: props.post.authorName })}</span>
           <Show when={props.post.publishedAt}>
-            {(publishedAt) => <DateTime value={publishedAt()} zone={props.zone} format="date" />}
+            {(publishedAt) => (
+              <DateTime value={publishedAt()} timeZone={props.zone} dateStyle="medium" />
+            )}
           </Show>
           <span>{t('app.post.likes', { count: props.post.likeCount })}</span>
         </div>
