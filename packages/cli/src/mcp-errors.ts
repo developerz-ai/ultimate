@@ -96,6 +96,9 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_RELEASE_VERSION_SKEW: 'bun run scripts/release.ts --bump patch --dry-run --json',
   // Two real remedies and the command cannot know which one this deployment wants, so it names
   // the one that inspects the binding rather than guessing between a volume and a bucket.
+  // `x db migrate --json` and not `x doctor`: this fires from inside `startQueue`, so the command
+  // that re-runs exactly the failing step is the migrate role, and it reports what it applied.
+  X_FRAMEWORK_SCHEMA_FAILED: 'x db migrate --json',
   X_STORAGE_UNWRITABLE: 'x doctor --json',
   X_STORAGE_SECRET_DEV: 'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
   X_MANIFEST_STALE: 'x manifest --json',

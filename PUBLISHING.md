@@ -8,7 +8,7 @@ Releases use **OIDC trusted publishing** from GitHub Actions
 mints a short-lived token from the run's OIDC identity and attaches a provenance attestation
 automatically.
 
-**`As of 2026-08-20`: 30 workspaces publish, all 30 are on the registry at 4.0.0, and every 4.0.0
+**`As of 2026-08-20`: 31 workspaces publish, all 30 are on the registry at 4.0.0, and every 4.0.0
 tarball carries a provenance attestation.** `v4.0.0` is tagged and pushed, its GitHub Release is
 published, and the run that Release triggered is what put those 30 versions on npm — the second
 workflow-published release in a row, after 3.0.0 ended the gap since 1.2.0.

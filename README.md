@@ -164,7 +164,7 @@ A version, a count or a status written into a file goes stale on the next commit
 | every `X_*` code, its owner and the file declaring it | `bun run manifest` → `framework.manifest.json` |
 | the realtime capacity figures, audited against the committed run | [`CLAUDE.md`](CLAUDE.md)'s status section — [`scripts/bench-claims.ts`](scripts/bench-claims.ts) fails the gate when they drift |
 
-`As of 2026-08-20`: 30 workspaces, 29 `@ultimat3/*` plus the unscoped `create-ultimate`, versioned and published in lockstep — one version, one commit, one tag, 30 tarballs. [`PUBLISHING.md`](PUBLISHING.md) owns the mechanics; [`CLAUDE.md`](CLAUDE.md) carries the full status table, one runnable check per row.
+`As of 2026-08-20`: 30 workspaces, 29 `@ultimat3/*` plus the unscoped `create-ultimate`, versioned and published in lockstep — one version, one commit, one tag, 31 tarballs. [`PUBLISHING.md`](PUBLISHING.md) owns the mechanics; [`CLAUDE.md`](CLAUDE.md) carries the full status table, one runnable check per row.
 
 **Never claimed:** no adoption numbers, no production deployments, no testimonials. None exist yet, and this file will say so until they do.
 

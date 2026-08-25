@@ -196,6 +196,15 @@ export type { FixHelper, FixScan } from './fix-scan';
 export { scanFixes, scanFixHelpers, scanFixSites } from './fix-scan';
 export type { DeclaredFlag } from './flag-reads';
 export { checkFlagReads, declaredFlags, readsFlag } from './flag-reads';
+export type { FrameworkSchema, SchemaExecutor } from './framework-schema';
+// The framework's own tables, as data. Exported so `scripts/` can read the applier's list without
+// re-deriving it — the shape a ratchet over declared-but-never-applied DDL needs.
+export {
+  applyFrameworkSchema,
+  FRAMEWORK_SCHEMA,
+  frameworkTableNames,
+  schemaStatements,
+} from './framework-schema';
 export type { Guard } from './guards';
 export { findingProblem, GUARD_DIR, guardFindings, guardPaths } from './guards';
 // The island bundler, and only its entry point. An island is the one module Ultimate ships to a
@@ -239,6 +248,7 @@ export { flagBool, flagList, flagString, GLOBAL_FLAGS, nearest, parseArgs } from
 export type { PrerenderedPage, PrerenderOptions, PrerenderReport } from './prerender';
 export { DEFAULT_ORIGIN, isPrerenderable, prerenderSite } from './prerender';
 export { COMMANDS, cliVersion, commandFor, SPECS } from './registry';
+export { FrameworkSchemaFailedError } from './schema-errors';
 export type { MigratedApp, ServedApp, ServeOptions, StartedApp } from './serve';
 export {
   CONTAINER_BINDING,

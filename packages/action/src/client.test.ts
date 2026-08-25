@@ -201,3 +201,59 @@ describe('typed client', () => {
     expect((failure as { code?: string }).code).toBe('X_CONTRACT_DRIFT');
   });
 });
+
+/**
+ * The far end of the chain the server half opened: a form in a browser needs to know WHICH field
+ * the server refused, and until 2026-08-24 the only thing that survived the wire was the flattened
+ * `cause` — so every app split that string apart by hand, guessing at a separator.
+ */
+describe('a rejection’s per-field issues, off the wire', () => {
+  const problem = (issues: unknown): Readonly<Record<string, unknown>> => ({
+    code: 'X_INPUT_INVALID',
+    cause: 'input for action "publishPost" failed validation: postId: expected a uuid',
+    fix: 'x actions describe publishPost --json',
+    issues,
+  });
+
+  test('arrives parsed, addressed by path', async () => {
+    const failure = await failWith({
+      status: 422,
+      body: problem([
+        { path: 'postId', expected: 'a uuid', received: '', message: 'expected a uuid' },
+      ]),
+    });
+
+    expect(failure).toBeInstanceOf(RemoteActionError);
+    expect((failure as RemoteActionError).meta?.['issues']).toEqual([
+      { path: 'postId', expected: 'a uuid', received: '', message: 'expected a uuid' },
+    ]);
+  });
+
+  test('a list this build cannot read leaves the cause as the answer, and does not throw', async () => {
+    const failure = await failWith({ status: 422, body: problem([{ path: 'postId' }]) });
+
+    expect(failure).toBeInstanceOf(RemoteActionError);
+    expect((failure as RemoteActionError).meta?.['issues']).toBeUndefined();
+    expect((failure as RemoteActionError).cause).toContain('postId: expected a uuid');
+  });
+
+  test('a body carrying no list at all is the answer every server sends today', async () => {
+    const { issues: _issues, ...withoutIssues } = problem(undefined);
+    const failure = await failWith({ status: 422, body: withoutIssues });
+
+    expect(failure).toBeInstanceOf(RemoteActionError);
+    expect(Object.keys((failure as RemoteActionError).meta ?? {})).not.toContain('issues');
+  });
+
+  test('a foreign member never rides along — the list is rebuilt, never copied', async () => {
+    const failure = await failWith({
+      status: 422,
+      body: problem([
+        { path: 'postId', message: 'expected a uuid', value: 'hunter2', received: '' },
+      ]),
+    });
+
+    const carried = (failure as RemoteActionError).meta?.['issues'];
+    expect(JSON.stringify(carried)).not.toContain('hunter2');
+  });
+});

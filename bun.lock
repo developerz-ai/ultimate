@@ -289,6 +289,7 @@
         "@ultimat3/manifest": "12.0.0",
         "@ultimat3/mcp": "12.0.0",
         "@ultimat3/money": "12.0.0",
+        "@ultimat3/notify": "12.0.0",
         "@ultimat3/policy": "12.0.0",
         "@ultimat3/pwa": "12.0.0",
         "@ultimat3/query": "12.0.0",
@@ -416,6 +417,16 @@
       "dependencies": {
         "@ultimat3/core": "12.0.0",
         "@ultimat3/schema": "12.0.0",
+      },
+    },
+    "packages/notify": {
+      "name": "@ultimat3/notify",
+      "version": "12.0.0",
+      "dependencies": {
+        "@ultimat3/core": "12.0.0",
+        "@ultimat3/jobs": "12.0.0",
+        "@ultimat3/schema": "12.0.0",
+        "@ultimat3/time": "12.0.0",
       },
     },
     "packages/policy": {
@@ -732,6 +743,8 @@
     "@ultimat3/mcp": ["@ultimat3/mcp@workspace:packages/mcp"],
 
     "@ultimat3/money": ["@ultimat3/money@workspace:packages/money"],
+
+    "@ultimat3/notify": ["@ultimat3/notify@workspace:packages/notify"],
 
     "@ultimat3/policy": ["@ultimat3/policy@workspace:packages/policy"],
 

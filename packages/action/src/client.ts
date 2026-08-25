@@ -16,6 +16,7 @@ import type { Action } from './action';
 import { ContractDriftError, RemoteActionError, RpcFailedError } from './errors';
 import { derivePath } from './naming';
 import { BUILD_ID_HEADER, IDEMPOTENCY_HEADER } from './wire-headers';
+import { issuesFromWire } from './wire-issues';
 
 /**
  * Loose constraint on purpose: a map of concrete `Action<In, Out>` values must be
@@ -212,6 +213,9 @@ function toUltimateError(text: string, status: number, name: string): UltimateEr
     action: name,
     status,
     code,
+    // Parsed, never taken: `body` is whatever answered the request. A list this build cannot read
+    // is dropped rather than repaired, and `cause` below still carries every rejection in it.
+    issues: issuesFromWire(body['issues']),
     cause: stringOr(body['cause'] ?? body['detail'], `${name} failed with ${status}`),
     fix: stringOr(body['fix'], `x actions describe ${name} --json`),
     // RFC-9457's `type` IS a documentation URI, so a server that sends no `docs` extension has

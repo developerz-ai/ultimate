@@ -91,21 +91,36 @@ describe('the eight primitives', () => {
  */
 describe('PRIMITIVE_FACTORIES', () => {
   test('lists every shipped factory, each over one of the eight kinds', () => {
-    expect(PRIMITIVE_FACTORIES).toHaveLength(7);
+    // No COUNT here, and none in a test name below either — `scripts/primitive-factories.test.ts`
+    // states the rule for this table and this file was breaking it: a title saying "the seven" was
+    // wrong the moment an eighth landed, twice in one release, and a `toHaveLength(11)` beside a
+    // spelled-out list is the same claim written twice. The LIST is the claim; this test only says
+    // the table is non-empty and that every row is well formed.
+    expect(PRIMITIVE_FACTORIES.length).toBeGreaterThan(0);
     for (const entry of PRIMITIVE_FACTORIES) {
       expect(PRIMITIVE_KINDS).toContain(entry.kind);
       expect(entry.pkg.startsWith('@ultimat3/')).toBe(true);
     }
   });
 
-  test('names the seven the framework ships, and no factory is listed twice', () => {
+  test('the shipped rows, spelled out, so a table that lost one cannot pass', () => {
+    // Sorted by package then factory name, which is what makes the list diffable and why NO
+    // ordinal is derivable from it. `scripts/primitive-factories.test.ts` asks the other half of
+    // the question — that every exported function returning an `Action` or a `JobHandle` has a row
+    // here, and that every row has a function.
     expect(PRIMITIVE_FACTORIES.map((entry) => `${entry.pkg}#${entry.factory}`)).toEqual([
+      // `@ultimat3/action` sorts before `@ultimat3/ai`: the common prefix is `@ultimat3/a`, and
+      // `c` precedes `i`. Code-unit order, like every other sorted list this repo commits.
+      '@ultimat3/action#transition',
       '@ultimat3/ai#agent',
       '@ultimat3/ai#agentJob',
       '@ultimat3/ai#hive',
       '@ultimat3/ai#llm',
       '@ultimat3/jobs#backfill',
+      '@ultimat3/jobs#exportRows',
       '@ultimat3/jobs#purge',
+      '@ultimat3/jobs#webhook',
+      '@ultimat3/notify#notifier',
       '@ultimat3/scraping#scrape',
     ]);
   });
@@ -121,11 +136,17 @@ describe('PRIMITIVE_FACTORIES', () => {
     // caller that has no types. A module is always strict, so the write THROWS rather than being
     // dropped in silence.
     expect(PRIMITIVE_FACTORIES.filter((entry) => !Object.isFrozen(entry))).toEqual([]);
+    // The row's OWN kind, read before the write, never a literal: the list is sorted by package
+    // then name, so `[0]` moves whenever a factory lands earlier in the alphabet — `transition`
+    // (`@ultimat3/action`) took that slot and this assertion failed claiming `'action'` for a row
+    // that is a `'mutator'`. A pin that breaks on a re-sort is testing the sort, not the freeze.
+    const before = PRIMITIVE_FACTORIES[0]?.kind;
     const untyped = PRIMITIVE_FACTORIES[0] as unknown as { kind: string };
     expect(() => {
       untyped.kind = 'entity';
     }).toThrow(TypeError);
-    expect(PRIMITIVE_FACTORIES[0]?.kind).toBe('action');
+    expect(PRIMITIVE_FACTORIES[0]?.kind).toBe(before);
+    expect(before).not.toBe('entity');
   });
 });
 

@@ -4,7 +4,9 @@
 import { describe, expect, test } from 'bun:test';
 import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
 import {
+  conflictingFieldNameError,
   invalidBrandTokenError,
+  invalidFieldPathError,
   invalidThemeError,
   invalidValueError,
   runtimeMissingError,
@@ -25,6 +27,10 @@ describe('UI_ERROR_CODES', () => {
     );
     expect(hasErrorCode(UI_ERROR_CODES.runtimeMissing)).toBe(true);
     expect(hasErrorCode(UI_ERROR_CODES.invalidValue)).toBe(true);
+    expect(hasErrorCode(UI_ERROR_CODES.formPathInvalid)).toBe(true);
+    expect(describeErrorCode(UI_ERROR_CODES.formPathInvalid).title).toBe(
+      'a form control name is not a usable field path',
+    );
   });
 
   // Asserted against core's constant, never a literal: a hand-copied URL is exactly how the dead
@@ -139,5 +145,22 @@ describe('a value ui does not control still produces the refusal', () => {
     expect(invalidValueError('Money', 3, 'a Money value').cause).toBe(
       '<Money> received 3, which is not a Money value',
     );
+  });
+});
+
+describe('the form path codes', () => {
+  test('invalidFieldPathError names the subject, the name, and the grammar to rename it to', () => {
+    const err = invalidFieldPathError('form field', 'items.0.price');
+    expect(err).toBeUltimateError(UI_ERROR_CODES.formPathInvalid);
+    expect(err.cause).toContain('form field "items.0.price"');
+    expect(err.fix).toContain('items[0].price');
+  });
+
+  test('conflictingFieldNameError names both halves of the collision', () => {
+    const err = conflictingFieldNameError('user.name', 'user');
+    expect(err).toBeUltimateError(UI_ERROR_CODES.formPathInvalid);
+    expect(err.cause).toContain('"user.name"');
+    expect(err.cause).toContain('"user"');
+    expect(err.fix.length).toBeGreaterThan(0);
   });
 });

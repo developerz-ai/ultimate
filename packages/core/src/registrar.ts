@@ -54,12 +54,20 @@ export interface PrimitiveFactory {
 export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
   (
     [
+      // `mutator` and not `action`, even though `Mutator extends Action`: the scan seeds `Mutator`
+      // in its own roots and the fixpoint refuses to overwrite a name it already holds, so the
+      // more specific answer wins. A `kind: 'action'` here would be the one row the scan disagrees
+      // with, and it would disagree silently in the direction that loses information.
+      { factory: 'transition', pkg: '@ultimat3/action', kind: 'mutator' },
       { factory: 'agent', pkg: '@ultimat3/ai', kind: 'action' },
       { factory: 'agentJob', pkg: '@ultimat3/ai', kind: 'job' },
       { factory: 'hive', pkg: '@ultimat3/ai', kind: 'action' },
       { factory: 'llm', pkg: '@ultimat3/ai', kind: 'action' },
       { factory: 'backfill', pkg: '@ultimat3/jobs', kind: 'job' },
+      { factory: 'exportRows', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'purge', pkg: '@ultimat3/jobs', kind: 'job' },
+      { factory: 'webhook', pkg: '@ultimat3/jobs', kind: 'job' },
+      { factory: 'notifier', pkg: '@ultimat3/notify', kind: 'job' },
       { factory: 'scrape', pkg: '@ultimat3/scraping', kind: 'job' },
     ] satisfies readonly PrimitiveFactory[]
   ).map((entry) => Object.freeze(entry)),

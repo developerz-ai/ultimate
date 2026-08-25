@@ -6,7 +6,7 @@ Honest answers. Where something is not built yet, it says so.
 
 ### Is it production ready?
 
-**`As of 2026-08`.** Stable API, semver from here. 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — **30 in all** — are **versioned** in lockstep: one version, one commit, one tag.
+**`As of 2026-08`.** Stable API, semver from here. 30 `@ultimat3/*` packages plus the unscoped `create-ultimate` — **31 in all** — are **versioned** in lockstep: one version, one commit, one tag.
 
 **Publication is a separate step from versioning, and for the current release it has run.** Repository, tag and registry are the same version; there are no publication holes — every one of the 30 is on npm.
 
@@ -35,7 +35,7 @@ What it does **not** claim:
 
 ### What is actually finished?
 
-All 29 packages, implemented and tested — not skeletons. The eight primitives, HTTP, rendering, caching, realtime tiers 1–2, auth, mail, storage, jobs, the AI-first surface (MCP, `llm()`, evals), and admin + generators + `x new`. Milestones 0–10 are ✅ and enforced by `x verify`'s `roadmap` step; milestone 11 is 🚧, open on its two-platform deploy proof. Each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) is the source of truth for those markers.
+All 30 packages, implemented and tested — not skeletons. The eight primitives, HTTP, rendering, caching, realtime tiers 1–2, auth, mail, storage, jobs, the AI-first surface (MCP, `llm()`, evals), and admin + generators + `x new`. Milestones 0–10 are ✅ and enforced by `x verify`'s `roadmap` step; milestone 11 is 🚧, open on its two-platform deploy proof. Each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) is the source of truth for those markers.
 
 ### What is left?
 

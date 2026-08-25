@@ -49,6 +49,10 @@ export const CLI_OWNED_ERROR_CODES = [
   // reading — the hole that let `scripts/` hold seven type errors under a green gate.
   'X_PACKAGE_UNREFERENCED',
   'X_RELEASE_VERSION_SKEW',
+  // The framework's own tables, refused by name rather than by the driver's rejection: a raw
+  // `permission denied for schema public` says which statement failed and neither which framework
+  // table it was creating nor which package wants it.
+  'X_FRAMEWORK_SCHEMA_FAILED',
   'X_STORAGE_UNWRITABLE',
   'X_STORAGE_SECRET_DEV',
   'X_MANIFEST_STALE',
@@ -198,6 +202,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_ERROR_CODE_UNDOCUMENTED: 'a shipped error code has no row in the error reference',
   X_ERROR_CODE_UNREGISTERED: 'the error reference documents a code no package registers',
   X_ERROR_CODE_UNRESOLVED: 'an error code is written as a name this repository cannot resolve',
+  X_FRAMEWORK_SCHEMA_FAILED: 'a framework table could not be created at boot',
   X_STORAGE_UNWRITABLE: 'the storage disk this process needs cannot be written to',
   X_STORAGE_SECRET_DEV: 'upload grants would be signed with the shipped development key',
   X_CLI_UNEXPECTED: 'the CLI itself failed',

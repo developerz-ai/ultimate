@@ -8,11 +8,12 @@ export const UI_ERROR_CODES = {
   themeInvalid: 'X_THEME_INVALID',
   runtimeMissing: 'X_UI_RUNTIME_MISSING',
   invalidValue: 'X_UI_INVALID_VALUE',
+  formPathInvalid: 'X_UI_FORM_PATH_INVALID',
 } as const;
 
 export type UiErrorCode = (typeof UI_ERROR_CODES)[keyof typeof UI_ERROR_CODES];
 
-// Unconditional like every other package: all four codes are ui's own, and a second package
+// Unconditional like every other package: every code here is ui's own, and a second package
 // claiming one has to throw X_ERROR_CODE_DUPLICATE at import. Taking the process down there is the
 // point — the alternative is two packages shipping two meanings for one code, decided by load order.
 registerErrorCodes({
@@ -20,6 +21,7 @@ registerErrorCodes({
   X_THEME_INVALID: { title: 'theme is not "light" or "dark"' },
   X_UI_RUNTIME_MISSING: { title: 'a host capability @ultimat3/ui needs is absent' },
   X_UI_INVALID_VALUE: { title: 'a formatting component received an unrenderable value' },
+  X_UI_FORM_PATH_INVALID: { title: 'a form control name is not a usable field path' },
 });
 
 export class UiError extends UltimateError {
@@ -145,5 +147,35 @@ export function invalidIconDataError(found: string, fix: string): UiError {
     code: UI_ERROR_CODES.invalidValue,
     cause: `lucide icon data ${found}`,
     fix,
+  });
+}
+
+/** The one grammar both a `name` attribute and a schema issue path are written in. */
+const FIELD_PATH_GRAMMAR =
+  'a segment, then `.segment` or `[index]` — "title", "items[0].price", never "items.0.price" or "items[]"';
+
+/**
+ * A form named a field the path grammar cannot read. Refused where it is DECLARED rather than
+ * where a rejection arrives: a path no issue can ever equal is a field whose server error lands at
+ * the top of the form forever, and that is indistinguishable from an app with no bug at all.
+ */
+export function invalidFieldPathError(subject: string, name: string): UiError {
+  return new UiError({
+    code: UI_ERROR_CODES.formPathInvalid,
+    cause: `${subject} "${name}" is not a field path, so no schema issue can address it`,
+    fix: `rename it to ${FIELD_PATH_GRAMMAR}`,
+  });
+}
+
+/**
+ * Two controls whose names describe different shapes for one path (`user` beside `user.name`).
+ * Refused rather than resolved: either answer silently drops one control's value, and the value
+ * dropped is something the user typed.
+ */
+export function conflictingFieldNameError(name: string, at: string): UiError {
+  return new UiError({
+    code: UI_ERROR_CODES.formPathInvalid,
+    cause: `form control "${name}" cannot be read: "${at}" already holds a value of another shape`,
+    fix: `rename one of the two controls — a path segment holds a value or a container, never both`,
   });
 }

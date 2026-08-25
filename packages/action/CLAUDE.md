@@ -21,6 +21,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `http.ts` | route projection (`enforcedBy: 'handler'`) + OpenAPI operation |
 | `openapi.ts` | deterministic OpenAPI 3.1 document |
 | `client.ts` | typed RPC client (browser-safe: no server imports) |
+| `wire-issues.ts` | the ONE reader of a problem document's `issues` member — an untrusted array back into `@ultimat3/schema`'s `ValidationIssue` shape |
+| `transition.ts` | `transition()`: a MUTATOR factory over one entity column's state machine. Declares no error code — entity's three propagate |
 | — | opt-in flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, re-exported from `src/index.ts`. There is no local copy and must not be one |
 | `wire-headers.ts` | `BUILD_ID_HEADER` + `IDEMPOTENCY_HEADER`, and nothing else. Their own module so `client.ts` can name them without importing `http.ts` |
 | `mcp-tool.ts` | MCP descriptor, same `invoke` |
@@ -44,6 +46,34 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 
 ## Invariants
 
+- **`X_INPUT_INVALID` carries the rejections TWICE, and they are one value.** The flattened line
+  stays in `cause` — it is what an operator reads in a log and what a non-form caller sees — and
+  `meta.issues` carries the same list structured, so a client rebuilding a form knows WHICH field
+  each rejection belongs to instead of splitting a string on `'; '` and guessing. `validate.ts` is
+  the one caller that passes both, and `validate.test.ts` pins `cause` to
+  `formatIssues(issues).join('; ')`; the rendering deliberately does NOT happen inside
+  `InputInvalidError`, because that module is reachable from browser-safe `client.ts` and
+  `@ultimat3/schema` declares no `sideEffects`, so a value import of `formatIssues` there would drag
+  that package's whole barrel into every bundle holding the typed client.
+- **`toValidationIssues`, never a library's raw issues.** A conforming schema library's issue object
+  may carry members Ultimate's shape does not — including the rejected VALUE — and this list is
+  handed to an HTTP surface that returns it to the caller. Four members travel. The same rule on the
+  way back in: `issuesFromWire` REBUILDS each entry member by member rather than copying it.
+- **`X_OUTPUT_INVALID` keeps the line alone.** An output rejection is a server defect whose remedy
+  is a code change; no client can act on a per-field list, and shipping the handler's internal
+  projection to a caller is new surface for nothing.
+- **An `issues` list off the wire is all-or-nothing.** A partly-parsed list would DROP the entries
+  it could not read, and a caller that finds `meta.issues` uses it INSTEAD of `cause` — so a dropped
+  entry is a rejection the user never hears about. `MAX_WIRE_ISSUES` bounds it, because whoever
+  displays the list renders it into a DOM.
+- **`transition()` is a factory, not a primitive, and it decides nothing about the machine.** It
+  returns a `mutator`, so every projection is inherited rather than re-declared, and it holds no
+  legality rule: `X_STATE_TRANSITION_ILLEGAL`, `X_STATE_CONFLICT` and `X_STATE_UNDECLARED` are
+  `@ultimat3/entity`'s and propagate untouched. `from` is REQUIRED — it is the UPDATE's predicate,
+  which is what makes the refusal free; defaulting or inferring it is the lost update coming back.
+  `conflict: 'server-wins'` is fixed (the server is the half that refused), and `audit` is OFF
+  unless declared (`audit: true` with no sink is `X_AUDIT_SINK_MISSING` before the input parse, so
+  defaulting it on would hold the factory hostage to an unrelated decision).
 - Every surface goes through `invoke`: parse input, evaluate policy, handle, parse
   output. Adding a second execution path is the one unforgivable change here.
 - **An explicit `ctx` is INSTALLED, never merely passed** (`As of 2026-08`). `invoke` entered
