@@ -136,8 +136,18 @@ there is no flag on the fixture and no code to silence.
 | `contractTest` | OpenAPI diff vs the committed spec, MCP exposure | `contract` |
 | `liveTest` | exactly what each subscriber receives | `live` |
 | `jobTest` | step sequence, retries, idempotency | `job` |
-| `e2eTest` | a browser driver incl. offline mode + SW update; with none registered it SKIPS, and the gate's `e2e` step passes over the skip — ask `hasE2eDriver()` rather than reading that as a pass | `e2e` |
+| `e2eTest` | a browser driver; with none registered it SKIPS, and the gate's `e2e` step passes over the skip — ask `hasE2eDriver()` rather than reading that as a pass | `e2e` |
 | `evalTest` | LLM output scoring against a threshold | `eval` |
+
+**Registering one, `As of 2026-08-25`.** `@ultimat3/cli`'s `installE2eDriver({ page, baseUrl })` is
+the driver that exists — a `PageLike` over `@ultimat3/scraping`'s browser — and an app's test preload
+is what calls it. It returns the undo, and `resetE2eDriver()` is the seam's inverse for anything that
+installs one by hand: `bun test` is one process, so a driver left registered reaches every later file.
+
+It registers `page` and nothing else. `budget`, `signIn` and `deploy` keep refusing with
+`X_TEST_FIXTURE_UNAVAILABLE`, and so do `E2eFixtures`' `offline()` / `online()` / `update()` — the
+browser's own network state and a second build id are not things a page port can answer for, and a
+fixture that silently no-opped would make the assertion after it read as proof.
 
 Each helper prefixes the test name with its type (`job · onboards an org`), which is what
 `bun test --test-name-pattern "job · "` selects — the six lines of `x verify` come from the tests

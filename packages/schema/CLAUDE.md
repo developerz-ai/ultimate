@@ -9,6 +9,7 @@ Tier 0. **Imports no `@ultimat3/*` package — not even `@ultimat3/core`.**
 | New validator | add to `validators.ts` **and** `TNamespace` **and** `t.ts` **and** `json-schema.ts` |
 | IR | every schema carries `.node: SchemaNode`; generators read that, never the closure |
 | **Issue messages** | the shape of the rejected value, **never its content** — see `describe-value.ts` |
+| **Issue paths** | framework-chosen segments only. A `t.object` segment is a DECLARED field name; a `t.record` KEY is the caller's, so `recordSchema` names a failing entry by POSITION (`meta[3]`) |
 | Coercion | HTTP boundary only — never call it from actions, jobs or MCP |
 | Exports | explicit in `src/index.ts`; no `export *`; a namespace member and its free function ship together (`t.nullable`/`nullableSchema`) |
 | Re-exports | `action`, `query`, `jobs`, `entity` re-export `t` verbatim so an authoring file imports one package — never let them wrap or copy it |
@@ -22,6 +23,17 @@ with "at least 3 chars, received a string of 3 characters".
 `standard.ts` and `errors.ts` depend on nothing but each other. `iso-date.ts` imports nothing and
 is imported by `validators.ts` and `coerce.ts` — the two doors a `t.date` string comes through, so
 the rule that a clock time must carry an offset or `Z` has one copy, not one per door.
+
+**An issue PATH is the same public surface as its message, `As of 2026-08-25`.** It travels
+`formatIssue` -> `@ultimat3/http`'s `bodyInvalid` -> `X_BODY_INVALID`'s `cause` -> the problem
+document **and** the log line, and `bodyInvalid`'s own doc block promises the `issues` it renders
+"name only facts the framework itself chose". A `t.record` key is not one: a record keyed by an
+email address, a phone number or a pasted credential wrote every one of them into the central log
+index, in the shape the password bug did. `recordSchema` emits the entry's INDEX — the segment
+`arraySchema` already uses, so `formatPath` renders `meta[3]` with no new spelling — because
+dropping the segment entirely makes three failing entries render three identical lines. It is
+`Object.entries` order, so it names an entry that exists rather than a byte offset in the body.
+A `t.object` segment stays as written: the schema author chose it, not the caller.
 
 **An issue message is a public surface.** `@ultimat3/http` folds it into `X_BODY_INVALID`'s `cause`,
 which is returned to the caller AND interpolated into the log line — and core's logger redacts by
@@ -84,6 +96,17 @@ real server still reads it the way the predicate does; a `\d` or a lookahead is 
 bun test                      # from packages/schema
 bun run typecheck
 ```
+
+`t.number.int()` demands `Number.isSafeInteger`, not `Number.isInteger` (`As of 2026-08-25`) — the
+defect `money-value.ts` carries the write-up for having fixed one file over, and `@ultimat3/entity`'s
+`columns.ts` had it right too. `t.number.int()` was the one that did not get the fix: it accepted
+`2 ** 53` at the boundary as a 200, the policy gate and the handler ran, and the ROW WRITE refused
+it as a 500 — the same value refused twice, once with a field path and once without. `json-schema.ts`
+publishes the same bound (`minimum`/`maximum` at `±Number.MAX_SAFE_INTEGER`, a caller's own bound
+when it is narrower and clamped when it is not), because a contract promising what the parser
+refuses is that disagreement one layer out. The IR node is untouched — `@ultimat3/action`'s
+`sampleNumber` reads `node.minimum`, and a default there would make every generated contract sample
+`-9007199254740991`.
 
 Gotchas:
 - `Schema<In, Out>` splits input from output: `.default()` makes the key optional on input and

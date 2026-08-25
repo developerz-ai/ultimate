@@ -96,21 +96,36 @@ describe('unit · the session key is a tenancy boundary, and auth.key discrimina
     const second = await keyAfterLogin(store, 'org-2', () => 'shared');
     expect(first).toBeDefined();
     expect(first).not.toBe(second);
-    expect(first?.startsWith('org-1/')).toBe(true);
-    expect(second?.startsWith('org-2/')).toBe(true);
+    // The tenant is still the readable leading segment; `sessionKeyFor` now suffixes each part
+    // with a digest of its RAW value, so `org 1` and `org-1` are two prefixes and not one.
+    expect(first?.startsWith('org-1.')).toBe(true);
+    expect(second?.startsWith('org-2.')).toBe(true);
   });
 
   test('two accounts inside ONE tenant get different session keys — what auth.key is for', async () => {
     const store = recordingStore();
     const first = await keyAfterLogin(store, 'org-1', () => 'account-a');
     const second = await keyAfterLogin(store, 'org-1', () => 'account-b');
-    expect(first).toBe('org-1/orders/account-a');
-    expect(second).toBe('org-1/orders/account-b');
+    expect(first).not.toBe(second);
+    expect(first?.split('/')[2]?.startsWith('account-a.')).toBe(true);
+    expect(second?.split('/')[2]?.startsWith('account-b.')).toBe(true);
   });
 
   test('no auth.key is the tenant default, unchanged', async () => {
     const store = recordingStore();
-    expect(await keyAfterLogin(store, 'org-1')).toBe('org-1/orders/default');
+    // The literal `default`, with no digest — which is what keeps it distinguishable from an
+    // `auth.key` that returns the string "default".
+    expect((await keyAfterLogin(store, 'org-1'))?.split('/')[2]).toBe('default');
+  });
+
+  test('two auth.keys that differ only outside the safe alphabet are two sessions', async () => {
+    // The collision the key's own sanitising used to create: `alice@corp.com` and
+    // `alice-corp.com` collapsed to one key, so one tenant's stored session was restored for the
+    // other account and `auth.validate()` answered true about it.
+    const store = recordingStore();
+    const at = await keyAfterLogin(store, 'org-1', () => 'alice@corp.com');
+    const dash = await keyAfterLogin(store, 'org-1', () => 'alice-corp.com');
+    expect(at).not.toBe(dash);
   });
 
   test('a discriminator cannot escape the key space — separators and NUL are stripped', async () => {
@@ -119,7 +134,7 @@ describe('unit · the session key is a tenancy boundary, and auth.key discrimina
     // returning a path was written to the store verbatim, unsanitised.
     const escaped = await keyAfterLogin(store, 'org-1', () => '../../etc/passwd\0');
     expect(escaped?.split('/')).toHaveLength(3);
-    expect(escaped).toBe('org-1/orders/..-..-etc-passwd-');
+    expect(escaped?.split('/')[2]?.startsWith('..-..-etc-passwd-.')).toBe(true);
   });
 });
 

@@ -20,6 +20,8 @@ import type { InterceptRules } from './intercept';
 import { interceptVerdict } from './intercept';
 import type { NetworkRing } from './rings';
 import type { RobotsGate } from './robots';
+import type { ScrapeSecrets } from './secrets';
+import { redactSecrets } from './secrets';
 import type { SessionSnapshot } from './session-state';
 
 /**
@@ -98,6 +100,14 @@ export interface HttpTransportInit {
   readonly onActivity?: (() => void) | undefined;
   /** The SAME proxy the browser dialled through. A different exit IP is a different client. */
   readonly proxy?: string | undefined;
+  /**
+   * The run's secret bag, for the ONE thing this leg persists that the site wrote: the first 200
+   * bytes of a non-2xx body, in `X_SCRAPE_HTTP_FAILED`'s cause. A login endpoint that echoes the
+   * submitted credential in its 4xx body put a password in an `UltimateError.message`, which the
+   * job driver writes to the dead-letter row and `x jobs show` prints. This field did not exist
+   * until 2026-08-24, so nothing on this leg COULD redact.
+   */
+  readonly secrets?: ScrapeSecrets | undefined;
   readonly fetch?: ScrapeFetch | undefined;
 }
 
@@ -122,11 +132,18 @@ const headerRecord = (headers: Headers): Record<string, string> => {
   return out;
 };
 
+/**
+ * `secrets` is optional and last so every existing caller compiles — but a caller that HAS a bag
+ * and omits it is a caller whose refusal quotes the site verbatim, which is exactly the defect.
+ * Both transports pass it: `httpOverFetch` from the driver's `SessionInit`, `recordedHttp` from
+ * the offline session's, so a fixture proves the redaction the live leg performs.
+ */
 export function responseOver(
   url: string,
   status: number,
   headers: Readonly<Record<string, string>>,
   body: () => Promise<string>,
+  secrets?: ScrapeSecrets | undefined,
 ): ScrapeResponse {
   const ok = status >= 200 && status < 300;
   const text = body;
@@ -138,7 +155,9 @@ export function responseOver(
     text,
     json: async (): Promise<unknown> => JSON.parse(await text()) as unknown,
     async parse<T>(schema: StandardSchemaV1<unknown, T>): Promise<T> {
-      if (!ok) throw httpFailed(url, status, (await text()).slice(0, 200));
+      // Redacted BEFORE the slice, never after: cutting at 200 bytes can leave half a secret,
+      // and half a password is still half a password in a durable row.
+      if (!ok) throw httpFailed(url, status, redactSecrets(await text(), secrets).slice(0, 200));
       return parse(schema, JSON.parse(await text()) as unknown);
     },
   };
@@ -195,8 +214,12 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
         const capped = await readWithinLimit(response.body, maxBytes);
         if ('over' in capped) throw bodyTooLarge(url, capped.over, maxBytes);
         const body = new TextDecoder().decode(capped.bytes);
-        return responseOver(url, response.status, headerRecord(response.headers), () =>
-          Promise.resolve(body),
+        return responseOver(
+          url,
+          response.status,
+          headerRecord(response.headers),
+          () => Promise.resolve(body),
+          init.secrets,
         );
       } catch (thrown) {
         // A deadline that fired is this package's own timeout, with its own code and fix — never

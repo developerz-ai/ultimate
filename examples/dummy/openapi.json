@@ -185,6 +185,7 @@
             "type": "string"
           },
           "likeCount": {
+            "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
           },
@@ -253,6 +254,7 @@
             "type": "string"
           },
           "size": {
+            "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
           }
@@ -272,6 +274,8 @@
             "type": "string"
           },
           "expiresAt": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
             "type": "integer"
           },
           "key": {
@@ -279,6 +283,8 @@
             "type": "string"
           },
           "maxBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
             "type": "integer"
           },
           "method": {
@@ -481,6 +487,7 @@
             "type": "string"
           },
           "likeCount": {
+            "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
           },
@@ -659,6 +666,7 @@
             "type": "string"
           },
           "likeCount": {
+            "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
           },
@@ -1195,10 +1203,12 @@
                 "type": "string"
               },
               "seats": {
+                "maximum": 9007199254740991,
                 "minimum": 1,
                 "type": "integer"
               },
               "seatsUsed": {
+                "maximum": 9007199254740991,
                 "minimum": 0,
                 "type": "integer"
               },

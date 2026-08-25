@@ -57,6 +57,21 @@ export interface ForeignKeyDescription {
   readonly onDelete: string | null;
 }
 
+/**
+ * A named CHECK constraint, as the SNAPSHOT spells it — an entity invariant of kind `check`.
+ *
+ * Absent from every row this module reads out of the live catalog, deliberately and for the reason
+ * `ColumnDescription.generated` gives one field up: `pg_get_constraintdef` answers Postgres' own
+ * rewriting of the expression, so a catalog value could never compare equal to a generated one and
+ * drift would report a correct database forever. The diff that DOES read it is `x db gen`'s, where
+ * both sides are this generator's own spellings.
+ */
+export interface CheckDescription {
+  readonly name: string;
+  /** The predicate, exactly as the entity's invariant spells it. */
+  readonly expression: string;
+}
+
 export interface TableDescription {
   readonly schema: string;
   readonly name: string;
@@ -64,6 +79,14 @@ export interface TableDescription {
   readonly primaryKey: readonly string[];
   readonly indexes: readonly IndexDescription[];
   readonly foreignKeys: readonly ForeignKeyDescription[];
+  /**
+   * The CHECK constraints migrations declare. Absent — never `[]` — on a table that declares none
+   * and in every sidecar written before this field existed, matching `IndexDescription.using`: a
+   * snapshot that predates it must read as "nothing recorded" so the next `x db gen` emits the
+   * `add constraint` the database is genuinely missing, rather than as "recorded none", which
+   * would leave every already-generated app's invariants unenforced forever.
+   */
+  readonly checks?: readonly CheckDescription[] | undefined;
 }
 
 export interface SchemaDescription {

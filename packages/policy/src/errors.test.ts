@@ -4,8 +4,14 @@
 // visible from the cause, which is why `message` alone is never the assertion.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
 import {
+  declaredErrorRetry,
+  describeErrorCode,
+  ERROR_DOCS_URL,
+  hasErrorCode,
+} from '@ultimat3/core';
+import {
+  emptyClauseList,
   forbidden,
   POLICY_ERROR_CODES,
   POLICY_ERROR_TITLES,
@@ -93,6 +99,29 @@ describe('permissionUnknown()', () => {
 // every code, declared once in `@ultimat3/core`. Pinned against the constant and never a literal —
 // a hand-copied URL is how the dead `https://ultimate.dev/errors/<code>` host survived every suite
 // in the tree, with the code interpolated into a fragment no page has ever had an anchor for.
+// The two halves of one refusal, and they say opposite things: an empty `and()` ALLOWS everyone
+// and an empty `or()` DENIES everyone, so a shared sentence would be wrong for one of them. Each
+// fix names the explicit spelling for its own half, which is what makes refusing cost a caller
+// nothing they cannot say another way.
+describe('emptyClauseList()', () => {
+  test('the and() half names what it would have allowed, and the spelling that says so', () => {
+    const error = emptyClauseList('and');
+    expect(error.code).toBe('X_POLICY_CLAUSE_EMPTY');
+    expect(error.cause).toContain('allows every actor');
+    expect(error.cause).toContain('anonymous');
+    expect(error.fix).toContain("allow('public')");
+  });
+
+  test('the or() half names a denial nobody can debug, and the spelling that carries a reason', () => {
+    const error = emptyClauseList('or');
+    expect(error.cause).toContain('denies every actor');
+    expect(error.fix).toContain("deny('<why nobody may act>')");
+    // Never the `and` fix: an `allow('public')` suggested for an empty `or()` would turn a
+    // fail-closed declaration bug into a public door, out of the error that reports it.
+    expect(error.fix).not.toContain("allow('public')");
+  });
+});
+
 describe('docs', () => {
   test('a constructed policy error points at the one page, never a per-code URL', () => {
     const errors = [
@@ -100,10 +129,26 @@ describe('docs', () => {
       policyMissing('publishPost'),
       roleRedefined('admin', 'a.ts', 'b.ts'),
       permissionUnknown('billing:write', ['post:publish']),
+      emptyClauseList('and'),
+      emptyClauseList('or'),
     ];
     for (const error of errors) {
       expect(error.docs).toBe(ERROR_DOCS_URL);
       expect(error.docs).not.toContain(error.code);
+    }
+  });
+
+  test('and every owned code declares how it is retried', () => {
+    // The defect `@ultimat3/scraping`'s `cdp-target.ts` names about `X_VALIDATION_FAILED`, in this
+    // package's own codes: `classifyThrown` reads an UNREGISTERED code as unclassified, so the
+    // attempt count governs and a job burns its whole retry policy re-proving a denial. Core's own
+    // `ErrorRetry` doc names "a permission denial" as the canonical `terminal` case, and
+    // `X_FORBIDDEN` — the framework's one permission-denial code — was not classified at all.
+    // Every one is LISTED rather than left to the `terminal` default, which is exactly what
+    // `@ultimat3/jobs`' webhook block does and for the same reason: the default is invisible to
+    // `classifyThrown`.
+    for (const code of POLICY_ERROR_CODES) {
+      expect(declaredErrorRetry(code)).toBe('terminal');
     }
   });
 

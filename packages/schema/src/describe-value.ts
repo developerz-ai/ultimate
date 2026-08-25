@@ -21,6 +21,14 @@ import { charCount } from './char-count';
  *
  * Constants are exempt only where they carry no caller data: `undefined`, `null`, `NaN` and the
  * infinities name themselves because "received a number" for a `NaN` reads as a lie.
+ *
+ * **The absolute is about caller data, not only about the rejected VALUE.** An issue's `path` is
+ * the other half of the same string, and a `t.record` KEY is the caller's — so `recordSchema`
+ * names a failing entry by its POSITION and never by its key, and `validators.test.ts` is that
+ * half's enforcement as `describe-value.test.ts` is this half's. A `t.object` path segment is a
+ * DECLARED field name and stays as written: the schema author chose it, not the caller.
+ * `@ultimat3/http`'s `bodyInvalid` is the seam that makes this binding rather than tasteful — its
+ * own doc block promises the `issues` it renders "name only facts the framework itself chose".
  */
 export function describeValue(value: unknown): string {
   if (value === undefined) return 'undefined';

@@ -22,7 +22,7 @@ import type {
 } from './page';
 import type { RobotsGate } from './robots';
 import type { ScrapeSecrets } from './secrets';
-import { safeHtml } from './secrets';
+import { safeConsole, safeHtml, safeNetwork, safePageErrors } from './secrets';
 import type {
   CaptureOptions,
   ElementSnapshot,
@@ -130,7 +130,16 @@ function frameOver(
       await wait(selector, options, 'actionable');
       await (await resolve()).select(selector, values);
     },
+    // Resolved through `resolve()` like every other verb, which is what makes a FRAME's `query`
+    // read the frame's document: `resolve` is `resolveChild` there, and both drivers override
+    // `query` on the frame target. A forward that reached for a captured page target instead
+    // would be the same defect `clear` had.
+    async query(selector): Promise<readonly ElementSnapshot[]> {
+      return await (await resolve()).query(selector);
+    },
     async values(selector): Promise<readonly ElementValue[]> {
+      // `resolve()` and not `this.query(…)`: a caller who destructures — `const { values } = page`
+      // — loses `this`, and a projection of the read above must not depend on how it was reached.
       return (await (await resolve()).query(selector)).map(toValue);
     },
     async text(selector): Promise<string> {
@@ -229,11 +238,21 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
     async download(options?: DownloadRequest): Promise<ScrapeDownloadFile> {
       return await target.download({ timeoutMs: options?.timeout ?? ctx.defaultTimeoutMs });
     },
+    // `async`, for `download()`'s reason: `ScrapeTarget` is the seam a third party implements, and
+    // a driver that throws synchronously from a promise-typed method would escape `.catch()`.
+    async offline(enabled: boolean): Promise<void> {
+      await target.setOfflineMode(enabled);
+    },
     cookies: (): Promise<readonly ScrapeCookie[]> => target.cookies(),
     session: () => target.session(),
-    console: () => target.console.entries(),
-    pageErrors: () => target.pageErrors.entries(),
-    network: () => target.network.entries(),
+    // Redacted BY VALUE on the way out, the same pass `html()` makes. A console line and a request
+    // URL are two of the four surfaces `secrets.ts` names, and neither had a redaction caller: a
+    // login endpoint fetched with the password in its query string, or a site that logs the
+    // credential it rejected, put the value in `page.network()` and `page.console()` verbatim —
+    // and from there into `saveFailureArtifact`'s stored report.
+    console: () => safeConsole(target.console.entries(), ctx.secrets),
+    pageErrors: () => safePageErrors(target.pageErrors.entries(), ctx.secrets),
+    network: () => safeNetwork(target.network.entries(), ctx.secrets),
     networkDropped: () => target.network.dropped,
     pageErrorsDropped: () => target.pageErrors.dropped,
   };

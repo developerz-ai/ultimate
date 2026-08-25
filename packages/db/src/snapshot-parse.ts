@@ -4,6 +4,7 @@
 // is a sidecar one of them accepts and the other cannot use.
 
 import type {
+  CheckDescription,
   ColumnDescription,
   ForeignKeyDescription,
   IndexDescription,
@@ -28,10 +29,30 @@ const order = (value: unknown): value is 'asc' | 'desc' | null =>
 
 function column(value: unknown): ColumnDescription | undefined {
   if (!isRow(value)) return undefined;
-  const { name, dataType, nullable, default: fallback, position } = value;
+  const { name, dataType, nullable, default: fallback, position, generated } = value;
   if (!str(name) || !str(dataType) || !bool(nullable) || !nullableStr(fallback)) return undefined;
   if (typeof position !== 'number') return undefined;
-  return { name, dataType, nullable, default: fallback, position };
+  // `generated` was recorded by `snapshotOf` and dropped HERE, silently, for as long as the field
+  // has existed: the sidecar carried the expression and the parse handed back a column without it,
+  // so `retypeColumn` read every generated column as newly generated and rebuilt it on every
+  // `x db gen`. Absent stays absent — an ordinary column must gain no key.
+  if (!(generated === undefined || str(generated))) return undefined;
+  return {
+    name,
+    dataType,
+    nullable,
+    default: fallback,
+    position,
+    ...(generated === undefined ? {} : { generated }),
+  };
+}
+
+/** The predicate is the snapshot's own spelling, so both halves are plain strings or nothing. */
+function check(value: unknown): CheckDescription | undefined {
+  if (!isRow(value)) return undefined;
+  const { name, expression } = value;
+  if (!str(name) || !str(expression)) return undefined;
+  return { name, expression };
 }
 
 function index(value: unknown): IndexDescription | undefined {
@@ -88,7 +109,14 @@ function tableOf(value: unknown): TableDescription | undefined {
   const indexes = all(value['indexes'], index);
   const foreignKeys = all(value['foreignKeys'], foreignKey);
   if (columns === undefined || indexes === undefined || foreignKeys === undefined) return undefined;
-  return { schema, name, columns, primaryKey, indexes, foreignKeys };
+  // Absent, never `[]`. A sidecar written before constraints were recorded says nothing about
+  // them, and reading that as "this table declares none" would drop every invariant an app has
+  // already generated instead of adding the ones its database is missing.
+  const raw = value['checks'];
+  if (raw === undefined) return { schema, name, columns, primaryKey, indexes, foreignKeys };
+  const checks = all(raw, check);
+  if (checks === undefined) return undefined;
+  return { schema, name, columns, primaryKey, indexes, foreignKeys, checks };
 }
 
 /**

@@ -60,6 +60,9 @@ export async function openOfflineSession(init: OfflineSessionInit): Promise<Scra
       source: init.source,
       // The same gate the page above holds, from the same field: two legs, one robots decision.
       robots: init.session.robots,
+      // The same bag, for the same reason: a redaction only the live leg performs is one no
+      // fixture can prove.
+      secrets: init.session.secrets,
       maxAgeMs: init.maxAgeMs,
     }),
     close: () => target.close(),

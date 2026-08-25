@@ -4,6 +4,8 @@ import { testClock } from './clock';
 import { httpOverFetch } from './http';
 import type { NetworkEntry } from './rings';
 import { createRing } from './rings';
+import type { ScrapeSecrets } from './secrets';
+import { createSecretBag, SECRET_PLACEHOLDER } from './secrets';
 import { EMPTY_SESSION } from './session-state';
 
 const codeOf = async (promise: Promise<unknown>): Promise<string | undefined> => {
@@ -24,6 +26,7 @@ const transport = (
   answer: { status: number; body: string },
   session = EMPTY_SESSION,
   allowHosts: readonly string[] = ['api.test'],
+  secrets?: ScrapeSecrets,
 ) => {
   const calls: Call[] = [];
   const network = createRing<NetworkEntry>();
@@ -32,6 +35,7 @@ const transport = (
     clock: testClock(),
     timeoutMs: 1_000,
     network,
+    secrets,
     session: () => Promise.resolve(session),
     fetch: (url, init) => {
       calls.push({ url, headers: (init.headers ?? {}) as Record<string, string> });
@@ -277,5 +281,48 @@ describe('unit · response headers are data, not a prototype the site can reach'
     );
     expect(response.headers['toString']).toBeUndefined();
     expect(response.headers['hasOwnProperty']).toBeUndefined();
+  });
+});
+
+/**
+ * A login endpoint that echoes the submitted credential in its 4xx body is common, and 200 bytes
+ * of it went straight into `X_SCRAPE_HTTP_FAILED`'s `cause`. `UltimateError.message` carries the
+ * cause, the job driver persists that on the dead-letter row, and `x jobs show` prints it — so a
+ * password reached a durable table and an operator's terminal. `HttpTransportInit` carried no
+ * `secrets` at all until 2026-08-24, so nothing on this leg COULD redact.
+ */
+describe('unit · the site`s own body never carries a secret into an error', () => {
+  const SECRET = 'hunter2-the-password';
+  const causeOf = async (promise: Promise<unknown>): Promise<string> => {
+    try {
+      await promise;
+      return '';
+    } catch (thrown) {
+      const error = thrown as { cause?: unknown; message?: unknown };
+      return `${typeof error.cause === 'string' ? error.cause : ''} ${
+        typeof error.message === 'string' ? error.message : ''
+      }`;
+    }
+  };
+
+  test('a 4xx body that echoes the password is redacted in the cause AND the message', async () => {
+    const { http } = transport(
+      { status: 401, body: `{"error":"wrong password: ${SECRET}"}` },
+      EMPTY_SESSION,
+      ['api.test'],
+      createSecretBag(['SHOP_PASSWORD'], () => SECRET),
+    );
+    const response = await http.request('https://api.test/login');
+    const cause = await causeOf(response.parse(t.object({ ok: t.boolean })));
+    expect(cause).not.toContain(SECRET);
+    expect(cause).toContain(SECRET_PLACEHOLDER);
+  });
+
+  test('with no secrets declared the body still reaches the cause — it is the diagnosis', async () => {
+    const { http } = transport({ status: 502, body: 'upstream is down' });
+    const response = await http.request('https://api.test/login');
+    expect(await causeOf(response.parse(t.object({ ok: t.boolean })))).toContain(
+      'upstream is down',
+    );
   });
 });

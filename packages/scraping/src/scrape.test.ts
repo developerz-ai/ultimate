@@ -13,7 +13,7 @@ import { authFailed } from './error-throws';
 import { memoryYieldHistory } from './expect';
 import type { ScrapeDefinition, ScrapeReport } from './scrape';
 import { scrape } from './scrape';
-import { memorySessionStore } from './session-state';
+import { memorySessionStore, sessionKeyFor } from './session-state';
 
 afterEach(() => {
   // `job()` refuses a duplicate name, and every test here declares the same one.
@@ -205,7 +205,11 @@ describe('unit · the login path', () => {
     const report = (await handle.run(runArgs({ page: 1 }))) as ScrapeReport<{ id: string }>;
     expect(logins).toBe(1);
     expect(report.rows).toHaveLength(2);
-    expect(await store.load('no-tenant/orders/account-a')).toBeDefined();
+    expect(
+      await store.load(
+        sessionKeyFor({ scrape: 'orders', tenant: undefined, discriminator: 'account-a' }),
+      ),
+    ).toBeDefined();
     delete process.env['SHOP_PASSWORD'];
   });
 

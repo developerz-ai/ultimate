@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';
+import { DEFAULT_RING_CAPACITY } from './rings';
 import type { SessionSnapshot } from './session-state';
 
 interface Recorder {
@@ -293,16 +294,164 @@ describe('unit · an uncaught page exception is recorded, and is NOT a console l
   });
 
   test('the ring is BOUNDED and honest — a rAF loop that throws cannot eat the heap', async () => {
+    // At `DEFAULT_RING_CAPACITY` and not at a `ringCapacity` this test passes in: that option was
+    // declared on `CdpTargetInit`, read here, and passed by no production caller at any distance —
+    // a knob only a test could turn. The bound is the framework's one bound, so the test exercises
+    // the one an app actually gets.
     const rec = recorder();
     const page = await cdpTarget({
       page: rec.page,
       browser: rec.browser,
       rules: { allowHosts: ['*'] },
       clock: testClock(),
-      ringCapacity: 2,
     });
-    for (const index of [1, 2, 3, 4]) rec.emit('pageerror', new Error(`boom ${index}`));
-    expect(page.pageErrors.entries().map((error) => error.message)).toEqual(['boom 3', 'boom 4']);
+    const overflow = DEFAULT_RING_CAPACITY + 2;
+    for (let index = 1; index <= overflow; index += 1) {
+      rec.emit('pageerror', new Error(`boom ${String(index)}`));
+    }
+    const messages = page.pageErrors.entries().map((error) => error.message);
+    expect(messages).toHaveLength(DEFAULT_RING_CAPACITY);
+    expect(messages.at(-1)).toBe(`boom ${String(overflow)}`);
     expect(page.pageErrors.dropped).toBe(2);
+  });
+});
+
+/**
+ * A page attribute and a storage key are the BROWSER's data, not an untrusted request body — and
+ * `t.record()` refuses `__proto__`, `constructor` and `prototype` by name, which is the right
+ * answer for a request body and the wrong one here.
+ *
+ * `<div constructor="Foo">` is legal HTML that a framework's own build emits, and
+ * `localStorage.setItem('constructor', …)` is legal storage. Both threw `X_VALIDATION_FAILED` out
+ * of `parseSnapshots`/`storageSchema` — inside `guard()`, which re-labelled it
+ * `X_SCRAPE_BROWSER_UNREACHABLE`, a code registered RETRYABLE. Five browser launches and five
+ * arrivals at a login, and a dead letter saying the browser went away about a browser that
+ * answered perfectly. The offline drivers build `attrs` in JS and never parse, so
+ * `driver-parity.test.ts` cannot see it.
+ */
+describe('unit · the browser`s own keys are read, never refused by name', () => {
+  const answering = (answers: Readonly<Record<string, unknown>>): Recorder => {
+    const base = recorder('https://shop.test/o');
+    return {
+      ...base,
+      page: {
+        ...base.page,
+        evaluate: (expression: string) => {
+          for (const [needle, answer] of Object.entries(answers)) {
+            if (expression.includes(needle)) return Promise.resolve(answer);
+          }
+          return Promise.resolve(undefined);
+        },
+      },
+    };
+  };
+
+  test('an element carrying a `constructor` attribute is a snapshot, not a refusal', async () => {
+    const snapshot = [
+      {
+        tag: 'div',
+        attrs: { constructor: 'Foo', __proto__: 'x', id: 'row' },
+        text: 'one',
+        value: '',
+        visible: true,
+        enabled: true,
+        box: { x: 0, y: 0, width: 1, height: 1 },
+        hitTarget: true,
+      },
+    ];
+    const cdp = answering({ querySelectorAll: JSON.stringify(snapshot) });
+    const target = await cdpTarget({
+      page: cdp.page,
+      browser: cdp.browser,
+      rules: { allowHosts: ['shop.test'] },
+      clock: testClock(),
+    });
+    const [element] = await target.query('.row');
+    expect(element?.attrs['constructor']).toBe('Foo');
+    // Read back off a NULL prototype, so an attribute the page never carried answers `undefined`
+    // rather than a function: `attrs['toString']` was the `Object.prototype` method.
+    expect(element?.attrs['toString']).toBeUndefined();
+  });
+
+  test('a localStorage key named `constructor` is a session, not a refusal', async () => {
+    const cdp = answering({
+      localStorage: JSON.stringify({ constructor: 'v', token: 'bearer-abc' }),
+      'navigator.userAgent': 'agent',
+    });
+    const target = await cdpTarget({
+      page: cdp.page,
+      browser: cdp.browser,
+      rules: { allowHosts: ['shop.test'] },
+      clock: testClock(),
+    });
+    const session = await target.session();
+    expect(session.storage['constructor']).toBe('v');
+    expect(session.storage['token']).toBe('bearer-abc');
+  });
+
+  test('a snapshot the browser could not have sent is still refused — and is NOT retryable', async () => {
+    // The other half, and it is the half that costs money: a parse that DOES fail must not be
+    // re-labelled `X_SCRAPE_BROWSER_UNREACHABLE`, which `errors.ts` registers `retryable`.
+    const cdp = answering({ querySelectorAll: JSON.stringify([{ tag: 42 }]) });
+    const target = await cdpTarget({
+      page: cdp.page,
+      browser: cdp.browser,
+      rules: { allowHosts: ['shop.test'] },
+      clock: testClock(),
+    });
+    let code: string | undefined;
+    try {
+      await target.query('.row');
+    } catch (thrown) {
+      code = (thrown as { code?: string }).code;
+    }
+    expect(code).toBe('X_VALIDATION_FAILED');
+  });
+});
+
+/**
+ * A launcher with no `setOfflineMode` is refused BY NAME, not silently accepted. `CdpPageLike`
+ * declares it optional — this file is the shape of somebody else's object — and this is the half
+ * that keeps optional from meaning unwired, exactly as `cookies()` is refused today.
+ */
+describe('unit · setOfflineMode on a launcher that does not have it', () => {
+  test('X_NOT_IMPLEMENTED, with a fix naming the upgrade — and NOT re-labelled retryable', async () => {
+    const rec = recorder('https://shop.test/o');
+    const target = await cdpTarget({
+      page: rec.page,
+      browser: rec.browser,
+      rules: { allowHosts: ['shop.test'] },
+      clock: testClock(),
+    });
+    let thrown: { code?: string; fix?: string } = {};
+    try {
+      await target.setOfflineMode(true);
+    } catch (caught) {
+      thrown = caught as { code?: string; fix?: string };
+    }
+    // `guard()` passes this through: `X_SCRAPE_BROWSER_UNREACHABLE` is registered retryable, and
+    // the method is still missing on attempt five.
+    expect(thrown.code).toBe('X_NOT_IMPLEMENTED');
+    expect(thrown.fix).toContain('puppeteer-core');
+  });
+
+  test('a launcher that HAS it is handed the value, unchanged', async () => {
+    const rec = recorder('https://shop.test/o');
+    const seen: boolean[] = [];
+    const target = await cdpTarget({
+      page: {
+        ...rec.page,
+        setOfflineMode: (enabled: boolean) => {
+          seen.push(enabled);
+          return Promise.resolve();
+        },
+      },
+      browser: rec.browser,
+      rules: { allowHosts: ['shop.test'] },
+      clock: testClock(),
+    });
+    await target.setOfflineMode(true);
+    await target.setOfflineMode(false);
+    expect(seen).toEqual([true, false]);
   });
 });

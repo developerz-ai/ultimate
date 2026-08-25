@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { secret } from '@ultimat3/core';
 import { fakePage } from './driver-fake';
-import { blankPasswordFields, createSecretBag, redactSecrets, safeHtml } from './secrets';
+import {
+  blankPasswordFields,
+  createSecretBag,
+  MIN_REDACTABLE_LENGTH,
+  redactSecrets,
+  SECRET_PLACEHOLDER,
+  safeHtml,
+} from './secrets';
 
 const bag = (values: Record<string, string>) =>
   createSecretBag(Object.keys(values), (name) => values[name]);
@@ -45,6 +52,22 @@ describe('unit · redaction is BY VALUE, not by key name', () => {
     expect(redactSecrets('GET /orders?key=sk-live-abcdef', secrets)).toBe(
       'GET /orders?key=[redacted]',
     );
+  });
+
+  /**
+   * The floor was a bare `.length >= 4` with no comment, under a header promising unconditional
+   * redaction. It is deliberate — a three-character PIN is a substring of ordinary prose, so
+   * redacting one blanks every price, id and timestamp fragment on the page and the artifact
+   * becomes undiagnosable — but a hole nobody wrote down is a hole nobody can reason about.
+   */
+  test('a secret shorter than the floor is NOT redacted, and that is the documented answer', () => {
+    const short = 'x'.repeat(MIN_REDACTABLE_LENGTH - 1);
+    expect(redactSecrets(`pin ${short}`, bag({ PIN: short }))).toBe(`pin ${short}`);
+  });
+
+  test('a secret AT the floor is redacted — the bound is >=, not >', () => {
+    const exact = 'x'.repeat(MIN_REDACTABLE_LENGTH);
+    expect(redactSecrets(`pin ${exact}`, bag({ PIN: exact }))).toBe(`pin ${SECRET_PLACEHOLDER}`);
   });
 
   test('the longest secret goes first, so one containing another leaves no tail', () => {

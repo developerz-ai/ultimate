@@ -28,6 +28,7 @@ import {
 import { entityNow } from './clock';
 import { coalesceFindById } from './coalesce';
 import { moneyColumns } from './column';
+import { narrowRow } from './columns';
 import { countsFrom, groupColumnOf, groupValue, MAX_GROUPS } from './count-by';
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import type { Driver } from './database';
@@ -58,6 +59,7 @@ import { deletePlan, idPlan, readPlan, updatePlan } from './plan';
 import type { FindManyArgs, Repo, Transactor, UpsertArgs } from './repo';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
+import type { RowWrite } from './types';
 
 export interface PostgresDriverOptions {
   /**
@@ -120,6 +122,11 @@ export const postgresRepo = <Row>(
 
   const idOf = (row: Row): string =>
     entity.$primaryKey.map((property) => String(valueAt(row, property))).join('');
+
+  /** Where a batch stops being wide — before `writeRows` or `upsertPlan` read a row. `narrowRow`
+   *  says why the position matters, and `memoryRepo` narrows at the same one. */
+  const narrowed = (batch: readonly RowWrite<Row>[]): readonly Row[] =>
+    batch.map((row) => narrowRow<Row>(entity.$columns, row));
 
   const one = async (plan: QueryPlan, args: FindManyArgs): Promise<Row | null> => {
     const [found] = await client().query<PhysicalRow>(
@@ -255,21 +262,24 @@ export const postgresRepo = <Row>(
     },
 
     async insert(values) {
-      const [written] = await writeRows('insert', [values], undefined);
-      // `returning *` is the row Postgres actually stored, defaults included.
-      return written ?? values;
+      const row = narrowRow<Row>(entity.$columns, values);
+      const [written] = await writeRows('insert', [row], undefined);
+      // `returning *` is the row Postgres actually stored, defaults included. The fallback is the
+      // NARROWED row: handing the caller's back would answer with a `bigint` minor unit.
+      return written ?? row;
     },
 
     async insertAll(batch) {
-      return writeRows('insertAll', batch, undefined);
+      return writeRows('insertAll', narrowed(batch), undefined);
     },
 
     async upsertAll(batch, args: UpsertArgs<Row>) {
-      const plan = upsertPlan(entity, batch, args.onConflict, args.onMatch ?? 'update');
+      const rows = narrowed(batch);
+      const plan = upsertPlan(entity, rows, args.onConflict, args.onMatch ?? 'update');
       // Refused here, not by the server: a batch that repeats a conflict target is `21000` in
       // Postgres and a silent overwrite in memory, and the two drivers have to mean one thing.
-      conflictKeys(entity, plan, batch);
-      return writeRows('upsertAll', batch, {
+      conflictKeys(entity, plan, rows);
+      return writeRows('upsertAll', rows, {
         columns: insertColumns(entity, plan.on),
         set: insertColumns(entity, plan.set),
       });

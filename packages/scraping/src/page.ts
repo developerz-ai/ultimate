@@ -1,6 +1,7 @@
-// The vocabulary a `run()` body writes against — small, declarative, and driver-blind. Fourteen
-// verbs, chosen because every scraper in the audit re-implemented these and nothing else; a
-// fifteenth would be a second way to do something on this list.
+// The vocabulary a `run()` body writes against — small, declarative, and driver-blind. Every verb
+// is here because every scraper in the audit re-implemented it and nothing else; a new one is a
+// second way to do something already on this list. NO COUNT: this said "Fourteen verbs" against
+// twenty-three, and a prose ordinal is wrong the moment the next verb lands.
 //
 // Nothing here mentions puppeteer, CDP, a frame handle or a locator. That is the seam: a run body
 // written against this file runs unchanged on a real browser, on a recorded fixture and on a
@@ -47,6 +48,17 @@ export interface ScrapeFrame {
   /** Clears first, then types — the spelling a login form wants. */
   fill(selector: string, text: string | Secret, options?: WaitOptions): Promise<void>;
   select(selector: string, values: readonly string[], options?: WaitOptions): Promise<void>;
+  /**
+   * Every match, as SNAPSHOTS — `visible`, `enabled` and (on a driver with a layout engine) the
+   * box and hit-target, which `values()` projects away.
+   *
+   * It exists because `ScrapeTarget.query` already answered all of that and nothing above it
+   * exposed it, so the first caller that needed "is this visible?" wrote its own
+   * `display !== 'none' && visibility !== 'hidden' && opacity !== '0'` — a second definition of
+   * "visible" in one framework. `values()` remains the projection for row assembly; this is the
+   * read for a decision about an element.
+   */
+  query(selector: string): Promise<readonly ElementSnapshot[]>;
   /** Every match, as values. Row assembly is the app's business, never the framework's. */
   values(selector: string): Promise<readonly ElementValue[]>;
   /** The first match's text, or `''`. */
@@ -90,6 +102,13 @@ export interface ScrapePage extends ScrapeFrame {
   /** The file the last click produced, or `X_SCRAPE_DOWNLOAD_TIMEOUT`. */
   download(options?: DownloadRequest): Promise<ScrapeDownloadFile>;
   cookies(): Promise<readonly ScrapeCookie[]>;
+  /**
+   * Cut the BROWSER's network, or restore it — what a PWA's offline behaviour has to be tested
+   * against. Refused with `X_NOT_IMPLEMENTED` on a driver that has no browser: patching `fetch`
+   * in the test process cannot reach a browser's own requests, so a driver that quietly answered
+   * "done" would let an offline assertion pass against an app that never went offline.
+   */
+  offline(enabled: boolean): Promise<void>;
   /**
    * The handoff, made explicit: what the HTTP leg will send, as a value an author can inspect and
    * a fixture can assert on. `http` uses it automatically — this is for seeing what carried over.

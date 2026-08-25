@@ -132,6 +132,16 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_SHOT_ISLAND_UNPHOTOGRAPHABLE',
   'X_SHOT_ISLAND_UNSTUBBED_REQUEST',
   'X_SHOT_ISLAND_MISSING',
+  // The browser-backed e2e driver — `e2e-driver.ts` and the three modules under it. Owned by the
+  // CLI because the ADAPTER is: `@ultimat3/testing` declares `PageLike` and may not import a
+  // browser, `@ultimat3/scraping` owns the browser and may not import the harness, and neither
+  // package can name a failure that only exists where the two meet.
+  'X_E2E_EVALUATE_UNSUPPORTED',
+  'X_E2E_EVALUATE_CAPTURED',
+  'X_E2E_EVALUATE_THREW',
+  'X_E2E_LOCATOR_EMPTY',
+  'X_E2E_LOCATOR_AMBIGUOUS',
+  'X_E2E_SERVICE_WORKER_ABSENT',
   'X_GH_UNAVAILABLE',
   'X_GH_NOT_AUTHENTICATED',
   'X_GH_COMMAND_FAILED',
@@ -250,6 +260,12 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_SHOT_ISLAND_UNPHOTOGRAPHABLE: 'the island never reached a state worth photographing',
   X_SHOT_ISLAND_UNSTUBBED_REQUEST: 'the island requested something no state stub answers',
   X_SHOT_ISLAND_MISSING: 'a declared island picture is not on disk',
+  X_E2E_EVALUATE_UNSUPPORTED: 'a page.evaluate() closure cannot be sent into the browser',
+  X_E2E_EVALUATE_CAPTURED: 'a page.evaluate() closure named a binding the page does not have',
+  X_E2E_EVALUATE_THREW: 'an expression an e2e page ran threw inside the browser',
+  X_E2E_LOCATOR_EMPTY: 'an e2e locator matched no element',
+  X_E2E_LOCATOR_AMBIGUOUS: 'an e2e locator matched more than one element and was asked to click',
+  X_E2E_SERVICE_WORKER_ABSENT: 'no service worker took control of the page within the budget',
   X_GH_UNAVAILABLE: 'the GitHub CLI is not runnable from here',
   X_GH_NOT_AUTHENTICATED: 'gh holds no credentials for this host',
   X_GH_COMMAND_FAILED: 'a gh invocation exited non-zero',

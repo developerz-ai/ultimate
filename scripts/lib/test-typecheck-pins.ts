@@ -11,19 +11,24 @@
 // about its own: a pin keyed on a file and a line goes stale on every edit to the file above it,
 // and churn teaches a reader to regenerate a ratchet without looking at it.
 //
-// What is left: **2**, both in `packages/entity/src/pg-driver.test.ts`, and they are one named
-// defect rather than two stale fixtures. `Repo`'s full-row write members take the ROW type where
-// money's WRITE type belongs — `Repo.insert(values: T)` demands a `MoneyValue`, while
-// `narrowMoney` exists solely to narrow a `bigint` handed to a driver, and `postgresRepo()` is
-// exported, so that caller is public API. Two fixes were attempted and reverted with evidence: a
-// `RowWrite<Row>` mapped type produces 6 fallout errors at the narrowing boundaries, and re-typing
-// `narrowMoney` cuts that to 4 but makes `Out` uninferrable, so every app call site would need an
-// explicit type argument. The remaining route narrows at each write-method entry, which moves the
-// narrowing before `assertRowTenant` in `writeRows` — strictly more correct and SQL-identical, but
-// a runtime-ordering change in `Driver`'s only production implementation whose live suites need
-// `TEST_DATABASE_URL`. That is its own piece of work; do not silence it.
+// What is left: **nothing**. The ratchet reads zero across every workspace `As of 2026-08-25`.
 //
-// Everything else is at zero. 446 errors closed across 30 workspaces, and thirteen of them were
+// The last two were `packages/entity/src/pg-driver.test.ts`, and this comment recorded them as one
+// named defect with a route already mapped: `Repo`'s full-row write members took the ROW type where
+// money's WRITE type belongs, so `Repo.insert(values: T)` demanded a `MoneyValue` while
+// `narrowMoney` exists solely to narrow a `bigint` handed to a driver — a compile error on public
+// API, since `postgresRepo()` is exported. `RowWrite<Row>` plus narrowing at each write-method
+// entry is what closed it, which is the third route this comment described and the one it said
+// would work.
+//
+// The diagnosis in it was right and the *cause* named here was not: this file assumed the runtime
+// had to be met halfway. Measured instead — `Bun.SQL` hands `int8` back as a **string**, never a
+// `bigint`, and `decodeRow` re-parses it — so the read path never met one, the write path already
+// narrowed, and the runtime was correct in both directions. Only the declaration was wrong. Fixing
+// the TEST, which is what a reader would have done, would have deleted a capability the framework
+// documents, implements and stores correctly.
+//
+// 448 errors closed across 30 workspaces, and fifteen of them were
 // the type being wrong rather than the test:
 //
 // | Where | What shipped |
@@ -64,7 +69,7 @@ export const TEST_TYPECHECK_PINS: Readonly<Record<string, number>> = {
   core: 0,
   'create-ultimate': 0,
   db: 0,
-  entity: 2,
+  entity: 0,
   flags: 0,
   http: 0,
   i18n: 0,

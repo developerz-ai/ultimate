@@ -112,6 +112,16 @@ export function useE2eDriver(driver: (name: string, body: E2eBody) => void): voi
  * instead of reading an all-skipped run as a green one. */
 export const hasE2eDriver = (): boolean => e2eDriver !== undefined;
 
+/**
+ * Put the seam back. The counterpart `useE2eDriver` shipped without, and the module scope it
+ * writes to is process-global: `bun test` shares one process across files, so a file that installs
+ * a browser and does not undo it hands every later file an `e2eTest` that opens a page nobody
+ * asked for. Same shape and same reason as `@ultimat3/scraping`'s `resetScrapeDriver()`.
+ */
+export const resetE2eDriver = (): void => {
+  e2eDriver = undefined;
+};
+
 export const e2eTest = (name: string, body: E2eBody): void => {
   if (e2eDriver === undefined) {
     test.skip(

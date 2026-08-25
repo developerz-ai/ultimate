@@ -10,6 +10,7 @@ import { pageOverTarget } from './page-over-target';
 import type { PageRecording } from './recording';
 import type { PageError } from './rings';
 import { createRing, pageErrorEntry } from './rings';
+import { createSecretBag, SECRET_PLACEHOLDER } from './secrets';
 import type { ScrapeTarget } from './target';
 
 const codeOf = async (promise: Promise<unknown>): Promise<string | undefined> => {
@@ -337,5 +338,86 @@ describe('unit · capture framing — the crop rectangle', () => {
       'X_SCRAPE_CAPTURE_INVALID',
     );
     expect((await page().pdf()).byteLength).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * `secrets.ts`'s header promises redaction BY VALUE over "page HTML, a console line, a request
+ * URL, an error cause". Three of those four had no redaction at all: `redactSecrets` had exactly
+ * one caller — `safeHtml` — so a password echoed into a console line, or pasted into a query
+ * string the page fetched, reached `page.console()` and `page.network()` verbatim, and from there
+ * `saveFailureArtifact`, the dead-letter row and every `x jobs show` an operator runs.
+ */
+describe('unit · what leaves the page is redacted by VALUE, not only its HTML', () => {
+  const SECRET = 'hunter2-the-password';
+
+  const tainted = (): { page: ScrapePage; target: ScrapeTarget } => {
+    const recording: PageRecording = { url: 'https://shop.test/o', html: '<p>o</p>' };
+    const target = htmlTarget({
+      driver: 'fixture',
+      lookup: () => Promise.resolve(recording),
+      rules: { allowHosts: ['shop.test'] },
+      clock: testClock(),
+      source: 'test/fixtures',
+      start: recording,
+    });
+    return {
+      target,
+      page: pageOverTarget(target, {
+        clock: testClock(),
+        allowHosts: ['shop.test'],
+        defaultTimeoutMs: 100,
+        secrets: createSecretBag(['SHOP_PASSWORD'], () => SECRET),
+      }),
+    };
+  };
+
+  test('a console line that echoes the secret answers [redacted]', () => {
+    const { page, target } = tainted();
+    target.console.push({ level: 'error', text: `login failed for ${SECRET}`, at: 1 });
+    expect(page.console()[0]?.text).not.toContain(SECRET);
+    expect(page.console()[0]?.text).toContain(SECRET_PLACEHOLDER);
+  });
+
+  test('a request URL that carries the secret in its query string answers [redacted]', () => {
+    const { page, target } = tainted();
+    target.network.push({
+      method: 'GET',
+      url: `https://shop.test/login?pw=${SECRET}`,
+      resourceType: 'fetch',
+      at: 1,
+    });
+    expect(page.network()[0]?.url).not.toContain(SECRET);
+    expect(page.network()[0]?.url).toContain(SECRET_PLACEHOLDER);
+  });
+
+  test('an uncaught page exception that quotes the secret answers [redacted]', () => {
+    // The stack too: a framework that prints the argument it threw on puts the value in both.
+    const { page, target } = tainted();
+    target.pageErrors.push(
+      pageErrorEntry({ message: `bad password ${SECRET}`, stack: `submit(${SECRET})`, at: 1 }),
+    );
+    expect(JSON.stringify(page.pageErrors())).not.toContain(SECRET);
+    expect(page.pageErrors()[0]?.stack).toContain(SECRET_PLACEHOLDER);
+  });
+
+  test('with no secrets declared the text is passed through untouched, allocation and all', () => {
+    const recording: PageRecording = { url: 'https://shop.test/o', html: '<p>o</p>' };
+    const target = htmlTarget({
+      driver: 'fixture',
+      lookup: () => Promise.resolve(recording),
+      rules: { allowHosts: ['shop.test'] },
+      clock: testClock(),
+      source: 'test/fixtures',
+      start: recording,
+    });
+    const page = pageOverTarget(target, {
+      clock: testClock(),
+      allowHosts: ['shop.test'],
+      defaultTimeoutMs: 100,
+    });
+    const line = { level: 'log', text: 'plain', at: 1 } as const;
+    target.console.push(line);
+    expect(page.console()[0]).toBe(line);
   });
 });

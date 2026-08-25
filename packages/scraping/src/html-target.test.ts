@@ -97,6 +97,22 @@ describe('unit · a download is armed only by a RECORDED selector', () => {
     expect((caught as { code?: string } | undefined)?.code).toBe('X_SCRAPE_DOWNLOAD_TIMEOUT');
   });
 
+  test('setOfflineMode REFUSES, and the refusal is a REJECTION too', async () => {
+    // The same rule one method over, and it has to be pinned HERE rather than through the page:
+    // `pageOverTarget.offline` is `async`, so its `await` would turn a synchronous throw from
+    // this target into a rejection and hide the defect from every page-level test.
+    //
+    // Refused rather than resolved because there is no browser to take offline. A resolved
+    // promise would let "a like taken offline is queued" pass against an app that was online.
+    const target = targetOver({ url: PAGE_URL, html: '<p>o</p>' });
+    let caught: unknown;
+    await target.setOfflineMode(true).catch((thrown: unknown) => {
+      caught = thrown;
+    });
+    expect((caught as { code?: string } | undefined)?.code).toBe('X_NOT_IMPLEMENTED');
+    expect((caught as { fix?: string } | undefined)?.fix).toContain('localBrowser()');
+  });
+
   test('a recorded download still arms', async () => {
     const target = targetOver({
       url: PAGE_URL,

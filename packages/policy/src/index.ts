@@ -11,6 +11,7 @@ export type { DefinePolicyInput } from './define';
 export { definePolicy } from './define';
 export type { PolicyErrorCode } from './errors';
 export {
+  emptyClauseList,
   forbidden,
   POLICY_ERROR_CODES,
   POLICY_ERROR_TITLES,

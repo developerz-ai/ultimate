@@ -653,6 +653,47 @@ right database, and `x db gen`'s `retypeColumn` owns that question where both si
 The `fix:` is the `alter table … set not null` itself and deliberately not `x db gen`, which has
 never emitted one and would answer with an empty migration.
 
+**An entity's INVARIANTS reach the DDL, `As of 2026-08-25`, and `invariant-ddl.ts` is what they
+become.** `EntityDescriptionLike` had no `invariants` field at all — the same seam gap
+`onDelete` carried until 3.0 — so a regenerated migration held **none** of them: measured on
+`examples/dummy`, nine database-expressible rules across six tables, including
+`member_unique_per_org UNIQUE(org_id, user_id)`, which is the constraint `upsertAll`'s inferred
+`on conflict` rests on, and `post_slug_unique`. The `drift` gate step hashes entity SOURCE against a
+sidecar and never reads the SQL, so the squash that lost them would have been **green**.
+
+Four rules, none optional.
+
+| Rule | Why |
+|---|---|
+| a `check` is a named `CONSTRAINT`, a `unique` is a unique **INDEX**, an `assert` is nothing | a soft-deleting entity stamps `deleted_at is null` onto a unique invariant and Postgres has no partial unique CONSTRAINT — only a partial unique index. An `assert` declares itself as a rule only the app can judge (`sql: null`), which is what `hasJsOnlyInvariant` already reads it as, so it is not an unrendered loss |
+| a `unique` invariant joins the ONE declared index list (`declaredIndexes`) | `createTable`, `diffTable` and `snapshotOf` must agree about what exists. A `create unique index` emitted and not recorded is `42P07` on the very next `x db gen` — worse than the silent drop |
+| a `check` is recorded on `TableDescription.checks`, **absent** and never `[]` | a sidecar that predates the field must read as "nothing recorded" so the next generation ADDS the constraints the database is genuinely missing. `[]` would mean "declares none" and leave every already-generated app's invariants unenforced forever. That absence is the repair path, and `parseSnapshot` preserves it |
+| the constraint name is `<table>_<name>_<check\|key>`, re-derived, bounded at 63 bytes, and **validated as an identifier** | nothing validates an invariant name at declaration, so `invariant('x" ); drop table t; --', …)` type-checks all the way to `create table` — the identical hole `columnName` carried. `identifier()` is the one rule; `constraintNameUnsafe` (`invariant-errors.ts`) exists only for its `fix:`, which names the `invariant()` call an author edits, and `generate-invariant.test.ts` pins that line because a guard whose value is its message is proven by nothing else |
+
+**A default's VALUE crosses the seam too — but nothing produces it yet.** `ColumnDescriptionLike.default`
+carries `ColumnDefaultLike` and `defaultExpression` renders it; `hasDefault` stays beside it as the
+older, narrower fact `generatedClause` reads. `@ultimat3/entity` still projects `hasDefault:
+meta.default !== undefined` and drops the value (`packages/entity/src/describe.ts`), so nine
+defaults in `examples/dummy` — `plan_code`, `billing_currency`, `role`, `tz`, `locale`, `theme`,
+`digest_opt_in`, `status`, `like_count` — are still unrendered. **They are no longer silent**:
+`unrenderedOf` reports each one on `GeneratedMigration.unrendered` and `unrenderedComment` writes a
+`-- UNRENDERED` block at the top of the emitted `up`.
+
+Comments, never a refusal, and never onto an EMPTY diff. A refusal would be a generator no app with
+a `.default('draft')` could run at all until tier 2 ships one line, and a migration nobody can
+generate repairs nothing. The empty-diff exclusion is `@ultimat3/cli`'s
+`generateAppMigration`, which reads `up.trim().length === 0` as "nothing changed": a comment there
+makes every `x db gen` write a file holding no statement — a ledger row, a checksum and a place in
+the apply order for nothing.
+
+**`REPLICA IDENTITY FULL` is still emitted by nothing, and it does not belong here.** Which tables
+need it is derived from the `live: true` queries in the manifest, not from any entity — this package
+is tier 1 and can see neither. An `EntityDescriptionLike.replicaIdentity` field would be a
+declared-and-never-wired key, which is the defect class this release exists to eliminate. The shape
+that works is a `GenerateOptions.replicaIdentityFull: readonly string[]` passed by
+`@ultimat3/cli`'s `db-generate.ts` from the live-query set, and it lands with that caller or not at
+all.
+
 **A column the DATABASE computes is a different thing at every step, and `generated-column.ts` is
 all of them** — `As of 2026-08-24`. `ColumnDescriptionLike.generated` carries the
 `generated always as (<expr>) stored` body across the tier seam (this package cannot import

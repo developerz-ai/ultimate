@@ -7,7 +7,7 @@
 // 500-line ceiling.
 
 import { describe, expect, test } from 'bun:test';
-import { validate } from './standard';
+import { formatIssues, validate } from './standard';
 import {
   arraySchema,
   builtinT,
@@ -234,12 +234,29 @@ describe('recordSchema', () => {
     expect(validate(schema, [1, 2]).issues).toBeDefined();
   });
 
-  test('tags each failing entry with its key path and aggregates across entries', () => {
+  // Rewritten, because the assertion it replaces PINNED the defect: it read
+  // `path).toEqual(['b'])` and called a caller-chosen key a "key path". A record's keys are the
+  // caller's data — `describe-value.ts`'s absolute, applied to the other half of an issue — and
+  // `@ultimat3/http`'s `bodyInvalid` states the contract this broke in its own doc block:
+  // *"`issues` … must name only facts the framework itself chose … Anything the caller sent goes
+  // in `meta`"*. The path travelled `formatIssue` -> `bodyInvalid`'s `cause` -> the problem
+  // document AND the log line, where the logger redacts by KEY and a key baked into a string has
+  // no key left to redact.
+  test('names each failing entry by POSITION, never by the caller-chosen key', () => {
     const schema = recordSchema(builtinT.number);
     const result = validate(schema, { a: 1, b: 'bad', c: 3, d: 'also bad' });
     expect(result.issues?.length).toBe(2);
-    expect(result.issues?.[0]?.path).toEqual(['b']);
-    expect(result.issues?.[1]?.path).toEqual(['d']);
+    expect(result.issues?.[0]?.path).toEqual([1]);
+    expect(result.issues?.[1]?.path).toEqual([3]);
+  });
+
+  test('a key that is a secret reaches neither the path nor the message', () => {
+    const schema = objectSchema({ meta: recordSchema(builtinT.string) });
+    const rendered = formatIssues(
+      validate(schema, { meta: { 'hunter2-was-my-password': 5 } }).issues ?? [],
+    );
+    expect(rendered).toEqual(['meta[0]: expected a non-empty string, received a number']);
+    expect(rendered.join('')).not.toContain('hunter2');
   });
 
   test('a `__proto__` key cannot reach the prototype of the output object', () => {
@@ -248,13 +265,16 @@ describe('recordSchema', () => {
     const schema = recordSchema(objectSchema({ a: builtinT.string }));
     const result = validate(schema, JSON.parse('{"__proto__":{"a":"pwned"}}'));
     expect(result.issues?.length).toBe(1);
-    expect(result.issues?.[0]?.path).toEqual(['__proto__']);
+    expect(result.issues?.[0]?.path).toEqual([0]);
+    // The refused NAME is a closed set this file declares, so the message may state it — that is
+    // the one string here the caller did not choose.
+    expect(result.issues?.[0]?.message).toContain('__proto__');
   });
 
   test('`constructor` and `prototype` are refused for the same reason', () => {
     const schema = recordSchema(builtinT.number);
-    expect(validate(schema, { constructor: 1 }).issues?.[0]?.path).toEqual(['constructor']);
-    expect(validate(schema, { prototype: 1 }).issues?.[0]?.path).toEqual(['prototype']);
+    expect(validate(schema, { constructor: 1 }).issues?.[0]?.path).toEqual([0]);
+    expect(validate(schema, { prototype: 1 }).issues?.[0]?.path).toEqual([0]);
   });
 
   test('the accepted record carries no prototype at all', () => {

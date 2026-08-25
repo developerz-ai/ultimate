@@ -6,7 +6,7 @@
 import type { IndexMethod } from '@ultimat3/db';
 import { entityDuplicate } from './errors';
 import type { InvariantKind } from './invariants';
-import type { OnDelete } from './types';
+import type { ColumnDefault, OnDelete } from './types';
 
 export interface ColumnDescription {
   readonly property: string;
@@ -34,6 +34,16 @@ export interface ColumnDescription {
    * field that is not on this projection reaches no DDL at all.
    */
   readonly generated?: string;
+  /**
+   * The declared default, when there is one — the VALUE, not merely `hasDefault`'s boolean.
+   *
+   * Same reason as `onDelete` and `generated`: `@ultimat3/db` is tier 1 and cannot import this
+   * package, so a fact that is not on this projection reaches no DDL. `hasDefault` alone let the
+   * generator infer only `gen_random_uuid()` and `now()`; every other default was dropped in
+   * silence, and a regenerated `examples/dummy` lost nine of them. Absent on a column declaring
+   * none, so a description written before this existed reads the same and nothing regenerates.
+   */
+  readonly default?: ColumnDefault;
 }
 
 /**

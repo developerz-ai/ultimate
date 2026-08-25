@@ -64,6 +64,45 @@ describe('toJsonSchema', () => {
     expect(money.required).toEqual(['minor', 'currency']);
   });
 
+  // `t.money`'s `minor` has published the safe-integer range since the validator started demanding
+  // one; `t.number.int()` published `{ type: 'integer' }` and nothing else, so the contract a
+  // generated client, an MCP tool schema and `openapi.json` all read promised a range the parser
+  // refuses — the same disagreement one layer out.
+  test('an integer publishes the safe range its validator enforces', () => {
+    expect(toJsonSchema(t.number.int(), { includeDialect: false })).toEqual({
+      type: 'integer',
+      minimum: -Number.MAX_SAFE_INTEGER,
+      maximum: Number.MAX_SAFE_INTEGER,
+    });
+  });
+
+  test("a caller's own bounds are the published ones, and a wider one is clamped to the safe range", () => {
+    expect(toJsonSchema(t.number.int().min(1).max(50), { includeDialect: false })).toMatchObject({
+      minimum: 1,
+      maximum: 50,
+    });
+    // `2 ** 53` is refused by the validator whatever `.max()` says, so publishing it would be the
+    // promise this test exists to delete.
+    expect(
+      toJsonSchema(
+        t.number
+          .int()
+          .min(-(2 ** 60))
+          .max(2 ** 60),
+        { includeDialect: false },
+      ),
+    ).toMatchObject({ minimum: -Number.MAX_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER });
+  });
+
+  test('a non-integer number publishes no bounds it does not have', () => {
+    // `t.number` accepts every finite double; a safe-integer range here would refuse `0.5`.
+    expect(toJsonSchema(t.number, { includeDialect: false })).toEqual({ type: 'number' });
+    expect(toJsonSchema(t.number.min(0.5), { includeDialect: false })).toEqual({
+      type: 'number',
+      minimum: 0.5,
+    });
+  });
+
   test('dialects: 2020-12 by default, draft-07 for MCP tools', () => {
     expect(toJsonSchema(t.object({ id: t.uuid })).$schema).toBe(
       'https://json-schema.org/draft/2020-12/schema',

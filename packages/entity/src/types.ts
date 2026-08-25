@@ -282,6 +282,23 @@ export type Insertable<C extends ColumnMap> = {
 };
 
 /**
+ * A whole row as a WRITER may spell it — the row's own type, or money's wider write shape.
+ *
+ * `Insertable` says this at the `database()` seam, where the columns are still in hand;
+ * `Repo.insert`/`insertAll`/`upsertAll` reach the same rows one layer down with only `Row`, and
+ * they took `Row` itself — so the `bigint` minor unit `MoneyInput` documents, `narrowMoney` exists
+ * to narrow and both drivers already store correctly was a compile error at the one entry point a
+ * caller uses. `postgresRepo()` is exported, so that caller is public API, not an internal detour.
+ *
+ * `Row[K]` stays in the union rather than being replaced by `InputOf<Row[K]>`, for the reason
+ * `RowPatch` below states: a conditional type over an unresolved `Row` never reduces, so `Row`
+ * would stop being assignable to its own write shape and every internal caller would redden.
+ */
+export type RowWrite<Row> = {
+  readonly [K in keyof Row]: Row[K] | InputOf<Row[K]>;
+};
+
+/**
  * A patch or a filter: every property optional, **and every property allowed to be present and
  * `undefined`**.
  *

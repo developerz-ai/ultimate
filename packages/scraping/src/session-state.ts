@@ -66,16 +66,67 @@ export const EMPTY_SESSION: SessionSnapshot = Object.freeze({
 });
 
 /**
+ * 64 bits of hex. A collision here is one account's cookies restored into a run acting as
+ * another, so the width is chosen against that and not against convenience: two distinct segments
+ * reach a 1% chance of sharing a digest at ~600 million of them. SHA-256 because its output is
+ * fixed by its specification — a key minted by one Bun version has to still address the session
+ * the previous one wrote, which `Bun.hash`'s families do not promise.
+ */
+const SEGMENT_DIGEST_CHARS = 16;
+
+/**
+ * One part of the key: readable, path-safe, and INJECTIVE — distinct inputs, distinct segments.
+ *
+ * The sanitised half is for a human reading a bucket listing. The digest is what makes it a key:
+ * `replaceAll(/[^a-zA-Z0-9._-]+/g, '-')` alone COLLAPSES, so `alice@corp.com` and
+ * `alice-corp.com` were one segment, `acct/1` and `acct-1` were one segment, and tenants
+ * `acme corp` and `acme-corp` were one key space. Every one of those is account A's authenticated
+ * session handed to a run acting as account B — `auth.validate()` answers true, because the
+ * session IS valid, for the wrong account.
+ *
+ * Encode rather than collapse, the reasoning `packages/action/src/idempotency-key.ts` states for
+ * its JSON tuple: a value that is app data must not be able to spell another value. A JSON tuple
+ * cannot be used here because the key is ALSO a storage path — the tenant-first prefix is what an
+ * object-store policy scopes — and percent-encoding cannot either, because `%2f` is exactly what
+ * `assertSafeKey` refuses. Sanitise for the eye, digest for the identity.
+ *
+ * Traversal was never what the collapse bought: `assertSafeKey` refuses a `..` segment and still
+ * does. The suffix means no segment can BE `..` in the first place.
+ */
+const encodeSegment = (raw: string): string =>
+  `${raw.replaceAll(/[^a-zA-Z0-9._-]+/g, '-')}.${new Bun.CryptoHasher('sha256')
+    .update(raw)
+    .digest('hex')
+    .slice(0, SEGMENT_DIGEST_CHARS)}`;
+
+/**
+ * The two absent cases, as literals rather than as encoded strings — which is what keeps them
+ * unambiguous. Every encoded segment ends in `.` plus 16 hex characters, and neither of these
+ * does, so no tenant called `no-tenant` and no `auth.key` returning `default` can land in the
+ * key space that means "there was none".
+ */
+const NO_TENANT = 'no-tenant';
+const NO_DISCRIMINATOR = 'default';
+
+/**
  * Per tenant, per scrape, per site. The tenant is FIRST because the key is also a storage path,
  * and a prefix that starts with the tenant is one an object-store policy can scope.
+ *
+ * CHANGES EXISTING KEYS. A session stored under the pre-2026-08-24 spelling is not found under
+ * this one, which reads as a cache miss: the run logs in again and writes the new key. No failure,
+ * no error, one extra login per stored session — and the old objects are orphaned until the
+ * bucket's own lifecycle rule collects them.
  */
 export function sessionKeyFor(input: {
   readonly scrape: string;
   readonly tenant: string | undefined;
   readonly discriminator?: string | undefined;
 }): string {
-  const parts = [input.tenant ?? 'no-tenant', input.scrape, input.discriminator ?? 'default'];
-  return parts.map((part) => part.replaceAll(/[^a-zA-Z0-9._-]+/g, '-')).join('/');
+  return [
+    input.tenant === undefined ? NO_TENANT : encodeSegment(input.tenant),
+    encodeSegment(input.scrape),
+    input.discriminator === undefined ? NO_DISCRIMINATOR : encodeSegment(input.discriminator),
+  ].join('/');
 }
 
 /** What a log line may say about a session: shape, never content. */

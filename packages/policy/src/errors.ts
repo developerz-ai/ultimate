@@ -3,12 +3,20 @@
 // an action with no policy never compiles. The code and its factory stay published for a
 // declaration site that cannot express the requirement in a type — a config-driven route table,
 // a policy resolved by name — and `policyMissing()` is how such a site says it.
-import { nearestName, registerErrorCodes, renderCauseValue, UltimateError } from '@ultimat3/core';
+import {
+  type ErrorRetry,
+  nearestName,
+  registerErrorCodes,
+  registerErrorRetry,
+  renderCauseValue,
+  UltimateError,
+} from '@ultimat3/core';
 
 export const POLICY_ERROR_CODES = [
   'X_FORBIDDEN',
   'X_POLICY_MISSING',
   'X_PERMISSION_UNKNOWN',
+  'X_POLICY_CLAUSE_EMPTY',
   'X_POLICY_SURFACE_UNKNOWN',
   'X_ROLE_REDEFINED',
 ] as const;
@@ -19,6 +27,7 @@ export const POLICY_ERROR_TITLES: Readonly<Record<PolicyErrorCode, string>> = {
   X_FORBIDDEN: 'policy denied this actor',
   X_POLICY_MISSING: 'an action was declared without a policy',
   X_PERMISSION_UNKNOWN: 'permission string is not in the permission set',
+  X_POLICY_CLAUSE_EMPTY: 'a policy combinator was built with no clauses',
   X_POLICY_SURFACE_UNKNOWN: 'enforce() was handed a surface no adapter answers to',
   X_ROLE_REDEFINED: 'two modules define the same role differently',
 };
@@ -30,6 +39,38 @@ export const POLICY_ERROR_TITLES: Readonly<Record<PolicyErrorCode, string>> = {
 registerErrorCodes(
   Object.fromEntries(Object.entries(POLICY_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
+
+/**
+ * Every one of them, LISTED rather than left to the `terminal` default — the call
+ * `@ultimat3/jobs`' webhook block already makes, and for its reason: `classifyThrown` reads an
+ * unregistered code carrying `terminal` as UNCLASSIFIED, so the attempt count governs and a job
+ * spends its whole retry policy re-proving an answer no attempt can change.
+ *
+ * `X_FORBIDDEN` is the one that matters, and core's own `ErrorRetry` doc comment names its case
+ * verbatim — *"the same call will fail the same way forever (a config fault, a validation error, a
+ * permission denial)"*. The same actor, the same input and the same row decide the same way on
+ * attempt five; the four declaration faults beside it cannot change between attempts at all,
+ * because each is raised while a module is still evaluating.
+ *
+ * Registered here rather than by the surfaces that THROW `X_FORBIDDEN` (http, auth, ai, realtime)
+ * for the reason the title is: this package owns the code, and a second package registering a
+ * different classification for it is a conflict `registerErrorRetry` raises rather than absorbs.
+ *
+ * Written out key by key over a CLOSED `Record<PolicyErrorCode, …>` rather than derived from
+ * `POLICY_ERROR_CODES` with a `.map`: a derivation classifies a new code by accident, and the one
+ * question worth asking of a code is whether trying it again could ever answer differently. A code
+ * added above with no row here is a missing-key TYPE error, which is the enforcement.
+ */
+const POLICY_ERROR_RETRY = Object.freeze<Record<PolicyErrorCode, ErrorRetry>>({
+  X_FORBIDDEN: 'terminal',
+  X_POLICY_MISSING: 'terminal',
+  X_PERMISSION_UNKNOWN: 'terminal',
+  X_POLICY_CLAUSE_EMPTY: 'terminal',
+  X_POLICY_SURFACE_UNKNOWN: 'terminal',
+  X_ROLE_REDEFINED: 'terminal',
+});
+
+registerErrorRetry(POLICY_ERROR_RETRY);
 
 export class PolicyError extends UltimateError {
   override readonly name = 'PolicyError';
@@ -106,6 +147,38 @@ export const permissionUnknown = (permission: string, known: readonly string[]):
         : `use '${nearest}', the nearest declared permission — or add '${permission}' to definePermissions([...]) if it is genuinely new`,
   });
 };
+
+/**
+ * A combinator built with no clauses, refused where it is WRITTEN — the call
+ * `@ultimat3/scraping`'s `allowHosts: []` and `discriminated-union.ts`'s unroutable member both
+ * already make: a declaration that is wrong for every input is wrong at its first import, not at
+ * the request that discovers it.
+ *
+ * `and()` is the dangerous half and the reason this code exists. With no clauses its loop finds
+ * nothing to deny and answers ALLOWED, so `and(...requiredCaps.map(can))` over a list that
+ * filtered to empty is a policy admitting an ANONYMOUS caller on all four surfaces — and
+ * `meta.auth` derives from `admitsAnonymous`, so `@ultimat3/http` does not 401 first either. There
+ * was no diagnostic to follow: the label renders as `and()`.
+ *
+ * `or()` is refused for symmetry and for axiom 1, not for safety: it denies, which fails closed,
+ * but it denies with "no clause allowed this actor" — a reason naming no clause, which is a denial
+ * nobody can debug. `deny('<reason>')` is the spelling that says the same thing WITH one.
+ *
+ * Both fixes name the explicit spelling, so refusing costs a caller nothing they cannot say
+ * another way.
+ */
+export const emptyClauseList = (combinator: 'and' | 'or'): PolicyError =>
+  new PolicyError({
+    code: 'X_POLICY_CLAUSE_EMPTY',
+    cause:
+      combinator === 'and'
+        ? 'and() was built with no clauses, so it allows every actor — anonymous callers included — on every surface'
+        : 'or() was built with no clauses, so it denies every actor and names no clause that could have allowed one',
+    fix:
+      combinator === 'and'
+        ? "write allow('public') if every caller may act — otherwise pass the clauses the list was meant to hold: and(can('<resource>:<verb>'), …)"
+        : "write deny('<why nobody may act>') if nobody may act — otherwise pass the clauses the list was meant to hold: or(can('<resource>:<verb>'), …)",
+  });
 
 /**
  * `enforce()` was handed a surface with no adapter. Thrown rather than denied, because the value

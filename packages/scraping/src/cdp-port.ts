@@ -57,6 +57,19 @@ export interface CdpPageLike {
   pdf(options?: Record<string, unknown>): Promise<Uint8Array>;
   setRequestInterception(enabled: boolean): Promise<void>;
   /**
+   * The browser's own network condition — `Network.emulateNetworkConditions` under CDP.
+   *
+   * OPTIONAL, read defensively, for `CdpRequestLike.method` and `CdpBrowserLike.cookies`' reason:
+   * this file is the shape of somebody ELSE's object, and a provider SDK or a launcher that
+   * predates the method must still satisfy the port. It does not go unwired by being optional —
+   * `cdp-target.ts` refuses BY NAME with `X_NOT_IMPLEMENTED` and a fix when a launcher lacks it,
+   * exactly as `cookies()` does, so the gap is a coded refusal rather than a silent no-op.
+   *
+   * Required instead would cost every existing launcher, every provider SDK and every test double
+   * a type error for a capability the port cannot make them have.
+   */
+  setOfflineMode?(enabled: boolean): Promise<void>;
+  /**
    * `event` stays a bare `string` — a union of the four names this package subscribes to would be
    * this file naming somebody else's event vocabulary, which is the thing it exists not to do, and
    * a launcher whose emitter is wider would then fail to satisfy the port for no reason.

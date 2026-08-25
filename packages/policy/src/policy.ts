@@ -2,6 +2,7 @@
 // object be evaluated in an HTTP request, a job, a live query and an MCP tool without
 // any of them re-implementing the rule — one authz system, never two.
 import type { Ctx } from '@ultimat3/core';
+import { emptyClauseList } from './errors';
 import { actorHas } from './grant-index';
 import { assertPermission, type KnownPermission, type Permission } from './permissions';
 import type { Actor } from './roles';
@@ -175,9 +176,18 @@ const combined = <I, R>(
   },
 });
 
-/** First denial wins, and its reason is the reason — short-circuit, left to right. */
-export const and = <I, R = unknown>(...policies: readonly Policy<I, R>[]): Policy<I, R> =>
-  combined(
+/**
+ * First denial wins, and its reason is the reason — short-circuit, left to right.
+ *
+ * An EMPTY clause list is refused here rather than answered: the loop below finds nothing to deny
+ * and returns ALLOWED, so `and(...requiredCaps.map(can))` over a list that filtered to nothing is
+ * a policy that admits an anonymous caller on every surface. `allow('public')` is how that is said
+ * on purpose. The rest parameter stays a rest parameter — a required first argument would make the
+ * spread that produces this bug a type error AND make every legitimate spread one too.
+ */
+export const and = <I, R = unknown>(...policies: readonly Policy<I, R>[]): Policy<I, R> => {
+  if (policies.length === 0) throw emptyClauseList('and');
+  return combined(
     'and',
     `and(${policies.map((policy) => policy.label).join(', ')})`,
     policies,
@@ -189,23 +199,44 @@ export const and = <I, R = unknown>(...policies: readonly Policy<I, R>[]): Polic
       return ALLOWED;
     },
   );
+};
 
-/** First allowance wins; if none allow, the LAST denial is reported. */
-export const or = <I, R = unknown>(...policies: readonly Policy<I, R>[]): Policy<I, R> =>
-  combined(
+/**
+ * First allowance wins; if none allow, the LAST denial is reported — **except** that a denial
+ * carrying `X_UNAUTHENTICATED` outranks one that does not.
+ *
+ * That exception is what makes `not()`'s rule below true of a TREE rather than only of a direct
+ * `can()` child. `not(or(can('order:internal'), deny('read-only mode')))` allowed `actor: null`:
+ * the `can` clause raised `X_UNAUTHENTICATED`, `deny`'s `X_FORBIDDEN` overwrote it as the last
+ * denial, and `not()` had nothing left to recognise, so it inverted a decision that was made
+ * because there was no actor. It is also the more accurate code on its own terms — a clause that
+ * could not be decided without an actor makes "authenticate and retry" a real instruction, which
+ * a 403 is not.
+ *
+ * `and` needs no such rule: it short-circuits, so the denial it reports IS the deciding one and
+ * every clause after it went unevaluated.
+ *
+ * An empty clause list is refused for the reason `and`'s is — see `emptyClauseList`.
+ */
+export const or = <I, R = unknown>(...policies: readonly Policy<I, R>[]): Policy<I, R> => {
+  if (policies.length === 0) throw emptyClauseList('or');
+  return combined(
     'or',
     `or(${policies.map((policy) => policy.label).join(', ')})`,
     policies,
     (args, recorder, depth) => {
       let last: PolicyDecision = denied('no clause allowed this actor');
+      let unauthenticated: PolicyDecision | undefined;
       for (const policy of policies) {
         const decision = policy.run(args, recorder, depth);
         if (decision.allowed) return ALLOWED;
+        if (decision.code === 'X_UNAUTHENTICATED') unauthenticated = decision;
         last = decision;
       }
-      return last;
+      return unauthenticated ?? last;
     },
   );
+};
 
 /**
  * Inverts a decision about an actor's grants — and only that.

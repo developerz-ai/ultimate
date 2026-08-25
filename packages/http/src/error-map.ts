@@ -250,6 +250,10 @@ export const ERROR_STATUS = {
   X_NOTIFY_DELIVERY_FAILED: 502,
   // @ultimat3/policy
   X_POLICY_MISSING: 500,
+  // A declaration fault raised at module evaluation, the same shelf as the line above. The row is
+  // not a claim it reaches a request — an unmapped code already answers 500 — it is the answer
+  // being REVIEWED instead of accidental, which is why this table is closed.
+  X_POLICY_CLAUSE_EMPTY: 500,
   X_PERMISSION_UNKNOWN: 500,
   // 500, and the page IS the point — deliberately not a 4xx to keep this table quiet.
   // `enforce()` was handed a surface no adapter answers to, which reaches a request only through a

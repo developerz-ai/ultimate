@@ -95,6 +95,39 @@ function stringNode(node: SchemaNode): JsonSchema {
 }
 
 /**
+ * The range an `integer` node's validator actually enforces — `Number.isSafeInteger`, the rule
+ * `validators.ts` applies and `money-value.ts` already published. Spelled `-MAX_SAFE_INTEGER`
+ * rather than `MIN_SAFE_INTEGER` (they are the same number) so the two projections of one rule
+ * read identically.
+ *
+ * A caller's own bound is the published one when it is NARROWER, and is clamped when it is not:
+ * `t.number.int().max(2 ** 60)` refuses `2 ** 60` at the boundary whatever the node says, so
+ * publishing it would be a promise the parser breaks — which is the disagreement this whole
+ * function exists to prevent, one layer out.
+ */
+const SAFE_INTEGER_MIN = -Number.MAX_SAFE_INTEGER;
+const SAFE_INTEGER_MAX = Number.MAX_SAFE_INTEGER;
+
+/**
+ * A non-integer `t.number` publishes only what the caller declared: it accepts every finite
+ * double, so a safe-integer range on it would tell a generated client to refuse `0.5`.
+ */
+function numberNode(node: SchemaNode): JsonSchema {
+  const integer = node.integer === true;
+  const minimum = integer
+    ? Math.max(node.minimum ?? SAFE_INTEGER_MIN, SAFE_INTEGER_MIN)
+    : node.minimum;
+  const maximum = integer
+    ? Math.min(node.maximum ?? SAFE_INTEGER_MAX, SAFE_INTEGER_MAX)
+    : node.maximum;
+  return {
+    type: integer ? 'integer' : 'number',
+    ...(minimum === undefined ? {} : { minimum }),
+    ...(maximum === undefined ? {} : { maximum }),
+  };
+}
+
+/**
  * JSON Schema's `pattern` is an ECMA-262 source with no flag syntax, so a flagged pattern is
  * stated in prose instead of silently narrowed: a consumer applying `pattern` alone would refuse
  * values this schema accepts, and there is nowhere honest to hide that.
@@ -141,11 +174,7 @@ function convert(node: SchemaNode): JsonSchema {
     case 'string':
       return annotate(stringNode(node));
     case 'number':
-      return annotate({
-        type: node.integer === true ? 'integer' : 'number',
-        ...(node.minimum === undefined ? {} : { minimum: node.minimum }),
-        ...(node.maximum === undefined ? {} : { maximum: node.maximum }),
-      });
+      return annotate(numberNode(node));
     case 'boolean':
       return annotate({ type: 'boolean' });
     case 'date':

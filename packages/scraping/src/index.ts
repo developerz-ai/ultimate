@@ -18,6 +18,7 @@ export type {
   ScrapeAuth,
 } from './auth';
 export { burnSession, createPrompt, ensureAuthenticated, restorableSession } from './auth';
+export { browserRecord } from './browser-record';
 export type { CaptureClip, CaptureFraming } from './capture-clip';
 export { assertCaptureFraming } from './capture-clip';
 export type {
@@ -28,7 +29,7 @@ export type {
   CdpRequestLike,
   CdpScreenshotOptions,
 } from './cdp-port';
-export { parseSnapshots, snapshotExpression } from './cdp-snapshot';
+export { clearExpression, parseSnapshots, snapshotExpression } from './cdp-snapshot';
 export type { CdpTargetInit } from './cdp-target';
 export { CDP_DRIVER, cdpTarget } from './cdp-target';
 export type { Deadline, ScrapeClock, TestScrapeClock } from './clock';
@@ -172,9 +173,13 @@ export type { ScrapeSecrets, SecretResolver } from './secrets';
 export {
   blankPasswordFields,
   createSecretBag,
+  MIN_REDACTABLE_LENGTH,
   redactSecrets,
   SECRET_PLACEHOLDER,
+  safeConsole,
   safeHtml,
+  safeNetwork,
+  safePageErrors,
 } from './secrets';
 export type { ScrapeSessionStore, SessionSnapshot, SessionState } from './session-state';
 export {

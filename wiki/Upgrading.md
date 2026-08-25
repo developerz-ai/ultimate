@@ -24,9 +24,11 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 136 As of 2026-08-25 — the WHOLE file, and all 136 sit inside the section of the major that
-# shipped them: the sum of the twelve per-major rows above. `[Unreleased]` holds none, which is what
-# a released commit looks like — a `BREAKING —` line left there at a tag is
+# 143 As of 2026-08-25 — the WHOLE file. 136 of them sit inside the section of the major that
+# shipped them, which is the sum of the twelve per-major rows above; the remaining 7 are under
+# `[Unreleased]`, awaiting the release that promotes them into a thirteenth row. At a TAGGED commit
+# `[Unreleased]` holds none, and that is the state the rule below checks — a `BREAKING —` line left
+# there at a tag is
 # X_DOC_CHANGELOG_UNRELEASED_BREAKING, and the release promotes the section rather than appending one.
 # Scope the count to one section to read a single row. The range is that section's own heading line
 # to the line before the next `## `, and `grep -n '^## ' CHANGELOG.md` prints both —

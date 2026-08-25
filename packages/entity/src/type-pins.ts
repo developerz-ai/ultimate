@@ -309,3 +309,39 @@ type _MoneyInputTakesABigInt = Assert<
 
 /** And a row value is always a legal input: read a row, write it back. */
 type _MoneyValueIsMoneyInput = Assert<[MoneyValue] extends [MoneyInput] ? true : false>;
+
+/** A row with the one column whose write type is wider than its row type, and nothing else. */
+type PinMoneyRow = { readonly id: string; readonly price: MoneyValue };
+
+type PinWideMoneyRow = {
+  readonly id: string;
+  readonly price: { readonly minor: bigint; readonly currency: string };
+};
+
+/**
+ * The pin the two above needed all along. `MoneyInput` declares the widening and could never
+ * enforce it end to end: `Repo.insert` took the ROW type, so the one call an app makes refused the
+ * value those lines call legal — a compile error at `postgresRepo().insert(...)`, which is exported
+ * and therefore public API, while both drivers narrowed it correctly at runtime. Pinned at `Repo`
+ * rather than at `RowWrite`, because a mapped type is only worth having where it is spent.
+ */
+type _RepoInsertTakesABigIntMinor = Assert<
+  [PinWideMoneyRow] extends [Parameters<Repo<PinMoneyRow>['insert']>[0]] ? true : false
+>;
+
+/** Every whole-row write, not just the single one — three entry points, one shape. */
+type _RepoBatchWritesTakeABigIntMinor = Assert<
+  [readonly PinWideMoneyRow[]] extends [Parameters<Repo<PinMoneyRow>['insertAll']>[0]] &
+    [Parameters<Repo<PinMoneyRow>['upsertAll']>[0]]
+    ? true
+    : false
+>;
+
+/**
+ * And the half that must NOT widen: what a repository answers with is the row type. `minor` stays
+ * a `number` because money crosses every wire this framework projects and `JSON.stringify` refuses
+ * a `bigint` — the widening is the caller's spelling, never the row's.
+ */
+type _RepoAnswersTheValueType = Assert<
+  [Awaited<ReturnType<Repo<PinMoneyRow>['insert']>>] extends [PinMoneyRow] ? true : false
+>;

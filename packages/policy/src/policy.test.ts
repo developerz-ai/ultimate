@@ -1,6 +1,8 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { PolicyError } from './errors';
 import { evaluate, explain, renderTrace } from './evaluate';
 import { actorHas } from './grant-index';
+import type { KnownPermission } from './permissions';
 import { clearPermissions, definePermissions } from './permissions';
 import type { Policy } from './policy';
 import { allow, and, can, deny, not, or, policyPermissions } from './policy';
@@ -122,6 +124,29 @@ describe('composition', () => {
     );
   });
 
+  // Reproduced: `not(or(can('order:internal'), deny('read-only mode')))` ALLOWED `actor: null`.
+  // `or` reported the LAST denial, which was `deny`'s `X_FORBIDDEN`, so the `X_UNAUTHENTICATED`
+  // the `can` clause raised never reached `not()` and there was nothing left for it to refuse to
+  // invert. The invariant `not()`'s doc block states was not the invariant enforced: the rule held
+  // only while `not`'s DIRECT child was a `can()`.
+  test('a denial for want of an actor outranks a later one, so not() cannot invert it', () => {
+    const inner = or(canPublish, deny<PostInput>('read-only mode'));
+    const evaluation = evaluate(not(inner), { input, actor: null });
+    expect(evaluation.allowed).toBe(false);
+    expect(evaluation.decision.allowed ? '' : evaluation.decision.code).toBe('X_UNAUTHENTICATED');
+    // The `or` itself is what changed: it now reports the clause that could not be decided
+    // without an actor, which is a 401 the caller can act on rather than a 403 they cannot.
+    const direct = evaluate(inner, { input, actor: null });
+    expect(direct.decision.allowed ? '' : direct.decision.code).toBe('X_UNAUTHENTICATED');
+  });
+
+  // The second claim, and it is a separate one: a surface reads `admitsAnonymous`, never
+  // `evaluate`, so the two agreeing is what keeps `@ultimat3/http`'s auth stage from letting a
+  // caller through a door the policy would have closed.
+  test('admitsAnonymous answers the same for that shape', () => {
+    expect(admitsAnonymous(not(or(canPublish, deny<PostInput>('read-only mode'))))).toBe(false);
+  });
+
   test('not() inverts, and double negation is identity', () => {
     expect(evaluate(not(canPublish), { input, actor: viewer }).allowed).toBe(true);
     expect(evaluate(not(canPublish), { input, actor: editor }).allowed).toBe(false);
@@ -150,6 +175,52 @@ describe('composition', () => {
     const policy = and(canPublish, or(isOwner, can<PostInput>('org:admin')));
     expect(evaluate(policy, { input, actor: owner }).allowed).toBe(true);
     expect(evaluate(policy, { input, actor: editor }).allowed).toBe(false);
+  });
+});
+
+/**
+ * Refused where it is WRITTEN, the same call `@ultimat3/scraping`'s `allowHosts: []` and
+ * `discriminated-union.ts`'s unroutable member already make. An `and()` with no clauses is not a
+ * neutral element here: it is a policy object that ALLOWS, anonymous callers included, on all four
+ * surfaces — and `meta.auth` derives from `admitsAnonymous`, so `@ultimat3/http` would not 401
+ * first either. There is no diagnostic to follow: the label renders as `and()`.
+ */
+describe('an empty clause list', () => {
+  test('and() is refused rather than shipping a policy that allows everyone', () => {
+    expect(() => and()).toThrow(/X_POLICY_CLAUSE_EMPTY/);
+  });
+
+  test('or() is refused rather than shipping a denial that names no clause', () => {
+    expect(() => or()).toThrow(/X_POLICY_CLAUSE_EMPTY/);
+  });
+
+  // The shape this exists for: a config-driven or per-tenant rule table whose list filters to
+  // nothing. Nobody writes `and()`; they write this and it becomes `and()`.
+  test('a spread that filters to empty is the shape it is written in', () => {
+    const required: readonly KnownPermission[] = [];
+    expect(() => and(...required.map((name) => can(name)))).toThrow(/X_POLICY_CLAUSE_EMPTY/);
+  });
+
+  test('the fix names the spelling that says the same thing on purpose', () => {
+    let andFix = '';
+    try {
+      and();
+    } catch (thrown) {
+      andFix = thrown instanceof PolicyError ? thrown.fix : '';
+    }
+    expect(andFix).toContain("allow('public')");
+    let orFix = '';
+    try {
+      or();
+    } catch (thrown) {
+      orFix = thrown instanceof PolicyError ? thrown.fix : '';
+    }
+    expect(orFix).toContain('deny(');
+  });
+
+  test('one clause is still legal — the refusal is about zero, never about few', () => {
+    expect(and(can<PostInput>('post:publish')).label).toBe('and(post:publish)');
+    expect(or(can<PostInput>('post:publish')).label).toBe('or(post:publish)');
   });
 });
 
@@ -198,6 +269,10 @@ describe('admitsAnonymous', () => {
     ['not(deny)', not(deny('nope'))],
     ['or(and(allow, allow), can)', or(and(allow(), allow()), guarded())],
     ['and(or(allow, can), deny)', and(or(allow(), guarded()), deny('nope'))],
+    // The shape that was wrong in BOTH, identically — which is why the agreement check above
+    // stayed green over it and the value assertion beside it is the one that goes red.
+    ['not(or(can, deny))', not(or(guarded(), deny('nope')))],
+    ['or(can, deny)', or(guarded(), deny('nope'))],
   ];
 
   test('answers exactly what running the policy with no actor answers', () => {
@@ -221,6 +296,10 @@ describe('admitsAnonymous', () => {
 
   test('a bare permission is unchanged — this is the common case and it must not move', () => {
     expect(admitsAnonymous(guarded())).toBe(false);
+  });
+
+  test('a permission clause under `or` denies anonymously even beside a deny()', () => {
+    expect(admitsAnonymous(not(or(guarded(), deny('nope'))))).toBe(false);
   });
 
   // A foreign `Policy` is a plain object, so `kind` can be any string — including one that reads a
