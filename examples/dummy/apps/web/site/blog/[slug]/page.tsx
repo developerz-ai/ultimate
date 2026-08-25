@@ -100,7 +100,7 @@ export function Page(props: {
             {t('site.blog.by', { name: props.data.authorName })}
             <Show when={props.data.publishedAt}>
               {(publishedAt) => (
-                <DateTime value={publishedAt()} zone={viewer().zone} format="long" />
+                <DateTime value={publishedAt()} timeZone={viewer().zone} dateStyle="long" />
               )}
             </Show>
           </p>

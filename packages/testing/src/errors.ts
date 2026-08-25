@@ -21,6 +21,7 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_EVAL_THRESHOLD',
   'X_TEST_SCHEMA_EXPECTED',
   'X_TEST_JOB_EXPECTED',
+  'X_TEST_LOCATOR_EXPECTED',
   'X_TEST_NETWORK_RACE',
   'X_TEST_FACTORY_TRAIT_UNKNOWN',
   'X_TEST_FACTORY_NOT_PERSISTED',
@@ -55,6 +56,7 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_EVAL_THRESHOLD: 'an evalTest() score fell below its threshold',
   X_TEST_SCHEMA_EXPECTED: 'a matcher expected a Standard Schema and got something else',
   X_TEST_JOB_EXPECTED: 'a matcher expected a job declaration and got something else',
+  X_TEST_LOCATOR_EXPECTED: 'a matcher expected a locator and got something else',
   X_TEST_NETWORK_RACE: 'a request raced unsealNetwork() and lost the patched fetch',
   X_TEST_FACTORY_TRAIT_UNKNOWN: 'a factory was asked for a trait it does not declare',
   X_TEST_FACTORY_NOT_PERSISTED: 'a factory create() had nowhere to write the row',
@@ -253,6 +255,22 @@ export class TestSchemaExpectedError extends UltimateError {
       // Names the call, not the intent: "assert against action.input" left the reader to work out
       // which call to edit, and a fix is only executable if it can be pasted over the failing line.
       fix: 'call toRejectInput(action.input) — the schema, not toRejectInput(action) or the query',
+    });
+  }
+}
+
+/**
+ * `toBeVisible` was handed something with no `isVisible()` — a page, a selector string, or the
+ * result of awaiting the locator. Thrown rather than returned as a failing result, exactly as
+ * `TestSchemaExpectedError` is: the assertion is not false, it is unanswerable, and a `pass: false`
+ * would read as "the element was hidden".
+ */
+export class TestLocatorExpectedError extends UltimateError {
+  constructor() {
+    super({
+      code: 'X_TEST_LOCATOR_EXPECTED',
+      cause: 'toBeVisible expects a locator — an object with isVisible() — not a page or a string',
+      fix: 'expect(page.getByRole("heading", { name: "Feed" })).toBeVisible()   # the locator itself, unawaited',
     });
   }
 }

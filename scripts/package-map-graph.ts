@@ -158,6 +158,51 @@ export function readPackageGraph(markdown: string): PackageGraph {
   return { blocks, edges, nodes, unreadable };
 }
 
+/** The heading whose table names every package. Rows below it, until the next `## `. */
+const PACKAGE_TABLE_HEADING = '## Every package';
+
+/** `| `cli` | 5 | … |` -> `{ dir: 'cli', tier: 5 }`. The tier cell may qualify itself
+ *  (`unlisted (6)`), so the FIRST integer in it is the claim — not the whole cell. */
+const TABLE_ROW = /^\|\s*`([^`]+)`\s*\|([^|]*)\|/;
+
+export interface PackageTableRow {
+  readonly dir: string;
+  /** `undefined` when the tier cell states no number at all — reported, never assumed. */
+  readonly tier: number | undefined;
+  readonly line: number;
+}
+
+/**
+ * Every row of the `## Every package` table. A SECOND prose copy of the same fact the mermaid
+ * graph draws, and until 2026-08-24 nothing read it: `scraping` was absent from it while the
+ * graph's own presence rule twelve lines below passed, because that rule reads the fence and this
+ * table is not in one. The same defect, one table over — which is the pattern this repo keeps
+ * re-shipping and axiom 3 exists to stop.
+ */
+export function packageTableRows(markdown: string): readonly PackageTableRow[] {
+  const rows: PackageTableRow[] = [];
+  const lines = markdown.split('\n');
+  let inside = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const text = lines[index] ?? '';
+    if (text.startsWith('## ')) {
+      inside = text.trim() === PACKAGE_TABLE_HEADING;
+      continue;
+    }
+    if (!inside) continue;
+    const match = TABLE_ROW.exec(text.trim());
+    if (match === null) continue;
+    const dir = match[1] as string;
+    const digits = /\d+/.exec(match[2] as string);
+    rows.push({
+      dir,
+      tier: digits === null ? undefined : Number(digits[0]),
+      line: index + 1,
+    });
+  }
+  return rows;
+}
+
 export interface GraphWorkspace {
   /** Directory under `packages/`, which is also the node name on the graph. */
   readonly dir: string;
@@ -274,6 +319,51 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
       at: PACKAGE_MAP,
     });
   }
+  const rows = packageTableRows(input.markdown);
+  // Vacuity guard, first: a renamed heading would make every row check below pass over nothing,
+  // which is the failure mode the whole file exists to prevent, reintroduced one level up.
+  if (rows.length === 0) {
+    findings.push(
+      unscanned(
+        `${PACKAGE_MAP} holds no \`${PACKAGE_TABLE_HEADING}\` table row, so no package's row was checked`,
+        `restore the \`${PACKAGE_TABLE_HEADING}\` heading in ${PACKAGE_MAP} with one \`| \`name\` | tier | … |\` row per package, or point PACKAGE_TABLE_HEADING in scripts/package-map-graph.ts at the heading that carries them`,
+      ),
+    );
+    return findings;
+  }
+  const rowByDir = new Map(rows.map((row) => [row.dir, row]));
+  for (const workspace of input.workspaces) {
+    if (workspace.private) continue;
+    const row = rowByDir.get(workspace.dir);
+    if (row === undefined) {
+      findings.push({
+        code: 'X_DOC_PACKAGE_GRAPH_STALE',
+        cause: `${workspace.name} publishes and ${PACKAGE_MAP}'s \`${PACKAGE_TABLE_HEADING}\` table carries no row for it`,
+        fix: `add a \`| \`${workspace.dir}\` | ${String(workspace.tier)} | … |\` row to the \`${PACKAGE_TABLE_HEADING}\` table in ${PACKAGE_MAP}`,
+        at: PACKAGE_MAP,
+      });
+      continue;
+    }
+    // The tier is checked because a row can be present and WRONG: `ui` sat in the wrong tier
+    // subgraph on this same page, and a reader trusts the number more than the placement.
+    if (row.tier === workspace.tier) continue;
+    findings.push({
+      code: 'X_DOC_PACKAGE_GRAPH_STALE',
+      cause: `${PACKAGE_MAP}:${String(row.line)} puts ${workspace.dir} at tier ${row.tier === undefined ? 'no stated tier' : String(row.tier)}, and scripts/lib/tiers.ts puts it at ${String(workspace.tier)}`,
+      fix: `set the tier cell at ${PACKAGE_MAP}:${String(row.line)} to ${String(workspace.tier)}, or move ${workspace.dir} in scripts/lib/tiers.ts — the executable table is the one \`bun run boundaries\` enforces`,
+      at: `${PACKAGE_MAP}:${String(row.line)}`,
+    });
+  }
+  const dirs = new Set(input.workspaces.map((workspace) => workspace.dir));
+  for (const row of rows) {
+    if (dirs.has(row.dir)) continue;
+    findings.push({
+      code: 'X_DOC_PACKAGE_GRAPH_STALE',
+      cause: `${PACKAGE_MAP}:${String(row.line)} carries a row for ${row.dir}, and packages/${row.dir} is not a workspace`,
+      fix: `delete the row at ${PACKAGE_MAP}:${String(row.line)}, or rename ${row.dir} to a directory that exists under packages/ — \`bun run scripts/list-workspaces.ts --json\` lists them`,
+      at: `${PACKAGE_MAP}:${String(row.line)}`,
+    });
+  }
   return findings;
 }
 
@@ -355,18 +445,20 @@ if (import.meta.main) {
   const { workspaces, unreadable } = await readGraphWorkspaces(root);
   const findings = checkPackageMapGraph({ markdown, workspaces, unreadable });
   const graph = markdown === undefined ? undefined : readPackageGraph(markdown);
+  const rows = markdown === undefined ? [] : packageTableRows(markdown);
   report(
     {
       ok: findings.length === 0,
       script: SCRIPT,
       summary:
         findings.length === 0
-          ? `${String(graph?.edges.length ?? 0)} arrows in ${PACKAGE_MAP}, every one a declared dependency, every publishable package on the graph`
+          ? `${String(graph?.edges.length ?? 0)} arrows in ${PACKAGE_MAP}, every one a declared dependency, every publishable package a node AND a row of the ${String(rows.length)}-row \`${PACKAGE_TABLE_HEADING.slice(3)}\` table, each at its declared tier`
           : `${String(findings.length)} arrow(s) or package(s) the package map and the manifests disagree about`,
       findings,
       data: {
         edges: graph?.edges ?? [],
         nodes: [...(graph?.nodes ?? [])],
+        tableRows: rows,
         workspaces: workspaces.length,
       },
     },

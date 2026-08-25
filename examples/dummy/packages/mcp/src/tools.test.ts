@@ -37,6 +37,10 @@ test('no tool reaches a client without a policy — it fails at boot, not at cal
   expect(() =>
     defineAppMcp({
       name: 'postly-test',
+      // @ts-expect-error `policy` is REQUIRED on an app tool — and this directive is the other
+      // half of the assertion below, not a silencing of it: the day `AppToolDefinition` stops
+      // requiring `policy`, it stops compiling. The runtime refusal still earns its place, because
+      // a tool map can arrive from a JS caller or be built at boot from data, where no type ran.
       tools: {
         unguarded: {
           description: 'A tool with no policy must not be constructible.',

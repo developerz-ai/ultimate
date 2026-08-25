@@ -57,6 +57,12 @@ descriptors are declared, tested and **not served**, and there is no Better Auth
 repo. The route table is exactly `site/` + `app/` + `api/`, and `site/page.tsx`'s CTA points at
 `/pricing` because that is the funnel that exists.
 
+`NotAMember` (`X_ORG_NOT_A_MEMBER`) lives in **`@postly/core`**, beside the `memberOf` whose `null`
+it refuses — it moved down from `apps/web/shared/errors.ts` on 2026-08-24 when `packages/mcp` needed
+the same refusal and could not reach `apps/web/`. Every surface that resolves a tenant resolves it
+the same way: `memberOf(ctx.actor)`, then `member.orgId`, never `ctx.actor.orgId` — core's `Actor`
+types that `string | undefined`, so it is neither an `OrgId` nor evidence of a membership.
+
 `apps/web/shared/actor.ts` is the app half of the actor — the member row, their org, the request
 clock — read through `useActor()`. It rides on core's own `ActorFacts` seam, on the SAME actor
 every policy reads (`memberOf`, `@postly/core`), and `postlyActor()` is the one constructor for a
@@ -104,7 +110,11 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   imports `@ultimat3/schema` directly, because that already is its one import.
 - Money is `{ minor, currency }`. Arithmetic in `packages/core/src/billing.ts`; formatting only
   in `<Money>` at the edge.
-- Dates are UTC instants in the DB, rendered only through `<DateTime zone={member.tz}>`.
+- Dates are UTC instants in the DB, rendered only through
+  `<DateTime value={at} timeZone={member.tz} dateStyle="long" />` — the prop is `timeZone`, and
+  `format` takes a `DateTimeFormatter` FUNCTION rather than a style name. `<RelativeTime>` is the
+  "3 minutes ago" half. Both from `@ultimat3/ui`; `apps/web/app/settings/page.tsx` is the worked
+  call.
 - Colours are `var(--color-*)` from `@ultimat3/ui` tokens. A raw hex fails lint.
 - User-facing strings come from `t('<feature>.<key>')`. A missing key renders `⟦key⟧` and fails
   `x verify`.
@@ -143,7 +153,12 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   baseline, so re-record with `ULTIMATE_EVAL_RECORD=1 x test eval` and commit the diff — never
   inside a `x verify`, which refuses to run while recording.
 - Test fixtures come from `scripts/test-setup.ts`, the one preload in `bunfig.toml`. `seed` and
-  `actorFor` are Postly's; everything else is the framework's — `clock`, `mail`, `network`,
+  `actorFor` are Postly's — REGISTERED and DECLARED there, in the same file: the
+  `declare module '@ultimat3/testing' { interface Fixtures { … } }` beside `defineFixtures` is
+  what makes `test('…', async ({ seed, actorFor }) => …)` typecheck at all, and its absence was 48
+  of the 116 `typecheck` errors this app carried on 2026-08-24. `seed('dev').pick({ … })` answers each
+  label's own ENTITY row (`SeedRowFor`, keyed off the `<entity>:<name>` prefix), never a bag of
+  `unknown`. Everything else is the framework's — `clock`, `mail`, `network`,
   `runJobs` and `subscribe` built in-process, and `page`, `budget`, `signIn`, `deploy` waiting on a
   driver (`X_TEST_FIXTURE_UNAVAILABLE` until one is installed). `subscribe` builds a whole `sync`
   node in this process — see `app/posts/live.live.test.ts`, whose five tests had never run. A test that destructures a name
@@ -175,8 +190,10 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   string index signature, so `ctx.whatever` compiles as `unknown` and an undeclared service is a
   runtime `TypeError` rather than a build error — `ctx.storage.ensureBucket()` shipped that way
   until it was deleted for `app/orgs/avatar.ts`, which calls `@ultimat3/storage`'s real surface.
-  `ctx.auth` and `ctx.billing` are still undeclared and still unimplemented; they are the two
-  remaining instances, not a pattern to copy. **A service that IS declared and still unregistered
+  `ctx.auth` is the ONE remaining instance, not a pattern to copy — `ctx.billing.charge(...)` was
+  the other until 2026-08-24, when the call was deleted from `app/orgs/service.ts` exactly as
+  `ctx.storage` was: `upgrade()` now moves the plan and returns the quote, which is every part of
+  an upgrade an app with no payment provider owns. **A service that IS declared and still unregistered
   is worse**, because the type checks: `ctx.session` and `ctx.channel` were both, and both are
   gone as of 2026-08 — the member row moved onto the actor's facts, and the channel publish that
   dead-lettered `notifySubscribers` on every run is deleted, because a `ChannelHub` is built by the
@@ -190,9 +207,20 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   `packages/cli/src/serve.ts` out of actions, queries, assets, storage, islands and page routes,
   and there is no seam by which an app contributes a raw `Route` — `configureAuthenticator()` is
   the only app-installed hook of that shape. So `start`/`callback` stay exported and unmounted
-  until that seam exists. Two things then remain here: mounting them, and the `x_users` /
-  `x_sessions` / `x_accounts` tables `BuiltinAdapter` reads, which no migration in
-  `packages/db/migrations` creates — `AUTH_TABLES` is DDL the framework exports and `x db gen`
-  generates only from this app's own entities, so neither half is a file to hand-write. Until
-  both land nobody can hold a Postly session, which is also why `configureAuthenticator()` is
-  still uncalled and `ctx.auth` still undeclared.
+  until that seam exists.
+
+  **Two things blocked a Postly session and one of them is now closed** (`As of 2026-08-25`). The
+  second was the schema: `BuiltinAdapter` reads `x_users`, `x_sessions`, `x_accounts`,
+  `x_verifications` and `x_api_keys`, **nothing in the framework had ever created them**, and
+  neither half was a file anybody could hand-write — `AUTH_TABLES` is DDL `@ultimat3/auth`
+  exports "so an app can paste them into a migration", while `x db gen` diffs `describeEntities()`
+  and these are not `entity()` declarations. The paragraph above used to record the symptom with
+  no cause, and the cause was that nobody had asked which framework tables have an applier: five
+  of them did not. They are now rows of `FRAMEWORK_SCHEMA`
+  (`packages/cli/src/framework-schema.ts`), applied by `applySchema` — which is on every boot path
+  there is, `ROLE=migrate` included — so `postlyAuth()`'s default adapter has tables to read.
+
+  **What is left is the raw-`Route` seam alone.** Until it lands `start`/`callback` are unserved,
+  which is why `configureAuthenticator()` is still uncalled, `ctx.auth` is still undeclared, and
+  `app/auth/demo-actor.ts` still answers every development request as a declared viewer — its own
+  warning says "this app mounts no sign-in route", and that sentence is now the whole of it.

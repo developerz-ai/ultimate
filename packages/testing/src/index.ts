@@ -185,6 +185,12 @@ export type { LiveConnection, LiveNodeHandle, LiveNodeOptions } from './live-nod
 export { createLiveNode } from './live-node';
 export type { LiveReplicator, LiveReplicatorOptions } from './live-replicator';
 export { startLiveReplicator } from './live-replicator';
+/**
+ * The budget `toBeVisible(options?)` takes. Exported because it is in a public matcher's signature;
+ * `retryUntil` and `RetryBudget` deliberately are NOT — nothing outside this package calls them,
+ * and an export nothing calls is the unwired declaration this matcher exists to have closed.
+ */
+export type { VisibleOptions } from './matcher-visible';
 export type { MatcherResult } from './matchers';
 export { matchersInstalled, recordSteps } from './matchers';
 // `isolateEntityRegistry` is deliberately NOT here — it is `@ultimat3/testing/registry-isolation`.

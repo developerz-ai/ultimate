@@ -3,10 +3,29 @@
  * and that `step.sleep('3d')` is the frozen clock's problem rather than a held connection.
  */
 
-import { expect, test } from '@ultimat3/testing';
+import { assert } from '@ultimat3/core';
+import { expect, type JobRunTrace, test } from '@ultimat3/testing';
 import { inviteMember } from './actions';
 import { onboardOrg, sendInvite } from './jobs';
 import { nudgeEmail } from './mail';
+
+/**
+ * How many times the run actually EXECUTED a step, as opposed to replaying it from the step log.
+ *
+ * `trace.steps` is keyed by step name, so under `noUncheckedIndexedAccess` every read is
+ * `StepTally | undefined` — and a step the run never took is exactly the regression this file
+ * exists to catch. Refused by name here rather than read through `?.`, which would turn "the step
+ * never ran" into `undefined === 1` and a message naming no step at all.
+ */
+const executionsOf = (trace: JobRunTrace, step: string): number => {
+  const tally = trace.steps[step];
+  assert(
+    tally !== undefined,
+    `this run took no step named "${step}" — it took: ${Object.keys(trace.steps).join(', ')}`,
+    'check the step name against the step.run(...) calls in apps/web/app/orgs/jobs.ts',
+  );
+  return tally.executions;
+};
 
 /** Any org and any member: what is under test is where the two jobs READ the tenant from. */
 const ORG = '00000000-0000-4000-8000-00000000c001';
@@ -44,9 +63,9 @@ test('a resumed run replays its steps, and a mail blip retries the mail job', as
   clock.advance('3d');
   const resumed = await runJobs.drain();
 
-  expect(resumed.steps['load-org'].executions).toBe(1); // replayed from the step log, not re-run
-  expect(resumed.steps['welcome-email'].executions).toBe(1);
-  expect(resumed.steps.nudge.executions).toBe(1);
+  expect(executionsOf(resumed, 'load-org')).toBe(1); // replayed from the step log, not re-run
+  expect(executionsOf(resumed, 'welcome-email')).toBe(1);
+  expect(executionsOf(resumed, 'nudge')).toBe(1);
   // The welcome mail is delivered and the nudge is not: its send was refused, and what is left in
   // the queue is the mail job on its backoff.
   expect(mail.outbox().length).toBe(1);
@@ -55,7 +74,7 @@ test('a resumed run replays its steps, and a mail blip retries the mail job', as
   const retried = await runJobs.drain();
 
   expect(mail.outbox().length).toBe(2); // the second attempt is the mail job's, and it lands
-  expect(retried.steps.nudge.executions).toBe(1); // and the step it came from never ran again
+  expect(executionsOf(retried, 'nudge')).toBe(1); // and the step it came from never ran again
 });
 
 // `mail` is not decoration: `welcome-email` sends before the sleep, and `send()` enqueues

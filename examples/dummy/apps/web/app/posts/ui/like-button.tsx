@@ -30,7 +30,8 @@ export const LikeButton = (props: LikeButtonProps): JSX.Element => {
 
   return (
     <div class={styles.row}>
-      <Button tone="ghost" onClick={() => like({ postId: props.postId, orgId: props.orgId })}>
+      {/* `ghost` is a BUTTON VARIANT, never a tone: `Tone` is the status colour scale. */}
+      <Button variant="ghost" onClick={() => like({ postId: props.postId, orgId: props.orgId })}>
         {t('app.post.like')}
       </Button>
 

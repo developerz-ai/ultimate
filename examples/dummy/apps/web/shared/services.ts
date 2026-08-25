@@ -63,6 +63,13 @@ export interface OrgsService {
   }): Promise<MemberView>;
   memberById(memberId: MemberId): Promise<MemberView>;
   /**
+   * The acting member's own row. No argument, for the reason `grantAvatarUpload` has none: the
+   * member is the actor's, so there is no value a caller could pass to widen it. The one read of
+   * the `tz`/`locale` columns the digest schedules off, for a surface that has the actor and not
+   * the row — `packages/mcp`'s `digestPreview` is the caller.
+   */
+  me(): Promise<MemberView>;
+  /**
    * A presigned PUT for the acting member's own avatar. No `orgId` parameter on purpose: the key
    * is derived from the actor's org, so there is no value a caller could pass to widen it.
    */

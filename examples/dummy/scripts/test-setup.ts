@@ -13,8 +13,9 @@ import '@ultimat3/testing/preload';
 // page could call a handler instead of the typed client. The preload is outside both, runs once
 // for the whole suite, and is already where the app says what its tests need.
 import '../apps/web/api';
+import type { Comment, Member, Org, Post } from '@postly/db';
 import { driver as appDriver } from '@postly/db';
-import { assert, userActor } from '@ultimat3/core';
+import { type Actor, assert, userActor } from '@ultimat3/core';
 import type { Driver, EntityCore, Repo, Seed } from '@ultimat3/entity';
 import { seedId } from '@ultimat3/entity';
 import { defineFixtures } from '@ultimat3/testing';
@@ -25,11 +26,35 @@ export interface SeedRow {
   readonly [column: string]: unknown;
 }
 
+/**
+ * A seed label is `<entity>:<name>` — `id('member:ada')`, `id('post:draft-money')` — so the prefix
+ * already says which table the row came from, and `pick` can answer with that entity's own row
+ * type instead of a bag of `unknown`.
+ *
+ * It answered `SeedRow` for every label until 2026-08-24, and the index signature is `unknown`:
+ * `draft.orgId` was `unknown` at 21 call sites, which is neither assignable to an action's
+ * `orgId: string` nor comparable with the view a test asserts against. Widening the index
+ * signature would have made those compile and proved nothing — the prefix is the fact, so it is
+ * the prefix that carries the type.
+ *
+ * A label with no entity prefix (`plans` has no seeded id; `user:…` labels are userId VALUES, not
+ * rows) still answers `SeedRow`, because nothing here knows what it is.
+ */
+export type SeedRowFor<Label extends string> = Label extends `member:${string}`
+  ? Member
+  : Label extends `org:${string}`
+    ? Org
+    : Label extends `post:${string}`
+      ? Post
+      : Label extends `comment:${string}`
+        ? Comment
+        : SeedRow;
+
 export interface SeedHandle {
   /** `pick({ draft: 'post:draft-money' })` — seed labels in, rows out, aliased at the call site. */
-  pick<M extends Readonly<Record<string, string>>>(
+  pick<const M extends Readonly<Record<string, string>>>(
     labels: M,
-  ): Promise<{ readonly [K in keyof M]: SeedRow }>;
+  ): Promise<{ readonly [K in keyof M]: SeedRowFor<M[K]> }>;
 }
 
 const idOf = (row: unknown): string | undefined => {
@@ -93,7 +118,7 @@ const handleFor = (seed: Seed): SeedHandle => {
   const ready = seed.run({ driver: capturingDriver(driver, rows) });
 
   return {
-    pick: async <M extends Readonly<Record<string, string>>>(labels: M) => {
+    pick: async <const M extends Readonly<Record<string, string>>>(labels: M) => {
       await ready;
       const picked: Record<string, SeedRow> = {};
       for (const [alias, label] of Object.entries(labels)) {
@@ -105,7 +130,7 @@ const handleFor = (seed: Seed): SeedHandle => {
         );
         picked[alias] = row;
       }
-      return picked as { readonly [K in keyof M]: SeedRow };
+      return picked as { readonly [K in keyof M]: SeedRowFor<M[K]> };
     },
   };
 };
@@ -133,12 +158,33 @@ const createSeed = async (): Promise<(name: string) => SeedHandle> => {
  * `posts.authorId` holds a member id — so an actor minted from the user id owns nothing it wrote
  * and `mayPublish` denies its author their own draft.
  */
-const actorFor = (member: SeedRow) =>
+const actorFor = (member: SeedRow): Actor =>
   userActor({
     id: member.id,
     orgId: String(member['orgId']),
     roles: [String(member['role'])],
   });
+
+/**
+ * The two names above, DECLARED — the augmentation `@ultimat3/testing`'s own `Fixtures` doc
+ * comment asks an app to write, and the half Postly never wrote. Without it every
+ * `test('…', async ({ seed, actorFor }) => …)` in this app was `TS2339: Property 'seed' does not
+ * exist on type 'Fixtures'` — 48 of the 116 this app's `typecheck` measured on 2026-08-24, one
+ * per destructuring site across seven files, for one missing declaration.
+ *
+ * It lives HERE, beside `defineFixtures`, and not in `types/`: a registration and its declaration
+ * that can be edited apart are two things to keep in step, and the one that goes stale is the
+ * declaration. Global by construction — a `declare module` in any file of the program reaches
+ * every test file, so no test imports this one.
+ */
+declare module '@ultimat3/testing' {
+  interface Fixtures {
+    /** `seed('dev')` — the seed by name, its rows picked by label. */
+    readonly seed: (name: string) => SeedHandle;
+    /** A seeded member row becomes the actor every policy in this app decides about. */
+    readonly actorFor: (member: SeedRow) => Actor;
+  }
+}
 
 /**
  * Two names, and deliberately no more. `clock`, `mail`, `network`, `runJobs` and the driver-backed

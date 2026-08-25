@@ -8,7 +8,120 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+Six capabilities the readiness register graded **Ship**, all of them, plus the defects found while
+building them — which were worse than the gaps. Every one is a factory over an existing primitive:
+no ninth primitive, no new `PrimitiveKind`, and `PRIMITIVE_FACTORIES` grew by three rows.
+
+`@ultimat3/notify` is the framework's **31st package** and its first new one since `scraping`.
+
+### Added
+
+- **Notifications — `notifier()`, a job factory in the new `@ultimat3/notify` (tier 4).** One
+  declaration, many channels: fan-out, a preference gate, a digest window, a delivery ledger and an
+  in-app inbox. Inspired by Rails' `noticed` and translated rather than copied — params are a
+  **schema** (which is how every primitive here declares input, and what earns the manifest row),
+  and the unit of retry is a durable **step** per (recipient × channel) rather than `noticed`'s
+  queue row per pair, because `step.run` already *is* the retry unit. Ultimate goes further than
+  `noticed` on the two the register demanded: `noticed` has no preference storage at all and no
+  digest coalescing. The notification **taxonomy** and `quietHours` deliberately never ship — the
+  framework ships the gate, the app declares what the gate reads.
+- **Full-text search — `searchable()` on a text column, `search()` as a query factory.** One
+  `tsvector` per entity, so one GIN index and one predicate, with per-source weights `A`–`D`.
+  `websearch_to_tsquery`, never bare `to_tsquery` — which reads a user's `&`, `|`, `!`, `:*` and
+  parens as **operators** — and never `plainto_tsquery`, which silently discards `"a phrase"` and
+  `-negation`. Paging is by the entity's declared total order: relevance ordering needs `ts_rank`
+  as a seekable key across four files, and shipping `order by ts_rank` without the cursor half is
+  exactly the pager 12.0.0 fixed.
+- **`generated always as (…) stored` reaches the migration.** `x db gen` could not emit a generated
+  column at all, which is what the search vector needs. An expression that moves is
+  `alter column … set expression as (…)` (Postgres 17+, which is the shipped floor everywhere):
+  it rewrites the table, recomputes every row and **keeps the column's indexes** — measured.
+  Drop-and-recreate loses the GIN index, and nothing in the diff puts it back.
+- **Outbound webhooks — `webhook()`, a job factory — and `verifyWebhookSignature()` inbound.**
+  One canonical string, `v1:<timestamp>:<eventId>:<topic>:<body>`, HMAC-SHA256, in
+  `@ultimat3/core` so the signer and the verifier are one function rather than two that agree
+  today. **`:` is refused in an id or a topic on both sides**: without that, one MAC over
+  `v1:t:evt:01HZ:orders.paid:<body>` authenticates **two** different id/topic splits — the
+  sender's own signature under a label it never wrote.
+- **Async export — `exportRows()`, a job factory.** A paged read streamed to object storage with a
+  resumable cursor, ndjson or RFC-4180 csv. **The part key is the page index**, so a replayed page
+  rewrites the same object with the same bytes and a duplicate row in the artifact is not
+  expressible. The csv formula guard (a cell leading `=`/`+`/`-`/`@`/TAB/CR is *evaluated* by
+  Excel, Sheets and LibreOffice) is on strings only, so a negative number stays a number.
+- **State machines — `enumerated().transitions()`, and `transition()` as a mutator factory.** The
+  legality check is in the statement's predicate, not around it: **twenty concurrent transitions at
+  one row produced 14 winners with a read-then-check-then-write and 1 with `from` in the
+  predicate.** `TransitionTable<S>` is a mapped type over the app's own union, so there is no enum
+  of state names anywhere in the framework and an unknown target is a compile error.
+- **Form binding — `useForm()` in `@ultimat3/ui`**, mapping an action's validation issues back to
+  the field that caused them, `items[2].price` included. Server authority is structural: `submit`
+  is a required option and `succeeded` is constructed at exactly one site from its resolved value,
+  so the local parse's result is never read.
+- **`bun run framework-tables`** — a gate ratchet refusing a literal `create table` in
+  `packages/*/src` that no boot path creates. Pinned at zero, enforcing outright.
+
+### Fixed
+
+- **`defineService` was a job-and-CLI feature, and nothing said so.** An app that registered
+  `defineService('posts', …)` got that service in a job, a task and a CLI command and **nowhere
+  else**: `@ultimat3/http` built its own service bag and never called core's `installedServices()`.
+  So on the surface an app spends its life on, `ctx.services` was `{}` and `useService('posts')`
+  threw `X_SERVICE_MISSING` for a service that was registered and working one process over. The
+  second half compounded it — core's `createContext` spreads the bag **onto** the context, so
+  `ctx.posts` *is* the service, and http never did. `ctx.posts` is the spelling
+  `docs/architecture/15-adding-a-feature.md` writes in its worked example, so **the documented path
+  was the broken one**. `createRequestContext` now composes `createContext()` instead of building a
+  second context beside it, so both halves are fixed at once and cannot drift again.
+  **`defineService` factories now run once per HTTP request**, which they never did.
+- **Five auth tables were created by nothing.** `x_users`, `x_sessions`, `x_accounts`,
+  `x_verifications` and `x_api_keys` — the five `BuiltinAdapter` reads — were declared, exported
+  and applied by **no boot path, in dev or in production, from the initial commit through all 21
+  released versions.** They are not `entity()` declarations, so `x db gen` never saw them, and the
+  file exported the DDL "so an app can paste it into a migration" that no app wrote.
+  `examples/dummy/CLAUDE.md` recorded the consequence in the app's own words — nobody could hold a
+  session — without anyone connecting it to the cause. Now in `FRAMEWORK_SCHEMA`, and
+  `bun run framework-tables` is what keeps the class closed.
+- **Two error codes were unreachable by any caller.** `X_TEST_SCHEMA_EXPECTED` and
+  `X_TEST_JOB_EXPECTED` were declared, registered and titled, and Bun **replaces** an error thrown
+  from an `async` matcher body with its own `returned a promise that rejected`. The three matchers
+  are no longer `async`.
+- **Per-field validation issues now survive the wire.** `InputInvalidError` flattened the issue
+  list to one string and put nothing in `meta`; `ProblemDocument` had no `issues` member; the typed
+  client reconstructed only `code`/`cause`/`fix`/`docs`. So the only carrier of per-field
+  information was the prose `cause` line, and every app writing forms parsed it. The list is now
+  carried end to end — action → http → mcp → client → form — **dropped under exactly the opacity
+  condition** an unclassified 5xx already uses, bounded, and rebuilt member by member with
+  `received` forced empty, because a foreign schema library's raw issue object may carry the value
+  that was rejected.
+- **A phantom write chain in the reference app.** `setPlan` and `updatePreferences` were
+  `.where({id}).update({…}).returning()` — `ReadBuilder` has no `update`, and nothing in
+  `@ultimat3/entity` has `returning`. Both were `TypeError`s on every call; nothing had ever
+  exercised the server half of a preference write. `examples/dummy`'s typecheck went 116 → 0.
+- **Nine e2e assertions used a matcher that does not exist.** `toBeVisible` was not among
+  `UltimateMatchers`' seven. It exists now and genuinely retries — a budget counted in
+  **observations, not milliseconds**, because this package freezes `Date.now()` and a clock
+  deadline never expires, turning a failing test into a hanging one.
+- **Two notify codes burned the whole retry policy.** `X_NOTIFY_FANOUT_TOO_WIDE` and
+  `X_NOTIFY_STORE_MISSING` are thrown inside a job body and were never classified, so an audience
+  over the cap and a missing store each re-proved an answer no attempt could change. Both are
+  `terminal`; `X_NOTIFY_DELIVERY_FAILED` is `retryable` and **502, not 500** — it wraps a
+  provider's rejection, and every `status >= 500` is reported to the error monitor, so a wrong 500
+  pages the on-call for someone else's outage.
+
+### Changed
+
+- `x db gen` emits `generated always as (…) stored`; `ColumnDescription` carries `generated`.
+- `enumerated()` returns `EnumeratedColumn<V>` rather than `Column<V[number]>` — structurally
+  widening, assignable everywhere the old type was.
+- **BREAKING — `ServiceFactory` receives `CtxFacts` rather than `Ctx`.** A factory reading a
+  sibling service no longer typechecks. Reading one was already documented as unsupported and no
+  app in the tree does it, but the type permitted it and now does not, which is a compile error
+  where there was none.
+- **BREAKING — `PageLike.content()` is deleted.** Its comment claimed every member was one the
+  reference app's e2e suite already calls; that was false for three of eleven, and `content()` had
+  **zero call sites anywhere in the repository**. `title()` and `reload()` stay, with the caveat
+  recorded: their only caller is a generated template that nothing executes.
+
 
 ## 12.0.0 - 2026-08-24
 

@@ -44,19 +44,31 @@ export interface LocatorLike {
 }
 
 /**
- * The browser surface an e2e test drives. Every member is one the reference app's e2e suite
- * already calls — this is the observed contract, not a wish list, and the driver that implements
- * it (a browser, at milestone 11) is the only thing that may add to it.
+ * The browser surface an e2e test drives. Intended as the OBSERVED contract rather than a wish
+ * list, and the driver that implements it (a browser, at milestone 11) is the only thing that may
+ * add to it.
+ *
+ * This comment claimed every member was one the reference app's e2e suite already calls, and an
+ * audit on 2026-08-24 found that false for three of eleven: `content()` had ZERO call sites
+ * anywhere in the repository, and `title()` / `reload()` are named only by `x g route`'s generated
+ * template — a string the CLI writes, which nothing executes. `content()` is deleted; the other
+ * two keep their line WITH the caveat, because a generated template is a real contract the moment
+ * a driver lands and a scaffolded app runs it.
+ *
+ * The claim was checkable and nobody checked it, which is the class this tree keeps re-shipping.
+ * Nothing enforces this one either: `PageLike` has no driver, so an unwired member cannot fail —
+ * see `hasE2eDriver()`. Do not restore the absolute wording without a rule that reads it.
  */
 export interface PageLike {
   goto(url: string): Promise<unknown>;
   /** The first flush of a streamed response — the shell, before the holes resolve. */
   gotoStreamed(url: string): Promise<{ readonly html: string }>;
+  /** Called only by `x g route`'s generated e2e template — no driver runs it yet. */
   reload(): Promise<unknown>;
   /** Resolves once the service worker controls the page, so the offline assertions are not racy. */
   waitForServiceWorker(): Promise<void>;
+  /** Called only by `x g route`'s generated e2e template — no driver runs it yet. */
   title(): Promise<string>;
-  content(): Promise<string>;
   url(): string;
   evaluate<T>(fn: () => T): Promise<T>;
   locator(selector: string): LocatorLike;

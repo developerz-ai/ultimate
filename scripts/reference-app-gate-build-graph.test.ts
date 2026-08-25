@@ -51,8 +51,16 @@ describe('the build-graph rule', () => {
 
 describe('referencesApp', () => {
   test('the root tsconfig is read for a real reference entry, not a substring', async () => {
-    expect(await referencesApp(repoRoot(), './examples/dummy')).toBe(false);
+    // Against the REAL root tsconfig, and deliberately not naming a path whose membership can
+    // change: this asserted `./examples/dummy` is absent, which was a true fact until the app's
+    // typecheck went green and the gate's own unpin rule required adding it. A test pinned to a
+    // fact the gate is designed to flip fails the day the gate works.
+    //
+    // The property is what matters: a real entry matches, and a PREFIX of one does not.
     expect(await referencesApp(repoRoot(), './packages/core')).toBe(true);
+    expect(await referencesApp(repoRoot(), './packages/cor')).toBe(false);
+    expect(await referencesApp(repoRoot(), './packages')).toBe(false);
+    expect(await referencesApp(repoRoot(), './packages/core/src')).toBe(false);
   });
 
   test('a references entry with no path (null, or anything not an object) is a non-match, not a crash', async () => {

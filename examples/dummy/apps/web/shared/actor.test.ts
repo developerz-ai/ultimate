@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { memberId, orgId } from '@postly/domain';
 import { createContext, runWithContext, userActor } from '@ultimat3/core';
 import type { MemberView, OrgView } from '../app/orgs/entity';
 import { postlyActor, useActor } from './actor';
@@ -46,8 +47,11 @@ describe('useActor', () => {
 
     const actor = runWithContext(ctx, useActor);
 
-    expect(actor.id).toBe(member.id);
-    expect(actor.orgId).toBe(org.id);
+    // `useActor()` answers BRANDED ids and a view row carries plain strings, so the expectation
+    // re-tags rather than the assertion widening. A brand is erased at runtime: same value, and
+    // `toBe` compares the two as the one type the app writes them as.
+    expect(actor.id).toBe(memberId(member.id));
+    expect(actor.orgId).toBe(orgId(org.id));
     expect(actor.member).toEqual(member);
     expect(actor.org).toEqual(org);
   });

@@ -17,13 +17,28 @@
 import {
   billingPeriodAt,
   localDateIn,
+  memberOf,
+  NotAMember,
   nextDigestAt,
   previousDigestAt,
   quoteUpgrade,
   seatsRemaining,
 } from '@postly/core';
-import { PLAN_CODES, seatLimit } from '@postly/domain';
+import { type OrgId, orgId, PLAN_CODES, seatLimit } from '@postly/domain';
+import type { Actor } from '@ultimat3/core';
 import { defineAppMcp, t } from '@ultimat3/mcp';
+
+/**
+ * The org an agent's call acts in. `ctx.actor.orgId` is `string | undefined` on core's `Actor` —
+ * the framework cannot know an app requires a tenant — so every read below typechecked nowhere an
+ * `OrgId` was wanted. `memberOf` is the same projection every policy predicate starts from, so a
+ * tool and the rule that guards it read one definition of "a member".
+ */
+const actingOrg = (actor: Actor): OrgId => {
+  const member = memberOf(actor);
+  if (member === null) throw new NotAMember(actor.id);
+  return member.orgId;
+};
 
 export const mcp = defineAppMcp({
   name: 'postly',
@@ -42,18 +57,24 @@ export const mcp = defineAppMcp({
       /** Read-only. `destructive` defaults to true, so a read tool must say so. */
       destructive: false,
       async handle({ ctx }) {
-        const at = nextDigestAt(ctx.now(), ctx.actor.tz);
+        // The member ROW, not the actor and not `ctx.tz`: the digest promises "09:00 where you
+        // are" and `members.tz` is the column the scheduler reads, so a preview off any other
+        // zone is a preview of a delivery that will not happen. `ctx.actor.tz` did not exist —
+        // core's `Actor` carries id, roles, scopes and tenant, and an app's own columns are never
+        // on it.
+        const member = await ctx.orgs.me();
+        const at = nextDigestAt(ctx.now(), member.tz);
         // The delivery's own window, to the millisecond: `previousDigestAt`, not
         // `at - 86_400_000`, or this preview disagrees with tonight's mail on the two days a
         // year the member's clock moves. A preview that is not the digest is not a preview.
         const posts = await ctx.posts.publishedSince(
-          ctx.actor.orgId,
-          previousDigestAt(at, ctx.actor.tz),
+          orgId(member.orgId),
+          previousDigestAt(at, member.tz),
         );
         return {
           deliverAt: at.toISOString(),
-          localDate: localDateIn(at, ctx.actor.tz),
-          zone: ctx.actor.tz,
+          localDate: localDateIn(at, member.tz),
+          zone: member.tz,
           posts: posts.map((post) => ({ id: post.id, title: post.title })),
         };
       },
@@ -68,7 +89,7 @@ export const mcp = defineAppMcp({
       /** Read-only. `destructive` defaults to true, so a read tool must say so. */
       destructive: false,
       async handle({ ctx }) {
-        const org = await ctx.orgs.byId(ctx.actor.orgId);
+        const org = await ctx.orgs.byId(actingOrg(ctx.actor));
         return {
           plan: org.planCode,
           limit: seatLimit(org.planCode),
@@ -90,7 +111,7 @@ export const mcp = defineAppMcp({
       /** Read-only. `destructive` defaults to true, so a read tool must say so. */
       destructive: false,
       async handle({ input, ctx }) {
-        const org = await ctx.orgs.byId(ctx.actor.orgId);
+        const org = await ctx.orgs.byId(actingOrg(ctx.actor));
         // The real period, off the calendar. It quoted `15` of `30` for every org on every day
         // until 2026-08, so a quote taken on the 2nd of February charged half a month — and no
         // month is 30 days in a zone that moves its clocks. The zone is the request's (`ctx.tz`),

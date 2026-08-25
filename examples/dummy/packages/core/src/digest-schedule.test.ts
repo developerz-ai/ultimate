@@ -114,3 +114,18 @@ test('one zone across two orgs is two groups, because the post window is org-sco
   // One zone, so one calculation — and both groups fire at the same instant, DST included.
   expect(groups[0]?.at).toBe(groups[1]?.at as Date);
 });
+
+/**
+ * `toZoned` takes an `Instant` — a `Date` proven valid — and every entry point here takes a plain
+ * `Date` off `ctx.now()` or a `timestamptz` column, so `instant()` is the gate between the two.
+ * Without it an Invalid Date reached `Intl` and came back `NaN`, and `localDateIn` answered
+ * `"NaN-NaN-NaN"` — which is a legal string, so it went into a digest's idempotency key and
+ * deduped every zone in every org onto one delivery. A refusal names the value instead.
+ */
+test('an Invalid Date is refused where it enters, not carried into an idempotency key', () => {
+  const invalid = new Date('not a date');
+
+  expect(() => localDateIn(invalid, 'Europe/Madrid')).toThrow(/X_INSTANT_INVALID/);
+  expect(() => nextDigestAt(invalid, 'Europe/Madrid')).toThrow(/X_INSTANT_INVALID/);
+  expect(() => previousDigestAt(invalid, 'Europe/Madrid')).toThrow(/X_INSTANT_INVALID/);
+});

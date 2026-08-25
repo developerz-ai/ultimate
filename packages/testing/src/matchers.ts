@@ -6,19 +6,18 @@ import type { ExpectExtendMatchers } from 'bun:test';
 import { expect } from 'bun:test';
 import { describeValue, isUltimateError, stringField } from '@ultimat3/core';
 import { TestJobExpectedError, TestSchemaExpectedError } from './errors';
+import type { MatcherResult } from './matcher-result';
 import type { UltimateMatchers } from './matcher-surface';
+import type { VisibleOptions } from './matcher-visible';
+import { assertVisibilityProbe, visibilityResult } from './matcher-visible';
 import type { OpenApiLike } from './test-types';
 
+export type { MatcherResult } from './matcher-result';
 // Re-exported so the EMITTED `matchers.d.ts` still names `./matcher-surface`. A type-only import
 // used by a non-exported const is elided from the declaration output, and with it goes the
 // `bun:test` augmentation for anyone consuming this package through `dist/` — which is every
 // package that reaches it across a project reference.
 export type { UltimateMatchers } from './matcher-surface';
-
-export interface MatcherResult {
-  readonly pass: boolean;
-  message(): string;
-}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -55,6 +54,25 @@ interface StandardSchema {
 
 const isStandardSchema = (value: unknown): value is StandardSchema =>
   isRecord(value) && isRecord(value['~standard']);
+
+/**
+ * The receiver check, SYNCHRONOUS and separate from the work — measured against Bun 1.4.0: a
+ * matcher declared `async` has any error it throws replaced by bun's own `Matcher \`x\` returned a
+ * promise that rejected`, so the code, the cause and the fix are all gone by the time a reader sees
+ * it. `X_TEST_SCHEMA_EXPECTED` and `X_TEST_JOB_EXPECTED` were declared, registered and titled, and
+ * no caller could ever observe either (`matcher-receiver.test.ts`). The guard runs before the
+ * matcher returns a promise; the work happens inside it.
+ */
+function assertStandardSchema(schema: unknown): StandardSchema {
+  if (!isStandardSchema(schema)) throw new TestSchemaExpectedError();
+  return schema;
+}
+
+/** The same rule for a job declaration. `recordSteps` is public, so it keeps its own check too. */
+function assertJobDeclaration(job: unknown): JobLike {
+  if (!isJob(job)) throw new TestJobExpectedError();
+  return job;
+}
 
 async function hasIssues(schema: unknown, input: unknown): Promise<boolean> {
   if (!isStandardSchema(schema)) {
@@ -176,7 +194,28 @@ function breakingChanges(before: OpenApiLike, after: OpenApiLike): readonly stri
  * of the three is visible, and a declared-but-unimplemented matcher fails at runtime in whichever
  * test calls it first.
  */
+/**
+ * What `expect.extend` binds `this` to. Bun supplies `isNot`, and it is the only member any matcher
+ * here reads — measured, because the shape is not in bun's published types and a matcher that
+ * guessed would silently wait for the wrong thing under `.not`.
+ */
+interface MatcherContext {
+  readonly isNot: boolean;
+}
+
 const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
+  // NOT `async`, deliberately — see `assertVisibilityProbe`. A matcher declared `async` has any
+  // error it throws replaced by bun's own "returned a promise that rejected", which is how the
+  // three matchers below it lost their codes. The guard runs synchronously; the wait is the
+  // promise this returns.
+  toBeVisible(received: unknown, options?: VisibleOptions) {
+    const probe = assertVisibilityProbe(received);
+    // `this` and not a parameter: the direction is bun's to tell us, and `.not` has to change what
+    // this WAITS for, not just how the answer is read.
+    const context = this as unknown as MatcherContext;
+    return visibilityResult(probe, context.isNot === true, options);
+  },
+
   toBeUltimateError(received: unknown, code?: string) {
     const actual = codeOf(received);
     if (actual === undefined) {
@@ -200,11 +239,15 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
     return result(!allowed, `expected the policy to deny ${JSON.stringify(context)}`);
   },
 
-  async toEmitSteps(received: unknown, expected: readonly string[]) {
-    const names = await recordSteps(received);
-    return result(
-      JSON.stringify(names) === JSON.stringify(expected),
-      `expected steps ${expected.join(' -> ')}, ran ${names.join(' -> ')}`,
+  // Not `async` — see `assertStandardSchema`. The guard is the synchronous prologue; the wait is
+  // the promise this returns.
+  toEmitSteps(received: unknown, expected: readonly string[]) {
+    const job = assertJobDeclaration(received);
+    return recordSteps(job).then((names) =>
+      result(
+        JSON.stringify(names) === JSON.stringify(expected),
+        `expected steps ${expected.join(' -> ')}, ran ${names.join(' -> ')}`,
+      ),
     );
   },
 
@@ -232,14 +275,18 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
     return result(received <= limit, `expected ${received} to be within the budget of ${limit}`);
   },
 
-  async toRejectInput(received: unknown, input: unknown) {
-    const rejected = await hasIssues(received, input);
-    return result(rejected, `expected the schema to reject ${JSON.stringify(input)}`);
+  toRejectInput(received: unknown, input: unknown) {
+    const schema = assertStandardSchema(received);
+    return hasIssues(schema, input).then((rejected) =>
+      result(rejected, `expected the schema to reject ${JSON.stringify(input)}`),
+    );
   },
 
-  async toAcceptInput(received: unknown, input: unknown) {
-    const rejected = await hasIssues(received, input);
-    return result(!rejected, `expected the schema to accept ${JSON.stringify(input)}`);
+  toAcceptInput(received: unknown, input: unknown) {
+    const schema = assertStandardSchema(received);
+    return hasIssues(schema, input).then((rejected) =>
+      result(!rejected, `expected the schema to accept ${JSON.stringify(input)}`),
+    );
   },
 };
 

@@ -1089,15 +1089,22 @@
         "properties": {
           "charge": {
             "additionalProperties": false,
+            "description": "integer minor units plus an ISO 4217 currency code",
             "properties": {
               "currency": {
-                "enum": [
-                  "USD",
-                  "EUR"
-                ],
+                "pattern": "^[A-Z]{3}$",
                 "type": "string"
               },
               "minor": {
+                "description": "amount in minor units, never a float",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "scale": {
+                "description": "decimal places `minor` counts; absent means the currency’s own",
+                "maximum": 15,
+                "minimum": 0,
                 "type": "integer"
               }
             },
@@ -1109,15 +1116,22 @@
           },
           "credit": {
             "additionalProperties": false,
+            "description": "integer minor units plus an ISO 4217 currency code",
             "properties": {
               "currency": {
-                "enum": [
-                  "USD",
-                  "EUR"
-                ],
+                "pattern": "^[A-Z]{3}$",
                 "type": "string"
               },
               "minor": {
+                "description": "amount in minor units, never a float",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "scale": {
+                "description": "decimal places `minor` counts; absent means the currency’s own",
+                "maximum": 15,
+                "minimum": 0,
                 "type": "integer"
               }
             },
@@ -1129,15 +1143,22 @@
           },
           "nextPeriod": {
             "additionalProperties": false,
+            "description": "integer minor units plus an ISO 4217 currency code",
             "properties": {
               "currency": {
-                "enum": [
-                  "USD",
-                  "EUR"
-                ],
+                "pattern": "^[A-Z]{3}$",
                 "type": "string"
               },
               "minor": {
+                "description": "amount in minor units, never a float",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "scale": {
+                "description": "decimal places `minor` counts; absent means the currency’s own",
+                "maximum": 15,
+                "minimum": 0,
                 "type": "integer"
               }
             },

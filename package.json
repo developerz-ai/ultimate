@@ -22,6 +22,7 @@
     "dev": "bun run --filter @ultimat3/cli dev",
     "error-render": "bun run scripts/error-render.ts",
     "format": "biome format --write .",
+    "framework-tables": "bun run scripts/framework-tables.ts",
     "frozen-records": "bun run scripts/frozen-records.ts",
     "gate-codes": "bun run scripts/gate-codes.ts",
     "lint": "biome check .",

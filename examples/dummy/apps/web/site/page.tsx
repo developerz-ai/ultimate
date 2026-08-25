@@ -51,7 +51,7 @@ export function Page(): JSX.Element {
   return (
     <main class={styles.page}>
       <section class={styles.hero}>
-        <Stack gap="4">
+        <Stack gap={4}>
           <h1>{t('site.hero.title')}</h1>
           <p class={styles.subtitle}>{t('site.hero.subtitle')}</p>
           <div class={styles.ctas}>

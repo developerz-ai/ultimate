@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "86aa80d2a50ed856975bfe763622aa4b7c46e837df01ac20af411527ae772f1c",
+  "buildId": "77b0de8100e2b52b56a34374fede1b5a113dc9cb184b5a58f4a45e3e1ce7b561",
   "tiers": {
     "0": [
       "core",
@@ -1223,6 +1223,16 @@
       "code": "X_FRAMEWORK_SCHEMA_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_FRAMEWORK_TABLE_UNAPPLIED",
+      "owner": "scripts",
+      "at": "scripts/framework-tables.ts"
+    },
+    {
+      "code": "X_FRAMEWORK_TABLE_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/framework-tables.ts"
     },
     {
       "code": "X_GATE_CODE_BACKLOG_STALE",
@@ -2991,6 +3001,11 @@
     },
     {
       "code": "X_TEST_LIVE_NODE_UPGRADE_REFUSED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_LOCATOR_EXPECTED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },
