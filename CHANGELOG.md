@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 13.0.0 - 2026-08-25
+
 Six capabilities the readiness register graded **Ship**, all of them, plus the defects found while
 building them â€” which were worse than the gaps. Every one is a factory over an existing primitive:
 no ninth primitive, no new `PrimitiveKind`, and `PRIMITIVE_FACTORIES` grew by three rows.
@@ -122,6 +126,11 @@ no ninth primitive, no new `PrimitiveKind`, and `PRIMITIVE_FACTORIES` grew by th
   **zero call sites anywhere in the repository**. `title()` and `reload()` stay, with the caveat
   recorded: their only caller is a generated template that nothing executes.
 
+### Commits
+
+- feat(scripts,testing,docs): the defects found building 13.0.0, and the rules that keep them closed (#350)
+- feat(jobs,action,notify,ui,mcp,cli): notifications, webhooks, exports, form binding (#349)
+- feat(core,http,db,entity,query): the request-context repair, full-text search, and state machines (#348)
 
 ## 12.0.0 - 2026-08-24
 

@@ -6,6 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 12.x → 13.0.0 | **2**, both narrow: a service factory's parameter type, and one deleted `PageLike` member with zero call sites anywhere in the repository | the `13.0.0` section, in order |
 | 11.x → 12.0.0 | **16**, from the widest sweep since 4.0.0 — a keyset defect that dropped rows, a name that reached the DDL unchecked, and eight interfaces that gained a member | the `12.0.0` section, in order |
 | 10.x → 11.0.0 | **7** | the `11.0.0` section, in order |
 | 9.x → 10.0.0 | **19** | the `10.0.0` section, in order |
@@ -17,17 +18,15 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 1.x → 12.0.0 | **134** | all eleven sections, oldest first |
+| 1.x → 13.0.0 | **136** | all twelve sections, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 136 As of 2026-08-24 — the WHOLE file. 134 of them sit inside the section of the major that
-# shipped them, which is the sum of the eleven per-major rows above; the remaining 2 are under
-# `[Unreleased]`, awaiting the release that promotes them into a twelfth row. At a TAGGED commit
-# `[Unreleased]` holds none, and that is the state the rule below checks — a `BREAKING —` line left
-# there at a tag is
+# 136 As of 2026-08-25 — the WHOLE file, and all 136 sit inside the section of the major that
+# shipped them: the sum of the twelve per-major rows above. `[Unreleased]` holds none, which is what
+# a released commit looks like — a `BREAKING —` line left there at a tag is
 # X_DOC_CHANGELOG_UNRELEASED_BREAKING, and the release promotes the section rather than appending one.
 # Scope the count to one section to read a single row. The range is that section's own heading line
 # to the line before the next `## `, and `grep -n '^## ' CHANGELOG.md` prints both —
@@ -47,6 +46,55 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 12.x → 13.0.0, entry by entry
+
+**Two breaking entries**, and both are compile errors the moment you upgrade. Nothing changes at
+runtime, no data migrates, no cursor or protocol moves. This major is wide in what it ADDS —
+notifications, full-text search, webhooks, exports, state machines, form binding — and narrow in
+what it breaks.
+
+**No `app.config.ts` key moves.** No codemod: each entry names its own manual edit.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `ServiceFactory` receives `CtxFacts`, not `Ctx` | your `defineService` factory annotates its parameter `(ctx: Ctx)`, or reads a **sibling service** off it |
+| 2 | `PageLike.content()` is deleted | you called it in an e2e test, or implement `PageLike` yourself |
+
+### 1. `ServiceFactory` receives `CtxFacts`
+
+`defineService`'s factory is handed the framework's own facts — `actor`, `now()`, `clock`, `tz`,
+`locale`, `requestId` — and **not** the app's augmented services. It always worked this way; the
+type said otherwise.
+
+```ts
+// before — compiles, and is circular: the factory that BUILDS ctx.posts
+// declares that ctx.posts must already exist
+export const posts = defineService('posts', (ctx: Ctx) => ({ … }));
+
+// after — the documented form, which cannot drift from the signature
+export const posts = defineService('posts', (ctx) => ({ … }));
+```
+
+Drop the annotation. If you genuinely need to name the type, `CtxFacts` is now exported from
+`@ultimat3/core` — it was the parameter type all along and the barrel never re-exported it, so no
+app could name what its own factory was handed.
+
+**Reading a sibling service inside a factory no longer typechecks.** That was already documented as
+unsupported — factories run in registration order and a sibling may not exist yet — but the type
+permitted it. Move the read into the method that needs it, where `useService()` resolves at call
+time.
+
+### 2. `PageLike.content()` is deleted
+
+`PageLike`'s comment claimed *"every member is one the reference app's e2e suite already calls"*.
+An audit found that false for three of eleven: `content()` had **zero call sites anywhere in the
+repository**, and `title()` / `reload()` are named only by `x g route`'s generated template, which
+nothing executes.
+
+`content()` is gone. `title()` and `reload()` stay, with the caveat recorded on each. If you drive
+a browser yourself, delete `content` from your `PageLike` implementation; if you called it, read the
+DOM through `evaluate()` instead.
 
 ## 11.x → 12.0.0, entry by entry
 
