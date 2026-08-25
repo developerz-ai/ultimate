@@ -9,6 +9,7 @@ import { columnName, moneyColumns, referenceBinding } from './column';
 import { currencyCheck, scaleCheck } from './columns';
 import type { Invariant } from './invariants';
 import type { ColumnDescription, EntityDescription, ReferenceDescription } from './registry';
+import type { SearchVector } from './search';
 import type { AnyColumn, ColumnMeta, IndexDef } from './types';
 
 export interface DescribeInput<Row> {
@@ -23,7 +24,33 @@ export interface DescribeInput<Row> {
   readonly cacheTag: string;
   readonly softDelete: boolean;
   readonly tenantColumn: string | null;
+  /** The generated `tsvector`, when any column is `.searchable()`. */
+  readonly search?: SearchVector | null;
 }
+
+/**
+ * The search vector as a physical column: `tsvector`, computed by the database, never written.
+ *
+ * `notNull` is what makes a missing `generated` clause LOUD rather than silent. Every function in
+ * the expression is total over a coalesced text, so the value can never be NULL — and if a
+ * generator that does not yet render `generated` emits the column as a plain `tsvector`, the first
+ * insert is a `23502` naming this column, instead of a table of NULL vectors where every search
+ * quietly answers nothing.
+ */
+const describeSearchColumn = (search: SearchVector): ColumnDescription => ({
+  // `$`-prefixed: a property key no column can be spelled as, because nothing may address it.
+  property: '$search',
+  column: search.column,
+  kind: 'tsvector',
+  notNull: true,
+  primaryKey: false,
+  unique: false,
+  hasDefault: false,
+  check: null,
+  references: null,
+  onDelete: null,
+  generated: search.expression,
+});
 
 /**
  * The foreign keys an entity declares, resolved through the one binding resolver. Money is
@@ -170,9 +197,14 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
     name: input.name,
     table: input.table,
     primaryKey: input.primaryKey.map(physicalOf),
-    columns: input.columns.flatMap(([property, column]) =>
-      describeColumn(input, property, column.$meta, references.get(property)),
-    ),
+    columns: [
+      ...input.columns.flatMap(([property, column]) =>
+        describeColumn(input, property, column.$meta, references.get(property)),
+      ),
+      // LAST, so every column an author declared keeps the position it had and no snapshot of an
+      // entity without a search vector moves.
+      ...(input.search == null ? [] : [describeSearchColumn(input.search)]),
+    ],
     invariants: input.invariants.map((inv) => ({
       name: inv.name,
       kind: inv.kind,

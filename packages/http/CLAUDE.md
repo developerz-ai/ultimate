@@ -41,7 +41,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   page. `type-pins.ts` holds the other half: a key on `HttpConfig` and not on `HttpConfigInput` is
   a build error, which `scripts/config-readers.ts` cannot see — that ratchet walks `AppConfig` and
   asks whether a key is READ, and this is the mirror question.
-- **`asCtx` is a WIDENING the compiler checks, never a cast.** `RequestContext extends Ctx`, and
+- **`asCtx` is a WIDENING the compiler checks, never a cast.** `RequestContext extends Ctx` and
   `asCtx` is the identity function. It used to be `ctx as unknown as Ctx` over an object that set
   none of `clock`, `now`, `logger`, `signal` or `services` — so `ctx.now()` threw
   `TypeError: ctx.now is not a function` on every audited action served over HTTP,
@@ -51,6 +51,46 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   and it is a type-pin rather than a `.test.ts` because `tsconfig.json` excludes tests.
   `ctx.buildId` is core's meaning — the build this PROCESS serves; the CLIENT's claim is
   `ctx.clientBuildId`, read only by `assertBuild()`.
+
+  **`RequestContext extends Ctx` again, and this file no longer BUILDS a context — it composes
+  one** (`As of 2026-08-24`). `Ctx extends CtxServices`, and `CtxServices` is the seam an app
+  augments (`declare module '@ultimat3/core'`) to declare `ctx.posts` — so in an APP's program
+  every service it declared became a REQUIRED member of `createRequestContext`'s object literal,
+  and this file failed to compile inside `examples/dummy` with `TS2739: missing posts, orgs` while
+  the framework's own gate, which augments nothing, stayed green. The framework cannot set members
+  only the app's boot knows about.
+
+  `createRequestContext` now spreads `createContext()`'s result. Those members arrive WITH the
+  base, so the literal is checked in full and there is **no assertion left in this file** —
+  `withServices`, which existed for one release, is gone. `packages/core/src/context.ts` keeps the
+  framework's one irreducible `as Ctx` and its header states, with the four measured alternatives,
+  why it cannot be removed below a major.
+
+  Composing is also one constructor for one shape instead of two. This file used to re-derive
+  `clock`, `now`, the logger child, `signal`, `deadlineAt` and the service bag, so core could fix
+  any of them and this surface would keep the old answer — which is exactly what happened to the
+  bag (see the bullet below). `defineService` factories now install here too, for the same reason:
+  they are `createContext`'s, and this is `createContext`.
+
+  `type-pins.ts` carries `_RequestContextIsACtx`, because `asCtx` is a function body and a future
+  edit answering a failure there with a cast would delete the enforcement and leave the comment.
+  The reverse direction is FALSE by design — core's `Ctx` carries no `requestHeaders`, which is
+  what `assertInRequest` proves one way at runtime.
+- **`defineService` used to be a job-and-CLI feature, and nothing said so** (`As of 2026-08-24`).
+  Two halves, and together they made services unreachable on the surface an app spends its life
+  on. This file built its own service bag from `RequestContextInit.services` alone and never
+  called core's `installedServices()`; `pipeline.ts:224` passes NO `services` at all. So a
+  `defineService('posts', …)` an app registered at boot was installed for a job, a task and a CLI
+  command and for nothing else — over HTTP `ctx.services` was `{}` and `useService('posts')` threw
+  `X_SERVICE_MISSING`. And the bag, even when one was passed, was never spread ONTO the context,
+  so `ctx.posts` — the spelling `docs/architecture/15-adding-a-feature.md` writes in its worked
+  example — read `undefined` beside a populated `ctx.services`.
+
+  Composing `createContext` fixes both at once, which is the argument for composing: the installer
+  is core's and so is the spread. Services go on FIRST so a service an app named `actor` or
+  `logger` loses to the request's own field and stays reachable as `ctx.services['actor']`; the
+  context's meaning never depends on what an app named a service. `context.test.ts` pins the
+  factory install, the spread and the collision order.
 - **The two inbound ids are read BEFORE the context and the span, in `correlation.ts`.** `startSpan`
   resolves its parent from `currentSpanContext()`, which reads `ctx.traceId`, so a `traceparent`
   parsed by a stage arrived one frame after the span's context was already frozen: the caller's
@@ -124,6 +164,38 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `error-map` stage is the one call site that can see the config, and every degraded `problem()` in
   the tail must stay opaque. The real text is not lost — it is the log field and the error report,
   both keyed by the request id the caller was given.
+- **The problem document carries the ISSUE LIST, and the opacity rule applies to it**
+  (`As of 2026-08-24`). `ProblemDocument.issues` is a top-level extension member — RFC 9457 §3.2
+  puts extension members at the document root and every Ultimate extension already is one
+  (`code`, `cause`, `fix`, `docs`, `requestId`); there is no bag. `@ultimat3/action` has attached
+  the list to `meta.issues` since `InputInvalidError` grew its third parameter and **nothing
+  carried it**, so every app in this framework recovered per-field form errors by splitting
+  `cause` on `'; '` — guesswork the moment a message contains the separator.
+
+  Four rules, and the third is the one most likely to be dropped by a later edit.
+  `issuesOf` is TOTAL and module-private, written in `retryAfterOf`'s shape and for its reason:
+  `meta` is a property read on a value this package did not build, in the frame that decides what
+  the caller sees. It is **all-or-nothing** — a client that finds `issues` uses it INSTEAD of
+  `cause`, so one unreadable entry drops the whole list back to the prose line rather than
+  shipping a subset, which would be a rejection the user never sees and a form reporting itself
+  valid. The member is **absent** when there is none, never `undefined` and never `[]`:
+  `JSON.stringify` drops an `undefined`, but this interface is read directly by `error-page.ts`
+  and by tests, and `[]` claims "validated clean" about a request that was just refused — which
+  the first implementation of this reader emitted, because `Array.isArray([])` is true and the
+  loop simply does not run. A list past `MAX_PROBLEM_ISSUES` (100) is dropped WHOLE for the same
+  all-or-nothing reason, and because `@ultimat3/action`'s `issuesFromWire` bounds it identically
+  on arrival: sending it is a body that costs the wire and answers nothing. That package is tier 3,
+  so the number is restated here and pinned on this side. And it is **dropped under exactly the condition
+  that blanks `title`/`detail`/`cause`** — an issue list on an unclassified 5xx is precisely the
+  internal detail `INTERNAL_CAUSE` exists to withhold, because it names the fields and the
+  expectations of something the caller was never meant to see inside. `X_INPUT_INVALID` is a
+  declared 4xx and so is never opaque.
+
+  `received` is forced to `''` and every entry is rebuilt member by member, never spread. Not
+  redundancy with `toValidationIssues`, which forces the same thing: this is the boundary where
+  the value LEAVES the process, a conforming library's own issue object is first-class here and
+  routinely carries the rejected value, and `@ultimat3/schema`'s `describeValue` exists because a
+  password-strength rule once wrote mistyped passwords into the log index.
 - **A rejected value is a log FIELD, never part of the message.** `logger.emit()` redacts `bound`,
   `contextFields` and `fields` — and never `msg` — so `logger.error(\`${code}: ${cause}\`)` in the
   `error-map` stage wrote a rejected password verbatim into the log store, at 4xx, which is logged
@@ -431,6 +503,33 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   is opaque, so rebinding means discarding the caller's limiter and the store it carries, and a
   caller who built their own may have meant their own numbers. A limiter that declares no table
   is refused too — what cannot be shown to hold is not assumed to hold.
+- **`verifyWebhookSignature` is a FUNCTION, never a pipeline stage** (`As of 2026-08-24`). The
+  secret is per SENDER, and only the route knows which sender it is serving; a stage would need one
+  secret for the whole app or a table this package has no business holding. It reads the body
+  through core's `readWithinLimit` — the same counting reader `UltimateRequest.#read` uses — so it
+  composes with the cap rather than defeating it, and it answers the raw text so the caller parses
+  the bytes that were signed rather than a re-serialisation of them.
+
+  The order inside it is load-bearing: the mac is checked BEFORE the freshness window, so
+  `X_WEBHOOK_SIGNATURE_STALE` means *authentic and old* and never *unreadable and old* — an
+  operator reading it goes to a clock or a replay, which is the only reason the second code exists.
+  The window is `Math.abs`, both directions: a sender whose clock runs ahead is the same replay
+  window pointed the other way, and accepting the future half doubles it. The timestamp is parsed
+  digits-only because `Number('nope')` is `NaN` and `NaN > toleranceMs` is FALSE — the one guard
+  whose failure mode is "the check does not run". `:` is refused in the id and the topic because
+  one mac over `v1:t:evt:01HZ:orders.paid:<body>` would otherwise authenticate two different
+  id/topic splits. The comparison is `timingSafeEqual` and may never become `===`; `bun run
+  secret-compare` is the mechanical half and `mac`/`signature` are names it reads.
+
+  **The FORMAT is `@ultimat3/core`'s and is not re-declared here** (`As of 2026-08-24`).
+  `packages/core/src/webhook-signature.ts` owns the canonical string, the mac and the parse;
+  this file owns the POLICY — what counts as fresh, how large a body may be, and which refusal a
+  receiver answers with. It shipped for one release as two implementations, here and in
+  `@ultimat3/jobs`, held together by a hex literal asserted in two test files: this package is
+  tier 2 and may not reach tier 3, that one's boundary forbids `http`, so the one copy lives at
+  the tier both can reach — the argument `timing-safe-equal.ts` makes for itself. The two literal
+  vectors stay until `scripts/webhook-round-trip.test.ts` replaces them. **Never re-declare the
+  canonical string here.**
 - Never throw a bare `Error` — use a factory from `errors.ts`.
 - No `any`. Validation goes through Standard Schema (`validate.ts`), not a vendor API.
 - Health endpoints answer outside the pipeline, on purpose.
@@ -456,12 +555,12 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `finalize.ts` | the tail of that lifecycle, guarded: a throw after the handler degrades, never rejects |
 | `router.ts` | trie matcher, precedence static > param > wildcard, `path-invalid` for a segment that will not decode |
 | `error-map.ts` | the code → status table, closed, plus the app's half (`registerErrorStatus`) |
-| `error-facts.ts` | every RENDERING of a throwable: `factsOf()`, the problem document, the three terminal lines |
+| `error-facts.ts` | every RENDERING of a throwable: `factsOf()`, the problem document (including the issue list and the opacity rule over it), the three terminal lines |
 | `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices` + the app's `configureAuthenticator()` |
 | `type-pins.ts` | compile-time claims about `AuthzDecision`'s shape — source, because `tsc` never reads a `.test.ts` |
 | `overlay.ts` | the dev error page: the same code/cause/fix as the terminal, plus any notices |
 | `overlay-style.ts` | the overlay's one stylesheet, split out so `security-headers.ts` hashes it |
-| `context.ts` | `RequestContext` + the single `Ctx` adapter (`asCtx`) + the inbound-header readers |
+| `context.ts` | `RequestContext` (core's `Ctx` plus the request's own), composed from `createContext`, the single `Ctx` adapter (`asCtx`) and the inbound-header readers |
 | `redirect.ts` | the intent slot a handler that cannot return a `Response` fills |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
 | `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor |
@@ -473,6 +572,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule |
 | `deadline.ts` | the per-request `AbortController`, the timer and `X_TIMEOUT` |
 | `csrf.ts` | the origin proof an unsafe method from a credentialed browser must carry |
+| `webhook-verify.ts` | the INBOUND webhook: the canonical string, the constant-time mac check and the replay window. The outbound half is `webhook()` in `@ultimat3/jobs`, which this package can never import |
 | `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only, plus `readCookie`. It negotiates nothing |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
 | `app-config.ts` | the app's own HTTP declaration (`configureHttp`) and the layering that keeps a boot fact above it |

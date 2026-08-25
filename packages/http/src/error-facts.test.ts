@@ -2,7 +2,7 @@
 // document and the terminal lines. Status decisions are `error-map.test.ts`'s — a split this
 // file exists because the two answer different questions about the same error.
 import { describe, expect, test } from 'bun:test';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ERROR_DOCS_URL, UltimateError } from '@ultimat3/core';
 import { factsOf, renderErrorLines, toProblem } from './error-facts';
 import { bodyInvalid, forbidden, routeNotFound } from './errors';
 import { rateLimited } from './rate-limit-errors';
@@ -113,5 +113,169 @@ describe('the fix line every uncoded throwable gets', () => {
     const facts = factsOf(new TypeError('undefined is not a function'));
     expect(facts.fix).not.toContain('x logs');
     expect(facts.fix).toContain('x errors explain X_INTERNAL --json');
+  });
+});
+
+/**
+ * The structured half of a rejection, carried to the caller.
+ *
+ * `cause` is one line for a human and an agent; a client rendering a form needs to know WHICH
+ * field each rejection belongs to, and splitting that line back apart is guesswork the moment a
+ * message contains the separator. `@ultimat3/action` has attached the list to `meta.issues` since
+ * `InputInvalidError` grew its third parameter, and nothing carried it across the wire — so every
+ * app recovered per-field errors by parsing prose. This is the carry.
+ */
+describe('toProblem carries the issue list', () => {
+  const issues = [
+    { path: 'title', expected: 'string', received: '', message: 'expected a string' },
+    { path: 'items[0].price', expected: 'number', received: '', message: 'expected a number' },
+  ] as const;
+
+  const withMeta = (code: string, meta: unknown): unknown =>
+    Object.assign(new UltimateError({ code, cause: 'c', fix: 'f' }), { meta });
+
+  /**
+   * `@ultimat3/action`'s `InputInvalidError`, CONSTRUCTED rather than imported: that package is
+   * tier 3 and this one is tier 2, so importing it here — even in a test — is an upward edge
+   * `bun run boundaries` refuses, and it follows relative specifiers now. This is the shape that
+   * constructor produces (`packages/action/src/errors.ts:199`), and the wire contract this file
+   * pins is the SHAPE, never the class.
+   */
+  const inputInvalid = (detail: string, list?: readonly unknown[]): unknown =>
+    Object.assign(
+      new UltimateError({
+        code: 'X_INPUT_INVALID',
+        cause: `input for action "createPost" failed validation: ${detail}`,
+        fix: 'x actions describe createPost --json  # prints the expected input schema',
+      }),
+      list === undefined ? {} : { meta: { issues: list } },
+    );
+
+  test('a rejected input reaches the caller addressed by path', () => {
+    const problem = toProblem(inputInvalid('title: expected a string', issues));
+
+    expect(problem.status).toBe(400);
+    expect(problem.issues).toEqual([...issues]);
+    // The line is unchanged and travels beside it — one value rendered twice, never instead of.
+    expect(problem.cause).toContain('title: expected a string');
+  });
+
+  test('an error with no issues carries no member at all, not undefined and not empty', () => {
+    // `[]` reads as "validated clean", which is false, and `undefined` survives into
+    // `error-page.ts` and every test that reads the document directly rather than its JSON.
+    const problem = toProblem(routeNotFound('GET', '/missing'));
+    expect('issues' in problem).toBe(false);
+  });
+
+  test('an unclassified 5xx drops the issues, exactly as it drops the cause', () => {
+    // The half most likely to be missed: an issue list on a failure nobody classified is
+    // precisely the internal detail `INTERNAL_CAUSE` exists to withhold — it names the fields and
+    // the expectations of something the caller was never meant to see the inside of.
+    const problem = toProblem(withMeta('X_SOMETHING_NOBODY_MAPPED', { issues }));
+    expect(problem.status).toBe(500);
+    expect(problem.cause).not.toContain('expected a string');
+    expect('issues' in problem).toBe(false);
+  });
+
+  test('dev mode is not opaque, so the issues come back with the cause', () => {
+    const problem = toProblem(withMeta('X_SOMETHING_NOBODY_MAPPED', { issues }), { dev: true });
+    expect(problem.issues).toEqual([...issues]);
+  });
+
+  test('a declared 4xx is never opaque, so X_INPUT_INVALID always carries them', () => {
+    const problem = toProblem(inputInvalid('x', issues), { dev: false });
+    expect(problem.issues).toHaveLength(2);
+  });
+
+  test('a meta this package did not build yields no member rather than a throw', () => {
+    // `meta` is a property read on a value http did not build, in the frame that decides what the
+    // caller sees — `retryAfterOf`'s reason, one function up, and the same total shape.
+    const hostile = new Proxy(new UltimateError({ code: 'X_BODY_INVALID', cause: 'c', fix: 'f' }), {
+      get(target, key, receiver): unknown {
+        if (key === 'meta') throw new TypeError('the meta is not for you');
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    expect(() => toProblem(hostile)).not.toThrow();
+    expect('issues' in toProblem(hostile)).toBe(false);
+  });
+
+  test('a meta.issues that is not a list of issues yields no member', () => {
+    for (const meta of [
+      { issues: 'title: expected a string' },
+      { issues: { path: 'title' } },
+      { issues: [{ path: 'title' }] },
+      { issues: [{ message: 'expected a string' }] },
+      { issues: [{ path: 1, message: 'x' }] },
+      { issues: null },
+      null,
+      'meta',
+    ]) {
+      expect('issues' in toProblem(withMeta('X_BODY_INVALID', meta))).toBe(false);
+    }
+  });
+
+  test('an EMPTY list is no member at all, because [] claims validated-clean', () => {
+    // The rule the member's own doc states and my first implementation broke: `Array.isArray([])`
+    // is true, the loop does not run, and `{ issues: [] }` reached the document — which says "we
+    // validated and found nothing wrong" for a request that was refused.
+    expect('issues' in toProblem(withMeta('X_BODY_INVALID', { issues: [] }))).toBe(false);
+  });
+
+  test('a list too long to be a form drops whole, rather than crossing and being refused', () => {
+    // The typed client bounds it at `MAX_WIRE_ISSUES` (`packages/action/src/wire-issues.ts`) and
+    // drops anything longer, so an oversized list is a body that costs the wire and answers
+    // nothing. Refused HERE, where the response is this package's business.
+    const many = Array.from({ length: 101 }, (_, at) => ({
+      path: `f${at}`,
+      expected: 'string',
+      received: '',
+      message: 'expected a string',
+    }));
+    expect('issues' in toProblem(withMeta('X_BODY_INVALID', { issues: many }))).toBe(false);
+    // The bound itself is inclusive: a hundred is a plausible form.
+    const hundred = many.slice(0, 100);
+    expect(toProblem(withMeta('X_BODY_INVALID', { issues: hundred })).issues).toHaveLength(100);
+  });
+
+  test('one unreadable entry drops the WHOLE list, never a silent subset', () => {
+    // A partly-read list is worse than none: a client that finds `issues` uses it INSTEAD of
+    // `cause`, so a dropped entry is a rejection the user never sees and a form that says it is
+    // valid when it is not.
+    const problem = toProblem(
+      withMeta('X_BODY_INVALID', { issues: [issues[0], { path: 'items', message: 42 }] }),
+    );
+    expect('issues' in problem).toBe(false);
+  });
+
+  test('a received value is emptied, whatever the producer put there', () => {
+    // Defence in depth. `toValidationIssues` forces `received: ''` today, but this is the boundary
+    // where the value LEAVES the process, and a future producer of `meta.issues` — a foreign
+    // library's raw issue object, which this framework accepts as first-class — may carry the
+    // rejected value. `packages/schema/src/describe-value.ts` exists because a password-strength
+    // rule once wrote mistyped passwords into the log index.
+    const leaky = {
+      path: 'password',
+      expected: 'a strong password',
+      received: 'hunter2SuperSecret',
+      message: 'too weak',
+    };
+    const problem = toProblem(withMeta('X_BODY_INVALID', { issues: [leaky] }));
+
+    expect(problem.issues).toEqual([
+      { path: 'password', expected: 'a strong password', received: '', message: 'too weak' },
+    ]);
+    expect(JSON.stringify(problem)).not.toContain('hunter2SuperSecret');
+  });
+
+  test('an entry carrying members Ultimate does not declare loses them', () => {
+    // Rebuilt member by member and never spread: the fifth member is where a value rides in.
+    const problem = toProblem(
+      withMeta('X_BODY_INVALID', {
+        issues: [{ ...issues[0], value: 'hunter2SuperSecret', input: { secret: 1 } }],
+      }),
+    );
+    expect(problem.issues).toEqual([issues[0]]);
+    expect(JSON.stringify(problem)).not.toContain('hunter2SuperSecret');
   });
 });

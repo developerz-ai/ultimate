@@ -3,6 +3,7 @@
 // 500-line ceiling — that file answers "what status is this code", one closed table, and this one
 // answers "what does a reader see", which is three audiences and one opacity rule.
 import { ERROR_DOCS_URL, renderCauseValue, singleLine, stringField } from '@ultimat3/core';
+import type { ValidationIssue } from '@ultimat3/schema';
 import { declaredStatusFor, statusFor } from './error-map';
 import { HTTP_ERROR_TITLES } from './errors';
 
@@ -103,6 +104,82 @@ export function retryAfterOf(error: unknown): number | undefined {
 }
 
 /**
+ * A list this long is not a form's worth of rejections; it is a body meant to be expensive. The
+ * same bound `@ultimat3/action`'s `issuesFromWire` applies on arrival, restated because that
+ * package is tier 3 and this one is tier 2 — `error-facts.test.ts` pins the number on this side.
+ */
+const MAX_PROBLEM_ISSUES = 100;
+
+/**
+ * The rejections a validation failure carried, addressed by path — or `undefined`.
+ *
+ * `@ultimat3/action` attaches the list to `meta.issues` (`InputInvalidError`'s third parameter),
+ * and until this reader existed nothing carried it across the wire: a client rendering a form
+ * recovered per-field errors by splitting `cause` on `'; '`, which is guesswork the moment a
+ * message contains the separator.
+ *
+ * Total, for `retryAfterOf`'s reason directly above: `meta` is a property read on a value this
+ * package did not build, in the frame that decides what the caller sees.
+ *
+ * ALL-OR-NOTHING, and that is the load-bearing rule. A client that finds `issues` uses it INSTEAD
+ * of `cause`, so a partly-read list is a rejection the user never sees and a form that reports
+ * itself valid when it is not. One unreadable entry drops the whole list back to the prose line.
+ *
+ * Every entry is rebuilt MEMBER BY MEMBER and `received` is forced empty — never a spread. Not
+ * redundancy with `toValidationIssues`, which forces the same thing today: this is the boundary
+ * where the value leaves the process, and a future producer of `meta.issues` need not have gone
+ * through that helper. A conforming library's own issue object is first-class in this framework
+ * and routinely carries the rejected VALUE; `packages/schema/src/describe-value.ts` exists because
+ * a password-strength rule once wrote mistyped passwords into the log index.
+ *
+ * Module-private, unlike `retryAfterOf`: that one has a second caller (`stages.ts` writes it onto
+ * the header) and this one has exactly one, `toProblem`. An exported reader nobody outside calls
+ * is a public API that promises support it has never been asked for.
+ */
+function issuesOf(error: unknown): readonly ValidationIssue[] | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  try {
+    const meta: unknown = (error as Record<string, unknown>)['meta'];
+    if (typeof meta !== 'object' || meta === null) return undefined;
+    const raw: unknown = (meta as Record<string, unknown>)['issues'];
+    // EMPTY is `undefined`, never `[]`. `Array.isArray([])` is true and the loop below would
+    // simply not run, so an empty list reached the document as `issues: []` — which tells a client
+    // "we validated and found nothing wrong" about a request that was just refused.
+    //
+    // TOO LONG is `undefined` too, and dropped WHOLE rather than truncated: a subset is the
+    // silent-drop this reader refuses everywhere else. The typed client bounds the same list at
+    // `MAX_WIRE_ISSUES` and would refuse it on arrival anyway (`packages/action/src/wire-issues.ts`),
+    // so sending it is a body that costs the wire and answers nothing — and that package is tier 3,
+    // so the number is restated here rather than imported.
+    if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_PROBLEM_ISSUES) {
+      return undefined;
+    }
+    const issues: ValidationIssue[] = [];
+    for (const entry of raw as readonly unknown[]) {
+      if (typeof entry !== 'object' || entry === null) return undefined;
+      const fields = entry as Record<string, unknown>;
+      const path: unknown = fields['path'];
+      const message: unknown = fields['message'];
+      const expected: unknown = fields['expected'];
+      // `path` and `message` are what a form binding addresses a control by and what it renders;
+      // an entry missing either is not usable, and a usable subset beside an unusable one is the
+      // silent-drop this list refuses.
+      if (typeof path !== 'string' || typeof message !== 'string') return undefined;
+      issues.push({
+        path,
+        expected: typeof expected === 'string' ? expected : message,
+        // Forced, never copied. See the paragraph above.
+        received: '',
+        message,
+      });
+    }
+    return issues;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * RFC-9457 `type`, per code. A URN, and deliberately not a URL: `type` is the document's PRIMARY
  * identifier for the problem KIND — a client switches on it — while `docs` is where a human goes
  * to read about it, and those stopped being the same string when `docs` became one wiki page for
@@ -127,6 +204,16 @@ export interface ProblemDocument {
   readonly fix: string;
   readonly docs: string;
   readonly requestId: string | undefined;
+  /**
+   * The rejections, addressed by path, for a failure that produced them. TOP-LEVEL and not an
+   * extension bag: RFC 9457 §3.2 puts extension members at the document root, and every Ultimate
+   * extension already is one (`code`, `cause`, `fix`, `docs`, `requestId`).
+   *
+   * ABSENT when there are none — never `undefined`, never `[]`. `JSON.stringify` drops an
+   * `undefined` member, but this interface is read directly by `error-page.ts` and by tests, and
+   * `[]` says "validated clean", which is a different and false claim.
+   */
+  readonly issues?: readonly ValidationIssue[] | undefined;
 }
 
 /** The title a caller gets for a failure the framework cannot name. */
@@ -165,6 +252,11 @@ export const toProblem = (
 ): ProblemDocument => {
   const facts = factsOf(error);
   const opaque = meta.dev !== true && isUnclassifiedFailure(facts.code, facts.status);
+  // Dropped under EXACTLY the condition that blanks `title`, `detail` and `cause`. An issue list
+  // on a failure nobody classified is precisely the internal detail `INTERNAL_CAUSE` exists to
+  // withhold — it names the fields and the expectations of something the caller was never meant to
+  // see the inside of. `X_INPUT_INVALID` is a declared 4xx, so it is never opaque.
+  const issues = opaque ? undefined : issuesOf(error);
   return {
     type: problemTypeFor(facts.code),
     title: opaque ? INTERNAL_TITLE : facts.title,
@@ -176,6 +268,7 @@ export const toProblem = (
     fix: facts.fix,
     docs: facts.docs,
     requestId: meta.requestId,
+    ...(issues === undefined ? {} : { issues }),
   };
 };
 

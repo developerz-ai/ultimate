@@ -450,6 +450,32 @@ Gotchas:
   where an app reads an undeclared service, which is the point, but `examples/dummy` ships one
   such read and it would land on the app gate's ratchet. Land it as its own change, alone, with a
   full `bun run verify` — never folded into another branch.
+- **`Ctx extends CtxFacts, CtxServices`, and `createContext` holds the framework's ONE irreducible
+  assertion** (`As of 2026-08-24`). Different hole from the bullet above, and the note there —
+  "an augmentation adds NAMED members and `Ctx extends CtxServices` picks them up with no index
+  signature at all" — is exactly why: those NAMED members are then REQUIRED of every value typed
+  `Ctx`, and no framework function can obtain them. They arrive through `init.services` (a
+  `ServiceBag`, string-indexed) and through `installedServices()`, which returns the same. So
+  `createContext` cannot type-check its own literal against `Ctx`, and neither could
+  `@ultimat3/http`'s `createRequestContext`, which failed to compile inside `examples/dummy` with
+  `TS2739: missing posts, orgs` while this repo's own gate — augmenting nothing — stayed green.
+
+  `CtxFacts` is everything the FRAMEWORK sets; `Ctx` is that plus `CtxServices`. Structurally
+  identical for a reader, and everything for a constructor. It bought two deletions: the `preview`
+  assertion is gone (that value is honestly a `CtxFacts`, which is also what a `ServiceFactory`
+  receives — a factory has never been able to read a sibling service and the type now says so),
+  and `@ultimat3/http` has **no assertion at all**, because `createRequestContext` composes
+  `createContext()` instead of building a second context beside it.
+
+  **One `as Ctx` remains and four alternatives were built and measured before it was kept.**
+  `Partial<CtxServices>` removes it and makes `ctx.posts` `PostRepo | undefined` for every app —
+  true, and a breaking change to the documented seam. Typing `CtxInit.services` as `CtxServices`
+  moves the proof to the caller and breaks every internal `createContext()` in an app's program,
+  because an app typechecks this tree's sources through its project references. A generic
+  `createContext<S>` returns a context no framework caller can pass where a `Ctx` is wanted. An
+  overload whose implementation signature returns the looser type compiles only through
+  TypeScript's documented bivariance hole — the same assertion, laundered. The file header carries
+  this list; the structural repair is a major and belongs with the index-signature deletion above.
 - Tests that touch the registry, the lifecycle or the listener table must call
   `resetErrorCodes()` / `resetLifecycle()` / `resetListeners()`.
 - `onShutdown`'s return value is the unregister, and every caller that can be started twice owns

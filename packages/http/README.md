@@ -113,6 +113,16 @@ thing that knows where its counters live, and a framework that inferred the answ
 environment would get it wrong on the first deployment that scaled differently.
 
 ```ts
+import {
+  createServer,
+  defineHttpConfig,
+  type RateLimitStore,
+  type Route,
+} from '@ultimat3/http';
+
+declare const routes: readonly Route[];
+declare const myStore: RateLimitStore;   // postgresRateLimitStore({ executor }), say
+
 createServer({
   routes,
   config: defineHttpConfig({ rateLimit: { scope: 'shared' } }), // this limit is the fleet's
@@ -234,6 +244,8 @@ flip. `HEAD` falls back to the `GET` route. `meta.auth` is **required** — a ro
 cannot forget to declare its auth posture.
 
 ```ts
+import { createServer, defineHttpConfig, json } from '@ultimat3/http';
+
 const handle = createServer({
   routes: [{ method: 'GET', path: '/posts/:id', meta: { name: 'posts.show', auth: 'public' },
              handler: (req) => json({ id: req.param('id') }) }],
@@ -245,11 +257,56 @@ const handle = createServer({
 Static paths are registered in Bun's native `routes` table; param/wildcard paths fall
 through to `fetch`. Method resolution stays ours so a 405 still carries problem+json.
 
+## Inbound webhooks
+
+`verifyWebhookSignature(request, { secret })` is the receiving half of the framework's webhook
+mechanism. It is a plain function and not a pipeline stage, because the secret is **per sender**
+and only the route knows which one applies.
+
+```ts
+// apps/web/api/webhooks/partner/route.ts
+import { verifyWebhookSignature } from '@ultimat3/http';
+
+declare const env: { readonly PARTNER_WEBHOOK_SECRET: string };   // the app's defineEnv() result
+// The seen-set and the dispatch are the app's — this package has nowhere to keep either.
+declare function alreadyHandled(eventId: string): Promise<boolean>;
+declare function handle(topic: string, payload: unknown, eventId: string): Promise<void>;
+
+export async function POST(request: Request): Promise<Response> {
+  const { eventId, topic, body } = await verifyWebhookSignature(request, {
+    secret: env.PARTNER_WEBHOOK_SECRET,
+  });
+  // Parse the bytes that were SIGNED. Never `request.json()` — the stream is spent, and a
+  // re-serialisation would not be the bytes the mac covers.
+  const payload: unknown = JSON.parse(body);
+  if (await alreadyHandled(eventId)) return new Response(null, { status: 200 });
+  await handle(topic, payload, eventId);
+  return new Response(null, { status: 202 });
+}
+```
+
+| Property | How |
+|---|---|
+| constant time | the mac is compared with `@ultimat3/core`'s `timingSafeEqual`, never `===` — where two macs first differ is exactly what a timing oracle forges one byte at a time |
+| a replay expires | the signature's timestamp is checked against `toleranceMs` (5 minutes by default), **both** directions — a sender whose clock runs ahead is the same window pointed the other way |
+| a replay is detectable | `eventId` is signed and returned, so it cannot be moved in transit; the seen-set is your table, because the framework has nowhere to keep one |
+| moving the timestamp breaks it | the timestamp is inside the canonical string, so editing `t=` on a captured request invalidates the mac |
+| the raw bytes are what is verified | the body is read through core's counting reader — the same one `UltimateRequest` uses — so a sender that declares no length cannot make this handler hold an unbounded payload |
+| the mac is checked BEFORE the window | `X_WEBHOOK_SIGNATURE_STALE` means *authentic and old*, never *unreadable and old*, so an operator reading it goes to a clock or a replay |
+
+`X_WEBHOOK_SIGNATURE_INVALID` and `X_WEBHOOK_SIGNATURE_STALE` are both **401**: the request is
+well formed and carried a credential, and the credential is what failed. Neither triggers the
+sign-in redirect, which keys on `X_UNAUTHENTICATED` alone.
+
+The sending half is `webhook()` in `@ultimat3/jobs`. Neither package may import the other, so the
+canonical string is stated in both and pinned by one literal vector asserted in both test files.
+
 ## Errors
 
 `X_ROUTE_NOT_FOUND` · `X_METHOD_NOT_ALLOWED` · `X_BODY_INVALID` · `X_UNAUTHENTICATED`
 · `X_FORBIDDEN` · `X_RATE_LIMITED` · `X_BUILD_SKEW` · `X_ROUTE_CONFLICT`
-· `X_CORS_CONFIG_INVALID` · `X_RATE_LIMIT_NOT_SHARED`
+· `X_CORS_CONFIG_INVALID` · `X_RATE_LIMIT_NOT_SHARED` · `X_WEBHOOK_SIGNATURE_INVALID`
+· `X_WEBHOOK_SIGNATURE_STALE`
 
 One `factsOf()` feeds three renderings — terminal, `application/problem+json`, dev
 overlay — so the `code`/`cause`/`fix` strings can never diverge.

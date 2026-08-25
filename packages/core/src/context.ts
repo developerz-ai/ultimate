@@ -1,6 +1,34 @@
 // Single responsibility: the ambient request context. Authz, tracing, locale, tz and the
 // service bag reach every layer through AsyncLocalStorage instead of being threaded as
 // parameters — otherwise every signature in the framework grows a `ctx` argument twice.
+//
+// THERE IS EXACTLY ONE ASSERTION IN THIS FILE AND IT IS IRREDUCIBLE (`As of 2026-08-24`). It is
+// the `as Ctx` in `createContext`, and it is the LAST one: the second — over `preview` — is gone,
+// because `CtxFacts` gives that value an honest type, and `@ultimat3/http`'s
+// `createRequestContext` now composes this function instead of building a second context beside
+// it, so that package has none at all.
+//
+// Why the last one cannot go. `Ctx extends CtxServices`, and `CtxServices` is the seam an app
+// augments (`declare module '@ultimat3/core'`) to declare `ctx.posts`. Those members are
+// therefore REQUIRED of any value typed `Ctx` — and this function cannot obtain them: they arrive
+// through `init.services`, a `ServiceBag` with a string index signature, and through
+// `installedServices()`, which returns the same. No function can return a value of a type whose
+// required members it has no way to hold, and no type operator can separate an augmented member
+// from a core one either — the index signature makes `keyof Ctx` `string`, so every `Omit` over it
+// removes everything.
+//
+// Four alternatives were built and measured before this line was kept. Making the augmented half
+// `Partial<CtxServices>` removes the assertion and turns `ctx.posts` into `PostRepo | undefined`
+// for every app — true, and a breaking change to the documented seam. Requiring `CtxInit.services`
+// to be a `CtxServices` moves the proof to the caller and breaks every internal `createContext()`
+// in an app's program, because an app typechecks the framework's sources through its project
+// references. A generic `createContext<S>` returns a context no framework caller can pass where a
+// `Ctx` is wanted. And an overload whose implementation signature returns the looser type compiles
+// only through TypeScript's documented bivariance hole — the same assertion, laundered.
+//
+// So it stays, bounded to that one expression, with `CtxFacts` beside it carrying everything this
+// package CAN prove. The structural repair is to `Ctx extends CtxServices` itself and it is a
+// major: this comment is the record of why it was not done quietly.
 
 import { type Actor, anonymousActor } from './actor';
 import { asyncContext } from './async-context';
@@ -37,7 +65,21 @@ export interface ServiceBag {
   readonly [service: string]: unknown;
 }
 
-export interface Ctx extends CtxServices {
+/**
+ * Every member the FRAMEWORK sets on a context — core's `Ctx` with the app's `CtxServices`
+ * augmentation removed. It exists because a framework function cannot type-check an object literal
+ * against a type carrying members only the app's boot knows about: `Ctx extends CtxServices`, an
+ * app augments `CtxServices` with `declare module`, and every service it declares then became a
+ * REQUIRED member of every context literal in the framework. `@ultimat3/http`'s
+ * `createRequestContext` stopped compiling inside `examples/dummy` for exactly that reason
+ * (`TS2739: missing posts, orgs`), while the framework's own gate — which augments nothing —
+ * stayed green.
+ *
+ * A service FACTORY is handed this and not a `Ctx`, which is also more honest than what it had:
+ * `installedServices` builds the bag, so a factory has never been able to read a sibling service,
+ * and the type now says so.
+ */
+export interface CtxFacts {
   readonly requestId: string;
   /** W3C trace id — the same value crosses HTTP -> job -> live query. */
   readonly traceId: string;
@@ -65,6 +107,13 @@ export interface Ctx extends CtxServices {
   /** Late-bound services, for anything not worth a type augmentation. */
   readonly services: ServiceBag;
 }
+
+/**
+ * The context as it EXISTS once a boot's services ride on it: the framework's half plus the app's
+ * augmentation. Structurally identical to what `Ctx` has always been — the split above changes
+ * nothing a reader sees, and everything a CONSTRUCTOR is asked to prove.
+ */
+export interface Ctx extends CtxFacts, CtxServices {}
 
 export interface CtxInit {
   readonly requestId?: string | undefined;
@@ -133,16 +182,17 @@ export function createContext(init: CtxInit = {}): Ctx {
   // what stops factories from depending on one another's instances. Explicit `init.services`
   // wins over an auto-installed one of the same name — a test's hand-built mock overrides the
   // real thing on purpose.
-  const preview = Object.freeze({ ...explicit, ...fields, services: explicit }) as Ctx;
+  const preview: CtxFacts = Object.freeze({ ...explicit, ...fields, services: explicit });
   const services: ServiceBag = Object.freeze({ ...installedServices(preview), ...explicit });
   const ctx = {
     // Services ride ON the context, not only under `ctx.services`: `CtxServices` exists to be
     // augmented, so `ctx.posts` has to BE the service. Spread first, so a service that collides
     // with a framework field (`actor`, `logger`) loses — it stays reachable as
     // `ctx.services.actor`, and the context's own meaning never depends on what an app named a
-    // service. The assertion is the one thing this package cannot prove: an augmentation
-    // declares which services exist, only the boot code knows whether it passed them, or
-    // registered a factory for them. So a service nothing installed reads as `undefined`
+    // service. The `as Ctx` below is the file's ONE assertion and the header says why it cannot
+    // be removed: an augmentation declares which services exist, only the boot code knows whether
+    // it passed them or registered a factory for them, and a `ServiceBag` cannot prove either.
+    // So a service nothing installed reads as `undefined`
     // through `ctx.posts` — this is a frozen plain object, and it stays one on purpose: a
     // get-trap proxy that threw on absent keys would also throw on `await ctx` (the runtime
     // probes `.then`), on `JSON.stringify`, and on every optional-property check.

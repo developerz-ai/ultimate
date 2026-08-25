@@ -39,7 +39,12 @@ export type Operator =
   | 'contains'
   | 'contained-by'
   | 'overlaps'
-  | 'has-key';
+  | 'has-key'
+  // The FULL-TEXT half, added 2026-08-24. `column` is not a column: it is `SEARCH_PROPERTY`, and
+  // both drivers branch on the OPERATOR and read the entity's own `$search` — a `tsvector` is a
+  // physical column no row carries, so resolving it as a property would be a lie in two places.
+  // The operand is a search TERM, always bound, never parsed as tsquery syntax.
+  | 'matches';
 
 export interface Predicate {
   readonly column: string;

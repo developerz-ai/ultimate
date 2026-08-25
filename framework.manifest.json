@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "0d62eb436417129ce1ccf3a41b3bc8f323ced3475e4c4b0d98d47155ca451cd6",
+  "buildId": "7a8e72af84e4c116bdd0652bab2698cf74afcaf8fb6d8d28a32054d26d9e653a",
   "tiers": {
     "0": [
       "core",
@@ -2453,6 +2453,16 @@
       "at": "packages/scraping/src/errors.ts"
     },
     {
+      "code": "X_SEARCH_IN_MEMORY",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
+    },
+    {
+      "code": "X_SEARCH_UNDECLARED",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
+    },
+    {
       "code": "X_SECRET_COMPARE_PIN_STALE",
       "owner": "scripts",
       "at": "scripts/secret-compare.ts"
@@ -2636,6 +2646,21 @@
       "code": "X_SQL_UNSAFE",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_STATE_CONFLICT",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
+    },
+    {
+      "code": "X_STATE_TRANSITION_ILLEGAL",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
+    },
+    {
+      "code": "X_STATE_UNDECLARED",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
     },
     {
       "code": "X_STEP_DUPLICATE",
@@ -3126,6 +3151,16 @@
       "code": "X_VERSION_STAMP_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/version-stamps.ts"
+    },
+    {
+      "code": "X_WEBHOOK_SIGNATURE_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
+    },
+    {
+      "code": "X_WEBHOOK_SIGNATURE_STALE",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
     },
     {
       "code": "X_WIKI_TABLE_MALFORMED",

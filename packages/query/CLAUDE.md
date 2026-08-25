@@ -28,6 +28,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `input-shape.ts` | what a read's `input:` may be, given that its route is a query STRING |
 | `sql.ts` | `explain()` / `describeSql()` |
 | `cache.ts` | the read path: the request memo, and the fill through `@ultimat3/cache`'s registered tiers |
+| `search.ts` | `search()` — the query FACTORY over an entity's `.searchable()` columns |
 | `source.ts` | `SqlSource` contract + `from()` in-memory reference |
 | `shape.ts` | shared read vocabulary (filters, ordering, seek keys) |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
@@ -207,6 +208,20 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   --json` measures, and they must stay that: `errors.ts` runs `registerErrorCodes` at import in both
   packages, and query's `registry.ts` runs `registerPrimitiveRegistrar('query', …)` — drop either
   and a bundled app loses its error titles or throws `X_REGISTRAR_MISSING`. Never `false`.
+- **`search()` is a FACTORY over `query()`, never a ninth primitive.** It owns the input schema
+  (`q` + a `limit` bounded in the schema, beside the read's own keys), trims and refuses a blank
+  term, and calls `.search(term)` on the chain the app hands it — which is what makes the term
+  unable to arrive any other way. The chain crosses **structurally** (`SearchChain`): this package
+  may import `@ultimat3/entity` and nothing here does, so four methods are not worth a new
+  `package.json` edge and a new `bun.lock` block — the trade `@ultimat3/db`'s `entity-shape.ts`
+  makes one tier down. It needs no row in `PRIMITIVE_FACTORIES`: that table is for a factory
+  returning an `action` or a `job` from OUTSIDE the primitive's own package, and this returns a
+  query from the query package. **It serves ONE page and refuses a second**, because a `SqlSource`
+  is handed a `SeekKey` and the entity chain wants its own signed, plan-scoped cursor — there is no
+  minting one from the other here, and falling through to `paginate`'s in-memory slice would cut
+  inside the one page the provider fetched and report `hasNextPage: false` at its edge. Rows served
+  on no page at all is the defect 12.0.0 spent a release removing from the timestamp seek; the
+  `fix:` names the entity chain, which pages this read correctly.
 - Policy runs per subscriber for live queries. Never cache a decision across actors.
 - The matcher patches from `QueryShape`, never from SQL text.
 - `paginate` has no `offset` parameter and must never grow one, and it is reachable **only** as

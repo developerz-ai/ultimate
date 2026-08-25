@@ -133,6 +133,9 @@ export {
   registerQuery,
   resetRegistry,
 } from './registry';
+/** The query FACTORY over an entity's searchable columns — a `query`, never a ninth primitive. */
+export type { SearchChain, SearchDef, SearchInput, SearchPage } from './search';
+export { search } from './search';
 export type { Filter, FilterOp, OrderKey, QueryShape, SeekKey } from './shape';
 /**
  * `isNull` is the one definition of SQL NULL a custom `SqlSource` has to agree with, and

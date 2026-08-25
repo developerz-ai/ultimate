@@ -8,13 +8,16 @@ import type { BatchIterator } from './batch';
 import { assertBatchable, batchIterator } from './batch';
 import { entityNow } from './clock';
 import type { EntityCore } from './entity';
+import { searchUndeclared } from './feature-errors';
 import { assertPageSize, DEFAULT_PAGE_SIZE, namedColumns } from './plan';
 import type { RelatedTables } from './preload';
 import { preloaded } from './preload';
 import type { Relation } from './relations';
 import { relationNamed } from './relations';
 import type { Page, Repo, RepoOptions, UpsertArgs } from './repo';
+import { SEARCH_PROPERTY } from './search';
 import type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
+import { transitionRow } from './transition';
 import type { ColumnMap, IdOf, Insertable, MoneyValue, RowPatch } from './types';
 
 /**
@@ -28,6 +31,23 @@ export interface ReadBuilder<Row> {
   /** Equality on the columns given. `where({ orgId })` is what satisfies the tenancy guard. */
   where(filter: RowPatch<Row>): ReadBuilder<Row>;
   andWhere(column: keyof Row & string, op: Operator, value: unknown): ReadBuilder<Row>;
+  /**
+   * Full-text search over the entity's generated `tsvector` — every `.searchable()` column at
+   * once, one GIN index, one predicate. `posts.where({ orgId }).search(input.q).limit(20).page()`.
+   *
+   * `term` is USER TEXT and is treated as such end to end: it crosses as a bound parameter and is
+   * parsed by `websearch_to_tsquery`, so `&`, `|`, `!`, `:*` and an unbalanced paren are characters
+   * to be matched, never operators and never a syntax error. There is deliberately no way to hand
+   * this layer a tsquery — a query language inside the query language is a second way to ask, and
+   * the one caller that would want it is the injection this method exists to make unreachable.
+   *
+   * It is an ordinary predicate, so the chain's tenancy, soft delete, projection, order, cursor
+   * and page size all mean here exactly what they mean without it. RELEVANCE is not an order this
+   * chain can serve: `ts_rank` is a computed value and the cursor carries columns, so the order
+   * stays the one the caller declared. An entity with no searchable column is `X_SEARCH_UNDECLARED`
+   * and the in-memory driver is `X_SEARCH_IN_MEMORY` — never a different answer from the two.
+   */
+  search(term: string): ReadBuilder<Row>;
   orderBy(column: keyof Row & string, direction?: SortDirection): ReadBuilder<Row>;
   limit(rows: number): ReadBuilder<Row>;
   /** The cursor from the previous page. */
@@ -128,6 +148,32 @@ export interface ReadBuilder<Row> {
 }
 
 export interface Table<Row, C extends ColumnMap = ColumnMap> extends ReadBuilder<Row> {
+  /**
+   * Move one row through the state machine `column` declares, in ONE statement.
+   *
+   * `from` is the state the caller believes the row is in, and it rides in the statement's own
+   * predicate — so the state that was observed and the state that was written are one decision,
+   * made under the row's lock. A read-then-check-then-write is the same call with a window in it,
+   * and under two concurrent callers the second one writes a transition out of a state the row had
+   * already left. Here the second statement matches no row: `X_STATE_CONFLICT`, naming the state
+   * the row is really in.
+   *
+   * A move the machine does not hold is `X_STATE_TRANSITION_ILLEGAL` and never reaches the
+   * database — the table is a property of the declaration. A move out of a TERMINAL state is the
+   * same code saying so; a terminal state is one whose outgoing list is empty, which is the whole
+   * of the concept and the only part of it the framework owns. Which state is terminal, what any
+   * of them mean, who may make a move and what happens on arrival are the app's, every one.
+   *
+   * Tenant-scoped exactly as `updateWhere` is, because it IS one: a row in another org matches no
+   * statement and reads back as absent, so the answer is `X_NOT_FOUND` rather than a conflict that
+   * would confirm it exists.
+   */
+  transition<K extends keyof Row & string>(
+    column: K,
+    id: IdOf<Row>,
+    move: { readonly from: Row[K] & string; readonly to: Row[K] & string },
+    options?: RepoOptions,
+  ): Promise<Row>;
   insert(values: Insertable<C>, options?: RepoOptions): Promise<Row>;
   /**
    * Many rows, one statement — the bulk write a per-row `insert` loop is the N+1 of, and the line
@@ -240,6 +286,16 @@ const builder = <Source, Row>(
       }),
 
     andWhere: (column, op, value) => next({ where: [...state.where, { column, op, value }] }),
+
+    // Refused HERE as well as at the statement, because this is the line the author wrote: a chain
+    // over an entity that declares nothing searchable can never produce a match, and the repair is
+    // one edit to the schema rather than anything about this call.
+    search: (term) => {
+      if (entity.$search === null) throw searchUndeclared(entity.$name);
+      return next({
+        where: [...state.where, { column: SEARCH_PROPERTY, op: 'matches', value: term }],
+      });
+    },
 
     orderBy: (column, direction = 'asc') =>
       next({ orderBy: [...state.orderBy, { column, direction }] }),
@@ -401,4 +457,9 @@ export const tableFor = <Row, C extends ColumnMap>(
   deleteWhere: async (filter, options) => repo.deleteWhere(filter, options),
   updateWhere: async (filter, patch, options) =>
     repo.updateWhere(filter, touch(entity, patch), options),
+  // `touch` is passed rather than applied here: a transition IS an update, so an `onUpdateNow()`
+  // column has to move exactly as `update(id, patch)` moves it — which is also the audit of WHEN
+  // the row moved, using the stamp already declared instead of a second one beside it.
+  transition: async (column, id, move, options) =>
+    transitionRow(entity, repo, column, id, move, (patch) => touch(entity, patch), options),
 });

@@ -69,6 +69,15 @@ export const ERROR_STATUS = {
   // 403 and never 401: the caller IS authenticated — that is what makes the forged write work —
   // so a 401 would send a signed-in user to a sign-in page they are already past.
   X_CSRF_BLOCKED: 403,
+  // 401 for both, and never 400: an inbound webhook is well formed and carries a CREDENTIAL — a
+  // timestamped hmac over its own bytes — so what failed is authentication, not the request. Never
+  // 403 either, which means an authenticated caller was refused, and there is no authenticated
+  // caller here. Two codes rather than one because the repairs differ and a sender's dashboard
+  // shows the status: `INVALID` is the wrong secret or a rewritten body, `STALE` is a skewed clock
+  // or a delivery being replayed off a capture. Neither triggers `signInRedirect`, which keys on
+  // `X_UNAUTHENTICATED` alone — a webhook sender is not a browser and has no session to go get.
+  X_WEBHOOK_SIGNATURE_INVALID: 401,
+  X_WEBHOOK_SIGNATURE_STALE: 401,
   // @ultimat3/action — the code every primitive throws when the CALLER's input fails the schema
   // the primitive declared. 400 because that is what the published OpenAPI operation promises for
   // it, and because a missing row made a typo'd uuid a 500: the caller was told the server broke,
@@ -157,6 +166,29 @@ export const ERROR_STATUS = {
   X_AGGREGATE_UNSUPPORTED: 500,
   X_AGGREGATE_MIXED_CURRENCY: 500,
   X_APPROXIMATE_COUNT_FILTERED: 500,
+  // The two search refusals, 500 for the reason the three above are: nothing the caller sends
+  // changes either answer. An entity with no searchable column needs a `searchable()` on one, and
+  // a driver that cannot answer a full-text match needs the Postgres one — both are edits to the
+  // app, and both carry a `fix:` that an unmapped 5xx would blank (`toProblem` replaces an
+  // undeclared code's cause with `INTERNAL_CAUSE`).
+  X_SEARCH_UNDECLARED: 500,
+  X_SEARCH_IN_MEMORY: 500,
+  // The three state-machine refusals, and they are deliberately THREE statuses rather than one:
+  // the machine says the transition does not exist, the row says it is somewhere else, or the
+  // column says there is no machine at all — three different readers and three different repairs.
+  //
+  // 422 and not 400: the request is well formed and its schema passed. The transition the caller
+  // named is not one this machine has, which is the same shape as `X_INVARIANT_VIOLATED` above and
+  // takes its status. Refused before any statement opens a connection, so nothing was written.
+  X_STATE_TRANSITION_ILLEGAL: 422,
+  // 409, the lost update caught. The row moved between the read the caller decided on and the
+  // write it asked for — nothing is wrong with either, and the repair is re-read and retry, which
+  // is precisely what a 409 tells a client to do. A 422 would say "your request is unusable",
+  // which is false: the identical request succeeds a moment later.
+  X_STATE_CONFLICT: 409,
+  // 500, the same shelf as `X_SEARCH_UNDECLARED`: a column with no machine is a declaration the
+  // app has not written, and no request changes that.
+  X_STATE_UNDECLARED: 500,
   // @ultimat3/db — the constraints a request trips, both 409. db's own `fix:` for the unique
   // violation says "answer 409, which is what a raced signup is", and `X_ENTITY_DUPLICATE` — the
   // same event one layer up — is 409 above; a foreign key rides with it because both halves of it
@@ -176,6 +208,30 @@ export const ERROR_STATUS = {
   // it either — the row exists for the reason `X_CORS_CONFIG_INVALID`'s does: this table is the
   // closed one, and a code with no row is a 500 anyway.
   X_ACTION_JOB_UNBRIDGED: 500,
+  // Every `X_WEBHOOK_*` below is OUTBOUND and is thrown inside a worker: `ROLE=worker` opens no
+  // HTTP port, so none of them ever answers a request. The rows exist for the reason
+  // `X_ACTION_JOB_UNBRIDGED`'s does — this table is the closed one, and a code with no row is a
+  // 500 anyway. The INBOUND pair (`X_WEBHOOK_SIGNATURE_*`, 401) is @ultimat3/http's and sits with
+  // the rest of this package's codes above; these are the ones a delivery ends on.
+  // Same class again: an export pass runs in a worker, and both codes refuse the DECLARATION —
+  // a `row()` that answers columns nobody declared, and a page too big to hold. Neither is
+  // anything a caller sent.
+  // @ultimat3/notify — five 500s and one 502, and the split is who failed.
+  //
+  // The five are the app's own declaration: a notifier with no channels, one channel named twice,
+  // a digest window on a bulk channel, a store nothing installed, and a fan-out past the per-run
+  // ceiling. Every `fix:` on those five names a code edit or a boot call, so nothing a caller
+  // sends changes any of them — `X_NOTIFY_FANOUT_TOO_WIDE` is the only one a request can even
+  // INFLUENCE (an action that notifies a whole org), and the repair is still `bulkChannel()` or a
+  // paged `backfill()`, never the request.
+  // 502, and it is the one row on this table that answers for somebody else's server. This code
+  // WRAPS a provider rejection — `NotifyDeliveryFailedError` takes the caught value and renders it
+  // — so the thing that failed is the channel's upstream, not this process. It is thrown inside a
+  // job step today (`x jobs show <notifier> --json` is its own `fix:`), so nothing reaches a
+  // request and the number is unobservable either way; the row is chosen for the day that stops
+  // being true, and the asymmetry decides it. A wrong 502 costs nothing. A wrong 500 pages the
+  // on-call for an email provider's outage, because `stages.ts` reports every `status >= 500` to
+  // the error monitor — which is the failure this whole table exists to stop.
   // @ultimat3/policy
   X_POLICY_MISSING: 500,
   X_PERMISSION_UNKNOWN: 500,
@@ -229,6 +285,21 @@ export const ERROR_STATUS = {
   // 404, deliberately NOT 403: the org check fires before anything is read, so answering
   // "forbidden" would confirm that a key exists to the one caller who must not learn it.
   X_STORAGE_ORG_MISMATCH: 404,
+  // @ultimat3/ui — a form control whose `name` is not a usable field path. The owning slice argued
+  // for NO ROW, on the grounds that this is a render-time developer error that can never reach
+  // HTTP, and the argument is right about the code and wrong about the table.
+  //
+  // `scripts/error-map-backlog.ts` is the only "no row" this table has, and its own header says
+  // what an entry there means: "NOT a claim that the code can never cross HTTP … a claim that
+  // nobody has decided yet", with the ratchet promising only that the undecided set never grows.
+  // This code HAS been decided, so a pin would record the opposite of what is known and grow the
+  // one list that may not grow.
+  //
+  // So it takes the answer every other decided-and-unreachable code takes — `X_CORS_CONFIG_INVALID`,
+  // `X_ACTION_JOB_UNBRIDGED`, `X_RATE_LIMIT_NOT_SHARED`. The row is NOT a claim that it reaches a
+  // request. A code with no row already answers 500 (`DEFAULT_STATUS`); the row changes nothing at
+  // runtime and makes that answer a reviewed one instead of an accident, which is the whole reason
+  // this table is closed.
   // @ultimat3/mail
   // The deployment configured no transport. It reaches a caller only through an inline
   // `send(…, { sync: true })` inside a request; the queued path dead-letters instead. A server-side

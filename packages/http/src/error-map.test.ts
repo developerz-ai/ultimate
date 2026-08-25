@@ -84,6 +84,32 @@ describe('error -> status', () => {
 // Every app-defined code answered 500, and `pipeline.ts` reports `status >= 500` to the error
 // monitor — so a wrong password paged the on-call. The table above is the framework's and stays
 // closed; this is the app's half of it.
+/**
+ * The rows that are a JUDGEMENT rather than the table's default, pinned so a future edit that
+ * flips one is a failing test rather than a quiet change of what a client is told. Every
+ * assertion below is a decision recorded in `error-map.ts`'s own comments; none of them is
+ * `DEFAULT_STATUS` falling through, which `an unmapped code is a loud 500` already covers.
+ */
+describe('the rows that were decided rather than defaulted', () => {
+  test('a state machine answers three different statuses, because it has three failures', () => {
+    // Well formed, schema passed, and the machine has no such transition — the same shape
+    // `X_INVARIANT_VIOLATED` is, refused before a statement opens a connection.
+    expect(statusFor('X_STATE_TRANSITION_ILLEGAL')).toBe(422);
+    // The lost update caught. Nothing is wrong with the request — the identical one succeeds a
+    // moment later — so 409 tells the client the one thing it can act on: re-read and retry.
+    expect(statusFor('X_STATE_CONFLICT')).toBe(409);
+    // A column with no machine is a declaration nobody wrote, which no request changes.
+    expect(statusFor('X_STATE_UNDECLARED')).toBe(500);
+  });
+
+  test('an inbound webhook that does not authenticate is 401, and never 403 or 400', () => {
+    // The request is well formed and carried a credential; the credential is what failed. A 403
+    // would mean an authenticated caller was refused, and there is no authenticated caller.
+    expect(statusFor('X_WEBHOOK_SIGNATURE_INVALID')).toBe(401);
+    expect(statusFor('X_WEBHOOK_SIGNATURE_STALE')).toBe(401);
+  });
+});
+
 describe('an app declares the status for its own codes', () => {
   afterEach(resetErrorStatus);
 

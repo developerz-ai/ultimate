@@ -325,6 +325,92 @@ export const posts = entity('posts', {
 | Refused | a unique GIN and an ordered GIN, at `entity()` — Postgres has neither, and the refusal names the edit |
 | Naming | the method is part of what separates two indexes on the same columns, so a btree and a GIN on one column are two indexes with two names |
 
+## Full-text search
+
+`.searchable()` on a `text()` column puts it in the entity's **one** generated `tsvector`, with a
+GIN index on it. Nothing else to declare, and no second column on the row.
+
+```ts
+import { database, entity, text, timestamp, uuid } from '@ultimat3/entity';
+
+declare const orgId: string;
+declare const term: string;   // what the user typed, verbatim
+
+const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().tenant(),
+    title: text({ max: 120 }).searchable('A'),   // 'A' outranks 'D' under ts_rank
+    body: text().nullable().searchable(),        // 'D' by default, Postgres' own
+    createdAt: timestamp().defaultNow(),
+  },
+  // Only when the defaults do not fit: the column is `search_tsv`, the language is 'english'.
+  search: { column: 'search_tsv', language: 'english' },
+});
+
+const db = database({ posts });
+
+await db.posts.where({ orgId }).search(term).orderBy('createdAt', 'desc').limit(20).page();
+```
+
+| Fact | Why |
+|---|---|
+| the term is a **bound parameter**, parsed by `websearch_to_tsquery` | `&`, `\|`, `!`, `:*` and an unbalanced paren are characters to match, never operators and never a `42601`. `plainto_tsquery` is safe too and silently discards `"a phrase"` and `-negation`; bare `to_tsquery` on user text is the injection |
+| the language is spliced from a closed set (`SEARCH_LANGUAGES`) | `regconfig` cannot be a bound parameter inside a generated column, and `to_tsvector(text)` with no configuration is not immutable, so Postgres refuses it there |
+| the column is `generated always as (…) stored`, `not null` | the database computes it on every write, including one made from psql |
+| tenancy, soft delete, the projection, the order and the cursor are unchanged | `.search()` is one more predicate on the chain you already had |
+| `memoryDriver()` **refuses** it — `X_SEARCH_IN_MEMORY` | stemming, stop words and a phrase parser are not a JS token comparison, and an answer memory could give is one Postgres would contradict. Assert a search in a `.live.test.ts` |
+| relevance is **not** an order the chain serves | `ts_rank` is a computed value and a cursor carries columns; the order is the one you declared, and it pages |
+
+## A state machine over a column
+
+`.transitions()` on an `enumerated()` column. The states are yours; the machine is the framework's.
+
+```ts
+import { database, entity, enumerated, timestamp, uuid } from '@ultimat3/entity';
+
+declare const id: string;
+
+const ORDER_STATES = ['pending', 'paid', 'shipped', 'delivered', 'cancelled'] as const;
+
+const orders = entity('orders', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().tenant(),
+    status: enumerated(ORDER_STATES)
+      .transitions({
+        pending: ['paid', 'cancelled'],
+        paid: ['shipped', 'cancelled'],
+        shipped: ['delivered'],
+        delivered: [],     // terminal — nothing leaves it, and an empty list is how you say so
+        cancelled: [],
+      })
+      .default('pending'),
+    updatedAt: timestamp().defaultNow().onUpdateNow(),
+  },
+});
+
+const db = database({ orders });
+
+// One statement. `from` is the state you believe the row is in, and it rides in the predicate.
+const shipped = await db.orders.transition('status', id, { from: 'paid', to: 'shipped' });
+```
+
+| Fact | Why |
+|---|---|
+| the table is a **mapped type** over your `enumerated()` set | a missing state, an unknown key and an unknown target are compile errors — the framework never names a state |
+| **one statement**, with `from` in its predicate | the state observed and the state written are one decision, under the row's lock. Two callers who both read `pending` cannot both move it: the second matches no row |
+| a move the table does not hold is `X_STATE_TRANSITION_ILLEGAL`, before any statement | the table is a property of the declaration, so an illegal move never reaches the database |
+| a row that moved first is `X_STATE_CONFLICT`, naming the state it is really in | read back **after** the refusal — a diagnosis, never the decision |
+| another org's row is `X_NOT_FOUND`, never a conflict | a conflict would confirm the row exists and name its state |
+| a terminal state is one with an empty list | derived. *Which* state is terminal is yours |
+| `onUpdateNow()` moves, because a transition is an update | the audit of *when* it moved, with no second mechanism beside it |
+| the CHECK comes from `enumerated()` | the machine emits no DDL of its own — one declaration of what a legal value is |
+| `memoryDriver()` answers it exactly as Postgres does | a compare-and-set over a map is the same question; unlike a `tsvector` match, there is nothing to fake |
+
+What is deliberately **not** here: who may make a move, what happens on arrival, an approval chain,
+a reason code. Those differ per app — wrap `transition()` in your own function and put them there.
+
 ## Counting by a column
 
 `As of 2026-08`. `count()` answers one number, so a screen or a backfill that needs one per row

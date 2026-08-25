@@ -13,6 +13,8 @@ import type {
 } from './entity-shape';
 import { migrationIrreversible } from './errors';
 import { type ConstraintPlans, foreignKeyPlan, foreignKeysOf, type Plan } from './foreign-key-plan';
+import type { Regeneration } from './generated-column';
+import { generatedClause, isGenerated, regenerate } from './generated-column';
 import { declaredMethod, indexMethodOf, indexMethodSql } from './index-method';
 import {
   type ColumnDescription,
@@ -54,7 +56,10 @@ function defaultExpression(column: ColumnDescriptionLike): string | null {
 }
 
 function columnClause(column: ColumnDescriptionLike): string {
-  const parts = [`"${column.column}"`, sqlType(column.kind)];
+  // The generation clause sits directly after the type, and `generatedClause` refuses the pairs
+  // Postgres has no column for. Every other part below is unchanged and unreachable for a
+  // generated column: it may carry no default, and `hasDefault` is what the refusal reads.
+  const parts = [`"${column.column}"`, `${sqlType(column.kind)}${generatedClause(column)}`];
   const expression = defaultExpression(column);
   if (expression !== null) parts.push(`default ${expression}`);
   if (column.notNull) parts.push('not null');
@@ -106,6 +111,9 @@ export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDe
           nullable: !column.notNull,
           default: defaultExpression(column),
           position: index + 1,
+          // Only when one was declared — absent stays absent, so no snapshot written before this
+          // field existed gains a key and no app's sidecar regenerates over a fact already true.
+          ...(column.generated === undefined ? {} : { generated: column.generated }),
         }));
       return {
         schema: 'public',
@@ -197,14 +205,20 @@ function retypeColumn(
   column: ColumnDescriptionLike,
   recorded: ColumnDescription,
   plan: Plan,
-): void {
+): Regeneration {
   const wanted = sqlType(column.kind);
-  if (recorded.dataType === wanted) return;
+  // A generated column moves by its own rules — see `generated-column.ts`. Asked whenever EITHER
+  // side is one, because becoming generated and ceasing to be are both changes with a statement.
+  if (isGenerated(column) || recorded.generated !== undefined) {
+    return regenerate(table, column, wanted, recorded, plan);
+  }
+  if (recorded.dataType === wanted) return 'unchanged';
   const alter = (type: string): string =>
     `alter table "${table}" alter column "${column.column}" type ${type} ` +
     `using "${column.column}"::${type};`;
   plan.up.push(alter(wanted));
   plan.down.push(alter(recorded.dataType));
+  return 'altered';
 }
 
 /** The parts of an index Postgres cannot alter in place — every one of them is a rebuild. */
@@ -258,16 +272,26 @@ function redefineIndex(
 function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: Plan): void {
   const existing = new Map(live.columns.map((column) => [column.name, column]));
   const added = new Set<string>();
+  // A column `regenerate` had to replace outright: `add column` implies no index, so every index
+  // over it has to be stated again even though its own definition never moved.
+  const rebuilt = new Set<string>();
   for (const column of entity.columns) {
     const recorded = existing.get(column.column);
     if (recorded !== undefined) {
-      retypeColumn(entity.table, column, recorded, plan);
+      if (retypeColumn(entity.table, column, recorded, plan) === 'rebuilt') {
+        rebuilt.add(column.column);
+      }
       continue;
     }
     added.add(column.column);
     // A NOT NULL add with no default cannot succeed on a populated table; emit it nullable and
     // leave the agent the exact follow-up rather than a migration that fails at 3am.
-    const nullable = column.notNull && defaultExpression(column) === null;
+    //
+    // A GENERATED column is the exception and not a special case of it: the database computes it
+    // for every existing row inside the same `add column`, so it lands NOT NULL and populated in
+    // one statement — measured. Emitting it nullable would leave a `-- backfill` comment naming a
+    // step nobody can perform, since a generated column cannot be written to.
+    const nullable = column.notNull && !isGenerated(column) && defaultExpression(column) === null;
     const clause = nullable ? columnClause({ ...column, notNull: false }) : columnClause(column);
     plan.up.push(`alter table "${entity.table}" add column ${clause};`);
     if (nullable) {
@@ -282,7 +306,9 @@ function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: 
   const indexed = new Map(live.indexes.map((index) => [index.name, index]));
   for (const index of entity.indexes) {
     const recorded = indexed.get(index.name);
-    if (recorded !== undefined) {
+    // A rebuilt column took its indexes down with it, so this one is CREATED rather than compared:
+    // `redefineIndex` sees a definition that never moved and would emit nothing at all.
+    if (recorded !== undefined && !index.columns.some((column) => rebuilt.has(column))) {
       redefineIndex(entity.table, index, recorded, plan);
       continue;
     }

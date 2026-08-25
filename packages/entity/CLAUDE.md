@@ -938,6 +938,52 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `EntityError` inline** rather than delegating to a shared one, because `fix-scan.ts` reads a fix
   literal only at a call site whose callee builds the error itself — a wrapper would take all 34
   fix lines back out of `x verify`'s `errors` step (measured: `checked` 1040 -> 1071).
+- **Full-text search is one generated `tsvector` per entity, and the TERM is never syntax.**
+  `.searchable()` on a `text()` column puts it in the vector (`search.ts`); `entity()` derives the
+  column, the `generated always as (…) stored` expression and the GIN index through the existing
+  `IndexInit` path. Rules, none optional. **`websearch_to_tsquery`, never `to_tsquery`**: the term
+  crosses as a bound parameter either way — that is what stops an injection — but bare `to_tsquery`
+  reads `&`, `|`, `!`, `<->`, `:*` and parentheses as OPERATORS, so a search box sends either a
+  `42601` or a query the caller did not write; `plainto_tsquery` is safe and throws the user's own
+  quotes and `-negation` away in silence. **The configuration is spliced, from a CLOSED set**
+  (`SEARCH_LANGUAGES`), because `regconfig` cannot be a bound parameter inside a generated column at
+  all — and `to_tsvector(text)` with no configuration is not immutable, so Postgres refuses it there.
+  **`coalesce(col, '')` on every source**: `to_tsvector(NULL)` is NULL and `NULL || tsvector` is
+  NULL, so one nullable column would erase the whole row's vector. **The vector column is NOT NULL**,
+  which is what makes a generator that does not render the `generated` clause fail on the first
+  insert (`23502`) instead of leaving a table of NULL vectors under a search that quietly answers
+  nothing. **The memory driver REFUSES** (`X_SEARCH_IN_MEMORY`) rather than emulating: stemming, stop
+  words and a phrase parser are not a JS token comparison, and a green unit test over a different
+  question is the one outcome the two-driver split exists to prevent — the parity rule inverted, and
+  `predicateSql`/`matchesPredicate` are exhaustive switches over `Operator`, so neither can be given
+  a case the other lacks. **RELEVANCE is not an order this chain serves**: `ts_rank` is a computed
+  value and the cursor carries columns, so `.search()` filters and the declared `orderBy` pages —
+  proven over 30 tied rows in `pg-search.live.test.ts`, which also explains the GIN index and pins
+  the plan the tenant predicate produces.
+- **A state machine on a column is the MECHANISM only, and the line is `19-mechanism-not-convention.md`'s.**
+  What ships: the transition table, the refusal of a move not in it, the ATOMICITY of check-and-move,
+  the terminal-state concept, and the stamp saying when the row moved. What never ships: the states,
+  an approval chain, a role that may perform a move, a side effect on arrival. **There is no enum of
+  state names anywhere in this package** — `.transitions()` hangs off `enumerated()`, so the states
+  are the app's own set and `TransitionTable<S>` is a MAPPED type over it: a missing state, an
+  unknown key and an unknown target are compile errors against a list the framework never saw.
+  **A terminal state is one whose outgoing list is empty** — derived, never declared, so "nothing
+  leaves cancelled" is structural and *which* state is terminal is not the framework's business.
+  **The move is ONE statement.** `from` rides in the predicate (`where id = $1 and status = $2`), so
+  the state that was OBSERVED and the state that was WRITTEN are one decision made under the row's
+  lock, and no rows is the refusal. A read-then-check-then-write is the same code with a window in
+  it: measured against a real server, twenty concurrent callers naming `pending` produced **14
+  winners** that way and **exactly 1** this way (`pg-transition.live.test.ts`). Legality is asked
+  BEFORE the statement, because the table is a property of the declaration and not of the database.
+  **The refusal is a read, and only ever after the decision** — `X_STATE_CONFLICT` names the state
+  the row is really in, from a tenant-scoped `findById` that runs once the statement has already
+  refused. Another org's row reads as absent, so the answer is `X_NOT_FOUND` and never a conflict
+  that would confirm it exists. **The machine adds no DDL**: `enumerated()` already emits the CHECK,
+  so there is one declaration of what a legal value is. **A machine column may not be nullable** —
+  NULL is not a state, and `= NULL` matches no row, so every move out of it would read as a
+  conflict. **`whyNot` asks three questions in one order** — unknown state, then terminal, then the
+  legal list — because an unknown state has no outgoing moves either, and a check that skipped it
+  reported a typo as "the row is terminal in `pendign`".
 - Never throw a bare `Error` — use `errors.ts`.
 - Tests restore the process-global registry in `afterAll` (`clearRegistry()`): a leaked registry
   breaks an unrelated package's tests, as it did in `@ultimat3/policy`.
@@ -953,6 +999,13 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `refuse.ts` | `refuseColumn`/`refuseInvariant` — the refusals raised before any entity exists, each carrying the EDIT that repairs it |
 | `expr.ts` / `invariants.ts` | the `invariants: (c) => …` rule language; bind + `toSql()` DDL |
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
+| `index-name.ts` | what an index is CALLED — the predicate/direction/method discriminator and the 63-byte bound |
+| `search.ts` | the generated `tsvector` a `.searchable()` column set derives: the closed language list, the weights, the expression |
+| `state-machine.ts` | the transition table, its five declaration rules, and what a terminal state IS |
+| `transition.ts` | one atomic move: the legality question, the conditional statement, the diagnosis of a statement that matched nothing |
+| `enum-column.ts` | `enumerated()` and its own chain — the one builder that may declare a machine |
+| `column-values.ts` | `got()` and `oneOf()`, so `enum-column.ts` needs no import of the file that imports it |
+| `feature-errors.ts` | the refusals search and the state machine raise at call time; the codes and titles stay in `errors.ts` |
 | `view.ts` | `$view(keys)` — the row projection an action names as its `output` |
 | `query.ts` / `database.ts` | chainable read to a cursor page; `database()` + `Driver` |
 | `clock.ts` | `entityNow()` — the ONE clock read on the write path, `ctx.clock` else the system's |
