@@ -73,9 +73,29 @@ two differ, and it is why a surface that decides on input alone needs no edit.
   process — so a clear in one test file is permanent for every file after it, whose own `import` is a
   cache hit that declares nothing. `restoreRoles` takes the declaration sites too: `defineRoles()` derives
   them from the CALLER's stack, so restoring through it would make `X_ROLE_REDEFINED` name the harness.
-- **`not()` never inverts `X_UNAUTHENTICATED`.** A null actor is not a fact about this
-  actor's grants; inverting it makes `not(can('order:internal'))` a public door into the
-  internal one. Any denial carrying that code propagates unchanged.
+- **`and()` and `or()` REFUSE an empty clause list** (`X_POLICY_CLAUSE_EMPTY`, `As of 2026-08-25`),
+  at the call that builds them. An empty `and()` found nothing to deny and answered ALLOWED, so
+  `and(...requiredCaps.map(can))` over a list that filtered to nothing — a config-driven or
+  per-tenant rule table — admitted an **anonymous** caller on all four surfaces, with `meta.auth`
+  deriving from `admitsAnonymous` so `@ultimat3/http` did not 401 first either, and no diagnostic:
+  the label renders as `and()`. `allow('public')` is the explicit spelling, so refusing costs a
+  caller nothing they cannot say another way. `or()` is refused for symmetry and for axiom 1 rather
+  than for safety — it fails closed, but with "no clause allowed this actor", a reason naming no
+  clause; `deny('<reason>')` carries one. Refused where it is WRITTEN, the same call
+  `@ultimat3/scraping`'s `allowHosts: []` and `discriminated-union.ts`'s unroutable member make.
+- **`not()` never inverts `X_UNAUTHENTICATED`, and `or()` is what makes that true of a TREE**
+  (`As of 2026-08-25`). A null actor is not a fact about this actor's grants; inverting it makes
+  `not(can('order:internal'))` a public door into the internal one. Any denial carrying that code
+  propagates unchanged — but the rule held only while `not`'s DIRECT child was a `can()`:
+  `not(or(can('order:internal'), deny('read-only mode')))` **allowed `actor: null`**, because `or`
+  reported the LAST denial and `deny`'s `X_FORBIDDEN` overwrote the code `not()` had to recognise.
+  So `or` now reports a denial carrying `X_UNAUTHENTICATED` over a later one that does not, and
+  `policy-anonymous.ts`'s `or` walk mirrors it. **`and` needs no such rule** — it short-circuits, so
+  the denial it reports IS the deciding one. The other candidate repair, `not()` re-reading
+  `args.actor === null` itself, was refused: it would deny an anonymous caller under `not(deny(…))`,
+  which this file and `policy-anonymous.ts` both document as ALLOWED, and it states the wrong rule —
+  `not` inverts a decision about grants, and whether one was made without an actor is `or`'s to
+  report.
 - **`defineRoles()` merges** and refuses a role two modules define differently
   (`X_ROLE_REDEFINED`, naming both declaration sites). A re-declaration of an *identical*
   role is a no-op, which is what keeps `defineRoles({ ...roleDefinitions(), … })` legal.
@@ -112,6 +132,12 @@ two differ, and it is why a surface that decides on input alone needs no edit.
 - No `any`. Never throw a bare `Error` — use `errors.ts`.
 - **This package owns `X_FORBIDDEN`** and registers its title with core. `http`, `auth`
   and every surface adapter reuse the code and must not re-register it.
+- **Every owned code is classified `terminal`, and every one is LISTED** (`As of 2026-08-25`).
+  `classifyThrown` reads an unregistered code carrying `terminal` as UNCLASSIFIED, so the attempt
+  count governs and a job spends its whole retry policy re-proving a denial — the cost
+  `@ultimat3/jobs`' webhook block is written up against. Core's own `ErrorRetry` doc names "a
+  permission denial" as the canonical `terminal` case and `X_FORBIDDEN` was not classified at all.
+  `errors.test.ts` pins the whole list, so a new code with no classification is a failing test.
 
 ## The one authz rule — and the one honest exception
 

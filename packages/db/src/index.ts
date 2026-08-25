@@ -32,6 +32,8 @@ export {
   poolProfileFor,
   setDbClient,
 } from './client';
+export type { ColumnDefaultLike } from './column-default';
+export { defaultExpression } from './column-default';
 export { defaultClient, REPLICA_URL_ENV } from './default-client';
 export type { DestructiveKind, DestructiveStatement } from './destructive';
 export {
@@ -56,6 +58,7 @@ export type {
   ColumnDescriptionLike,
   EntityDescriptionLike,
   IndexDescriptionLike,
+  InvariantDescriptionLike,
 } from './entity-shape';
 export type { DbErrorCode, DbErrorInit } from './errors';
 export {
@@ -96,6 +99,7 @@ export {
   isIndexMethod,
 } from './index-method';
 export type {
+  CheckDescription,
   ColumnDescription,
   ForeignKeyDescription,
   IndexDescription,
@@ -104,6 +108,15 @@ export type {
   TableDescription,
 } from './introspect';
 export { buildSchema, findTable, introspect } from './introspect';
+export {
+  checkClauses,
+  checkPlan,
+  constraintNameFor,
+  declaredChecks,
+  declaredIndexes,
+  uniqueColumns,
+} from './invariant-ddl';
+export { constraintExpressionUnsafe, constraintNameUnsafe } from './invariant-errors';
 export type {
   AppliedMigration,
   LedgerRow,
@@ -172,3 +185,5 @@ export { STATEMENT_ATTRIBUTE } from './statement-span';
 export { statementsOf } from './statement-split';
 export type { DbTx, IsolationLevel, TransactionOptions } from './transaction';
 export { beginStatement, currentTx, withTransaction } from './transaction';
+export type { UnrenderedDeclaration } from './unrendered';
+export { unrenderedComment, unrenderedOf } from './unrendered';

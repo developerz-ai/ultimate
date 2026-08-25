@@ -193,6 +193,7 @@ export type {
   ReferenceOptions,
   RowOf,
   RowPatch,
+  RowWrite,
   SearchWeight,
   TimestampColumn,
   TypeOf,

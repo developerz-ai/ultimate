@@ -64,6 +64,20 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x help shot --json   # the cause lists every request the state must answer under routes',
   X_SHOT_ISLAND_MISSING:
     'x help shot --json   # every absent picture carries its own named refusal in the run above',
+  // The six e2e-driver codes. Every one of them is raised inside a running suite, so the runnable
+  // half is the command that re-runs that suite — the cause already names the closure, the locator
+  // call or the budget, and no `x` command can edit a test for its author.
+  X_E2E_EVALUATE_UNSUPPORTED:
+    'x test e2e --json   # the cause quotes the closure; page.evaluate takes a zero-parameter arrow',
+  X_E2E_EVALUATE_CAPTURED:
+    'x test e2e --json   # the fix line names the binding to inline into the closure',
+  X_E2E_EVALUATE_THREW:
+    'x dev --json   # then run the expression the cause quotes in the browser console; the throw is the page\u2019s',
+  X_E2E_LOCATOR_EMPTY:
+    'x test e2e --json   # the fix line carries the toBeVisible() assertion to await first',
+  X_E2E_LOCATOR_AMBIGUOUS:
+    'x test e2e --json   # the fix line carries the same call with .first() on it',
+  X_E2E_SERVICE_WORKER_ABSENT: 'x build --target static --json',
   X_GH_UNAVAILABLE: 'gh auth login   # install first from https://cli.github.com',
   X_GH_NOT_AUTHENTICATED: 'gh auth login',
   X_GH_COMMAND_FAILED: 'x ci --json   # the finding carries the gh invocation that failed',

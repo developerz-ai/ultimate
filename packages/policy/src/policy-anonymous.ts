@@ -58,14 +58,20 @@ const OUTCOME_BY_KIND = Object.freeze<Record<PolicyKind, (policy: PolicyTree) =>
       }
       return 'allowed';
     },
-    // First allowance wins; if none allow, `or` reports the LAST denial.
+    // First allowance wins; if none allow, `or` reports the LAST denial — except that a clause
+    // denying for want of an actor outranks one that does not, which is `or`'s own rule in
+    // `policy.ts` and the reason `not()` can recognise an `X_UNAUTHENTICATED` raised deeper than
+    // its direct child. Both halves were wrong here identically, so the agreement test between
+    // this walk and `policy.run` stayed green over the shape neither got right.
     or: (policy) => {
       let last: AnonymousOutcome = 'denied';
+      let unauthenticated = false;
       for (const child of policy.children) {
         last = anonymousOutcome(child);
         if (last === 'allowed') return 'allowed';
+        if (last === 'unauthenticated') unauthenticated = true;
       }
-      return last;
+      return unauthenticated ? 'unauthenticated' : last;
     },
     not: (policy) => {
       const inner = policy.children[0];

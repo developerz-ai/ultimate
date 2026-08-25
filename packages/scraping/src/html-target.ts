@@ -7,7 +7,13 @@
 
 import type { CaptureClip } from './capture-clip';
 import type { ScrapeClock } from './clock';
-import { browserUnreachable, downloadTimeout, fixtureMissing, fixtureStale } from './error-throws';
+import {
+  browserUnreachable,
+  downloadTimeout,
+  fixtureMissing,
+  fixtureStale,
+  scrapeNotImplemented,
+} from './error-throws';
 import { queryHtml } from './html-query';
 import { markupRequests } from './html-requests';
 import type { InterceptRules } from './intercept';
@@ -88,6 +94,20 @@ const keyOf = (selector: string, element: ElementSnapshot | undefined): string =
   return selector;
 };
 
+/**
+ * ONE browsing context: the page's document, or a frame's. A browser gives every context its own
+ * DOM and its own form state, so this target gives every one its own markup and its own overlay.
+ *
+ * It is the whole fix for the frame half. The frame target used to be `{ ...base }` with `query`
+ * overridden, so `type`, `clear` and `select` read the element out of the PARENT's markup and
+ * wrote into the PARENT's overlay — a value typed into an iframe'd login form then read back out
+ * of `page.values()`, and a `fill` seeded itself from the parent field's value.
+ */
+interface OfflineDocument {
+  html(): string;
+  readonly overlay: Map<string, string>;
+}
+
 export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
   const consoleRing = createRing<ConsoleLine>();
   const networkRing = createRing<NetworkEntry>();
@@ -98,6 +118,13 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
   // `driver-parity.test.ts` pins the divergence, beside the box/hit-target one it already carries.
   const pageErrorRing = createRing<PageError>();
   const overlay = new Map<string, string>();
+  /**
+   * One overlay per FRAME, held here rather than in the frame target, because `frames()` builds a
+   * fresh target on every call — `page.frame(name)` re-resolves per operation, by design — so an
+   * overlay owned by the target would be discarded between the `clear` and the `type` a single
+   * `fill` performs. Keyed by name and URL together: two frames may share either one alone.
+   */
+  const frameOverlays = new Map<string, Map<string, string>>();
   let page: PageRecording = init.start ?? EMPTY;
   let armed: string | undefined;
   let closed = false;
@@ -110,19 +137,57 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
     if (closed) throw browserUnreachable(init.driver, 'the offline target is already closed');
   };
 
-  const withOverlay = (selector: string, elements: readonly ElementSnapshot[]): ElementSnapshot[] =>
+  const withOverlay = (
+    document: OfflineDocument,
+    selector: string,
+    elements: readonly ElementSnapshot[],
+  ): ElementSnapshot[] =>
     elements.map((element) => {
-      const typed = overlay.get(keyOf(selector, element));
+      const typed = document.overlay.get(keyOf(selector, element));
       return typed === undefined ? element : { ...element, value: typed };
     });
 
-  const query = async (selector: string): Promise<readonly ElementSnapshot[]> => {
+  const queryIn = async (
+    document: OfflineDocument,
+    selector: string,
+  ): Promise<readonly ElementSnapshot[]> => {
     live();
-    return withOverlay(selector, await queryHtml(page.html, selector));
+    return withOverlay(document, selector, await queryHtml(document.html(), selector));
   };
 
+  const atIn = (
+    document: OfflineDocument,
+    selector: string,
+    index: number,
+  ): Promise<ElementSnapshot | undefined> =>
+    queryIn(document, selector).then((elements) => elements[index]);
+
+  /** Appends, exactly as typing does — the port's contract. `fill` is a `clear` and then this. */
+  const typeIn = async (
+    document: OfflineDocument,
+    selector: string,
+    text: string,
+  ): Promise<void> => {
+    const element = await atIn(document, selector, 0);
+    const key = keyOf(selector, element);
+    document.overlay.set(key, `${document.overlay.get(key) ?? element?.value ?? ''}${text}`);
+  };
+
+  const setIn = async (
+    document: OfflineDocument,
+    selector: string,
+    value: string,
+  ): Promise<void> => {
+    document.overlay.set(keyOf(selector, await atIn(document, selector, 0)), value);
+  };
+
+  const pageDocument: OfflineDocument = { html: () => page.html, overlay };
+
+  const query = (selector: string): Promise<readonly ElementSnapshot[]> =>
+    queryIn(pageDocument, selector);
+
   const at = (selector: string, index: number): Promise<ElementSnapshot | undefined> =>
-    query(selector).then((elements) => elements[index]);
+    atIn(pageDocument, selector, index);
 
   /** Interception, offline: every request the markup would make, judged by the same rule. */
   const intercept = async (recording: PageRecording): Promise<void> => {
@@ -152,6 +217,9 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
     }
     page = found;
     overlay.clear();
+    // A navigation is a new document tree, frames included: a value typed into the old page's
+    // frame must not answer a query on the new one's.
+    frameOverlays.clear();
     armed = undefined;
     networkRing.push({
       method: 'GET',
@@ -175,13 +243,46 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
     await load(absolute);
   };
 
-  const frameTarget = (html: string, url: string): ScrapeTarget => ({
-    ...base,
-    url: () => url,
-    content: () => Promise.resolve(html),
-    query: async (selector) => withOverlay(selector, await queryHtml(html, selector)),
-    frames: () => Promise.resolve([]),
-  });
+  const overlayFor = (key: string): Map<string, string> => {
+    const found = frameOverlays.get(key);
+    if (found !== undefined) return found;
+    const created = new Map<string, string>();
+    frameOverlays.set(key, created);
+    return created;
+  };
+
+  /**
+   * A frame target: the parent's, with every verb that touches a DOCUMENT re-pointed at this
+   * frame's. `...base` is what makes the spread dangerous — a verb nobody overrides silently acts
+   * on the parent — so the act-verbs are listed here even where the body is one line.
+   *
+   * `click` navigates NOTHING, and that is a real limit rather than an oversight: a
+   * `PageRecording.frames` entry is one static document, so there is no second frame document for
+   * a click to land on. What it must never do is navigate the PARENT, which is what inheriting
+   * `base.click` did — `driver-parity-frames.test.ts` pins that on all three drivers. `evaluate` and
+   * `download` stay the parent's: the recording format keys evaluations and downloads per PAGE,
+   * so a frame has no map of its own to read.
+   */
+  const frameTarget = (html: string, url: string, key: string): ScrapeTarget => {
+    const document: OfflineDocument = { html: () => html, overlay: overlayFor(key) };
+    return {
+      ...base,
+      url: () => url,
+      content: () => Promise.resolve(html),
+      query: (selector) => queryIn(document, selector),
+      async click(selector: string): Promise<void> {
+        const element = await atIn(document, selector, 0);
+        if (element === undefined) throw fixtureMissing(`${url} ${selector}`, init.source);
+        const download =
+          recorded(page.downloads, selector) ?? recorded(page.downloads, element.attrs['id'] ?? '');
+        if (download !== undefined) armed = download;
+      },
+      type: (selector, text) => typeIn(document, selector, text),
+      clear: (selector) => setIn(document, selector, ''),
+      select: (selector, values) => setIn(document, selector, values[0] ?? ''),
+      frames: () => Promise.resolve([]),
+    };
+  };
 
   const base: ScrapeTarget = {
     driver: init.driver,
@@ -205,17 +306,10 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
         element.attrs['data-goto'] ?? (element.tag === 'a' ? element.attrs['href'] : undefined);
       if (href !== undefined && href !== '') await navigate(href);
     },
-    async type(selector: string, text: string): Promise<void> {
-      const element = await at(selector, 0);
-      const key = keyOf(selector, element);
-      overlay.set(key, `${overlay.get(key) ?? element?.value ?? ''}${text}`);
-    },
-    async clear(selector: string): Promise<void> {
-      overlay.set(keyOf(selector, await at(selector, 0)), '');
-    },
-    async select(selector: string, values: readonly string[]): Promise<void> {
-      overlay.set(keyOf(selector, await at(selector, 0)), values[0] ?? '');
-    },
+    type: (selector: string, text: string): Promise<void> => typeIn(pageDocument, selector, text),
+    clear: (selector: string): Promise<void> => setIn(pageDocument, selector, ''),
+    select: (selector: string, values: readonly string[]): Promise<void> =>
+      setIn(pageDocument, selector, values[0] ?? ''),
     evaluate(expression: string): Promise<unknown> {
       live();
       const answer = recorded(page.evaluate, expression);
@@ -224,6 +318,20 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
       if (answer === undefined)
         throw fixtureMissing(`${page.url} evaluate(${expression})`, init.source);
       return Promise.resolve(JSON.parse(answer) as unknown);
+    },
+    /**
+     * REFUSED, and `async` so it REJECTS. There is no browser here and no service worker, so
+     * there is no network to cut — and a resolved promise would let "a like taken offline is
+     * queued" pass against an app that was online for the whole test. That is the exact shape of
+     * lie `packages/testing`'s `fetch` patch already tells about a browser's own requests.
+     */
+    // `async`, so the refusal REJECTS: the method is typed `Promise<void>` and a synchronous
+    // `throw` from one jumps straight over `page.offline(true).catch(…)` at every caller.
+    async setOfflineMode(_enabled: boolean): Promise<void> {
+      throw scrapeNotImplemented(
+        `setOfflineMode() on the ${init.driver} driver`,
+        'run this assertion on localBrowser()/remoteBrowser(), whose setOfflineMode() reaches a real browser — an offline driver has no network to cut, so it cannot prove an offline behaviour',
+      );
     },
     screenshot: (options: CaptureOptions): Promise<Uint8Array> =>
       Promise.resolve(options.clip === undefined ? FAKE_PNG : clippedPng(options.clip)),
@@ -255,7 +363,7 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
           name,
           url,
           selector: element.attrs['id'] === undefined ? undefined : `#${element.attrs['id']}`,
-          target: frameTarget(html, url),
+          target: frameTarget(html, url, `${name}\u0000${url}`),
         });
       }
       return refs;

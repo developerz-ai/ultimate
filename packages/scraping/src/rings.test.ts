@@ -111,3 +111,49 @@ describe('unit · RESOURCE_TYPES', () => {
     expect(new Set(RESOURCE_TYPES).size).toBe(RESOURCE_TYPES.length);
   });
 });
+
+/**
+ * A capacity that cannot be one is REFUSED at construction, and the reason is the shape of the
+ * failure it replaces: `while (items.length > capacity) items.shift()` with a negative capacity
+ * shifts an already-empty array forever, because `0 > -1` stays true. `createRing(-1).push(1)`
+ * never returned — measured, killed at `timeout 5`, exit 124.
+ *
+ * A hang there is past `ctx.signal`, past the wedge watchdog and past the job timeout: it is a
+ * spinning synchronous loop on the worker's only thread inside a `page.on('request')` handler,
+ * which is incident #1 in this file's own header. `NaN` fails the other way — the guard never
+ * fires and the ring is unbounded, which is the OOM the bound exists to prevent.
+ *
+ * `assert` from core, the shape `@ultimat3/storage`'s `resolveListLimit` uses: a bound with no
+ * code of its own is still a coded refusal (`X_INVARIANT`), never a bare `Error`.
+ */
+describe('unit · a capacity that cannot bound anything is refused, never accepted', () => {
+  const codeOf = (run: () => unknown): string | undefined => {
+    try {
+      run();
+      return undefined;
+    } catch (thrown) {
+      return (thrown as { code?: string }).code;
+    }
+  };
+
+  test('a negative capacity is refused at construction, not hung on at the first push', () => {
+    expect(codeOf(() => createRing<number>(-1))).toBe('X_INVARIANT');
+  });
+
+  test('a zero capacity is refused — a ring that can hold nothing is a silent discard', () => {
+    expect(codeOf(() => createRing<number>(0))).toBe('X_INVARIANT');
+  });
+
+  test('NaN is refused, because it makes the ring UNBOUNDED rather than small', () => {
+    expect(codeOf(() => createRing<number>(Number.NaN))).toBe('X_INVARIANT');
+  });
+
+  test('a fraction is refused — the bound would not be the number that was asked for', () => {
+    expect(codeOf(() => createRing<number>(1.5))).toBe('X_INVARIANT');
+  });
+
+  test('omitted is still DEFAULT_RING_CAPACITY, and a positive integer is still honoured', () => {
+    expect(createRing<number>().capacity).toBe(DEFAULT_RING_CAPACITY);
+    expect(createRing<number>(1).capacity).toBe(1);
+  });
+});

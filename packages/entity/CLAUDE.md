@@ -33,6 +33,23 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `pg-driver-bulk.live.test.ts`, `pg-driver-tenancy.live.test.ts`). A method with only the first is
   unproven against Postgres itself; a method with only the second is unproven against memory. Both
   are the bar, not either one.
+- **Money's write shape is wider than its row shape, and both drivers narrow it at the WRITE
+  METHOD'S entry — `As of 2026-08-25`.** `MoneyInput` lets a writer hand a `bigint` minor unit read
+  straight off a `bigint` column; `MoneyValue` is what a row holds, because `JSON.stringify` refuses
+  a `bigint` and money crosses every wire this framework projects. `RowWrite<Row>` is the type that
+  says so at `Repo.insert`/`insertAll`/`upsertAll`, which took the ROW type instead — so the
+  widening this package documents, narrows and stores correctly was a **compile error at the only
+  call an app makes**, `postgresRepo()` being exported, and it was the last two entries on
+  `scripts/lib/test-typecheck-pins.ts`. `narrowRow` (`columns.ts`) is the narrowing, called at each
+  entry rather than deep inside `bindValues`/`write`, and the POSITION is the rule. `entity.$assert`
+  and `upsertPlan` both run before a statement exists, so an invariant reading `total.minor` was
+  handed the caller's `bigint` and never the `number` the row would hold — it rejected rows both
+  drivers then stored correctly. And it decides whether a refusal costs a row: Bun's client binds a
+  `bigint` verbatim (measured), so a minor unit past ±2^53 narrowed any later is INSERTed,
+  committed, and only then refused by the decode of its own `returning *` — a row the app wrote and
+  can never read. `pg-money-write.live.test.ts` is the proof, because only a real table can see
+  that; `money-write-parity.test.ts` pins both drivers together, and `type-pins.ts` fails the build
+  if those three writes stop taking `RowWrite` or start answering with it.
 - **What a PREDICATE means is decided by the column's declared KIND, and `memory-match.ts` is
   where that one meaning is written.** The database decides by the column's type, so a driver
   deciding by the JS `typeof` of the value in hand is answering a different question — four rules,

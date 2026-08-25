@@ -170,6 +170,9 @@ const describeColumn = <Row>(
       primaryKey: meta.primaryKey || input.primaryKey.includes(property),
       unique: meta.unique,
       hasDefault: meta.default !== undefined,
+      // The value beside the boolean: `@ultimat3/db` renders it, and without it the generator
+      // could only infer two expressions and dropped every other default without saying so.
+      ...(meta.default === undefined ? {} : { default: meta.default }),
       check: meta.check?.(physical) ?? null,
       // Rendered from the resolved record, so the string a migration reads and the record a
       // traversal reads can never disagree about what a `references()` points at.

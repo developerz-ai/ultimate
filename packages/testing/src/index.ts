@@ -252,6 +252,7 @@ export {
   hasE2eDriver,
   jobTest,
   liveTest,
+  resetE2eDriver,
   SEPARATOR,
   TEST_TYPES,
   testName,

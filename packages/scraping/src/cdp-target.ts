@@ -4,8 +4,9 @@
 import { isUltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse, t } from '@ultimat3/schema';
+import { browserRecord } from './browser-record';
 import type { CdpBrowserLike, CdpFrameLike, CdpPageLike, CdpRequestLike } from './cdp-port';
-import { parseSnapshots, snapshotExpression } from './cdp-snapshot';
+import { clearExpression, parseSnapshots, snapshotExpression } from './cdp-snapshot';
 import type { ScrapeClock } from './clock';
 import { browserUnreachable, pageCrashed, scrapeNotImplemented } from './error-throws';
 import type { InterceptRules } from './intercept';
@@ -46,11 +47,6 @@ const cookieSchema = t.array(
     secure: t.boolean,
   }),
 ) as unknown as StandardSchemaV1<unknown, ScrapeCookie[]>;
-
-const storageSchema = t.record(anyString) as unknown as StandardSchemaV1<
-  unknown,
-  Record<string, string>
->;
 
 const asResourceType = (raw: string): ResourceType =>
   (RESOURCE_TYPES as readonly string[]).includes(raw) ? (raw as ResourceType) : 'other';
@@ -130,31 +126,51 @@ const readPageError = (payload: unknown, at: number): PageError => {
 };
 
 /**
- * The one failure `guard()` must NOT re-label, and the line is drawn at exactly one code.
+ * The failures `guard()` must NOT re-label. Two codes, each because a SECOND attempt reaches the
+ * identical answer — never because the error looked coded.
  *
- * `X_NOT_IMPLEMENTED` is the only code that says "this build does not have the feature" — a fact
- * about the launcher's own shape, never about the connection. A browser cannot produce it; only
- * this file's own `scrapeNotImplemented()` can, from inside a guarded closure. Re-labelled as
- * `X_SCRAPE_BROWSER_UNREACHABLE` (registered `retryable` in `errors.ts`) it spends every attempt
- * in the scrape's retry policy on a method that is still missing on attempt five, and tells the
- * operator the browser went away while the browser is answering fine.
+ * | Code | Why a retry cannot change it |
+ * |---|---|
+ * | `X_NOT_IMPLEMENTED` | a fact about the launcher's own shape. A browser cannot produce it; only this file's `scrapeNotImplemented()` can, and the method is still missing on attempt five |
+ * | `X_VALIDATION_FAILED` | the browser ANSWERED, and the answer did not match the shape this driver reads it with. The page is what it is; attempt five reads the same DOM |
+ *
+ * Both were re-labelled `X_SCRAPE_BROWSER_UNREACHABLE`, which `errors.ts` registers `retryable`,
+ * so each spent the whole retry policy — five browser launches, five arrivals at a login — while
+ * telling the operator the browser went away about a browser that was answering perfectly.
  *
  * Every OTHER coded error stays wrapped, deliberately. `thrown instanceof UltimateError` is the
  * naive version of this check and it is wrong: an `X_SCRAPE_TIMEOUT` raised while the socket was
  * already dead would then arrive unwrapped, and "the browser went away mid-run" is the frame that
  * makes a disconnect legible — which is the whole reason this wrapper exists.
  *
+ * The half this package cannot close: both codes belong to `@ultimat3/core`/`@ultimat3/schema` and
+ * NEITHER is classified, so `classifyThrown` reads them as unclassified and the job's attempt
+ * count still governs. Passing them through stops the wrong TITLE and the false `retryable`
+ * claim; making them terminal is a `registerErrorRetry` beside the code that declares it.
+ *
  * `isUltimateError`, not `instanceof`: the brand survives a duplicated module instance.
  */
-const isStructuralRefusal = (thrown: unknown): boolean =>
-  isUltimateError(thrown) && thrown.code === 'X_NOT_IMPLEMENTED';
+const PASSED_THROUGH_CODES: ReadonlySet<string> = new Set([
+  'X_NOT_IMPLEMENTED',
+  'X_VALIDATION_FAILED',
+]);
 
+const isStructuralRefusal = (thrown: unknown): boolean =>
+  isUltimateError(thrown) && PASSED_THROUGH_CODES.has(thrown.code);
+
+/**
+ * `ringCapacity` was declared here, exported, read three lines into `cdpTarget` — and passed by
+ * NOBODY: `driver-cdp.ts` constructs without it and no `BrowserOptions` or `ScrapeDefinition`
+ * field reaches it, so an app could not set it at any distance. Deleted rather than threaded, the
+ * same call `CaptureOptions.timeoutMs` got: wiring it through only the CDP driver would give one
+ * of three drivers a bound the other two ignore, which is precisely the divergence
+ * `driver-parity.test.ts` exists to refuse. `DEFAULT_RING_CAPACITY` is the one bound.
+ */
 export interface CdpTargetInit {
   readonly page: CdpPageLike;
   readonly browser: CdpBrowserLike;
   readonly rules: InterceptRules;
   readonly clock: ScrapeClock;
-  readonly ringCapacity?: number | undefined;
 }
 
 /**
@@ -228,9 +244,9 @@ async function arm(init: CdpTargetInit, sinks: CdpSinks): Promise<void> {
 }
 
 export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
-  const console_ = createRing<ConsoleLine>(init.ringCapacity);
-  const network = createRing<NetworkEntry>(init.ringCapacity);
-  const pageErrors = createRing<PageError>(init.ringCapacity);
+  const console_ = createRing<ConsoleLine>();
+  const network = createRing<NetworkEntry>();
+  const pageErrors = createRing<PageError>();
   const crashed: { value: string | undefined } = { value: undefined };
   await arm(init, { network, console: console_, pageErrors, crashed });
   let pendingStorage: SessionSnapshot | undefined;
@@ -288,6 +304,15 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       ),
     click: (selector) => guard('click', () => frame.click(selector)),
     type: (selector, text) => guard('type', () => frame.type(selector, text)),
+    // Listed even though `type` above already covers the pair a `fill` performs: `clear` is the
+    // one verb with no port method, so it is the one an author of a new frame verb forgets. It was
+    // forgotten — the spread handed the frame the PAGE's closure, so `frame.fill()` emptied the
+    // parent document's same-named field and merely APPENDED to the frame's, which is how an
+    // iframe'd login submits `oldUserNEWUSER` and passes its own offline test doing it.
+    clear: (selector) =>
+      guard('clear', async () => {
+        await frame.evaluate(clearExpression(selector));
+      }),
     select: (selector, values) =>
       guard('select', async () => {
         await frame.select(selector, ...values);
@@ -318,15 +343,24 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
     type: (selector, text) => guard('type', () => init.page.type(selector, text)),
     clear: (selector) =>
       guard('clear', async () => {
-        await init.page.evaluate(
-          `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (el) { el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); } })()`,
-        );
+        await init.page.evaluate(clearExpression(selector));
       }),
     select: (selector, values) =>
       guard('select', async () => {
         await init.page.select(selector, ...values);
       }),
     evaluate: (expression) => guard('evaluate', () => init.page.evaluate(expression)),
+    setOfflineMode: (enabled: boolean): Promise<void> =>
+      guard('setOfflineMode', async () => {
+        const source = init.page as { setOfflineMode?: (value: boolean) => Promise<void> };
+        if (typeof source.setOfflineMode !== 'function') {
+          throw scrapeNotImplemented(
+            'setOfflineMode() on a CDP page with no setOfflineMode() method',
+            'upgrade the launcher to a puppeteer-core that exposes page.setOfflineMode(), or drive the condition from the app under test instead of the browser',
+          );
+        }
+        await source.setOfflineMode(enabled);
+      }),
     screenshot: (options: CaptureOptions) =>
       guard('screenshot', async () => {
         // `fullPage` is OMITTED when a clip is given rather than sent as `false`: the two are
@@ -398,7 +432,9 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
           cookies:
             typeof source.cookies === 'function' ? parse(cookieSchema, await source.cookies()) : [],
           headers: {},
-          storage: parse(storageSchema, JSON.parse(typeof storage === 'string' ? storage : '{}')),
+          // `browserRecord` and not `t.record()`: a page may legitimately hold a key called
+          // `constructor`, and the schema refuses that name outright — see `browser-record.ts`.
+          storage: browserRecord(JSON.parse(typeof storage === 'string' ? storage : '{}')),
           userAgent: typeof agent === 'string' ? agent : '',
           origin,
         };

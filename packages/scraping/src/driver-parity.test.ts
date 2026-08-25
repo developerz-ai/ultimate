@@ -28,6 +28,7 @@ const HTML_A = `<html><body>
   <button class="go" data-goto="/orders/2">Go first</button>
   <button class="go" data-goto="/orders/nowhere">Go second</button>
   <button id="pay" disabled>Pay</button>
+  <p id="hidden" style="display:none">gone</p>
   <img src="https://tracker.test/pixel.gif">
 </body></html>`;
 const HTML_B = '<html><body><h1 id="title">Page two</h1></body></html>';
@@ -313,6 +314,81 @@ describe('unit · one fixture directory replays both legs of a hybrid run', () =
       } finally {
         await session.close();
       }
+    }
+  });
+});
+
+/**
+ * `query()` on the vocabulary, and the reason it is not a convenience: `ScrapeTarget.query`
+ * already answered `visible`, and `ScrapeFrame` did not expose it — so `packages/cli`'s e2e
+ * adapter computed visibility itself and became a character-for-character copy of
+ * `snapshotExpression`'s `display !== 'none' && visibility !== 'hidden' && opacity !== '0'`. Two
+ * definitions of "visible" in one framework is axiom 1, and the shape `render-modes` and
+ * `flight-copies` exist to refuse. `values()` stays the PROJECTION for row assembly; this is the
+ * snapshot, actionability fields included.
+ */
+describe('unit · query() answers the port`s snapshot, on every driver', () => {
+  test('every match, with visible and enabled, on all three', async () => {
+    await forEachDriver(async (session, name) => {
+      await session.page.goto(URL_A);
+      const rows = await session.page.query('.row');
+      expect(
+        rows.map((row) => row.attrs['data-id']),
+        name,
+      ).toEqual(['1', '2']);
+      expect((await session.page.query('#pay'))[0]?.enabled, name).toBe(false);
+      expect((await session.page.query('#hidden'))[0]?.visible, name).toBe(false);
+      expect((await session.page.query('#title'))[0]?.visible, name).toBe(true);
+    });
+  });
+
+  test('a selector that matches nothing is an empty array, never a refusal', async () => {
+    await forEachDriver(async (session, name) => {
+      await session.page.goto(URL_A);
+      expect(await session.page.query('#nothing'), name).toEqual([]);
+    });
+  });
+});
+
+/**
+ * `page.offline(true)` is the browser's own network condition, and there is exactly one honest
+ * answer per driver: the real one sets it, and an offline driver REFUSES.
+ *
+ * A silent no-op is the failure this member exists to prevent. `packages/testing`'s
+ * `sealed-network.ts` patches `globalThis.fetch` in the TEST process, which a browser's requests
+ * never pass through — so an e2e "a like taken offline is queued" would go green against a fully
+ * online app. A refusal by name is the only thing that stops a test claiming to have proved
+ * something it never touched.
+ */
+describe('unit · offline() is set on the browser or refused by name — never a silent no-op', () => {
+  test('the real driver sets it on the page, both ways', async () => {
+    const launcher = fakeCdpLauncher({ url: URL_A, html: HTML_A });
+    const session = await open(localBrowser({ launcher }));
+    try {
+      await session.page.offline(true);
+      expect(launcher.browser.offline).toBe(true);
+      await session.page.offline(false);
+      expect(launcher.browser.offline).toBe(false);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('an offline driver REFUSES with X_NOT_IMPLEMENTED, so the test cannot lie', async () => {
+    for (const [name, driver] of [
+      ['fake', fakeBrowser(PAGES, { http: HTTP })],
+      ['fixture', fixtureBrowser(dir)],
+    ] as const) {
+      const session = await open(driver);
+      let code: string | undefined;
+      // The caller's own shape. That it REJECTS rather than throwing synchronously is the
+      // target's rule and is pinned where it can fail — `html-target.test.ts`; the page's
+      // `async` forward would mask a sync throw from here.
+      await session.page.offline(true).catch((thrown: unknown) => {
+        code = (thrown as { code?: string }).code;
+      });
+      expect(code, name).toBe('X_NOT_IMPLEMENTED');
+      await session.close();
     }
   });
 });

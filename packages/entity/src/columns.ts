@@ -27,6 +27,7 @@ import type {
   MoneyColumnNames,
   MoneyInput,
   MoneyValue,
+  RowWrite,
   TimestampColumn,
   UuidColumn,
 } from './types';
@@ -386,6 +387,22 @@ export const narrowMoney = <Row>(columns: ColumnMap, row: Row): Row => {
   }
   return (narrowed ?? row) as Row;
 };
+
+/**
+ * The same narrowing at a write METHOD'S entry, typed honestly: what a caller may spell in,
+ * the row the entity declares out.
+ *
+ * `narrowMoney` is `<Row>(columns, row: Row): Row` — sound for `bindValues`, whose input and
+ * output are both a patch, and a lie for a full row that arrived as `RowWrite<Row>`, which is
+ * exactly the position `Repo.insert`/`insertAll`/`upsertAll` are in. Narrowing here rather than at
+ * `bindValues` is also what makes an `assert` invariant judge the value the row will HOLD instead
+ * of the spelling a caller happened to use: `entity.$assert` runs before the statement exists, so
+ * a rule reading `total.minor` saw the caller's `bigint` in both drivers and the stored `number`
+ * nowhere. The `as` is the one assertion this file is for — every money property is a `MoneyValue`
+ * once `narrowMoney` has returned, and `parseMinor` threw for anything that could not become one.
+ */
+export const narrowRow = <Row>(columns: ColumnMap, values: RowWrite<Row>): Row =>
+  narrowMoney(columns, values) as Row;
 
 /**
  * The CHECK that stops a psql session writing a currency the app would refuse — the app's own

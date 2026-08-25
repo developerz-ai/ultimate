@@ -14,6 +14,7 @@ import { interceptVerdict } from './intercept';
 import type { HttpRecording } from './recording';
 import type { NetworkRing } from './rings';
 import type { RobotsGate } from './robots';
+import type { ScrapeSecrets } from './secrets';
 
 export type HttpRecordingLookup = (
   method: string,
@@ -33,6 +34,8 @@ export interface RecordedHttpInit {
    */
   readonly robots?: RobotsGate | undefined;
   readonly maxAgeMs?: number | undefined;
+  /** The SAME bag the live leg holds, so a recorded 4xx body redacts the way a real one does. */
+  readonly secrets?: ScrapeSecrets | undefined;
 }
 
 /** `GET https://api.example.com/v1/orders?page=2` -> `http-get-api-example-com-v1-orders-page-2`. */
@@ -67,8 +70,12 @@ export function recordedHttp(init: RecordedHttpInit): ScrapeHttp {
         resourceType: 'fetch',
         at: init.clock.now().getTime(),
       });
-      return responseOver(url, found.status, found.headers ?? {}, () =>
-        Promise.resolve(found.body),
+      return responseOver(
+        url,
+        found.status,
+        found.headers ?? {},
+        () => Promise.resolve(found.body),
+        init.secrets,
       );
     },
   };

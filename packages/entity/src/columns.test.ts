@@ -8,6 +8,7 @@ import {
   locale,
   money,
   narrowMoney,
+  narrowRow,
   newId,
   text,
   timestamp,
@@ -17,7 +18,7 @@ import {
 } from './columns';
 import { entity } from './entity';
 import { clearRegistry } from './registry';
-import type { MoneyInput, MoneyValue } from './types';
+import type { MoneyInput, MoneyValue, RowWrite } from './types';
 
 afterAll(() => {
   // The registry is process-global; a leaked entity breaks an unrelated package's tests.
@@ -132,6 +133,43 @@ describe('money', () => {
     );
     expect(() =>
       narrowMoney(columns, { price: { minor: 9_007_199_254_740_993n, currency: 'EUR' } }),
+    ).toThrow(/past ±2\^53/);
+  });
+
+  test('narrowRow is the same rule typed for a write METHOD: what a caller may spell in, the row out', () => {
+    // `narrowMoney` is `<Row>(columns, row: Row): Row` — its input and output are one type, which
+    // is what `bindValues` needs and a lie for `Repo.insert(values: RowWrite<Row>)`, whose input
+    // is the wide shape and whose output is the entity's row. This is that call, typed honestly:
+    // no cast at any of the four write-method entries, and none at an app's call site either.
+    interface Row {
+      readonly id: string;
+      readonly price: MoneyValue;
+    }
+    const columns = { id: text(), price: money() };
+    const wide: RowWrite<Row> = { id: 'a', price: { minor: 1234n, currency: 'EUR' } };
+    const row: Row = narrowRow<Row>(columns, wide);
+    expect(row).toEqual({ id: 'a', price: { minor: 1234, currency: 'EUR' } });
+    expect(typeof row.price.minor).toBe('number');
+    // The one property a stored row must have and a `bigint` one cannot: it serialises.
+    expect(JSON.parse(JSON.stringify(row))).toEqual({
+      id: 'a',
+      price: { minor: 1234, currency: 'EUR' },
+    });
+
+    // Identity on the common path, exactly as `narrowMoney` is: an already-narrow row must not
+    // allocate a second one to say nothing changed.
+    // `Object.is` and not `toBe`: `toBe`'s expected argument is typed by the RECEIVED value, and
+    // the received value here is a `Row` while `already` is the wider `RowWrite<Row>` — which is
+    // the asymmetry this function exists for and so is not one to cast away.
+    const already: RowWrite<Row> = { id: 'a', price: { minor: 1234, currency: 'EUR' } };
+    expect(Object.is(narrowRow<Row>(columns, already), already)).toBe(true);
+
+    // And the refusals are still the read path's, at the write method rather than at the statement.
+    expect(() =>
+      narrowRow<Row>(columns, {
+        id: 'a',
+        price: { minor: 9_007_199_254_740_993n, currency: 'EUR' },
+      }),
     ).toThrow(/past ±2\^53/);
   });
 

@@ -107,6 +107,28 @@ describe('builtinT.number', () => {
     expect(validate(schema, 5.5).issues).toBeDefined();
     expect(validate(schema, 5).issues).toBeUndefined();
   });
+
+  // The defect `money-value.ts` already carries the write-up for fixing one file over, in the
+  // validator every `t.number.int()` field on every action goes through. 2^53 IS a whole number,
+  // so `Number.isInteger` accepted it at the boundary, the policy gate and the handler ran, and
+  // the row write refused it as a 500 — the same value refused twice, once with a field path and
+  // once without.
+  test('int() demands a SAFE integer, not merely a whole one', () => {
+    const int = builtinT.number.int();
+    expect(validate(int, Number.MAX_SAFE_INTEGER).issues).toBeUndefined();
+    expect(validate(int, -Number.MAX_SAFE_INTEGER).issues).toBeUndefined();
+    expect(validate(int, 2 ** 53).issues).toBeDefined();
+    expect(validate(int, -(2 ** 53)).issues).toBeDefined();
+    expect(validate(int, 2 ** 53 + 2).issues).toBeDefined();
+  });
+
+  // The message states the rule that fired, because `expected an integer` is false about a value
+  // that IS one — and it still names no part of the value, which is `describe-value.ts`'s rule.
+  test('the refusal names the rule, and never the value', () => {
+    const message = validate(builtinT.number.int(), 2 ** 53).issues?.[0]?.message;
+    expect(message).toBe('expected a safe integer, received a number');
+    expect(message).not.toContain('9007199254740992');
+  });
 });
 
 describe('builtinT.boolean', () => {

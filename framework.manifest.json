@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "0a3385cbe5049e6175fa629af4dc38ccfe50955ed0063de5465895633f10867d",
+  "buildId": "2d626441dee1e4722aa11a603e6b8937e6ec3baf454333cbd5171b13f3e23c75",
   "tiers": {
     "0": [
       "core",
@@ -1025,6 +1025,36 @@
       "at": "packages/time/src/errors.ts"
     },
     {
+      "code": "X_E2E_EVALUATE_CAPTURED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_E2E_EVALUATE_THREW",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_E2E_EVALUATE_UNSUPPORTED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_E2E_LOCATOR_AMBIGUOUS",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_E2E_LOCATOR_EMPTY",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_E2E_SERVICE_WORKER_ABSENT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ENTITY_DUPLICATE",
       "owner": "entity",
       "at": "packages/entity/src/errors.ts"
@@ -1913,6 +1943,11 @@
       "code": "X_PIPELINE_NO_RESPONSE",
       "owner": "http",
       "at": "packages/http/src/errors.ts"
+    },
+    {
+      "code": "X_POLICY_CLAUSE_EMPTY",
+      "owner": "policy",
+      "at": "packages/policy/src/errors.ts"
     },
     {
       "code": "X_POLICY_MISSING",

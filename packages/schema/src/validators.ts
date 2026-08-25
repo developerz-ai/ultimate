@@ -128,8 +128,14 @@ function makeNumberSchema(node: SchemaNode): NumberSchema {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       return fail(path, expected('a finite number', value));
     }
-    if (node.integer === true && !Number.isInteger(value)) {
-      return fail(path, expected('an integer', value));
+    // Safe, not merely whole — the same rule `money-value.ts` states one file over, for the same
+    // reason: `Number.isInteger` let 2^53 through the boundary as a 200, so the policy gate and
+    // the handler ran and the ROW WRITE refused it as a 500 (`entity`'s `columns.ts` demands
+    // `Number.isSafeInteger`). The same value refused twice, once with a field path and once
+    // without. Above 2^53 a double cannot name its own successor, so a "whole" number there is
+    // already a rounded one.
+    if (node.integer === true && !Number.isSafeInteger(value)) {
+      return fail(path, expected('a safe integer', value));
     }
     if (node.minimum !== undefined && value < node.minimum) {
       return fail(path, expected(`a number >= ${node.minimum}`, value));
@@ -279,15 +285,32 @@ export function recordSchema<S extends AnySchema>(
       if (!isPlainObject(value)) return fail(path, expected('an object', value));
       const issues: StandardIssue[] = [];
       const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
-      for (const [key, entry] of Object.entries(value)) {
+      for (const [index, [key, entry]] of Object.entries(value).entries()) {
+        // The entry's POSITION, never its key. `describe-value.ts`'s absolute is stated about the
+        // rejected value, and a record's KEY is the caller's data just as much: the path travels
+        // `formatIssue` -> `bodyInvalid`'s `cause` -> the problem document AND the log line, and
+        // core's logger redacts by key, so a key baked into a string has no key left to redact.
+        // `@ultimat3/http`'s `bodyInvalid` states the contract this was breaking in its own doc
+        // block — *"`issues` … must name only facts the framework itself chose"*. A record keyed
+        // by an email address, a phone number or a pasted credential wrote every one of them into
+        // the central log index, in the same shape the password bug did.
+        //
+        // The index rather than nothing at all: the segment's whole job is to say WHICH entry
+        // failed, and dropping it makes three failing entries render three identical lines. It is
+        // the same segment `arraySchema` already uses, so `formatPath` renders `meta[3]` with no
+        // new spelling to learn. It is `Object.entries` order — integer-like keys sort ahead of
+        // string ones — so it names an entry that exists rather than a byte offset in the body.
+        const at = [...path, index];
         if (PROTOTYPE_KEYS.has(key)) {
           issues.push({
+            // The refused NAMES are a closed set declared right here, so the message may state
+            // them: that is the one part of this line the caller did not choose.
             message: expected(`a record key that is not ${[...PROTOTYPE_KEYS].join(' | ')}`, key),
-            path: [...path, key],
+            path: at,
           });
           continue;
         }
-        const result = valueCheck(entry, [...path, key]);
+        const result = valueCheck(entry, at);
         if (result.ok) out[key] = result.value;
         else issues.push(...result.issues);
       }

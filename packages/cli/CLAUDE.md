@@ -293,6 +293,45 @@ is a **required** field, so shelling out to GitHub without stating a remedy is a
 than a review comment. A GraphQL response is untrusted input and is parsed against a schema, never
 cast: a `null` where an id was expected would otherwise become a mutation against `undefined`.
 
+## The browser-backed e2e driver lives here, because the adapter has nowhere else to be
+
+`@ultimat3/testing` declares `PageLike` and has never had a driver for it; `@ultimat3/scraping` owns
+the only real browser in the tree and speaks `ScrapePage`. Both are tier 5, so neither may import
+the other, and `testing -> scraping` would be a NEW sideways edge. This package already holds
+declared edges to **both** (`SIDEWAYS_ALLOW`, `scripts/lib/tiers.ts`) and is the one package allowed
+to know about everything — so the join is here, and it is the same rule
+`docs/architecture/01-package-map.md` states for wiring a route table into `pwa`.
+
+| File | Job |
+|---|---|
+| `e2e-driver.ts` | `installE2eDriver({ page, baseUrl })` — the ONE call an app's test preload makes. Registers `page` over its declaration and installs the `e2eTest` seam; returns the undo |
+| `e2e-page.ts` | `PageLike` over four members of `ScrapePage`, declared structurally so a test stands one up in six lines |
+| `e2e-locator.ts` | `LocatorLike` — a handle that resolves nothing until asked, one round trip per question |
+| `e2e-selection.ts` | what a locator SELECTS, as data, and the one in-page expression that resolves it |
+| `e2e-evaluate.ts` | the closure→string crossing, which is the only lossy edge in the adapter |
+| `e2e-errors.ts` | one constructor per refusal |
+| `e2e-dom-fixture.ts` | a document small enough to hold in a test and real enough to RUN the expressions above |
+
+**Absent by default, and that is a requirement rather than a state.** CI has no Chrome. Nothing here
+runs until `installE2eDriver` is called, so `hasE2eDriver()` still answers `false` and the gate's
+`e2e` step still refuses instead of passing over a browser it does not have.
+
+**`evaluate` is the edge that cannot be lossless.** `PageLike.evaluate` takes a closure and every
+browser port in this framework takes a string, so what crosses is `Function.prototype.toString()`
+and nothing else. A zero-parameter closure naming only page globals is supported; a native or bound
+function, a declared parameter and a method shorthand are refused STATICALLY, before a byte leaves;
+a binding the page does not have comes back named, from the page's own `ReferenceError`. Measured on
+Bun 1.4.0 and load-bearing: **Bun's transpiler folds `wanted === 3` to `!0` before `toString()` ever
+runs**, so a captured PRIMITIVE can vanish from the source and never fail at all, while a captured
+reference always survives as its name. No static rule in this process can see the difference — which
+is why the refusal is raised from the page's answer rather than from a scan of the source.
+
+**Three of `E2eFixtures`' four members refuse, deliberately.** `offline()` and `online()` need a CDP
+method for the browser's own network state and `CdpPageLike` declares none; `update()` needs a second
+build served under a new id, which is a fact about the server. A fixture that silently no-opped would
+make the assertion after it read as proof — `offline()` followed by "the fallback rendered" is the
+app's ONLINE page passing an offline test.
+
 ## The `errors` step enforces the error contract
 
 | File | Job |

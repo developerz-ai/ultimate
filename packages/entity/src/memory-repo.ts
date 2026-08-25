@@ -11,7 +11,7 @@ import { foldAggregate } from './aggregate-fold';
 import { keyOf } from './batch-read';
 import { conflictKeyOf, conflictKeys, upsertPlan } from './bulk-write';
 import { entityNow } from './clock';
-import { narrowMoney } from './columns';
+import { narrowRow } from './columns';
 import { countsFrom, groupColumnOf } from './count-by';
 import { cursorFor, kindOf, seekFrom, valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
@@ -21,6 +21,7 @@ import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
 import type { FindManyArgs, MemoryRepo, RepoOptions, Transactor, Tx } from './repo';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
+import type { RowWrite } from './types';
 
 const field = (row: unknown, property: string): unknown =>
   typeof row === 'object' && row !== null ? (row as Record<string, unknown>)[property] : undefined;
@@ -113,11 +114,19 @@ export const memoryRepo = <Row>(
     return { plan, found: rowsOf(plan, args) };
   };
 
-  const write = (given: Row, options: RepoOptions | undefined, operation: string): Row => {
+  /** Money's write shape narrowed once per batch, at the method the caller reached. */
+  const narrowed = (batch: readonly RowWrite<Row>[]): readonly Row[] =>
+    batch.map((row) => narrowRow<Row>(entity.$columns, row));
+
+  const write = (
+    given: RowWrite<Row>,
+    options: RepoOptions | undefined,
+    operation: string,
+  ): Row => {
     // `MoneyInput` lets a writer hand a `bigint`; a stored row holds the value type. The Postgres
-    // driver narrows in `bindValues` and reads its answer back through `returning *`, so without
-    // this an in-memory row would be the one row in the framework `JSON.stringify` refuses.
-    const row = narrowMoney(entity.$columns, given);
+    // driver narrows at the same position — its write methods' entry — so without this an
+    // in-memory row would be the one row in the framework `JSON.stringify` refuses.
+    const row = narrowRow<Row>(entity.$columns, given);
     // Beside `$assert`, and before the row lands: a write is judged by the tenant it names as well
     // as by the invariants it declares, and the Postgres driver runs the same pair in `writeRows`.
     // `update` reaches here with the STORED row merged under its patch, so a patch that moves a row
@@ -184,11 +193,15 @@ export const memoryRepo = <Row>(
       return write(values, options, 'insert');
     },
 
-    async insertAll(batch, options) {
+    async insertAll(given, options) {
       // The whole batch is judged before any of it lands: Postgres refuses the statement as one,
       // so a row an invariant rejects — or one naming a tenant this actor may not write — must not
       // leave the rows before it stored here either. `write` re-checks both per row; this loop is
       // what makes the batch all-or-nothing, which is the half a per-row check cannot give.
+      //
+      // Narrowed FIRST, so what this loop judges is what `write` will store: `$assert` was handed
+      // the caller's `bigint` minor unit here and the narrowed `number` one call later.
+      const batch = narrowed(given);
       for (const row of batch) {
         assertRowTenant(entity.$name, entity.$tenantColumn, 'insertAll', row);
         entity.$assert(row);
@@ -196,10 +209,12 @@ export const memoryRepo = <Row>(
       return batch.map((row) => write(row, options, 'insertAll'));
     },
 
-    async upsertAll(batch, args) {
+    async upsertAll(given, args) {
       // The INCOMING rows, judged before any of them is matched: under `onMatch: 'nothing'` a
       // colliding row is skipped and never reaches `write()`, so checking only what lands would
-      // let a row naming another tenant through whenever it happened to collide.
+      // let a row naming another tenant through whenever it happened to collide. Narrowed first
+      // for the reason `insertAll` above is, and before `conflictKeyOf` reads a target too.
+      const batch = narrowed(given);
       for (const row of batch) {
         assertRowTenant(entity.$name, entity.$tenantColumn, 'upsertAll', row);
         entity.$assert(row);

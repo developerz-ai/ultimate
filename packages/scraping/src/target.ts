@@ -92,8 +92,10 @@ export interface GotoOptions {
 export type CaptureOptions = CaptureFraming;
 
 /**
- * The port. Twelve methods, every one of them something a browser genuinely does and nothing a
- * scraper's vocabulary should be re-deriving per driver.
+ * The port. Every member is something a browser genuinely does and nothing a scraper's vocabulary
+ * should be re-deriving per driver. NO COUNT: this comment said "Twelve methods" while the
+ * interface carried seventeen, and a number in prose is wrong the moment the next member lands.
+ * `ScrapeTarget` itself is the list.
  */
 export interface ScrapeTarget {
   /** `puppeteer` | `fixture` | `fake`. Appears in every error cause raised against it. */
@@ -130,6 +132,15 @@ export interface ScrapeTarget {
   select(selector: string, values: readonly string[]): Promise<void>;
   /** The expression runs in the page. The result is `unknown` and is parsed by the caller. */
   evaluate(expression: string): Promise<unknown>;
+  /**
+   * The browser goes offline, or comes back. REQUIRED on this port where it is optional on
+   * `CdpPageLike`, and the asymmetry is the enforcement: a driver author gets a type error naming
+   * this member, and the two honest implementations are "set it on the browser" and "refuse by
+   * name". A driver with no browser (`fake`, `fixture`) has no network to cut, so it answers
+   * `X_NOT_IMPLEMENTED` — never a resolved promise, which would let an offline-behaviour test go
+   * green against an app that was online the whole time.
+   */
+  setOfflineMode(enabled: boolean): Promise<void>;
   screenshot(options: CaptureOptions): Promise<Uint8Array>;
   pdf(options: CaptureOptions): Promise<Uint8Array>;
   cookies(): Promise<readonly ScrapeCookie[]>;

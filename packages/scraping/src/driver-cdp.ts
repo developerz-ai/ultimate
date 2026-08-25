@@ -143,6 +143,10 @@ async function sessionOver(
       signal,
       onActivity,
       proxy: options.proxy,
+      // The run's secrets, so the ONE thing this leg quotes from the site — the first 200 bytes
+      // of a non-2xx body, in `X_SCRAPE_HTTP_FAILED`'s cause — cannot carry the password the
+      // login endpoint echoed back. The bag was in scope here and unread.
+      secrets: init.secrets,
     }),
     close: () => guard.shutdown(),
   };

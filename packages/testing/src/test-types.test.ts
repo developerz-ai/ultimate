@@ -12,6 +12,7 @@ import {
   hasE2eDriver,
   jobTest,
   liveTest,
+  resetE2eDriver,
   SEPARATOR,
   TEST_TYPES,
   testName,
@@ -103,4 +104,9 @@ describe(testName('unit', 'the e2e driver seam'), () => {
 afterAll(() => {
   // Each registrar registered exactly one test, and each of those bodies ran exactly once.
   expect(ran).toEqual({ unit: 1, contract: 1, live: 1, job: 1 });
+  // This file installed a driver at MODULE scope and the seam is process-global, so without this
+  // every later file in the run inherited an `e2eTest` that pushed into `driverCalls` above — a
+  // leak with no thread back to here. `useE2eDriver` shipped without an inverse; this is it.
+  resetE2eDriver();
+  expect(hasE2eDriver()).toBe(false);
 });

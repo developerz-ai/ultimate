@@ -113,6 +113,33 @@ export {
   schemaHash,
   writeSchemaHash,
 } from './drift';
+// The browser-backed e2e driver. `installE2eDriver` is the ONE entry point an app's test preload
+// calls; everything below it is exported because the adapter's own pieces are what a driver author
+// re-uses, and a deep import into `src/` would make each of them a compatibility promise anyway.
+export type { E2eDriverOptions } from './e2e-driver';
+export { e2eFixtures, installE2eDriver } from './e2e-driver';
+export {
+  E2eEvaluateCapturedError,
+  E2eEvaluateThrewError,
+  E2eEvaluateUnsupportedError,
+  E2eLocatorAmbiguousError,
+  E2eLocatorEmptyError,
+  E2eServiceWorkerAbsentError,
+} from './e2e-errors';
+export type { EvaluablePage } from './e2e-evaluate';
+export { closureSource, evaluateClosure, evaluateExpression } from './e2e-evaluate';
+export type { LocatablePage } from './e2e-locator';
+export { e2eLocator, resetLocatorMarks } from './e2e-locator';
+export type { E2eBrowserPage, E2ePageOptions } from './e2e-page';
+export { DEFAULT_E2E_TIMEOUT_MS, DEFAULT_SERVICE_WORKER_TIMEOUT_MS, e2ePage } from './e2e-page';
+export type { E2eResolution, E2eSelection } from './e2e-selection';
+export {
+  MARK_ATTRIBUTE,
+  markSelector,
+  selectionCall,
+  selectionExpression,
+  unmarkExpression,
+} from './e2e-selection';
 export type { ErrorCatalog } from './error-catalog';
 export {
   buildErrorCatalog,

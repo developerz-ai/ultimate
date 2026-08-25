@@ -70,14 +70,24 @@ missing row to `null`. A surface that has no row passes `{ input, actor, ctx }` 
 |---|---|
 | `can(p, predicate?)` | permission first, then the row-level predicate |
 | `allow()` / `deny(reason)` | terminal; `allow()` is how "public" is said out loud |
-| `and(...)` | first denial wins, its reason is the reason |
-| `or(...)` | first allowance wins; otherwise the last denial is reported |
+| `and(...)` | first denial wins, its reason is the reason; **no clauses is `X_POLICY_CLAUSE_EMPTY`** |
+| `or(...)` | first allowance wins; otherwise the last denial — except one carrying `X_UNAUTHENTICATED`, which outranks a later one. **No clauses is `X_POLICY_CLAUSE_EMPTY`** |
 | `not(p)` | inverts — except `X_UNAUTHENTICATED`, which propagates unchanged |
 
 `not()` never turns "there is no actor" into an allow. `can()` denies a null actor with
 `X_UNAUTHENTICATED`, and inverting that would make `not(can('order:internal'))` — the natural
 simplification of `and(can('order:read'), not(can('order:internal')))` — a public door into the
-internal one.
+internal one. `or()` is what makes that true of a whole TREE rather than only of `not`'s direct
+child: it used to report the LAST denial, so `not(or(can('order:internal'), deny('read-only mode')))`
+**allowed an anonymous caller** — `deny`'s `X_FORBIDDEN` had overwritten the code `not()` had to
+recognise.
+
+`and()` and `or()` refuse an empty clause list at the call that builds them. Nobody writes `and()`;
+they write `and(...requiredCaps.map(can))` over a config-driven list that filters to nothing — and
+an empty `and()` found nothing to deny and **allowed everyone, anonymous callers included**, on all
+four surfaces, with no diagnostic beyond a label reading `and()`. `allow('public')` and
+`deny('<reason>')` are the explicit spellings, so the refusal costs you nothing you cannot say
+another way.
 
 `policy.permissions` (or `policyPermissions(policy)`) is the flattened, deduped, sorted list of
 every permission a tree references, `not()` clauses included. It is what a compliance report has

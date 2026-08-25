@@ -19,6 +19,13 @@ alias is re-declared, if `minor` widens back to a `bigint`, if any field loses `
 fourth field appears — or if `scale` ever stops being optional, which is the pin that says the
 shape is still additive and this is still a minor version.
 
+**The widening a WRITE accepts is `@ultimat3/entity`'s `MoneyInput`, and `RowWrite<Row>` is how a
+caller spells it**, `As of 2026-08-25`. A minor unit read straight off a `bigint` column reaches
+`Repo.insert`/`insertAll`/`upsertAll` with no conversion at the call site and is narrowed there,
+before an invariant or a statement sees it — so nothing in THIS package ever meets a `bigint`
+`minor`, and nothing here should learn to. `type-pins.ts` pins both halves: those three writes take
+the wide shape and answer with the row type.
+
 ## Boundary
 
 | File | Single responsibility |

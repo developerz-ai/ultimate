@@ -8,7 +8,74 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+The gaps 13.0.0 left, closed — and the three packages that release never opened, audited.
+
+### Added
+
+- **A real e2e browser driver.** `hasE2eDriver()` had answered `false` since it was written; no
+  driver had ever existed. `installE2eDriver()` in `@ultimat3/cli` adapts a live `ScrapePage` to
+  `PageLike` — `goto`, `reload`, `title`, `url`, `gotoStreamed`, `waitForServiceWorker`,
+  `evaluate`, `locator`, `getByRole`, `getByText` and every `LocatorLike` method, driving the
+  retrying `toBeVisible` matcher unchanged. `cli` is the composition point because it already holds
+  declared tier edges to **both** `testing` and `scraping`; a `testing → scraping` edge would have
+  been a new sideways exception.
+- `ScrapeFrame.query(selector)` and `ScrapePage.offline(enabled)`, so a frame read and a browser's
+  offline mode are drivable rather than approximated.
+- `resetE2eDriver()` — `useE2eDriver` shipped with no inverse and wrote process-global module
+  scope, so `packages/testing`'s own test file leaked a driver into every later file in a run.
+
+### Fixed
+
+- **BREAKING — a frame verb acted on the parent document.** `frameTarget` spread the parent target
+  and `clear` was missed when the overrides were added. On CDP, `frame.fill()` cleared the
+  **parent's** same-id field and then **appended** to the frame's, so a remembered username
+  submitted as `oldUserNEWUSER` while a parent field was silently emptied. On the offline drivers
+  one shared overlay meant `page.values('#password')` read back what was typed into the frame.
+  `driver-parity.test.ts` exists to catch a CDP/offline divergence and had no frame coverage;
+  `driver-parity-frames.test.ts` now does.
+- **BREAKING — two tenants could share one authenticated session.** `sessionKeyFor` collapsed every
+  non-`[a-zA-Z0-9._-]` run to a single `-`, so `alice@corp.com` and `alice-corp.com` were one key.
+  The browser then loaded account A's cookies, `auth.validate()` answered `true` — the session *is*
+  valid, for the wrong account — and A's rows were stored under B's tenant. Each segment now
+  carries a hash of its raw value. **Every stored session key changes spelling**: a miss reads as
+  "no session", so it costs one extra login per stored session and orphans the old objects.
+- **A schema refusal burned a job's whole retry policy.** `classifyThrown` reports the fail-closed
+  default only for a code that was *explicitly declared*, so `X_VALIDATION_FAILED` — unclassified —
+  let the attempt count govern. Measured: a page carrying `<div constructor="…">` cost
+  `@ultimat3/scraping` five browser launches, five arrivals at a login, and a dead letter claiming
+  the browser went away, about a browser that answered perfectly.
+- **`X_FORBIDDEN` was unclassified too**, so a job retried an authz denial five times.
+- A site's response body reached an error `cause` unredacted, and `secrets.ts`'s header promised
+  otherwise. `page.console()`, `page.network()` and `page.pageErrors()` were unredacted as well —
+  three of the four surfaces that header named, plus a fifth it did not.
+- `createRing` with a negative capacity **hung forever** — past `ctx.signal`, past the wedge
+  watchdog and past the job timeout. Reproduced at `exit 124`.
+- A recorded 204 could not be replayed: `t.string` refuses an empty string, so `body: ''`,
+  `html: ''` and an empty header value all raised `X_VALIDATION_FAILED`, and the two offline
+  drivers disagreed about the same recording.
+
+### Changed
+
+- **BREAKING — `t.number.int()` demands a SAFE integer.** It used `Number.isInteger`, so
+  `9007199254740992` passed the boundary as a 200 and failed at the row write as a 500 — the same
+  value refused twice, once with a field path and once without. `money-value.ts`, one file over,
+  already carried the write-up for having fixed exactly this. `toJsonSchema` now publishes the safe
+  range on an integer node, so the contract stops promising what the parser refuses.
+- **BREAKING — `and()` and `or()` refuse an empty clause list.** `and()` answered **allowed** and
+  `admitsAnonymous(and())` agreed, so a policy built from a list that filtered to empty admitted an
+  anonymous caller on all four surfaces.
+- **BREAKING — a `t.record` issue path names the failing entry by POSITION**, not by the caller's
+  key. The key *is* caller data, and it reached `X_BODY_INVALID`'s cause and the log line —
+  the surface `describe-value.ts` exists to keep caller content out of.
+- **BREAKING — `ScrapeTarget.setOfflineMode` is required** and `CdpTargetInit.ringCapacity` is
+  deleted (declared, exported, read, and passed by nothing but a test).
+- **BREAKING — `Repo.insert`/`insertAll`/`upsertAll` take `RowWrite<T>`.** They took the ROW type
+  where money's WRITE type belongs, so `postgresRepo()` — exported — was a compile error for a
+  `bigint` minor the framework documents, implements and stores correctly. Measured while fixing
+  it: `Bun.SQL` hands `int8` back as a **string**, never a `bigint`, so the runtime was right in
+  both directions and only the declaration was wrong.
+- An `or` denying an anonymous caller reports `X_UNAUTHENTICATED` where it reported `X_FORBIDDEN`.
+
 
 ## 13.0.0 - 2026-08-25
 

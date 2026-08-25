@@ -85,6 +85,32 @@ Both legs replay from **one** fixture directory (`fixtureBrowser(dir)`), so a hy
 login, session handoff, HTTP bulk fetch — is tested end to end. Both legs apply the same robots
 gate, offline included.
 
+## Reading elements, frames, and the network condition
+
+| Read | Answers |
+|---|---|
+| `page.values(selector)` | `ElementValue[]` — tag, text, value, attrs. The projection row assembly wants |
+| `page.query(selector)` | `ElementSnapshot[]` — the same matches PLUS `visible`, `enabled`, and the layout `box`/`hitTarget` a driver with a layout engine can answer. The read for a decision ABOUT an element |
+| `page.frame(nameOrSelector)` | a `ScrapeFrame`, re-resolved on every call through it |
+| `page.offline(enabled)` | cuts the BROWSER's network, or restores it |
+
+`query()` exists because there is exactly one definition of "visible" in this framework and it is
+the port's. A caller that had to compute its own wrote
+`display !== 'none' && visibility !== 'hidden' && opacity !== '0'` a second time, which is the
+copy axiom 1 forbids.
+
+**A frame verb reaches the FRAME.** `fill`, `type`, `select`, `clear`, `click` and `query` through
+a `ScrapeFrame` handle all address that frame's own document — never the parent's, even when the
+two carry the same ids, which is what an iframe'd SSO login looks like. `driver-parity-frames.test.ts`
+drives all six through a frame on all three drivers. The one thing an offline driver cannot do is
+NAVIGATE a frame: a recorded frame is one static document, so a click inside one moves nothing
+(and, in particular, never moves the parent).
+
+**`page.offline()` is set on a browser or refused by name.** The offline drivers answer
+`X_NOT_IMPLEMENTED` rather than resolving: patching `fetch` in a test process cannot reach a
+browser's own requests, so a driver that quietly answered "done" would let "a like taken offline is
+queued" pass against an app that was online for the whole test.
+
 ## What the page reports back, and the one thing a picture cannot say
 
 Three bounded rings, read off `ScrapePage`. Bounded because a ten-thousand-page run that kept
@@ -96,6 +122,14 @@ bound threw away, so a count taken from one is never quietly a floor.
 | `page.console()` | `ConsoleLine[]` — what the page LOGGED |
 | `page.pageErrors()` / `page.pageErrorsDropped()` | `PageError[]` — what the page THREW and nobody caught, with the `stack` when the exception carried one |
 | `page.network()` / `page.networkDropped()` | `NetworkEntry[]` — every request, refusals included |
+
+All three are **redacted by value** on the way out, the same pass `page.html()` makes: a login
+endpoint fetched with the password in its query string, or a site that logs the credential it
+rejected, would otherwise put the value in `page.network()`/`page.console()` verbatim and from
+there into the stored failure artifact. The HTTP leg's `X_SCRAPE_HTTP_FAILED` cause is redacted
+too, at its throw site. Values shorter than `MIN_REDACTABLE_LENGTH` are not — a 3-character PIN is
+a substring of ordinary prose — and pixels never can be, which is why a typed secret TAINTS the
+page and `screenshot()`/`pdf()` are refused outright.
 
 `console()` and `pageErrors()` are separate streams because they are separate events: an island
 that throws during hydration calls no console method, so a scrape reading the console alone sees a
@@ -141,7 +175,8 @@ on a machine with no browser — the case CI is.
 | `driver-cdp.ts` / `cdp-*.ts` | the real browser, over a structural CDP port |
 | `driver-fake.ts` / `driver-fixture.ts` / `html-*.ts` | the offline drivers, on Bun's `HTMLRewriter` |
 | `http.ts` / `http-recorded.ts` | the second transport, live and replayed |
-| `auth.ts` / `session-state.ts` | acquire → persist → reuse → validate → burn |
+| `auth.ts` / `session-state.ts` | acquire → persist → reuse → validate → burn. The session key encodes each part (`<sanitised>.<digest>`), so two account names that differ only outside `[a-zA-Z0-9._-]` are two sessions |
+| `secrets.ts` / `browser-record.ts` | what may leave this package, and how a browser's own string map is read |
 | `expect.ts` | the silent-green alarm |
 | `watchdog.ts` | the wedge and zombie discipline |
 | `capture-clip.ts` | the one framing rule — crop, whole page, or a refusal — checked before any driver sees it |

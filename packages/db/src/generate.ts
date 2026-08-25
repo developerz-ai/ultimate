@@ -4,6 +4,7 @@
 // field. Every generated migration must be reversible; a drop that loses data refuses instead.
 
 import { assert, systemClock } from '@ultimat3/core';
+import { defaultExpression } from './column-default';
 import { isDestructive } from './destructive';
 import { dropOrder } from './drop-order';
 import type {
@@ -23,6 +24,9 @@ import {
   type SchemaDescription,
   type TableDescription,
 } from './introspect';
+import { checkClauses, checkPlan, declaredChecks, declaredIndexes } from './invariant-ddl';
+import { identifier } from './sql';
+import { type UnrenderedDeclaration, unrenderedComment, unrenderedOf } from './unrendered';
 
 const SQL_TYPES: Readonly<Record<string, string>> = {
   uuid: 'uuid',
@@ -44,22 +48,19 @@ function sqlType(kind: string): string {
   return SQL_TYPES[kind] ?? kind;
 }
 
-/**
- * Entity descriptions carry `hasDefault` but not the expression, so the two generated defaults
- * are inferred from the blessed column helpers. Anything else is left to a follow-up migration.
- */
-function defaultExpression(column: ColumnDescriptionLike): string | null {
-  if (!column.hasDefault) return null;
-  if (column.kind === 'uuid' && column.primaryKey) return 'gen_random_uuid()';
-  if (column.kind === 'timestamptz') return 'now()';
-  return null;
-}
-
 function columnClause(column: ColumnDescriptionLike): string {
   // The generation clause sits directly after the type, and `generatedClause` refuses the pairs
   // Postgres has no column for. Every other part below is unchanged and unreachable for a
   // generated column: it may carry no default, and `hasDefault` is what the refusal reads.
-  const parts = [`"${column.column}"`, `${sqlType(column.kind)}${generatedClause(column)}`];
+  //
+  // Through `identifier`, never `"${…}"`: the name arrives from a projection this package cannot
+  // typecheck and a name that closes its own quote produced a real `drop table` through
+  // `generateMigration` once already. It is also what makes an unrendered report safe to write
+  // into a `--` comment, since generation refuses the dangerous name before the comment exists.
+  const parts = [
+    identifier(column.column).text,
+    `${sqlType(column.kind)}${generatedClause(column)}`,
+  ];
   const expression = defaultExpression(column);
   if (expression !== null) parts.push(`default ${expression}`);
   if (column.notNull) parts.push('not null');
@@ -115,6 +116,7 @@ export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDe
           // field existed gains a key and no app's sidecar regenerates over a fact already true.
           ...(column.generated === undefined ? {} : { generated: column.generated }),
         }));
+      const checks = declaredChecks(entity);
       return {
         schema: 'public',
         name: entity.table,
@@ -123,7 +125,10 @@ export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDe
         // Whole, never partly: a snapshot that recorded the name and dropped the predicate made
         // the next generation blind to a `where` or an `order` changing, and a partial index
         // silently kept as a total one is a constraint the entity no longer declares.
-        indexes: entity.indexes.map((index) => ({
+        //
+        // `declaredIndexes`, so a `unique` invariant's index is recorded exactly like an entity's
+        // own — a statement emitted and not recorded is `42P07` on the very next `x db gen`.
+        indexes: declaredIndexes(entity).map((index) => ({
           name: index.name,
           columns: [...index.columns],
           unique: index.unique,
@@ -136,6 +141,10 @@ export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDe
           ...(index.using === undefined ? {} : { using: index.using }),
         })),
         foreignKeys: foreignKeysOf(entity),
+        // Absent, never `[]`, on a table declaring none: a sidecar that predates this field must
+        // read as "nothing recorded" so the next generation adds the constraints the database is
+        // genuinely missing — the rule `using` and `generated` already state one field up.
+        ...(checks.length === 0 ? {} : { checks }),
       };
     });
   return { tables };
@@ -144,12 +153,17 @@ export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDe
 function createTable(entity: EntityDescriptionLike): readonly string[] {
   const clauses = entity.columns.map(columnClause);
   if (entity.primaryKey.length > 0) {
-    clauses.push(`primary key (${entity.primaryKey.map((key) => `"${key}"`).join(', ')})`);
+    const key = entity.primaryKey.map((column) => identifier(column).text).join(', ');
+    clauses.push(`primary key (${key})`);
   }
-  const statements = [`create table "${entity.table}" (\n  ${clauses.join(',\n  ')}\n);`];
+  // After the key, so a table declaring no invariant emits the statement it always emitted.
+  clauses.push(...checkClauses(entity));
+  const statements = [
+    `create table ${identifier(entity.table).text} (\n  ${clauses.join(',\n  ')}\n);`,
+  ];
   // Every column of a new table carries its own clause, so every `unique` one brings its index.
   const added = new Set(entity.columns.map((column) => column.column));
-  for (const index of entity.indexes) {
+  for (const index of declaredIndexes(entity)) {
     if (impliedByColumnClause(entity, index, added)) continue;
     statements.push(createIndex(entity.table, index));
   }
@@ -185,12 +199,17 @@ function createIndex(table: string, index: IndexDescriptionLike): string {
   );
   const kind = index.unique ? 'create unique index' : 'create index';
   const direction = index.order === null ? '' : ` ${index.order}`;
-  const columns = index.columns.map((column) => `"${column}"${direction}`).join(', ');
+  const columns = index.columns
+    .map((column) => `${identifier(column).text}${direction}`)
+    .join(', ');
   const predicate = index.where === null ? '' : ` where (${index.where})`;
   // Re-derived from the closed set, never spliced: `indexMethodSql` answers `''` for a btree, so
   // an index that declared no method emits the statement this generator always emitted, byte for
   // byte, and one that declared a method Postgres does not have is refused instead of built.
-  return `${kind} "${index.name}" on "${table}"${indexMethodSql(method)} (${columns})${predicate};`;
+  return (
+    `${kind} ${identifier(index.name).text} on ${identifier(table).text}` +
+    `${indexMethodSql(method)} (${columns})${predicate};`
+  );
 }
 
 /**
@@ -214,8 +233,8 @@ function retypeColumn(
   }
   if (recorded.dataType === wanted) return 'unchanged';
   const alter = (type: string): string =>
-    `alter table "${table}" alter column "${column.column}" type ${type} ` +
-    `using "${column.column}"::${type};`;
+    `alter table ${identifier(table).text} alter column ${identifier(column.column).text} ` +
+    `type ${type} using ${identifier(column.column).text}::${type};`;
   plan.up.push(alter(wanted));
   plan.down.push(alter(recorded.dataType));
   return 'altered';
@@ -250,7 +269,7 @@ function redefineIndex(
   plan: Plan,
 ): void {
   if (indexShape(index) === indexShape(recorded)) return;
-  plan.up.push(`drop index "${index.name}";`, createIndex(table, index));
+  plan.up.push(`drop index ${identifier(index.name).text};`, createIndex(table, index));
   // `down` is reversed at assembly, so the pair is pushed forwards and read backwards: recreating
   // the recorded definition is what must land last, after the new one is dropped.
   plan.down.push(
@@ -265,7 +284,7 @@ function redefineIndex(
       // rebuilt as a btree — a `down` that recreates the wrong structure is worse than none.
       ...(recorded.using === undefined ? {} : { using: declaredMethod(recorded.using) }),
     }),
-    `drop index "${index.name}";`,
+    `drop index ${identifier(index.name).text};`,
   );
 }
 
@@ -293,18 +312,20 @@ function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: 
     // step nobody can perform, since a generated column cannot be written to.
     const nullable = column.notNull && !isGenerated(column) && defaultExpression(column) === null;
     const clause = nullable ? columnClause({ ...column, notNull: false }) : columnClause(column);
-    plan.up.push(`alter table "${entity.table}" add column ${clause};`);
+    plan.up.push(`alter table ${identifier(entity.table).text} add column ${clause};`);
     if (nullable) {
       plan.up.push(
-        `-- backfill "${column.column}", then: ` +
-          `alter table "${entity.table}" alter column "${column.column}" set not null;`,
+        `-- backfill ${identifier(column.column).text}, then: alter table ` +
+          `${identifier(entity.table).text} alter column ${identifier(column.column).text} set not null;`,
       );
     }
-    plan.down.push(`alter table "${entity.table}" drop column "${column.column}";`);
+    plan.down.push(
+      `alter table ${identifier(entity.table).text} drop column ${identifier(column.column).text};`,
+    );
   }
 
   const indexed = new Map(live.indexes.map((index) => [index.name, index]));
-  for (const index of entity.indexes) {
+  for (const index of declaredIndexes(entity)) {
     const recorded = indexed.get(index.name);
     // A rebuilt column took its indexes down with it, so this one is CREATED rather than compared:
     // `redefineIndex` sees a definition that never moved and would emit nothing at all.
@@ -316,8 +337,12 @@ function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: 
     // migration emits, so it still needs a statement of its own.
     if (impliedByColumnClause(entity, index, added)) continue;
     plan.up.push(createIndex(entity.table, index));
-    plan.down.push(`drop index "${index.name}";`);
+    plan.down.push(`drop index ${identifier(index.name).text};`);
   }
+
+  // Last: a CHECK may read a column this migration just added, and `add constraint` on a column
+  // that does not exist yet is `42703`. `invariant-ddl.ts` owns which of them move.
+  checkPlan(entity, live, plan);
 }
 
 export interface GenerateOptions {
@@ -343,6 +368,13 @@ export interface GeneratedMigration {
    * cannot be written unmarked and then refused by `x verify` for lacking the mark.
    */
   readonly destructive: boolean;
+  /**
+   * Every declaration this generator could not write down. Empty on a migration that carries the
+   * whole schema, which is what makes it readable as a verdict rather than as noise — and the same
+   * list `unrenderedComment` writes into the top of `up`, so a caller that would rather refuse
+   * (`x db gen`) and a reviewer reading the committed file are looking at one answer.
+   */
+  readonly unrendered: readonly UnrenderedDeclaration[];
 }
 
 export function migrationStamp(now: Date): string {
@@ -376,7 +408,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
     foreignKeyPlan(entity, live, plans);
     if (live === undefined) {
       plan.up.push(...createTable(entity));
-      plan.down.push(`drop table "${entity.table}";`);
+      plan.down.push(`drop table ${identifier(entity.table).text};`);
       continue;
     }
     diffTable(entity, live, plan);
@@ -389,9 +421,12 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
           `x db gen "${options.name}" --allow-destructive   # or keep the column and deprecate it`,
         );
       }
-      plan.up.push(`alter table "${entity.table}" drop column "${column.name}";`);
+      plan.up.push(
+        `alter table ${identifier(entity.table).text} drop column ${identifier(column.name).text};`,
+      );
       plan.down.push(
-        `alter table "${entity.table}" add column "${column.name}" ${column.dataType};` +
+        `alter table ${identifier(entity.table).text} add column ` +
+          `${identifier(column.name).text} ${column.dataType};` +
           ' -- data is not restored',
       );
     }
@@ -409,7 +444,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   plan.up.push(...preDrops.up, ...order.constraints);
   plan.down.push(...preDrops.down, ...order.constraints.map(() => '-- constraint not restored'));
   for (const table of order.tables) {
-    plan.up.push(`drop table "${table.name}";`);
+    plan.up.push(`drop table ${identifier(table.name).text};`);
     plan.down.push(`-- "${table.name}" cannot be restored; recover it from a backup`);
   }
 
@@ -417,7 +452,18 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   plan.down.push(...constraints.down);
 
   const id = `${migrationStamp(options.now ?? systemClock.now())}_${slugify(options.name)}`;
-  const up = plan.up.join('\n');
+  // At the TOP of `up`, so what is MISSING is the first thing read — and a line comment, so it is
+  // noise to every reader that matters: `statementsOf` drops a chunk of comments alone,
+  // `stripSqlNoise` blanks it before `isDestructive` looks for a verb, and the server ignores it.
+  //
+  // Never onto an EMPTY diff. `@ultimat3/cli`'s `generateAppMigration` reads `up.trim().length` as
+  // "nothing changed" and re-records the hash sidecar instead of writing a file; a comment there
+  // would make every `x db gen` on an app with an unrendered default write a migration holding no
+  // statement — a ledger row, a checksum and a place in the apply order for nothing. The list is
+  // still on `GeneratedMigration.unrendered`, which is where a caller with no file reads it.
+  const unrendered = unrenderedOf(options.entities);
+  const body = plan.up.join('\n');
+  const up = body.length === 0 ? body : unrenderedComment(unrendered) + body;
   return {
     id,
     name: options.name,
@@ -427,5 +473,6 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
     down: [...plan.down].reverse().join('\n'),
     snapshot: snapshotOf(options.entities),
     destructive: isDestructive(up),
+    unrendered,
   };
 }

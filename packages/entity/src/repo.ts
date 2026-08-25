@@ -9,7 +9,7 @@
 
 import type { AggregateFn } from './aggregate';
 import type { Predicate, SortKey } from './tenancy';
-import type { IdOf, RowPatch } from './types';
+import type { IdOf, RowPatch, RowWrite } from './types';
 
 export interface Tx {
   readonly id: string;
@@ -80,11 +80,16 @@ export interface Page<T> {
  * The id parameters are `IdOf<T>`, not `string`: an entity that declared `uuid<PostId>()` is
  * addressed by a `PostId` and by nothing else. `IdOf<unknown>` and `IdOf<{ id: string }>` are
  * both `string`, so a row-agnostic consumer sees the signature it always saw.
+ *
+ * The whole-row writes take `RowWrite<T>` and the filtered ones `RowPatch<T>`, which are one
+ * statement in two shapes: money's write type is wider than its row type, and every one of these
+ * five entry points narrows it — `narrowRow` — before anything reads the row. Taking `T` here made
+ * the documented `bigint` minor unit unspellable at the only call an app makes.
  */
 export interface Repo<T = unknown> {
   findById(id: IdOf<T>, options?: FindByIdOptions): Promise<T | null>;
   findMany(args?: FindManyArgs): Promise<Page<T>>;
-  insert(values: T, options?: RepoOptions): Promise<T>;
+  insert(values: RowWrite<T>, options?: RepoOptions): Promise<T>;
   /**
    * Many rows, one statement — the bulk form a per-row `insert` loop is the N+1 of. Resolves with
    * the rows as stored, defaults included, in the order given; an empty batch writes nothing and
@@ -92,13 +97,13 @@ export interface Repo<T = unknown> {
    * Past Postgres's bind count the batch becomes several statements, so wrap it in
    * `withTransaction` when all-or-nothing matters.
    */
-  insertAll(rows: readonly T[], options?: RepoOptions): Promise<readonly T[]>;
+  insertAll(rows: readonly RowWrite<T>[], options?: RepoOptions): Promise<readonly T[]>;
   /**
    * `insertAll` that resolves a collision instead of failing on it. Resolves with the rows this
    * call actually wrote — under `onMatch: 'nothing'` a row already stored is skipped and absent,
    * which is what `returning *` says on the Postgres side.
    */
-  upsertAll(rows: readonly T[], args: UpsertArgs<T>): Promise<readonly T[]>;
+  upsertAll(rows: readonly RowWrite<T>[], args: UpsertArgs<T>): Promise<readonly T[]>;
   update(id: IdOf<T>, patch: RowPatch<T>, options?: RepoOptions): Promise<T>;
   delete(id: IdOf<T>, options?: RepoOptions): Promise<void>;
   /**

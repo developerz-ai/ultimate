@@ -85,29 +85,84 @@ function fakeStorage(seed: Readonly<Record<string, string>> = {}): StorageDriver
 describe('unit · sessionKeyFor', () => {
   test('the TENANT comes first, because the key is also an object-store prefix', () => {
     // A prefix that starts with the tenant is one a bucket policy can scope; scrape-first is not.
-    expect(sessionKeyFor({ scrape: 'orders.daily', tenant: 'org-1' })).toBe(
-      'org-1/orders.daily/default',
-    );
+    const key = sessionKeyFor({ scrape: 'orders.daily', tenant: 'org-1' });
+    expect(key.split('/')).toHaveLength(3);
+    expect(key.startsWith('org-1.')).toBe(true);
   });
 
   test('no tenant is the literal "no-tenant", never an empty leading segment', () => {
-    expect(sessionKeyFor({ scrape: 'orders.daily', tenant: undefined })).toBe(
-      'no-tenant/orders.daily/default',
+    expect(sessionKeyFor({ scrape: 'orders.daily', tenant: undefined }).split('/')[0]).toBe(
+      'no-tenant',
     );
   });
 
   test('the discriminator is a PART of the key, never the whole of it', () => {
     // `auth.key` supplies this. If it were the whole key, two tenants naming one account would
     // share one authenticated session.
-    expect(
-      sessionKeyFor({ scrape: 'orders.daily', tenant: 'org-1', discriminator: 'ops@shop.test' }),
-    ).toBe('org-1/orders.daily/ops-shop.test');
+    const key = sessionKeyFor({
+      scrape: 'orders.daily',
+      tenant: 'org-1',
+      discriminator: 'ops@shop.test',
+    });
+    expect(key.startsWith('org-1.')).toBe(true);
+    expect(key.split('/')[2]?.startsWith('ops-shop.test.')).toBe(true);
   });
 
-  test('every part is sanitised, so a discriminator cannot smuggle a path segment in', () => {
-    expect(sessionKeyFor({ scrape: 'orders daily', tenant: 'org 1', discriminator: 'a/b c' })).toBe(
-      'org-1/orders-daily/a-b-c',
+  /**
+   * THE property, and the one a `replaceAll` cannot hold: a run of characters outside
+   * `[a-zA-Z0-9._-]` collapsed to a single `-`, so `alice@corp.com` and `alice-corp.com` were ONE
+   * key. `restorableSession` loads by it, `driver.open({ restore })` puts account A's cookies and
+   * `localStorage` into the browser, `auth.validate()` answers true — the session IS valid, for
+   * the wrong account — and the scrape files A's rows under B's tenant.
+   *
+   * Traversal is NOT what the collapse was buying: `assertSafeKey` (`@ultimat3/storage`) already
+   * refuses a `..` segment, and it still does, below.
+   */
+  test('two account names that differ only outside the safe alphabet are TWO keys', () => {
+    const shape = { scrape: 'orders.daily', tenant: 'org-1' };
+    const at = sessionKeyFor({ ...shape, discriminator: 'alice@corp.com' });
+    const dash = sessionKeyFor({ ...shape, discriminator: 'alice-corp.com' });
+    expect(at).not.toBe(dash);
+
+    const slash = sessionKeyFor({ ...shape, discriminator: 'acct/1' });
+    const hyphen = sessionKeyFor({ ...shape, discriminator: 'acct-1' });
+    expect(slash).not.toBe(hyphen);
+  });
+
+  test('two TENANTS that differ only outside the safe alphabet are two key spaces', () => {
+    const spaced = sessionKeyFor({ scrape: 'orders.daily', tenant: 'acme corp' });
+    const hyphen = sessionKeyFor({ scrape: 'orders.daily', tenant: 'acme-corp' });
+    expect(spaced).not.toBe(hyphen);
+  });
+
+  test('two SCRAPES that differ only outside the safe alphabet are two key spaces', () => {
+    const spaced = sessionKeyFor({ scrape: 'orders daily', tenant: 'org-1' });
+    const hyphen = sessionKeyFor({ scrape: 'orders-daily', tenant: 'org-1' });
+    expect(spaced).not.toBe(hyphen);
+  });
+
+  test('a tenant named "no-tenant" is not the same key space as no tenant at all', () => {
+    expect(sessionKeyFor({ scrape: 'orders.daily', tenant: 'no-tenant' })).not.toBe(
+      sessionKeyFor({ scrape: 'orders.daily', tenant: undefined }),
     );
+    expect(
+      sessionKeyFor({ scrape: 'orders.daily', tenant: 'org-1', discriminator: 'default' }),
+    ).not.toBe(sessionKeyFor({ scrape: 'orders.daily', tenant: 'org-1' }));
+  });
+
+  test('the same input answers the same key — a session store is a cache with a memory', () => {
+    const input = { scrape: 'orders.daily', tenant: 'org-1', discriminator: 'ops@shop.test' };
+    expect(sessionKeyFor(input)).toBe(sessionKeyFor(input));
+  });
+
+  test('every part stays inside the path alphabet, so the key is still a storage path', () => {
+    const key = sessionKeyFor({
+      scrape: 'orders daily',
+      tenant: 'org 1',
+      discriminator: 'a/b c\u0000',
+    });
+    expect(key.split('/')).toHaveLength(3);
+    expect(/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(key)).toBe(true);
   });
 });
 
@@ -187,15 +242,24 @@ describe('unit · storageSessionStore', () => {
   });
 
   test('a key that would escape its prefix is refused, not written', async () => {
-    // The key IS a storage path, so `assertSafeKey` is what stops a discriminator that survived
-    // sanitisation — `.` is a legal key character — from addressing another tenant's object.
+    // The key IS a storage path, so `assertSafeKey` is the backstop. It is still the backstop:
+    // a hand-built key with a `..` segment is refused here.
     const storage = fakeStorage();
-    const escaping = sessionKeyFor({ scrape: '..', tenant: 'org-1' });
-    expect(escaping).toBe('org-1/../default');
-    await expect(storageSessionStore(storage).save({ ...STATE, key: escaping })).rejects.toThrow(
-      /X_STORAGE_PATH_UNSAFE|".." segment/,
-    );
+    await expect(
+      storageSessionStore(storage).save({ ...STATE, key: 'org-1/../default' }),
+    ).rejects.toThrow(/X_STORAGE_PATH_UNSAFE|".." segment/);
     expect(storage.writes).toEqual([]);
+  });
+
+  test('a scrape literally named ".." does not build a traversing key at all', async () => {
+    // It used to: `sessionKeyFor({ scrape: '..' })` answered `org-1/../default`, and only
+    // `assertSafeKey` stood between that and another tenant's object. The per-segment digest
+    // means no segment can BE `..`, so the refusal below never has to fire.
+    const storage = fakeStorage();
+    const key = sessionKeyFor({ scrape: '..', tenant: 'org-1' });
+    expect(key.split('/')[1]).not.toBe('..');
+    await storageSessionStore(storage).save({ ...STATE, key });
+    expect(storage.writes[0]?.key).toBe(`${DEFAULT_SESSION_PREFIX}/${key}.json`);
   });
 });
 

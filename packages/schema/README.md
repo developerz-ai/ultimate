@@ -111,6 +111,18 @@ value meant a password-strength rule wrote every mistyped password to the centra
 cleartext. There is no dev-only escape hatch: a flag is one misconfigured environment away from
 being the same breach. `describe-value.ts` owns the rule and `describe-value.test.ts` enforces it.
 
+**The issue's PATH is the same public surface**, so it too names only what the framework chose. A
+`t.object` segment is a declared field name and stays as written; a `t.record` KEY is the caller's
+data, so a failing record entry is named by POSITION — `meta[3]`, the segment `t.array` already
+uses. `@ultimat3/http`'s `bodyInvalid` states this contract in its own doc block: the `issues` it
+renders "name only facts the framework itself chose". A record keyed by an email address, a phone
+number or a pasted credential wrote every one of them into the log index otherwise.
+
+`t.number.int()` demands a **safe** integer. `2 ** 53` is a whole number, and accepting it here
+meant the boundary answered 200 and the row write answered 500 for the same value. The published
+JSON Schema carries the same bound: `minimum`/`maximum` at `±Number.MAX_SAFE_INTEGER`, or your own
+bound where it is narrower.
+
 `error.issues` is `{ path, expected, received, message }[]` with paths like `items[0].price`;
 `formatIssues()` renders one line per issue for the dev overlay. `validate()` never throws and
 returns the Standard Schema result. Async libraries: `parseAsync()` / `validateAsync()`.
