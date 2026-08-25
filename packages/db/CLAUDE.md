@@ -665,19 +665,85 @@ Four rules, none optional.
 
 | Rule | Why |
 |---|---|
-| a `check` is a named `CONSTRAINT`, a `unique` is a unique **INDEX**, an `assert` is nothing | a soft-deleting entity stamps `deleted_at is null` onto a unique invariant and Postgres has no partial unique CONSTRAINT — only a partial unique index. An `assert` declares itself as a rule only the app can judge (`sql: null`), which is what `hasJsOnlyInvariant` already reads it as, so it is not an unrendered loss |
+| a `check` is a named `CONSTRAINT`, a `unique` is a unique **INDEX**, an `assert` is nothing | a soft-deleting entity stamps `deleted_at is null` onto a unique invariant and Postgres has no partial unique CONSTRAINT — only a partial unique index. An `assert` declares itself as a rule only the app can judge (`sql: null`), which is what `hasJsOnlyInvariant` already reads it as, so on its own it is not an unrendered loss — see the next paragraph for the case where it is |
 | a `unique` invariant joins the ONE declared index list (`declaredIndexes`) | `createTable`, `diffTable` and `snapshotOf` must agree about what exists. A `create unique index` emitted and not recorded is `42P07` on the very next `x db gen` — worse than the silent drop |
 | a `check` is recorded on `TableDescription.checks`, **absent** and never `[]` | a sidecar that predates the field must read as "nothing recorded" so the next generation ADDS the constraints the database is genuinely missing. `[]` would mean "declares none" and leave every already-generated app's invariants unenforced forever. That absence is the repair path, and `parseSnapshot` preserves it |
 | the constraint name is `<table>_<name>_<check\|key>`, re-derived, bounded at 63 bytes, and **validated as an identifier** | nothing validates an invariant name at declaration, so `invariant('x" ); drop table t; --', …)` type-checks all the way to `create table` — the identical hole `columnName` carried. `identifier()` is the one rule; `constraintNameUnsafe` (`invariant-errors.ts`) exists only for its `fix:`, which names the `invariant()` call an author edits, and `generate-invariant.test.ts` pins that line because a guard whose value is its message is proven by nothing else |
 
-**A default's VALUE crosses the seam too — but nothing produces it yet.** `ColumnDescriptionLike.default`
-carries `ColumnDefaultLike` and `defaultExpression` renders it; `hasDefault` stays beside it as the
-older, narrower fact `generatedClause` reads. `@ultimat3/entity` still projects `hasDefault:
-meta.default !== undefined` and drops the value (`packages/entity/src/describe.ts`), so nine
-defaults in `examples/dummy` — `plan_code`, `billing_currency`, `role`, `tz`, `locale`, `theme`,
-`digest_opt_in`, `status`, `like_count` — are still unrendered. **They are no longer silent**:
-`unrenderedOf` reports each one on `GeneratedMigration.unrendered` and `unrenderedComment` writes a
-`-- UNRENDERED` block at the top of the emitted `up`.
+**An `assert` IS an unrendered loss the moment a migration recorded its CHECK, `As of 2026-08-25`,
+and that is the half `unrenderedOf` could not see.** `checkPlan` drops a recorded check nothing
+declares — "a snapshot may not lie" — and an `assert` declares nothing in SQL, so regenerating
+**deletes the database's half of a rule the entity still states**, with nothing added back and no
+`-- destructive:` marker (`destructive.ts` excludes `drop constraint` by name, on the argument that
+the database rebuilds it; here nothing does). Measured on `examples/dummy`: `x db gen` emitted
+`alter table "posts" drop constraint "post_slug_shape"` and four more, and `unrenderedOf` answered
+`[]` — so `@ultimat3/cli`'s `repairFix`, whose whole job is to refuse `x db gen` as the instruction
+when the generator would lose something, read the empty list and handed out
+`x db gen "drop post_slug_shape"`: the command that performs the loss, offered as the repair for it.
+
+**The discriminator is what the recorded schema holds, never the kind.** An `assert` with nothing
+recorded behind it loses nothing and is reported by nothing — the previous reading was right about
+that, and a marker on nearly every app's every migration marks none. `unrenderedOf(entities,
+current)` therefore takes the recorded schema, **required and nullable**: a caller with no sidecar
+(the first migration) has to say `undefined`, because an argument nobody passes is a blind answer
+nobody notices, which is exactly how the five drops shipped. `namesConstraint` (`invariant-ddl.ts`)
+is the match, under **both** spellings — this generator's `<table>_<name>_check` and the rule's own
+name, which is what a hand-written `0001_init.sql` calls it — and it never throws, because its
+caller is a reporter reached by the `drift` gate step where a throw replaces a finding with a crash.
+Self-clearing: once the drop is applied and the new sidecar written, nothing records the check and
+the next generation reports nothing.
+
+**A COLUMN declares a CHECK too, and until 2026-08-25 it reached `create table` and nothing else.**
+`check-ddl.ts` is what it becomes. `columnClause` wrote `check (…)` **inline and anonymous**,
+`snapshotOf` recorded no check for a column and `diffTable` had no arm for one — so the constraint
+existed only in the statement that created the table and was invisible to every generation after it.
+Neither `drift` nor `unrendered` could see the loss: the gate's `drift` step hashes entity SOURCE
+against a sidecar and never reads the SQL, and `unrenderedOf` keys on declared **invariants**, which
+these are not — they are minted by the column builder (`enumerated()`'s value set,
+`tz()`'s IANA whitelist, `locale()`'s tags, money's currency pattern and scale bound;
+`packages/entity/src/enum-column.ts` implements `enumerated(V)` as `kind: 'text'` plus
+`check: oneOf(V)`). Three consequences, measured on `examples/dummy`: a value added to
+`enumerated()` generated **no migration at all**, so the app accepted `'archived'` and the database
+answered `23514`; a regenerated migration retyped every Postgres-ENUM column to bare `text` with no
+CHECK beside it; and the sidecar claimed a schema the database did not have, so `down` and every
+later diff reasoned off a lie.
+
+Four rules, none optional.
+
+| Rule | Why |
+|---|---|
+| every CHECK is a **named** constraint on ONE list (`declaredChecks` = `columnChecks` then `invariantChecks`) | `createTable`, `diffTable` and `snapshotOf` must agree about what exists, the rule `declaredIndexes` already states. An anonymous constraint is not diffable at all — there is nothing to match a recorded name against |
+| the name is `<table>_<column>_check`, and it is **not a convention chosen here** | it is the name Postgres itself mints for an anonymous single-column CHECK — measured, `check-ddl.live.test.ts`, including for a multi-clause predicate like `scaleCheck`'s. Any other spelling makes the repair add a SECOND constraint beside the one an already-generated database is holding |
+| an ADD onto a column the recorded schema already had is `drop constraint if exists` **then** `add constraint` | the two databases the generator cannot tell apart read identically in the snapshot — one is holding the old anonymous form under exactly this name, one is holding nothing because the old `diffTable` emitted nothing. A bare `add constraint` is `42710` on the first (measured), inside `ROLE=migrate`, with the server's words and none of the entity's. A column this migration ADDS, or one `regenerate` rebuilt, takes the bare add: the name provably cannot be taken |
+| two declarations naming one constraint are **refused**, never deduped | `invariant('status', …)` on a table whose `status` is an `enumerated()` derives the same `posts_status_check` the column owns, and two `add constraint` under one name is `42710` — a migration nobody can apply, which is worse than either declaration being dropped. `X_INVARIANT` through core's `assert`, the refusal `createIndex` already gives a unique GIN. Unlike two identical index definitions there is nothing to dedup: the predicates differ |
+
+**What an app with an existing sidecar sees on its first `x db gen` after this.** One
+`drop constraint if exists` / `add constraint` pair per checked column, on every table it already
+has — the same absent-never-`[]` discipline `checks` was given for invariants, read the other way
+round: the sidecar says nothing, so the generator emits the pair that is correct whether the
+database is holding the constraint or not. Self-clearing — the new sidecar records the check and the
+next generation emits nothing. It is not free: `add constraint … check` takes `ACCESS EXCLUSIVE` and
+scans the table, under `migrate`'s 3s `lock_timeout`. Validating is deliberate over `NOT VALID`,
+which would accept the rows already in the table — and a database holding the identical constraint
+has none that can fail.
+
+**`checkPlan` takes the `rebuilt` set for the same reason `diffTable`'s index loop does.**
+`regenerate`'s plain -> generated path is `drop column` + `add column`, which takes the constraint
+with it while the snapshot still records it — so without the set the check is silently gone, which
+is this file's own defect one level in.
+
+`rebuildCheck` is NOT `destructive.ts`'s concern: `drop constraint` is excluded there by name on
+the argument that the database rebuilds it, and here the very next statement does.
+
+
+**A default's VALUE crosses the seam too.** `ColumnDescriptionLike.default` carries
+`ColumnDefaultLike` and `defaultExpression` renders it; `hasDefault` stays beside it as the older,
+narrower fact `generatedClause` reads. `@ultimat3/entity` projects the value beside the flag
+(`packages/entity/src/describe.ts:175`), so the nine defaults in `examples/dummy` — `plan_code`,
+`billing_currency`, `role`, `tz`, `locale`, `theme`, `digest_opt_in`, `status`, `like_count` — do
+reach the SQL. A description whose producer does not project it still reads `hasDefault` alone, and
+that half **is not silent**: `unrenderedOf` reports each one on `GeneratedMigration.unrendered` and
+`unrenderedComment` writes a `-- UNRENDERED` block at the top of the emitted `up`.
 
 Comments, never a refusal, and never onto an EMPTY diff. A refusal would be a generator no app with
 a `.default('draft')` could run at all until tier 2 ships one line, and a migration nobody can

@@ -2,7 +2,7 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Eleven majors have shipped, and this page walks all eleven** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Eleven majors have shipped, and this page walks all eleven** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
@@ -18,15 +18,23 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 1.x → 13.0.0 | **136** | all twelve sections, oldest first |
+| 11.x → 13.0.0 | **25** | every major section `CHANGELOG.md` still carries, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 143 As of 2026-08-25 — the WHOLE file. 136 of them sit inside the section of the major that
-# shipped them, which is the sum of the twelve per-major rows above; the remaining 7 are under
-# `[Unreleased]`, awaiting the release that promotes them into a thirteenth row. At a TAGGED commit
+# 33 As of 2026-08-25 — the WHOLE file, which is capped at 1,000 lines: 25 sit inside the section
+# of the major that shipped them (the sum of every row above `11.x → 13.0.0` whose section the
+# changelog still carries), and the
+# remaining 8 are under `[Unreleased]`, awaiting the release that promotes them into a section.
+#
+# The count is SMALLER than the number of entries this page walks, and that is the archive, not a
+# discrepancy: `CHANGELOG.md` keeps the recent releases and `git show v10.0.0:CHANGELOG.md` has the
+# rest. THIS page is not truncated with it — a reader upgrading across four majors needs every
+# walkthrough in order, so every major keeps its row and its section here. `changelog-check` reads
+# the oldest `## X.Y.Z` heading still in the changelog as the retention boundary and stops asking
+# for a count below it. At a TAGGED commit
 # `[Unreleased]` holds none, and that is the state the rule below checks — a `BREAKING —` line left
 # there at a tag is
 # X_DOC_CHANGELOG_UNRELEASED_BREAKING, and the release promotes the section rather than appending one.

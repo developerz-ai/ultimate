@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "2d626441dee1e4722aa11a603e6b8937e6ec3baf454333cbd5171b13f3e23c75",
+  "buildId": "3fe5aa3f7793363e14a4d72337935e1bc3765138c8a27b46ab52a7073046f34c",
   "tiers": {
     "0": [
       "core",
@@ -808,6 +808,16 @@
       "code": "X_DB_POOL_EXHAUSTED",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_DB_SCHEMA_UNDECLARED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DB_SCHEMA_UNMIGRATED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_DB_SERIALIZATION_FAILURE",
@@ -1753,6 +1763,11 @@
       "code": "X_MIGRATION_SNAPSHOT_MISSING",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_MIGRATION_UNGENERATABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_MONEY_NOT_INTEGER",

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { declaredSchema, generateMigration, snapshotJson } from '@ultimat3/db';
 import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
-import { generateAppMigration, migrationSql } from './db-generate';
+import { generateAppMigration, migrationSql, unrenderedJson, unrenderedLines } from './db-generate';
 import { checkSourceDrift, schemaHash } from './drift';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';
 
@@ -266,3 +266,62 @@ test('a newest migration with no snapshot refuses to generate, never diffs again
   expect((failure as { fix: string }).fix).toContain('0001_init.snapshot.json');
   rmSync(dir, { recursive: true, force: true });
 });
+
+// `generateMigration` returns `unrendered` and writes a `-- UNRENDERED` block into the SQL, and
+// `x db gen` read NONE of it: the loss reached the committed `.sql` and the command said nothing.
+// The block is a comment, and a comment cannot be a verdict — only the command's own output can.
+const unrenderedFixture = (): ReturnType<typeof generateMigration> =>
+  generateMigration({
+    entities: [
+      {
+        name: 'Draft',
+        table: 'drafts',
+        primaryKey: ['id'],
+        columns: [
+          {
+            property: 'state',
+            column: 'state',
+            kind: 'text',
+            notNull: true,
+            primaryKey: false,
+            unique: false,
+            // The exact condition that lost nine defaults in silence: the flag with no expression.
+            hasDefault: true,
+            check: null,
+            references: null,
+          },
+        ],
+        indexes: [],
+      },
+    ],
+    name: 'add drafts',
+    now: new Date('2026-08-25T09:30:00Z'),
+  });
+
+test('a migration carrying the whole declaration reports no unrendered lines at all', () => {
+  expect(unrenderedLines([])).toEqual([]);
+  expect(unrenderedJson([])).toEqual([]);
+});
+
+test('a declaration that reached no SQL is counted on the human path', () => {
+  const lines = unrenderedLines(unrenderedFixture().unrendered);
+  expect(lines[0]).toContain('1');
+  expect(lines.join('\n')).toContain('"drafts"."state"');
+  expect(lines.join('\n')).toContain('hasDefault');
+  // The remedy rides along, because a count with no edit beside it is a number nobody can act on.
+  expect(lines.join('\n')).toContain('packages/entity/src/describe.ts');
+});
+
+test('the same list is structured under --json, field for field', () => {
+  const json = unrenderedJson(unrenderedFixture().unrendered);
+  expect(json).toHaveLength(1);
+  expect(json[0]).toMatchObject({ kind: 'default', table: 'drafts', name: 'state' });
+  expect(typeof json[0]?.['cause']).toBe('string');
+  expect(typeof json[0]?.['fix']).toBe('string');
+});
+
+// There is deliberately NO test that `generateAppMigration` threads `migration.unrendered` onto
+// its result. `entity()` cannot build a column that produces one — `describe.ts` sets `hasDefault`
+// from `meta.default !== undefined` and spreads the value beside it, so the flag never arrives
+// without an expression — and a test whose mutation (`unrendered: []`) it cannot notice is not a
+// test. The threading is a build error instead: `GeneratedFiles.unrendered` is required.

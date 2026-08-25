@@ -122,6 +122,24 @@ const CSS_TEXT_ISLAND = `export function mount(el, props) {
 }
 `;
 
+/**
+ * An ASYNC mount, the shape `like.island.tsx` already ships: `await OfflineQueue.open(store)` before
+ * the first render, so a click can never be handed a client whose queue has not rehydrated. The
+ * await here is a MACROTASK on purpose — the incidental microtask turns of `await mountIsland(…)`
+ * would otherwise let a one-tick mount finish by accident, and a test that passes by accident is
+ * the reason this hole survived.
+ */
+const ASYNC_ISLAND = `export async function mount(el, props) {
+  el.textContent = '';
+  const queue = await openQueue();
+  const p = document.createElement('p');
+  p.setAttribute('data-role', 'state');
+  p.textContent = queue.depth + ' ' + props.label;
+  p.$$click = () => { p.textContent = 'clicked'; };
+  el.appendChild(p);
+}
+`;
+
 /** `@ultimat3/ui`'s Menu, Popover and focus trap all close on Escape from a listener registered on
  *  `document` (`packages/ui/src/a11y.ts:118`), never on their own node. */
 const ESCAPABLE_ISLAND = `export function mount(el) {
@@ -192,6 +210,34 @@ describe(testName('unit', 'the island fixture mounts a compiled island'), () => 
     // is a second, uneditable copy of the same values above the real editor.
     expect(mounted.find('dl')).toBeNull();
     expect(mounted.all('button')).toHaveLength(1);
+  });
+
+  test('an async mount is finished before the fixture answers — no manual flush', async () => {
+    // The shipped runtime AWAITS `mount` (`packages/render/src/hydrate.ts`'s `boot`), so an island
+    // that opens a queue or a socket before rendering is a browser-legal island. The fixture called
+    // it and returned, so every assertion below ran against an empty wrapper and every test of such
+    // an island had to carry a hand-rolled `settle()` — the fixture answering for a browser it did
+    // not match.
+    using mounted = await mount(
+      ASYNC_ISLAND,
+      { label: 'ready' },
+      {
+        globals: {
+          openQueue: () =>
+            new Promise((resolve) => {
+              setTimeout(() => {
+                resolve({ depth: 0 });
+              }, 0);
+            }),
+        },
+      },
+    );
+
+    expect(mounted.text('[data-role="state"]')).toBe('0 ready');
+    // Not just present: DRIVABLE. A mount awaited far enough to paint but not far enough to attach
+    // its handlers would read as fixed here and still be inert.
+    expect(mounted.fire('[data-role="state"]', 'click')).toBe(true);
+    expect(mounted.text('[data-role="state"]')).toBe('clicked');
   });
 
   test('a global the micro-DOM does not supply reaches the island — fetch above all', async () => {

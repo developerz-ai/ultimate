@@ -142,9 +142,13 @@ Nothing is checked at runtime: a brand has no witness, `$parse` still validates 
 One declaration, two enforcement points: the app checks it on every write, and the migration
 emits it. A bulk import or a `psql` session hits the same rule.
 
+The DDL is `@ultimat3/db`'s — one renderer, reading `$describe()`, so what `x db gen` writes is the
+only spelling there is. On a table this migration creates the check is an inline clause; on one that
+already exists it is the `alter table` beside it.
+
 ```sql
-ALTER TABLE "posts" ADD CONSTRAINT "posts_post_like_count_non_negative_check" CHECK (like_count >= 0);
-CREATE UNIQUE INDEX "posts_post_slug_unique_per_org_key" ON "posts" ("org_id", "slug");
+alter table "posts" add constraint "posts_post_like_count_non_negative_check" check (like_count >= 0);
+create unique index "posts_post_slug_unique_per_org_key" on "posts" ("org_id", "slug");
 ```
 
 A rule written as a JS predicate — `c.slug.matches(isValidSlug)`, `c.satisfies(fn, [...])` —

@@ -10,7 +10,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { text, timestamp, uuid } from './columns';
 import { describeEntity } from './describe';
 import { entity } from './entity';
-import { assertInvariants, invariant, invariantsToSql } from './invariants';
+import { assertInvariants, invariant } from './invariants';
 import { clearRegistry } from './registry';
 import { viewFor } from './view';
 
@@ -35,7 +35,6 @@ const CORE_MEMBERS = [
   '$parse',
   '$view',
   '$assert',
-  '$migration',
   '$describe',
   '$references',
 ] as const;
@@ -83,10 +82,10 @@ describe('the entity DSL surface', () => {
     expect(target.$describe()).toEqual(direct);
   });
 
-  test('$migration() delegates to invariantsToSql() over the entity own invariants', () => {
-    expect(target.$migration()).toBe(invariantsToSql(target.$name, target.$invariants));
-  });
-
+  // No `$migration()` row above, and none here. It rendered CHECK/UNIQUE DDL a second time — the
+  // first is `@ultimat3/db`'s, off `$describe()` — and it rendered it under the entity NAME rather
+  // than the table, which is a relation that need not exist. This very test is why that survived:
+  // it compared the facade against the copy it delegated to, so both were wrong together.
   test('$assert() delegates to assertInvariants() — identical failure, not a reimplementation', () => {
     const row = { id: 'x', title: 'ok', createdAt: new Date() };
     expect(() => target.$assert(row)).not.toThrow();

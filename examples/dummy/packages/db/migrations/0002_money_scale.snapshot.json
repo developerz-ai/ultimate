@@ -1,0 +1,597 @@
+{
+  "tables": [
+    {
+      "schema": "public",
+      "name": "comments",
+      "columns": [
+        {
+          "name": "author_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "body",
+          "dataType": "varchar(2000)",
+          "nullable": false,
+          "default": null,
+          "position": 2
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 3
+        },
+        {
+          "name": "id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 4
+        },
+        {
+          "name": "org_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 5
+        },
+        {
+          "name": "post_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 6
+        }
+      ],
+      "primaryKey": ["id"],
+      "indexes": [
+        {
+          "name": "comments_post_id_created_at_idx",
+          "columns": ["post_id", "created_at"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "comments_author_id_fkey",
+          "columns": ["author_id"],
+          "referencedTable": "members",
+          "referencedColumns": ["id"],
+          "onDelete": "restrict"
+        },
+        {
+          "name": "comments_org_id_fkey",
+          "columns": ["org_id"],
+          "referencedTable": "orgs",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        },
+        {
+          "name": "comments_post_id_fkey",
+          "columns": ["post_id"],
+          "referencedTable": "posts",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ],
+      "checks": [
+        {
+          "name": "comment_body_present",
+          "expression": "length(btrim(body)) >= 1"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "likes",
+      "columns": [
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 1
+        },
+        {
+          "name": "member_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 2
+        },
+        {
+          "name": "org_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 3
+        },
+        {
+          "name": "post_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 4
+        }
+      ],
+      "primaryKey": ["post_id", "member_id"],
+      "indexes": [
+        {
+          "name": "likes_member_id_idx",
+          "columns": ["member_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "likes_member_id_fkey",
+          "columns": ["member_id"],
+          "referencedTable": "members",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        },
+        {
+          "name": "likes_org_id_fkey",
+          "columns": ["org_id"],
+          "referencedTable": "orgs",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        },
+        {
+          "name": "likes_post_id_fkey",
+          "columns": ["post_id"],
+          "referencedTable": "posts",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "members",
+      "columns": [
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 1
+        },
+        {
+          "name": "digest_opt_in",
+          "dataType": "boolean",
+          "nullable": false,
+          "default": "true",
+          "position": 2
+        },
+        {
+          "name": "email",
+          "dataType": "varchar(254)",
+          "nullable": false,
+          "default": null,
+          "position": 3
+        },
+        {
+          "name": "id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 4
+        },
+        {
+          "name": "locale",
+          "dataType": "text",
+          "nullable": false,
+          "default": "'en'",
+          "position": 5
+        },
+        {
+          "name": "name",
+          "dataType": "varchar(80)",
+          "nullable": false,
+          "default": null,
+          "position": 6
+        },
+        {
+          "name": "org_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 7
+        },
+        {
+          "name": "role",
+          "dataType": "member_role",
+          "nullable": false,
+          "default": "'author'",
+          "position": 8
+        },
+        {
+          "name": "theme",
+          "dataType": "theme",
+          "nullable": false,
+          "default": "'system'",
+          "position": 9
+        },
+        {
+          "name": "tz",
+          "dataType": "text",
+          "nullable": false,
+          "default": "'UTC'",
+          "position": 10
+        },
+        {
+          "name": "user_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 11
+        }
+      ],
+      "primaryKey": ["id"],
+      "indexes": [
+        {
+          "name": "member_unique_per_org",
+          "columns": ["org_id", "user_id"],
+          "unique": true,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "members_org_id_role_idx",
+          "columns": ["org_id", "role"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "members_tz_idx",
+          "columns": ["tz"],
+          "unique": false,
+          "primary": false,
+          "where": "digest_opt_in",
+          "order": null
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "members_org_id_fkey",
+          "columns": ["org_id"],
+          "referencedTable": "orgs",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ],
+      "checks": [
+        {
+          "name": "member_email_shape",
+          "expression": "position('@' in email) > 1"
+        },
+        {
+          "name": "member_locale_supported",
+          "expression": "locale IN ('en', 'es')"
+        },
+        {
+          "name": "member_tz_supported",
+          "expression": "tz IN ('UTC', 'America/New_York', 'America/Sao_Paulo', 'Europe/Madrid', 'Europe/Berlin', 'Asia/Tokyo', 'Australia/Sydney', 'Pacific/Auckland')"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "orgs",
+      "columns": [
+        {
+          "name": "billing_currency",
+          "dataType": "billing_currency",
+          "nullable": false,
+          "default": "'USD'",
+          "position": 1
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 2
+        },
+        {
+          "name": "id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 3
+        },
+        {
+          "name": "name",
+          "dataType": "varchar(80)",
+          "nullable": false,
+          "default": null,
+          "position": 4
+        },
+        {
+          "name": "plan_code",
+          "dataType": "plan_code",
+          "nullable": false,
+          "default": "'free'",
+          "position": 5
+        },
+        {
+          "name": "slug",
+          "dataType": "varchar(80)",
+          "nullable": false,
+          "default": null,
+          "position": 6
+        },
+        {
+          "name": "updated_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 7
+        }
+      ],
+      "primaryKey": ["id"],
+      "indexes": [
+        {
+          "name": "orgs_plan_code_idx",
+          "columns": ["plan_code"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "orgs_slug_key",
+          "columns": ["slug"],
+          "unique": true,
+          "primary": false,
+          "where": null,
+          "order": null
+        }
+      ],
+      "foreignKeys": [],
+      "checks": [
+        {
+          "name": "org_name_present",
+          "expression": "length(btrim(name)) >= 1"
+        },
+        {
+          "name": "org_slug_shape",
+          "expression": "slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "plans",
+      "columns": [
+        {
+          "name": "code",
+          "dataType": "plan_code",
+          "nullable": false,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "currency",
+          "dataType": "billing_currency",
+          "nullable": false,
+          "default": null,
+          "position": 2
+        },
+        {
+          "name": "monthly_currency",
+          "dataType": "char(3)",
+          "nullable": false,
+          "default": null,
+          "position": 3
+        },
+        {
+          "name": "monthly_minor",
+          "dataType": "bigint",
+          "nullable": false,
+          "default": null,
+          "position": 4
+        },
+        {
+          "name": "monthly_scale",
+          "dataType": "integer",
+          "nullable": true,
+          "default": null,
+          "position": 5
+        },
+        {
+          "name": "seats",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null,
+          "position": 6
+        }
+      ],
+      "primaryKey": ["code", "currency"],
+      "indexes": [],
+      "foreignKeys": [],
+      "checks": [
+        {
+          "name": "plan_currency_matches_price",
+          "expression": "monthly_currency = currency::text"
+        },
+        {
+          "name": "plan_price_non_negative",
+          "expression": "monthly_minor >= 0"
+        },
+        {
+          "name": "plan_seats_positive",
+          "expression": "seats >= 1"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "posts",
+      "columns": [
+        {
+          "name": "author_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 1
+        },
+        {
+          "name": "body",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 2
+        },
+        {
+          "name": "cover_url",
+          "dataType": "text",
+          "nullable": true,
+          "default": null,
+          "position": 3
+        },
+        {
+          "name": "created_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 4
+        },
+        {
+          "name": "excerpt",
+          "dataType": "varchar(200)",
+          "nullable": false,
+          "default": null,
+          "position": 5
+        },
+        {
+          "name": "id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 6
+        },
+        {
+          "name": "like_count",
+          "dataType": "integer",
+          "nullable": false,
+          "default": "0",
+          "position": 7
+        },
+        {
+          "name": "org_id",
+          "dataType": "uuid",
+          "nullable": false,
+          "default": null,
+          "position": 8
+        },
+        {
+          "name": "published_at",
+          "dataType": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "position": 9
+        },
+        {
+          "name": "slug",
+          "dataType": "varchar(80)",
+          "nullable": false,
+          "default": null,
+          "position": 10
+        },
+        {
+          "name": "status",
+          "dataType": "post_status",
+          "nullable": false,
+          "default": "'draft'",
+          "position": 11
+        },
+        {
+          "name": "title",
+          "dataType": "varchar(120)",
+          "nullable": false,
+          "default": null,
+          "position": 12
+        },
+        {
+          "name": "updated_at",
+          "dataType": "timestamptz",
+          "nullable": false,
+          "default": "now()",
+          "position": 13
+        }
+      ],
+      "primaryKey": ["id"],
+      "indexes": [
+        {
+          "name": "post_slug_unique_per_org",
+          "columns": ["org_id", "slug"],
+          "unique": true,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "posts_author_id_idx",
+          "columns": ["author_id"],
+          "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "posts_feed_idx",
+          "columns": ["org_id", "published_at"],
+          "unique": false,
+          "primary": false,
+          "where": "status = 'published'",
+          "order": "desc"
+        }
+      ],
+      "foreignKeys": [
+        {
+          "name": "posts_author_id_fkey",
+          "columns": ["author_id"],
+          "referencedTable": "members",
+          "referencedColumns": ["id"],
+          "onDelete": "restrict"
+        },
+        {
+          "name": "posts_org_id_fkey",
+          "columns": ["org_id"],
+          "referencedTable": "orgs",
+          "referencedColumns": ["id"],
+          "onDelete": "cascade"
+        }
+      ],
+      "checks": [
+        {
+          "name": "post_like_count_non_negative",
+          "expression": "like_count >= 0"
+        },
+        {
+          "name": "post_publish_coherent",
+          "expression": "(status = 'published') = (published_at IS NOT NULL)"
+        },
+        {
+          "name": "post_slug_shape",
+          "expression": "slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'"
+        }
+      ]
+    }
+  ]
+}

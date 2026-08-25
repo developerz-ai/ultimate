@@ -82,8 +82,20 @@ One interface, three drivers, no driver type in it.
 | `screenshot` / `pdf` | `{ fullPage }` only |
 | `download({ timeout })` | whatever the last click produced, or `X_SCRAPE_DOWNLOAD_TIMEOUT` |
 | `cookies` / `session` | the handoff to the HTTP leg, as a value you can inspect |
+| `query(selector)` | every match as a snapshot — tag, attributes, text, **and `visible`**. The one definition of "visible" in the framework; nothing else may compute it |
+| `offline(enabled)` | the browser's own offline mode. **Not** `@ultimat3/testing`'s sealed network, which patches `fetch` in the *test process* and a browser's requests never traverse — a test built on that would pass against a fully online app |
 | `console()` / `network()` | bounded rings, 200 entries each |
 | `pageErrors()` / `pageErrorsDropped()` | uncaught exceptions, a **third** ring — not console lines |
+
+**A frame verb acts on the frame, and this had to be fixed.** `frame()` returns a target that
+overrides every verb addressing a document — `click`, `type`, `select`, `clear`, `query`. Until
+2026-08-25 `clear` was missing from that list, so `frame(…).fill()` cleared the **parent's**
+same-id field and then *appended* to the frame's: a remembered username submitted as
+`oldUserNEWUSER` while a parent field was silently emptied. On the offline drivers one shared
+overlay made it worse — `page.values('#password')` read back what was typed into the frame.
+
+`driver-parity-frames.test.ts` pins every frame verb across all three drivers, because the parity
+suite that exists to catch a CDP/offline divergence had no frame coverage at all.
 
 `screenshot`/`pdf` take **no `timeout`** — `CaptureRequest.timeout` and the port's `CaptureOptions.timeoutMs` were deleted in 4.0.0 ([Upgrading](Upgrading)). No driver had ever honoured them, and a deadline enforced above the driver would have had to race `ScrapeClock.sleep`, which under `testClock` resolves on the first microtask — so every capture in every test would have timed out. The driver's own default is the honest bound.
 
@@ -171,6 +183,14 @@ run: async ({ page, secrets }) => {
 }
 ```
 
+**Redaction is by VALUE, on four surfaces**: `page.html()`, `page.console()`, `page.network()` URLs
+and `page.pageErrors()` — plus the HTTP leg's response body, which reaches an error `cause` and
+from there a dead-letter row that `x jobs show` prints. Three of those were unredacted until
+2026-08-25 while this package's own header promised all of them.
+
+**One stated limit**: a secret shorter than 4 characters is not redacted. A 3-character token would
+match too much ordinary page text to be safe to blank; declare a longer one.
+
 Typing a `Secret` **taints the page**. A later `screenshot()` or `pdf()` is refused with `X_SCRAPE_SECRET_EXPOSED` — a screenshot of a filled login form *is* the password, in pixels, in object storage, forever. Refused rather than masked: a mask over pixels is a guess about layout, and `page.html()` already gives a redacted artifact that is exact.
 
 ## Sessions
@@ -183,6 +203,18 @@ Reuse is both the fast path and the safe path — logging in on every run is slo
 | `ensureAuthenticated(plan)` | log in when there is nothing to restore |
 | `burnSession(plan)` | delete it — a flagged profile stays flagged, so a retry that reloads it re-trips the block |
 | `memorySessionStore()` / `storageSessionStore(storage)` | where it lives |
+
+**The key hashes each segment, and this changed on 2026-08-25.** A session key is
+`<tenant>/s/<discriminator>`, and both segments used to be sanitised by collapsing every run of
+non-`[a-zA-Z0-9._-]` to a single `-`. So `alice@corp.com` and `alice-corp.com` produced **one key**,
+as did `acct/1` and `acct-1`, and tenants `acme corp` and `acme-corp`. The browser then loaded
+account A's cookies, `auth.validate()` answered `true` — the session *is* valid, for the wrong
+account — and A's rows were stored under B's tenant. Each segment now carries a hash of its raw
+value, so two spellings can no longer collide.
+
+**Migration: none to run.** Every stored key changes spelling, a miss reads as "no session", so the
+run logs in again and writes the new key. One extra login per stored session, no error, and the old
+objects are orphaned until the bucket's lifecycle rule collects them.
 
 A session record survives a **refusal** rather than being deleted with it: `refusedAt` is read before `driver.open()`, so a replay, a manual `x jobs retry` or a second enqueue refuses without spending a browser, a CDP attach or one more wrong password at a site that locks accounts after three.
 

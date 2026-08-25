@@ -63,10 +63,11 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'idle',
   /**
-   * Measured, not guessed: a 19,368-byte island chunk plus the 615-byte `idle` hydration runtime
-   * is 19,983 bytes on this document, against 20,480 — 497 bytes of headroom, so an import added
-   * here is meant to fail. 15,020 of those bytes are the Solid runtime itself, which is issue
-   * #254's subject; the editor's own compiled markup is the other 4.3 kB.
+   * Measured, not guessed: a 17,807-byte island chunk plus the 774-byte `idle` hydration runtime
+   * is 18,581 bytes on this document, against 20,480 — 1,899 bytes of headroom (re-measured
+   * 2026-08-25: the chunk was 19,368 and the runtime 615 when this was first written, and both
+   * moved with the tree rather than with this route). Most of it is the Solid runtime itself,
+   * which is issue #254's subject; the editor's own compiled markup is the rest.
    *
    * Re-measure rather than adjust: `buildIslands` in `settings.island.test.ts` reports the chunk,
    * and `hydrateRuntimeBytes` reports the runtime.

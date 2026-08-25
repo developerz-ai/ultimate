@@ -7,12 +7,19 @@ import { assert } from '@ultimat3/core';
 import type { ColumnDescriptionLike } from './entity-shape';
 import type { Plan } from './foreign-key-plan';
 import type { ColumnDescription } from './introspect';
+import { identifier } from './sql';
 
 /** How a column that moved was brought back into line — what the caller has to do next, if anything. */
 export type Regeneration = 'unchanged' | 'altered' | 'rebuilt';
 
+/**
+ * Through `identifier`, never `"${…}"`, for the reason `columnClause` states — and this path is
+ * the one `columnClause` does NOT cover: `regenerate` is reached from `retypeColumn` for a column
+ * that ALREADY exists, so nothing on the way here has looked at the name. Both operands arrive
+ * from a projection this package cannot typecheck and from a `.snapshot.json` anything may edit.
+ */
 const alterColumn = (table: string, column: string): string =>
-  `alter table "${table}" alter column "${column}"`;
+  `alter table ${identifier(table).text} alter column ${identifier(column).text}`;
 
 /**
  * The `generated always as (…) stored` clause, or `''` for every ordinary column — so a description
@@ -82,16 +89,18 @@ export function regenerate(
   // column again. Reported as `rebuilt` so the caller can put the indexes back — an `add column`
   // implies none of them.
   if (held === null) {
+    const dropColumn = `alter table ${identifier(table).text} drop column ${identifier(column.column).text};`;
     plan.up.push(
-      `alter table "${table}" drop column "${column.column}";`,
-      `alter table "${table}" add column "${column.column}" ${wantedType}` +
-        `${generatedClause(column)}${column.notNull ? ' not null' : ''};`,
+      dropColumn,
+      `alter table ${identifier(table).text} add column ${identifier(column.column).text} ` +
+        `${wantedType}${generatedClause(column)}${column.notNull ? ' not null' : ''};`,
     );
     // Pushed forwards and read backwards — `down` is reversed at assembly.
     plan.down.push(
-      `alter table "${table}" add column "${column.column}" ${recorded.dataType};` +
+      `alter table ${identifier(table).text} add column ${identifier(column.column).text} ` +
+        `${recorded.dataType};` +
         ' -- was not a generated column',
-      `alter table "${table}" drop column "${column.column}";`,
+      dropColumn,
     );
     return 'rebuilt';
   }

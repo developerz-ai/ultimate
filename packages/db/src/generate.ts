@@ -4,6 +4,7 @@
 // field. Every generated migration must be reversible; a drop that loses data refuses instead.
 
 import { assert, systemClock } from '@ultimat3/core';
+import { checkClauses, checkPlan, declaredChecks } from './check-ddl';
 import { defaultExpression } from './column-default';
 import { isDestructive } from './destructive';
 import { dropOrder } from './drop-order';
@@ -24,7 +25,7 @@ import {
   type SchemaDescription,
   type TableDescription,
 } from './introspect';
-import { checkClauses, checkPlan, declaredChecks, declaredIndexes } from './invariant-ddl';
+import { declaredIndexes } from './invariant-ddl';
 import { identifier } from './sql';
 import { type UnrenderedDeclaration, unrenderedComment, unrenderedOf } from './unrendered';
 
@@ -65,9 +66,10 @@ function columnClause(column: ColumnDescriptionLike): string {
   if (expression !== null) parts.push(`default ${expression}`);
   if (column.notNull) parts.push('not null');
   if (column.unique && !column.primaryKey) parts.push('unique');
-  if (column.check !== null) parts.push(`check (${column.check})`);
-  // No `references` clause. A foreign key is `alter table … add constraint`, emitted after every
-  // table exists (`foreignKeyPlan`) — inline it must point at a table that already exists, and
+  // No `check` clause — written here it was ANONYMOUS and reached `create table` alone, so
+  // regenerating dropped the value set `enumerated()` declares; `check-ddl.ts` owns every CHECK now.
+  // No `references` clause either: a foreign key is `alter table … add constraint`, emitted after
+  // every table exists (`foreignKeyPlan`) — inline it must point at a table that already exists, and
   // entity registration order is the app's import order, which says nothing about that.
   return parts.join(' ');
 }
@@ -341,8 +343,9 @@ function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: 
   }
 
   // Last: a CHECK may read a column this migration just added, and `add constraint` on a column
-  // that does not exist yet is `42703`. `invariant-ddl.ts` owns which of them move.
-  checkPlan(entity, live, plan);
+  // that does not exist yet is `42703`. `check-ddl.ts` owns which of them move; `rebuilt` because a
+  // column dropped and re-added lost its constraint while the snapshot still records it.
+  checkPlan(entity, live, plan, rebuilt);
 }
 
 export interface GenerateOptions {
@@ -445,7 +448,11 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   plan.down.push(...preDrops.down, ...order.constraints.map(() => '-- constraint not restored'));
   for (const table of order.tables) {
     plan.up.push(`drop table ${identifier(table.name).text};`);
-    plan.down.push(`-- "${table.name}" cannot be restored; recover it from a backup`);
+    // `identifier` in a comment too: a `--` ends at the first newline, so a name holding one
+    // would put a second command on the next line of `down`.
+    plan.down.push(
+      `-- ${identifier(table.name).text} cannot be restored; recover it from a backup`,
+    );
   }
 
   plan.up.push(...constraints.up);
@@ -461,7 +468,10 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   // would make every `x db gen` on an app with an unrendered default write a migration holding no
   // statement — a ledger row, a checksum and a place in the apply order for nothing. The list is
   // still on `GeneratedMigration.unrendered`, which is where a caller with no file reads it.
-  const unrendered = unrenderedOf(options.entities);
+  //
+  // `current`, not the entities alone: an `assert` whose CHECK a previous migration recorded is a
+  // loss only because THIS plan drops it, and the recorded schema is the only thing that knows.
+  const unrendered = unrenderedOf(options.entities, current);
   const body = plan.up.join('\n');
   const up = body.length === 0 ? body : unrenderedComment(unrendered) + body;
   return {

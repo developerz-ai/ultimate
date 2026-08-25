@@ -225,12 +225,12 @@ export function defaultHydrate(surface: Surface): HydrateStrategy {
  * (`settings.island.tsx`) is 17,797 B. No `budget.js` under 4096 was reachable by any of them, on
  * any surface, because the allowance is measured above the baseline and not against it.
  *
- * The number: 17,797 (the heaviest island this repo actually ships) + 1,067 (`hydrateRuntimeBytes`
+ * The number: 17,797 (the heaviest island this repo actually ships) + 1,251 (`hydrateRuntimeBytes`
  * for one directive at `DEFAULT_ISLAND_HYDRATE`, which is `'interaction'` — `route.ts:33`, applied
- * at `:253` to any island route declaring no `hydrate`) = **18,864**. That is the worst case an
+ * at `:253` to any island route declaring no `hydrate`) = **19,048**. That is the worst case an
  * app reaches without writing a number down. 20,480 is NOT that rounded up — the next whole
- * kilobyte above it is 19,456 — it is one whole kB further, leaving 1,616 B of headroom and still
- * under 2x 18,864, so a route bundling the same island twice is refused. `island-budget.test.ts`
+ * kilobyte above it is 19,456 — it is one whole kB further, leaving 1,432 B of headroom and still
+ * under 2x 19,048, so a route bundling the same island twice is refused. `island-budget.test.ts`
  * asserts all three. `idle` costs 774 and `visible` 846, so an island route that declares its
  * strategy pays less; the default is what the budget has to clear.
  *
@@ -238,8 +238,10 @@ export function defaultHydrate(surface: Surface): HydrateStrategy {
  * mount's OUTCOME so `x shot` can tell an island that RAN from one that only started loading, and
  * again on 2026-08-23 — +18 B in the shared prelude (`hush`) for all three, +39 B more on
  * `interaction` — when each runtime learned to TERMINATE the promise chain `boot` starts rather
- * than emit one unhandled rejection per user event. The headroom absorbed both and the conclusion
- * is unchanged, which is the point of stating the
+ * than emit one unhandled rejection per user event. `interaction` alone grew a third time on
+ * 2026-08-25 (+184 B, `aim`), when the replay learned that the node it was dispatching at had been
+ * detached by the mount it was waiting for. The headroom absorbed all three and the conclusion is
+ * unchanged, which is the point of stating the
  * arithmetic here rather than the answer alone. It is not
  * derived from Solid's own size on purpose — this package may not import or name `solid-js`
  * (`CLAUDE.md`), so a constant tracking the runtime's version would be a dependency in a comment.

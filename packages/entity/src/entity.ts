@@ -15,7 +15,7 @@ import type { Expr, InvariantColumns, Resolve } from './expr';
 import { invariantColumns } from './expr';
 import { indexName } from './index-name';
 import type { Invariant, InvariantDef } from './invariants';
-import { assertInvariants, bindInvariant, invariantsToSql } from './invariants';
+import { assertInvariants, bindInvariant } from './invariants';
 import type { EntityDescription, ReferenceDescription } from './registry';
 import { registerEntity } from './registry';
 import type { SearchInit, SearchSource, SearchVector } from './search';
@@ -124,8 +124,10 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
   $view<K extends keyof Row & string>(keys: readonly K[]): EntityView<Row, K>;
   /** Runs every invariant. Called by the repository on insert and update. */
   $assert(row: Row): void;
-  /** The CHECK/UNIQUE statements the migration emits for this entity. */
-  $migration(): string;
+  // No `$migration()`. The CHECK/UNIQUE statements an entity contributes are `@ultimat3/db`'s to
+  // render, off `$describe()`, beside the columns, indexes and foreign keys they have to be
+  // ordered against — a fragment of a migration is not one, and the one here named the wrong
+  // relation for three majors because nothing but its own test ever read it.
   $describe(): EntityDescription;
   /**
    * The foreign keys this entity declares, resolved — one record per `references()`, both ends
@@ -414,7 +416,6 @@ export const entity = <const C extends ColumnMap>(
     $view: <K extends keyof Row & string>(keys: readonly K[]) =>
       viewFor<Row, K>(name, init.columns, keys),
     $assert: (row) => assertInvariants(name, invariants, row),
-    $migration: () => invariantsToSql(name, invariants),
     $describe: describe,
     $references: references,
   };

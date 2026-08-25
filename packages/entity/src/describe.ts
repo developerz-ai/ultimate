@@ -208,12 +208,15 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
       // entity without a search vector moves.
       ...(input.search == null ? [] : [describeSearchColumn(input.search)]),
     ],
+    // `columns` rides along whole: the generator needs the list a `unique` names, and recovering
+    // it by splitting `sql` is reading this package's own rendering back. See InvariantDescription.
     invariants: input.invariants.map((inv) => ({
       name: inv.name,
       kind: inv.kind,
       message: inv.message,
       sql: inv.sql,
       where: inv.where ?? null,
+      columns: inv.columns,
     })),
     // Projected whole, never reduced to the name: the generator spells the column list from this
     // and a name cannot be parsed back into one. See `IndexDescription`.

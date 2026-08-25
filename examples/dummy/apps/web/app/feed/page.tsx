@@ -21,9 +21,9 @@ import { Skeleton, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { useActor } from '../../shared/actor';
 import { queries } from '../../shared/client';
+import { syncUrlFrom } from '../../shared/sync-url';
 import { Layout } from '../layout';
 import styles from './page.module.scss';
-import { syncUrlFrom } from './sync-url';
 
 /**
  * The page's one island, declared ABOVE `defineRoute` so the route can drain it — the same shape
@@ -52,8 +52,10 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'idle',
   /**
-   * Measured, not guessed: the island chunk is 42,714 bytes (`buildIslands` in
-   * `feed.island.test.ts` reports it) plus the `idle` hydration runtime, against 61,440. Most of
+   * Measured, not guessed: the island chunk is 43,890 bytes (re-measured 2026-08-25 — it was
+   * 42,714 until the tree moved under it, and 4 of the difference are `socketFor` and `signal`
+   * moving to `shared/live-socket.ts`) plus the 774-byte `idle` hydration runtime, against
+   * 61,440. Most of
    * it is the Solid runtime and `LiveClient`; the feed's own compiled markup is a few hundred
    * bytes, which is why this island renders plain elements rather than `@postly/ui`'s `PostCard`
    * — that component alone costs more than the headroom left here.

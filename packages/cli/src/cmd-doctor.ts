@@ -11,12 +11,12 @@ import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { checkMigrationSnapshots } from './db-snapshot';
 import { ICON_SOURCE } from './dev-assets';
-import { checkSourceDrift } from './drift';
 import { intFlagOr, neighbouringPort, PORT_RANGE } from './flag-number';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import type { ParsedArgs } from './parse';
 import { portFree } from './port-probe';
+import { checkMigrationDrift } from './schema-drift';
 
 /**
  * The injection seam `runDoctor` reads instead of the environment. Not a semver surface —
@@ -262,7 +262,7 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
     exists: (relativePath) => (root === undefined ? false : existsSync(join(root, relativePath))),
     portFree,
     database: () => probeDatabase(process.env['DATABASE_URL']),
-    drift: async () => (root === undefined ? [] : checkSourceDrift(root)),
+    drift: async () => (root === undefined ? [] : checkMigrationDrift(root)),
     snapshots: async () => (root === undefined ? [] : checkMigrationSnapshots(root)),
   };
 }

@@ -13,12 +13,12 @@
  * rich rendering it already does elsewhere; this is the part only a browser can do.
  */
 
-import type { ClientSocket, SignalFactory } from '@ultimat3/realtime';
 import { LiveClient, setLiveClient, useConnection, useLive } from '@ultimat3/realtime';
 import type { JSX } from 'solid-js';
-import { createSignal, For, Show } from 'solid-js';
+import { For, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import { postHref } from '../../shared/entities';
+import { signal, socketFor } from '../../shared/live-socket';
 import { type FeedRow, LIVE_FEED } from './live';
 
 /** Already translated, on the server: an island's props cross as JSON, so `t()` cannot travel. */
@@ -29,7 +29,7 @@ export interface FeedLabels {
 }
 
 export interface FeedIslandProps {
-  /** `ws://host:port` of the sync node, resolved by `sync-url.ts` on the server. */
+  /** `ws://host:port` of the sync node, resolved by `shared/sync-url.ts` on the server. */
   readonly syncUrl: string;
   /** This build, so the node can tell a stale tab to reload rather than serving it a patch. */
   readonly buildId: string;
@@ -38,55 +38,6 @@ export interface FeedIslandProps {
   readonly orgId: string;
   readonly labels: FeedLabels;
 }
-
-/**
- * `WebSocket` as the framework's `ClientSocket`. Four handlers and a send — the reconnect, the
- * backoff and the heartbeat all stay in `LiveClient`, which is why this is the whole adapter.
- */
-const socketFor = (url: string): ClientSocket => {
-  const socket = new WebSocket(url);
-  return {
-    send: (data: string): void => {
-      socket.send(data);
-    },
-    close: (code?: number, reason?: string): void => {
-      socket.close(code, reason);
-    },
-    onOpen: (handler: () => void): void => {
-      socket.onopen = (): void => {
-        handler();
-      };
-    },
-    onMessage: (handler: (data: string) => void): void => {
-      socket.onmessage = (event: MessageEvent): void => {
-        handler(String(event.data));
-      };
-    },
-    onClose: (handler: (code: number) => void): void => {
-      socket.onclose = (event: CloseEvent): void => {
-        handler(event.code);
-      };
-    },
-    get bufferedAmount(): number {
-      return socket.bufferedAmount;
-    },
-  };
-};
-
-/**
- * Solid's `createSignal`, narrowed to the two-function shape realtime declares. Wrapped rather
- * than passed: Solid's setter also accepts an updater function, so a `T` that IS a function would
- * be called instead of stored.
- */
-const signal: SignalFactory = <T,>(initial: T): [() => T, (next: T) => void] => {
-  const [get, set] = createSignal<T>(initial);
-  return [
-    get,
-    (next: T): void => {
-      set(() => next);
-    },
-  ];
-};
 
 function Feed(props: FeedIslandProps): JSX.Element {
   const connection = useConnection();

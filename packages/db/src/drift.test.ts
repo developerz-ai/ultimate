@@ -437,3 +437,62 @@ describe('nullability', () => {
     expect(diffSchema(schema(live), schema(expected)).ok).toBe(true);
   });
 });
+
+describe('unit · diffSchema stays total when the catalog name is unwritable', () => {
+  // `identifier()` — the package's one quoting rule — refuses a name holding whitespace, a quote
+  // or a backslash, and `dropForeignKey` now goes through it. Postgres accepts every one of them
+  // in a quoted name, so the catalog can hand this comparison a constraint the fix line cannot be
+  // written from. `diffSchema` is documented pure and TOTAL: a report that throws is an exception
+  // in place of the verdict the caller asked for.
+  const withKey = (name: string, onDelete: string | null): TableDescription => ({
+    ...table('posts', ['id', 'org_id']),
+    foreignKeys: [
+      {
+        name,
+        columns: ['org_id'],
+        referencedTable: 'orgs',
+        referencedColumns: ['id'],
+        onDelete,
+      },
+    ],
+  });
+
+  test('a changed rule on a hand-named constraint reports rather than throwing', () => {
+    const live: SchemaDescription = { tables: [withKey('fk posts org', 'c')] };
+    const expected: SchemaDescription = { tables: [withKey('posts_org_id_fkey', null)] };
+    const report = diffSchema(live, expected);
+    expect(report.differences.map((difference) => difference.kind)).toEqual([
+      'changed-foreign-key',
+    ]);
+    // The name still reaches the reader — it is the only thing that identifies which constraint —
+    // and the instruction says outright that the statement has to be written by hand rather than
+    // handing over DDL built by the splicing this package spent a release removing.
+    expect(report.differences[0]?.fix).toContain(
+      'drop constraint "fk posts org" on table "posts" and add it back',
+    );
+    expect(report.differences[0]?.fix).not.toContain('alter table');
+  });
+
+  test('a rule no Postgres has, out of a hand-edited snapshot, reports rather than throwing', () => {
+    // `addForeignKey` refuses one through core's `assert` — right for DDL it SENDS, wrong for a
+    // fix line. The declared side of this comparison is a `.snapshot.json` on disk.
+    const live: SchemaDescription = { tables: [withKey('posts_org_id_fkey', 'c')] };
+    const expected: SchemaDescription = {
+      tables: [withKey('posts_org_id_fkey', 'drop table posts')],
+    };
+    const report = diffSchema(live, expected);
+    expect(report.differences.map((difference) => difference.kind)).toEqual([
+      'changed-foreign-key',
+    ]);
+    expect(report.differences[0]?.fix).not.toContain('drop table posts');
+    expect(report.differences[0]?.fix).not.toContain('alter table');
+  });
+
+  test('a writable name still gets the drop/add pair as runnable DDL', () => {
+    const live: SchemaDescription = { tables: [withKey('fk_posts_org', 'c')] };
+    const expected: SchemaDescription = { tables: [withKey('posts_org_id_fkey', null)] };
+    expect(diffSchema(live, expected).differences[0]?.fix).toContain(
+      'alter table "posts" drop constraint "fk_posts_org"; alter table "posts" add constraint',
+    );
+  });
+});

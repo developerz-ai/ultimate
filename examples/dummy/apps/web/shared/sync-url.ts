@@ -1,5 +1,8 @@
 /**
- * Where the browser dials the sync node.
+ * Where the browser dials the sync node. `shared/`, not a feature: every route that mounts an
+ * island holding a `LiveClient` needs this string on the server, and two features deriving a
+ * socket URL apart is two answers to one question — it moved here from `app/feed/` when
+ * `/posts/{id}` grew its own island.
  *
  * `SYNC_URL` when the deployment states one — the sync node is its own container, and behind an
  * ingress it has its own hostname. Otherwise it is DERIVED from `APP_URL` the way the framework

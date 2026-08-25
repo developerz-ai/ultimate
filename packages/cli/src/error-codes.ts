@@ -92,6 +92,22 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_GENERATE_CONFLICT',
   'X_PORT_IN_USE',
   'X_DB_GEN_FAILED',
+  // The two directions of the drift a hash cannot see, and they are two repairs. The `drift` step
+  // compared a schema-source HASH to a `.hash` sidecar and never read what the migration recorded,
+  // so nine declared CHECK constraints that had never reached any database were green for as long
+  // as nobody edited the schema. `UNMIGRATED` means the entities declare it and no migration
+  // carries it — the database will never get it. `UNDECLARED` means a migration recorded it and
+  // nothing in source declares it any more. One code over both would hand two readers one wrong
+  // edit, which is the reason `X_ERROR_FIX_PATH_MISSING` is not `X_ERROR_FIX_INVALID` either.
+  'X_DB_SCHEMA_UNMIGRATED',
+  'X_DB_SCHEMA_UNDECLARED',
+  // The third thing the `drift` step asks, and the one no declaration-based check can answer: SQL
+  // in a committed migration that `x db gen` could never have written, which a squash discards in
+  // silence because a regenerated sidecar equals the declaration by construction. CLI-owned rather
+  // than `@ultimat3/db`'s — that package classifies the statements and deliberately declares no
+  // code, because the only remedy available for all of them is a line in the migration file, and
+  // where that file lives is this package's fact.
+  'X_MIGRATION_UNGENERATABLE',
   'X_DB_MIGRATE_FAILED',
   'X_DB_BRANCH_FAILED',
   'X_DB_STUDIO_FAILED',
@@ -239,6 +255,9 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_GENERATE_CONFLICT: 'a generator would overwrite a file',
   X_PORT_IN_USE: 'the dev port is taken',
   X_DB_GEN_FAILED: 'x db gen failed',
+  X_DB_SCHEMA_UNMIGRATED: 'an entity declaration no migration recorded',
+  X_DB_SCHEMA_UNDECLARED: 'a migration records schema no entity declares',
+  X_MIGRATION_UNGENERATABLE: 'this migration holds SQL no declaration carries and does not say so',
   X_DB_MIGRATE_FAILED: 'x db migrate failed',
   X_DB_BRANCH_FAILED: 'an x db branch step failed',
   X_DB_STUDIO_FAILED: 'x db studio failed',

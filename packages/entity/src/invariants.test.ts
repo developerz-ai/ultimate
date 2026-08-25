@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { enumerated, integer, money, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
 import { invariantColumns } from './expr';
-import { assertInvariants, constraintName, invariant, invariantsToSql, toSql } from './invariants';
+import { assertInvariants, invariant } from './invariants';
 import { clearRegistry } from './registry';
 
 const isSlug = (value: string): boolean => /^[a-z0-9-]+$/.test(value);
@@ -49,20 +49,21 @@ afterAll(() => {
   clearRegistry();
 });
 
-describe('toSql', () => {
-  test('a check invariant becomes an ALTER TABLE ... CHECK over physical names', () => {
-    expect(toSql('invariants_test_posts', named('like_count_non_negative'))).toBe(
-      'ALTER TABLE "invariants_test_posts" ADD CONSTRAINT ' +
-        '"invariants_test_posts_like_count_non_negative_check" CHECK (like_count >= 0);',
-    );
+// What a rule BINDS to. The DDL it becomes is `@ultimat3/db`'s and is proven there
+// (`generate-invariant.test.ts`); this package rendered a second copy under the entity name until
+// 2026-08-25, and these tests asserted that copy rather than anything a migration ever applied.
+describe('bindInvariant', () => {
+  test('a check invariant carries its predicate over physical names', () => {
+    expect(named('like_count_non_negative').sql).toBe('like_count >= 0');
+    expect(named('like_count_non_negative').columns).toEqual(['like_count']);
     expect(named('title_present').sql).toBe('char_length(btrim(title)) >= 1');
   });
 
-  test('a unique invariant becomes a partial unique index when rows are soft-deleted', () => {
-    expect(toSql('invariants_test_posts', named('slug_unique_per_org'))).toBe(
-      'CREATE UNIQUE INDEX "invariants_test_posts_slug_unique_per_org_key" ' +
-        'ON "invariants_test_posts" ("org_id", "slug") WHERE deleted_at is null;',
-    );
+  test('a unique invariant names its columns, and is partial when rows are soft-deleted', () => {
+    expect(named('slug_unique_per_org').kind).toBe('unique');
+    expect(named('slug_unique_per_org').columns).toEqual(['org_id', 'slug']);
+    expect(named('slug_unique_per_org').sql).toBe('org_id, slug');
+    expect(named('slug_unique_per_org').where).toBe('deleted_at is null');
   });
 
   test('money names its own two columns', () => {
@@ -72,22 +73,13 @@ describe('toSql', () => {
     ]);
   });
 
-  test('constraint names are derived, not hand-written', () => {
-    expect(constraintName('posts', named('like_count_non_negative'))).toBe(
-      'posts_like_count_non_negative_check',
-    );
-    expect(constraintName('posts', named('slug_unique_per_org'))).toBe(
-      'posts_slug_unique_per_org_key',
-    );
-  });
-
   test('a JS predicate is app-only and says so instead of pretending', () => {
     expect(named('slug_shape').kind).toBe('assert');
     expect(named('slug_shape').sql).toBeNull();
-    expect(toSql('posts', named('publish_coherent'))).toBeNull();
-    // The two SQL-expressible rules are the only statements a migration emits.
-    expect(posts.$migration().split('\n')).toHaveLength(3);
-    expect(invariantsToSql('posts', [])).toBe('');
+    expect(named('publish_coherent').kind).toBe('assert');
+    expect(named('publish_coherent').sql).toBeNull();
+    // The two SQL-expressible rules are the only ones a constraint can carry.
+    expect(posts.$invariants.filter((inv) => inv.sql !== null)).toHaveLength(3);
   });
 });
 

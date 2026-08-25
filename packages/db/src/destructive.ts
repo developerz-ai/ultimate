@@ -5,6 +5,7 @@
 
 import { stripSqlNoise } from './sql-noise';
 import { noiseAt } from './sql-scan';
+import { statementExcerpt } from './statement-excerpt';
 import { statementsOf } from './statement-split';
 
 /** The line a migration carries to declare that applying it destroys data. */
@@ -91,20 +92,6 @@ const RULES: readonly (readonly [DestructiveKind, RegExp])[] = [
 ];
 
 /**
- * One capped line — an error prints this, not a whole script. Only the comments *preceding* the
- * statement come off, the ones `statementsOf` carries in from the file header; the SQL itself stays
- * verbatim, because `stripSqlNoise` blanks quoted identifiers and `drop table ""` names nothing an
- * author can act on. Blanking is for deciding, never for reporting.
- */
-function excerpt(statement: string): string {
-  const line = statement
-    .replace(/^(?:\s*(?:--[^\n]*|\/\*[\s\S]*?\*\/)\s*)+/, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return line.length > 120 ? `${line.slice(0, 117)}...` : line;
-}
-
-/**
  * Every destructive statement in `up`, in apply order.
  *
  * `statementsOf` cuts on a `;` that is not inside a literal, an identifier, a dollar-quoted body
@@ -117,7 +104,7 @@ export function destructiveStatements(up: string): readonly DestructiveStatement
   for (const statement of statementsOf(up)) {
     const bare = stripSqlNoise(statement).toLowerCase();
     const rule = RULES.find(([, pattern]) => pattern.test(bare));
-    if (rule !== undefined) found.push({ kind: rule[0], statement: excerpt(statement) });
+    if (rule !== undefined) found.push({ kind: rule[0], statement: statementExcerpt(statement) });
   }
   return found;
 }

@@ -54,6 +54,14 @@ export const posts = entity('posts', {
      * namespace is global. Strictly stronger than the pair it replaces, so nothing that held
      * before stops holding; `createDraft` derives the slug from the title, so a cross-org title
      * collision is now a write that fails loudly instead of a public page that resolves at random.
+     *
+     * **This database does not have it yet**, and since 2026-08-25 that is a finding rather than a
+     * note: `0001_init.sql` created `post_slug_unique_per_org UNIQUE (org_id, slug)`, no migration
+     * has replaced it, and the newest migration's sidecar records what the SQL did — so `x verify`'s
+     * `drift` step reports `posts_post_slug_unique_key` unmigrated beside `post_slug_unique_per_org`
+     * undeclared. Until one `x db gen` closes it, two orgs CAN publish the same slug and
+     * `/blog/{slug}` serves whichever row the planner reaches first. Check for an existing
+     * collision before generating: the index cannot be created over one.
      */
     invariant('post_slug_unique', c.unique(['slug'])),
     invariant('post_like_count_non_negative', c.likeCount.atLeast(0)),

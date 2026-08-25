@@ -23,10 +23,15 @@ Three components Postly needs and `@ultimat3/ui` should not have an opinion abou
 ## Composition, not configuration
 
 `PostCard` takes an `actions` slot instead of an `onLike` prop. The static blog passes nothing;
-the authed feed passes `<LikeButton>` from `apps/web/app/posts/ui/`. That is what keeps the
-mutator — and its offline queue — out of the 0kb surface.
+the post page passes `<LikeButton likeCount={…}>` from `apps/web/app/posts/ui/`. That is what keeps
+the mutator — and its offline queue — out of the 0kb surface.
 
 ```tsx
 <PostCard post={post} href={`/blog/${post.slug}`} zone={viewer.tz} />
-<PostCard post={post} href={`/posts/${post.id}`} zone={viewer.tz} actions={<LikeButton post={post} />} />
+<PostCard post={post} href={`/posts/${post.id}`} zone={viewer.tz} actions={<LikeButton likeCount={post.likeCount} />} />
 ```
+
+`<LikeButton>` is the SERVER's half — the count, and a button it cannot honour. The interactive one
+is `apps/web/app/posts/[id]/like.island.tsx`, which the post page declares with `island()` and which
+replaces this markup once a browser has booted it. A component calling `useMutation()` on a route
+with no island is `X_LIVE_ROUTE_NO_ISLAND`, which is where that split came from.

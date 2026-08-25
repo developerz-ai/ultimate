@@ -75,14 +75,7 @@ export {
   stateUndeclared,
 } from './feature-errors';
 export type { Invariant, InvariantDef, InvariantKind } from './invariants';
-export {
-  assertInvariants,
-  constraintName,
-  invariant,
-  invariantsToSql,
-  MAX_ASSERTED_ROWS,
-  toSql,
-} from './invariants';
+export { assertInvariants, invariant, MAX_ASSERTED_ROWS } from './invariants';
 export { memoryRepo, memoryTransactor } from './memory-repo';
 export type { StatementLoop } from './n-plus-one';
 export { N_PLUS_ONE_THRESHOLD, nPlusOne, preloadsFor } from './n-plus-one';

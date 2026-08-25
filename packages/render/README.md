@@ -198,27 +198,29 @@ production Solid, `As of 2026-08`:
 | `render(() => <p>hello</p>, el)` — the floor, before an author writes a line | 12,588 |
 | a signal, a button and reactive text | 13,663 |
 | `settings.island.tsx`, the heaviest island this repo ships | 17,797 |
-| one directive's hydration runtime at `hydrate: 'idle'` | 615 |
-| the same at `'interaction'`, which is what an island route declaring no `hydrate` gets | 881 |
+| one directive's hydration runtime at `hydrate: 'idle'` | 774 |
+| the same at `'interaction'`, which is what an island route declaring no `hydrate` gets | 1,251 |
 
-17,797 + 881 = **18,678** — the heaviest island this repo ships, plus the runtime an app pays
+17,797 + 1,251 = **19,048** — the heaviest island this repo ships, plus the runtime an app pays
 without writing a number down. `DEFAULT_ISLAND_HYDRATE` is `'interaction'`
 ([`route.ts:33`](src/route.ts)), applied at `:253` to any island route that states no `hydrate`, so
-`idle`'s 615 is the cheaper case and not the one a budget has to clear.
+`idle`'s 774 is the cheaper case and not the one a budget has to clear.
 
 The default is **20,480** (20kb), which is not that number rounded: the next whole kilobyte above
-it is 19,456, and clearing today's worst island by 778 bytes is a ceiling the next line anyone
-writes breaks. 20kb leaves 1,802 B, and stays under 2× 18,678 — so a route that bundles the same
+it is 19,456, and clearing today's worst island by 408 bytes is a ceiling the next line anyone
+writes breaks. 20kb leaves 1,432 B, and stays under 2× 19,048 — so a route that bundles the same
 island twice is still refused. All three clauses are assertions in
-[`modes.test.ts`](src/modes.test.ts)'s `DEFAULT_ISLAND_JS_BYTES` block, against the measured
-table above; a default that stopped clearing the floor, or stopped being a ceiling, is red.
+[`island-budget.test.ts`](src/island-budget.test.ts)'s `DEFAULT_ISLAND_JS_BYTES` block, against the
+measured table above; a default that stopped clearing the floor, or stopped being a ceiling, is red.
 
 It was **4kb** until `As of 2026-08`, sized from `contact-sales.island.tsx` — 875 B of chunk, and
 no `solid-js` import anywhere in it. Calibrating a JSX budget on the one island shape that does not
 pay the JSX runtime put the default a factor of three below the floor of every island that does:
 no `budget.js` under 4096 was reachable on any surface, because the allowance is measured ABOVE the
 baseline and not against it. (Its second number was wrong too — one directive's hydration runtime
-is 615 B at `idle` and 881 B at `interaction`, never 1,019.)
+was 615 B at `idle` and 881 B at `interaction` when that default was set, never 1,019. The table
+above is what it measures today: the runtime has grown three times since, for the mount markers,
+for terminating the chain `boot` starts, and for aiming the replay.)
 
 Still a ceiling and not a pass: exceeding it is `X_BUDGET_EXCEEDED`, naming the island. An island
 that pulls a design system in — `@ultimat3/ui`'s `<Switch>` measures 36,335 B — writes its own
@@ -385,7 +387,12 @@ side effect. Anything that loads an app's source — `x dev`, `x build`, `server
   is handed an `AbortSignal` so the work stops, and nothing more is enqueued. Solid's compiled templates and signals mean the shell costs zero
   hydration work, so streaming buys TTFB *and* TBT here, not just TTFB.
 - **`hydrate: 'interaction'`** replays the event that woke the island; without replay the
-  first click on a cold island is silently lost.
+  first click on a cold island is silently lost. It replays onto a node the mount left standing —
+  the original target when the mount kept it, otherwise whatever `elementFromPoint` now answers for
+  a pointer event, otherwise the island root. An island's `mount` opens with `el.textContent = ''`,
+  so the pressed node is usually gone by the time the replay runs, and dispatching at it reached
+  nothing: `hydrate: 'interaction'` is usable with a replacing island, and was not until
+  `As of 2026-08-25`.
 - **`hydrate: 'never'`** emits no attributes beyond the marker and no runtime — the `site/`
   0kb default is mechanical, not aspirational. A page that renders an island anyway is
   `X_ISLAND_NOT_HYDRATED`, not a silently dead button.

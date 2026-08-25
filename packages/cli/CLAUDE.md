@@ -573,8 +573,11 @@ regex and `+` is a quantifier — `n1` is what actually selects these tests.
 | `db-branch.ts` | what a branch IS: the closed verb set, the name it takes on disk and in `pg_database`, and list/create/drop per mode |
 | `cmd-db-branch.ts` | `x db branch`'s wiring alone — which verb, which refusal, and the one connection an external clone runs on |
 | `db-finding.ts` | one thrown value → one `Finding`, shared by `cmd-db.ts` and `cmd-db-branch.ts` |
-| `drift.ts` | `checkSourceDrift`: the `.hash` sidecar `x verify`'s `drift` step compares, no database needed |
+| `drift.ts` | `checkSourceDrift`: the `.hash` sidecar the `drift` step compares, no database needed |
+| `schema-diff.ts` | what two GENERATED snapshots disagree about, as data — the pure half |
+| `schema-drift.ts` | `checkMigrationDrift`: entity declarations against the newest `.snapshot.json`, and the composition the `drift` step and `x doctor` both read |
 | `db-destructive.ts` | `checkDestructiveMigrations`: the same step's second half — every committed `up` that drops, truncates or retypes must carry `-- destructive: true` |
+| `db-ungeneratable.ts` | `checkUngeneratableMigrations`: the same step's fourth rail — every committed `up` holding SQL `x db gen` could not have written must say how many, as `-- ungeneratable: <n>` |
 | `db-backfill.ts` | `x db backfill --list`: the flag parsing, the ledger read and the table |
 | `db-seed.ts` | `x db seed`, everything except the argv: `SEED_GLOBS` (where a seed is declared), `discoverSeeds`, `parseSeedTierFlag`, `selectSeeds` (which seeds this invocation runs, and its two refusals — `X_DECLARATION_UNKNOWN` and `X_SEED_ENVIRONMENT`), `runSeeds` (one transaction **per seed**, never one around the run) and the two renderers. The `db-backfill.ts` split repeated: a driver plus plain strings in, plain rows out, so every rule is testable with no `ParsedArgs` and no boot. Which tiers an environment takes is `@ultimat3/entity`'s `seedTiersFor` — two copies of "may this seed run" would be two answers |
 
@@ -681,6 +684,84 @@ wrote the marker from, so the generator and the gate cannot disagree about one f
 file, never one per statement — the marker declares the whole migration. It rides on `drift` rather
 than becoming an eighteenth step because it is this step's own question over this step's own files;
 a new step is for a genuinely new question.
+
+**The `drift` step reads the SNAPSHOT, not only the hash, `As of 2026-08-25`.** `checkSourceDrift`
+compares a schema-source hash to a `.hash` sidecar and never reads what the migration RECORDED, so
+`dummy/social-media-clone` sat green while **nine declared CHECK constraints had never reached any
+database** — a comment body could be whitespace, a like count could go negative, an email needed no
+`@` — and a squash that dropped ten invariants and nine defaults would have been green too. The
+source had not moved, so nothing that hashes source could see it. `checkSnapshotDrift`
+(`schema-drift.ts`) diffs `snapshotOf(describeEntities())` against `declaredSchema(readMigrations())`
+— both sides are `snapshotOf`'s own spelling, which is what makes a check, a default and a column
+type comparable at all. Measured against that app rolled back to the state its gate was green in:
+**20 findings**, 9 checks and 11 defaults.
+
+**Two directions, two codes, because they are two repairs.** `X_DB_SCHEMA_UNMIGRATED` is a
+declaration the migrations do not carry — the database will never get it. `X_DB_SCHEMA_UNDECLARED`
+is a migration carrying what nothing declares any more, whose fix names BOTH branches, because the
+declaration may have been lost rather than removed and `x db gen` would emit the DROP. One "drift"
+verdict over both teaches a reader neither.
+
+**Absent is not empty, and reading it as "recorded none" would fail every existing app on its first
+run.** `TableDescription.checks` is absent — never `[]` — on a table declaring none, exactly like
+`IndexDescription.using` and `ColumnDescription.generated`. Both sides normalise to empty
+(`schema-diff.ts`), `using` reads through `indexMethodOf` and `order` through `?? 'asc'`, or an app
+whose sidecar predates any of the three reports a difference on every index it has.
+
+**The hash half stays, and runs second.** It catches what the snapshot comparison cannot see at all
+— a seed, a helper or a TS-only invariant moving under `packages/db/src` with no statement behind
+it, which is what `reconcileSchemaHash` exists to re-record. It is SUPPRESSED when the snapshot half
+found something: both then answer one condition and only one of them is an instruction, since
+`schema hashes to 3f2a, newest migration recorded 91bc` names no constraint, no column and no table.
+
+**An app whose modules will not import is not judged here.** `appEntities` answers `undefined`
+rather than a short registry, which would read as "every table was dropped" and hand out a DROP per
+table for one file's syntax error — the same stance `generateAppMigration` takes with its `blocked`
+outcome. The cost is that a schema check can be silently skipped under an already-red gate; the
+alternative is a false red whose fix destroys data.
+
+**The FOURTH thing the `drift` step asks is what neither hash nor snapshot can see: SQL no
+declaration carries at all.** `ALTER TABLE posts REPLICA IDENTITY FULL;` sits in
+`examples/dummy/packages/db/migrations/0001_init.sql`, no generator emits it, no snapshot records
+it, and a squash drops it in silence — and no declaration-based check can ever see it, because a
+regenerated sidecar equals the declaration by construction. `db-ungeneratable.ts` reports it,
+`As of 2026-08-25`. It classifies nothing itself: `@ultimat3/db`'s `ungeneratableStatements`
+matches each statement's leading verb phrase against `GENERATABLE_FORMS` — everything
+`generateMigration` emits, held honest in both directions by that package's own test — because
+every SQL classifier in the tree is db's (`sql-scan.ts`, `statement-split.ts`, `sql-noise.ts`,
+`destructive.ts`) and a second one here is the reimplementation this file's own rule forbids.
+Measured: **7 statements in `examples/dummy`** (five `CREATE TYPE … AS ENUM`, two
+`REPLICA IDENTITY FULL`), **0 in all four `dummy/social-media-clone` migrations** and 0 in
+`examples/dummy`'s own generated `0002_money_scale.sql` — real generator output reports nothing,
+which is the half a rail like this lives or dies on.
+
+**The declaration is a header line, and it carries a COUNT: `-- ungeneratable: 7`.** Not
+`@ultimat3/db`'s code but this package's (`X_MIGRATION_UNGENERATABLE`), because the only remedy
+available for every statement it reports is a line in the migration file, and where an app keeps
+its migrations is this package's fact — db classifies and deliberately declares no code. Three
+decisions behind that shape:
+
+| Decision | Why |
+|---|---|
+| in the migration file, not a pin table here | the gate runs in every generated app, and a table in `packages/cli/src` can hold no row for an app it has never seen. `-- destructive: true` in the same directory, read by the same reader, is the precedent |
+| a count, not a boolean | the first hand-written statement would otherwise buy the file an unlimited allowance, and statements a reader never sees again are this rail's whole subject. A ratchet in the `README_FENCE_BACKLOG` sense: `found > declared` reports, a declared count that is too high is a pin nobody lowered |
+| the **header** — before the first statement | `hasDestructiveMarker` had to become a lexical scan because a regex over the raw file matched its marker inside a block comment and inside a dollar-quoted body, and `noiseAt` is db's and unexported. A run anchored at index 0 needs no scanner to be exact: before the first statement there is no string, no quoted identifier and no dollar body for a marker to hide in |
+
+**The `fix:` names the marker first and `x db gen` second, and that order is the point.**
+Regenerating is exactly what *discards* these statements, so the command every other db code
+answers with is the one this one must not lead with — `X_MIGRATION_UNGENERATABLE`'s `CLI_FIXES` row
+is `x verify --only drift`, and the re-declare branch (an enum is a text column plus a check
+invariant) rides behind an em-dash because it is available for some of the statements and never
+for `REPLICA IDENTITY FULL`, which nothing in the framework emits.
+
+**`x db gen` reports what it could not write, and exits 0.** `GeneratedMigration.unrendered` reached
+the committed `.sql` as a `-- UNRENDERED` comment and nothing else read it; `db-generate.ts` now
+carries it on every branch (a REQUIRED field, so forgetting to project it is a type error) and
+`cmd-db.ts` prints the count plus each entry's own remedy and carries the list under
+`data.unrendered`. Not a non-zero exit: `x db gen` is the `fix:` on `X_DB_DRIFT` and four other
+shipped errors, and a fix that always exits 1 is not an instruction — the `x i18n add fr` failure,
+repeated. The red belongs at the gate, and the `drift` step reads the SAME list to decide that
+`x db gen` is not the fix it should be handing out.
 
 The *source* half is a different question with a different answer: `checkSourceDrift` hashes the
 entity source against what `x db gen` recorded, answers the same before and after a migration, and

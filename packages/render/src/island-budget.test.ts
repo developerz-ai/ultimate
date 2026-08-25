@@ -42,8 +42,13 @@ describe('DEFAULT_ISLAND_JS_BYTES', () => {
      * `boot` starts: `hush` in the shared prelude (+18 B, so `idle` 744 -> 774 and `visible`
      * 816 -> 846) and, here, an `off` that runs on the rejection arm as well — one unhandled
      * rejection per user event, and a queue of retained `Event` objects, otherwise.
+     *
+     * Moved 1,067 -> 1,251 on 2026-08-25, when the replay learned WHERE to land: `aim` re-checks
+     * containment after the mount and hit-tests a pointer event whose target the mount detached.
+     * +184 B, and all of it in the `interaction` part — `idle` is still 774 and `visible` 846, so
+     * a route that declares its strategy pays nothing for this.
      */
-    hydrateRuntimeDefault: 1_067,
+    hydrateRuntimeDefault: 1_251,
   } as const;
 
   test('a Solid island can reach it — the property 4096 did not have', () => {

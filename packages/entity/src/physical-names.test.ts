@@ -4,6 +4,7 @@
 // the invariant SQL — because the second place that spells a name is the one that gets it wrong.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+import { generateMigration } from '@ultimat3/db';
 import { t } from '@ultimat3/schema';
 import { plainDate } from '@ultimat3/time';
 import { columnName, moneyColumns } from './column';
@@ -82,9 +83,24 @@ describe('unit · the table an entity is bound to', () => {
     expect(names.some((name) => name.startsWith('account_'))).toBe(false);
   });
 
-  test('an invariant compiles to SQL over the physical columns', () => {
-    expect(accounts.$migration()).toContain('seat_count');
-    expect(accounts.$migration()).not.toContain('"seats"');
+  test('an invariant compiles to SQL over the physical columns, on the physical TABLE', () => {
+    const described = accounts.$describe();
+    const rule = described.invariants.find((inv) => inv.name === 'account_seats_positive');
+    expect(rule?.sql).toBe('seat_count >= 1');
+    expect(rule?.columns).toEqual(['seat_count']);
+    // Through the DDL that actually ships. The half this file existed to check and did not: the
+    // deleted `$migration()` rendered `ALTER TABLE "account"` — the entity name where the table
+    // belongs, a relation Postgres answers 42P01 for — and the assertion above it, being about
+    // COLUMNS, passed over it for three majors.
+    const migration = generateMigration({
+      entities: [accounts.$describe()],
+      name: 'create legacy accounts',
+      now: new Date('2026-08-25T00:00:00.000Z'),
+    });
+    expect(migration.up).toContain(
+      'constraint "legacy_accounts_account_seats_positive_check" check (seat_count >= 1)',
+    );
+    expect(migration.up).not.toContain('"account"');
   });
 
   test('a table name that could not be quoted safely is refused where it is written', () => {

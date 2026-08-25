@@ -136,6 +136,17 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   `bun test`, where nothing installs a client.
 - Tests sit next to their source: `<file>.test.ts` (unit), `.contract.test.ts`, `.live.test.ts`,
   `.job.test.ts`, `.e2e.test.ts`, `.eval.test.ts`.
+- A route that reads or writes over the socket declares an `island()`, and the hook call lives in
+  that island's `mount()`. Three of them now: `/feed` (`useLive`), `/settings` (no hook, the same
+  shape) and `/posts/{id}` (`useMutation`). A component calling one of the live hooks on a route
+  with no island is `X_LIVE_ROUTE_NO_ISLAND` — nothing of that route ever runs in a browser, so the
+  control is inert at 200. Two rules the third one added: an island that WRITES builds its
+  `LiveClient` with an `OfflineQueue` (`useMutation().pending` answers 0 for every mutator when the
+  client has none, so the queued badge cannot render without one), and it names the mutator through
+  `app/posts/like-mutation.ts` rather than importing `mutator.ts`, exactly as `app/feed/live.ts`
+  names the query — the declaration drags `@ultimat3/action` and the Postgres client into the
+  chunk. `hydrate` is `idle`, never `interaction`: the interaction runtime replays the waking event
+  onto `ev.target`, and `mount` clears the wrapper first, so that node is no longer in the document.
 - An island that has states worth reviewing carries a sibling `<name>.island.states.ts`, and
   `x shot --island <name> --json` photographs every one of them into `.x/shot/island/<name>/`.
   `apps/web/app/settings/settings.island.states.ts` is the worked example: `empty-options` is what
