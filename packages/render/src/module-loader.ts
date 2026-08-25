@@ -20,8 +20,42 @@ import { surfaceOf } from './surfaces';
 const JSX_FACTORY = '__xh';
 const JSX_FRAGMENT = '__xFragment';
 
+const RENDER_PACKAGE = '@ultimat3/render';
+
+/**
+ * The specifier the prelude imports, resolved ONCE in the LOADER's frame — never the compiled
+ * file's. It was the bare package name, resolved from the IMPORTING file, and the plugin is
+ * process-wide the moment anything imports `@ultimat3/render/server`: so every `.tsx` compiled
+ * somewhere the package is not installed above it — a `mkdtemp` fixture, a scaffolded app under
+ * test, anything outside this repository — died at link time with `Cannot find module`.
+ *
+ * The loader's frame is also the only CORRECT one, which is what makes this a resolution and not a
+ * workaround: the prelude names the factory whose nodes THIS package's renderer and brand checks
+ * (`isJsxNode`, `isIslandNode`) read back, so it has to be this instance rather than whichever copy
+ * happens to sit above the file being compiled. Measured: the resolved URL and the package name
+ * answer the same module object in the workspace, so nothing that resolved before resolves twice.
+ *
+ * Why the emitted TEXT changes rather than the plugin, measured on Bun 1.4.0: a runtime
+ * `Bun.plugin` ignores `onResolve` outright — the callback never fires, from module scope or from
+ * a `--preload`, and a virtual namespace never resolves — and ignores `resolveDir` on an `onLoad`
+ * result. Neither seam can carry the resolution, so the specifier must. Revisit if Bun wires
+ * either: an `onResolve` hook would leave every compiled module byte-identical.
+ *
+ * The fallback is the status quo, for the one frame that cannot answer: inside a
+ * `bun build --compile` binary `import.meta.url` is `file:///$bunfs/root/<name>` and
+ * `import.meta.resolve` throws `Cannot find package`. There the prelude emits the bare name again
+ * and resolves from the file — exactly what every build did before this constant existed.
+ */
+export const JSX_FACTORY_SPECIFIER = ((): string => {
+  try {
+    return import.meta.resolve(RENDER_PACKAGE);
+  } catch {
+    return RENDER_PACKAGE;
+  }
+})();
+
 /** No newline: the prelude shares line 1 with the file's own first line, so stack traces still point at it. */
-const JSX_PRELUDE = `import { h as ${JSX_FACTORY}, Fragment as ${JSX_FRAGMENT} } from '@ultimat3/render';`;
+const JSX_PRELUDE = `import { h as ${JSX_FACTORY}, Fragment as ${JSX_FRAGMENT} } from ${JSON.stringify(JSX_FACTORY_SPECIFIER)};`;
 
 const transpiler = new Bun.Transpiler({
   loader: 'tsx',

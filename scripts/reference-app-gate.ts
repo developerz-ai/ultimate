@@ -46,6 +46,17 @@ export interface GateStep {
   readonly ok: boolean;
   readonly skipped: boolean;
   readonly findings: readonly Finding[];
+  /**
+   * A failed step's captured stdout — the failing test's NAME, its assertion diff and its
+   * `file:line`. `packages/cli/src/output.ts:199-207` already carries it through `x verify --json`
+   * for exactly this reason, with a comment saying the alternative is a log that reads "one or
+   * more unit tests failed" and nothing else. This file then dropped it on the floor, so that is
+   * precisely what CI showed: a shard's exit code, no test name, and nothing in the log to find.
+   *
+   * Diagnosing one flaky shard cost a clean-checkout reproduction and 300 instrumented builds
+   * because of this line's absence.
+   */
+  readonly output?: string;
 }
 
 const asFinding = (value: unknown): Finding | undefined => {
@@ -61,6 +72,7 @@ const asStep = (value: unknown): GateStep | undefined => {
   if (typeof value !== 'object' || value === null) return undefined;
   const { name, ok, skipped, findings } = value as Record<string, unknown>;
   if (typeof name !== 'string' || typeof ok !== 'boolean') return undefined;
+  const { output } = value as Record<string, unknown>;
   return {
     name,
     ok,
@@ -68,6 +80,9 @@ const asStep = (value: unknown): GateStep | undefined => {
     findings: (Array.isArray(findings) ? findings : [])
       .map(asFinding)
       .filter((f) => f !== undefined),
+    // Absent, never `''` — a step that captured nothing and a step whose output was dropped are
+    // different states, and only one of them is a bug in this file.
+    ...(typeof output === 'string' && output.length > 0 ? { output } : {}),
   };
 };
 
@@ -311,6 +326,12 @@ export const stepLines = (
     const pinned = step.name in expectedRed ? '  pinned' : '';
     lines.push(`  ${mark} ${step.name.padEnd(14)}${pinned}`);
     for (const finding of step.findings) lines.push(renderFinding(finding, '      '));
+    // Only on a red step, and only when it is NOT pinned: success stays quiet (the pattern
+    // `packages/cli/src/output.ts:205-207` sets), and a pinned red is expected, so printing its
+    // output every run would bury the one unpinned failure a reader is here for.
+    if (!step.ok && !step.skipped && pinned === '' && step.output !== undefined) {
+      for (const line of step.output.split('\n')) lines.push(`      | ${line}`);
+    }
   }
   return lines;
 };

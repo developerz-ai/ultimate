@@ -653,6 +653,101 @@ right database, and `x db gen`'s `retypeColumn` owns that question where both si
 The `fix:` is the `alter table … set not null` itself and deliberately not `x db gen`, which has
 never emitted one and would answer with an empty migration.
 
+**A CHECK that went missing is drift, `As of 2026-08-25`, and it is compared by NAME because it
+cannot be compared any other way.** `pg_get_constraintdef` answers Postgres' own rewriting —
+`status in ('draft', 'published')` reads back as
+`CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))`, measured on 18.4
+(`drift-check.live.test.ts`) — so a catalog value could never equal a generated one and a text
+comparison reports a correct database as wrong forever. That is why nothing here read
+`pg_constraint` for CHECKs at all, and why `alter table … drop constraint` in a psql session was
+`ok: true` on every check that followed it.
+
+**The two readings do not share a field, and that split is the whole design.**
+`TableDescription.checks` is the DECLARED side — name **and** expression, `snapshotOf`'s own
+spelling, the value `checkPlan` diffs. `TableDescription.checkNames` is the CATALOG side — `conname`
+for `contype = 'c'`, names and nothing else, written only by `introspect()`. Filling `checks` from
+the catalog instead would put a rewritten expression where `checkPlan` expects a generated one, and
+every `x db gen` in every app would then drop and re-add every constraint it has, forever, because
+the two strings can never be equal. Split, the TYPE says which reading a value came from and
+`checkPlan` cannot be handed a catalog value by accident.
+
+Three rules ride with it. **Absent and `[]` are different on both sides** — an absent `checks` is a
+sidecar written before the field existed (declares nothing, so nothing can be missing), and an
+absent `checkNames` is a description that never asked the catalog, which reading as "the database
+holds none" is one finding per declared constraint against a database nobody looked at.
+`introspect()` therefore always writes `checkNames`, `[]` included. **Only the declared side is
+judged**, the rule `compareIndexes` and `compareForeignKeys` already state: a NOT NULL (`contype =
+'n'` from Postgres 17 on), an `enumerated()` column's old anonymous form and every constraint an
+extension brought would each be a finding against a database that is exactly right. **There is no
+`changed-check` and there never will be** — presence is a boolean, the predicate is text, and
+normalising the text is an expression parser competing with the server's. `missing-check`'s `fix:`
+is the `add constraint` statement itself, not `x db migrate`: the migration declaring it is already
+in the ledger, so the migrator applies nothing, and the declared side carries the predicate that
+makes an executable fix possible at all.
+
+**A retype takes the objects written against the column out of its way first, `As of 2026-08-25`,
+and `retype-dependents.ts` decides which those are.** Postgres compiles a partial index's predicate
+and a CHECK's expression against the column's type at creation and cannot recompile either:
+`alter table "posts" alter column "status" type text using "status"::text` answered
+`42883 operator does not exist: text = post_status` and the migration aborted mid-run — inside
+`ROLE=migrate`, with the ledger recording nothing. It is what blocked `examples/dummy` from
+regenerating at all.
+
+**Which objects are dependent is measured, never assumed** (`generate-retype.live.test.ts`, one
+shape at a time on 18.4):
+
+| recorded object | survives the ALTER |
+|---|---|
+| btree over the column — plain, unique or composite | **yes**, Postgres rebuilds it itself |
+| partial index whose predicate names the column | **no — 42883** |
+| partial index naming another column | yes |
+| CHECK whose expression names the column | **no — 42883** |
+| a view over the column | no, `0A000`, and no snapshot records a view |
+
+So only an expression that MENTIONS the column is moved, and a plain btree is left alone — dropping
+it is a table scan to rebuild for nothing.
+
+**The reference test over-approximates on purpose, and it cannot be narrowed by type name.**
+Measured: `char(1)` → `char(3)`, `varchar(80)` → `text` and `numeric` → `integer` all re-derive
+their predicates cleanly, while `integer` → `text` under `check (c >= 0)` is `42883` — both sides
+built-ins. Whether an expression re-resolves depends on operator resolution, which is exactly the
+knowledge a generator with no database cannot have, so every ambiguous case answers "dependent":
+a miss is `42883` in the release phase, a false positive is a rebuild on a statement that is
+already rewriting the whole table under ACCESS EXCLUSIVE. `referencesColumn` walks `sql-scan.ts`
+rather than matching a substring — a name inside a literal or a comment is not a reference,
+`status_code` is not `status`, and a **quoted** identifier IS one, which is the one span the lexer
+calls noise and this reader must not skip.
+
+**What is moved aside is put back by the ORDINARY diff, never twice.** `up` drops the dependents
+before the ALTER and `MovedAside` carries their names to the two arms that would otherwise act on a
+thing that is no longer there: the index loop CREATES a declared name instead of comparing it
+(`redefineIndex` is silent on a definition that never moved, which here means the table comes out
+with no index at all), and `checkPlan` neither drops nor re-adds a predropped name — a declared one
+takes the bare `add constraint` because the name is provably free, and a recorded one the entity no
+longer declares is simply gone, which is what `checkPlan` would have done to it anyway. `down`
+pushes the restores forwards and is reversed as a whole, so it reads: drop the new objects, retype
+back, then recreate the ones compiled against the old type — restoring first is `42883` in the
+other direction. What it restores is what the snapshot RECORDED, never what the entity declares.
+
+**Three things it does not move, and each is measured rather than assumed.** A **foreign key** over
+the retyped column is `ERROR: foreign key constraint "c_k_fkey" cannot be implemented` — the
+dependents are in `live.foreignKeys` *and* in every OTHER table's, which `diffTable` cannot see from
+one entity, and the statements belong to `foreign-key-plan.ts`'s own buckets, so half a fix here
+would collide with it. Neither tracked app can reach it (every key is `uuid` on both sides) and it
+is the next thing to close. A **generated column's** own retype (`regenerate`) does not move
+dependents either: it emits `set expression` and `alter … type` with no `using`, and nothing covers
+a partial index over one. And **what no migration wrote down** is invisible by construction —
+`x db gen` runs with no database open, so a hand-added expression index over the column is still
+`42883` and a VIEW over it is `0A000` whatever this does, since `SchemaDescription` has a field for
+neither.
+
+**`index-ddl.ts` holds `createIndex`, `redefineIndex`, `indexShape`, `dropIndex` and
+`asDeclared`**, split out of `generate.ts` at the 500-line ceiling along the seam `check-ddl.ts` and
+`generated-column.ts` already drew — `generate.ts` assembles a plan, `index-ddl.ts` writes the index
+statements in it. `drift-findings.ts` is the same split on the other file: every `DriftDifference`
+constructor and the `DriftKind` union, with `drift.ts` keeping the comparisons and re-exporting both
+types explicitly so the public surface does not move.
+
 **An entity's INVARIANTS reach the DDL, `As of 2026-08-25`, and `invariant-ddl.ts` is what they
 become.** `EntityDescriptionLike` had no `invariants` field at all — the same seam gap
 `onDelete` carried until 3.0 — so a regenerated migration held **none** of them: measured on

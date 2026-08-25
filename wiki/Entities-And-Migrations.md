@@ -498,7 +498,7 @@ not drift, and neither is a table in the framework's `x_` namespace.
 
 ### What the catalog diff compares
 
-Ten `DriftKind` values, `As of 2026-08-19` — the executable list is `DriftKind` in
+Eleven `DriftKind` values, `As of 2026-08-25` — the executable list is `DriftKind` in
 [`packages/db/src/drift.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/db/src/drift.ts).
 **Only the declared side is judged**: a live index or key no snapshot names is not drift, because
 Postgres creates one for every primary key and every unique constraint and an index a DBA added is a
@@ -509,6 +509,7 @@ planner decision.
 | `unexpected-column` · `missing-column` · `changed-column` | a modelled table's columns disagree with the snapshot. A primary-key column reads as `NOT NULL` on both sides whether or not anything declared it |
 | `unexpected-table` · `missing-table` · `unknown-schema` | a modelled table is absent, or a table outside `x_` is present that no migration declares |
 | `missing-index` | the snapshot names an index the catalog does not hold |
+| `missing-check` | the snapshot names a CHECK constraint the catalog does not hold. Compared **by name only** — `pg_get_constraintdef` answers Postgres' own rewriting (`status in ('draft','published')` comes back as `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))`), so the predicate's text can never be compared, exactly as an index's `where` cannot. Only the **declared** side is judged, so a `NOT NULL`, an `enumerated()` column's old anonymous constraint and an extension's own are all silent |
 | `changed-index` | the index is there and one of **four** facts about it differs: its column list, its uniqueness, its **direction**, or whether it is **partial**. The last two are new `As of 2026-08-19` — a `desc` index rebuilt ascending served a feed's newest page off the wrong end, and a partial index recreated as a total one silently widened the constraint, and both read `ok: true`. `asc` is normalised to `null` first, because Postgres stores an ascending index as not-descending. The predicate's **text** is deliberately never compared → [Known gaps](Known-Gaps) |
 | `missing-foreign-key` | no key points those columns at that table. Matched on **where the key points**, never on its name: a hand-written `constraint fk_posts_org` is the same constraint as a generated `posts_org_id_fkey` |
 | `changed-foreign-key` | new `As of 2026-08-19`. The key points where it was declared to point and one side's `on delete` rule is not the other's. Reported apart from `missing-foreign-key` because it is a different repair — the constraint is there, and what changed is what happens to the child rows. Its `fix:` is the **pair**, not `x db migrate`: a rule cannot be altered in place, `add constraint` alone is `42710` on a name already taken, and no `x db gen` diff emits either statement. Both sides go through one normalisation, so the catalog's `c` and a snapshot's `cascade` agree, and Postgres' `a` (`no action`) on every undeclared key reads as no rule |

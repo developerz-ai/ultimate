@@ -4,196 +4,33 @@
 // by the framework contract; `x verify` fails on it and `--json` carries every difference.
 
 import { baseClient, type DbClient } from './client';
-import { DbError } from './errors';
-import { foreignKeyTarget, onDeleteRule, rebuildForeignKey } from './foreign-key';
-import { indexMethodOf } from './index-method';
+import type { DriftDifference } from './drift-findings';
 import {
-  type ForeignKeyDescription,
-  findTable,
-  introspect,
-  type SchemaDescription,
-  type TableDescription,
-} from './introspect';
+  changedColumn,
+  changedForeignKey,
+  changedIndex,
+  missingCheck,
+  missingColumn,
+  missingForeignKey,
+  missingIndex,
+  missingTable,
+  unexpectedColumn,
+  unexpectedTable,
+  unknownSchema,
+} from './drift-findings';
+import { DbError } from './errors';
+import { foreignKeyTarget, onDeleteRule } from './foreign-key';
+import { indexMethodOf } from './index-method';
+import { findTable, introspect, type SchemaDescription, type TableDescription } from './introspect';
 import { type LedgerRow, type Migration, readLedger } from './migrate';
 
-export type DriftKind =
-  | 'unexpected-column'
-  | 'missing-column'
-  | 'changed-column'
-  | 'unexpected-table'
-  | 'missing-table'
-  | 'unknown-schema'
-  | 'missing-index'
-  | 'changed-index'
-  | 'missing-foreign-key'
-  | 'changed-foreign-key';
-
-export interface DriftDifference {
-  readonly kind: DriftKind;
-  readonly table: string;
-  readonly column: string | null;
-  readonly cause: string;
-  readonly fix: string;
-}
+// Re-exported explicitly, never `export *`: `src/index.ts` publishes both from `'./drift'`, so the
+// split is invisible to `@ultimat3/db`'s public surface and no consumer moves with it.
+export type { DriftDifference, DriftKind } from './drift-findings';
 
 export interface DriftReport {
   readonly ok: boolean;
   readonly differences: readonly DriftDifference[];
-}
-
-function unexpectedColumn(table: string, column: string): DriftDifference {
-  return {
-    kind: 'unexpected-column',
-    table,
-    column,
-    // Pinned by the contract. Do not reword without changing docs/errors/X_DB_DRIFT.
-    cause: `table "${table}" has column "${column}" not present in any migration`,
-    fix: `x db gen "add ${column}"`,
-  };
-}
-
-function missingColumn(table: string, column: string): DriftDifference {
-  return {
-    kind: 'missing-column',
-    table,
-    column,
-    cause: `table "${table}" is missing column "${column}" that migrations declare`,
-    fix: 'x db migrate',
-  };
-}
-
-/**
- * The column exists on both sides and one of them lets it be `NULL`.
- *
- * This is the finding the expand/contract flow needs and never had. `generate.ts` emits a `NOT
- * NULL` add as nullable plus a `-- backfill "c", then: … set not null;` comment, because the
- * strict version cannot succeed on a populated table — and phase 2 is a comment, so it is a thing
- * a human has to remember. Nobody did, and `compareTable` compared columns by name and by type
- * while `snapshotOf` had recorded `nullable` all along, so the column stayed nullable forever
- * against an entity schema that said otherwise, with `ok: true` on every check. The first
- * `undefined` write then lands as `NULL` and crashes three services away from the migration.
- *
- * `x db gen` is deliberately not the fix: it diffs types and indexes and has never emitted a
- * `set not null`, so naming it would send a reader to a command that generates an empty migration.
- */
-function changedColumn(table: string, column: string, liveNullable: boolean): DriftDifference {
-  const clause = liveNullable ? 'set not null' : 'drop not null';
-  return {
-    kind: 'changed-column',
-    table,
-    column,
-    cause: liveNullable
-      ? `table "${table}" allows NULL in column "${column}" that migrations declare not null`
-      : `table "${table}" forbids NULL in column "${column}" that migrations declare nullable`,
-    fix:
-      `alter table "${table}" alter column "${column}" ${clause};   # in a new migration` +
-      (liveNullable ? ' — backfill the existing NULLs first' : ''),
-  };
-}
-
-function unexpectedTable(table: string): DriftDifference {
-  return {
-    kind: 'unexpected-table',
-    table,
-    column: null,
-    cause: `table "${table}" is not present in any migration`,
-    fix: `x db gen "add ${table}"`,
-  };
-}
-
-function missingTable(table: string): DriftDifference {
-  return {
-    kind: 'missing-table',
-    table,
-    column: null,
-    cause: `table "${table}" is declared by migrations but does not exist`,
-    fix: 'x db migrate',
-  };
-}
-
-/**
- * Not a difference between two schemas but the absence of one to compare against — reported
- * through the same channel so it reaches an operator, since a check that quietly answered "clean"
- * because it had nothing to check is the one failure mode drift detection cannot have.
- */
-function unknownSchema(migrations: readonly Migration[]): DriftDifference {
-  const newest = [...migrations].sort((a, b) => (a.id < b.id ? -1 : 1)).at(-1);
-  return {
-    kind: 'unknown-schema',
-    table: '',
-    column: null,
-    cause:
-      `migration "${newest?.id ?? ''}" records no schema snapshot, so what this database owes ` +
-      'cannot be established',
-    // The same two remedies `X_MIGRATION_SNAPSHOT_MISSING` names, in the same order, because it is
-    // the same condition. It used to lead with `x db gen`, which raises that error and whose own
-    // fix pointed back here — a cycle a scaffolded app hit on its first `x db migrate`. The
-    // pathspec is a glob because this package is tier 1: only `@ultimat3/cli` knows the directory.
-    fix:
-      `git checkout -- "*${newest?.id ?? ''}.snapshot.json"   # or, if it was never written: ` +
-      `delete migration "${newest?.id ?? ''}" and rerun x db gen "${newest?.name ?? 'initial'}"`,
-  };
-}
-
-function missingIndex(table: string, index: string): DriftDifference {
-  return {
-    kind: 'missing-index',
-    table,
-    column: null,
-    cause: `table "${table}" is missing index "${index}" that migrations declare`,
-    fix: 'x db migrate',
-  };
-}
-
-function changedIndex(table: string, index: string, detail: string): DriftDifference {
-  return {
-    kind: 'changed-index',
-    table,
-    column: null,
-    cause: `index "${index}" on "${table}" ${detail}, not what migrations declare`,
-    fix: 'x db migrate',
-  };
-}
-
-function missingForeignKey(table: string, key: ForeignKeyDescription): DriftDifference {
-  return {
-    kind: 'missing-foreign-key',
-    table,
-    column: null,
-    cause:
-      `table "${table}" has no foreign key on (${key.columns.join(', ')}) to ` +
-      `"${key.referencedTable}" (${key.referencedColumns.join(', ')}) that migrations declare`,
-    fix: 'x db migrate',
-  };
-}
-
-/**
- * The key points where it was declared to point and one side's `on delete` rule is not the other's
- * — reported apart from `missing-foreign-key` because it is a different repair: the constraint is
- * there, and what changed is what happens to the child rows.
- *
- * The `fix` is the pair, not `x db migrate`: a rule cannot be altered in place, `add constraint`
- * alone is `42710` on a name already taken, and no `x db gen` diff emits either statement, so
- * naming a command would send a reader to one that generates an empty migration. Same reasoning
- * as `changedColumn`.
- */
-function changedForeignKey(
-  table: string,
-  declared: ForeignKeyDescription,
-  held: ForeignKeyDescription,
-): DriftDifference {
-  const rule = onDeleteRule(held.onDelete);
-  return {
-    kind: 'changed-foreign-key',
-    table,
-    column: null,
-    cause:
-      `foreign key on "${table}" (${declared.columns.join(', ')}) to ` +
-      `"${declared.referencedTable}" ` +
-      `${rule === null ? 'declares no on delete rule' : `is on delete ${rule}`}, not what ` +
-      'migrations declare',
-    fix: `${rebuildForeignKey(table, declared, held)}   # in a new migration`,
-  };
 }
 
 /**
@@ -315,6 +152,33 @@ function compareForeignKeys(live: TableDescription, expected: TableDescription):
 }
 
 /**
+ * CHECK constraints migrations declare, against the NAMES the catalog holds — `checkNames`, which
+ * is a separate field from `checks` precisely so this comparison cannot reach a definition it must
+ * not read (`introspect.ts`).
+ *
+ * Two absences, and they mean opposite things. `expected.checks` absent is a sidecar written
+ * before constraints were recorded: it declares nothing, so nothing can be missing. `live.checkNames`
+ * absent is a description that never asked the catalog — a stub, a fake client's rows, a
+ * `TableDescription` built by hand — and reading that as "the database holds none" is one finding
+ * per declared constraint against a database nobody looked at. `introspect()` always answers with
+ * the field, `[]` included, so a real read is never mistaken for an unread one.
+ *
+ * Only the declared side is judged, the rule `compareIndexes` and `compareForeignKeys` both state:
+ * a NOT NULL, an `enumerated()` column's old anonymous form, a constraint an extension brought and
+ * every hand-written CHECK an app has ever added would each be a finding against a database that
+ * is exactly right.
+ */
+function compareChecks(live: TableDescription, expected: TableDescription): DriftDifference[] {
+  const declared = expected.checks;
+  const held = live.checkNames;
+  if (declared === undefined || held === undefined) return [];
+  const present = new Set(held);
+  return declared
+    .filter((check) => !present.has(check.name))
+    .map((check) => missingCheck(live.name, check));
+}
+
+/**
  * A primary key column is `NOT NULL` in the catalog whether or not anything declared it — Postgres
  * adds the constraint with the key. Both sides are therefore read through the union of the two
  * primary keys, or a table whose snapshot spells its key column nullable reports a difference
@@ -350,6 +214,7 @@ function compareTable(live: TableDescription, expected: TableDescription): Drift
     }
   }
   differences.push(...compareIndexes(live, expected));
+  differences.push(...compareChecks(live, expected));
   differences.push(...compareForeignKeys(live, expected));
   return differences;
 }

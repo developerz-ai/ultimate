@@ -87,6 +87,24 @@ export interface TableDescription {
    * would leave every already-generated app's invariants unenforced forever.
    */
   readonly checks?: readonly CheckDescription[] | undefined;
+  /**
+   * The catalog's half of `checks`, and a **separate field rather than the same one** — names
+   * only, `conname` for `contype = 'c'`, never a definition.
+   *
+   * The two readings cannot share `checks` because they are not the same value. A catalog read
+   * carries Postgres' own rewriting of the predicate and a declaration carries this generator's
+   * spelling, so a `checks` filled from `pg_constraint` would put a rewritten expression on the
+   * field `checkPlan` diffs against a generated one — every regenerated migration would then drop
+   * and re-add every constraint in the app, forever, because the two strings can never be equal.
+   * Splitting them means the type says which reading a value came from, and `checkPlan` cannot be
+   * handed a catalog value by accident.
+   *
+   * `snapshotOf` never writes it and `parseSnapshot` never reads it, so a sidecar carries `checks`
+   * alone. `introspect()` always answers with it, `[]` included: absent therefore means "nobody
+   * asked the catalog", which is what keeps `compareChecks` silent on a description that never
+   * read one instead of reporting every declared constraint as missing.
+   */
+  readonly checkNames?: readonly string[] | undefined;
 }
 
 export interface SchemaDescription {
@@ -133,6 +151,12 @@ interface ForeignKeyRow {
   readonly referenced_table: string;
   readonly referenced_columns: readonly string[];
   readonly on_delete: string | null;
+}
+
+/** A CHECK constraint's NAME. There is deliberately no column for its definition — see `checkNames`. */
+interface CheckRow {
+  readonly table_name: string;
+  readonly constraint_name: string;
 }
 
 const byName = (a: { name: string }, b: { name: string }): number => (a.name < b.name ? -1 : 1);
@@ -206,7 +230,21 @@ export async function introspect(options: IntrospectOptions = {}): Promise<Schem
     order by src.relname, c.conname
   `);
 
-  return buildSchema(schema, excluded, columns, indexes, foreignKeys);
+  // `conname` and nothing else. `pg_get_constraintdef(c.oid)` is one word further along this line
+  // and is the reason this query did not exist: it answers Postgres' rewriting of the predicate,
+  // which no generated spelling can ever equal, so reading it would make every drift check report
+  // a correct database as wrong. `contype = 'c'` is the CHECK constraints alone — Postgres 17
+  // onwards records a NOT NULL as `'n'`, and a domain's as `'c'` on the domain rather than here.
+  const checks = await client.query<CheckRow>(sql`
+    select src.relname as table_name, c.conname as constraint_name
+    from pg_constraint c
+    join pg_class src on src.oid = c.conrelid
+    join pg_namespace n on n.oid = src.relnamespace
+    where c.contype = 'c' and n.nspname = ${schema} and src.relkind = 'r'
+    order by src.relname, c.conname
+  `);
+
+  return buildSchema(schema, excluded, columns, indexes, foreignKeys, checks);
 }
 
 /** Pure, so the row -> description mapping is testable without a database. */
@@ -216,6 +254,7 @@ export function buildSchema(
   columns: readonly ColumnRow[],
   indexes: readonly IndexRow[],
   foreignKeys: readonly ForeignKeyRow[],
+  checks: readonly CheckRow[] = [],
 ): SchemaDescription {
   const names = [...new Set(columns.map((row) => row.table_name))]
     .filter((name) => !excluded.includes(name))
@@ -261,6 +300,12 @@ export function buildSchema(
           onDelete: row.on_delete,
         }))
         .sort(byName),
+      // Always written, `[]` included: this reading of a table HAS asked the catalog, and absence
+      // is reserved for a description that has not (`compareChecks` is silent on that one).
+      checkNames: checks
+        .filter((row) => row.table_name === name)
+        .map((row) => row.constraint_name)
+        .sort(),
     };
   });
 

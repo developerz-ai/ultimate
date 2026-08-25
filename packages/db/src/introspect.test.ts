@@ -230,7 +230,7 @@ describe('findTable', () => {
 });
 
 describe('introspect', () => {
-  test('sends four catalog queries and folds their rows through buildSchema', async () => {
+  test('sends five catalog queries and folds their rows through buildSchema', async () => {
     const client = createRecordingClient();
     client.on(/information_schema\.columns/, {
       rows: [
@@ -269,14 +269,24 @@ describe('introspect', () => {
         },
       ],
     });
+    // Registered AFTER the foreign-key stub and matched on `contype`, because both queries read
+    // `pg_constraint` and the last matching stub wins: the fifth query asks for CHECK names and
+    // answering it with a foreign key's row is a `checkNames` nothing in the catalog holds.
+    client.on(/contype = 'c'/, {
+      rows: [{ table_name: 'posts', constraint_name: 'posts_status_check' }],
+    });
 
     const schema = await introspect({ client });
 
-    expect(client.statements).toHaveLength(4);
+    expect(client.statements).toHaveLength(5);
     const posts = findTable(schema, 'posts');
     expect(posts?.columns).toHaveLength(1);
     expect(posts?.primaryKey).toEqual(['id']);
     expect(posts?.foreignKeys).toHaveLength(1);
+    // Names only. `checks` stays absent on a catalog read — it is the DECLARED side's field, and a
+    // rewritten predicate landing on it is what `checkPlan` would then diff a generated one against.
+    expect(posts?.checkNames).toEqual(['posts_status_check']);
+    expect(posts?.checks).toBeUndefined();
   });
 
   test('defaults `exclude` to `[x_migrations]`, so the ledger never appears as a table', async () => {
@@ -378,6 +388,18 @@ describe('introspect', () => {
     expect(constraints).toContain('order by k.ord');
   });
 
+  test('the CHECK query reads conname and never a definition', async () => {
+    const client = createRecordingClient();
+    await introspect({ client });
+    const checks = client.texts.find((text) => text.includes("contype = 'c'"));
+    expect(checks).toBeDefined();
+    // The whole reason this query is name-only: `pg_get_constraintdef` answers Postgres' own
+    // rewriting of the predicate, which no generated spelling can equal — so a `checks` filled
+    // from it makes `x db gen` drop and re-add every constraint in the app on every run, forever.
+    expect(checks).not.toContain('pg_get_constraintdef');
+    expect(checks).toContain('c.conname as constraint_name');
+  });
+
   test('with no `client` option the ambient client is used, so `x db` needs no wiring', async () => {
     const client = createRecordingClient();
     client.on(/information_schema\.columns/, {
@@ -398,7 +420,7 @@ describe('introspect', () => {
 
     const schema = await introspect();
 
-    expect(client.statements).toHaveLength(4);
+    expect(client.statements).toHaveLength(5);
     expect(schema.tables.map((t) => t.name)).toEqual(['posts']);
   });
 });

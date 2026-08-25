@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+// why: Bun has no native for creating or removing a directory tree, and the only file that can
+// prove the prelude resolves is one OUTSIDE this repository — which needs a real temp directory.
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os'; // why: same — no Bun native answers the platform temp root.
+import { join } from 'node:path'; // why: same — Bun.write and import() both take a joined path.
+import { h } from './jsx';
 import {
   clearStylesheets,
   installRenderLoader,
+  JSX_FACTORY_SPECIFIER,
   loadStylesheet,
   registeredStylesheets,
   stylesFor,
@@ -30,6 +37,45 @@ describe('installRenderLoader', () => {
   });
 });
 
+describe('the JSX prelude resolves from the loader, not from the compiled file', () => {
+  /**
+   * The load-bearing case, and it only fails outside the repository: a bare `@ultimat3/render` in
+   * the prelude was resolved from the IMPORTING file, so every `.tsx` compiled anywhere the package
+   * is not installed above it died at link time with `Cannot find module '@ultimat3/render'`. A
+   * fixture under `packages/` cannot see this — the repo's own `node_modules` answers for it.
+   */
+  test('a .tsx OUTSIDE the repository compiles AND evaluates', async () => {
+    installRenderLoader();
+    const root = mkdtempSync(join(tmpdir(), 'ultimate-prelude-'));
+    try {
+      await Bun.write(
+        join(root, 'outside.tsx'),
+        // `__xh` is the prelude's own binding, in module scope by the time this line runs — which
+        // is what lets the file hand the factory back for an identity check the shape cannot make.
+        'export const A = () => <p class="x">hi</p>;\nexport const factory = __xh;\n',
+      );
+      const mod = (await import(join(root, 'outside.tsx'))) as {
+        A: () => unknown;
+        factory: unknown;
+      };
+      // Reference identity, never `toEqual` on the node: a specifier resolving to a SECOND copy of
+      // this package answers a structurally identical node, and every brand check that reads it
+      // back — `isJsxNode`, `isIslandNode` — would then reject what an out-of-tree module built.
+      expect(mod.factory).toBe(h);
+      expect(mod.A()).toEqual(h('p', { class: 'x' }, 'hi'));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('the emitted specifier names the same module the package name does', async () => {
+    expect(transformTsx('export const A = () => <p />;')).toContain(JSX_FACTORY_SPECIFIER);
+    const viaSpecifier = (await import(JSX_FACTORY_SPECIFIER)) as { h: unknown };
+    const viaPackageName = (await import('@ultimat3/render')) as { h: unknown };
+    expect(viaSpecifier.h).toBe(viaPackageName.h);
+  });
+});
+
 describe('transformTsx', () => {
   test('compiles JSX to the server factory, not to React.createElement', () => {
     const out = transformTsx('export const A = () => <main class="x">hi</main>;');
@@ -39,7 +85,7 @@ describe('transformTsx', () => {
 
   test('imports the factory it emits, so the module has no free variable', () => {
     expect(transformTsx('export const A = () => <p />;')).toContain(
-      "import { h as __xh, Fragment as __xFragment } from '@ultimat3/render';",
+      `import { h as __xh, Fragment as __xFragment } from ${JSON.stringify(JSX_FACTORY_SPECIFIER)};`,
     );
   });
 
