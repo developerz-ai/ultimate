@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/admin",
-  "version": "14.0.0",
+  "version": "15.0.0",
   "description": "Two dashboards: the /_x framework dev panels and the generated, AI-first app admin",
   "license": "MIT",
   "type": "module",
@@ -32,20 +32,20 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/action": "14.0.0",
-    "@ultimat3/ai": "14.0.0",
-    "@ultimat3/cache": "14.0.0",
-    "@ultimat3/core": "14.0.0",
-    "@ultimat3/db": "14.0.0",
-    "@ultimat3/entity": "14.0.0",
-    "@ultimat3/i18n": "14.0.0",
-    "@ultimat3/jobs": "14.0.0",
-    "@ultimat3/mcp": "14.0.0",
-    "@ultimat3/money": "14.0.0",
-    "@ultimat3/policy": "14.0.0",
-    "@ultimat3/query": "14.0.0",
-    "@ultimat3/render": "14.0.0",
-    "@ultimat3/schema": "14.0.0",
-    "@ultimat3/ui": "14.0.0"
+    "@ultimat3/action": "15.0.0",
+    "@ultimat3/ai": "15.0.0",
+    "@ultimat3/cache": "15.0.0",
+    "@ultimat3/core": "15.0.0",
+    "@ultimat3/db": "15.0.0",
+    "@ultimat3/entity": "15.0.0",
+    "@ultimat3/i18n": "15.0.0",
+    "@ultimat3/jobs": "15.0.0",
+    "@ultimat3/mcp": "15.0.0",
+    "@ultimat3/money": "15.0.0",
+    "@ultimat3/policy": "15.0.0",
+    "@ultimat3/query": "15.0.0",
+    "@ultimat3/render": "15.0.0",
+    "@ultimat3/schema": "15.0.0",
+    "@ultimat3/ui": "15.0.0"
   }
 }

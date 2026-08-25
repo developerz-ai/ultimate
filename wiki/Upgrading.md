@@ -6,6 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 14.x → 15.0.0 | **1** — `DriftKind` gains a member, so an exhaustive `switch` with no `default` stops compiling | the `15.0.0` section, in order |
 | 13.x → 14.0.0 | **8** — two are security fixes with a behaviour change (a frame verb, a session key), four are types that refused what the runtime already did, and two remove API nothing called | the `14.0.0` section, in order |
 | 12.x → 13.0.0 | **2**, both narrow: a service factory's parameter type, and one deleted `PageLike` member with zero call sites anywhere in the repository | the `13.0.0` section, in order |
 | 11.x → 12.0.0 | **16**, from the widest sweep since 4.0.0 — a keyset defect that dropped rows, a name that reached the DDL unchecked, and eight interfaces that gained a member | the `12.0.0` section, in order |
@@ -19,13 +20,13 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 11.x → 14.0.0 | **33** | every major section `CHANGELOG.md` still carries, oldest first |
+| 11.x → 15.0.0 | **34** | every major section `CHANGELOG.md` still carries, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 33 As of 2026-08-25 — the WHOLE file, which is capped at 1,000 lines: 25 sit inside the section
+# 34 As of 2026-08-25 — the WHOLE file, which is capped at 1,000 lines: 26 sit inside the section
 # of the major that shipped them (the sum of every row above `11.x → 13.0.0` whose section the
 # changelog still carries), and the
 # remaining 8 are under `[Unreleased]`, awaiting the release that promotes them into a section.
@@ -57,6 +58,35 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 14.x → 15.0.0, entry by entry
+
+**One breaking entry**, and it is a compile error only for code that exhaustively switches over a
+type it does not own. Nothing changes at runtime and no data migrates.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `DriftKind` gains `missing-check` | you `switch` over `DriftKind` with **no `default`** |
+
+### 1. `DriftKind` gains `missing-check`
+
+The same shape 4.0.0 recorded when it gained `changed-foreign-key`. Add a `default`, or handle the
+new member:
+
+```ts
+case 'missing-check':
+  // the snapshot names a CHECK constraint the catalog does not hold
+  break;
+```
+
+**It compares `conname` and never the definition**, and that is not an optimisation — it is the
+only comparison that can work. `pg_get_constraintdef` answers Postgres' *own rewriting*:
+`status in ('draft','published')` comes back as
+`CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))`. Comparing that text against a
+generated predicate would report a correct database as drifted, forever.
+
+Only the **declared** side is judged, so a `NOT NULL` (`contype='n'` on PG17+), an `enumerated()`
+column's old anonymous constraint and an extension's own constraints are all silent.
 
 ## 13.x → 14.0.0, entry by entry
 

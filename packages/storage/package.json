@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/storage",
-  "version": "14.0.0",
+  "version": "15.0.0",
   "description": "Named disks over Bun.file and Bun.s3: safe keys, signed URLs, sniffed uploads",
   "license": "MIT",
   "type": "module",
@@ -31,6 +31,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "14.0.0"
+    "@ultimat3/core": "15.0.0"
   }
 }

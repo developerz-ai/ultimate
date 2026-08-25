@@ -10,6 +10,70 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 Nothing yet.
 
+## 15.0.0 - 2026-08-25
+
+The four items 14.0.0 left open, closed — and one deliberately left open, with the reason.
+
+### Fixed
+
+- **A retype aborted whenever a predicate named the column.** `alter column … type` failed
+  `42883` when a partial index's `where` or a CHECK named it: both were compiled against the old
+  type and cannot be recompiled. **`examples/dummy` could not regenerate at all**, aborting at
+  statement 68 of 85; it now applies 86 statements clean and reverses in 66, measured on a
+  populated database.
+
+  The dependency set was larger than reported. Measured on PG 18.4, one shape at a time: a plain
+  btree, a composite btree and a unique index all **survive** the ALTER; a partial index naming the
+  column and a CHECK naming it are both `42883`. A **foreign key** over the column and a **view**
+  are fatal too — measured, not fixed, written into `packages/db/CLAUDE.md`.
+
+  The reference scan **over-approximates deliberately**: narrowing by type name was tried and
+  rejected with data — `char(1)→char(3)`, `varchar(80)→text` and `numeric→integer` all re-derive
+  their predicates, but `integer→text` under `check (c >= 0)` does not, all built-ins. Whether an
+  expression re-resolves is *operator resolution*, so a miss is `42883` inside `ROLE=migrate` and a
+  false positive is a rebuild on a statement already rewriting the whole table.
+- **Two byte allowances were stale, and flaky only under load.** The module Bun's tree-shaker drops
+  non-deterministically grew from 379 B to ~1,124 B when `schema-error-codes.ts` gained
+  `registerErrorRetry`. The drop is load-correlated — 0 in 80 idle builds, 22 in 240 under six-way
+  contention — which is why CI failed and a laptop never did. Both tests now discriminate on the
+  module itself: **51 bytes of planted real source made the minified chunk 47 bytes SMALLER**, so
+  the old `<= 512` bound could not catch a regression in either direction.
+
+  **The root cause is upstream and the fix is a workaround.** `@ultimat3/core` *declares* that
+  module in `sideEffects` and `bun run side-effects` agrees the declaration is true, so Bun 1.4.0
+  is dropping a module its own package marks side-effecting — the family of `oven-sh/bun#27709`,
+  open. Recorded in both files so nobody tidies it back into a threshold.
+- **A compiled module imported a specifier it could not resolve.** `JSX_PRELUDE` emitted a bare
+  `'@ultimat3/render'`, so any `.tsx` outside the repo failed — invisible to the gate because
+  `bun test --isolate` gives each file its own module registry. Bun 1.4.0's **runtime** plugin does
+  not support `onResolve` (three registrations, none fires), so the specifier is resolved in the
+  loader's frame. Nothing persists that output: islands are built by a separate `Bun.build`.
+- **The app gate reported a shard's exit code and nothing else.** `packages/cli` already carried the
+  failing test's name and assertion diff through `--json`; `scripts/reference-app-gate.ts` dropped
+  it in three places. An unpinned red step now prints it and a pinned one stays quiet. That absence
+  is why one flaky shard cost a clean-checkout reproduction and 300 instrumented builds.
+
+### Changed
+
+- **BREAKING — `DriftKind` gains `missing-check`.** A `switch` over `DriftKind` with no `default`
+  no longer compiles, the same shape 4.0.0 recorded for `changed-foreign-key`. It compares
+  `conname` and **never** the definition: `pg_get_constraintdef` answers Postgres' own rewriting, so
+  a text comparison would report a correct database forever. `checks` (declaration) and
+  `checkNames` (catalog) are two fields, and `CheckRow` has no definition column, so merging them
+  requires visibly adding one.
+
+### Known
+
+- **The reference app is deliberately NOT regenerated.** `x db gen` reports three `-- UNRENDERED`
+  entries and would drop three real CHECKs. `invariant()` has **no SQL-expressible pattern form** —
+  `matches` takes a JS `RegExp` and yields `sql: null` — so a regex constraint can only be
+  hand-written and only be lost. The guard is correct; the gap is the framework's, and it is
+  recorded in that app's schema file.
+
+### Commits
+
+- fix: a retype that aborted, a drift that could not see, and two stale byte allowances (#353)
+
 ## 14.0.0 - 2026-08-25
 
 The gaps 13.0.0 left, closed — and the three packages that release never opened, audited.
