@@ -2,7 +2,7 @@
 // `tz` for every timestamp — because a server that formats in its own zone tells a reader in
 // another one the wrong day.
 
-import { isValidHandle, MAX_HANDLE, USER_ROLES } from '@social-media-clone/domain';
+import { HANDLE_RE, MAX_HANDLE, USER_ROLES } from '@social-media-clone/domain';
 import {
   boolean,
   entity,
@@ -47,7 +47,12 @@ export const users = entity('users', {
     updatedAt: timestamp().defaultNow().onUpdateNow(),
   },
   invariants: (c) => [
-    invariant('user_handle_shape', c.handle.matches(isValidHandle)),
+    /**
+     * The PATTERN, not `isValidHandle`. A predicate reports `sql: null`, so this table had NO
+     * handle constraint in Postgres while the declaration read as though it did. `HANDLE_RE` is
+     * inside the subset both engines read identically, so one declaration now feeds both.
+     */
+    invariant('user_handle_shape', c.handle.matches(HANDLE_RE)),
     invariant('user_email_shape', c.email.contains('@')),
     invariant('user_display_name_present', c.displayName.trimmed().minLength(1)),
   ],

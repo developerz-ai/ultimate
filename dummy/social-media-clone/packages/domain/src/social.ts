@@ -41,9 +41,12 @@ export const isVisibleAudience = (audience: Audience, isFriend: boolean): boolea
 };
 
 /**
- * A friendship that has been answered must record when. Runs in the app on every write and as a
- * Postgres CHECK, from one declaration — so a row inserted by a migration, a seed or a psql session
- * cannot violate it either.
+ * A friendship that has been answered must record when.
+ *
+ * The CHECK is declared in `friendships.ts` as `iff(c.status.eq('pending'), c.respondedAt.isNull())`
+ * and not from this function: a JS predicate cannot be translated and reports `sql: null`, so
+ * passing it to `c.satisfies` claimed a constraint the database never had. This stays as the
+ * app-side spelling of the same rule.
  */
 export const hasRespondedCoherently = (
   status: FriendshipStatus,

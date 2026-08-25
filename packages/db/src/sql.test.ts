@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { isSqlFragment, join, literal, raw, sql } from './sql';
+import { statementsOf } from './statement-split';
 
 describe('sql', () => {
   test('binds values as $1..$n and never inlines them', () => {
@@ -77,5 +78,51 @@ describe('sql', () => {
 
   test('literal escapes embedded quotes', () => {
     expect(literal("o'brien").text).toBe("'o''brien'");
+  });
+});
+
+// Doubling the quote is not the whole rule, and `standard_conforming_strings` is why. It is
+// settable per session, per database and per role and `SET` needs no privilege, so with it OFF a
+// backslash escapes the character after it inside an ordinary `'…'` — a value is silently read as
+// a different value, and one ending in a backslash escapes the closing quote and leaves the literal
+// unterminated. `packages/db/src/column-default.ts:43` reaches here with an app's own
+// `.default('C:\\logs')`, so this is caller input whatever the old comment claimed. Same rule and
+// same measurement as `packages/entity/src/sql-literal.ts`.
+describe('literal', () => {
+  test('a value carrying no backslash is byte-identical to what it always was', () => {
+    // Load-bearing: both tracked apps have applied migrations on disk with hashes over this text.
+    expect(literal('draft').text).toBe("'draft'");
+    expect(literal('').text).toBe("''");
+    expect(literal("x'; drop table posts; --").text).toBe("'x''; drop table posts; --'");
+    expect(literal('draft').text.startsWith('E')).toBe(false);
+  });
+
+  test('a value carrying a backslash is an E-string with the backslash doubled', () => {
+    expect(literal('C:\\logs').text).toBe("E'C:\\\\logs'");
+  });
+
+  test('a value that is ONLY a backslash still closes its own literal', () => {
+    expect(literal('\\').text).toBe("E'\\\\'");
+  });
+
+  test('a value ENDING in a backslash does not escape the closing quote', () => {
+    expect(literal('a\\').text).toBe("E'a\\\\'");
+  });
+
+  test('both escapes apply together, and the quote is still doubled', () => {
+    expect(literal("o'brien\\").text).toBe("E'o''brien\\\\'");
+  });
+
+  // The other half of the change: this package's own lexer has to read back what its escape
+  // writes, or `statementsOf` starts miscounting and `multipleStatements` refuses a migration
+  // holding one statement. `sql-scan.ts` already knows the `E''` prefix (`escapesAt`), and inside
+  // one a backslash escapes — which is exactly why the doubling is not optional. A value carrying
+  // a backslash NEXT TO a quote is the shape that tells the two apart: emit `E'…'` without
+  // doubling and `\'` reads as an escaped quote, the literal ends early, and the `;` after it is
+  // a statement separator instead of data.
+  test('statementsOf reads an E-string whole, semicolons inside it included', () => {
+    const script = `select ${literal("a\\'b; drop table posts; --").text};`;
+    expect(statementsOf(script)).toHaveLength(1);
+    expect(statementsOf(script)[0]).toContain('drop table posts');
   });
 });

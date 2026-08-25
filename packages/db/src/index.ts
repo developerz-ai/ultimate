@@ -81,15 +81,9 @@ export {
   dbUnavailable,
   driverError,
   identifierUnsafe,
-  migrateConcurrent,
-  migrationConflict,
-  migrationDestructive,
-  migrationIrreversible,
-  migrationSnapshotMissing,
   multipleStatements,
   poolAcquireTimeout,
   poolMaxInvalid,
-  rollbackStepsInvalid,
   serializationExhausted,
   sqlUnsafe,
 } from './errors';
@@ -147,6 +141,15 @@ export {
   rollback,
   runningAppVersion,
 } from './migrate';
+export {
+  migrateConcurrent,
+  migrationConflict,
+  migrationDestructive,
+  migrationIrreversible,
+  migrationSnapshotMissing,
+  migrationViewDepends,
+  rollbackStepsInvalid,
+} from './migration-errors';
 export type { StatementAttribution, StatementEvent, StatementObserver } from './observe';
 export { setStatementObserver, statementObserver } from './observe';
 export type {

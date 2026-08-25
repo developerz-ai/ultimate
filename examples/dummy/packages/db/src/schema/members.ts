@@ -37,7 +37,15 @@ export const members = entity('members', {
     createdAt: timestamp().defaultNow(),
   },
   invariants: (c) => [
-    invariant('member_email_shape', c.email.contains('@')),
+    /**
+     * The PATTERN, not `contains('@')`. Both render, but `contains` renders
+     * `position('@' in email) > 0` — weaker than the `> 1` this table has enforced since
+     * `0001_init.sql:38`, so regenerating on the `contains` form would silently drop the rule
+     * that an address has a local part. This spelling implies `> 1` and adds that exactly one
+     * `@` is present. No `\s` in it deliberately: JS and Postgres read `\s` differently, and
+     * `matches` refuses the constructs where they disagree rather than emitting a lookalike.
+     */
+    invariant('member_email_shape', c.email.matches(/^[^@]+@[^@]+$/)),
     /** One membership per user per org: the uniqueness makes `inviteMember` replay-safe. */
     invariant('member_unique_per_org', c.unique(['orgId', 'userId'])),
   ],

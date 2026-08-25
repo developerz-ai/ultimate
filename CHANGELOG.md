@@ -8,7 +8,72 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`invariant()` can express a pattern that reaches the database**, and the existing spelling was
+  the defect. `c.slug.matches(/re/)` already emitted `slug ~ '…'` — what it did not do was check
+  that the two engines READ that string the same way, so `matches(/\bfoo/)` shipped a CHECK that
+  compiled cleanly, errored nowhere, and enforced a **backspace**: Postgres reads `\b` as `BACKSPACE`
+  and `'foo' ~ '\bfoo'` is FALSE. Nothing is translated — `pattern.source` is the string `.test()`
+  runs *and* the string spliced into the constraint — and every construct where the two disagree is
+  now **refused at declaration** with the portable spelling in the `fix:`. Measured against a live
+  server, one shape at a time: `\b`, `.`, `\w`, `\s`, `\A`/`\Z`, backreferences, named groups,
+  inline flags, POSIX classes, a leading `]` in a class, `\x`, and a non-ASCII range endpoint.
+  **Breaking**: a `matches(/…/)` outside the subset now throws instead of generating a CHECK. Those
+  apps had two rules under one name and no way to notice.
+- **`iff(a, b)`, `isNull()` and `isNotNull()`** — the vocabulary a cross-column coherence rule
+  needed. `iff(c.status.eq('published'), c.publishedAt.isNotNull())` renders
+  `(status = 'published') = (published_at is not null)`.
+
+  `=` and deliberately **not** `IS NOT DISTINCT FROM`, which is the total form and measurably the
+  wrong one: every operator in this language is *false* on a null operand in TS, so with a partial
+  operand the total form makes Postgres **refuse a row TypeScript accepted** — a raw `23514` in
+  place of `X_INVARIANT_VIOLATED`. `=` keeps the disagreement in the direction where the app refuses
+  first. One combinator, not a boolean algebra: `and`/`or`/`not` arrive with a real caller or not at
+  all.
+- **`bun run sql-literal-copies`** — a step of the gate's `unit` check. One module may turn `'` into
+  `''`, matched on the transformation rather than on a name. Pinned at zero.
+
+### Fixed
+
+- **An app's declared column default could be stored as a different value, silently.**
+  `.default('C:\logs')` emitted `default 'C:\logs'`, which stores `C:\logs` with
+  `standard_conforming_strings` on and **`C:logs`** with it off — a GUC settable per session, per
+  database and per role, needing no privilege. A declaration that type-checks, a migration that
+  applies, a column defaulting to a value nobody wrote, and no error anywhere. A value *ending* in a
+  backslash was worse: the escaped quote left the literal unterminated.
+
+  Three copies of the escape existed and **two stopped at doubling the quote**. `literal()` in
+  `@ultimat3/db` is now the one answer and emits `E'…'` **only** when the value carries a backslash,
+  so every migration already on disk is byte-identical and nothing regenerates.
+- **A foreign key over a retyped column aborted the migration.** `42804`, thrown by the ALTER
+  itself, inside `ROLE=migrate`, with the ledger recording nothing. It could not be answered from
+  inside `diffTable`: the constraint that breaks is recorded on the table that *owns* it, so for a
+  retype of the key's target it is a different entity's row. The retype set is now derived over the
+  whole schema before the entity loop, and `retypeColumn` reads it instead of deciding again.
+- **A view over a retyped column reached the operator as `X_DB_UNAVAILABLE`** — "cannot reach the
+  database", on a database the migrator was connected to and mid-transaction on, while the server's
+  own `rule _RETURN on view … depends on column` sat unread in a `DETAIL` field.
+  `X_MIGRATION_VIEW_DEPENDS` names the view, the table and the column, caught by a preflight inside
+  the migration's own transaction so nothing partial applies. A refusal, not a repair: no
+  `SchemaDescription` records a view and no `entity()` can declare one.
+- **A generated column's rebuild silently dropped a partial index and a CHECK naming it.**
+  Plain → generated has no `set expression`, so the column is dropped and re-added — and
+  `drop column` takes both with it, while the snapshot went on recording them.
+- **`sqlType` answered the `Object` function for the kind `constructor`** and spliced its source
+  into the type position of an `alter` statement.
+
+### Changed
+
+- **Both tracked apps now render every invariant.** `examples/dummy` and
+  `dummy/social-media-clone` had **five** rules between them declared as JS predicates, so each
+  reported `sql: null` and reached no database — while three source comments claimed a Postgres
+  CHECK was enforced "from one declaration". `dummy/social-media-clone`'s `users` table has had no
+  handle constraint at all, and `friendships` none on its responded-coherence rule.
+
+  `examples/dummy`'s `member_email_shape` was the subtle one: it declared `contains('@')`, which
+  renders `position('@' in email) > 0` — weaker than the `> 1` the hand-written migration has
+  enforced since day one, so regenerating on that form would have *introduced* a regression.
 
 ## 15.0.0 - 2026-08-25
 

@@ -53,6 +53,19 @@ export function foreignKeyTarget(key: ForeignKeyDescription): string {
 }
 
 /**
+ * Which constraint, on which table — a key's NAME, where `foreignKeyTarget` is its meaning.
+ *
+ * The two exist for opposite questions and neither substitutes for the other. Drift asks whether
+ * two keys point the same way and must ignore the name; a plan that has already DROPPED a
+ * constraint asks whether this is that exact constraint, which is the name and nothing else. The
+ * table is in it because two tables may each hold a `..._org_id_fkey`, and `checkPlan`'s
+ * `predropped` set is the same shape one file over.
+ */
+export function keyId(table: string, constraint: string): string {
+  return JSON.stringify([table, constraint]);
+}
+
+/**
  * Through `identifier`, never `"${…}"` — the package's one rule, which every name this file writes
  * now goes through. A name that closes its own quote produced a real `drop table` through
  * `generateMigration` once already, out of `columnClause`, and every name below arrives the same

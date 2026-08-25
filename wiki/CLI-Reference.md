@@ -385,7 +385,7 @@ pre-1.2.0 layout, and reading it as one would drop every table the pair exists t
 
 Errors, seed: `X_DECLARATION_UNKNOWN` (no seed of that name — the cause lists the ones there are), `X_CLI_BAD_FLAG` (an unknown `--tier`, one name declared twice, or a `dev` seed reached under `production` with no consent), and whatever the seed itself threw, reported per seed with the file it came from.
 
-Errors, schema: `X_DB_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_MIGRATION_CONFLICT`, `X_MIGRATION_IRREVERSIBLE`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`. `X_DB_STUDIO_FAILED` is reserved and no longer thrown — `x db studio` is planned.
+Errors, schema: `X_DB_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_MIGRATION_CONFLICT`, `X_MIGRATION_IRREVERSIBLE`, `X_MIGRATION_VIEW_DEPENDS`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`. `X_DB_STUDIO_FAILED` is reserved and no longer thrown — `x db studio` is planned.
 
 Errors, backfill: `X_BACKFILL_PENDING` (`--pending`, and the only one that is not a refusal — the sweep simply has not run), `X_BACKFILL_UNKNOWN`, `X_BACKFILL_ENVIRONMENT`, `X_BACKFILL_MIGRATION_PENDING`, `X_BACKFILL_APPLIED`, `X_BACKFILL_RUNNING`. All six are `@ultimat3/jobs`', carry a one-line runnable `fix:`, and are what a non-zero exit from these shapes means — full wording in [Error codes → Backfills](Error-Codes#backfills). `X_BACKFILL_STALLED` is the seventh and never reaches this command: it is raised by the pass, on a worker, so it surfaces through `x jobs show <id>`.
 

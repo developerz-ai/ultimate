@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "3fffdc793b40b78cbd2a7548aae812471af378b6ee146686dd3418b39d7437ab",
+  "buildId": "6f07b933156dd58c15dbd1738562eb286f690b8d1a95a0e0d97c296517629877",
   "tiers": {
     "0": [
       "core",
@@ -1770,6 +1770,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_MIGRATION_VIEW_DEPENDS",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
       "code": "X_MONEY_NOT_INTEGER",
       "owner": "money",
       "at": "packages/money/src/errors.ts"
@@ -2753,6 +2758,16 @@
       "code": "X_SOCKET_UNAUTHENTICATED",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_SQL_LITERAL_COPY",
+      "owner": "scripts",
+      "at": "scripts/sql-literal-copies.ts"
+    },
+    {
+      "code": "X_SQL_LITERAL_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/sql-literal-copies.ts"
     },
     {
       "code": "X_SQL_UNSAFE",

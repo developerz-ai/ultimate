@@ -12,6 +12,7 @@ import type { EntityCore } from './entity';
 import { EntityError } from './errors';
 import { searchInMemory } from './feature-errors';
 import { instantMicros } from './instant';
+import { isNullish as isNull } from './is-null';
 import type { Predicate } from './tenancy';
 import type { ColumnKind } from './types';
 
@@ -33,9 +34,6 @@ import type { ColumnKind } from './types';
  * guessing "both sides look like decimals" would trade this disagreement for that one.
  */
 const DECIMAL_TEXT: ReadonlySet<ColumnKind> = new Set<ColumnKind>(['bigint', 'numeric']);
-
-/** Absent and NULL are one thing to a predicate: a column the projection left out is not a value. */
-const isNull = (value: unknown): boolean => value === null || value === undefined;
 
 const sign = <T extends number | bigint | string>(left: T, right: T): number =>
   left < right ? -1 : left > right ? 1 : 0;

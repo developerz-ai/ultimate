@@ -11,9 +11,10 @@ import {
   isReservable,
   poolProfileFor,
 } from './client';
-import { migrateConcurrent, migrationConflict, rollbackStepsInvalid } from './errors';
+import { refuseDependentViews } from './dependent-view';
 import { expectedQueryLoop } from './expected-loop';
 import type { SchemaDescription } from './introspect';
+import { migrateConcurrent, migrationConflict, rollbackStepsInvalid } from './migration-errors';
 import { raw, sql } from './sql';
 import { SQLSTATE, sqlState } from './sqlstate';
 import { statementsOf } from './statement-split';
@@ -348,6 +349,12 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
             await withTransaction(
               async (tx) => {
                 await setLockTimeout(tx, lockTimeoutMs);
+                // Before the first statement, never after the failure: a view compiled against a
+                // column this script retypes is `0A000` from the server with the view named only in
+                // a DETAIL field nothing prints, surfaced as "cannot reach the database". Costs one
+                // text scan and no round trip on a migration that retypes nothing, which is nearly
+                // all of them (`dependent-view.ts`).
+                await refuseDependentViews(tx, migration.up);
                 await applyScript(tx, migration.up);
                 const durationMs = Math.round(performance.now() - at);
                 await tx.execute(sql`
@@ -438,6 +445,9 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
             await withTransaction(
               async (tx) => {
                 await setLockTimeout(tx, lockTimeoutMs);
+                // Both directions: a reversal retypes the same column back, and a view created
+                // since the migration applied blocks it exactly as one created before would.
+                await refuseDependentViews(tx, migration.down);
                 await applyScript(tx, migration.down);
                 await tx.execute(sql`delete from ${raw(LEDGER_TABLE)} where id = ${row.id}`);
               },

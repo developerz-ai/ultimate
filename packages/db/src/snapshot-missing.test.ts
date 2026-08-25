@@ -6,8 +6,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { checkDrift } from './drift';
-import { migrationSnapshotMissing } from './errors';
 import { createRecordingClient } from './fake';
+import { migrationSnapshotMissing } from './migration-errors';
 
 const FILE = 'packages/db/migrations/0000_initial.snapshot.json';
 

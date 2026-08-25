@@ -2,6 +2,7 @@
 // the CHECK a closed set of values emits. Here rather than in `columns.ts` so `enum-column.ts` can
 // read them without importing the file that imports it.
 
+import { literal } from '@ultimat3/db';
 import { describeValue } from '@ultimat3/schema';
 
 /**
@@ -21,9 +22,16 @@ import { describeValue } from '@ultimat3/schema';
  */
 export const got = (value: unknown): string => `got ${describeValue(value)}`;
 
-const quote = (value: string): string => `'${value.replaceAll("'", "''")}'`;
-
+/**
+ * The value list of a closed set, quoted by `@ultimat3/db`'s `literal()` — the framework's one
+ * splice rule, imported downward rather than restated. This file carried its own
+ * `'${v.replaceAll("'", "''")}'` and `expr.ts` carried the same line; two copies of an escape is two
+ * places a hardening has to land, and only one of them ever does. The members are an APP's own
+ * `enumerated([...])` array, so they reach `create table` as text nothing validated.
+ *
+ * `.text` because a column's `check` is a bare string all the way to the DDL, not a `SqlFragment`.
+ */
 export const oneOf =
   (values: readonly string[]) =>
   (name: string): string =>
-    `${name} in (${values.map(quote).join(', ')})`;
+    `${name} in (${values.map((value) => literal(value).text).join(', ')})`;

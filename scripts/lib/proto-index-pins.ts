@@ -47,9 +47,9 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
       "closed tables keyed by a role, a lifecycle phase and an environment. `context.ts:203` was the worst of the thirteen — `useService('constructor')` answered the `Object` function out of the function whose job is throwing `X_SERVICE_MISSING` — and it is repaired; the rest are compiler-checked unions.",
   },
   db: {
-    count: 5,
+    count: 4,
     reason:
-      '`client.ts`, `errors.ts`, `sqlstate.ts`, `generate.ts` and `sql-noise.ts` index by a pool role, a SQLSTATE and a column kind. `sqlstate.ts:100` reads a code that came off the WIRE, and is the one here closest to being a real defect again.',
+      '`client.ts`, `errors.ts`, `sqlstate.ts` and `sql-noise.ts` index by a pool role and a SQLSTATE. `sqlstate.ts:100` reads a code that came off the WIRE, and is the one here closest to being a real defect again. The fifth was the column-kind read, which moved out of `generate.ts` into `sql-type.ts` and is now guarded rather than pinned — a bare index answered the `Object` function for the kind `constructor` and spliced its source into the type position of an alter statement.',
   },
   entity: {
     count: 4,

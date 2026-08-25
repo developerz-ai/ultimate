@@ -155,6 +155,37 @@ A rule written as a JS predicate — `c.slug.matches(isValidSlug)`, `c.satisfies
 still runs on write, reports `kind: 'assert'` and `sql: null`, and is what `x verify` warns
 about: a rule the database does not know is a rule a migration script can violate.
 
+A `RegExp` is not a predicate and does reach the database: `c.slug.matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)`
+is `kind: 'check'` and emits `slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`. The **same string** runs in both
+places — nothing is translated — so a construct the two engines read differently is REFUSED where it
+is written, with the portable spelling in the `fix` where one exists (`\w` -> `[A-Za-z0-9_]`, `.` ->
+`[^\n\r]`) and the app-only predicate where none does (`\b` is a word boundary to `.test()` and a
+BACKSPACE to Postgres). `i` becomes `~*`; every other flag is refused.
+
+`isNull()` / `isNotNull()` are the only pair in the vocabulary TOTAL over NULL — `IS NULL` answers
+true or false for every input, and the app side reads an ABSENT key and a stored `null` as one value.
+`iff(a, b)` is the biconditional over two predicates, rendered `(a) = (b)`, which is what Postgres
+spells one as:
+
+```ts
+import { entity, enumerated, iff, invariant, timestamp, uuid } from '@ultimat3/entity';
+
+export const publishable = entity('publishable', {
+  columns: {
+    id: uuid().primaryKey(),
+    status: enumerated(['draft', 'published']).default('draft'),
+    publishedAt: timestamp().nullable(),
+  },
+  invariants: (c) => [
+    invariant('post_publish_coherent', iff(c.status.eq('published'), c.publishedAt.isNotNull())),
+    // check ((status = 'published') = (published_at is not null))
+  ],
+});
+```
+
+A `satisfies(fn, [...])` that could be written this way should be: only one of the two reaches the
+database, and `x verify` reports the other as a rule the database does not know.
+
 ## One typed handle
 
 ```ts
