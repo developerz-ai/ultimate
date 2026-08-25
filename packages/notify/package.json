@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/notify",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Notifications: one declaration, many channels — fan-out, preference gate, digest window, delivery ledger, in-app inbox",
   "license": "MIT",
   "type": "module",
@@ -35,9 +35,9 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "13.0.0",
-    "@ultimat3/jobs": "13.0.0",
-    "@ultimat3/schema": "13.0.0",
-    "@ultimat3/time": "13.0.0"
+    "@ultimat3/core": "14.0.0",
+    "@ultimat3/jobs": "14.0.0",
+    "@ultimat3/schema": "14.0.0",
+    "@ultimat3/time": "14.0.0"
   }
 }

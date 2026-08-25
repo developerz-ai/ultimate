@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 14.0.0 - 2026-08-25
+
 The gaps 13.0.0 left, closed — and the three packages that release never opened, audited.
 
 ### Added
@@ -90,6 +94,10 @@ The gaps 13.0.0 left, closed — and the three packages that release never opene
   both directions and only the declaration was wrong.
 - An `or` denying an anonymous caller reports `X_UNAUTHENTICATED` where it reported `X_FORBIDDEN`.
 
+### Commits
+
+- fix(db,render,cli): a column's CHECK left the database, and the first click was lost (#352)
+- fix: the gaps 13.0.0 left, and the three packages that release never opened (#351)
 
 ## 13.0.0 - 2026-08-25
 

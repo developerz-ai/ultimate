@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/scraping",
-  "version": "13.0.0",
+  "version": "14.0.0",
   "description": "Browser automation as a job: scrape() returns a JobHandle",
   "license": "MIT",
   "type": "module",
@@ -30,9 +30,9 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "13.0.0",
-    "@ultimat3/jobs": "13.0.0",
-    "@ultimat3/schema": "13.0.0",
-    "@ultimat3/storage": "13.0.0"
+    "@ultimat3/core": "14.0.0",
+    "@ultimat3/jobs": "14.0.0",
+    "@ultimat3/schema": "14.0.0",
+    "@ultimat3/storage": "14.0.0"
   }
 }

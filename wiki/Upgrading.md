@@ -6,6 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 13.x → 14.0.0 | **8** — two are security fixes with a behaviour change (a frame verb, a session key), four are types that refused what the runtime already did, and two remove API nothing called | the `14.0.0` section, in order |
 | 12.x → 13.0.0 | **2**, both narrow: a service factory's parameter type, and one deleted `PageLike` member with zero call sites anywhere in the repository | the `13.0.0` section, in order |
 | 11.x → 12.0.0 | **16**, from the widest sweep since 4.0.0 — a keyset defect that dropped rows, a name that reached the DDL unchecked, and eight interfaces that gained a member | the `12.0.0` section, in order |
 | 10.x → 11.0.0 | **7** | the `11.0.0` section, in order |
@@ -18,7 +19,7 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 11.x → 13.0.0 | **25** | every major section `CHANGELOG.md` still carries, oldest first |
+| 11.x → 14.0.0 | **33** | every major section `CHANGELOG.md` still carries, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
@@ -56,6 +57,58 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 13.x → 14.0.0, entry by entry
+
+**Eight breaking entries.** **Four** are compile errors the moment you upgrade (3, 4, 5, 8). **Two**
+are security fixes that change behaviour with nothing failing to compile (1, 2). **One** changes the
+text of a validation issue path (6), and **one** is a driver interface (7).
+
+**No `app.config.ts` key moves.** No codemod: each entry names its own manual edit.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | a frame verb acts on the frame, not the parent document | never — a **fix**. `frame(…).fill()` used to clear the parent's same-id field and append to the frame's |
+| 2 | a session key hashes each segment | never an edit — but **every stored session logs in once more**, see below |
+| 3 | `$migration()`, `toSql`, `invariantsToSql`, `constraintName` removed | you called one — nothing in this repo did, and `$migration()` rendered `ALTER TABLE "<entity name>"`, a relation that does not exist |
+| 4 | `t.number.int()` demands a **safe** integer | you relied on `2^53` passing a boundary that the row write then refused |
+| 5 | `and()` / `or()` refuse an empty clause list | you build a policy from a list that can filter to empty — `and()` used to answer **allowed** |
+| 6 | a `t.record` issue path names the entry by **position** | you parse issue paths and expect the caller's key. The key *is* caller data and reached the log line |
+| 7 | `ScrapeTarget.setOfflineMode` required; `CdpTargetInit.ringCapacity` deleted | you implement `ScrapeTarget` yourself |
+| 8 | `Repo.insert`/`insertAll`/`upsertAll` take `RowWrite<T>` | you implement `Repo` — otherwise this **accepts more** than before |
+
+### 2. Every stored session key changes spelling
+
+Segments used to be sanitised by collapsing every run of non-`[a-zA-Z0-9._-]` to a single `-`, so
+`alice@corp.com` and `alice-corp.com` produced **one key**. The browser then loaded account A's
+cookies, `auth.validate()` answered `true` — the session *is* valid, for the wrong account — and
+A's rows were stored under B's tenant.
+
+**Nothing to run.** A stored record is not found under the new spelling, a miss reads as "no
+session", so the run logs in again and writes the new key: one extra login per stored session, no
+error, and the old objects are orphaned until your bucket's lifecycle rule collects them.
+
+### 5. `and()` with no clauses used to admit anonymous callers
+
+```ts
+// before — answered ALLOWED, and admitsAnonymous() agreed, so http did not 401 first
+policy: and(...requiredCaps.map(can))   // requiredCaps filtered to empty
+
+// after — refused where it is written
+policy: requiredCaps.length === 0 ? allow('public') : and(...requiredCaps.map(can))
+```
+
+`allow('public')` is the explicit spelling for "no clauses required"; `deny('<reason>')` is the one
+that carries a reason. Both are refused because a combinator with no clauses states nothing, and
+`and()` stated the opposite of what its author meant.
+
+### 8. `Repo`'s whole-row writes take `RowWrite<T>`
+
+They took the **row** type where money's **write** type belongs, so `Repo.insert` demanded a
+`MoneyValue` while `narrowMoney` exists precisely to narrow a `bigint` handed to a driver — a
+compile error on public API for a value the framework documents, implements and stores correctly.
+`RowWrite<T>` accepts both spellings. If you implement `Repo`, widen those three signatures; if you
+only call them, this accepts strictly more than before and costs you nothing.
 
 ## 12.x → 13.0.0, entry by entry
 
