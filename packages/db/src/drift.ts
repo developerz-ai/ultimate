@@ -5,7 +5,7 @@
 
 import { baseClient, type DbClient } from './client';
 import { DbError } from './errors';
-import { addForeignKey, dropForeignKey, foreignKeyTarget, onDeleteRule } from './foreign-key';
+import { foreignKeyTarget, onDeleteRule, rebuildForeignKey } from './foreign-key';
 import { indexMethodOf } from './index-method';
 import {
   type ForeignKeyDescription,
@@ -192,9 +192,7 @@ function changedForeignKey(
       `"${declared.referencedTable}" ` +
       `${rule === null ? 'declares no on delete rule' : `is on delete ${rule}`}, not what ` +
       'migrations declare',
-    fix:
-      `${dropForeignKey(table, held.name)} ${addForeignKey(table, declared)}` +
-      '   # in a new migration',
+    fix: `${rebuildForeignKey(table, declared, held)}   # in a new migration`,
   };
 }
 

@@ -62,8 +62,16 @@ export interface MountedIsland extends Disposable {
   ): boolean;
 }
 
+/**
+ * Module-private, and its `mount` returns `unknown` rather than `void` — the shipped hydration
+ * runtime chains `import(e).then((m) => m.mount(el, props))` (`packages/render/src/hydrate.ts`),
+ * so a browser AWAITS whatever `mount` answers before it marks the element mounted. An island that
+ * opens a queue or a socket first is therefore an ordinary island (`like.island.tsx` is `async`),
+ * and a fixture typed `=> void` could only ever call it and walk away. Widening, not narrowing: an
+ * island module is matched structurally off an `unknown` import, so nothing implements this type.
+ */
 interface IslandEntry {
-  readonly mount: (el: unknown, props: unknown) => void;
+  readonly mount: (el: unknown, props: unknown) => unknown;
 }
 
 /** `unknown` + a check, not a cast: a chunk whose `mount` was renamed is a real authoring mistake
@@ -180,7 +188,11 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
     if (options.shell !== undefined) {
       for (const child of [...parseHtml(options.shell).children]) el.appendChild(child);
     }
-    entry.mount(el, options.props);
+    // AWAITED, because the runtime this fixture stands in for awaits it. Left unawaited, an async
+    // island's `mount` resumed AFTER the `restore()` below had taken the fake `document` back out
+    // — so it failed with `document is not defined` inside whichever later test happened to be
+    // running, with no thread back here.
+    await entry.mount(el, options.props);
     return {
       code: chunk.code,
       el,

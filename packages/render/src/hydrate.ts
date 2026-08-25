@@ -148,6 +148,27 @@ io.observe(el)})
 // woke the island, and re-dispatches it once mounted. Without this, the first click on a
 // cold island is silently lost — the failure users read as "the button does nothing".
 //
+// `aim` is WHERE it is re-dispatched, and it is not `ev.target`. An island's `mount` opens with
+// `el.textContent = ''` — the documented idiom, and what `settings`, `feed` and `like` all do — so
+// by the time the replay runs, the node the visitor actually pressed has been detached and a
+// `dispatchEvent` on it reaches nothing: "the button does nothing on the first press, and works on
+// the second", which is indistinguishable from a slow network and is never reported as a bug.
+//
+// The runtime CAN tell the two mounts apart, per event, and that is what makes a repair possible
+// instead of a refusal: `el.contains(ev.target)` after the mount answers "did this mount keep the
+// node I caught the event on". Kept → replay there, which is what a takeover-style island
+// (`contact-sales.island.tsx` attaches to the server's own form) needs.
+//
+// Replaced → the honest target is where the event would land NOW, so a pointer event is
+// hit-tested again with `elementFromPoint`. That is the same answer the browser would have given
+// had the visitor pressed a moment later, and it reaches a fresh descendant's own handler —
+// dispatching at the island ROOT does not, because Solid's delegated listener sits on `document`
+// and walks UP from the target (`solid-js/web`'s `eventHandler`), so a handler on a child of the
+// root is never visited. The root is the last resort, not the repair: it is where an event with no
+// coordinates goes (a `keydown` has no `clientX`), and where a hit landing outside this island goes
+// — synthesizing a click on an element the visitor never pressed is worse than losing the replay.
+// `typeof` and not `ev.clientX||ev.clientY`, because (0, 0) is a coordinate.
+//
 // `off` is BOTH arms of the `then`, and the rejection arm is the reason it is a named function.
 // `boot` rethrows on purpose (see the prelude), so `el.__x` holds a rejected promise from the
 // first failed mount onward — and a `.then` with no rejection handler makes a fresh rejected
@@ -157,13 +178,16 @@ io.observe(el)})
 // will never mount. Swallowing here loses no signal: the DOM already carries the failure as
 // `data-x-failed`, which is the documented observable.
 const RUNTIME_INTERACTION = `
+function aim(el,ev){var t=ev.target;if(t&&el.contains(t))return t;
+var x=ev.clientX,h=typeof x==='number'?document.elementFromPoint(x,ev.clientY):null;
+return h&&el.contains(h)?h:el}
 each('[data-x-hydrate="interaction"]',function(el){
 var evs=(el.getAttribute('data-x-events')||'click').split(' ');
 var q=[],done=false;
 var off=function(){done=true;evs.forEach(function(n){el.removeEventListener(n,on,true)});q=[]};
 var on=function(ev){if(done)return;q.push(ev);
 boot(el).then(function(){var r=q;off();
-r.forEach(function(ev){var c=new ev.constructor(ev.type,ev);ev.target.dispatchEvent(c)})},off)};
+r.forEach(function(ev){var c=new ev.constructor(ev.type,ev);aim(el,ev).dispatchEvent(c)})},off)};
 evs.forEach(function(n){el.addEventListener(n,on,true)})})
 `.trim();
 

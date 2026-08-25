@@ -74,6 +74,18 @@ export interface InvariantDescription {
   /** `null` for an `assert`: a JS predicate the database was never told about. */
   readonly sql: string | null;
   readonly where: string | null;
+  /**
+   * The physical columns this rule reads — the same list `Invariant.columns` holds, for every
+   * kind, never narrowed to `unique`.
+   *
+   * Same reason as `onDelete`, `generated` and `default` on `ColumnDescription`: `@ultimat3/db` is
+   * tier 1 and cannot import this package, so a fact absent here is a fact the generator has to
+   * recover from a rendering. Without it `uniqueColumns()` split a `unique` rule's `sql` on commas
+   * and re-validated each part as an identifier — a comma-split of text this package joined, which
+   * is the shape `parseIndexName` failed at when `posts_org_id_created_at_idx` became the single
+   * column `"org_id_created_at"`. Carried, so the split has nothing left to do.
+   */
+  readonly columns: readonly string[];
 }
 
 /**

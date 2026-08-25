@@ -18,9 +18,10 @@
 // is therefore excluded from byte EQUALITY: measured 2026-08-23, 300 builds in one process, it
 // flips between 42,335 B and 42,714 B with no source change. The 12 consecutive builds this file
 // once called proof were a sample too small to see a ~5%-per-build event — run 8 of 12 flipped
-// when the sample was repeated. The other two islands import no `@ultimat3/*` package at all, so
-// no `sideEffects`-declared module can be in their graph however the shaker feels that run, and
-// they were stable across the same 300 builds.
+// when the sample was repeated. `posts/[id]/like.island.tsx` joined it on 2026-08-25 for the same
+// reason and by the same derivation, not by being listed. The other two islands import no
+// `@ultimat3/*` package at all, so no `sideEffects`-declared module can be in their graph however
+// the shaker feels that run, and they were stable across the same 300 builds.
 //
 // The split is DERIVED, never listed: `frameworkImports` walks each island's own-source graph, so
 // an import added to a pure island moves it into the excluded set loudly instead of turning this
@@ -43,8 +44,27 @@ const REPO_ROOT = join(APP_ROOT, '..', '..');
  */
 const BUN_SHAKE_FLAP_BYTES = 512;
 
-const transpiler = new Bun.Transpiler({ loader: 'tsx' });
+/**
+ * One transpiler per loader, chosen by extension — the same rule `packages/cli/src/live-routes.ts`
+ * follows for the same walk. Parsing a `.ts` as `tsx` reads `<T>(x: T) => …` as an unclosed JSX
+ * element, so a plain module holding a generic arrow (`shared/live-socket.ts`) threw where the
+ * island importing it built cleanly.
+ */
+const transpilers = {
+  ts: new Bun.Transpiler({ loader: 'ts' }),
+  tsx: new Bun.Transpiler({ loader: 'tsx' }),
+} as const;
+const transpilerFor = (file: string): Bun.Transpiler =>
+  file.endsWith('x') ? transpilers.tsx : transpilers.ts;
 const SPECIFIER_ENDINGS = ['', '.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx'];
+
+/**
+ * What the walk below can parse. An island MAY import a `.module.scss` — the island build runs
+ * `loadStylesheet` over it — and handing that file to a `tsx` transpiler throws on its first rule
+ * (`Unexpected .`). Nothing is lost by stopping there: a stylesheet cannot import a package
+ * specifier, so no `sideEffects`-declared module can hide behind one.
+ */
+const SCANNABLE = /\.(?:tsx?|jsx?)$/;
 
 async function resolveRelative(fromFile: string, specifier: string): Promise<string | null> {
   const base = join(dirname(fromFile), specifier);
@@ -68,10 +88,10 @@ async function frameworkImports(entry: string): Promise<readonly string[]> {
     const file = queue.pop();
     if (file === undefined || seen.has(file)) continue;
     seen.add(file);
-    for (const imported of transpiler.scanImports(await Bun.file(file).text())) {
+    for (const imported of transpilerFor(file).scanImports(await Bun.file(file).text())) {
       if (imported.path.startsWith('.')) {
         const resolved = await resolveRelative(file, imported.path);
-        if (resolved !== null) queue.push(resolved);
+        if (resolved !== null && SCANNABLE.test(resolved)) queue.push(resolved);
       } else if (imported.path.startsWith('@ultimat3/')) {
         packages.add(imported.path);
       }
@@ -111,10 +131,12 @@ test('every island in the app is measured, and each is classified by its own gra
   // nothing to compare, which is the vacuous green this whole file is an argument against.
   expect([...first.keys()].sort()).toEqual([
     'apps/web/app/feed/feed.island.tsx',
+    'apps/web/app/posts/[id]/like.island.tsx',
     'apps/web/app/settings/settings.island.tsx',
     'apps/web/site/pricing/contact-sales.island.tsx',
   ]);
   expect(reachable.get('apps/web/app/feed/feed.island.tsx')).toEqual(['@ultimat3/realtime']);
+  expect(reachable.get('apps/web/app/posts/[id]/like.island.tsx')).toEqual(['@ultimat3/realtime']);
   expect(reachable.get('apps/web/app/settings/settings.island.tsx')).toEqual([]);
   expect(reachable.get('apps/web/site/pricing/contact-sales.island.tsx')).toEqual([]);
 });
@@ -131,6 +153,7 @@ test('the module the shaker drops is one a package still declares as a side effe
 test('buildIslands is byte-reproducible for every island the shaker answers the same way', () => {
   const pure = [...first.keys()].filter((file) => (reachable.get(file) ?? []).length === 0).sort();
   expect(pure).toHaveLength(2);
+
   const at = (build: ReadonlyMap<string, IslandChunk>): readonly string[] =>
     pure.map((file) => line(build.get(file) as IslandChunk));
   expect(at(second)).toEqual(at(first));
@@ -138,7 +161,7 @@ test('buildIslands is byte-reproducible for every island the shaker answers the 
 
 test('an island that reaches a side-effecting module moves by the shaker flap and no more', () => {
   const impure = [...first.keys()].filter((file) => (reachable.get(file) ?? []).length > 0);
-  expect(impure).toHaveLength(1);
+  expect(impure).toHaveLength(2);
   for (const file of impure) {
     const before = (first.get(file) as IslandChunk).bytes;
     const after = (second.get(file) as IslandChunk).bytes;

@@ -156,6 +156,18 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // so the fix answered a failed step with X_CLI_UNKNOWN_COMMAND. `x doctor` is what reports
   // reachability and drift, and is already this table's answer for X_DB_STUDIO_FAILED.
   X_DB_GEN_FAILED: 'x doctor --json   # cause carries the Postgres error verbatim',
+  // Both directions resolve through the same command, and the CAUSE is what differs: one names a
+  // declaration the migrations never carried, the other one they carry and nothing declares. The
+  // narrowing is deliberately not a second command — there is only one generator.
+  X_DB_SCHEMA_UNMIGRATED:
+    'x db gen "add the declaration the cause names" --json   # then x db migrate --json',
+  X_DB_SCHEMA_UNDECLARED:
+    'x db gen "drop the declaration the cause names" --json   # or re-declare it on the entity',
+  // Not `x db gen`: regenerating is exactly what DISCARDS these statements, so the one command
+  // that must not be offered here is the one every other db code answers with. The gate is what
+  // reproduces the finding, and the finding names the file and the header line to add.
+  X_MIGRATION_UNGENERATABLE:
+    'x verify --only drift --json   # then add the `-- ungeneratable: <n>` header line the finding names',
   X_DB_MIGRATE_FAILED: 'x doctor --json   # cause carries the Postgres error verbatim',
   X_DB_BRANCH_FAILED: 'x db branch ls --json',
   X_DB_STUDIO_FAILED: 'x doctor --json',

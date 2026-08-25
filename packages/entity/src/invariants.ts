@@ -69,28 +69,13 @@ export const bindInvariant = <T>(
   };
 };
 
-export const constraintName = (
-  table: string,
-  inv: { readonly name: string; readonly kind: InvariantKind },
-): string => `${table}_${inv.name}_${inv.kind === 'unique' ? 'key' : 'check'}`;
-
-/** The DDL the migration emits. One statement, terminated, ready to diff. */
-export const toSql = <T>(table: string, inv: Invariant<T>): string | null => {
-  if (inv.sql === null) return null;
-  const name = constraintName(table, inv);
-  if (inv.kind === 'check') {
-    return `ALTER TABLE "${table}" ADD CONSTRAINT "${name}" CHECK (${inv.sql});`;
-  }
-  const where = inv.where === undefined ? '' : ` WHERE ${inv.where}`;
-  const columns = inv.columns.map((column) => `"${column}"`).join(', ');
-  return `CREATE UNIQUE INDEX "${name}" ON "${table}" (${columns})${where};`;
-};
-
-export const invariantsToSql = <T>(table: string, invariants: readonly Invariant<T>[]): string =>
-  invariants
-    .map((inv) => toSql(table, inv))
-    .filter((statement): statement is string => statement !== null)
-    .join('\n');
+// The DDL an invariant becomes is NOT rendered here. `@ultimat3/db` owns it — `constraintNameFor`,
+// `declaredChecks` and `declaredIndexes` (`invariant-ddl.ts`), reading `$describe()` — and this
+// package rendered a second copy of the same fact until 2026-08-25. The copy is what made the case
+// for one renderer: it was reachable only through `entity.$migration()`, which passed the entity
+// NAME where the table belongs, so `entity('account', { table: 'legacy_accounts' })` rendered
+// `ALTER TABLE "account" ADD CONSTRAINT "account_seats_non_negative_check" …` — a relation that
+// does not exist and a constraint name no migration ever wrote. Never re-render it here.
 
 /**
  * Whether any rule here can only be judged in the app. This is what decides whether a FILTERED

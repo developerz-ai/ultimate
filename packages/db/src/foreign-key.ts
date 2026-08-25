@@ -4,6 +4,7 @@
 
 import { assert } from '@ultimat3/core';
 import type { ForeignKeyDescription } from './introspect';
+import { identifier } from './sql';
 
 /**
  * `pg_constraint.confdeltype`. The catalog's vocabulary; a description holds the rule's name.
@@ -51,7 +52,16 @@ export function foreignKeyTarget(key: ForeignKeyDescription): string {
   return JSON.stringify([[...key.columns], key.referencedTable, [...key.referencedColumns]]);
 }
 
-const quoted = (names: readonly string[]): string => names.map((name) => `"${name}"`).join(', ');
+/**
+ * Through `identifier`, never `"${…}"` — the package's one rule, which every name this file writes
+ * now goes through. A name that closes its own quote produced a real `drop table` through
+ * `generateMigration` once already, out of `columnClause`, and every name below arrives the same
+ * way: from a projection this package cannot typecheck, or from a `.snapshot.json` on disk that
+ * anything may edit. Being unreachable with a hostile name today is a property of the CALLERS, not
+ * of this file, and it survives exactly until the next refactor.
+ */
+const quoted = (names: readonly string[]): string =>
+  names.map((name) => identifier(name).text).join(', ');
 
 /**
  * A statement of its own, never a clause inside `create table`. Inline, the constraint is created
@@ -76,14 +86,48 @@ export function addForeignKey(table: string, key: ForeignKeyDescription): string
     `references(() => target.id, { onDelete: 'cascade' })   # cascade | restrict | set null`,
   );
   return (
-    `alter table "${table}" add constraint "${key.name}" ` +
+    `alter table ${identifier(table).text} add constraint ${identifier(key.name).text} ` +
     `foreign key (${quoted(key.columns)}) ` +
-    `references "${key.referencedTable}" (${quoted(key.referencedColumns)})` +
+    `references ${identifier(key.referencedTable).text} (${quoted(key.referencedColumns)})` +
     `${rule === null ? '' : ` on delete ${rule}`};`
   );
 }
 
 /** The reverse. Dropping a constraint loses nothing the database cannot rebuild. */
 export function dropForeignKey(table: string, constraint: string): string {
-  return `alter table "${table}" drop constraint "${constraint}";`;
+  return `alter table ${identifier(table).text} drop constraint ${identifier(constraint).text};`;
+}
+
+/**
+ * The drop/add pair that moves a key's `on delete` rule — a rebuild, because Postgres has no
+ * `alter constraint` for it — for a `fix:` line an author pastes into a new migration.
+ *
+ * It lives here, beside the two writers, because it is the one caller reading values neither of
+ * them may assume: `held` is the **live catalog's** and `declared` is a `.snapshot.json`'s. Both
+ * writers refuse rather than guess — `identifier()` on a name holding a quote, a space or a
+ * backslash (all three legal inside a quoted Postgres name), and `addForeignKey` on an `on delete`
+ * rule Postgres does not have. That is exactly right for DDL this package SENDS and wrong for a
+ * `fix:` line: `diffSchema` is documented pure and total, so a pair it cannot write is a sentence,
+ * never a throw — a drift check that raises in place of its report hands the caller an exception
+ * where a verdict was asked for. The constraint is still named, because it is the only thing
+ * identifying which one, quoted by `JSON.stringify`, which escapes rather than refuses; nothing
+ * runs this string either way.
+ */
+export function rebuildForeignKey(
+  table: string,
+  declared: ForeignKeyDescription,
+  held: ForeignKeyDescription,
+): string {
+  // The writers are ASKED whether they can write the pair — never a second copy of their rules
+  // beside them, which is the copy that drifts. A refusal is the answer, and nothing here reads
+  // the thrown value.
+  try {
+    return `${dropForeignKey(table, held.name)} ${addForeignKey(table, declared)}`;
+  } catch {
+    return (
+      `drop constraint ${JSON.stringify(held.name)} on table ${JSON.stringify(table)} and add ` +
+      'it back with the on delete rule the migrations declare — by hand: x db gen cannot ' +
+      'write this pair'
+    );
+  }
 }

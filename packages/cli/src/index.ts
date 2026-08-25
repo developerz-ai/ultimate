@@ -275,6 +275,11 @@ export { flagBool, flagList, flagString, GLOBAL_FLAGS, nearest, parseArgs } from
 export type { PrerenderedPage, PrerenderOptions, PrerenderReport } from './prerender';
 export { DEFAULT_ORIGIN, isPrerenderable, prerenderSite } from './prerender';
 export { COMMANDS, cliVersion, commandFor, SPECS } from './registry';
+export type { SchemaDifference, SchemaDirection, SchemaPart } from './schema-diff';
+export { diffDeclaredSchema } from './schema-diff';
+// The drift a hash cannot see, and the composition both the gate step and `x doctor` read.
+export type { DeclaredEntities } from './schema-drift';
+export { checkMigrationDrift, checkSnapshotDrift } from './schema-drift';
 export { FrameworkSchemaFailedError } from './schema-errors';
 export type { MigratedApp, ServedApp, ServeOptions, StartedApp } from './serve';
 export {

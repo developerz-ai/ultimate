@@ -78,6 +78,44 @@ describe('unit · the two statements', () => {
       /X_INVARIANT/,
     );
   });
+
+  // A name that closes its own quote produced a REAL `drop table` through `generateMigration`
+  // once already, out of `columnClause`. These four operands are the last ones in the package
+  // that reached statement text by interpolation; `identifier()` is the package's one rule and
+  // every one of them goes through it now. Not "unreachable today, therefore fine": the names
+  // here arrive from a projection this package cannot typecheck and from a snapshot on disk that
+  // anybody may edit, and the refusal is what makes that stop mattering.
+  describe('a hostile name is refused, never quoted around', () => {
+    const hostile = 'n" , "x" text); drop table t; --';
+
+    test('the referenced table', () => {
+      expect(() => addForeignKey('posts', key({ referencedTable: hostile }))).toThrow(
+        /X_SQL_UNSAFE/,
+      );
+    });
+
+    test('the constraint name', () => {
+      expect(() => addForeignKey('posts', key({ name: hostile }))).toThrow(/X_SQL_UNSAFE/);
+    });
+
+    test('the table the constraint sits on', () => {
+      expect(() => addForeignKey(hostile, key())).toThrow(/X_SQL_UNSAFE/);
+    });
+
+    test('either column list — a composite key validates every member, not the first', () => {
+      expect(() => addForeignKey('posts', key({ columns: ['org_id', hostile] }))).toThrow(
+        /X_SQL_UNSAFE/,
+      );
+      expect(() => addForeignKey('posts', key({ referencedColumns: ['id', hostile] }))).toThrow(
+        /X_SQL_UNSAFE/,
+      );
+    });
+
+    test('the drop half too — it is the statement a squash emits for a removed references()', () => {
+      expect(() => dropForeignKey('posts', hostile)).toThrow(/X_SQL_UNSAFE/);
+      expect(() => dropForeignKey(hostile, 'posts_org_id_fkey')).toThrow(/X_SQL_UNSAFE/);
+    });
+  });
 });
 
 describe('unit · onDeleteRule', () => {

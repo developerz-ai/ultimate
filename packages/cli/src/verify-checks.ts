@@ -23,8 +23,8 @@ import { policyFindings } from './app-permissions';
 import { APP_CONFIG_FILE } from './app-root';
 import { checkBudgets, readBuildStats } from './budgets';
 import { checkDestructiveMigrations } from './db-destructive';
+import { checkUngeneratableMigrations } from './db-ungeneratable';
 import { checkDocumentStyles, documentSurfaces } from './document-styles';
-import { checkSourceDrift } from './drift';
 import { checkErrorCodeResolution, checkErrorFixReport } from './error-contract';
 import { guardFindings } from './guards';
 import { catalogFindings } from './i18n-registration';
@@ -32,6 +32,7 @@ import { liveRouteFindings } from './live-routes';
 import { msg } from './messages';
 import type { Finding } from './output';
 import { findingFrom } from './output';
+import { checkMigrationDrift } from './schema-drift';
 import { scanSiteMeta } from './seo-meta';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
 import type { VerifyStep } from './verify-step';
@@ -147,7 +148,8 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   ...TEST_STEPS,
   {
     name: 'drift',
-    summary: 'schema source vs migrations, and every destructive statement declared',
+    summary:
+      'entity declarations vs migrations, every destructive statement declared, and every statement no declaration carries',
     // Only an app owns migrations; a package monorepo's `packages/db` is the driver, not a schema.
     // Source, not database: the gate runs in CI with nothing listening, and the database half is
     // the post-migrate verification `runMigrations` performs where a connection is already open.
@@ -158,8 +160,13 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
     run: async (ctx) =>
       fromFindings([
-        ...(await checkSourceDrift(ctx.root)),
+        ...(await checkMigrationDrift(ctx.root)),
         ...(await checkDestructiveMigrations(ctx.root)),
+        // The third rail, and the one the other two cannot see: a hand-written statement is
+        // recorded by no snapshot and hashed by no source, so both halves above are green over SQL
+        // a squash silently drops. Same directory, same reader, no database — this step's own
+        // question, which is why it is not an eighteenth step.
+        ...(await checkUngeneratableMigrations(ctx.root)),
       ]),
   },
   {

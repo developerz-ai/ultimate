@@ -5,6 +5,7 @@
 import type { EntityDescriptionLike } from './entity-shape';
 import { addForeignKey, dropForeignKey, foreignKeyTarget, onDeleteRule } from './foreign-key';
 import type { ForeignKeyDescription, TableDescription } from './introspect';
+import { identifier } from './sql';
 
 /** The two directions of one migration, pushed in `up` order; `down` is reversed at assembly. */
 export interface Plan {
@@ -137,10 +138,17 @@ export interface ConstraintPlans {
   readonly doomed: ReadonlySet<string>;
 }
 
-/** A key whose target is being dropped: gone on the way up, a note on the way back. */
+/**
+ * A key whose target is being dropped: gone on the way up, a note on the way back.
+ *
+ * The note goes through `identifier` too. A `--` comment ends at the first newline, so a name
+ * holding one is a second command on the line after it — the same escape `columnClause` closed,
+ * one quoting rule short of the statement above it.
+ */
 function unrestorableDrop(table: string, constraint: string, target: string, preDrops: Plan): void {
   preDrops.up.push(dropForeignKey(table, constraint));
   preDrops.down.push(
-    `-- constraint "${constraint}" on "${table}" cannot be restored; "${target}" is gone`,
+    `-- constraint ${identifier(constraint).text} on ${identifier(table).text} ` +
+      `cannot be restored; ${identifier(target).text} is gone`,
   );
 }

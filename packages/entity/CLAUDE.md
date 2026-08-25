@@ -793,8 +793,28 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **Every framework member on an entity is `$`-prefixed** — the columns are `Object.assign`ed onto
   the core, so an unprefixed member would make `view`, `name` or `tenant` an illegal column name.
   `$view`, never `view`; no free `view(entity, keys)` either — one way to write a projection.
-- **Invariants run twice**: in the app on write AND as a Postgres CHECK/UNIQUE via `toSql()`. An
-  untranslatable JS predicate reports `kind: 'assert'`, `sql: null` — never a pretend CHECK.
+- **Invariants run twice, and only ONE side of the pair is rendered here.** In the app on write
+  (`assertInvariants`), and as a Postgres CHECK/UNIQUE emitted by `@ultimat3/db` —
+  `constraintNameFor`, `declaredChecks`, `declaredIndexes` (`invariant-ddl.ts`), reading
+  `$describe()`. An untranslatable JS predicate reports `kind: 'assert'`, `sql: null` — never a
+  pretend CHECK. **This package rendered a second copy of that DDL until 2026-08-25**
+  (`toSql`/`invariantsToSql`/`constraintName`, reachable through `entity.$migration()`), and the
+  copy is the argument: nothing but its own tests ever called it, so nobody noticed it passed the
+  entity NAME where the table belongs — `entity('account', { table: 'legacy_accounts' })` rendered
+  `ALTER TABLE "account" ADD CONSTRAINT "account_…_check"`, a relation Postgres answers `42P01` for
+  and a constraint name no migration has ever written. All four are deleted; `$migration()` was on
+  `EntityCore`, so this is a breaking change to a documented member. Never render constraint DDL
+  here again — the entity's job is to DESCRIBE the rule, and `<table>_<name>_<check|key>` now has
+  exactly one source.
+- **`InvariantDescription.columns` is projected, `As of 2026-08-25`** — the physical names the rule
+  reads, for every kind, straight off `Invariant.columns`. Same argument as `onDelete`, `generated`
+  and `default` on `ColumnDescription`: `@ultimat3/db` is tier 1 and cannot import this package, so
+  a fact this projection drops is a fact the generator must recover from a rendering. It was
+  recovering it — `uniqueColumns()` split a `unique` rule's `sql` on commas and re-validated each
+  part — which is the shape that made `posts_org_id_created_at_idx` read back as the single column
+  `"org_id_created_at"`. `snapshotOf` derives from `declaredChecks`/`declaredIndexes` and not from
+  this record, so the field changes no snapshot and nothing regenerates
+  (`describe-invariant.test.ts` pins both halves).
 - **And the two halves must AGREE, term by term** (`expr.ts`). A rule the app accepts and the CHECK
   refuses is not a stricter database: the write comes back as a raw constraint error instead of
   `X_INVARIANT_VIOLATED`, which is the framework's own invariant bypassed on the way out. Two
@@ -1014,7 +1034,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `columns-data.ts` | the wide vocabulary an existing schema needs: `json`, `decimal`, `date`, `bigint`, `bytes`, `arrayOf` |
 | `array-element.ts` | which element kinds `arrayOf()` refuses, and the one-line edit that repairs each |
 | `refuse.ts` | `refuseColumn`/`refuseInvariant` — the refusals raised before any entity exists, each carrying the EDIT that repairs it |
-| `expr.ts` / `invariants.ts` | the `invariants: (c) => …` rule language; bind + `toSql()` DDL |
+| `expr.ts` / `invariants.ts` | the `invariants: (c) => …` rule language; `bindInvariant` resolves property paths to physical names. No DDL — that is `@ultimat3/db`'s `invariant-ddl.ts` |
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
 | `index-name.ts` | what an index is CALLED — the predicate/direction/method discriminator and the 63-byte bound |
 | `search.ts` | the generated `tsvector` a `.searchable()` column set derives: the closed language list, the weights, the expression |

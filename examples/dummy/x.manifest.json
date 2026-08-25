@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "2dab9e30572d97f1",
+  "buildId": "3172b1261c1cd2a5",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -74,11 +74,11 @@
       "url": "/posts/:id",
       "render": "ssr",
       "offline": "network-only",
-      "hydrate": "interaction",
+      "hydrate": "idle",
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "40kb",
+        "js": "50kb",
         "lcp": 2000
       }
     },

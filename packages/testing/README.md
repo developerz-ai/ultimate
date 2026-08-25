@@ -291,6 +291,12 @@ line and makes the direction visible instead of hidden.
 **`fire` answers whether a handler RAN.** A selector that matches nothing and an island that
 attached no handler are the same silence; the second is a bug and the first is a typo in the test.
 
+**An `async` mount is awaited**, as the shipped hydration runtime awaits it — an island that opens
+a queue or a socket before its first render (`like.island.tsx` does) needs no `settle()` helper in
+the test. Until `As of 2026-08-25` the call was bare, so the fixture answered before such an island
+had rendered anything and the mount later resumed against a `document` the teardown had already
+removed.
+
 **A mount installs process-global state**, so `MountedIsland` is `Disposable` — `using`, or
 `island[Symbol.dispose]()` in an `afterAll`. Left installed it hands a fake `document` to every
 later FILE in the run.

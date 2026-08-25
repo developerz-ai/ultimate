@@ -76,6 +76,10 @@ const recorded = (currency: string): SchemaDescription => ({
       primaryKey: ['id'],
       indexes: [],
       foreignKeys: [],
+      // Recorded, so these two tests keep asking about the TYPE alone. A snapshot that omits it is
+      // a different question — "the database may be holding the old anonymous form" — and
+      // `check-ddl.test.ts` is where that one is pinned.
+      checks: [{ name: 'posts_price_currency_check', expression: "price_currency ~ '^[A-Z]{3}$'" }],
     },
   ],
 });

@@ -12,6 +12,14 @@ export {
   listBranches,
   reapBranches,
 } from './branch';
+export {
+  checkClauses,
+  checkPlan,
+  columnCheckName,
+  columnChecks,
+  columnNamesConstraint,
+  declaredChecks,
+} from './check-ddl';
 export type {
   DbClient,
   DbConnection,
@@ -109,11 +117,9 @@ export type {
 } from './introspect';
 export { buildSchema, findTable, introspect } from './introspect';
 export {
-  checkClauses,
-  checkPlan,
   constraintNameFor,
-  declaredChecks,
   declaredIndexes,
+  invariantChecks,
   uniqueColumns,
 } from './invariant-ddl';
 export { constraintExpressionUnsafe, constraintNameUnsafe } from './invariant-errors';
@@ -185,5 +191,7 @@ export { STATEMENT_ATTRIBUTE } from './statement-span';
 export { statementsOf } from './statement-split';
 export type { DbTx, IsolationLevel, TransactionOptions } from './transaction';
 export { beginStatement, currentTx, withTransaction } from './transaction';
+export type { GeneratableForm } from './ungeneratable';
+export { GENERATABLE_FORMS, ungeneratableStatements } from './ungeneratable';
 export type { UnrenderedDeclaration } from './unrendered';
 export { unrenderedComment, unrenderedOf } from './unrendered';

@@ -5,12 +5,15 @@
 // never reads the SQL, so the loss was GREEN. A comment in the emitted `up` cannot be green.
 
 import { assert } from '@ultimat3/core';
+import { columnNamesConstraint } from './check-ddl';
 import { hasUnrenderedDefault } from './column-default';
-import type { EntityDescriptionLike } from './entity-shape';
+import type { EntityDescriptionLike, InvariantDescriptionLike } from './entity-shape';
+import { findTable, type SchemaDescription, type TableDescription } from './introspect';
+import { namesConstraint } from './invariant-ddl';
 
 export interface UnrenderedDeclaration {
   /** Which half of the declaration reached no SQL. */
-  readonly kind: 'default';
+  readonly kind: 'default' | 'invariant';
   /** The physical table it was declared on. */
   readonly table: string;
   /** The column or the invariant it was declared on. */
@@ -59,15 +62,89 @@ export function unrenderedComment(entries: readonly UnrenderedDeclaration[]): st
 }
 
 /**
- * What the entities declare and this migration does not carry. One producer today: a column whose
- * description says `hasDefault` with no expression beside it, which is every non-`now()`,
- * non-`gen_random_uuid()` default until `@ultimat3/entity` projects `ColumnMeta.default`.
+ * A rule the app still declares and this migration TAKES AWAY. An `assert` reaches no SQL by
+ * design — `sql: null` says only the app can judge it — so on its own it is not a loss, and
+ * reporting every one would put a marker on nearly every app's every migration, which marks none.
  *
- * Read off the ENTITIES and not off the plan, deliberately: a diff that emitted nothing for a
- * table because nothing about it moved still has to report a default the create statement never
- * carried, or the loss becomes invisible again on the second run.
+ * It becomes a loss the moment a migration RECORDED the rule as a real CHECK, because `checkPlan`
+ * drops a recorded check nothing declares: regenerating then deletes the database's half of a rule
+ * the entity still states — and it earns no `-- destructive:` marker of its own, because
+ * `destructive.ts` excludes `drop constraint` by name on the argument that the database rebuilds
+ * it, which here nothing does. Measured on `examples/dummy`: five constraints out of
+ * `0001_init.sql` dropped in one run, three of them declared as asserts and reported by this, and
+ * `unrendered` was empty — so `@ultimat3/cli`'s `repairFix` handed out
+ * `x db gen "drop post_slug_shape"` — the command that performs the loss — as the repair for it.
+ *
+ * Self-clearing, which is what keeps it off every later file: once the drop is applied and the new
+ * sidecar written, nothing records the check and the next generation reports nothing.
  */
-export function unrenderedOf(entities: readonly EntityDescriptionLike[]): UnrenderedDeclaration[] {
+function unrenderedInvariant(
+  entity: EntityDescriptionLike,
+  invariant: InvariantDescriptionLike,
+  recorded: string,
+): UnrenderedDeclaration {
+  return {
+    kind: 'invariant',
+    table: entity.table,
+    // The RECORDED name, never the rule's: it is the string in this migration's own `drop
+    // constraint`, in the sidecar, and in the drift finding a caller matches this entry against.
+    name: recorded,
+    cause:
+      `the entity declares "${invariant.name}" as an assert — a rule only the app can judge — ` +
+      'and this migration drops the CHECK a migration recorded for it',
+    fix:
+      `invariant('${invariant.name}', …)   # express it in SQL to keep the CHECK — ` +
+      'an assert has none, so the next x db gen drops it',
+  };
+}
+
+/** Every recorded CHECK on this table that an `assert` still declares and this run would drop. */
+function droppedAsserts(
+  entity: EntityDescriptionLike,
+  live: TableDescription | undefined,
+): UnrenderedDeclaration[] {
+  const recorded = live?.checks ?? [];
+  if (recorded.length === 0) return [];
+  const entries: UnrenderedDeclaration[] = [];
+  for (const invariant of entity.invariants ?? []) {
+    // `sql !== null` beside the kind, the pair `hasJsOnlyInvariant` already reads: a description
+    // carrying an expression is rendered by `declaredChecks` whatever its kind claims.
+    if (invariant.kind !== 'assert' || invariant.sql !== null) continue;
+    for (const check of recorded) {
+      if (!namesConstraint(entity.table, invariant, check.name)) continue;
+      // A recorded check one of this entity's COLUMNS still declares is not being dropped — the two
+      // naming conventions collide on `<table>_<column>_check` when an assert is named after a
+      // column, and only what this run DECLARES can tell the two apart.
+      if (columnNamesConstraint(entity, check.name)) continue;
+      entries.push(unrenderedInvariant(entity, invariant, check.name));
+    }
+  }
+  return entries;
+}
+
+/**
+ * What the entities declare and this migration does not carry. Two producers, and they are one
+ * question — "is this migration smaller than the declaration?" — never two:
+ *
+ * - a column whose description says `hasDefault` with no expression beside it, which is every
+ *   non-`now()`, non-`gen_random_uuid()` default until `@ultimat3/entity` projects
+ *   `ColumnMeta.default`;
+ * - an `assert` invariant whose CHECK a previous migration recorded, which this run drops.
+ *
+ * The defaults half is read off the ENTITIES and not off the plan, deliberately: a diff that
+ * emitted nothing for a table because nothing about it moved still has to report a default the
+ * create statement never carried, or the loss becomes invisible again on the second run. The
+ * invariants half needs `current` for the opposite reason — an assert with nothing recorded behind
+ * it is not a loss at all, and the recorded schema is the only thing that can tell the two apart.
+ *
+ * `current` is REQUIRED and may be `undefined`: a caller with no recorded schema (the first
+ * migration) has to say so, because the alternative is an argument nobody passes and a blind
+ * answer nobody notices — which is exactly how five drops shipped under an empty list.
+ */
+export function unrenderedOf(
+  entities: readonly EntityDescriptionLike[],
+  current: SchemaDescription | undefined,
+): UnrenderedDeclaration[] {
   const entries: UnrenderedDeclaration[] = [];
   for (const entity of entities) {
     for (const column of entity.columns) {
@@ -82,6 +159,12 @@ export function unrenderedOf(entities: readonly EntityDescriptionLike[]): Unrend
           'packages/entity/src/describe.ts, then re-run x db gen',
       });
     }
+    entries.push(
+      ...droppedAsserts(
+        entity,
+        current === undefined ? undefined : findTable(current, entity.table),
+      ),
+    );
   }
   return entries;
 }

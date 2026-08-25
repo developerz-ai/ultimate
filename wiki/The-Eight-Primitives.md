@@ -32,7 +32,7 @@ A primitive's surfaces are methods **on the primitive**, never free functions ta
 
 | Primitive | Its surface |
 |---|---|
-| `entity` | `$`-sigil members: `posts.$view([...])`, `posts.$parse(row)`, `posts.$assert(row)`, `posts.$migration()`. An entity *is* its columns, so the sigil keeps the namespace clear — `posts.name` is a column, `posts.$name` is the entity |
+| `entity` | `$`-sigil members: `posts.$view([...])`, `posts.$parse(row)`, `posts.$assert(row)`. An entity *is* its columns, so the sigil keeps the namespace clear — `posts.name` is a column, `posts.$name` is the entity |
 | `policy` | one signature, `({ actor, input, row, ctx })`, identical on every surface. `row` is required and nullable, never smuggled through `input` |
 | `action` | `.as()` `.tool()` `.openapi()` `.client()` `.job()` `.contract()` `.describe()`, plus `.input` `.output` `.policy` `.mcp`. `handle` is not among them |
 | `mutator` | everything `action` has, plus `.local()` `.server()` `.conflict` `.describeMutator()` |

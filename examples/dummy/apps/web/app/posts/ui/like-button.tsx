@@ -1,46 +1,35 @@
 /**
- * The one interactive island on a post. It calls the mutator and nothing else: the optimistic
- * update, the offline queue and the reconciliation belong to the mutator, not to this component.
+ * The like control as the SERVER can render it: the count it knows, and a button it cannot honour.
+ *
+ * It held `useMutation()` and `useConnection()` until 2026-08-25, on a route that declared no
+ * `island()` — so no module of it ever ran in a browser, every click went nowhere and the queued
+ * badge could not appear (`X_LIVE_ROUTE_NO_ISLAND`). The interactive half is now
+ * `[id]/like.island.tsx`, which replaces this markup once a browser has booted it; this file is the
+ * shell inside the island's wrapper, and the same `.module.scss` styles both.
+ *
+ * The button is `disabled` rather than wired to the mutator's HTTP twin, and that is the honest
+ * statement: a like is applied through the socket the island opens, so before the island there is
+ * nothing behind it to press.
  */
 
 import { useT } from '@postly/i18n';
-import { useConnection, useMutation } from '@ultimat3/realtime';
-import { Button } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
-import { Show } from 'solid-js';
-import { likePost } from '../mutator';
 import styles from './like-button.module.scss';
 
 export type LikeButtonProps = {
-  readonly postId: string;
-  /**
-   * The post's org, because `postLike` decides on it. It rides in the mutator's input rather than
-   * being read off the session inside the handler: a policy decides on what it was given, and the
-   * same input has to reach the rule from an offline queue replayed hours later.
-   */
-  readonly orgId: string;
-  /** Comes from the live query's row, so it is already the optimistic value while queued. */
+  /** Comes from the read the page already made — the same value the island is handed, once. */
   readonly likeCount: number;
 };
 
 export const LikeButton = (props: LikeButtonProps): JSX.Element => {
   const t = useT();
-  const like = useMutation(likePost);
-  const connection = useConnection();
 
   return (
     <div class={styles.row}>
-      {/* `ghost` is a BUTTON VARIANT, never a tone: `Tone` is the status colour scale. */}
-      <Button variant="ghost" onClick={() => like({ postId: props.postId, orgId: props.orgId })}>
+      <button class={styles.button} type="button" disabled>
         {t('app.post.like')}
-      </Button>
-
+      </button>
       <span class={styles.count}>{t('app.post.likes', { count: props.likeCount })}</span>
-
-      {/* The queue is durable, so this is information, not an error. */}
-      <Show when={connection.offline && like.pending > 0}>
-        <span class={styles.queued}>{t('errors.offlineQueued')}</span>
-      </Show>
     </div>
   );
 };

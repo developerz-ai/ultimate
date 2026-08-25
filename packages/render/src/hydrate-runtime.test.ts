@@ -81,6 +81,10 @@ describe('the interaction runtime, executed', () => {
         name === 'data-x-entry' ? pathToFileURL(island).href : null,
       // Every real element has one, and `boot` marks the mount outcome through it.
       setAttribute: (): void => undefined,
+      // This element is both the island root and every event's target, and it has no children — so
+      // containment reduces to identity here. `hydrate-replay.test.ts` is where the two are
+      // different nodes, which is the case this harness cannot express and the defect it hid.
+      contains: (node: unknown): boolean => node === element,
       addEventListener: (name: string, fn: (event: FakeEvent) => void): void => {
         listeners.set(name, [...(listeners.get(name) ?? []), fn]);
       },

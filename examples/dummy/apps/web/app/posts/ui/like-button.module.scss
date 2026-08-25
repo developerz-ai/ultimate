@@ -1,9 +1,31 @@
 // Like control. Semantic tokens only, so the dark theme needs no second rule.
+//
+// One stylesheet, two renderers: the server shell (`like-button.tsx`) and the island that replaces
+// it (`[id]/like.island.tsx`) both import this file, and the scope hash is over the basename plus
+// the source rather than the path — so the classes agree and hydration changes nothing on screen.
 
 .row {
   align-items: center;
   display: flex;
   gap: var(--space-2);
+}
+
+// A plain button, not `@ultimat3/ui`'s: the island renders this markup too, and one control from
+// the design system weighs more than this route's whole budget once `LiveClient` is in the chunk.
+.button {
+  background-color: transparent;
+  border: 1px solid rgb(var(--color-line));
+  border-radius: var(--radius-md);
+  color: rgb(var(--color-accent));
+  cursor: pointer;
+  font: inherit;
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3);
+
+  &:disabled {
+    color: rgb(var(--color-fg-muted));
+    cursor: default;
+  }
 }
 
 .count {

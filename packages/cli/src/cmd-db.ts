@@ -21,7 +21,7 @@ import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
 import { BRANCH_SUBCOMMANDS } from './db-branch';
 import { stepFinding } from './db-finding';
-import { generateAppMigration } from './db-generate';
+import { generateAppMigration, unrenderedJson, unrenderedLines } from './db-generate';
 import type { SeedPassRow } from './db-seed';
 import {
   discoverSeeds,
@@ -192,6 +192,12 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
       findings: [stepFinding(error, 'X_DB_GEN_FAILED')],
     };
   }
+  // Loud on BOTH branches, and never an exit code. `x db gen` is the `fix:` on `X_DB_DRIFT` and on
+  // four other shipped errors, so a run that exits 1 whenever the description carries a default
+  // this build cannot project would make every one of those instructions unfollowable — the
+  // `x i18n add fr` failure, repeated. The count is the verdict; the gate's own `drift` step is
+  // where a red belongs, and it reads the same list to decide that `x db gen` is not the fix.
+  const lost = unrenderedLines(generated.unrendered);
   const migration = generated.migration;
   if (migration === undefined) {
     return {
@@ -205,12 +211,13 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
           : msg('cli.db.gen.unchanged'),
       findings: generated.findings,
       // `files` is what this command WROTE, so the empty array here was a false claim.
-      lines: generated.files.map((file) => `  ${file}`),
+      lines: [...generated.files.map((file) => `  ${file}`), ...lost],
       data: {
         outcome: generated.outcome,
         migration: null,
         files: [...generated.files],
         schemaHash: generated.schemaHash ?? null,
+        unrendered: unrenderedJson(generated.unrendered),
       },
     };
   }
@@ -218,13 +225,14 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
     ok: true,
     command: 'db',
     summary: msg('cli.db.gen.written', { id: migration.id }),
-    lines: generated.files.map((file) => `  ${file}`),
+    lines: [...generated.files.map((file) => `  ${file}`), ...lost],
     data: {
       outcome: generated.outcome,
       migration: migration.id,
       name: migration.name,
       files: [...generated.files],
       schemaHash: generated.schemaHash ?? null,
+      unrendered: unrenderedJson(generated.unrendered),
     },
   };
 }

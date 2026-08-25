@@ -1,7 +1,6 @@
-// Single responsibility: the DDL an entity's invariants become, and which of them a migration must
-// add or drop. `generate.ts` assembles the plan; this file decides what a rule IS in SQL. Split out
-// for the reason `generated-column.ts` and `foreign-key.ts` are: a check and a unique are two
-// different statements with two different diffs, and neither is the ordinary column's.
+// Single responsibility: the DDL an entity's INVARIANTS become — what a rule is called, the index a
+// `unique` becomes, and the CHECK list a caller merges. `check-ddl.ts` owns the plan those checks
+// join, because a column declares one of its own and the two are one list on the server.
 //
 // A `check` becomes a named CONSTRAINT, inline on a created table and `alter table … add
 // constraint` on an existing one. A `unique` becomes a unique INDEX — never a UNIQUE constraint —
@@ -16,10 +15,9 @@ import type {
   InvariantDescriptionLike,
 } from './entity-shape';
 import { indexMethodOf } from './index-method';
-import type { CheckDescription, TableDescription } from './introspect';
-import { constraintExpressionUnsafe, constraintNameUnsafe } from './invariant-errors';
+import type { CheckDescription } from './introspect';
+import { constraintNameUnsafe } from './invariant-errors';
 import { identifier } from './sql';
-import { statementsOf } from './statement-split';
 
 /**
  * `NAMEDATALEN - 1`. Postgres truncates a longer identifier and says nothing, so two constraints
@@ -27,8 +25,40 @@ import { statementsOf } from './statement-split';
  * the snapshot — invisible to a drift check comparing declared names. `@ultimat3/entity` bounds
  * the index names it mints for the same reason; this bound is Postgres', not a convention, so
  * stating it on both sides of the tier seam is one fact written twice rather than two rules.
+ *
+ * Exported so `check-ddl.ts` bounds a column's constraint name against the same number: two copies
+ * of NAMEDATALEN in one package is two rules that can drift, which is the thing it exists against.
  */
-const MAX_IDENTIFIER_BYTES = 63;
+export const MAX_IDENTIFIER_BYTES = 63;
+
+/**
+ * The convention alone, with nothing validated and nothing refused. One copy, so `constraintNameFor`
+ * and `namesConstraint` can never disagree about what a rule's constraint is called — the two
+ * questions "what do I emit" and "is this recorded constraint that rule's" are the same string.
+ */
+function spellConstraintName(table: string, invariant: InvariantDescriptionLike): string {
+  return `${table}_${invariant.name}_${invariant.kind === 'unique' ? 'key' : 'check'}`;
+}
+
+/**
+ * Whether a CHECK a migration RECORDED is this rule's own enforcement in the database. Two
+ * spellings, because two writers name it: this generator's `<table>_<name>_check`, and a
+ * hand-written migration that used the rule's own name — which is what `examples/dummy`'s
+ * `0001_init.sql` did for every one of its app-judged rules.
+ *
+ * Never throws, unlike `constraintNameFor`: its caller is a REPORTER (`unrendered.ts`), reached by
+ * `x verify`'s drift step, where a throw replaces a finding with a crash. The RECORDED name is
+ * required to be an identifier and the invariant's is not, because only the recorded one is written
+ * back out — into a `--` comment and into a `fix:` — and a sidecar is a hand-editable file.
+ */
+export function namesConstraint(
+  table: string,
+  invariant: InvariantDescriptionLike,
+  recorded: string,
+): boolean {
+  if (!isIdentifier(recorded)) return false;
+  return recorded === invariant.name || recorded === spellConstraintName(table, invariant);
+}
 
 /**
  * The constraint an invariant becomes: `<table>_<name>_check` / `<table>_<name>_key`.
@@ -40,8 +70,7 @@ const MAX_IDENTIFIER_BYTES = 63;
  * adds twice under two names.
  */
 export function constraintNameFor(table: string, invariant: InvariantDescriptionLike): string {
-  const suffix = invariant.kind === 'unique' ? 'key' : 'check';
-  const name = `${table}_${invariant.name}_${suffix}`;
+  const name = spellConstraintName(table, invariant);
   // Through the package's one identifier rule, never a second regex: an invariant name is
   // validated by nobody at declaration, so this is where a name that closes the quote is stopped.
   if (!isIdentifier(invariant.name) || !isIdentifier(table)) {
@@ -58,7 +87,8 @@ export function constraintNameFor(table: string, invariant: InvariantDescription
   return name;
 }
 
-function isIdentifier(value: string): boolean {
+/** Whether `identifier()` would accept this name — the package's one rule, asked rather than run. */
+export function isIdentifier(value: string): boolean {
   try {
     identifier(value);
     return true;
@@ -67,16 +97,6 @@ function isIdentifier(value: string): boolean {
     // naming the invariant rather than the raw name — so nothing is swallowed here.
     return false;
   }
-}
-
-/**
- * The predicate, refused when it holds a second command. `statementsOf` is this package's one
- * lexer, so a `;` inside a string literal — `check (tag <> ';')` — is data and not a split.
- */
-function predicate(constraint: string, sql: string): string {
-  const commands = statementsOf(sql).length;
-  if (commands > 1) throw constraintExpressionUnsafe(constraint, commands);
-  return sql;
 }
 
 /**
@@ -158,62 +178,16 @@ export function declaredIndexes(entity: EntityDescriptionLike): readonly IndexDe
   return [...entity.indexes, ...extra];
 }
 
-/** The CHECK constraints this entity declares, in declaration order. */
-export function declaredChecks(entity: EntityDescriptionLike): readonly CheckDescription[] {
+/**
+ * The CHECK constraints this entity's INVARIANTS declare, in declaration order. The predicate is
+ * handed on unvalidated: `check-ddl.ts` refuses a second command over the MERGED list, so one rule
+ * covers a rule's expression and a column's alike rather than one guard per producer.
+ */
+export function invariantChecks(entity: EntityDescriptionLike): readonly CheckDescription[] {
   return (entity.invariants ?? [])
     .filter((invariant) => invariant.kind === 'check' && invariant.sql !== null)
-    .map((invariant) => {
-      const name = constraintNameFor(entity.table, invariant);
-      return { name, expression: predicate(name, invariant.sql ?? '') };
-    });
-}
-
-/** `constraint "n" check (…)` — the clause form, for a table this migration creates. */
-export function checkClauses(entity: EntityDescriptionLike): readonly string[] {
-  return declaredChecks(entity).map(
-    (check) => `constraint ${identifier(check.name).text} check (${check.expression})`,
-  );
-}
-
-const addCheck = (table: string, check: CheckDescription): string =>
-  `alter table ${identifier(table).text} add constraint ${identifier(check.name).text} ` +
-  `check (${check.expression});`;
-
-const dropCheck = (table: string, name: string): string =>
-  `alter table ${identifier(table).text} drop constraint ${identifier(name).text};`;
-
-/**
- * Which CHECK constraints an existing table gains, loses or has rebuilt. Postgres has no `alter
- * constraint` for a predicate, so a moved expression is a drop and an add — the same shape
- * `redefineIndex` uses, and `down` is pushed forwards and read backwards for the same reason.
- *
- * Both directions, the rule `foreignKeyPlan` states: a snapshot may not lie. A recorded constraint
- * the entity no longer declares is DROPPED, and its `down` re-adds it from the expression the
- * snapshot holds — so unlike a dropped column there is nothing to restore and nothing to refuse.
- * `destructive.ts` deliberately excludes `drop constraint` for exactly this reason.
- */
-export function checkPlan(
-  entity: EntityDescriptionLike,
-  live: TableDescription,
-  plan: { up: string[]; down: string[] },
-): void {
-  const recorded = new Map((live.checks ?? []).map((check) => [check.name, check]));
-  const wanted = declaredChecks(entity);
-  for (const check of wanted) {
-    const held = recorded.get(check.name);
-    if (held === undefined) {
-      plan.up.push(addCheck(entity.table, check));
-      plan.down.push(dropCheck(entity.table, check.name));
-      continue;
-    }
-    if (held.expression === check.expression) continue;
-    plan.up.push(dropCheck(entity.table, check.name), addCheck(entity.table, check));
-    plan.down.push(addCheck(entity.table, held), dropCheck(entity.table, check.name));
-  }
-  const declared = new Set(wanted.map((check) => check.name));
-  for (const check of live.checks ?? []) {
-    if (declared.has(check.name)) continue;
-    plan.up.push(dropCheck(entity.table, check.name));
-    plan.down.push(addCheck(entity.table, check));
-  }
+    .map((invariant) => ({
+      name: constraintNameFor(entity.table, invariant),
+      expression: invariant.sql ?? '',
+    }));
 }

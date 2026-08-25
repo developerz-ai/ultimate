@@ -4,7 +4,7 @@
 
 // `node:path` — Bun ships no path joiner of its own, and these paths are built, not opened.
 import { join } from 'node:path';
-import type { GeneratedMigration } from '@ultimat3/db';
+import type { GeneratedMigration, UnrenderedDeclaration } from '@ultimat3/db';
 import {
   DESTRUCTIVE_MARKER,
   declaredSchema,
@@ -39,6 +39,14 @@ export interface GeneratedFiles {
   readonly files: readonly string[];
   /** What the source hashes to, whenever this run was in a position to record it. */
   readonly schemaHash?: string | undefined;
+  /**
+   * Every declaration the generator could not write down, on EVERY branch that got as far as
+   * running it — a `.default('draft')` the description carries no expression for is unrendered
+   * whether or not this run had a diff to write. Required, not optional: a caller that forgets to
+   * project it is a type error, which is the only reason the field was silent for as long as it
+   * was.
+   */
+  readonly unrendered: readonly UnrenderedDeclaration[];
   /** Modules that would not load. Non-empty means nothing was generated. */
   readonly findings: readonly Finding[];
 }
@@ -81,7 +89,9 @@ export async function generateAppMigration(
   options: GenerateMigrationOptions,
 ): Promise<GeneratedFiles> {
   const app = await loadApp(root);
-  if (app.findings.length > 0) return { outcome: 'blocked', files: [], findings: app.findings };
+  if (app.findings.length > 0) {
+    return { outcome: 'blocked', files: [], findings: app.findings, unrendered: [] };
+  }
 
   const migrations = await readMigrations(root);
   const current = declaredSchema(migrations);
@@ -115,13 +125,16 @@ export async function generateAppMigration(
     const newest = migrations[migrations.length - 1];
     // No migration to record against, which in this branch means no entity is declared either —
     // a registry against zero migrations is `create table` for all of it, never an empty diff.
-    if (newest === undefined) return { outcome: 'unchanged', files: [], findings: [] };
+    if (newest === undefined) {
+      return { outcome: 'unchanged', files: [], findings: [], unrendered: migration.unrendered };
+    }
     const reconciled = await reconcileSchemaHash(root, newest.id);
     return {
       outcome: reconciled.written ? 'hash-recorded' : 'unchanged',
       schemaHash: reconciled.hash,
       files: reconciled.written ? [`${MIGRATIONS_DIR}/${hashFileName(newest.id)}`] : [],
       findings: [],
+      unrendered: migration.unrendered,
     };
   }
 
@@ -140,5 +153,42 @@ export async function generateAppMigration(
     schemaHash,
     files: [sql, snapshot, hashFileName(migration.id)].map((file) => `${MIGRATIONS_DIR}/${file}`),
     findings: [],
+    unrendered: migration.unrendered,
   };
+}
+
+/**
+ * The loss, on the human path. `-- UNRENDERED` in the emitted SQL is a comment, and a comment in a
+ * file nobody opens is not a verdict — this is what `x db gen` PRINTS, so the count is read the
+ * moment the migration is written rather than at the review that may not happen.
+ *
+ * Empty in, empty out: a header on every run marks none of them, the rule `unrenderedComment` and
+ * `destructive.ts` both already state for their own markers.
+ */
+export function unrenderedLines(entries: readonly UnrenderedDeclaration[]): readonly string[] {
+  if (entries.length === 0) return [];
+  return [
+    `  ${entries.length} declaration${entries.length === 1 ? '' : 's'} reached no SQL — this migration is smaller than the entities declare`,
+    ...entries.flatMap((entry) => [
+      `    ${entry.kind} on "${entry.table}"."${entry.name}": ${entry.cause}`,
+      `      fix: ${entry.fix}`,
+    ]),
+  ];
+}
+
+/**
+ * The same list under `--json`, field for field. Spread into plain objects because `data` is a
+ * `JsonValue` and the payload has to carry the same facts the human lines do — a `--json` reader
+ * that had to parse a rendered sentence back is the drift `renderHuman` exists to prevent.
+ */
+export function unrenderedJson(
+  entries: readonly UnrenderedDeclaration[],
+): readonly Record<string, string>[] {
+  return entries.map((entry) => ({
+    kind: entry.kind,
+    table: entry.table,
+    name: entry.name,
+    cause: entry.cause,
+    fix: entry.fix,
+  }));
 }

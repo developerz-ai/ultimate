@@ -144,6 +144,41 @@ export function parseUpgradeSections(text: string): ReadonlySet<string> {
   return walked;
 }
 
+/**
+ * The oldest released version CHANGELOG.md still carries — the RETENTION BOUNDARY, derived from the
+ * file rather than configured, so trimming the file again is deleting sections and nothing else.
+ *
+ * CHANGELOG.md is capped at 1,000 lines and older sections are deleted, because they are one
+ * `git show v<tag>:CHANGELOG.md` away and a file nobody scrolls is a file nobody reads.
+ * wiki/Upgrading.md is NOT trimmed with it: a reader upgrading across four majors needs every
+ * walkthrough in order, where a reader of the changelog wants the last release. Two documents, two
+ * jobs — so a row naming a section BELOW this boundary is the archive working, not a stale row,
+ * and only a row naming a version ABOVE it and absent is the typo this rule exists to catch.
+ */
+export function retentionBoundary(sections: readonly ChangelogSection[]): string | undefined {
+  const released = sections
+    .map((section) => section.version)
+    .filter((version) => /^\d+\.\d+\.\d+$/.test(version));
+  return released.length === 0 ? undefined : (released.at(-1) as string);
+}
+
+/** `11.0.0` -> `[11, 0, 0]`, for an ordering comparison that never sorts `9` above `10`. */
+const versionOrder = (version: string): readonly number[] =>
+  version.split('.').map((part) => Number.parseInt(part, 10));
+
+/** True when `version` is older than `boundary` — i.e. archived out of CHANGELOG.md on purpose. */
+export function isArchived(version: string, boundary: string | undefined): boolean {
+  if (boundary === undefined) return false;
+  const left = versionOrder(version);
+  const right = versionOrder(boundary);
+  for (let index = 0; index < 3; index += 1) {
+    const a = left[index] ?? 0;
+    const b = right[index] ?? 0;
+    if (a !== b) return a < b;
+  }
+  return false;
+}
+
 /** The `# <n>` the fenced `grep -cE` in wiki/Upgrading.md promises the reader they will see. */
 export function parseDerivedTotal(text: string): { line: number; claimed: number } | undefined {
   const lines = text.split('\n');
@@ -231,10 +266,15 @@ export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
     return gaps;
   }
 
+  const boundary = retentionBoundary(sections);
   for (const row of single) {
     const section = byVersion.get(row.target ?? '');
     const actual = section?.breaking ?? 0;
     if (row.claimed === actual && section !== undefined) continue;
+    // Archived on purpose: the section was deleted from CHANGELOG.md and the walkthrough kept.
+    // Its count cannot be re-derived from a file that no longer carries it, and demanding one
+    // would make trimming the changelog impossible without gutting the upgrade guide with it.
+    if (section === undefined && isArchived(row.target ?? '', boundary)) continue;
     gaps.push(
       section === undefined
         ? {
@@ -250,10 +290,11 @@ export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
     );
   }
 
-  const expectedTotal = single.reduce(
-    (sum, row) => sum + (byVersion.get(row.target ?? '')?.breaking ?? 0),
-    0,
-  );
+  // Retained sections only — the aggregate row states what a `grep` over THIS file answers, and a
+  // count that included archived majors could never be re-derived by the reader running it.
+  const expectedTotal = single
+    .filter((row) => byVersion.has(row.target ?? ''))
+    .reduce((sum, row) => sum + (byVersion.get(row.target ?? '')?.breaking ?? 0), 0);
   for (const row of rows.filter((candidate) => candidate.aggregate)) {
     if (row.claimed === expectedTotal) continue;
     gaps.push({
