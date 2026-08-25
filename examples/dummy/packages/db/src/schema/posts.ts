@@ -45,6 +45,17 @@ export const posts = entity('posts', {
     updatedAt: timestamp().defaultNow().onUpdateNow(),
   },
   invariants: (c) => [
+    /**
+     * `matches` is TS-only: it takes a JS `RegExp` and yields `sql: null`, so this reaches no
+     * CHECK. `0001_init.sql:64` carries `CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$')` because it
+     * was hand-written — and `x db gen` therefore reports it as UNRENDERED and would DROP it.
+     *
+     * That is why this app's migrations are not regenerated. The guard is correct and the repair
+     * is a FRAMEWORK gap, measured 2026-08-25: `invariant()` has no SQL-expressible pattern form,
+     * so a regex constraint can only be hand-written and can only be lost. `c.slug.matches('^…$')`
+     * over a string, rendering `~`, is the missing capability; until it exists this stays an
+     * assert and the CHECK stays hand-written.
+     */
     invariant('post_slug_shape', c.slug.matches(isValidSlug)),
     /**
      * Global, not per-org. The public blog URL is `/blog/{slug}` with no tenant anywhere in it,

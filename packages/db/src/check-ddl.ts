@@ -125,11 +125,13 @@ export function checkClauses(entity: EntityDescriptionLike): readonly string[] {
   );
 }
 
-const addCheck = (table: string, check: CheckDescription): string =>
+/** Exported for `retype-dependents.ts`: a constraint moved out of a retype's way is put back by
+ * the same statement that would have added it, never by a second spelling of `add constraint`. */
+export const addCheck = (table: string, check: CheckDescription): string =>
   `alter table ${identifier(table).text} add constraint ${identifier(check.name).text} ` +
   `check (${check.expression});`;
 
-const dropCheck = (table: string, name: string): string =>
+export const dropCheck = (table: string, name: string): string =>
   `alter table ${identifier(table).text} drop constraint ${identifier(name).text};`;
 
 /**
@@ -161,12 +163,21 @@ const rebuildCheck = (table: string, check: CheckDescription): readonly string[]
  * plain -> generated path). The constraint went with the column and the snapshot still records it,
  * so without this the check would be silently gone — the defect class this file exists against,
  * one level in.
+ *
+ * `predropped` names the CONSTRAINTS this plan already dropped, ahead of a retype whose predicate
+ * they were compiled against (`retype-dependents.ts`). Two arms read it and both are about a name
+ * that is provably free: a declared one takes the bare `add constraint` rather than the
+ * drop-if-exists pair, and a recorded one the entity no longer declares is left alone entirely —
+ * `drop constraint` on it a second time is `42704`, and its `down` belongs to the retype that
+ * moved it. Keyed by name and not by column because an INVARIANT's check reads a column without
+ * being derived from one, which is exactly the constraint `examples/dummy` retypes under.
  */
 export function checkPlan(
   entity: EntityDescriptionLike,
   live: TableDescription,
   plan: { up: string[]; down: string[] },
   rebuilt: ReadonlySet<string> = new Set(),
+  predropped: ReadonlySet<string> = new Set(),
 ): void {
   const recorded = new Map((live.checks ?? []).map((check) => [check.name, check]));
   const present = new Set(live.columns.map((column) => column.name));
@@ -189,10 +200,11 @@ export function checkPlan(
   );
   const wanted = declaredChecks(entity);
   for (const check of wanted) {
-    const held = dropped.has(check.name) ? undefined : recorded.get(check.name);
+    const gone = dropped.has(check.name) || predropped.has(check.name);
+    const held = gone ? undefined : recorded.get(check.name);
     if (held === undefined) {
       plan.up.push(
-        ...(exposed.has(check.name)
+        ...(exposed.has(check.name) && !predropped.has(check.name)
           ? rebuildCheck(entity.table, check)
           : [addCheck(entity.table, check)]),
       );
@@ -205,7 +217,7 @@ export function checkPlan(
   }
   const declared = new Set(wanted.map((check) => check.name));
   for (const check of live.checks ?? []) {
-    if (declared.has(check.name)) continue;
+    if (declared.has(check.name) || predropped.has(check.name)) continue;
     plan.up.push(dropCheck(entity.table, check.name));
     plan.down.push(addCheck(entity.table, check));
   }

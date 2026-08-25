@@ -158,6 +158,13 @@ describe('generateMigration', () => {
   test('a column whose SQL type changed is retyped, and the down restores the old one', () => {
     // The table was created when `char` meant `char(1)`; skipping it by name left the database
     // rejecting every currency while the new snapshot claimed `char(3)`.
+    //
+    // The CHECK reads the column, so it is moved out of the ALTER's way and put back — the
+    // conservative half of `retype-dependents.ts`. `char` -> `char(3)` is measurably a retype
+    // Postgres CAN re-derive the expression across, and `integer` -> `text` under `c >= 0` is not:
+    // which of the two this is cannot be decided from two type NAMES without becoming the
+    // expression parser the server already is, so the answer that costs a rebuild is taken over
+    // the one that costs `42883` inside `ROLE=migrate`.
     const migration = generateMigration({
       entities: [priced],
       current: recorded('char'),
@@ -166,11 +173,20 @@ describe('generateMigration', () => {
     });
 
     expect(migration.up).toBe(
-      'alter table "posts" alter column "price_currency" type char(3) ' +
-        'using "price_currency"::char(3);',
+      'alter table "posts" drop constraint "posts_price_currency_check";\n' +
+        'alter table "posts" alter column "price_currency" type char(3) ' +
+        'using "price_currency"::char(3);\n' +
+        'alter table "posts" add constraint "posts_price_currency_check" ' +
+        "check (price_currency ~ '^[A-Z]{3}$');",
     );
+    // Reversed as a whole: the constraint compiled against `char(3)` comes off first, the column
+    // goes back, and only then is the recorded predicate added again.
     expect(migration.down).toBe(
-      'alter table "posts" alter column "price_currency" type char using "price_currency"::char;',
+      'alter table "posts" drop constraint "posts_price_currency_check";\n' +
+        'alter table "posts" alter column "price_currency" type char ' +
+        'using "price_currency"::char;\n' +
+        'alter table "posts" add constraint "posts_price_currency_check" ' +
+        "check (price_currency ~ '^[A-Z]{3}$');",
     );
   });
 

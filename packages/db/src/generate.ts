@@ -3,29 +3,26 @@
 // the CLI passes `describeEntities()` and the types below mirror `EntityDescription` field for
 // field. Every generated migration must be reversible; a drop that loses data refuses instead.
 
-import { assert, systemClock } from '@ultimat3/core';
+import { systemClock } from '@ultimat3/core';
 import { checkClauses, checkPlan, declaredChecks } from './check-ddl';
 import { defaultExpression } from './column-default';
 import { isDestructive } from './destructive';
 import { dropOrder } from './drop-order';
-import type {
-  ColumnDescriptionLike,
-  EntityDescriptionLike,
-  IndexDescriptionLike,
-} from './entity-shape';
+import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { migrationIrreversible } from './errors';
 import { type ConstraintPlans, foreignKeyPlan, foreignKeysOf, type Plan } from './foreign-key-plan';
 import type { Regeneration } from './generated-column';
 import { generatedClause, isGenerated, regenerate } from './generated-column';
-import { declaredMethod, indexMethodOf, indexMethodSql } from './index-method';
+import { createIndex, dropIndex, impliedByColumnClause, redefineIndex } from './index-ddl';
 import {
   type ColumnDescription,
   findTable,
-  type IndexDescription,
   type SchemaDescription,
   type TableDescription,
 } from './introspect';
 import { declaredIndexes } from './invariant-ddl';
+import type { MovedAside } from './retype-dependents';
+import { moveDependentsAside } from './retype-dependents';
 import { identifier } from './sql';
 import { type UnrenderedDeclaration, unrenderedComment, unrenderedOf } from './unrendered';
 
@@ -72,34 +69,6 @@ function columnClause(column: ColumnDescriptionLike): string {
   // every table exists (`foreignKeyPlan`) — inline it must point at a table that already exists, and
   // entity registration order is the app's import order, which says nothing about that.
   return parts.join(' ');
-}
-
-/**
- * A `unique` column clause already creates an index, and Postgres names it exactly what the
- * entity's own convention names it — `<table>_<column>_key`. Emitting `create unique index` for
- * it too is the same index twice: `42P07`, and a migration that cannot be applied at all.
- * Mirrors the rule `entity()` already applies to a foreign key indexing its own column.
- *
- * A **partial** unique index is not that index: the column clause constrains every row, so
- * skipping the partial one would silently widen the constraint the entity declared.
- */
-function impliedByColumnClause(
-  entity: EntityDescriptionLike,
-  index: IndexDescriptionLike,
-  added: ReadonlySet<string>,
-): boolean {
-  const [only] = index.columns;
-  if (!index.unique || index.where !== null || index.columns.length !== 1 || only === undefined) {
-    return false;
-  }
-  const column = entity.columns.find((each) => each.column === only);
-  // `columnClause` writes `unique` under exactly this condition — keep the two in step.
-  //
-  // NOT an optional chain, despite what biome's useOptionalChain suggests: `column?.unique` is
-  // `boolean | undefined`, and this function returns `boolean`. The lint rule marks its own fix
-  // unsafe for exactly this reason — applying it turned a green typecheck red.
-  // biome-ignore lint/complexity/useOptionalChain: an optional chain widens the return to include undefined
-  return column !== undefined && column.unique && !column.primaryKey && added.has(only);
 }
 
 export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDescription {
@@ -173,67 +142,34 @@ function createTable(entity: EntityDescriptionLike): readonly string[] {
 }
 
 /**
- * Every part of the declaration reaches the statement: the whole column list in its declared
- * order, the direction when one was asked for, and the predicate that makes it partial. A part
- * dropped here is a constraint the database does not hold or an index the planner cannot use.
- */
-function createIndex(table: string, index: IndexDescriptionLike): string {
-  assert(
-    index.columns.length > 0,
-    `index "${index.name}" on "${table}" names no columns`,
-    `indexes: [{ on: ['<column>'] }]   # name the columns in the entity(), then x db gen`,
-  );
-  const method = index.using ?? 'btree';
-  // Two rules Postgres has and a declaration can break, refused here rather than at migrate time:
-  // GIN supports neither a unique index nor an ASC/DESC option, and either one reaches the server
-  // as a syntax error inside `ROLE=migrate` — a release phase that fails with the server's words
-  // and none of the entity's. `X_INVARIANT` for the reason `createIndex` already uses it on an
-  // index naming no columns: a declaration this build cannot honour is refused, never reinterpreted.
-  assert(
-    method === 'btree' || !index.unique,
-    `index "${index.name}" on "${table}" is unique and ${method}; Postgres has no unique ${method} index`,
-    `indexes: [{ on: ['<column>'], using: '${method}' }]   # drop unique, or drop using`,
-  );
-  assert(
-    method === 'btree' || index.order === null,
-    `index "${index.name}" on "${table}" is ${method} and ${index.order}; only a btree orders its keys`,
-    `indexes: [{ on: ['<column>'], using: '${method}' }]   # drop order, or drop using`,
-  );
-  const kind = index.unique ? 'create unique index' : 'create index';
-  const direction = index.order === null ? '' : ` ${index.order}`;
-  const columns = index.columns
-    .map((column) => `${identifier(column).text}${direction}`)
-    .join(', ');
-  const predicate = index.where === null ? '' : ` where (${index.where})`;
-  // Re-derived from the closed set, never spliced: `indexMethodSql` answers `''` for a btree, so
-  // an index that declared no method emits the statement this generator always emitted, byte for
-  // byte, and one that declared a method Postgres does not have is refused instead of built.
-  return (
-    `${kind} ${identifier(index.name).text} on ${identifier(table).text}` +
-    `${indexMethodSql(method)} (${columns})${predicate};`
-  );
-}
-
-/**
  * Skipping an existing column by name alone missed the type moving under it: a table created
  * while money's currency was bare `char` keeps `char(1)` and rejects every ISO 4217 code, yet the
  * snapshot this run records claims `char(3)` — two claims with no statement between them. Both
  * sides are generated spellings (`current` is a previous migration's own snapshot), so any
  * difference is a real kind change, not a catalog alias.
+ *
+ * The ALTER is not the whole statement list: Postgres compiled every predicate written against
+ * this column with its OLD type and cannot recompile one, so a partial index or a CHECK that reads
+ * it is dropped FIRST and `moved` carries the names on to the arms that would otherwise act on
+ * them. Without that the retype is `42883` and the migration aborts mid-run
+ * (`retype-dependents.ts`).
  */
 function retypeColumn(
-  table: string,
+  live: TableDescription,
   column: ColumnDescriptionLike,
   recorded: ColumnDescription,
   plan: Plan,
+  moved: MovedAside,
 ): Regeneration {
   const wanted = sqlType(column.kind);
+  const table = live.name;
   // A generated column moves by its own rules — see `generated-column.ts`. Asked whenever EITHER
   // side is one, because becoming generated and ceasing to be are both changes with a statement.
   if (isGenerated(column) || recorded.generated !== undefined) {
     return regenerate(table, column, wanted, recorded, plan);
   }
   if (recorded.dataType === wanted) return 'unchanged';
+  moveDependentsAside(live, column.column, plan, moved);
   const alter = (type: string): string =>
     `alter table ${identifier(table).text} alter column ${identifier(column.column).text} ` +
     `type ${type} using ${identifier(column.column).text}::${type};`;
@@ -242,64 +178,18 @@ function retypeColumn(
   return 'altered';
 }
 
-/** The parts of an index Postgres cannot alter in place — every one of them is a rebuild. */
-function indexShape(index: IndexDescriptionLike | IndexDescription): string {
-  return JSON.stringify([
-    [...index.columns],
-    index.unique,
-    index.where,
-    index.order ?? null,
-    indexMethodOf(index),
-  ]);
-}
-
-/**
- * A same-named index whose definition moved is dropped and recreated, because Postgres has no
- * `alter index` for any of it — the column list, the uniqueness, the predicate and the direction
- * are all fixed at creation.
- *
- * Matching on the name alone was the gap: `where` and `order` were not even recorded, so an
- * entity narrowing an index to a predicate, or reversing it to `desc`, generated an empty
- * migration and the database kept serving the old one. Both sides here are *generated* spellings
- * — `recorded` is a previous migration's own snapshot, never the catalog's rewriting of it — so a
- * text difference in `where` is a real change and not a formatting one.
- */
-function redefineIndex(
-  table: string,
-  index: IndexDescriptionLike,
-  recorded: IndexDescription,
-  plan: Plan,
-): void {
-  if (indexShape(index) === indexShape(recorded)) return;
-  plan.up.push(`drop index ${identifier(index.name).text};`, createIndex(table, index));
-  // `down` is reversed at assembly, so the pair is pushed forwards and read backwards: recreating
-  // the recorded definition is what must land last, after the new one is dropped.
-  plan.down.push(
-    createIndex(table, {
-      name: recorded.name,
-      columns: recorded.columns,
-      unique: recorded.unique,
-      where: recorded.where,
-      order: recorded.order,
-      // `declaredMethod`, never a cast: `recorded` is a snapshot's, typed open because the catalog
-      // shares the shape, and a method this generator cannot emit must refuse rather than be
-      // rebuilt as a btree — a `down` that recreates the wrong structure is worse than none.
-      ...(recorded.using === undefined ? {} : { using: declaredMethod(recorded.using) }),
-    }),
-    `drop index ${identifier(index.name).text};`,
-  );
-}
-
 function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: Plan): void {
   const existing = new Map(live.columns.map((column) => [column.name, column]));
   const added = new Set<string>();
   // A column `regenerate` had to replace outright: `add column` implies no index, so every index
   // over it has to be stated again even though its own definition never moved.
   const rebuilt = new Set<string>();
+  // What a retype dropped ahead of itself, read by the two arms below.
+  const moved: MovedAside = { indexes: new Set(), checks: new Set() };
   for (const column of entity.columns) {
     const recorded = existing.get(column.column);
     if (recorded !== undefined) {
-      if (retypeColumn(entity.table, column, recorded, plan) === 'rebuilt') {
+      if (retypeColumn(live, column, recorded, plan, moved) === 'rebuilt') {
         rebuilt.add(column.column);
       }
       continue;
@@ -329,9 +219,11 @@ function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: 
   const indexed = new Map(live.indexes.map((index) => [index.name, index]));
   for (const index of declaredIndexes(entity)) {
     const recorded = indexed.get(index.name);
-    // A rebuilt column took its indexes down with it, so this one is CREATED rather than compared:
+    // A rebuilt column took its indexes down with it, and a retype dropped the ones whose
+    // predicate it could not survive — either way this one is CREATED rather than compared:
     // `redefineIndex` sees a definition that never moved and would emit nothing at all.
-    if (recorded !== undefined && !index.columns.some((column) => rebuilt.has(column))) {
+    const gone = moved.indexes.has(index.name) || index.columns.some((each) => rebuilt.has(each));
+    if (recorded !== undefined && !gone) {
       redefineIndex(entity.table, index, recorded, plan);
       continue;
     }
@@ -339,13 +231,14 @@ function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: 
     // migration emits, so it still needs a statement of its own.
     if (impliedByColumnClause(entity, index, added)) continue;
     plan.up.push(createIndex(entity.table, index));
-    plan.down.push(`drop index ${identifier(index.name).text};`);
+    plan.down.push(dropIndex(index.name));
   }
 
   // Last: a CHECK may read a column this migration just added, and `add constraint` on a column
   // that does not exist yet is `42703`. `check-ddl.ts` owns which of them move; `rebuilt` because a
-  // column dropped and re-added lost its constraint while the snapshot still records it.
-  checkPlan(entity, live, plan, rebuilt);
+  // column dropped and re-added lost its constraint while the snapshot still records it, and
+  // `moved.checks` because a retype already dropped the ones written against the old type.
+  checkPlan(entity, live, plan, rebuilt, moved.checks);
 }
 
 export interface GenerateOptions {

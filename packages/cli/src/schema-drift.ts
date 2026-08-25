@@ -61,8 +61,19 @@ function repairFix(
   const named = unrendered.find(
     (entry) => entry.table === difference.table && entry.name === difference.name,
   );
-  const blocked = named ?? unrendered[0];
-  if (blocked !== undefined) return blocked.fix;
+  // The entry ABOUT this difference carries the edit that repairs it, so it is the whole answer.
+  if (named !== undefined) return named.fix;
+  // Otherwise `x db gen` is still unsafe — it would drop what the other entries name — but the
+  // reader must NOT be handed a different declaration's edit as the instruction for this one.
+  // Reading `unrendered[0]` did exactly that: a column default and an index each got
+  // `invariant('org_slug_shape', …)`, an edit in another file about another rule.
+  // No `x db gen` in this branch, and that is the point: while ANY declaration reaches no SQL,
+  // regenerating drops it, so the command is the wrong instruction for every difference in the
+  // app — not only for the one the entry names.
+  const blocker = unrendered[0];
+  if (blocker !== undefined) {
+    return `${blocker.fix}   # ${blocker.table}.${blocker.name} reaches no SQL, so regenerating would drop it; repair that before recording ${difference.name}`;
+  }
   // "record", not "add": one finding covers a declaration the migrations never carried AND one they
   // carry differently, so `add` would be a wrong migration name for half of them. `undeclared` gets
   // both branches, in the order they are safe — regenerating emits the DROP, and the declaration
