@@ -102,11 +102,37 @@ describe('the rows that were decided rather than defaulted', () => {
     expect(statusFor('X_STATE_UNDECLARED')).toBe(500);
   });
 
+  test('a channel refusing a delivery is 502, because the upstream failed and not this server', () => {
+    // The row that stops an email provider's outage paging this app's on-call: `stages.ts`
+    // reports every `status >= 500` to the error monitor, and a wrapped provider rejection is
+    // somebody else's server saying no.
+    expect(statusFor('X_NOTIFY_DELIVERY_FAILED')).toBe(502);
+    // Its five siblings are the app's own declaration, and they stay 500s.
+    for (const code of [
+      'X_NOTIFY_CHANNELS_EMPTY',
+      'X_NOTIFY_CHANNEL_DUPLICATE',
+      'X_NOTIFY_FANOUT_TOO_WIDE',
+      'X_NOTIFY_STORE_MISSING',
+      'X_NOTIFY_DIGEST_UNSUPPORTED',
+    ]) {
+      expect(statusFor(code)).toBe(500);
+    }
+  });
+
   test('an inbound webhook that does not authenticate is 401, and never 403 or 400', () => {
     // The request is well formed and carried a credential; the credential is what failed. A 403
     // would mean an authenticated caller was refused, and there is no authenticated caller.
     expect(statusFor('X_WEBHOOK_SIGNATURE_INVALID')).toBe(401);
     expect(statusFor('X_WEBHOOK_SIGNATURE_STALE')).toBe(401);
+  });
+
+  test('a code that can never reach a request still has a row, and it is 500', () => {
+    // `X_UI_FORM_PATH_INVALID` is a render-time developer error and the row is NOT a claim
+    // otherwise: an unmapped code already answers 500, so the row costs nothing at runtime and
+    // buys a reviewed answer instead of an accidental one. The alternative — a backlog pin —
+    // would record it as UNDECIDED, which is the opposite of what is known about it.
+    expect(statusFor('X_UI_FORM_PATH_INVALID')).toBe(500);
+    expect(Object.hasOwn(ERROR_STATUS, 'X_UI_FORM_PATH_INVALID')).toBe(true);
   });
 });
 

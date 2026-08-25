@@ -1,6 +1,6 @@
 # Package map
 
-29 packages, 6 tiers. **One package = one reason to change.** If two things in a package change for different reasons, they are two packages.
+30 packages, 6 tiers. **One package = one reason to change.** If two things in a package change for different reasons, they are two packages.
 
 Rationale for the primitives themselves: [`../idea/02-primitives.md`](../idea/02-primitives.md). Enforcement: [`02-boundaries.md`](./02-boundaries.md).
 
@@ -13,7 +13,7 @@ tier 0  core, schema
 tier 1  i18n, money, time, cache, seo, db, storage, flags   (may import tier 0)
 tier 2  entity, policy, http, auth                   (may import tier 0-1)
 tier 3  action, query, jobs, realtime                (may import tier 0-2)
-tier 4  render, pwa, mcp, ai, manifest, mail, ui     (may import tier 0-3)
+tier 4  render, pwa, mcp, ai, manifest, mail, ui, notify  (may import tier 0-3)
 tier 5  admin, testing, cli, scraping               (may import tier 0-4)
 ```
 
@@ -92,10 +92,12 @@ Decided **2026-08**, when the Postgres entity driver needed a home. `db` imports
 | `ai` | 4 | `llm()` primitive, versioned prompts, evals, embeddings | provider adapters, structured-output retry, cost accounting, semantic cache | spend past `budget`; inline a prompt string |
 | `manifest` | 4 | `x.manifest.json` + `openapi.json` emit and drift detection | the manifest schema, generation, contract diff | generate prose documentation |
 | `mail` | 4 | transactional email as data: one template renders HTML and text | block templates, i18n-only strings, token-only colours, transport adapters | send inline — delivery is a job |
+| `notify` | 4 | one notification declaration, many channels: fan-out, preference gate, digest window, delivery ledger, in-app inbox | `notifier()` (a **job** factory), the channel seam, the `x_notify_*` tables, the four stores | own a notification taxonomy or a `quietHours` rule — it ships the gate, the app ships what the gate reads; import `@ultimat3/mail` (same tier — a `Mailer` is declared structurally) |
 | `ui` | 4 | Solid components + design tokens + SCSS modules | primitives, `<Image>`, token source of truth, `data-theme` application | fetch, hold business logic, or run its own authz |
 | `admin` | 5 | generated admin dashboard, itself an Ultimate app with MCP on | admin screens derived from entities, its MCP surface | bypass `policy`; ship in the app bundle graph |
 | `testing` | 5 | the six test runners, template DB, frozen clock, sealed network | fixture shapes, DB cloning, seeded RNG, egress trap | appear in a production bundle |
 | `cli` | 5 | the `x` binary: generators, dev server, `verify` orchestration | command surface, `--json` output, generator templates, composition wiring | contain framework logic — it delegates |
+| `scraping` | 5 | browser automation as a **job**: one declaration drives a real browser, extracts against a schema and persists the session | `scrape()` (a **job** factory), the CDP port declared structurally (`cdp-port.ts`), session stores | take a runtime dependency on a CDP library — the caller passes its own; hold tier 4's floor against `recover: 'agent'` reaching `@ultimat3/ai` |
 | `create-ultimate` | unlisted (6) | the published `bunx create-ultimate` shim | the `create-ultimate` bin, argument forwarding into `x new` | reimplement a template `cli` already owns |
 
 ## Dependency graph
@@ -109,7 +111,7 @@ graph TD
     cli; testing; admin; scraping
   end
   subgraph T4["tier 4"]
-    render; pwa; mcp; ai; manifest; mail; ui
+    render; pwa; mcp; ai; manifest; mail; ui; notify
   end
   subgraph T3["tier 3"]
     action; query; jobs; realtime
@@ -153,6 +155,8 @@ graph TD
   manifest --> query
   manifest --> jobs
   mail --> jobs
+  notify --> jobs
+  notify --> time
 
   action --> policy
   action --> http

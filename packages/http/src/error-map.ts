@@ -213,9 +213,19 @@ export const ERROR_STATUS = {
   // `X_ACTION_JOB_UNBRIDGED`'s does — this table is the closed one, and a code with no row is a
   // 500 anyway. The INBOUND pair (`X_WEBHOOK_SIGNATURE_*`, 401) is @ultimat3/http's and sits with
   // the rest of this package's codes above; these are the ones a delivery ends on.
+  X_WEBHOOK_ENDPOINT_UNKNOWN: 500,
+  X_WEBHOOK_ENDPOINT_INVALID: 500,
+  X_WEBHOOK_ENDPOINT_DISABLED: 500,
+  X_WEBHOOK_EVENT_UNKNOWN: 500,
+  X_WEBHOOK_EVENT_INVALID: 500,
+  X_WEBHOOK_DELIVERY_FAILED: 500,
+  X_WEBHOOK_DELIVERY_THROTTLED: 500,
+  X_WEBHOOK_DELIVERY_REJECTED: 500,
   // Same class again: an export pass runs in a worker, and both codes refuse the DECLARATION —
   // a `row()` that answers columns nobody declared, and a page too big to hold. Neither is
   // anything a caller sent.
+  X_EXPORT_ROW_INVALID: 500,
+  X_EXPORT_PART_TOO_LARGE: 500,
   // @ultimat3/notify — five 500s and one 502, and the split is who failed.
   //
   // The five are the app's own declaration: a notifier with no channels, one channel named twice,
@@ -224,6 +234,11 @@ export const ERROR_STATUS = {
   // sends changes any of them — `X_NOTIFY_FANOUT_TOO_WIDE` is the only one a request can even
   // INFLUENCE (an action that notifies a whole org), and the repair is still `bulkChannel()` or a
   // paged `backfill()`, never the request.
+  X_NOTIFY_CHANNELS_EMPTY: 500,
+  X_NOTIFY_CHANNEL_DUPLICATE: 500,
+  X_NOTIFY_FANOUT_TOO_WIDE: 500,
+  X_NOTIFY_STORE_MISSING: 500,
+  X_NOTIFY_DIGEST_UNSUPPORTED: 500,
   // 502, and it is the one row on this table that answers for somebody else's server. This code
   // WRAPS a provider rejection — `NotifyDeliveryFailedError` takes the caught value and renders it
   // — so the thing that failed is the channel's upstream, not this process. It is thrown inside a
@@ -232,6 +247,7 @@ export const ERROR_STATUS = {
   // being true, and the asymmetry decides it. A wrong 502 costs nothing. A wrong 500 pages the
   // on-call for an email provider's outage, because `stages.ts` reports every `status >= 500` to
   // the error monitor — which is the failure this whole table exists to stop.
+  X_NOTIFY_DELIVERY_FAILED: 502,
   // @ultimat3/policy
   X_POLICY_MISSING: 500,
   X_PERMISSION_UNKNOWN: 500,
@@ -300,6 +316,7 @@ export const ERROR_STATUS = {
   // request. A code with no row already answers 500 (`DEFAULT_STATUS`); the row changes nothing at
   // runtime and makes that answer a reviewed one instead of an accident, which is the whole reason
   // this table is closed.
+  X_UI_FORM_PATH_INVALID: 500,
   // @ultimat3/mail
   // The deployment configured no transport. It reaches a caller only through an inline
   // `send(…, { sync: true })` inside a request; the queued path dead-letters instead. A server-side

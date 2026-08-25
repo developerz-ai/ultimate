@@ -2,7 +2,7 @@
 
 A full-stack, Bun-only, opinionated framework: Rails' philosophy applied to Bun + Postgres + SolidJS, where the primary developer is an AI agent and the secondary developer is a tired senior engineer working through their own AI agent and AI reviewer.
 
-**`As of 2026-08-23`.** 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 30 in all — versioned in lockstep. **Every major so far has been a correctness sweep and none has shipped a codemod**, so each `BREAKING —` entry names its own manual edit ([Upgrading](Upgrading), one section per major, newest first). This page states no per-major counts: they are read from each major's own `CHANGELOG.md` section by `bun run changelog-check`, and a count hand-copied here goes stale on the next release. The **[footer](_Footer)** is the only page that stamps a version — one release bumps one line, and a stamp on a second page is 46 hand-copies of one fact.
+**`As of 2026-08-23`.** 30 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 31 in all — versioned in lockstep. **Every major so far has been a correctness sweep and none has shipped a codemod**, so each `BREAKING —` entry names its own manual edit ([Upgrading](Upgrading), one section per major, newest first). This page states no per-major counts: they are read from each major's own `CHANGELOG.md` section by `bun run changelog-check`, and a count hand-copied here goes stale on the next release. The **[footer](_Footer)** is the only page that stamps a version — one release bumps one line, and a stamp on a second page is 46 hand-copies of one fact.
 
 ## Is it for a project this size
 
@@ -10,7 +10,7 @@ A full-stack, Bun-only, opinionated framework: Rails' philosophy applied to Bun 
 
 The measured version of that claim, with the command behind every number: [`docs/idea/21-the-range.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/21-the-range.md).
 
-**Repository and registry agree, and there are no publication holes** `As of 2026-08-20`. `bunx create-ultimate myapp` installs whatever `latest` is; all 30 workspaces resolve at that one version, each published by [`release.yml`](https://github.com/developerz-ai/ultimate/blob/main/.github/workflows/release.yml) over OIDC with a provenance attestation, and [`registry-audit.yml`](https://github.com/developerz-ai/ultimate/blob/main/.github/workflows/registry-audit.yml) files an issue on the day that stops being true. Resolve it rather than believing this sentence:
+**Repository and registry agree, and there are no publication holes** `As of 2026-08-20`. `bunx create-ultimate myapp` installs whatever `latest` is; all 31 workspaces resolve at that one version, each published by [`release.yml`](https://github.com/developerz-ai/ultimate/blob/main/.github/workflows/release.yml) over OIDC with a provenance attestation, and [`registry-audit.yml`](https://github.com/developerz-ai/ultimate/blob/main/.github/workflows/registry-audit.yml) files an issue on the day that stops being true. Resolve it rather than believing this sentence:
 
 | Fact | Read it yourself |
 |---|---|

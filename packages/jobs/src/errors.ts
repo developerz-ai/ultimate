@@ -26,6 +26,16 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_JOB_ROW_STATUS_UNKNOWN',
   'X_ACTION_JOB_UNBRIDGED',
   'X_JOB_CLAIM_QUEUES_EMPTY',
+  'X_WEBHOOK_ENDPOINT_UNKNOWN',
+  'X_WEBHOOK_ENDPOINT_INVALID',
+  'X_WEBHOOK_ENDPOINT_DISABLED',
+  'X_WEBHOOK_EVENT_UNKNOWN',
+  'X_WEBHOOK_EVENT_INVALID',
+  'X_WEBHOOK_DELIVERY_FAILED',
+  'X_WEBHOOK_DELIVERY_THROTTLED',
+  'X_WEBHOOK_DELIVERY_REJECTED',
+  'X_EXPORT_ROW_INVALID',
+  'X_EXPORT_PART_TOO_LARGE',
 ] as const;
 
 /**
@@ -64,6 +74,16 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_JOB_ROW_STATUS_UNKNOWN: 'a queue row carries a status this build does not know',
   X_ACTION_JOB_UNBRIDGED: 'an action projection was registered as a job',
   X_JOB_CLAIM_QUEUES_EMPTY: 'a claim named no queue, and the drivers do not agree what that means',
+  X_WEBHOOK_ENDPOINT_UNKNOWN: 'no endpoint carries this id',
+  X_WEBHOOK_ENDPOINT_INVALID: 'the endpoint cannot be delivered to as declared',
+  X_WEBHOOK_ENDPOINT_DISABLED: 'the endpoint takes no deliveries',
+  X_WEBHOOK_EVENT_UNKNOWN: 'no event carries this id',
+  X_WEBHOOK_EVENT_INVALID: 'the event cannot be signed as declared',
+  X_WEBHOOK_DELIVERY_FAILED: 'the endpoint did not accept the delivery',
+  X_WEBHOOK_DELIVERY_THROTTLED: 'the endpoint asked for the delivery later, and said when',
+  X_WEBHOOK_DELIVERY_REJECTED: 'the endpoint refused the delivery in a way a retry cannot change',
+  X_EXPORT_ROW_INVALID: 'row() answered something the declared columns do not carry',
+  X_EXPORT_PART_TOO_LARGE: 'one page encoded to more bytes than a part may hold',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws
@@ -93,6 +113,28 @@ registerErrorRetry({
   X_BACKFILL_STALLED: 'terminal',
   X_BACKFILL_ENVIRONMENT: 'terminal',
   X_BACKFILL_APPLIED: 'terminal',
+  // The one retryable webhook code, and the reason the split exists at all: a 5xx, a 429 or a
+  // connection that never opened is the same request landing later, which is what the job's retry
+  // policy is for.
+  X_WEBHOOK_DELIVERY_FAILED: 'retryable',
+  // `retry-after` and not `retryable`: the receiver NAMED a delay, so `statedDelayMs` reads
+  // `meta.retryAfterSeconds` and the nack waits that long (clamped by the policy's `maxDelay`)
+  // instead of guessing a curve against an answer it was already given.
+  X_WEBHOOK_DELIVERY_THROTTLED: 'retry-after',
+  // The rest are `terminal` and every one is LISTED rather than left to the default, because
+  // `classifyThrown` reads an unregistered code carrying `terminal` as UNCLASSIFIED — which spends
+  // a delivery's whole retry policy re-proving that a 404 endpoint is still a 404.
+  X_WEBHOOK_DELIVERY_REJECTED: 'terminal',
+  X_WEBHOOK_ENDPOINT_UNKNOWN: 'terminal',
+  X_WEBHOOK_ENDPOINT_INVALID: 'terminal',
+  X_WEBHOOK_ENDPOINT_DISABLED: 'terminal',
+  X_WEBHOOK_EVENT_UNKNOWN: 'terminal',
+  X_WEBHOOK_EVENT_INVALID: 'terminal',
+  // Both export codes are refusals of the DECLARATION and not of the data: the same `row()` over
+  // the same page answers the same way on every attempt, so an unclassified reading would spend
+  // the whole retry policy proving it.
+  X_EXPORT_ROW_INVALID: 'terminal',
+  X_EXPORT_PART_TOO_LARGE: 'terminal',
 });
 
 // No `docs:` on any class below, here or in `backfill-errors.ts`. `UltimateError` fills it from

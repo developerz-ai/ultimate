@@ -15,16 +15,29 @@ import { repoRoot } from './lib/run';
 const FUNCTION =
   /export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(?:<[^{}]*?>)?\s*\(([\s\S]*?)\)\s*:\s*([^{;]+?)\s*\{/g;
 /** `export const name = (…): Return =>` — the same declaration in the other spelling. */
+/** The kinds this scan can recognise from a return type. A subset of `PrimitiveKind`: the other
+ *  five primitives are declared, never returned by a factory. */
+type FactoryKind = 'action' | 'job' | 'mutator';
+
 const ARROW =
   /export\s+const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:<[^{}]*?>)?\s*\(([\s\S]*?)\)\s*:\s*([^=;]+?)\s*=>/g;
 /** `export interface X<…> extends Action<…>` — how `LlmAction` is an `Action` without saying so. */
 const EXTENDS =
   /export\s+interface\s+([A-Za-z_$][\w$]*)\s*(?:<[^{}]*?>)?\s*\n?\s*extends\s+([A-Za-z_$][\w$]*)\s*</g;
 
-/** The two primitive types a factory hands back, and the kind each one means. */
-const ROOTS: ReadonlyMap<string, 'action' | 'job'> = new Map([
+/**
+ * The primitive types a factory hands back, and the kind each one means.
+ *
+ * `Mutator` is seeded HERE rather than left to the `extends` fixpoint, and that placement is the
+ * whole rule: `Mutator extends Action<…>`, so the fixpoint would resolve it to `action` and a
+ * `kind: 'mutator'` row would fail as a mismatch — reporting the table as wrong when the table is
+ * right. `new Map(ROOTS)` seeds first and the fixpoint refuses a second entry for a name it
+ * already holds, so the more specific answer wins by construction.
+ */
+const ROOTS: ReadonlyMap<string, FactoryKind> = new Map([
   ['Action', 'action'],
   ['JobHandle', 'job'],
+  ['Mutator', 'mutator'],
 ]);
 
 /**
@@ -43,7 +56,7 @@ const CONSTRUCTORS: ReadonlySet<string> = new Set<string>(PRIMITIVE_KINDS);
 interface Declared {
   readonly factory: string;
   readonly pkg: string;
-  readonly kind: 'action' | 'job';
+  readonly kind: FactoryKind;
   readonly at: string;
 }
 
@@ -67,7 +80,7 @@ const read = (path: string): Promise<string> => Bun.file(`${repoRoot()}/${path}`
  * signal, and every factory below that link read as "not a primitive" — the vacuous green this
  * file's neighbours (`checkVocabulary` in `scripts/render-modes.ts`) each refuse by name.
  */
-export function primitiveTypes(sources: readonly string[]): ReadonlyMap<string, 'action' | 'job'> {
+export function primitiveTypes(sources: readonly string[]): ReadonlyMap<string, FactoryKind> {
   const kinds = new Map(ROOTS);
   for (;;) {
     let grew = false;
@@ -89,7 +102,7 @@ export function primitiveTypes(sources: readonly string[]): ReadonlyMap<string, 
 export function factoriesIn(
   path: string,
   source: string,
-  kinds: ReadonlyMap<string, 'action' | 'job'>,
+  kinds: ReadonlyMap<string, FactoryKind>,
 ): readonly Declared[] {
   const pkg = path.split('/')[1] ?? '';
   const found: Declared[] = [];
@@ -145,17 +158,25 @@ describe('unit · every primitive factory in the tree has a row in PRIMITIVE_FAC
   });
 
   /**
-   * The six that ship, asserted as a SET rather than derived from the scan — otherwise the two
+   * Every shipped row, asserted as a SET rather than derived from the scan — otherwise the two
    * tests above are a scan agreeing with itself, and a scan that found nothing would pass both.
+   *
+   * No COUNT here or in the test's name, which is CLAUDE.md's rule for this table stated one level
+   * up: the list is the claim, and a title saying "the seven" is wrong the moment an eighth lands
+   * — as it did, twice, in one release.
    */
-  test('the seven shipped rows, spelled out, so a scan that finds nothing cannot pass', () => {
+  test('the shipped rows, spelled out, so a scan that finds nothing cannot pass', () => {
     expect(PRIMITIVE_FACTORIES.map((row) => `${row.pkg}.${row.factory}:${row.kind}`)).toEqual([
+      '@ultimat3/action.transition:mutator',
       '@ultimat3/ai.agent:action',
       '@ultimat3/ai.agentJob:job',
       '@ultimat3/ai.hive:action',
       '@ultimat3/ai.llm:action',
       '@ultimat3/jobs.backfill:job',
+      '@ultimat3/jobs.exportRows:job',
       '@ultimat3/jobs.purge:job',
+      '@ultimat3/jobs.webhook:job',
+      '@ultimat3/notify.notifier:job',
       '@ultimat3/scraping.scrape:job',
     ]);
     expect(declared).toHaveLength(PRIMITIVE_FACTORIES.length);
@@ -191,6 +212,46 @@ describe('unit · the scan itself can fail', () => {
     ]);
   });
 
+  test('a Mutator-returning export is a MUTATOR factory, not an action one', () => {
+    // `Mutator extends Action<…>`, so before `Mutator` was seeded as its own root the fixpoint
+    // answered `action` here and a correct `kind: 'mutator'` row failed as a mismatch — the scan
+    // reporting the table as wrong. `transition()` is the factory this exists for.
+    const source =
+      'export function transition<Row, S extends string>(def: Def<Row, S>): Mutator<In, Out> {\n  return built;\n}\n';
+    expect(factoriesIn('packages/action/src/transition.ts', source, ROOTS)).toEqual([
+      {
+        factory: 'transition',
+        pkg: '@ultimat3/action',
+        kind: 'mutator',
+        at: 'packages/action/src/transition.ts',
+      },
+    ]);
+  });
+
+  test('a subtype of Mutator keeps the mutator kind, not Action\u2019s', () => {
+    // The fixpoint hop, from the specific root rather than through it: `extends Mutator` must not
+    // walk on to `Action` and downgrade the answer.
+    const source = [
+      'export interface StateMutator<I, O> extends Mutator<I, O> {',
+      '  moves(): readonly string[];',
+      '}',
+      'export function stateful<I, O>(def: Def<I, O>): StateMutator<I, O> {',
+      '  return built;',
+      '}',
+      '',
+    ].join('\n');
+    const kinds = primitiveTypes([source]);
+    expect(kinds.get('StateMutator')).toBe('mutator');
+    expect(factoriesIn('packages/action/src/stateful.ts', source, kinds)).toEqual([
+      {
+        factory: 'stateful',
+        pkg: '@ultimat3/action',
+        kind: 'mutator',
+        at: 'packages/action/src/stateful.ts',
+      },
+    ]);
+  });
+
   test('a JobHandle-returning export is a job factory, by the same rule', () => {
     const source =
       'export function sweep<Row>(def: Def<Row>): JobHandle<Input> {\n  return handle;\n}\n';
@@ -213,7 +274,10 @@ describe('unit · the scan itself can fail', () => {
       .join('\n');
     const kinds = primitiveTypes([chain]);
     expect(kinds.get('A7')).toBe('action');
-    expect([...kinds.keys()]).toHaveLength(9);
+    // The seven chain links, named — not a total, which also counts the roots and so moved when
+    // `Mutator` was seeded. A count that mixes the fixture with the table breaks on an edit to
+    // either, and says nothing about the chain when it does.
+    for (let n = 1; n <= 7; n += 1) expect(kinds.get(`A${String(n)}`)).toBe('action');
   });
 
   /**

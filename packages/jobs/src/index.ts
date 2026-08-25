@@ -7,6 +7,23 @@
 // bypasses `defineApi`'s own result — the ambiguity axiom 1 exists to refuse.
 import './register';
 
+// The wire format, RE-EXPORTED from `@ultimat3/core` and never re-declared: it is one module at
+// the tier both halves can reach, because this package signs a delivery, `@ultimat3/http` verifies
+// one, and neither may import the other. Re-exported here so a `job` file needs one import rather
+// than two — the same reason `t` is re-exported above.
+export type { WebhookMacInput, WebhookSigningInput } from '@ultimat3/core';
+export {
+  isCanonicalWebhookField,
+  WEBHOOK_FIELD_MAX,
+  WEBHOOK_ID_HEADER,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_SIGNATURE_VERSION,
+  WEBHOOK_TOPIC_HEADER,
+  webhookHeaders,
+  webhookMac,
+  webhookSignature,
+  webhookSigningString,
+} from '@ultimat3/core';
 /** Re-exported so a `job`/`task` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
@@ -161,6 +178,18 @@ export type { PgEventBusOptions } from './events-pg';
 export { createPgEventBus } from './events-pg';
 export type { ExecuteJobOptions, JobExecution, JobOutcome } from './execute';
 export { executeJob } from './execute';
+export type { ExportDefinition, ExportReport } from './export';
+export { DEFAULT_EXPORT_BATCH, DEFAULT_EXPORT_MAX_PART_BYTES, exportRows } from './export';
+export { ExportPartTooLargeError, ExportRowInvalidError } from './export-errors';
+export type { EncodePageInput, ExportFormat, ExportRecord, ExportValue } from './export-format';
+export { csvHeader, EXPORT_EXTENSION, EXPORT_FORMATS, encodeExportPage } from './export-format';
+export type { ExportManifest, ExportSink, MemoryExportSink } from './export-sink';
+export {
+  EXPORT_PART_DIGITS,
+  exportManifestKey,
+  exportPartKey,
+  memoryExportSink,
+} from './export-sink';
 export type {
   DeadLetterEntry,
   JobsManifest,
@@ -222,7 +251,6 @@ export {
 export { DEFAULT_OUTBOX_CLAIM_LEASE_MS } from './outbox-lease';
 export type { PgOutboxOptions } from './outbox-pg';
 export { createPgOutboxStore } from './outbox-pg';
-
 export type {
   PurgeDefinition,
   PurgeInput,
@@ -287,5 +315,26 @@ export { getTask, isTaskHandle, registeredTasks, resetTasks, task } from './task
  * "whose tenant is this", which is the thing this declaration exists to make singular.
  */
 export type { JobTenant } from './tenant';
+export type {
+  WebhookDefinition,
+  WebhookDeliveryInput,
+  WebhookEndpoint,
+  WebhookEvent,
+  WebhookFetch,
+  WebhookReport,
+} from './webhook';
+export { DEFAULT_WEBHOOK_DISABLE_AFTER, WEBHOOK_CONTENT_TYPE, webhook } from './webhook';
+export {
+  WebhookDeliveryFailedError,
+  WebhookDeliveryRejectedError,
+  WebhookDeliveryThrottledError,
+  WebhookEndpointDisabledError,
+  WebhookEndpointInvalidError,
+  WebhookEndpointUnknownError,
+  WebhookEventInvalidError,
+  WebhookEventUnknownError,
+} from './webhook-errors';
+export type { MemoryWebhookLedger, WebhookAttempt, WebhookLedger } from './webhook-ledger';
+export { DEFAULT_MAX_WEBHOOK_ATTEMPTS, memoryWebhookLedger } from './webhook-ledger';
 export type { Worker, WorkerOptions, WorkerStats } from './worker';
 export { createWorker } from './worker';

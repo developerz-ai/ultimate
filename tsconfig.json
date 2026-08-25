@@ -63,6 +63,9 @@
       "path": "./packages/money"
     },
     {
+      "path": "./packages/notify"
+    },
+    {
       "path": "./packages/policy"
     },
     {

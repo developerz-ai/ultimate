@@ -23,7 +23,7 @@ and is the source of truth for what the next release carries — `As of 2026-08-
 `X_LIVE_SERVER_RENDER`, and two fixes; none of them was ever a row here. Read that section rather
 than this sentence: `grep -n '^## ' CHANGELOG.md` finds its bounds, and it changes on any commit.
 
-**Publication is not a gap.** All 30 workspaces are on the registry `As of 2026-08-20`, checked by `scripts/registry-audit.ts` daily;
+**Publication is not a gap.** All 31 workspaces are on the registry `As of 2026-08-20`, checked by `scripts/registry-audit.ts` daily;
 `@ultimat3/scraping` was the last never-published package and was bootstrapped by hand at 2.0.0
 ([`PUBLISHING.md`](https://github.com/developerz-ai/ultimate/blob/main/PUBLISHING.md) step 1).
 `bun add @ultimat3/scraping` resolves — check it with `npm view @ultimat3/scraping version`.

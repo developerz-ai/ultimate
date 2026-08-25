@@ -108,7 +108,7 @@ compiling, or stops meaning what it meant.
 
 ## Lockstep
 
-One version, one commit, one tag, 30 tarballs. [`../../PUBLISHING.md`](../../PUBLISHING.md) owns
+One version, one commit, one tag, 31 tarballs. [`../../PUBLISHING.md`](../../PUBLISHING.md) owns
 every step of it and this page restates none of them. The one thing to check before starting a
 release run: the section for this major exists and its heading still says `unreleased`, because
 releasing it is then a two-word deletion rather than a page to write under time pressure.
@@ -120,7 +120,7 @@ releasing it is then a two-word deletion rather than a page to write under time 
 | every `` `x …` `` on a `wiki/` or `docs/` page resolves against the real command registry | `scripts/doc-commands.ts` | `manifest` |
 | every `wiki/` table renders as a table | `scripts/wiki-tables.ts` | `manifest` |
 | exactly one page stamps a version, and it is the shipped one | `scripts/version-stamps.ts` | `manifest` |
-| all 30 workspaces at the tag's version before the first publish | `scripts/release.ts --check <version>` | the release workflow, not the gate |
+| all 31 workspaces at the tag's version before the first publish | `scripts/release.ts --check <version>` | the release workflow, not the gate |
 | **a major has a `wiki/Upgrading.md` section** | nothing | — |
 | **the summary table's counts match `CHANGELOG.md`** | nothing | — |
 | **every `BREAKING —` entry names an edit** | nothing | — |

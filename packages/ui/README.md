@@ -356,6 +356,72 @@ result before first paint, so there is no flash and screenshots are deterministi
 Content-Security-Policy: script-src 'self' 'sha256-…'   # themeInlineScriptCspSource()
 ```
 
+## Forms bound to an action's input schema
+
+`As of 2026-08-24`. Four things already existed and none were connected: the action's `input`
+schema, the issue paths its parse produces, the rejection the server sends back, and `Field`'s
+error slot. `useForm` is the binding — **not** a ninth primitive and not a component: a form is a
+binding over an existing `action`, the way `llm()` is a factory over one.
+
+```tsx
+import { t } from '@ultimat3/i18n';
+import { Field, Form, type FormSchema, Input, useForm, valuesOfForm } from '@ultimat3/ui';
+
+// In an app this is `InferInput<typeof createPost.input>` — an object type, not an interface,
+// which is what lets `valuesOfForm`'s `Record<string, unknown>` be narrowed to it below.
+type CreatePostInput = { readonly title: string };
+interface Post {
+  readonly id: string;
+}
+
+// The action and its typed client, both the app's: `createPost.input` IS a `FormSchema`.
+declare const createPost: { readonly input: FormSchema };
+declare const api: { createPost(values: CreatePostInput): Promise<Post> };
+
+export function CreatePostForm() {
+  const form = useForm<CreatePostInput, Post>({
+    fields: ['title', 'items[0].price'],
+    schema: createPost.input,            // optional: latency only, never authority
+    submit: (values) => api.createPost(values),
+    // The app's wording, not the framework's: one `t()` key per thing a user can get wrong.
+    messageFor: (issue) => (issue.path === 'title' ? t('post.title.invalid') : t('post.invalid')),
+  });
+
+  return (
+    // `undefined` and never `''`: `error` being PRESENT is what makes Form render the summary
+    // and move focus to it, so an empty string is an error box on a form with nothing wrong.
+    <Form
+      error={form.state().formErrors.join(' ') || undefined}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void form.submit(valuesOfForm(new FormData(event.currentTarget)) as CreatePostInput);
+      }}
+    >
+      <Field label={t('post.title')} error={form.errorFor('title')}>
+        {(control) => <Input {...control} name="title" />}
+      </Field>
+    </Form>
+  );
+}
+```
+
+| Rule | Why |
+|---|---|
+| **`submit` is required and is the only producer of `succeeded`** | a form that decides for itself that a value is acceptable is a security defect. The client-side parse is a latency optimisation; the action re-parses server-side on every path |
+| the local parse's **value** is discarded — only its issues are read | otherwise the browser decides what the server was asked to store. `FormSchema` deliberately has no output type |
+| a `name` attribute and an issue path are the **same string** (`items[0].price`) | one grammar, so a rejection finds its control with no per-form mapping table. `formatFieldPath` / `parseFieldPath` are the two directions; a name the grammar cannot read is `X_UI_FORM_PATH_INVALID`, refused where it is DECLARED |
+| an issue whose path matches no declared field goes to **`formErrors`**, never to a neighbouring control | a form that silently drops "the server rejected this" is worse than one with no binding at all. A near miss (`items` against a form holding `items[0].price`) is one of these |
+| every message is the app's, through `messageFor` | a schema issue (`expected number`) is diagnostic text, not a user-facing string. The framework ships the mapping and **no copy table** — there is no `ui.form.*` key to override. A translator that answers `''` or throws falls back to the diagnostic text, the way a missing catalog key renders `⟦key⟧` |
+| a second `submit` while one is in flight **joins** it | a double click is not a second write |
+
+**The wire carries no structured issue list yet.** A server-side validation failure arrives as
+`X_INPUT_INVALID` with the issues rendered into `cause` (`title: too short; items[0].price:
+expected number`) — `packages/action/src/errors.ts` puts nothing in `meta`, and `toProblem`
+(`packages/http/src/error-facts.ts`) has no `issues` member — so `issuesFromRejection` reads
+`meta.issues` where it exists and parses that line where it does not. It binds a fragment to a
+field only when the head is a declared path, so a message holding `'; '` or `': '` degrades to a
+form-level error rather than to a wrong control.
+
 ## Errors
 
 | Code | When |
@@ -363,6 +429,7 @@ Content-Security-Policy: script-src 'self' 'sha256-…'   # themeInlineScriptCsp
 | `X_TOKEN_UNKNOWN` | a token role the SCSS source does not define — including a `defineTheme()` override of a role, radius or font slot that is not in the scale |
 | `X_THEME_INVALID` | a theme other than `light` / `dark` |
 | `X_UI_RUNTIME_MISSING` | a DOM render with no registered Solid runtime, `<UiProvider>` on the server, or `browserThemeEnv()` off-DOM. A server render with no runtime is **not** one of them — it gets `INERT_SOLID_RUNTIME` |
+| `X_UI_FORM_PATH_INVALID` | a form field or control name the path grammar cannot read (`items.0.price`, `items[]`, `__proto__`), or two control names describing different shapes for one path (`user` beside `user.name`) |
 | `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other, a heading level off 1–6, a `defineTheme()` value that is not a token value, an `<Icon>` glyph with a tag/attribute/colour outside `ICON_TAGS`, two `Accordion` items sharing an id, `InfiniteScroll` with `hasMore` and no `nextHref`, a negative `debounce` window, or (`As of 2026-08`) upstream icon data `bun run icons` refuses (not an object, no renderable nodes, an attribute value that is not glyph geometry) |
 
 ## Commands

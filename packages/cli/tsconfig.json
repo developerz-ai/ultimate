@@ -51,6 +51,9 @@
       "path": "../mcp"
     },
     {
+      "path": "../notify"
+    },
+    {
       "path": "../policy"
     },
     {

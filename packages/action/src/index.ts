@@ -233,3 +233,23 @@ export {
   registerActions,
   resetRegistry,
 } from './registry';
+/**
+ * A mutator FACTORY, never a ninth primitive: `transition()` returns a `mutator`, so a move through
+ * a state machine inherits the route, the OpenAPI operation, the typed client, the MCP tool, the job
+ * handle and its manifest row. The machine itself is `@ultimat3/entity`'s — this package owns the
+ * projection, not the legality rule.
+ */
+export type {
+  TransitionDef,
+  TransitionInput,
+  TransitionTarget,
+  TransitionValues,
+} from './transition';
+export { transition } from './transition';
+/**
+ * The one reader of a problem document's `issues` member. Exported because the typed client is not
+ * the only caller that meets one: an island that posts with a plain `fetch` — which is what
+ * `x g resource` emits, to keep this package out of its chunk — holds the parsed body itself and
+ * would otherwise write a second, unvalidated reader.
+ */
+export { issuesFromWire, MAX_WIRE_ISSUES } from './wire-issues';

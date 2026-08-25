@@ -71,6 +71,37 @@ describe('a hand-written tool parses its own input', () => {
     expect(String((error as { cause: string }).cause)).toContain('postId');
   });
 
+  test('the refusal carries the issue list, not only the prose line', async () => {
+    // A tool-argument rejection used to carry LESS than an HTTP one: `InputInvalidError`'s third
+    // parameter is the structured channel `@ultimat3/http` now puts on the problem document, and
+    // this call site passed only the joined string. An agent recovering which field to resend had
+    // to split `cause` on `'; '`, which is guesswork the moment a message contains the separator.
+    const error = await thrownBy(run(definition(), { postId: 'not-a-uuid' }));
+    if (!isUltimateError(error)) return expect.unreachable('expected an UltimateError');
+    const issues = (error.meta as { issues?: readonly { path: string; message: string }[] })
+      ?.issues;
+
+    expect(issues).toBeDefined();
+    expect(issues?.map((issue) => issue.path)).toContain('postId');
+    // The line is unchanged and travels beside it — one value rendered twice, never instead of.
+    for (const issue of issues ?? []) {
+      expect(String(error.cause)).toContain(`${issue.path}: ${issue.message}`);
+    }
+  });
+
+  test('the issue list never carries the value that was rejected', async () => {
+    // `toValidationIssues` is what forces `received: ''`. The raw `result.issues` this call site
+    // used to hand over is a conforming LIBRARY's object, which may carry the rejected value —
+    // and an MCP refusal goes back to an agent and into the audit record.
+    const error = await thrownBy(run(definition(), { postId: 'not-a-uuid' }));
+    if (!isUltimateError(error)) return expect.unreachable('expected an UltimateError');
+    const issues = (error.meta as { issues?: readonly { received: string }[] })?.issues ?? [];
+
+    expect(issues.length).toBeGreaterThan(0);
+    for (const issue of issues) expect(issue.received).toBe('');
+    expect(JSON.stringify(error.meta)).not.toContain('not-a-uuid');
+  });
+
   test('a missing required field is refused the same way', async () => {
     expect(codeOf(await thrownBy(run(definition(), {})))).toBe('X_INPUT_INVALID');
     expect(seen).toEqual([]);

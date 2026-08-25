@@ -8,11 +8,8 @@ import {
   type PostgresIdempotencyStore,
   postgresIdempotencyStore,
   resetIdempotency,
-  SQL_AUDIT_TABLE,
-  SQL_IDEMPOTENCY_TABLE,
   setIdempotencyStore,
 } from '@ultimat3/action';
-import { SQL_AUTH_LIMIT_TABLES } from '@ultimat3/auth';
 import type { DbClient, PgliteClient, PostgresClient, SqlFragment } from '@ultimat3/db';
 import {
   createPgliteClient,
@@ -23,7 +20,6 @@ import {
   setDbClient,
 } from '@ultimat3/db';
 import type { Tx } from '@ultimat3/entity';
-import { SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
 import type { EventBus, JobDriver, OutboxStore, PgExecutor } from '@ultimat3/jobs';
 import {
   createJobsFacade,
@@ -32,13 +28,13 @@ import {
   createPgOutboxStore,
   resetJobDriver,
   resetJobsFacade,
-  SQL_JOBS_TABLE,
   setEventBus,
   setJobDriver,
   setJobsFacade,
 } from '@ultimat3/jobs';
 import { attachReplica, type ReplicaEnv, replicaUrlFor } from './dev-replica';
 import type { DevServices } from './dev-services';
+import { applyFrameworkSchema } from './framework-schema';
 import type { RuntimeOverrides } from './runtime-overrides';
 
 /** Both embedded and external clients boot lazily and close explicitly. */
@@ -113,40 +109,18 @@ export function pgExecutorFor(client: DbClient): PgExecutor {
 /**
  * Every table this process's framework packages own, applied before anything reads one.
  *
- * PGlite speaks the extended protocol, which carries one statement per round trip, so the DDL is
- * applied statement by statement. Safe to split on `;`: every constant is fixed, with no semicolon
- * inside a literal, and each package's own SQL test is where that stays true.
+ * The LIST is `FRAMEWORK_SCHEMA` and lives in `framework-schema.ts`, not here: this function is on
+ * every boot path the framework has — `x dev`, each served role, `x jobs`, `x db backfill`,
+ * `x mcp serve` and `ROLE=migrate` all reach it through `startQueue` — so the list it reads is the
+ * one place a framework table can be forgotten, and it is worth being a table somebody can read
+ * rather than an array literal inside a boot function.
  *
- * `SQL_IDEMPOTENCY_TABLE`, `SQL_RATE_LIMIT_TABLE` and `SQL_AUTH_LIMIT_TABLES` are here and not in
- * `@ultimat3/action`, `@ultimat3/http` or `@ultimat3/auth` because a package that holds no
- * database dependency cannot apply its own schema
- * — the same reason `SQL_JOBS_TABLE` is applied here. Each one absent is the same failure at a
- * different door: a retried `POST /api/payments/charge` charges the card twice, and the FIRST
- * request a `rateLimitStore` deployment serves dies on a missing `x_rate_limit` relation. The
- * table is installed whether or not this boot passes `runtime.rateLimitStore` — `create table if
- * not exists` on an unused table costs one round trip at boot, and a store installed later must
- * not be the thing that discovers the schema was never applied. The auth pair is the strongest
- * case for that rule: `defineAuth` builds its limiter when the APP's modules import, which is
- * after this, so the first failed sign-in would otherwise be what discovers the missing relation.
+ * Each package's DDL is here and not in `@ultimat3/action`, `@ultimat3/http`, `@ultimat3/auth` or
+ * `@ultimat3/notify` because a package that holds no database dependency cannot apply its own
+ * schema — the same reason `SQL_JOBS_TABLE` is applied by the boot.
  */
 async function applySchema(client: DevDbClient): Promise<void> {
-  for (const ddl of [
-    SQL_JOBS_TABLE,
-    SQL_IDEMPOTENCY_TABLE,
-    // The DDL only, and deliberately NO `setAuditSink` beside `setIdempotencyStore` below: there
-    // is no default audit sink on purpose, so `X_AUDIT_SINK_MISSING` keeps firing at boot for an
-    // app that declares `audit: true` and installs none. Applying the table without installing a
-    // sink is the same call `SQL_RATE_LIMIT_TABLE` already makes — one round trip at boot on a
-    // possibly-unused table, against `postgresAuditSink` failing its first write with
-    // `relation "x_audit" does not exist`.
-    SQL_AUDIT_TABLE,
-    SQL_RATE_LIMIT_TABLE,
-    SQL_AUTH_LIMIT_TABLES,
-  ]) {
-    for (const statement of ddl.split(';')) {
-      if (statement.trim().length > 0) await client.execute(raw(statement));
-    }
-  }
+  await applyFrameworkSchema((statement) => client.execute(raw(statement)));
 }
 
 /**

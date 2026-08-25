@@ -388,6 +388,73 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   ABANDONED round does not release**: it is still enqueueing, so handing the lock over is that same
   double-fire delivered by the shutdown, and a lease row expiring on its own is the safe end —
   `jobs.scheduler.drain-abandoned` is the line that says so.
+- **`exportRows()` is a FACTORY over `job()`, and the part KEY is what makes at-least-once safe**
+  (`As of 2026-08-24`). Same rule `backfill()`, `purge()` and `webhook()` follow. The paging is
+  `backfill-pass.ts`'s and never a second idiom — `inBatches()`, one page per `step.run`, and what
+  a step persists is the CURSOR and two counters, never the page.
+
+  **One object per PAGE, not one per export**, and that is the whole design rather than a
+  simplification: `StorageDriver.put()` buffers by construction — `packages/storage/src/driver.ts`
+  says the server-side path "is for objects that FIT IN MEMORY" — so a single-object export holds
+  the entire dataset, which is the failure this factory exists to prevent. Because a part is named
+  by its page INDEX, a page that runs twice rewrites the same object with the same bytes: there is
+  no idempotency argument to make about the app's rows, and no append anywhere, because a duplicate
+  part cannot be expressed. `export-pass.test.ts` proves it by deleting a mid-run checkpoint and
+  re-running, which is exactly the window at-least-once opens.
+
+  **The interleaving assertion is the memory guard, not `maxPartBytes`.** `maxPartBytes` bounds one
+  page; it cannot see a rewrite that accumulates every page and writes at the end. The test records
+  how many checkpoints had LANDED at each `put` — `0,1,2,…` for a streaming pass and a flat run of
+  the final count for a buffering one — and it is the only thing in the suite that fails on that
+  rewrite.
+
+  **An export gets NO cross-tenant escape, and `backfill()` does.** The asymmetry is deliberate and
+  is the direction of the data: a sweep that rewrites every tenant's rows is an operator action
+  with an audit trail, while an export READS every tenant's rows into one object somebody can
+  download. `tenant: 'none'` therefore fails closed on a tenant-scoped entity
+  (`X_TENANCY_ACTOR_ORG_REQUIRED`) and is for tables with no tenant column at all.
+
+  **The format is the framework's and the columns are the app's.** The csv formula guard (a cell
+  leading `=`, `+`, `-`, `@`, TAB or CR is evaluated by every spreadsheet) and RFC-4180 quoting are
+  identical for a bank and a blog; which columns leave the building never is. The guard is on
+  STRINGS only — prefixing every leading `-` would turn a refund column into text.
+- **`webhook()` is a FACTORY over `job()` and delivers ONE event to ONE endpoint** (`As of
+  2026-08-24`). Same rule `backfill()` and `purge()` follow. The unit is the ENDPOINT and not the
+  event, because retry, backoff and disable-after-N are all per-endpoint facts: a job that fanned
+  out inside one body would retry every subscriber because one of them was down, which is the
+  defect `15-adding-a-feature.md` already names for a mail loop under a single step. **Which
+  endpoints exist is the app's** (axiom 8) — the fan-out is the app's own loop, one `enqueue` per
+  endpoint, and the idempotency key is `<name>:<endpointId>:<eventId>` for the same reason: a key
+  on the event alone would dedupe every subscriber's delivery into the first one's row.
+
+  Four things are load-bearing and none is an implementation detail. **The endpoint is never
+  checkpointed**: it carries the secret, and a `step.run` output is written to `x_job_steps` — so
+  this body uses NO steps and re-reads both seams per attempt. **The signature's timestamp is SEND
+  time**, so a delivery retried three days later is signed again now and a receiver's freshness
+  window measures the request rather than the age of the fact behind it. **The endpoint row's own
+  `headers` merge UNDER the framework's**, because a row that could set
+  `x-ultimate-webhook-signature` is a row that can forge one. **`redirect: 'manual'`**, because
+  following a 3xx re-POSTs a body signed for one host to whatever the receiver named, signature
+  and all.
+
+  The ledger is a SEAM (`WebhookLedger`), the shape `PurgeTarget` already has: retention is seven
+  years for one business and thirty days for the next, so shipping a schema would be shipping one
+  of those answers. `record()` answers the consecutive-failure count rather than that being a
+  second method — the number the mechanism disables on must not be readable from before the row it
+  is deciding about. Every attempt is recorded BEFORE the throw: a failure the ledger cannot see is
+  an endpoint that never gets disabled. Re-enabling is always the app's.
+
+  **The wire format is `@ultimat3/core`'s, RE-EXPORTED and never re-declared** (`As of
+  2026-08-24`). `packages/core/src/webhook-signature.ts` states
+  `v1:<timestampSeconds>:<eventId>:<topic>:<body>` once — the canonical string, the mac, the three
+  header names and the parse a receiver reads back — because this package signs a delivery,
+  `@ultimat3/http` verifies one, and neither may import the other. Exactly the argument
+  `timing-safe-equal.ts` makes for itself. It shipped for one release as two implementations held
+  together by a hex literal asserted in two test files; that works and is not a single source of
+  truth. Core's own suite now pins the thing neither package could: that the SENDING form
+  (`body: string`) and the RECEIVING form (`body: Uint8Array`) are the same function over the same
+  bytes. **Never re-declare the canonical string here** — a second spelling is what the move
+  deleted.
 - **`backfill()` is a FACTORY over `job()`, never a ninth primitive.** Same rule `llm()` follows
   in `@ultimat3/ai`: a new capability arrives as a factory over an existing primitive, so a
   backfill inherits `.enqueue()`, the retry policy, the cancellation, the dead-letter path and

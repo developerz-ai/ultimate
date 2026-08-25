@@ -29,7 +29,7 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   entity: 14,
   flags: 4,
   i18n: 2,
-  jobs: 12,
+  jobs: 10,
   mail: 1,
   manifest: 1,
   mcp: 2,

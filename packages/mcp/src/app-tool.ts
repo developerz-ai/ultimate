@@ -16,7 +16,7 @@ import { useContext } from '@ultimat3/core';
 import type { KnownPermission } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
-import { formatIssues, validateAsync } from '@ultimat3/schema';
+import { formatIssues, toValidationIssues, validateAsync } from '@ultimat3/schema';
 import { asCallerContext } from './caller-context';
 import { McpToolUnsafeError } from './errors';
 import type { ProjectablePrimitive } from './from-action';
@@ -123,7 +123,17 @@ async function parseInput(
 ): Promise<InferOutput<StandardSchemaV1>> {
   const result = await validateAsync(schema, raw);
   if (result.issues !== undefined) {
-    throw new InputInvalidError(name, formatIssues(result.issues).join('; '));
+    // `toValidationIssues`, never the raw `result.issues` — the same normalisation
+    // `packages/action/src/validate.ts` does, for the same two reasons. A conforming library's
+    // issue object may carry members Ultimate's shape does not, INCLUDING the rejected value, and
+    // this list reaches an agent and the audit record. And the list is what a caller addresses a
+    // field by: passing only the joined line made an MCP rejection carry strictly less than the
+    // HTTP one, which puts the list on the problem document (`error-facts.ts`).
+    //
+    // `formatIssues(issues)` is byte-identical to `formatIssues(result.issues)`: that renderer
+    // reads `path` and `message`, which is exactly what `toValidationIssues` copies out.
+    const issues = toValidationIssues(result.issues);
+    throw new InputInvalidError(name, formatIssues(issues).join('; '), issues);
   }
   return result.value;
 }

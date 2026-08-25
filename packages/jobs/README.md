@@ -337,6 +337,140 @@ export const hourly = task({
 without writing any of the above. It needs a `worker` to run it and a `scheduler` to fire it: a
 deployment with neither has no background work at all, and this is one more thing it does not do.
 
+## Exporting a large dataset is a job too
+
+`exportRows()` is a factory over `job()` that streams a paged read to object storage with a
+resumable cursor. It exists for one reason: `const all = await repo.all(); await disk.put(key,
+csv(all))` works on 200 rows and OOM-kills the pod on two million.
+
+```ts
+import type { ReadBuilder } from '@ultimat3/entity';
+import { exportRows, t } from '@ultimat3/jobs';
+import { formatMoney, type Money } from '@ultimat3/money';
+import { disk } from '@ultimat3/storage';
+import { formatDate, instant } from '@ultimat3/time';
+
+interface Order {
+  readonly id: string;
+  readonly placedAt: Date;
+  readonly total: Money;
+}
+
+// The app's own chain: `source` takes whatever `db.orders.where(…)` answers.
+declare const db: {
+  readonly orders: { where(filter: { readonly orgId: string }): ReadBuilder<Order> };
+};
+
+export const exportOrders = exportRows({
+  name: 'orders.export',
+  input: t.object({ orgId: t.string, exportId: t.string }),
+  // The security boundary of the whole feature — an export concentrates one tenant's rows into a
+  // single downloadable object.
+  tenant: ({ orgId }) => orgId,
+  prefix: ({ orgId, exportId }) => `exports/${orgId}/${exportId}`,
+  source: ({ input }) => db.orders.where({ orgId: input.orgId }),
+  format: 'csv',
+  columns: ['id', 'placedAt', 'total'],
+  row: (order) => ({
+    id: order.id,
+    // A date gets its zone and a Money its currency HERE, where the app knows which it means.
+    // `instant()` is the check that turns a stored `Date` into one nothing can format zone-less.
+    placedAt: formatDate(instant(order.placedAt), { locale: 'en', zone: 'UTC' }),
+    total: formatMoney(order.total, 'en'),
+  }),
+  sink: disk('exports'),   // a StorageDriver already IS an ExportSink
+});
+```
+
+The artifact is one object per page plus a manifest:
+
+```
+exports/<orgId>/<exportId>/part-00000.csv
+exports/<orgId>/<exportId>/part-00001.csv
+exports/<orgId>/<exportId>/manifest.json
+```
+
+| Rule | Why |
+|---|---|
+| one object per PAGE, never one per export | `put()` buffers by construction — its own header says the server-side path "is for objects that FIT IN MEMORY" — so a single-object export holds the whole dataset, which is the failure this exists to prevent |
+| the part key is the page INDEX | so a page that runs twice REWRITES its part. At-least-once needs no idempotency argument about your rows here: a duplicate part cannot be expressed |
+| a step persists the CURSOR and two counters | never the page — `steps.ts` retains a completed step's output for the whole run, so checkpointing rows keeps every exported row until the job ends |
+| every line ends in a newline, header in part 0 only | `cat part-*` is one valid file, which is what makes the parts an artifact rather than fragments |
+| `maxPartBytes` is a heap bound, not a file-size preference | one page is encoded whole before it is written; `X_EXPORT_PART_TOO_LARGE` names the `batch` to lower |
+| a `row()` key `columns` does not carry is REFUSED | both encoders would drop it in silence, and `row: (r) => ({ ...r })` picks up every column the entity gains from the next migration on |
+| csv cells leading `=`, `+`, `-`, `@`, TAB or CR are neutralised | Excel, Sheets and LibreOffice EVALUATE them, so a user-named record is code execution in the reviewer's spreadsheet. Strings only — a negative number stays a number |
+| the manifest COUNTS parts, never lists them | `exportPartKey(prefix, i, format)` rebuilds every key, and a list is the one thing in the pass that would grow with the export |
+| `tenant: 'none'` gets no cross-tenant escape | `backfill()` does (`backfill-scope.ts`) because its lazy chain leaves an author nothing to wrap. An export does not, and the difference is the direction of the data: a sweep rewrites rows under audit, an export writes every tenant's rows into one downloadable object |
+| `rate` has no default, unlike a backfill's | a backfill competes for WRITE capacity on rows the app is still serving; an export is a bounded read somebody is usually waiting for. Declare it for an export big enough to matter to the pool |
+
+`ExportSink` is a seam and not a `@ultimat3/storage` import, for the reason `PurgeTarget` is one:
+this package holds no storage dependency, and taking one so a queue could name a disk would put the
+object store on tier 3's import graph.
+
+## Outbound webhooks are jobs too
+
+`webhook()` is a factory over `job()` and delivers **one event to one endpoint**. Retry with
+backoff, disable-after-N and the ledger are all per-endpoint facts, so the endpoint is the unit: a
+job that fanned out inside one body would retry every subscriber because one of them was down.
+**Which endpoints exist is the app's** — the fan-out is your own `for` loop over your own
+subscription table, one `enqueue` per endpoint.
+
+```ts
+import { memoryWebhookLedger, webhook } from '@ultimat3/jobs';
+
+declare const db: {
+  endpoints: { byId(id: string): Promise<{ id: string; url: string; secret: string } | null> };
+  events: { byId(id: string): Promise<{ topic: string; body: string } | null> };
+};
+
+export const deliver = webhook({
+  name: 'partner.webhooks',
+  tenant: 'none',
+  // Read once per ATTEMPT and never checkpointed: the endpoint carries a secret, and a step's
+  // output is written to `x_job_steps`.
+  endpoint: ({ endpointId }) => db.endpoints.byId(endpointId),
+  event: ({ eventId }) => db.events.byId(eventId),
+  ledger: memoryWebhookLedger(), // dev only — a bounded ring in one heap
+  disableAfter: 10,
+});
+
+// The fan-out is yours, because the subscription table is yours.
+declare function subscribersOf(topic: string): Promise<readonly { id: string }[]>;
+declare const event: { readonly id: string };
+
+for (const endpoint of await subscribersOf('orders.paid')) {
+  await deliver.enqueue({ endpointId: endpoint.id, eventId: event.id });
+}
+```
+
+The delivery carries three headers beyond `content-type`, and the signature is over
+`v1:<timestampSeconds>:<eventId>:<topic>:<body>`:
+
+```
+x-ultimate-webhook-id:        evt_01HZ
+x-ultimate-webhook-topic:     orders.paid
+x-ultimate-webhook-signature: t=1700000000,v1=<hex hmac-sha256>
+```
+
+The receiving half is `verifyWebhookSignature(request, { secret })` in `@ultimat3/http`. The format
+itself — the canonical string, the mac and the header names — is **one module in `@ultimat3/core`**
+(`webhook-signature.ts`), re-exported by both packages and re-declared by neither: this package
+signs, `http` verifies, and neither may import the other, so the one copy lives at the tier both
+can reach. Same argument `timing-safe-equal.ts` makes for itself.
+
+| Rule | Why |
+|---|---|
+| the timestamp is **inside** the mac | a captured delivery re-dated to slip back into a receiver's freshness window no longer verifies |
+| the timestamp is SEND time, not event time | a retry three days later signs again now, so the window measures the request rather than the age of the fact |
+| `:` is refused in an id or a topic | one mac over `v1:t:evt:01HZ:orders.paid:<body>` would otherwise authenticate two different id/topic splits — the same delivery under a label the sender never wrote |
+| the endpoint's own `headers` merge **under** the framework's | an endpoint row that could set `x-ultimate-webhook-signature` is an endpoint row that can forge one |
+| `redirect: 'manual'` | following a 3xx would re-POST a body signed for one host to whatever the receiver named |
+| the endpoint is never checkpointed | a `step.run` output lands in `x_job_steps`, and the endpoint carries the secret |
+| every attempt is recorded **before** the throw | a failure the ledger cannot see is a failure the consecutive count cannot see, which is an endpoint that never gets disabled |
+| a `Retry-After` the receiver names is honoured | `X_WEBHOOK_DELIVERY_THROTTLED` carries `meta.retryAfterSeconds`, which the nack waits out (clamped by `retry.maxDelay`) rather than guessing a curve against an answer it already has |
+| re-enabling is always yours | an endpoint the framework un-disabled on its own is a retry loop with no end |
+| `WebhookLedger` is a seam, not a table | retention is seven years for one business and thirty days for the next, so shipping a schema would ship one of those answers |
+
 ## The deadline cancels
 
 A job's `timeout` aborts `ctx.signal` **before** it fails the attempt, because the nack that
@@ -504,6 +638,17 @@ and never detects the occurrence the pod it replaced dropped (`catchUp` and `max
 update runs two leaders.
 
 ```ts
+import {
+  createPgLeaseLeader,
+  createScheduler,
+  type JobDriver,
+  type PgExecutor,
+  pgSchedulerState,
+} from '@ultimat3/jobs';
+
+declare const driver: JobDriver;
+declare const executor: PgExecutor;   // `@ultimat3/cli`'s pgExecutorFor(client)
+
 createScheduler({
   driver,
   state: pgSchedulerState(executor),
@@ -518,6 +663,10 @@ expiry and needs no connection affinity. `acquire()` is also the renewal, called
 is how a demoted node finds out.
 
 ```ts
+import { type AnyJobHandle, task } from '@ultimat3/jobs';
+
+declare const sendDigest: AnyJobHandle;   // the job this cron puts on the queue
+
 export const nightlyDigest = task({
   cron: '0 3 * * *',
   tz: 'UTC',                      // REQUIRED — a cron without a timezone is a bug

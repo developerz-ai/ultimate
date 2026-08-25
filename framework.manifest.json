@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "7a8e72af84e4c116bdd0652bab2698cf74afcaf8fb6d8d28a32054d26d9e653a",
+  "buildId": "86aa80d2a50ed856975bfe763622aa4b7c46e837df01ac20af411527ae772f1c",
   "tiers": {
     "0": [
       "core",
@@ -35,7 +35,8 @@
       "ai",
       "manifest",
       "mail",
-      "ui"
+      "ui",
+      "notify"
     ],
     "5": [
       "admin",
@@ -173,6 +174,12 @@
     },
     {
       "name": "@ultimat3/mcp",
+      "version": "12.0.0",
+      "tier": 4,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/notify",
       "version": "12.0.0",
       "tier": 4,
       "private": false
@@ -1133,6 +1140,16 @@
       "at": "packages/ai/src/errors.ts"
     },
     {
+      "code": "X_EXPORT_PART_TOO_LARGE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_EXPORT_ROW_INVALID",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
       "code": "X_FILE_TOO_LONG",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -1201,6 +1218,11 @@
       "code": "X_FRAME_RATE_LIMIT",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_FRAMEWORK_SCHEMA_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_GATE_CODE_BACKLOG_STALE",
@@ -1751,6 +1773,36 @@
       "code": "X_NOT_IN_APP",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_NOTIFY_CHANNEL_DUPLICATE",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
+      "code": "X_NOTIFY_CHANNELS_EMPTY",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
+      "code": "X_NOTIFY_DELIVERY_FAILED",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
+      "code": "X_NOTIFY_DIGEST_UNSUPPORTED",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
+      "code": "X_NOTIFY_FANOUT_TOO_WIDE",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
+      "code": "X_NOTIFY_STORE_MISSING",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
     },
     {
       "code": "X_OAUTH_DENIED",
@@ -3083,6 +3135,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_UI_FORM_PATH_INVALID",
+      "owner": "ui",
+      "at": "packages/ui/src/errors.ts"
+    },
+    {
       "code": "X_UI_INVALID_VALUE",
       "owner": "ui",
       "at": "packages/ui/src/errors.ts"
@@ -3151,6 +3208,46 @@
       "code": "X_VERSION_STAMP_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/version-stamps.ts"
+    },
+    {
+      "code": "X_WEBHOOK_DELIVERY_FAILED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_WEBHOOK_DELIVERY_REJECTED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_WEBHOOK_DELIVERY_THROTTLED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_WEBHOOK_ENDPOINT_DISABLED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_WEBHOOK_ENDPOINT_INVALID",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_WEBHOOK_ENDPOINT_UNKNOWN",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_WEBHOOK_EVENT_INVALID",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_WEBHOOK_EVENT_UNKNOWN",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
     },
     {
       "code": "X_WEBHOOK_SIGNATURE_INVALID",

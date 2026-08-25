@@ -17,7 +17,7 @@ export const TIERS: Readonly<Record<number, readonly string[]>> = {
   1: ['i18n', 'money', 'time', 'cache', 'seo', 'db', 'storage', 'flags'],
   2: ['entity', 'policy', 'http', 'auth'],
   3: ['action', 'query', 'jobs', 'realtime'],
-  4: ['render', 'pwa', 'mcp', 'ai', 'manifest', 'mail', 'ui'],
+  4: ['render', 'pwa', 'mcp', 'ai', 'manifest', 'mail', 'ui', 'notify'],
   5: ['admin', 'testing', 'cli', 'scraping'],
 };
 
@@ -102,7 +102,7 @@ export const UNLISTED_TIER = 6;
 
 /**
  * Above tier 5, deliberately rather than by fallback. `create-ultimate` resolved to
- * `UNLISTED_TIER` because it is absent from `TIERS`, and a tier of 6 makes every one of the 29
+ * `UNLISTED_TIER` because it is absent from `TIERS`, and a tier of 6 makes every one of the 30
  * framework packages a legal LOWER-tier import — so the `create-ultimate -> cli` edge the doc
  * block above presents as earning its line restricted nothing at all. It stays out of `TIERS`
  * because that map is the prose table's executable copy (`tier-table-drift.test.ts` asserts them

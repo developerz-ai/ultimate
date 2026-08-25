@@ -178,7 +178,9 @@ export type { Debounced } from './debounce';
 export { DEBOUNCE_DEFAULT_MS, debounce } from './debounce';
 export type { UiErrorCode } from './errors';
 export {
+  conflictingFieldNameError,
   invalidBrandTokenError,
+  invalidFieldPathError,
   invalidGlyphError,
   invalidIconDataError,
   invalidThemeError,
@@ -189,6 +191,28 @@ export {
   UiError,
   unknownTokenError,
 } from './errors';
+// --- forms: the binding between an action's input schema and Field's error slot ---------------
+export type { FieldPathSegment, IssuePathSegment } from './form/field-path';
+export { formatFieldPath, MAX_FIELD_INDEX, parseFieldPath } from './form/field-path';
+export type { FormBinding, FormBindingOptions } from './form/form-binding';
+export { createFormBinding } from './form/form-binding';
+export type {
+  FormIssue,
+  FormSchema,
+  FormValidationIssue,
+  FormValidationResult,
+} from './form/form-issue';
+export { issuesFromRejection, issuesFromValidation } from './form/form-issue';
+export type { FormErrors, FormState, FormStatus } from './form/form-state';
+export {
+  distributeIssues,
+  errorOf,
+  IDLE_FORM_STATE,
+  messagesOf,
+  NO_FORM_ERRORS,
+} from './form/form-state';
+export { valuesOfForm } from './form/form-values';
+export { useForm } from './form/use-form';
 export type { UiKey } from './i18n-keys';
 export { UI_KEYS } from './i18n-keys';
 export type { ArrowKeyElement, RovingItem } from './roving';

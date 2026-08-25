@@ -240,6 +240,53 @@ the core, because it never leaves the client; keep it a pure function of `(tx, i
 SQLite). Type your tables once: `declare module '@ultimat3/action' { interface
 LocalTables { posts: PostRow } }`.
 
+## `transition()` — a mutator factory over a state machine
+
+`As of 2026-08-24`. A move through an entity column's state machine is a server-authoritative write
+with an input schema, an output schema and a policy — which is what a `mutator` already is. So
+`transition()` **returns one**, and the move inherits the route, the OpenAPI operation, the typed
+client, the MCP tool, the job handle and its `PRIMITIVE_FACTORIES` row. It is not a ninth primitive
+and it declares no error code of its own.
+
+```ts
+import { t, transition, type TransitionTarget } from '@ultimat3/action';
+import type { Ctx } from '@ultimat3/core';
+import { can } from '@ultimat3/policy';
+
+const ORDER_STATES = ['pending', 'paid', 'shipped'] as const;
+type OrderState = (typeof ORDER_STATES)[number];
+
+const OrderView = t.object({ id: t.uuid, status: t.enum(ORDER_STATES) });
+
+// `@ultimat3/entity`'s `orders(ctx)`: a real `Table` satisfies the seam as written.
+declare function orders(ctx: Ctx): TransitionTarget<{ id: string; status: OrderState }, OrderState>;
+declare const id: string;
+declare const ctx: Ctx;
+
+export const moveOrder = transition({
+  table: (ctx) => orders(ctx),      // the request's table — tenant-scoped like every write
+  column: 'status',                 // the column whose enumerated().transitions() IS the machine
+  states: ORDER_STATES,             // typed against the row: a state it cannot hold is a compile error
+  localTable: 'orders',             // what the optimistic twin patches
+  output: OrderView,
+  policy: can('order:move'),
+});
+
+await moveOrder({ id, from: 'pending', to: 'paid' }, { ctx });
+```
+
+| Rule | Why |
+|---|---|
+| **`from` is required, and never defaulted or inferred** | it rides in the UPDATE's own predicate, so the state observed and the state written are one decision under the row's lock. Measured on the mechanism underneath: twenty concurrent moves at one row gave 14 winners with a read-then-check-then-write and **1 winner plus 19 refusals** with `from` in the predicate. Anything that supplies `from` for the caller is the lost update coming back |
+| the states are the **input schema**, not a `t.string` | the union survives into `InferOutput`, so the typed client refuses a typo at **compile** time, the MCP tool's `inputSchema` and the OpenAPI component both publish the legal set, and a bad state is `X_INPUT_INVALID` before a database is touched |
+| `conflict: 'server-wins'`, not overridable | the server is the half that REFUSED the move; a local twin winning the rebase would leave the client showing a state the database rejected |
+| `audit` is **off** unless the app says so | `audit: true` with no sink installed is `X_AUDIT_SINK_MISSING`, raised before the input parse — an on-by-default audit would make every `transition()` refuse until an unrelated decision was made. What the row is kept for, and for how long, is the same compliance question that kept a purge out of `postgresAuditSink` |
+| `X_STATE_TRANSITION_ILLEGAL`, `X_STATE_CONFLICT` and `X_STATE_UNDECLARED` propagate untouched | they are `@ultimat3/entity`'s. A second error class over one failure is a second path |
+
+`table` is typed structurally (`TransitionTarget`), not imported: `@ultimat3/action` holds no
+dependency edge on `@ultimat3/entity` — the tier table permits one, the manifest and the lockfile do
+not — and a real `Table` satisfies the seam as written.
+
 ## Determinism + idempotency
 
 `serializeOpenApi(buildOpenApi())` sorts keys at every depth, iterates the registry
@@ -548,7 +595,7 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_ACTION_POLICY_MISSING` | registration without `policy:` | add `policy: can('…')` |
 | `X_RATE_LIMIT_INVALID` | `rateLimit:` with a non-positive or non-finite half — `windowMs: 0` refills infinitely. Owned by `@ultimat3/http`, which owns the conversion | make both positive, or delete the block |
 | `X_ACTION_DEPRECATION_INVALID` | `deprecated:` with a `since`/`sunset` that is not a date | use an ISO-8601 instant |
-| `X_INPUT_INVALID` | input failed the Standard Schema | `x actions describe <name> --json` |
+| `X_INPUT_INVALID` | input failed the Standard Schema. Carries the rejections **twice**: the flattened line in `cause`, and the structured list in `meta.issues` — one value rendered two ways, `As of 2026-08-24` | `x actions describe <name> --json` |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a new payload / still in flight | new key, or retry later |
 | `X_IDEMPOTENCY_KEY_INVALID` | `Idempotency-Key:` sent blank (`Headers.get()` answers `''`, not `null`) or past 255 characters | send one unique value per request, or omit the header |
 | `X_IDEMPOTENCY_NOT_SHARED` | `configureIdempotency({ scope: 'shared' })` over a per-process (or scope-less) store | install `postgresIdempotencyStore({ executor })` at boot |
@@ -569,6 +616,12 @@ the browser bundle may never have registered it, and linked only to a page that 
 server's own `docs`/`type` when it sent an `http(s)` one, this build's registered link when it
 knows the code, otherwise the error index. A per-code URL is never synthesized for a code
 nothing here declares.
+
+A document carrying an `issues` member arrives parsed as well: `meta.issues`, read by
+`issuesFromWire` — a wire value, so the list is rebuilt member by member and a list this build
+cannot read is dropped whole rather than half-kept, leaving `cause` (which still holds every
+rejection) as the answer. It is exported for the island that posts with a plain `fetch` and holds
+the body itself.
 
 ## Boundaries
 

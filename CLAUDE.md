@@ -12,9 +12,14 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
-**Status:** released, `As of 2026-08-23`. 29 `@ultimat3/*` packages plus the unscoped
-`create-ultimate` — 30 in all — **versioned** in lockstep and **published** in lockstep: one version,
-one commit, one tag, 30 tarballs.
+**Status:** released, `As of 2026-08-24`. 30 `@ultimat3/*` packages plus the unscoped
+`create-ultimate` — 31 in all — **versioned** in lockstep and **published** in lockstep: one version,
+one commit, one tag, 31 tarballs.
+
+**`@ultimat3/notify` is the 31st and has never been published**, so it needs step 1 of
+[`PUBLISHING.md`](PUBLISHING.md) — the one-time hand publish that gives npm a package for a trusted
+publisher to attach to — **before** the next release run, or `release.yml` publishes 30 of 31 and
+`scripts/registry-audit.ts` files the drift issue.
 
 **This page states no version number, deliberately.** It carried one for two majors after the tree
 moved past it, and a version written here is read as the installable one. Every row below is a
@@ -79,8 +84,8 @@ environment `npm-publish`, publish permission, all 30, verified per package with
 `npx -y npm@12 trust list <pkg> --json` — `npm trust` shipped in **npm 12** and Bun's bundled npm
 answers it as an unknown command, which is why `scripts/trust-publishers.ts` pins the runner. That
 attachment is what lets [`.github/workflows/release.yml`](.github/workflows/release.yml) publish at
-all: 30 tarballs per release, each attested, `_npmUser: GitHub Actions`, on every release from
-3.0.0 on.
+all: one tarball per publishable workspace per release, each attested,
+`_npmUser: GitHub Actions`, on every release from 3.0.0 on.
 
 **The `npm-publish` environment needs a human to approve the run.** The release workflow reaches
 `waiting` and publishes nothing until a named reviewer approves the pending deployment — the last
@@ -241,7 +246,7 @@ A package may import from strictly lower tiers. Never sideways within a tier, ne
 | 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage`, `flags` |
 | 2 | `entity`, `policy`, `http`, `auth` |
 | 3 | `action`, `query`, `jobs`, `realtime` |
-| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui` |
+| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui`, `notify` |
 | 5 | `admin`, `testing`, `cli`, `scraping` |
 
 Declared sideways edges, each earning its line: `realtime → query`, `cli → admin`, `cli → scraping`, `cli → testing`, `create-ultimate → cli`.
@@ -375,7 +380,7 @@ The workflows, `As of 2026-08-22` — `ls .github/workflows`:
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` | push to `main`, every PR | the jobs above |
-| `release.yml` | a **published** GitHub Release | 30 tarballs to npm via OIDC trusted publishing, behind the `npm-publish` environment gate |
+| `release.yml` | a **published** GitHub Release | every publishable workspace to npm via OIDC trusted publishing, behind the `npm-publish` environment gate. The list is **derived** by `scripts/release-workflow.ts`, never a number written here |
 | `registry-audit.yml` | daily cron | `scripts/registry-audit.ts`; files a `registry-drift` issue when the tree's stamped version and the registry disagree. Not a `ci.yml` job because it asks about the **registry**, which no commit changes |
 | `deploy-social-demo.yml` | push to `main` | builds and publishes the demo app's production image |
 | `wiki.yml` | push to `main` | mirrors `wiki/` into the GitHub wiki |

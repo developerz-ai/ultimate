@@ -13,6 +13,7 @@ import {
   UltimateError,
 } from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
+import type { ValidationIssue } from '@ultimat3/schema';
 
 // Re-exported, not re-declared: the five idempotency failures moved to their own file when this
 // one reached the line ceiling, and every importer still reads them from `./errors`.
@@ -177,12 +178,32 @@ export class ActionPolicyMissingError extends UltimateError {
 }
 
 export class InputInvalidError extends UltimateError {
-  constructor(name: string, detail: string) {
+  /**
+   * The rejections, addressed by path — `undefined` where the caller had only text.
+   *
+   * A `cause` is one line for a human and an agent to read; a client that renders a form needs to
+   * know WHICH field each rejection belongs to, and splitting the line back apart is guesswork the
+   * moment a message contains the separator. Both travel: the line is unchanged, and this is a
+   * structured channel beside it.
+   */
+  readonly issues: readonly ValidationIssue[] | undefined;
+
+  /**
+   * `detail` is the rendered form of `issues` and must stay so — `formatIssues(issues).join('; ')`,
+   * which is what `validate.ts` (the one caller that passes both) does, and what `validate.test.ts`
+   * pins. The rendering is NOT done here on purpose: this module is reachable from `client.ts`,
+   * which is browser-safe, and `@ultimat3/schema` declares no `sideEffects`, so a value import of
+   * `formatIssues` here would pull that package's whole barrel into every browser bundle holding
+   * the typed client.
+   */
+  constructor(name: string, detail: string, issues?: readonly ValidationIssue[]) {
     super({
       code: 'X_INPUT_INVALID',
       cause: `input for action "${name}" failed validation: ${detail}`,
       fix: `x actions describe ${name} --json  # prints the expected input schema`,
+      ...(issues === undefined ? {} : { meta: { issues } }),
     });
+    this.issues = issues;
   }
 }
 
@@ -233,6 +254,12 @@ export interface RemoteFailure {
    * a `javascript:` in the preferred slot cannot suppress a usable link behind it.
    */
   readonly docs?: readonly (string | undefined)[] | undefined;
+  /**
+   * The per-field rejections the document carried, already parsed — `issuesFromWire`'s answer,
+   * never the raw member. `undefined` where the body had none or where it had one this build
+   * refuses to read, and in both cases `cause` still holds every rejection.
+   */
+  readonly issues?: readonly ValidationIssue[] | undefined;
 }
 
 /** A link, not a string the server happened to put in a field the overlay renders as an href. */
@@ -286,7 +313,14 @@ export class RemoteActionError extends UltimateError {
       // `retryFor(code)`, which fails closed — so a 503 out of a typed call announced itself as
       // `terminal` on the one field the framework promises a client never has to infer.
       retry: retryForStatus(failure.code, failure.status),
-      meta: { origin: 'remote', action: failure.action, status: failure.status },
+      meta: {
+        origin: 'remote',
+        action: failure.action,
+        status: failure.status,
+        // Absent rather than `undefined`: `meta` is rendered into `--json` and the error reporter,
+        // and a null member reads as "the server sent an empty list" rather than "it sent none".
+        ...(failure.issues === undefined ? {} : { issues: failure.issues }),
+      },
     });
     this.status = failure.status;
   }

@@ -30,6 +30,7 @@ export const CATALOG_PACKAGES = [
   '@ultimat3/manifest',
   '@ultimat3/mcp',
   '@ultimat3/money',
+  '@ultimat3/notify',
   '@ultimat3/policy',
   '@ultimat3/pwa',
   '@ultimat3/query',
