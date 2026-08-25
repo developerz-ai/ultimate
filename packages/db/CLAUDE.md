@@ -653,6 +653,35 @@ right database, and `x db gen`'s `retypeColumn` owns that question where both si
 The `fix:` is the `alter table … set not null` itself and deliberately not `x db gen`, which has
 never emitted one and would answer with an empty migration.
 
+**A column the DATABASE computes is a different thing at every step, and `generated-column.ts` is
+all of them** — `As of 2026-08-24`. `ColumnDescriptionLike.generated` carries the
+`generated always as (<expr>) stored` body across the tier seam (this package cannot import
+`@ultimat3/entity`, so a field that is not on the projection reaches no DDL at all), and it reached
+none until this date: `@ultimat3/entity`'s `.searchable()` emitted a `tsvector not null` column that
+`columnClause` rendered plain, so nothing computed it and **the first insert was a `23502`**. Loud,
+which was deliberate — but a feature nobody can insert into is not shipped. Four rules ride with it,
+each one measured against a real server (`generate-generated-column.live.test.ts`):
+
+| Rule | Why it is not the ordinary column's rule |
+|---|---|
+| the clause sits directly after the type | `"c" tsvector generated always as (…) stored not null check (…)` is what Postgres accepts; a column constraint may follow it |
+| **generated and defaulted is refused** at `x db gen` | Postgres has no such column (`42601`) — a generated column's value IS its expression. `X_INVARIANT`, the same refusal `createIndex` gives a unique GIN, and for the same reason: the alternative is DDL whose first reader is `ROLE=migrate` |
+| an expression that moved is **`set expression as (…)`**, never a drop and recreate | Postgres 17's statement, and it rewrites the table, recomputes every row and **keeps the column's indexes** — measured. Dropping the column takes its GIN index with it and nothing in the diff puts one back, and `alter table … drop column` is what `destructive.ts` reads as data loss: every expression change would then carry `-- destructive: true` on a migration that loses nothing, and a marker on all is none |
+| a retype on it carries **no `using`** | Postgres refuses `using` on a generated column outright, which is exactly what `retypeColumn` emits for every other column — and there is nothing to convert, because the expression produces the new type itself |
+| the NOT NULL add is **one statement**, never nullable-then-backfill | the database computes it for every existing row inside the same `add column`. The ordinary path's `-- backfill "c", then: … set not null;` names a step nobody can perform: writing to a generated column is `428C9` |
+
+Two transitions have no `set expression`. **Generated → plain is `drop expression`**, which keeps
+every value the column already computed. **Plain → generated is the whole column again** — drop,
+add, and every index over it stated a second time, which is why `regenerate` answers `rebuilt` and
+`diffTable` carries that set into its index loop: `redefineIndex` sees a definition that never moved
+and would emit nothing, so the table would come back with no index at all.
+
+**`introspect` deliberately does not read `generation_expression` back.** Postgres stores its own
+rewriting (`COALESCE(title, ''::text)` for `coalesce("title", '')`), so a catalog value could never
+compare equal to a generated one and drift would report a correct database forever. The diff that
+DOES read it is `x db gen`'s, where both sides are this generator's own spellings — the rule
+`IndexDescription.where` already states.
+
 `compareTable` judges **declared** indexes: one the migrations name and the catalog does not hold is
 `missing-index`, and one whose access method, column list or uniqueness moved is `changed-index` — which is what
 catches a composite index rebuilt with its columns the other way round while the column diff said
@@ -750,7 +779,8 @@ rather than spliced DDL — the discipline `createIndex` already applies to an i
 ceiling and along the seam the tier already draws: they are the structural mirror of
 `@ultimat3/entity`'s description, which is how a snapshot crosses tier 2 → tier 1 with no import.
 `ColumnDescriptionLike.onDelete` is optional for exactly that reason — a description written before
-the field existed still satisfies the shape.
+the field existed still satisfies the shape — and `ColumnDescriptionLike.generated` is optional for
+the same one.
 
 **`snapshot-json.ts` writes the sidecar's bytes, and they must be a fixed point of Biome.** A
 scaffolded app's `lint` step is `biome check .` over `"includes": ["**"]`, and `.sql`/`.hash` are

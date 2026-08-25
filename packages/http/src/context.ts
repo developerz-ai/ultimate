@@ -6,11 +6,11 @@ import {
   anonymousActor,
   type Clock,
   type Ctx,
+  createContext,
   isAnonymous,
   type Logger,
   traceId as newTraceId,
   type Role,
-  logger as rootLogger,
   type ServiceBag,
   systemClock,
   useContext,
@@ -28,15 +28,23 @@ import type { CacheHint, RedirectIntent } from './response';
 import type { Route, RouteParams } from './router';
 
 /**
- * The per-request context, and — through `asCtx` — core's `Ctx` itself. Every member `Ctx`
- * declares is declared here and SET by `createRequestContext`, because `asCtx` used to be
- * `as unknown as Ctx` over an object missing five of them (`clock`, `now`, `logger`, `signal`,
- * `services`). The assertion type-checked and every reader threw at runtime: `ctx.now()` in
- * `@ultimat3/action`'s audit trail, `useService()`, `throwIfAborted()`. The cast is gone, so
- * a member core adds is a build error in this file until it is set. The `extends` is what makes
- * that true rather than aspirational — and it carries `CtxServices`' index signature, which is
- * what an app augments for `ctx.posts`; `noPropertyAccessFromIndexSignature` keeps `ctx.typo` a
- * build error all the same.
+ * The per-request context, and — through `asCtx` — core's `Ctx` itself.
+ *
+ * `extends Ctx` again, `As of 2026-08-24`, and it is safe again for one reason: this file no
+ * longer BUILDS a `Ctx`, it composes one. `Ctx extends CtxServices`, an app augments
+ * `CtxServices` with `declare module` to declare `ctx.posts`, and every service it declared then
+ * became a required member of every context literal in the framework — this file failed to
+ * compile inside `examples/dummy` with `TS2739: missing posts, orgs` while the framework's own
+ * gate, which augments nothing, stayed green. `createRequestContext` now spreads
+ * `createContext()`'s result, so the members only an app's boot can supply arrive with it and the
+ * literal below is checked in full.
+ *
+ * The `extends` is therefore back to doing what it was always claimed to do: a member core adds
+ * to `Ctx` is set here — by `base` — or this file does not compile. `asCtx` is the identity
+ * function and never an assertion; `as unknown as Ctx` is what it used to be, over an object
+ * missing `clock`, `now`, `logger`, `signal` and `services`, and every reader threw at runtime.
+ * `CtxServices`' index signature is what an app augments; `noPropertyAccessFromIndexSignature`
+ * keeps `ctx.typo` a build error all the same.
  */
 export interface RequestContext extends Ctx {
   /** `performance.now()` at accept time; used for the server-timing header. */
@@ -145,12 +153,6 @@ export interface RequestContextInit {
   readonly services?: ServiceBag;
 }
 
-/**
- * One signal for every context built without one, so "no cancellation here" costs no allocation
- * and `ctx.signal.aborted` is still a read rather than a `TypeError`. The same shape core uses.
- */
-const NEVER_ABORTED: AbortSignal = new AbortController().signal;
-
 export const createRequestContext = (init: RequestContextInit): RequestContext => {
   const clock = init.clock ?? systemClock;
   const requestId = init.requestId ?? uuid(clock);
@@ -158,40 +160,62 @@ export const createRequestContext = (init: RequestContextInit): RequestContext =
   // collector rejects the span that carries one — while the log lines beside it, which quote the
   // same field, look fine. Two ids for one request that cannot be joined.
   const traceId = init.traceId ?? newTraceId();
+  // COMPOSED from core's constructor rather than built beside it, and that is what deletes the
+  // last cast in this file. `createContext` returns a `Ctx` that already carries the app's
+  // `CtxServices` augmentation, so spreading it hands this literal the members only the app's boot
+  // could supply — and the return below is checked in full, with nothing asserted anywhere.
+  //
+  // It is also one constructor for one shape instead of two. This file used to re-derive `clock`,
+  // `now`, the logger child, `signal`, `deadlineAt` and the service bag itself, so core could fix
+  // any of them and the HTTP surface would keep the old answer — which is exactly what happened to
+  // the bag: core has spread services ONTO the context since it shipped and this file never did,
+  // so an app declaring `ctx.posts` the documented way read `undefined` over HTTP while
+  // `ctx.services.posts` beside it was populated. Composing makes that class of drift unwritable.
+  //
+  // `defineService` factories now install on this surface too, for the same reason: they are
+  // `createContext`'s and this is `createContext`.
+  const base = createContext({
+    requestId,
+    traceId,
+    role: init.role,
+    // The build this PROCESS serves. The client's claim goes to `clientBuildId` below, where only
+    // `assertBuild()` reads it — the two shared this name until `asCtx` was checked.
+    buildId: init.config.buildId ?? 'dev',
+    // What the request gets before the `locale` stage runs, and what it keeps if the stage is
+    // never reached (a refusal in `admit`). The owners' configured fallbacks, never a third one.
+    locale: localeConfig().fallback,
+    tz: timeConfig().defaultZone,
+    clock,
+    ...(init.logger === undefined ? {} : { logger: init.logger }),
+    // Absent means a request nothing can cancel, which is core's `neverAborted` — the same shape
+    // this file kept its own singleton for.
+    ...(init.signal === undefined ? {} : { signal: init.signal }),
+    // `null` and "not set" are one fact to core, whose own field is `number | null`.
+    ...(init.deadlineAt === undefined || init.deadlineAt === null
+      ? {}
+      : { deadlineAt: init.deadlineAt }),
+    ...(init.services === undefined ? {} : { services: init.services }),
+  });
   return {
+    ...base,
+    // Everything below is either this package's own or a core member the PIPELINE rewrites: the
+    // mutable slots are re-declared here so a stage can write them, and they must therefore be
+    // this object's own properties rather than the frozen base's.
     requestId,
     traceId,
     parentSpanId: init.parentSpanId ?? null,
     startedAt: performance.now(),
     url: init.url,
     method: init.method.toUpperCase(),
-    role: init.role,
     config: init.config,
     ip: init.ip ?? null,
     https: init.https ?? init.url.protocol === 'https:',
     peer: init.peer ?? null,
     headers: new Headers(),
     requestHeaders: new Headers(init.requestHeaders),
-    // The build this PROCESS serves, resolved the way core resolves it. The client's claim goes
-    // to `clientBuildId` below, where only `assertBuild()` reads it.
-    buildId: init.config.buildId ?? 'dev',
-    clock,
-    now: () => clock.now(),
-    // A child, so `ctx.logger` carries the ids even where core's ALS injector cannot see the
-    // context — a callback that outlived the request scope, a logger passed to a driver.
-    logger: (init.logger ?? rootLogger).child({ requestId, traceId }),
-    signal: init.signal ?? NEVER_ABORTED,
-    deadlineAt: init.deadlineAt ?? null,
-    // Frozen and explicit. `defineService` factories are NOT installed here: core does not
-    // export the installer, so the honest answer for a service nothing passed is
-    // `X_SERVICE_MISSING` from `useService()` — which is what it exists to raise — rather than
-    // the `TypeError: undefined is not an object` a missing bag produced.
-    services: Object.freeze({ ...(init.services ?? {}) }),
     params: {},
     route: undefined,
     actor: anonymousActor(),
-    // What the request gets before the `locale` stage runs, and what it keeps if the stage is
-    // never reached (a refusal in `admit`). The owners' configured fallbacks, never a third one.
     locale: localeConfig().fallback,
     tz: timeConfig().defaultZone,
     clientBuildId: null,

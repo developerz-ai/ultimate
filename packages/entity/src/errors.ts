@@ -21,6 +21,11 @@ export const ENTITY_OWNED_ERROR_CODES = [
   'X_AGGREGATE_UNSUPPORTED',
   'X_AGGREGATE_MIXED_CURRENCY',
   'X_APPROXIMATE_COUNT_FILTERED',
+  'X_SEARCH_UNDECLARED',
+  'X_SEARCH_IN_MEMORY',
+  'X_STATE_UNDECLARED',
+  'X_STATE_TRANSITION_ILLEGAL',
+  'X_STATE_CONFLICT',
 ] as const;
 
 /**
@@ -58,6 +63,11 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityOwnedErrorCode, string>>
   X_AGGREGATE_UNSUPPORTED: 'that column has no aggregate both drivers can answer alike',
   X_AGGREGATE_MIXED_CURRENCY: 'an amount was aggregated across currencies',
   X_APPROXIMATE_COUNT_FILTERED: 'an estimate was asked of a filtered chain',
+  X_SEARCH_UNDECLARED: 'this entity has no searchable column',
+  X_SEARCH_IN_MEMORY: 'the in-memory driver cannot answer a full-text match',
+  X_STATE_UNDECLARED: 'that column declares no state machine',
+  X_STATE_TRANSITION_ILLEGAL: 'the machine has no such transition',
+  X_STATE_CONFLICT: 'the row is no longer in the state this transition named',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the

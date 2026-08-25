@@ -21,6 +21,17 @@ export interface ColumnDescriptionLike {
    * the field travelling structurally is the *only* way the rule crosses the tier boundary.
    */
   readonly onDelete?: string | null | undefined;
+  /**
+   * The `generated always as (<expr>) stored` body, when the DATABASE computes this column rather
+   * than a writer. Absent on every ordinary column, exactly like `IndexDescriptionLike.using`: a
+   * description written before this existed emits the statement it always emitted.
+   *
+   * `@ultimat3/entity` (tier 2) is the declarer and this package cannot import it, so the
+   * expression crosses the seam structurally or it reaches no DDL at all — which is where it was
+   * until `As of 2026-08-24`: the column landed as a plain `tsvector not null` and the first insert
+   * was a `23502`, because nothing computed it.
+   */
+  readonly generated?: string | undefined;
 }
 
 /**

@@ -8,10 +8,15 @@
 // with `defineService` is what lets `createContext` do that automatically instead of every
 // caller wiring `services: { posts: postsService(ctx) }` by hand at every call site.
 
-import type { Ctx, ServiceBag } from './context';
+import type { CtxFacts, ServiceBag } from './context';
 import { UltimateError } from './errors';
 
-export type ServiceFactory<T = unknown> = (ctx: Ctx) => T;
+/**
+ * `CtxFacts` and not `Ctx`: this factory runs INSIDE `createContext`, against a preview that
+ * carries no other registered service — which the paragraph above has always said and the type
+ * now enforces. It is also what lets `createContext` build that preview without an assertion.
+ */
+export type ServiceFactory<T = unknown> = (ctx: CtxFacts) => T;
 
 const factories = new Map<string, ServiceFactory>();
 
@@ -48,7 +53,7 @@ export function isManagedService(name: string): boolean {
  * service yet — a factory reads the ambient actor/clock/tz, never a sibling service, so
  * factories cannot depend on one another's instances.
  */
-export function installedServices(ctx: Ctx): ServiceBag {
+export function installedServices(ctx: CtxFacts): ServiceBag {
   if (factories.size === 0) return {};
   const bag: Record<string, unknown> = {};
   for (const [name, factory] of factories) bag[name] = factory(ctx);

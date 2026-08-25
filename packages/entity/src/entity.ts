@@ -13,10 +13,13 @@ import { describeEntity, describeReferences } from './describe';
 import { invariantViolated } from './errors';
 import type { Expr, InvariantColumns, Resolve } from './expr';
 import { invariantColumns } from './expr';
+import { indexName } from './index-name';
 import type { Invariant, InvariantDef } from './invariants';
 import { assertInvariants, bindInvariant, invariantsToSql } from './invariants';
 import type { EntityDescription, ReferenceDescription } from './registry';
 import { registerEntity } from './registry';
+import type { SearchInit, SearchSource, SearchVector } from './search';
+import { searchVectorOf } from './search';
 import { resolveTenantColumn } from './tenancy';
 import type { AnyColumn, ColumnMap, ColumnMeta, IndexDef, RowOf } from './types';
 import type { EntityView } from './view';
@@ -73,6 +76,12 @@ export interface EntityInit<C extends ColumnMap> {
    */
   readonly invariants?: (columns: InvariantColumns<C>) => readonly InvariantDef[];
   readonly indexes?: readonly IndexInit<C>[];
+  /**
+   * Full-text search, when the two defaults do not fit: `search_tsv` and `'english'`. WHICH columns
+   * are searched is `.searchable()` on the columns themselves, never restated here — this is the
+   * adoption escape, exactly as `table` and `.column()` are.
+   */
+  readonly search?: SearchInit;
   /** Extra cache tags this entity participates in, beyond its own. */
   readonly tags?: readonly string[];
 }
@@ -95,6 +104,11 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
   readonly $softDelete: boolean;
   /** Property key of the tenant column, or `null`. Presence is what turns tenancy on. */
   readonly $tenantColumn: string | null;
+  /**
+   * The generated `tsvector` this entity's `.searchable()` columns derive, or `null` when none is.
+   * Presence is what makes `.search(text)` legal — both drivers read it, and neither invents one.
+   */
+  readonly $search: SearchVector | null;
   /** Phantom: `type Post = typeof posts.$row`. Reading it at runtime throws. */
   readonly $row: Row;
   /** The Standard Schema the columns already describe — forms and actions hand input to it. */
@@ -125,88 +139,6 @@ export type Entity<Row, C extends ColumnMap = ColumnMap> = EntityCore<Row, C> & 
 
 const MONEY_PARTS = new Set(['minor', 'currency']);
 
-/**
- * What separates two indexes on the SAME columns: the predicate and the direction. Eight hex
- * characters of sha256 over both — deterministic across processes, so a name is a property of the
- * declaration and never of the run that generated it.
- */
-/**
- * What separates two indexes on the SAME columns: the predicate, the direction and the ACCESS
- * METHOD. Eight hex characters of sha256 over all three — deterministic across processes, so a
- * name is a property of the declaration and never of the run that generated it.
- *
- * The method belongs here for exactly the reason `where` does. A btree on an `arrayOf()` column
- * answers `=` and an ordering; a GIN on the same column answers `@>` / `<@` / `&&`. They are two
- * distinct indexes, and without the method in the name both are `<table>_<cols>_idx` — where the
- * dedup below drops one in silence (the defect this discriminator was added for) or, since that
- * dedup is now on the whole definition, two `create index` statements share one name and the
- * migration is `42P07`.
- */
-const indexDiscriminator = (
-  order: string | undefined,
-  where: string | null,
-  using: string | undefined,
-): string =>
-  new Bun.CryptoHasher('sha256')
-    // The method is APPENDED only when one was declared, never as an empty field: every name this
-    // function has ever minted for a partial or ordered index is therefore unchanged by the method
-    // existing, and an index that declares no method is byte-identical to the one it was.
-    .update(`${order ?? ''}|${where ?? ''}${using === undefined ? '' : `|${using}`}`)
-    .digest('hex')
-    .slice(0, 8);
-
-/**
- * `<table>_<columns>_idx`, plus a discriminator when — and only when — the index carries a
- * predicate, a direction or a non-default access method.
- *
- * Only then, because the plain name is load-bearing in two places: `unique()` on a column is an
- * inline column clause and Postgres names the index it creates exactly `<table>_<column>_key`, so
- * a discriminator there would make the generator emit a second `create unique index` for an index
- * that already exists (`42P07`); and a foreign key's own index is deduped against a hand-declared
- * one by this name.
- *
- * Without it, two DIFFERENT partial indexes on one column were one name — `posts_author_id_idx`
- * for both `where status = 'published'` and `where status = 'draft'` — and the dedup below dropped
- * the second with no error, no warning and no drift finding, since a declared index is matched by
- * name.
- */
-/**
- * `NAMEDATALEN - 1`. Postgres truncates a longer identifier and says NOTHING, so two index names
- * sharing their first 63 bytes become one index on the server — the same silent collapse the
- * discriminator above exists to prevent, one layer down, and invisible to a drift check comparing
- * DECLARED names because those still differ. Bytes and not characters: 63 is what the server
- * counts, and `.length` would stop seeing the truncation the moment a name is not ASCII.
- */
-const MAX_IDENTIFIER_BYTES = 63;
-
-const byteLength = (value: string): number => new TextEncoder().encode(value).length;
-
-const indexName = (
-  entityName: string,
-  table: string,
-  columns: readonly string[],
-  unique: boolean,
-  order?: string | undefined,
-  where: string | null = null,
-  using?: IndexMethod | undefined,
-): string => {
-  const suffix = unique ? 'key' : 'idx';
-  const base = `${table}_${columns.join('_')}`;
-  const plain = order === undefined && where === null && using === undefined;
-  const name = plain
-    ? `${base}_${suffix}`
-    : `${base}_${indexDiscriminator(order, where, using)}_${suffix}`;
-  const bytes = byteLength(name);
-  if (bytes <= MAX_IDENTIFIER_BYTES) return name;
-  throw invariantViolated(
-    entityName,
-    'index',
-    `the index on (${columns.join(', ')}) is named "${name}", which is ${bytes} bytes — ` +
-      `Postgres truncates an identifier at ${MAX_IDENTIFIER_BYTES} and does not say so, ` +
-      'so two indexes can silently become one',
-  );
-};
-
 const defaultValue = (meta: ColumnMeta): unknown => {
   const declared = meta.default;
   if (declared === undefined) return undefined;
@@ -229,6 +161,22 @@ export const entity = <const C extends ColumnMap>(
   const cacheTag = `entity:${name}`;
   const softDelete = Object.hasOwn(init.columns, SOFT_DELETE_COLUMN);
   const tenantColumn = resolveTenantColumn(name, init.columns, init.tenant);
+
+  const searchSources: readonly SearchSource[] = entries.flatMap(([property, column]) => {
+    const weight = column.$meta.searchable;
+    return weight === undefined ? [] : [{ column: columnName(property, column.$meta), weight }];
+  });
+  const search = searchVectorOf(
+    searchSources,
+    init.search,
+    // `physical`, not `candidate`: a parameter whose NAME reads like a credential is what
+    // `bun run secret-compare` refuses an `===` on, and this is a column name.
+    (physical) =>
+      entries.some(([property, column]) => columnName(property, column.$meta) === physical),
+    (subject, detail) => {
+      throw invariantViolated(name, subject, detail);
+    },
+  );
 
   const primaryKey =
     init.primaryKey ?? entries.filter(([, column]) => column.$meta.primaryKey).map(([key]) => key);
@@ -342,6 +290,19 @@ export const entity = <const C extends ColumnMap>(
         ...(index.using === undefined || index.using === 'btree' ? {} : { using: index.using }),
       };
     }),
+    // The one index nobody declared and every search needs. Through the SAME `IndexInit` path a
+    // hand-written `using: 'gin'` takes — `indexName` gives it the method discriminator, so it can
+    // never collide with a btree an author declares on the same column.
+    ...(search === null
+      ? []
+      : [
+          {
+            name: indexName(name, table, [search.column], false, undefined, null, 'gin'),
+            columns: [search.column],
+            unique: false,
+            using: 'gin' as IndexMethod,
+          },
+        ]),
   ];
   /**
    * A foreign key already indexes its column; naming it again in `indexes` is not two indexes.
@@ -379,6 +340,7 @@ export const entity = <const C extends ColumnMap>(
       cacheTag,
       softDelete,
       tenantColumn,
+      search,
     });
   const references = (): readonly ReferenceDescription[] => describeReferences(name, entries);
 
@@ -423,6 +385,7 @@ export const entity = <const C extends ColumnMap>(
     $cacheTag: cacheTag,
     $softDelete: softDelete,
     $tenantColumn: tenantColumn,
+    $search: search,
     $schema: {
       '~standard': {
         version: 1,

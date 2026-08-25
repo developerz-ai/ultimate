@@ -14,6 +14,15 @@ export interface ColumnDescription {
   readonly nullable: boolean;
   readonly default: string | null;
   readonly position: number;
+  /**
+   * The generation expression, as the SNAPSHOT spells it. Absent for an ordinary column and absent
+   * for every row this module reads out of the live catalog — deliberately: Postgres stores its own
+   * rewriting of the expression (`COALESCE(title, ''::text)` for `coalesce("title", '')`), so a
+   * catalog value could never compare equal to a generated one, and drift would report a correct
+   * database forever. Both sides of the diff that DOES read it — `x db gen`'s — are generated
+   * spellings, which is the same rule `IndexDescription.where` states one field down.
+   */
+  readonly generated?: string | undefined;
 }
 
 export interface IndexDescription {

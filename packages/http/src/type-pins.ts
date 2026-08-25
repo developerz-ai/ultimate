@@ -3,7 +3,9 @@
 // test file and a claim written there can never fail. Nothing here emits or is imported — a
 // regression is a build error, the only enforcement that counts (axiom 3).
 
+import type { Ctx } from '@ultimat3/core';
 import type { HttpConfig, HttpConfigInput } from './config';
+import type { RequestContext } from './context';
 import type { AuthzDecision } from './hooks';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
@@ -70,3 +72,16 @@ export type _EveryHttpConfigKeyIsSettable = Assert<
 // `keyof HttpConfigInput` by construction and the assertion is vacuously true whatever anyone
 // edits — a claim that cannot fail is not a claim. The derivation IS the enforcement there; this
 // file only pins what a derivation cannot say.
+
+/**
+ * `RequestContext` IS a `Ctx`, so `asCtx` stays a checked widening rather than an assertion.
+ *
+ * `asCtx` already carries this claim at its own call site and this pin is not a duplicate of it:
+ * `asCtx` is a function body, and a future edit answering a failure there with a cast would delete
+ * the enforcement and leave the comment. A pin has nothing to cast.
+ *
+ * The direction that matters is this one and not the reverse — `Ctx extends RequestContext` is
+ * FALSE by design, because core's `Ctx` carries no `requestHeaders`, which is precisely what
+ * `assertInRequest` exists to prove one way at runtime.
+ */
+export type _RequestContextIsACtx = Assert<RequestContext extends Ctx ? true : false>;

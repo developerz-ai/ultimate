@@ -10,6 +10,7 @@ import { arrayContains, arrayOverlaps, jsonContains, jsonHasKey } from './contai
 import { kindOf, valueAt } from './cursor';
 import type { EntityCore } from './entity';
 import { EntityError } from './errors';
+import { searchInMemory } from './feature-errors';
 import { instantMicros } from './instant';
 import type { Predicate } from './tenancy';
 import type { ColumnKind } from './types';
@@ -158,6 +159,10 @@ export const matchesPredicate = <Row>(
   row: unknown,
   predicate: Predicate,
 ): boolean => {
+  // BEFORE anything is read off the row. A full-text match has no in-memory meaning — see
+  // `searchInMemory` — and `valueAt(row, '$search')` would answer `undefined`, which every
+  // comparison below reads as NULL and silently turns into "no rows".
+  if (predicate.op === 'matches') throw searchInMemory(entity.$name);
   // The column's declared kind, resolved once — `price.minor` included, which is the path a money
   // predicate and a money sort key both name.
   const kind = kindOf(entity, predicate.column);

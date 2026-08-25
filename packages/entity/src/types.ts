@@ -48,6 +48,13 @@ export type ColumnDefault =
 
 export type OnDelete = 'cascade' | 'restrict' | 'set null';
 
+/**
+ * A source column's contribution to the entity's search vector — Postgres' own four labels, which
+ * `ts_rank` weights `{D, C, B, A}` = `{0.1, 0.2, 0.4, 1.0}` by default. `D` is what an unweighted
+ * `to_tsvector` produces, so it is the default here too.
+ */
+export type SearchWeight = 'A' | 'B' | 'C' | 'D';
+
 export interface ReferenceOptions {
   readonly onDelete?: OnDelete;
 }
@@ -63,6 +70,7 @@ export interface ReferenceOptions {
  * `t.money` — the schema node that becomes the OpenAPI contract — rejected the framework's own row.
  */
 import type { MoneyValue } from '@ultimat3/schema';
+import type { StateMachine, TransitionTable } from './state-machine';
 
 export type { MoneyValue };
 
@@ -133,6 +141,20 @@ export interface ColumnMeta {
   /** A thunk: schema modules reference each other in a cycle. */
   readonly references?: () => AnyColumn;
   readonly onDelete?: OnDelete;
+  /**
+   * Presence is what puts this column in the entity's generated `tsvector`, and the value is its
+   * weight. A modifier and not a column of its own: the vector is derived from every searchable
+   * column at once (`search.ts`), so declaring it per column would be one vector per column and
+   * one GIN index per column.
+   */
+  readonly searchable?: SearchWeight;
+  /**
+   * The state machine this column's values move through, when one was declared. Built once at
+   * declaration (`stateMachineOf`) so an illegal table is a refusal where it was written, and held
+   * as the built machine rather than the literal table because the literal is an object a caller
+   * indexes by a data key.
+   */
+  readonly machine?: StateMachine;
 }
 
 /**
@@ -159,6 +181,34 @@ export interface Column<T, Optional extends boolean = false> {
    * override it to keep theirs, and nothing else has any.
    */
   column(name: string): Column<T, Optional>;
+  /**
+   * Adds this column to the entity's one generated `tsvector`, at `weight` (default `D`). Text
+   * only — every other kind is refused here, where the chain was written.
+   */
+  searchable(weight?: SearchWeight): Column<T, Optional>;
+}
+
+/**
+ * `enumerated()`'s own column: the one that may declare a state machine, because it is the one
+ * that already declares a closed set of values for the machine to move through.
+ *
+ * The links below are overridden for the reason `UuidColumn`'s and `TimestampColumn`'s are — the
+ * generic chain answers the general `Column`, so `enumerated(S).default('draft')` would lose
+ * `transitions` and `enumerated(S).transitions(T).column('c')` would lose the machine's own type.
+ */
+export interface EnumeratedColumn<V extends readonly string[], Optional extends boolean = false>
+  extends Column<V[number], Optional> {
+  /**
+   * Declares which values may follow which. The states are `V` — this column's own — so the
+   * framework never names one: a missing state, an unknown key and an unknown target are each a
+   * compile error against the set the app already wrote.
+   *
+   * A state machine column may not be nullable: NULL is not a state, so nothing could say what it
+   * may move to.
+   */
+  transitions(table: TransitionTable<V[number]>): EnumeratedColumn<V, Optional>;
+  default(value: V[number]): EnumeratedColumn<V, true>;
+  column(name: string): EnumeratedColumn<V, Optional>;
 }
 
 /**

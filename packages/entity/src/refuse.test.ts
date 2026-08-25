@@ -46,7 +46,13 @@ const c = invariantColumns<typeof columns>('refuse_test_posts', Object.keys(colu
  * narrowing TypeScript needs, and an unreachable fix that is wrong is still one nobody may copy —
  * and it is counted here so the total below still pins every site.
  */
-const UNREACHABLE_SITES = 1;
+/**
+ * Two now. The second is `transitions()`'s own `!meta.notNull` guard (`columns.ts`): `nullable()`
+ * answers the general `Column`, which has no `transitions`, so TypeScript refuses that order of the
+ * chain before the guard can run. It stays because a JS caller and a re-wrapped `$meta` both reach
+ * it — and it carries the same fix line as its reachable twin below, which is what this file is for.
+ */
+const UNREACHABLE_SITES = 2;
 
 /**
  * Every site that refuses through `refuseColumn` or `refuseInvariant`, one thunk each. The count
@@ -87,6 +93,18 @@ const SITES: readonly (readonly [string, () => unknown])[] = [
   ['bytes value', () => bytes().$parse('nope')],
   ['array value', () => arrayOf(text()).$parse('nope')],
   ['invariant matches flags', () => c.slug.matches(/^a+$/g)],
+  ['searchable kind', () => uuid().searchable()],
+  // A JS caller reaching the weight refusal — the union makes it unwritable in TypeScript, and
+  // `.searchable(input.weight)` from parsed JSON is exactly how it arrives anyway.
+  ['searchable weight', () => text().searchable('Z' as 'A')],
+  ['transitions table', () => enumerated(['a', 'b']).transitions({ a: ['c'], b: [] } as never)],
+  [
+    'transitions nullable',
+    () =>
+      enumerated(['a', 'b'])
+        .transitions({ a: ['b'], b: [] })
+        .nullable(),
+  ],
 ];
 
 /** A fix is an instruction: a call to paste, a command to run, or an edit naming a file. */

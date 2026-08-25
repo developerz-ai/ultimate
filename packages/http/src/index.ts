@@ -2,6 +2,16 @@
 // listed here is an implementation detail and may change without a major bump.
 
 export type { RenderMode } from '@ultimat3/core';
+// The wire format is `@ultimat3/core`'s and is RE-EXPORTED, never re-declared: it is one module at
+// the tier both halves can reach, because `@ultimat3/jobs` signs a delivery, this package verifies
+// one, and neither may import the other. Re-exported here so a receiver route needs one import.
+export {
+  isCanonicalWebhookField,
+  WEBHOOK_ID_HEADER,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_SIGNATURE_VERSION,
+  WEBHOOK_TOPIC_HEADER,
+} from '@ultimat3/core';
 export type { AppHttpConfig, BootOwnedHttpKey } from './app-config';
 export { configuredHttp, configureHttp, mergeHttpConfig, resetHttpConfig } from './app-config';
 export { NEXT_PARAM, nextAfterSignIn, signInRedirect } from './auth-redirect';
@@ -77,6 +87,8 @@ export {
   serverNotStarted,
   trustProxyUnset,
   unauthenticated,
+  webhookSignatureInvalid,
+  webhookSignatureStale,
 } from './errors';
 export type { ForwardedInput, ForwardedSplit } from './forwarded';
 export {
@@ -192,3 +204,9 @@ export { createServer } from './server';
 export type { Stage, StageDoc, StageName, StagePhase, StageRun } from './stages';
 export type { InferOutput, Schema, ValidationOutcome } from './validate';
 export { formatIssue, validate, validateSync } from './validate';
+export type { VerifiedWebhook, WebhookVerifyOptions } from './webhook-verify';
+export {
+  DEFAULT_WEBHOOK_BODY_LIMIT,
+  DEFAULT_WEBHOOK_TOLERANCE_MS,
+  verifyWebhookSignature,
+} from './webhook-verify';

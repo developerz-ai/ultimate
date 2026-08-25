@@ -22,9 +22,6 @@ export {
   url,
   uuid,
 } from './columns';
-// The vocabulary an EXISTING schema needs. Separate from the blessed builders on purpose: those
-// are decisions this framework made for a table it was going to create, and these are the shapes
-// a table already has (`docs`: Entities-And-Migrations, "Adopting an existing database").
 export type { DecimalOptions } from './columns-data';
 export { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
 // `crossTenantReason` stays internal: an app that could read the flag would have a second way to
@@ -36,6 +33,9 @@ export type { DescribeInput } from './describe';
 export { sqlTypeOf } from './describe';
 export type { Entity, EntityCore, EntityInit, IndexInit } from './entity';
 export { entity, SOFT_DELETE_COLUMN } from './entity';
+// The vocabulary an EXISTING schema needs. Separate from the blessed builders on purpose: those
+// are decisions this framework made for a table it was going to create, and these are the shapes
+// a table already has (`docs`: Entities-And-Migrations, "Adopting an existing database").
 export type {
   EntityErrorCode,
   PreloadCandidate,
@@ -65,6 +65,15 @@ export {
   writeUnfiltered,
 } from './errors';
 export type { ColumnExpr, Expr, InvariantColumns, Resolve } from './expr';
+/** The two DECLARED capabilities' refusals — a third-party driver raises the same ones. */
+export type { IllegalTransition } from './feature-errors';
+export {
+  searchInMemory,
+  searchUndeclared,
+  stateConflict,
+  stateTransitionIllegal,
+  stateUndeclared,
+} from './feature-errors';
 export type { Invariant, InvariantDef, InvariantKind } from './invariants';
 export {
   assertInvariants,
@@ -116,6 +125,20 @@ export type {
 } from './repo';
 export type { RowBulkChange, RowChange, RowChangeOp, RowObserver } from './row-observer';
 export { observedRepo, rowObserver, setRowObserver } from './row-observer';
+// Full-text search. The LANGUAGE set and the weights are values an app reads to build a form;
+// `SEARCH_PROPERTY` is what a `matches` predicate names, which a hand-built `QueryPlan` needs.
+export type { SearchInit, SearchLanguage, SearchSource, SearchVector } from './search';
+export {
+  DEFAULT_SEARCH_COLUMN,
+  DEFAULT_SEARCH_LANGUAGE,
+  DEFAULT_SEARCH_WEIGHT,
+  isSearchLanguage,
+  isSearchWeight,
+  SEARCH_LANGUAGES,
+  SEARCH_PROPERTY,
+  SEARCH_WEIGHTS,
+  searchExpression,
+} from './search';
 export type {
   Seed,
   SeedContext,
@@ -128,6 +151,16 @@ export type {
   SeedWrite,
 } from './seed';
 export { defineSeed, isSeed, SEED_TIERS, seedId, seedTiersFor } from './seed';
+// A state machine over a column. The MECHANISM only: the table, the refusal, the terminal concept.
+// The states are the app's `enumerated()` set and nothing here names one.
+export type { StateMachine, TransitionTable } from './state-machine';
+export {
+  canMove,
+  isState,
+  isTerminal,
+  movesFrom,
+  stateMachineOf,
+} from './state-machine';
 export type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
 export {
   assertRowTenant,
@@ -141,6 +174,7 @@ export {
   scopedPlan,
   tenantColumnOf,
 } from './tenancy';
+export type { Move } from './transition';
 export type {
   AnyColumn,
   Column,
@@ -148,6 +182,7 @@ export type {
   ColumnKind,
   ColumnMap,
   ColumnMeta,
+  EnumeratedColumn,
   IdOf,
   IndexDef,
   Insertable,
@@ -158,6 +193,7 @@ export type {
   ReferenceOptions,
   RowOf,
   RowPatch,
+  SearchWeight,
   TimestampColumn,
   TypeOf,
   UuidColumn,

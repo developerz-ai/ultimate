@@ -5,7 +5,6 @@
 import { uuid as uuidV7 } from '@ultimat3/core';
 import {
   CURRENCY_CODE_PATTERN,
-  describeValue,
   isCurrencyCode,
   isMoneyScale,
   MAX_MONEY_SCALE,
@@ -19,6 +18,7 @@ import {
   makeColumn,
   makeTimestamp,
 } from './column';
+import { got, oneOf } from './column-values';
 import { refuseColumn } from './refuse';
 import type {
   Column,
@@ -30,23 +30,6 @@ import type {
   TimestampColumn,
   UuidColumn,
 } from './types';
-
-/**
- * The rejected value, rendered as its SHAPE and never its content — `@ultimat3/schema`'s
- * `describeValue`, the same renderer every builtin validator fails through, so a column and a
- * schema describe one bad value the same way.
- *
- * WHY it is not `String(value)`: a column rejection is not a private diagnostic. It becomes
- * `X_INVARIANT_VIOLATED`'s `cause` and a `$view` issue, which `@ultimat3/http` returns to the
- * caller AND writes into the log line — and core's logger redacts by KEY, so a value baked into a
- * message has no key left to redact. `text()` on a password field wrote the mistyped password to
- * the central log index in cleartext and into the user's own network tab; a `uuid()` holding an
- * API key surrogate does the same. A column is the worse half of that pair, because the value can
- * arrive from the DATABASE — so the leak is not bounded by what someone just typed.
- *
- * `got` stays `got` and the "expected …" half is untouched: only what follows it changes.
- */
-const got = (value: unknown): string => `got ${describeValue(value)}`;
 
 /** uuid v7: time-ordered, so a primary key index stays append-friendly. */
 export const newId = (): string => uuidV7();
@@ -151,34 +134,6 @@ const parseInstant = (value: unknown): Date => {
 /** Always `timestamptz`. UTC storage is not a per-table decision. */
 export const timestamp = (): TimestampColumn =>
   makeTimestamp<false>({ ...BARE, kind: 'timestamptz' }, parseInstant, false);
-
-const quote = (value: string): string => `'${value.replaceAll("'", "''")}'`;
-
-const oneOf =
-  (values: readonly string[]) =>
-  (name: string): string =>
-    `${name} in (${values.map(quote).join(', ')})`;
-
-/**
- * A closed set of strings, emitted as a CHECK rather than a Postgres `ENUM` type: adding a
- * variant is then a one-line migration instead of `ALTER TYPE`, which cannot run inside a
- * transaction on older servers.
- */
-export const enumerated = <const V extends readonly string[]>(values: V): Column<V[number]> => {
-  const allowed = new Set<string>(values);
-  return column<V[number]>(
-    'text',
-    (value) =>
-      typeof value === 'string' && allowed.has(value)
-        ? value
-        : refuseColumn(
-            'enum',
-            `expected one of ${values.join(' | ')}, ${got(value)}`,
-            'store one of the values enumerated() declares, or add the new variant to that list and run x db gen "extend the enum check" — the values are a CHECK constraint, so the table moves with them',
-          ),
-    { values, check: oneOf(values) },
-  );
-};
 
 /**
  * An absolute http(s) URL, validated on write rather than on render: a bad URL stored once is
@@ -454,3 +409,7 @@ export const currencyCheck = (currencyColumn: string): string =>
  */
 export const scaleCheck = (scaleColumn: string): string =>
   `${scaleColumn} is null or (${scaleColumn} >= 0 and ${scaleColumn} <= ${MAX_MONEY_SCALE})`;
+
+// `enumerated()` lives in `enum-column.ts` — it is the one builder with a chain of its own, and
+// splitting it is what kept this file under the ceiling. Re-exported so no caller had to move.
+export { enumerated } from './enum-column';

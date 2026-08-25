@@ -25,6 +25,15 @@ export interface ColumnDescription {
    * projection reaches no `alter table` at all. It reached none until 3.0.
    */
   readonly onDelete: OnDelete | null;
+  /**
+   * The `generated always as (<expr>) stored` body, when the DATABASE computes this column rather
+   * than a writer. Absent on every ordinary column, matching `IndexDescription.using`: a
+   * description written before this existed reads the same, so nothing regenerates.
+   *
+   * `@ultimat3/db` is tier 1 and cannot import this package, so — exactly like `onDelete` — a
+   * field that is not on this projection reaches no DDL at all.
+   */
+  readonly generated?: string;
 }
 
 /**

@@ -10,6 +10,7 @@ import { columnFor } from './column';
 import { isNullableKey, kindOf } from './cursor';
 import type { EntityCore } from './entity';
 import { SOFT_DELETE_COLUMN } from './entity';
+import { searchUndeclared } from './feature-errors';
 import { microsToIso, seekAlias } from './instant';
 import { allColumns, arrayLiteral, columnsOf, physicalName } from './pg-row';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
@@ -28,7 +29,38 @@ export interface ReadShape {
 const columnRef = <Row>(entity: EntityCore<Row>, path: string): SqlFragment =>
   identifier(physicalName(entity, path));
 
+/**
+ * `websearch_to_tsquery`, and the choice is the point of the whole feature.
+ *
+ * `to_tsquery` reads its argument as tsquery SYNTAX — `&`, `|`, `!`, `<->`, `:*`, parentheses — so
+ * a term straight out of a search box is either a `42601` on the first unbalanced paren or, worse,
+ * an operator the caller did not write. `plainto_tsquery` is safe but ANDs every word and throws
+ * the user's own operators away silently. `websearch_to_tsquery` is the parser Postgres ships for
+ * untrusted input: it never raises a syntax error, and it gives `"quoted phrase"`, `or` and a
+ * leading `-` the meaning every search box on the web already has. Cats & dogs is three terms.
+ *
+ * The term crosses as a BOUND PARAMETER either way — nothing here interpolates it — so the choice
+ * is not what stops an injection; the parameter is. What the parser decides is whether the user's
+ * punctuation is read as syntax, which is the second half of the same question.
+ *
+ * The configuration is spliced through `raw()`, from `SEARCH_LANGUAGES`, exactly as `asc|desc` is:
+ * a closed set of one word, chosen by this file from the ENTITY's declaration and never from a
+ * value on the wire. `regconfig` cannot be a bound parameter and stay index-matchable anyway.
+ */
+const searchSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFragment => {
+  const vector = entity.$search;
+  if (vector === null) throw searchUndeclared(entity.$name);
+  const column = identifier(vector.column);
+  // The term as TEXT, whatever arrived: `websearch_to_tsquery` takes text, and a number or a null
+  // reaching it as a parameter is a `42883` where the caller is owed "no rows".
+  const term = predicate.value === null || predicate.value === undefined ? '' : predicate.value;
+  return sql`${column} @@ websearch_to_tsquery(${raw(`'${vector.language}'`)}, ${String(term)})`;
+};
+
 const predicateSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFragment => {
+  // BEFORE the column is resolved: a `matches` predicate names `SEARCH_PROPERTY`, which is not a
+  // column and must never be looked up as one.
+  if (predicate.op === 'matches') return searchSql(entity, predicate);
   const column = columnRef(entity, predicate.column);
   const value = predicate.value;
   switch (predicate.op) {

@@ -72,7 +72,7 @@ export type {
   ThemeMode,
 } from './config';
 export { defineConfig } from './config';
-export type { Ctx, CtxInit, CtxPatch, CtxServices, ServiceBag } from './context';
+export type { Ctx, CtxFacts, CtxInit, CtxPatch, CtxServices, ServiceBag } from './context';
 export {
   createContext,
   DEFAULT_LOCALE,
@@ -535,3 +535,24 @@ export {
   VERSION_DEFINE,
   VERSION_MANIFEST,
 } from './version';
+// The webhook wire format, at the tier both halves can reach — `@ultimat3/jobs` signs a delivery
+// and `@ultimat3/http` verifies one, and neither may import the other. Same argument
+// `timing-safe-equal.ts` makes for itself, one line above.
+export type {
+  WebhookMacInput,
+  WebhookSignatureFields,
+  WebhookSigningInput,
+} from './webhook-signature';
+export {
+  isCanonicalWebhookField,
+  parseWebhookSignatureHeader,
+  WEBHOOK_FIELD_MAX,
+  WEBHOOK_ID_HEADER,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_SIGNATURE_VERSION,
+  WEBHOOK_TOPIC_HEADER,
+  webhookHeaders,
+  webhookMac,
+  webhookSignature,
+  webhookSigningString,
+} from './webhook-signature';

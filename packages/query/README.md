@@ -172,6 +172,54 @@ server memory bought with an occasional extra page fetch.
 An honest refusal beats a silently wrong result set, so unsupported shapes fail at
 **subscribe** time, not on the first change event.
 
+## `search()` — the query factory over a searchable entity
+
+A model call is an `action` and a sweep is a `job`; a search is a **read**, so `search()` returns a
+`query`. It inherits the policy, the cache tags, the MCP tool, the typed client, the route and its
+manifest row — there is no ninth primitive.
+
+```ts
+import { type QueryPolicy, search, type SearchChain, t } from '@ultimat3/query';
+
+interface PostRow {
+  readonly id: string;
+  readonly title: string;
+  readonly createdAt: Date;
+}
+
+// `@ultimat3/entity`'s chain, crossed STRUCTURALLY: a real `db.posts` satisfies `SearchChain`
+// as written, so this package holds no dependency edge on entity.
+declare const db: {
+  readonly posts: {
+    where(filter: { readonly orgId: string }): {
+      orderBy(column: keyof PostRow & string, direction: 'asc' | 'desc'): SearchChain<PostRow>;
+    };
+  };
+};
+declare const postRead: QueryPolicy;
+declare const orgId: string;
+
+export const searchPosts = search({
+  input: { orgId: t.uuid },              // your own keys — `q` and `limit` are added
+  policy: postRead,
+  page: { max: 50, default: 20 },
+  // The chain WITHOUT the term: tenancy, filters, and the order the page is served in.
+  in: ({ input }) => db.posts.where({ orgId: input.orgId }).orderBy('createdAt', 'desc'),
+});
+
+// A query is CALLABLE — there is no `.run()`; `.as()`, `.page()` and `.client()` are the rest.
+await searchPosts({ orgId, q: 'cats -dogs "exact phrase"' });
+```
+
+`search()` adds `.search(q)` and `.limit(limit)` and nothing else, which is what makes the term
+unable to arrive any other way. A blank term is refused rather than answered with no rows — an
+empty box is not an empty result set.
+
+**It serves one page.** The rows come from the entity chain, which pages by its own signed cursor;
+that cursor cannot cross the `SqlSource` seam, and slicing in memory instead would cut inside the
+page the provider fetched and report `hasNextPage: false` at its edge. So a second page is
+refused, and the `fix:` names the chain — `db.posts.search(term).after(cursor).page()`.
+
 ## Pagination is cursor-only
 
 `offset` does not exist in this package on purpose: it makes the database count rows it

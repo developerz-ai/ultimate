@@ -34,6 +34,8 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_TRUST_PROXY_UNSET',
   'X_OVERLOADED',
   'X_CSRF_BLOCKED',
+  'X_WEBHOOK_SIGNATURE_INVALID',
+  'X_WEBHOOK_SIGNATURE_STALE',
 ] as const;
 
 /**
@@ -88,6 +90,8 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_TRUST_PROXY_UNSET: 'proxy headers are trusted without saying how many proxies are in front',
   X_OVERLOADED: 'in-flight requests are at the configured ceiling',
   X_CSRF_BLOCKED: 'a credentialed write arrived from an origin that is not allowed to make it',
+  X_WEBHOOK_SIGNATURE_INVALID: 'the inbound webhook is not signed by the holder of this secret',
+  X_WEBHOOK_SIGNATURE_STALE: 'the inbound webhook is signed correctly and is too old to accept',
 };
 
 // Registered at module load, unconditionally, in one call, so core's registry renders OUR title
@@ -378,4 +382,38 @@ export const requestTimedOut = (method: string, pathname: string, timeoutMs: num
     cause: `${method} ${pathname} did not finish within ${timeoutMs}ms`,
     fix: 'pass ctx.signal to every outbound call (fetch(url, { signal: ctx.signal })) and call throwIfAborted(ctx) before expensive work, or call configureHttp({ requestTimeoutMs: 60_000 }) at module scope in a file under apps/*/',
     meta: { timeoutMs },
+  });
+
+/**
+ * The inbound delivery is not signed by the holder of this route's secret — a wrong secret, a
+ * body something rewrote in transit, or a header this format does not define.
+ *
+ * 401 rather than 400: the request is well formed and carried a CREDENTIAL, and the credential is
+ * what failed. Rather than 403, which means an authenticated caller was refused, and there is no
+ * authenticated caller here. `reason` names only what the framework chose — never the signature
+ * that arrived, never the secret, and never the body — because a `cause` reaches both the caller
+ * and the log store, and a credential in either is a leak wearing a diagnostic's clothes.
+ */
+export const webhookSignatureInvalid = (pathname: string, reason: string): HttpError =>
+  new HttpError({
+    code: 'X_WEBHOOK_SIGNATURE_INVALID',
+    cause: `${pathname} refused an inbound webhook: ${reason}`,
+    fix: 'sign the delivery with the secret this endpoint was registered under, or re-read the secret from your sender dashboard and pass it as verifyWebhookSignature(request, { secret })',
+  });
+
+/**
+ * Signed correctly, and outside the replay window. Its own code because the repair is a different
+ * one: a sender's clock, or a delivery being replayed off a capture. Same 401 — the credential is
+ * a TIMESTAMPED one, and this is the expiry half of it.
+ */
+export const webhookSignatureStale = (
+  pathname: string,
+  skewMs: number,
+  toleranceMs: number,
+): HttpError =>
+  new HttpError({
+    code: 'X_WEBHOOK_SIGNATURE_STALE',
+    cause: `${pathname} received a valid signature ${skewMs}ms from this clock, and the window is ${toleranceMs}ms`,
+    fix: 'sync the sending host clock with NTP, or widen the window with verifyWebhookSignature(request, { secret, toleranceMs: 600_000 }) if the sender queues deliveries for longer than that',
+    meta: { skewMs, toleranceMs },
   });

@@ -8,6 +8,7 @@
 
 import { invariantViolated } from './errors';
 import { refuseColumn } from './refuse';
+import { DEFAULT_SEARCH_WEIGHT, isSearchWeight } from './search';
 import type {
   AnyColumn,
   Column,
@@ -180,6 +181,27 @@ export const makeColumn = <T, Optional extends boolean>(
     ),
 
   unique: () => makeColumn<T, Optional>({ ...meta, unique: true }, parse, optional),
+
+  searchable: (weight = DEFAULT_SEARCH_WEIGHT) => {
+    // Refused where the chain was written, because the alternative is a `to_tsvector` over a cast
+    // the DDL cannot express: `to_tsvector` takes text, and a `jsonb` or a `timestamptz` reaching
+    // it is a `42883` inside `ROLE=migrate`, with the server's words and none of the column's.
+    if (meta.kind !== 'text') {
+      refuseColumn(
+        'searchable',
+        `a ${meta.kind} column is not searchable — full text search reads text`,
+        'text().searchable() — index a text() column, and store the searchable projection of a structured value in one of its own',
+      );
+    }
+    if (!isSearchWeight(weight)) {
+      refuseColumn(
+        'searchable',
+        `"${String(weight)}" is not a search weight`,
+        "text().searchable('A') — one of A, B, C or D, biggest first; omit it for D",
+      );
+    }
+    return makeColumn<T, Optional>({ ...meta, searchable: weight }, parse, optional);
+  },
 
   tenant: () => makeColumn<T, Optional>({ ...meta, tenant: true, index: true }, parse, optional),
 
