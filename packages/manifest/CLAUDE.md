@@ -132,6 +132,14 @@ by the CLI, not imported.
   **breaking**, so it also demands a major release of every APP that regenerates. Charging every
   app a major for a field their readers never had to look at is a fix line that is not true.
   `build.test.ts`'s `shape compatibility` case is the assertion — if it fails, the bump is earned.
+- **`QueryFact.subscribes` is the one fact a tier-1 generator cannot reach any other way** (`As of
+  2026-08-26`). `@ultimat3/db` needs the tables a live query subscribes to so `x db gen` can grant
+  them `REPLICA IDENTITY FULL`, and `@ultimat3/cli` (tier 5) cannot import `@ultimat3/query`'s
+  runtime to ask — the manifest is the crossing. Written only when the read declared some:
+  `QueryDescriptor.subscribes` is `null` for a read that named none and an empty list is refused at
+  `query()`, so absence carries the whole meaning and no plain read pays a key for it. Classified
+  in `diff-operations.ts` as **internal** — no caller's contract moved — but reported, because the
+  list is what a migration is keyed on.
 - `diff.ts` reads `mcp.expose` through `isMcpExposed` from `@ultimat3/core`, on **both** sides.
   `before` is a file parsed off disk, so an older or hand-trimmed manifest can carry an absent or
   non-boolean value that `!==` would classify from; and the fact `sources.ts` publishes has to be

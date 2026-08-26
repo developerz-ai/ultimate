@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "3172b1261c1cd2a5",
+  "buildId": "8c9a514d2b6b2c1c",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -1875,6 +1875,9 @@
         "feed:read"
       ],
       "live": true,
+      "subscribes": [
+        "posts"
+      ],
       "cacheTags": []
     },
     {

@@ -112,11 +112,20 @@ function tableOf(value: unknown): TableDescription | undefined {
   // Absent, never `[]`. A sidecar written before constraints were recorded says nothing about
   // them, and reading that as "this table declares none" would drop every invariant an app has
   // already generated instead of adding the ones its database is missing.
+  // `true` or nothing. `false` is accepted and NORMALISED away rather than rejecting the file: it
+  // is a hand-edit meaning exactly what absence means, and discarding the whole snapshot over it
+  // makes `x db gen` refuse with `X_MIGRATION_SNAPSHOT_MISSING` on a sidecar that says nothing
+  // wrong. Any other value is garbage and takes the file with it, like every field above.
+  const identity = value['replicaIdentityFull'];
+  if (!(identity === undefined || bool(identity))) return undefined;
+  const replica = identity === true ? { replicaIdentityFull: true as const } : {};
   const raw = value['checks'];
-  if (raw === undefined) return { schema, name, columns, primaryKey, indexes, foreignKeys };
+  if (raw === undefined) {
+    return { schema, name, columns, primaryKey, indexes, foreignKeys, ...replica };
+  }
   const checks = all(raw, check);
   if (checks === undefined) return undefined;
-  return { schema, name, columns, primaryKey, indexes, foreignKeys, checks };
+  return { schema, name, columns, primaryKey, indexes, foreignKeys, checks, ...replica };
 }
 
 /**

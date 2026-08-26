@@ -313,6 +313,32 @@ describe('every collection is sorted by its own key', () => {
     expect(diffManifest(one, other).changes).toEqual([]);
   });
 
+  // The twin, for the field `x db gen` reads: a set the author declared, in a file reviewed by
+  // hand, so declaration order must not churn `buildId` — and absence must survive the rebuild,
+  // because `normalizeQuery` writing `subscribes: []` would tell the emitter to grant REPLICA
+  // IDENTITY FULL to nothing while claiming the read asked.
+  test('a query’s subscribes are sorted, and absent when the read declared none', () => {
+    const query = {
+      name: 'liveFeed',
+      policy: 'feed:read',
+      permissions: ['feed:read'],
+      live: true,
+      cacheTags: ['feed'],
+    };
+    const one = buildManifest({
+      ...sources,
+      queries: [{ ...query, subscribes: ['posts', 'orgs'] }],
+    });
+    const other = buildManifest({
+      ...sources,
+      queries: [{ ...query, subscribes: ['orgs', 'posts'] }],
+    });
+
+    expect(one.queries[0]?.subscribes).toEqual(['orgs', 'posts']);
+    expect(manifestJson(one)).toBe(manifestJson(other));
+    expect('subscribes' in (buildManifest(sources).queries[0] ?? {})).toBe(false);
+  });
+
   test('a route that declares no tags keeps the key absent, never an empty array', () => {
     // `exactOptionalPropertyTypes`: an explicit `undefined` is a different answer from no key,
     // and `emit.ts` writes what it is given.

@@ -151,6 +151,42 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `policy` | evaluated **per subscriber**, on subscribe and on every fanout |
 | cursor | reconnect state: epoch + query hash + version + seek key |
 
+### `subscribes:` — the one fact about a live read nothing can derive
+
+```ts
+import { from, type QueryPolicy, query, t } from '@ultimat3/query';
+
+interface PostSummary {
+  readonly id: string;
+  readonly orgId: string;
+  readonly createdAt: Date;
+}
+
+declare const feedRead: QueryPolicy;
+declare const repo: () => Promise<readonly PostSummary[]>;
+
+export const liveFeed = query({
+  input: t.object({ orgId: t.uuid }),
+  policy: feedRead,
+  live: true,
+  subscribes: ['posts'],   // the table `x db gen` grants REPLICA IDENTITY FULL
+  sql: ({ orgId }) => from<PostSummary>('posts', repo).where({ orgId }).orderBy('createdAt'),
+});
+```
+
+Logical replication carries no old row on an `UPDATE` unless the table is `REPLICA IDENTITY FULL`,
+so no patch can be computed and `@ultimat3/realtime` refuses the subscription. The table name lives
+inside `sql:` — a callback nothing can invoke without valid input — so `x db gen` has no way to
+work it out and needs it declared.
+
+Optional: a read that declares nothing behaves exactly as it did, and the generator emits nothing
+for it. It is **checked, not trusted** — `toLiveQuery` refuses at the first subscribe when the
+relation the read resolves to is not among the declared names (`X_QUERY_SUBSCRIBES_DRIFT`), because
+a stale declaration grants the identity to the wrong table and leaves the right one unpatchable in
+silence. An empty list, or one on a read that is not `live: true`, is refused at `query()`
+(`X_QUERY_SUBSCRIBES_INVALID`). Naming more relations than the shape resolves to is legal — a join
+reads relations the shape's single `entity` cannot name.
+
 ### Cursor tradeoff (the reconnect risk, stated plainly)
 
 A cursor is not a snapshot. Resume re-runs the **bounded** query from the seek key

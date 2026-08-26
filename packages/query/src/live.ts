@@ -18,6 +18,7 @@ import { queryHash } from './query';
 import { queryName, sourceFor } from './read';
 import type { QueryShape, SeekKey } from './shape';
 import { seekKeyOf } from './shape';
+import { assertSubscribed } from './subscribes';
 
 /**
  * Reconnect state. Deliberately tiny — an id, a sort key and a version — because
@@ -123,6 +124,10 @@ export async function toLiveQuery<TInput extends StandardSchemaV1, TRow extends 
   const shape = source.shape();
   // Fail at subscribe time, not on the first change event nobody can patch.
   assertMatchable(name, shape);
+  // The same moment and the same reason, one declaration further out: a `subscribes:` the read has
+  // outgrown means `x db gen` granted REPLICA IDENTITY FULL somewhere else, so every UPDATE on this
+  // relation arrives without its old row and no patch is computable from it.
+  assertSubscribed(name, target.subscribes, shape.entity);
 
   const epoch = options.epoch ?? liveEpoch();
   const hash = queryHash(name, input);

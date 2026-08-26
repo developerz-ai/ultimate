@@ -72,6 +72,7 @@ export { testCommand } from './cmd-test';
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand, CommandContext } from './command';
 export { failed, ok } from './command';
+export { acceptCreatedTables, createdTables } from './db-accept-created';
 export type { BranchRow, BranchSubcommand } from './db-branch';
 export {
   BRANCH_SUBCOMMANDS,
@@ -83,6 +84,8 @@ export {
 } from './db-branch';
 export type { GeneratedFiles, GenerateMigrationOptions, GenerateOutcome } from './db-generate';
 export { generateAppMigration, migrationSql } from './db-generate';
+export type { SubscribingQuery } from './db-subscribes';
+export { QuerySubscribesUnknownError, replicaIdentityTables } from './db-subscribes';
 export type { AssetRoutesOptions } from './dev-assets';
 export {
   assetRoutes,

@@ -168,6 +168,12 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // reproduces the finding, and the finding names the file and the header line to add.
   X_MIGRATION_UNGENERATABLE:
     'x verify --only drift --json   # then add the `-- ungeneratable: <n>` header line the finding names',
+  // The edit comes first and the command re-runs it, exactly as the two schema codes above do:
+  // the cause names the query and the name that matched nothing, and `subscribes:` is a field in
+  // that query's own file. Regenerating is safe here — this refusal happens BEFORE anything is
+  // written, so there is no half-generated migration to undo.
+  X_QUERY_SUBSCRIBES_UNKNOWN:
+    'x db gen "retry after fixing subscribes" --json   # first edit subscribes: on the query the cause names',
   X_DB_MIGRATE_FAILED: 'x doctor --json   # cause carries the Postgres error verbatim',
   X_DB_BRANCH_FAILED: 'x db branch ls --json',
   X_DB_STUDIO_FAILED: 'x doctor --json',

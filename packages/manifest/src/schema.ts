@@ -96,6 +96,17 @@ export interface QueryFact {
   /** Every permission the policy asserts, flattened through the combinators, deduped and sorted. */
   readonly permissions: readonly string[];
   readonly live: boolean;
+  /**
+   * The relations a live read is patched from, as the query DECLARED them — absent when it
+   * declared none, exactly like `ActionFact.rateLimit`, because an empty array on every plain
+   * read is bytes in a hand-reviewed file for no fact gained.
+   *
+   * The reason this fact exists: `x db gen` has to grant `REPLICA IDENTITY FULL` to those tables
+   * or `@ultimat3/realtime` refuses the subscription, and `@ultimat3/cli` cannot derive them —
+   * the relation name lives inside the query's `sql:` callback, which no generator can invoke
+   * without valid input. So the manifest is the one place a tier-1 generator can read it.
+   */
+  readonly subscribes?: readonly string[];
   readonly cacheTags: readonly string[];
 }
 

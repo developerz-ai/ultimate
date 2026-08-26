@@ -81,6 +81,21 @@ beforeAll(() => {
     }),
   );
 
+  // Named after `recentSourcesPosts` on purpose: `listQueries` sorts, so the pair proves the
+  // projection both ways round without moving the index the tests above read.
+  registerQuery(
+    'subscribedSourcesPosts',
+    query({
+      input: t.object({ limit: t.number.default(10) }),
+      policy: can('post:read'),
+      live: true,
+      // The one fact `x db gen` cannot derive: the relation name lives inside `sql:`, which no
+      // generator can invoke without valid input (#357).
+      subscribes: ['sources_test_posts'],
+      sql: ({ limit }) => from<{ id: string }>('sources_test_posts', []).limit(limit),
+    }),
+  );
+
   job({
     tenant: 'none',
     name: 'sourcesTestOnboard',
@@ -109,7 +124,10 @@ describe('frameworkSources reaches every registry', () => {
       'archiveSourcesPost',
       'publishSourcesPost',
     ]);
-    expect(sources.queries?.map((q) => q.name)).toEqual(['recentSourcesPosts']);
+    expect(sources.queries?.map((q) => q.name)).toEqual([
+      'recentSourcesPosts',
+      'subscribedSourcesPosts',
+    ]);
     expect(sources.jobs?.map((j) => j.name)).toEqual(['sourcesTestOnboard']);
     expect(sources.app).toBe(APP);
   });
@@ -202,6 +220,19 @@ describe('the query and job projections', () => {
     expect(fact?.live).toBe(true);
     // `tags` on the descriptor, `cacheTags` in the manifest.
     expect(fact?.cacheTags).toEqual(['feed']);
+  });
+
+  // The half `@ultimat3/cli` reads at generation time: tier 5 cannot import query's runtime, so
+  // if the projection drops this the emitter has no live-query set at all and #357 stays open.
+  test('a live query publishes the relations it declared, and only when it declared some', () => {
+    const facts = frameworkSources({ app: APP }).queries ?? [];
+    const declared = facts.find((f) => f.name === 'subscribedSourcesPosts');
+    const silent = facts.find((f) => f.name === 'recentSourcesPosts');
+
+    expect(declared?.subscribes).toEqual(['sources_test_posts']);
+    // Absent, never `[]`: a key on every plain read would be bytes for no fact, and the emitter
+    // reads absence as "this read asks for no table".
+    expect(silent).not.toHaveProperty('subscribes');
   });
 
   test('a job carries its queue and retry policy, and no steps', () => {

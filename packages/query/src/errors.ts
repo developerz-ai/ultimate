@@ -23,6 +23,8 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_QUERY_INPUT_UNENCODABLE: 'a query input cannot be carried in a query string',
   X_QUERY_NOT_PAGEABLE: 'a read returned rows with no id, so a cursor cannot name a position',
   X_QUERY_POLICY_MISSING: 'a query was registered without a policy',
+  X_QUERY_SUBSCRIBES_DRIFT: 'a live query subscribes to a relation its own sql never reads',
+  X_QUERY_SUBSCRIBES_INVALID: 'a query declares subscribed relations no live read can use',
   X_QUERY_UNREGISTERED: 'a query was used before it was registered',
 };
 
@@ -244,6 +246,52 @@ export class MatcherUnsupportedError extends UltimateError {
       code: 'X_MATCHER_UNSUPPORTED',
       cause: `live query "${name}" uses ${feature}, which the incremental matcher cannot patch`,
       fix: `set \`live: false\` and poll, or reshape the query to equality filters + orderBy + limit`,
+    });
+  }
+}
+
+/**
+ * A `subscribes:` declaration that cannot mean anything, refused at `query()` so the file that
+ * wrote it is the file that fails — the rule `assertCacheTtl` follows one field over.
+ *
+ * `problem` is a closed union rather than two classes: both are the same author mistake in the
+ * same declaration, and a caller catching one wants the other too.
+ */
+export class QuerySubscribesInvalidError extends UltimateError {
+  constructor(problem: 'empty' | 'not-live') {
+    super({
+      code: 'X_QUERY_SUBSCRIBES_INVALID',
+      cause:
+        problem === 'empty'
+          ? 'subscribes: [] names no relation, so no table can be granted REPLICA IDENTITY FULL'
+          : 'subscribes: names relations on a read that is not live, and only a live read subscribes',
+      fix:
+        problem === 'empty'
+          ? "name the relation the read selects from — subscribes: ['posts'] — or drop the field"
+          : 'add `live: true` beside it, or delete `subscribes:` — nothing reads it on a plain read',
+    });
+  }
+}
+
+/**
+ * The declaration and the read disagreed. Thrown at the first subscribe, where the resolved shape
+ * is the first thing in the framework that can answer which relation the read really names.
+ *
+ * A refusal and not a warning, for the reason `assertMatchable` refuses one line above it: a live
+ * query whose old row never arrives cannot be patched, so what a warning would preserve is a
+ * subscription that silently stops updating. `x db gen` reads this declaration, so a stale one has
+ * already granted REPLICA IDENTITY FULL to the wrong table and left this one without it.
+ */
+export class QuerySubscribesDriftError extends UltimateError {
+  constructor(name: string, declared: readonly string[], entity: string) {
+    super({
+      code: 'X_QUERY_SUBSCRIBES_DRIFT',
+      cause:
+        `live query "${name}" declares subscribes: [${declared.join(', ')}], ` +
+        `and its sql reads "${entity}", which is not among them`,
+      fix:
+        `add "${entity}" to that query's subscribes:, then run \`x db gen\` — ` +
+        'the migration granting REPLICA IDENTITY FULL is keyed on the declared names',
     });
   }
 }

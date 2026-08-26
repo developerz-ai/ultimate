@@ -22,6 +22,8 @@ import {
 } from './introspect';
 import { declaredIndexes } from './invariant-ddl';
 import { migrationIrreversible } from './migration-errors';
+import type { ReplicaIdentityInput } from './replica-identity';
+import { replicaIdentityFullAfter, replicaIdentityPlan } from './replica-identity';
 import type { MovedAside } from './retype-dependents';
 import { moveDependentsAside } from './retype-dependents';
 import { moveKeysAside, retypedColumns, retypedIn } from './retype-keys';
@@ -54,7 +56,13 @@ function columnClause(column: ColumnDescriptionLike): string {
   return parts.join(' ');
 }
 
-export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDescription {
+/** No table subscribed to, which is what every caller outside `generateMigration` describes. */
+const NONE: ReadonlySet<string> = new Set();
+
+export function snapshotOf(
+  entities: readonly EntityDescriptionLike[],
+  replicaIdentityFull: ReadonlySet<string> = NONE,
+): SchemaDescription {
   const tables = [...entities]
     .sort((a, b) => (a.table < b.table ? -1 : 1))
     .map((entity): TableDescription => {
@@ -99,6 +107,9 @@ export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDe
         // read as "nothing recorded" so the next generation adds the constraints the database is
         // genuinely missing — the rule `using` and `generated` already state one field up.
         ...(checks.length === 0 ? {} : { checks }),
+        // The same rule once more: `true` or absent, never `false`. This is what makes the ALTER
+        // beside it a one-time statement rather than a line every `x db gen` writes again.
+        ...(replicaIdentityFull.has(entity.table) ? { replicaIdentityFull: true as const } : {}),
       };
     });
   return { tables };
@@ -227,6 +238,17 @@ export interface GenerateOptions {
   readonly now?: Date | undefined;
   /** Allow a DROP COLUMN whose down cannot restore the data. `x db gen --allow-destructive`. */
   readonly allowDestructive?: boolean | undefined;
+  /**
+   * Tables a live query subscribes to, so logical replication carries the old row —
+   * `@ultimat3/realtime` refuses a subscription without it. Absent or empty emits nothing.
+   *
+   * A parameter and never an `EntityDescriptionLike` field: which tables need it is DECLARED by
+   * each `live: true` query's `subscribes:`, never derived — the relation is a literal inside the
+   * query's `sql:` callback, which nothing can invoke without valid input. This package is tier 1
+   * and can see neither the manifest nor `@ultimat3/query`, so `@ultimat3/cli`'s `db-generate.ts`
+   * is the one caller that can answer it.
+   */
+  readonly replicaIdentityFull?: readonly string[] | undefined;
 }
 
 export interface GeneratedMigration {
@@ -275,6 +297,9 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   // of one key can move in two different entities' diffs (`retype-keys.ts`).
   const preAlters: Plan = { up: [], down: [] };
   const wanted = new Set(options.entities.map((entity) => entity.table));
+  // The tables this run brings into being, read by the replica-identity arm below: their `down` is
+  // already `drop table`, so reverting the identity ahead of it performs nothing.
+  const created = new Set<string>();
 
   const doomed = new Set(
     current.tables.filter((table) => !wanted.has(table.name)).map((table) => table.name),
@@ -291,6 +316,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
     if (live === undefined) {
       plan.up.push(...createTable(entity));
       plan.down.push(`drop table ${identifier(entity.table).text};`);
+      created.add(entity.table);
       continue;
     }
     diffTable(entity, live, plan, retypedIn(retyped, entity.table));
@@ -337,6 +363,18 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   plan.up.push(...constraints.up);
   plan.down.push(...constraints.down);
 
+  // Dead last in `up`, and it is the only placement that is right for every arm: the table has to
+  // exist, and a `create table` in this same migration is the reason it might not. It is ordered
+  // against nothing else — replica identity constrains no column, no index and no constraint — so
+  // the end is where it can never be read as depending on a statement above it.
+  const replicaIdentity: ReplicaIdentityInput = {
+    wanted: options.replicaIdentityFull,
+    declared: wanted,
+    created,
+    current,
+  };
+  replicaIdentityPlan(plan, replicaIdentity);
+
   const id = `${migrationStamp(options.now ?? systemClock.now())}_${slugify(options.name)}`;
   // At the TOP of `up`, so what is MISSING is the first thing read — and a line comment, so it is
   // noise to every reader that matters: `statementsOf` drops a chunk of comments alone,
@@ -362,7 +400,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
     // FRONT here precisely so reversal puts it last — a key is added back only once both of its
     // ends have been retyped back, which is every other statement in the script.
     down: [...preAlters.down, ...plan.down].reverse().join('\n'),
-    snapshot: snapshotOf(options.entities),
+    snapshot: snapshotOf(options.entities, replicaIdentityFullAfter(replicaIdentity)),
     destructive: isDestructive(up),
     unrendered,
   };

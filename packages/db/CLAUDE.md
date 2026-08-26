@@ -1007,13 +1007,32 @@ generate repairs nothing. The empty-diff exclusion is `@ultimat3/cli`'s
 makes every `x db gen` write a file holding no statement — a ledger row, a checksum and a place in
 the apply order for nothing.
 
-**`REPLICA IDENTITY FULL` is still emitted by nothing, and it does not belong here.** Which tables
-need it is derived from the `live: true` queries in the manifest, not from any entity — this package
-is tier 1 and can see neither. An `EntityDescriptionLike.replicaIdentity` field would be a
-declared-and-never-wired key, which is the defect class this release exists to eliminate. The shape
-that works is a `GenerateOptions.replicaIdentityFull: readonly string[]` passed by
-`@ultimat3/cli`'s `db-generate.ts` from the live-query set, and it lands with that caller or not at
-all.
+**`REPLICA IDENTITY FULL` is emitted, `As of 2026-08-26` — by a PARAMETER, never by an entity
+field.** `@ultimat3/realtime` refuses a live query on a table without it and nothing in the
+framework wrote it, so a scaffolded app generated a schema its own preflight rejected (issue #357).
+Which tables need it is **declared** by each `live: true` query's `subscribes:` and read out of the
+manifest — **not derived**, and this file said "derived" until 2026-08-26. It cannot be derived: the
+relation name is a string inside the query's `sql:` callback, which no generator can invoke without
+valid input, so a live-query-to-table set does not exist anywhere to be read. `liveFeed` in the
+reference app requires `{ orgId: t.uuid, limit }` and its table is the `'posts'` literal inside
+`from<PostSummary>('posts', …)`; `packages/query/src/sql.ts` says the same thing about itself —
+"`null` when no sample input was supplied". `X_QUERY_SUBSCRIBES_DRIFT` is what keeps the declaration
+honest, checked against the resolved shape at first subscribe. It is still a PARAMETER and never an
+`EntityDescriptionLike` field — this package is tier 1 and can see neither the manifest nor
+`@ultimat3/query` — so such a field would have been a declared-and-never-wired key, the defect class
+this release exists to eliminate. `GenerateOptions.replicaIdentityFull: readonly string[] |
+undefined` is the shape, passed by `@ultimat3/cli`'s `db-generate.ts` from `x.manifest.json`'s
+`queries[].subscribes`; `replica-identity.ts` owns every rule that rides with it.
+
+| Rule | Why |
+|---|---|
+| recorded on the snapshot as `TableDescription.replicaIdentityFull` | `true` or **absent**, never `false` — the literal type is the enforcement. Absent is "nothing recorded", the reading `checks` and `using` already have, so a sidecar written before the field emits the ALTER once more and Postgres accepts it on a table that has it. Without the record the statement lands in **every** migration forever, which is a generator an author learns to ignore |
+| the snapshot records the **union** with what was already recorded | a caller passing no set must not erase the fact. `snapshotOf(entities)` alone answers `NONE`, so the one place the union is computed is `generateMigration` |
+| dead **last** in `up` | the table has to exist and a `create table` in this same migration is why it might not. It is ordered against nothing else — replica identity constrains no column, index or constraint — so the end is the only placement that cannot read as depending on a statement above it |
+| never `-- destructive: true` | it drops no row, rewrites no column and matches none of `destructive.ts`'s four rules. `generate-replica-identity.test.ts` asserts both the verdict and `destructiveStatements()` |
+| a name **no entity declares** is skipped, silently | the list comes from the manifest, and a live query whose entity was deleted is an app fault this generator cannot repair. Emitting it anyway is `42P01` at `ROLE=migrate`, which is the one place this package refuses to put a fault |
+| nothing is ever **reverted** | the option is optional, so "absent" and "no live query subscribes any more" are the same value. Reading them alike would let a caller that never passes it turn off replication for every subscribed table in the app |
+| `down` is `replica identity default`, except on a table this migration **creates** | that table's whole `down` is already `drop table`; a second statement ahead of it is a line an author reads and nothing performs |
 
 **A column the DATABASE computes is a different thing at every step, and `generated-column.ts` is
 all of them** — `As of 2026-08-24`. `ColumnDescriptionLike.generated` carries the

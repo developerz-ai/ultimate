@@ -105,6 +105,22 @@ export interface TableDescription {
    * read one instead of reporting every declared constraint as missing.
    */
   readonly checkNames?: readonly string[] | undefined;
+  /**
+   * That a migration set `replica identity full` on this table — what `@ultimat3/realtime` requires
+   * of every table a live query subscribes to, and the only reason this generator emits it.
+   *
+   * `true` or absent, never `false`, and the literal type is what enforces it. Absent means
+   * *nothing recorded*: a sidecar written before this field existed, exactly as `checks` absent
+   * means "no constraint was recorded" rather than "none is declared". Writing `false` onto every
+   * table an app has would rewrite every sidecar in the tree on the next `x db gen` for a fact that
+   * was already true — the argument `IndexDescription.using` makes about `btree`.
+   *
+   * `introspect()` never answers it. The catalog's half is `pg_class.relreplident`, which
+   * `@ultimat3/realtime`'s preflight already reads at the only moment it matters; a second reader
+   * here would let a `diffSchema` compare a declaration against a catalog value, which is the
+   * mistake `checks` and `checkNames` exist as two fields to prevent.
+   */
+  readonly replicaIdentityFull?: true | undefined;
 }
 
 export interface SchemaDescription {
