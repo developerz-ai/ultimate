@@ -160,10 +160,12 @@ const isMissingFile = (error: unknown): boolean => stringField(error, 'code') ==
 
 export function localDriver(options: LocalDriverOptions): StorageDriver {
   const root = options.root.replace(/\/+$/, '');
+  // `=== undefined`, never `??`: `??` coalesces on `null` too, so an explicitly blanked key in a
+  // decoded JSON config took the default instead of the refusal `finiteCount` is here to raise.
   const maxPutBytes = finiteCount(
     'the local disk driver',
     'maxPutBytes',
-    options.maxPutBytes ?? DEFAULT_MAX_UPLOAD_BYTES,
+    options.maxPutBytes === undefined ? DEFAULT_MAX_UPLOAD_BYTES : options.maxPutBytes,
     1,
   );
   const clock = options.clock ?? systemClock;

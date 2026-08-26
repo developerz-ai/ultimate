@@ -199,14 +199,20 @@ export function objectSchema<S extends Shape>(shape: S): ObjectSchema<S> {
     ...base,
     shape,
     extend: (extra) => objectSchema({ ...shape, ...extra } as Simplified<S & typeof extra>),
+    // `Object.create(null)` in both, for the reason the IR above states and with a worse outcome
+    // here: `next['__proto__'] = member` on a `{}` literal hits the prototype SETTER, so the field
+    // is not mis-published, it is GONE — `pick('__proto__')` answered a schema with no properties
+    // at all, dropping the one field the caller asked to keep from validation, from the IR and
+    // from `parse()`'s output. `extend` needs none of this: object spread defines own properties
+    // and never invokes a setter.
     pick: (...keys) => {
-      const next: Record<string, AnySchema> = {};
+      const next: Record<string, AnySchema> = Object.create(null) as Record<string, AnySchema>;
       for (const key of keys) next[key] = shape[key] as AnySchema;
       return objectSchema(next) as ObjectSchema<Pick<S, (typeof keys)[number]>>;
     },
     omit: (...keys) => {
       const drop = new Set<string>(keys);
-      const next: Record<string, AnySchema> = {};
+      const next: Record<string, AnySchema> = Object.create(null) as Record<string, AnySchema>;
       for (const [key, member] of Object.entries(shape)) {
         if (!drop.has(key)) next[key] = member;
       }

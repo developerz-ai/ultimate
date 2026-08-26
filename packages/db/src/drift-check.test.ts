@@ -47,6 +47,35 @@ describe('a CHECK migrations declare, against the ones the catalog holds', () =>
     );
   });
 
+  /**
+   * Both identifiers in that statement are the catalog's and the sidecar's, and a `.snapshot.json`
+   * is a file on disk anything may edit. A constraint name that closes its own quote appends a
+   * second statement to the line a reader pastes into a migration — the same hole
+   * `unexpected-table`'s drop carried, one constructor over.
+   *
+   * The EXPRESSION is deliberately still spliced: it is a predicate, not an identifier, there is
+   * no screen that could accept `status in (...)` and reject a second statement, and it is the
+   * declared side's own text — the author's, out of their own migration. That is a narrower claim
+   * than "this line is safe", and it is the honest one.
+   */
+  test('a constraint name that closes its own quote cannot append a statement to the fix', () => {
+    const hostile = {
+      name: 'posts_status_check"; drop table users; --',
+      expression: "status <> ''",
+    };
+    const report = diffSchema(
+      schema(posts({ checkNames: [] })),
+      schema(posts({ checks: [hostile] })),
+    );
+    const difference = report.differences[0];
+
+    expect(difference?.kind).toBe('missing-check');
+    expect(difference?.fix).not.toContain('drop table users');
+    expect(difference?.fix).not.toContain(hostile.name);
+    // Reported, and the name is still readable where nobody pastes it.
+    expect(difference?.cause).toContain(hostile.name);
+  });
+
   test('a correct database is SILENT, however Postgres has rewritten the predicate', () => {
     // The harder half. The catalog's spelling of this exact constraint is
     // `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))`; nothing here reads it,

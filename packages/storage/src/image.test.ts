@@ -333,3 +333,36 @@ describe('the variant quality is screened against core, not beside it', () => {
     expect(variantKey('a.png', { width: 10, quality: DEFAULT_QUALITY })).toBe('a@w10.webp');
   });
 });
+
+/**
+ * `??` coalesces on `null` as well as `undefined`, so an explicit `null` — what a decoded JSON
+ * config carries for a key someone blanked — took the default BEFORE the guard above could refuse
+ * it. The mirror of the `NaN` half: one slips past the guard, the other past the default, and both
+ * end in a bound nobody chose. `JSON.parse` rather than a literal, because `null` is not in the
+ * option's type and this is the caller the bug is about.
+ */
+describe('an explicitly null quality is refused, never defaulted', () => {
+  test('transformImage({ quality: null }) names quality', async () => {
+    const fromJson: number = JSON.parse('null');
+    let rendered = 'no-error-thrown';
+    try {
+      await transformImage(opaquePng(), { width: 4, format: 'jpeg', quality: fromJson });
+    } catch (error) {
+      rendered = String(error);
+    }
+    expect(rendered).toContain('X_INVARIANT');
+    expect(rendered).toContain('quality');
+  });
+
+  test('variantKey({ quality: null }) names quality', () => {
+    const fromJson: number = JSON.parse('null');
+    let rendered = 'no-error-thrown';
+    try {
+      variantKey('a/b.png', { quality: fromJson });
+    } catch (error) {
+      rendered = String(error);
+    }
+    expect(rendered).toContain('X_INVARIANT');
+    expect(rendered).toContain('quality');
+  });
+});

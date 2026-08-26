@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "65fd9783ba898fcf528e29e38e18d1d2eeb8c53892456f5af035506911215df4",
+  "buildId": "09deb9b66415b9235fd4c931e39f23dc9aed9fd4daa896b7332eba510f5f8369",
   "tiers": {
     "0": [
       "core",
@@ -1198,6 +1198,21 @@
       "code": "X_FILE_TOO_LONG",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_FINITE_BOUND_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/finite-bounds.ts"
+    },
+    {
+      "code": "X_FINITE_BOUND_UNCHECKED",
+      "owner": "scripts",
+      "at": "scripts/finite-bounds.ts"
+    },
+    {
+      "code": "X_FINITE_BOUND_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/finite-bounds.ts"
     },
     {
       "code": "X_FIX_TARGET_UNKNOWN",

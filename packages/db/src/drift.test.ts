@@ -73,6 +73,63 @@ describe('drift', () => {
     expect(fix).toContain(`drop table "drafts"`);
   });
 
+  /**
+   * A table name is DATA, and this finding's whole subject is a relation nothing in this
+   * framework created. `create table "x""; drop table users; --" ("id" int)` is legal DDL —
+   * anyone who can create a table picks the name that lands in this line — so a name spliced raw
+   * closed the identifier and appended a second command to a statement an operator was told to
+   * paste. Through `identifier`, which is the rule `foreign-key.ts` already states for every name
+   * this package writes, and a name it refuses degrades to prose rather than to DDL.
+   */
+  test('a table name that closes its own quote cannot append a statement to the fix', () => {
+    const hostile = 'x"; drop table users; --';
+    const report = diffSchema(schema(table(hostile, ['id'])), schema());
+
+    const fix = report.differences.find((d) => d.kind === 'unexpected-table')?.fix ?? '';
+    expect(fix).not.toContain('drop table users');
+    expect(fix).not.toContain(hostile);
+    // The finding is still reported, and the machine-readable field still carries the real name.
+    expect(report.differences.find((d) => d.kind === 'unexpected-table')?.table).toBe(hostile);
+  });
+
+  /**
+   * The second layer, and the one a quoted identifier does not close. `'` is legal in a Postgres
+   * identifier and `identifier()` accepts it, so a name inside a `psql -c '…'` payload ended the
+   * shell's own quoting and everything after it was a command the shell ran — a strictly worse
+   * outcome than the SQL above, because it never reaches a database to be refused. The name is
+   * therefore never placed inside a shell-quoted string at all.
+   */
+  test('a table name carrying a quote is never put inside a shell-quoted psql payload', () => {
+    const report = diffSchema(schema(table("a';id;'", ['id'])), schema());
+
+    const fix = report.differences.find((d) => d.kind === 'unexpected-table')?.fix ?? '';
+    expect(fix).toContain(`drop table "a';id;'"`);
+    expect(fix).not.toContain("-c '");
+  });
+
+  /**
+   * The third layer, and the only one no quoting closes: `x db gen "add C"` puts the column
+   * inside SHELL DOUBLE QUOTES, where `$(…)` and a backtick substitute whatever they name before
+   * `x` is ever reached. `create table t ("$(id)" int)` is legal DDL, so the name is the
+   * attacker's the same way the table's is — and a `"` cannot be escaped out of trouble here the
+   * way it can inside an identifier, because the argument is not an identifier. So the name is
+   * left out of the command entirely and the reader reads it off the `cause`, which is prose that
+   * nobody pastes.
+   */
+  test('a column name the shell would substitute never reaches the x db gen argument', () => {
+    const report = diffSchema(
+      schema(table('posts', ['id', '$(id)'])),
+      schema(table('posts', ['id'])),
+    );
+    const difference = report.differences.find((d) => d.kind === 'unexpected-column');
+
+    expect(difference?.fix).not.toContain('$(');
+    expect(difference?.fix).toContain('x db gen');
+    // Still reported, and the name is still there to read — in the cause and in `column`.
+    expect(difference?.cause).toContain('$(id)');
+    expect(difference?.column).toBe('$(id)');
+  });
+
   test('an unknown table and a missing table both report precisely', () => {
     const report = diffSchema(schema(table('drafts', ['id'])), schema(table('posts', ['id'])));
     const kinds = report.differences.map((difference) => difference.kind);
@@ -150,6 +207,25 @@ describe('nullability', () => {
     expect(report.differences[0]?.kind).toBe('changed-column');
     expect(report.differences[0]?.cause).toContain('forbids NULL');
     expect(report.differences[0]?.fix).toContain('drop not null');
+  });
+
+  /**
+   * `changed-column`'s fix is a statement a reader pastes into a migration, and both of its
+   * identifiers come from the catalog. A name that closes its own quote appends a second
+   * statement to it exactly as it did to `unexpected-table`'s drop.
+   */
+  test('a column name that closes its own quote cannot append a statement to the alter', () => {
+    const hostile = 'org_id"; drop table users; --';
+    const base = table('posts', ['id', hostile]);
+    const report = diffSchema(
+      schema(withNullable(base, hostile, true)),
+      schema(withNullable(base, hostile, false)),
+    );
+    const difference = report.differences.find((d) => d.kind === 'changed-column');
+
+    expect(difference?.fix).not.toContain('drop table users');
+    expect(difference?.fix).not.toContain(hostile);
+    expect(difference?.column).toBe(hostile);
   });
 
   test('agreeing sides report nothing', () => {

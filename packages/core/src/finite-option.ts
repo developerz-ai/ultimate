@@ -1,21 +1,22 @@
-// The one refusal the framework makes for a numeric option that is not a number.
-//
-// `??` guards NULLISH, and `NaN` is not nullish — so `Number(process.env.X)` on an unset variable,
-// a `parseInt` of a typo and a JSON `null`-turned-`NaN` all walk straight past the default. And
-// `Math.max`/`Math.min`/`Math.floor` PROPAGATE it, so none of the three is a validator either.
-// What the value then bounds decides which failure you get, and all four have shipped: a
-// comparison that reads false forever, an `Array.from({ length: NaN })` that is `[]`, a
-// `setTimeout(fn, NaN)` that is `setTimeout(fn, 0)`, and a loop that never terminates.
-//
-// `bun run finite-bounds` is the ratchet; this is the repair it recognises. It lives in tier 0
-// because twenty-one packages need it: `jobs`, `realtime` and `query` each carried a byte-identical
-// copy for one day, which is the shape three backoff curves and three SQL escapes already took.
+// Single responsibility: the one refusal the framework makes for a numeric option that is not a
+// number. Tier 0 because twenty-one packages need it — `jobs`, `realtime` and `query` each carried
+// a byte-identical copy, the shape three backoff curves and three SQL escapes already took.
+// `bun run finite-bounds` is the ratchet; this is the repair it recognises.
 
 import { assert } from './assert';
 
 /**
  * The option, when it is a real number. Returns it so a call site stays one expression:
  * `this.#capacity = finiteOption('ChangeBuffer', 'capacity', options.capacity ?? 1024)`.
+ *
+ * WHY IT TAKES A FUNCTION AT ALL, since every part of the job looks already done by an operator:
+ * `??` guards NULLISH and `NaN` is not nullish, so `Number(process.env.X)` on an unset variable, a
+ * `parseInt` of a typo and a JSON `null`-turned-`NaN` all walk straight past the default. And
+ * `Math.max` / `Math.min` / `Math.floor` PROPAGATE it rather than validating, so none of the three
+ * is a screen either — `Math.min(raw, Infinity)` is `Infinity`. What the value then bounds decides
+ * WHICH failure you get, and all four have shipped: a comparison that reads false forever, an
+ * `Array.from({ length: NaN })` that is `[]`, a `setTimeout(fn, NaN)` that is `setTimeout(fn, 0)`,
+ * and a loop that never terminates. Several packages' comments point here for this argument.
  */
 export function finiteOption(subject: string, option: string, value: number): number {
   assert(

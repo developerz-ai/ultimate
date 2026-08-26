@@ -27,7 +27,7 @@ import {
   storageNotImplemented,
 } from './errors';
 import { assertSafeKey } from './path';
-import { assertFiniteSignedUrlBound } from './signed-url';
+import { DEFAULT_SIGNED_URL_TTL_MS } from './signed-url';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
 const DRIVER_NAME = 's3';
@@ -210,10 +210,12 @@ function refuseUnsupportedPut(bucket: string, key: string, putOptions?: PutOptio
 }
 
 export function s3Driver(options: S3DriverOptions): StorageDriver {
+  // `=== undefined`, never `??`: `??` coalesces on `null` too, so an explicitly blanked key in a
+  // decoded JSON config took the default instead of the refusal `finiteCount` is here to raise.
   const maxPutBytes = finiteCount(
     'the s3 driver',
     'maxPutBytes',
-    options.maxPutBytes ?? DEFAULT_MAX_UPLOAD_BYTES,
+    options.maxPutBytes === undefined ? DEFAULT_MAX_UPLOAD_BYTES : options.maxPutBytes,
     1,
   );
   let client: S3ClientLike | undefined;
@@ -362,12 +364,15 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
      * `maxBytes` — S3 has no header for it, so size stays a server-side policy check.
      */
     async signedUrl(key: string, urlOptions?: SignedUrlOptions): Promise<string> {
-      // Screened with the SAME rule `buildSignedUrl` applies on the local disk: `Math.ceil(NaN /
+      // Screened with the SAME function `buildSignedUrl` applies on the local disk — one
+      // finite-bound path for both presigners, never a private copy per package: `Math.ceil(NaN /
       // 1000)` is `NaN`, so `X-Amz-Expires=NaN` went to AWS and the app got a 403 on a link it
-      // believed it had just minted.
-      const expiresInMs = assertFiniteSignedUrlBound(
+      // believed it had just minted. `=== undefined` rather than `??`, so an explicit `null` is
+      // refused instead of silently taking the default.
+      const expiresInMs = finiteCount(
+        'the s3 driver',
         'expiresInMs',
-        urlOptions?.expiresInMs ?? 900_000,
+        urlOptions?.expiresInMs === undefined ? DEFAULT_SIGNED_URL_TTL_MS : urlOptions.expiresInMs,
         1,
       );
       return conn()

@@ -118,6 +118,14 @@ Gotchas:
   PROTOTYPE, so a field named after one was unsatisfiable for every input and its `.default()`
   never fired; a `{}` output let a declared `__proto__` field write through the setter. Never
   reintroduce either half, and never assume a parsed object has `Object.prototype` on it.
+- **Every map keyed by a DECLARED FIELD NAME is built on `Object.create(null)`** — `objectSchema`'s
+  `properties`, `json-schema.ts`'s converted `properties`, and `pick`/`omit`'s rebuilt shape. That
+  last pair is the one with teeth: `next['__proto__'] = member` on a `{}` literal hits the setter,
+  so `pick('__proto__')` answered a schema with **zero** properties and dropped the one field the
+  caller asked to keep from validation, from the IR and from `parse()`'s output. `extend` needs
+  nothing: object spread defines own properties and never invokes a setter. A field named
+  `__proto__` is declarable — `t.object({ ['__proto__']: t.string })`, a COMPUTED key, which is an
+  ordinary own property where the literal `{ __proto__: … }` form is the setter.
 - `t.date` refuses a clock time with no offset and no `Z` (`iso-date.ts`): a zone-less string is a
   different instant per host `TZ`, and `coerceQuery` puts it one query parameter from the wire.
   A date-only string carries no clock time and is UTC by spec, so it still parses.

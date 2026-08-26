@@ -411,4 +411,47 @@ describe('cardinality ceiling', () => {
     }
     expect(code).toBe('X_METRIC_CARDINALITY');
   });
+
+  /**
+   * The label grammar must not be a function of how busy the process is. The screen ran inside
+   * `createSeries`, and the overflow branch answers from the folded series WITHOUT allocating one
+   * — so `bad"key` threw on a fresh process and was accepted in silence once the instrument was
+   * full, which is the state a runaway label produces in the first place. Accepted means the point
+   * lands on the overflow series and the caller is never told the label it passed is one no
+   * scraper can parse.
+   */
+  test('a label past the ceiling is still refused — validation is not load-dependent', () => {
+    const orders = counter('test_cardinality_late_label_total', { maxSeries: 2 });
+    orders.add(1, { route: '/a' });
+    orders.add(1, { route: '/b' });
+    // Full: the next unknown label set folds rather than allocating.
+    orders.add(1, { route: '/c' });
+    expect(pointsOf('test_cardinality_late_label_total')).toHaveLength(3);
+
+    let caught: unknown;
+    try {
+      orders.add(1, { 'bad"key': 'x' });
+    } catch (thrown) {
+      caught = thrown;
+    }
+    expect(isUltimateError(caught)).toBe(true);
+    expect((caught as UltimateError).code).toBe('X_METRIC_NAME_INVALID');
+    // And it was refused rather than folded: the overflow series did not take the point.
+    const overflow = pointsOf('test_cardinality_late_label_total').find(
+      (point) => point.attributes[OVERFLOW_ATTRIBUTE] === true,
+    );
+    expect(overflow?.value).toBe(1);
+  });
+
+  test('a known label set past the ceiling still needs no re-check, and keeps counting', () => {
+    const hits = counter('test_cardinality_known_label_total', { maxSeries: 1 });
+    hits.add(1, { route: '/a' });
+    hits.add(1, { route: '/b' });
+    hits.add(1, { route: '/a' });
+    expect(
+      pointsOf('test_cardinality_known_label_total').find(
+        (point) => point.attributes['route'] === '/a',
+      )?.value,
+    ).toBe(2);
+  });
 });

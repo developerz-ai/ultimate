@@ -4,7 +4,8 @@
 // live-database test would name, because every one of them still returns the right rows.
 
 import { describe, expect, test } from 'bun:test';
-import type { DbClient } from './client';
+import { renderThrowable } from '@ultimat3/core';
+import type { DbClient, ReservableClient } from './client';
 import { dbUnavailable } from './errors';
 import { createRecordingClient } from './fake';
 import { reservableOver } from './fake-reservable';
@@ -60,16 +61,47 @@ describe('readOnlyQuery', () => {
     'refuses timeoutMs %p instead of taking the default in silence',
     async (timeoutMs) => {
       const client = createRecordingClient();
-      let rendered = 'no-error-thrown';
-      try {
-        await readOnlyQuery('select 1', { client, timeoutMs });
-      } catch (error) {
-        rendered = String(error);
-      }
+      const rendered = renderThrowable(
+        await readOnlyQuery('select 1', { client, timeoutMs }).catch((error: unknown) => error),
+      );
+
       expect(rendered).toContain('X_INVARIANT');
       expect(rendered).toContain('timeoutMs');
+      // And nothing was opened to find that out: the bound is decided before `BEGIN READ ONLY`.
+      expect(client.texts).toEqual([]);
     },
   );
+
+  /**
+   * The refusal has to survive a pool that cannot answer. `timeoutMs` was screened AFTER
+   * `reserve()` and after `BEGIN READ ONLY`, so an unbounded option on an exhausted pool handed
+   * the caller the pool's error — or the wait for a connection — in place of the `X_INVARIANT`
+   * naming the option they actually got wrong. A value this build cannot honour is refused before
+   * anything is opened, the same order `rollback({ steps })` takes against the advisory lock.
+   */
+  test('an option this build cannot honour is refused before a connection is reserved', async () => {
+    const exhausted = dbUnavailable('every pooled connection is checked out');
+    let reserves = 0;
+    const client: ReservableClient = {
+      query: async () => [],
+      one: async () => null,
+      execute: async () => 0,
+      reserve: async () => {
+        reserves += 1;
+        throw exhausted;
+      },
+    };
+
+    const rendered = renderThrowable(
+      await readOnlyQuery('select 1', { client, timeoutMs: Number.NaN }).catch(
+        (error: unknown) => error,
+      ),
+    );
+
+    expect(rendered).toContain('X_INVARIANT');
+    expect(rendered).toContain('timeoutMs');
+    expect(reserves).toBe(0);
+  });
 
   test('a rejecting statement still rolls back and rethrows the original error', async () => {
     const calls: string[] = [];

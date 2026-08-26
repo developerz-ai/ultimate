@@ -1,10 +1,10 @@
-// The repair `bun run finite-bounds` recognises, so its own contract has to hold: the refusal must
-// name the option (that is what makes it ONE edit), the finite case must pass through unchanged
-// (or every call site is broken), and a fraction must survive `finiteOption` and die in
-// `finiteCount` — the two are different questions and a helper that conflated them would be a
-// fourth copy of the rule rather than the end of it.
+// Owns the contract of the repair `bun run finite-bounds` recognises: the refusal names the option
+// (what makes it ONE edit), a finite value passes through unchanged (or every call site breaks),
+// and a fraction survives `finiteOption` and dies in `finiteCount` — two different questions, and
+// a helper that conflated them would be a fourth copy of the rule rather than the end of it.
 
 import { describe, expect, test } from 'bun:test';
+import { renderThrowable } from './error-render';
 import { isUltimateError, type UltimateError } from './errors';
 import { finiteCount, finiteOption } from './finite-option';
 
@@ -13,7 +13,11 @@ const caught = (fn: () => unknown): UltimateError => {
     fn();
   } catch (thrown) {
     if (isUltimateError(thrown)) return thrown;
-    return expect.unreachable(`expected an UltimateError, got ${String(thrown)}`);
+    // `renderThrowable`, never `String(thrown)`: this line runs where the assertion has ALREADY
+    // gone wrong, and `String()` is not total — measured, it throws on a null-prototype object
+    // ("No default value"), on a throwing `toString`, and on a `Proxy` whose `get` trap raises.
+    // Each replaces the report of the real failure with a second one naming nothing.
+    return expect.unreachable(`expected an UltimateError, got ${renderThrowable(thrown)}`);
   }
   return expect.unreachable('expected a refusal, nothing was thrown');
 };

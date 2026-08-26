@@ -85,10 +85,12 @@ export async function grantUpload(input: GrantUploadInput): Promise<UploadGrant>
   // Refused here as well as in the presigner one call down: `expiresAt: now + NaN` is `NaN` in the
   // grant this function RETURNS, and the message a caller can act on names `createUploadGrant`'s
   // own option rather than `buildSignedUrl`'s.
+  // `=== undefined`, never `??`, for the reason `buildSignedUrl` states: `??` coalesces on `null`
+  // too, so an explicit one took the default instead of this refusal.
   const expiresInMs = finiteCount(
     'createUploadGrant',
     'expiresInMs',
-    input.expiresInMs ?? DEFAULT_SIGNED_URL_TTL_MS,
+    input.expiresInMs === undefined ? DEFAULT_SIGNED_URL_TTL_MS : input.expiresInMs,
     1,
   );
   const url = await input.disk.signedUrl(key, {

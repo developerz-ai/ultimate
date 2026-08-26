@@ -385,3 +385,32 @@ describe('the s3 driver byte ceiling is screened at construction', () => {
     ).toBe('function');
   });
 });
+
+/**
+ * `??` coalesces on `null` as well as `undefined`, so an explicit `null` — what a decoded JSON
+ * config carries for a key someone blanked — took the default BEFORE the guard above could refuse
+ * it. The mirror of the `NaN` half: one slips past the guard, the other past the default, and both
+ * end in a bound nobody chose. `JSON.parse` rather than a literal, because `null` is not in the
+ * option's type and this is the caller the bug is about.
+ */
+describe('an explicitly null s3 bound is refused, never defaulted', () => {
+  test('maxPutBytes: null names maxPutBytes', () => {
+    const fromJson: number = JSON.parse('null');
+    let rendered = 'no-error-thrown';
+    try {
+      s3Driver({ bucket: 'b', client: new FakeS3Client(), maxPutBytes: fromJson });
+    } catch (error) {
+      rendered = String(error);
+    }
+    expect(rendered).toContain('X_INVARIANT');
+    expect(rendered).toContain('maxPutBytes');
+  });
+
+  test('signedUrl({ expiresInMs: null }) names expiresInMs', async () => {
+    const fromJson: number = JSON.parse('null');
+    const driver = s3Driver({ bucket: 'b', client: new FakeS3Client() });
+    await expect(driver.signedUrl('org/org-1/a.txt', { expiresInMs: fromJson })).rejects.toThrow(
+      /expiresInMs/,
+    );
+  });
+});

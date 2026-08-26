@@ -1,3 +1,8 @@
+// Owns the capped read: that a body past the limit is ABANDONED rather than materialised and then
+// measured, that the peer is cancelled rather than drained, and that a non-finite limit is refused
+// before the stream is touched. Every one of those is invisible to a test that only reads the
+// answer — the bytes never held and the socket told to stop are the whole point of the function.
+
 import { describe, expect, test } from 'bun:test';
 import { type CappedBody, readWithinLimit } from './read-capped';
 

@@ -333,7 +333,6 @@ function reportObserveFailure(instrument: Instrument, thrown: unknown): void {
 }
 
 function createSeries(instrument: Instrument, key: string, attributes: MetricAttributes): Series {
-  assertLabelNames(instrument.descriptor.name, attributes);
   const created: Series = {
     attributes,
     value: 0,
@@ -352,6 +351,12 @@ function seriesFor(instrument: Instrument, attributes: MetricAttributes): Series
   const key = seriesKey(attributes);
   const found = instrument.series.get(key);
   if (found !== undefined) return found;
+  // On the MISS, ahead of the ceiling — never inside `createSeries`, which the overflow branch
+  // below returns without reaching. A screen that ran only where a series is BORN was a screen
+  // that depended on load: `bad"key` threw on a fresh process and was swallowed on a busy one,
+  // once the instrument had filled up, which is exactly when an unparseable label is likeliest to
+  // arrive. A hit needs no check — a key in the map passed this on the way in.
+  assertLabelNames(instrument.descriptor.name, attributes);
   if (instrument.series.size >= instrument.maxSeries) {
     reportOverflow(instrument);
     // Created directly rather than through this function again: the overflow series is the ONE

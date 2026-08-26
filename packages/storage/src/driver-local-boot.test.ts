@@ -3,6 +3,8 @@
 // are boot-time refusals, so no test here writes a byte: the `root` below is never created.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+// why: Bun exposes no `tmpdir()`; `node:os` is the only way to ask the platform where its
+// temporary directory is.
 import { tmpdir } from 'node:os';
 import { isLocal } from '@ultimat3/core';
 import {
@@ -229,5 +231,26 @@ describe('the driver byte ceiling is screened at construction', () => {
     expect(typeof localDriver({ root, signingSecret: 'test-secret', maxPutBytes: 1024 }).put).toBe(
       'function',
     );
+  });
+});
+
+/**
+ * `??` coalesces on `null` as well as `undefined`, so an explicit `null` — what a decoded JSON
+ * config carries for a key someone blanked — took the default BEFORE the guard above could refuse
+ * it. The mirror of the `NaN` half: one slips past the guard, the other past the default, and both
+ * end in a bound nobody chose. `JSON.parse` rather than a literal, because `null` is not in the
+ * option's type and this is the caller the bug is about.
+ */
+describe('an explicitly null byte ceiling is refused, never defaulted', () => {
+  test('localDriver({ maxPutBytes: null }) names maxPutBytes', () => {
+    const fromJson: number = JSON.parse('null');
+    let rendered = 'no-error-thrown';
+    try {
+      localDriver({ root, signingSecret: 'test-secret', maxPutBytes: fromJson });
+    } catch (error) {
+      rendered = String(error);
+    }
+    expect(rendered).toContain('X_INVARIANT');
+    expect(rendered).toContain('maxPutBytes');
   });
 });

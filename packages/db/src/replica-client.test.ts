@@ -4,7 +4,7 @@
 // capacity problem it was built to solve.
 
 import { describe, expect, test } from 'bun:test';
-import type { Clock } from '@ultimat3/core';
+import { type Clock, renderThrowable } from '@ultimat3/core';
 import { db, isReservable, setDbClient } from './client';
 import { createRecordingClient, type RecordingClient } from './fake';
 import { reservableOver } from './fake-reservable';
@@ -240,7 +240,7 @@ describe('the breaker numbers are screened where the client is built', () => {
     try {
       replicatedClient(primary, replica, options);
     } catch (error) {
-      return String(error);
+      return renderThrowable(error);
     }
     return 'no-error-thrown';
   };

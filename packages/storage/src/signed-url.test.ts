@@ -196,3 +196,19 @@ describe('buildSignedUrl refuses a constraint it could not verify back', () => {
     expect((await verifySignedUrl({ url, secret: SECRET, clock })).ok).toBe(true);
   });
 });
+
+/**
+ * `??` coalesces on `null` as well as `undefined`, so an explicit `null` — what a decoded JSON
+ * config carries for a key someone blanked — took the default BEFORE the guard above could refuse
+ * it. The mirror of the `NaN` half: one slips past the guard, the other past the default, and both
+ * end in a bound nobody chose. `JSON.parse` rather than a literal, because `null` is not in the
+ * option's type and this is the caller the bug is about.
+ */
+describe('an explicitly null bound is refused, never defaulted', () => {
+  test('expiresInMs: null names itself instead of taking the 15-minute default', async () => {
+    const fromJson: number = JSON.parse('null');
+    await expect(
+      buildSignedUrl({ secret: SECRET, key: KEY, expiresInMs: fromJson }),
+    ).rejects.toThrow(/expiresInMs/);
+  });
+});

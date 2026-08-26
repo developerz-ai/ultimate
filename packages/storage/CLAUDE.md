@@ -14,14 +14,24 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
   fits the table is `@ultimat3/auth`'s: ship the server function (`grantUpload`), let the app
   wrap it in its own `action()` with its own policy. See `docs/architecture/17-uploads.md`.
 
-- **Every byte ceiling and every TTL is screened where it is DECLARED, `As of 2026-08-26`** —
-  `uploadPolicy({ maxBytes })`, both drivers' `maxPutBytes`, `createUploadGrant({ expiresInMs })`
-  and `buildSignedUrl`'s two, through core's `finiteCount` or `assertFiniteSignedUrlBound`.
+- **Every byte ceiling and every TTL is screened where it is DECLARED, through core's
+  `finiteCount` and nothing else, `As of 2026-08-26`** — `uploadPolicy({ maxBytes })`, both
+  drivers' `maxPutBytes`, `createUploadGrant({ expiresInMs })`, `buildSignedUrl`'s two and the s3
+  driver's presign TTL. There was briefly a private `assertFiniteSignedUrlBound` here saying the
+  same thing in its own words; a second finite-bound path is one that drifts from the shared
+  contract, which is exactly what `jobs`, `realtime` and `query` each proved with a copy of their
+  own. Both presigners now call the one function, which is what `driver-parity.test.ts` needs to
+  stay true.
   Measured: `uploadPolicy({ maxBytes: Number.NaN })` accepted a 5,000,016-byte PNG through
   `validateUpload`, because `size > NaN` is false — the one number deciding how much a caller may
   store stopped deciding anything. Variant `quality` is core's `assertFiniteImageQuality` and NOT a
   second screen: `variantKey` never reaches the encoder, so a copy that disagreed would mint
   `q150` keys for bytes `transformImageBytes` then refuses.
+- **The default is taken on `undefined` and on nothing else, `As of 2026-08-26`** —
+  `options.x === undefined ? D : options.x`, never `options.x ?? D`. `??` coalesces on `null` too,
+  so an explicitly blanked key in a decoded JSON config took the default BEFORE the screen above
+  could refuse it: the mirror of the `NaN` half, where one value slips past the guard and the other
+  past the default, and both end in a bound nobody chose. Every site above, `quality` included.
 
 - **`MAX_KEY_LENGTH` is BYTES, and is measured in bytes, `As of 2026-08-26`.** S3's limit is "a
   sequence of Unicode characters whose UTF-8 encoding is at most 1,024 bytes long", and `path.ts`

@@ -4,7 +4,12 @@
 // everything.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+// why: Bun ships no temp-directory API and no recursive remove — `mkdtemp` and `rm` have no
+// `Bun.*` equivalent, and this suite needs a real directory per run. Delete this import the day
+// one lands.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no `tmpdir()`; `node:os` is the only way to ask the platform where its
+// temporary directory is.
 import { tmpdir } from 'node:os';
 import { frozenClock } from '@ultimat3/core';
 import { acceptSignedUpload, readSignedObject } from './accept';

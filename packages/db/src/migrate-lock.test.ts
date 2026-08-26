@@ -4,6 +4,7 @@
 // `Running`, the logs stay empty, and `backoffLimit` never fires.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { renderThrowable } from '@ultimat3/core';
 import { type DbClient, setDbClient } from './client';
 import { expectedQueryLoopReason } from './expected-loop';
 import { createRecordingClient, type RecordingClient } from './fake';
@@ -151,6 +152,46 @@ describe('lock_timeout', () => {
 
     expect(client.texts.some((text) => text.includes('lock_timeout'))).toBe(false);
   });
+
+  /**
+   * `lockWaitMs` was screened at the boundary and this one was not, so the same
+   * `Number(process.env.…)` on an unset variable reached `SET LOCAL lock_timeout = NaN` — a
+   * syntax error the server raises INSIDE the migration's own transaction, where what aborted
+   * the deploy is a Postgres parse message and not the option that was wrong. A negative was the
+   * quiet half: `<= 0` returned early, so a bound nobody could honour disabled the layer in
+   * silence.
+   */
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5])(
+    'migrate refuses lockTimeoutMs %p at the option, before any statement',
+    async (lockTimeoutMs) => {
+      client.on(/from x_migrations/, { rows: [] });
+
+      const rendered = renderThrowable(
+        await migrate({ migrations: [addPosts], appVersion: '1.5.0', lockTimeoutMs }).catch(
+          (error: unknown) => error,
+        ),
+      );
+
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('lockTimeoutMs');
+      expect(client.texts).toEqual([]);
+    },
+  );
+
+  test.each([Number.NaN, -1, 1.5])(
+    'rollback refuses lockTimeoutMs %p on the same boundary',
+    async (lockTimeoutMs) => {
+      client.on(/from x_migrations/, { rows: [ledgerRow()] });
+
+      const rendered = renderThrowable(
+        await rollback({ migrations: [addPosts], lockTimeoutMs }).catch((error: unknown) => error),
+      );
+
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('lockTimeoutMs');
+      expect(client.texts).toEqual([]);
+    },
+  );
 });
 
 describe('the deploy-critical fixes name commands that exist', () => {

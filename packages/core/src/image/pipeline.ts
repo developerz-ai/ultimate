@@ -39,8 +39,9 @@ export const DEFAULT_IMAGE_QUALITY = 80;
  * The encoder CLAMPS and never refuses, which is why this is a screen and not a comment. Exported
  * because `@ultimat3/storage` mints a variant KEY from the same number without ever reaching this
  * pipeline — two screens that refuse different qualities would mint `q150` keys for bytes this
- * encoder goes on to refuse, which is the dead-on-arrival shape `assertFiniteSignedUrlBound`
- * already exists for. Measured
+ * encoder goes on to refuse, which is the dead-on-arrival shape `buildSignedUrl`'s own
+ * `finiteCount` screen already exists for — that package held a private `assertFiniteSignedUrlBound`
+ * until this sweep collapsed it onto the tier-0 check. Measured
  * on a 3x2 PNG re-encoded as JPEG: quality 80 wrote 663 bytes, and `NaN`, `-5` and `0` each wrote
  * 635 — the worst encoding the codec can make — while `Infinity` and `1e9` each wrote 719. Every
  * one of them silently. `Number(url.searchParams.get('q'))` is `NaN` when the parameter is absent,

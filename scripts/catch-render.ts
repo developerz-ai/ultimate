@@ -12,7 +12,9 @@
 // WHY IT IS A DEFECT, in the framework's own words: `@ultimat3/core`'s `isThrownError` exists
 // because "a `Proxy`'s `getPrototypeOf` trap runs during `instanceof`, and the one place this
 // question is asked is a `catch` block that has nothing left to answer with if it does". `String()`
-// runs a hostile `toString` and throws outright on a Symbol; `JSON.stringify` throws on a bigint
+// runs a hostile `toString`; `${…}` throws outright on a Symbol, where `String(sym)` does NOT —
+// `String(Symbol('x'))` is `"Symbol(x)"`, and this comment claimed otherwise until 2026-08-26.
+// `JSON.stringify` throws on a bigint
 // and on a cycle. Each turns a coded refusal into an uncoded crash, in the exact place the process
 // has no second chance. `renderThrowable(value)` is the total form and is one import.
 //

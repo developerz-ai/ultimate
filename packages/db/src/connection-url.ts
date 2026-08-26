@@ -2,6 +2,7 @@
 // string the driver opens — the libpq `options` merge and the `application_name` label. Split from
 // `client.ts` because which settings reach a connection is a rule, not a step of connecting.
 
+import { describeValue } from '@ultimat3/core';
 import { dbUnavailable } from './errors';
 import { declaresLibpqOption, mergeLibpqOptions } from './libpq-options';
 import type { PoolProfile } from './pool-profile';
@@ -20,7 +21,14 @@ export function connectionUrl(options: ConnectionUrlOptions, profile: PoolProfil
   try {
     url = new URL(raw);
   } catch (error) {
-    throw dbUnavailable(`DATABASE_URL is not a valid url: ${raw}`, error);
+    // The SHAPE of the rejected value, never the value. A connection string is
+    // `user:password@host` by construction, and this `cause` is the boot log line AND the `--json`
+    // payload — the logger redacts `fields` by key, so a password baked into a message has no key
+    // left to redact it by. `@ultimat3/core`'s `defineEnv` reached the identical conclusion about
+    // the identical variable (`packages/core/src/env.ts`); this is the same rule at the second
+    // reader, not a second rule. The value still has a printer: `x env check`, through
+    // `maskedEnvValues`.
+    throw dbUnavailable(`DATABASE_URL is not a valid url: received ${describeValue(raw)}`, error);
   }
   // libpq `options` is the portable way to pin a statement timeout for every pooled connection —
   // MERGED into the operator's own, never assigned over it, and emitted for every role including

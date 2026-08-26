@@ -20,7 +20,17 @@ export class MetricNameInvalidError extends UltimateError {
  */
 export const METRIC_NAME_RE = /^[a-z_][a-z0-9_]*$/;
 
-const snake = (value: string): string => value.toLowerCase().replaceAll(/[^a-z0-9_]/g, '_');
+/**
+ * The suggestion both `fix:` lines below hand back, and it has to SATISFY `METRIC_NAME_RE`, not
+ * merely resemble it: the grammar's first character is `[a-z_]`, so lowercasing `2digits` left
+ * `2digits` and the refusal told the caller to rename the label to the same name it had just
+ * refused. An underscore prefix is the one repair that keeps the rest of the identifier — which is
+ * also what makes the empty string a nameable `_` rather than a second refusal.
+ */
+const snake = (value: string): string => {
+  const lowered = value.toLowerCase().replaceAll(/[^a-z0-9_]/g, '_');
+  return /^[a-z_]/.test(lowered) ? lowered : `_${lowered}`;
+};
 
 /** Refused at DECLARATION, where the instrument is still nameable. */
 export function assertMetricName(name: string): void {
@@ -40,9 +50,11 @@ export function assertMetricName(name: string): void {
  * and `queue_depth` — the three the chart's HPA reads — disappear together, and the autoscaler
  * sees no signal rather than a bad one.
  *
- * Refused where the series is created, never sanitised at render: a silently renamed label is a
- * different series, and the point would land somewhere the dashboard querying the declared name
- * cannot see. Once per NEW label set, because `seriesFor` answers a known set from its map.
+ * Refused on the way in, never sanitised at render: a silently renamed label is a different
+ * series, and the point would land somewhere the dashboard querying the declared name cannot see.
+ * Once per label set the instrument has not seen — `seriesFor` calls this on its MISS, ahead of
+ * the cardinality ceiling, because the overflow branch answers without allocating a series and a
+ * check hung off the allocation would have made the refusal a function of how busy the process is.
  */
 export function assertLabelNames(metric: string, attributes: MetricAttributes): void {
   for (const label of Object.keys(attributes)) {

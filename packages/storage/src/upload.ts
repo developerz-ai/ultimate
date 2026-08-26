@@ -48,7 +48,14 @@ export function uploadPolicy(init: UploadPolicyInit = {}): UploadPolicy {
     // policy.maxBytes` is false for a `NaN` ceiling, so the cap that decides how much a caller may
     // store stops deciding anything. Measured: a 5,000,016-byte PNG passed `validateUpload` under
     // `uploadPolicy({ maxBytes: Number.NaN })`.
-    maxBytes: finiteCount('uploadPolicy', 'maxBytes', init.maxBytes ?? DEFAULT_MAX_UPLOAD_BYTES, 1),
+    // `=== undefined`, never `??`: `??` coalesces on `null` too, so an explicitly blanked key in
+    // a decoded JSON config took the default instead of the refusal beside it.
+    maxBytes: finiteCount(
+      'uploadPolicy',
+      'maxBytes',
+      init.maxBytes === undefined ? DEFAULT_MAX_UPLOAD_BYTES : init.maxBytes,
+      1,
+    ),
     allowedContentTypes: init.allowedContentTypes ?? IMAGE_CONTENT_TYPES,
     requireChecksum: init.requireChecksum ?? false,
   };

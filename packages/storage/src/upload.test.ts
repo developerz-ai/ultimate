@@ -244,3 +244,24 @@ describe('the upload ceiling is screened where it is declared', () => {
     ).toBe('X_STORAGE_TOO_LARGE');
   });
 });
+
+/**
+ * `??` coalesces on `null` as well as `undefined`, so an explicit `null` — what a decoded JSON
+ * config carries for a key someone blanked — took the default BEFORE the guard above could refuse
+ * it. The mirror of the `NaN` half: one slips past the guard, the other past the default, and both
+ * end in a bound nobody chose. `JSON.parse` rather than a literal, because `null` is not in the
+ * option's type and this is the caller the bug is about.
+ */
+describe('an explicitly null upload ceiling is refused, never defaulted', () => {
+  test('uploadPolicy({ maxBytes: null }) names maxBytes', () => {
+    const fromJson: number = JSON.parse('null');
+    let rendered = 'no-error-thrown';
+    try {
+      uploadPolicy({ maxBytes: fromJson });
+    } catch (error) {
+      rendered = String(error);
+    }
+    expect(rendered).toContain('X_INVARIANT');
+    expect(rendered).toContain('maxBytes');
+  });
+});

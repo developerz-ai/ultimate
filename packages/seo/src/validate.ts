@@ -52,16 +52,22 @@ export function validateMeta(
   // `rendered.length > NaN` is false for every title, so a ceiling that is not a number is not a
   // loose rule — it is no rule, and the report comes back clean on a site whose every title is
   // truncated in the SERP.
+  //
+  // `=== undefined`, never `??`: `??` also coalesces on `null`, so an explicit `null` from a
+  // decoded JSON config was swapped for the default BEFORE `finiteCount` could refuse it. Only an
+  // ABSENT option takes the default; a present one that is not a number is a refusal naming it.
   const titleMax = finiteCount(
     'validateMeta',
     'titleMaxLength',
-    options.titleMaxLength ?? TITLE_MAX_LENGTH,
+    options.titleMaxLength === undefined ? TITLE_MAX_LENGTH : options.titleMaxLength,
     1,
   );
   const descriptionMax = finiteCount(
     'validateMeta',
     'descriptionMaxLength',
-    options.descriptionMaxLength ?? DESCRIPTION_MAX_LENGTH,
+    options.descriptionMaxLength === undefined
+      ? DESCRIPTION_MAX_LENGTH
+      : options.descriptionMaxLength,
     1,
   );
   const checked = indexableRoutes(routes);

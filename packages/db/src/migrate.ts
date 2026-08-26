@@ -315,7 +315,17 @@ async function setLockTimeout(tx: DbTx, lockTimeoutMs: number): Promise<void> {
  * same `ACCESS EXCLUSIVE` locks against the same tables.
  */
 function migrationLockTimeoutMs(explicit: number | undefined): number {
-  return explicit ?? poolProfileFor('migrate').lockTimeoutMs;
+  // Screened here, where BOTH `migrate()` and `rollback()` resolve it, and before either takes the
+  // advisory lock. `lockWaitMs` beside it was screened from the start and this one was not, so
+  // `Number(process.env.…)` on an unset variable travelled all the way to `SET LOCAL lock_timeout
+  // = NaN`, which the server rejects inside the migration's own transaction — the option that was
+  // wrong appears nowhere in what the deploy prints. `finiteCount`, never a second bound checker.
+  return finiteCount(
+    'migrate',
+    'lockTimeoutMs',
+    explicit ?? poolProfileFor('migrate').lockTimeoutMs,
+    0,
+  );
 }
 
 export async function migrate(options: MigrateOptions): Promise<MigrationReport> {
