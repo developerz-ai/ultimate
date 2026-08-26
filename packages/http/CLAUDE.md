@@ -19,6 +19,34 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 
 ## Rules
 
+- **Every numeric knob `defineHttpConfig` resolves is screened, `As of 2026-08-26`** — `port`,
+  `bodyLimitBytes`, `requestTimeoutMs`, `maxInflight`, `drainTimeoutMs` and `trustedProxyHops`,
+  each a whole number in its own domain or `X_CONFIG_INVALID` (core's code, borrowed as
+  `@ultimat3/auth` borrows it). Measured with `NaN`, which is what `Number(process.env.…)` answers
+  for an unset variable: `total > NaN` is false so the body cap stopped capping and the whole
+  payload was buffered; `NaN <= 0` is false so a deadline armed and `setTimeout(fn, NaN)` is 1ms,
+  which 504s every request; `ceiling > 0` is false so `admit` shed nothing; and
+  `Math.max(0, Math.floor(NaN))` is `NaN`, so `trustProxy: true` silently trusted no hop and every
+  caller's ip became the proxy's. `Math.max(0, …)` was the guard for the last of those — a clamp is
+  not a validator, and this package relied on one. `webhook-verify.ts` screens its own two
+  (`toleranceMs`, `maxBytes`) and `rate-limit.ts` its `maxKeys`; the helper names carry `Finite`
+  (`assertFiniteCount`, `assertFiniteKeyCap`, `assertFiniteBodyLimit`) because
+  `bun run finite-bounds` recognises a repair by the shape of the CALL — spelled `count`, all five
+  config options read as unchecked to the ratchet while every one was screened. `maxBytes` is
+  refused HERE as well as inside `readWithinLimit`: that one is a file away and its `fix:` names
+  core's reader rather than the option the caller wrote.
+
+  **The FLOOR is per option, because only the caller knows what zero means** (`As of 2026-08-26`).
+  `requestTimeoutMs: 0` is "no deadline" and `maxInflight: 0` is "never shed" — decisions the code
+  reads — so those two floor at 0; `trustedProxyHops` floors at **1**, and it shipped for one day
+  screened at 0. `forwardedElement` answers `undefined` for `hops < 1`, so
+  `{ trustProxy: true, trustedProxyHops: 0 }` was byte-for-byte the failure the screen's own comment
+  names: `clientAddress` falls back to the socket, one rate-limit bucket for everything behind the
+  ingress, `x-forwarded-proto` untrusted and HSTS never emitted. `-1` and `NaN` were refused for
+  producing exactly that state and `0` was accepted into it. `resolveTrustedProxyHops` owns both
+  refusals — unset is `X_TRUST_PROXY_UNSET`, out of domain is `X_CONFIG_INVALID` — and there is no
+  `?? 0` behind it, because a default of zero reopens the same hole from the other side.
+
 - Route `meta.auth` is required. Never default a route to public.
 - **An app declares its half of `HttpConfig` through `configureHttp()`, and the boot lays its own
   facts over it** (`As of 2026-08-24`). Until 12.0.0 the entire tuning surface was **unreachable

@@ -9,6 +9,7 @@ reaches down to this package for it. **Never** import `entity`, `jobs`, `http` o
 |---|---|
 | Deps | none. `@electric-sql/pglite` is an **optional peer**, imported by variable specifier inside `loadPgliteDriver()` so no consumer's `tsc` or bundler resolves it. **No ORM** — `entity`'s hand-written `postgresDriver()` is the production backing |
 | SQL | `sql` binds `$n`; anything non-scalar and non-fragment throws `X_SQL_UNSAFE` |
+| A name reaching a `fix:` | `shellInertIdentifier()` (`sql.ts`), the tree's ONE screen for it, `As of 2026-08-26`. `identifier()` alone does not close it: it refuses `"`, `\` and whitespace and **accepts** a backtick and a `$` — `SAFE_IDENTIFIER` allows `$` on its fast path — which are the two characters a shell substitutes inside DOUBLE quotes. A refused name is left OUT of the command, never escaped into it |
 | Escape hatches | `raw()`, `identifier()`, `literal()` — each call is an audit point. `literal()` is the tree's ONE SQL-string-literal escape (`scripts/sql-literal-copies.ts`, pinned at zero) and it emits `E'…'` when the value carries a backslash |
 | SQLSTATE | one reader, `sqlState()` (`sqlstate.ts`). Never read `error.code` for a SQLSTATE |
 | Reading a caught value | `renderThrowable()` from core; never `error instanceof Error ? error.message : String(error)` — both halves RUN app code (a `Proxy` trap, `Symbol.toPrimitive`) and `checkDb` backs `/readyz`, where a render that throws is an exception in place of the report the kubelet asked for |
@@ -1311,6 +1312,34 @@ survives the round trip whole.
   `x db migrate` then accepts, through `@ultimat3/cli`'s `acceptCreatedTables`), or `psql … drop
   table` for a table nothing owns. No migration PATH is named — where an app keeps its migrations is
   the CLI's fact. `X_DB_DRIFT` is a shipped code and is unchanged; only this `fix:` text moved.
+
+- **A name a `fix:` puts in a command is screened ONCE, by `shellInertIdentifier()` (`sql.ts`),
+  `As of 2026-08-26`.** `identifier()` answers about SQL and cannot close this: it refuses `"`,
+  `\` and whitespace and **accepts** a backtick and a `$` — `SAFE_IDENTIFIER` allows `$` on its
+  fast path — which are exactly the two characters a shell substitutes inside DOUBLE quotes. A
+  `fix:` is pasted into a shell at least as often as into a psql session, so a column named
+  `$(id)` inside `x db gen "add $(id)"` RUNS `id` the moment its reader pastes the line, and a
+  screen reusing `identifier()` unchanged ships a green suite over a live command-execution hole.
+  It began as a private `writableName` in `drift-findings.ts` and was promoted rather than copied:
+  three copies of a string-literal escape shipped here once and two were wrong the same way
+  (`scripts/sql-literal-copies.ts`). Callers **degrade to prose** — the argument to `x db gen` is a
+  migration DESCRIPTION, not an identifier, so no quoted form makes a hostile name safe to pass,
+  and the name is read off `cause`/`meta` instead. Every benign rendering is byte-identical: the
+  screen sits on the refusal branch alone, because roughly ten pages across `packages/cli`,
+  `packages/core`, `wiki/` and `docs/` quote `x db gen "add <name>"` verbatim.
+
+- **`dbDrift()` lives in `drift-errors.ts` and not in `errors.ts`, for exactly the reason
+  `dependent-view.ts` states.** Its `fix:` needs `shellInertIdentifier` and `sql.ts` imports
+  `errors.ts`, so keeping the constructor there is an import cycle around the module whose
+  evaluation REGISTERS every code. `dependent-view.ts` avoided the same cycle by handing
+  `errors.ts` a finished string; that is not available here, because `dbDrift(table, column)` is
+  public API shipped since 1.0 and its signature cannot change. So the constructor moved instead,
+  the way `migration-errors.ts` and `invariant-errors.ts` did — `X_DB_DRIFT` is still declared,
+  titled and registered in `errors.ts`, and `src/index.ts` still exports the same name, so the
+  public surface is byte-identical. `@ultimat3/entity`'s mirror screens through the **same**
+  export across the tier seam (tier 2 → tier 1), which is what keeps the "keep in sync" comment on
+  both declarations true; `packages/entity/src/errors.test.ts` asserts the two texts are equal,
+  so a one-sided edit is a failing test rather than a comment nobody read.
 
 ```bash
 bun test                      # from packages/db

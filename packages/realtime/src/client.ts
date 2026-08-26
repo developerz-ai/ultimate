@@ -3,7 +3,7 @@
 // serves all three tiers: `useLive` is tier 2, and a `store` + `queue` makes the same call tier 3
 // with nothing about the subscription changing — that is the ladder's whole promise.
 
-import { type Clock, systemClock, uuid } from '@ultimat3/core';
+import { type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core';
 import type { Topic } from './channel';
 import type {
   ClientSocket,
@@ -110,7 +110,11 @@ export class LiveClient<T extends TableMap = TableMap> {
     this.#connected = connected;
     this.#setConnected = setConnected;
     this.#heartbeat = new Heartbeat({
-      intervalMs: options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS,
+      intervalMs: finiteOption(
+        'the sync client',
+        'heartbeatMs',
+        options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS,
+      ),
       schedule: options.scheduler ?? timeoutScheduler,
       now: () => this.#clock.now().getTime(),
       beat: () => this.#beat(),

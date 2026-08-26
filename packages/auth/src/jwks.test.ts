@@ -4,7 +4,7 @@
 // endpoint — an assumption the first IdP-initiated login or `response_mode=form_post` breaks.
 
 import { describe, expect, test } from 'bun:test';
-import { frozenClock } from '@ultimat3/core';
+import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { AuthError } from './errors';
 import { verifyIdToken } from './id-token';
 import { createJwksClient, decodeJwtHeader, verifyJwtSignature } from './jwks';
@@ -427,5 +427,59 @@ describe('a token with no kid', () => {
     expect(await verifyJwtSignature(`${body}.${base64Url(new Uint8Array(signature))}`, keys)).toBe(
       true,
     );
+  });
+});
+
+/**
+ * Both numbers bound something that fails SILENTLY when they are not numbers: `now >= fetchedAt +
+ * NaN` is false, so the key set is never stale and a provider's key rotation is never picked up —
+ * every login against the new `kid` fails until the process restarts — and `AbortSignal.timeout`
+ * throws a bare `TypeError` on `NaN`, several frames below the option that set it.
+ */
+describe('the jwks client screens both of its numbers', () => {
+  const JWKS_URI = 'https://op.test/jwks';
+
+  const codeOf = (build: () => unknown): string => {
+    try {
+      build();
+    } catch (error) {
+      return isUltimateError(error)
+        ? `${error.code} ${error.cause}`
+        : `unexpected: ${String(error)}`;
+    }
+    return 'no-error-thrown';
+  };
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses ttlMs %p, naming it',
+    (ttlMs) => {
+      const rendered = codeOf(() =>
+        createJwksClient({ provider: 'test-op', jwksUri: JWKS_URI, ttlMs }),
+      );
+      expect(rendered).toContain('X_CONFIG_INVALID');
+      expect(rendered).toContain('ttlMs');
+    },
+  );
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses timeoutMs %p, naming it',
+    (timeoutMs) => {
+      const rendered = codeOf(() =>
+        createJwksClient({ provider: 'test-op', jwksUri: JWKS_URI, timeoutMs }),
+      );
+      expect(rendered).toContain('X_CONFIG_INVALID');
+      expect(rendered).toContain('timeoutMs');
+    },
+  );
+
+  test('real numbers still build a client', () => {
+    expect(
+      typeof createJwksClient({
+        provider: 'test-op',
+        jwksUri: JWKS_URI,
+        ttlMs: 60_000,
+        timeoutMs: 5_000,
+      }).keyFor,
+    ).toBe('function');
   });
 });

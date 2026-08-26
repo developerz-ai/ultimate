@@ -12,6 +12,7 @@
 
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { finiteOption } from '@ultimat3/core';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { CoveragePin } from './lib/coverage-pins';
 import {
@@ -253,8 +254,13 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
     });
   }
 
-  const floorLines = pin?.lines ?? COVERAGE_TARGET;
-  const floorFuncs = pin?.funcs ?? COVERAGE_TARGET;
+  // Screened, not trusted. A pin is hand-written, so `lines: NaN` is a typo away — and
+  // `reading.lines < NaN` is FALSE for every reading, so the floor stops enforcing rather than
+  // enforcing the wrong number. That is this repo's most repeated defect and the direction that
+  // hides: a coverage gate that passes everything, reporting green. `finiteOption` is the tier-0
+  // check every package uses; `scripts/` reaches it the same way `boundaries.ts` reaches core.
+  const floorLines = finiteOption('the coverage pin', 'lines', pin?.lines ?? COVERAGE_TARGET);
+  const floorFuncs = finiteOption('the coverage pin', 'funcs', pin?.funcs ?? COVERAGE_TARGET);
   if (reading.lines < floorLines || reading.funcs < floorFuncs) {
     findings.push({
       code: 'X_COVERAGE_BELOW',

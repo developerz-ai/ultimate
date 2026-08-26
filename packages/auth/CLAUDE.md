@@ -16,6 +16,60 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 
 ## Non-negotiables
 
+- **A policy NUMBER is screened at `defineAuth`, `As of 2026-08-26`** (`policy-numbers.ts`,
+  `X_CONFIG_INVALID`). `session.absoluteTtlMs`, `session.idleTtlMs`, `session.idleSlideMs`,
+  `password.minLength`, the two argon2 costs and every `rateLimit` number. Measured with `NaN` —
+  what `Number(process.env.SESSION_TTL_MS)` answers when the variable is unset, and not nullish, so
+  the spread over the defaults keeps it: `now >= NaN` is false, so a session idle since 2000
+  reported `absoluteExpired: false` AND `idleExpired: false`; `password.length < NaN` is false and
+  the two-distinct-characters rule is guarded by `length > 0`, so the EMPTY password was accepted.
+  A rule whose comparison is false for every input is not a loose rule, it is no rule.
+
+- **Every RUNTIME number this package bounds anything with is screened too, `As of 2026-08-26`** —
+  `assertFiniteAuthCount` in `policy-numbers.ts`, one file for both halves. `jwks.ttlMs`
+  (`now >= fetchedAt + NaN` is false, so a provider's key rotation is never refetched and every
+  login against the new `kid` fails until the process restarts), the three OAuth legs' `timeoutMs`
+  (`AbortSignal.timeout(NaN)` THROWS, and it is screened OUTSIDE each leg's `try` — inside it, the
+  catch rendered an app config typo as the identity provider being unreachable), the limiter's
+  `maxKeys` (`Math.max(1, Math.floor(NaN))` is `NaN`, so the sweep bounding a table half of whose
+  keys are attacker-chosen never ran) and `mfa.drift`. **`drift` is the one that hangs**: it is a
+  LOOP BOUND, not a comparison — `for (offset = -Infinity; offset <= Infinity; offset += 1)` never
+  terminates, measured, synchronously, on the login path — and `NaN` makes the loop never run at
+  all, so every correct code is rejected as if it were wrong. Editing `verifyTotp` with the screen
+  removed WEDGES `mfa.test.ts` rather than failing it; mutate with the `NaN` case.
+
+  **That sentence was false when it was written and four more sites closed it, `As of 2026-08-26`.**
+  It named the options `defineAuth` resolves and the ones a *service* call takes, and missed every
+  number a **cookie** or a **mailed link** is bounded by. `oauth.handshake.ttlMs` is the one that
+  matters: `openHandshake`'s `now - issuedAt > NaN` is false, so a year-old sealed handshake — the
+  state, nonce and PKCE verifier that ARE the callback leg's CSRF defence — opened and returned its
+  verifier, while `handshakeCookie` wrote `Max-Age=NaN`, which is not `delta-seconds`, so the
+  browser dropped the attribute and kept the cookie for the whole session. One number, both ends of
+  the deadline, off together and silently. `session.cookie.maxAgeSeconds` is the same shape beside
+  a `policy.absoluteTtlMs` that WAS screened; `kdf.maxConcurrent`/`kdf.maxQueued` are the second
+  thing that WEDGES after `mfa.drift` — core asks `active < maxConcurrent` then
+  `waiters.length >= maxQueued`, both false for `NaN`, so every `hashPassword` on the box parks in
+  an unbounded queue nothing releases and login stops answering rather than shedding.
+
+- **A number is screened ABOVE the write it feeds, not beside the arithmetic** (`As of
+  2026-08-26`). `issueVerification` read `input.ttlMs ?? DEFAULT_VERIFICATION_TTL_MS[purpose]`
+  straight into `new Date(now + ttl)` and threw a bare `RangeError` — `toISOString()` refuses an
+  Invalid Date — on the line AFTER `putVerification` had already resolved. Two faults from one
+  number: an uncoded throw out of the package, and a durable row whose expiry `consumeVerification`
+  compares as `now >= NaN`, false for ever, i.e. a password-reset link that never expires. The
+  write also upserts on `(purpose, identifier)`, so the failing call had destroyed whatever live
+  token that address held on its way out. `verify.test.ts` asserts the ordering directly (no row
+  written, no mail sent, the earlier token still redeemable) — moving the screen below the store
+  call fails those three and leaves the coded-refusal case green.
+
+- **The minimum is per option, and zero is usually legitimate.** `assertFiniteAuthCount`'s `min` is
+  `0 | 1` because only the call site knows what zero MEANS, and picking `1` for tidiness is how a
+  screen breaks a working deployment while every test still passes. `maxAgeSeconds: 0` is how a
+  cookie is expired — it is what sign-out emits — and `{ maxConcurrent: 0, maxQueued: 0 }` is a
+  gate that refuses every hash, which is how `password.test.ts` proves the unreadable-hash path
+  burns the same KDF a wrong password does. Both take `min: 0`. A TTL takes `min: 1`, because a
+  handshake or a mailed link that is already expired when it is issued is not a configuration.
+
 - Every credential failure throws `loginFailed()` — one code, one cause, one fix. Adding a
   parameter to it re-opens account enumeration.
 - **A stored hash Bun cannot read is the generic failure, and it burns the same KDF** (`As of
@@ -394,7 +448,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 
 | File | Job |
 |---|---|
-| `auth.ts` | `defineAuth`, entity schemas, `login`/`register`/`authenticate`/`logout` |
+| `auth.ts` | `defineAuth`, entity schemas, `login`/`register`/`authenticate`/`logout`. Three suites, split at the line ceiling along the three subjects: `auth.test.ts` (the credential flow), `auth-config.test.ts` (`defineAuth`'s defaults and refusals) and `auth-lockout.test.ts` (the tenant and address buckets) |
 | `policy-bridge.ts` | the one funnel: identity → `Actor`, all four `ActorKind`s |
 | `session.ts` | two expiries, rotation, revocation, device list, the cookie |
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
@@ -414,6 +468,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `oauth-exchange.ts` | `oauthCredentials` + the one POST to the token endpoint |
 | `id-token.ts` | id token → claims this handshake may believe |
 | `id-token-fixture.ts` | the one string-input JWT builder the OAuth tests share. Off `index.ts` |
+| `auth-fixture.ts` | the KDF parameters, the password and the `AuthError` catcher the three `auth*.test.ts` suites share. Off `index.ts` |
 | `oauth-profile.ts` | claims or userinfo → one `OAuthProfile` |
 | `oauth-login.ts` | profile → account link → session. `completeOAuthLogin` is the entry point |
 | `oauth-login-fixture.ts` | the adapter, clock and profile the three `oauth-login*` suites share. Off `index.ts` |

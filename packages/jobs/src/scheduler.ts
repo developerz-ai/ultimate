@@ -21,7 +21,7 @@
 // over the same `lastFiredAt`.
 
 import type { Clock } from '@ultimat3/core';
-import { isUltimateError, logger, onShutdown, renderThrowable } from '@ultimat3/core';
+import { finiteOption, isUltimateError, logger, onShutdown, renderThrowable } from '@ultimat3/core';
 import { instant, nextCronOccurrence } from '@ultimat3/time';
 import { nowMs } from './clock';
 import { settleAllBy } from './drain-wait';
@@ -115,7 +115,11 @@ export interface Scheduler {
 export function createScheduler(options: SchedulerOptions): Scheduler {
   const schedulerState = options.state ?? createMemorySchedulerState();
   const resolveCron = options.cron ?? defaultCronResolver;
-  const tickIntervalMs = options.tickIntervalMs ?? 1_000;
+  const tickIntervalMs = finiteOption(
+    'createScheduler',
+    'tickIntervalMs',
+    options.tickIntervalMs ?? 1_000,
+  );
   const leader = options.leader ?? soleLeader();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let isLeader = false;

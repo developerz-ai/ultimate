@@ -6,7 +6,7 @@
 import { DEFAULT_ENVIRONMENT, tryResolveEnvironment } from '@ultimat3/core';
 import { assertCorsConfig, type CorsConfig, DEFAULT_CORS } from './cors';
 import { type CsrfConfig, DEFAULT_CSRF } from './csrf';
-import { trustProxyUnset } from './errors';
+import { httpCountInvalid, trustProxyUnset } from './errors';
 import {
   DEFAULT_LOCALE_CONFIG,
   DEFAULT_TZ_CONFIG,
@@ -121,6 +121,70 @@ const env = (name: string): string | undefined => {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 };
 
+/**
+ * A whole, in-range count, or the refusal that names it.
+ *
+ * `Number.isSafeInteger` and not `Number.isFinite`: these are byte counts, millisecond budgets and
+ * request ceilings, and above 2^53 a double cannot name its own successor — the same rule
+ * `@ultimat3/schema` states for an integer at the wire boundary. The `Finite` in the name is
+ * load-bearing: `bun run finite-bounds` recognises a repair by the shape of the CALL, so a screen
+ * named `count` left every option below reading as unchecked.
+ *
+ * `min` is the CALLER's, exactly as it is on `@ultimat3/core`'s `finiteCount`, because only the
+ * caller knows what zero means: `requestTimeoutMs: 0` is "no deadline" and `maxInflight: 0` is
+ * "never shed", both decisions the code reads, while `trustedProxyHops: 0` is a proxy trusted for
+ * nothing — the state the whole declaration exists to refuse. A helper that picked one bound would
+ * be wrong at half the call sites, and a second helper for "positive" would be the copy.
+ */
+const assertFiniteCount = (
+  name: string,
+  value: number,
+  max: number,
+  expected: string,
+  example: string,
+  min: 0 | 1 = 0,
+): number => {
+  if (!Number.isSafeInteger(value) || value < min || value > max) {
+    throw httpCountInvalid(name, value, expected, example);
+  }
+  return value;
+};
+
+const MAX_PORT = 65_535;
+
+/** Nobody has 64 proxies in front of one process; a bigger number is a typo, not a topology. */
+const MAX_PROXY_HOPS = 64;
+
+/**
+ * Which `x-forwarded-for` entry is the caller, or the refusal that says the declaration is not one.
+ *
+ * Screened, not clamped. `Math.max(0, Math.floor(x))` turned `-1` into `0` and `NaN` into `NaN`,
+ * and BOTH mean "trust nothing" to `forwardedElement` — so the one declaration saying which entry
+ * the caller wrote silently stopped being made, and every request's client ip became the proxy's
+ * own. One rate-limit bucket for everything behind the ingress, no word said.
+ *
+ * **`0` is that same state and is refused with them**, `As of 2026-08-26`. `forwardedElement`
+ * answers `undefined` for `hops < 1`, so `{ trustProxy: true, trustedProxyHops: 0 }` produced
+ * exactly the failure the screen was written for while the screen accepted it. One is the smallest
+ * topology `trustProxy: true` can describe.
+ *
+ * There is no `?? 0` fallback, and that is the point: an undeclared count is `trustProxyUnset()`,
+ * because "trust the header" and "know which entry of it" are one declaration and half of it is a
+ * header the caller writes. A default of zero would reopen the same hole from the other side.
+ */
+const resolveTrustedProxyHops = (trustProxy: boolean, declared: number | undefined): number => {
+  if (!trustProxy) return 0;
+  if (declared === undefined) throw trustProxyUnset();
+  return assertFiniteCount(
+    'trustedProxyHops',
+    declared,
+    MAX_PROXY_HOPS,
+    'the whole number of proxies that append to x-forwarded-for, at least 1',
+    'trustProxy: true, trustedProxyHops: 1',
+    1,
+  );
+};
+
 export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
   // `ULTIMATE_ENV` is the framework's one environment key and `NODE_ENV` is only its fallback, so
   // reading `NODE_ENV` alone made a deployment that declared production the documented way serve
@@ -135,14 +199,22 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
   const trustProxy = input.trustProxy ?? false;
   // Refused here, not on the first request: "trust the header" and "know which entry of it" are
   // one declaration, and half of it is a header the caller writes.
-  if (trustProxy && input.trustedProxyHops === undefined) throw trustProxyUnset();
+  const trustedProxyHops = resolveTrustedProxyHops(trustProxy, input.trustedProxyHops);
   const csp = { ...DEFAULT_SECURITY.csp, reportOnly: dev, ...input.security?.csp };
   // Beside `assertCorsConfig`, and for its reason: a merged value is the only one that can be
   // judged, and a directive name that is not a token would otherwise be a bare `TypeError` out of
   // the first response's header build — or worse, a second directive nobody declared.
   assertCspExtend(csp.extend);
   return {
-    port: input.port ?? Number.parseInt(env('PORT') ?? '3000', 10),
+    // `Number.parseInt(env('PORT'), 10)` is `NaN` for `PORT=web`, and a config that carries NaN
+    // into `Bun.serve` binds a port nobody asked for.
+    port: assertFiniteCount(
+      'port',
+      input.port ?? Number.parseInt(env('PORT') ?? '3000', 10),
+      MAX_PORT,
+      'a whole port number from 0 to 65535, where 0 asks the OS for a free one',
+      'port: 3000',
+    ),
     hostname: input.hostname ?? env('HOSTNAME') ?? '0.0.0.0',
     basePath: input.basePath ?? '/',
     buildId: input.buildId ?? env('BUILD_ID') ?? null,
@@ -150,13 +222,40 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
     dev,
     signInPath: input.signInPath ?? null,
     trustProxy,
-    trustedProxyHops: trustProxy ? Math.max(0, Math.floor(input.trustedProxyHops ?? 0)) : 0,
-    bodyLimitBytes: input.bodyLimitBytes ?? 1_048_576,
+    trustedProxyHops,
+    bodyLimitBytes: assertFiniteCount(
+      'bodyLimitBytes',
+      input.bodyLimitBytes ?? 1_048_576,
+      Number.MAX_SAFE_INTEGER,
+      'a whole number of bytes',
+      'bodyLimitBytes: 1_048_576',
+    ),
     // 30s: longer than any request a browser waits out, shorter than the 15s drain budget times
     // two, so a rolling restart cannot be held open by work started just before SIGTERM.
-    requestTimeoutMs: input.requestTimeoutMs ?? 30_000,
-    maxInflight: input.maxInflight ?? 1_000,
-    drainTimeoutMs: input.drainTimeoutMs ?? null,
+    requestTimeoutMs: assertFiniteCount(
+      'requestTimeoutMs',
+      input.requestTimeoutMs ?? 30_000,
+      Number.MAX_SAFE_INTEGER,
+      'a whole number of milliseconds, where 0 means no deadline',
+      'requestTimeoutMs: 30_000',
+    ),
+    maxInflight: assertFiniteCount(
+      'maxInflight',
+      input.maxInflight ?? 1_000,
+      Number.MAX_SAFE_INTEGER,
+      'a whole number of requests, where 0 means never shed',
+      'maxInflight: 1_000',
+    ),
+    drainTimeoutMs:
+      input.drainTimeoutMs === undefined || input.drainTimeoutMs === null
+        ? null
+        : assertFiniteCount(
+            'drainTimeoutMs',
+            input.drainTimeoutMs,
+            Number.MAX_SAFE_INTEGER,
+            'a whole number of milliseconds, or null for the lifecycle default',
+            'drainTimeoutMs: 15_000',
+          ),
     locale: { ...DEFAULT_LOCALE_CONFIG, ...input.locale },
     tz: { ...DEFAULT_TZ_CONFIG, ...input.tz },
     cors,

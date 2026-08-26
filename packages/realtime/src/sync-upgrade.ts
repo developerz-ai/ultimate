@@ -124,7 +124,22 @@ export async function handleUpgrade(
   // not return until it has, so a grant recorded on the next line is one the socket was already
   // built without.
   if (grant) deps.onGranted(data.socketId, grant);
-  if (!server.upgrade(request, { data })) {
+  let upgraded: boolean;
+  try {
+    upgraded = server.upgrade(request, { data });
+  } catch (error) {
+    // The other exit that never opens a socket, and the one the `false` branch below hid. Bun runs
+    // `websocket.open` synchronously inside `upgrade`, so ANYTHING that throws in there — a socket
+    // refusing its own ceiling, an app-supplied registry, an `open` a later change adds work to —
+    // comes out here, with no `close` callback behind it. Unreleased, that is one `GrantBook` entry
+    // per connection ATTEMPT, and an unreapable one: `sweepGrants` only visits a grant carrying an
+    // `expiresAt`, which `authenticate: async () => ({ actor })` does not produce. Measured, 20
+    // failing upgrades left 20 grants. Rethrown untouched — the throw is the operator's diagnosis,
+    // and this line owes it the release, not a verdict.
+    deps.onUngranted(data.socketId);
+    throw error;
+  }
+  if (!upgraded) {
     deps.onUngranted(data.socketId);
     return new Response('expected websocket', { status: 426 });
   }

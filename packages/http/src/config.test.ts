@@ -237,3 +237,115 @@ describe('dev is decided by ULTIMATE_ENV, not NODE_ENV alone', () => {
     expect(config.dev).toBe(true);
   });
 });
+
+/**
+ * Every numeric knob here arrives from `app.config.ts` or the environment, and `Number(env)` on an
+ * unset variable is `NaN`. `NaN` is not nullish, so `??` passes it through; `Math.max`/`Math.floor`
+ * propagate it; and then every comparison it reaches answers FALSE. The result is never a wrong
+ * number — it is the guard turning itself off:
+ *
+ * | knob | what `NaN` does, measured |
+ * |---|---|
+ * | `bodyLimitBytes` | `total > NaN` is false, so `readWithinLimit` buffers the WHOLE body |
+ * | `requestTimeoutMs` | `NaN <= 0` is false, so a deadline arms — `setTimeout(fn, NaN)` is 1ms, and every request 504s |
+ * | `maxInflight` | `ceiling > 0` is false, so the `admit` stage sheds nothing |
+ * | `trustedProxyHops` | `Math.max(0, Math.floor(NaN))` is `NaN`, so `forwardedElement` answers `undefined` and `trustProxy: true` silently does nothing |
+ */
+/** Every call below needs it: `rateLimit.scope` is a declaration the deployment owes. */
+const SCOPED = { rateLimit: { scope: 'process' } } as const;
+
+describe('defineHttpConfig refuses a limit that is not a number', () => {
+  const NOT_A_COUNT = [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5] as const;
+
+  for (const value of NOT_A_COUNT) {
+    test(`bodyLimitBytes: ${String(value)} is X_CONFIG_INVALID, never an uncapped body`, () => {
+      expect(() => defineHttpConfig({ ...SCOPED, bodyLimitBytes: value })).toThrow(
+        /X_CONFIG_INVALID/,
+      );
+    });
+  }
+
+  test('each knob is named in its own refusal', () => {
+    expect(() => defineHttpConfig({ ...SCOPED, requestTimeoutMs: Number.NaN })).toThrow(
+      /requestTimeoutMs/,
+    );
+    expect(() => defineHttpConfig({ ...SCOPED, maxInflight: Number.NaN })).toThrow(/maxInflight/);
+    expect(() => defineHttpConfig({ ...SCOPED, drainTimeoutMs: Number.NaN })).toThrow(
+      /drainTimeoutMs/,
+    );
+    expect(() =>
+      defineHttpConfig({ ...SCOPED, trustProxy: true, trustedProxyHops: Number.NaN }),
+    ).toThrow(/trustedProxyHops/);
+    expect(() => defineHttpConfig({ ...SCOPED, port: Number.NaN })).toThrow(/port/);
+  });
+
+  test('a port outside the range a socket has is refused, 0 (pick one) is not', () => {
+    expect(() => defineHttpConfig({ ...SCOPED, port: 65_536 })).toThrow(/X_CONFIG_INVALID/);
+    expect(defineHttpConfig({ ...SCOPED, port: 0 }).port).toBe(0);
+  });
+
+  test('the documented zeroes still mean what they meant', () => {
+    // `requestTimeoutMs: 0` is "no deadline" and `maxInflight: 0` is "never shed" — both are
+    // decisions the code reads, not accidents, so the screen must not take them away.
+    expect(defineHttpConfig({ ...SCOPED, requestTimeoutMs: 0 }).requestTimeoutMs).toBe(0);
+    expect(defineHttpConfig({ ...SCOPED, maxInflight: 0 }).maxInflight).toBe(0);
+    // `drainTimeoutMs` is the one knob here whose "unstated" is itself a value the code reads:
+    // `createServer` calls `configureLifecycle` only when it is NOT null, so a resolved default
+    // would silently revert an app's own `configureLifecycle({ deadlineMs })`. Omission is how a
+    // TypeScript app declines — `HttpConfigInput.drainTimeoutMs` is `number | undefined` — so the
+    // screen must not turn declining into a number.
+    expect(defineHttpConfig({ ...SCOPED }).drainTimeoutMs).toBeNull();
+    expect(defineHttpConfig({ ...SCOPED, bodyLimitBytes: 0 }).bodyLimitBytes).toBe(0);
+  });
+
+  test('a fractional hop count is refused rather than floored to something else', () => {
+    // It was `Math.max(0, Math.floor(hops))`, which is a clamp and not a validator: it turned
+    // `-1` into `0` (trust silently off) and `NaN` into `NaN` (trust silently off) with no word.
+    expect(() => defineHttpConfig({ ...SCOPED, trustProxy: true, trustedProxyHops: 1.5 })).toThrow(
+      /X_CONFIG_INVALID/,
+    );
+    expect(
+      defineHttpConfig({ ...SCOPED, trustProxy: true, trustedProxyHops: 2 }).trustedProxyHops,
+    ).toBe(2);
+  });
+
+  test('a hop count of ZERO is refused — it IS the state this screen was written to name', () => {
+    // `forwardedElement` returns `undefined` for `hops < 1` (`forwarded.ts`), so
+    // `{ trustProxy: true, trustedProxyHops: 0 }` is byte-for-byte the failure the comment above
+    // the screen describes: `clientAddress` falls back to the socket, every caller behind the
+    // ingress shares one rate-limit bucket, and `x-forwarded-proto` is untrusted so HSTS is never
+    // emitted. `-1` and `NaN` were refused for producing exactly this, and `0` was let through.
+    expect(() => defineHttpConfig({ ...SCOPED, trustProxy: true, trustedProxyHops: 0 })).toThrow(
+      /X_CONFIG_INVALID/,
+    );
+    expect(() => defineHttpConfig({ ...SCOPED, trustProxy: true, trustedProxyHops: 0 })).toThrow(
+      /trustedProxyHops/,
+    );
+    // The floor is 1 because ONE proxy is the smallest topology `trustProxy: true` can describe.
+    expect(
+      defineHttpConfig({ ...SCOPED, trustProxy: true, trustedProxyHops: 1 }).trustedProxyHops,
+    ).toBe(1);
+  });
+
+  test('trustProxy: false still resolves 0 — the count is not a declaration at all then', () => {
+    // The floor applies to a DECLARED count. With nothing trusted there is no hop to name, and 0
+    // is what every reader of `HttpConfig.trustedProxyHops` already treats as "trust nothing".
+    expect(defineHttpConfig({ ...SCOPED }).trustedProxyHops).toBe(0);
+    expect(defineHttpConfig({ ...SCOPED, trustProxy: false }).trustedProxyHops).toBe(0);
+  });
+
+  test('trustProxy: true with no count is still X_TRUST_PROXY_UNSET, not a screened zero', () => {
+    // There is no `?? 0` behind this: a default of zero would be the silent trust-nothing above,
+    // arriving through the door the unset refusal exists to close. The two refusals are one
+    // declaration, so the unset one must still fire and must NOT become the count refusal.
+    expect(() => defineHttpConfig({ ...SCOPED, trustProxy: true })).toThrow(/X_TRUST_PROXY_UNSET/);
+  });
+
+  test('an app that sets nothing still gets every default', () => {
+    const config = defineHttpConfig({ ...SCOPED });
+    expect(config.bodyLimitBytes).toBe(1_048_576);
+    expect(config.requestTimeoutMs).toBe(30_000);
+    expect(config.maxInflight).toBe(1_000);
+    expect(config.trustedProxyHops).toBe(0);
+  });
+});

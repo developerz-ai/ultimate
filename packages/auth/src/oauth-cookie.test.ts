@@ -281,3 +281,71 @@ describe('the two legs of a login', () => {
     expect(isUltimateError(thrown) ? thrown.code : thrown).toBe('X_OAUTH_STATE_INVALID');
   });
 });
+
+/**
+ * The handshake TTL is the whole replay window on `state`, `nonce` and the PKCE verifier — the
+ * CSRF defence for the callback leg — and it is bounded on BOTH sides by the same number: the
+ * server comparison in `openHandshake` and the `Max-Age` the browser is asked to honour. `NaN`
+ * switches off both at once, silently: `now - issuedAt > NaN` is false forever, and `Max-Age=NaN`
+ * is not `delta-seconds`, so the browser drops the attribute and keeps the cookie for the session.
+ *
+ * Latent rather than live: `oauth-route.ts`'s `sealOptions` passes a clock and a secret and never
+ * a `ttlMs`, so no shipped path reaches it. All three functions are public off `src/index.ts`,
+ * which is what makes an app's `Number(process.env.OAUTH_HANDSHAKE_TTL_MS)` the way in.
+ */
+describe('the handshake ttl is a screened number', () => {
+  const YEAR_LATER = frozenClock(new Date(NOW.getTime() + 365 * 24 * 60 * 60 * 1000));
+
+  const refusal = (run: () => unknown): { code: string; option: unknown } => {
+    try {
+      run();
+    } catch (error) {
+      if (isUltimateError(error)) return { code: error.code, option: error.meta?.['option'] };
+      throw error;
+    }
+    return expect.unreachable('the handshake ttl was taken from a number that bounds nothing');
+  };
+
+  test('a non-finite ttl is refused instead of accepting a year-old handshake', () => {
+    const sealed = sealHandshake(start(), options);
+    // The unscreened comparison: `now - issuedAt > NaN` is false, so this opened and returned the
+    // verifier a year after it was sealed. The default refuses it — that is the control.
+    expect(
+      codeOf(() => openHandshake(sealed, 'github', { secret: SECRET, clock: YEAR_LATER })),
+    ).toBe('X_OAUTH_STATE_INVALID');
+    for (const ttlMs of [Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5]) {
+      const { code, option } = refusal(() =>
+        openHandshake(sealed, 'github', { secret: SECRET, clock: YEAR_LATER, ttlMs }),
+      );
+      expect(code).toBe('X_CONFIG_INVALID');
+      expect(option).toBe('oauth.handshake.ttlMs');
+    }
+  });
+
+  test('the cookie is refused rather than written with a Max-Age no browser can read', () => {
+    for (const ttlMs of [Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5]) {
+      expect(refusal(() => handshakeCookie(start(), { ...options, ttlMs })).code).toBe(
+        'X_CONFIG_INVALID',
+      );
+    }
+  });
+
+  test('an honest ttl still seals, opens and reaches the header', () => {
+    const sealed = sealHandshake(start(), { ...options, ttlMs: 120_000 });
+    expect(openHandshake(sealed, 'github', { ...options, ttlMs: 120_000 }).provider).toBe('github');
+    expect(handshakeCookie(start(), { ...options, ttlMs: 120_000 })).toContain('Max-Age=120');
+  });
+
+  test('the callback leg is screened too — readHandshakeCookie opens through the same door', () => {
+    const cookie = handshakeCookie(start(), options);
+    expect(
+      refusal(() =>
+        readHandshakeCookie(callbackRequest(cookie), 'github', {
+          secret: SECRET,
+          clock: YEAR_LATER,
+          ttlMs: Number.NaN,
+        }),
+      ).code,
+    ).toBe('X_CONFIG_INVALID');
+  });
+});

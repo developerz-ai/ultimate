@@ -10,7 +10,7 @@
 // become — the checkpoints are transactional with the work, and this row is not.
 
 import type { Clock } from '@ultimat3/core';
-import { systemClock } from '@ultimat3/core';
+import { finiteCount, systemClock } from '@ultimat3/core';
 import { nowMs } from './clock';
 
 /**
@@ -167,7 +167,8 @@ export function createMemoryBackfillLedger(clock: Clock = systemClock): Backfill
       });
       return Promise.resolve();
     },
-    list(filter = {}) {
+    // `async`, so a refused limit REJECTS here as it does on the pg ledger — see `driver-memory.ts`.
+    async list(filter = {}) {
       // Reversed BEFORE the sort: the test clock is frozen, so two rows share a `startedAt` and a
       // stable sort would hand back the oldest of them first under a "newest first" contract.
       const rows = [...runs.values()]
@@ -176,8 +177,8 @@ export function createMemoryBackfillLedger(clock: Clock = systemClock): Backfill
         .filter((run) => filter.name === undefined || run.name === filter.name)
         .filter((run) => filter.status === undefined || run.status === filter.status)
         .filter((run) => filter.runId === undefined || run.runId === filter.runId)
-        .slice(0, filter.limit ?? 100);
-      return Promise.resolve(rows);
+        .slice(0, finiteCount('the backfill ledger list', 'limit', filter.limit ?? 100));
+      return rows;
     },
   };
 }

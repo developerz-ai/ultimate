@@ -26,11 +26,13 @@
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
-grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 35 As of 2026-08-26 — the WHOLE file, which is capped at 1,000 lines. All 35 sit inside the
-# section of the major that shipped them (the sum of every row above whose section the changelog
-# still carries); `[Unreleased]` holds none, which is the state a TAGGED commit is checked in —
-# 16.0.0's release promoted its eight into the section rather than appending one.
+grep -cE '^(- \*\*|### )BREAKING —' <(awk '/^## /{u = ($0 == "## [Unreleased]")} !u' CHANGELOG.md)
+# 35 As of 2026-08-26 — every RELEASED section, which is the sum of every row above whose section
+# the changelog still carries. `[Unreleased]` is cut by the awk deliberately: a bare whole-file
+# grep agrees with this number only while that section is empty, so it moved on every PR that
+# landed a breaking change and moved BACK when the release promoted the section — a count that can
+# only be right between merges, whose repair is a number the next release invalidates. Corrected
+# 2026-08-26, after it failed exactly that way.
 #
 # The count is SMALLER than the number of entries this page walks, and that is the archive, not a
 # discrepancy: `CHANGELOG.md` keeps the recent releases and `git show v10.0.0:CHANGELOG.md` has the

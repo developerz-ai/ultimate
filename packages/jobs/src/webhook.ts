@@ -17,6 +17,7 @@
 
 import type { Clock, Ctx } from '@ultimat3/core';
 import {
+  finiteOption,
   isCanonicalWebhookField,
   renderThrowable,
   systemClock,
@@ -169,7 +170,11 @@ const isRetryableStatus = (status: number): boolean =>
 
 export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliveryInput> {
   const clock = definition.clock ?? systemClock;
-  const disableAfter = definition.disableAfter ?? DEFAULT_WEBHOOK_DISABLE_AFTER;
+  const disableAfter = finiteOption(
+    'webhook()',
+    'disableAfter',
+    definition.disableAfter ?? DEFAULT_WEBHOOK_DISABLE_AFTER,
+  );
   const send = definition.fetch ?? ((url, init) => fetch(url, init));
 
   return job<WebhookDeliveryInput>({

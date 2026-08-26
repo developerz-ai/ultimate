@@ -9,7 +9,7 @@ import { assertBatchable, batchIterator } from './batch';
 import { entityNow } from './clock';
 import type { EntityCore } from './entity';
 import { searchUndeclared } from './feature-errors';
-import { assertPageSize, DEFAULT_PAGE_SIZE, namedColumns } from './plan';
+import { assertFinitePageSize, DEFAULT_PAGE_SIZE, namedColumns } from './plan';
 import type { RelatedTables } from './preload';
 import { preloaded } from './preload';
 import type { Relation } from './relations';
@@ -305,7 +305,7 @@ const builder = <Source, Row>(
     // sized. `planFor` applies the identical guard, so a caller reaching the repository directly
     // cannot go round it.
     limit: (rows) => {
-      assertPageSize(entity.$name, rows);
+      assertFinitePageSize(entity.$name, rows);
       return next({ limit: rows });
     },
 
@@ -400,7 +400,7 @@ const builder = <Source, Row>(
       where: state.where,
       orderBy: state.orderBy,
       // The page that will actually run, so an unnamed one still reads as the bound it has.
-      limit: state.limit ?? DEFAULT_PAGE_SIZE,
+      limit: assertFinitePageSize(entity.$name, state.limit ?? DEFAULT_PAGE_SIZE),
       ...(state.cursor === null ? {} : { cursor: state.cursor }),
       // The projection actually sent, preload keys included: a plan that is safe to log is only
       // useful if it is the plan that ran.

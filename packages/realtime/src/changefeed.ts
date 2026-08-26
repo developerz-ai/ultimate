@@ -3,6 +3,7 @@
 // replicator, and the fanout never learn which one they are attached to.
 
 import type { Clock } from '@ultimat3/core';
+import { finiteOption } from '@ultimat3/core';
 import { ReplicationFailedError } from './errors';
 import type { Row } from './json';
 import { PgReplicationStream, type ReplicationStreamStats } from './pg-replication';
@@ -72,7 +73,7 @@ export class InMemoryChangeFeed implements ChangeFeed {
   #lastLsn: string | null = null;
 
   constructor(options: InMemoryChangeFeedOptions = {}) {
-    this.#retain = options.retain ?? 1024;
+    this.#retain = finiteOption('the change feed', 'retain', options.retain ?? 1024);
   }
 
   async start(options: ChangeFeedStartOptions): Promise<void> {

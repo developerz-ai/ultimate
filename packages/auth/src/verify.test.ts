@@ -430,3 +430,50 @@ describe('a verification identifier is normalised at both ends of the flow', () 
     expect(rt.mail.sent[0]?.to).toBe('ada@example.test');
   });
 });
+
+/**
+ * The ttl is the whole life of a mailed credential, and it was read straight into a `Date` with
+ * the store write already behind it. `new Date(now + NaN)` is an Invalid Date, `.toISOString()`
+ * on one throws a bare `RangeError` — out of this package, past every coded path — and that throw
+ * is on the line AFTER `putVerification` resolved. Two faults from one number: the uncoded escape,
+ * and a durable row whose expiry `consumeVerification` compares as `now >= NaN`, which is false
+ * for ever. `putVerification` upserts on `(purpose, identifier)`, so the failed call had already
+ * replaced whatever live token that address held.
+ */
+describe('the verification ttl is screened before anything is written', () => {
+  const issue = (rt: TestRuntime, ttlMs?: number) =>
+    issueVerification(rt, {
+      purpose: 'password-reset',
+      identifier: 'a@example.com',
+      locale: 'en',
+      ...(ttlMs === undefined ? {} : { ttlMs }),
+    });
+
+  test('a ttl that bounds nothing is a coded refusal, never a bare RangeError', async () => {
+    const rt = runtime();
+    for (const ttlMs of [Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5]) {
+      const error = await caught(() => issue(rt, ttlMs));
+      expect(error.code).toBe('X_CONFIG_INVALID');
+      expect(error.meta?.['option']).toBe('verification.ttlMs');
+    }
+  });
+
+  test('the refused call writes no row and sends no mail', async () => {
+    const rt = runtime();
+    await caught(() => issue(rt, Number.NaN));
+    expect(rt.store.written.size).toBe(0);
+    expect(rt.mail.sent).toHaveLength(0);
+  });
+
+  test('the live token the upsert would have replaced is still redeemable afterwards', async () => {
+    const rt = runtime();
+    const issued = await issue(rt);
+    await caught(() => issue(rt, Number.NaN));
+    const record = await consumeVerification(rt, {
+      purpose: 'password-reset',
+      identifier: 'a@example.com',
+      token: issued.token,
+    });
+    expect(record.identifier).toBe('a@example.com');
+  });
+});

@@ -216,6 +216,31 @@ export const mfaRequiredUnenforceable = (): AuthError =>
     fix: 'drop required from defineAuth({ mfa }) and gate it in your own sign-in handler, which is where the enrolment route lives: if (user.mfaSecret === null) send them to enrolTotp(auth, { account: user.email }) instead of createSession(auth.sessions, ...)',
   });
 
+/**
+ * A policy NUMBER that is not one, refused where `defineAuth` still names the key.
+ *
+ * Every one of these arrives as `Number(process.env.SESSION_TTL_MS)` as often as a literal, and
+ * that is `NaN` for an unset variable — not nullish, so the spread over the defaults keeps it, and
+ * then every comparison it reaches is false. What that produces is not a short session or a weak
+ * password, it is the RULE not existing: `now >= NaN` is false, so a session never expires on
+ * either clock; `password.length < NaN` is false, so the empty password was accepted. Both were
+ * measured. `X_CONFIG_INVALID` is core's code, borrowed rather than re-declared, beside
+ * `mfaRequiredUnenforceable` above and for the same reason — a declaration this package cannot
+ * honour is not a new kind of failure.
+ */
+export const authPolicyNumberInvalid = (
+  key: string,
+  value: number,
+  expected: string,
+  consequence: string,
+): AuthError =>
+  new AuthError({
+    code: 'X_CONFIG_INVALID',
+    cause: `defineAuth({ ${key}: ${String(value)} }) is not ${expected}; ${consequence}, so the rule is not enforced at all rather than enforced wrongly — and NaN is what Number(process.env.…) answers for an unset variable`,
+    fix: `pass ${expected} for ${key} in defineAuth, and parse an environment value before you pass it — Number.parseInt(process.env.AUTH_TTL_MS ?? '', 10) is NaN when the variable is unset, so give it a default: Number.parseInt(process.env.AUTH_TTL_MS ?? '2592000000', 10)`,
+    meta: { option: key, value: String(value) },
+  });
+
 export const passwordWeak = (reasons: readonly string[]): AuthError =>
   new AuthError({
     code: 'X_PASSWORD_WEAK',

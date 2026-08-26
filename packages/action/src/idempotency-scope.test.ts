@@ -98,6 +98,40 @@ describe('the memory store is bounded and swept', () => {
     expect(store.size).toBeLessThanOrEqual(100);
   });
 
+  /**
+   * `Math.max(1, Math.floor(x))` was the guard on both, and `Math.floor(NaN)` is `NaN`: the cap
+   * comparison is then false for every size, so the flood above would grow without bound, and
+   * `now - at > NaN` is false, so a replay window that exists to expire a key never expires one.
+   * `Number(process.env.IDEMPOTENCY_WINDOW_MS)` on an unset variable is how it arrives.
+   */
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses a maxKeys of %p rather than clamping it into a table with no cap',
+    (maxKeys) => {
+      let rendered = 'no-error-thrown';
+      try {
+        new MemoryIdempotencyStore({ maxKeys });
+      } catch (error) {
+        rendered = String(error);
+      }
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('maxKeys');
+    },
+  );
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses a windowMs of %p rather than a replay window nothing falls out of',
+    (windowMs) => {
+      let rendered = 'no-error-thrown';
+      try {
+        new MemoryIdempotencyStore({ windowMs });
+      } catch (error) {
+        rendered = String(error);
+      }
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('windowMs');
+    },
+  );
+
   test('an in-flight reservation survives the eviction that drops settled ones', async () => {
     const store = new MemoryIdempotencyStore({ maxKeys: 10 });
     // Reserved and never settled: dropping this one is what would let a concurrent duplicate run.

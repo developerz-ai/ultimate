@@ -3,7 +3,7 @@
 // 12:00:10, so a fire-and-forget emitter would silently strand every waiting run.
 
 import type { Clock } from '@ultimat3/core';
-import { logger, systemClock, uuid } from '@ultimat3/core';
+import { finiteOption, logger, systemClock, uuid } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { nowMs, toMs } from './clock';
 import type { EventLookup } from './steps';
@@ -39,8 +39,17 @@ export interface MemoryEventBusOptions {
 
 export function createMemoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
   const clock = options.clock ?? systemClock;
-  const defaultTtl = options.defaultTtl ?? 604_800_000;
-  const maxEvents = options.maxEvents ?? 10_000;
+  // TWO screens, because these are two knobs: the default is declared at construction and belongs
+  // to whoever built the bus, `ttl` rides the publish CALL. One screen over `ttl ?? defaultTtl`
+  // told a caller who wrote `{ ttl: NaN }` to "pass a finite defaultTtl" — an instruction naming an
+  // option they never set, on a constructor usually in another file. `steps.ts` names `timeout` for
+  // the same value shape.
+  const defaultTtlMs = finiteOption(
+    'the memory event bus',
+    'defaultTtl',
+    toMs(options.defaultTtl ?? 604_800_000),
+  );
+  const maxEvents = finiteOption('the memory event bus', 'maxEvents', options.maxEvents ?? 10_000);
   const events = new Map<string, JobEvent>();
 
   const purgeExpired = (): number => {
@@ -64,7 +73,11 @@ export function createMemoryEventBus(options: MemoryEventBusOptions = {}): Event
         name,
         payload,
         publishedAt: at,
-        expiresAt: at + toMs(publishOptions.ttl ?? defaultTtl),
+        expiresAt:
+          at +
+          (publishOptions.ttl === undefined
+            ? defaultTtlMs
+            : finiteOption('the memory event bus', 'ttl', toMs(publishOptions.ttl))),
         ...(publishOptions.correlationKey === undefined
           ? {}
           : { correlationKey: publishOptions.correlationKey }),

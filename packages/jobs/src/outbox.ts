@@ -24,7 +24,14 @@
 // test and `x dev` must enqueue with nothing wired — but it is a fallback, not the guarantee.
 
 import type { Clock } from '@ultimat3/core';
-import { currentSpanContext, logger, renderThrowable, traceparent, uuid } from '@ultimat3/core';
+import {
+  assert,
+  currentSpanContext,
+  logger,
+  renderThrowable,
+  traceparent,
+  uuid,
+} from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
@@ -383,6 +390,18 @@ export interface OutboxRelay {
 export function createOutboxRelay(options: RelayOptions): OutboxRelay {
   const batchSize = options.batchSize ?? 100;
   const intervalMs = options.intervalMs ?? 200;
+  // Refused, never clamped — `worker-options.ts` carries the reason. `setInterval(fn, NaN)` reads
+  // the delay as 0 and `claim(NaN)` slices `(0, NaN)`: a relay that spins and publishes nothing.
+  assert(
+    Number.isSafeInteger(batchSize) && batchSize >= 1,
+    `createOutboxRelay batchSize is ${String(batchSize)} — a batch is a whole number of staged rows, at least one`,
+    'pass a finite batchSize to createOutboxRelay(...), or omit it for the default 100',
+  );
+  assert(
+    Number.isFinite(intervalMs) && intervalMs >= 0,
+    `createOutboxRelay intervalMs is ${String(intervalMs)}, which setInterval reads as 0 — the relay would spin, not poll`,
+    'pass a finite intervalMs to createOutboxRelay(...), or omit it for the default 200',
+  );
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
   /** The pass in flight, so `stop()` joins it instead of returning underneath it. */

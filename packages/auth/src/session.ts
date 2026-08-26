@@ -7,6 +7,7 @@
 import type { Clock } from '@ultimat3/core';
 import type { AuthSession, SessionStore } from './adapter';
 import { sessionExpired, sessionUnknown } from './errors';
+import { assertFiniteAuthCount } from './policy-numbers';
 import { randomToken, sha256Hex, timingSafeEqual } from './tokens';
 
 export interface SessionPolicy {
@@ -230,6 +231,13 @@ export interface SessionCookieOptions {
  * - `SameSite=Lax` — not attached to cross-site POSTs, which is CSRF's whole mechanism.
  * - `Path=/`, no `Domain` — required by `__Host-`; a sibling subdomain cannot set or read it.
  * - `Max-Age`   — the client drops it at the absolute expiry, matching the server's ceiling.
+ *
+ * The two numbers behind that last attribute are screened here rather than merged first, because
+ * they are two different options and an error naming the one the caller did not pass is a `fix:`
+ * nobody can follow. `Max-Age` is `delta-seconds` — digits — so `NaN`, `Infinity` and `1.5` are
+ * attributes a browser DISCARDS: the cookie then lives until the tab closes, which is the client
+ * half of the session ceiling gone with no error anywhere. Zero is legitimate and stays legal, at
+ * both ends: it means "expire now", which is exactly what `clearSessionCookie` emits.
  */
 export function sessionCookie(
   token: string,
@@ -237,7 +245,22 @@ export function sessionCookie(
   options?: SessionCookieOptions,
 ): string {
   const name = options?.name ?? policy.cookieName;
-  const maxAge = options?.maxAgeSeconds ?? Math.floor(policy.absoluteTtlMs / 1000);
+  const maxAge =
+    options?.maxAgeSeconds === undefined
+      ? Math.floor(
+          assertFiniteAuthCount(
+            'session.absoluteTtlMs',
+            policy.absoluteTtlMs,
+            'the cookie carries `Max-Age=NaN`, which is not delta-seconds, so the browser drops the attribute and keeps the session cookie for the whole browsing session',
+            1,
+          ) / 1000,
+        )
+      : assertFiniteAuthCount(
+          'session.cookie.maxAgeSeconds',
+          options.maxAgeSeconds,
+          'the cookie carries an attribute that is not delta-seconds, so the browser drops it and keeps the session cookie for the whole browsing session',
+          0,
+        );
   return `${name}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
 }
 

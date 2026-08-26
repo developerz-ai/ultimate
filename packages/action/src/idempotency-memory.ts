@@ -3,7 +3,7 @@
  * and for tests, and refused at registration under a `shared` declaration — its `scope` says so.
  * Shaped after `@ultimat3/http`'s `memoryRateLimitStore`, including the deliberate eviction order.
  */
-import { uuid } from '@ultimat3/core';
+import { finiteCount, uuid } from '@ultimat3/core';
 import type {
   IdempotencyFailure,
   IdempotencyRecord,
@@ -47,8 +47,21 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
   #lastSweepMs = Number.NEGATIVE_INFINITY;
 
   constructor(options: MemoryIdempotencyStoreOptions = {}) {
-    this.windowMs = Math.max(1, Math.floor(options.windowMs ?? DEFAULT_IDEMPOTENCY_WINDOW_MS));
-    this.#maxKeys = Math.max(1, Math.floor(options.maxKeys ?? DEFAULT_MAX_IDEMPOTENCY_KEYS));
+    // Screened, not clamped: `Math.floor(NaN)` is `NaN`, so `size > maxKeys` is false for every
+    // size and `now - at > windowMs` is false for every record — a table with no cap, holding keys
+    // that never expire, out of a `Math.max` that reads like a guard.
+    this.windowMs = finiteCount(
+      'MemoryIdempotencyStore',
+      'windowMs',
+      options.windowMs ?? DEFAULT_IDEMPOTENCY_WINDOW_MS,
+      1,
+    );
+    this.#maxKeys = finiteCount(
+      'MemoryIdempotencyStore',
+      'maxKeys',
+      options.maxKeys ?? DEFAULT_MAX_IDEMPOTENCY_KEYS,
+      1,
+    );
     // Batched down to 90% so the eviction sort is paid once per 10% of the cap, not per write.
     this.#evictTo = Math.max(1, Math.floor(this.#maxKeys * 0.9));
     this.#now = options.now ?? ((): number => Date.now());

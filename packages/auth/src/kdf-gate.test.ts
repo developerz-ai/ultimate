@@ -170,3 +170,61 @@ describe('the shed refusal, whoever performs the queueing', () => {
     expect(order).toEqual(['held', 'waiter', 'latecomer']);
   });
 });
+
+/**
+ * The fourth runtime number, and the one that WEDGES rather than fails — the shape `mfa.drift`
+ * already had. `createFlightGate` asks `active < maxConcurrent` and then
+ * `waiters.length >= maxQueued`, and both are false for `NaN`: every `hashPassword` and
+ * `verifyPassword` on the box parks in a queue with no bound and nothing to release it, so login
+ * stops answering at all instead of shedding. Screened at the constructor, so `configureKdfGate`
+ * and a direct `createKdfGate(limits)` are the same door.
+ */
+describe('the kdf limits are screened numbers', () => {
+  const refusal = (limits: { maxConcurrent: number; maxQueued: number }): AuthError => {
+    try {
+      createKdfGate(limits);
+    } catch (error) {
+      if (error instanceof AuthError) return error;
+      throw error;
+    }
+    // Never `await gate.run(...)` here: an unscreened NaN queues for ever and wedges the runner.
+    return expect.unreachable('a gate was built on a bound no comparison can be true against');
+  };
+
+  test('a width that is not a whole count is refused, not queued behind', () => {
+    for (const maxConcurrent of [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5]) {
+      const error = refusal({ maxConcurrent, maxQueued: 64 });
+      expect(error.code).toBe('X_CONFIG_INVALID');
+      expect(error.meta?.['option']).toBe('kdf.maxConcurrent');
+    }
+  });
+
+  test('a queue bound that is not delta-countable is refused', () => {
+    for (const maxQueued of [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5]) {
+      const error = refusal({ maxConcurrent: 8, maxQueued });
+      expect(error.code).toBe('X_CONFIG_INVALID');
+      expect(error.meta?.['option']).toBe('kdf.maxQueued');
+    }
+  });
+
+  test('a zero queue stays legal — it sheds at the width instead of waiting', async () => {
+    const gate = createKdfGate({ maxConcurrent: 1, maxQueued: 0 });
+    expect(await gate.run(async () => 'hashed')).toBe('hashed');
+  });
+
+  /**
+   * The minimum is 0 at BOTH, and this is the case that decides it: a zero-width gate with a zero
+   * queue refuses every hash, which is how `password.test.ts` proves the unreadable-hash path
+   * burns the same KDF a wrong password does. A `min: 1` would have read as tightening a bound
+   * and would have broken a control that is already shipped.
+   */
+  test('a zero width with a zero queue stays legal — it sheds every hash, it does not hang', async () => {
+    const gate = createKdfGate({ maxConcurrent: 0, maxQueued: 0 });
+    const answer = await gate.run(async () => 'hashed').catch((error: unknown) => error);
+    expect(answer instanceof AuthError ? answer.code : answer).toBe('X_OVERLOADED');
+  });
+
+  test('the shipped defaults pass their own screen', () => {
+    expect(createKdfGate(DEFAULT_KDF_LIMITS)).toBeDefined();
+  });
+});

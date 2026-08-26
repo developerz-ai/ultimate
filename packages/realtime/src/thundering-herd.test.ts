@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { frozenClock } from '@ultimat3/core';
+import { frozenClock, UltimateError } from '@ultimat3/core';
 import {
   AcceptBudget,
   backoffDelay,
@@ -99,5 +99,49 @@ describe('timeoutScheduler', () => {
     cancelB();
     await nextTick();
     expect(fired).toEqual(['a', 'c']);
+  });
+});
+
+describe('a budget built on a number that is not a number', () => {
+  /** Every shape `Number(...)` / `parseInt` / JSON hands a config reader that no `??` can catch. */
+  const NOT_A_RATE = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+  test('a non-finite perSecond is refused, because the bucket would admit EVERY accept', () => {
+    // MEASURED before the guard: `Math.max(1, NaN)` is `NaN`, so `#tokens` is `NaN`; `tryAccept`
+    // asks `this.#tokens < 1` and `NaN < 1` is FALSE, so it never refuses. The shed that exists
+    // for a reconnect herd let the whole herd through, and `retryAfterMs()` answered `NaN` —
+    // which `JSON.stringify` writes as `null` in the `reconnect` frame. Both call sites are the
+    // ones that matter: the node's accept path and `SyncSocket`'s per-socket frame flood budget.
+    for (const perSecond of NOT_A_RATE) {
+      expect(() => new AcceptBudget({ perSecond })).toThrow(UltimateError);
+    }
+  });
+
+  test('a non-finite burst is refused too — it is the bucket depth, not a hint', () => {
+    for (const burst of NOT_A_RATE) {
+      expect(() => new AcceptBudget({ perSecond: 10, burst })).toThrow(UltimateError);
+    }
+  });
+
+  test('the refusal names the option and the call, so it is one edit', () => {
+    let thrown: unknown;
+    try {
+      new AcceptBudget({ perSecond: Number.NaN });
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    const rendered = thrown instanceof UltimateError ? `${thrown.cause} ${thrown.fix}` : '';
+    expect(rendered).toContain('perSecond');
+    expect(rendered).toContain('AcceptBudget');
+  });
+
+  test('a finite budget still sheds — the guard refuses numbers, not budgets', () => {
+    // Non-vacuity: a constructor that threw on everything would satisfy every assertion above.
+    const clock = frozenClock();
+    const budget = new AcceptBudget({ perSecond: 1, burst: 2, clock });
+    expect(budget.tryAccept()).toBe(true);
+    expect(budget.tryAccept()).toBe(true);
+    expect(budget.tryAccept()).toBe(false);
+    expect(budget.retryAfterMs(() => 0)).toBe(1000);
   });
 });

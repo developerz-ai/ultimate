@@ -232,3 +232,28 @@ describe('what the caller may override, and what it may not', () => {
     expect(provider.userEmailsUrl).toBe(null);
   });
 });
+
+/**
+ * `AbortSignal.timeout(NaN)` THROWS — `TypeError: Value NaN is outside the range [0,
+ * 9007199254740991]` — several frames below the option that set it, so the one leg that turns an
+ * issuer into a provider failed with a message naming neither this package nor `timeoutMs`. The
+ * other two legs (`oauth-exchange.ts`, `oauth-profile.ts`) are the same call and the same screen.
+ */
+describe('the discovery timeout is screened before AbortSignal sees it', () => {
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses timeoutMs %p with a coded refusal, never a bare TypeError',
+    async (timeoutMs) => {
+      const served = serving(DOCUMENT);
+      const code = await codeOf(() =>
+        discoverOAuthProvider({
+          id: 'bigco',
+          issuer: 'https://sso.bigco.test',
+          fetch: served.fetch,
+          timeoutMs,
+        }),
+      );
+      expect(code).toBe('X_CONFIG_INVALID');
+      expect(served.seen).toEqual([]);
+    },
+  );
+});

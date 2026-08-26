@@ -208,6 +208,11 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   --json` measures, and they must stay that: `errors.ts` runs `registerErrorCodes` at import in both
   packages, and query's `registry.ts` runs `registerPrimitiveRegistrar('query', …)` — drop either
   and a bundled app loses its error titles or throws `X_REGISTRAR_MISSING`. Never `false`.
+- **Every numeric option is refused when it is not a FINITE number, `As of 2026-08-26`.**
+  `@ultimat3/core`'s `finiteOption()` guards the read cache's `ttlMs` and `search()`'s `page.max`,
+  `page.default` and `termMax`; `bun run finite-bounds` is the ratchet and this package is pinned
+  at **zero**. `??` guards nullish and `NaN` is not, so an unchecked bound is a comparison that
+  reads false forever — and `Math.max`/`Math.floor` propagate `NaN` rather than validating it.
 - **`search()` is a FACTORY over `query()`, never a ninth primitive.** It owns the input schema
   (`q` + a `limit` bounded in the schema, beside the read's own keys), trims and refuses a blank
   term, and calls `.search(term)` on the chain the app hands it — which is what makes the term
@@ -221,7 +226,22 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   minting one from the other here, and falling through to `paginate`'s in-memory slice would cut
   inside the one page the provider fetched and report `hasNextPage: false` at its edge. Rows served
   on no page at all is the defect 12.0.0 spent a release removing from the timestamp seek; the
-  `fix:` names the entity chain, which pages this read correctly.
+  `fix:` names the entity chain, which pages this read correctly. **The refusal is on the rows that
+  would be CUT, never on the window**, `As of 2026-08-26`: a screen demanding `first >= limit`
+  refuses the framework's own default pair — `limit` defaults to 20 and `first` arrives from a
+  client — so every `pageSize` under 20 was a 500 at page ONE, including a search matching three
+  rows that fit the window twice over. `windowOf.execute` asserts on `rows.length` instead, so a
+  page that is whole is served with `hasNextPage: false` and no cursor is ever handed back that a
+  second call is guaranteed to refuse. **The one page it serves is the
+  chain's own ORDER**, `As of 2026-08-26`: `onePage.seek` narrows the window with `Builder.limit()`
+  and never with `Builder.seek()`, which sets `totalized` — `servedOrder()` is then `totalOrder([])`
+  = `id asc`, because the ranking lives inside the chain behind the row thunk and no `OrderKey` here
+  can name it, and `execute()` re-sorts the page the provider already ranked. Measured with a chain
+  serving `z, m, a`: `runQuery` answered `z, m, a` and `.page(input, { first: 2 })` answered `a, m`,
+  dropping the top-ranked row off page one. It exposes no `total()` for the same reason — an absent
+  `total` is how `SqlSource` says the source already serves one order it can be resumed in. The
+  fixture in `search.test.ts` must stay NOT id-ascending: `ROWS` is `a, b, c`, which is why the
+  shipped page test could not see this.
 - Policy runs per subscriber for live queries. Never cache a decision across actors.
 - The matcher patches from `QueryShape`, never from SQL text.
 - `paginate` has no `offset` parameter and must never grow one, and it is reachable **only** as

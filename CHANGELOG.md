@@ -8,7 +8,95 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+One sweep, in tier order, against a single defect class: **a numeric bound whose own non-finite
+value makes its guard read false.** `??` guards *nullish*, and `NaN` is not nullish — so
+`Number(process.env.X)` on an unset variable, a `parseInt` of a typo and an untyped config value all
+walk past the default and land on the bound intact. `Math.max`, `Math.min` and `Math.floor` are not
+validators either: all three **propagate** `NaN`, and this repo was relying on all three as guards.
+
+| Shape | What actually happens |
+|---|---|
+| `value > limit` | false for **every** input — the limit stops being enforced rather than enforced wrongly |
+| `Array.from({ length: NaN })`, `slice(0, NaN)` | `[]` — zero workers spawned, reported as success |
+| `setTimeout(fn, NaN)` | `setTimeout(fn, 0)` — a poll becomes a spin |
+| `while (n < limit)` | never terminates, synchronously, past every `AbortSignal` |
+
+### Added
+
+- **`finiteOption()` and `finiteCount()` in `@ultimat3/core`**, at tier 0, so every tier above
+  reaches one check. Four private copies had grown before they were collapsed — `jobs`, `realtime`,
+  `query`, and `@ultimat3/storage`'s `assertFiniteSignedUrlBound`, deleted after confirming
+  `finiteCount`'s predicate is byte-identical to it, so no tier-0 widening was needed.
+- **`bun run finite-bounds`** — a step of the gate's `unit` check, standalone. Every `a.b ?? <number>`
+  in `packages/*/src` needs a finite check on the same value, or a pinned count. It ships **with**
+  the sweep and not after it, because three files documented it before it existed and a doc
+  promising a command that does not exist is what axiom 3 forbids. A ratchet: 129 sites across 19
+  packages on day one, falling as each slice lands, and `X_FINITE_BOUND_PIN_STALE` fires the moment
+  a slice repairs a package and leaves its row behind.
+
+  It matches on the **shape** and has been widened twice by defects that walked past it, both on
+  2026-08-26: an optional chain on the *object* (`options?.ttlMs ?? C`, which is
+  `auth/src/oauth-cookie.ts`'s handshake TTL) and a default read out of a **table** of numbers
+  (`?? DEFAULT_VERIFICATION_TTL_MS[input.purpose]`, `auth/src/verify.ts`). Each sat behind a green
+  ratchet and a `CLAUDE.md` sentence claiming that package's numbers were screened.
+- **`X_CACHE_LIMIT_INVALID`** — a tier's ceiling, duration or similarity floor refused at
+  **construction** rather than on the first write.
+- **`X_TRUST_PROXY_UNSET`** and `assertClaimBounds` (`@ultimat3/jobs`), exported.
+- **No shipped code changed.** This sweep adds codes and removes none.
+
+### Changed
+
+- **BREAKING — every numeric option below refuses a value it used to accept.** The accepted domain
+  narrows to *finite*, and in most cases to *whole* and *non-negative*; the refusal is at the option
+  boundary, with a `fix:` naming the option and its domain. An app passing a real number is
+  unaffected. An app that was passing `NaN` was not working — the bound it declared was not being
+  enforced, and nothing said so.
+
+  | Package | Options |
+  |---|---|
+  | `@ultimat3/http` | `port` (`0…65535`, whole), `bodyLimitBytes`, `requestTimeoutMs`, `maxInflight`, `drainTimeoutMs` (whole, `≥ 0`; `null` still declines the drain), `memoryRateLimitStore({ maxKeys })` (`≥ 1`), `verifyWebhookSignature({ maxBytes })` (`≥ 1`) |
+  | `@ultimat3/query` | `search()`'s `page.max`, `page.default`, `termMax`; `cache.ttlMs` |
+  | `@ultimat3/jobs` | `createLimiter`'s five options; `JobDriver.claim`, `introspect.list` and `deadLetters` limits |
+  | `@ultimat3/realtime` | `maxPerTenant`, `maxReconnectAttempts`, `maxPerSocket` and four socket ceilings — the five now refused at **boot** rather than per-frame; `createMemoryEventBus` / `createPgEventBus` `defaultTtl` |
+  | `@ultimat3/auth` | `HandshakeSealOptions.ttlMs`, `IssueVerificationInput.ttlMs`, `SessionCookieOptions.maxAgeSeconds` (negatives and fractions newly refused), `KdfLimits.maxConcurrent` and `maxQueued` |
+
+  **What to do:** run your app. Every refusal is at boot or at the call boundary, so one `bun test`
+  or one `x verify` surfaces all of them at once and the `fix:` line carries the edit.
+- **BREAKING — `http.trustedProxyHops` accepts `1…64`.** `0` was the failure state, not a setting:
+  `forwarded.ts` returns `undefined` for `hops < 1`, so a declared `0` silently trusted nothing while
+  reading as a configured value. It is a boot-owned key, so no app can write it; the blast radius is
+  embedders calling `defineHttpConfig` directly. The unreachable `?? 0` beside it is removed rather
+  than left as a dead line that reads as a live default.
+- **BREAKING — `search().page(input, { first })` serves a window narrower than the read.** It was
+  briefly refused outright during this sweep, which was wrong in the one direction that matters: the
+  framework's own defaults collide — `limit` defaults to `20` and `first` has no default — so
+  `search({…})` + `.page(input, { first: 10 })` was a 500 on page **one** with nothing misdeclared.
+  A screen that fires on its own defaults is not a screen. The refusal now fires only when rows
+  would actually be **cut**, and names both edits; when the page fits, `hasNextPage` is false by
+  construction, so no cursor is minted that a second call is guaranteed to throw on.
+
+### Fixed
+
+- **`X_LOCALE_INVALID` was answering 500.** It sat in the never-reaches-a-request backlog on the
+  strength of the http `locale` stage never throwing — true of that stage, irrelevant to `?locale=`,
+  a path segment, or an action input reaching `formatDate` / `formatMoney` / `describeCron`. Those
+  paged the on-call for a string the caller typed. It is `400` now, beside its sibling.
+- **`pick` / `omit` returned a schema validating nothing.** `packages/schema/src/validators.ts`
+  built the rebuilt shape on a plain `{}`, so a schema declaring a `__proto__` field returned **zero
+  properties** — publishing nothing and dropping the field from `parse()` output. Found while
+  verifying an unrelated finding; `bun run proto-index` cannot see it, because it is a computed
+  **write** rather than a read.
+- **`packages/db/src/client.ts` split 510 → 263 lines** across five files. 213 public exports
+  before, 213 after, checked against the pre-existing `dist/index.d.ts`.
+- **A JSDoc block that had drifted onto the next symbol** in `packages/http/src/rate-limit.ts`, and
+  two stacked blocks in `packages/http/src/config.ts` whose rationale was dead text.
+
+### Removed
+
+- **`packages/time/src/locale.ts`** — unimported; the eleven hits for `'./locale'` are all
+  `packages/http/src/locale.ts`, a different file.
+- **`SQL_OUTBOX_TABLE`** from the `@ultimat3/jobs` barrel. It was a byte-for-byte second copy of the
+  statements `SQL_JOBS_TABLE` already creates, so `x_outbox` was declared twice and created once.
 
 ## 16.0.0 - 2026-08-26
 

@@ -101,6 +101,7 @@ export type {
   QueueStats,
 } from './driver';
 export {
+  assertClaimBounds,
   assertClaimQueues,
   DEFAULT_QUEUE,
   DEFAULT_VISIBILITY_TIMEOUT_MS,
@@ -138,7 +139,6 @@ export {
   SQL_OUTBOX_MARK_PUBLISHED,
   SQL_OUTBOX_RELEASE,
   SQL_OUTBOX_STAGE,
-  SQL_OUTBOX_TABLE,
   SQL_SCHEDULER_STATE_GET,
   SQL_SCHEDULER_STATE_MARK,
   SQL_STATS,

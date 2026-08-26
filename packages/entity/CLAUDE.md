@@ -245,10 +245,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   number, answers the read they did. `limit(rows)` was `next({ limit: rows })` and nothing else —
   no integer check, no positivity check, no ceiling — so an action taking `pageSize` as input and
   passing it through bound whatever a client sent, and one request could ask for five million rows.
-  `assertPageSize` is `assertBatchable`'s three refusals in the other call, deliberately under the
+  `assertFinitePageSize` is `assertBatchable`'s three refusals in the other call, deliberately under the
   same code (`X_INVARIANT_VIOLATED`) because `limit(0)` and `inBatches(0)` are one mistake in two
   places. Called from **both** `limit()` on the chain (so the refusal lands on the line the author
-  wrote) and `planFor` (so `findMany({ limit })` straight at the repository cannot route around it),
+  wrote) and both `plan()` builders, on the RESOLVED page — so `findMany({ limit })` straight at the
+  repository cannot route around it, and `bun run finite-bounds` can see the repair, which it could
+  not while the screen was spelled `assertPageSize` and took a parameter called `rows` —
   and `MAX_PAGE_SIZE` bounds `inBatches(size)` too — a batch IS a page, so the ceiling belongs to
   the range and not to one of the two calls.
 - **A repository pinned to its own client refuses to run inside a transaction**

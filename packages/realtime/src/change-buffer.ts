@@ -13,6 +13,7 @@
 // node fills from the change stream it already subscribes to, which is a `ResumeSource` shape
 // change, not a placement change.
 
+import { finiteOption } from '@ultimat3/core';
 import type { ResumeSource } from './cursor';
 import type { RowPatch } from './json';
 
@@ -64,10 +65,18 @@ export class RingChangeBuffer implements ResumeSource {
   #bytes = 0;
 
   constructor(options: ChangeBufferOptions = {}) {
-    this.#capacity = options.capacity ?? 1024;
-    this.#maxQueries = options.maxQueries ?? 4096;
-    this.#maxBytesPerQuery = options.maxBytesPerQuery ?? DEFAULT_MAX_BUFFER_BYTES_PER_QUERY;
-    this.#maxBytes = options.maxBytes ?? DEFAULT_MAX_BUFFER_BYTES;
+    this.#capacity = finiteOption('ChangeBuffer', 'capacity', options.capacity ?? 1024);
+    this.#maxQueries = finiteOption('ChangeBuffer', 'maxQueries', options.maxQueries ?? 4096);
+    this.#maxBytesPerQuery = finiteOption(
+      'ChangeBuffer',
+      'maxBytesPerQuery',
+      options.maxBytesPerQuery ?? DEFAULT_MAX_BUFFER_BYTES_PER_QUERY,
+    );
+    this.#maxBytes = finiteOption(
+      'ChangeBuffer',
+      'maxBytes',
+      options.maxBytes ?? DEFAULT_MAX_BUFFER_BYTES,
+    );
   }
 
   /** Retained bytes across every query on this node. The number the ceiling is about. */

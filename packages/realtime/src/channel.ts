@@ -4,7 +4,7 @@
 // append-only stream, so tier 1 needs no frame of its own. That is why climbing the ladder is a
 // config change: the client's frame handler is the same code at every rung.
 
-import { type Actor, logger, renderThrowable } from '@ultimat3/core';
+import { type Actor, finiteOption, logger, renderThrowable } from '@ultimat3/core';
 import { formatLsn } from './changefeed';
 import {
   isPolicyDenial,
@@ -101,8 +101,16 @@ export class ChannelHub {
   constructor(options: ChannelHubOptions) {
     this.#transport = options.transport;
     this.#sockets = options.sockets;
-    this.#maxTopicsPerSocket = options.maxTopicsPerSocket ?? 64;
-    this.#maxTopicsPerNode = options.maxTopicsPerNode ?? DEFAULT_MAX_TOPICS_PER_NODE;
+    this.#maxTopicsPerSocket = finiteOption(
+      'ChannelHub',
+      'maxTopicsPerSocket',
+      options.maxTopicsPerSocket ?? 64,
+    );
+    this.#maxTopicsPerNode = finiteOption(
+      'ChannelHub',
+      'maxTopicsPerNode',
+      options.maxTopicsPerNode ?? DEFAULT_MAX_TOPICS_PER_NODE,
+    );
   }
 
   /** Sockets this node will deliver `name` to. The metric the fanout reads. */

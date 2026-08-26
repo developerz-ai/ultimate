@@ -9,6 +9,7 @@
 import {
   type Clock,
   backoffDelay as coreBackoffDelay,
+  finiteOption,
   type JitterMode,
   type Random,
   systemClock,
@@ -111,7 +112,7 @@ export function drainPlan(
   socketIds: readonly string[],
   options: DrainPlanOptions = {},
 ): DrainPlanEntry[] {
-  const spreadMs = options.spreadMs ?? 30_000;
+  const spreadMs = finiteOption('drainPlan', 'spreadMs', options.spreadMs ?? 30_000);
   const rng = options.rng ?? Math.random;
   const total = socketIds.length;
   if (total === 0) return [];
@@ -146,6 +147,14 @@ export class AcceptBudget {
   #lastRefill: number;
 
   constructor(options: AcceptBudgetOptions) {
+    // `Math.max(1, …)` is a CLAMP, not a validator, and it propagates every non-finite value it is
+    // handed. Measured: `perSecond: NaN` makes `#tokens` NaN, `tryAccept` asks `#tokens < 1`,
+    // `NaN < 1` is false — so the bucket admits every accept, forever, and `retryAfterMs()`
+    // answers NaN, which `JSON.stringify` writes into the `reconnect` frame as `null`. `Infinity`
+    // is the same failure spelled differently: a budget that never refuses is not a budget. A
+    // finite clamp is monotone and safe, so 0 and negatives keep their floor of 1.
+    finiteOption('AcceptBudget', 'perSecond', options.perSecond);
+    finiteOption('AcceptBudget', 'burst', options.burst ?? options.perSecond);
     this.#perSecond = Math.max(1, options.perSecond);
     this.#burst = Math.max(1, options.burst ?? options.perSecond);
     this.#clock = options.clock ?? systemClock;

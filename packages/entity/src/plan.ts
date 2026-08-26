@@ -88,8 +88,8 @@ export const totalOrder = <Row>(
  * query, a third-party driver's caller — cannot route around it. One function, so the two can
  * never disagree about what a page may be.
  */
-export const assertPageSize = (entityName: string, rows: number): void => {
-  if (Number.isSafeInteger(rows) && rows >= 1 && rows <= MAX_PAGE_SIZE) return;
+export const assertFinitePageSize = (entityName: string, rows: number): number => {
+  if (Number.isSafeInteger(rows) && rows >= 1 && rows <= MAX_PAGE_SIZE) return rows;
   throw new EntityError({
     code: 'X_INVARIANT_VIOLATED',
     cause: `${entityName}.limit(${String(rows)}) — a page is a whole number of rows, at least one and at most ${MAX_PAGE_SIZE}`,
@@ -108,7 +108,6 @@ export const assertPageSize = (entityName: string, rows: number): void => {
  * `cursorFor` and `seekFrom` still call it: they are reached from a driver directly.
  */
 export const planFor = <Row>(entity: EntityCore<Row>, args: FindManyArgs): QueryPlan => {
-  if (args.limit !== undefined) assertPageSize(entity.$name, args.limit);
   const orderBy = totalOrder(entity, args.orderBy ?? []);
   assertSeekable(entity, orderBy);
   const scoped =
@@ -119,7 +118,10 @@ export const planFor = <Row>(entity: EntityCore<Row>, args: FindManyArgs): Query
     entity: entity.$name,
     where: [...(args.where ?? []), ...scoped],
     orderBy,
-    limit: args.limit ?? DEFAULT_PAGE_SIZE,
+    // Screened on the RESOLVED page, so `findMany({ limit })` straight at the repository — a
+    // generated client, a query, a third-party driver's caller — cannot route around the rule the
+    // chain's own `limit()` applies.
+    limit: assertFinitePageSize(entity.$name, args.limit ?? DEFAULT_PAGE_SIZE),
     ...(args.cursor === undefined || args.cursor === null ? {} : { cursor: args.cursor }),
     ...(args.select === undefined ? {} : { select: args.select }),
   };

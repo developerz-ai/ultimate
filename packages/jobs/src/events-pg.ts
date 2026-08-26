@@ -7,7 +7,7 @@
 // resumes at 12:00:30 must still see an event published at 12:00:10.
 
 import type { Clock } from '@ultimat3/core';
-import { logger, renderThrowable, systemClock, uuid } from '@ultimat3/core';
+import { finiteOption, logger, renderThrowable, systemClock, uuid } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { nowMs, toMs } from './clock';
 import type { PgExecutor } from './driver-pg';
@@ -46,8 +46,15 @@ export interface PgEventBusOptions {
  */
 export function createPgEventBus(options: PgEventBusOptions): EventBus {
   const clock = options.clock ?? systemClock;
-  const defaultTtl = options.defaultTtl ?? 604_800_000;
-  const listLimit = options.listLimit ?? 1_000;
+  // TWO screens, for the reason `events.ts` states: `defaultTtl` is the constructor's knob and
+  // `ttl` is the publish call's, so one screen over `ttl ?? defaultTtl` names the wrong one for
+  // whichever value actually arrived.
+  const defaultTtlMs = finiteOption(
+    'the pg event bus',
+    'defaultTtl',
+    toMs(options.defaultTtl ?? 604_800_000),
+  );
+  const listLimit = finiteOption('the pg event bus', 'listLimit', options.listLimit ?? 1_000);
   const exec = options.executor;
 
   const purgeExpired = (): number => {
@@ -68,7 +75,11 @@ export function createPgEventBus(options: PgEventBusOptions): EventBus {
         name,
         payload,
         publishedAt: at,
-        expiresAt: at + toMs(publishOptions.ttl ?? defaultTtl),
+        expiresAt:
+          at +
+          (publishOptions.ttl === undefined
+            ? defaultTtlMs
+            : finiteOption('the pg event bus', 'ttl', toMs(publishOptions.ttl))),
         ...(publishOptions.correlationKey === undefined
           ? {}
           : { correlationKey: publishOptions.correlationKey }),

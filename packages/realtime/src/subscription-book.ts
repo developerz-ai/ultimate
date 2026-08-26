@@ -4,6 +4,7 @@
 // the only thing that knows what exists. Every question it answers is indexed, never scanned.
 
 import type { Actor } from '@ultimat3/core';
+import { finiteOption } from '@ultimat3/core';
 import { SubscriptionIdTakenError, SubscriptionLimitError } from './errors';
 import type { LiveSubscription } from './live-contract';
 import type { SyncSocket } from './socket';
@@ -35,6 +36,8 @@ export interface SubscriptionCaps {
 
 /** Sockets may open this many live queries before `X_SUBSCRIPTION_LIMIT`. */
 export const DEFAULT_MAX_PER_SOCKET = 128;
+
+const SUBJECT = 'the subscription caps';
 
 /**
  * Every live subscription on this node, keyed by `(socket, sid)`.
@@ -70,9 +73,28 @@ export class SubscriptionBook {
   /** The same claims counted per tenant, because that cap spans sockets and a lane cannot see it. */
   readonly #claimedPerTenant = new Map<string, number>();
   readonly #caps: SubscriptionCaps;
+  /**
+   * BOTH caps screened here, once, rather than on the subscribe path — and `maxPerTenant` was not
+   * screened at all: it has no `??` default, which is the one shape `bun run finite-bounds` states
+   * in its own header that it cannot see. `count >= NaN` is false, so the only cap that spans the
+   * sockets of one tenant was off in silence; measured, a book built with `maxPerTenant: NaN`
+   * admitted 5,000 subscribes for one tenant. `undefined` stays `undefined`, because there the
+   * caller is saying "no per-tenant cap" rather than handing a number that is not one.
+   */
+  readonly #maxPerSocket: number;
+  readonly #maxPerTenant: number | undefined;
 
   constructor(caps: SubscriptionCaps = {}) {
     this.#caps = caps;
+    this.#maxPerSocket = finiteOption(
+      SUBJECT,
+      'maxPerSocket',
+      caps.maxPerSocket ?? DEFAULT_MAX_PER_SOCKET,
+    );
+    this.#maxPerTenant =
+      caps.maxPerTenant === undefined
+        ? undefined
+        : finiteOption(SUBJECT, 'maxPerTenant', caps.maxPerTenant);
   }
 
   get(socketId: string, sid: string): LiveSubscription | undefined {
@@ -160,7 +182,7 @@ export class SubscriptionBook {
    * node to an entry, a matcher and a read.
    */
   assertCapacity(socket: SyncSocket): void {
-    const perSocket = this.#caps.maxPerSocket ?? DEFAULT_MAX_PER_SOCKET;
+    const perSocket = this.#maxPerSocket;
     const claimed = this.#claimedBySocket.get(socket.id)?.size ?? 0;
     if (socket.queries.size + claimed >= perSocket) {
       throw new SubscriptionLimitError({
@@ -170,7 +192,7 @@ export class SubscriptionBook {
         knob: 'maxPerSocket',
       });
     }
-    const perTenant = this.#caps.maxPerTenant;
+    const perTenant = this.#maxPerTenant;
     const tenant = this.#tenantFor(socket);
     if (perTenant === undefined || tenant === null) return;
     if (this.tenantCount(tenant) + (this.#claimedPerTenant.get(tenant) ?? 0) >= perTenant) {

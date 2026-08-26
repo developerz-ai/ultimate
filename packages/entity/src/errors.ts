@@ -2,6 +2,7 @@
 // that fixes the situation — `X_DB_DRIFT` is the flagship: it names the table, the
 // column and the generator invocation.
 import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { shellInertIdentifier } from '@ultimat3/db';
 
 /** Codes this package declares and owns. */
 export const ENTITY_OWNED_ERROR_CODES = [
@@ -293,11 +294,26 @@ export const repoClientPinned = (entityName: string): EntityError =>
     fix: `setDbClient(client) at boot and build the repository with no client: — postgresDriver() then resolves the open transaction through db() — or run this call outside withTransaction()`,
   });
 
+/**
+ * The contract's pinned wording. Mirror of `@ultimat3/db`'s `dbDrift()` (`drift-errors.ts`) —
+ * keep in sync; both screen through the same `shellInertIdentifier`, so the two lines are one
+ * text on both sides of the tier seam, and `errors.test.ts` asserts it rather than asking.
+ *
+ * The column is the CATALOG's, so it is data, and `x db gen "add C"` puts it inside SHELL DOUBLE
+ * QUOTES where `$(…)` and a backtick substitute before `x` is reached at all. The argument is a
+ * migration DESCRIPTION, not an identifier, so no quoted form makes a hostile name safe to pass —
+ * a refused one is left OUT of the command rather than escaped into it, and read off `cause`.
+ */
 export const dbDrift = (tableName: string, columnName: string): EntityError =>
   new EntityError({
     code: 'X_DB_DRIFT',
     cause: `table "${tableName}" has column "${columnName}" not present in any migration`,
-    fix: `x db gen "add ${columnName}"`,
+    fix:
+      shellInertIdentifier(columnName) === null
+        ? 'x db gen "add the column named in this error"   # its name carries a backtick, a ' +
+          'dollar sign, a quote, a backslash or whitespace, so it is in the cause and not in ' +
+          'this command'
+        : `x db gen "add ${columnName}"`,
   });
 
 export const notFound = (entityName: string, id: string): EntityError =>

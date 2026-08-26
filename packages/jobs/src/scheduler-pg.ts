@@ -4,7 +4,7 @@
 // pod it replaced dropped, and two pods in a rolling update both dispatch every task.
 
 import type { Clock } from '@ultimat3/core';
-import { uuid } from '@ultimat3/core';
+import { finiteOption, uuid } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { PgExecutor } from './driver-pg';
 import {
@@ -70,7 +70,11 @@ export const DEFAULT_LEADER_TTL_MS = 30_000;
 export function createPgLeaseLeader(options: PgLeaseLeaderOptions): LeaderElection {
   const lockKey = options.lockKey ?? 'scheduler';
   const holder = options.holder ?? `scheduler-${uuid()}`;
-  const ttlMs = options.ttlMs ?? DEFAULT_LEADER_TTL_MS;
+  const ttlMs = finiteOption(
+    'the pg scheduler lease',
+    'ttlMs',
+    options.ttlMs ?? DEFAULT_LEADER_TTL_MS,
+  );
   return {
     async acquire() {
       const rows = await options.executor.query<{ holder: string }>(SQL_LEADER_ACQUIRE, [

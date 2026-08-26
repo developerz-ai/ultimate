@@ -12,6 +12,7 @@ import { decodeJwtSegment, isRecord } from './json';
 import type { OAuthProvider } from './oauth';
 import { oauthExchangeFailed, oauthTokenInvalid } from './oauth-errors';
 import type { OAuthFetch } from './oauth-exchange';
+import { assertFiniteAuthCount } from './policy-numbers';
 import { base64UrlBytes } from './tokens';
 
 /**
@@ -112,7 +113,19 @@ const algorithmOf = (jwk: Record<string, unknown>): JwtAlgorithm | null => {
 export function createJwksClient(options: JwksClientOptions): JwksKeySource {
   const clock = options.clock ?? systemClock;
   const ttlMs = options.ttlMs ?? DEFAULT_JWKS_TTL_MS;
+  assertFiniteAuthCount(
+    'jwks.ttlMs',
+    ttlMs,
+    '`now >= fetchedAt + NaN` is false, so the key set is never stale and a rotation is never refetched — every login against the new kid fails until the process restarts',
+    1,
+  );
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  assertFiniteAuthCount(
+    'jwks.timeoutMs',
+    timeoutMs,
+    'AbortSignal.timeout throws a bare TypeError on it, several frames below the option that set it, and the single-flight deadline derived from it goes with it',
+    1,
+  );
   let keys = new Map<string, CryptoKey>();
   let fetchedAtMs = Number.NEGATIVE_INFINITY;
   // When the last UNKNOWN-`kid` refresh ran, tracked apart from `fetchedAtMs` because that field

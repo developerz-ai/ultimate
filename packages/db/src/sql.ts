@@ -132,6 +132,42 @@ export function identifier(name: string): SqlFragment {
 }
 
 /**
+ * The two characters a shell substitutes INSIDE double quotes. Rejected before `identifier` is
+ * consulted at all, because `identifier` accepts both.
+ */
+const SHELL_ACTIVE = /[`$]/;
+
+/**
+ * A quoted identifier that is ALSO inert wherever a human pastes it — or `null` for a name no line
+ * built here may spell. The one screen a catalog name goes through before it reaches a `fix:`.
+ *
+ * TWO layers, and `identifier` closes only the first. It answers about SQL: it refuses `"`, `\`
+ * and whitespace, and ACCEPTS a backtick and a `$` — `SAFE_IDENTIFIER` above allows `$` on its
+ * fast path — which are exactly the two characters `$(…)` and a command substitution are built
+ * from. A column called `$(id)` inside `x db gen "add $(id)"` therefore RUNS `id` the moment its
+ * reader pastes the line, and a screen reusing `identifier` unchanged would ship a green suite
+ * over that.
+ *
+ * The name is DATA at every caller: `create table "x""; drop table users; --" ("id" int)` is legal
+ * DDL, so whoever can create a table or a column picks the text that lands in a `fix:`. A refusal
+ * is degraded to prose by its caller and never escaped — the argument to `x db gen` is a migration
+ * DESCRIPTION, not an identifier, so there is no quoted form that makes a hostile name safe to
+ * pass, and a fix naming no command beats one running a second command the reader never read.
+ *
+ * `'` is deliberately NOT refused: it is legal in an identifier and inert both in a psql session
+ * and inside shell double quotes. The price of the two that ARE refused is a legal `a$b` losing
+ * its executable fix line, which is prose in place of something nobody read running.
+ */
+export function shellInertIdentifier(name: string): string | null {
+  if (SHELL_ACTIVE.test(name)) return null;
+  try {
+    return identifier(name).text;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * A quoted string literal Postgres reads IDENTICALLY under both settings of
  * `standard_conforming_strings`. Utility and DDL statements (`CREATE DATABASE`, `COMMENT ON`,
  * `create table … default …`) reject bound parameters, so this is the only place a value may be

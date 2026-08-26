@@ -52,6 +52,7 @@ export {
   expectedSchema,
   FRAMEWORK_TABLE_PREFIX,
 } from './drift';
+export { dbDrift } from './drift-errors';
 export type {
   ColumnDescriptionLike,
   EntityDescriptionLike,
@@ -66,7 +67,6 @@ export {
   DB_ERROR_RETRY,
   DB_ERROR_TITLES,
   DbError,
-  dbDrift,
   dbNotImplemented,
   dbUnavailable,
   driverError,
@@ -177,7 +177,15 @@ export { markScopeWrote, replicaScope, withReplicaReads } from './replica-scope'
 export { snapshotJson } from './snapshot-json';
 export { parseSnapshot } from './snapshot-parse';
 export type { SqlFragment } from './sql';
-export { identifier, isSqlFragment, join, literal, raw, sql } from './sql';
+export {
+  identifier,
+  isSqlFragment,
+  join,
+  literal,
+  raw,
+  shellInertIdentifier,
+  sql,
+} from './sql';
 export { stripSqlNoise } from './sql-noise';
 export type { DbSqlStateCode } from './sqlstate';
 export { DB_SQLSTATE_CODES, isRetryableState, SQLSTATE, sqlState, sqlStateCode } from './sqlstate';

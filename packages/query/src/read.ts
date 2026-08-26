@@ -10,6 +10,7 @@ import {
   anonymousActor,
   assert,
   createContext,
+  finiteOption,
   logger,
   runWithContext,
   tryUseContext,
@@ -186,7 +187,13 @@ async function readRowsIn(
   // the process — a paginated feed over 10k tenants is 10k immortal entries.
   return def.cache === undefined
     ? await readOnce(ctx, key, read)
-    : await readThrough(ctx, key, def.cache.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS, read, tags);
+    : await readThrough(
+        ctx,
+        key,
+        finiteOption('the read cache', 'ttlMs', def.cache.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS),
+        read,
+        tags,
+      );
 }
 
 async function buildSource(

@@ -4,7 +4,7 @@
 // simply stop heartbeating and expire, and every other node already sees the same set. Ephemeral
 // state is never modelled as rows — that rule is what keeps presence off the write path entirely.
 
-import { type Clock, systemClock, uuid } from '@ultimat3/core';
+import { type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core';
 import type { ChannelHub, Topic } from './channel';
 import type { Transport } from './fanout';
 import type { JsonObject } from './json';
@@ -66,8 +66,11 @@ export class PresenceRegistry {
     this.#transport = options.transport;
     this.#hub = options.hub;
     this.#clock = options.clock ?? systemClock;
-    this.#ttlMs = options.ttlMs ?? 30_000;
-    this.#maxMembers = Math.max(1, options.maxMembers ?? DEFAULT_MAX_PRESENCE_MEMBERS);
+    this.#ttlMs = finiteOption('presence', 'ttlMs', options.ttlMs ?? 30_000);
+    this.#maxMembers = Math.max(
+      1,
+      finiteOption('presence', 'maxMembers', options.maxMembers ?? DEFAULT_MAX_PRESENCE_MEMBERS),
+    );
     this.#nodeId = options.nodeId ?? uuid();
   }
 
