@@ -2,6 +2,7 @@
 // is about the duration VOCABULARY, this one is about the number arm that bypassed it.
 
 import { describe, expect, test } from 'bun:test';
+import { UltimateError } from '@ultimat3/core';
 import { parseDuration, toMs, toSeconds } from './duration';
 
 describe('toMs screens the number arm', () => {
@@ -48,22 +49,20 @@ describe('what the screen deliberately still accepts', () => {
 // that does not exist in their code. `@ultimat3/jobs`' `finiteDurationMs` takes the same two names
 // for the same reason; this is that shape on the exported conversion one tier down.
 describe('the refusal names the caller, not the conversion', () => {
-  const fixOf = (run: () => unknown): string => {
+  // Narrowed, not cast: a double cast through `unknown` reports a FOREIGN error's missing field
+  // as `undefined` and the assertion then fails on the wrong thing. Rethrow what is not ours.
+  const fieldOf = (run: () => unknown, read: (error: UltimateError) => unknown): string => {
     try {
       run();
     } catch (error) {
-      return (error as { fix?: unknown }).fix as string;
+      if (!(error instanceof UltimateError)) throw error;
+      const value = read(error);
+      return typeof value === 'string' ? value : `not-a-string:${typeof value}`;
     }
     return 'no-throw';
   };
-  const causeOf = (run: () => unknown): string => {
-    try {
-      run();
-    } catch (error) {
-      return (error as { cause?: unknown }).cause as string;
-    }
-    return 'no-throw';
-  };
+  const fixOf = (run: () => unknown): string => fieldOf(run, (error) => error.fix);
+  const causeOf = (run: () => unknown): string => fieldOf(run, (error) => error.cause);
 
   test('toMs names the subject and option it was given', () => {
     // The whole phrase, not `toContain('duration')`: `duration` is already the DEFAULT option, so

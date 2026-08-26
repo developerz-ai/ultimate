@@ -205,7 +205,7 @@ export function createMemoryOutboxStore(options: MemoryOutboxOptions = {}): Memo
 }
 
 export interface EnqueueOptions {
-  /** Epoch ms, or a delay via `runAt: Date.now() + toMs('5m')` — `toMs` from `@ultimat3/time`. */
+  /** Epoch ms, or a delay off the caller's own clock: `clock.now().getTime() + toMs('5m')`. */
   readonly runAt?: number;
   readonly tenantId?: string;
   readonly queue?: string;
