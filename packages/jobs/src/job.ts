@@ -12,7 +12,7 @@ import { assert } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
-import { toMs } from './clock';
+import { finiteDurationMs } from './clock';
 import type { JobDescriptor } from './describe';
 import { describeJob } from './describe';
 import type { EnqueueResult } from './driver';
@@ -204,8 +204,13 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
   );
 
   const stepTimeoutMs =
-    definition.stepTimeout === undefined ? undefined : toMs(definition.stepTimeout);
-  const eventPollMs = definition.eventPoll === undefined ? undefined : toMs(definition.eventPoll);
+    definition.stepTimeout === undefined
+      ? undefined
+      : finiteDurationMs(definition.stepTimeout, `job "${name}"`, 'stepTimeout');
+  const eventPollMs =
+    definition.eventPoll === undefined
+      ? undefined
+      : finiteDurationMs(definition.eventPoll, `job "${name}"`, 'eventPoll');
   // `withStepTimeout` reads `<= 0` as "no ceiling at all" and a poll of zero is a suspension that
   // resumes immediately, forever. Both are an author who asked for a limit and got the opposite,
   // so they are refused where they are written — the same answer `concurrency: 0` gets.
@@ -231,7 +236,10 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
     queue: definition.queue ?? DEFAULT_QUEUE,
     retry: { ...DEFAULT_RETRY, ...definition.retry },
     concurrency: definition.concurrency,
-    timeoutMs: definition.timeout === undefined ? undefined : toMs(definition.timeout),
+    timeoutMs:
+      definition.timeout === undefined
+        ? undefined
+        : finiteDurationMs(definition.timeout, `job "${name}"`, 'timeout'),
     stepTimeoutMs,
     eventPollMs,
     input: definition.input,

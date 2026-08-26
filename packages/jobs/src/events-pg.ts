@@ -9,7 +9,7 @@
 import type { Clock } from '@ultimat3/core';
 import { finiteOption, logger, renderThrowable, systemClock, uuid } from '@ultimat3/core';
 import type { DurationInput } from './clock';
-import { nowMs, toMs } from './clock';
+import { finiteDurationMs, nowMs } from './clock';
 import type { PgExecutor } from './driver-pg';
 import {
   SQL_EVENT_FIND,
@@ -49,10 +49,10 @@ export function createPgEventBus(options: PgEventBusOptions): EventBus {
   // TWO screens, for the reason `events.ts` states: `defaultTtl` is the constructor's knob and
   // `ttl` is the publish call's, so one screen over `ttl ?? defaultTtl` names the wrong one for
   // whichever value actually arrived.
-  const defaultTtlMs = finiteOption(
+  const defaultTtlMs = finiteDurationMs(
+    options.defaultTtl ?? 604_800_000,
     'the pg event bus',
     'defaultTtl',
-    toMs(options.defaultTtl ?? 604_800_000),
   );
   const listLimit = finiteOption('the pg event bus', 'listLimit', options.listLimit ?? 1_000);
   const exec = options.executor;
@@ -79,7 +79,7 @@ export function createPgEventBus(options: PgEventBusOptions): EventBus {
           at +
           (publishOptions.ttl === undefined
             ? defaultTtlMs
-            : finiteOption('the pg event bus', 'ttl', toMs(publishOptions.ttl))),
+            : finiteDurationMs(publishOptions.ttl, 'the pg event bus', 'ttl')),
         ...(publishOptions.correlationKey === undefined
           ? {}
           : { correlationKey: publishOptions.correlationKey }),

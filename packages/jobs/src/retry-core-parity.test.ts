@@ -100,7 +100,7 @@ describe('backoffDelayMs is core backoffDelay', () => {
   });
 
   test('a duration STRING is still this package’s job, not core’s', () => {
-    // core takes numbers; `toMs` stays on this side of the seam, so `'30s'` keeps working.
+    // core takes numbers; `finiteDurationMs` stays on this side of the seam, so `'30s'` keeps working.
     expect(backoffDelayMs({ attempts: 3, backoff: 'fixed', delay: '30s', jitter: false }, 1)).toBe(
       30_000,
     );

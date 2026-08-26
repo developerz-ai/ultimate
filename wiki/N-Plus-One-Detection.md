@@ -91,7 +91,7 @@ same run, and neither is wrong: one is measuring, the other is judging.
 
 None of this reaches into the driver. `@ultimat3/db`'s `observe.ts` is a tier-1, process-wide
 `StatementObserver` seam — `setStatementObserver(observer)` installs one, `statementObserver()`
-reads it — that the two statement funnels (`runOn` in `client.ts`, `statement()` in `pglite.ts`)
+reads it — that the two statement funnels (`runOn` in `statement-funnel.ts`, `statement()` in `pglite.ts`)
 call after every statement settles, success or failure. Every call site guards first: read the
 accessor, branch on `undefined`, and only build a `StatementEvent` once something is actually
 installed. Nothing is allocated on the path when nothing is watching — one property read and one

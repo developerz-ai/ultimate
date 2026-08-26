@@ -195,7 +195,7 @@ describe('a malformed locale tag', () => {
     });
   }
 
-  test('the refusal names the tag and carries a runnable fix', () => {
+  test('the refusal carries the tag under `meta.locale` and a runnable fix', () => {
     let caught: unknown;
     try {
       formatMoney(money(1299, 'EUR'), 'en_US');
@@ -203,7 +203,9 @@ describe('a malformed locale tag', () => {
       caught = thrown;
     }
     expect(isUltimateError(caught)).toBe(true);
-    expect((caught as UltimateError).cause).toContain('en_US');
+    // `meta.locale`, never the prose: the cause is a BOUNDED excerpt `@ultimat3/core` owns
+    // (issue #366), and an assertion on its wording made one message edit an eight-file edit.
+    expect((caught as UltimateError).meta?.['locale']).toBe('en_US');
     expect((caught as UltimateError).fix).toContain('supportedLocalesOf');
   });
 

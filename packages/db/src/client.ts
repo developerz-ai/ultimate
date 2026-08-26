@@ -1,22 +1,20 @@
-// Single responsibility: the pooled Postgres client and the ambient `db()` handle — one statement
-// funnel, the reserved-connection pin, and the process-wide client every repository reaches
+// Single responsibility: the pooled Postgres client and the ambient `db()` handle — the lazy
+// connect, the reserved-connection pin, and the process-wide client every repository reaches
 // through. Sizing lives in `pool-profile.ts`, the connection string in `connection-url.ts`, the
-// `Bun.SQL` slice in `bun-sql.ts`, so importing this module never opens a socket.
+// `Bun.SQL` slice in `bun-sql.ts` and the observed statement funnel in `statement-funnel.ts`, so
+// importing this module never opens a socket.
 
 import { type Role, resolveRole } from '@ultimat3/core';
-import { statementAttribution } from './attribution';
 import { type BunSqlDriver, type BunSqlReserved, bunSqlFactory } from './bun-sql';
 import { connectionUrl } from './connection-url';
 // Deliberate cycle, the same shape as `client.ts ⇄ transaction.ts`: nothing here is referenced at
 // module evaluation, and both sides are `function` declarations, so hoisting covers the TDZ.
 import { defaultClient } from './default-client';
 import { DbError, driverError } from './errors';
-import { expectedQueryLoopReason } from './expected-loop';
-import { statementObserver } from './observe';
 import { assertPoolProfile, type PoolProfile, poolProfileFor } from './pool-profile';
 import { reserveWithin } from './pool-reserve';
 import { type SqlFragment, sql } from './sql';
-import { withStatementSpan } from './statement-span';
+import { affectedBy, rowsOf, runOn } from './statement-funnel';
 import { currentTx } from './transaction';
 
 export interface DbClient {
@@ -51,20 +49,6 @@ export interface PostgresClientOptions {
   readonly applicationName?: string | undefined;
 }
 
-function rowsOf<T>(result: unknown): readonly T[] {
-  return Array.isArray(result) ? (result as readonly T[]) : [];
-}
-
-// The command tag only when it counted something, exactly like `rowsOf` in `pglite.ts` — one rule
-// across both drivers, so `execute()` and the observer's event cannot answer differently for the
-// same statement depending on which database is behind them. A driver that tags a read `0` while
-// returning rows would otherwise report 0 here and the row count there.
-function affectedBy(result: unknown): number {
-  if (!Array.isArray(result)) return 0;
-  const count = (result as { count?: unknown }).count;
-  return typeof count === 'number' && count > 0 ? count : result.length;
-}
-
 export interface PostgresClient extends ReservableClient {
   readonly profile: PoolProfile;
   ping(): Promise<void>;
@@ -86,76 +70,6 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     const Factory = bunSqlFactory();
     driver = new Factory(url, { max: profile.max, idleTimeout: profile.idleTimeoutMs / 1000 });
     return driver;
-  }
-
-  /** The send itself: one statement on one handle, every driver failure typed on the way out. */
-  async function sendOn(
-    driver: Pick<BunSqlDriver, 'unsafe'>,
-    fragment: SqlFragment,
-  ): Promise<unknown> {
-    try {
-      return await driver.unsafe(fragment.text, fragment.values);
-    } catch (error) {
-      // `driverError`, not `dbUnavailable`: the SQLSTATE has always been on this error and nothing
-      // read it, so a `23505` from two clicks racing a signup told the operator the database was
-      // unreachable and paged on-call for an outage that never happened. Everything the table does
-      // not classify is still `X_DB_UNAVAILABLE`, byte for byte.
-      throw driverError(`statement failed: ${fragment.text.slice(0, 120)}`, error);
-    }
-  }
-
-  /**
-   * The funnel — pooled and pinned statements both arrive here, which is why the observer hangs
-   * off this one function and nowhere else. Uninstalled it costs one property read and one
-   * branch: no clock read, no span, no event object, and `sendOn` receives exactly the call `runOn`
-   * made before the seam existed (axiom 6).
-   */
-  async function runOn(
-    driver: Pick<BunSqlDriver, 'unsafe'>,
-    fragment: SqlFragment,
-  ): Promise<unknown> {
-    const observer = statementObserver();
-    if (observer === undefined) return sendOn(driver, fragment);
-    // Read here, not by the consumer: the scope is gone by the time a per-request detector judges
-    // what it collected, so the reason has to be captured with the statement it defends.
-    const expected = expectedQueryLoopReason();
-    // Same moment, same argument: `postgresRepo` is several frames and a microtask above this one,
-    // and what it knows — the entity and the operation — is what turns fifty identical `select`s
-    // into "50× findById on members". Absent for hand-written SQL, a migration, a health probe.
-    const attribution = statementAttribution();
-    const started = performance.now();
-    let result: unknown;
-    try {
-      // The span wraps the send and nothing else, so its duration is the statement's and the
-      // observer's own work is not charged to the database.
-      result = await withStatementSpan(fragment.text, () => sendOn(driver, fragment));
-    } catch (error) {
-      // A statement that failed is still a statement: fifty identical timeouts are an N+1 of
-      // timeouts. The error is already `X_DB_UNAVAILABLE`, so the event carries what the caller
-      // is about to be thrown — and an observer that throws here replaces it, which is why
-      // `observe.ts` says a reporting-only observer must not throw.
-      observer.onStatement({
-        text: fragment.text,
-        values: fragment.values,
-        durationMs: performance.now() - started,
-        rows: 0,
-        error,
-        attribution,
-        expected,
-      });
-      throw error;
-    }
-    // Outside the `try` deliberately: a throw from `onStatement` is the observer's, not the
-    // database's, and catching it above would report a statement that succeeded as failed.
-    observer.onStatement({
-      text: fragment.text,
-      values: fragment.values,
-      durationMs: performance.now() - started,
-      rows: affectedBy(result),
-      attribution,
-      expected,
-    });
-    return result;
   }
 
   async function run(fragment: SqlFragment): Promise<unknown> {

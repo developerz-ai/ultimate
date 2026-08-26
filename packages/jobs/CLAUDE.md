@@ -370,7 +370,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   renders a dead letter at attempt 1 of 5 as a silent early stop.
 - **The backoff arithmetic is `@ultimat3/core`'s, and `retry.ts` is the option names over it**
   (`As of 2026-08-23`). `backoffDelayMs` is `backoffDelay({ curve, jitter, base, max, attempt })`
-  with this package's spellings applied on the way in — `DurationInput` through `toMs`, the
+  with this package's spellings applied on the way in — `DurationInput` through `finiteDurationMs`, the
   `DEFAULT_RETRY` fallbacks, and `jitter: boolean` mapped to `'equal' | 'none'`. **EQUAL, never
   `full`**: `jitter: true` here has meant half-fixed-half-random since it shipped, and `full`
   would hand a job that already failed twice a near-zero wait. The public `RetryPolicy`,
@@ -842,8 +842,30 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 
 `clock.ts` calls `parseDuration(str)` and `scheduler.ts` calls
 `nextCronOccurrence(cron, { tz, from })`. Both are normalised in one place each
-(`toMs`, `defaultCronResolver`) and the scheduler's resolver is injectable, so a signature
-change in `@ultimat3/time` is a one-line fix, not a sweep.
+(`finiteDurationMs`, `defaultCronResolver`) and the scheduler's resolver is injectable, so a
+signature change in `@ultimat3/time` is a one-line fix, not a sweep.
+
+**`clock.ts`'s conversion is `finiteDurationMs(duration, subject, option)`, never a bare `toMs`**
+(`As of 2026-08-26`). It was `toMs` — a THIRD implementation of duration→ms with no finiteness
+screen at all, and the one every scheduling decision in this package goes through:
+`step.sleep(Number(process.env.DELAY))` on an unset variable made `wakeAt = at + NaN`, and every
+`wakeAt <= now` against a `NaN` is false forever — a sleep that never ends, on a row `x jobs show`
+prints as `sleeping`. Partial screening is what hid it: `events.ts`, `events-pg.ts` and `steps.ts`
+wrapped the RESULT in `finiteOption` while `retry.ts` and `step.sleep` did not, so a reader saw
+`finiteOption` in the file and concluded the package was screened.
+
+Three things about the shape are load-bearing. The floor is `finiteOption` and NOT `finiteCount`,
+measured rather than assumed: `retry-core-parity.test.ts` pins `maxDelay: -5` at `0` and four
+`.job.test.ts` suites configure `retry: { delay: 0 }`, so a negative and a zero duration are
+shipped behaviour here — only a non-finite one is refused, and a caller wanting a positive whole
+number narrows on top, which is what `job()` does for `stepTimeout` and `eventPoll`. `subject` and
+`option` are REQUIRED, so a call site that does not name the app author's own key
+(`retry.delay`, `job("x") timeout`, `step.sleep`'s argument) is `TS2554` at the call rather than a
+review note — `@ultimat3/time`'s `toMs` screens under the subject `toMs`, which names a framework
+internal. And the callee CARRIES `Finite`, because `bun run finite-bounds` reads a repair off the
+callee's name: that is what lets `finiteDurationMs(options.defaultTtl ?? 604_800_000, …)` be
+recognised as screened with no second wrapper around it. `duration-bounds.test.ts` is the
+enforcement `finite-bounds` cannot be — a `typeof duration === 'number'` arm has no `??` in it.
 
 `driver-pg.ts`'s `PgExecutor` (`:62-64`) is a one-method duck-typed interface — this package still
 has no `@ultimat3/db` dependency, and nothing here knows what an observer, a span or

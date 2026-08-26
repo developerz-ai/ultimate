@@ -268,7 +268,9 @@ describe('a malformed locale tag', () => {
       }
       expect(isUltimateError(caught)).toBe(true);
       expect((caught as UltimateError).code).toBe('X_LOCALE_INVALID');
-      expect((caught as UltimateError).cause).toContain('en_US');
+      // `meta.locale`, never the prose: the cause is a BOUNDED excerpt `@ultimat3/core` owns
+      // (issue #366), and an assertion on its wording made one message edit an eight-file edit.
+      expect((caught as UltimateError).meta?.['locale']).toBe('en_US');
     });
   }
 

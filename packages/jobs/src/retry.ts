@@ -6,7 +6,7 @@
 import type { BackoffCurve, Random } from '@ultimat3/core';
 import { backoffDelay } from '@ultimat3/core';
 import type { DurationInput } from './clock';
-import { toMs } from './clock';
+import { finiteDurationMs } from './clock';
 
 /**
  * This package's name for core's curve, and an ALIAS rather than a second union: two spellings of
@@ -60,8 +60,8 @@ export type { Random };
 export function backoffDelayMs(policy: RetryPolicy, attempt: number, random?: Random): number {
   return backoffDelay({
     attempt,
-    base: toMs(policy.delay ?? DEFAULT_RETRY.delay),
-    max: toMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay),
+    base: finiteDurationMs(policy.delay ?? DEFAULT_RETRY.delay, 'retry', 'delay'),
+    max: finiteDurationMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay, 'retry', 'maxDelay'),
     curve: policy.backoff ?? DEFAULT_RETRY.backoff,
     // EQUAL, not full: a job that has already failed twice must not be handed a near-zero wait,
     // and this package's `jitter: true` has meant "half fixed, half random" since it shipped.

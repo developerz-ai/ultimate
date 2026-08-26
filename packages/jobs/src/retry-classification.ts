@@ -4,7 +4,7 @@
 
 import type { ErrorRetry } from '@ultimat3/core';
 import { classifyThrown, statedDelayMs } from '@ultimat3/core';
-import { toMs } from './clock';
+import { finiteDurationMs } from './clock';
 import type { Random, RetryDecision, RetryPolicy } from './retry';
 import { DEFAULT_RETRY, nextRetry } from './retry';
 
@@ -67,7 +67,7 @@ export function nextRetryForError(
   if (stated === undefined) return { ...decision, stoppedBy: undefined, classification };
   // Clamped by the policy's own ceiling, which is what `maxDelay` is for: a responder naming a
   // day is still a responder this deployment has not agreed to wait a day for.
-  const cap = toMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay);
+  const cap = finiteDurationMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay, 'retry', 'maxDelay');
   return { ...decision, delayMs: Math.min(stated, cap), stoppedBy: undefined, classification };
 }
 
