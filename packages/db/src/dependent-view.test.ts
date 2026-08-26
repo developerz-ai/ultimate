@@ -111,9 +111,13 @@ describe('the fix line', () => {
   }).up;
 
   /** The refusal `refuseDependentViews` raises for one catalog row, with nothing real connected. */
-  const refuse = async (definition: string, view = 'docs_published'): Promise<UltimateError> => {
+  const refuse = async (
+    definition: string,
+    view = 'docs_published',
+    relkind = 'v',
+  ): Promise<UltimateError> => {
     const client = createRecordingClient().on(/pg_depend/, {
-      rows: [{ view_name: view, table_name: 'docs', column_name: 'rank', definition }],
+      rows: [{ view_name: view, table_name: 'docs', column_name: 'rank', definition, relkind }],
     });
     const failure = await refuseDependentViews(client, up).then(
       () => undefined,
@@ -184,5 +188,37 @@ describe('the fix line', () => {
     expect(error.fix).toStartWith('psql "$DATABASE_URL"');
     expect(error.fix).toContain('my \\"odd\\" view');
     expect(error.fix).toContain('SELECT id, rank FROM docs');
+  });
+
+  /**
+   * `dependentViews` selects `relkind in ('v', 'm')` on purpose — a matview carries the same
+   * `_RETURN` rule and fails the same `0A000`. But Postgres refuses `drop view` on one
+   * (WRONG_OBJECT_TYPE, "use DROP MATERIALIZED VIEW"), so before 2026-08-26 the one kind the
+   * query went out of its way to include was the one whose fix could not run.
+   */
+  test('a MATERIALISED view gets materialized-view DDL, both halves', async () => {
+    const failure = await refuse('SELECT id, rank FROM docs', 'docs_ranked', 'm');
+    expect(failure.fix).toContain('drop materialized view "docs_ranked"');
+    expect(failure.fix).toContain('create materialized view "docs_ranked" as');
+    // Never the plain spelling anywhere in the line — a stray `drop view` is the bug returning.
+    expect(failure.fix).not.toMatch(/(?:^|[^d] )drop view /);
+  });
+
+  test('a matview fix says its indexes are not carried — the recreate is not complete', async () => {
+    const failure = await refuse('SELECT id, rank FROM docs', 'docs_ranked', 'm');
+    expect(failure.fix).toContain('re-create its indexes');
+  });
+
+  test('an ordinary view is unchanged by the matview branch', async () => {
+    const failure = await refuse('SELECT id, rank FROM docs', 'docs_published', 'v');
+    expect(failure.fix).toContain('drop view "docs_published"');
+    expect(failure.fix).not.toContain('materialized');
+    expect(failure.fix).not.toContain('re-create its indexes');
+  });
+
+  test('the quoted-name fallback carries the kind too', async () => {
+    const failure = await refuse('SELECT id FROM docs', 'has space', 'm');
+    expect(failure.fix).toContain('drop materialized view <name>');
+    expect(failure.fix).toContain('create materialized view <name> as');
   });
 });

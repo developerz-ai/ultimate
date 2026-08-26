@@ -3,10 +3,6 @@
 // file asks what `x db gen` writes for one table, this one asks what it writes when two tables
 // have to come down in a particular order or not at all.
 
-// `x db gen` on the framework's own engine: what it writes, what it refuses to write, and the
-// round trip that makes the second generation incremental — the file it emits must parse back
-// through the reader that applies it. Indexes are `generate-index.test.ts`.
-
 import { describe, expect, test } from 'bun:test';
 import type {
   ColumnDescriptionLike,
@@ -15,7 +11,6 @@ import type {
 } from './entity-shape';
 import { unrestorableNote } from './foreign-key';
 import { generateMigration, snapshotOf } from './generate';
-import type { SchemaDescription } from './introspect';
 
 const column = (
   name: string,
@@ -54,39 +49,6 @@ const posts = (columns: readonly ColumnDescriptionLike[]): EntityDescriptionLike
   primaryKey: ['id'],
   columns,
   indexes: [slugKey],
-});
-
-const _priced: EntityDescriptionLike = {
-  ...posts([
-    column('id', { kind: 'uuid', primaryKey: true, notNull: true }),
-    column('price_currency', {
-      kind: 'char',
-      notNull: true,
-      check: "price_currency ~ '^[A-Z]{3}$'",
-    }),
-  ]),
-  indexes: [],
-};
-
-/** The snapshot an earlier generated migration recorded — `dataType` is that run's `sqlType()`. */
-const _recorded = (currency: string): SchemaDescription => ({
-  tables: [
-    {
-      schema: 'public',
-      name: 'posts',
-      columns: [
-        { name: 'id', dataType: 'uuid', nullable: false, default: null, position: 1 },
-        { name: 'price_currency', dataType: currency, nullable: false, default: null, position: 2 },
-      ],
-      primaryKey: ['id'],
-      indexes: [],
-      foreignKeys: [],
-      // Recorded, so these two tests keep asking about the TYPE alone. A snapshot that omits it is
-      // a different question — "the database may be holding the old anonymous form" — and
-      // `check-ddl.test.ts` is where that one is pinned.
-      checks: [{ name: 'posts_price_currency_check', expression: "price_currency ~ '^[A-Z]{3}$'" }],
-    },
-  ],
 });
 
 const at = new Date('2026-07-26T12:00:00.000Z');

@@ -106,6 +106,8 @@ interface ViewRow {
   readonly table_name: string;
   readonly column_name: string;
   readonly definition: string;
+  /** `v` or `m`. A MATERIALISED view needs different DDL to drop and to recreate. */
+  readonly relkind: string;
 }
 
 /**
@@ -129,7 +131,7 @@ async function dependentViews(
   );
   return client.query<ViewRow>(sql`
     select distinct v.relname as view_name, c.relname as table_name, a.attname as column_name,
-           pg_get_viewdef(v.oid, true) as definition
+           pg_get_viewdef(v.oid, true) as definition, v.relkind as relkind
       from pg_depend d
       join pg_rewrite r on r.oid = d.objid and d.classid = 'pg_rewrite'::regclass
       join pg_class v on v.oid = r.ev_class
@@ -172,19 +174,31 @@ const psql = (statement: string): string => `psql "$DATABASE_URL" -c ${shellArg(
  *
  * The definition is collapsed to one line because `pg_get_viewdef(oid, true)` pretty-prints across
  * several and a `fix:` is read as a command.
+ *
+ * `relkind` decides the DDL and is not cosmetic: `dependentViews` deliberately selects `'m'` as
+ * well as `'v'`, and Postgres refuses `drop view` on a materialised one — `WRONG_OBJECT_TYPE`,
+ * "use DROP MATERIALIZED VIEW". So the one case the query went out of its way to include was the
+ * one whose `fix:` could not run. `pg_get_viewdef` answers the SELECT for both kinds, so only the
+ * two keywords differ; a matview's indexes and its `WITH DATA` population are NOT carried, and
+ * the fix says so rather than implying the recreate is complete.
  */
-function restoreView(view: string, definition: string): string {
+function restoreView(view: string, definition: string, relkind: string): string {
   const body = definition.replace(/\s+/g, ' ').replace(/;\s*$/, '').trim();
+  const materialised = relkind === 'm';
+  const kind = materialised ? 'materialized view' : 'view';
+  const note = materialised
+    ? '   # then re-create its indexes: a matview keeps none of them across a drop'
+    : '';
   try {
     const name = identifier(view).text;
     return (
-      `${psql(`drop view ${name}`)}   # then x db migrate, then: ` +
-      `${psql(`create view ${name} as ${body}`)}`
+      `${psql(`drop ${kind} ${name}`)}   # then x db migrate, then: ` +
+      `${psql(`create ${kind} ${name} as ${body}`)}${note}`
     );
   } catch {
     return (
-      `psql "$DATABASE_URL"   # quote the view name ${JSON.stringify(view)} yourself, then: ` +
-      `drop view <name>; \\q; x db migrate; and create it again as: create view <name> as ${body}`
+      `psql "$DATABASE_URL"   # quote the ${kind} name ${JSON.stringify(view)} yourself, then: ` +
+      `drop ${kind} <name>; \\q; x db migrate; and create it again as: create ${kind} <name> as ${body}${note}`
     );
   }
 }
@@ -204,7 +218,7 @@ export async function refuseDependentViews(client: DbClient, script: string): Pr
       row.view_name,
       row.table_name,
       row.column_name,
-      restoreView(row.view_name, row.definition),
+      restoreView(row.view_name, row.definition, row.relkind),
     );
   }
 }

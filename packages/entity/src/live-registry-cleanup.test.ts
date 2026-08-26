@@ -1,9 +1,7 @@
-// Single responsibility: a suite that registers an entity at module scope unregisters it even when
-// the suite never runs. Bun evaluates a skipped file's module body and then does NOT run a hook
-// inside `describe.skipIf(true)` — measured below — so a `clearRegistry()` parked in that hook
-// leaks the entity into every later file in the process, where the next same-named `entity()` is an
-// `X_ENTITY_DUPLICATE` nobody can attribute. Static, because the leak shows only in the ONE
-// configuration a live suite is never deliberately run in.
+// Single responsibility: a live suite that registers at module scope must unregister even when it
+// never runs. Bun evaluates a skipped file's body but runs no hook inside `describe.skipIf(true)`
+// — measured below — so a `clearRegistry()` parked there leaks into every later file. Static,
+// because the leak shows only in the one configuration a live suite is never deliberately run in.
 
 import { afterAll, describe, expect, test } from 'bun:test';
 

@@ -332,7 +332,7 @@ describe('the newest migration records the schema this chain creates', () => {
     expect(missingFrom(recordedIndexes().keys(), new Set(chain.indexes.keys()))).toEqual([]);
   });
 
-  test('every index and UNIQUE the chain leaves behind is recorded, bar the three pinned', () => {
+  test('every index and UNIQUE the chain leaves behind is recorded, bar any pinned as unrecorded', () => {
     expect(chain.indexes.size).toBeGreaterThan(UNRECORDED_BY_THE_SIDECAR.length);
     expect(missingFrom(chain.indexes.keys(), new Set(recordedIndexes().keys()))).toEqual(
       [...UNRECORDED_BY_THE_SIDECAR].sort(),
@@ -344,11 +344,18 @@ describe('the newest migration records the schema this chain creates', () => {
     let compared = 0;
     for (const [name, live] of chain.indexes) {
       const found = sidecar.get(name);
-      if (found === undefined) continue; // the pinned three, asserted by name in the test above
+      if (found === undefined) continue; // pinned by name in the test above; that list is now empty
       compared += 1;
       expect({ name, ...found }).toEqual({ name, ...live });
     }
     // The loop above skips on absence, so it would pass over an empty sidecar in silence.
+    //
+    // `walk` reads named `CONSTRAINT … UNIQUE (…)` clauses and not a bare `unique` on a column,
+    // which `columnClause` can emit and `snapshotOf` records as `<table>_<column>_key`. The chain
+    // holds none today (measured: zero across all three files). If one ever appears the miss is
+    // LOUD, not silent — the sidecar would carry a name `chain.indexes` lacks, which is exactly
+    // what "the sidecar records no index the chain does not leave behind" refuses. A parser for
+    // column-level clauses is the fix if that day comes; a red run is the signal it has.
     expect(compared).toBe(chain.indexes.size - UNRECORDED_BY_THE_SIDECAR.length);
   });
 
