@@ -58,11 +58,16 @@ describe('backoffMs', () => {
     expect(backoffMs(POLICY, 1, () => 0.3333)).toBe(167);
   });
 
-  test('a policy carrying a NaN waits 0 rather than firing immediately', () => {
+  test('a policy carrying a NaN is REFUSED, not silently turned into 0', () => {
     // `Number(process.env.AI_RETRY_BASE_MS)` on an unset var is NaN, and `setTimeout(NaN)` fires on
-    // the next tick — a "backoff" that is a tight spin across every attempt. Inherited from core.
+    // the next tick — a "backoff" that is a tight spin across every attempt.
+    //
+    // This asserted `0` while core clamped, which was the safe answer to the wrong question: a
+    // schedule of zeroes still spins, it just spins deliberately. Core's `backoffDelay` now refuses
+    // a non-finite bound before clamping, and the gateway inherits the refusal along with the curve
+    // — the whole point of having one engine.
     const broken: RetryPolicy = { attempts: 3, baseDelayMs: Number.NaN, maxDelayMs: 8_000 };
-    expect(backoffMs(broken, 1, () => 0.5)).toBe(0);
+    expect(() => backoffMs(broken, 1, () => 0.5)).toThrow('X_INVARIANT');
   });
 
   test('a negative base never produces a negative wait', () => {

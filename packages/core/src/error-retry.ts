@@ -106,9 +106,21 @@ export function registerErrorRetry(retries: Readonly<Record<string, ErrorRetry>>
   }
 }
 
-/** Test seam. Production registers once at boot and never unregisters. */
-export function resetErrorRetry(): void {
+/**
+ * Test seam. Production registers once at boot and never unregisters.
+ *
+ * `restore` is not a nicety: this map is PROCESS-WIDE and every package fills it at module
+ * evaluation, so a bare `clear()` in one file's `afterEach` deletes registrations that file never
+ * made. Bun runs one process for the whole suite and `scripts/test-setup.ts` imports packages
+ * before any test runs, so their module bodies never run again to repair it — measured,
+ * `@ultimat3/policy`'s codes read as unclassified in every file loaded after core's tests, and
+ * `@ultimat3/db`, `@ultimat3/ai` and `@ultimat3/jobs` each carry a `beforeEach` that re-registers
+ * their own table for exactly this reason. Pass `registeredErrorRetry()` captured at module scope
+ * and the wipe is scoped to what the test added.
+ */
+export function resetErrorRetry(restore: Readonly<Record<string, ErrorRetry>> = {}): void {
   REGISTERED.clear();
+  for (const [code, retry] of Object.entries(restore)) REGISTERED.set(code, retry);
 }
 
 /**

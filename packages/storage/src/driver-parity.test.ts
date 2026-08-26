@@ -9,7 +9,13 @@
 // That is the honest form of parity: the pair still moves together the day either half changes.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+// why: Bun ships no temp-directory API and no recursive remove — `mkdtemp` and `rm` have no
+// `Bun.*` equivalent. `writeFile` is here for the one thing `Bun.write` cannot do: FAIL when the
+// parent directory is missing, which is what line ~156 uses to make the OS refuse an unlink with
+// something other than ENOENT. Every other write in this file is `Bun.write`.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+// why: Bun exposes no `tmpdir()`; `node:os` is the only way to ask the platform where its
+// temporary directory is.
 import { tmpdir } from 'node:os';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
@@ -49,7 +55,7 @@ describe('a REFUSED listing is a refusal on both disks, never an empty page', ()
     // error and answered `{ objects: [], truncated: false }`; the s3 driver let a bare `S3Error`
     // escape with no code, no fix and nothing for the http error map to render but a 500.
     const file = `${root}/not-a-directory`;
-    await writeFile(file, 'x');
+    await Bun.write(file, 'x');
     const onAFile = localDriver({ root: file, signingSecret: 'test-secret', clock });
     expect(codeOf(await catchError(() => onAFile.list()))).toBe('X_STORAGE_LIST_FAILED');
 
@@ -125,7 +131,7 @@ describe('a listing reports only what a listing can know', () => {
     // `etag: ''` is the same rule applied to the etag, and it is what stops `list()` reading every
     // file it lists: hashing a sidecar-less object meant one full buffered read per listed row,
     // sequentially, under a comment promising the opposite.
-    await writeFile(`${root}/loose.txt`, 'sidecar-less');
+    await Bun.write(`${root}/loose.txt`, 'sidecar-less');
     const listedLocal = (await local.list()).objects[0];
     expect(listedLocal?.contentType).toBeUndefined();
     expect(listedLocal?.etag).toBe('');

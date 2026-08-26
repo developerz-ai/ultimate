@@ -19,6 +19,7 @@ import {
   purgePost,
   requireCredential,
 } from './purge-http';
+import { assertFiniteDurationMs } from './tiers';
 
 export const FASTLY_API_URL = 'https://api.fastly.com';
 
@@ -72,7 +73,11 @@ export function fastlyPurgeDriver(options: FastlyPurgeOptions): PurgeDriver {
   const apiToken = requireCredential(options.apiToken, 'FASTLY_API_TOKEN', 'fastly');
   const serviceId = requireCredential(options.serviceId, 'FASTLY_SERVICE_ID', 'fastly');
   const baseUrl = options.baseUrl ?? FASTLY_API_URL;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_PURGE_TIMEOUT_MS;
+  const timeoutMs = assertFiniteDurationMs(
+    'fastly',
+    'timeoutMs',
+    options.timeoutMs ?? DEFAULT_PURGE_TIMEOUT_MS,
+  );
   const doFetch = options.fetch ?? defaultPurgeFetch;
   const headers = { 'Fastly-Key': apiToken };
 

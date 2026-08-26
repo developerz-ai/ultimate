@@ -1,7 +1,10 @@
-// One bounded cache, on one canonical key, for every `Intl` formatter the framework builds.
+// One bounded cache, on one canonical key, and one screen, for every `Intl` formatter the
+// framework builds.
 // A locale and a zone both arrive from a request header, so an unbounded `Map` keyed on the
 // caller's spelling is memory the client chooses — 31 MB and 55.1 MB, measured `As of 2026-08` and
 // written up in the README. The bound and the canonical key are two halves of ONE rule.
+
+import { UltimateError } from './errors';
 
 /**
  * Above the full canonical IANA set (445 zones as of tzdata 2025) so a correct app never evicts,
@@ -40,4 +43,42 @@ export function canonicalLocale(locale: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * A tag `Intl` cannot parse. Distinct from `@ultimat3/i18n`'s `X_LOCALE_UNSUPPORTED`, which is a
+ * well-formed tag outside the app's supported set — this one is not a tag at all, and a raw
+ * `RangeError` out of a formatter says nothing about which caller supplied it.
+ */
+export function localeInvalid(locale: string): UltimateError {
+  return new UltimateError({
+    code: 'X_LOCALE_INVALID',
+    cause: `"${locale}" is not a well-formed BCP 47 language tag`,
+    fix: "pass a tag like 'en', 'en-GB' or 'de-DE' — screen a header-supplied value with Intl.DateTimeFormat.supportedLocalesOf([tag]) before it reaches a formatter",
+  });
+}
+
+/**
+ * The canonical spelling of a well-formed tag, or `X_LOCALE_INVALID`. The ONE screen a
+ * caller-supplied BCP 47 tag passes before it reaches an `Intl` constructor.
+ *
+ * Validating and keying are one step, which is why this lives beside the cache rather than in
+ * either caller: `getCanonicalLocales` runs exactly the structural check
+ * `Intl.DateTimeFormat.supportedLocalesOf` throws on — what the `fix:` above tells the caller to
+ * run — and unlike it hands back the spelling every formatter cache keys on, so `EN-us` and
+ * `en-US` cannot mint two entries for one locale.
+ *
+ * It is tier 0 for the reason `cachedFormatter` is: `@ultimat3/time` and `@ultimat3/money` both
+ * need it and `money -> time` is a sideways import `bun run boundaries` refuses. Money was the
+ * last package still letting the tag through — a `RangeError` off an `Accept-Language` header —
+ * on the argument that this seam "decides a cache key, never whether a locale is acceptable",
+ * which is true of the cache and was never an argument for passing the tag on.
+ *
+ * Well-formed but unknown to this runtime's ICU (`zz`) is NOT refused: `Intl` falls back for
+ * those, and a user carrying a locale the runtime has no data for must still get a rendered page.
+ */
+export function assertLocale(locale: string): string {
+  const tag = canonicalLocale(locale);
+  if (tag === undefined) throw localeInvalid(locale);
+  return tag;
 }

@@ -168,6 +168,38 @@ describe('currentLocale', () => {
   });
 });
 
+/**
+ * The declaration is the boundary. `resolveLocale` can only ever answer with a member of
+ * `supported` or the fallback, so a tag the app DECLARES is the one route by which a value
+ * `Intl` cannot parse reaches `ctx.locale` — and from there `formatDate`, `formatMoney` and
+ * `Intl.PluralRules`, one request at a time, several frames from `app.config.ts`.
+ */
+describe('configureLocales screens what it is handed', () => {
+  afterEach(() => {
+    resetLocaleConfig();
+  });
+
+  test('a supported tag Intl cannot parse is refused at boot, naming the tag', () => {
+    // Lowercase, because `normalizeLocale` lowercases before it compares — `e` is exactly the
+    // shape that survives every later check and lands on a formatter.
+    expect(() => configureLocales({ supported: ['en', 'e'] })).toThrow(/X_LOCALE_INVALID/);
+    expect(() => configureLocales({ supported: ['en', 'e'] })).toThrow(/"e"/);
+    // Refused means unchanged: a rejected call must not leave half a config behind.
+    expect(localeConfig().supported).toEqual([...SUPPORTED_LOCALES]);
+  });
+
+  test('a fallback that is not a tag is refused too', () => {
+    expect(() => configureLocales({ fallback: 'en_US' })).toThrow(/X_LOCALE_INVALID/);
+    expect(localeConfig().fallback).toBe(DEFAULT_LOCALE);
+  });
+
+  test('every tag the framework itself ships passes, script subtags included', () => {
+    expect(() =>
+      configureLocales({ supported: [...SUPPORTED_LOCALES, 'zh-hant', 'pt-br'] }),
+    ).not.toThrow();
+  });
+});
+
 describe('resetLocaleConfig', () => {
   afterEach(() => {
     resetLocaleConfig();

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "58963b704fe93eeae102e86f8bb560232087ad519d5283d36d39116f4ddf9fbc",
+  "buildId": "09deb9b66415b9235fd4c931e39f23dc9aed9fd4daa896b7332eba510f5f8369",
   "tiers": {
     "0": [
       "core",
@@ -576,6 +576,11 @@
     },
     {
       "code": "X_CACHE_JITTER_INVALID",
+      "owner": "cache",
+      "at": "packages/cache/src/errors.ts"
+    },
+    {
+      "code": "X_CACHE_LIMIT_INVALID",
       "owner": "cache",
       "at": "packages/cache/src/errors.ts"
     },
@@ -1195,6 +1200,21 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_FINITE_BOUND_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/finite-bounds.ts"
+    },
+    {
+      "code": "X_FINITE_BOUND_UNCHECKED",
+      "owner": "scripts",
+      "at": "scripts/finite-bounds.ts"
+    },
+    {
+      "code": "X_FINITE_BOUND_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/finite-bounds.ts"
+    },
+    {
       "code": "X_FIX_TARGET_UNKNOWN",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -1581,8 +1601,8 @@
     },
     {
       "code": "X_LOCALE_INVALID",
-      "owner": "time",
-      "at": "packages/time/src/errors.ts"
+      "owner": "core",
+      "at": "packages/core/src/error-codes.ts"
     },
     {
       "code": "X_LOCALE_UNSUPPORTED",

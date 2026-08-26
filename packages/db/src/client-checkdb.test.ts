@@ -4,7 +4,8 @@
 // whole fixture.
 
 import { describe, expect, test } from 'bun:test';
-import { checkDb, type DbClient } from './client';
+import type { DbClient } from './client';
+import { checkDb } from './db-health';
 
 /**
  * Stands in for what `Bun.SQL` itself throws — an error carrying no Ultimate code, which is

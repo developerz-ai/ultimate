@@ -3,7 +3,7 @@
  * No call site passes a locale by hand — `t()` here is the ambient translator.
  */
 
-import { cachedFormatter, canonicalLocale, tryUseContext } from '@ultimat3/core';
+import { assertLocale, cachedFormatter, canonicalLocale, tryUseContext } from '@ultimat3/core';
 import { type Catalog, mergeCatalogs } from './catalog';
 import {
   DEFAULT_LOCALE,
@@ -85,8 +85,19 @@ function freshDefaultConfig(): LocaleConfig {
 
 let config: LocaleConfig = freshDefaultConfig();
 
-/** Called once at boot from `app.config.ts`. */
+/**
+ * Called once at boot from `app.config.ts`.
+ *
+ * Screened before it is stored, and this is the ONE screen the locale path needs: `resolveLocale`
+ * can only ever answer with a member of `supported` or the fallback — every other candidate
+ * normalises away — so a tag the APP declares is the only route by which a string `Intl` cannot
+ * parse reaches `ctx.locale`, and from there `formatDate`, `formatMoney` and `Intl.PluralRules`
+ * one request at a time, several frames from the config line that caused it. Refused whole: a
+ * rejected call leaves the previous config in place rather than half of a new one.
+ */
 export function configureLocales(partial: Partial<LocaleConfig>): LocaleConfig {
+  for (const tag of partial.supported ?? []) assertLocale(tag);
+  if (partial.fallback !== undefined) assertLocale(partial.fallback);
   config = { ...config, ...partial };
   return config;
 }

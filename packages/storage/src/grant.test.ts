@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+// why: Bun ships no temp-directory API and no recursive remove — `mkdtemp` and `rm` have no
+// `Bun.*` equivalent, and this suite needs a real directory per run. Delete this import the day
+// one lands.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no `tmpdir()`; `node:os` is the only way to ask the platform where its
+// temporary directory is.
 import { tmpdir } from 'node:os';
 import { frozenClock } from '@ultimat3/core';
 import { isPendingKey, isQuarantinedKey } from './attachment';
@@ -156,5 +161,77 @@ describe('grantUpload', () => {
     const first = await grantUpload({ disk, orgId: 'org-1', policy: IMAGES, clock, request });
     const second = await grantUpload({ disk, orgId: 'org-1', policy: IMAGES, clock, request });
     expect(first.key).not.toBe(second.key);
+  });
+});
+
+/**
+ * `expiresAt: clock.now().getTime() + NaN` is `NaN` in the grant this function RETURNS, and the
+ * presigner one call down refuses in terms of `buildSignedUrl`'s own option — so the caller's
+ * report named a function they never called. Refused here too, which is the layered form.
+ */
+describe('the grant TTL is screened where the caller writes it', () => {
+  const grantWith = async (expiresInMs: number): Promise<string> =>
+    codeOf(async () =>
+      grantUpload({
+        disk,
+        orgId: 'org-1',
+        request: { filename: 'report.png', contentType: 'image/png' },
+        policy: IMAGES,
+        uploadId: () => 'u-1',
+        clock,
+        expiresInMs,
+      }),
+    );
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses expiresInMs %p, naming createUploadGrant',
+    async (expiresInMs) => {
+      const rendered = await grantWith(expiresInMs);
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('expiresInMs');
+      expect(rendered).toContain('createUploadGrant');
+    },
+  );
+
+  test('a real TTL still mints a grant that expires when it says', async () => {
+    const grant = await grantUpload({
+      disk,
+      orgId: 'org-1',
+      request: { filename: 'report.png', contentType: 'image/png' },
+      policy: IMAGES,
+      uploadId: () => 'u-1',
+      clock,
+      expiresInMs: 900_000,
+    });
+    expect(grant.expiresAt).toBe(new Date(START).getTime() + 900_000);
+  });
+});
+
+/**
+ * `??` coalesces on `null` as well as `undefined`, so an explicit `null` — what a decoded JSON
+ * config carries for a key someone blanked — took the default BEFORE the guard above could refuse
+ * it. The mirror of the `NaN` half: one slips past the guard, the other past the default, and both
+ * end in a bound nobody chose. `JSON.parse` rather than a literal, because `null` is not in the
+ * option's type and this is the caller the bug is about.
+ */
+describe('an explicitly null grant TTL is refused, never defaulted', () => {
+  test('expiresInMs: null names createUploadGrant', async () => {
+    const fromJson: number = JSON.parse('null');
+    let rendered = 'no-error-thrown';
+    try {
+      await grantUpload({
+        disk,
+        orgId: 'org-1',
+        request: { filename: 'report.png', contentType: 'image/png' },
+        policy: uploadPolicy({ allowedContentTypes: ['image/png'] }),
+        uploadId: () => 'u-1',
+        clock: frozenClock(START),
+        expiresInMs: fromJson,
+      });
+    } catch (error) {
+      rendered = String(error);
+    }
+    expect(rendered).toContain('X_INVARIANT');
+    expect(rendered).toContain('expiresInMs');
   });
 });

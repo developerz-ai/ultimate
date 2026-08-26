@@ -239,3 +239,49 @@ describe('size', () => {
     expect(await cache.size()).toBe(1);
   });
 });
+
+/**
+ * The file header calls the threshold "a correctness boundary rather than a tuning knob: set
+ * slightly too loose, it hands a user the answer to somebody else's question". `NaN` is not
+ * slightly too loose — it removes the boundary: `similarity < NaN` is false for every record, so
+ * `lookup` answers the closest thing it holds whatever the question was. `maxEntries: NaN` is the
+ * same shape one line down (`records.size > NaN` never evicts), and both arrive the same way —
+ * `Number(process.env.SEMANTIC_THRESHOLD)` on an unset variable.
+ */
+describe('the semantic cache refuses a limit that is not a limit', () => {
+  test('a NaN threshold is refused, never a cache that matches everything', () => {
+    expect(() => createMemorySemanticCache({ threshold: Number.NaN })).toThrow(
+      /X_CACHE_LIMIT_INVALID/,
+    );
+  });
+
+  test('a threshold outside [0, 1] is refused — cosine similarity has no values there', () => {
+    expect(() => createMemorySemanticCache({ threshold: 1.5 })).toThrow(/X_CACHE_LIMIT_INVALID/);
+    expect(() => createMemorySemanticCache({ threshold: -0.5 })).toThrow(/X_CACHE_LIMIT_INVALID/);
+    expect(() => createMemorySemanticCache({ threshold: 0 })).not.toThrow();
+    expect(() => createMemorySemanticCache({ threshold: 1 })).not.toThrow();
+  });
+
+  test('a NaN maxEntries is refused, never a table that never evicts', () => {
+    expect(() => createMemorySemanticCache({ maxEntries: Number.NaN })).toThrow(
+      /X_CACHE_LIMIT_INVALID/,
+    );
+    expect(() => createMemorySemanticCache({ maxEntries: 0 })).toThrow(/X_CACHE_LIMIT_INVALID/);
+  });
+
+  test('a per-call threshold override is screened too — it is the same boundary', async () => {
+    const cache = createMemorySemanticCache({ clock: fakeClock(0) });
+    await cache.remember('a', [1, 0], 'answer for a');
+    // Without the screen this answered `'answer for a'` for a vector orthogonal to it. Thrown
+    // where it is validated, exactly as `remember` throws `X_CACHE_TTL_INVALID` above: the
+    // caller's `await` sees it either way.
+    expect(() => cache.lookup([0, 1], Number.NaN)).toThrow(/X_CACHE_LIMIT_INVALID/);
+  });
+
+  test('an ordinary configuration still builds and still gates', async () => {
+    const cache = createMemorySemanticCache({ threshold: 0.9, maxEntries: 2, clock: fakeClock(0) });
+    await cache.remember('a', [1, 0], 'answer for a');
+    expect(await cache.lookup([0, 1])).toBeUndefined();
+    expect(await cache.lookup([1, 0])).toMatchObject({ value: 'answer for a' });
+  });
+});

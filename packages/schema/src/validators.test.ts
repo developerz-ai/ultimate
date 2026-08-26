@@ -105,6 +105,44 @@ describe('objectSchema', () => {
     }
   });
 
+  /**
+   * The published IR, not the parse output beside it: `properties[key] = member.node` on a `{}`
+   * literal hits the prototype SETTER for `__proto__`, so the field was absent from
+   * `node.properties` — the map `json-schema.ts` publishes and `coerce.ts` walks. Validation still
+   * ran it (the `checks` array is a list of pairs), so a field was enforced on the wire, missing
+   * from the OpenAPI document and never coerced from a query string, with nothing red anywhere.
+   */
+  test('a declared `__proto__` field is an own key of the published IR', () => {
+    const schema = objectSchema({ ['__proto__']: builtinT.string });
+    const properties = schema.node.properties ?? {};
+    expect(Object.hasOwn(properties, '__proto__')).toBe(true);
+    expect(Object.keys(properties)).toEqual(['__proto__']);
+    expect(Object.getPrototypeOf(properties)).toBe(null);
+  });
+
+  /**
+   * The same defect one screen down in the same function, and the half the IR fix above does not
+   * reach: `pick`/`omit` rebuild the shape by assigning into a `{}` literal, so `next['__proto__']
+   * = member` hits the prototype SETTER and the field is not merely mis-published — it is GONE.
+   * Measured before the repair: `pick('__proto__')` answered a schema with zero properties, so the
+   * one field the caller explicitly asked to keep was dropped from validation, from the IR and
+   * from the OpenAPI document, and `parse()` discarded its value as an unknown key.
+   */
+  test('pick and omit keep a declared `__proto__` field instead of dropping it', () => {
+    const schema = objectSchema({ ['__proto__']: builtinT.string, id: builtinT.uuid });
+    expect(Object.keys(schema.pick('__proto__').node.properties ?? {})).toEqual(['__proto__']);
+    expect(Object.keys(schema.omit('id').node.properties ?? {})).toEqual(['__proto__']);
+    // `JSON.parse`, never a `{ __proto__: … }` literal: the literal form is the prototype setter
+    // in the SOURCE too, so a fixture written that way sends no such key at all. This is also the
+    // one caller the whole defect is about — a decoded request body.
+    const kept = schema.pick('__proto__').safeParse(JSON.parse('{"__proto__":"kept"}'));
+    expect(kept.issues).toBeUndefined();
+    expect(
+      Object.getOwnPropertyDescriptor(kept.issues === undefined ? kept.value : {}, '__proto__')
+        ?.value,
+    ).toBe('kept');
+  });
+
   test('extend adds fields to the shape and to validation', () => {
     const base = objectSchema({ id: builtinT.uuid });
     const extended = base.extend({ title: builtinT.string });

@@ -5,7 +5,7 @@
 // only client input that survives is the filename's extension, and only if it survives a regex.
 
 import type { Clock } from '@ultimat3/core';
-import { systemClock } from '@ultimat3/core';
+import { finiteCount, systemClock } from '@ultimat3/core';
 import type { AttachmentTarget } from './attachment';
 import { attachmentKey, pendingKey, quarantineKey, uploadName } from './attachment';
 import type { StorageDriver } from './driver';
@@ -82,7 +82,17 @@ export async function grantUpload(input: GrantUploadInput): Promise<UploadGrant>
     throw tooLarge(key, size, policy.maxBytes);
   }
 
-  const expiresInMs = input.expiresInMs ?? DEFAULT_SIGNED_URL_TTL_MS;
+  // Refused here as well as in the presigner one call down: `expiresAt: now + NaN` is `NaN` in the
+  // grant this function RETURNS, and the message a caller can act on names `createUploadGrant`'s
+  // own option rather than `buildSignedUrl`'s.
+  // `=== undefined`, never `??`, for the reason `buildSignedUrl` states: `??` coalesces on `null`
+  // too, so an explicit one took the default instead of this refusal.
+  const expiresInMs = finiteCount(
+    'createUploadGrant',
+    'expiresInMs',
+    input.expiresInMs === undefined ? DEFAULT_SIGNED_URL_TTL_MS : input.expiresInMs,
+    1,
+  );
   const url = await input.disk.signedUrl(key, {
     method: 'PUT',
     maxBytes: policy.maxBytes,

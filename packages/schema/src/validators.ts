@@ -155,7 +155,11 @@ function makeNumberSchema(node: SchemaNode): NumberSchema {
 }
 
 export function objectSchema<S extends Shape>(shape: S): ObjectSchema<S> {
-  const properties: Record<string, SchemaNode> = {};
+  // `Object.create(null)` for the same reason the parse output below uses one, on the other side
+  // of the same rule: a DECLARED `__proto__` field assigned into a `{}` literal hits the prototype
+  // setter and never becomes a key, so the field vanished from the IR `json-schema.ts` publishes
+  // and `coerce.ts` walks while the `checks` list beside it went on validating it.
+  const properties: Record<string, SchemaNode> = Object.create(null) as Record<string, SchemaNode>;
   const checks: [string, Check<unknown>][] = [];
   for (const [key, member] of Object.entries(shape)) {
     properties[key] = member.node;
@@ -195,14 +199,20 @@ export function objectSchema<S extends Shape>(shape: S): ObjectSchema<S> {
     ...base,
     shape,
     extend: (extra) => objectSchema({ ...shape, ...extra } as Simplified<S & typeof extra>),
+    // `Object.create(null)` in both, for the reason the IR above states and with a worse outcome
+    // here: `next['__proto__'] = member` on a `{}` literal hits the prototype SETTER, so the field
+    // is not mis-published, it is GONE — `pick('__proto__')` answered a schema with no properties
+    // at all, dropping the one field the caller asked to keep from validation, from the IR and
+    // from `parse()`'s output. `extend` needs none of this: object spread defines own properties
+    // and never invokes a setter.
     pick: (...keys) => {
-      const next: Record<string, AnySchema> = {};
+      const next: Record<string, AnySchema> = Object.create(null) as Record<string, AnySchema>;
       for (const key of keys) next[key] = shape[key] as AnySchema;
       return objectSchema(next) as ObjectSchema<Pick<S, (typeof keys)[number]>>;
     },
     omit: (...keys) => {
       const drop = new Set<string>(keys);
-      const next: Record<string, AnySchema> = {};
+      const next: Record<string, AnySchema> = Object.create(null) as Record<string, AnySchema>;
       for (const [key, member] of Object.entries(shape)) {
         if (!drop.has(key)) next[key] = member;
       }

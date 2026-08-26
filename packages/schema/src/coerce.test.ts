@@ -51,6 +51,15 @@ describe('coerceQuery', () => {
     expect(Object.hasOwn(Object.prototype, 'polluted')).toBe(false);
   });
 
+  test('a DECLARED __proto__ field is coerced like any other, now the IR carries it', () => {
+    // The other half of the same defect: while `objectSchema` dropped the key from
+    // `node.properties`, this loop had nothing to walk and the field arrived as the raw string.
+    const input = t.object({ ['__proto__']: t.number.int() });
+    const coerced = coerceQuery(input, new URLSearchParams('__proto__=7'));
+    expect(Object.getOwnPropertyDescriptor(coerced, '__proto__')?.value).toBe(7);
+    expect(Object.hasOwn(Object.prototype, '7')).toBe(false);
+  });
+
   test('turns a query string into something the schema accepts', () => {
     const query = new URLSearchParams('page=3&live=yes&tags=alpha&tags=beta&since=2026-07-26');
     const coerced = coerceQuery(listPosts, query);

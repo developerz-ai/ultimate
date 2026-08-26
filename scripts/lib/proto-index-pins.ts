@@ -79,11 +79,6 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
     reason:
       'render-mode, surface and hydration tables, each keyed by a member of a vocabulary `scripts/render-modes.ts` already refuses a second copy of.',
   },
-  schema: {
-    count: 2,
-    reason:
-      '`errors.ts:33` escapes a character its own regex matched and `json-schema.ts:226` picks a dialect. `errors.ts:120` was the worst of the thirteen — a `TypeError` thrown from inside an error constructor — and is repaired.',
-  },
   scripts: {
     count: 38,
     reason:

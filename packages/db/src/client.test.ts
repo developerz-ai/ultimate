@@ -354,3 +354,55 @@ describe('close', () => {
     expect(pool.closes).toBe(1);
   });
 });
+
+/**
+ * A pool profile an app passes is five numbers, every one of them a plausible
+ * `Number(process.env.…)`. `NaN` is not nullish, so the spread over the role default keeps it, and
+ * each one then fails in its own way and none of them loudly: `max: NaN` reaches `Bun.SQL`,
+ * `idleTimeoutMs: NaN` becomes `idleTimeout: NaN` seconds, `statementTimeoutMs: NaN` is written
+ * into the libpq `options` string as the literal `NaN` for the SERVER to reject on connect, and
+ * `acquireTimeoutMs: NaN` is neither "> 0" nor a usable delay — a timer given it fires at 1ms in
+ * this Bun, so every `reserve()` reports the pool exhausted while the pool is empty.
+ */
+describe('the pool profile is screened where the role default is overridden', () => {
+  const NUMBERS = [
+    'max',
+    'statementTimeoutMs',
+    'idleTimeoutMs',
+    'lockTimeoutMs',
+    'acquireTimeoutMs',
+  ] as const;
+
+  for (const option of NUMBERS) {
+    test(`${option}: NaN is refused at construction, naming the option`, () => {
+      expect(() =>
+        createPostgresClient({ url: TEST_URL, role: 'web', profile: { [option]: Number.NaN } }),
+      ).toThrow(new RegExp(option));
+    });
+  }
+
+  test('max must be at least one connection; the timeouts may be zero, which means no bound', () => {
+    expect(() => createPostgresClient({ url: TEST_URL, profile: { max: 0 } })).toThrow(
+      /X_INVARIANT/,
+    );
+    expect(() =>
+      createPostgresClient({
+        url: TEST_URL,
+        role: 'migrate',
+        profile: { statementTimeoutMs: 0, lockTimeoutMs: 0, acquireTimeoutMs: 0 },
+      }),
+    ).not.toThrow();
+  });
+
+  test('a fraction is refused — a millisecond budget is whole', () => {
+    expect(() => createPostgresClient({ url: TEST_URL, profile: { idleTimeoutMs: 1.5 } })).toThrow(
+      /X_INVARIANT/,
+    );
+  });
+
+  test('every shipped role profile passes its own screen', () => {
+    for (const role of ['web', 'sync', 'worker', 'scheduler', 'migrate', 'replicator'] as const) {
+      expect(() => createPostgresClient({ url: TEST_URL, role })).not.toThrow();
+    }
+  });
+});

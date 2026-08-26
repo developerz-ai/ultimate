@@ -2,6 +2,7 @@
 // an operator already sets, header parsing, the OTLP/JSON value encoding, and one POST that never
 // throws. A serialisation, not a vendor (axiom 7), exactly as `metrics-text.ts` is to Prometheus.
 
+import { assert } from './assert';
 import { renderThrowable } from './error-render';
 import { type CodedErrorInit, UltimateError } from './errors';
 import { logger } from './logger';
@@ -111,6 +112,29 @@ export function tryOtlpEndpoint(
 }
 
 /** The endpoint, or a coded error naming the variable to set. */
+/**
+ * A batch size, a queue bound or a millisecond budget, screened where the exporter is CONSTRUCTED.
+ *
+ * These arrive as `Number(process.env.OTEL_…)` as often as literals, and `NaN` is not nullish so
+ * `??` keeps it. What follows is never a wrong number: `setInterval(fn, NaN)` runs at 1ms in this
+ * Bun (measured, with a `TimeoutNaNWarning`), so the collector is POSTed a thousand times a
+ * second; `AbortSignal.timeout(NaN)` throws, and `postOtlp` swallows it, so every export fails
+ * with one warn line and the traces simply stop; and `queue.length >= NaN` is false, so a bound
+ * that exists to be a bound stops being one. `X_INVARIANT` rather than a fourth `X_OTLP_*` code:
+ * the three here name the endpoint, the headers and the protocol, and this is none of those.
+ *
+ * The `Finite` in the name is load-bearing: `bun run finite-bounds` recognises a repair by the
+ * shape of the CALL, so a screen named for its subject alone is invisible to the ratchet.
+ */
+export function assertFiniteOtlpBound(option: string, value: number): number {
+  assert(
+    Number.isSafeInteger(value) && value >= 1,
+    `otlp exporter option ${option} is ${String(value)}; it must be a whole number of at least 1 — a comparison against a non-finite bound is false for every value, and a timer given one runs at 1ms`,
+    `pass a whole number for ${option}, and parse an environment value before you pass it: Number(process.env.OTEL_BSP_SCHEDULE_DELAY ?? '') is NaN when the variable is unset`,
+  );
+  return value;
+}
+
 export function otlpEndpoint(
   signal: OtlpSignal,
   explicit?: string | undefined,

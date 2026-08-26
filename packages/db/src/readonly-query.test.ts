@@ -4,7 +4,8 @@
 // live-database test would name, because every one of them still returns the right rows.
 
 import { describe, expect, test } from 'bun:test';
-import type { DbClient } from './client';
+import { renderThrowable } from '@ultimat3/core';
+import type { DbClient, ReservableClient } from './client';
 import { dbUnavailable } from './errors';
 import { createRecordingClient } from './fake';
 import { reservableOver } from './fake-reservable';
@@ -50,12 +51,56 @@ describe('readOnlyQuery', () => {
     expect(result.guards).toEqual(['txn:read-only']);
   });
 
-  test('only 0 disables the timeout — NaN falls back to the default', async () => {
-    const client = createRecordingClient();
-    const result = await readOnlyQuery('select 1', { client, timeoutMs: Number.NaN });
+  /**
+   * Only 0 disables the timeout, and a number that is not one is now REFUSED rather than
+   * normalised. It used to fall back to the default silently, which meant an agent read ran under
+   * a ceiling nobody wrote and nothing said so — the intent (never silently skip the layer) is
+   * kept, and the caller is told which option it was.
+   */
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5])(
+    'refuses timeoutMs %p instead of taking the default in silence',
+    async (timeoutMs) => {
+      const client = createRecordingClient();
+      const rendered = renderThrowable(
+        await readOnlyQuery('select 1', { client, timeoutMs }).catch((error: unknown) => error),
+      );
 
-    expect(client.texts).toContain(`SET LOCAL statement_timeout = ${READONLY_TIMEOUT_MS}`);
-    expect(result.guards).toContain(`timeout:${READONLY_TIMEOUT_MS}ms`);
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('timeoutMs');
+      // And nothing was opened to find that out: the bound is decided before `BEGIN READ ONLY`.
+      expect(client.texts).toEqual([]);
+    },
+  );
+
+  /**
+   * The refusal has to survive a pool that cannot answer. `timeoutMs` was screened AFTER
+   * `reserve()` and after `BEGIN READ ONLY`, so an unbounded option on an exhausted pool handed
+   * the caller the pool's error — or the wait for a connection — in place of the `X_INVARIANT`
+   * naming the option they actually got wrong. A value this build cannot honour is refused before
+   * anything is opened, the same order `rollback({ steps })` takes against the advisory lock.
+   */
+  test('an option this build cannot honour is refused before a connection is reserved', async () => {
+    const exhausted = dbUnavailable('every pooled connection is checked out');
+    let reserves = 0;
+    const client: ReservableClient = {
+      query: async () => [],
+      one: async () => null,
+      execute: async () => 0,
+      reserve: async () => {
+        reserves += 1;
+        throw exhausted;
+      },
+    };
+
+    const rendered = renderThrowable(
+      await readOnlyQuery('select 1', { client, timeoutMs: Number.NaN }).catch(
+        (error: unknown) => error,
+      ),
+    );
+
+    expect(rendered).toContain('X_INVARIANT');
+    expect(rendered).toContain('timeoutMs');
+    expect(reserves).toBe(0);
   });
 
   test('a rejecting statement still rolls back and rethrows the original error', async () => {

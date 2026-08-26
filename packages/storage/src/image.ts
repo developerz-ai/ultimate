@@ -4,6 +4,7 @@
 // bytes, `transformImage()` returns exactly the size `fitDimensions()` already promised.
 
 import {
+  assertFiniteImageQuality,
   blurDataUrl,
   type ImageFormat,
   imageUnsupported,
@@ -90,7 +91,14 @@ export function variantKey(sourceKey: string, transform: ImageTransform): string
   if (transform.width !== undefined) parts.push(`w${transform.width}`);
   if (transform.height !== undefined) parts.push(`h${transform.height}`);
   if (transform.fit !== undefined) parts.push(transform.fit);
-  const quality = transform.quality ?? DEFAULT_QUALITY;
+  // Core's screen, not a second one: this function never reaches the encoder, so without it a
+  // `q150` or a `qNaN` variant key is minted for bytes `transformImageBytes` then refuses — and
+  // an unbounded quality is an unbounded number of distinct keys in the bucket.
+  // `=== undefined`, never `??`: `??` coalesces on `null` too, so an explicit one was spelled
+  // into a key as the default rather than refused.
+  const quality = assertFiniteImageQuality(
+    transform.quality === undefined ? DEFAULT_QUALITY : transform.quality,
+  );
   if (quality !== DEFAULT_QUALITY) parts.push(`q${quality}`);
   if (parts.length === 0) parts.push('full');
   return assertSafeKey(`${stem}@${parts.join('-')}.${FORMAT_EXTENSIONS[format]}`);
@@ -173,7 +181,9 @@ export async function transformImage(
     // what stops a rounded edge leaving a transparent (in JPEG: black) sliver inside it.
     fit: 'cover',
     format: transform.format ?? 'webp',
-    quality: transform.quality ?? DEFAULT_QUALITY,
+    quality: assertFiniteImageQuality(
+      transform.quality === undefined ? DEFAULT_QUALITY : transform.quality,
+    ),
   });
 }
 

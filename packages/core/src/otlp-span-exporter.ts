@@ -4,6 +4,7 @@
 import { renderThrowable } from './error-render';
 import { logger } from './logger';
 import {
+  assertFiniteOtlpBound,
   OTLP_SCOPE,
   type OtlpKeyValue,
   otlpAttributes,
@@ -126,9 +127,13 @@ export interface OtlpSpanExporter extends SpanExporter {
 export function otlpSpanExporter(options: OtlpSpanExporterOptions = {}): OtlpSpanExporter {
   const url = otlpEndpoint('traces', options.endpoint);
   const headers = otlpHeaders(options.headers);
-  const maxBatchSize = options.maxBatchSize ?? 512;
-  const maxQueueSize = options.maxQueueSize ?? 2048;
-  const timeoutMs = options.timeoutMs ?? 10_000;
+  const maxBatchSize = assertFiniteOtlpBound('maxBatchSize', options.maxBatchSize ?? 512);
+  const maxQueueSize = assertFiniteOtlpBound('maxQueueSize', options.maxQueueSize ?? 2048);
+  const timeoutMs = assertFiniteOtlpBound('timeoutMs', options.timeoutMs ?? 10_000);
+  const flushIntervalMs = assertFiniteOtlpBound(
+    'flushIntervalMs',
+    options.flushIntervalMs ?? 5_000,
+  );
   const send = options.fetch ?? globalThis.fetch;
   const queue: ReadableSpan[] = [];
   let inflight: Promise<void> = Promise.resolve();
@@ -173,7 +178,7 @@ export function otlpSpanExporter(options: OtlpSpanExporterOptions = {}): OtlpSpa
 
   // Unref'd, so a pending flush never holds a draining process open — `shutdown()` is what
   // decides the last batch leaves, exactly as `startMetricExport` defers to the drain hook.
-  const timer = setInterval(() => void drainQueue(), options.flushIntervalMs ?? 5_000);
+  const timer = setInterval(() => void drainQueue(), flushIntervalMs);
   timer.unref();
 
   return {

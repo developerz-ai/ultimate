@@ -201,10 +201,13 @@ export function startSpan(name: string, options?: StartSpanOptions): Span {
   // so one trace is sampled or not sampled as a whole. Before this, `traceFlags` was hardcoded to
   // 1 for a root and `end()` exported regardless, which made the bit a value the framework
   // forwarded and nobody obeyed.
+  // The id is resolved BEFORE the decision, because the decision may be a function of it: a
+  // `traceidratio` sampler hashes the trace id, and a root's id exists nowhere else to hash.
+  const traceId = parent?.traceId ?? newTraceId();
   const context: SpanContext = {
-    traceId: parent?.traceId ?? newTraceId(),
+    traceId,
     spanId: newSpanId(),
-    traceFlags: currentSampler().shouldSample(name, inbound, attributes) ? 1 : 0,
+    traceFlags: currentSampler().shouldSample(name, inbound, attributes, traceId) ? 1 : 0,
   };
   const events: SpanEvent[] = [];
   const startedAt = clock.now().getTime();

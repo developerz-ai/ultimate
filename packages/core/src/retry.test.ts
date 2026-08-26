@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { registerErrorRetry, resetErrorRetry } from './error-retry';
+import { registerErrorRetry, registeredErrorRetry, resetErrorRetry } from './error-retry';
 import { UltimateError } from './errors';
 import { retry, retryDecision } from './retry';
 
+/**
+ * What was registered before this file ran — the preload's packages, whose module bodies will not
+ * run again. A bare `resetErrorRetry()` deletes those too, and every file loaded after this one
+ * then reads its own package's codes as unclassified.
+ */
+const BASELINE = registeredErrorRetry();
+
 afterEach(() => {
-  resetErrorRetry();
+  resetErrorRetry(BASELINE);
 });
 
 const recorder = (): { readonly slept: number[]; sleep: (ms: number) => Promise<void> } => {

@@ -4,24 +4,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { diffSchema } from './drift';
-import type { SchemaDescription, TableDescription } from './introspect';
-
-const table = (name: string, columns: readonly string[]): TableDescription => ({
-  schema: 'public',
-  name,
-  columns: columns.map((column, index) => ({
-    name: column,
-    dataType: 'text',
-    nullable: true,
-    default: null,
-    position: index + 1,
-  })),
-  primaryKey: ['id'],
-  indexes: [],
-  foreignKeys: [],
-});
-
-const schema = (...tables: readonly TableDescription[]): SchemaDescription => ({ tables });
+import { schema, table } from './drift-fixtures';
+import type { TableDescription } from './introspect';
 
 describe('a foreign key migrations declare, against the one the catalog holds', () => {
   const posts = table('posts', ['id', 'org_id']);

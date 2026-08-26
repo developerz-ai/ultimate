@@ -14,6 +14,12 @@ function escapeLabel(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\n', '\\n');
 }
 
+/**
+ * The KEY is interpolated bare and the VALUE is escaped, which is the whole grammar: a label name
+ * is an identifier `metrics.ts` refuses at series creation (`X_METRIC_NAME_INVALID`), a label
+ * value is arbitrary text. Never sanitise a key here — a renamed label is a different series, and
+ * this function has no way to tell the dashboard that.
+ */
 function labels(attributes: MetricAttributes, extra?: readonly [string, string]): string {
   const pairs = Object.entries(attributes)
     .sort(([a], [b]) => (a < b ? -1 : 1))

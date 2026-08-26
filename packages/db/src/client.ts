@@ -1,17 +1,20 @@
-// Single responsibility: the Postgres connection and the ambient `db()` handle. Pool size and
-// statement timeout are chosen by runtime ROLE — a `worker` draining a queue must not size its
-// pool like a `web` process behind a CDN. `Bun.SQL` is reached lazily so importing this module
-// never opens a socket (the CLI imports it to print help).
+// Single responsibility: the pooled Postgres client and the ambient `db()` handle — one statement
+// funnel, the reserved-connection pin, and the process-wide client every repository reaches
+// through. Sizing lives in `pool-profile.ts`, the connection string in `connection-url.ts`, the
+// `Bun.SQL` slice in `bun-sql.ts`, so importing this module never opens a socket.
 
-import { type Role, renderThrowable, resolveRole } from '@ultimat3/core';
+import { type Role, resolveRole } from '@ultimat3/core';
 import { statementAttribution } from './attribution';
+import { type BunSqlDriver, type BunSqlReserved, bunSqlFactory } from './bun-sql';
+import { connectionUrl } from './connection-url';
 // Deliberate cycle, the same shape as `client.ts ⇄ transaction.ts`: nothing here is referenced at
 // module evaluation, and both sides are `function` declarations, so hoisting covers the TDZ.
 import { defaultClient } from './default-client';
-import { DbError, dbUnavailable, driverError, poolAcquireTimeout, poolMaxInvalid } from './errors';
+import { DbError, driverError } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
-import { declaresLibpqOption, mergeLibpqOptions } from './libpq-options';
 import { statementObserver } from './observe';
+import { assertPoolProfile, type PoolProfile, poolProfileFor } from './pool-profile';
+import { reserveWithin } from './pool-reserve';
 import { type SqlFragment, sql } from './sql';
 import { withStatementSpan } from './statement-span';
 import { currentTx } from './transaction';
@@ -41,168 +44,11 @@ export function isReservable(client: DbClient): client is ReservableClient {
   return typeof (client as Partial<ReservableClient>).reserve === 'function';
 }
 
-export interface PoolProfile {
-  readonly max: number;
-  /** 0 disables the timeout — only `migrate`, which is allowed to take as long as it takes. */
-  readonly statementTimeoutMs: number;
-  readonly idleTimeoutMs: number;
-  /**
-   * How long a statement may **wait for a lock** before `55P03`, distinct from how long it may run.
-   * 0 everywhere but `migrate`, which is the only role that takes `ACCESS EXCLUSIVE`: an `alter
-   * table` queued behind a long `SELECT` puts every later query on that table behind it too,
-   * because Postgres' lock queue is FIFO — and `migrate` runs `statement_timeout = 0`, so nothing
-   * else would ever end the wait. Read by `migrate()` as a `SET LOCAL`, never by the pool.
-   */
-  readonly lockTimeoutMs: number;
-  /**
-   * How long `reserve()` may wait for a free connection before `X_DB_POOL_EXHAUSTED`. 0 waits
-   * forever, which is what a run-once role wants and what a request-serving one must never do:
-   * queueing turns exhaustion into a hang, `/readyz`'s `select 1` joins the same queue, the kubelet
-   * kills the pod, and the replacement inherits the same saturated database.
-   */
-  readonly acquireTimeoutMs: number;
-}
-
-/** Sized per role because the failure modes differ: RPS bursts vs. queue depth vs. run-once. */
-export const POOL_PROFILES = Object.freeze<Record<Role, PoolProfile>>({
-  web: {
-    max: 20,
-    statementTimeoutMs: 10_000,
-    idleTimeoutMs: 30_000,
-    lockTimeoutMs: 0,
-    acquireTimeoutMs: 5_000,
-  },
-  sync: {
-    max: 10,
-    statementTimeoutMs: 10_000,
-    idleTimeoutMs: 60_000,
-    lockTimeoutMs: 0,
-    acquireTimeoutMs: 5_000,
-  },
-  worker: {
-    max: 8,
-    statementTimeoutMs: 120_000,
-    idleTimeoutMs: 30_000,
-    lockTimeoutMs: 0,
-    acquireTimeoutMs: 10_000,
-  },
-  scheduler: {
-    max: 2,
-    statementTimeoutMs: 15_000,
-    idleTimeoutMs: 60_000,
-    lockTimeoutMs: 0,
-    acquireTimeoutMs: 10_000,
-  },
-  // `migrate` waits: its pool is `max: 1` and the advisory-lock pin holds it for the whole run, so
-  // a deadline here would refuse the migration's own session. The wait that needed bounding is the
-  // advisory lock's, and `MIGRATION_LOCK_WAIT_MS` bounds it.
-  migrate: {
-    max: 1,
-    statementTimeoutMs: 0,
-    idleTimeoutMs: 10_000,
-    lockTimeoutMs: 3_000,
-    acquireTimeoutMs: 0,
-  },
-  replicator: {
-    max: 4,
-    statementTimeoutMs: 0,
-    idleTimeoutMs: 60_000,
-    lockTimeoutMs: 0,
-    acquireTimeoutMs: 0,
-  },
-});
-
-export function poolProfileFor(role: Role = resolveRole()): PoolProfile {
-  return POOL_PROFILES[role];
-}
-
-/** The one pool knob an operator can turn without a rebuild. Layered over the role default. */
-export const POOL_MAX_ENV = 'DATABASE_POOL_MAX';
-
-/**
- * `DATABASE_POOL_MAX`, or nothing. `POOL_PROFILES` is frozen into the build, so before this the
- * only way to change a fleet's connection count was to ship a new image — and 400 `web` pods at
- * `max: 20` is 8,000 backends against a `max_connections` of 450. An unparseable value **refuses**
- * rather than falling back: a fleet that ignored the number it was given is the failure the
- * variable exists to prevent, and it would only be found in `pg_stat_activity` at 3am.
- */
-export function poolMaxFromEnv(): Partial<PoolProfile> {
-  const raw = process.env[POOL_MAX_ENV];
-  if (raw === undefined || raw.trim() === '') return {};
-  const max = Number(raw);
-  if (!Number.isSafeInteger(max) || max < 1) throw poolMaxInvalid(raw);
-  return { max };
-}
-
-/** One connection pinned out of `Bun.SQL`'s pool, released back by hand. */
-interface BunSqlReserved {
-  unsafe(text: string, values?: readonly unknown[]): Promise<unknown>;
-  release(): void;
-}
-
-/** The slice of `Bun.SQL` we use. Declared structurally so this package has no dependency. */
-interface BunSqlDriver {
-  unsafe(text: string, values?: readonly unknown[]): Promise<unknown>;
-  reserve(): Promise<BunSqlReserved>;
-  close(options?: { readonly timeout?: number }): Promise<void>;
-}
-
-type BunSqlFactory = new (url: string, options?: Readonly<Record<string, unknown>>) => BunSqlDriver;
-
-function bunSqlFactory(): BunSqlFactory {
-  const host = globalThis as unknown as { readonly Bun?: { readonly SQL?: unknown } };
-  const factory = host.Bun?.SQL;
-  if (typeof factory !== 'function') {
-    throw dbUnavailable('Bun.SQL is unavailable — this package requires Bun >= 1.3');
-  }
-  return factory as BunSqlFactory;
-}
-
 export interface PostgresClientOptions {
   readonly url?: string | undefined;
   readonly role?: Role | undefined;
   readonly profile?: Partial<PoolProfile> | undefined;
   readonly applicationName?: string | undefined;
-}
-
-function connectionUrl(options: PostgresClientOptions, profile: PoolProfile): string {
-  const raw = options.url ?? process.env['DATABASE_URL'];
-  if (raw === undefined || raw === '') {
-    throw dbUnavailable('DATABASE_URL is not set, so there is no database to connect to');
-  }
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch (error) {
-    throw dbUnavailable(`DATABASE_URL is not a valid url: ${raw}`, error);
-  }
-  // libpq `options` is the portable way to pin a statement timeout for every pooled connection —
-  // MERGED into the operator's own, never assigned over it, and emitted for every role including
-  // the two whose bound is 0. `set` here dropped a `?options=-c search_path=app` on `web`, `sync`,
-  // `worker` and `scheduler` and kept it on `migrate` and `replicator`, so the role that runs the
-  // migrations and the role that serves the traffic read different schemas. 0 is a value, not a
-  // silence: it is `migrate` saying it may take as long as it takes, and left unsaid a server-side
-  // `alter database ... set statement_timeout` kills the one role that must outlive it.
-  // `application_name` is a LABEL, not a bound: 'ultimate' is a DEFAULT, and a default may not
-  // overwrite what the operator wrote — `?application_name=billing-api` is the filter their
-  // `pg_stat_activity` query, their pooler rule and their audit rule all match on, and losing it
-  // is silent. Both spellings count, or the URL parameter and a `-c application_name=` in
-  // `options` disagree and which one the backend honours is argument order nobody here measured.
-  const named = options.applicationName;
-  const settings: Record<string, string> = {
-    statement_timeout: String(profile.statementTimeoutMs),
-  };
-  const inOptions = declaresLibpqOption(url.searchParams.get('options'), 'application_name');
-  // An explicit `applicationName` is a deliberate call by the role that opened the pool, so it
-  // wins. Only then is the setting named to the merge, and only when the operator wrote the other
-  // spelling: `mergeLibpqOptions` drops their assignment before appending, so the two cannot
-  // disagree — and a URL with no assignment in it keeps the exact `options` it always had.
-  if (named !== undefined && inOptions) settings['application_name'] = named;
-  const declared = url.searchParams.has('application_name') || inOptions;
-  url.searchParams.set('options', mergeLibpqOptions(url.searchParams.get('options'), settings));
-  if (named !== undefined) url.searchParams.set('application_name', named);
-  else if (!declared) url.searchParams.set('application_name', 'ultimate');
-  return url.toString();
 }
 
 function rowsOf<T>(result: unknown): readonly T[] {
@@ -219,49 +65,6 @@ function affectedBy(result: unknown): number {
   return typeof count === 'number' && count > 0 ? count : result.length;
 }
 
-/**
- * `pool.reserve()` under a deadline. Without one an exhausted pool does not fail, it **queues** —
- * so a slow endpoint filling all 20 slots turns every later request, `/readyz`'s `select 1`
- * included, into a wait with no end and no error, and the pod is killed for being unready rather
- * than answering 503 for the requests it cannot serve.
- *
- * The losing reservation is released, never dropped: the pool hands out a connection whenever one
- * frees, deadline or no deadline, and a pin nobody holds is a connection nobody gets back. That is
- * the whole reason this is not a bare `Promise.race`.
- */
-async function reserveWithin(
-  pool: Pick<BunSqlDriver, 'reserve'>,
-  profile: PoolProfile,
-): Promise<BunSqlReserved> {
-  const budget = profile.acquireTimeoutMs;
-  if (budget <= 0) return pool.reserve();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let expired = false;
-  const pending = pool.reserve();
-  try {
-    return await Promise.race([
-      pending,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          expired = true;
-          reject(poolAcquireTimeout(budget, profile.max));
-        }, budget);
-        // The deadline must not be what keeps a finished process alive.
-        timer.unref?.();
-      }),
-    ]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-    // Attached unconditionally so a rejection arriving after we gave up is handled, not unhandled.
-    void pending.then(
-      (late) => {
-        if (expired) late.release();
-      },
-      () => undefined,
-    );
-  }
-}
-
 export interface PostgresClient extends ReservableClient {
   readonly profile: PoolProfile;
   ping(): Promise<void>;
@@ -271,7 +74,10 @@ export interface PostgresClient extends ReservableClient {
 /** Lazily connects: the pool opens on the first statement, never at import. */
 export function createPostgresClient(options: PostgresClientOptions = {}): PostgresClient {
   const role = options.role ?? resolveRole();
-  const profile: PoolProfile = { ...poolProfileFor(role), ...(options.profile ?? {}) };
+  const profile: PoolProfile = assertPoolProfile({
+    ...poolProfileFor(role),
+    ...(options.profile ?? {}),
+  });
   let driver: BunSqlDriver | undefined;
 
   function connect(): BunSqlDriver {
@@ -454,28 +260,4 @@ export function baseClient(): DbClient {
  */
 export function db(): DbClient {
   return currentTx() ?? baseClient();
-}
-
-/** Named `Db*` because `@ultimat3/core` already exports a `HealthReport` for the lifecycle. */
-export interface DbHealthReport {
-  readonly ok: boolean;
-  readonly latencyMs: number;
-  readonly error?: string | undefined;
-}
-
-/** Backs `/readyz` for every role. Never throws — the probe wants a report, not an exception. */
-export async function checkDb(client: DbClient = baseClient()): Promise<DbHealthReport> {
-  const started = performance.now();
-  try {
-    await client.query(sql`select 1`);
-    return { ok: true, latencyMs: Math.round(performance.now() - started) };
-  } catch (error) {
-    return {
-      ok: false,
-      latencyMs: Math.round(performance.now() - started),
-      // `renderThrowable`, never `error.message`: the probe wants a report, and a render that
-      // throws is an exception out of `/readyz` — the one caller that cannot catch it.
-      error: renderThrowable(error),
-    };
-  }
 }

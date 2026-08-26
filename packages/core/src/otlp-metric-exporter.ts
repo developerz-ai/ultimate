@@ -11,6 +11,7 @@ import type {
   ReadableMetric,
 } from './metrics';
 import {
+  assertFiniteOtlpBound,
   OTLP_SCOPE,
   otlpAttributes,
   otlpEndpoint,
@@ -118,7 +119,7 @@ export interface OtlpMetricExporter extends MetricExporter {
 export function otlpMetricExporter(options: OtlpMetricExporterOptions = {}): OtlpMetricExporter {
   const url = otlpEndpoint('metrics', options.endpoint);
   const headers = otlpHeaders(options.headers);
-  const timeoutMs = options.timeoutMs ?? 10_000;
+  const timeoutMs = assertFiniteOtlpBound('timeoutMs', options.timeoutMs ?? 10_000);
   const send = options.fetch ?? globalThis.fetch;
   let startedAtMs = options.startedAtMs;
   let inflight: Promise<void> = Promise.resolve();

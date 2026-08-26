@@ -52,6 +52,9 @@ const CORE_CODE_TITLES = {
   X_IMAGE_UNSUPPORTED: 'the built-in image pipeline cannot read or write this format',
   X_INTERNAL: 'unexpected internal framework error',
   X_INVARIANT: 'invariant violated',
+  // Owned here rather than by `@ultimat3/time`, which declared it until 16.x: `@ultimat3/money`
+  // needs the same screen and tier 1 may not import sideways. One code, one declaration.
+  X_LOCALE_INVALID: 'not a well-formed BCP 47 tag',
   X_METRIC_CARDINALITY:
     'a metric exceeded its series ceiling and is folding into one overflow series',
   X_METRIC_NAME_INVALID:

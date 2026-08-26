@@ -4,6 +4,7 @@
 // is a stored-XSS delivery vehicle the moment any surface serves it back with the declared
 // type, so the magic bytes decide and a contradiction is rejected outright.
 
+import { finiteCount } from '@ultimat3/core';
 import { sha256Base64 } from './driver';
 import { checksumMismatch, contentTypeMismatch, contentTypeNotAllowed, tooLarge } from './errors';
 import { assertSafeKey } from './path';
@@ -43,7 +44,18 @@ export interface UploadPolicyInit {
 
 export function uploadPolicy(init: UploadPolicyInit = {}): UploadPolicy {
   return {
-    maxBytes: init.maxBytes ?? DEFAULT_MAX_UPLOAD_BYTES,
+    // Screened where it is DECLARED, because every reader of it is a comparison: `size >
+    // policy.maxBytes` is false for a `NaN` ceiling, so the cap that decides how much a caller may
+    // store stops deciding anything. Measured: a 5,000,016-byte PNG passed `validateUpload` under
+    // `uploadPolicy({ maxBytes: Number.NaN })`.
+    // `=== undefined`, never `??`: `??` coalesces on `null` too, so an explicitly blanked key in
+    // a decoded JSON config took the default instead of the refusal beside it.
+    maxBytes: finiteCount(
+      'uploadPolicy',
+      'maxBytes',
+      init.maxBytes === undefined ? DEFAULT_MAX_UPLOAD_BYTES : init.maxBytes,
+      1,
+    ),
     allowedContentTypes: init.allowedContentTypes ?? IMAGE_CONTENT_TYPES,
     requireChecksum: init.requireChecksum ?? false,
   };

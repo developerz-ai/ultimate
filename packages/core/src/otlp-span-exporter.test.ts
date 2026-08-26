@@ -26,6 +26,19 @@ const span = (overrides: Partial<ReadableSpan> = {}): ReadableSpan => ({
   ...overrides,
 });
 
+/**
+ * A `fetch` double that really IS a `typeof globalThis.fetch`.
+ *
+ * Bun's `fetch` is a function with a namespace beside it — `fetch.preconnect` — so a bare arrow no
+ * longer satisfies the type, and the three doubles in this file each cast the gap away instead. A
+ * cast would keep passing the day the exporter starts calling something the double lacks; this
+ * supplies the whole surface, and `preconnect` is a no-op because a test double must never open a
+ * socket to the collector it is standing in for.
+ */
+const stubFetch = (
+  handler: (input: string | URL | Request, init?: RequestInit) => Promise<Response>,
+): typeof globalThis.fetch => Object.assign(handler, { preconnect: (): void => {} });
+
 interface Capture {
   readonly calls: { url: string; body: string; headers: Record<string, string> }[];
   readonly fetch: typeof globalThis.fetch;
@@ -33,14 +46,14 @@ interface Capture {
 
 const capture = (ok = true): Capture => {
   const calls: { url: string; body: string; headers: Record<string, string> }[] = [];
-  const fetch = ((url: string, init?: RequestInit) => {
+  const fetch = stubFetch((url, init) => {
     calls.push({
       url: String(url),
       body: String(init?.body ?? ''),
       headers: { ...(init?.headers as Record<string, string>) },
     });
     return Promise.resolve(new Response('', { status: ok ? 200 : 500 }));
-  }) as unknown as typeof globalThis.fetch;
+  });
   return { calls, fetch };
 };
 
@@ -146,8 +159,8 @@ describe('otlpSpanExporter', () => {
   test('a collector that is down never reaches the caller', async () => {
     const exporter = otlpSpanExporter({
       ...ENV,
-      fetch: (() =>
-        Promise.reject(new Error('ECONNREFUSED'))) as unknown as typeof globalThis.fetch,
+      // The collector's own refusal, handed to the subject — this test's input, never its verdict.
+      fetch: stubFetch(() => Promise.reject(new Error('ECONNREFUSED'))),
     });
     exporter.export(span());
     await exporter.flush();
@@ -215,5 +228,46 @@ describe('otlpTraceRequest', () => {
       resourceSpans: { scopeSpans: { spans: Record<string, unknown>[] }[] }[];
     };
     expect(request.resourceSpans[0]?.scopeSpans[0]?.spans[0]).not.toHaveProperty('parentSpanId');
+  });
+});
+
+/**
+ * A bound whose value is not a number turns its own comparison off, and one of these is a TIMER:
+ * measured in this Bun, `setInterval(fn, NaN)` warns `TimeoutNaNWarning` and runs at **1ms**, so a
+ * `flushIntervalMs` of `Number(process.env.OTEL_FLUSH_MS)` on an unset variable POSTs to the
+ * collector a thousand times a second. `timeoutMs` is the other direction:
+ * `AbortSignal.timeout(NaN)` throws `TypeError: Value NaN is outside the range`, which `postOtlp`
+ * catches and logs — so every export fails and the traces stop, one warn line at a time.
+ */
+describe('otlpSpanExporter refuses a bound that is not a bound', () => {
+  const ENDPOINT = 'http://collector:4318';
+
+  test('a NaN flush interval is refused, never a 1ms timer', () => {
+    expect(() => otlpSpanExporter({ endpoint: ENDPOINT, flushIntervalMs: Number.NaN })).toThrow(
+      /X_INVARIANT/,
+    );
+  });
+
+  test('every numeric option is screened, and each names itself', () => {
+    for (const option of [
+      'maxBatchSize',
+      'maxQueueSize',
+      'timeoutMs',
+      'flushIntervalMs',
+    ] as const) {
+      expect(() => otlpSpanExporter({ endpoint: ENDPOINT, [option]: Number.NaN })).toThrow(
+        new RegExp(option),
+      );
+      expect(() => otlpSpanExporter({ endpoint: ENDPOINT, [option]: 0 })).toThrow(/X_INVARIANT/);
+    }
+  });
+
+  test('an exporter that states nothing still builds', () => {
+    const exporter = otlpSpanExporter({
+      endpoint: ENDPOINT,
+      fetch: stubFetch(async () => new Response('{}')),
+    });
+    expect(typeof exporter.flush).toBe('function');
+    void exporter.shutdown();
   });
 });

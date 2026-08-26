@@ -3,7 +3,7 @@
 // The client is built lazily on first use so importing this module never opens a socket, and
 // credentials arrive as env var NAMES: a literal key in app.config.ts is a key in git.
 
-import { ConfigInvalidError, EnvMissingError, stringField } from '@ultimat3/core';
+import { ConfigInvalidError, EnvMissingError, finiteCount, stringField } from '@ultimat3/core';
 import {
   DEFAULT_CONTENT_TYPE,
   type ListOptions,
@@ -27,6 +27,7 @@ import {
   storageNotImplemented,
 } from './errors';
 import { assertSafeKey } from './path';
+import { DEFAULT_SIGNED_URL_TTL_MS } from './signed-url';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
 const DRIVER_NAME = 's3';
@@ -209,7 +210,14 @@ function refuseUnsupportedPut(bucket: string, key: string, putOptions?: PutOptio
 }
 
 export function s3Driver(options: S3DriverOptions): StorageDriver {
-  const maxPutBytes = options.maxPutBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
+  // `=== undefined`, never `??`: `??` coalesces on `null` too, so an explicitly blanked key in a
+  // decoded JSON config took the default instead of the refusal `finiteCount` is here to raise.
+  const maxPutBytes = finiteCount(
+    'the s3 driver',
+    'maxPutBytes',
+    options.maxPutBytes === undefined ? DEFAULT_MAX_UPLOAD_BYTES : options.maxPutBytes,
+    1,
+  );
   let client: S3ClientLike | undefined;
   const conn = (): S3ClientLike => {
     client ??= buildClient(options);
@@ -356,7 +364,17 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
      * `maxBytes` — S3 has no header for it, so size stays a server-side policy check.
      */
     async signedUrl(key: string, urlOptions?: SignedUrlOptions): Promise<string> {
-      const expiresInMs = urlOptions?.expiresInMs ?? 900_000;
+      // Screened with the SAME function `buildSignedUrl` applies on the local disk — one
+      // finite-bound path for both presigners, never a private copy per package: `Math.ceil(NaN /
+      // 1000)` is `NaN`, so `X-Amz-Expires=NaN` went to AWS and the app got a 403 on a link it
+      // believed it had just minted. `=== undefined` rather than `??`, so an explicit `null` is
+      // refused instead of silently taking the default.
+      const expiresInMs = finiteCount(
+        'the s3 driver',
+        'expiresInMs',
+        urlOptions?.expiresInMs === undefined ? DEFAULT_SIGNED_URL_TTL_MS : urlOptions.expiresInMs,
+        1,
+      );
       return conn()
         .file(assertSafeKey(key))
         .presign({

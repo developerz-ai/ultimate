@@ -218,7 +218,7 @@ X_DB_DRIFT: schema differs from migrations
 |---|---|---|
 | live column, no migration | `table "T" has column "C" not present in any migration` | `x db gen "add C"` |
 | migrated column, not live | `table "T" is missing column "C" that migrations declare` | `x db migrate` |
-| live table, no migration | `table "T" is not present in any migration` | `x db gen "add T"` |
+| live table, no migration | `table "T" is not present in any migration` | a `create table if not exists` in a migration, then `x db migrate` — or `drop table` in `psql` where nothing owns it. Never `x db gen`, which diffs a table nothing declares against nothing and writes no file (issue #345). The name goes through `identifier()`, and one it refuses leaves the fix as prose |
 | migrated table, not live | `table "T" is declared by migrations but does not exist` | `x db migrate` |
 | index rebuilt differently | `index "I" on "T" covers (…)` / `is unique` / `is descending` / `is partial`, `not what migrations declare` | `x db migrate` |
 | foreign key, rule moved | `foreign key on "T" (C) to "R" is on delete cascade, not what migrations declare` | the `drop constraint` + `add constraint` pair, in a new migration |

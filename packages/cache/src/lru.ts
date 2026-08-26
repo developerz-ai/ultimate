@@ -16,7 +16,7 @@ import type {
   TierInvalidation,
   TtlJitter,
 } from './tiers';
-import { assertTtl, nowMs } from './tiers';
+import { assertFiniteCapacity, assertFiniteDurationMs, assertTtl, nowMs } from './tiers';
 
 export interface LruOptions {
   /** Byte budget for the whole tier. Default 64 MiB. */
@@ -81,6 +81,9 @@ export interface LruStats {
   readonly evictions: number;
 }
 
+/** 64 MiB. Named because the constructor now screens it, and a screen needs something to pass. */
+const DEFAULT_LRU_MAX_BYTES = 64 * 1024 * 1024;
+
 export class LruCache {
   private readonly map = new Map<string, LruNode>();
   private readonly tagIndex = new Map<string, Set<string>>();
@@ -97,8 +100,16 @@ export class LruCache {
   private evictions = 0;
 
   constructor(options: LruOptions = {}) {
-    this.maxBytes = options.maxBytes ?? 64 * 1024 * 1024;
-    this.defaultTtlMs = options.defaultTtlMs ?? 60_000;
+    this.maxBytes = assertFiniteCapacity(
+      'lru',
+      'maxBytes',
+      options.maxBytes ?? DEFAULT_LRU_MAX_BYTES,
+    );
+    this.defaultTtlMs = assertFiniteDurationMs(
+      'lru',
+      'defaultTtlMs',
+      options.defaultTtlMs ?? 60_000,
+    );
     this.clock = options.clock ?? systemClock;
     this.jitter = {
       ...(options.jitterFraction === undefined ? {} : { jitterFraction: options.jitterFraction }),

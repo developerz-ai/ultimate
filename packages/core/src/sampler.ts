@@ -9,9 +9,20 @@ import type { SpanAttributes, SpanContext } from './telemetry';
  * The seam. `parent` is the inbound span context when there is one — an upstream that decided
  * "not sampled" has said so in `parent.traceFlags`, and a sampler that ignores it splits one
  * distributed trace into a sampled half and an unsampled half, which is worse than either.
+ *
+ * `traceId` is the id of the span being CREATED — the parent's carried forward, or the one this
+ * process just minted for a root. It is an argument of its own for the same reason OTel makes it
+ * one: a trace-id-hashing sampler has to answer for a ROOT too, where there is no parent to read
+ * the id off, and every span of one trace has to reach the same answer or the collector is handed
+ * orphans. An implementation that ignores it (`always_on`, `parentbased_*`) simply omits it.
  */
 export interface Sampler {
-  shouldSample(name: string, parent: SpanContext | undefined, attributes: SpanAttributes): boolean;
+  shouldSample(
+    name: string,
+    parent: SpanContext | undefined,
+    attributes: SpanAttributes,
+    traceId: string,
+  ): boolean;
 }
 
 export const OTEL_SAMPLER_KEY = 'OTEL_TRACES_SAMPLER';
@@ -55,13 +66,38 @@ export function parentBasedRatioSampler(
   };
 }
 
-/** `always_off` / `always_on` without the parent-based prefix ignore the inbound decision. */
+/** The 64-bit space OTel's `TraceIdRatioBased` compares the low 8 bytes of a trace id against. */
+const TRACE_ID_SPACE = 2 ** 64;
+
+const TRACE_ID_HEX = /^[0-9a-f]{32}$/;
+
+/**
+ * OTel's `TraceIdRatioBased`: the LOW 8 bytes of the trace id as a big-endian unsigned integer,
+ * against `ratio` of the 2^64 space. Answers `undefined` for anything that is not a 32-hex trace
+ * id, so the caller decides what to do with an id no hash can read rather than this silently
+ * sampling or silently dropping it.
+ */
+function traceIdSampled(traceId: string, ratio: number): boolean | undefined {
+  if (!TRACE_ID_HEX.test(traceId)) return undefined;
+  return BigInt(`0x${traceId.slice(16)}`) < BigInt(Math.floor(ratio * TRACE_ID_SPACE));
+}
+
+/**
+ * `traceidratio` — the OTel spelling that ignores the inbound decision and hashes the TRACE ID.
+ *
+ * The hash is the whole of it, and a roll is not a substitute: `startSpan` asks the sampler for
+ * every span, root and child alike, so a `random()` here re-decided per span and one trace left
+ * as a sampled half and an unsampled half — measured at 0.5, an unexported root with eight of its
+ * twenty children at the collector. Hashing the id makes the answer a function of the trace, which
+ * is what the name of this sampler means and what lets a second SERVICE agree with us unprompted.
+ * `random` survives only for an id no hash can read, and stays injectable so that path is a test.
+ */
 export function ratioSampler(ratio: number, random: () => number = Math.random): Sampler {
   return {
-    shouldSample(): boolean {
+    shouldSample(_name, _parent, _attributes, traceId): boolean {
       if (ratio >= 1) return true;
       if (ratio <= 0) return false;
-      return random() < ratio;
+      return traceIdSampled(traceId, ratio) ?? random() < ratio;
     },
   };
 }

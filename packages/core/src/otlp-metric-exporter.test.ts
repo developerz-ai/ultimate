@@ -180,3 +180,14 @@ describe('otlpMetricsRequest', () => {
     expect(point).not.toHaveProperty('min');
   });
 });
+
+/** The same screen as the span exporter's, over the one bound this exporter carries. */
+describe('otlpMetricExporter refuses a timeout that is not a timeout', () => {
+  test('NaN, zero and a fraction are all refused at construction', () => {
+    for (const timeoutMs of [Number.NaN, 0, 1.5, -1]) {
+      expect(() => otlpMetricExporter({ endpoint: 'http://collector:4318', timeoutMs })).toThrow(
+        /X_INVARIANT/,
+      );
+    }
+  });
+});

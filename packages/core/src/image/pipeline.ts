@@ -3,6 +3,7 @@
 // copy: responsive variants, blur placeholders and PWA icons are the same three steps with
 // different numbers, and a framework that generated them twice would drift twice.
 
+import { assert } from '../assert';
 import { composeOnto, layOut, type ResizeSpec } from './canvas';
 import { imageFromBunError, imageUnsupported } from './errors';
 import { unshared } from './png-bytes';
@@ -33,6 +34,27 @@ export const canEncode = (format: string): format is EncodableFormat =>
 
 /** 1-100, lossy formats only. Bun's own default, pinned here so output cannot drift with it. */
 export const DEFAULT_IMAGE_QUALITY = 80;
+
+/**
+ * The encoder CLAMPS and never refuses, which is why this is a screen and not a comment. Exported
+ * because `@ultimat3/storage` mints a variant KEY from the same number without ever reaching this
+ * pipeline — two screens that refuse different qualities would mint `q150` keys for bytes this
+ * encoder goes on to refuse, which is the dead-on-arrival shape `buildSignedUrl`'s own
+ * `finiteCount` screen already exists for — that package held a private `assertFiniteSignedUrlBound`
+ * until this sweep collapsed it onto the tier-0 check. Measured
+ * on a 3x2 PNG re-encoded as JPEG: quality 80 wrote 663 bytes, and `NaN`, `-5` and `0` each wrote
+ * 635 — the worst encoding the codec can make — while `Infinity` and `1e9` each wrote 719. Every
+ * one of them silently. `Number(url.searchParams.get('q'))` is `NaN` when the parameter is absent,
+ * so the degraded image is the one an unparameterised URL gets.
+ */
+export const assertFiniteImageQuality = (quality: number): number => {
+  assert(
+    Number.isInteger(quality) && quality >= 1 && quality <= 100,
+    `image quality is ${String(quality)}, and the encoder clamps rather than refusing: it must be a whole number from 1 to 100`,
+    `pass a whole quality from 1 to 100 — transformImageBytes(bytes, { quality: ${String(DEFAULT_IMAGE_QUALITY)} }) — and parse a query value before you pass it`,
+  );
+  return quality;
+};
 
 const encodeFix =
   "request 'png', 'jpeg' or 'webp', or route the transform through an ImageTransformDriver (a " +
@@ -86,7 +108,7 @@ export async function transformImageBytes(
   if (format !== undefined && !canEncode(format)) {
     throw imageUnsupported(`encoding ${format} is not built in`, encodeFix, { format });
   }
-  const quality = spec.quality ?? DEFAULT_IMAGE_QUALITY;
+  const quality = assertFiniteImageQuality(spec.quality ?? DEFAULT_IMAGE_QUALITY);
   const source = await run('reading the image header', () => bunImage(bytes).metadata());
   const output: EncodableFormat = format ?? (canEncode(source.format) ? source.format : 'png');
   const layout = layOut(source, spec);

@@ -4,7 +4,7 @@
 // a 2GB executable. Verification never throws and never short-circuits on expiry before the
 // signature, so a forged URL can never learn "the signature was fine, just late".
 
-import { type Clock, systemClock, timingSafeEqual } from '@ultimat3/core';
+import { type Clock, finiteCount, systemClock, timingSafeEqual } from '@ultimat3/core';
 import type { SignedUrlMethod } from './driver';
 import { assertSafeKey, isSafeKey } from './path';
 
@@ -102,13 +102,36 @@ export async function signConstraints(
 const trimBase = (base: string): string => base.replace(/\/+$/, '');
 const encodeKey = (key: string): string => key.split('/').map(encodeURIComponent).join('/');
 
+/**
+ * The mint's side of the screen `parseConstraints` already applies to the read. `finiteCount` from
+ * `@ultimat3/core` is that screen — a private copy of it lived here, and a second finite-bound path
+ * is one that drifts from the shared contract, which is what `jobs`, `realtime` and `query` each
+ * proved with a byte-identical copy of their own. The S3 driver calls the same function directly,
+ * because it presigns through the provider rather than through this one, and two presigners that
+ * refuse different inputs is the disagreement `driver-parity.test.ts` exists to catch.
+ *
+ * A URL is minted here and verified elsewhere, so a number this function writes and that one
+ * refuses is a link that is dead on arrival — the app's own call succeeded, and the only report is
+ * a 400 at a recipient who cannot fix it. `expiresInMs: NaN` is exactly that: `now + NaN` is
+ * `NaN`, `String` writes the literal `NaN` into `x-exp`, and `Number.isSafeInteger` on the other
+ * side says no.
+ */
 export async function buildSignedUrl(input: SignedUrlInput): Promise<string> {
   const key = assertSafeKey(input.key);
   const clock = input.clock ?? systemClock;
+  // `=== undefined`, never `??`: `??` coalesces on `null` too, so an explicit `null` would take
+  // the default instead of the refusal `finiteCount` is here to raise.
+  const expiresInMs = finiteCount(
+    'buildSignedUrl',
+    'expiresInMs',
+    input.expiresInMs === undefined ? DEFAULT_SIGNED_URL_TTL_MS : input.expiresInMs,
+    1,
+  );
+  if (input.maxBytes !== undefined) finiteCount('buildSignedUrl', 'maxBytes', input.maxBytes, 0);
   const constraints: SignedUrlConstraints = {
     key,
     method: input.method ?? 'GET',
-    expiresAt: clock.now().getTime() + (input.expiresInMs ?? DEFAULT_SIGNED_URL_TTL_MS),
+    expiresAt: clock.now().getTime() + expiresInMs,
     maxBytes: input.maxBytes,
     // An empty string is not a content type, and `canonicalRequest` renders it and `undefined`
     // identically — so minting one would produce a URL indistinguishable from an unconstrained

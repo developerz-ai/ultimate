@@ -73,14 +73,43 @@ export function requireCredential(value: string, envKey: string, driver: string)
 // Every CDN splits a key list on whitespace or a comma, so a key carrying either purges two
 // things that do not exist instead of the one that does — silently, since the request succeeds.
 const UNSAFE_KEY = /[\s,]/;
-const MAX_KEY_LENGTH = 1024;
+const MAX_KEY_BYTES = 1024;
 
-const keyProblem = (key: string): string | undefined => {
-  if (key === '') return 'is empty';
+// The CDN's limit is on the HEADER, so it is bytes — and `String.length` is UTF-16 code units,
+// which for a non-ASCII tag is a third of the answer: 900 CJK characters measured 900 against a
+// 1024 limit and put 2,700 bytes on the wire, where the provider refuses or truncates the key.
+// That is the accepted purge that cleared nothing, arriving through the guard meant to stop it.
+const keyBytes = (key: string): number => new TextEncoder().encode(key).byteLength;
+
+/**
+ * The problem AND the repair, together — because there are three ways a key is unpurgeable and only
+ * one of them is fixed by renaming away a separator. A 900-character CJK tag carries no whitespace
+ * and no comma, so "rename it so it carries no space or comma" left the next purge failing exactly
+ * as the last one did: an instruction that does not repair the stated cause is the shape axiom 4
+ * exists to forbid.
+ */
+interface KeyProblem {
+  readonly problem: string;
+  readonly fix: string;
+}
+
+const keyProblem = (key: string): KeyProblem | undefined => {
+  if (key === '')
+    return {
+      problem: 'is empty',
+      fix: 'give the tag a name in its declareTags(...) call — an empty surrogate key purges nothing',
+    };
   if (UNSAFE_KEY.test(key))
-    return 'contains whitespace or a comma, which a CDN reads as a separator';
-  if (key.length > MAX_KEY_LENGTH)
-    return `is ${key.length} characters, over the 1024-byte key limit`;
+    return {
+      problem: 'contains whitespace or a comma, which a CDN reads as a separator',
+      fix: 'rename the tag in its declareTags(...) call so the key carries no space or comma',
+    };
+  const bytes = keyBytes(key);
+  if (bytes > MAX_KEY_BYTES)
+    return {
+      problem: `is ${bytes} bytes, over the ${MAX_KEY_BYTES}-byte key limit`,
+      fix: `shorten the tag in its declareTags(...) call to at most ${MAX_KEY_BYTES} UTF-8 bytes — the limit is on the header, so it is BYTES, and a non-ASCII character costs two or three of them each`,
+    };
   return undefined;
 };
 
@@ -94,9 +123,9 @@ export function assertPurgeableKeys(driver: string, keys: readonly string[]): vo
     if (problem === undefined) continue;
     throw new CachePurgeFailedError({
       driver,
-      detail: `surrogate key ${JSON.stringify(key)} ${problem}`,
+      detail: `surrogate key ${JSON.stringify(key)} ${problem.problem}`,
       retryable: false,
-      fix: 'rename the tag in its declareTags(...) call so the key carries no space or comma',
+      fix: problem.fix,
     });
   }
 }

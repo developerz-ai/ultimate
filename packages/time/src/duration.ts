@@ -3,8 +3,8 @@
  * `step.sleep('3d')` in @ultimat3/jobs and every `retry.backoff` value comes through here.
  */
 
+import { assertLocale } from '@ultimat3/core';
 import { durationInvalid, scheduleInvalid } from './errors';
-import { assertLocale } from './locale';
 
 export const MS = 1;
 export const SECOND = 1000;

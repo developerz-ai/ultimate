@@ -10,6 +10,20 @@ Tier 1. Tagged caching + THE invalidation graph.
 
 ## Rules
 
+- **A tier's own LIMIT is screened where `app.config.ts` names it, `As of 2026-08-26`** —
+  `assertFiniteCapacity` for a byte budget or an entry ceiling, `assertFiniteDurationMs` for a
+  request budget or a `defaultTtlMs`, `assertFiniteSimilarityFloor` for the semantic tier's
+  threshold — all three beside `assertTtl` in `tiers.ts`, and all three raising one code,
+  `X_CACHE_LIMIT_INVALID`. Not a nicety: `Number(process.env.CACHE_MAX_BYTES)` on an unset variable
+  is `NaN`, `NaN` is not nullish so `??` keeps it, and every comparison against it is FALSE —
+  `while (bytes > maxBytes)` never evicted, so the bounded cache this package is built on had no
+  bound at all, and `similarity < floor` never skipped, so the semantic tier answered the nearest
+  thing it held to a question nobody asked. The failure is never a wrong number; it is the guard
+  switching itself off. Never `Math.max(1, x)` in front of one: that is a clamp, not a validator.
+  **The `Finite` in all three names is load-bearing** — `bun run finite-bounds` recognises a repair
+  by the shape of the CALL, so while they were spelled `assertCapacity` / `assertTimeoutMs` all
+  nine of this package's options read as unchecked to the ratchet while every one was screened.
+
 - `invalidateTags()` in `invalidate.ts` is the ONLY fan-out path. Never call
   `tier.invalidateTags()` from outside it. It is also the only place the log is written:
   `recentInvalidations()` is a read of what that one path already reported, never a second

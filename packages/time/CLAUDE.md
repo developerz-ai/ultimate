@@ -12,7 +12,6 @@
 | `zone-canonical.ts` | one zone, one key: `canonicalTimeZone` — the casing/alias collapse every cache keys on |
 | `zoned.ts` | `toZoned` / `fromZoned` + gap and overlap policies. Everything depends on this. |
 | `format.ts` | `Intl` rendering. Every function takes `locale` **and** `zone`. |
-| `locale.ts` | `assertLocale` — the ONE screen a caller-supplied BCP 47 tag passes before `Intl` |
 | `duration.ts` | `'2h30m'` ⇄ ms |
 | `cron.ts` | barrel over the three cron modules — the only one `index.ts` re-exports |
 | `cron-parse.ts` | field grammar → `CronExpression`. Non-integer, non-name tokens are rejected. |
@@ -52,14 +51,17 @@
   a code that has shipped since 1.0, with a runnable `fix:`, thrown by exactly one of nine callers.
   `format.ts` argued the pass-through decided "a cache key, never whether a locale is acceptable",
   which is true of the cache and was not an argument for letting the tag through. **Breaking at
-  9.x.** `assertLocale` (`locale.ts`) is the one screen and it VALIDATES AND CANONICALIZES in one
+  9.x.** `assertLocale` (**`@ultimat3/core`'s**, since 16.x — `locale.ts` is gone, because
+  `@ultimat3/money` needs the identical screen and tier 1 may not import sideways) is the one
+  screen and it VALIDATES AND CANONICALIZES in one
   step — `Intl.getCanonicalLocales` runs the same structural check `supportedLocalesOf` throws on
   and hands back the spelling the cache keys on, so there is no second question to ask. Well-formed
   but unknown to ICU (`zz`) is **not** refused: `Intl` falls back, and so must a rendered page.
 - **Never cache an `Intl` formatter on a raw caller string.** A zone and a locale both arrive from
   a request header, so the key must be canonical (`canonicalTimeZone` for a zone, `assertLocale`
   for a locale) and the cache must be bounded (`cachedFormatter`). **`cachedFormatter`,
-  `MAX_CACHED_FORMATTERS` and `canonicalLocale` are `@ultimat3/core`'s as of 2.0.0**, not this
+  `MAX_CACHED_FORMATTERS`, `canonicalLocale` and `assertLocale` are `@ultimat3/core`'s** — the
+  first three as of 2.0.0 and the screen as of 16.x, with `X_LOCALE_INVALID` moving with it — not this
   package's: `@ultimat3/money` hit the identical unbounded-`Map`-on-a-header bug and tier 1 may not
   import sideways, so the mechanism moved down a tier rather than being copied. An unbounded
   `Map` keyed on `x-timezone` grew 31 MB for 4,096 casings of one zone name, and the casing space

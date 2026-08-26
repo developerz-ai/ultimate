@@ -16,17 +16,17 @@ import { formatIssues } from './standard';
  */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: escaping them is the point.
 const CONTROL = /[\u0000-\u001f\u007f\u2028\u2029]/g;
-const ESCAPES: Readonly<Record<string, string>> = {
+// Null-prototype, so `ESCAPES[char]` cannot answer an `Object.prototype` member no matter what
+// `CONTROL` matched. The domain argument — a key is exactly one control character, and no
+// prototype member has a single-character name — was true and is no longer load-bearing; a table
+// that cannot reach the prototype needs no argument, and `bun run proto-index` stops reporting it.
+const ESCAPES: Readonly<Record<string, string>> = Object.assign(Object.create(null), {
   '\n': String.raw`\n`,
   '\r': String.raw`\r`,
   '\t': String.raw`\t`,
   '\b': String.raw`\b`,
   '\f': String.raw`\f`,
-};
-// `ESCAPES[char]` is a computed read on a plain object and is safe by DOMAIN, not by luck: the
-// key is whatever `CONTROL` matched, so it is exactly one control character — and no
-// `Object.prototype` member has a single-character name. Every other computed read in this file
-// goes through `Object.hasOwn`.
+});
 const singleLine = (text: string): string =>
   text.replace(
     CONTROL,

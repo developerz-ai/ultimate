@@ -23,25 +23,15 @@ export {
 export type {
   DbClient,
   DbConnection,
-  DbHealthReport,
-  PoolProfile,
   PostgresClient,
   PostgresClientOptions,
   ReservableClient,
 } from './client';
-export {
-  baseClient,
-  checkDb,
-  createPostgresClient,
-  db,
-  isReservable,
-  POOL_MAX_ENV,
-  POOL_PROFILES,
-  poolProfileFor,
-  setDbClient,
-} from './client';
+export { baseClient, createPostgresClient, db, isReservable, setDbClient } from './client';
 export type { ColumnDefaultLike } from './column-default';
 export { defaultExpression } from './column-default';
+export type { DbHealthReport } from './db-health';
+export { checkDb } from './db-health';
 export { defaultClient, REPLICA_URL_ENV } from './default-client';
 export type { DestructiveKind, DestructiveStatement } from './destructive';
 export {
@@ -169,6 +159,8 @@ export {
 } from './pglite';
 export type { PgliteBranchInfo, PgliteBranchOptions } from './pglite-branch';
 export { branchPglite, pgliteBranchDir } from './pglite-branch';
+export type { PoolProfile } from './pool-profile';
+export { POOL_MAX_ENV, POOL_PROFILES, poolProfileFor } from './pool-profile';
 export type { ReadOnlyQueryOptions, ReadOnlyQueryResult } from './readonly-query';
 export { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
 export type { ReadOnlyRoleOptions } from './readonly-role';

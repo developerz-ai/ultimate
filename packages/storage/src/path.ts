@@ -5,8 +5,19 @@
 
 import { pathUnsafe } from './errors';
 
-/** S3's own limit; keeping local and remote disks interchangeable requires the same ceiling. */
+/**
+ * S3's own limit; keeping local and remote disks interchangeable requires the same ceiling.
+ *
+ * BYTES, and S3 says so — "a sequence of Unicode characters whose UTF-8 encoding is at most 1,024
+ * bytes long". It was measured with `String.length`, which is UTF-16 code units, and a code-unit
+ * count is never MORE than the UTF-8 byte count — so every non-ASCII key over the real limit
+ * passed this guard and was refused by the store instead, which is the one thing a shared ceiling
+ * exists to prevent. `MAX_KEY_LENGTH` keeps its name: it is exported, and the number is unchanged.
+ */
 export const MAX_KEY_LENGTH = 1024;
+
+/** What the wire counts. The key is at most ~1 KB, so this is cheaper than deciding not to. */
+const utf8Bytes = (value: string): number => new TextEncoder().encode(value).byteLength;
 export const ORG_PREFIX = 'org';
 
 /**
@@ -32,8 +43,9 @@ function hasControlByte(key: string): boolean {
 
 function unsafeReason(key: string): string | undefined {
   if (key.length === 0) return 'is empty';
-  if (key.length > MAX_KEY_LENGTH) {
-    return `is ${key.length} chars, over the ${MAX_KEY_LENGTH} limit`;
+  const bytes = utf8Bytes(key);
+  if (bytes > MAX_KEY_LENGTH) {
+    return `is ${bytes} bytes, over the ${MAX_KEY_LENGTH}-byte limit`;
   }
   if (hasControlByte(key)) return 'contains a NUL or control byte';
   if (key.includes('\\')) return 'contains a backslash';

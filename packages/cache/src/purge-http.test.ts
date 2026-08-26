@@ -113,6 +113,28 @@ describe('assertPurgeableKeys', () => {
     expect(() => assertPurgeableKeys('fastly', ['x'.repeat(1025)])).toThrow(/X_CACHE_PURGE_FAILED/);
   });
 
+  /**
+   * The limit is BYTES and the guard counted UTF-16 code units, so 900 CJK characters — 2700 bytes
+   * on the wire — passed a check whose own message said "over the 1024-byte key limit". The CDN
+   * then refuses or truncates the header, which is the accepted-purge-that-cleared-nothing this
+   * function exists to prevent.
+   */
+  test('measures the key in BYTES, not characters', () => {
+    const key = '\u4e2d'.repeat(900);
+    expect(key.length).toBeLessThan(1024);
+    expect(new TextEncoder().encode(key).byteLength).toBeGreaterThan(1024);
+    const failure = refusalOf(() => {
+      assertPurgeableKeys('fastly', [key]);
+    });
+    expect(failure.code).toBe('X_CACHE_PURGE_FAILED');
+    expect(failure.cause).toContain('2700 bytes');
+  });
+
+  test('a multi-byte key that fits in bytes is still accepted', () => {
+    // 340 three-byte characters is 1020 bytes: under the limit on the wire, so not this guard's.
+    expect(() => assertPurgeableKeys('fastly', ['\u4e2d'.repeat(340)])).not.toThrow();
+  });
+
   test('the refusal is not retryable — the same key would fail identically', () => {
     const failure = refusalOf(() => {
       assertPurgeableKeys('fastly', ['post 1']);

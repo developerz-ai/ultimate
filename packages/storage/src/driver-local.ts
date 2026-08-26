@@ -5,6 +5,7 @@
 
 import {
   type Clock,
+  finiteCount,
   isLocal,
   type ResolveEnvironmentOptions,
   resolveEnvironment,
@@ -159,7 +160,14 @@ const isMissingFile = (error: unknown): boolean => stringField(error, 'code') ==
 
 export function localDriver(options: LocalDriverOptions): StorageDriver {
   const root = options.root.replace(/\/+$/, '');
-  const maxPutBytes = options.maxPutBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
+  // `=== undefined`, never `??`: `??` coalesces on `null` too, so an explicitly blanked key in a
+  // decoded JSON config took the default instead of the refusal `finiteCount` is here to raise.
+  const maxPutBytes = finiteCount(
+    'the local disk driver',
+    'maxPutBytes',
+    options.maxPutBytes === undefined ? DEFAULT_MAX_UPLOAD_BYTES : options.maxPutBytes,
+    1,
+  );
   const clock = options.clock ?? systemClock;
   // The segment is the disk's REGISTERED name, learned from `defineStorage` at boot — the driver
   // kind is not a mount point, and minting under it made every disk not literally named `local`

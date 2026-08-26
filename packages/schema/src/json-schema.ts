@@ -231,7 +231,13 @@ function convert(node: SchemaNode): JsonSchema {
         additionalProperties: false,
       });
     case 'object': {
-      const properties: Record<string, JsonSchema> = {};
+      // `Object.create(null)`, the same rule `validators.ts` applies to the IR this reads: a
+      // `__proto__` property assigned into a `{}` literal reaches the setter and is published
+      // nowhere, so the document would omit a field the server enforces.
+      const properties: Record<string, JsonSchema> = Object.create(null) as Record<
+        string,
+        JsonSchema
+      >;
       for (const [key, child] of Object.entries(node.properties ?? {})) {
         properties[key] = convert(child);
       }

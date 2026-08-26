@@ -1,5 +1,10 @@
 /** Public surface of @ultimat3/time. Explicit exports only. */
 
+// `localeInvalid` and the `X_LOCALE_INVALID` it carries are `@ultimat3/core`'s since 16.x —
+// `@ultimat3/money` needs the same screen and `money -> time` is a sideways import. Re-exported
+// rather than dropped so this package's public surface is unchanged, the same way
+// `@ultimat3/action` and `@ultimat3/query` re-export core's client-flight names.
+export { localeInvalid } from '@ultimat3/core';
 export {
   addBusinessDays,
   type BusinessCalendar,
@@ -57,7 +62,6 @@ export {
   dstNonexistent,
   durationInvalid,
   instantInvalid,
-  localeInvalid,
   TIME_ERROR_CODES,
   TIME_ERROR_TITLES,
   TimeError,

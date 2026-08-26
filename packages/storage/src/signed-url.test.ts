@@ -159,3 +159,56 @@ describe('an empty content type is never the same as none', () => {
     expect(verified.ok ? verified.constraints.contentType : 'set').toBeUndefined();
   });
 });
+
+/**
+ * A URL is minted once and verified elsewhere, so a bad number at the mint is discovered by the
+ * RECIPIENT: `expiresInMs: NaN` makes `expiresAt` `NaN`, which `String()` writes into the query as
+ * the literal `NaN`, which `parseConstraints` then refuses as `malformed`. Every link the app
+ * hands out is dead on arrival, the app's own code path succeeded, and the only report is a 400 at
+ * a caller who cannot fix it. `verifySignedUrl` has screened its side with `Number.isSafeInteger`
+ * from the start; this is the same screen on the side that writes the number.
+ */
+describe('buildSignedUrl refuses a constraint it could not verify back', () => {
+  const mint = (extra: Record<string, unknown>): Promise<string> =>
+    buildSignedUrl({ secret: SECRET, key: KEY, ...extra });
+
+  for (const expiresInMs of [Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5]) {
+    test(`expiresInMs: ${String(expiresInMs)} is refused at the mint`, async () => {
+      await expect(mint({ expiresInMs })).rejects.toThrow(/X_INVARIANT/);
+    });
+  }
+
+  test('maxBytes is screened on the same terms as the verifier screens it', async () => {
+    await expect(mint({ method: 'PUT', maxBytes: Number.NaN })).rejects.toThrow(/maxBytes/);
+    await expect(mint({ method: 'PUT', maxBytes: -1 })).rejects.toThrow(/X_INVARIANT/);
+    // Zero is a real constraint: a PUT of nothing. The verifier accepts it, so the mint must too.
+    await expect(mint({ method: 'PUT', maxBytes: 0 })).resolves.toContain('x-max=0');
+  });
+
+  test('a URL minted with ordinary constraints still verifies', async () => {
+    const clock = frozenClock(START);
+    const url = await buildSignedUrl({
+      secret: SECRET,
+      key: KEY,
+      expiresInMs: 60_000,
+      clock,
+    });
+    expect((await verifySignedUrl({ url, secret: SECRET, clock })).ok).toBe(true);
+  });
+});
+
+/**
+ * `??` coalesces on `null` as well as `undefined`, so an explicit `null` — what a decoded JSON
+ * config carries for a key someone blanked — took the default BEFORE the guard above could refuse
+ * it. The mirror of the `NaN` half: one slips past the guard, the other past the default, and both
+ * end in a bound nobody chose. `JSON.parse` rather than a literal, because `null` is not in the
+ * option's type and this is the caller the bug is about.
+ */
+describe('an explicitly null bound is refused, never defaulted', () => {
+  test('expiresInMs: null names itself instead of taking the 15-minute default', async () => {
+    const fromJson: number = JSON.parse('null');
+    await expect(
+      buildSignedUrl({ secret: SECRET, key: KEY, expiresInMs: fromJson }),
+    ).rejects.toThrow(/expiresInMs/);
+  });
+});

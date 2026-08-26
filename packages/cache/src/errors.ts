@@ -6,6 +6,7 @@ import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 export const CACHE_OWNED_ERROR_CODES = [
   'X_CACHE_DRIVER_UNAVAILABLE',
   'X_CACHE_JITTER_INVALID',
+  'X_CACHE_LIMIT_INVALID',
   'X_CACHE_PURGE_FAILED',
   'X_CACHE_TAG_UNKNOWN',
   'X_CACHE_TOO_LARGE',
@@ -21,6 +22,7 @@ export type CacheErrorCode = (typeof CACHE_ERROR_CODES)[number];
 export const CACHE_ERROR_TITLES: Readonly<Record<CacheOwnedErrorCode, string>> = {
   X_CACHE_DRIVER_UNAVAILABLE: "a tier's backing store is missing",
   X_CACHE_JITTER_INVALID: 'a TTL jitter fraction outside [0, 1)',
+  X_CACHE_LIMIT_INVALID: 'a cache ceiling, similarity floor or timeout that is not a usable number',
   X_CACHE_PURGE_FAILED: 'the CDN refused a purge',
   X_CACHE_TAG_UNKNOWN: 'a tag no entity declared',
   X_CACHE_TOO_LARGE: "one entry exceeds the tier's byte budget",
@@ -67,6 +69,56 @@ export class CacheTooLargeError extends UltimateError {
       code: 'X_CACHE_TOO_LARGE',
       cause: `entry "${input.key}" is ${input.bytes}B, over the ${input.tier} budget of ${input.maxBytes}B`,
       fix: `raise cache.${input.tier}.maxBytes in app.config.ts, or cache a projection instead of the row`,
+    });
+  }
+}
+
+/**
+ * A LIMIT this package runs on that is not one — a tier's byte budget, its entry ceiling, the
+ * similarity floor the semantic tier decides "same question" with, or a purge driver's request
+ * timeout. Sibling of the TTL refusal below, over the knobs an `app.config.ts` carries and
+ * `CacheTooLargeError`'s `fix:` line already tells an operator to raise.
+ *
+ * `Number(process.env.CACHE_MAX_BYTES)` on an unset variable is `NaN`, `NaN` is not nullish so
+ * `??` passes it through, and every comparison it reaches then answers false. The failure is never
+ * a wrong number, it is the guard turning itself off — `while (bytes > NaN)` never evicts, so the
+ * cache has no ceiling at all, and `similarity < NaN` never skips, so a semantic lookup answers
+ * the nearest thing it holds to a question nobody asked. Refused where the value is still
+ * nameable, exactly as `assertTtl` does.
+ */
+/**
+ * The mechanism is stated ONLY for `NaN`, and that is deliberate. This cause used to say "a
+ * comparison against this one is false for every entry" for every rejected value, which is true of
+ * `NaN` and false of everything else it also receives: `Infinity`, `-Infinity`, `0`, a fraction, an
+ * unsafe integer. A ceiling of `Infinity` is never *exceeded* and a similarity floor of `Infinity`
+ * is never *met* — opposite outcomes, from one sentence claiming both. A cause that names the wrong
+ * failure sends the reader to the wrong place, which is the failure mode axiom 4 exists to prevent,
+ * so the shared half says only what is true of every value and the `NaN` half is added when it is.
+ */
+const limitEffect = (value: number): string =>
+  Number.isNaN(value)
+    ? ', and every comparison against NaN is false, so the limit stops being enforced rather than being enforced wrongly — NaN is what Number(process.env.…) answers for an unset variable, and it is not nullish, so `??` does not catch it'
+    : ', and it is applied as given, so the tier is bounded at a value nobody chose';
+
+export class CacheLimitInvalidError extends UltimateError {
+  constructor(input: {
+    option: string;
+    value: number;
+    tier: string;
+    expected: string;
+    /**
+     * Where the value came FROM, when that is not an `app.config.ts` key. `loadDeadlineMs` and the
+     * similarity override arrive as call arguments (`createCacheStack`, `lookup`), so telling their
+     * caller to edit `app.config.ts` names a key that does not exist.
+     */
+    source?: string | undefined;
+  }) {
+    const where = input.source ?? `${input.tier}.${input.option} in app.config.ts`;
+    super({
+      code: 'X_CACHE_LIMIT_INVALID',
+      cause: `the ${input.tier} tier was given ${input.option}=${String(input.value)}; it must be ${input.expected}${limitEffect(input.value)}`,
+      fix: `set ${where} to ${input.expected} — and if it comes from the environment, parse it first: Number(process.env.CACHE_LIMIT) is NaN when the variable is unset`,
+      meta: { option: input.option, value: String(input.value), tier: input.tier },
     });
   }
 }

@@ -238,7 +238,6 @@
     },
     "policy": {
       "all-granted": "every required permission is granted",
-      "evaluated": "the policy decided this",
       "granted": "the grant list contains this permission",
       "missing": "no policy is registered for this permission",
       "not-granted": "the grant list does not contain this permission"

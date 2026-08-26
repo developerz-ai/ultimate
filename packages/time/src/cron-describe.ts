@@ -4,10 +4,9 @@
  * ship English to every locale that forgot the argument — so injection is mandatory, not opt-in.
  */
 
-import { cachedFormatter } from '@ultimat3/core';
+import { assertLocale, cachedFormatter } from '@ultimat3/core';
 import { type CronExpression, parseCronOnce } from './cron-parse';
 import { cronNotDescribable } from './errors';
-import { assertLocale } from './locale';
 
 export interface CronPhrases {
   everyMinute: string;

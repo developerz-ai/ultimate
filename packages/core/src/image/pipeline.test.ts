@@ -4,6 +4,7 @@
 // addressed, so a re-encode that differed per run or per platform is a cache that never hits.
 
 import { describe, expect, test } from 'bun:test';
+import { isUltimateError } from '../errors';
 import { ImageDecodeFailedError, ImageTooLargeError, ImageUnsupportedError } from './errors';
 import {
   AVIF_12X16,
@@ -31,6 +32,7 @@ import {
   canDecode,
   canEncode,
   DECODABLE_FORMATS,
+  DEFAULT_IMAGE_QUALITY,
   dataUrl,
   ENCODABLE_FORMATS,
   transformImageBytes,
@@ -58,6 +60,10 @@ const thrown = async (run: () => Promise<unknown>): Promise<Failure> => {
     ) {
       return { code: error.code, cause: error.cause, fix: error.fix };
     }
+    // Any other `UltimateError` too — a refused OPTION is not one of the three format codes, and
+    // reading it as `unexpected:` would let a test assert on a string that already contains the
+    // code it was looking for.
+    if (isUltimateError(error)) return { code: error.code, cause: error.cause, fix: error.fix };
     return { code: `unexpected: ${String(error)}`, cause: '', fix: '' };
   }
 };
@@ -230,6 +236,31 @@ describe('decoding, against an independent encoder', () => {
 });
 
 describe('transformImageBytes', () => {
+  /**
+   * Measured against `PNG_RGB_3X2` as JPEG before the screen landed: quality 80 wrote 663 bytes,
+   * `NaN`, `-5` and `0` all wrote 635 (the WORST encoding the codec can make) and `Infinity` and
+   * `1e9` both wrote 719 (the best) — every one of them silently, with no error. `Bun.Image`
+   * clamps, so a `Number(url.searchParams.get('q'))` that parsed nothing produced a visibly
+   * degraded image nobody could trace back to the query string.
+   */
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, -5, 0, 101, 80.5])(
+    'refuses quality %p rather than letting the encoder clamp it',
+    async (quality) => {
+      const failure = await thrown(() =>
+        transformImageBytes(fixtureBytes(PNG_RGB_3X2), { format: 'jpeg', quality }),
+      );
+      expect(failure.code).toBe('X_INVARIANT');
+      expect(`${failure.cause} ${failure.fix}`).toContain('quality');
+    },
+  );
+
+  test('the shipped default and both ends of the range still encode', async () => {
+    for (const quality of [1, DEFAULT_IMAGE_QUALITY, 100]) {
+      const out = await transformImageBytes(fixtureBytes(PNG_RGB_3X2), { format: 'jpeg', quality });
+      expect(probeImage(out).format).toBe('jpeg');
+    }
+  });
+
   test('resizes to the requested width and reports it back through the header', async () => {
     const out = await transformImageBytes(fixtureBytes(PNG_GRADIENT_32X24), {
       width: 16,

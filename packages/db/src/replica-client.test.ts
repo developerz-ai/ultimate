@@ -4,7 +4,7 @@
 // capacity problem it was built to solve.
 
 import { describe, expect, test } from 'bun:test';
-import type { Clock } from '@ultimat3/core';
+import { type Clock, renderThrowable } from '@ultimat3/core';
 import { db, isReservable, setDbClient } from './client';
 import { createRecordingClient, type RecordingClient } from './fake';
 import { reservableOver } from './fake-reservable';
@@ -225,5 +225,49 @@ describe('withTransaction over a replicated client', () => {
     }
 
     expect(replica.texts).toEqual(['select id from posts']);
+  });
+});
+
+/**
+ * A circuit breaker is two comparisons and nothing else: `consecutiveFailures >= limit` opens it,
+ * `clock.monotonic() < parkedUntil` holds it open. Both are false for every input when the number
+ * behind them is `NaN` — so a breaker built from `Number(process.env.REPLICA_BREAKER_FAILURES)` on
+ * an unset variable never opens, and every read keeps going to a replica that is failing.
+ */
+describe('the breaker numbers are screened where the client is built', () => {
+  const buildWith = (options: Record<string, number>): string => {
+    const { primary, replica } = pair();
+    try {
+      replicatedClient(primary, replica, options);
+    } catch (error) {
+      return renderThrowable(error);
+    }
+    return 'no-error-thrown';
+  };
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses breakerFailures %p, naming it',
+    (breakerFailures) => {
+      const rendered = buildWith({ breakerFailures });
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('breakerFailures');
+    },
+  );
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses breakerCooldownMs %p, naming it',
+    (breakerCooldownMs) => {
+      const rendered = buildWith({ breakerCooldownMs });
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('breakerCooldownMs');
+    },
+  );
+
+  test('real numbers still build a client', () => {
+    const { primary, replica } = pair();
+    expect(
+      typeof replicatedClient(primary, replica, { breakerFailures: 3, breakerCooldownMs: 5_000 })
+        .execute,
+    ).toBe('function');
   });
 });

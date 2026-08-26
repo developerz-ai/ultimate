@@ -154,7 +154,7 @@ negated; an empty one is `0` in either direction, never `-0`.
 | `X_DST_AMBIGUOUS` | overlap hit with `overlap: 'throw'` |
 | `X_DST_NONEXISTENT` | gap hit with `gap: 'throw'` |
 | `X_INSTANT_INVALID` | unparseable timestamp |
-| `X_LOCALE_INVALID` | a tag `Intl` cannot parse (`en_US`, `''`) reached `describeCron` |
+| `X_LOCALE_INVALID` | a tag `Intl` cannot parse (`en_US`, `''`) reached any entry point taking a `locale`. Declared by `@ultimat3/core` `As of 2026-08`, thrown here unchanged — `@ultimat3/time` owned it until then. It answers **400**, not 500: the `locale` stage negotiates `Accept-Language` and never throws, so a tag that reaches this code came from a path, query or action input the caller wrote |
 | `X_CRON_NOT_DESCRIBABLE` | a valid 6-field cron whose seconds field `CronPhrases` has no words for |
 | `X_SCHEDULE_INVALID` | a wall-clock field out of range: `slot.hour`, `slot.minute`, `slot.second`, `slot.weekday` |
 

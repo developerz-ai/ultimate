@@ -3,7 +3,7 @@
 // handle a statement is sent on, what happens when the replica will not answer, and the counters
 // that make both visible to a test that cannot scrape a metrics endpoint.
 
-import { type Clock, logger, renderThrowable, systemClock } from '@ultimat3/core';
+import { type Clock, finiteCount, logger, renderThrowable, systemClock } from '@ultimat3/core';
 import { type DbClient, type DbConnection, isReservable, type ReservableClient } from './client';
 import { isPlainRead } from './replica-route';
 import { markScopeWrote, replicaScope } from './replica-scope';
@@ -53,8 +53,21 @@ export function replicatedClient(
   options: ReplicatedClientOptions = {},
 ): ReplicatedClient {
   const clock = options.clock ?? systemClock;
-  const limit = options.breakerFailures ?? BREAKER_FAILURES;
-  const cooldown = options.breakerCooldownMs ?? BREAKER_COOLDOWN_MS;
+  // Both are comparisons and nothing else — `consecutiveFailures >= limit` opens the breaker,
+  // `monotonic() < parkedUntil` holds it open — so a `NaN` in either is a breaker that never trips
+  // and never parks, with every read still going to the replica that is failing.
+  const limit = finiteCount(
+    'replicatedClient',
+    'breakerFailures',
+    options.breakerFailures ?? BREAKER_FAILURES,
+    1,
+  );
+  const cooldown = finiteCount(
+    'replicatedClient',
+    'breakerCooldownMs',
+    options.breakerCooldownMs ?? BREAKER_COOLDOWN_MS,
+    1,
+  );
   let replicaCount = 0;
   let primaryCount = 0;
   let fallbackCount = 0;

@@ -14,6 +14,7 @@
 import { onDeleteRule, rebuildForeignKey } from './foreign-key';
 import type { CheckDescription, ForeignKeyDescription } from './introspect';
 import type { Migration } from './migrate';
+import { identifier } from './sql';
 
 export type DriftKind =
   | 'unexpected-column'
@@ -41,6 +42,14 @@ export interface DriftReport {
   readonly differences: readonly DriftDifference[];
 }
 
+/**
+ * The one `fix:` here whose second layer no quoting closes. `x db gen "add C"` puts the column
+ * inside SHELL DOUBLE QUOTES, where `$(…)` and a backtick substitute before `x` is reached at all
+ * — and the argument is a migration DESCRIPTION, not an identifier, so there is no quoted form
+ * that would make a hostile name safe to pass. A name `writableName` refuses is therefore left out
+ * of the command rather than escaped into it: the command still runs and still generates the
+ * migration, and the name is read off `cause` and `column`, which are prose nobody pastes.
+ */
 export function unexpectedColumn(table: string, column: string): DriftDifference {
   return {
     kind: 'unexpected-column',
@@ -48,7 +57,12 @@ export function unexpectedColumn(table: string, column: string): DriftDifference
     column,
     // Pinned by the contract. Do not reword without changing docs/errors/X_DB_DRIFT.
     cause: `table "${table}" has column "${column}" not present in any migration`,
-    fix: `x db gen "add ${column}"`,
+    fix:
+      writableName(column) === null
+        ? 'x db gen "add the undeclared column"   # the live column name carries a backtick, a ' +
+          'dollar sign, a quote, a backslash or whitespace, so it is in the cause and not in ' +
+          'this command'
+        : `x db gen "add ${column}"`,
   };
 }
 
@@ -82,6 +96,8 @@ export function changedColumn(
   liveNullable: boolean,
 ): DriftDifference {
   const clause = liveNullable ? 'set not null' : 'drop not null';
+  const relation = writableName(table);
+  const attribute = writableName(column);
   return {
     kind: 'changed-column',
     table,
@@ -89,20 +105,84 @@ export function changedColumn(
     cause: liveNullable
       ? `table "${table}" allows NULL in column "${column}" that migrations declare not null`
       : `table "${table}" forbids NULL in column "${column}" that migrations declare nullable`,
+    // Both identifiers are the catalog's, so both go through the one screen. A refusal names the
+    // column as the thing it could not spell, which is what tells this line apart from
+    // `missingCheck`'s refusal in a report that carries both.
     fix:
-      `alter table "${table}" alter column "${column}" ${clause};   # in a new migration` +
-      (liveNullable ? ' — backfill the existing NULLs first' : ''),
+      relation === null || attribute === null
+        ? `${clause} on the column named in this difference, in a new migration, then ` +
+          'x db migrate — its table or column name carries a backtick, a dollar sign, a quote, ' +
+          'a backslash or whitespace, so no statement here can spell it'
+        : `alter table ${relation} alter column ${attribute} ${clause};   # in a new migration` +
+          (liveNullable ? ' — backfill the existing NULLs first' : ''),
   };
 }
 
+/**
+ * The `fix:` names the two edits that actually resolve this, and neither is `x db gen` (issue
+ * #345). That command diffs the ENTITY REGISTRY against the newest snapshot, and a table nothing
+ * declares is absent from both sides of that diff — so it wrote an EMPTY migration, and the
+ * generator's own empty-diff branch writes no file at all, leaving the reader with nothing to run
+ * and the same finding on the next deploy.
+ *
+ * What is left once `@ultimat3/cli`'s `acceptCreatedTables` has run is a table no migration's SQL
+ * creates and no entity declares — so either a migration should claim it (`if not exists`, because
+ * the relation is already there, and `x db migrate` then accepts a table its own SQL creates), or
+ * nothing owns it and it should not be in this schema. No migration PATH is named: where an app
+ * keeps its migrations is the CLI's fact, not this package's.
+ */
 export function unexpectedTable(table: string): DriftDifference {
+  const name = writableName(table);
   return {
     kind: 'unexpected-table',
     table,
     column: null,
     cause: `table "${table}" is not present in any migration`,
-    fix: `x db gen "add ${table}"`,
+    fix:
+      name === null
+        ? 'claim it in a migration with create table if not exists, or drop it by hand — its ' +
+          'table name carries a backtick, a dollar sign, a quote, a backslash or whitespace, so ' +
+          'no statement here can spell it'
+        : `put a create table if not exists ${name} (…) statement in a migration — x db migrate ` +
+          'then accepts a table its own SQL creates — or, if nothing owns it, run ' +
+          `drop table ${name}; inside psql "$DATABASE_URL"`,
   };
+}
+
+/**
+ * The ONE screen every `fix:` on this page puts a catalog name through: the quoted identifier a
+ * statement may carry, or `null` for a name no line here may spell.
+ *
+ * The name is DATA — `unexpected-table` is by definition a relation nothing here created, and
+ * `create table "x""; drop table users; --" ("id" int)` is legal DDL, so whoever can create a
+ * table or a column picks the text that lands in a `fix:`. `identifier` is the rule
+ * `foreign-key.ts` states for every name this package writes, and a refusal degrades to prose the
+ * way `rebuildForeignKey`'s does: a fix naming no command beats one running a second command the
+ * reader never read.
+ *
+ * TWO layers, and `identifier` closes only the first. A `fix:` is pasted into a SHELL at least as
+ * often as into a migration, and `identifier` answers about SQL: it refuses `"`, `\` and
+ * whitespace, and accepts a backtick and a `$`, which are exactly the two characters a shell
+ * substitutes INSIDE DOUBLE QUOTES. `unexpectedColumn`'s `x db gen "add C"` is that context and no
+ * quoting rescues it, because the argument is a description and not an identifier — so the screen
+ * is `identifier` AND those two, once, here, rather than a second predicate per context.
+ *
+ * `'` is deliberately NOT refused: it is legal in an identifier, it is inert in a psql session and
+ * inside shell double quotes, and no line on this page puts a name inside shell SINGLE quotes any
+ * more — `unexpectedTable`'s drop names `psql` and leaves the statement outside it, where a
+ * `-c '…'` payload used to end early and hand the rest to the shell. The price of the two that ARE
+ * refused is a legal `a$b` losing its executable fix line, which is a fix that reads as prose
+ * rather than a fix that runs something nobody read.
+ */
+const SHELL_ACTIVE = /[`$]/;
+
+function writableName(name: string): string | null {
+  if (SHELL_ACTIVE.test(name)) return null;
+  try {
+    return identifier(name).text;
+  } catch {
+    return null;
+  }
 }
 
 export function missingTable(table: string): DriftDifference {
@@ -174,6 +254,8 @@ export function changedIndex(table: string, index: string, detail: string): Drif
  * the predicate, which is what makes an executable fix possible at all.
  */
 export function missingCheck(table: string, check: CheckDescription): DriftDifference {
+  const relation = writableName(table);
+  const constraint = writableName(check.name);
   return {
     kind: 'missing-check',
     table,
@@ -183,9 +265,19 @@ export function missingCheck(table: string, check: CheckDescription): DriftDiffe
     // banned advice word the `errors` gate demands a command beside: writing the migration is half
     // the repair and applying it is the other half, and `changedColumn`'s bare `# in a new
     // migration` leaves the second half to be guessed.
+    //
+    // Both NAMES go through the one screen; the EXPRESSION deliberately does not, and cannot. It
+    // is a predicate, so no screen could accept `status in ('draft', 'published')` and reject a
+    // second statement — and it is the DECLARED side's own text, out of the author's migration,
+    // where both names are the catalog's and a sidecar's. Narrower than "this line is safe", and
+    // it is the honest claim.
     fix:
-      `alter table "${table}" add constraint "${check.name}" ` +
-      `check (${check.expression});   # in a new migration, then x db migrate`,
+      relation === null || constraint === null
+        ? 'add the constraint named in this difference back in a new migration, then ' +
+          'x db migrate — its table or constraint name carries a backtick, a dollar sign, a ' +
+          'quote, a backslash or whitespace, so no statement here can spell it'
+        : `alter table ${relation} add constraint ${constraint} ` +
+          `check (${check.expression});   # in a new migration, then x db migrate`,
   };
 }
 

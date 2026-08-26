@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { SEO_ERROR_CODES } from './errors';
 import type { RouteRecord } from './routes';
-import { assertMeta, validateMeta } from './validate';
+import { assertMeta, type ValidateMetaOptions, validateMeta } from './validate';
 
 function route(partial: Partial<RouteRecord> & Pick<RouteRecord, 'path' | 'file'>): RouteRecord {
   return { surface: 'site', render: 'static', ...partial };
@@ -170,5 +170,80 @@ describe('validateMeta', () => {
   test('a complete route table passes and reports what it checked', () => {
     const report = validateMeta([GOOD], { baseUrl: 'https://ultimate.dev' });
     expect(report).toEqual({ ok: true, checked: 1, issues: [] });
+  });
+});
+
+/**
+ * A ceiling is only ever read as `length > ceiling`, and that comparison is false for every string
+ * when the ceiling is `NaN` — so `validateMeta(routes, { titleMaxLength: Number(process.env.X) })`
+ * with the variable unset reported a clean site whose every title is truncated in the SERP. A rule
+ * whose comparison can never fire is not a loose rule, it is no rule.
+ */
+describe('the length ceilings are screened before anything is compared against them', () => {
+  const LONG = route({
+    path: '/long',
+    file: 'apps/web/site/long/page.tsx',
+    meta: { title: 'x'.repeat(200), description: 'y'.repeat(400) },
+  });
+
+  const refusedFor = (options: Record<string, number>): string => {
+    try {
+      validateMeta([LONG], options);
+    } catch (error) {
+      return String(error);
+    }
+    return 'no-error-thrown';
+  };
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses titleMaxLength %p, naming it',
+    (titleMaxLength) => {
+      const rendered = refusedFor({ titleMaxLength });
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('titleMaxLength');
+    },
+  );
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses descriptionMaxLength %p, naming it',
+    (descriptionMaxLength) => {
+      const rendered = refusedFor({ descriptionMaxLength });
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('descriptionMaxLength');
+    },
+  );
+
+  test('a real ceiling still reports the over-long title it is there to catch', () => {
+    const report = validateMeta([LONG], { titleMaxLength: 60 });
+    expect(report.ok).toBe(false);
+  });
+});
+
+/**
+ * The mirror of the ceiling above, and the reason `??` is the wrong default beside a guard: it
+ * coalesces on `null` as well as `undefined`, so an explicit `null` — what a decoded JSON config
+ * carries for a key someone blanked, and what a JavaScript caller passes for "no value" — was
+ * swapped for the default BEFORE `finiteCount` could see it. One half of the bug lets a non-number
+ * past the guard; this half lets it past the default, and both end in a bound nobody chose.
+ */
+describe('an explicitly null ceiling is refused, never defaulted', () => {
+  const LONG = route({
+    path: '/long',
+    file: 'apps/web/site/long/page.tsx',
+    meta: { title: 'x'.repeat(200), description: 'y'.repeat(400) },
+  });
+
+  test.each(['titleMaxLength', 'descriptionMaxLength'])('%s: null names itself', (option) => {
+    // Parsed rather than written: `null` is not in the option's type, and the caller this is
+    // about is a config file that reached the process as JSON.
+    const options: ValidateMetaOptions = JSON.parse(`{"${option}":null}`);
+    let rendered = 'no-error-thrown';
+    try {
+      validateMeta([LONG], options);
+    } catch (error) {
+      rendered = String(error);
+    }
+    expect(rendered).toContain('X_INVARIANT');
+    expect(rendered).toContain(option);
   });
 });

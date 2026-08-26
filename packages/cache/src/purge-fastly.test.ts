@@ -263,3 +263,36 @@ describe('the cdn tier over a real driver', () => {
     expect(result).toEqual({ tier: 'cdn', keys: ['post', 'post:1'] });
   });
 });
+
+/**
+ * `AbortSignal.timeout(NaN)` throws `TypeError: Value NaN is outside the range [0, …]` — inside
+ * `purgePost`'s try, so it comes back as a RETRYABLE `X_CACHE_PURGE_FAILED` naming a transport
+ * failure that never happened. The CDN is then never purged, the retry loop runs against a config
+ * typo forever, and every reader keeps serving the stale object the purge existed to remove.
+ * Screened at construction, where `FASTLY_PURGE_TIMEOUT_MS` is still nameable.
+ */
+describe('the purge timeout is screened where the driver is built', () => {
+  test('NaN, zero and Infinity are refused, not turned into a fake transport failure', () => {
+    for (const timeoutMs of [Number.NaN, 0, Number.POSITIVE_INFINITY, -1]) {
+      expect(() =>
+        fastlyPurgeDriver({
+          apiToken: 'fastly-token',
+          serviceId: 'svc_1',
+          timeoutMs,
+          fetch: () => Promise.resolve(new Response('{}')),
+        }),
+      ).toThrow(/X_CACHE_LIMIT_INVALID/);
+    }
+  });
+
+  test('an ordinary timeout still builds a driver', () => {
+    expect(() =>
+      fastlyPurgeDriver({
+        apiToken: 'fastly-token',
+        serviceId: 'svc_1',
+        timeoutMs: 5_000,
+        fetch: () => Promise.resolve(new Response('{}')),
+      }),
+    ).not.toThrow();
+  });
+});

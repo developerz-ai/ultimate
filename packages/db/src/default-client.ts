@@ -3,7 +3,8 @@
 // framework decides a process's database topology from the environment, and `client.ts` is at the
 // line ceiling.
 
-import { createPostgresClient, type DbClient, poolMaxFromEnv } from './client';
+import { createPostgresClient, type DbClient } from './client';
+import { poolMaxFromEnv } from './pool-profile';
 import { replicatedClient } from './replica-client';
 
 /**

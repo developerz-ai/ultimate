@@ -1276,12 +1276,49 @@ takes, and left unsaid an `alter database … set statement_timeout` on the serv
 that must outlive it. The splitter honours libpq's backslash escape, so a `search_path=two\ words`
 survives the round trip whole.
 
+- **Every numeric option this package bounds anything with is screened, `As of 2026-08-26`** —
+  through core's `finiteCount`, which borrows `X_INVARIANT` as this package already does.
+  `replicaClient`'s `breakerFailures` and `breakerCooldownMs` (a breaker is two comparisons and
+  nothing else: `failures >= NaN` never opens it, `monotonic() < NaN` never parks it, so every read
+  keeps going to the replica that is failing), `migrate`'s `lockWaitMs` (`NaN - elapsed <= 0` is
+  false and `Bun.sleep(NaN)` does not sleep — a tight spin re-taking `pg_try_advisory_lock`, not an
+  unbounded wait) and `readonlyQuery`'s `timeoutMs`, plus `client.ts`'s pool profile. The last one
+  is a **behaviour change**: it used to normalise `NaN` to the default silently, so an agent read
+  ran under a ceiling nobody wrote. Only an explicit `0` disables that layer, which is why its floor
+  is 0 and not 1.
+
+- **`client.ts` reached the 500-line ceiling on 2026-08-26, and shed the five jobs that were not
+  "open a connection and send a statement".** `pool-profile.ts` owns the five numbers a pool runs
+  on — the per-role table, `DATABASE_POOL_MAX` and the screen every merged profile passes;
+  `connection-url.ts` builds the connection string (the libpq `options` merge and the
+  `application_name` label); `bun-sql.ts` declares the slice of `Bun.SQL` this package uses and
+  looks the global up lazily;
+  `pool-reserve.ts` is `reserve()` under the acquire deadline; `db-health.ts` is `checkDb`, the
+  `/readyz` report. `client.ts` keeps connecting, the statement funnel and the ambient `db()` —
+  and it still opens no socket at import, because `bunSqlFactory()` is reached from inside
+  `connect()`. **The public surface did not move**: `src/index.ts` exports every one of those
+  names from its new module, so `@ultimat3/db` is byte-identical to what it was. The same day,
+  `drift.test.ts` split three ways along the three questions it was asking — `drift.test.ts`
+  (tables and columns), `drift-index.test.ts` and `drift-ledger.test.ts` (what the migrations
+  declare, and the post-migrate check) — over one shared `drift-fixtures.ts`, which
+  `drift-foreign-key.test.ts` now imports instead of carrying its own byte-identical copy.
+
+- **`unexpectedTable`'s `fix:` no longer names `x db gen`, `As of 2026-08-26`** (issue #345). That
+  command diffs the ENTITY REGISTRY against the newest snapshot, and a table nothing declares is on
+  neither side of it — so the diff came back empty, the generator's empty-diff branch writes NO
+  file, and the reader had nothing to run and the same finding on the next deploy. The two edits
+  that do resolve it are named instead: a `create table if not exists` in a migration (which
+  `x db migrate` then accepts, through `@ultimat3/cli`'s `acceptCreatedTables`), or `psql … drop
+  table` for a table nothing owns. No migration PATH is named — where an app keeps its migrations is
+  the CLI's fact. `X_DB_DRIFT` is a shipped code and is unchanged; only this `fix:` text moved.
+
 ```bash
 bun test                      # from packages/db
 bun run typecheck
 ```
 
 Gotchas:
+
 - `exactOptionalPropertyTypes` — declare optional fields as `x?: T | undefined`.
 - `noUncheckedIndexedAccess` — array reads are `T | undefined`; `chunks[i] ?? ''` everywhere.
 - Tests use `createRecordingClient()` + `setDbClient()`; no test may need a live database.

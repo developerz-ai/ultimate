@@ -3,18 +3,13 @@
 // app-version fence is the `migrate` role's contract — a pod must refuse to migrate a database
 // another build already owns, because the alternative is two schemas racing during a rollout.
 
-import { appVersion } from '@ultimat3/core';
-import {
-  baseClient,
-  type DbClient,
-  type DbConnection,
-  isReservable,
-  poolProfileFor,
-} from './client';
+import { appVersion, finiteCount } from '@ultimat3/core';
+import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { refuseDependentViews } from './dependent-view';
 import { expectedQueryLoop } from './expected-loop';
 import type { SchemaDescription } from './introspect';
 import { migrateConcurrent, migrationConflict, rollbackStepsInvalid } from './migration-errors';
+import { poolProfileFor } from './pool-profile';
 import { raw, sql } from './sql';
 import { SQLSTATE, sqlState } from './sqlstate';
 import { statementsOf } from './statement-split';
@@ -237,6 +232,9 @@ async function acquireLock(session: DbClient, waitMs: number): Promise<void> {
           sql`select pg_try_advisory_lock(${MIGRATION_LOCK_KEY}) as locked`,
         );
         if (row?.locked === true) return;
+        // `waitMs` is screened at both call sites: `NaN - elapsed` is `NaN`, `NaN <= 0` is false
+        // and `Bun.sleep(Math.min(POLL, NaN))` does not sleep — so an unbounded wait is not what a
+        // non-finite one produced, a tight spin re-taking `pg_try_advisory_lock` was.
         const remaining = waitMs - (performance.now() - started);
         if (remaining <= 0) {
           throw migrateConcurrent(MIGRATION_LOCK_KEY, Math.round(performance.now() - started));
@@ -317,7 +315,17 @@ async function setLockTimeout(tx: DbTx, lockTimeoutMs: number): Promise<void> {
  * same `ACCESS EXCLUSIVE` locks against the same tables.
  */
 function migrationLockTimeoutMs(explicit: number | undefined): number {
-  return explicit ?? poolProfileFor('migrate').lockTimeoutMs;
+  // Screened here, where BOTH `migrate()` and `rollback()` resolve it, and before either takes the
+  // advisory lock. `lockWaitMs` beside it was screened from the start and this one was not, so
+  // `Number(process.env.…)` on an unset variable travelled all the way to `SET LOCAL lock_timeout
+  // = NaN`, which the server rejects inside the migration's own transaction — the option that was
+  // wrong appears nowhere in what the deploy prints. `finiteCount`, never a second bound checker.
+  return finiteCount(
+    'migrate',
+    'lockTimeoutMs',
+    explicit ?? poolProfileFor('migrate').lockTimeoutMs,
+    0,
+  );
 }
 
 export async function migrate(options: MigrateOptions): Promise<MigrationReport> {
@@ -329,7 +337,7 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
   return withAdvisoryLock(
     client,
     options.lock !== false,
-    options.lockWaitMs ?? MIGRATION_LOCK_WAIT_MS,
+    finiteCount('migrate', 'lockWaitMs', options.lockWaitMs ?? MIGRATION_LOCK_WAIT_MS, 0),
     async (session) => {
       await ensureLedger(session);
       const ledger = await readLedger(session);
@@ -419,7 +427,7 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
   return withAdvisoryLock(
     client,
     options.lock !== false,
-    options.lockWaitMs ?? MIGRATION_LOCK_WAIT_MS,
+    finiteCount('migrate', 'lockWaitMs', options.lockWaitMs ?? MIGRATION_LOCK_WAIT_MS, 0),
     async (session) => {
       const ledger = await readLedger(session);
       const targets = [...ledger].reverse().slice(0, steps);
