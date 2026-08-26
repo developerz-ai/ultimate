@@ -67,7 +67,12 @@ describe('out-of-order streaming', () => {
     slow.resolve('<i>slow</i>');
 
     const html = await collected;
-    expect(html.indexOf('data-x-hole="x:fast"')).toBeLessThan(html.indexOf('data-x-hole="x:slow"'));
+    // The reveal sequence itself, not a pairwise `indexOf`: a hole that stopped being revealed
+    // answers -1, which is less than every real index, so the pairwise form passed on a document
+    // that revealed nothing. Anchored on the `<template>`, which `revealChunk` alone emits — the
+    // shell's placeholders carry `id=`, and REVEAL_SCRIPT's own selector carries the attribute too.
+    const revealed = [...html.matchAll(/<template data-x-hole="([^"]*)">/g)].map(([, id]) => id);
+    expect(revealed).toEqual(['x:fast', 'x:slow']);
     expect(html.endsWith('</body></html>')).toBe(true);
   });
 

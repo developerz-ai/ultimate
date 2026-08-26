@@ -174,6 +174,9 @@ describe('diffTable', () => {
   test('the constraint is added AFTER the column it reads', () => {
     const recorded = posts({ columns: posts().columns.filter((each) => each.column !== 'status') });
     const up = migrate(posts(), recorded);
+    // `indexOf` answers -1 for a statement never emitted, and -1 is below every real index — so
+    // the ordering below holds for an `up` that adds no column at all. Pinned present first.
+    expect(up).toContain('add column "status"');
     // `add constraint` on a column that does not exist yet is `42703`.
     expect(up.indexOf('add column "status"')).toBeLessThan(up.indexOf('add constraint'));
   });

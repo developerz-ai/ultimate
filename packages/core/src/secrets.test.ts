@@ -239,6 +239,10 @@ describe('unit · the plaintext shape', () => {
   test('serialization is sorted and stable, so an unchanged edit produces no diff', () => {
     const one = serializeSecretValues({ B: '2', A: '1' });
     expect(one).toBe(serializeSecretValues({ A: '1', B: '2' }));
+    // Both names survive the sort before either is ordered: a dropped key is `-1`, which is less
+    // than every real offset, so "A comes first" would hold for a buffer that no longer carries A
+    // at all — and this is the buffer `x secrets edit` seals.
+    expect(one).toContain('"A": "1"');
     expect(one.indexOf('"A"')).toBeLessThan(one.indexOf('"B"'));
   });
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "865bd0e6edda7e434d8547eb67027c00968f291ca7e86c5472628bd25458254b",
+  "buildId": "01774c56466b736d1e5b8d678a4d59821b5746c771319e10e7f5a334691dcf07",
   "tiers": {
     "0": [
       "core",
@@ -1400,6 +1400,21 @@
       "at": "packages/core/src/error-codes.ts"
     },
     {
+      "code": "X_INDEX_ORDER_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/index-of-order.ts"
+    },
+    {
+      "code": "X_INDEX_ORDER_UNGUARDED",
+      "owner": "scripts",
+      "at": "scripts/index-of-order.ts"
+    },
+    {
+      "code": "X_INDEX_ORDER_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/index-of-order.ts"
+    },
+    {
       "code": "X_INPUT_INVALID",
       "owner": "action",
       "at": "packages/action/src/errors.ts"
@@ -2748,6 +2763,16 @@
       "code": "X_SITEMAP_TOO_LARGE",
       "owner": "seo",
       "at": "packages/seo/src/errors.ts"
+    },
+    {
+      "code": "X_SKIP_CLEANUP_UNREACHED",
+      "owner": "scripts",
+      "at": "scripts/skip-if-cleanup.ts"
+    },
+    {
+      "code": "X_SKIP_CLEANUP_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/skip-if-cleanup.ts"
     },
     {
       "code": "X_SOCKET_AUTH_UNAVAILABLE",

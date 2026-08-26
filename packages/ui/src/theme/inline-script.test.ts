@@ -12,10 +12,11 @@ describe('theme inline script', () => {
     expect(THEME_INLINE_SCRIPT).toContain(THEME_STORAGE_KEY);
     expect(THEME_INLINE_SCRIPT).toContain(THEME_ATTRIBUTE);
     expect(THEME_INLINE_SCRIPT).toContain('prefers-color-scheme: dark');
-    // stored branch must come before the media-query branch
-    expect(THEME_INLINE_SCRIPT.indexOf("s==='light'")).toBeLessThan(
-      THEME_INLINE_SCRIPT.indexOf('matchMedia'),
-    );
+    // The stored branch AND its fall-through, as one substring: a pairwise `indexOf` comparison
+    // answers -1 for a branch that is no longer in the script, and -1 is less than every real
+    // index — so dropping the `light` case read as "stored comes first" while a stored 'light'
+    // silently fell through to the OS.
+    expect(THEME_INLINE_SCRIPT).toContain("s==='light'||s==='dark'?s:matchMedia(");
   });
 
   test('stays tiny, single-line, and free of double quotes', () => {

@@ -30,7 +30,14 @@ const ITEMS: FeedItem[] = [
 describe('buildFeed', () => {
   test('emits all three formats newest-first', () => {
     const feed = buildFeed(CHANNEL, ITEMS);
-    expect(feed.rss.indexOf('Newer')).toBeLessThan(feed.rss.indexOf('Older'));
+    // The item titles RSS actually emitted, in order — the same claim the JSON half below makes,
+    // and for the same reason: a pairwise `indexOf` answers -1 for a title that is no longer in
+    // the document, and -1 is less than every real index, so a feed that had dropped its newest
+    // item read as newest-first. Anchored on `<item>`, so the channel's own <title> is not one.
+    const rssTitles = [...feed.rss.matchAll(/<item>[\s\S]*?<title>([^<]*)<\/title>/g)].map(
+      ([, title]) => title,
+    );
+    expect(rssTitles).toEqual(['Newer', 'Older &amp; wiser']);
     const json = JSON.parse(feed.json) as { items: Array<{ title: string }> };
     expect(json.items.map((item) => item.title)).toEqual(['Newer', 'Older & wiser']);
   });

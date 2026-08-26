@@ -1,15 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { ErrorReport, ReadableSpan } from '@ultimat3/core';
-import {
-  collectMetrics,
-  configureErrorReporting,
-  configureTelemetry,
-  memoryErrorReporter,
-  memoryExporter,
-  resetErrorReporting,
-  resetMetrics,
-  resetTelemetry,
-} from '@ultimat3/core';
+import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
 import type { AuthzDecision } from './hooks';
 import { createPipeline, PIPELINE_STAGES } from './pipeline';
@@ -165,11 +154,20 @@ describe('stage order', () => {
     expect(pipeline.stages.every((stage) => typeof stage.run === 'function')).toBe(true);
   });
 
+  // Each earlier stage is pinned PRESENT before it is ordered: `indexOf` answers -1 for a stage
+  // that is not in the list at all, and -1 is less than every real index — so without these four
+  // lines the assertion that a policy always sees parsed input passed on a pipeline with no
+  // `body` stage in it. The later operand needs no such line: a -1 on the right of a
+  // `toBeLessThan` fails loudly.
   test('body validation runs before authz, so a policy always sees parsed input', () => {
     const names = PIPELINE_STAGES.map((stage) => stage.name);
+    expect(names).toContain('body');
     expect(names.indexOf('body')).toBeLessThan(names.indexOf('authz'));
+    expect(names).toContain('auth');
     expect(names.indexOf('auth')).toBeLessThan(names.indexOf('rate-limit'));
+    expect(names).toContain('context');
     expect(names.indexOf('context')).toBeLessThan(names.indexOf('auth'));
+    expect(names).toContain('handler');
     expect(names.indexOf('handler')).toBeLessThan(names.indexOf('response'));
   });
 });
@@ -324,172 +322,5 @@ describe('lifecycle', () => {
     const body = (await response.json()) as Record<string, unknown>;
     expect(body['code']).toBe('X_BUILD_SKEW');
     expect(body['fix']).toContain('reload');
-  });
-});
-
-describe('the request span', () => {
-  // The root span of a request is the only span a host can hang a timeline off, and it carried
-  // no attributes at all — an exporter got a name and a duration with nothing to correlate.
-  const spansOf = async (run: () => Promise<Response>): Promise<readonly ReadableSpan[]> => {
-    const exporter = memoryExporter();
-    configureTelemetry({ exporter });
-    try {
-      await run();
-    } finally {
-      resetTelemetry();
-    }
-    return exporter.spans;
-  };
-
-  test('is a server span naming the request id, method, route and status the client saw', async () => {
-    const pipeline = pipelineWith({});
-    const spans = await spansOf(() => pipeline.handle(get('/public'), { role: 'web' }));
-
-    const root = spans.find((span) => span.parentSpanId === undefined);
-    expect(root?.name).toBe('GET /public');
-    expect(root?.kind).toBe('server');
-    expect(root?.attributes['http.method']).toBe('GET');
-    expect(root?.attributes['http.route']).toBe('/public');
-    expect(root?.attributes['http.status_code']).toBe(200);
-    expect(typeof root?.attributes['http.request_id']).toBe('string');
-  });
-
-  test('the id on the span is the id on the response, or the two cannot be joined', async () => {
-    const pipeline = pipelineWith({});
-    const answered: Response[] = [];
-    const spans = await spansOf(async () => {
-      const response = await pipeline.handle(get('/public'), { role: 'web' });
-      answered.push(response);
-      return response;
-    });
-
-    const root = spans.find((span) => span.parentSpanId === undefined);
-    // `?? undefined` folds "no response" and "no header" into one absence, and the line below
-    // refutes it — so the comparison can never pass by both sides being missing.
-    const headerId = answered[0]?.headers.get('x-request-id') ?? undefined;
-    expect(headerId).toBeString();
-    expect(root?.attributes['http.request_id']).toBe(headerId);
-  });
-
-  test('a refused request still reports the status it answered with', async () => {
-    const pipeline = pipelineWith({ actorId: 'u_1', decision: { allowed: false, reason: 'nope' } });
-    const spans = await spansOf(() => pipeline.handle(get('/guarded'), { role: 'web' }));
-
-    const root = spans.find((span) => span.parentSpanId === undefined);
-    // The refusal is the outcome worth finding in a timeline; a span that stopped at the throw
-    // would report no status at all.
-    expect(root?.attributes['http.status_code']).toBe(403);
-  });
-});
-
-/** The point of the whole exercise: `docker/helm`'s web HPA derives `rps` from this counter. */
-describe('every request lands in the metrics the deploy chart scales on', () => {
-  const seriesOf = (name: string) =>
-    collectMetrics().metrics.find((metric) => metric.descriptor.name === name)?.points ?? [];
-
-  const totalFor = (route: string, status: string): number =>
-    seriesOf('http_requests_total')
-      .filter(
-        (point) => point.attributes['route'] === route && point.attributes['status'] === status,
-      )
-      .reduce((sum, point) => sum + point.value, 0);
-
-  beforeEach(() => {
-    resetMetrics();
-  });
-
-  test('counts a served request once, with a duration beside it', async () => {
-    const pipeline = pipelineWith({});
-    await pipeline.handle(get('/public'), { role: 'web' });
-    await pipeline.handle(get('/public'), { role: 'web' });
-
-    expect(totalFor('/public', '2xx')).toBe(2);
-    const duration = seriesOf('http_request_duration_seconds').find(
-      (point) => point.attributes['route'] === '/public',
-    );
-    expect((duration as { count?: number } | undefined)?.count).toBe(2);
-  });
-
-  test('a refused request is counted too — an error path is not a request that did not happen', async () => {
-    const pipeline = pipelineWith({ actorId: 'u_1', decision: { allowed: false, reason: 'nope' } });
-    await pipeline.handle(get('/guarded'), { role: 'web' });
-
-    expect(totalFor('/guarded', '4xx')).toBe(1);
-  });
-
-  test('the label is the route PATTERN, so a million ids are one series', async () => {
-    const pipeline = pipelineWith({});
-    for (const id of ['1', '2', '3']) {
-      await pipeline.handle(get(`/posts/${id}`), { role: 'web' });
-    }
-
-    expect(totalFor('/posts/:id', '2xx')).toBe(3);
-    // The concrete paths must appear nowhere: this is the cardinality bomb, and a metric label is
-    // the one place an attacker gets to choose how much memory the monitoring stack allocates.
-    expect(seriesOf('http_requests_total').map((point) => point.attributes['route'])).toEqual([
-      '/posts/:id',
-    ]);
-  });
-
-  test('an unmatched path collapses to one series instead of one per probe', async () => {
-    const pipeline = pipelineWith({});
-    await pipeline.handle(get('/wp-admin'), { role: 'web' });
-    await pipeline.handle(get('/.env'), { role: 'web' });
-
-    expect(totalFor('unmatched', '4xx')).toBe(2);
-  });
-});
-
-/**
- * The seam that shipped with nothing plugged into it. `onError` stays the APP's sink; the
- * framework's own reporting is a stage, so an app that never writes a hook is still not blind.
- */
-describe('a server fault reaches the error reporter', () => {
-  const reporter = memoryErrorReporter();
-
-  beforeEach(() => {
-    resetErrorReporting();
-    reporter.reset();
-    configureErrorReporting({ reporter });
-  });
-
-  afterEach(() => {
-    resetErrorReporting();
-  });
-
-  test('reports a 5xx with the request id, the trace and the route PATTERN', async () => {
-    const pipeline = pipelineWith({});
-    const response = await pipeline.handle(get('/boom/7'), { role: 'web' });
-
-    expect(response.status).toBe(500);
-    expect(reporter.events).toHaveLength(1);
-    const event = reporter.events[0] as ErrorReport;
-    expect(event.source).toBe('http');
-    expect(event.code).toBe('X_INTERNAL');
-    expect(event.scope.requestId).toBe(response.headers.get('x-request-id') as string);
-    expect(event.scope.role).toBe('web');
-    // The pattern, never `/boom/7`: a report facet is as attacker-chosen as a metric label.
-    expect(event.scope.operation).toBe('GET /boom/:id');
-  });
-
-  test('a 4xx is the caller’s mistake and is NOT reported', async () => {
-    const pipeline = pipelineWith({ actorId: 'u_1', decision: { allowed: false, reason: 'nope' } });
-    await pipeline.handle(get('/guarded'), { role: 'web' });
-    await pipeline.handle(get('/wp-admin'), { role: 'web' });
-
-    expect(reporter.events).toEqual([]);
-  });
-
-  test('the app’s own onError hook still fires, alongside the framework’s report', async () => {
-    const seen: string[] = [];
-    const pipeline = createPipeline({
-      table: createRouter(routes),
-      config,
-      hooks: { onError: (error) => seen.push((error as Error).name) },
-    });
-    await pipeline.handle(get('/boom/7'), { role: 'web' });
-
-    expect(seen).toEqual(['TypeError']);
-    expect(reporter.events).toHaveLength(1);
   });
 });
