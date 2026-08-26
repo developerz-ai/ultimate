@@ -2,10 +2,11 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Eleven majors have shipped, and this page walks all eleven** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Twelve majors have shipped, and this page walks all twelve** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 15.x → 16.0.0 | **1** — `matches(/re/)` refuses a construct the two regex engines read differently, at `entity()` time | the `16.0.0` section, in order |
 | 14.x → 15.0.0 | **1** — `DriftKind` gains a member, so an exhaustive `switch` with no `default` stops compiling | the `15.0.0` section, in order |
 | 13.x → 14.0.0 | **8** — two are security fixes with a behaviour change (a frame verb, a session key), four are types that refused what the runtime already did, and two remove API nothing called | the `14.0.0` section, in order |
 | 12.x → 13.0.0 | **2**, both narrow: a service factory's parameter type, and one deleted `PageLike` member with zero call sites anywhere in the repository | the `13.0.0` section, in order |
@@ -20,16 +21,16 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 11.x → 15.0.0 | **34** | every major section `CHANGELOG.md` still carries, oldest first |
+| 11.x → 16.0.0 | **35** | every major section `CHANGELOG.md` still carries, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 34 As of 2026-08-25 — the WHOLE file, which is capped at 1,000 lines: 26 sit inside the section
-# of the major that shipped them (the sum of every row above `11.x → 13.0.0` whose section the
-# changelog still carries), and the
-# remaining 8 are under `[Unreleased]`, awaiting the release that promotes them into a section.
+# 35 As of 2026-08-26 — the WHOLE file, which is capped at 1,000 lines. All 35 sit inside the
+# section of the major that shipped them (the sum of every row above whose section the changelog
+# still carries); `[Unreleased]` holds none, which is the state a TAGGED commit is checked in —
+# 16.0.0's release promoted its eight into the section rather than appending one.
 #
 # The count is SMALLER than the number of entries this page walks, and that is the archive, not a
 # discrepancy: `CHANGELOG.md` keeps the recent releases and `git show v10.0.0:CHANGELOG.md` has the
@@ -58,6 +59,65 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 15.x → 16.0.0, entry by entry
+
+**One breaking entry**, and it fires at `entity()` — before a migration exists, before anything
+reaches a database. Nothing migrates, and an app whose patterns are already portable emits exactly
+what it emitted at 15.x.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `c.<col>.matches(/re/)` refuses an unportable construct | your pattern uses `\b`, `.`, `\w`, `\s`, a backreference, a named group, an inline flag, a POSIX class, `\A`/`\Z`, `\x`, a leading `]` in a class, or a non-ASCII range endpoint |
+
+### 1. `matches(/re/)` refuses what the two engines read differently
+
+At 15.x this accepted **any** `RegExp` and emitted a maybe-equivalent POSIX pattern. That is the
+defect, not the refusal: `matches(/\bfoo/)` shipped a CHECK that compiled cleanly, errored nowhere,
+and enforced a **BACKSPACE** — measured on 18.4, `'foo' ~ '\bfoo'` is FALSE while `/\bfoo/.test('foo')`
+is true. Two rules under one name, with nothing anywhere to report it.
+
+Nothing is translated now either, and that is the mechanism: `pattern.source` is the string
+`.test()` runs **and** the string spliced into the constraint. That is only safe because every
+construct where the engines disagree is refused at declaration.
+
+**How to find them:** run your entities — `bun test`, or `x db gen`. The refusal is at `entity()`
+time, so one run surfaces every one, and each names the construct, its index, both readings, and
+the repair.
+
+| Construct | Measured on 18.4 | Write instead |
+|---|---|---|
+| `\b` | `'foo' ~ '\bfoo'` **false** — ARE reads BACKSPACE | a predicate: `matches((v) => /\bfoo/.test(v))`, app-only, `sql: null` |
+| `.` | `'a\nb' ~ 'a.b'` **true**, JS false | `[^\n\r]` |
+| `\w` `\W` | `'é' ~ '^\w$'` **true** — locale alnum class | `[A-Za-z0-9_]` |
+| `\s` `\S` | `'\u00a0' ~ '^\s$'` **false**, JS true | `[ \t\n\r\f\v]` |
+| `\A` `\Z` | anchor in ARE, a letter in JS | `^` / `$` |
+| `\x` | `'Д' ~ '^\x414$'` **true** — ARE takes 3 hex, JS 2 | a predicate |
+| leading `]` in a class | `[]a]` differs | `\]` |
+| `\1`–`\9`, `(?<name>…)`, `(?i)`, `[[:alpha:]]`, non-ASCII range endpoint | backreference, named group, inline flag, POSIX class, collation-ordered range | a predicate |
+
+Kept, and each measured to AGREE: literals, `^ $ | ( ) * + ?`, lazy quantifiers, `{n}`/`{n,}`/`{n,m}`,
+`(?:` `(?=` `(?!` `(?<=` `(?<!`, `\d \D \n \r \t \f \v`, punctuation escapes, bracket expressions
+with ASCII ranges, non-ASCII *members*, and `\uwxyz` at exactly four hex digits.
+
+Two of those earn a note. **`\d` is in by measurement, not by reading** — POSIX pins `[[:digit:]]`
+at the ten ASCII digits, and `'٣'`/`'５'` are false on both sides. **`\uwxyz` is in because Bun
+escapes a regex literal's non-ASCII characters** (`/^é$/.source` is `^\u00E9$`), so refusing it
+would have refused every i18n pattern written the ordinary way.
+
+**The subset is falsifiable, not asserted.** One live test runs every refused construct against a
+real server and asserts the two engines still disagree; another runs the kept subset and asserts
+they agree. A future Postgres that grows JavaScript's `\b` turns those red rather than leaving a
+stale exclusion in place.
+
+### Not breaking, but you will see it
+
+`x db gen` now emits `drop index` / `drop constraint` for a recorded index no entity declares.
+At 15.x it emitted nothing, so those objects stayed on the database while the next sidecar stopped
+recording them — and `drift` was green over it. Your first generation after upgrading may carry
+drops you did not expect; read them, they are objects your entities genuinely no longer declare.
+A recorded unique CONSTRAINT gets a `drop constraint … if exists` **before** the `drop index`,
+because `drop index` on a constraint-backed index is `2BP01` and `if exists` does not suppress it.
 
 ## 14.x → 15.0.0, entry by entry
 

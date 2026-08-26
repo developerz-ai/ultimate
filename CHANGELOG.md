@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 16.0.0 - 2026-08-26
+
 ### Added
 
 - **`invariant()` can express a pattern that reaches the database**, and the existing spelling was
@@ -19,8 +23,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   now **refused at declaration** with the portable spelling in the `fix:`. Measured against a live
   server, one shape at a time: `\b`, `.`, `\w`, `\s`, `\A`/`\Z`, backreferences, named groups,
   inline flags, POSIX classes, a leading `]` in a class, `\x`, and a non-ASCII range endpoint.
-  **Breaking**: a `matches(/…/)` outside the subset now throws instead of generating a CHECK. Those
-  apps had two rules under one name and no way to notice.
+- **BREAKING — `c.<col>.matches(/re/)` refuses a construct the two regex engines read differently.**
+  It previously accepted any `RegExp` and emitted a maybe-equivalent POSIX pattern, so
+  `matches(/\bfoo/)` shipped a CHECK that compiled cleanly, errored nowhere, and enforced a
+  BACKSPACE. A pattern outside the portable subset now throws `X_INVARIANT_VIOLATED` at `entity()`
+  time, naming the construct, its index, both readings, and either the portable spelling or the
+  app-only predicate form.
+
+  **What to do:** run your entities. Every refusal is at declaration, so a `bun test` or a `x db
+  gen` surfaces all of them at once; the `fix:` line carries the edit. An app whose patterns are
+  already inside the subset compiles and emits exactly what it emitted before. Apps that were
+  refused were not working — they had two rules under one name and no way to notice.
 - **`iff(a, b)`, `isNull()` and `isNotNull()`** — the vocabulary a cross-column coherence rule
   needed. `iff(c.status.eq('published'), c.publishedAt.isNotNull())` renders
   `(status = 'published') = (published_at is not null)`.
@@ -36,6 +49,27 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`x db gen` never dropped an index an entity stopped declaring.** `diffTable`'s index loop
+  walked DECLARED indexes only and matched by name, so a recorded index no entity declares stayed
+  on the database forever while the next sidecar quietly stopped recording it. `checkPlan` has that
+  arm and `foreignKeyPlan` gained it in 2026-08; the index arm never did.
+
+  Measured on `examples/dummy`: the chain created `member_unique_per_org`, `members_tz_idx` and
+  `post_slug_unique_per_org`, dropped none, and the newest sidecar recorded none. `declaredSchema`
+  reads only that sidecar and calls it the database, so the **next** `x db gen` was blind to all
+  three — and `drift` was green over it, because drift judges the declared side.
+  `post_slug_unique_per_org` matters most: its replacement is **narrower**, `(slug)` against
+  `(org_id, slug)`.
+
+  Dropping one is not one statement. A recorded unique CONSTRAINT and a plain unique INDEX are
+  indistinguishable in `TableDescription`, and the *same declaration* reaches the server as either
+  kind depending on which migration created it. Measured on 18.4: `drop index` on a
+  constraint-backed index is `2BP01`, and **`if exists` does not suppress it** — so the emitted
+  repair is a guarded pair, constraint first, and only for the shape a constraint's index can have.
+- **A materialised view's `fix:` line emitted DDL Postgres refuses.** `dependentViews` selects
+  `relkind in ('v', 'm')` deliberately, while `restoreView` always wrote `drop view` — answered
+  with `WRONG_OBJECT_TYPE`. The one kind the query went out of its way to include was the one whose
+  fix could not run.
 - **An app's declared column default could be stored as a different value, silently.**
   `.default('C:\logs')` emitted `default 'C:\logs'`, which stores `C:\logs` with
   `standard_conforming_strings` on and **`C:logs`** with it off — a GUC settable per session, per
@@ -65,6 +99,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- **`examples/dummy` regenerates its migrations, for the first time.** Its `drift` step is green
+  and unpinned — 17/20 to **18/20** on the app ratchet. `REPLICA IDENTITY FULL` turned out not to
+  be the blocker its pin claimed: that measurement was taken against a **squash**, and the
+  incremental path keeps `0001_init.sql` and both `ALTER`s. What it needed was the
+  `-- ungeneratable: 7` header the error's own `fix:` line asked for. Still a real gap for a NEW
+  app, tracked as #357.
 - **Both tracked apps now render every invariant.** `examples/dummy` and
   `dummy/social-media-clone` had **five** rules between them declared as JS predicates, so each
   reported `sql: null` and reached no database — while three source comments claimed a Postgres
@@ -74,6 +114,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `examples/dummy`'s `member_email_shape` was the subtle one: it declared `contains('@')`, which
   renders `position('@' in email) > 0` — weaker than the `> 1` the hand-written migration has
   enforced since day one, so regenerating on that form would have *introduced* a regression.
+
+### Commits
+
+- fix(db): drop the index an entity stopped declaring, so the reference app can regenerate (#358)
+- fix(db,entity): a pattern that reaches the database, a literal that survives the GUC, and a retype that no longer aborts (#356)
 
 ## 15.0.0 - 2026-08-25
 
