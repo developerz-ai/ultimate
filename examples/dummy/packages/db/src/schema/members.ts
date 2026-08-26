@@ -44,6 +44,12 @@ export const members = entity('members', {
      * that an address has a local part. This spelling implies `> 1` and adds that exactly one
      * `@` is present. No `\s` in it deliberately: JS and Postgres read `\s` differently, and
      * `matches` refuses the constructs where they disagree rather than emitting a lookalike.
+     *
+     * It is STRICTER than what it replaces, so it can fail on rows the old rule admitted —
+     * `a@b@c` and `a@` both satisfy `position('@' in email) > 0`. Every seeded address here is
+     * valid, so the generated migration applies clean in this app; on a populated database look
+     * first (`select email from members where email !~ '^[^@]+@[^@]+$'`) and fix what it returns,
+     * or the `add constraint` fails with `23514`.
      */
     invariant('member_email_shape', c.email.matches(/^[^@]+@[^@]+$/)),
     /** One membership per user per org: the uniqueness makes `inviteMember` replay-safe. */

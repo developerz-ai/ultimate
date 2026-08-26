@@ -103,7 +103,6 @@ describe.skipIf(!hasPostgres)('live · postgres · full-text search', () => {
     await client.execute(raw(DROP));
     await client.close();
     setDbClient(undefined);
-    clearRegistry();
   });
 
   const titles = async (term: string, org: string = ORG_A): Promise<readonly string[]> => {
@@ -235,4 +234,10 @@ describe.skipIf(!hasPostgres)('live · postgres · full-text search', () => {
       memoryRepo(posts, SEEDED).findMany({ where: [tenant(ORG_A), search('run')], limit: 10 }),
     ).rejects.toMatchObject({ code: 'X_SEARCH_IN_MEMORY' });
   });
+});
+
+// Outside the block above and unconditional: bun runs no hook inside a skipped `describe`, and the
+// registry is process-wide. `live-registry-cleanup.test.ts` is the rule that keeps it here.
+afterAll(() => {
+  clearRegistry();
 });

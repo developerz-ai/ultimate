@@ -84,6 +84,19 @@ describe.skipIf(!hasPostgres)('live · postgres · a view over a retyped column'
     return rows[0]?.format_type ?? '';
   };
 
+  /**
+   * What `restoreView` recovers, asked of the same server: `pg_get_viewdef(oid, true)` pretty-
+   * prints across several lines and ends in a `;`, and the preflight collapses both because a
+   * `fix:` is one line an operator pastes. Re-derived here rather than pinned as a string —
+   * pinning it pins `search_path`, which is the caller's and not this package's.
+   */
+  const viewDefinition = async (view: string): Promise<string> => {
+    const rows = await client.query<{ definition: string }>(
+      raw(`select pg_get_viewdef('"${view}"'::regclass, true) as definition`),
+    );
+    return (rows[0]?.definition ?? '').replace(/\s+/g, ' ').replace(/;\s*$/, '').trim();
+  };
+
   const teardown = async (): Promise<void> => {
     await client.execute(raw(`drop view if exists "${VIEW}" cascade`));
     await client.execute(raw(`drop view if exists "${NOTES_VIEW}" cascade`));
@@ -118,9 +131,17 @@ describe.skipIf(!hasPostgres)('live · postgres · a view over a retyped column'
     expect(error.message).toContain(VIEW);
     expect(error.message).toContain(TABLE);
     expect(error.message).toContain('rank');
-    // And the `fix:` is the view's own definition, so recreating it is a paste and not an archaeology.
-    expect(error.fix).toContain(`drop view "${VIEW}"`);
-    expect(error.fix).toContain(`create view "${VIEW}" as SELECT id, rank FROM ${TABLE}`);
+    // And the `fix:` is the view's own definition, so recreating it is a paste and not an
+    // archaeology. What is asserted is what the PREFLIGHT owns — the psql invocation, the two
+    // statements, and the definition it recovered — never the server's rendering of that
+    // definition: `pg_get_viewdef` schema-qualifies a relation that is not on `search_path`, so
+    // `FROM dv_docs` here is `FROM public.dv_docs` under a role whose `search_path` differs, and
+    // a pinned `SELECT id, rank FROM dv_docs` failed on product code nobody touched. The same
+    // server answers what it recovered, so the comparison stays exact without being its spelling.
+    const body = await viewDefinition(VIEW);
+    expect(body).toContain('rank');
+    expect(error.fix).toContain(`psql "$DATABASE_URL" -c 'drop view "${VIEW}"'`);
+    expect(error.fix).toContain(`psql "$DATABASE_URL" -c 'create view "${VIEW}" as ${body}'`);
   });
 
   test('nothing was applied and the ledger records nothing', async () => {

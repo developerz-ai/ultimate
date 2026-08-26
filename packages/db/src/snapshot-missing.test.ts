@@ -65,6 +65,10 @@ describe('unit · the drift difference points the same way', () => {
     expect(report.differences[0]?.kind).toBe('unknown-schema');
     expect(fix.startsWith('x db gen')).toBe(false);
     expect(fix).toContain('git checkout -- "*0000_initial.snapshot.json"');
+    // Both needles present before either is used as a bound: a `delete` that vanished is -1, and
+    // every real index is greater than -1, so the ordering would read as satisfied.
+    expect(fix).toContain('delete');
+    expect(fix).toContain('x db gen');
     expect(fix.indexOf('x db gen')).toBeGreaterThan(fix.indexOf('delete'));
   });
 });

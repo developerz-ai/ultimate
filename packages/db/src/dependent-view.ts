@@ -106,6 +106,8 @@ interface ViewRow {
   readonly table_name: string;
   readonly column_name: string;
   readonly definition: string;
+  /** `v` or `m`. A MATERIALISED view needs different DDL to drop and to recreate. */
+  readonly relkind: string;
 }
 
 /**
@@ -129,7 +131,7 @@ async function dependentViews(
   );
   return client.query<ViewRow>(sql`
     select distinct v.relname as view_name, c.relname as table_name, a.attname as column_name,
-           pg_get_viewdef(v.oid, true) as definition
+           pg_get_viewdef(v.oid, true) as definition, v.relkind as relkind
       from pg_depend d
       join pg_rewrite r on r.oid = d.objid and d.classid = 'pg_rewrite'::regclass
       join pg_class v on v.oid = r.ev_class
@@ -142,25 +144,61 @@ async function dependentViews(
 }
 
 /**
+ * One SQL statement as a single argv word for `psql -c`.
+ *
+ * SINGLE quotes, unlike `migrationConflict`'s `-c "…"`: `identifier()` writes the view's name in
+ * DOUBLE quotes, so a double-quoted shell word would end at the name. The definition is the
+ * server's own text and may hold a `'` of its own — `where status = 'published'` — so the one
+ * escape a POSIX shell has for it is spelled out here. This is not the SQL literal escape
+ * (`sql.ts`'s `literal()`, the tree's one copy of that); nothing below is sent to a server.
+ */
+const shellArg = (statement: string): string => `'${statement.replaceAll("'", `'\\''`)}'`;
+
+/** The invocation `migrationConflict` already writes, with the statement as its own argv word. */
+const psql = (statement: string): string => `psql "$DATABASE_URL" -c ${shellArg(statement)}`;
+
+/**
  * The two statements that unblock the deploy, as one line an operator pastes.
+ *
+ * It leads with the command to RUN and carries the follow-up in a `#` comment, the shape
+ * `migrateConcurrent` and `migrationSnapshotMissing` already write. It used to lead with bare DDL
+ * and a `#`: `#` is not a comment in Postgres, so psql read the whole line and failed on it, while
+ * a shell read `drop` as a program that does not exist. Neither reader could run it (axiom 4).
  *
  * `identifier()` REFUSES a name holding a quote, a space or a backslash — all three legal inside a
  * quoted Postgres name — and a `fix:` may not throw: the rule `rebuildForeignKey` already states,
  * with the same shape. A refusal that raised `X_SQL_UNSAFE` in place of the finding would hand the
  * operator an exception where a verdict was asked for, over a view name that is perfectly legal.
+ * The fallback still leads with a command that runs — a psql session — because quoting that name
+ * is the one step this package will not do twice: `identifier()` is its only identifier writer.
  *
  * The definition is collapsed to one line because `pg_get_viewdef(oid, true)` pretty-prints across
  * several and a `fix:` is read as a command.
+ *
+ * `relkind` decides the DDL and is not cosmetic: `dependentViews` deliberately selects `'m'` as
+ * well as `'v'`, and Postgres refuses `drop view` on a materialised one — `WRONG_OBJECT_TYPE`,
+ * "use DROP MATERIALIZED VIEW". So the one case the query went out of its way to include was the
+ * one whose `fix:` could not run. `pg_get_viewdef` answers the SELECT for both kinds, so only the
+ * two keywords differ; a matview's indexes and its `WITH DATA` population are NOT carried, and
+ * the fix says so rather than implying the recreate is complete.
  */
-function restoreView(view: string, definition: string): string {
+function restoreView(view: string, definition: string, relkind: string): string {
   const body = definition.replace(/\s+/g, ' ').replace(/;\s*$/, '').trim();
+  const materialised = relkind === 'm';
+  const kind = materialised ? 'materialized view' : 'view';
+  const note = materialised
+    ? '   # then re-create its indexes: a matview keeps none of them across a drop'
+    : '';
   try {
     const name = identifier(view).text;
-    return `drop view ${name};   # then x db migrate, then: create view ${name} as ${body};`;
+    return (
+      `${psql(`drop ${kind} ${name}`)}   # then x db migrate, then: ` +
+      `${psql(`create ${kind} ${name} as ${body}`)}${note}`
+    );
   } catch {
     return (
-      `drop the view named ${JSON.stringify(view)}, run x db migrate, then create it again as: ` +
-      body
+      `psql "$DATABASE_URL"   # quote the ${kind} name ${JSON.stringify(view)} yourself, then: ` +
+      `drop ${kind} <name>; \\q; x db migrate; and create it again as: create ${kind} <name> as ${body}${note}`
     );
   }
 }
@@ -180,7 +218,7 @@ export async function refuseDependentViews(client: DbClient, script: string): Pr
       row.view_name,
       row.table_name,
       row.column_name,
-      restoreView(row.view_name, row.definition),
+      restoreView(row.view_name, row.definition, row.relkind),
     );
   }
 }

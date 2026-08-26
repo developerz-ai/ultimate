@@ -87,7 +87,6 @@ describe.skipIf(!hasPostgres)('live · postgres · a state machine transition', 
     await client.execute(raw(DROP));
     await client.close();
     setDbClient(undefined);
-    clearRegistry();
   });
 
   test('twenty concurrent callers naming the same from-state produce exactly one move', async () => {
@@ -186,4 +185,10 @@ describe.skipIf(!hasPostgres)('live · postgres · a state machine transition', 
       ),
     ).rejects.toThrow();
   });
+});
+
+// Outside the block above and unconditional: bun runs no hook inside a skipped `describe`, and the
+// registry is process-wide. `live-registry-cleanup.test.ts` is the rule that keeps it here.
+afterAll(() => {
+  clearRegistry();
 });

@@ -74,7 +74,6 @@ describe.skipIf(!hasPostgres)('live · postgres · cursor precision', () => {
     await client.execute(raw(DROP));
     await client.close();
     setDbClient(undefined);
-    clearRegistry();
   });
 
   /** Every row the walk hands back, one page at a time, from the top. */
@@ -107,4 +106,10 @@ describe.skipIf(!hasPostgres)('live · postgres · cursor precision', () => {
   test('a page boundary inside the millisecond never repeats a row', async () => {
     expect(await walk('desc', 2)).toEqual(DESCENDING);
   });
+});
+
+// Outside the block above and unconditional: bun runs no hook inside a skipped `describe`, and the
+// registry is process-wide. `live-registry-cleanup.test.ts` is the rule that keeps it here.
+afterAll(() => {
+  clearRegistry();
 });

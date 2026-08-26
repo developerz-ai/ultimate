@@ -220,6 +220,10 @@ describe('a multi-statement migration', () => {
 
     expect(report.applied).toHaveLength(1);
     // The lock timeout is the transaction's own guard, not the script's, so it is not counted.
+    // Both bounds are asserted present first: `indexOf` answers -1 for a text never sent, and a
+    // -1 lower bound silently becomes `slice(0, …)` — a wider window that still holds one row.
+    expect(client.texts).toContain('BEGIN');
+    expect(client.texts).toContain('COMMIT');
     const inside = client.texts
       .slice(client.texts.indexOf('BEGIN') + 1, client.texts.indexOf('COMMIT'))
       .filter((text) => !text.includes('lock_timeout'));

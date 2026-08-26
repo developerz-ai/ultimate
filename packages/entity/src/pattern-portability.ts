@@ -97,9 +97,11 @@ const BACKREFERENCE = [
 
 /**
  * The group openings that survive both engines. `(?:` `(?=` `(?!` `(?<=` `(?<!` are measured to
- * agree; the whole rest of the `(?` family is refused, because ARE has no named groups at all —
- * `(?<year>…)` is a server-side `invalid regular expression` — and its inline directors (`(?i)`)
- * are not JavaScript syntax.
+ * agree — each has a row in `pg-invariant-pattern.live.test.ts`'s agreement table, the two
+ * LOOKBEHINDS only since 2026-08-25: this sentence shipped naming five and the table ran three, so
+ * it was broader than the evidence for as long as it existed. The whole rest of the `(?` family is
+ * refused, because ARE has no named groups at all — `(?<year>…)` is a server-side `invalid regular
+ * expression` — and its inline directors (`(?i)`) are not JavaScript syntax.
  *
  * Greediness needs no rule: `~` and `.test()` both answer whether a match EXISTS, and with
  * backreferences refused no amount of greedy-vs-lazy backtracking can change that answer. So

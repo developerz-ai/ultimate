@@ -12,7 +12,8 @@ import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shap
 import { type ConstraintPlans, foreignKeyPlan, foreignKeysOf, type Plan } from './foreign-key-plan';
 import type { Regeneration } from './generated-column';
 import { generatedClause, isGenerated, regenerate } from './generated-column';
-import { createIndex, dropIndex, impliedByColumnClause, redefineIndex } from './index-ddl';
+import { createIndex, impliedByColumnClause } from './index-ddl';
+import { indexPlan } from './index-plan';
 import {
   type ColumnDescription,
   findTable,
@@ -207,23 +208,9 @@ function diffTable(
     );
   }
 
-  const indexed = new Map(live.indexes.map((index) => [index.name, index]));
-  for (const index of declaredIndexes(entity)) {
-    const recorded = indexed.get(index.name);
-    // A rebuilt column took its indexes down with it, and a retype dropped the ones whose
-    // predicate it could not survive — either way this one is CREATED rather than compared:
-    // `redefineIndex` sees a definition that never moved and would emit nothing at all.
-    const gone = moved.indexes.has(index.name) || index.columns.some((each) => rebuilt.has(each));
-    if (recorded !== undefined && !gone) {
-      redefineIndex(entity.table, index, recorded, plan);
-      continue;
-    }
-    // `added` only: an index over a column that was already there is implied by no clause this
-    // migration emits, so it still needs a statement of its own.
-    if (impliedByColumnClause(entity, index, added)) continue;
-    plan.up.push(createIndex(entity.table, index));
-    plan.down.push(dropIndex(index.name));
-  }
+  // Both directions, in `index-plan.ts`: a recorded index the entity no longer declares is DROPPED
+  // there, which is the arm this loop did not have for as long as it lived here.
+  indexPlan(entity, live, plan, { added, rebuilt, moved: moved.indexes });
 
   // Last: a CHECK may read a column this migration just added, and `add constraint` on a column
   // that does not exist yet is `42703`. `check-ddl.ts` owns which of them move; `rebuilt` because a

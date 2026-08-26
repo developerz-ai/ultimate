@@ -13,25 +13,34 @@
 -- The `.snapshot.json` beside this file is hand-written too, 2026-08-25, and it is what unblocked
 -- the generator: `x db gen` diffs the entities against the NEWEST migration's sidecar, and with
 -- none it answered X_MIGRATION_SNAPSHOT_MISSING and refused rather than emitting `create table`
--- for six tables that already exist. Its own `fix:` is not available here — deleting this
--- migration only moves the refusal to 0001, and deleting that one too is the squash, which was
--- measured on 2026-08-25 and LOSES 10 invariants, 9 defaults and both REPLICA IDENTITY FULL with
--- `drift` green over it (scripts/lib/gated-apps.ts records the measurement).
+-- for six tables that already exist. It did that job and is now spent — the migration AFTER this
+-- one is `x db gen`'s own and carries its own sidecar, so this file is no longer the newest and
+-- nothing reads the snapshot beside it. `declaredSchema` (packages/db/src/drift.ts) sorts by id
+-- and returns the last one only.
 --
--- What the sidecar records is what THIS SQL creates — `varchar(80)` where the entity declares
+-- What that sidecar recorded is what THIS SQL creates — `varchar(80)` where the entity declares
 -- `text`, `post_slug_unique_per_org` where it declares `post_slug_unique`, and the enum types —
--- never what the entities declare. That is the whole point: recording the declaration would be
--- the same lie the squash tells, and the 53 differences `x verify`'s `drift` step now itemises
--- are all real. Three limits of the vocabulary, so a reader does not mistake them for errors:
--- `SchemaDescription` has no field for a CREATE TYPE, none for a column-level CHECK (so 0002's
--- own `monthly_scale` check is absent, as it would be in a generated sidecar — `snapshotOf`
--- records `declaredChecks` only), and one `order` per index rather than one per column, so
--- `posts_feed_idx` reads `desc` for the pair rather than for `published_at` alone.
+-- never what the entities declare. Recording the declaration would have been the lie a squash
+-- tells, and the differences it made `x verify`'s `drift` step itemise were all real. They are
+-- now RECORDED, by the generated migration after this one: the database is made to match the
+-- entities, rather than the record rewritten to say it already did.
 --
--- No `.hash` sidecar on purpose. The sidecar records a hash of the WHOLE schema source, and this
--- app's `drift` step is pinned red (scripts/lib/gated-apps.ts) because 0001's recorded hash
--- already predates that source. One column does not earn the claim that the migrations describe
--- it, and a hash written here would make the pin go green without regenerating anything.
+-- Two limits of the vocabulary, so a reader does not mistake them for errors: `SchemaDescription`
+-- has no field for a CREATE TYPE, and one `order` per index rather than one per column, so
+-- `posts_feed_idx` reads `desc` for the pair rather than for `published_at` alone. A column-level
+-- CHECK was the third until `packages/db/src/check-ddl.ts` landed on 2026-08-25 — this column's
+-- own scale check is now named and recorded, as `plans_monthly_scale_check`.
+--
+-- No `.hash` sidecar on purpose, and this is now the only migration here without one. That sidecar
+-- records a hash of the WHOLE schema source, which one column does not describe; 0001 and the
+-- generated migration after it each carry theirs.
+--
+-- The squash is still not the exit, and what it costs has SHRUNK to exactly seven. It no longer
+-- loses the invariants or the column defaults — `invariant-ddl.ts` renders the checks and
+-- `ColumnDescriptionLike.default` carries the declared value across the tier seam — but it still
+-- loses 0001's five `CREATE TYPE … AS ENUM` and both `ALTER TABLE … REPLICA IDENTITY FULL`, which
+-- nothing in the framework emits. That is 0001's `-- ungeneratable: 7` header, and
+-- `migrations.test.ts` asserts the count against the statements rather than trusting it.
 
 alter table "plans" add column "monthly_scale" integer check (monthly_scale is null or (monthly_scale >= 0 and monthly_scale <= 15));
 

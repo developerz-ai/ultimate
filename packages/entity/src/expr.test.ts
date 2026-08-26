@@ -32,6 +32,17 @@ const codeOf = (build: () => unknown): string => {
   }
 };
 
+/** The EDIT a refusal hands back — the half `codeOf` cannot see, and the half a reader pastes. */
+const fixOf = (build: () => unknown): string => {
+  try {
+    build();
+  } catch (error) {
+    if (isUltimateError(error)) return error.fix;
+    return expect.unreachable('not an UltimateError');
+  }
+  return expect.unreachable('nothing was refused');
+};
+
 describe('matches(/…/) reaches the database with its flags, or not at all', () => {
   test('a case-insensitive pattern compiles to ~*, so both halves accept the same row', () => {
     const rule = c.slug.matches(/^[A-Z]+$/i);
@@ -141,6 +152,27 @@ describe('iff is the biconditional, and it is one node in both halves', () => {
   test('a unique operand is refused where it is written: it is a column list, not a predicate', () => {
     expect(codeOf(() => iff(c.unique(['title']), c.slug.isNotNull()))).toBe('X_INVARIANT_VIOLATED');
     expect(codeOf(() => iff(c.slug.isNotNull(), c.unique(['title'])))).toBe('X_INVARIANT_VIOLATED');
+    expect(fixOf(() => iff(c.unique(['title']), c.slug.isNotNull()))).toContain(
+      'c.unique(["title"])',
+    );
+  });
+
+  /**
+   * The `fix:` is TypeScript to PASTE, so a column path is a VALUE spliced into source — the same
+   * hazard the `matches()` half of this file exists against, one layer up in the error message.
+   * `'${column}'` closed its own literal on a name carrying a quote, and an object key may hold one
+   * (`columns: { "o'brien": text() }` is legal TypeScript, and `unique()` is reached untyped by a
+   * JS caller and by a dynamically built list besides). A backslash is the second half and is why
+   * doubling the quote would not have been enough either.
+   */
+  test('the unique refusal it hands back parses, whatever the column is called', () => {
+    const odd = { "o'brien": text(), 'a\\b': text() };
+    const q = invariantColumns<typeof odd>('expr_test_quotes', Object.keys(odd));
+    const fix = fixOf(() => iff(q.unique(["o'brien", 'a\\b']), q["o'brien"].isNotNull()));
+    const pasted = fix.split('   #')[0] ?? '';
+    expect(pasted).toBe('invariant("o\'brien_a\\\\b_unique", c.unique(["o\'brien", "a\\\\b"]))');
+    // Parsed, not eyeballed: `generate-output.test.ts` uses the same oracle on generated files.
+    expect(() => new Bun.Transpiler({ loader: 'ts' }).transformSync(pasted)).not.toThrow();
   });
 
   /**

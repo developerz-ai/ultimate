@@ -56,20 +56,6 @@ export const GATED_APPS: readonly GatedApp[] = [
         'never served, and demo-actor.ts warns about it on every dev request). `budget` blocks ' +
         'the 6th and needs `x build --target static` output. Closed by the raw-Route seam in ' +
         'packages/cli/src/serve.ts, then the driver — in that order',
-      drift:
-        'migrations predate the current entity set. The stated exit — regenerate with the schema — ' +
-        'is NOT AVAILABLE and must not be taken: measured 2026-08-25, `rm migrations/* && x db gen ' +
-        '"init"` produces all six tables and LOSES all 10 declared invariants (including ' +
-        '`member_unique_per_org UNIQUE(org_id, user_id)`, which members.ts says is what makes ' +
-        '`inviteMember` replay-safe, and `post_slug_unique`), 9 scalar column defaults, and both ' +
-        '`ALTER TABLE … REPLICA IDENTITY FULL`. Legacy has 15 named constraints; the regenerated ' +
-        'file has 9, all of them `*_fkey`. And this step would go GREEN over it, because it ' +
-        'compares a schema-source hash to the newest `.hash` sidecar and NEVER READS THE SQL — ' +
-        'the exact green-for-the-wrong-reason case. Three framework causes, all in `packages/db`: ' +
-        '`EntityDescriptionLike` carries no `invariants` field (entity-shape.ts), ' +
-        '`defaultExpression` infers only `gen_random_uuid()`/`now()` (generate.ts), and nothing in ' +
-        'the framework emits `REPLICA IDENTITY FULL` at all — `@ultimat3/realtime` only checks it. ' +
-        'Closed when those land, not before',
       budgets:
         'X_BUDGET_UNMEASURED on 6 of the 8 routes that declare a `budget:`, and `.x/` is gitignored ' +
         'so no stats file is ever committed. `x build --target static` now COMPLETES here — the ' +

@@ -27,12 +27,11 @@
 // `up` is where that is said. Refusing it here would need the type knowledge two paragraphs up.
 
 import type { EntityDescriptionLike } from './entity-shape';
-import { addForeignKey, dropForeignKey, keyId } from './foreign-key';
+import { addForeignKey, dropForeignKey, keyId, unrestorableNote } from './foreign-key';
 import type { Plan } from './foreign-key-plan';
 import { isGenerated } from './generated-column';
 import type { ForeignKeyDescription, SchemaDescription, TableDescription } from './introspect';
 import { findTable } from './introspect';
-import { identifier } from './sql';
 import { sqlType } from './sql-type';
 
 /** Table name to the columns whose physical type this migration moves. Empty entries are omitted. */
@@ -116,9 +115,13 @@ export function moveKeysAside(
 
 /**
  * The `down` half. A key whose own table or whose target is being dropped has no `add constraint`
- * that could run at all, so it gets the note `unrestorableDrop` already gives one — through
- * `identifier`, because a `--` comment ends at the first newline and a name holding one would put
- * a second command on the line after it.
+ * that could run at all, so it gets the SAME note `unrestorableDrop` gives one — the text is
+ * `unrestorableNote`'s, in `foreign-key.ts`, and not a second spelling here. One failed rollback
+ * has one wording whichever module emitted it (axiom 2); these two had already drifted, this one
+ * naming no table at all while `foreign-key-plan.ts` named the target.
+ *
+ * The table it names is the key's OWN when that is the one going: a constraint whose table is
+ * gone is the more proximate reason there is nothing to add it back onto.
  */
 function restore(
   table: TableDescription,
@@ -128,8 +131,9 @@ function restore(
   if (!doomed.has(table.name) && !doomed.has(key.referencedTable)) {
     return addForeignKey(table.name, key);
   }
-  return (
-    `-- constraint ${identifier(key.name).text} on ${identifier(table.name).text} ` +
-    'cannot be restored; a table it needs is gone'
+  return unrestorableNote(
+    table.name,
+    key.name,
+    doomed.has(table.name) ? table.name : key.referencedTable,
   );
 }

@@ -511,7 +511,10 @@ migration ever generated and a marker on all of them marks none. **A closed list
 `drop table`, `drop column`, `truncate`, `alter column … type`; a rail enumerating every Postgres
 foot-gun is a second SQL parser competing with the server's, and every one of these four is a
 statement `generateMigration` emits, so each has a generated case holding it honest. `drop
-constraint`/`default`/`not null` and `drop index` are excluded by name: the database rebuilds them.
+constraint`/`default`/`not null` and `drop index` are excluded by name — a `drop index` holds no
+rows of its own, its `down` recreates the recorded definition, and `redefineIndex` has emitted one
+on every index rename since it existed, so classifying it marks nearly every migration and a marker
+on all is none.
 **Decide on blanked text, report the original** — `statementsOf` + `stripSqlNoise` before a keyword
 is looked for, so `-- drop table users` is prose and `values ('drop table users')` is data; but the
 excerpt in the error keeps its identifiers, because `drop table ""` names nothing an author can act
@@ -853,12 +856,56 @@ Four rules.
 A script that retypes nothing costs one text scan and no round trip, which is nearly every migration
 an app writes.
 
-**`index-ddl.ts` holds `createIndex`, `redefineIndex`, `indexShape`, `dropIndex` and
-`asDeclared`**, split out of `generate.ts` at the 500-line ceiling along the seam `check-ddl.ts` and
-`generated-column.ts` already drew — `generate.ts` assembles a plan, `index-ddl.ts` writes the index
-statements in it. `drift-findings.ts` is the same split on the other file: every `DriftDifference`
+**`index-ddl.ts` holds `createIndex`, `redefineIndex`, `indexShape`, `dropIndex`,
+`dropRecordedIndex`, `mayBeConstraintBacked` and `asDeclared`**, split out of `generate.ts` at the
+500-line ceiling along the seam `check-ddl.ts` and `generated-column.ts` already drew —
+`generate.ts` assembles a plan, `index-plan.ts` decides which index statements go in it, and
+`index-ddl.ts` writes them. `drift-findings.ts` is the same split on the other file: every `DriftDifference`
 constructor and the `DriftKind` union, with `drift.ts` keeping the comparisons and re-exporting both
 types explicitly so the public surface does not move.
+
+**`index-plan.ts` walks both directions, `As of 2026-08-25`** — the third arm to learn it, after
+`checkPlan` and `foreignKeyPlan`. `diffTable`'s index loop walked `declaredIndexes(entity)` and
+matched by name with **no reverse pass**, so an index the entities stopped declaring stayed on the
+database forever while the sidecar beside it stopped recording it: measured on `examples/dummy`,
+`member_unique_per_org`, `members_tz_idx` and `post_slug_unique_per_org` all survived a regeneration
+that recorded none of them, and the `drift` gate step was green over all three because drift judges
+the declared side. `indexPlan(entity, live, plan, context)` is the whole question now — declared
+first and removed last, the order `checkPlan` uses — and `generate.ts` calls it.
+
+**A recorded UNIQUE index cannot be told from a UNIQUE CONSTRAINT's, and it never will be.**
+`TableDescription` carries no discriminator and cannot usefully be given one: the *same*
+declaration reaches the server as either, depending on which migration created it. A `unique` column
+on a table `createTable` writes goes out as `create table … slug text unique`, which Postgres backs
+with a **constraint** named `posts_slug_key`; the same column gaining `unique` later takes
+`diffTable`'s `create unique index "posts_slug_key"` and is a plain index. `snapshotOf` records both
+as `{ unique: true, primary: false }`, and every sidecar already on disk was written that way, so a
+new field could not classify one retroactively. Measured on 18.4
+(`index-removal.live.test.ts`):
+
+| statement | on a constraint's index | on a plain index |
+|---|---|---|
+| `drop index "n"` | **2BP01** | ok |
+| `drop index if exists "n"` | **2BP01** — `if exists` does not suppress it | ok |
+| `alter table … drop constraint if exists "n"` | drops it, index and all | notice, no-op |
+
+So `dropRecordedIndex` emits the **pair**, constraint first — reversed, the `drop index` reaches a
+constraint's index and is the 2BP01 this exists to avoid — and only for the shape a constraint could
+be backing: `mayBeConstraintBacked` is unique, non-primary, total, unordered and btree, because
+`add constraint … unique` and a `unique` column clause can produce nothing else. A partial or
+ordered or GIN index takes the bare `drop index`. The asymmetry that remains is named rather than
+hidden: `down` recreates it with `create unique index`, so a constraint comes back as an index. That
+is the one statement this generator has, and it restores what the record described.
+
+Four names are skipped by the removal arm, and each is a statement Postgres would refuse or repeat:
+a `primary` index (2BP01, and the key is `TableDescription.primaryKey`), one already in
+`MovedAside.indexes` (a retype dropped it ahead of the ALTER — 42704), one over a column
+`regenerate` rebuilt (it went with the `drop column` — 42704), and one over a column this migration
+DROPS (`alter table … drop column` takes it, the rule `foreignKeyPlan` already applies to a
+constraint on a dropped column). A doomed **table** needs no arm at all: `generate.ts` only reaches
+a diff for a table an entity still declares. The known limit is written in the file header — a
+unique index a foreign key on ANOTHER table still references cannot be dropped (2BP01), and this arm
+sees one table at a time.
 
 **An entity's INVARIANTS reach the DDL, `As of 2026-08-25`, and `invariant-ddl.ts` is what they
 become.** `EntityDescriptionLike` had no `invariants` field at all — the same seam gap
@@ -1073,8 +1120,10 @@ module's vocabulary; `snapshotOf` imports `foreignKeysOf` back, one direction on
 **`foreignKeyPlan` walks both directions, `As of 2026-08-19`.** A *removed* `references()` used to
 emit nothing while the snapshot beside it recorded `foreignKeys: []` — so the orphan constraint
 stayed on the database **and** the record denied one the catalog holds, which `compareForeignKeys`
-can never see because it judges the declared side. That is not parity with a removed index: a
-removed index leaves the snapshot correct by omission, and this snapshot lied. The drop names the
+can never see because it judges the declared side. **This paragraph said "that is not parity with a
+removed index: a removed index leaves the snapshot correct by omission", and that was wrong** — see
+`index-plan.ts` below: a removed index's snapshot lied in exactly the same way, and the arm to fix
+it did not land until 2026-08-25. The drop names the
 constraint **the previous snapshot recorded**, never the one this generator would have chosen — a
 hand-written `fk_legacy` is `42704` under the generated spelling — and a key whose columns this
 migration is dropping is skipped, because `drop column` takes the constraint with it. A key whose

@@ -96,7 +96,6 @@ describe.skipIf(!hasPostgres)('live · postgres · a seed replays', () => {
     await client.execute(raw(DROP));
     await client.close();
     setDbClient(undefined);
-    clearRegistry();
   });
 
   const countOf = async (table: string): Promise<number> =>
@@ -131,4 +130,10 @@ describe.skipIf(!hasPostgres)('live · postgres · a seed replays', () => {
     expect(Number(rows[0]?.monthly_minor)).toBe(3000);
     expect(rows[0]?.created_at.toISOString()).toBe('2024-05-05T00:00:00.000Z');
   });
+});
+
+// Outside the block above and unconditional: bun runs no hook inside a skipped `describe`, and the
+// registry is process-wide. `live-registry-cleanup.test.ts` is the rule that keeps it here.
+afterAll(() => {
+  clearRegistry();
 });

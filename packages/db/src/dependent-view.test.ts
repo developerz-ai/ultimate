@@ -4,8 +4,10 @@
 // INVENTED is a catalog read and a refusal on a migration that would have applied.
 
 import { describe, expect, test } from 'bun:test';
-import { retypeTargets } from './dependent-view';
+import { UltimateError } from '@ultimat3/core';
+import { refuseDependentViews, retypeTargets } from './dependent-view';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
+import { createRecordingClient } from './fake';
 import { generateMigration, snapshotOf } from './generate';
 
 const column = (
@@ -97,5 +99,126 @@ describe('retypeTargets', () => {
     expect(retypeTargets('alter table "t" alter column "c" set not null;')).toEqual([]);
     expect(retypeTargets('alter table "t" drop constraint "k";')).toEqual([]);
     expect(retypeTargets('create index "i" on "t" ("c");')).toEqual([]);
+  });
+});
+
+describe('the fix line', () => {
+  const up = generateMigration({
+    entities: [docs('text')],
+    current: snapshotOf([docs('integer')]),
+    name: 'rank to text',
+    now: new Date(0),
+  }).up;
+
+  /** The refusal `refuseDependentViews` raises for one catalog row, with nothing real connected. */
+  const refuse = async (
+    definition: string,
+    view = 'docs_published',
+    relkind = 'v',
+  ): Promise<UltimateError> => {
+    const client = createRecordingClient().on(/pg_depend/, {
+      rows: [{ view_name: view, table_name: 'docs', column_name: 'rank', definition, relkind }],
+    });
+    const failure = await refuseDependentViews(client, up).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(UltimateError);
+    return failure as UltimateError;
+  };
+
+  /**
+   * The `-c` argument as a POSIX shell actually reads it. `printf` and not `psql`, because the
+   * question is the QUOTING and nothing here has a server: a fix line that is one argv word to
+   * `psql` is one argv word to any program.
+   */
+  const shellReads = async (invocation: string): Promise<string> => {
+    const argument = invocation.replace('psql "$DATABASE_URL" -c ', "printf '%s' ");
+    const shell = Bun.spawn(['sh', '-c', argument], { stdout: 'pipe', stderr: 'pipe' });
+    const [out, code] = await Promise.all([new Response(shell.stdout).text(), shell.exited]);
+    expect(code).toBe(0);
+    return out;
+  };
+
+  // The shape it had until 2026-08-25: `drop view "v";   # then x db migrate, then: create …`.
+  // `#` is not a comment in Postgres, so psql read the whole line and failed on it; a shell read
+  // `drop` as a program that does not exist. Runnable by neither reader is axiom 4 unmet.
+  test('both halves are psql invocations, never bare DDL', async () => {
+    const error = await refuse('SELECT id, rank FROM docs;');
+    expect(error.fix).toStartWith('psql "$DATABASE_URL" -c ');
+    expect(error.fix).toContain(`psql "$DATABASE_URL" -c 'drop view "docs_published"'`);
+    expect(error.fix).toContain(
+      `psql "$DATABASE_URL" -c 'create view "docs_published" as SELECT id, rank FROM docs'`,
+    );
+    // The view, the table and the column still reach the operator: that is what the code is for.
+    expect(error.cause).toContain('docs_published');
+    expect(error.cause).toContain('docs');
+    expect(error.cause).toContain('rank');
+  });
+
+  // `pg_get_viewdef` pretty-prints across lines and ends in a `;`; a `fix:` is read as a command.
+  test('the recovered definition is collapsed onto one line', async () => {
+    const error = await refuse(' SELECT id,\n    rank\n   FROM docs;');
+    expect(error.fix).toContain(`create view "docs_published" as SELECT id, rank FROM docs'`);
+    expect(error.fix).not.toContain('\n');
+  });
+
+  // The half a hand-written escape gets wrong. A view definition carries the server's own text,
+  // and `where status = 'published'` is a quote inside the word the shell is being handed.
+  test("a ' in the definition survives the shell, so the statement arrives whole", async () => {
+    const definition = `SELECT id, rank FROM docs WHERE status = 'published';`;
+    const error = await refuse(definition);
+    const create = error.fix.slice(error.fix.lastIndexOf('psql "$DATABASE_URL" -c '));
+    expect(await shellReads(create)).toBe(
+      `create view "docs_published" as SELECT id, rank FROM docs WHERE status = 'published'`,
+    );
+  });
+
+  test('the drop half survives the same shell, one argv word', async () => {
+    const error = await refuse('SELECT id, rank FROM docs;');
+    const drop = error.fix.slice(0, error.fix.indexOf('   #'));
+    expect(await shellReads(drop)).toBe('drop view "docs_published"');
+  });
+
+  // `identifier()` refuses a name holding a quote, a space or a backslash — all three legal inside
+  // a quoted Postgres name — and a `fix:` may not throw. The degraded line still LEADS with a
+  // command that runs, and still carries the definition, so nothing has to be reconstructed.
+  test('a name identifier() refuses degrades to a session, never to an exception', async () => {
+    const error = await refuse('SELECT id, rank FROM docs;', 'my "odd" view');
+    expect(error.fix).toStartWith('psql "$DATABASE_URL"');
+    expect(error.fix).toContain('my \\"odd\\" view');
+    expect(error.fix).toContain('SELECT id, rank FROM docs');
+  });
+
+  /**
+   * `dependentViews` selects `relkind in ('v', 'm')` on purpose — a matview carries the same
+   * `_RETURN` rule and fails the same `0A000`. But Postgres refuses `drop view` on one
+   * (WRONG_OBJECT_TYPE, "use DROP MATERIALIZED VIEW"), so before 2026-08-26 the one kind the
+   * query went out of its way to include was the one whose fix could not run.
+   */
+  test('a MATERIALISED view gets materialized-view DDL, both halves', async () => {
+    const failure = await refuse('SELECT id, rank FROM docs', 'docs_ranked', 'm');
+    expect(failure.fix).toContain('drop materialized view "docs_ranked"');
+    expect(failure.fix).toContain('create materialized view "docs_ranked" as');
+    // Never the plain spelling anywhere in the line — a stray `drop view` is the bug returning.
+    expect(failure.fix).not.toMatch(/(?:^|[^d] )drop view /);
+  });
+
+  test('a matview fix says its indexes are not carried — the recreate is not complete', async () => {
+    const failure = await refuse('SELECT id, rank FROM docs', 'docs_ranked', 'm');
+    expect(failure.fix).toContain('re-create its indexes');
+  });
+
+  test('an ordinary view is unchanged by the matview branch', async () => {
+    const failure = await refuse('SELECT id, rank FROM docs', 'docs_published', 'v');
+    expect(failure.fix).toContain('drop view "docs_published"');
+    expect(failure.fix).not.toContain('materialized');
+    expect(failure.fix).not.toContain('re-create its indexes');
+  });
+
+  test('the quoted-name fallback carries the kind too', async () => {
+    const failure = await refuse('SELECT id FROM docs', 'has space', 'm');
+    expect(failure.fix).toContain('drop materialized view <name>');
+    expect(failure.fix).toContain('create materialized view <name> as');
   });
 });
