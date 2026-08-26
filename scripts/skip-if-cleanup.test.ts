@@ -54,6 +54,20 @@ afterAll(() => {
     expect(cleanupFiles(one(bailed))[0]?.cleared).toBe(false);
   });
 
+  test('a BRACED early return leaks exactly as the one-liner does', () => {
+    const braced = `import { afterAll, describe } from 'bun:test';
+const ready = Boolean(process.env['TEST_DATABASE_URL']);
+describe.skipIf(!ready)('live', () => {});
+afterAll(() => {
+  if (!ready) {
+    return;
+  }
+  clearRegistry();
+});
+`;
+    expect(cleanupFiles(one(braced))[0]?.cleared).toBe(false);
+  });
+
   test('a file that skips but resets nothing is not this rule’s business', () => {
     const noReset = `import { describe } from 'bun:test';
 describe.skipIf(true)('live', () => {});

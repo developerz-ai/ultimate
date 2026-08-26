@@ -50,9 +50,12 @@ import { repoRoot } from './lib/run';
 const SCRIPT = 'skip-if-cleanup';
 
 /**
- * Listed one per entry and never brace-expanded: `Bun.Glob` does NOT support `{a,b}`, and a
- * pattern it cannot expand matches ZERO files — which this rule would have reported as a clean
- * tree. Measured while writing its sibling.
+ * Listed one per entry.
+ *
+ * `Bun.Glob` DOES expand braces — but an alternative containing a `/` matches **zero files**:
+ * measured, `{packages,scripts}/**` finds 1,309 and `{packages/<any>/src,scripts}` finds none. A
+ * pattern that matches nothing reads exactly like a clean tree, which is how this rule's sibling
+ * reported a clean answer having scanned no file at all.
  */
 const TEST_GLOBS = ['packages/*/src/**/*.test.ts', 'examples/**/*.test.ts', 'dummy/**/*.test.ts'];
 
@@ -71,8 +74,15 @@ const FILE_SCOPE_HOOK = /^(?:afterAll|beforeAll|afterEach|beforeEach)\s*\(/;
 /** A new top-level statement, which ends whatever file-scope hook was open. */
 const TOP_LEVEL = /^\S/;
 
-/** An early return inside a file-scope hook: the hook runs, and then does nothing. */
-const EARLY_RETURN = /^\s{2,}if\s*\(.*\)\s*return\b/;
+/**
+ * An early return inside a file-scope hook: the hook runs, and then does nothing.
+ *
+ * Both spellings — `if (!ready) return;` and the braced form over two lines. The first draft read
+ * only the one-liner, so a braced guard leaked exactly as the nested form does while reading as
+ * clean.
+ */
+const EARLY_RETURN = /^\s{2,}if\s*\(.*\)\s*(?:return\b|\{\s*$)/;
+const BRACED_RETURN = /^\s{4,}return\b/;
 
 export interface CleanupFile {
   readonly file: string;
@@ -98,7 +108,7 @@ export function cleanupFiles(sources: ReadonlyMap<string, string>): readonly Cle
       } else if (TOP_LEVEL.test(text)) {
         inHook = false;
       }
-      if (inHook && EARLY_RETURN.test(text)) bailed = true;
+      if (inHook && (EARLY_RETURN.test(text) || BRACED_RETURN.test(text))) bailed = true;
       if (inHook && !bailed && RESET.test(text)) {
         cleared = true;
         line = index + 1;

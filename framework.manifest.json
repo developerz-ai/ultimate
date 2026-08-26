@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "01774c56466b736d1e5b8d678a4d59821b5746c771319e10e7f5a334691dcf07",
+  "buildId": "58963b704fe93eeae102e86f8bb560232087ad519d5283d36d39116f4ddf9fbc",
   "tiers": {
     "0": [
       "core",
@@ -1401,6 +1401,11 @@
     },
     {
       "code": "X_INDEX_ORDER_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/index-of-order.ts"
+    },
+    {
+      "code": "X_INDEX_ORDER_PIN_UNEXPLAINED",
       "owner": "scripts",
       "at": "scripts/index-of-order.ts"
     },

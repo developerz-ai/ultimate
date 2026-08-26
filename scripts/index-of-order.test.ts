@@ -55,11 +55,28 @@ describe('what counts as a guard', () => {
     expect(guarded(`    expect(up).toContain('alter table "p" drop x now;');`)).toBe(true);
   });
 
-  test('an explicit index assertion, in each spelling', () => {
-    expect(guarded(`    expect(i).toBeGreaterThanOrEqual(0);`)).toBe(true);
-    expect(guarded(`    expect(i).toBeGreaterThan(-1);`)).toBe(true);
-    expect(guarded(`    expect(i).not.toBe(-1);`)).toBe(true);
-    expect(guarded(`    expect(i).toBe(3);`)).toBe(true);
+  test('an explicit index assertion, in each spelling, ON THE SAME EXPRESSION', () => {
+    const g = (guard: string): boolean =>
+      orderingSites(FILE, wrap(`${guard}\n    expect(up.indexOf('drop x')).toBeLessThan(n);`))[0]
+        ?.guarded === true;
+    expect(g(`    expect(up.indexOf('drop x')).toBeGreaterThanOrEqual(0);`)).toBe(true);
+    expect(g(`    expect(up.indexOf('drop x')).toBeGreaterThan(-1);`)).toBe(true);
+    expect(g(`    expect(up.indexOf('drop x')).not.toBe(-1);`)).toBe(true);
+    expect(g(`    expect(up.indexOf('drop x')).toBe(3);`)).toBe(true);
+  });
+
+  test('a guard on a DIFFERENT expression does not count', () => {
+    // The rule that found the STARTTLS defect. `GUARDS.some(body)` never bound to the index, so
+    // any unrelated numeric assertion in the same test silenced it — `expect(res.status)
+    // .toBe(200)` satisfied `/\.toBe\(\d+\)/`. A false NEGATIVE, and the worst kind: it made
+    // the rule quietly weaker than it claimed, and hid a mail client that skipped STARTTLS
+    // entirely while its ordering test stayed green.
+    expect(guarded(`    expect(res.status).toBe(200);`)).toBe(false);
+    expect(guarded(`    expect(rows.length).toBeGreaterThanOrEqual(0);`)).toBe(false);
+  });
+
+  test('a split-count is a presence proof, and a stronger one than toContain', () => {
+    expect(guarded(`    expect(up.split('drop x').length - 1).toBe(1);`)).toBe(true);
   });
 
   test('a matcher argument on its own line ends with a comma, and still resolves', () => {

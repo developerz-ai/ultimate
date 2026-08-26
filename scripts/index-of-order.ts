@@ -31,6 +31,9 @@
 // or a `toContain(<the same needle>)` on the haystack — which is the spelling this repo reaches
 // for most, and the one `generate-drop-order.test.ts` now writes above every comparison.
 //
+// Both `indexOf` and `findIndex` are read — `findIndex` answers -1 identically, and
+// `migrate-lock.test.ts` uses it as an ordering bound.
+//
 //   bun run index-of-order  ·  bun run scripts/index-of-order.ts [--json] [--explain]
 //   bun run scripts/index-of-order.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
@@ -43,9 +46,13 @@ import { repoRoot } from './lib/run';
 const SCRIPT = 'index-of-order';
 
 /**
- * Every tree a test can live in. Listed one per entry and never brace-expanded: `Bun.Glob` does
- * NOT support `{a,b}`, and a pattern it cannot expand matches ZERO files — which this rule would
- * have reported as a clean tree. Measured while writing it.
+ * Every tree a test can live in, listed one per entry.
+ *
+ * `Bun.Glob` DOES expand braces — but an alternative containing a `/` matches **zero files**:
+ * measured, `{packages,scripts}/**` finds 1,309 and `{packages/<any>/src,scripts}` finds none.
+ * A pattern that matches nothing reads exactly like a clean tree, which is how the first draft of
+ * this rule reported "0 at-risk sites" having scanned no file at all. One pattern per entry needs
+ * no such judgement.
  */
 const TEST_GLOBS = [
   'packages/*/src/**/*.test.ts',
@@ -58,10 +65,10 @@ const FROM_INDEX = /\b(?:indexOf|findIndex)\s*\(/;
 
 /** A presence assertion, in any spelling this tree uses. */
 const GUARDS = [
-  /\.toBeGreaterThanOrEqual\s*\(\s*0\s*\)/,
-  /\.toBeGreaterThan\s*\(\s*-1\s*\)/,
-  /\.not\s*\.\s*toBe\s*\(\s*-1\s*\)/,
-  /\.toBe\s*\(\s*\d+\s*\)/,
+  /^\s*\.\s*toBeGreaterThanOrEqual\s*\(\s*0\s*\)/,
+  /^\s*\.\s*toBeGreaterThan\s*\(\s*-1\s*\)/,
+  /^\s*\.\s*not\s*\.\s*toBe\s*\(\s*-1\s*\)/,
+  /^\s*\.\s*toBe\s*\(\s*\d+\s*\)/,
 ] as const;
 
 export interface OrderSite {
@@ -88,6 +95,18 @@ function balanced(src: string, open: number): number {
     else if (c === ')') {
       depth -= 1;
       if (depth === 0) return i;
+    } else if (c === '/' && src[i + 1] === '/') {
+      // A COMMENT is not code, and this tree's comments are full of backticks — `indexOf`,
+      // `BEGIN`. Read as a template literal, one swallowed the rest of the scan and the enclosing
+      // test came back empty, so a correctly guarded site read as unguarded. `sql-scan.ts` records
+      // the same lesson for SQL: source order, never a sequence of replacements.
+      const end = src.indexOf('\n', i);
+      if (end < 0) return -1;
+      i = end;
+    } else if (c === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      if (end < 0) return -1;
+      i = end + 1;
     } else if (c === "'" || c === '"' || c === '`') {
       i += 1;
       while (i < src.length && src[i] !== c) i += src[i] === '\\' ? 2 : 1;
@@ -98,12 +117,64 @@ function balanced(src: string, open: number): number {
 
 /** The body of the `test(`/`it(` containing `at`, or the whole file when it sits outside one. */
 function enclosingTest(src: string, at: number): string {
-  const before = src.slice(0, at);
-  const start = Math.max(before.lastIndexOf('\n  test('), before.lastIndexOf('\n  it('));
-  if (start < 0) return src;
-  const open = src.indexOf('(', start + 1);
-  const close = balanced(src, open);
-  return close > at ? src.slice(open, close) : src;
+  // Bounded by INDENTATION, not by paren-balancing the whole test call. Balancing works for one
+  // expression and is the right tool there, but over a 200-line body any regex literal or stray
+  // quote derails it — and a derailed scan returns nothing, which reads as "no guard here" and
+  // reports a correctly guarded site. Indentation is what actually delimits a `test(` block in
+  // this tree, and it degrades gracefully.
+  const lines = src.split('\n');
+  const atLine = src.slice(0, at).split('\n').length - 1;
+  const opener = /^(\s*)(?:test|it)(?:\.[A-Za-z]+)*\s*\(/;
+  let first = -1;
+  let indent = '';
+  for (let i = atLine; i >= 0; i -= 1) {
+    const m = opener.exec(lines[i] ?? '');
+    if (m !== null) {
+      first = i;
+      indent = m[1] ?? '';
+      break;
+    }
+  }
+  // No enclosing test means no body to search: answer the empty string so nothing reads as a
+  // guard. Over-reporting is the safe direction; returning the whole FILE is not — a guard in an
+  // unrelated test then marks this assertion guarded, which is a false negative.
+  if (first < 0) return '';
+  let last = lines.length;
+  for (let i = first + 1; i < lines.length; i += 1) {
+    const text = lines[i] ?? '';
+    if (text.trim() === '') continue;
+    const lead = /^\s*/.exec(text)?.[0] ?? '';
+    if (lead.length <= indent.length) {
+      last = i;
+      break;
+    }
+  }
+  return last > atLine ? lines.slice(first, last).join('\n') : '';
+}
+
+/**
+ * The expression whose `-1` would pass — normalised, so a guard on the SAME thing can be matched.
+ *
+ * `GUARDS.some(...)` over the whole body never bound to it, so an unrelated `expect(res.status)
+ * .toBe(200)` satisfied `/\.toBe\(\d+\)/` and silenced the rule. A guard has to be about this
+ * index, not merely present nearby.
+ */
+function normalised(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** Whether the body asserts THIS index expression is a real position. */
+function guardsExpression(body: string, expression: string): boolean {
+  const wanted = normalised(expression);
+  for (const m of body.matchAll(/\bexpect\s*\(/g)) {
+    const open = m.index + m[0].length - 1;
+    const close = balanced(body, open);
+    if (close < 0) continue;
+    if (normalised(body.slice(open + 1, close)) !== wanted) continue;
+    const tail = body.slice(close + 1, close + 60);
+    if (GUARDS.some((guard) => guard.test(tail))) return true;
+  }
+  return false;
 }
 
 /**
@@ -131,6 +202,10 @@ function containsNeedle(body: string, needle: string): boolean {
   // totally as an index assertion does — the value-at-index spelling, the mirror of `toBe(0)`
   // which `GUARDS` already carries. Flagged at `scripts/scaffold-first-run.test.ts` without it.
   if (body.includes(`toBe(${needle})`)) return true;
+  // `expect(BODY.split('return false').length - 1).toBe(1)` is a presence proof STRONGER than
+  // `toContain`: it pins the exact number of occurrences. Two sites in this tree spell it that
+  // way, and both read as unguarded until the rule learned it.
+  if (body.includes(`split(${needle})`) && /\.toBe\s*\(\s*[1-9]\d*\s*\)/.test(body)) return true;
   const wanted = literalOf(needle);
   if (wanted === undefined || wanted === '') return false;
   for (const m of body.matchAll(/\.toContain\s*\(/g)) {
@@ -176,7 +251,7 @@ export function orderingSites(file: string, src: string): readonly OrderSite[] {
       line: src.slice(0, open).split('\n').length,
       matcher,
       risky: risky.replace(/\s+/g, ' ').trim(),
-      guarded: contained || GUARDS.some((guard) => guard.test(body)),
+      guarded: contained || guardsExpression(body, risky),
     });
   }
   return found;
@@ -253,6 +328,17 @@ export function checkOrdering(input: OrderInput): readonly Finding[] {
     });
   }
   for (const pin of input.pins) {
+    // "There was a reason" is the documentation axiom 3 says does not exist. The pins file
+    // declared this rule in prose and nothing read `reason`, so the first pin added in a hurry
+    // would have carried none — `boundaries.ts` refuses a blank `FLOOR_ABOVE` reason the same way.
+    if (pin.reason.trim() === '') {
+      findings.push({
+        code: 'X_INDEX_ORDER_PIN_UNEXPLAINED',
+        cause: `${pin.pkg} is pinned with a blank reason, so nothing records what its remaining sites are or why they stand`,
+        fix: `write what the remaining site(s) in ${pin.pkg} are and why they have not been repaired, in scripts/lib/index-of-order-pins.ts — or repair them and run bun run scripts/index-of-order.ts --unpin ${pin.pkg}`,
+        at: 'scripts/lib/index-of-order-pins.ts',
+      });
+    }
     const count = counts.get(pin.pkg) ?? 0;
     if (count < pin.count) {
       findings.push({
@@ -270,25 +356,60 @@ if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
   const { sites, files } = await scanTree(root);
-  const findings = checkOrdering({ sites, pins: INDEX_OF_ORDER_PINS, scanned: files > 0 });
-  const unguarded = sites.filter((site) => !site.guarded);
-  report(
-    {
-      ok: findings.length === 0,
-      script: SCRIPT,
-      summary:
-        findings.length === 0
-          ? `${String(sites.length)} indexOf ordering assertion(s) across ${String(files)} test file(s), ${String(unguarded.length)} unguarded and every one pinned`
-          : findings[0]?.code === 'X_INDEX_ORDER_UNSCANNED'
-            ? 'this rule read nothing, so no ordering assertion was checked'
-            : `${String(findings.length)} package(s) off the index-of-order ratchet`,
-      findings,
-      data: {
-        files,
-        sites: sites.length,
-        unguarded: args.flags.get('explain') === true ? unguarded : unguarded.length,
+  // `--unpin <pkg>[,<pkg>]` — the edit `X_INDEX_ORDER_PIN_STALE` names, performed. Advertised in
+  // this file's header from the first draft and unimplemented until a review pointed at it: an
+  // executable fix that is not executable is axiom 4 inverted.
+  const unpin = args.flags.get('unpin');
+  if (typeof unpin === 'string') {
+    const names = new Set(
+      unpin
+        .split(',')
+        .map((one) => one.trim())
+        .filter((one) => one !== ''),
+    );
+    const kept = INDEX_OF_ORDER_PINS.filter((pin) => !names.has(pin.pkg));
+    const unknown = [...names].filter(
+      (name) => !INDEX_OF_ORDER_PINS.some((pin) => pin.pkg === name),
+    );
+    report(
+      {
+        ok: unknown.length === 0,
+        script: SCRIPT,
+        summary:
+          unknown.length === 0
+            ? `unpinned ${String(INDEX_OF_ORDER_PINS.length - kept.length)} package(s); write the remaining ${String(kept.length)} into scripts/lib/index-of-order-pins.ts`
+            : `${String(unknown.length)} name(s) are not pinned`,
+        findings: unknown.map((name) => ({
+          code: 'X_INDEX_ORDER_PIN_STALE',
+          cause: `${name} has no entry in INDEX_OF_ORDER_PINS, so there is nothing to unpin`,
+          fix: 'bun run index-of-order --json  # the pinned names are in data.pins',
+          at: 'scripts/lib/index-of-order-pins.ts',
+        })),
+        data: { pins: kept },
       },
-    },
-    args.json,
-  );
+      args.json,
+    );
+  } else {
+    const findings = checkOrdering({ sites, pins: INDEX_OF_ORDER_PINS, scanned: files > 0 });
+    const unguarded = sites.filter((site) => !site.guarded);
+    report(
+      {
+        ok: findings.length === 0,
+        script: SCRIPT,
+        summary:
+          findings.length === 0
+            ? `${String(sites.length)} indexOf ordering assertion(s) across ${String(files)} test file(s), ${String(unguarded.length)} unguarded and every one pinned`
+            : findings[0]?.code === 'X_INDEX_ORDER_UNSCANNED'
+              ? 'this rule read nothing, so no ordering assertion was checked'
+              : `${String(findings.length)} package(s) off the index-of-order ratchet`,
+        findings,
+        data: {
+          files,
+          sites: sites.length,
+          unguarded: args.flags.get('explain') === true ? unguarded : unguarded.length,
+        },
+      },
+      args.json,
+    );
+  }
 }
