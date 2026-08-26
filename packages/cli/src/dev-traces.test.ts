@@ -226,3 +226,33 @@ describe('unit · the /_x timeline source', () => {
     );
   });
 });
+
+/**
+ * The retention bound, when it is not a number. `while (byTrace.size > NaN)` is false on every
+ * pass, so the eviction loop never runs and this recorder — one entry per request, each holding
+ * every `ReadableSpan` that request opened, and a request issuing 50k statements holds 50k of
+ * them — grows for the life of the `x dev` process. The bound does not get bigger, it stops
+ * existing.
+ */
+describe('a retention bound that is not a number is not a bound', () => {
+  const NOT_A_BOUND = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+  test('a non-finite limit is refused when the recorder is built', () => {
+    for (const limit of NOT_A_BOUND) {
+      expect(() => createTraceRecorder({ limit })).toThrow('X_INVARIANT');
+    }
+  });
+
+  test('a limit of 0 is refused — a recorder that retains nothing is not a recorder', () => {
+    expect(() => createTraceRecorder({ limit: 0 })).toThrow('X_INVARIANT');
+    expect(createTraceRecorder({ limit: 1 }).traces()).toEqual([]);
+  });
+
+  test('the limit the caller declared still evicts', () => {
+    const { recorder, clock } = install(1);
+    request(clock, { id: 'req_1', path: '/a' });
+    clock.advance(1000);
+    request(clock, { id: 'req_2', path: '/b' });
+    expect(recorder.traces().map((trace) => trace.requestId)).toEqual(['req_2']);
+  });
+});

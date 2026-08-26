@@ -67,9 +67,21 @@ validators either: all three **propagate** `NaN`, and this repo was relying on a
   | `@ultimat3/mcp` | `serveStdio` `lineLimitBytes` (whole ≥ 1), `mcpHttpRoute` `bodyLimitBytes` (now refused at **construction**, not on the first request), `capQueryRows` `maxRows`/`maxBytes` |
   | `@ultimat3/notify` | `createMemoryDeliveryLedger` `max`, `InboxQuery.limit` (both drivers), `notifier` `maxRecipients`, `deliver[].wait` and `deliver[].digest.window` |
   | `@ultimat3/ui` | `DataTable` `skeletonRows`, `Skeleton` `lines`, `filterOptions` limit |
+  | `@ultimat3/scraping` | `scrape` `pageTimeout`/`rate`/`watchdog.idleMs`/`auth.maxAge`/`expect.{minRows,maxDrop,window}`, `localBrowser` `graceMs`, `page.waitFor` `timeout`, `awaitActionable` `pollMs`, `http.request` `timeout`/`maxBytes`, `robotsFetcher` `timeoutMs`/`maxBytes`, `fakePage` `timeoutMs`, `deadline(clock, totalMs)` |
+  | `@ultimat3/testing` | `installDeterminism` `now`/`seed`, `setFrozenClock`, `frozenClock`, `advanceClock` |
+  | `@ultimat3/cli` | `syncAuthenticator` `ttlMs`, `installE2eDriver` `timeoutMs`/`serviceWorkerTimeoutMs`, `createTraceRecorder` `limit`, `runIslandShot` `minBytes`, `startMetricsEndpoint` `port` |
+  | `@ultimat3/admin` | `memoryAuditLog` `capacity`, `AuditLog.entries` `limit`, `adminSearch` `limitPerResource`, `adminResource` `pageSize` |
 
   **What to do:** run your app. Every refusal is at boot or at the call boundary, so one `bun test`
   or one `x verify` surfaces all of them at once and the `fix:` line carries the edit.
+- **`TRUSTED_PROXY_HOPS` now accepts 1–64, widened from 1–16.** Two screens governed one setting
+  with two different ceilings: `packages/cli/src/dev-roles.ts` judged the env string and
+  `@ultimat3/http` the config number. Both screens are legitimate and stay — an operator who set an
+  env var must not get a `fix:` naming a code edit they cannot make — but the *number* was the
+  axiom-1 violation. The CLI moved, because widening breaks no shipped configuration while
+  tightening `@ultimat3/http` would narrow a public API in an already-released tier. A test probes
+  both screens for the highest value each accepts and fails naming both numbers the moment they
+  diverge: behaviour compared, not constants.
 - **BREAKING — `http.trustedProxyHops` accepts `1…64`.** `0` was the failure state, not a setting:
   `forwarded.ts` returns `undefined` for `hops < 1`, so a declared `0` silently trusted nothing while
   reading as a configured value. It is a boot-owned key, so no app can write it; the blast radius is
@@ -128,6 +140,33 @@ validators either: all three **propagate** `NaN`, and this repo was relying on a
 - **The MCP query cap answered an empty table as a complete answer.** `capQueryRows` with a
   non-finite ceiling gives the agent **zero rows with `truncated: false`**, and switches the 256 KiB
   context guard off entirely.
+- **A `NaN` scrape timeout was a busy-loop against a real browser.** Measured with the screens
+  removed: `awaitActionable({ timeoutMs: NaN })` ran **835,462 polls in 3 seconds — 278,487/s** and
+  was still looping, each one a CDP round trip, past `ctx.signal`, past the wedge watchdog and past
+  the job timeout. `for (;;)` with a `NaN` budget has no exit.
+- **A saved scrape session with an unparseable `savedAt` was restored at any age.** The stored value
+  is only checked to *be a string*, so an edited fixture gave `age = NaN` and `age > maxAge` is
+  false. The comparison is now written fail-closed — `!(age <= limit)` — which is identical for
+  every finite age and opposite for `NaN`.
+- **`installDeterminism({ now: 'yesterday' })` broke `Date.now()` for the WHOLE test process.**
+  `bun test` is one process and the preload installs the clock globally, so an unparseable `now`
+  made `Date.now()` answer `NaN` and `new Date()` answer `Invalid Date` in every test file, with no
+  later `advanceClock` or `setFrozenClock` able to undo it.
+- **A `NaN` seed did not break determinism — it silently made the run the SEED-ZERO run.** Measured:
+  `seed >>> 0` maps `NaN`, `±Infinity`, `0.5`, `-1` and `2**32` all to the identical sequence as
+  `seed: 0`. So the run reproduced fine and the *record of which seed produced it* was false, in the
+  package whose whole promise is reproducibility.
+- **`configureLifecycle` is NOT fixed here and is tracked in #371.** A `NaN` `deadlineMs` makes a
+  deploy drop in-flight requests and abandon shutdown hooks on the first tick — reproduced:
+  `drain()` returned in 111 ms with work still in flight. It is an `!== undefined` assignment rather
+  than a `??` default, so the ratchet cannot see it, which means `packages/core`'s absence from the
+  pin table currently claims more than it has proved.
+- **`x dev` held every span of every request forever** for a non-finite trace limit —
+  `while (byTrace.size > NaN)` never runs, so the eviction loop stops existing.
+- **`syncAuthenticator({ ttlMs: NaN })` reopened the hole that file exists to close.** `expiresAt =
+  now + NaN` is `NaN` and `expired()` asks `expiresAt <= now`, false forever. Measured: session
+  revoked, clock advanced a **full year**, `sweepGrants` answered `{refreshed: 0, revoked: 0,
+  failed: 0}`, and the book still held the socket.
 
 ### Removed
 

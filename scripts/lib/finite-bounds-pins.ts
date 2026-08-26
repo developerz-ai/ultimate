@@ -40,24 +40,9 @@ export interface FiniteBoundPin {
  */
 export const FINITE_BOUNDS_PINS: Readonly<Record<string, FiniteBoundPin>> = {
   admin: {
-    count: 4,
-    reason:
-      '`audit.ts`, `layout.tsx`, `resource.ts`, `search.ts` — `capacity`, `limitPerResource`, `pageSize`, `width`. NOT AUDITED — this count falls when the tier 5 slice of the 17.0.0 sweep lands.',
-  },
-  cli: {
-    count: 6,
-    reason:
-      '`dev-traces.ts`, `e2e-page.ts`, `island-shot.ts`, `metrics-endpoint.ts`, `sync-authenticator.ts` — `limit`, `minBytes`, `port`, `serviceWorkerTimeoutMs`, `timeoutMs`, `ttlMs`, …. NOT AUDITED — this count falls when the tier 5 slice of the 17.0.0 sweep lands.',
-  },
-  scraping: {
-    count: 9,
-    reason:
-      '`actionability.ts`, `driver-fake.ts`, `expect.ts`, `http.ts`, `robots-fetch.ts` and more — `graceMs`, `idleMs`, `maxBytes`, `pollMs`, `rate`, `timeoutMs`, …. NOT AUDITED — this count falls when the tier 5 slice of the 17.0.0 sweep lands.',
-  },
-  testing: {
     count: 1,
     reason:
-      '`determinism.ts` — `seed`. NOT AUDITED — this count falls when the tier 5 slice of the 17.0.0 sweep lands.',
+      '`layout.tsx` — `width`. AUDITED in the tier 5 slice of the 17.0.0 sweep, and left on purpose. `branding.logo.width` reaches an `<img>` attribute and nothing else: a `NaN` renders a `width` the HTML parser rejects, so the browser falls back to the image intrinsic size — a wrong-looking logo on one element, with no loop, no silent zero-work and no bound that stops being enforced. Screening it means throwing `X_INVARIANT` out of `AdminLayout`, which blanks EVERY admin screen over a cosmetic typo; the same trade the tier 4 slice made for `@ultimat3/ui`\'s `Textarea` `rows`. `layout.test.ts` holds the evidence — it asserts the shell, the nav and the main landmark still render under a NaN width, so adding the screen turns that test red rather than passing silently. Overturn with one `finiteCount("AdminLayout", "logo.width", props.app.branding.logo.width ?? 24, 1)` at layout.tsx:40.',
   },
   ui: {
     count: 3,

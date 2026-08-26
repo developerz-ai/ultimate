@@ -243,3 +243,66 @@ describe('a resource skipped for a structural reason is not an authz event', () 
     expect(context.audit.entries()).toEqual([]);
   });
 });
+
+/**
+ * The per-resource cap, when it is not a number. `??` guards nullish and `NaN` is not nullish, so
+ * an `input.limitPerResource` computed from an environment value or an untyped config walks past
+ * `DEFAULT_LIMIT_PER_RESOURCE` and reaches BOTH consumers intact: `hits.length >= NaN` is false, so
+ * the early return never fires and every searchable field of every resource is queried; and
+ * `repo.list({ limit: NaN })` hands the repo a limit no `LIMIT` clause can carry.
+ */
+describe('adminSearch · a per-resource limit that is not a number is not a limit', () => {
+  const NOT_A_BOUND = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+  const twoRows = (): Map<string, AdminRow> =>
+    new Map([
+      ['p_1', row({ id: 'p_1' })],
+      ['p_2', row({ id: 'p_2', title: 'First light' })],
+    ]);
+
+  test('a non-finite limit is refused, never accepted as "no cap"', async () => {
+    const app = adminOver(repoOver(twoRows()));
+    for (const limitPerResource of NOT_A_BOUND) {
+      await expect(
+        adminSearch({
+          term: 'First',
+          resources: [app.resource('admin_search_post')],
+          ctx: ctx(),
+          limitPerResource,
+        }),
+      ).rejects.toThrow('X_INVARIANT');
+    }
+  });
+
+  test('a limit of 0 is refused — a search that may return nothing is not a search', async () => {
+    const app = adminOver(repoOver(twoRows()));
+    await expect(
+      adminSearch({
+        term: 'First',
+        resources: [app.resource('admin_search_post')],
+        ctx: ctx(),
+        limitPerResource: 0,
+      }),
+    ).rejects.toThrow('X_INVARIANT');
+  });
+
+  test('the cap the caller passed is still what stops the walk', async () => {
+    const seen: (number | undefined)[] = [];
+    const base = repoOver(twoRows());
+    const repo: AdminRepo<AdminRow> = {
+      ...base,
+      list: async (query): Promise<readonly AdminRow[]> => {
+        seen.push(query.limit);
+        return base.list(query);
+      },
+    };
+    const found = await adminSearch({
+      term: 'First',
+      resources: [adminOver(repo).resource('admin_search_post')],
+      ctx: ctx(),
+      limitPerResource: 1,
+    });
+    expect(found.hits.length).toBe(1);
+    expect(seen).toEqual([1]);
+  });
+});

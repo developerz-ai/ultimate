@@ -8,7 +8,7 @@
 // The exit is a RESOLVER, not a string: `scrape-run.ts` builds this gate as an argument to
 // `driver.open()`, and the proxy is a driver option the session only reports on the way back out.
 
-import { readWithinLimit } from '@ultimat3/core';
+import { finiteCount, readWithinLimit } from '@ultimat3/core';
 import type { ScrapeFetch } from './http';
 import type { RobotsFetch } from './robots';
 
@@ -56,11 +56,29 @@ export interface RobotsFetchInit {
  */
 export function robotsFetcher(init: RobotsFetchInit = {}): RobotsFetch {
   const call: ScrapeFetch = init.fetch ?? fetch;
-  const limit = init.maxBytes ?? DEFAULT_ROBOTS_MAX_BYTES;
+  // Both bounds are screened HERE, at construction, and both floors are 1 — because every way this
+  // read can fail is the same answer, `undefined`, which the gate reads as "no restrictions". A
+  // `NaN` deadline throws a bare `TypeError` out of `AbortSignal.timeout` (measured: "Value NaN is
+  // outside the range [0, 9007199254740991]") straight into the gate's own `.catch`, and a `NaN`
+  // cap makes `readWithinLimit` refuse after the request already left. A zero of either is the
+  // same outcome spelled deliberately: an expired deadline and a cap every file is over. Robots
+  // enforcement off, for the whole run, with nothing in the log.
+  const limit = finiteCount(
+    'robotsFetcher',
+    'maxBytes',
+    init.maxBytes ?? DEFAULT_ROBOTS_MAX_BYTES,
+    1,
+  );
+  const timeoutMs = finiteCount(
+    'robotsFetcher',
+    'timeoutMs',
+    init.timeoutMs ?? DEFAULT_ROBOTS_TIMEOUT_MS,
+    1,
+  );
   return async (robotsUrl: string): Promise<string | undefined> => {
     // Armed per read, not per gate: the gate is long-lived and reads once per origin, so a
     // deadline created alongside it would already have expired by the second origin.
-    const deadline = AbortSignal.timeout(init.timeoutMs ?? DEFAULT_ROBOTS_TIMEOUT_MS);
+    const deadline = AbortSignal.timeout(timeoutMs);
     const signal = init.signal === undefined ? deadline : AbortSignal.any([deadline, init.signal]);
     // Resolved here, at the read, because the session that owns the exit did not exist when this
     // fetcher was built. An empty string is not an exit and is dropped with the absent one.

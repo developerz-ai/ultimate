@@ -10,7 +10,7 @@
 // guarantee the page vocabulary makes — and a different exit IP mid-session is exactly what
 // anti-bot systems look for.
 
-import { readWithinLimit } from '@ultimat3/core';
+import { finiteCount, readWithinLimit } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse } from '@ultimat3/schema';
 import type { ScrapeClock } from './clock';
@@ -172,6 +172,29 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
   const call: ScrapeFetch = init.fetch ?? fetch;
   return {
     async request(url: string, request: HttpRequestInit = {}): Promise<ScrapeResponse> {
+      // Screened FIRST — before the activity touch, before the robots read this method performs
+      // and before a byte leaves. `AbortSignal.timeout(NaN)` THROWS, and it throws a bare
+      // `TypeError` ("Value NaN is outside the range [0, 9007199254740991]"), which is the one
+      // thing the deadline below exists to prevent: an unclassified platform error reaching a
+      // job's retry classifier instead of this package's own `X_SCRAPE_TIMEOUT`. And the cap is
+      // the only thing between a hostile stream and the worker's heap, so `readWithinLimit`'s own
+      // refusal is too late: it arrives once the request — a POST included — has been performed.
+      //
+      // Both floors are 1. A zero deadline aborts on the tick it is armed and a zero cap puts
+      // every response over, so either one makes every request on this leg fail; neither is a
+      // caller declining a feature the way `watchdog.graceMs: 0` is.
+      const timeoutMs = finiteCount(
+        'http.request',
+        'timeout',
+        request.timeout ?? init.timeoutMs,
+        1,
+      );
+      const maxBytes = finiteCount(
+        'http.request',
+        'maxBytes',
+        request.maxBytes ?? DEFAULT_HTTP_MAX_BYTES,
+        1,
+      );
       init.onActivity?.();
       if (interceptVerdict(url, 'fetch', init.rules) !== 'allow') {
         throw hostBlocked(url, init.rules.allowHosts);
@@ -180,7 +203,6 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
       await init.pace?.(init.signal);
       const session = await init.session();
       const cookies = cookieHeaderFor(session.cookies, url);
-      const timeoutMs = request.timeout ?? init.timeoutMs;
       // `AbortSignal.timeout` and NOT `clock.sleep`: this is a deadline handed to the platform's
       // own fetch, not a wait this package performs — and under a test clock a slept deadline
       // would fire on the microtask after it was armed, cancelling every request instantly.
@@ -210,7 +232,6 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
         // Counted as it arrives rather than `.text()`, which materialises first and checks never:
         // a 30s stream at 50MB/s is a 1.5GB allocation the worker does not get back, and it takes
         // every other job on that worker with it. The same read `robots-fetch.ts` performs.
-        const maxBytes = request.maxBytes ?? DEFAULT_HTTP_MAX_BYTES;
         const capped = await readWithinLimit(response.body, maxBytes);
         if ('over' in capped) throw bodyTooLarge(url, capped.over, maxBytes);
         const body = new TextDecoder().decode(capped.bytes);

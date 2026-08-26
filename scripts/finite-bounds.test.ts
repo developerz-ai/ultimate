@@ -257,15 +257,23 @@ describe('the real tree', () => {
     // Named individually rather than counted: the total moving is what a future edit is allowed to
     // do, and one of THESE regressing is what it is not.
     //
-    // Tiers 0 through 3, which is what the sweep has landed so far. Each remaining slice ADDS its
-    // own band here as it merges — tier 4, then tier 5 — and lowers its rows in
-    // `finite-bounds-pins.ts` in the same commit, because `X_FINITE_BOUND_PIN_STALE` fires the
-    // moment a repair lands and leaves a pin behind. A name may only ever be ADDED to this list:
-    // taking one out is the regression the test exists to catch.
+    // Every tier, 0 through 5: the sweep has landed all five slices. A name may only ever be
+    // ADDED to this list — taking one out is the regression the test exists to catch — and a
+    // package joins it in the same commit that lowers its row in `finite-bounds-pins.ts`, because
+    // `X_FINITE_BOUND_PIN_STALE` fires the moment a repair lands and leaves a pin behind.
     const sites = finiteBoundSites(await collectSourceFiles(repoRoot()));
-    const total = [...sites.values()].reduce((sum, list) => sum + list.length, 0);
-    // Non-vacuity: a scan that found nothing at all would satisfy every assertion below.
-    expect(total).toBeGreaterThan(10);
+    // NON-VACUITY: a scanner that found nothing at all would satisfy every assertion below, and
+    // this half used to be `total > 10` — a threshold calibrated at 129 sites, which the sweep
+    // then walked straight through. A count is the wrong instrument once the count is meant to
+    // approach zero: it fails when the tree gets BETTER, and the repair is to keep lowering a
+    // magic number until it reaches 0 and stops proving anything. So the proof is the PINS
+    // instead. Every pinned package must still report exactly what it is pinned at — those sites
+    // are audited and deliberately unrepaired, so they are the one thing a working scanner is
+    // guaranteed to find, and a broken one reports 0 for them.
+    for (const [pkg, pin] of Object.entries(FINITE_BOUNDS_PINS)) {
+      expect(sites.get(pkg) ?? [], `${pkg} still reports its pinned sites`).toHaveLength(pin.count);
+    }
+    expect(Object.keys(FINITE_BOUNDS_PINS).length).toBeGreaterThan(0);
     const swept = [
       // tier 0–1, swept in the first slice
       'core',
@@ -295,6 +303,11 @@ describe('the real tree', () => {
       'manifest',
       'mcp',
       'notify',
+      // tier 5, swept in this one. `admin` is NOT here and must not be added while it holds a
+      // pin: `logo.width` is audited and deliberately unscreened, and the pin carries the reason.
+      'scraping',
+      'cli',
+      'testing',
     ];
     for (const pkg of swept) {
       expect(sites.get(pkg) ?? [], `${pkg} has no unchecked numeric option`).toEqual([]);

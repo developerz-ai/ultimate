@@ -248,3 +248,30 @@ describe('the header tools', () => {
     expect(seen).toEqual(['es']);
   });
 });
+
+/**
+ * `branding.logo.width` is the one numeric bound in this package the 17.0.0 sweep left UNSCREENED,
+ * and this is the measurement that decided it. `??` guards nullish and `NaN` is not, so a width
+ * computed rather than typed reaches the `<img>` — and what comes out is a `width` attribute the
+ * HTML parser rejects, so the browser falls back to the image's intrinsic size. A wrong-looking
+ * logo, on one element. Nothing loops, nothing is silently skipped, no bound stops being enforced.
+ *
+ * The alternative is throwing `X_INVARIANT` out of `AdminLayout`, which blanks EVERY admin screen
+ * over a cosmetic typo — the same trade the tier 4 slice made for `@ultimat3/ui`'s `Textarea`
+ * `rows`. Overturn it with one `finiteCount('AdminLayout', 'logo.width', …, 1)` at `layout.tsx:40`
+ * and this test becomes the thing that fails.
+ */
+describe('the brand · an unscreened width is cosmetic, and that is why it is not screened', () => {
+  test('a NaN width still renders the shell, the logo and every landmark', () => {
+    const branding = adminBranding({
+      logo: { src: '/logo.svg', altKey: 'admin.brand.logo', width: Number.NaN },
+    });
+    const rendered = render({ app: appWith({ branding, theme: themeAttributes(branding) }) });
+    const img = one(byTag(rendered.nodes, 'img'), '<img>');
+    expect(img.props['src']).toBe('/logo.svg');
+    expect(Number.isNaN(img.props['width'])).toBe(true);
+    // The half that matters: nothing else about the page changed.
+    expect(byTag(rendered.nodes, 'nav')).toHaveLength(1);
+    expect(byTag(rendered.nodes, 'main')).toHaveLength(1);
+  });
+});

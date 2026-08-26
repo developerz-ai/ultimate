@@ -92,6 +92,31 @@ is its own entry point and not part of the barrel.
 | Globals install all-or-nothing | `installGlobals` saves DESCRIPTORS, not values — a saved value cannot tell "no such global" from "a global holding `undefined`", and the teardown deleted both — and rolls the whole install back if one assignment throws. That rollback is the half with teeth: the install runs BEFORE `mountIsland`'s own `try`, so a getter-only own global among the caller's `globals` used to leave the fake `document` installed for the rest of the process |
 | Which command shards | `bun test` is one process on one database, and that is still what a scaffolded app's `test` script runs. `x verify` DOES shard its parallel test steps, over `ULTIMATE_TEST_WORKER` and one database per worker; `live` and `e2e` stay serial because a replication slot is cluster-scoped and `e2e` has one built `dist/`. Say which command a claim is about |
 
+## The frozen instant is screened, and so is the seed — `As of 2026-08-26`
+
+`installDeterminism({ now })`, `setFrozenClock`, `frozenClock` and `advanceClock` all write ONE
+module-level number, and `bun test` is one process: `new Date('yesterday').getTime()` is `NaN`, so
+one unreadable instant makes `Date.now()` answer `NaN` and `new Date()` answer `Invalid Date` for
+every file after it, where every `expiresAt > Date.now()` in the framework reads false and no
+assertion anywhere names the clock. Nothing repairs it either — `NaN + ms` is `NaN`, so
+`advanceClock` only carries it forward, which is why that required parameter is screened too. All
+four go through one `instantMs`, and `defineIslandStates` already refused an unpinned `now` at
+declaration (`isPinnedInstant`) — this is that rule where the clock is actually set.
+
+**The seed is NOT a bound, and it is screened anyway — measured before deciding.**
+`seededRandom` starts at `seed >>> 0`, so `NaN`, `±Infinity`, `0.5`, `-1` and `2 ** 32` all produce
+the SAME sequence as `seed: 0`. A non-finite seed therefore does not make a run non-deterministic;
+it silently makes it the seed-0 run, and the record of which seed produced it is false — in the
+package whose promise is reproducibility. `preload.ts` already screened its own environment read by
+hand (`Number.isFinite(seed) ? { seed } : {}`) while `harness.ts` passed an app's `seedValue`
+straight through, which is the repair-in-another-file shape. What the screen does NOT claim: `>>>`
+is modulo `2 ** 32`, so a seed above that still wraps onto another one.
+
+`finiteOption`/`finiteCount` from `@ultimat3/core` are the one form; `determinism-bounds.test.ts`
+holds both sides, restores the captured instant after EVERY case, and pins seed `0` as legal.
+`retry.ts`'s budget was already screened, and `matcher-visible.ts` passes its `timeout`/`interval`
+into that screen rather than growing a second one.
+
 Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 
 Entry points: `.` (the API), `./preload` (side effects for bunfig) and `./registry-isolation`

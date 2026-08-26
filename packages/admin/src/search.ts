@@ -2,6 +2,7 @@
 // search config to drift from the entities, and no result an actor could not have opened —
 // the same `admin:read` + `<entity>:read` pair gates the hit and the detail page it links to.
 
+import { finiteCount } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
 import { type AuditEntry, deniedDraft } from './audit';
 import { denied } from './authz';
@@ -104,7 +105,16 @@ const SKIPPED_FORBIDDEN = 'admin.search.skipped.forbidden';
 export async function adminSearch(input: AdminSearchInput): Promise<AdminSearchResult> {
   const { ctx } = input;
   const term = input.term.trim();
-  const limit = input.limitPerResource ?? DEFAULT_LIMIT_PER_RESOURCE;
+  // Both consumers of this number fail silently on a `NaN`, in opposite directions:
+  // `hits.length >= NaN` is false, so the early return never fires and every field of every
+  // resource is queried, and `repo.list({ limit: NaN })` hands the repo a limit no `LIMIT` clause
+  // carries. At least 1 — a cap of zero is a search that is guaranteed to find nothing.
+  const limit = finiteCount(
+    'adminSearch',
+    'limitPerResource',
+    input.limitPerResource ?? DEFAULT_LIMIT_PER_RESOURCE,
+    1,
+  );
   const searched: string[] = [];
   const skipped: { entity: string; reason: string }[] = [];
   const hits: AdminSearchHit[] = [];

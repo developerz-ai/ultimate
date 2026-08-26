@@ -113,3 +113,56 @@ describe('memoryAuditLog', () => {
     expect(seen).toEqual(['create']);
   });
 });
+
+/**
+ * The ring's own bound, and the one `entries()` takes. `??` guards nullish and `NaN` is not
+ * nullish, so `Number(process.env.ADMIN_AUDIT_CAPACITY)` on an unset variable walks past the
+ * default and lands on the bound intact — where `log.length > NaN` is FALSE for every length, so
+ * the ring stops evicting and the "dev/inspection buffer" grows without limit for the life of the
+ * process. `slice(0, NaN)` is the other half and fails the opposite way: an empty audit log,
+ * reported as a successful read.
+ */
+describe('memoryAuditLog · a capacity that is not a number is not a capacity', () => {
+  const NOT_A_BOUND = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+  const entry = (operation: string) =>
+    ({
+      requestId: 'req_1',
+      actor: { id: 'u_1' },
+      operation,
+      kind: 'operation',
+      entity: 'post',
+      permission: 'admin:write',
+      outcome: 'allowed',
+      reason: 'ok',
+    }) as const;
+
+  test('a non-finite capacity is refused, never accepted as an unbounded ring', () => {
+    for (const capacity of NOT_A_BOUND) {
+      expect(() => memoryAuditLog({ capacity })).toThrow('X_INVARIANT');
+    }
+  });
+
+  test('a capacity of 0 is refused — a ring that keeps nothing records nothing', () => {
+    expect(() => memoryAuditLog({ capacity: 0 })).toThrow('X_INVARIANT');
+    expect(memoryAuditLog({ capacity: 1 }).entries()).toEqual([]);
+  });
+
+  test('the ring still evicts at the capacity it was given', async () => {
+    const log = memoryAuditLog({ capacity: 2 });
+    for (const name of ['a', 'b', 'c']) await log.append(entry(name));
+    expect(log.entries().map((e) => e.operation)).toEqual(['c', 'b']);
+  });
+
+  test('a non-finite entries limit is refused, never read as an empty log', async () => {
+    const log = memoryAuditLog();
+    await log.append(entry('create'));
+    for (const limit of NOT_A_BOUND) {
+      expect(() => log.entries({ limit })).toThrow('X_INVARIANT');
+    }
+    // 0 stays legal: "give me none" is a coherent request, and refusing it would narrow a
+    // shipped API for no safety gained.
+    expect(log.entries({ limit: 0 })).toEqual([]);
+    expect(log.entries({ limit: 1 }).length).toBe(1);
+  });
+});

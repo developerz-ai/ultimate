@@ -80,6 +80,39 @@ and a value cannot leak. `driver-parity.test.ts` runs the real driver's code pat
 | the watch loop is never floating | `void watch().catch(…)` ends the run with `X_SCRAPE_WATCHDOG_STOPPED` through `watchdogStopped()`, rather than becoming an unhandled rejection with the guard silently dead behind it. `ScrapeClock` is a seam an app implements and `kill()` is a driver's, so the loop runs third-party code. Its OWN code and not `X_SCRAPE_WEDGED`: an exact `cause:` cannot rescue a wrong title, and `x errors explain X_SCRAPE_WEDGED` sends the reader to a page that is fine. **Terminal** where the wedge is retryable — the clock is the definition's and attempt 2 reaches the same one, so retrying is five browser launches and five arrivals at a login for no chance of a different answer. The ceiling's own `clock.sleep` is caught too: `close()` runs in `runScrape`'s `finally` and may never throw |
 | Chrome is never needed for `bun test` | `fakeBrowser`/`fakePage` run on Bun's own `HTMLRewriter` |
 
+## Every numeric bound here is screened, and `??` is not the screen — `As of 2026-08-26`
+
+`NaN` is not nullish, so a `??` default never fires for it, and `Math.min`, `Math.max` and
+`Math.floor` PROPAGATE it rather than validating. `finiteOption`/`finiteCount` from `@ultimat3/core`
+are the one form — never a local copy, which is what `scripts/flight-copies.ts` exists for — and
+`bun run finite-bounds` is the ratchet. It saw 9 of these sites; the four it CANNOT see (a required
+option with no `??`, and a value that arrives through `toMillis`) were the worse half.
+
+| Bound | What a non-finite one DID |
+|---|---|
+| `pageTimeout` → `deadline()` | `Math.max(0, NaN - elapsed)` is `NaN` and `NaN <= 0` is false, so `expired()` never answers true and BOTH `for (;;)` loops — `awaitActionable` and `page-over-target.ts`'s `frame()` — run forever. Measured against `systemScrapeClock`: **835,462 polls in 3s, 278,487/s**, one CDP round trip each, past `ctx.signal` and past the job timeout |
+| `pollMs` | `Math.min(NaN, remaining)` is `NaN`, and `setTimeout(fn, NaN)` is `setTimeout(fn, 0)` — the same spin inside a budget that does expire. `0` is refused for that reason and not for tidiness |
+| `robots` `timeoutMs` / `maxBytes` | the silent one. Every failure of the robots read answers `undefined`, which the gate reads as "no restrictions" — and `AbortSignal.timeout(NaN)` THROWS (`Value NaN is outside the range [0, 9007199254740991]`) straight into `createRobotsGate`'s own `.catch`. So robots enforcement went off for the whole run with nothing in the log. `scrape-run.ts` feeds this the run's `pageTimeout`, so it arrived from a declaration |
+| `http.request` `timeout` / `maxBytes` | the same `AbortSignal.timeout` throw, as a bare `TypeError` reaching the job's retry classifier unclassified — the one thing `scrapeTimeout` exists to prevent. Both are screened BEFORE the request leaves: `readWithinLimit`'s own refusal arrives once a POST has already been performed |
+| `watchdog.idleMs` | `elapsed < NaN` is false, so the guard fires on the FIRST 250ms poll and every run dies as `X_SCRAPE_WEDGED` against a browser that answered. `Infinity` is the mirror: the loop never fires, which is incident #1 with nothing armed |
+| `watchdog.graceMs` | `clock.sleep(NaN)` is 0, so `browser.close()` cannot win the race and `kill()` runs instead — and on `remoteBrowser()`, where `process()` is `null`, that reaches nothing and the paid remote session outlives the run |
+| `auth.maxAge` | `age > NaN` is false, and false there means RESTORED: a session of any age handed back, no re-login, nothing in the report |
+| `expect.minRows` / `maxDrop` / `window` | the alarm's own numbers. `rows < NaN` is false, so the floor never fires and a zero-row scrape stays green forever — the exact failure this package's `expect` exists to prevent. `window` is worse than it looks: `slice(-0)` is `slice(0)`, the WHOLE history |
+| `rate` | already refused by `scrape()` where it is written, and screened again in `runScrape` — `runScrape` is exported, so a definition assembled by hand never passes that assert. The layered form, not a second rule |
+
+**The floors are claims, and each one is asserted.** `0` is legal where a caller means something by
+it and refused where it is the same outcome as `NaN`: `page.waitFor({ timeout: 0 })` is one look and
+no wait, `watchdog.graceMs: 0` declines the polite close, `auth.maxAge: 0` restores nothing,
+`expect.minRows: 0` is the declaration this package asks a legitimately-zero scrape to write. A
+SESSION default of `0` (`pageTimeout`, `fakePage({ timeoutMs })`) is refused, because it is every
+wait and every navigation already out of time. `<file>-bounds.test.ts` beside each source holds both
+sides, and flipping a floor turns exactly one of them red.
+
+**One comparison fails closed instead**, because a screen cannot reach it: `restorableSession`'s
+`age` comes from `found.savedAt`, which is a string in a bucket that `parseSessionState` only checks
+is a string. `!(age <= limit)` and never `age > limit` — the same test for every finite age, the
+opposite one for a `NaN`.
+
 ## Logging
 
 Structured lines go through `ctx.logger` (core's `Logger`) — this package ships **call sites and a

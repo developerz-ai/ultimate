@@ -171,3 +171,69 @@ describe('e2e page — title and locators', () => {
     await expect(page.evaluate(() => wanted.rows === 3)).rejects.toThrow(/X_E2E_EVALUATE_CAPTURED/);
   });
 });
+
+/**
+ * Both deadlines, when they are not numbers. An app's test preload is what calls
+ * `installE2eDriver({ page, baseUrl, timeoutMs })`, so `Number(process.env.E2E_TIMEOUT_MS)` on an
+ * unset variable is the realistic arrival — and `??` guards nullish, which `NaN` is not.
+ *
+ * Neither lands anywhere that refuses it. `timeoutMs` is handed to the driver, which passes it to
+ * `page.goto(url, { timeout })`; `serviceWorkerTimeoutMs` is INTERPOLATED into the in-page source
+ * as `setTimeout(() => resolve(false), NaN)`, which is `setTimeout(…, 0)` — so the deadline fires
+ * on the next tick and every `waitForServiceWorker()` refuses with
+ * `X_E2E_SERVICE_WORKER_ABSENT`, naming a budget of `NaN` for a worker that took control.
+ * A misdiagnosis is worse than a failure, which is why this is refused at construction.
+ */
+describe('e2e page — a deadline that is not a number', () => {
+  const NOT_A_BOUND = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+  interface Timed extends Recorder {
+    readonly timeouts: readonly (number | undefined)[];
+  }
+
+  const timing = (answers: readonly unknown[] = []): Timed => {
+    const timeouts: (number | undefined)[] = [];
+    const base = recorder(answers);
+    return {
+      ...base,
+      timeouts,
+      goto: (url: string, options?: { readonly timeout?: number | undefined }) => {
+        timeouts.push(options?.timeout);
+        return base.goto(url);
+      },
+    };
+  };
+
+  test('a non-finite timeoutMs is refused before a navigation is attempted', () => {
+    for (const timeoutMs of NOT_A_BOUND) {
+      const page = timing();
+      expect(() => e2ePage({ page, baseUrl: BASE, timeoutMs })).toThrow('X_INVARIANT');
+      expect(page.timeouts).toEqual([]);
+    }
+  });
+
+  test('a non-finite serviceWorkerTimeoutMs is refused, never interpolated into the page', () => {
+    for (const serviceWorkerTimeoutMs of NOT_A_BOUND) {
+      const page = timing();
+      expect(() => e2ePage({ page, baseUrl: BASE, serviceWorkerTimeoutMs })).toThrow('X_INVARIANT');
+      expect(page.evaluated).toEqual([]);
+    }
+  });
+
+  // 0 is the driver's own "no deadline" — puppeteer reads `timeout: 0` as "wait forever" — so the
+  // floor is 0 and not 1. Refusing it would take a documented value away from an app.
+  test('a timeoutMs of 0 is accepted and reaches the driver unchanged', async () => {
+    const page = timing();
+    await e2ePage({ page, baseUrl: BASE, timeoutMs: 0 }).goto('/feed');
+    expect(page.timeouts).toEqual([0]);
+  });
+
+  test('the deadline the caller declared is still the one the page is given', async () => {
+    const page = timing([JSON.stringify({ controlled: true })]);
+    const subject = e2ePage({ page, baseUrl: BASE, timeoutMs: 250, serviceWorkerTimeoutMs: 750 });
+    await subject.goto('/feed');
+    await subject.waitForServiceWorker();
+    expect(page.timeouts).toEqual([250]);
+    expect(page.evaluated[0]).toContain('750');
+  });
+});

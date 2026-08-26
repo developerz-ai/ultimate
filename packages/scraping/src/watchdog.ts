@@ -10,6 +10,7 @@
 // socket die, which is what turns an infinite await into a catchable `X_SCRAPE_WEDGED` — and a
 // graceful-quit CEILING on shutdown, past which the same kill runs.
 
+import { finiteCount } from '@ultimat3/core';
 import type { ScrapeClock } from './clock';
 import { watchdogStopped, wedged } from './error-throws';
 
@@ -49,8 +50,19 @@ export interface WedgeGuard {
 }
 
 export function createWedgeGuard(init: WedgeGuardInit): WedgeGuard {
-  const idleMs = init.idleMs ?? DEFAULT_IDLE_MS;
-  const graceMs = init.graceMs ?? DEFAULT_GRACE_MS;
+  // Screened before the watch loop starts, because both failures are silent in the expensive
+  // direction. `elapsed < NaN` is FALSE, so a `NaN` idleMs fires on the first 250ms poll and every
+  // run dies as `X_SCRAPE_WEDGED` against a browser that answered; `elapsed < Infinity` is always
+  // true, so the loop never fires and the guard is incident #1 with nothing armed. A `NaN` graceMs
+  // is `clock.sleep(NaN)`, which `setTimeout` reads as 0: `browser.close()` cannot win the race, so
+  // `kill()` runs instead — and on `remoteBrowser()`, where `process()` is `null`, that reaches
+  // nothing and the paid remote session survives the run.
+  //
+  // The floors differ because zero means two different things. `idleMs: 0` is "kill at the first
+  // poll", which is the NaN outcome spelled deliberately; `graceMs: 0` is "do not wait for the
+  // polite close", which is a policy a caller may hold.
+  const idleMs = finiteCount('the scrape watchdog', 'idleMs', init.idleMs ?? DEFAULT_IDLE_MS, 1);
+  const graceMs = finiteCount('the scrape watchdog', 'graceMs', init.graceMs ?? DEFAULT_GRACE_MS);
   const controller = new AbortController();
   let lastTouch = init.clock.monotonic();
   // TWO latches, not one. `stopped` ends the watch loop; `shuttingDown` guards the teardown. They

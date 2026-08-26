@@ -9,6 +9,7 @@
 // A step record saying "logged in" would be a checkpoint asserting something about a session that
 // may have expired an hour ago.
 
+import { finiteCount, finiteOption } from '@ultimat3/core';
 import type { JobRunArgs } from '@ultimat3/jobs';
 import { parse } from '@ultimat3/schema';
 import { createArtifactWriter } from './artifacts';
@@ -41,13 +42,23 @@ const orgOf = (ctx: unknown): string | undefined => {
   return typeof actor?.orgId === 'string' ? actor.orgId : undefined;
 };
 
-const toMillis = (value: string | number | undefined, fallback: number): number => {
+/**
+ * `'30s'` | `30_000` | absent, as milliseconds — screened under the name the DEFINITION uses.
+ *
+ * The number branch is the one that needs it: the string branch can only ever produce digits, and
+ * a number a definition declares is whatever the app computed. What it lands on is the reason the
+ * refusal is here rather than downstream — this one value becomes the robots read's deadline
+ * (where a non-finite one turns robots enforcement off silently, because every failure of that
+ * read answers "no restrictions"), the session's `timeoutMs`, and through it every actionability
+ * budget in the run, where `NaN <= 0` is false so the poll loop never leaves.
+ */
+const toMillis = (value: string | number | undefined, fallback: number, option: string): number => {
   if (value === undefined) return fallback;
-  if (typeof value === 'number') return value;
+  if (typeof value === 'number') return finiteCount('the scrape definition', option, value, 1);
   const match = /^(\d+(?:\.\d+)?)(ms|s|m|h)?$/.exec(value.trim());
   if (match === null) return fallback;
   const scale = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 }[match[2] ?? 'ms'] ?? 1;
-  return Number(match[1]) * scale;
+  return finiteCount('the scrape definition', option, Number(match[1]) * scale, 1);
 };
 
 export const DEFAULT_PAGE_TIMEOUT_MS = 30_000;
@@ -69,7 +80,14 @@ export async function runScrape<I, Row>(
   });
   const secrets = createSecretBag(definition.secrets ?? []);
   const rules = { allowHosts: definition.allowHosts, block: definition.block };
-  const pace = createPacer(definition.rate ?? DEFAULT_NAVIGATION_RATE, clock);
+  // Screened here as well as in `scrape()`, and the two are not one check written twice: that one
+  // refuses the DECLARATION and never sees a definition assembled by hand, which `runScrape` is
+  // exported to accept. `finiteOption` and not `finiteCount` — a rate of 0.5 is one navigation
+  // every two seconds, and `scrape()` owns the "greater than zero" half.
+  const pace = createPacer(
+    finiteOption('the scrape definition', 'rate', definition.rate ?? DEFAULT_NAVIGATION_RATE),
+    clock,
+  );
   const artifact = createArtifactWriter({
     storage: definition.artifacts?.storage,
     scrape: definition.name,
@@ -94,7 +112,7 @@ export async function runScrape<I, Row>(
   // Read BEFORE the browser opens: a refused credential must not reach a login form again, and
   // opening a session first would already have spent an identity on a run that cannot succeed.
   const restored = await restorableSession(plan);
-  const pageTimeoutMs = toMillis(definition.pageTimeout, DEFAULT_PAGE_TIMEOUT_MS);
+  const pageTimeoutMs = toMillis(definition.pageTimeout, DEFAULT_PAGE_TIMEOUT_MS, 'pageTimeout');
   // The exit the session dials, readable only AFTER `driver.open()` — the proxy is a driver
   // option and the gate below is an argument to `open()`, so the gate asks for it per read
   // instead of being handed a value that cannot exist yet. Every read happens during a

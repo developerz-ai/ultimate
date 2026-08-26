@@ -4,6 +4,7 @@
 // `waitForSelector('#aceptar:not([disabled])')`, which is this rule, spelled once, by hand, at
 // one call site out of forty.
 
+import { finiteCount } from '@ultimat3/core';
 import type { ScrapeClock } from './clock';
 import { deadline } from './clock';
 import { notActionable, selectorMissing } from './error-throws';
@@ -85,8 +86,12 @@ export interface ActionabilityWait {
  * a scraper failure take an afternoon.
  */
 export async function awaitActionable(wait: ActionabilityWait): Promise<ElementSnapshot> {
-  const budget = deadline(wait.clock, wait.timeoutMs);
-  const pollMs = wait.pollMs ?? DEFAULT_POLL_MS;
+  const budget = deadline(wait.clock, wait.timeoutMs, 'page.waitFor');
+  // At least 1ms, and the floor is the point: `Math.min(0, remainingMs())` is 0, `clock.sleep(0)`
+  // returns on the next turn, and the poll is then one full round trip to the browser per
+  // event-loop turn for the whole budget. `NaN` is the same loop by a different route —
+  // `Math.min(NaN, x)` is `NaN` and `setTimeout(fn, NaN)` is `setTimeout(fn, 0)`.
+  const pollMs = finiteCount('page.waitFor', 'pollMs', wait.pollMs ?? DEFAULT_POLL_MS, 1);
   let previous: ElementSnapshot | undefined;
   let lastProblem: string | undefined;
   let everSeen = false;
