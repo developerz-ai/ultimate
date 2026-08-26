@@ -132,14 +132,21 @@ const IMMUTABLE_MAX_AGE_SECONDS = 31_536_000;
  * The name carries `finite` deliberately: `bun run finite-bounds` recognises a repair by the shape
  * of the CALL, so this screen spelled `deltaSeconds` read as no screen at all.
  *
+ * `isDeltaSeconds` is EXPORTED and has exactly two readers, which is the point of it: this one
+ * decides what may be WRITTEN, and `route-cache.ts` decides what may be DECLARED. A byte-identical
+ * predicate in both files is how the two drift, and a value one accepts and the other drops is a
+ * silent hole in the middle — a route that registers cleanly and then emits no age.
+ *
  * TOTAL, never a throw: this is the response path, where refusing turns a bad cache hint into a
  * 500. A dropped age is always the SAFER direction — no `s-maxage` means a shared cache falls back
  * to `max-age`, and a `max-age` of 0 means revalidate — so nothing here can lengthen an age the
  * caller did not ask for. The warning is what keeps it from being silent; the fix belongs at the
  * declaration, and `field` names which one.
  */
+export const isDeltaSeconds = (value: number): boolean => Number.isSafeInteger(value) && value >= 0;
+
 const finiteDeltaSeconds = (field: string, value: number): number | undefined => {
-  if (Number.isSafeInteger(value) && value >= 0) return value;
+  if (isDeltaSeconds(value)) return value;
   logger.warn('http.cache_hint_not_delta_seconds', { field, value: String(value) });
   return undefined;
 };

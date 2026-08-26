@@ -152,8 +152,16 @@ const assertFiniteCount = (
 
 const MAX_PORT = 65_535;
 
-/** Nobody has 64 proxies in front of one process; a bigger number is a typo, not a topology. */
-const MAX_PROXY_HOPS = 64;
+/**
+ * Nobody has 64 proxies in front of one process; a bigger number is a typo, not a topology.
+ *
+ * EXPORTED, and that is the point of it: `@ultimat3/cli`'s `trustedHopsFromEnv` screens the same
+ * setting from `TRUSTED_PROXY_HOPS` and had to restate the literal, which is how one setting came
+ * to have two ceilings — that end said 16 while this one said 64, so a deployment behind 20 hops
+ * was accepted by the library and refused at boot. `cli` is tier 5 and this is tier 2, so the
+ * import is downward and legal; the number lives here because this is where the setting is.
+ */
+export const MAX_PROXY_HOPS = 64;
 
 /**
  * Which `x-forwarded-for` entry is the caller, or the refusal that says the declaration is not one.

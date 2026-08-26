@@ -228,7 +228,7 @@ export const demo = defineSeed('demo', async ({ insert, id }) => {
       // must be absent; if it appears there, the ordering in `canSeePost` has regressed.
       id: id('post:blocked-author'),
       authorId: id('user:mara'),
-      body: 'Written by someone who blocked the demo user. Public audience, and still must never appear.',
+      body: 'Written by someone who blocked the demo user. Public audience, so a signed-out reader sees it — and the demo user never does.',
       audience: 'public',
       publishedAt: at('2026-03-12T21:15:00Z'),
       createdAt: at('2026-03-12T21:15:00Z'),

@@ -30,7 +30,43 @@ import { listWorkspaces } from './lib/workspaces';
 const SCRIPT = 'release-facts';
 export const SCOPE = '@ultimat3/';
 
-export const FACT_GLOBS: readonly string[] = ['*.md', 'wiki/**/*.md', 'docs/**/*.md'];
+export const FACT_GLOBS: readonly string[] = [
+  '*.md',
+  'wiki/**/*.md',
+  'docs/**/*.md',
+  // i18n catalogs, added 2026-08-26. The deployed demo's landing page rendered `29 packages
+  // published in lockstep` from `dummy/social-media-clone/packages/i18n/catalogs/en.json` while
+  // the tree published 31, and nothing could see it — this rule read markdown only, so a claim a
+  // visitor reads on a live page was the one kind of claim it did not check.
+  'packages/i18n/catalogs/*.json',
+  'dummy/*/packages/i18n/catalogs/*.json',
+  'examples/*/packages/i18n/catalogs/*.json',
+];
+
+/**
+ * Fold a `{ "value": "31", "label": "packages published in lockstep" }` pair onto ONE line, so the
+ * line scanner can read a claim whose number and subject live under different JSON keys.
+ *
+ * WIDENING THE GLOBS ALONE WOULD NOT HAVE CAUGHT THE DEMO. The count and the words it counts are on
+ * two different lines, and every pattern in this file matches a number ADJACENT to its subject — so
+ * a stat strip is invisible to all of them no matter which files are read. That is the real reason
+ * `29` survived, and it is a deeper miss than "markdown only".
+ *
+ * The label line is blanked rather than removed so every later line keeps its number and a finding
+ * still cites the line a human has to edit.
+ */
+export function foldStatPairs(text: string): string {
+  const lines = text.split('\n');
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const value = /"value"\s*:\s*"(\d+)"/.exec(lines[index] ?? '');
+    if (value === null) continue;
+    const label = /"label"\s*:\s*"([^"]+)"/.exec(lines[index + 1] ?? '');
+    if (label === null) continue;
+    lines[index] = `${value[1] as string} ${label[1] as string}`;
+    lines[index + 1] = '';
+  }
+  return lines.join('\n');
+}
 
 /**
  * `CHANGELOG.md` names every past release's count by design, and `docs/plans/` is a dated record of
@@ -86,7 +122,15 @@ export function releaseFacts(names: readonly string[]): readonly CountFact[] {
     {
       label: 'packages (scoped or in all)',
       accepts: [scoped, total],
-      patterns: [/[Aa]ll\s+(\d+)\s+(?:packages|publish)\b/g, /(\d+)\s+packages,\s*\d+\s+tiers/g],
+      patterns: [
+        /[Aa]ll\s+(\d+)\s+(?:packages|publish)\b/g,
+        /(\d+)\s+packages,\s*\d+\s+tiers/g,
+        // A stat strip's folded line — `31 packages published in lockstep`. MEMBERSHIP and not an
+        // exact count, for this file's own stated reason: the phrasing does not say which set it
+        // means, and both 30 (scoped) and 31 (every publishable workspace) are honest readings of
+        // it. 29 is neither, which is what the demo shipped.
+        /(\d+)\s+packages\s+publish(?:ed)?\b/g,
+      ],
     },
   ];
 }
@@ -169,7 +213,12 @@ export const releaseFactFindingFor = (gap: FactGap): Finding =>
 export const readFactPages = async (root: string): Promise<readonly MarkdownFile[]> => {
   const seen = new Map<string, MarkdownFile>();
   for (const glob of FACT_GLOBS) {
-    for (const file of await readMarkdown(root, glob, skipFactPath)) seen.set(file.path, file);
+    for (const file of await readMarkdown(root, glob, skipFactPath)) {
+      seen.set(
+        file.path,
+        file.path.endsWith('.json') ? { ...file, text: foldStatPairs(file.text) } : file,
+      );
+    }
   }
   return [...seen.values()].sort((a, b) => (a.path < b.path ? -1 : 1));
 };

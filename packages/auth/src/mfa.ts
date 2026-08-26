@@ -3,6 +3,7 @@
 // phishing page stays valid for the rest of its 30 seconds. Recovery codes are hashed at rest
 // and single-use, so a database dump is not a permanent MFA bypass.
 
+import { finiteCount } from '@ultimat3/core';
 import type { Auth } from './auth';
 import { mfaSecretInvalid } from './errors';
 import { assertFiniteAuthCount } from './policy-numbers';
@@ -307,9 +308,21 @@ export interface RecoveryCodeSet {
 const normaliseRecoveryCode = (code: string): string =>
   code.replaceAll('-', '').replaceAll(' ', '').toUpperCase();
 
+/**
+ * `count` is a LOOP BOUND, so it fails in both directions and neither is a smaller set of codes.
+ * `NaN` — what `Number(process.env.RECOVERY_CODES)` answers for an unset variable, and not nullish,
+ * so the default never sees it — makes `index < count` false at once and enrols a user with ZERO
+ * ways back into their account, in a well-formed `{ codes: [], hashes: [] }` that no caller can
+ * tell from a real one. `Infinity` is the other end and it WEDGES: measured, the loop never
+ * terminates, synchronously, on the enrolment path. Same shape as `mfa.drift`.
+ *
+ * `finiteCount` from core rather than `assertFiniteAuthCount`, for the reason `randomToken` gives:
+ * that refusal spells `defineAuth({ <key>: … })` and this is a call-site argument.
+ */
 export function generateRecoveryCodes(count = 10): RecoveryCodeSet {
+  const wanted = finiteCount('generateRecoveryCodes', 'count', count, 1);
   const codes: string[] = [];
-  for (let index = 0; index < count; index += 1) {
+  for (let index = 0; index < wanted; index += 1) {
     const raw = base32Encode(randomBytes(10)).slice(0, 16);
     codes.push(`${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}-${raw.slice(12, 16)}`);
   }

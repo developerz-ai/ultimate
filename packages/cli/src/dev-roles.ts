@@ -14,6 +14,7 @@ import {
   configuredHttp,
   createServer,
   defineHttpConfig,
+  MAX_PROXY_HOPS,
   mergeHttpConfig,
 } from '@ultimat3/http';
 import type { OutboxRelay, Scheduler, Worker } from '@ultimat3/jobs';
@@ -197,13 +198,13 @@ function warnIfUnauthenticatable(routes: readonly Route[]): void {
  * Widened rather than narrowed: tightening the library would break a shipped public API, while
  * this end only ever refused topologies http already supports.
  *
- * It is a duplicated literal because `@ultimat3/http` does not export the constant — the real
- * repair is `export const MAX_PROXY_HOPS` there and an import here, which is a downward edge and
- * legal. Until then the duplication is ENFORCED rather than documented:
- * `runtime-overrides.test.ts` probes both screens for the highest count each accepts and fails
- * naming both numbers the moment they disagree.
+ * It was a duplicated literal until 2026-08-26, because `@ultimat3/http` did not export the
+ * constant. It does now, so this file IMPORTS it — a downward edge, tier 5 to tier 2 — and there is
+ * no second number left to drift. `runtime-overrides.test.ts` still probes both screens for the
+ * highest count each accepts, and it is kept rather than deleted: it compares BEHAVIOUR, so it also
+ * catches the two disagreeing for a reason a shared constant cannot fix, such as one side gaining a
+ * range check the other does not have.
  */
-const MAX_TRUSTED_PROXY_HOPS = 64;
 
 /**
  * How many proxies append to `x-forwarded-for` between the client and this process, or `null`
@@ -224,7 +225,7 @@ export function trustedHopsFromEnv(env: Env): number | null {
   const hops = Number(raw);
   // A malformed count is refused rather than defaulted: reading the header at the wrong index is
   // trusting a value the client typed, which is the failure trusting a proxy exists to avoid.
-  if (!Number.isInteger(hops) || hops < 1 || hops > MAX_TRUSTED_PROXY_HOPS) {
+  if (!Number.isInteger(hops) || hops < 1 || hops > MAX_PROXY_HOPS) {
     throw new PortInvalidError({ value: raw, name: 'TRUSTED_PROXY_HOPS' });
   }
   return hops;

@@ -4,6 +4,7 @@
 import { type Clock, systemClock } from './clock';
 import { describeValue } from './error-render';
 import { UltimateError } from './errors';
+import { finiteCount } from './finite-option';
 
 /** Nominal typing without a runtime cost. `Brand<string, 'post'>` never mixes with `'user'`. */
 export type Brand<T, K extends string> = T & { readonly __brand: K };
@@ -39,8 +40,13 @@ function seedCounter(): number {
   return (((bytes[0] ?? 0) << 8) | (bytes[1] ?? 0)) & COUNTER_SEED_MASK;
 }
 
+/**
+ * `new Uint8Array(NaN)` is a zero-length array, not a throw, so an unscreened length made this
+ * answer `''` — an id that is no id, minted silently. `min: 1`: zero bytes of randomness is the
+ * same empty string, and every caller here (`uuid`, `traceId`, `spanId`) wants a width.
+ */
 export function randomHex(byteLength: number): string {
-  const bytes = randomBytes(byteLength);
+  const bytes = randomBytes(finiteCount('randomHex', 'byteLength', byteLength, 1));
   let out = '';
   for (const byte of bytes) {
     out += HEX[byte >> 4];
@@ -109,9 +115,15 @@ export function uuidTimestamp(id: string): Date {
   return new Date(Number.parseInt(id.slice(0, 8) + id.slice(9, 13), 16));
 }
 
-/** URL-safe random id. Not sortable — use it for tokens and slugs, never primary keys. */
+/**
+ * URL-safe random id. Not sortable — use it for tokens and slugs, never primary keys.
+ *
+ * The default is not a screen: `??` guards nullish and `NaN` is not nullish, so
+ * `nanoid(Number(process.env.ID_LENGTH))` on an unset variable walked past `21` and answered the
+ * empty string. `min: 1` for the reason `randomHex` gives.
+ */
 export function nanoid(length = 21): string {
-  const bytes = randomBytes(length);
+  const bytes = randomBytes(finiteCount('nanoid', 'length', length, 1));
   let out = '';
   for (const byte of bytes) out += NANO_ALPHABET[byte & 63] as string;
   return out;

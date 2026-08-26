@@ -71,9 +71,17 @@ validators either: all three **propagate** `NaN`, and this repo was relying on a
   | `@ultimat3/testing` | `installDeterminism` `now`/`seed`, `setFrozenClock`, `frozenClock`, `advanceClock` |
   | `@ultimat3/cli` | `syncAuthenticator` `ttlMs`, `installE2eDriver` `timeoutMs`/`serviceWorkerTimeoutMs`, `createTraceRecorder` `limit`, `runIslandShot` `minBytes`, `startMetricsEndpoint` `port` |
   | `@ultimat3/admin` | `memoryAuditLog` `capacity`, `AuditLog.entries` `limit`, `adminSearch` `limitPerResource`, `adminResource` `pageSize` |
+  | `@ultimat3/core` (blind-spot slice) | `configureLifecycle` `deadlineMs` (whole ≥ 0), `nanoid` `length`, `randomHex` `byteLength` (whole ≥ 1) |
+  | `@ultimat3/auth` (blind-spot slice) | `randomToken` `byteLength`, `generateRecoveryCodes` `count` (whole ≥ 1) |
+  | `@ultimat3/http` | `Route.meta.cache.maxAgeSeconds`, `sMaxAgeSeconds`, `staleWhileRevalidateSeconds` — whole ≥ 0, refused at `createRouter` with `X_CONFIG_INVALID` naming the route and the key. `0` stays legal: it is "revalidate every time", and three framework defaults declare it |
+  | `@ultimat3/time` | `toMs(number)` / `toSeconds(number)` — finite only. **Negatives and fractions are unchanged**: `toSeconds(-3000) === -3` is shipped, tested behaviour |
 
   **What to do:** run your app. Every refusal is at boot or at the call boundary, so one `bun test`
   or one `x verify` surfaces all of them at once and the `fix:` line carries the edit.
+- **`MAX_PROXY_HOPS` is exported from `@ultimat3/http`**, and `packages/cli/src/dev-roles.ts`
+  imports it instead of restating `64`. The behavioural test comparing the two ceilings is KEPT
+  rather than deleted: it compares what each screen accepts, so it still catches the two diverging
+  for a reason a shared constant cannot fix — one side gaining a range check the other lacks.
 - **`TRUSTED_PROXY_HOPS` now accepts 1–64, widened from 1–16.** Two screens governed one setting
   with two different ceilings: `packages/cli/src/dev-roles.ts` judged the env string and
   `@ultimat3/http` the config number. Both screens are legitimate and stay — an operator who set an
@@ -163,6 +171,29 @@ validators either: all three **propagate** `NaN`, and this repo was relying on a
   pin table currently claims more than it has proved.
 - **`x dev` held every span of every request forever** for a non-finite trace limit —
   `while (byTrace.size > NaN)` never runs, so the eviction loop stops existing.
+- **`randomToken(NaN)` was the empty string** — the framework's secret generator, returning no
+  secret and reporting success. `nanoid` and `randomHex` did the same, and `randomHex` is what
+  `traceId()`, `spanId()` and `uuid()` mint from. A negative length threw a bare, uncoded
+  `RangeError`. All are bare **parameter defaults**, so `??` never applied and the ratchet could not
+  see them.
+- **`generateRecoveryCodes(Infinity)` wedged the process**, synchronously, on the enrolment path,
+  from a public export — `for (index = 0; index < Infinity; …)` has no exit. `NaN` enrolled a user
+  with **zero** recovery codes in a well-formed `RecoveryCodeSet`, and `2.5` silently gave three.
+  The second hang in `@ultimat3/auth` after `mfa.drift`, and now closed.
+- **`configureLifecycle({ deadlineMs: NaN })` made a deploy abandon its own shutdown.** In-flight
+  requests dropped and close hooks **ABANDONED on the first tick** — measured, `drain()` returned in
+  16 ms with `inflight` still 1, and Bun printed `TimeoutNaNWarning`. It emitted
+  `X_SHUTDOWN_TIMEOUT` saying `after NaNms` with a `fix:` telling the operator to *raise the
+  budget*, which cannot help when the value is not a budget. **`packages/cli/src/hold.ts` carried
+  the identical defect and is fixed transitively** — a reader of that file will see no diff. The
+  message text is deliberately unchanged: with the bound screened, `NaNms` is unreachable, so a
+  branch for it would be a test that cannot fail.
+- **A route's `cache` hint was only caught on the response path**, once per request, forever. It is
+  now refused where it is **declared**, at `createRouter`, naming the route file and the key — the
+  layered form the whole sweep uses: refuse where the value is written, be total where it is used.
+- **`@ultimat3/time`'s `toMs` passed a non-finite number straight through**, so `time` and `notify`
+  gave **opposite answers** to the same input after the tier-4 slice screened the copy and not the
+  original.
 - **`syncAuthenticator({ ttlMs: NaN })` reopened the hole that file exists to close.** `expiresAt =
   now + NaN` is `NaN` and `expired()` asks `expiresAt <= now`, false forever. Measured: session
   revoked, clock advanced a **full year**, `sweepGrants` answered `{refreshed: 0, revoked: 0,

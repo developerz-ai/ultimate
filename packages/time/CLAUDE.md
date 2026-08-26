@@ -143,6 +143,19 @@
 - Never take the clock from `Date.now()`; accept a `Clock` (`now(clock)`).
 - Cron and schedules iterate the **local wall clock**, then convert once with `fromZoned`.
 - `m` is minutes, `ms` is milliseconds. A bare number is not a duration.
+- **`toMs`'s NUMBER arm is screened, `As of 2026-08-26`** — `finiteOption('toMs', 'duration', …)`.
+  The string arm has always been total, because `parseDuration` refuses everything it cannot read;
+  the number arm passed straight through, so `toMs(Number(process.env.TTL_MS))` on an unset
+  variable answered `NaN` and every `wakeAt > now` built from it read false forever — a sleep that
+  never ends and a timeout that never fires, with no error anywhere. `??` does not guard it: `NaN`
+  is not nullish. `@ultimat3/notify`'s `toDurationMs` had screened its own copy of the body and
+  this one had not, so one duration vocabulary gave two answers to one input (#372);
+  `packages/notify/src/plan-bounds.test.ts` calls BOTH on the same inputs and is what keeps them
+  from drifting apart again.
+  **`finiteOption`, never `finiteCount`**: a duration here is legitimately NEGATIVE —
+  `parseDuration` accepts a leading `-`, and `toSeconds(-3000)` is a tested `-3` — and legitimately
+  fractional. A caller that needs whole non-negative milliseconds narrows on top; narrowing here
+  breaks the signed-duration contract `toSeconds` is built on.
 - Tests must cover a spring-forward gap, a fall-back overlap and a non-hour offset zone.
 
 ## Commands

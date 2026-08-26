@@ -16,7 +16,7 @@ export type { AppHttpConfig, BootOwnedHttpKey } from './app-config';
 export { configuredHttp, configureHttp, mergeHttpConfig, resetHttpConfig } from './app-config';
 export { NEXT_PARAM, nextAfterSignIn, signInRedirect } from './auth-redirect';
 export type { HttpConfig, HttpConfigInput } from './config';
-export { defineHttpConfig, stripBasePath } from './config';
+export { defineHttpConfig, MAX_PROXY_HOPS, stripBasePath } from './config';
 export type { ActorView, RequestContext, RequestContextInit } from './context';
 export {
   actorView,
@@ -82,6 +82,7 @@ export {
   pathInvalid,
   pipelineNoResponse,
   requestTimedOut,
+  routeCacheInvalid,
   routeConflict,
   routeNotFound,
   serverNotStarted,

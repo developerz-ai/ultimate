@@ -5,7 +5,7 @@
 // exact same one, and re-exporting it here keeps every existing `from '@ultimat3/auth'` import
 // working.
 
-import { timingSafeEqual } from '@ultimat3/core';
+import { finiteCount, timingSafeEqual } from '@ultimat3/core';
 
 export { timingSafeEqual };
 
@@ -24,9 +24,22 @@ export function base64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(BASE64URL_UNSAFE, (char) => BASE64URL_REPLACEMENTS[char] ?? '');
 }
 
-/** 32 bytes -> 43 base64url chars. Opaque by construction: it encodes nothing about the user. */
+/**
+ * 32 bytes -> 43 base64url chars. Opaque by construction: it encodes nothing about the user.
+ *
+ * The default is not a screen — `??` guards nullish and `NaN` is not nullish — and
+ * `new Uint8Array(NaN)` is a zero-length array rather than a throw, so
+ * `randomToken(Number(process.env.TOKEN_BYTES))` on an unset variable answered `''`: the function
+ * whose entire job is an unguessable secret returning the empty string, with nothing said.
+ * `-1` was a bare uncoded `RangeError` out of the package. `min: 1`, because a zero-byte token is
+ * that same empty string — not a weak secret, no secret.
+ *
+ * `finiteCount` from core rather than this package's `assertFiniteAuthCount`: that one's refusal
+ * spells the edit `defineAuth({ <key>: … })` (`errors.ts`), and there is no `defineAuth` key here —
+ * the edit is at the call site, and a `fix:` naming a file that cannot hold it is worse than none.
+ */
 export function randomToken(byteLength = 32): string {
-  return base64Url(randomBytes(byteLength));
+  return base64Url(randomBytes(finiteCount('randomToken', 'byteLength', byteLength, 1)));
 }
 
 /**
