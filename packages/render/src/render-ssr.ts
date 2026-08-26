@@ -5,6 +5,7 @@
  */
 
 import type { Ctx } from '@ultimat3/core';
+import { finiteStatus } from './finite-status';
 import type { RouteEntry } from './registry';
 import type { RenderResult, RouteParams } from './route';
 
@@ -31,7 +32,9 @@ export async function renderSsr(
 ): Promise<RenderResult> {
   const html = await render(input);
   return {
-    status: options.status ?? 200,
+    // Screened here and not at the Response boundary: `??` guards nullish, so a non-finite status
+    // reaches `new Response` intact and raises a RangeError two frames above the route that set it.
+    status: finiteStatus('renderSsr', options.status ?? 200),
     headers: ssrHeaders(input.entry, options),
     body: html,
   };

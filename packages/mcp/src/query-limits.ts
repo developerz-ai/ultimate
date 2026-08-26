@@ -2,6 +2,8 @@
 // it may come back. A cap the caller cannot raise, applied where the tool cannot forget it —
 // `limit` is an argument, and an argument is a request, never a permission.
 
+import { finiteCount } from '@ultimat3/core';
+
 /** The ceilings. Frozen because a cap a caller can widen is a default, not a cap. */
 export interface QueryLimits {
   /** Hard row ceiling. A larger `limit` argument is clamped, not honoured. */
@@ -84,14 +86,22 @@ function rowBytes(row: readonly unknown[]): number {
  * what to do next: select fewer columns.
  */
 export function capQueryRows(source: QueryRows, limits: QueryLimits): QueryResult {
-  const overRows = source.rows.length > limits.maxRows;
+  // `QueryLimits` is a PUBLIC type and this is the one path `resolveQueryLimits` cannot defend: a
+  // ceilings object built by hand. `slice(0, NaN)` is `[]` and `length > NaN` is false, so the
+  // agent would be handed zero rows with `truncated: false` — an empty table reported as the
+  // complete answer — and `bytes + size > NaN` would switch the 256 KiB context guard off entirely.
+  // `maxRows` floors at 1 because `resolveQueryLimits` already refuses to build anything lower;
+  // `maxBytes` floors at 0, where nothing in this package claims a floor.
+  const maxRows = finiteCount('capQueryRows', 'limits.maxRows', limits.maxRows, 1);
+  const maxBytes = finiteCount('capQueryRows', 'limits.maxBytes', limits.maxBytes, 0);
+  const overRows = source.rows.length > maxRows;
   const kept: (readonly unknown[])[] = [];
   let bytes = 2; // the enclosing `[]`
   let overBytes = false;
 
-  for (const row of source.rows.slice(0, limits.maxRows)) {
+  for (const row of source.rows.slice(0, maxRows)) {
     const size = rowBytes(row);
-    if (bytes + size > limits.maxBytes) {
+    if (bytes + size > maxBytes) {
       overBytes = true;
       break;
     }
@@ -108,6 +118,6 @@ export function capQueryRows(source: QueryRows, limits: QueryLimits): QueryResul
     // ceiling would also have applied further down.
     truncatedBy: overBytes ? 'bytes' : overRows ? 'rows' : null,
     bytes,
-    guards: [...source.guards, `cap:${limits.maxRows} rows`, `cap:${limits.maxBytes} bytes`],
+    guards: [...source.guards, `cap:${maxRows} rows`, `cap:${maxBytes} bytes`],
   };
 }

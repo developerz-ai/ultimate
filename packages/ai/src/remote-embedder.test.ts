@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
+import { NOT_A_BOUND, refusal } from './bounds-fixture';
 import { cosine } from './embeddings';
 import type { AiFetch } from './fetch-seam';
 import { RemoteEmbedder } from './remote-embedder';
@@ -273,5 +274,65 @@ describe('RemoteEmbedder: a hostile rejection still comes back coded', () => {
     // `${symbol}` and `String(symbol)` both throw; the literal fallback and `renderThrowable`
     // both survive. This is the guard against the obvious "just stringify it" repair.
     expect(await codeFor(Symbol('nope'))).toBe('X_AI_PROVIDER_UNAVAILABLE');
+  });
+});
+
+/**
+ * Four bounds, resolved when the embedder is BUILT rather than per batch, because three of the
+ * four only failed once a request had already been paid for. Each failed differently and none of
+ * them named the option an app wrote:
+ *
+ * - `batchSize: 0` never advanced the loop and re-issued the same empty request to a paid endpoint
+ *   forever; `batchSize: NaN` sent ONE request of zero inputs and answered zero vectors for three
+ *   texts, which `indexDocument` then wrote into a store as `undefined` rows.
+ * - `timeoutMs: NaN` threw a `TypeError` out of `AbortSignal.timeout` INSIDE the try, so this
+ *   file's own catch re-dressed a config typo as `X_AI_PROVIDER_UNAVAILABLE` — a code the gateway
+ *   classifies as retryable and retries, per provider, every time.
+ * - `maxResponseBytes: NaN` reached core's reader, which refuses it correctly and says
+ *   `readWithinLimit was given a limit of NaN` — a framework internal no caller can edit.
+ */
+describe('RemoteEmbedder screens its bounds at construction', () => {
+  /** One builder per option, written out rather than spread, so each is the real constructor call. */
+  const BUILD = {
+    batchSize: (batchSize: number) =>
+      new RemoteEmbedder({ name: 'voyage-3', dimension: 2, apiKey: 'k', batchSize }),
+    timeoutMs: (timeoutMs: number) =>
+      new RemoteEmbedder({ name: 'voyage-3', dimension: 2, apiKey: 'k', timeoutMs }),
+    maxResponseBytes: (maxResponseBytes: number) =>
+      new RemoteEmbedder({ name: 'voyage-3', dimension: 2, apiKey: 'k', maxResponseBytes }),
+    dimension: (dimension: number) =>
+      new RemoteEmbedder({ name: 'voyage-3', dimension, apiKey: 'k' }),
+  };
+
+  test('each option is refused under its own name, before any request exists', () => {
+    for (const [option, build] of Object.entries(BUILD)) {
+      for (const value of NOT_A_BOUND) {
+        const error = refusal(() => build(value));
+        expect(error.code).toBe('X_INVARIANT');
+        expect(error.cause).toContain(option);
+        // The fix names the constructor the app calls, which is the edit it has to make.
+        expect(error.fix).toContain('RemoteEmbedder');
+      }
+    }
+  });
+
+  test('the two floors that are not zero are the two that hang or abort', () => {
+    // `batchSize: 0` is the infinite loop; `timeoutMs: 0` aborts every request on the next tick,
+    // so neither zero is a configuration anything can run under.
+    expect(refusal(() => BUILD.batchSize(0)).cause).toContain('at least 1');
+    expect(refusal(() => BUILD.timeoutMs(0)).cause).toContain('at least 1');
+    // A byte cap of zero IS a decision — hold no body — so it stays legal.
+    expect(() => BUILD.maxResponseBytes(0)).not.toThrow();
+  });
+
+  test('an honest embedder still batches — the non-vacuity half', async () => {
+    const calls: Call[] = [];
+    const vectors = await embedder(calls, (call) => embeddingsFor(call.body.input ?? [], 1)).embed([
+      'a',
+      'b',
+      'c',
+    ]);
+    expect(calls).toHaveLength(2);
+    expect(vectors).toHaveLength(3);
   });
 });

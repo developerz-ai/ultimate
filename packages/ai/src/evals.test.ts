@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { asyncRefusal } from './bounds-fixture';
 import type { EvalBaseline } from './eval-baseline';
 import { RECORD_ENV, writeBaseline } from './eval-baseline';
 import { defineEval, describeEvals, promptsWithoutEvals, resetEvals } from './evals';
@@ -332,5 +333,51 @@ describe('unit · every prompt is evaluated', () => {
         baseline: expect.stringContaining('never-recorded.baseline.json'),
       },
     ]);
+  });
+});
+
+/**
+ * An eval's completion ceiling is a model call's like any other, and a `NaN` one is the same
+ * defect: it becomes the pre-flight estimate, passes every budget scope and then writes itself
+ * onto the ledger and the per-process `BudgetStore`. An eval suite is exactly where that goes
+ * unnoticed longest — it runs in CI, it is expected to spend, and nothing it asserts is about
+ * money. Refused per run, since `defineEval` takes the number as a plain field.
+ */
+describe('unit · a run refuses a completion ceiling that is not one', () => {
+  test('maxTokens is screened before a single case is generated', async () => {
+    const prompt = classify();
+    const gateway = gatewayWith({ 'Classify: great product': 'positive' });
+    const evaluation = defineEval({
+      name: 'sentiment-bounded',
+      prompt,
+      baseline: await unrecorded(),
+      tolerance: 0.05,
+      scorers: [exact],
+      cases: THREE_CASES,
+      maxTokens: Number.NaN,
+    });
+    const error = await asyncRefusal(() => evaluation.run(gateway));
+    expect(error.code).toBe('X_INVARIANT');
+    expect(error.cause).toContain('maxTokens');
+    expect(error.fix).toContain('defineEval');
+  });
+
+  test('an honest ceiling still measures — the non-vacuity half', async () => {
+    const prompt = classify();
+    const gateway = gatewayWith({
+      'Classify: great product': 'positive',
+      'Classify: awful product': 'negative',
+      'Classify: it broke': 'negative',
+    });
+    const evaluation = defineEval({
+      name: 'sentiment-bounded-ok',
+      prompt,
+      baseline: await unrecorded(),
+      tolerance: 0.05,
+      scorers: [exact],
+      cases: THREE_CASES,
+      maxTokens: 64,
+    });
+    expect((await evaluation.run(gateway)).score).toBe(1);
   });
 });

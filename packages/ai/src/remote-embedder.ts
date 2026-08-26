@@ -6,7 +6,7 @@
 // vendor: `baseUrl` selects the provider and nothing else changes. A second class per vendor
 // would be a second thing to learn for a difference that does not exist on the wire.
 
-import { readWithinLimit, renderThrowable } from '@ultimat3/core';
+import { finiteCount, readWithinLimit, renderThrowable } from '@ultimat3/core';
 import type { Embedder } from './embeddings';
 import { normalize } from './embeddings';
 import { AiKeyMissingError, AiTransportError, EmbedderDimMismatchError } from './errors';
@@ -25,6 +25,8 @@ const DETAIL_LIMIT = 300;
  */
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
+/** Named in every bound refusal, so the fix names the constructor argument the app wrote. */
+const SUBJECT = 'RemoteEmbedder';
 
 export interface RemoteEmbedderInput {
   /** The provider's model id. Doubles as the embedder name, so a store records what wrote it. */
@@ -52,10 +54,33 @@ export class RemoteEmbedder implements Embedder {
   readonly name: string;
   readonly dimension: number;
   private readonly config: RemoteEmbedderInput;
+  /**
+   * The three numeric bounds, resolved and SCREENED once when the embedder is built rather than
+   * read fresh per batch. Each of the three failed differently and none of them raised anything a
+   * caller could act on: `batchSize: 0` never advanced the loop and issued the same empty request
+   * to a paid endpoint forever, `batchSize: NaN` sent ONE request of zero inputs and answered zero
+   * vectors for however many texts it was handed, `timeoutMs: NaN` threw a `TypeError` out of
+   * `AbortSignal.timeout` that this file's own `catch` re-dressed as `X_AI_PROVIDER_UNAVAILABLE` —
+   * a config typo reported as a transport failure, which the gateway then RETRIES — and
+   * `maxResponseBytes: NaN` reached core's reader, which refuses it correctly but only after the
+   * request has been paid for, in a message about `readWithinLimit` rather than about this option.
+   */
+  private readonly batchSize: number;
+  private readonly timeoutMs: number;
+  private readonly maxResponseBytes: number;
 
   constructor(input: RemoteEmbedderInput) {
     this.name = input.name;
-    this.dimension = input.dimension;
+    this.dimension = finiteCount(SUBJECT, 'dimension', input.dimension, 1);
+    this.batchSize = finiteCount(SUBJECT, 'batchSize', input.batchSize ?? DEFAULT_BATCH_SIZE, 1);
+    // A floor of 1 rather than 0: `AbortSignal.timeout(0)` aborts on the next tick, so a zero here
+    // is not "no deadline" — it is every request failing before the socket is even opened.
+    this.timeoutMs = finiteCount(SUBJECT, 'timeoutMs', input.timeoutMs ?? DEFAULT_TIMEOUT_MS, 1);
+    this.maxResponseBytes = finiteCount(
+      SUBJECT,
+      'maxResponseBytes',
+      input.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+    );
     this.config = input;
   }
 
@@ -65,7 +90,7 @@ export class RemoteEmbedder implements Embedder {
    */
   async embed(texts: readonly string[]): Promise<readonly Float32Array[]> {
     if (texts.length === 0) return [];
-    const size = this.config.batchSize ?? DEFAULT_BATCH_SIZE;
+    const size = this.batchSize;
     const vectors: Float32Array[] = [];
     for (let start = 0; start < texts.length; start += size) {
       vectors.push(...(await this.batch(texts.slice(start, start + size))));
@@ -79,7 +104,7 @@ export class RemoteEmbedder implements Embedder {
       throw new AiKeyMissingError({ provider: this.name, envVar: API_KEY_ENV });
     }
     const doFetch: AiFetch = this.config.fetch ?? fetch;
-    const timeoutMs = this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const timeoutMs = this.timeoutMs;
     const url = `${this.config.baseUrl ?? DEFAULT_BASE_URL}/embeddings`;
     let response: Response;
     try {
@@ -113,7 +138,7 @@ export class RemoteEmbedder implements Embedder {
     }
     // Read through core's counting reader rather than `response.json()`: a body is buffered whole
     // before anything measures it otherwise, and a `content-length` a remote wrote is not a bound.
-    const maxBytes = this.config.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+    const maxBytes = this.maxResponseBytes;
     const read = await readWithinLimit(response.body, maxBytes);
     if ('over' in read) {
       throw new AiTransportError({

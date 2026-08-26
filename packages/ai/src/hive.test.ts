@@ -13,6 +13,7 @@ import { createContext, userActor } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
+import { asyncRefusal, NOT_A_BOUND } from './bounds-fixture';
 import { createGateway } from './gateway';
 import { hive } from './hive';
 import { definePrompt, type Prompt } from './prompt';
@@ -414,5 +415,56 @@ describe('hive() is an action factory, not a ninth primitive', () => {
     expect(schema).toContain('members');
     expect(schema).toContain('skipped');
     expect(schema).toContain('actor');
+  });
+});
+
+/**
+ * The fan-out's two bounds, and `concurrency` is the one this whole sweep's ratchet cites as its
+ * measured example: `Math.max(1, Math.min(NaN, inputs.length))` is `NaN`, `Array.from({ length:
+ * NaN }, worker)` is an EMPTY worker list, so no member ran, `members` came back as an array of
+ * holes, and the hive reported `0 ok / 0 failed / 0 skipped` — a clean run over inputs nothing
+ * touched, which is the one outcome the three arms exist to make impossible.
+ */
+describe('hive() refuses a width that is not a number', () => {
+  const fanOut = (extra: { concurrency?: number; minMembers?: number }, name: string) =>
+    hive({
+      input: t.object({}),
+      member: worker([]),
+      split: () => [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+      onMemberError: 'collect',
+      policy: allow(),
+      ...extra,
+    }).named(name);
+
+  test('concurrency and minMembers are each refused under their own name', async () => {
+    let index = 0;
+    for (const value of NOT_A_BOUND) {
+      index += 1;
+      const byWidth = await asyncRefusal(() =>
+        fanOut({ concurrency: value }, `widthHive${String(index)}`)({}, { ctx: ctxAs('u-1') }),
+      );
+      expect(byWidth.code).toBe('X_INVARIANT');
+      expect(byWidth.cause).toContain('concurrency');
+      expect(byWidth.fix).toContain('hive');
+      const byFloor = await asyncRefusal(() =>
+        fanOut({ minMembers: value }, `floorHive${String(index)}`)({}, { ctx: ctxAs('u-1') }),
+      );
+      expect(byFloor.cause).toContain('minMembers');
+    }
+  });
+
+  test('a declared zero keeps meaning what it meant, which is one worker', async () => {
+    // `Math.max(1, Math.min(0, n))` has always read `concurrency: 0` as "run it serially", so the
+    // floor here is 0 and not 1: refusing a zero would be a new rule rather than this repair.
+    const serial = fanOut({ concurrency: 0 }, 'serialHive');
+    const result = await serial({}, { ctx: ctxAs('u-2') });
+    expect(result.ok).toBe(3);
+    expect(result.members.map((one) => one.index)).toEqual([0, 1, 2]);
+  });
+
+  test('an honest width still fans out — the non-vacuity half', async () => {
+    const result = await fanOut({ concurrency: 2 }, 'honestHive')({}, { ctx: ctxAs('u-3') });
+    expect(result.ok).toBe(3);
+    expect(result.failed + result.skipped).toBe(0);
   });
 });

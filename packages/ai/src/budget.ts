@@ -10,7 +10,7 @@
 // module-scope `new` threw at EVALUATION in a browser bundle, where the bundler stubs
 // `node:async_hooks` to `{}`, and took every importer of `@ultimat3/ai` with it.
 
-import { asyncContext } from '@ultimat3/core';
+import { asyncContext, finiteCount } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import { assertSameCurrency } from '@ultimat3/money';
 import { AiBudgetExceededError } from './errors';
@@ -138,7 +138,13 @@ export class BudgetLedger {
   private turnstile: Promise<unknown> = Promise.resolve();
 
   constructor(input: BudgetLedgerInput) {
-    this.limits = input.limits;
+    // The ceilings are screened where they LAND, because `assertScope` compares with `>`: a `NaN`
+    // limit makes `limit - spent` a `NaN`, `want > NaN` false, and the scope silently unlimited —
+    // the ceiling does not become wrong, it stops existing. `llm()`, `agent()` and `hive()` screen
+    // the same numbers first under the key names their declarations use (`tokensPerRun` is this
+    // `request`), so this is the backstop for a `createGateway({ budget })` or a hand-built ledger,
+    // where these ARE the names the caller wrote.
+    this.limits = assertFiniteLimits(input.limits);
     this.actorKey = input.actorKey;
     this.orgKey = input.orgKey;
     this.store = input.store ?? new MemoryBudgetStore();
@@ -288,6 +294,19 @@ export class BudgetLedger {
       });
     }
   }
+}
+
+/**
+ * Every declared token ceiling, proven to be a number. A limit is optional and an absent one is
+ * "unlimited" by design — which is exactly why a `NaN` one is the dangerous value: it reads as a
+ * declared ceiling everywhere (`report()`, a manifest row, a log line) and enforces nothing.
+ */
+function assertFiniteLimits(limits: BudgetLimits): BudgetLimits {
+  for (const scope of ['request', 'tokensIn', 'actor', 'org'] as const) {
+    const limit = limits[scope];
+    if (limit !== undefined) finiteCount('the AI budget', scope, limit);
+  }
+  return limits;
 }
 
 /** Spreadable single-key record, so an absent limit stays absent under exactOptionalPropertyTypes. */

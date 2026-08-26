@@ -5,6 +5,8 @@
 // replays the send. This is the second layer: the claim is taken atomically before the send, and a
 // claim that already reads `sent` answers `false` and the fan-out skips.
 
+import { finiteCount } from '@ultimat3/core';
+
 export const DELIVERY_STATUSES = ['sending', 'sent', 'failed'] as const;
 
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
@@ -86,7 +88,17 @@ export interface MemoryDeliveryLedger extends DeliveryLedger {
 export function createMemoryDeliveryLedger(
   options: MemoryLedgerOptions = {},
 ): MemoryDeliveryLedger {
-  const max = options.max ?? DEFAULT_MAX_DELIVERY_RECORDS;
+  // `while (rows.size > max)` is the eviction, so a `max` that is not a number is not a large cap
+  // — it is no cap, and this ledger grows into the heap of a process that was told it was bounded.
+  // `??` guards nullish and `NaN` is not, so `Number(process.env.…)` on an unset variable arrives
+  // here intact. A floor of 1 because a ledger that keeps zero rows cannot refuse a replay, which
+  // is its one job, and it fails at it silently.
+  const max = finiteCount(
+    'createMemoryDeliveryLedger',
+    'max',
+    options.max ?? DEFAULT_MAX_DELIVERY_RECORDS,
+    1,
+  );
   const rows = new Map<string, DeliveryRecord>();
   let dropped = 0;
 

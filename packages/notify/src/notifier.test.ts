@@ -106,3 +106,63 @@ describe('unit · notifier()', () => {
     expect(row).toEqual({ factory: 'notifier', pkg: '@ultimat3/notify', kind: 'job' });
   });
 });
+
+/**
+ * Three numbers a declaration may hold, and the same defect in each: `audience.length > NaN` is
+ * false for every audience, so the fan-out ceiling stops existing; `waitMs > slept` is false, so a
+ * declared delay is silently not waited; and `at + NaN` is `NaN`, so `existing.endsAt > at` never
+ * holds and every event opens its own digest window — a coalescer that coalesces nothing and
+ * schedules one flush per event. All three are refused where the notifier is DECLARED, which is
+ * the only place an author can act on them.
+ */
+describe('unit · notifier(), a bound that is not a number', () => {
+  const base = {
+    name: 'post.liked',
+    input,
+    tenant: 'none',
+    key: (params: TestParams) => `like:${params.postId}`,
+  } as const;
+
+  for (const maxRecipients of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
+    test(`maxRecipients: ${String(maxRecipients)} is refused, never an unbounded fan-out`, () => {
+      const log = recorder();
+      expect(() =>
+        notifier<TestParams>({
+          ...base,
+          maxRecipients,
+          deliver: [{ channel: log.one('email') }],
+        }),
+      ).toThrow(/X_INVARIANT/);
+    });
+  }
+
+  test('a wait that is not a duration is refused, never a delay that does not happen', () => {
+    const log = recorder();
+    expect(() =>
+      notifier<TestParams>({
+        ...base,
+        deliver: [{ channel: log.one('email'), wait: Number.NaN }],
+      }),
+    ).toThrow(/X_INVARIANT/);
+  });
+
+  test('a digest window that is not a duration is refused, never a window that never closes', () => {
+    const log = recorder();
+    expect(() =>
+      notifier<TestParams>({
+        ...base,
+        deliver: [{ channel: log.one('email'), digest: { window: Number.POSITIVE_INFINITY } }],
+      }),
+    ).toThrow(/X_INVARIANT/);
+  });
+
+  test('maxRecipients: 0 and wait: 0 are still declarations, not mistakes', () => {
+    const log = recorder();
+    const handle = notifier<TestParams>({
+      ...base,
+      maxRecipients: 0,
+      deliver: [{ channel: log.one('email'), wait: 0 }],
+    });
+    expect(handle.kind).toBe('job');
+  });
+});

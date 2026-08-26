@@ -379,3 +379,28 @@ describe('mcpHttpRoute.handle: the declared limits are the enforced ones', () =>
     expect((await route.handle(toolCall({ authorization: 'Bearer t' }))).status).toBe(200);
   });
 });
+
+/**
+ * A byte cap that is not a number is not a large cap, it is no cap: `total > NaN` is false for
+ * every body, and `??` cannot screen it because `NaN` is not nullish. `readWithinLimit` refuses it
+ * — but on the FIRST REQUEST an agent makes, two frames from the descriptor an author wrote, and
+ * only for a request that has already got past `resolveToken`. The refusal belongs at construction,
+ * where the author is standing.
+ */
+describe('mcpHttpRoute: a body cap that is not a cap', () => {
+  const authorized = {
+    server,
+    resolveToken: () => ({ actor: agentActor({ id: 'a' }), scopes: new Set(['dev:read']) }),
+  };
+
+  for (const bodyLimitBytes of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
+    test(`bodyLimitBytes: ${String(bodyLimitBytes)} is refused at construction`, () => {
+      expect(() => mcpHttpRoute({ ...authorized, bodyLimitBytes })).toThrow(/X_INVARIANT/);
+    });
+  }
+
+  test('bodyLimitBytes: 0 is a cap, exactly as @ultimat3/http already accepts one', () => {
+    const route = mcpHttpRoute({ ...authorized, bodyLimitBytes: 0 });
+    expect(route.path).toBe('/mcp');
+  });
+});

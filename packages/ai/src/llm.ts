@@ -24,7 +24,7 @@
 import type { Action, ActionMcp, ActionPolicy, InvokeOptions } from '@ultimat3/action';
 import { action } from '@ultimat3/action';
 import type { Ctx, Span, SpanAttributes } from '@ultimat3/core';
-import { withSpan } from '@ultimat3/core';
+import { finiteCount, withSpan } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, toMcpInputSchema, validateAsync } from '@ultimat3/schema';
@@ -138,6 +138,15 @@ export function llm<
   V extends PromptVars,
 >(def: LlmDef<TInput, TOutput, V>): LlmAction<TInput, TOutput> {
   const respond = respondToolFor(def.output);
+  // Screened at DECLARATION, beside `respondToolFor`'s own refusal and for the same reason: an
+  // `llm()` is evaluated at module scope, so a bound that is not one fails the boot rather than
+  // the first request. It is the read at `generate` below that makes it urgent — `maxTokens`
+  // becomes the pre-flight ESTIMATE, a `NaN` estimate passes every `want > remaining` check, and
+  // `debit` then writes that `NaN` onto the ambient ledger AND the per-process `BudgetStore`,
+  // where it never expires: one bad declaration turns every actor and org ceiling in the process
+  // off for the life of the process. A floor of 1 because a completion ceiling of zero tokens is
+  // a call that cannot answer.
+  finiteCount('llm', 'maxTokens', def.maxTokens ?? DEFAULT_MAX_TOKENS, 1);
   const built = action<TInput, TOutput>({
     input: def.input,
     output: def.output,
@@ -378,7 +387,12 @@ function repair(issues: string): AiMessage {
 
 function limitsOf(budget: LlmBudget | undefined): BudgetLimits {
   return {
-    ...(budget?.tokensIn === undefined ? {} : { tokensIn: budget.tokensIn }),
+    // Screened under the name the DECLARATION uses. `BudgetLedger` screens its own `limits` too,
+    // but its field is called `tokensIn` there by coincidence and `request` for `tokensPerRun` —
+    // a fix line has to name the key the app actually wrote.
+    ...(budget?.tokensIn === undefined
+      ? {}
+      : { tokensIn: finiteCount('llm', 'budget.tokensIn', budget.tokensIn) }),
     ...(budget?.costPerCall === undefined ? {} : { costPerCall: budget.costPerCall }),
   };
 }

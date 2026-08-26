@@ -6,7 +6,7 @@
 
 // One formatter, in `@ultimat3/core`: the copy that lived here stopped at `mb`, and the route
 // budget message on the other side of the build stopped at `kb`, for the same byte count.
-import { formatBytes } from '@ultimat3/core';
+import { finiteCount, formatBytes } from '@ultimat3/core';
 import type { PwaRoute } from './strategies';
 
 export interface PrecacheAsset {
@@ -54,6 +54,11 @@ export const DEFAULT_PRECACHE_WARN_BYTES = 5 * 1024 * 1024;
 export function buildPrecacheManifest(input: PrecacheInput): PrecacheManifest {
   const entries = new Map<string, PrecacheEntry>();
   const add = (entry: PrecacheEntry): void => {
+    // Screened per entry, not on the total: `totalBytes > warnBytes` is false when either side is
+    // `NaN`, so ONE asset whose byte count did not arrive as a number takes down the budget
+    // warning for every other entry — silently, in a function whose output is otherwise
+    // byte-identical per commit. This runs at build time, where a refusal is the right answer.
+    finiteCount('buildPrecacheManifest', `bytes for ${entry.url}`, entry.bytes);
     if (!entries.has(entry.url)) entries.set(entry.url, entry);
   };
 
@@ -106,7 +111,11 @@ export function buildPrecacheManifest(input: PrecacheInput): PrecacheManifest {
   // rule tie-break and `@ultimat3/jobs`' `job.ts`.
   const sorted = [...entries.values()].sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
   const totalBytes = sorted.reduce((sum, entry) => sum + entry.bytes, 0);
-  const warnBytes = input.warnBytes ?? DEFAULT_PRECACHE_WARN_BYTES;
+  const warnBytes = finiteCount(
+    'buildPrecacheManifest',
+    'warnBytes',
+    input.warnBytes ?? DEFAULT_PRECACHE_WARN_BYTES,
+  );
 
   const warnings: string[] = [];
   if (totalBytes > warnBytes) {

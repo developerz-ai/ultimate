@@ -264,3 +264,27 @@ describe('the file controls', () => {
     });
   });
 });
+
+/**
+ * NOT A REPAIR — the evidence for a pin. `Combobox`'s `debounceMs` is screened one hop away, by
+ * `debounce()`, which `scripts/finite-bounds.ts` cannot see. `setTimeout(fn, NaN)` is
+ * `setTimeout(fn, 0)`, so the window would be no window at all and every keystroke would fire the
+ * caller's `onFilter` — the refusal is right, and it already ships under `X_UI_INVALID_VALUE`.
+ * `debounceMs: 0` is a legitimate "no debounce" and must keep working.
+ */
+describe('Combobox: a debounce window that is not a window', () => {
+  beforeAll(probe);
+  afterAll(unprobe);
+
+  const options = [{ value: 'Berlin' }];
+
+  for (const debounceMs of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+    test(`debounceMs: ${String(debounceMs)} is X_UI_INVALID_VALUE, never a spin`, () => {
+      expect(() => renderNodes(Combobox, { options, debounceMs })).toThrow(/X_UI_INVALID_VALUE/);
+    });
+  }
+
+  test('debounceMs: 0 means no debounce and still renders', () => {
+    expect(renderNodes(Combobox, { options, debounceMs: 0 }).length).toBeGreaterThan(0);
+  });
+});

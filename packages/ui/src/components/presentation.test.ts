@@ -200,3 +200,24 @@ describe('the presentational primitives', () => {
     });
   });
 });
+
+/**
+ * `Math.max` IS NOT A VALIDATOR — it PROPAGATES `NaN`, so `Math.max(1, NaN)` is `NaN` and
+ * `Array.from({ length: NaN })` is `[]`. The placeholder that exists to hold the box while content
+ * loads rendered ZERO lines, which is the layout shift it was written to prevent, and nothing
+ * anywhere said so. `?? 1` cannot screen it: `NaN` is not nullish.
+ */
+describe('Skeleton, a line count that is not a count', () => {
+  beforeAll(probe);
+  afterAll(unprobe);
+
+  for (const lines of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
+    test(`lines: ${String(lines)} is refused, never a placeholder that holds no box`, () => {
+      expect(() => renderNodes(Skeleton, { lines })).toThrow(/X_INVARIANT/);
+    });
+  }
+
+  test('lines: 0 still clamps to one line, exactly as it did before the screen', () => {
+    expect(renderNodes(Skeleton, { lines: 0 })).toHaveLength(2);
+  });
+});

@@ -4,6 +4,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/jobs';
+import type { InboxStore } from './inbox';
+import { createMemoryInboxStore } from './inbox';
 import {
   createPgInboxStore,
   SQL_NOTIFY_INBOX_ADD,
@@ -118,5 +120,33 @@ describe('unit · postgres inbox', () => {
     expect(SQL_NOTIFY_INBOX_MARK_READ).toContain('where recipient = $1 and id = any($2::uuid[])');
     expect(SQL_NOTIFY_INBOX_MARK_SEEN).toContain('where recipient = $1 and seen_at is null');
     expect(calls.map((call) => call.params[0])).toEqual(['ana', 'ana']);
+  });
+});
+
+/**
+ * The two drivers must screen the page bound identically, because they are one interface an app
+ * swaps between boot modes. They did not: the memory store's `slice(0, NaN)` answered `[]` — an
+ * empty inbox reported as the whole of it — while `limit $3` reached Postgres as `NaN` and the
+ * driver decided what that meant. `slice(0, Infinity)` was worse still: every row the recipient
+ * ever received, out of the call whose own doc says an inbox is a page.
+ */
+describe('unit · both inbox drivers answer one question one way', () => {
+  const pg = (): InboxStore => createPgInboxStore({ executor: recording([], []) });
+
+  for (const limit of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
+    test(`limit: ${String(limit)} is refused by BOTH drivers`, async () => {
+      await expect(createMemoryInboxStore().list({ recipient: 'ana', limit })).rejects.toThrow(
+        /X_INVARIANT/,
+      );
+      await expect(pg().list({ recipient: 'ana', limit })).rejects.toThrow(/X_INVARIANT/);
+    });
+  }
+
+  test('limit: 0 is an empty page from both, and the statement still carries the bound', async () => {
+    const calls: Call[] = [];
+    const store = createPgInboxStore({ executor: recording([], calls) });
+    expect(await store.list({ recipient: 'ana', limit: 0 })).toEqual([]);
+    expect(calls[0]?.params[2]).toBe(0);
+    expect(await createMemoryInboxStore().list({ recipient: 'ana', limit: 0 })).toEqual([]);
   });
 });

@@ -200,3 +200,24 @@ describe('a message with no newline in it', () => {
     expect(DEFAULT_STDIO_LINE_LIMIT).toBe(1_048_576);
   });
 });
+
+/**
+ * `line.length > NaN` is false for every line, so the buffer this cap exists to bound grows until
+ * the process dies — the same unbounded read `transport-http.ts` guards, with the cap switched off
+ * by a value the `??` default cannot see. Refused before a single byte of stdin is read.
+ */
+describe('a line cap that is not a cap', () => {
+  for (const lineLimitBytes of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1, 0]) {
+    test(`lineLimitBytes: ${String(lineLimitBytes)} is refused before stdin is touched`, async () => {
+      await expect(
+        serveStdio({
+          server,
+          caller,
+          input: streamOf(['{"jsonrpc":"2.0","id":1,"method":"initialize"}\n']),
+          lineLimitBytes,
+          write: () => {},
+        }),
+      ).rejects.toThrow(/X_INVARIANT/);
+    });
+  }
+});

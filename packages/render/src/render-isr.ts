@@ -15,7 +15,7 @@ import {
   sampleFence,
   unregisterDependent,
 } from '@ultimat3/cache';
-import { logger, renderThrowable } from '@ultimat3/core';
+import { finiteCount, logger, renderThrowable } from '@ultimat3/core';
 import { parseTtlMs } from './duration';
 import type { RouteDescriptor } from './registry';
 import { describeRoutes } from './registry';
@@ -67,7 +67,13 @@ export interface MemoryIsrStoreOptions {
 }
 
 export function memoryIsrStore(options: MemoryIsrStoreOptions = {}): IsrStore {
-  const maxEntries = options.maxEntries ?? DEFAULT_ISR_MAX_ENTRIES;
+  // `map.size > NaN` is false for every size, so a cap that arrived non-finite is not a bigger
+  // cap — it is no cap, and this store is the one thing bounding a crawler over 100k slugs.
+  const maxEntries = finiteCount(
+    'memoryIsrStore',
+    'maxEntries',
+    options.maxEntries ?? DEFAULT_ISR_MAX_ENTRIES,
+  );
   const map = new Map<string, IsrEntry>();
   return {
     get: (path) => map.get(path),
@@ -236,8 +242,9 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
 
   function isFresh(entry: IsrEntry): boolean {
     if (entry.stale) return false;
-    if (entry.ttlMs === null) return true; // tag-only revalidation: fresh until invalidated
-    return now() - entry.generatedAt < entry.ttlMs;
+    const ttlMs = entryTtlMs(entry);
+    if (ttlMs === null) return true; // tag-only revalidation: fresh until invalidated
+    return now() - entry.generatedAt < ttlMs;
   }
 
   function regenerate(path: string, render: IsrRenderFn): Promise<IsrEntry> {
@@ -398,19 +405,37 @@ function segmentPattern(segment: string): string {
 const TAG_ONLY_S_MAX_AGE_SECONDS = 60;
 
 /**
+ * `IsrStore` is a driver seam, so an entry can come back from an app's own store — one backed by
+ * Redis round-trips it through JSON, where a `ttlMs` that was never written reads back as
+ * `undefined` and `entry.ttlMs === null` is then false. Two failures follow from that one value
+ * and neither raises: `now - generatedAt < NaN` is false, so the page is NEVER fresh and every
+ * request regenerates it, and the CDN is handed `s-maxage=NaN` — an unparseable directive a
+ * conforming cache IGNORES, dropping the page to heuristic caching rather than to the declared
+ * age. Read on the request path, so it is TOTAL rather than a throw: a ttl that is not a positive
+ * finite number of milliseconds is the tag-only `null` `parseTtlMs` would have answered for it.
+ */
+function entryTtlMs(entry: IsrEntry): number | null {
+  const ttlMs = entry.ttlMs;
+  if (ttlMs === null || (Number.isFinite(ttlMs) && ttlMs > 0)) return ttlMs;
+  logger.warn('isr.entry_ttl_invalid', { path: entry.path, ttlMs: String(ttlMs) });
+  return null;
+}
+
+/**
  * The declared TTL is the route's own contract with the CDN: a shared cache must not hold the
  * page longer than the app said it stays true. A flat `s-maxage=60` made `revalidate: { ttl:
  * '5m' }` a lie in one direction and `ttl: '30s'` a lie in the other.
  */
 function cacheControl(ttlMs: number | null): string {
   const sMaxAge = ttlMs === null ? TAG_ONLY_S_MAX_AGE_SECONDS : Math.round(ttlMs / 1_000);
+
   return `public, max-age=0, s-maxage=${sMaxAge}, stale-while-revalidate=86400`;
 }
 
 function toResult(entry: IsrEntry, buildId: string, servedStale = false): RenderResult {
   const headers: Record<string, string> = {
     ...staticHeaders(entry.hash, buildId),
-    'cache-control': cacheControl(entry.ttlMs),
+    'cache-control': cacheControl(entryTtlMs(entry)),
     // The store keys on the locale; a shared cache in front of it has to as well, or the CDN
     // repeats the bug this entry was split to fix. `ssrHeaders`' own line, for the same reason.
     // The rest of the shared key — the cookie, the zone — is added by `@ultimat3/http`'s

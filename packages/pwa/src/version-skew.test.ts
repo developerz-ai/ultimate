@@ -106,3 +106,23 @@ describe('cacheNamespace', () => {
     expect(() => cacheNamespace('', 'runtime')).toThrow(BuildIdMissingError);
   });
 });
+
+/**
+ * `Math.max(1, NaN)` is `NaN`, and `slice(0, NaN)` is `[]` — so a non-finite `keep` retains
+ * nothing and evicts every deploy, the RUNNING one included, which is the exact case the
+ * `keep: 0` test above pins as impossible. `Math.max` is not a validator; it propagates.
+ */
+describe('a non-finite retention count is refused', () => {
+  const deploys: readonly Deploy[] = [
+    { buildId: 'b1', deployedAt: 1_000 },
+    { buildId: 'b2', deployedAt: 2_000 },
+  ];
+
+  test('NaN is refused rather than evicting every deploy including the live one', () => {
+    expect(() => retentionPlan(deploys, Number.NaN)).toThrow(/keep/);
+  });
+
+  test('a fractional keep is refused — there is no half a deploy to retain', () => {
+    expect(() => retentionPlan(deploys, 1.5)).toThrow(/keep/);
+  });
+});

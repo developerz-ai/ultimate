@@ -6,6 +6,7 @@
  */
 
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
+import { finiteCount } from '@ultimat3/core';
 import {
   RouteDuplicateError,
   RouteFileInvalidError,
@@ -242,7 +243,14 @@ export function registerRoute<TData = RouteData>(
 
   const derived = routePathFromFile(input.file);
   const path = input.path ?? derived.path;
-  const suspenseBoundaries = input.suspenseBoundaries ?? 0;
+  // `ctx.suspenseBoundaries < 1` is the only thing between `render: 'stream'` and a route that
+  // streams nothing, and `NaN < 1` is false — a count that arrived non-finite does not report the
+  // route it counted, it stops reporting any route.
+  const suspenseBoundaries = finiteCount(
+    'registerRoute',
+    'suspenseBoundaries',
+    input.suspenseBoundaries ?? 0,
+  );
   // Explicit `<TData>`: `isRouteConfig` is a guard over the default `RouteData`, so inference off
   // the narrowed argument would resolve the route's own data generic away here.
   const config = withIslandBudget<TData>(input.config, derived.surface);

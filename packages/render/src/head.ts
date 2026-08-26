@@ -7,6 +7,7 @@
  * catalog and so the tag vocabulary keeps exactly one owner (`@ultimat3/seo`).
  */
 
+import { finiteCount } from '@ultimat3/core';
 import type { RouteMeta } from '@ultimat3/seo';
 import { BudgetExceededError } from './errors';
 // `html.ts` is this package's one escaper — a second one is how a character ends up missing.
@@ -188,7 +189,9 @@ export function themeScript(options: ThemeScriptOptions = {}): HeadTag {
     `document.documentElement.setAttribute(${JSON.stringify(attribute)},t)}catch(e){}`;
 
   const bytes = new TextEncoder().encode(source).byteLength;
-  const cap = options.maxBytes ?? THEME_SCRIPT_MAX_BYTES;
+  // `bytes > NaN` is false for every script, so a cap that arrived non-finite does not admit a
+  // bigger script — it removes the only budget a 0kb `site/` route has.
+  const cap = finiteCount('themeScript', 'maxBytes', options.maxBytes ?? THEME_SCRIPT_MAX_BYTES);
   if (bytes > cap) {
     throw new BudgetExceededError(
       `the inlined theme script is ${bytes}b, over its ${cap}b cap — the only script a ` +

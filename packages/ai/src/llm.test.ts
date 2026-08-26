@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx, isAction } from '@ultimat3/action';
 import { createContext, PRIMITIVE_KINDS } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
+import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
 import { llm } from './llm';
 import {
   ANSWER,
@@ -351,3 +352,51 @@ describe('cancellation', () => {
 });
 
 /** The common declaration, so each test states only the part it is about. */
+
+/**
+ * `maxTokens` is refused at DECLARATION, beside `respondToolFor`'s own refusal, because it is not
+ * the request a `NaN` there breaks — it is the budget.
+ *
+ * `maxTokens` becomes the pre-flight ESTIMATE. `BudgetLedger.assertScope` asks `want > remaining`,
+ * which is false for a `NaN` want, so the call passes every ceiling; `debit` then writes that
+ * `NaN` onto the ambient ledger AND onto the `BudgetStore`, which is per process and never
+ * expires. Measured before the screen: a 5,000,000-token call passed a 1,000-token ceiling on the
+ * very next reserve. One unscreened declaration turns every actor and org ceiling in the process
+ * off, permanently, and nothing anywhere reports it.
+ */
+describe('llm() screens its completion ceiling where the app writes it', () => {
+  test('a maxTokens that is not a whole count fails the declaration, not the first request', () => {
+    for (const maxTokens of [...NOT_A_BOUND, 0, 4_096.5]) {
+      const error = refusal(() =>
+        llm({
+          input: Input,
+          output: Output,
+          prompt: promptFor(`bounded-${String(maxTokens)}`),
+          vars: ({ input }) => ({ postId: input.postId }),
+          policy: allow(),
+          maxTokens,
+        }),
+      );
+      expect(error.code).toBe('X_INVARIANT');
+      expect(error.cause).toContain('maxTokens');
+      expect(error.fix).toContain('llm');
+    }
+  });
+
+  test('a declared token budget is screened under the key the declaration uses', async () => {
+    const bounded = declare(promptFor('budget-bound'), { budget: { tokensIn: Number.NaN } });
+    install(stub(ANSWER).provider);
+    const error = await asyncRefusal(() => bounded({ postId: POST_ID }, { ctx: createContext() }));
+    expect(error.code).toBe('X_INVARIANT');
+    // `tokensIn`, not the ledger's own field name: a fix has to name what the app wrote.
+    expect(error.cause).toContain('tokensIn');
+  });
+
+  test('an honest ceiling still runs the call — the non-vacuity half', async () => {
+    const bounded = declare(promptFor('budget-ok'), { maxTokens: 512 });
+    const { provider, seen } = stub(ANSWER);
+    install(provider);
+    expect(await bounded({ postId: POST_ID }, { ctx: createContext() })).toEqual(ANSWER);
+    expect(seen[0]?.maxTokens).toBe(512);
+  });
+});

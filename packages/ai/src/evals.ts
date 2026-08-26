@@ -11,6 +11,7 @@
 // Every result is filed against a prompt's content hash, so a score is always attributable
 // to an exact prompt rather than "whatever was in main that day".
 
+import { finiteCount } from '@ultimat3/core';
 import type { EvalBaseline, Regression } from './eval-baseline';
 import {
   baselinePath,
@@ -179,7 +180,10 @@ async function runEval<V extends PromptVars>(
   for (const testCase of input.cases) {
     const generated = await gateway.generate({
       messages: [{ role: 'user' as const, content: input.prompt.render(testCase.vars) }],
-      maxTokens: input.maxTokens ?? 1_024,
+      // A ceiling of `NaN` is not a ceiling: it becomes the pre-flight estimate, passes every
+      // budget check and then poisons the ledger it was checked against. Refused here, per RUN,
+      // because `defineEval` takes it as a plain field and there is no earlier seam.
+      maxTokens: finiteCount('defineEval', 'maxTokens', input.maxTokens ?? 1_024, 1),
       ...(input.prompt.system !== undefined ? { system: input.prompt.system } : {}),
       ...(input.prompt.model !== undefined ? { model: input.prompt.model } : {}),
       ...(input.prompt.effort !== undefined ? { effort: input.prompt.effort } : {}),

@@ -53,3 +53,25 @@ describe('filterOptions', () => {
     expect(filterOptions(many, '', 3)).toHaveLength(3);
   });
 });
+
+/**
+ * `limit` is a BARE PARAMETER DEFAULT, so `??` never runs and `NaN` reaches `slice(0, NaN)`, which
+ * is `[]`. Every suggestion vanishes and `<Combobox>` renders "no results" — a filter reporting
+ * that nothing matches when the caller's cap is what matched nothing. `Infinity` is the mirror:
+ * every option rendered, out of the function whose whole job is that long lists are a scroll.
+ */
+describe('a suggestion cap that is not a cap', () => {
+  const many = Array.from({ length: 40 }, (_unused, index) => ({ value: `item ${String(index)}` }));
+
+  for (const limit of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
+    test(`limit: ${String(limit)} is refused, never an empty list called "no results"`, () => {
+      expect(() => filterOptions(many, 'item', limit)).toThrow(/X_INVARIANT/);
+      expect(() => filterOptions(many, '', limit)).toThrow(/X_INVARIANT/);
+    });
+  }
+
+  test('limit: 0 renders nothing on purpose, and the default still applies', () => {
+    expect(filterOptions(many, 'item', 0)).toHaveLength(0);
+    expect(filterOptions(many, 'item')).toHaveLength(COMBOBOX_LIMIT);
+  });
+});

@@ -23,7 +23,7 @@
 import type { Action, ActionMcp, ActionPolicy } from '@ultimat3/action';
 import { action } from '@ultimat3/action';
 import type { Ctx, Span } from '@ultimat3/core';
-import { isMcpExposed, throwIfAborted, withSpan } from '@ultimat3/core';
+import { finiteCount, isMcpExposed, throwIfAborted, withSpan } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
@@ -72,6 +72,9 @@ const DEFAULT_MAX_TOKENS = 4_096;
  * is the request, so an untruncated result is billed once per remaining turn.
  */
 const DEFAULT_TOOL_RESULT_CHARS = 4_000;
+
+/** Named in every bound refusal, so the fix names the key the declaration carries. */
+const SUBJECT = 'agent';
 
 export interface AgentBudget extends LlmBudget {
   /**
@@ -161,6 +164,21 @@ export function agent<
       tools: unexposed.map(toolLabel),
     });
   }
+  // The three loop bounds, screened at DECLARATION for the same reason the tool check above is:
+  // the values are here, and an `agent()` runs at module scope, so a bound that is not one fails
+  // the boot instead of the ninetieth second of a run. None of them is checked by what it lands
+  // on — `turn <= NaN` is false on the FIRST comparison, so the loop takes zero turns and reports
+  // `X_AGENT_MAX_TURNS` about a model that was never called; `slice(0, NaN)` is `''`, so every
+  // tool result reaches the model empty while the run keeps paying for turns; and `maxTokens`
+  // becomes the pre-flight estimate, where a `NaN` disables the ledger for the whole process.
+  finiteCount(SUBJECT, 'maxTurns', def.maxTurns ?? DEFAULT_MAX_TURNS, 1);
+  finiteCount(
+    SUBJECT,
+    'maxToolResultChars',
+    def.maxToolResultChars ?? DEFAULT_TOOL_RESULT_CHARS,
+    1,
+  );
+  finiteCount(SUBJECT, 'maxTokens', def.maxTokens ?? DEFAULT_MAX_TOKENS, 1);
   // Projected on FIRST RUN, memoised, for the reason above: `agent()` is evaluated at module
   // scope and a tool's name is stamped by `registerAction` at boot, so naming it here would make
   // the ordinary `export const publishPost = action(...)` beside it `X_ACTION_UNREGISTERED`.
@@ -389,10 +407,16 @@ function limitsOf<
 >(def: AgentDef<TInput, TOutput, V>): BudgetLimits {
   const budget = def.budget;
   return {
-    ...(budget?.tokensIn === undefined ? {} : { tokensIn: budget.tokensIn }),
+    // Screened under the names the DECLARATION uses, not the ledger's: `tokensPerRun` arrives at
+    // `BudgetLimits` as `request`, and a fix line naming a key the app never wrote is not a fix.
+    ...(budget?.tokensIn === undefined
+      ? {}
+      : { tokensIn: finiteCount(SUBJECT, 'budget.tokensIn', budget.tokensIn) }),
     ...(budget?.costPerCall === undefined ? {} : { costPerCall: budget.costPerCall }),
     // The ledger's `request` scope accumulates across every call made under one ledger, which for
     // a run under `withBudget` is exactly "the whole run".
-    ...(budget?.tokensPerRun === undefined ? {} : { request: budget.tokensPerRun }),
+    ...(budget?.tokensPerRun === undefined
+      ? {}
+      : { request: finiteCount(SUBJECT, 'budget.tokensPerRun', budget.tokensPerRun) }),
   };
 }

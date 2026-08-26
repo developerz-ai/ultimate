@@ -134,3 +134,47 @@ describe('buildPrecacheManifest', () => {
     expect(serializePrecacheManifest(first)).toBe(serializePrecacheManifest(second));
   });
 });
+
+/**
+ * `totalBytes > warnBytes` is the only thing that says an install will stall on a slow
+ * connection, and it is false when either side is `NaN` — one asset whose byte count did not
+ * arrive as a number takes the whole budget warning down with it, silently, in a function whose
+ * output is otherwise byte-identical per commit.
+ */
+describe('the precache budget refuses a byte count that is not one', () => {
+  test('a NaN warnBytes is refused rather than disabling the warning', () => {
+    expect(() => buildPrecacheManifest({ buildId: 'b1', routes, warnBytes: Number.NaN })).toThrow(
+      /warnBytes/,
+    );
+  });
+
+  test("a single asset's NaN bytes is refused rather than making the total NaN", () => {
+    expect(() =>
+      buildPrecacheManifest({
+        buildId: 'b1',
+        routes,
+        assets: [{ url: '/app.js', revision: 'a1', bytes: Number.NaN }],
+        warnBytes: 1,
+      }),
+    ).toThrow(/bytes/);
+  });
+
+  test('a route whose bytes are not a number is refused with the same rule', () => {
+    expect(() =>
+      buildPrecacheManifest({
+        buildId: 'b1',
+        routes: [
+          {
+            path: '/',
+            surface: 'site',
+            mode: 'static',
+            offline: 'precache',
+            revision: 'r1',
+            bytes: Number.POSITIVE_INFINITY,
+          },
+        ],
+        warnBytes: 1,
+      }),
+    ).toThrow(/bytes/);
+  });
+});

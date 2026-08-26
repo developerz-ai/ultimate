@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { asyncRefusal } from './bounds-fixture';
 import { normalize } from './embeddings';
 import { PgVectorStore } from './pg-vector';
 import { conditionsSql, vectorLiteral } from './pg-vector-sql';
@@ -240,5 +241,41 @@ describe('PgVectorStore scope', () => {
     }
     expect(codeOf(thrown)).toBe('X_VECTOR_SCOPE_WIDENED');
     expect((thrown as { fix?: string }).fix).toContain("scoped({ tenant: 'other' })");
+  });
+});
+
+/**
+ * The production store screens the same three bounds as its in-memory twin, and it has to: they
+ * reach Postgres as bound parameters, so an unscreened one is either the database's error to
+ * report — about a `limit`, naming nothing a caller wrote — or, for `rrfK`, no error at all.
+ * Postgres float8 HAS a `NaN`, it sorts as the largest value, so every fused score ties and the
+ * ranking collapses to the id tiebreak with a full result list still coming back.
+ */
+describe('PgVectorStore refuses a bound before it opens a connection', () => {
+  test('k, candidates and rrfK are named, and no statement is issued', async () => {
+    const { client, store } = harness();
+    const query = { query: 'drift', vector: vec(1, 0, 0, 0) };
+    expect((await asyncRefusal(() => store.hybrid({ ...query, k: Number.NaN }))).cause).toContain(
+      'k',
+    );
+    expect(
+      (await asyncRefusal(() => store.hybrid({ ...query, k: 5, candidates: Number.NaN }))).cause,
+    ).toContain('candidates');
+    expect(
+      (await asyncRefusal(() => store.hybrid({ ...query, k: 5, rrfK: Number.NaN }))).cause,
+    ).toContain('rrfK');
+    expect((await asyncRefusal(() => store.search(vec(1, 0, 0, 0), Number.NaN))).cause).toContain(
+      'k',
+    );
+    expect((await asyncRefusal(() => store.searchText('drift', 2.5))).cause).toContain('k');
+    // The point of screening here rather than letting the driver answer: nothing was sent.
+    expect(client.statements).toHaveLength(0);
+  });
+
+  test('an honest hybrid read still builds its statement — the non-vacuity half', async () => {
+    const { client, store } = harness();
+    await store.hybrid({ query: 'drift', vector: vec(1, 0, 0, 0), k: 5 });
+    expect(client.statements).toHaveLength(1);
+    expect(client.statements[0]?.values).toContain(60);
   });
 });

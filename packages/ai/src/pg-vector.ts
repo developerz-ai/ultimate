@@ -3,6 +3,7 @@
 // the tenant and policy envelope has to be un-bypassable — every statement it emits is built on
 // `conditionsSql`, and the fusion happens in SQL rather than after the rows are already loaded.
 
+import { finiteCount, finiteOption } from '@ultimat3/core';
 import { type DbClient, db, type SqlFragment } from '@ultimat3/db';
 import { VectorDimMismatchError } from './errors';
 import {
@@ -35,6 +36,9 @@ export interface PgVectorStoreInput {
   /** The envelope this instance is bound to. `scoped()` is how request paths narrow it. */
   readonly scope?: VectorScope | undefined;
 }
+
+/** Named in every bound refusal here, matching `vector.ts`: one store contract, one subject. */
+const HYBRID = 'hybrid search';
 
 /** The row every statement projects. `metadata` arrives as jsonb; drivers differ on parsing it. */
 interface HitRow {
@@ -103,7 +107,12 @@ export class PgVectorStore implements VectorStore {
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
     this.assertDimension(vector.length);
-    return this.run(searchSql(this.target, vector, { scope: this.scope, filter, k }));
+    // `k` is the statement's `limit` and reaches Postgres as a bound parameter, so a `NaN` is the
+    // database's error to report rather than this store's — and a fractional one is an error there
+    // too. Refused here instead, before a connection is taken, naming the argument the caller wrote.
+    return this.run(
+      searchSql(this.target, vector, { scope: this.scope, filter, k: finiteCount(HYBRID, 'k', k) }),
+    );
   }
 
   async searchText(
@@ -111,17 +120,24 @@ export class PgVectorStore implements VectorStore {
     k: number,
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
-    return this.run(textSql(this.target, query, { scope: this.scope, filter, k }));
+    return this.run(
+      textSql(this.target, query, { scope: this.scope, filter, k: finiteCount(HYBRID, 'k', k) }),
+    );
   }
 
   async hybrid(input: HybridSearchInput): Promise<readonly SearchHit[]> {
     this.assertDimension(input.vector.length);
+    // The same three bounds `MemoryVectorStore.hybrid` screens, and they have to be screened in
+    // BOTH stores: `rrfK` lands in `1.0 / (rrfK + rank)`, Postgres has a float8 `NaN`, and it
+    // sorts as the LARGEST value — so every fused score ties, the order collapses to the `id`
+    // tiebreak, and the fusion this method exists for is gone with nothing raised anywhere.
+    const k = finiteCount(HYBRID, 'k', input.k);
     const args: PgHybridArgs = {
       scope: this.scope,
       filter: input.filter,
-      k: input.k,
-      candidates: input.candidates ?? Math.max(input.k * 4, 20),
-      rrfK: input.rrfK ?? 60,
+      k,
+      candidates: finiteCount(HYBRID, 'candidates', input.candidates ?? Math.max(k * 4, 20)),
+      rrfK: finiteOption(HYBRID, 'rrfK', input.rrfK ?? 60),
     };
     return this.run(hybridSql(this.target, input.query, input.vector, args));
   }

@@ -9,6 +9,7 @@
 // The declaration lives here and the fan-out lives in `fanout.ts` — the same split `backfill.ts`
 // and `backfill-pass.ts` already have.
 
+import { finiteCount } from '@ultimat3/core';
 import type { JobHandle, JobTenant, RetryPolicy } from '@ultimat3/jobs';
 import { DEFAULT_RETRY, job } from '@ultimat3/jobs';
 import type { Schema } from '@ultimat3/schema';
@@ -101,10 +102,16 @@ function resolve<Params>(
     }
     return {
       channel,
-      waitMs: delivery.wait === undefined ? 0 : toDurationMs(delivery.wait),
+      waitMs:
+        delivery.wait === undefined
+          ? 0
+          : toDurationMs(delivery.wait, `deliver[${channel.name}].wait`),
       when: delivery.if,
       unless: delivery.unless,
-      digestMs: delivery.digest === undefined ? undefined : toDurationMs(delivery.digest.window),
+      digestMs:
+        delivery.digest === undefined
+          ? undefined
+          : toDurationMs(delivery.digest.window, `deliver[${channel.name}].digest.window`),
       group: delivery.digest?.group,
     };
   });
@@ -121,7 +128,18 @@ export function notifier<Params>(
   const declared = definition.recipients;
   const plan: NotifyPlan<Params> = {
     name: definition.name,
-    maxRecipients: definition.maxRecipients ?? DEFAULT_MAX_RECIPIENTS,
+    // `audience.length > maxRecipients` is the ONLY thing between a notifier and an unbounded
+    // fan-out, and `NaN` makes it false for every audience — the ceiling stops existing rather than
+    // being enforced wrongly. Refused where the notifier is declared, which is where an author can
+    // act on it. Floor of 0: a notifier whose audience must be empty is loud (every non-empty run
+    // is `X_NOTIFY_FANOUT_TOO_WIDE`), so it is a declaration and not the silent failure this
+    // screen exists for.
+    maxRecipients: finiteCount(
+      `notifier ${definition.name}`,
+      'maxRecipients',
+      definition.maxRecipients ?? DEFAULT_MAX_RECIPIENTS,
+      0,
+    ),
     deliveries,
     keyFor: (params) => definition.key(params),
     // Bound to the definition rather than torn off it, so an author who writes `recipients` as a

@@ -37,6 +37,16 @@
 - No hex outside `MAIL_TOKENS`. Base styling is inlined (clients strip `<style>`); dark mode is
   one `prefers-color-scheme` block keyed on short `data-x` role codes.
 - Never format a date without `options.tz`. The `Date:` header is UTC, stated as `+0000`.
+- **`timeoutMs` is refused at CONSTRUCTION, where `poolSize` already is, and its floor is 1**
+  (`As of 2026-08-26`). `finiteCount('createSmtpDriver'|'createResendDriver', 'timeoutMs', …, 1)`.
+  Zero is not "no deadline" in either driver: the value goes straight to `AbortSignal.timeout` and
+  to `setTimeout(fn, timeoutMs)`, both of which fire on the next tick, so `0` and `NaN` are the same
+  failure — `setTimeout(fn, NaN)` IS `setTimeout(fn, 0)`. Resend's was the worse half: the signal is
+  constructed INSIDE the `try` that wraps the fetch, so `AbortSignal.timeout(NaN)`'s bare
+  `TypeError` was caught and reported as a RETRYABLE egress failure whose `fix:` said to curl the
+  endpoint, and the queue retried a config error to the dead-letter table. `bun run finite-bounds`
+  is the ratchet; the repair is recognised by the shape of the call.
+
 - **Every "now" in this package comes from a `Clock`, `createMemoryDriver` included** (`As of
   2026-08-22`). It stamped `at: new Date()`, and `SentMail.at` is what `outbox()`, `lastTo()` and
   the `/_x` panel ORDER on — so the one fact a test most needs to state was the one it could only

@@ -8,6 +8,7 @@
 // stdout is the WIRE. Anything logged there corrupts the protocol, so diagnostics go to
 // stderr and this file never calls `console.log`.
 
+import { finiteCount } from '@ultimat3/core';
 import type { McpCaller } from './registry';
 import type { McpServer } from './server';
 import { errorResponse, INVALID_REQUEST, PARSE_ERROR } from './wire';
@@ -41,7 +42,16 @@ export interface StdioTransportInput {
 export async function serveStdio(config: StdioTransportInput): Promise<void> {
   const stream = config.input ?? Bun.stdin.stream();
   const write = config.write ?? defaultWrite;
-  const limit = config.lineLimitBytes ?? DEFAULT_STDIO_LINE_LIMIT;
+  // Before a byte of stdin is read, because `line.length > NaN` is false for EVERY line: the cap
+  // would not be a large one, it would be absent, and the buffer it bounds grows until the process
+  // dies. `??` cannot screen it — `NaN` is not nullish. Floor of 1: a cap of 0 refuses every
+  // message there is, which is a dead transport rather than a bound.
+  const limit = finiteCount(
+    'serveStdio',
+    'lineLimitBytes',
+    config.lineLimitBytes ?? DEFAULT_STDIO_LINE_LIMIT,
+    1,
+  );
   const decoder = new TextDecoder();
   let buffer = '';
   // The rest of an over-long message is dropped, not parsed: whatever follows it on the same line

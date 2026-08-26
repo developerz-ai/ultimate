@@ -113,3 +113,32 @@ describe('a row the driver decoded into something JSON cannot hold', () => {
     expect(() => JSON.stringify(result)).not.toThrow();
   });
 });
+
+/**
+ * `capQueryRows` takes its ceilings from the caller, and `QueryLimits` is a PUBLIC type — so the
+ * one path `resolveQueryLimits` cannot defend is a limits object built by hand. `slice(0, NaN)` is
+ * `[]` and `overRows` is `length > NaN`, which is false: the agent is handed zero rows with
+ * `truncated: false`, an empty table reported as the complete answer to its question. The byte
+ * ceiling fails the same way — `bytes + size > NaN` is false for every row, so the 256 KiB that
+ * exists to protect the model's context stops applying at all.
+ */
+describe('capQueryRows: a ceiling that is not a ceiling', () => {
+  const limits = resolveQueryLimits(10);
+
+  for (const maxRows of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, 0, -1]) {
+    test(`maxRows: ${String(maxRows)} is refused, never zero rows called complete`, () => {
+      expect(() => capQueryRows(rowsOf(3), { ...limits, maxRows })).toThrow(/X_INVARIANT/);
+    });
+  }
+
+  for (const maxBytes of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
+    test(`maxBytes: ${String(maxBytes)} is refused, never an uncapped answer`, () => {
+      expect(() => capQueryRows(rowsOf(3), { ...limits, maxBytes })).toThrow(/X_INVARIANT/);
+    });
+  }
+
+  test('the ceilings resolveQueryLimits builds are always usable ones', () => {
+    expect(() => capQueryRows(rowsOf(3), resolveQueryLimits(Number.NaN))).not.toThrow();
+    expect(() => capQueryRows(rowsOf(3), resolveQueryLimits('nonsense'))).not.toThrow();
+  });
+});

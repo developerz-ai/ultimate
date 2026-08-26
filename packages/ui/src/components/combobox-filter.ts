@@ -2,6 +2,8 @@
 // every debounced keystroke, so a no-JS form round-trip and a live filter narrow the list the
 // same way — two matchers would eventually disagree, and the user would see the list flicker.
 
+import { finiteCount } from '@ultimat3/core';
+
 export interface ComboboxOption {
   /** The text the field takes when the suggestion is picked — and what the form submits. */
   value: string;
@@ -36,8 +38,14 @@ export function filterOptions(
   query = '',
   limit: number = COMBOBOX_LIMIT,
 ): readonly ComboboxOption[] {
+  // A BARE PARAMETER DEFAULT, which `??` never guards and `scripts/finite-bounds.ts` cannot see:
+  // `slice(0, NaN)` is `[]`, so every suggestion vanishes and `<Combobox>` renders "no results" for
+  // a list that matched. `Infinity` is the mirror — every option rendered, out of the function
+  // whose own doc says long lists are a scroll, not an answer. 0 stays legal: it renders nothing,
+  // on purpose and visibly.
+  const cap = finiteCount('filterOptions', 'limit', limit, 0);
   const needle = normalizeQuery(query);
-  if (needle === '') return options.slice(0, limit);
+  if (needle === '') return options.slice(0, cap);
 
   const prefix: ComboboxOption[] = [];
   const contains: ComboboxOption[] = [];
@@ -46,5 +54,5 @@ export function filterOptions(
     if (text.startsWith(needle)) prefix.push(option);
     else if (text.includes(needle)) contains.push(option);
   }
-  return [...prefix, ...contains].slice(0, limit);
+  return [...prefix, ...contains].slice(0, cap);
 }

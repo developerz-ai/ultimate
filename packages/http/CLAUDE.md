@@ -570,6 +570,15 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   only. `HTTP_ERROR_TITLES` holds owned codes, and `registerErrorCodes` takes it whole and
   unguarded — declaring a borrowed one throws `X_ERROR_CODE_DUPLICATE` at import, which is the
   point. `factsOf` therefore reads a borrowed code's title off the error itself, never the map.
+- **A `cache-control` age is delta-seconds or it is DROPPED, never emitted** (`As of 2026-08-26`).
+  `finiteDeltaSeconds` in `response.ts` — `Number.isSafeInteger && >= 0`, per field. `max-age=NaN`
+  is not a shorter age, it is an unparseable directive a conforming cache IGNORES, so the response
+  fell back to heuristic caching rather than to the declared age. TOTAL, never a throw: this is the
+  response path, and a bad cache hint must not become a 500. Every fallback is the SHORTER
+  direction — `max-age` to 0, `s-maxage` and `stale-while-revalidate` omitted — so nothing here can
+  lengthen an age the caller did not ask for. `http.cache_hint_not_delta_seconds` names the field.
+  The boot-time half is still missing: `Route.cache` (`router.ts`) is a real declaration site where
+  a throw WOULD be correct, and nothing screens it there yet — issue #373.
 - Tests must not touch the network — the preload seals `fetch`. Socket tests live in
   `e2e/` and run with `bun test packages/http/e2e`, sealed: `start()` calls core's
   `markListening()`, so the seal treats our own port as self, not egress. Never unseal.

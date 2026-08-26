@@ -248,3 +248,26 @@ describe('DataTable', () => {
     });
   });
 });
+
+/**
+ * `Array.from({ length: NaN })` is `[]`, so a loading table with a non-finite `skeletonRows`
+ * announced `aria-busy` over an EMPTY tbody — the collapsed layout the placeholder exists to
+ * prevent, reported as a healthy loading state. `Infinity` is worse: `Array.from` asks for
+ * 2^53 - 1 elements and the render dies with a bare `RangeError`, uncoded, out of a component.
+ */
+describe('DataTable, a placeholder count that is not a count', () => {
+  beforeAll(probe);
+  afterAll(unprobe);
+
+  for (const skeletonRows of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
+    test(`skeletonRows: ${String(skeletonRows)} is refused, never a busy empty table`, () => {
+      expect(() => table({ loading: true, skeletonRows })).toThrow(/X_INVARIANT/);
+    });
+  }
+
+  test('skeletonRows: 0 is a loading table with no placeholders, which is a choice', () => {
+    const nodes = table({ loading: true, skeletonRows: 0 });
+    expect(one(byTag(nodes, 'tbody'), '<tbody>').props['aria-busy']).toBe('true');
+    expect(byTag(nodes, 'td')).toHaveLength(0);
+  });
+});

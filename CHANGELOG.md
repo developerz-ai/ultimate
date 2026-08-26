@@ -59,6 +59,14 @@ validators either: all three **propagate** `NaN`, and this repo was relying on a
   | `@ultimat3/jobs` | `createLimiter`'s five options; `JobDriver.claim`, `introspect.list` and `deadLetters` limits |
   | `@ultimat3/realtime` | `maxPerTenant`, `maxReconnectAttempts`, `maxPerSocket` and four socket ceilings — the five now refused at **boot** rather than per-frame; `createMemoryEventBus` / `createPgEventBus` `defaultTtl` |
   | `@ultimat3/auth` | `HandshakeSealOptions.ttlMs`, `IssueVerificationInput.ttlMs`, `SessionCookieOptions.maxAgeSeconds` (negatives and fractions newly refused), `KdfLimits.maxConcurrent` and `maxQueued` |
+  | `@ultimat3/ai` | `llm`/`agent`/`defineEval`/`llmJudge`/`gateway` `maxTokens`, `agent` `maxTurns` and `maxToolResultChars`, `createGateway` `retry.attempts`, `RemoteEmbedder` `batchSize`/`timeoutMs`/`dimension`, `HashEmbedder.dimension`, `embedBatched` size, `registerModel` `contextWindow`/`maxOutput` (whole ≥ 1); `budget.tokensIn`/`tokensPerRun`, `BudgetLimits`, `hive` `concurrency`/`minMembers`, `retrieve` k, `assembleContext` `maxTokens`, vector `k`/`candidates`, `registerModel` `cacheMinimumTokens` and both prices' `minor` (whole ≥ 0); `chunk` `size`/`overlap`, `k1`, `b`, `rrfK` (finite, fractions still allowed) |
+  | `@ultimat3/render` | `renderSsr` and `streamResult` `status` (whole, 200–599), `holeTimeoutMs`, `render-isr` `maxEntries`, `themeScript` `maxBytes`, `registerRoute` `suspenseBoundaries` |
+  | `@ultimat3/pwa` | `minEngagementMs`, `warnBytes`, each precache entry's own `bytes`, `retentionPlan` `keep` |
+  | `@ultimat3/mail` | `driver-resend` and `driver-smtp` `timeoutMs` (whole ≥ 1 — both hand the value straight to `AbortSignal.timeout`, so `0` aborts on the next tick and is not "no deadline") |
+  | `@ultimat3/manifest` | `checkAgentsMd` `maxBytes` |
+  | `@ultimat3/mcp` | `serveStdio` `lineLimitBytes` (whole ≥ 1), `mcpHttpRoute` `bodyLimitBytes` (now refused at **construction**, not on the first request), `capQueryRows` `maxRows`/`maxBytes` |
+  | `@ultimat3/notify` | `createMemoryDeliveryLedger` `max`, `InboxQuery.limit` (both drivers), `notifier` `maxRecipients`, `deliver[].wait` and `deliver[].digest.window` |
+  | `@ultimat3/ui` | `DataTable` `skeletonRows`, `Skeleton` `lines`, `filterOptions` limit |
 
   **What to do:** run your app. Every refusal is at boot or at the call boundary, so one `bun test`
   or one `x verify` surfaces all of them at once and the `fix:` line carries the edit.
@@ -90,6 +98,36 @@ validators either: all three **propagate** `NaN`, and this repo was relying on a
   before, 213 after, checked against the pre-existing `dist/index.d.ts`.
 - **A JSDoc block that had drifted onto the next symbol** in `packages/http/src/rate-limit.ts`, and
   two stacked blocks in `packages/http/src/config.ts` whose rationale was dead text.
+- **A `NaN` token estimate did not bypass the AI budget — it POISONED it.** `@ultimat3/ai`'s
+  gateway used the pre-flight estimate as its ceiling check and then wrote it onto both the ledger
+  and the per-process `BudgetStore`. Measured: a `NaN` estimate passed a 1,000-token ceiling, and
+  every later call was then compared against a poisoned total, so a **5,000,000-token call passed
+  the same ceiling**. Screened at the seam every model call crosses, and at each declaration under
+  the key name the declaration itself uses — a bound reported under the framework's internal name
+  sends the reader to a key their app never wrote.
+- **`chunk({ size })` and `embedBatched` were a synchronous infinite loop**, past every
+  `AbortSignal`, past the job timeout, on the worker's only thread. Both are now pinned by tests
+  that HANG when the screen is removed — the runner has to be killed, which is the honest shape of
+  that assertion.
+- **An ISR page with a non-finite TTL was never fresh, so it regenerated on EVERY request.**
+  `render-isr`'s freshness test is `now - generatedAt < ttlMs`, false for a `NaN` ttl, and the entry
+  comes from a **pluggable** `IsrStore`. Silent unbounded origin load, on top of the `s-maxage=NaN`
+  it also emitted. Repaired totally rather than by throwing: a ttl that is not positive-finite
+  becomes the tag-only `null`, with an `isr.entry_ttl_invalid` warning.
+- **`cache-control` emitted `max-age=NaN`**, which is not a shorter age — it is an unparseable
+  directive a conforming cache **ignores**, so the response fell back to heuristic caching rather
+  than to the declared age. `finiteDeltaSeconds` drops a field that is not RFC-9111 delta-seconds;
+  every fallback goes the SHORTER direction, so nothing can lengthen an age the caller did not ask
+  for. Total, never a throw — this is the response path. The boot-time half, screening `Route.cache`
+  at registration, is issue #373.
+- **A `NaN` `precache` entry took down the budget warning for every OTHER entry** — one bad entry
+  makes the total `NaN`, and `NaN > warnBytes` is false. Reproduced: an `Infinity` entry printed
+  `precache is 0b (over 1b)`.
+- **`retentionPlan` evicted every deploy, including the running one**, for a non-finite `keep`:
+  `Math.max(1, NaN)` is `NaN` and `slice(0, NaN)` is `[]`.
+- **The MCP query cap answered an empty table as a complete answer.** `capQueryRows` with a
+  non-finite ceiling gives the agent **zero rows with `truncated: false`**, and switches the 256 KiB
+  context guard off entirely.
 
 ### Removed
 

@@ -17,7 +17,7 @@
 import type { Action, ActionMcp, ActionPolicy } from '@ultimat3/action';
 import { action, actionName } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
-import { throwIfAborted, withSpan } from '@ultimat3/core';
+import { finiteCount, throwIfAborted, withSpan } from '@ultimat3/core';
 import type { AnySchema, InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { BudgetLimits } from './budget';
 import { BudgetLedger, currentBudget, withBudget } from './budget';
@@ -41,6 +41,9 @@ const DEFAULT_CONCURRENCY = 4;
  * one or two items buys nothing but a second way for the run to fail.
  */
 const DEFAULT_MIN_MEMBERS = 2;
+
+/** Named in every bound refusal, so the fix names the key the declaration carries. */
+const SUBJECT = 'hive';
 
 export interface HiveSplitArgs<TInput extends StandardSchemaV1> {
   readonly input: InferOutput<TInput>;
@@ -108,13 +111,18 @@ async function run<
   const inputs = await def.split({ input: args.input, ctx: args.ctx });
   if (inputs.length === 0) throw new HiveEmptyError({ member: name });
 
-  const floor = def.minMembers ?? DEFAULT_MIN_MEMBERS;
+  // Both bounds screened before either clamp reads them, because neither clamp is a screen:
+  // `Math.max` and `Math.min` PROPAGATE a `NaN`, so `concurrency: NaN` survived both and reached
+  // `Array.from({ length: NaN }, worker)` — an empty worker list, a `members` array of holes, and
+  // `0 ok / 0 failed / 0 skipped` returned as a clean run over inputs nothing ever touched.
+  // `minMembers: NaN` is quieter and the same shape: `inputs.length < NaN` is false, so the floor
+  // stops existing rather than being wrong. The floor stays 0 for both — `Math.max(1, …)` already
+  // reads a declared 0 as "one worker", and refusing it here would be a new rule, not a repair.
+  const floor = finiteCount(SUBJECT, 'minMembers', def.minMembers ?? DEFAULT_MIN_MEMBERS);
+  const declared = finiteCount(SUBJECT, 'concurrency', def.concurrency ?? DEFAULT_CONCURRENCY);
   // A split below the floor still runs every input it produced — dropping one would be silent
   // data loss — it just stops paying for a pool to do it.
-  const width =
-    inputs.length < floor
-      ? 1
-      : Math.max(1, Math.min(def.concurrency ?? DEFAULT_CONCURRENCY, inputs.length));
+  const width = inputs.length < floor ? 1 : Math.max(1, Math.min(declared, inputs.length));
 
   return withSpan('ai.hive', async (span) => {
     span.setAttributes({
@@ -170,10 +178,16 @@ function limitsOf<
 >(def: HiveDef<TInput, MIn, MOut>): BudgetLimits {
   const budget = def.budget;
   return {
-    ...(budget?.tokensIn === undefined ? {} : { tokensIn: budget.tokensIn }),
+    // Under the declaration's own key names — `tokensPerRun` is the ledger's `request`, and a fix
+    // line has to name what the app wrote.
+    ...(budget?.tokensIn === undefined
+      ? {}
+      : { tokensIn: finiteCount(SUBJECT, 'budget.tokensIn', budget.tokensIn) }),
     ...(budget?.costPerCall === undefined ? {} : { costPerCall: budget.costPerCall }),
     // The ledger's `request` scope accumulates across every call made under it, which for a hive
     // under `withBudget` is every member's every turn.
-    ...(budget?.tokensPerRun === undefined ? {} : { request: budget.tokensPerRun }),
+    ...(budget?.tokensPerRun === undefined
+      ? {}
+      : { request: finiteCount(SUBJECT, 'budget.tokensPerRun', budget.tokensPerRun) }),
   };
 }

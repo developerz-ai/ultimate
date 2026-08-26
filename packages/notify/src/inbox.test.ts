@@ -72,3 +72,24 @@ describe('unit · in-app inbox', () => {
     expect((await inbox.list({ recipient: 'ana', limit: 1 })).map((r) => r.key)).toEqual(['b']);
   });
 });
+
+/**
+ * `slice(0, NaN)` is `[]` and `slice(0, Infinity)` is EVERY row — one silently reports an empty
+ * inbox as the whole of it, the other is the unbounded read the `limit` exists to prevent. Neither
+ * is reachable through the `??` default, because `NaN` is not nullish.
+ */
+describe('unit · in-memory inbox, a page size that is not one', () => {
+  for (const limit of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
+    test(`limit: ${String(limit)} is refused, never answered as a page`, async () => {
+      const inbox = createMemoryInboxStore();
+      await inbox.add({ ...write, key: 'a', createdAt: AT });
+      await expect(inbox.list({ recipient: 'ana', limit })).rejects.toThrow(/X_INVARIANT/);
+    });
+  }
+
+  test('limit: 0 is an empty page, which is a bound and not a mistake', async () => {
+    const inbox = createMemoryInboxStore();
+    await inbox.add({ ...write, key: 'a', createdAt: AT });
+    expect(await inbox.list({ recipient: 'ana', limit: 0 })).toEqual([]);
+  });
+});

@@ -139,3 +139,24 @@ describe('dispose', () => {
     expect(controller.installed()).toBe(false);
   });
 });
+
+/**
+ * `now() - startedAt < NaN` is false at every instant, so an engagement threshold that arrived
+ * non-finite does not shorten the wait — it deletes it, and the install prompt fires on first
+ * paint, which is the one thing this controller exists to prevent. `0` stays legal: "ask as soon
+ * as the browser offers" is a decision an app may take, and it is a comparison that still works.
+ */
+describe('a non-finite engagement threshold is refused', () => {
+  test('a NaN minEngagementMs is refused instead of prompting on first paint', () => {
+    expect(() =>
+      createInstallController({ host: fakeHost(() => 0), minEngagementMs: Number.NaN }),
+    ).toThrow(/minEngagementMs/);
+  });
+
+  test('zero still means "as soon as the browser offers"', async () => {
+    const host = fakeHost(() => 0);
+    const controller = createInstallController({ host, minEngagementMs: 0 });
+    host.fire('beforeinstallprompt', promptEvent('accepted'));
+    expect(await controller.prompt()).toBe('accepted');
+  });
+});

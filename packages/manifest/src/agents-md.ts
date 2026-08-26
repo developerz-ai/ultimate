@@ -15,6 +15,7 @@
 // This module therefore checks exactly two things: that the file exists, and that it has not
 // grown into a document nobody reads. It never writes.
 
+import { finiteCount } from '@ultimat3/core';
 import { AgentsMdMissingError, AgentsMdTooLargeError } from './errors';
 
 export const AGENTS_MD_FILENAME = 'AGENTS.md';
@@ -43,7 +44,12 @@ export interface CheckAgentsMdInput {
 /** Inspect without throwing — `x verify --json` reports, `assertAgentsMd` enforces. */
 export async function checkAgentsMd(input: CheckAgentsMdInput = {}): Promise<AgentsMdCheck> {
   const path = input.path ?? `./${AGENTS_MD_FILENAME}`;
-  const maxBytes = input.maxBytes ?? AGENTS_MD_MAX_BYTES;
+  // `bytes > maxBytes` is false when `maxBytes` is `NaN`, so `assertAgentsMd` passed a file of any
+  // size while the check it returned reported `ok: false` — the gate's throw and the gate's report
+  // disagreeing about one file, with nothing raising. Screened here rather than in `assertAgentsMd`
+  // because this is the function that reads the option; "inspect without throwing" is about the
+  // file's state, and a budget that is not a number is the caller's bug, not the repository's.
+  const maxBytes = finiteCount('checkAgentsMd', 'maxBytes', input.maxBytes ?? AGENTS_MD_MAX_BYTES);
   const file = Bun.file(path);
 
   if (!(await file.exists())) {
