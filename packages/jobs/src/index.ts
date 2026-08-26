@@ -101,6 +101,7 @@ export type {
   QueueStats,
 } from './driver';
 export {
+  assertClaimBounds,
   assertClaimQueues,
   DEFAULT_QUEUE,
   DEFAULT_VISIBILITY_TIMEOUT_MS,

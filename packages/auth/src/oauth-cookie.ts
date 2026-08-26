@@ -10,6 +10,7 @@ import { EnvMissingError, systemClock } from '@ultimat3/core';
 import type { OAuthHandshake, OAuthProviderId } from './oauth';
 import { oauthStateInvalid } from './oauth-errors';
 import { hasOAuthProvider } from './oauth-registry';
+import { assertFiniteAuthCount } from './policy-numbers';
 import { type RequestLike, readCookie } from './session';
 import { base64Url, timingSafeEqual } from './tokens';
 
@@ -29,6 +30,26 @@ export function handshakeCookieName(provider: OAuthProviderId): string {
 
 /** Long enough to read a consent screen, short enough that a lifted cookie is already stale. */
 export const DEFAULT_HANDSHAKE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * One screen for both ends of the deadline, because it is one number bounding two things: the
+ * server comparison in `openHandshake` and the `Max-Age` the browser is asked to honour. `NaN`
+ * switches off both at once and neither says anything — `now - issuedAt > NaN` is false forever,
+ * and `Max-Age=NaN` is not `delta-seconds`, so a browser drops the attribute and keeps the cookie
+ * until the tab closes. What survives is the state, nonce and PKCE verifier that are the CSRF
+ * defence of the callback leg, replayable a year later.
+ *
+ * Screened at every reader rather than once at seal time: the two legs are two HTTP requests and
+ * two calls, so a check on the way out is one the way back never runs.
+ */
+function handshakeTtlMs(options: HandshakeSealOptions | undefined): number {
+  return assertFiniteAuthCount(
+    'oauth.handshake.ttlMs',
+    options?.ttlMs ?? DEFAULT_HANDSHAKE_TTL_MS,
+    'the server-side replay deadline is a comparison that is false for every handshake and the cookie carries a Max-Age no browser keeps, so a lifted handshake stays redeemable',
+    1,
+  );
+}
 
 /** `wiki/Configuration.md` requires it at >=32 chars for the `web` role; this is that gate. */
 const MIN_SECRET_LENGTH = 32;
@@ -146,7 +167,7 @@ export function openHandshake(
   // The cookie's own `Max-Age` is the client's copy of this deadline, and a client is free to
   // ignore it — so the age that decides is measured here, against the server's clock.
   const clock = options?.clock ?? systemClock;
-  if (clock.now().getTime() - issuedAt > (options?.ttlMs ?? DEFAULT_HANDSHAKE_TTL_MS)) {
+  if (clock.now().getTime() - issuedAt > handshakeTtlMs(options)) {
     throw oauthStateInvalid(provider, 'the stored handshake expired before the callback arrived');
   }
 
@@ -164,7 +185,7 @@ export function handshakeCookie(
   handshake: OAuthHandshake,
   options?: HandshakeCookieOptions,
 ): string {
-  const maxAge = Math.floor((options?.ttlMs ?? DEFAULT_HANDSHAKE_TTL_MS) / 1000);
+  const maxAge = Math.floor(handshakeTtlMs(options) / 1000);
   // The handshake already names its provider, so the two legs cannot disagree about the name.
   const name = options?.name ?? handshakeCookieName(handshake.provider);
   return `${name}=${sealHandshake(handshake, options)}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;

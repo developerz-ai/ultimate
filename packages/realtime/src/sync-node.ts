@@ -23,7 +23,7 @@ import {
 } from './socket';
 import { GrantBook, type SyncAuthenticator, sweepGrants } from './sync-auth';
 import { ackRefOf, createFrameRouter, type MutationHandler } from './sync-frames';
-import { drainGraceMs, syncNodeBounds } from './sync-node-bounds';
+import { drainGraceMs, socketCeilings, syncNodeBounds } from './sync-node-bounds';
 import { decode, type Frame, PROTOCOL_VERSION, toWireError } from './sync-protocol';
 import { handleUpgrade, type UpgradeTarget, type WsData } from './sync-upgrade';
 import {
@@ -139,6 +139,10 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   const clock = options.clock ?? systemClock;
   const accept = options.accept ?? new AcceptBudget({ perSecond: 500, burst: 2000, clock });
   const bounds = syncNodeBounds(options);
+  // Screened at construction, once, and reused per socket: the four ceilings below are read inside
+  // `websocket.open`, which Bun runs synchronously inside `server.upgrade`, so refusing them there
+  // is a node that boots clean and throws out of every upgrade. `sync-node-bounds.ts` carries why.
+  const ceilings = socketCeilings(options);
   const path = options.path ?? '/_x/sync';
   const presence = options.presence;
   const grants = new GrantBook();
@@ -376,16 +380,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           serverBuildId: options.buildId,
           actor: grants.get(ws.data.socketId)?.actor ?? null,
           clock,
-          ...(options.maxFramesPerSecond === undefined
-            ? {}
-            : { maxFramesPerSecond: options.maxFramesPerSecond }),
-          ...(options.frameBurst === undefined ? {} : { frameBurst: options.frameBurst }),
-          ...(options.maxBufferedBytes === undefined
-            ? {}
-            : { maxBufferedBytes: options.maxBufferedBytes }),
-          ...(options.maxDroppedFrames === undefined
-            ? {}
-            : { maxDroppedFrames: options.maxDroppedFrames }),
+          ...ceilings,
         });
         sockets.add(socket);
       },

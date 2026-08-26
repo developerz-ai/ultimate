@@ -81,6 +81,24 @@ describe('parsing', () => {
     expect(rows[0]?.claimed).toBe(2);
   });
 
+  test('the derived total counts RELEASED sections only', () => {
+    // A whole-file sum agrees with the page only while [Unreleased] is empty, so every PR that
+    // landed a breaking change turned this red and the repair was a number the next release
+    // invalidates — the release PROMOTES the section, it does not append one, so the total is
+    // unchanged by a release and must be unchanged by the work leading to it.
+    const pending = GOOD_CHANGELOG.replace(
+      'Nothing yet.',
+      '- **BREAKING — a third thing moved.** Do the third edit.',
+    );
+    expect(kinds(pending, GOOD_UPGRADING)).not.toContain('total');
+    // Non-vacuous: the same entry inside a RELEASED section does move it.
+    const shipped = GOOD_CHANGELOG.replace(
+      '- **BREAKING — another thing moved.** Do the other edit.',
+      '- **BREAKING — another thing moved.** Do the other edit.\n- **BREAKING — a third.** Edit.',
+    );
+    expect(kinds(shipped, GOOD_UPGRADING)).toContain('total');
+  });
+
   test('the derived total is read out of the fenced grep the page prints', () => {
     expect(parseDerivedTotal(GOOD_UPGRADING)?.claimed).toBe(2);
     expect(parseDerivedTotal('# Upgrading\n\nno fence here\n')).toBeUndefined();

@@ -233,17 +233,6 @@ export interface MemoryRateLimitStore extends RateLimitStore {
   readonly size: number;
 }
 
-/**
- * Default driver: correct for one process, which is exactly dev and tests.
- *
- * Bounded, because the key falls back to the connection address: a scan rotating through an
- * IPv6 /64 mints a fresh key per request, and an unbounded map turns that into an OOM. Two
- * rules keep it flat. A refilled bucket is *forgotten*, not evicted — it answers exactly as a
- * missing one, so dropping it costs nothing and a scanner's one-request buckets qualify within
- * a second. Only if that is not enough does the cap evict live state, and then the entries
- * closest to full go first: throwing away a spent bucket is what would hand the scanner a free
- * reset, so the most-throttled key is the last one to go.
- */
 /** A whole positive count, or the config refusal that names it. */
 const assertFiniteKeyCap = (option: string, value: number): number => {
   if (Number.isSafeInteger(value) && value >= 1) return value;
@@ -255,6 +244,17 @@ const assertFiniteKeyCap = (option: string, value: number): number => {
   );
 };
 
+/**
+ * Default driver: correct for one process, which is exactly dev and tests.
+ *
+ * Bounded, because the key falls back to the connection address: a scan rotating through an
+ * IPv6 /64 mints a fresh key per request, and an unbounded map turns that into an OOM. Two
+ * rules keep it flat. A refilled bucket is *forgotten*, not evicted — it answers exactly as a
+ * missing one, so dropping it costs nothing and a scanner's one-request buckets qualify within
+ * a second. Only if that is not enough does the cap evict live state, and then the entries
+ * closest to full go first: throwing away a spent bucket is what would hand the scanner a free
+ * reset, so the most-throttled key is the last one to go.
+ */
 export const memoryRateLimitStore = (
   options: { readonly maxKeys?: number | undefined } = {},
 ): MemoryRateLimitStore => {

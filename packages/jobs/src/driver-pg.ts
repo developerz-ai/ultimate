@@ -5,7 +5,7 @@
 // they run against in `driver-pg-ddl.ts`, and the row-to-record decoding in `driver-pg-rows.ts`.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteOption, systemClock, uuid } from '@ultimat3/core';
+import { finiteCount, systemClock, uuid } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { nowMs } from './clock';
 import type {
@@ -20,7 +20,7 @@ import type {
   NackOptions,
   QueueStats,
 } from './driver';
-import { assertClaimQueues, DEFAULT_QUEUE } from './driver';
+import { assertClaimBounds, assertClaimQueues, DEFAULT_QUEUE } from './driver';
 import type { BackfillRow, JobRow, StepRow } from './driver-pg-rows';
 import { num, toBackfillRun, toJobRecord, toStepRecord } from './driver-pg-rows';
 import {
@@ -135,7 +135,7 @@ function pgBackfillLedger(exec: () => PgExecutor): BackfillLedger {
         filter.name ?? null,
         filter.status ?? null,
         filter.runId ?? null,
-        finiteOption('the pg driver list', 'limit', filter.limit ?? 100),
+        finiteCount('the pg driver list', 'limit', filter.limit ?? 100),
       ]);
       return rows.map(toBackfillRun);
     },
@@ -200,12 +200,14 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
         filter.queue ?? null,
         filter.name ?? null,
         filter.state ?? null,
-        finiteOption('the pg driver list', 'limit', filter.limit ?? 100),
+        finiteCount('the pg driver list', 'limit', filter.limit ?? 100),
       ]);
       return rows.map(toJobRecord);
     },
     async deadLetters(limit = 100) {
-      const rows = await exec().query<JobRow>(SQL_JOB_DEAD_LETTERS, [limit]);
+      const rows = await exec().query<JobRow>(SQL_JOB_DEAD_LETTERS, [
+        finiteCount('the pg driver dead letters', 'limit', limit),
+      ]);
       return rows.map(toJobRecord);
     },
     async requeue(jobId, requeueOptions) {
@@ -293,6 +295,7 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
 
     async claim(claimOptions: ClaimOptions): Promise<readonly ClaimedJob[]> {
       assertClaimQueues('pg', claimOptions);
+      assertClaimBounds('pg', claimOptions);
       const rows = await exec().query<JobRow>(SQL_CLAIM, [
         claimOptions.queues,
         claimOptions.limit,

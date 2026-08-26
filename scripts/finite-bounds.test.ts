@@ -40,11 +40,21 @@ describe('what counts as an unchecked numeric bound', () => {
     expect(options('const n = state.held ?? 1;')).toEqual([]);
   });
 
-  test('a call, an index or an optional chain on the left is not an option read', () => {
+  test('a call or an INDEX on the left is not an option read', () => {
     expect(options('const n = map.get(key) ?? 512;')).toEqual([]);
     expect(options('const n = rows[0].limit ?? 512;')).toEqual([]);
-    expect(options('const n = queue?.pending ?? 512;')).toEqual([]);
+    expect(options('const n = rows[0]?.pending ?? 512;')).toEqual([]);
     expect(options('const n = list.filter(x).length ?? 512;')).toEqual([]);
+  });
+
+  test('an optional chain on the OBJECT is an option read, and used to be excluded', () => {
+    // This line asserted `[]` until 2026-08-26, and the exclusion was not a judgement — it was
+    // the path pattern spelling `\\.` where the code writes `?.`. `auth/src/oauth-cookie.ts`'s
+    // handshake TTL is exactly this shape, so a NaN there accepted a year-old sealed handshake
+    // under a green ratchet. `rows[0]?.pending` above stays out on the lookbehind's `.`, which is
+    // a different character doing different work.
+    expect(options('const n = queue?.pending ?? 512;')).toEqual(['pending']);
+    expect(options('const n = options?.ttlMs ?? DEFAULT_SIZE;')).toEqual(['ttlMs']);
   });
 
   test('a SCREAMING default this corpus declares NON-numeric is not a site', () => {
@@ -69,6 +79,44 @@ describe('what counts as an unchecked numeric bound', () => {
       file('packages/b/src/d.ts', "const DEFAULT_MODE = 'fast';"),
     ]);
     expect(numeric.has('DEFAULT_MODE')).toBe(false);
+  });
+
+  test('a default read out of a TABLE of numbers is a site', () => {
+    // `auth/src/verify.ts` shipped `input.ttlMs ?? DEFAULT_VERIFICATION_TTL_MS[input.purpose]`, and
+    // the declaration spans lines, so the single-line value capture read `{` and filed the name
+    // under "not numeric" — the site was matched by the pattern and then dropped by the filter,
+    // which is the shape of a guard whose claim is wider than its reach.
+    const source = [
+      'const DEFAULT_TTL_MS: Readonly<Record<Purpose, number>> = {',
+      "  'email-verify': 24 * 60 * 60 * 1000,",
+      "  'password-reset': 60 * 60 * 1000,",
+      '};',
+      'const ttl = input.ttlMs ?? DEFAULT_TTL_MS[input.purpose];',
+    ].join('\n');
+    const files = [file('packages/a/src/one.ts', source)];
+    expect([...finiteBoundSites(files).values()].flat().map((site) => site.option)).toEqual([
+      'ttlMs',
+    ]);
+  });
+
+  test('a table name is NOT a number, so a bare `?? TABLE` is an object default', () => {
+    // Folding table names into the scalar set would report `o.opts ?? DEFAULT_OPTS` — an object
+    // default, never a bound. That false report is what gets a rule switched off, so the two sets
+    // stay apart.
+    const source = [
+      'const DEFAULT_OPTS = { retries: 3, delayMs: 50 };',
+      'const o = i.opts ?? DEFAULT_OPTS;',
+    ].join('\n');
+    expect([...finiteBoundSites([file('packages/a/src/one.ts', source)]).values()].flat()).toEqual(
+      [],
+    );
+  });
+
+  test('one non-numeric value disqualifies the whole table', () => {
+    const source = ["const LABELS = { a: 'x', b: 2 };", 'const n = i.n ?? LABELS[i.p];'].join('\n');
+    expect([...finiteBoundSites([file('packages/a/src/one.ts', source)]).values()].flat()).toEqual(
+      [],
+    );
   });
 
   test('a template literal is the CLI writing source, never this file reading its own option', () => {

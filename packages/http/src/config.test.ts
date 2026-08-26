@@ -309,6 +309,38 @@ describe('defineHttpConfig refuses a limit that is not a number', () => {
     ).toBe(2);
   });
 
+  test('a hop count of ZERO is refused — it IS the state this screen was written to name', () => {
+    // `forwardedElement` returns `undefined` for `hops < 1` (`forwarded.ts`), so
+    // `{ trustProxy: true, trustedProxyHops: 0 }` is byte-for-byte the failure the comment above
+    // the screen describes: `clientAddress` falls back to the socket, every caller behind the
+    // ingress shares one rate-limit bucket, and `x-forwarded-proto` is untrusted so HSTS is never
+    // emitted. `-1` and `NaN` were refused for producing exactly this, and `0` was let through.
+    expect(() => defineHttpConfig({ ...SCOPED, trustProxy: true, trustedProxyHops: 0 })).toThrow(
+      /X_CONFIG_INVALID/,
+    );
+    expect(() => defineHttpConfig({ ...SCOPED, trustProxy: true, trustedProxyHops: 0 })).toThrow(
+      /trustedProxyHops/,
+    );
+    // The floor is 1 because ONE proxy is the smallest topology `trustProxy: true` can describe.
+    expect(
+      defineHttpConfig({ ...SCOPED, trustProxy: true, trustedProxyHops: 1 }).trustedProxyHops,
+    ).toBe(1);
+  });
+
+  test('trustProxy: false still resolves 0 — the count is not a declaration at all then', () => {
+    // The floor applies to a DECLARED count. With nothing trusted there is no hop to name, and 0
+    // is what every reader of `HttpConfig.trustedProxyHops` already treats as "trust nothing".
+    expect(defineHttpConfig({ ...SCOPED }).trustedProxyHops).toBe(0);
+    expect(defineHttpConfig({ ...SCOPED, trustProxy: false }).trustedProxyHops).toBe(0);
+  });
+
+  test('trustProxy: true with no count is still X_TRUST_PROXY_UNSET, not a screened zero', () => {
+    // There is no `?? 0` behind this: a default of zero would be the silent trust-nothing above,
+    // arriving through the door the unset refusal exists to close. The two refusals are one
+    // declaration, so the unset one must still fire and must NOT become the count refusal.
+    expect(() => defineHttpConfig({ ...SCOPED, trustProxy: true })).toThrow(/X_TRUST_PROXY_UNSET/);
+  });
+
   test('an app that sets nothing still gets every default', () => {
     const config = defineHttpConfig({ ...SCOPED });
     expect(config.bodyLimitBytes).toBe(1_048_576);

@@ -7,6 +7,7 @@ import type { Clock } from '@ultimat3/core';
 import type { AuthVerification, VerificationStore } from './adapter';
 import { normaliseEmail } from './email';
 import { AuthError } from './errors';
+import { assertFiniteAuthCount } from './policy-numbers';
 import { randomToken, sha256Hex, timingSafeEqual } from './tokens';
 
 /**
@@ -67,7 +68,18 @@ export async function issueVerification(
 ): Promise<IssuedVerification> {
   const now = runtime.clock.now();
   const token = randomToken(32);
-  const ttl = input.ttlMs ?? DEFAULT_VERIFICATION_TTL_MS[input.purpose];
+  // Screened HERE, above the write, not beside the `Date` it feeds. Unscreened this threw a bare
+  // `RangeError` out of the package — `new Date(now + NaN)` is an Invalid Date and `toISOString()`
+  // refuses one — on the line after `putVerification` had already resolved. The row survived the
+  // failure with an expiry `consumeVerification` reads as `now >= NaN`, which is false for ever:
+  // a reset link that never expires. And because the write upserts on `(purpose, identifier)`, it
+  // had replaced whatever live token that address held on its way to failing.
+  const ttl = assertFiniteAuthCount(
+    'verification.ttlMs',
+    input.ttlMs ?? DEFAULT_VERIFICATION_TTL_MS[input.purpose],
+    'the stored expiry is an Invalid Date, `now >= NaN` is false, and the mailed link is a password that never expires',
+    1,
+  );
   const expiresAt = new Date(now.getTime() + ttl);
   // The FOURTH identity door, and the one that did not normalise: `register`, `login`,
   // `profileEmail` and `accountKey` all do. `putVerification` upserts on `(purpose, identifier)`

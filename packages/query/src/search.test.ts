@@ -141,10 +141,27 @@ describe('search()', () => {
     expect(seen.org).toBe('org-1');
   });
 
-  test('a window that would CUT the read page is refused at page one, not at page two', async () => {
-    // The read serves 20 rows (`limit`'s default) and the caller asked for 2. There is no page two
-    // to carry the other 18, so serving page one would put them on no page at all — the defect
-    // 12.0.0 spent a release removing from the timestamp seek, arriving through a different door.
+  test('a window narrower than the read is served, not refused — page one is answerable', async () => {
+    // `first` is client-supplied on essentially every cursor API (`{ first: query.pageSize }`) and
+    // `limit` defaults to 20, so a screen demanding `first >= limit` refuses the framework's OWN
+    // default pair: 500 at page ONE for a window this read answers completely. The read fetched 3
+    // rows, the caller asked for 10, and everything the read holds is on this page.
+    const recorded: Recorded = { term: null, limit: null };
+    const searchPosts = search<Post>({
+      policy: can('search:read'),
+      in: () => chainFor(recorded),
+    });
+    registerQuery('searchPosts', searchPosts);
+    const page = await paginate(searchPosts, { q: 'cats' }, { first: 10, ctx });
+    expect(page.rows.map((row) => row.id)).toEqual(['a', 'b', 'c']);
+    // Nothing was cut, so there is no next page to advertise and no cursor a second call throws on.
+    expect(page.hasNextPage).toBe(false);
+  });
+
+  test('a window the read OVERFLOWS is refused — the rest would be on no page at all', async () => {
+    // The read answered 3 rows and the caller asked for 2. There is no page two to carry the
+    // third, so serving this page would put it on no page at all — the defect 12.0.0 spent a
+    // release removing from the timestamp seek, arriving through a different door.
     const recorded: Recorded = { term: null, limit: null };
     const searchPosts = search<Post>({
       policy: can('search:read'),
@@ -184,13 +201,33 @@ describe('search()', () => {
     });
     registerQuery('searchPosts', searchPosts);
     const page = await paginate(searchPosts, { q: 'cats', limit: 3 }, { first: 3, ctx });
-    await expect(
-      paginate(
-        searchPosts,
-        { q: 'cats', limit: 3 },
-        { first: 3, after: page.endCursor ?? '', ctx },
-      ),
-    ).rejects.toBeInstanceOf(UltimateError);
+    const second = paginate(
+      searchPosts,
+      { q: 'cats', limit: 3 },
+      { first: 3, after: page.endCursor ?? '', ctx },
+    );
+    await expect(second).rejects.toBeInstanceOf(UltimateError);
+    // The CURSOR is what is refused, and the assertion says so: this window fits, so a bare
+    // `rejects` here would pass just as happily on the overflow refusal beside it and stop pinning
+    // the property it was written for.
+    const caught = await second.catch((thrown: unknown) => thrown);
+    expect(caught instanceof UltimateError ? caught.cause : '').toContain(
+      'no cursor this layer can carry',
+    );
+  });
+
+  test('a window the read exactly FILLS is served — the refusal is on the cut, not on the numbers', async () => {
+    // Two rows, a window of two, and a `limit` of 20 the caller never touched. Nothing is cut, so
+    // there is nothing to refuse — a screen comparing `first` against `limit` refuses this.
+    const recorded: Recorded = { term: null, limit: null };
+    const searchPosts = search<Post>({
+      policy: can('search:read'),
+      in: () => chainFor(recorded, ROWS.slice(0, 2)),
+    });
+    registerQuery('searchPosts', searchPosts);
+    const page = await paginate(searchPosts, { q: 'cats' }, { first: 2, ctx });
+    expect(page.rows.map((row) => row.id)).toEqual(['a', 'b']);
+    expect(page.hasNextPage).toBe(false);
   });
 
   test(".page() serves the chain's own order — the top row is never sorted off page one", async () => {

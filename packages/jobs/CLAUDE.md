@@ -114,10 +114,11 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   pass issued `driver.claim({ limit: NaN })`. `bun run proto-index` cannot reach this one — the
   table is a **parameter**, not an object literal in the file — so `worker-slots.test.ts` is the
   enforcement, over `constructor`, `__proto__` and `toString` at once.
-- **Every numeric knob is refused when it is not a FINITE number** — `finite.ts`'s `finiteOption()` is the one
-  refusal, `bun run finite-bounds --explain --json` is the count rather than a number written here,
-  and this package is pinned at **zero**. `worker-options.ts` is the one place `createWorker` reads them
-  (`As of 2026-08-26`), and `createOutboxRelay` refuses its own two.
+- **Every numeric knob is refused when it is not a FINITE number** — `@ultimat3/core`'s
+  `finiteOption()` (a bound) and `finiteCount()` (a whole number of things, with the caller's
+  minimum) are the two refusals, and this package declares none of its own. `worker-options.ts` is
+  the one place `createWorker` reads them (`As of 2026-08-26`), and `createOutboxRelay` refuses its
+  own two.
   Measured: `visibilityTimeoutMs: NaN` makes `visibleAt` `NaN`, the reclaim scan asks
   `visibleAt <= now`, and a job whose worker DIED is never claimable again — at-least-once becomes
   never, on a row `x jobs ls` still prints as `running`. `concurrency: NaN` slices `(0, NaN)`, so
@@ -125,6 +126,29 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   the claim loop spins on the database. `??` guards only nullish and `Math.max`/`Math.floor`
   propagate `NaN`: `Number(process.env.X)` on an unset variable arrives intact. Same refusal
   `createLimiter`'s `maxTenants` and `backfill()`'s `batch` already made.
+
+  **`bun run finite-bounds` is a floor, never the answer, and a pin of zero is not proof**
+  (`As of 2026-08-26`). It matches `x.y ?? CONST`, so it never saw `createLimiter`'s four
+  ceilings — read as `config.global !== undefined && global >= config.global`, a shape with no
+  `??` in it — and this package read as clean at **zero** while every one of them was off.
+  Measured: `createLimiter({ global: Number(process.env.WORKER_GLOBAL_CONCURRENCY) })` with the
+  variable unset granted **1000 of 1000** acquires where `global: 2` grants 2, and
+  `snapshot().config` still reported the ceiling to `/_x`. All five numbers (`perTenant`,
+  `perQueue`, `global`, `ratePerTenant.limit`, `ratePerTenant.windowMs` — the window is half the
+  same ceiling, since `stamp > at - NaN` empties it on every call) are screened at construction
+  beside `maxTenants`, `finiteCount` with **min 0**: zero is a HARD STOP here and one this repo's
+  own suite configures, never "unlimited", which is what omitting the option means.
+
+  **A row count is `finiteCount`, and the reason is driver parity** (`As of 2026-08-26`).
+  `finiteOption` accepts `-1` and `2.5`, and both diverge: `introspect.list({ limit: -1 })` sliced
+  every row BUT the newest on `driver-memory.ts` and Postgres answers `ERROR: LIMIT must not be
+  negative` (probed on pg18), while `2.5` keeps 2 rows here and **3** there with no error on either
+  side. `list`, `deadLetters`, the backfill ledger's `list` and `assertClaimBounds` (both drivers'
+  `claim`) take the count screen with **min 0** — `limit: 0` is zero rows on both — and
+  `claim`'s `visibilityTimeoutMs` takes `finiteOption`, because a lease window is a duration.
+  The memory driver's `list`/`deadLetters` are `async` for the reason `claim` is: a refusal must
+  REJECT on both, and a synchronous throw out of a method typed `Promise<…>` is itself the
+  divergence.
 - **`enqueuedBy` is ATTRIBUTION, never authority — decided 2026-08, do not re-litigate.** Both
   answers were defensible. Impersonating the enqueuer at claim time gives correct authz and is
   rejected because a job that sleeps three days, or dead-letters and is retried next quarter, then

@@ -46,7 +46,14 @@ export interface PgEventBusOptions {
  */
 export function createPgEventBus(options: PgEventBusOptions): EventBus {
   const clock = options.clock ?? systemClock;
-  const defaultTtl = options.defaultTtl ?? 604_800_000;
+  // TWO screens, for the reason `events.ts` states: `defaultTtl` is the constructor's knob and
+  // `ttl` is the publish call's, so one screen over `ttl ?? defaultTtl` names the wrong one for
+  // whichever value actually arrived.
+  const defaultTtlMs = finiteOption(
+    'the pg event bus',
+    'defaultTtl',
+    toMs(options.defaultTtl ?? 604_800_000),
+  );
   const listLimit = finiteOption('the pg event bus', 'listLimit', options.listLimit ?? 1_000);
   const exec = options.executor;
 
@@ -70,7 +77,9 @@ export function createPgEventBus(options: PgEventBusOptions): EventBus {
         publishedAt: at,
         expiresAt:
           at +
-          finiteOption('the pg event bus', 'defaultTtl', toMs(publishOptions.ttl ?? defaultTtl)),
+          (publishOptions.ttl === undefined
+            ? defaultTtlMs
+            : finiteOption('the pg event bus', 'ttl', toMs(publishOptions.ttl))),
         ...(publishOptions.correlationKey === undefined
           ? {}
           : { correlationKey: publishOptions.correlationKey }),

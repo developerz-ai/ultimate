@@ -196,14 +196,22 @@ class LibNatsClient implements NatsClient {
  */
 export const openNatsClient = async (options: NatsClientOptions): Promise<NatsClient> => {
   const target = parseNatsUrl(options.url);
+  // Screened BEFORE the try, and before the dial. Two reasons, and the second is why it is not a
+  // line further down: the value is FORWARDED to the library rather than compared here, so there is
+  // no `??` for `bun run finite-bounds` to see — the same conditional-spread shape that hid the
+  // sync node's four socket ceilings; and inside the `try`, the catch below would re-render a
+  // misconfiguration as `X_TRANSPORT_UNAVAILABLE`, which is a bus outage nobody can fix by looking
+  // at the bus. `-1` stays legal: that is the library's "reconnect forever".
+  const maxReconnectAttempts =
+    options.maxReconnectAttempts === undefined
+      ? undefined
+      : finiteOption('the nats client', 'maxReconnectAttempts', options.maxReconnectAttempts);
   try {
     const connection = await connect({
       servers: [`${target.host}:${target.port}`],
       name: options.name ?? 'ultimate',
       waitOnFirstConnect: true,
-      ...(options.maxReconnectAttempts === undefined
-        ? {}
-        : { maxReconnectAttempts: options.maxReconnectAttempts }),
+      ...(maxReconnectAttempts === undefined ? {} : { maxReconnectAttempts }),
       ...(options.reconnectDelay === undefined
         ? {}
         : { reconnectDelayHandler: options.reconnectDelay }),

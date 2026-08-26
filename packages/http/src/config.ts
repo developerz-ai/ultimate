@@ -122,14 +122,19 @@ const env = (name: string): string | undefined => {
 };
 
 /**
- * A count, or a refusal naming the knob. `Number.isSafeInteger` and not `Number.isFinite`: these
- * are byte counts, millisecond budgets and request ceilings, and above 2^53 a double cannot name
- * its own successor — the same rule `@ultimat3/schema` states for an integer at the wire boundary.
- */
-/**
- * A whole, in-range count, or the refusal that names it. The `Finite` in the name is load-bearing:
- * `bun run finite-bounds` recognises a repair by the shape of the CALL, so a screen named `count`
- * left every option below reading as unchecked.
+ * A whole, in-range count, or the refusal that names it.
+ *
+ * `Number.isSafeInteger` and not `Number.isFinite`: these are byte counts, millisecond budgets and
+ * request ceilings, and above 2^53 a double cannot name its own successor — the same rule
+ * `@ultimat3/schema` states for an integer at the wire boundary. The `Finite` in the name is
+ * load-bearing: `bun run finite-bounds` recognises a repair by the shape of the CALL, so a screen
+ * named `count` left every option below reading as unchecked.
+ *
+ * `min` is the CALLER's, exactly as it is on `@ultimat3/core`'s `finiteCount`, because only the
+ * caller knows what zero means: `requestTimeoutMs: 0` is "no deadline" and `maxInflight: 0` is
+ * "never shed", both decisions the code reads, while `trustedProxyHops: 0` is a proxy trusted for
+ * nothing — the state the whole declaration exists to refuse. A helper that picked one bound would
+ * be wrong at half the call sites, and a second helper for "positive" would be the copy.
  */
 const assertFiniteCount = (
   name: string,
@@ -137,8 +142,9 @@ const assertFiniteCount = (
   max: number,
   expected: string,
   example: string,
+  min: 0 | 1 = 0,
 ): number => {
-  if (!Number.isSafeInteger(value) || value < 0 || value > max) {
+  if (!Number.isSafeInteger(value) || value < min || value > max) {
     throw httpCountInvalid(name, value, expected, example);
   }
   return value;
@@ -148,6 +154,36 @@ const MAX_PORT = 65_535;
 
 /** Nobody has 64 proxies in front of one process; a bigger number is a typo, not a topology. */
 const MAX_PROXY_HOPS = 64;
+
+/**
+ * Which `x-forwarded-for` entry is the caller, or the refusal that says the declaration is not one.
+ *
+ * Screened, not clamped. `Math.max(0, Math.floor(x))` turned `-1` into `0` and `NaN` into `NaN`,
+ * and BOTH mean "trust nothing" to `forwardedElement` — so the one declaration saying which entry
+ * the caller wrote silently stopped being made, and every request's client ip became the proxy's
+ * own. One rate-limit bucket for everything behind the ingress, no word said.
+ *
+ * **`0` is that same state and is refused with them**, `As of 2026-08-26`. `forwardedElement`
+ * answers `undefined` for `hops < 1`, so `{ trustProxy: true, trustedProxyHops: 0 }` produced
+ * exactly the failure the screen was written for while the screen accepted it. One is the smallest
+ * topology `trustProxy: true` can describe.
+ *
+ * There is no `?? 0` fallback, and that is the point: an undeclared count is `trustProxyUnset()`,
+ * because "trust the header" and "know which entry of it" are one declaration and half of it is a
+ * header the caller writes. A default of zero would reopen the same hole from the other side.
+ */
+const resolveTrustedProxyHops = (trustProxy: boolean, declared: number | undefined): number => {
+  if (!trustProxy) return 0;
+  if (declared === undefined) throw trustProxyUnset();
+  return assertFiniteCount(
+    'trustedProxyHops',
+    declared,
+    MAX_PROXY_HOPS,
+    'the whole number of proxies that append to x-forwarded-for, at least 1',
+    'trustProxy: true, trustedProxyHops: 1',
+    1,
+  );
+};
 
 export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
   // `ULTIMATE_ENV` is the framework's one environment key and `NODE_ENV` is only its fallback, so
@@ -163,7 +199,7 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
   const trustProxy = input.trustProxy ?? false;
   // Refused here, not on the first request: "trust the header" and "know which entry of it" are
   // one declaration, and half of it is a header the caller writes.
-  if (trustProxy && input.trustedProxyHops === undefined) throw trustProxyUnset();
+  const trustedProxyHops = resolveTrustedProxyHops(trustProxy, input.trustedProxyHops);
   const csp = { ...DEFAULT_SECURITY.csp, reportOnly: dev, ...input.security?.csp };
   // Beside `assertCorsConfig`, and for its reason: a merged value is the only one that can be
   // judged, and a directive name that is not a token would otherwise be a bare `TypeError` out of
@@ -186,19 +222,7 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
     dev,
     signInPath: input.signInPath ?? null,
     trustProxy,
-    // Screened, not clamped. `Math.max(0, Math.floor(x))` turned `-1` into `0` and `NaN` into
-    // `NaN`, and BOTH of those mean "trust nothing" to `forwardedElement` — so the one declaration
-    // that says which x-forwarded-for entry is the caller silently stopped being made, and every
-    // request's client ip became the proxy's own. One bucket for the whole fleet, no word said.
-    trustedProxyHops: trustProxy
-      ? assertFiniteCount(
-          'trustedProxyHops',
-          input.trustedProxyHops ?? 0,
-          MAX_PROXY_HOPS,
-          'the whole number of proxies that append to x-forwarded-for',
-          'trustProxy: true, trustedProxyHops: 1',
-        )
-      : 0,
+    trustedProxyHops,
     bodyLimitBytes: assertFiniteCount(
       'bodyLimitBytes',
       input.bodyLimitBytes ?? 1_048_576,

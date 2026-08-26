@@ -64,11 +64,45 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `query({ live: true })` — the second one matters, because a rule that only holds for test fakes
   is a rule no declaration can reach.
 - **Every numeric option is refused when it is not a FINITE number, `As of 2026-08-26`.**
-  `finite.ts`'s `finiteOption()` is the one refusal — `bun run finite-bounds --explain --json`
-  is the count, never a number written here — and this package is pinned at **zero**. `??` guards nullish and
-  `NaN` is not, so `Number(process.env.X)` on an unset variable reaches the bound intact, and
-  `Math.max`/`Math.min`/`Math.floor` propagate rather than validate — `AcceptBudget` was
-  `Math.max(1, options.perSecond)` and admitted every accept, because `NaN < 1` is false.
+  `@ultimat3/core`'s `finite-option.ts` holds the one refusal, `finiteOption()`. `??` guards
+  nullish and `NaN` is not, so `Number(process.env.X)` on an unset variable reaches the bound
+  intact, and `Math.max`/`Math.min`/`Math.floor` propagate rather than validate — `AcceptBudget`
+  was `Math.max(1, options.perSecond)` and admitted every accept, because `NaN < 1` is false.
+- **"Pinned at zero" is a claim about the RATCHET, not about this package, and the two came apart
+  once (`As of 2026-08-26`).** `bun run finite-bounds` is a count of options defaulted with `??`
+  and never screened; `realtime` is absent from `scripts/lib/finite-bounds-pins.ts`, which is that
+  count reading zero. It read zero while **two** options were unscreened, because the rule's own
+  header names the shape it cannot see: an option with **no `??` default**. Both had one spelling
+  — a value the caller either supplies or does not, forwarded or compared as-is.
+  `SubscriptionBook`'s `maxPerTenant` (`count >= NaN` is false, so the only cap spanning the
+  sockets of one tenant was OFF; measured, 5,000 subscribes admitted under `maxPerTenant: NaN`,
+  and it sat two lines under the screened `maxPerSocket`), and `openNatsClient`'s
+  `maxReconnectAttempts`, handed to the library unscreened — measured, the dial then never
+  returns. It also cannot see WHERE a screen runs, which is the bullet below. So: a package's
+  numeric options are audited by reading its option interfaces, and the ratchet is the floor under
+  that, never the proof of it. `SyncGrant.expiresAt` is deliberately NOT on that list and is the
+  one number left with the same shape: it is DATA an app's `authenticate` returns, not a
+  configuration option, and `expiresAt: NaN` makes `GrantBook.expired()` skip that grant forever —
+  the same outcome as omitting it, which is already a supported spelling.
+- **A ceiling is refused where the object is BUILT, never inside a callback the runtime invokes
+  per connection (`As of 2026-08-26`).** `maxBufferedBytes`, `maxDroppedFrames`,
+  `maxFramesPerSecond` and `frameBurst` were screened only in `SyncSocket`'s constructor, which
+  `sync-node` runs inside `websocket.open`, which Bun runs SYNCHRONOUSLY inside `server.upgrade`.
+  Measured: `createSyncNode` did not throw, `/healthz` and `/readyz` both answered, `ready` was
+  true, and every upgrade threw `X_INVARIANT` with the node holding zero sockets — a node that
+  boots green and refuses every client, whose cause is one frame inside the runtime. They are
+  `socketCeilings()` in `sync-node-bounds.ts` now, called once by `createSyncNode`, and the
+  per-socket screen STAYS beside it: `SyncSocket` is exported and an app may build one directly,
+  which is the layered repair `finite-bounds`' own header prescribes for a check in another file.
+  `undefined` stays `undefined` — `SyncSocket` owns those four defaults, and a second spelling of
+  one is a number that can drift from it.
+- **An upgrade that THROWS gives the grant back, not only one that answers `false`
+  (`As of 2026-08-26`).** `handleUpgrade` records the grant before `server.upgrade` because `open`
+  reads it, and released it on the `false` branch alone — so a throw out of `open` left one
+  `GrantBook` entry per connection ATTEMPT, unreapable: `sweepGrants` only visits a grant carrying
+  an `expiresAt`, which `authenticate: async () => ({ actor })` does not produce. Measured, 20
+  failing upgrades left 20 grants. The `try` around `server.upgrade` rethrows untouched — the throw
+  is the operator's diagnosis and that line owes it the release, not a verdict.
 - **Every ceiling is refused when it is not a FINITE number, `As of 2026-08-26`.**
   `AcceptBudget`'s `perSecond`/`burst`, `SyncSocket`'s `maxBufferedBytes`/`maxDroppedFrames` and
   `SocketRegistry`'s `idleTimeoutMs` throw `X_INVARIANT` at construction on `NaN` and `±Infinity`.

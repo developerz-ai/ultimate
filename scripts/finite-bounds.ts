@@ -87,6 +87,9 @@ const isFixture = (path: string): boolean => /-fixture\.tsx?$/.test(path);
  * switched off. A name declared numeric in one place and non-numeric in another is NOT numeric.
  */
 const CONST_DECL = /(?:const|let)\s+([A-Z][A-Z0-9_]{2,})\s*(?::[^=]*)?=\s*([^;\n]+)/g;
+const TABLE_DECL = /(?:const|let)\s+([A-Z][A-Z0-9_]{2,})\s*(?::[^=]*)?=\s*\{/g;
+/** `key: <value>` up to the next `,` or `}` — the entry shape a table of numbers is made of. */
+const TABLE_VALUE = /(?:[A-Za-z_$][\w$]*|'[^']*'|"[^"]*"|\[[^\]]*\])\s*:\s*([^,}\n]+)/g;
 const NUMERIC_LITERAL = /^-?\d[\d_]*(?:\.\d[\d_]*)?(?:e[+-]?\d+)?$/i;
 /**
  * Arithmetic over numeric literals and nothing else — `1024 * 1024`, `60 * 60 * 1000`. No letters,
@@ -113,17 +116,76 @@ export function numericConstants(files: readonly SourceFile[]): ReadonlySet<stri
 }
 
 /**
- * `options.maxBytes ?? 1024` — a dotted property read, nullish-coalesced to a number.
+ * A SCREAMING const bound to an object literal whose every value is a number — the table half of
+ * `numericConstants`. `DEFAULT_VERIFICATION_TTL_MS[input.purpose]` is a default, and its NAME alone
+ * cannot say so: the declaration spans lines, so `CONST_DECL`'s single-line value capture reads `{`
+ * and files it under "not numeric", which is how a table-keyed default reads as noise and is
+ * dropped. Kept SEPARATE from the scalar set deliberately — folding table names in would make a
+ * bare `?? DEFAULT_OPTS` read as a numeric bound when it is an object default, which is the kind of
+ * false report that gets a rule switched off.
+ */
+export function numericTables(files: readonly SourceFile[]): ReadonlySet<string> {
+  const tables = new Set<string>();
+  const rejected = new Set<string>();
+  for (const file of files) {
+    for (const match of file.source.matchAll(TABLE_DECL)) {
+      const name = match[1] as string;
+      const open = (match.index as number) + (match[0] as string).length - 1;
+      const body = file.source.slice(open + 1, closingBrace(file.source, open));
+      const values = [...body.matchAll(TABLE_VALUE)].map((entry) => (entry[1] as string).trim());
+      if (values.length > 0 && values.every(isNumericValue)) tables.add(name);
+      else rejected.add(name);
+    }
+  }
+  for (const name of rejected) tables.delete(name);
+  return tables;
+}
+
+/**
+ * `options.maxBytes ?? 1024` — a property read, nullish-coalesced to a number.
  *
- * The left side is a PURE dotted path: no call, no index, no optional chain. That is what keeps
- * `map.get(k) ?? 0`, `buffer[0] ?? 0`, `rows[0]?.pending ?? 0` and `queue?.pending().length ?? 0`
- * out — every one of which is an accumulator or an element read, not configuration.
+ * The left side is a dotted path, optionally chained (`options?.ttlMs`), and it may NOT be reached
+ * through a call or an index. That is what keeps `map.get(k) ?? 0`, `buffer[0] ?? 0`,
+ * `rows[0]?.pending ?? 0` and `queue?.pending().length ?? 0` out — every one of which is an
+ * accumulator or an element read, not configuration. The `.` in the LOOKBEHIND is what does that
+ * work, and it does all of it: an identifier following a `]` is reached through `.` or `?.` either
+ * way, so the dot is always the character immediately before it. A `\]` was added beside the dot
+ * on 2026-08-26 to make the element case explicit and MEASURED INERT the same day — same 59 sites
+ * with it and without — so it is not here. A clause that decides nothing reads as a rule holding a
+ * line it is not holding.
+ *
+ * The right side may be an indexed default (`?? DEFAULT_TTL_MS[input.purpose]`), because a table of
+ * defaults keyed by a variant is still a default.
+ *
+ * BOTH WIDENINGS WERE ADDED AFTER THEY LET A DEFECT THROUGH, 2026-08-26. `oauth-cookie.ts`'s
+ * handshake `ttlMs` is `options?.ttlMs ?? C` and `verify.ts`'s is `?? DEFAULT_VERIFICATION_TTL_MS
+ * [input.purpose]`; a NaN in the first accepts a year-old sealed OAuth handshake, and in the second
+ * writes a verification row whose Invalid-Date expiry `consumeVerification` reads as never expired.
+ * Both sat behind a green ratchet and a `packages/auth/CLAUDE.md` sentence claiming every runtime
+ * number in that package was screened.
  */
 const DEFAULTED =
-  /(?<![\w$.?])([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*\?\?\s*([\w$.]+)(?![\w$(.])/g;
+  /(?<![\w$.?])([A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*)+)\s*\?\?\s*([\w$.]+(?:\[[^\]\n]+\])?)(?![\w$(.])/g;
+
+/** `DEFAULT_TTL_MS[input.purpose]` — a table read, whose TABLE name is what settles it. */
+const INDEXED_FALLBACK = /^([A-Za-z_$][\w$]*)\[/;
 
 /** Repairs, in one alternation: `Number.is*` or any callee carrying `Finite`. */
 const REPAIR_CALL = /(?:Number\.is(?:Finite|SafeInteger|Integer)|\b[\w$]*[Ff]inite[\w$]*)\s*\(/g;
+
+/** The `}` closing the `{` at `open`, or the end of the source. */
+const closingBrace = (code: string, open: number): number => {
+  let depth = 0;
+  for (let index = open; index < code.length; index += 1) {
+    const char = code[index] as string;
+    if (char === '{') depth += 1;
+    else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return code.length;
+};
 
 /** The `)` closing the `(` at `open`, or the end of the file. */
 const closingParen = (code: string, open: number): number => {
@@ -194,6 +256,7 @@ export function scanFiniteBounds(
   path: string,
   source: string,
   numeric: ReadonlySet<string>,
+  tables: ReadonlySet<string> = new Set(),
 ): readonly FiniteBoundSite[] {
   const code = maskLiterals(source);
   const spans = repairSpans(source);
@@ -202,7 +265,12 @@ export function scanFiniteBounds(
     const fallback = (match[2] as string).trim();
     // Accumulator identities, not configuration — and the whole of the noise floor.
     if (fallback === '0' || fallback === '1') continue;
-    if (!NUMERIC_LITERAL.test(fallback) && !numeric.has(fallback)) continue;
+    const indexed = INDEXED_FALLBACK.exec(fallback);
+    const isDefault =
+      indexed === null
+        ? NUMERIC_LITERAL.test(fallback) || numeric.has(fallback)
+        : tables.has(indexed[1] as string);
+    if (!isDefault) continue;
     const path0 = match[1] as string;
     const option = path0.slice(path0.lastIndexOf('.') + 1);
     const lineStart = code.lastIndexOf('\n', match.index) + 1;
@@ -247,10 +315,11 @@ export function finiteBoundSites(
   files: readonly SourceFile[],
 ): ReadonlyMap<string, readonly FiniteBoundSite[]> {
   const numeric = numericConstants(files);
+  const tables = numericTables(files);
   const found = new Map<string, FiniteBoundSite[]>();
   for (const file of files) {
     if (!scannable(file)) continue;
-    for (const site of scanFiniteBounds(file.path, file.source, numeric)) {
+    for (const site of scanFiniteBounds(file.path, file.source, numeric, tables)) {
       const list = found.get(packageOf(site.path)) ?? [];
       list.push(site);
       found.set(packageOf(site.path), list);

@@ -336,3 +336,47 @@ describe('readSessionCookie against a header a client controls', () => {
     expect(readSessionCookie(request, POLICY)).toBe('right');
   });
 });
+
+/**
+ * `Max-Age` is `delta-seconds` — digits, per RFC 6265 §5.2.2 — so `NaN`, `Infinity` and `1.5` are
+ * all attributes a browser DISCARDS, silently turning the session cookie into a session-lifetime
+ * one that survives every ceiling this package computes. `policy.absoluteTtlMs` is screened at
+ * `defineAuth`; the override beside it arrives on the call, and `sessionCookie` is public.
+ */
+describe('the session cookie Max-Age is a screened number', () => {
+  /** The sync twin of `caught` above: the cookie builders take no clock and return a string. */
+  const refusal = (run: () => unknown): AuthError => {
+    try {
+      run();
+    } catch (error) {
+      if (error instanceof AuthError) return error;
+      throw error;
+    }
+    return expect.unreachable('the cookie was built from a number no browser can read');
+  };
+
+  test('a maxAgeSeconds override that is not delta-seconds is refused, never emitted', () => {
+    for (const maxAgeSeconds of [Number.NaN, Number.POSITIVE_INFINITY, 1.5, -1]) {
+      const error = refusal(() => sessionCookie('token-value', POLICY, { maxAgeSeconds }));
+      expect(error.code).toBe('X_CONFIG_INVALID');
+      // The option it names is the one the caller wrote, or the fix line is one nobody can follow.
+      expect(error.meta?.['option']).toBe('session.cookie.maxAgeSeconds');
+    }
+  });
+
+  test('zero stays legal — Max-Age=0 is how a cookie is expired, which is what sign-out does', () => {
+    expect(sessionCookie('', POLICY, { maxAgeSeconds: 0 })).toContain('Max-Age=0');
+  });
+
+  test('the policy ttl behind the default branch is screened as itself', () => {
+    const error = refusal(() =>
+      sessionCookie('token-value', { ...POLICY, absoluteTtlMs: Number.NaN }),
+    );
+    expect(error.code).toBe('X_CONFIG_INVALID');
+    expect(error.meta?.['option']).toBe('session.absoluteTtlMs');
+  });
+
+  test('an honest override still reaches the header', () => {
+    expect(sessionCookie('token-value', POLICY, { maxAgeSeconds: 90 })).toContain('Max-Age=90');
+  });
+});

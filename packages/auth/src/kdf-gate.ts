@@ -8,6 +8,7 @@
 
 import { createFlightGate } from '@ultimat3/core';
 import { kdfOverloaded } from './errors';
+import { assertFiniteAuthCount } from './policy-numbers';
 
 export interface KdfLimits {
   /** Hashes running at once. Multiply by `memoryCost` for the resident ceiling this buys. */
@@ -43,6 +44,28 @@ export interface KdfGate {
  * are observations no caller here has ever had, and widening a public signature is not a refactor.
  */
 export function createKdfGate(limits: KdfLimits = DEFAULT_KDF_LIMITS): KdfGate {
+  // Screened at the CONSTRUCTOR, because this pair WEDGES rather than fails: core asks
+  // `active < maxConcurrent` and then `waiters.length >= maxQueued`, and both are false for `NaN`,
+  // so every hash on the box parks in a queue with no bound and nothing to release it — login
+  // stops answering instead of shedding.
+  //
+  // ZERO is legitimate at BOTH, which is why the minimum is 0 and not 1: `maxQueued: 0` means
+  // "shed at the width, never wait", and `{ maxConcurrent: 0, maxQueued: 0 }` is a gate that
+  // refuses every hash — `password.test.ts`'s way of proving the unreadable-hash path burns the
+  // same KDF the other two failures do. Refusing zero here would have failed that test, which is
+  // the deployment this screen must not break.
+  assertFiniteAuthCount(
+    'kdf.maxConcurrent',
+    limits.maxConcurrent,
+    '`active < NaN` is false, so no hash ever starts and every caller queues instead',
+    0,
+  );
+  assertFiniteAuthCount(
+    'kdf.maxQueued',
+    limits.maxQueued,
+    '`waiters.length >= NaN` is false, so the queue this gate exists to bound has no bound at all',
+    0,
+  );
   return createFlightGate(limits, {
     overflow: (state) => kdfOverloaded(state.active, state.queued),
   });

@@ -8,6 +8,7 @@
 // `X_NOT_IMPLEMENTED` stubs. What IS true is the second half — swapping the driver is
 // `setJobDriver(other)` and ZERO job-code change — and that is what the interface buys.
 
+import { finiteCount, finiteOption } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { ClaimQueuesEmptyError } from './errors';
 import type { LeaseStore } from './leases';
@@ -269,4 +270,21 @@ export function resetJobDriver(): void {
  */
 export const assertClaimQueues = (driver: string, options: ClaimOptions): void => {
   if (options.queues.length === 0) throw new ClaimQueuesEmptyError(driver);
+};
+
+/**
+ * The two NUMBERS of a claim, screened for both drivers in one place for the reason above: a value
+ * neither of them refuses is answered two ways. `limit: -1` sliced every ready row but the newest
+ * into a lease on the memory driver, where Postgres answers `LIMIT must not be negative`; `2.5`
+ * claims 2 rows here and 3 there, with no error on either side.
+ *
+ * `limit` is a COUNT of rows and takes zero — claiming nothing is what a full worker asks for, and
+ * both drivers already answer it identically. `visibilityTimeoutMs` is a DURATION, so it is
+ * screened for finiteness alone, the same rule `worker-options.ts` applies to the same knob: it is
+ * on this list because `visibleAt = at + NaN` is never `<= now`, which turns at-least-once into
+ * never on a row `x jobs ls` still prints as `running`.
+ */
+export const assertClaimBounds = (driver: string, options: ClaimOptions): void => {
+  finiteCount(`the ${driver} driver claim`, 'limit', options.limit);
+  finiteOption(`the ${driver} driver claim`, 'visibilityTimeoutMs', options.visibilityTimeoutMs);
 };

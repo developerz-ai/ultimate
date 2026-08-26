@@ -76,6 +76,54 @@ export function syncNodeBounds(options: SyncNodeNumericOptions): SyncNodeBounds 
   };
 }
 
+/**
+ * The four ceilings this node forwards to every socket it builds, and the only options it accepts
+ * that `SyncSocket` — not this module — owns the default of.
+ *
+ * They were screened only in `SyncSocket`'s constructor, which Bun runs inside `websocket.open`,
+ * which Bun runs SYNCHRONOUSLY inside `server.upgrade`. Measured: `createSyncNode` did not throw,
+ * `/healthz` and `/readyz` both answered, `ready` was true, and every upgrade threw `X_INVARIANT`
+ * with the node holding zero sockets — a misconfiguration that fails per connection instead of at
+ * boot, and each of those throws leaked the grant `handleUpgrade` records before the upgrade.
+ *
+ * `undefined` stays `undefined` rather than acquiring a default here: `SyncSocket` owns those four
+ * numbers, and a second spelling of one is a number that can drift from the one it copies. Nothing
+ * narrower than "finite" either — `maxDroppedFrames: 0` is "close on the first drop",
+ * `maxFramesPerSecond: 0` is clamped to 1 by `AcceptBudget`'s own documented floor, and a screen
+ * that refused either would turn a working deployment into a boot failure.
+ *
+ * The per-socket screen STAYS, because `SyncSocket` is exported and an app may build one directly
+ * — the layered form `finite-bounds`' own header prescribes for a repair in a different file.
+ */
+export interface SocketCeilings {
+  // `?: number` and never `?: number | undefined`, unlike `SyncNodeNumericOptions` above: this one
+  // is SPREAD into `SyncSocketOptions`, and under `exactOptionalPropertyTypes` an explicit
+  // `undefined` is a different type from an absent key. The build error is the enforcement — a
+  // screened ceiling that arrived as `undefined` would silently take the socket's default.
+  readonly maxFramesPerSecond?: number;
+  readonly frameBurst?: number;
+  readonly maxBufferedBytes?: number;
+  readonly maxDroppedFrames?: number;
+}
+
+export function socketCeilings(options: SocketCeilings): SocketCeilings {
+  const { maxFramesPerSecond, frameBurst, maxBufferedBytes, maxDroppedFrames } = options;
+  return {
+    ...(maxFramesPerSecond === undefined
+      ? {}
+      : { maxFramesPerSecond: finiteOption(SUBJECT, 'maxFramesPerSecond', maxFramesPerSecond) }),
+    ...(frameBurst === undefined
+      ? {}
+      : { frameBurst: finiteOption(SUBJECT, 'frameBurst', frameBurst) }),
+    ...(maxBufferedBytes === undefined
+      ? {}
+      : { maxBufferedBytes: finiteOption(SUBJECT, 'maxBufferedBytes', maxBufferedBytes) }),
+    ...(maxDroppedFrames === undefined
+      ? {}
+      : { maxDroppedFrames: finiteOption(SUBJECT, 'maxDroppedFrames', maxDroppedFrames) }),
+  };
+}
+
 /** Per CALL, not per node: `drain({ graceMs })` is an argument, so it is refused where it arrives. */
 export const drainGraceMs = (graceMs: number | undefined): number =>
   finiteOption('the sync node drain', 'graceMs', graceMs ?? DEFAULT_DRAIN_GRACE_MS);

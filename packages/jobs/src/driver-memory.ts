@@ -3,7 +3,7 @@
 // real claim/ack/nack paths rather than a mock that always succeeds.
 
 import type { Clock } from '@ultimat3/core';
-import { assert, finiteOption, systemClock, uuid } from '@ultimat3/core';
+import { assert, finiteCount, systemClock, uuid } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { createMemoryBackfillLedger } from './backfill-ledger';
 import { nowMs } from './clock';
@@ -20,7 +20,7 @@ import type {
   NackOptions,
   QueueStats,
 } from './driver';
-import { assertClaimQueues, DEFAULT_QUEUE } from './driver';
+import { assertClaimBounds, assertClaimQueues, DEFAULT_QUEUE } from './driver';
 import { JobDuplicateError } from './errors';
 import type { LeaseStore } from './leases';
 import { createMemoryLeaseStore } from './leases';
@@ -103,7 +103,10 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
     job(jobId) {
       return Promise.resolve(jobs.get(jobId));
     },
-    list(filter: JobFilter = {}) {
+    // `async` for the reason `claim` is: a refused bound must REJECT here exactly as it does on the
+    // pg driver, and a synchronous throw out of a method typed `Promise<…>` is a second answer to
+    // one question.
+    async list(filter: JobFilter = {}) {
       const rows = [...jobs.values()]
         .filter((record) => filter.queue === undefined || record.queue === filter.queue)
         .filter((record) => filter.name === undefined || record.name === filter.name)
@@ -112,15 +115,15 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
         // `x jobs ls` answered one thing against `x dev` and the opposite in production — and,
         // because the limit is applied after the sort, a default page of the hundred OLDEST rows.
         .sort((a, b) => b.createdAt - a.createdAt)
-        .slice(0, finiteOption('the memory driver list', 'limit', filter.limit ?? 100));
-      return Promise.resolve(rows);
+        .slice(0, finiteCount('the memory driver list', 'limit', filter.limit ?? 100));
+      return rows;
     },
-    deadLetters(limit = 100) {
+    async deadLetters(limit = 100) {
       const rows = [...jobs.values()]
         .filter((record) => record.state === 'dead')
         .sort((a, b) => b.updatedAt - a.updatedAt)
-        .slice(0, limit);
-      return Promise.resolve(rows);
+        .slice(0, finiteCount('the memory driver dead letters', 'limit', limit));
+      return rows;
     },
     async requeue(jobId, requeueOptions) {
       const existing = jobs.get(jobId);
@@ -199,6 +202,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
     // question, which is the class of divergence this pair is checked for.
     async claim(claimOptions: ClaimOptions): Promise<readonly ClaimedJob[]> {
       assertClaimQueues('memory', claimOptions);
+      assertClaimBounds('memory', claimOptions);
       const at = nowMs(clock);
       const wanted = new Set(claimOptions.queues);
       const claimable = [...jobs.values()]

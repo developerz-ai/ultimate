@@ -21,7 +21,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 
 - **Every numeric knob `defineHttpConfig` resolves is screened, `As of 2026-08-26`** — `port`,
   `bodyLimitBytes`, `requestTimeoutMs`, `maxInflight`, `drainTimeoutMs` and `trustedProxyHops`,
-  each a whole non-negative number or `X_CONFIG_INVALID` (core's code, borrowed as
+  each a whole number in its own domain or `X_CONFIG_INVALID` (core's code, borrowed as
   `@ultimat3/auth` borrows it). Measured with `NaN`, which is what `Number(process.env.…)` answers
   for an unset variable: `total > NaN` is false so the body cap stopped capping and the whole
   payload was buffered; `NaN <= 0` is false so a deadline armed and `setTimeout(fn, NaN)` is 1ms,
@@ -35,6 +35,17 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   config options read as unchecked to the ratchet while every one was screened. `maxBytes` is
   refused HERE as well as inside `readWithinLimit`: that one is a file away and its `fix:` names
   core's reader rather than the option the caller wrote.
+
+  **The FLOOR is per option, because only the caller knows what zero means** (`As of 2026-08-26`).
+  `requestTimeoutMs: 0` is "no deadline" and `maxInflight: 0` is "never shed" — decisions the code
+  reads — so those two floor at 0; `trustedProxyHops` floors at **1**, and it shipped for one day
+  screened at 0. `forwardedElement` answers `undefined` for `hops < 1`, so
+  `{ trustProxy: true, trustedProxyHops: 0 }` was byte-for-byte the failure the screen's own comment
+  names: `clientAddress` falls back to the socket, one rate-limit bucket for everything behind the
+  ingress, `x-forwarded-proto` untrusted and HSTS never emitted. `-1` and `NaN` were refused for
+  producing exactly that state and `0` was accepted into it. `resolveTrustedProxyHops` owns both
+  refusals — unset is `X_TRUST_PROXY_UNSET`, out of domain is `X_CONFIG_INVALID` — and there is no
+  `?? 0` behind it, because a default of zero reopens the same hole from the other side.
 
 - Route `meta.auth` is required. Never default a route to public.
 - **An app declares its half of `HttpConfig` through `configureHttp()`, and the boot lays its own

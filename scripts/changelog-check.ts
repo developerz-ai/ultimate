@@ -331,12 +331,19 @@ export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
   }
 
   const derived = parseDerivedTotal(input.upgrading);
-  const wholeFile = sections.reduce((sum, section) => sum + section.breaking, 0);
-  if (derived !== undefined && derived.claimed !== wholeFile) {
+  // RELEASED sections only, which is what the row it backs says: "every major section CHANGELOG.md
+  // still carries". Summing [Unreleased] with them made the number move on every PR that landed a
+  // breaking change and move BACK when the release promoted the section, so the doc could only be
+  // right between merges — and the edit it demanded was to a number that the next release invalidates.
+  const releasedTotal = sections.reduce(
+    (sum, section) => (section.released ? sum + section.breaking : sum),
+    0,
+  );
+  if (derived !== undefined && derived.claimed !== releasedTotal) {
     gaps.push({
       kind: 'total',
       at: `${UPGRADING_PATH}:${derived.line}`,
-      detail: `promises the grep prints ${derived.claimed}; it prints ${wholeFile}`,
+      detail: `promises the grep prints ${derived.claimed}; it prints ${releasedTotal}`,
     });
   }
   return gaps;

@@ -88,15 +88,19 @@ const limitSchema = (max: number, fallback: number) =>
  * a release removing from the timestamp seek. So it is a refusal with the alternative in the `fix`:
  * page with the entity chain's own `.search(term).after(cursor)`, or raise this read's `limit`.
  *
- * **The refusal is at page ONE, not page two** (`As of 2026-08-26`). It used to serve `first` rows,
- * mint an `endCursor` and report `hasNextPage: true` — a connection protocol saying "call me again
- * with this" for a call the assert below is guaranteed to throw on. Refusing the second page was
- * never the choice: it was the choice between refusing a WINDOW that cuts the one page this read
- * has, and dropping the rows it cut onto no page at all. So the window must COVER the page — a
- * search's page size is its `limit` input, and there is exactly one place to say it — and
- * `hasNextPage` is then false by construction, because the read can serve at most `limit` rows and
- * the window is at least that. The cursor stays minted on a non-empty page, which is what every
- * cursor connection does; `hasNextPage: false` is the stop signal, and now it is the true one.
+ * **The refusal is on the rows that would be CUT, never on the window** (`As of 2026-08-26`). It
+ * used to serve `first` rows, mint an `endCursor` and report `hasNextPage: true` — a connection
+ * protocol saying "call me again with this" for a call the cursor assert is guaranteed to throw on.
+ * A first repair demanded `first >= limit` and refused the window itself, which refuses the
+ * framework's OWN default pair: `limit` defaults to 20 and `first` arrives from a client
+ * (`{ first: query.pageSize }`), so every `pageSize` under 20 was a 500 at page ONE — including
+ * every search that matched three rows and fit the window twice over. A screen that fires on a
+ * request the read can answer completely is not protecting anyone.
+ *
+ * So the condition is the one thing that is actually wrong: the read answered MORE rows than the
+ * window carries, and this seam has no second page to put the rest on. Below that, the page is
+ * whole and `hasNextPage` is false by construction — the true stop signal, and no cursor is ever
+ * handed back that a second call is guaranteed to refuse.
  *
  * **`seek` narrows the WINDOW and never the ORDER, and that is the whole reason this wrapper takes a
  * `Builder`.** `Builder.seek()` sets `totalized`, so `servedOrder()` becomes `totalOrder([])` —
@@ -124,16 +128,48 @@ const onePage = <Row extends object>(
       `search of ${entity} serves one page: a relevance-filtered read has no cursor this layer can carry`,
       `db.${entity}.search(term).orderBy('<key>').after(cursor).page()   # the entity chain pages this read — or raise its limit`,
     );
-    // `paginate` asks for `first + 1` — the extra row IS `hasNextPage`. So `window > served` is
-    // exactly `first >= served`: the caller's page holds everything this read fetched.
-    assert(
-      window > served,
-      `search of ${entity} serves ${String(served)} rows in one page and .page() asked for ${String(window - 1)}: the rest would be on no page at all, because this read has no second page`,
-      `read.page(input, { first: ${String(served)} })   # widen the window to the read's page — or narrow the page: read({ q, limit: ${String(window - 1)} })`,
-    );
-    return onePage(base.limit(window), entity, served);
+    // `paginate` asks for `first + 1` — the extra row IS `hasNextPage` — so the window it names is
+    // one wider than the page it will serve.
+    return windowOf(base, entity, served, window - 1);
   },
 });
+
+/**
+ * The one page, narrowed to the window `paginate` asked for and refused only when it does not FIT.
+ *
+ * The check is on the rows that came back, not on the two numbers, because those two numbers cannot
+ * decide it: `first: 10` against a `limit` of 20 is a complete answer whenever the term matched ten
+ * rows or fewer, which is most searches. Refusing it on the declaration alone made the framework's
+ * own defaults a 500.
+ *
+ * The `fix:` names `served` — the read's declared `limit` — and never the count that came back: a
+ * window sized to today's result set breaks on the first row added to the corpus.
+ */
+const windowOf = <Row extends object>(
+  base: Builder<Row>,
+  entity: string,
+  served: number,
+  /** Rows `paginate` will serve. It fetched one more, to decide `hasNextPage`. */
+  first: number,
+): SqlSource<Row> => {
+  const windowed = base.limit(first + 1);
+  return {
+    toSQL: (): SqlText => windowed.toSQL(),
+    shape: () => windowed.shape(),
+    // No `seek()` and no `total()`: `paginate` seeks once, and `SqlSource` reads an absent `total`
+    // as "the source already serves one order it can be resumed in" — exactly true of a relevance
+    // ranking, which `total()` would re-sort by id for the same reason `seek` must not.
+    execute: async () => {
+      const rows = await windowed.execute();
+      assert(
+        rows.length <= first,
+        `search of ${entity} answered more than the ${String(first)} rows .page() asked for, and this read has no second page: the rest would be on no page at all`,
+        `read.page(input, { first: ${String(served)} })   # widen the window to the read's whole page — or narrow the page: read({ q, limit: ${String(first)} })`,
+      );
+      return rows;
+    },
+  };
+};
 
 /**
  * The factory. `live: false` and the source declares itself unpatchable, because the incremental

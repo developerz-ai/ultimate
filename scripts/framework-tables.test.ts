@@ -94,8 +94,10 @@ describe('the rule', () => {
   });
 
   test('one table declared twice is reported once', () => {
-    // `x_outbox` really is declared twice — `SQL_JOBS_TABLE` and `SQL_OUTBOX_TABLE` both create
-    // it — so a per-site report would double-count a table that has an applier.
+    // The tree carries no double declaration today: `SQL_OUTBOX_TABLE` was the second copy of
+    // `x_outbox` and it is deleted, which is why this case is synthetic. The rule outlives it —
+    // two files may create one relation, and a per-site report would then count a table that HAS
+    // an applier as two findings and send the next agent looking for a second migration.
     const findings = checkFrameworkTables({
       declared: [
         declared('x_outbox', 'packages/jobs/src/a.ts'),
