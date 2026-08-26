@@ -2,7 +2,7 @@
 // matter here are the ones where a number is legitimately ambiguous.
 
 import { describe, expect, test } from 'bun:test';
-import { checkReleaseFacts, releaseFacts, skipFactPath } from './release-facts';
+import { checkReleaseFacts, foldStatPairs, releaseFacts, skipFactPath } from './release-facts';
 
 const FACTS = releaseFacts([
   ...Array.from({ length: 29 }, (_, i) => `@ultimat3/p${String(i)}`),
@@ -66,5 +66,50 @@ describe('the false green', () => {
   test('a corpus stating no count is a finding, not agreement', () => {
     const found = checkReleaseFacts({ pages: [{ path: 'p.md', text: 'no counts' }], facts: FACTS });
     expect(found.map((gap) => gap.kind)).toEqual(['vacuous']);
+  });
+});
+
+describe('a stat strip states a count under two different JSON keys', () => {
+  // The deployed demo rendered `29 packages published in lockstep` while the tree published 31,
+  // and this rule could not see it. Widening the globs to JSON would NOT have been enough: the
+  // number and the words it counts are on two different lines, and every pattern here matches a
+  // number ADJACENT to its subject.
+  const strip = [
+    '{',
+    '  "stats": {',
+    '    "packages": {',
+    '      "value": "27",',
+    '      "label": "packages published in lockstep"',
+    '    }',
+    '  }',
+    '}',
+  ].join('\n');
+
+  test('the pair is folded onto ONE line, and the line numbers do not move', () => {
+    const folded = foldStatPairs(strip).split('\n');
+    expect(folded).toHaveLength(strip.split('\n').length);
+    expect(folded[3]).toBe('27 packages published in lockstep');
+    // Blanked, not removed — a finding has to cite the line a human edits.
+    expect(folded[4]).toBe('');
+  });
+
+  test('a folded stat strip with a wrong count is a stale claim', () => {
+    expect(gaps(foldStatPairs(strip), 'en.json')).toEqual(['27 packages published']);
+  });
+
+  test('either honest reading of the phrasing is accepted', () => {
+    // The words do not say WHICH set, so scoped and total are both correct English — this file's
+    // own rule for an unqualified phrasing. 27 is neither, which is why the case above is caught.
+    for (const honest of ['29', '30']) {
+      const page = foldStatPairs(strip.replace('"27"', `"${honest}"`));
+      expect(gaps(page, 'en.json')).toEqual([]);
+    }
+  });
+
+  test('an unpaired value is not a claim', () => {
+    // A `value` with no `label` under it counts nothing, and must not invent a subject for itself.
+    const lonely = ['{', '  "value": "27",', '  "other": "x"', '}'].join('\n');
+    expect(foldStatPairs(lonely)).toBe(lonely);
+    expect(gaps(foldStatPairs(lonely), 'en.json')).toEqual([]);
   });
 });

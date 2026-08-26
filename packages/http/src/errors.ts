@@ -365,6 +365,28 @@ export const httpCountInvalid = (
   });
 
 /**
+ * A route DECLARING a cache age that a cache cannot read. `X_CONFIG_INVALID` and not a code of its
+ * own, for the reason the borrowed list gives: this is a declaration the framework cannot honour,
+ * and it is thrown while the route table is built, so no request is ever answered with it.
+ *
+ * Thrown here because `cacheControl` cannot throw: the response path is total by design — it drops
+ * the field and logs — so without this the mistake is a log line once per request, forever, while
+ * the response falls back to HEURISTIC caching, the one behaviour no `CacheHint` ever asked for.
+ */
+export const routeCacheInvalid = (
+  route: string,
+  path: string,
+  field: string,
+  value: number,
+): HttpError =>
+  new HttpError({
+    code: 'X_CONFIG_INVALID',
+    cause: `route ${route} (${path}) declares cache.${field} = ${String(value)}, and cache-control delta-seconds is 1*DIGIT — a fraction, a negative and NaN are directives a conforming cache IGNORES, so the response would fall back to heuristic caching instead of the age declared here`,
+    fix: `in the route file declaring ${route}, set meta.cache.${field} to a whole number of seconds, 0 or more — 0 is legal and means "revalidate every time". If it comes from the environment, give it a default before it reaches the route: Number(process.env.X) is NaN when the variable is unset and ?? does not catch that, because NaN is not nullish`,
+    meta: { route, path, option: `cache.${field}`, value: String(value) },
+  });
+
+/**
  * SIGTERM has run the `accept` phase: `readyz` is already 503 and the socket is closing, but a
  * connection the load balancer had not yet stopped using still arrives. Answering it with a
  * coded 503 and a `Retry-After` is what `packages/http/CLAUDE.md` claimed the layer did — until

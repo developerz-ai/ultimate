@@ -16,6 +16,7 @@ import { routeConflict } from './errors';
 import type { Bucket } from './rate-limit';
 import type { UltimateRequest } from './request';
 import type { CacheHint } from './response';
+import { assertRouteCache } from './route-cache';
 import type { Schema } from './validate';
 
 export type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS';
@@ -129,6 +130,10 @@ const segmentsOf = (path: string): readonly string[] =>
 export const createRouter = (routes: readonly Route[]): RouteTable => {
   const root = node();
   for (const route of routes) {
+    // Before the trie is touched: a hint that cannot be emitted is refused where it was WRITTEN,
+    // not on the response path — `cacheControl` is total there by design, so the alternative is a
+    // log line once per request and a response that quietly falls back to heuristic caching.
+    assertRouteCache(route.meta.cache, route.meta.name, route.path);
     let current = root;
     const segments = segmentsOf(route.path);
     for (const [index, segment] of segments.entries()) {

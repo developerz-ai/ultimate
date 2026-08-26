@@ -296,7 +296,7 @@
           "label": "policy object per decision, on all four surfaces"
         },
         "packages": {
-          "value": "29",
+          "value": "31",
           "label": "packages published in lockstep"
         }
       },
@@ -340,7 +340,7 @@
       "description": "Everything here is seeded and fake. What you can see is decided by a policy, not by a WHERE clause.",
       "eyebrow": "Anonymous, and allowed",
       "empty": "Nothing public to read yet",
-      "emptyHelp": "Every post the seed created is either friends-only, private, or written by someone who blocked the demo user — so a signed-out reader is shown none of them.",
+      "emptyHelp": "This list is empty only when every public post has been deleted \u2014 the seed writes two that any signed-out reader can see. The rest are friends-only or private, and audience is decided before you are.",
       "likes_one": "{count} like",
       "likes_other": "{count} likes",
       "comments_one": "{count} comment",

@@ -13,11 +13,18 @@ export type NotifyDuration = string | number;
 
 /**
  * `parseDuration` refuses every string it cannot read, so the STRING arm is already total. The
- * number arm is the hole: it passes straight through, and a `NaN` there makes `waitMs > slept`
+ * number arm was the hole: it passed straight through, and a `NaN` there makes `waitMs > slept`
  * false for every delivery (a declared delay that silently does not happen) and `at + windowMs`
  * `NaN` (a digest bucket whose `endsAt > at` never holds, so every event opens its own window and
  * the coalescer coalesces nothing). `option` names which declaration was wrong, since one notifier
  * may hold several.
+ *
+ * NOT A COPY OF `@ultimat3/time`'s `toMs`, and the difference is the whole reason both exist:
+ * `toMs` is the framework's duration vocabulary and a negative or fractional duration is REAL
+ * there — `toSeconds(-3000)` is a tested `-3` — so it screens finiteness and stops. A notifier's
+ * `wait` and digest `window` are counts of whole forward milliseconds, and the refusal has to name
+ * the declaration. `plan-bounds.test.ts` calls BOTH on the same inputs, which is what keeps the
+ * two from drifting apart again the way they did when only this one was screened.
  */
 export const toDurationMs = (duration: NotifyDuration, option = 'duration'): number =>
   finiteCount(

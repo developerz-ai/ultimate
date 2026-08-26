@@ -3,7 +3,7 @@
  * `step.sleep('3d')` in @ultimat3/jobs and every `retry.backoff` value comes through here.
  */
 
-import { assertLocale } from '@ultimat3/core';
+import { assertLocale, finiteOption } from '@ultimat3/core';
 import { durationInvalid, scheduleInvalid } from './errors';
 
 export const MS = 1;
@@ -61,9 +61,25 @@ export function parseDuration(input: string): number {
   return (negative ? -1 : 1) * Math.round(total);
 }
 
-/** Parse-or-passthrough for APIs that accept either form. */
+/**
+ * Parse-or-passthrough for APIs that accept either form.
+ *
+ * The STRING arm has always been total — `parseDuration` refuses everything it cannot read. The
+ * NUMBER arm was the hole: it passed straight through, so `toMs(Number(process.env.TTL_MS))` on an
+ * unset variable answered `NaN`, and every `wakeAt > now` built from it reads false forever — a
+ * sleep that never ends, a timeout that never fires, no error anywhere. `??` does not guard it,
+ * because `NaN` is not nullish. `@ultimat3/notify` screened its own copy of this body and this one
+ * did not, so one duration vocabulary gave two answers to one input.
+ *
+ * `finiteOption`, not `finiteCount`: a duration here is legitimately NEGATIVE — `parseDuration`
+ * accepts a leading `-` and `toSeconds(-3000)` is a tested `-3` — and legitimately fractional.
+ * A caller that needs whole non-negative milliseconds narrows on top of this, which is what
+ * `@ultimat3/notify`'s `toDurationMs` does; narrowing here would break both.
+ */
 export function toMs(duration: string | number): number {
-  return typeof duration === 'number' ? duration : parseDuration(duration);
+  return typeof duration === 'number'
+    ? finiteOption('toMs', 'duration', duration)
+    : parseDuration(duration);
 }
 
 /**

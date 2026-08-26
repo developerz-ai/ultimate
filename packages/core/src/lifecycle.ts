@@ -4,6 +4,7 @@
 
 import { type Clock, systemClock } from './clock';
 import { UltimateError } from './errors';
+import { finiteCount } from './finite-option';
 import { settleWithin } from './lifecycle-deadline';
 import { lifecycleDrained } from './lifecycle-errors';
 import { type LogFields, type Logger, logger as rootLogger } from './logger';
@@ -49,6 +50,8 @@ export interface LifecycleOptions {
    * lapses and another worker re-claims it, which is what at-least-once already promises. The
    * alternative is not "the job finishes": it is the same duplicate, delivered by SIGKILL at the
    * kubelet's grace period, with no log line naming what overran.
+   *
+   * Screened where it is assigned: a whole number of milliseconds, 0 or more. `0` is "drain now".
    */
   readonly deadlineMs?: number | undefined;
   readonly clock?: Clock | undefined;
@@ -119,7 +122,15 @@ let idleWaiters: (() => void)[] = [];
 const readiness = new Map<string, ReadinessCheck>();
 
 export function configureLifecycle(options: LifecycleOptions): void {
-  if (options.deadlineMs !== undefined) deadlineMs = options.deadlineMs;
+  // Screened above the write, never beside the arithmetic: `Math.max(0, deadlineAt - monotonic())`
+  // PROPAGATES a NaN into `setTimeout(fn, NaN)`, i.e. 0 — measured, one in-flight operation dropped
+  // and a 300ms close hook ABANDONED 111ms into a 25s budget, while `X_SHUTDOWN_TIMEOUT` rendered
+  // `NaNms` and told the operator to RAISE a budget that was never a number. `min: 0` because 0 is
+  // a real budget — drain now, no grace — and `@ultimat3/http`'s `drainTimeoutMs` accepts 0 and
+  // hands it straight here, so a floor of 1 would refuse at boot what that package declares.
+  if (options.deadlineMs !== undefined) {
+    deadlineMs = finiteCount('configureLifecycle', 'deadlineMs', options.deadlineMs, 0);
+  }
   if (options.clock !== undefined) {
     clock = options.clock;
     startedAtMono = clock.monotonic();

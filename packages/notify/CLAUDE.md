@@ -81,6 +81,7 @@ off.
 | Exports | `src/index.ts`, explicit, no `export *` |
 | Errors | `src/errors.ts`, subclass `UltimateError`, never a bare `Error` |
 | Files | one responsibility each, < 200 lines, tests beside the source |
+| Durations | one vocabulary — `@ultimat3/time`'s. `toDurationMs` is a **narrowing** of `toMs`, never a copy of it: `toMs` screens finiteness and stops, because a negative or fractional duration is real there (`toSeconds(-3000)` is a tested `-3`); a `wait` and a digest `window` are counts of whole FORWARD milliseconds, and the refusal names which declaration was wrong since one notifier holds several. `plan-bounds.test.ts` calls BOTH on the same inputs — the two disagreed once (#372), when only this side was screened, and only a test that calls both can see it come back |
 
 ## Homeless work this package cannot do
 

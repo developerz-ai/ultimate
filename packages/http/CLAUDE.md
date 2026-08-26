@@ -47,6 +47,13 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   refusals — unset is `X_TRUST_PROXY_UNSET`, out of domain is `X_CONFIG_INVALID` — and there is no
   `?? 0` behind it, because a default of zero reopens the same hole from the other side.
 
+  **`MAX_PROXY_HOPS` is EXPORTED, `As of 2026-08-26`**, and that is the point of it. It was module
+  private, so `@ultimat3/cli`'s `trustedHopsFromEnv` — which screens the same setting arriving as
+  `TRUSTED_PROXY_HOPS` — restated the literal, and one setting came to have two ceilings: that end
+  said 16 while this one said 64, so a deployment behind 20 hops was accepted by the library and
+  refused at boot. `cli` is tier 5 and this is tier 2, so the import is downward and legal. The
+  number lives here because this is where the setting is.
+
 - Route `meta.auth` is required. Never default a route to public.
 - **An app declares its half of `HttpConfig` through `configureHttp()`, and the boot lays its own
   facts over it** (`As of 2026-08-24`). Until 12.0.0 the entire tuning surface was **unreachable
@@ -577,8 +584,16 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   response path, and a bad cache hint must not become a 500. Every fallback is the SHORTER
   direction — `max-age` to 0, `s-maxage` and `stale-while-revalidate` omitted — so nothing here can
   lengthen an age the caller did not ask for. `http.cache_hint_not_delta_seconds` names the field.
-  The boot-time half is still missing: `Route.cache` (`router.ts`) is a real declaration site where
-  a throw WOULD be correct, and nothing screens it there yet — issue #373.
+  **The boot-time half is `route-cache.ts`, `As of 2026-08-26`** — the layered form: refuse where
+  the value is WRITTEN, be total where it is USED. `createRouter` screens `Route.cache`'s three
+  delta-seconds fields per route and throws `X_CONFIG_INVALID` naming the route and the key, so
+  `cache: { maxAgeSeconds: Number(process.env.CACHE_AGE) }` fails at boot instead of registering
+  cleanly and surfacing as one warn line per request, forever. The two screens must accept exactly
+  the same set: this one decides what may be DECLARED, `finiteDeltaSeconds` what may be WRITTEN,
+  and a value one accepts and the other drops is a silent hole between them. **Zero stays legal at
+  both ends** — `max-age=0` is "revalidate every time" and `PRIVATE_CACHE`, `defaultCache`'s
+  anonymous hint and the CLI's authorized-object hint all declare it. `ctx.cache` is NOT screened
+  and must not be: it is app-set per request at runtime, which is the total side by definition.
 - Tests must not touch the network — the preload seals `fetch`. Socket tests live in
   `e2e/` and run with `bun test packages/http/e2e`, sealed: `start()` calls core's
   `markListening()`, so the seal treats our own port as self, not egress. Never unseal.
@@ -601,6 +616,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `redirect.ts` | the intent slot a handler that cannot return a `Response` fills |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
 | `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor |
+| `route-cache.ts` | the screen a `Route.cache` hint gets where it is DECLARED, thrown from `createRouter`; the response path's `finiteDeltaSeconds` is the total half of the same rule |
 | `rate-limit.ts` | the token-bucket maths, the store interface, the memory driver and `toBucket` |
 | `rate-limit-postgres.ts` | the SHARED store: one table, one `insert … on conflict` per take, over a structural `PgExecutor` |
 | `rate-limit-errors.ts` | every refusal a rate limit produces — the 429 and the six declaration faults. Split off `errors.ts` at the ceiling; the codes and titles stay there, one registry |
