@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 17.0.0 - 2026-08-26
+
 One sweep, in tier order, against a single defect class: **a numeric bound whose own non-finite
 value makes its guard read false.** `??` guards *nullish*, and `NaN` is not nullish — so
 `Number(process.env.X)` on an unset variable, a `parseInt` of a typo and an untyped config value all
@@ -205,6 +209,15 @@ validators either: all three **propagate** `NaN`, and this repo was relying on a
   `packages/http/src/locale.ts`, a different file.
 - **`SQL_OUTBOX_TABLE`** from the `@ultimat3/jobs` barrel. It was a byte-for-byte second copy of the
   statements `SQL_JOBS_TABLE` already creates, so `x_outbox` was declared twice and created once.
+
+### Commits
+
+- fix(core,auth,http,time): randomToken(NaN) was the empty string, and a deploy abandoned its own shutdown (#377)
+- fix(tier 5): 835,462 polls in three seconds, and a session that never expired (#375)
+- fix(tier 4): a NaN estimate did not bypass the AI budget, it poisoned it (#374)
+- fix(tier 2–3): at-least-once became never when a lease bound was NaN (#370)
+- fix(tier 0–1): a bound whose own NaN makes its guard read false (#364)
+- test(scripts): two ratchets for tests that cannot fail, and the 24 sites they found (#360)
 
 ## 16.0.0 - 2026-08-26
 

@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/core",
-  "version": "16.0.0",
+  "version": "17.0.0",
   "description": "Ultimate's foundation: errors, context, env, config, clock, ids, logging, telemetry, lifecycle",
   "license": "MIT",
   "type": "module",

@@ -5,7 +5,7 @@
   them. No heading, deliberately. Reported 2026-08; rejected on those grounds.
 -->
 
-**Ultimate** — v16.0.0 `As of 2026-08`. Stable API, semver from here. MIT licensed. What npm serves is `npm view @ultimat3/core version`, never this line.
+**Ultimate** — v17.0.0 `As of 2026-08`. Stable API, semver from here. MIT licensed. What npm serves is `npm view @ultimat3/core version`, never this line.
 
 This footer is the **only** page that stamps a version. It renders under every wiki page, so one release bumps one line; a stamp on a second page is 46 hand-copies of one fact, and every one of them goes stale on the next tag.
 
