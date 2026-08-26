@@ -34,6 +34,7 @@ import { type Actor, anonymousActor } from './actor';
 import { asyncContext } from './async-context';
 import { type Clock, systemClock } from './clock';
 import { UltimateError } from './errors';
+import { finiteOption } from './finite-option';
 import { traceId as newTraceId, uuid } from './ids';
 import { type Logger, logger as rootLogger, setLoggerContextFields } from './logger';
 import { type Role, resolveRole } from './roles';
@@ -173,7 +174,7 @@ export function createContext(init: CtxInit = {}): Ctx {
     now: () => clock.now(),
     logger: base.child({ requestId, traceId: trace }),
     signal: init.signal ?? neverAborted,
-    deadlineAt: init.deadlineAt ?? null,
+    deadlineAt: screenDeadline(init.deadlineAt),
   };
   // A registered service (`defineService`) closes over the ctx it is built for — actor, clock,
   // tz — so it has to run HERE, against this exact call's fields, rather than once at boot and
@@ -243,6 +244,24 @@ function earliest(left: number | undefined, right: number | null | undefined): n
 }
 
 /**
+ * The one screen over `deadlineAt`, at both boundaries that can set it. A deadline is an instant,
+ * not a count, so `finiteOption` rather than `finiteCount` — a clock epoch is legitimately large
+ * and a test clock's is legitimately small.
+ *
+ * WHY IT IS REFUSED AND NOT CLAMPED, in this file specifically: `Math.min` PROPAGATES `NaN`, so one
+ * non-finite side poisons the child's deadline as well as its own. `remainingBudgetMs` then asks
+ * `left >= 1` of a `NaN`, gets `false`, and answers `undefined` — the same answer it gives for "no
+ * deadline at all". So the `x-request-timeout-ms` header is silently omitted and the next hop falls
+ * back to its OWN configured budget, which `request-budget.ts`'s own header calls "the exact
+ * failure this header exists to prevent". A deadline that quietly stops bounding anything is the
+ * dangerous direction, and it is the direction `??` cannot see, because `NaN` is not nullish.
+ */
+function screenDeadline(value: number | null | undefined): number | null {
+  if (value === undefined || value === null) return null;
+  return finiteOption('the request context', 'deadlineAt', value);
+}
+
+/**
  * Derive a narrowed context — impersonation, a locale switch, a per-step abort signal.
  * `requestId` is deliberately not patchable: one request, one id.
  */
@@ -270,7 +289,7 @@ export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
     // lengthens it, because the socket the parent is answering does not move. `??` alone said
     // that and did not do it — a patched hour replaced a parent's second outright, and
     // `remainingBudgetMs` then put the hour on `x-request-timeout-ms` for the next hop.
-    deadlineAt: earliest(patch.deadlineAt, parent.deadlineAt),
+    deadlineAt: earliest(screenDeadline(patch.deadlineAt) ?? undefined, parent.deadlineAt),
     signal: patch.signal ?? parent.signal,
     services: { ...carried, ...(patch.services ?? {}) },
   });

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { agentActor, anonymousActor, userActor } from './actor';
+import { frozenClock } from './clock';
 import {
   createContext,
   hasContext,
@@ -283,14 +284,44 @@ describe('a child scope inherits the deadline and can only shorten it', () => {
     expect(childDeadline(undefined, undefined)).toBeNull();
   });
 
+  // A FROZEN clock, not `Date.now()`. The parent's budget here is 1,000ms, so a real clock gives
+  // the assertion a one-second window: pause for longer than that between building the context and
+  // reading the budget — eight test workers on a loaded runner will — and `remainingBudgetMs`
+  // answers `undefined` for an EXPIRED deadline, failing a test that is about clamping. A frozen
+  // clock cannot expire, so the only thing left that can fail it is the thing it is testing.
   test('the header the next hop reads carries the clamped budget, not the extended one', () => {
-    const now = Date.now();
-    runWithContext(createContext({ deadlineAt: now + 1_000 }), () => {
+    const clock = frozenClock('2026-08-24T10:00:00.000Z');
+    const now = clock.now().getTime();
+    runWithContext(createContext({ clock, deadlineAt: now + 1_000 }), () => {
       withChildContext({ deadlineAt: now + 3_600_000 }, () => {
         const left = remainingBudgetMs(useContext());
         expect(left).toBeDefined();
         expect(left ?? 0).toBeLessThanOrEqual(1_000);
       });
     });
+  });
+
+  // The defect this whole PR is about, in the file that derives a deadline. `Math.min` PROPAGATES
+  // NaN, so ONE non-finite side poisons the child too; `remainingBudgetMs` then asks `left >= 1`,
+  // gets false, and answers `undefined` — indistinguishable from "no deadline set". The budget
+  // header vanishes and the next hop silently uses its own timeout.
+  test('a non-finite deadline is refused at the boundary, never propagated by Math.min', () => {
+    expect(() => createContext({ deadlineAt: Number.NaN })).toThrow('deadlineAt');
+    expect(() => createContext({ deadlineAt: Number.POSITIVE_INFINITY })).toThrow('deadlineAt');
+
+    const clock = frozenClock('2026-08-24T10:00:00.000Z');
+    const parent = createContext({ clock, deadlineAt: clock.now().getTime() + 1_000 });
+    runWithContext(parent, () => {
+      expect(() => withChildContext({ deadlineAt: Number.NaN }, () => undefined)).toThrow(
+        'deadlineAt',
+      );
+    });
+  });
+
+  // The guard must not have eaten the legitimate case: no deadline at all is still no deadline,
+  // and that is the ONE nullish value `screenDeadline` is allowed to pass through.
+  test('an absent deadline is still absent, and still means unbounded', () => {
+    expect(createContext({}).deadlineAt).toBeNull();
+    expect(remainingBudgetMs(createContext({}))).toBeUndefined();
   });
 });

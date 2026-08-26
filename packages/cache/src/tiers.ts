@@ -117,7 +117,6 @@ export function assertFiniteCapacity(tier: TtlScope, option: string, value: numb
 }
 
 /**
-/**
  * A millisecond duration: a driver's request budget (handed to `AbortSignal.timeout`, which THROWS
  * on a non-finite one — inside `purgePost`'s try, so the config typo came back as a retryable
  * transport failure that never happened) and a tier's own `defaultTtlMs`, which is otherwise only
@@ -127,13 +126,20 @@ export function assertFiniteCapacity(tier: TtlScope, option: string, value: numb
  * by the shape of the CALL, so `assertCapacity` and `assertTimeoutMs` left all nine of this
  * package's options reading as unchecked while every one of them was screened.
  */
-export function assertFiniteDurationMs(tier: string, option: string, value: number): number {
+export function assertFiniteDurationMs(
+  tier: string,
+  option: string,
+  value: number,
+  /** Passed only where the value is a CALL argument rather than an `app.config.ts` key. */
+  source?: string | undefined,
+): number {
   if (Number.isSafeInteger(value) && value > 0) return value;
   throw new CacheLimitInvalidError({
     tier,
     option,
     value,
     expected: 'a whole number of milliseconds greater than zero',
+    source,
   });
 }
 
@@ -257,6 +263,9 @@ export function createCacheStack(
       'ladder',
       'loadDeadlineMs',
       options.loadDeadlineMs ?? DEFAULT_LOAD_DEADLINE_MS,
+      // Caller-owned: it arrives as a `createCacheStack({ loadDeadlineMs })` argument, so there is
+      // no `app.config.ts` key to send the reader to.
+      'the loadDeadlineMs argument to createCacheStack(...)',
     ),
     schedule: options.schedule,
   });
