@@ -20,7 +20,7 @@ import {
   uuid,
 } from './columns';
 import { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
-import { invariantColumns } from './expr';
+import { iff, invariantColumns } from './expr';
 
 const refusal = (
   run: () => unknown,
@@ -93,6 +93,10 @@ const SITES: readonly (readonly [string, () => unknown])[] = [
   ['bytes value', () => bytes().$parse('nope')],
   ['array value', () => arrayOf(text()).$parse('nope')],
   ['invariant matches flags', () => c.slug.matches(/^a+$/g)],
+  // A construct, not a flag: `\b` is a word boundary to `.test()` and a BACKSPACE to the CHECK.
+  ['invariant matches construct', () => c.slug.matches(/\bfoo/)],
+  // A column list where a predicate belongs — the one operand `iff` cannot render.
+  ['invariant iff unique', () => iff(c.unique(['slug']), c.title.isNotNull())],
   ['searchable kind', () => uuid().searchable()],
   // A JS caller reaching the weight refusal — the union makes it unwritable in TypeScript, and
   // `.searchable(input.weight)` from parsed JSON is exactly how it arrives anyway.
@@ -201,6 +205,31 @@ describe('unit · every column and invariant refusal hands back an edit', () => 
     expect(refusal(() => c.slug.matches(/^a+$/gm)).fix).toContain(
       'matches((value) => /^a+$/m.test(value))',
     );
+  });
+
+  /**
+   * A construct refusal has two fix lines and they are not interchangeable. Where a portable
+   * spelling exists the author keeps their CHECK and edits one class; where none does, the only
+   * honest repair is the predicate, which reports `sql: null` — offering "use a predicate" for a
+   * `\w` would trade an enforced constraint for an app-only one over a two-character edit.
+   */
+  test('a construct with a portable spelling is repaired in place, not downgraded', () => {
+    const fix = refusal(() => c.slug.matches(/^\w+$/)).fix;
+    expect(fix).toContain('[A-Za-z0-9_]');
+    expect(fix).toContain('x db gen');
+    expect(fix).not.toContain('matches((value)');
+  });
+
+  test('a construct with no portable spelling is handed the app-only predicate', () => {
+    const fix = refusal(() => c.slug.matches(/\bfoo/)).fix;
+    expect(fix).toContain('matches((value) => /\\bfoo/.test(value))');
+    expect(fix).toContain('sql: null');
+  });
+
+  test('the cause names the construct and where it sits, so the author can find it', () => {
+    const cause = refusal(() => c.slug.matches(/^ab.cd$/)).cause;
+    expect(cause).toContain('index 3');
+    expect(cause).toContain('newline');
   });
 });
 

@@ -8,11 +8,11 @@ import {
   DB_ERROR_TITLES,
   DB_OWNED_ERROR_CODES,
   driverError,
-  migrateConcurrent,
   poolAcquireTimeout,
   poolMaxInvalid,
   serializationExhausted,
 } from './errors';
+import { migrateConcurrent } from './migration-errors';
 import { DB_SQLSTATE_CODES } from './sqlstate';
 
 describe('DB_OWNED_ERROR_CODES', () => {
@@ -37,6 +37,7 @@ describe('DB_OWNED_ERROR_CODES', () => {
       'X_MIGRATION_DESTRUCTIVE',
       'X_MIGRATION_IRREVERSIBLE',
       'X_MIGRATION_SNAPSHOT_MISSING',
+      'X_MIGRATION_VIEW_DEPENDS',
       'X_SQL_UNSAFE',
     ]);
   });

@@ -9,11 +9,11 @@ reaches down to this package for it. **Never** import `entity`, `jobs`, `http` o
 |---|---|
 | Deps | none. `@electric-sql/pglite` is an **optional peer**, imported by variable specifier inside `loadPgliteDriver()` so no consumer's `tsc` or bundler resolves it. **No ORM** — `entity`'s hand-written `postgresDriver()` is the production backing |
 | SQL | `sql` binds `$n`; anything non-scalar and non-fragment throws `X_SQL_UNSAFE` |
-| Escape hatches | `raw()`, `identifier()`, `literal()` — each call is an audit point |
+| Escape hatches | `raw()`, `identifier()`, `literal()` — each call is an audit point. `literal()` is the tree's ONE SQL-string-literal escape (`scripts/sql-literal-copies.ts`, pinned at zero) and it emits `E'…'` when the value carries a backslash |
 | SQLSTATE | one reader, `sqlState()` (`sqlstate.ts`). Never read `error.code` for a SQLSTATE |
 | Reading a caught value | `renderThrowable()` from core; never `error instanceof Error ? error.message : String(error)` — both halves RUN app code (a `Proxy` trap, `Symbol.toPrimitive`) and `checkDb` backs `/readyz`, where a render that throws is an exception in place of the report the kubelet asked for |
 | Errors | subclass `DbError`; never `throw new Error` **in source**. A test simulating a *database* failure throws `dbUnavailable()`; a test simulating the *caller's body* failing throws a bare `Error` on purpose — an arbitrary throw is exactly what rollback and disposal must survive, and a `DbError` there would prove the narrower thing |
-| New code | add to `DB_ERROR_CODES` **and** `DB_ERROR_TITLES` in `errors.ts` |
+| New code | add to `DB_ERROR_CODES` **and** `DB_ERROR_TITLES` in `errors.ts` — always there, whichever file the CONSTRUCTOR lives in. `errors.ts` reached the 500-line ceiling on 2026-08-25, so a migration's constructors are `migration-errors.ts` and an invariant's are `invariant-errors.ts`; both import `DbError` from `errors.ts` and neither is imported back, and `src/index.ts` re-exports every one of them so no consumer can tell |
 | A value ambient across an `await` | `asyncContext<T>(subject)` from `@ultimat3/core` — never `new AsyncLocalStorage`. Three scopes here use it: `transaction.ts`, `attribution.ts`, `expected-loop.ts` |
 | Exports | explicit in `src/index.ts`; no `export *` |
 | Files | < 200 LOC, one responsibility, `kebab-case.ts`, test beside source |
@@ -685,6 +685,36 @@ is the `add constraint` statement itself, not `x db migrate`: the migration decl
 in the ledger, so the migrator applies nothing, and the declared side carries the predicate that
 makes an executable fix possible at all.
 
+**`literal()` DOES receive caller input, and this file's own source said otherwise until
+2026-08-25.** `column-default.ts:43` renders `ColumnDefaultLike` through it — an app's own
+`.default('C:\\logs')`, crossing the tier seam from `@ultimat3/entity`, validated by nothing and
+guarded by no `identifier()`. Measured through `generateMigration` on 18.4: the emitted
+`default 'C:\logs'` stores `C:\logs` with `standard_conforming_strings` on and **`C:logs`** with it
+off. A declaration that type-checks, a migration that applies, a column defaulting to a value nobody
+wrote, and no error anywhere. A value ENDING in a backslash is worse — the escaped quote leaves the
+literal unterminated.
+
+The rule is `E'…'` **only** when the value actually carries a backslash: without one there is no
+escape mechanism for the two GUC settings to disagree about, so every migration already on disk
+stays byte for byte what it was and nothing regenerates spuriously. That property is load-bearing —
+both tracked apps hold applied migrations whose `.hash` covers this text — and
+`generate-default.live.test.ts` pins both halves against a real server, applying the same generated
+migration under `on` and under `off` and reading the stored default back. `sql.test.ts` pins the
+five shapes; the round trip through `statementsOf` is there too, because this package's own lexer
+has to read back what its escape writes or `migrate()` starts miscounting statements
+(`sql-scan.ts`'s `escapesAt` already knew the `E''` prefix).
+
+**The other two callers here are safe by CONSTRUCTION, never by input, and the difference matters
+if either is refactored.** `readonly-role.ts:71` sits in the same `sql` template as
+`identifier(role)`, which throws on a backslash before the tag function runs; `branch.ts:85` runs
+after an already-awaited `identifier(base)`. Neither is validating the value it passes to
+`literal()` — a caller moved out of that ordering loses the guard silently.
+
+`literal()` is now the tree's ONE answer, enforced: `scripts/sql-literal-copies.ts` refuses a
+`replace`/`replaceAll` whose replacement is `''` anywhere but `packages/db/src/sql.ts`, matched on
+the TRANSFORMATION rather than on a name — the three copies were called `literal`, `literalText`
+and an unnamed inline template. Pinned at zero.
+
 **A retype takes the objects written against the column out of its way first, `As of 2026-08-25`,
 and `retype-dependents.ts` decides which those are.** Postgres compiles a partial index's predicate
 and a CHECK's expression against the column's type at creation and cannot recompile either:
@@ -702,7 +732,7 @@ shape at a time on 18.4):
 | partial index whose predicate names the column | **no — 42883** |
 | partial index naming another column | yes |
 | CHECK whose expression names the column | **no — 42883** |
-| a view over the column | no, `0A000`, and no snapshot records a view |
+| a view over the column | no, `0A000`; no snapshot records a view, so `migrate()` refuses it instead (`dependent-view.ts`) |
 
 So only an expression that MENTIONS the column is moved, and a plain btree is left alone — dropping
 it is a table scan to rebuild for nothing.
@@ -729,17 +759,99 @@ pushes the restores forwards and is reversed as a whole, so it reads: drop the n
 back, then recreate the ones compiled against the old type — restoring first is `42883` in the
 other direction. What it restores is what the snapshot RECORDED, never what the entity declares.
 
-**Three things it does not move, and each is measured rather than assumed.** A **foreign key** over
-the retyped column is `ERROR: foreign key constraint "c_k_fkey" cannot be implemented` — the
-dependents are in `live.foreignKeys` *and* in every OTHER table's, which `diffTable` cannot see from
-one entity, and the statements belong to `foreign-key-plan.ts`'s own buckets, so half a fix here
-would collide with it. Neither tracked app can reach it (every key is `uuid` on both sides) and it
-is the next thing to close. A **generated column's** own retype (`regenerate`) does not move
-dependents either: it emits `set expression` and `alter … type` with no `using`, and nothing covers
-a partial index over one. And **what no migration wrote down** is invisible by construction —
-`x db gen` runs with no database open, so a hand-added expression index over the column is still
-`42883` and a VIEW over it is `0A000` whatever this does, since `SchemaDescription` has a field for
-neither.
+**A FOREIGN KEY over the retyped column is moved too, `As of 2026-08-25`, and `retype-keys.ts`
+decides which — above `diffTable`, which is the whole point.** Postgres re-checks a key's two ends
+against each other on every `alter column … type`: measured on 18.4, `42804 foreign key constraint
+"rk_posts_org_code_fkey" cannot be implemented — Key columns "org_code" … and "code" … are of
+incompatible types: integer and text`, thrown by the ALTER itself, inside `ROLE=migrate`, with the
+ledger recording nothing.
+
+**It could not be answered from inside `diffTable` and that is not an implementation detail.** The
+constraint that breaks is recorded on the table that OWNS it, so for a retype of the key's TARGET it
+is a different entity's row — `diffTable(orgs)` is handed `orgs`'s record and can never see
+`posts.foreignKeys`. So `retypedColumns(entities, current)` derives the whole schema's retype set
+once, before the entity loop, and `retypeColumn` READS it instead of asking
+`recorded.dataType === wanted` a second time: two answers to "is this column being retyped" is the
+axiom-1 split this package has spent the week closing.
+
+Four rules ride with it.
+
+| Rule | Why |
+|---|---|
+| the drop goes in a `preAlters` bucket merged at the TOP of `up` and at the FRONT of `down` | both ends of one key can move in two different entities' diffs, so the drop must precede every ALTER in the migration and the restore must follow every one of them. `down` is reversed at assembly, so the front becomes the end: drop the new key, retype both ends back, then add the recorded one. Restoring any earlier is `42804` in the other direction |
+| what comes back in `up` is written by `foreignKeyPlan`, never here | `moveKeysAside` answers a set of `keyId`s and `ConstraintPlans.predropped` reads it as "the schema does not record this key" — the same reading `checkPlan` gives its own `predropped`. That is what makes the three outcomes fall out of code that already exists: still declared (added back in the `constraints` bucket that already runs after every table statement), no longer declared (gone, exactly as the removal arm would have left it), `on delete` moved (added back carrying the new rule). Three branches restating them here is the collision this was deferred over |
+| **both** ends of `breaksOn` earn their line, and they do not overlap | the OWNER arm catches a key whose table is retyped while its TARGET's table is being dropped; the TARGET arm catches the mirror — the key's own table is doomed, so nothing retypes its column and `foreignKeyPlan` is never called for it at all, while `drop table` is emitted at the END of `up`, long after the ALTER it would have unblocked. Both are pinned live (`generate-retype-key.live.test.ts`), because when both tables survive either arm alone would do |
+| a key whose own table or whose target is doomed gets a `--` note in `down` | `add constraint` against a table no `down` can restore is a rollback that cannot run — the rule `unrestorableDrop` already states |
+
+**Re-adding the key is still the SERVER's judgement, deliberately.** An entity that retypes one end
+and not the other declares a pairing Postgres has no operator for, and the `add constraint` at the
+end of `up` is where that is said. Refusing it at generation would need to know whether two types
+share an equality operator — `varchar(80)` and `text` do, `integer` and `text` do not — which is the
+operator-resolution knowledge a generator with no database cannot have, and the same reason
+`referencesColumn` over-approximates. What it cannot see at all is a key the recorded schema does
+not hold: a hand-written migration's, or a sidecar written before `foreignKeys` was recorded.
+
+`sql-type.ts` holds `SQL_TYPES`/`sqlType`, split out of `generate.ts` so the pre-pass can ask what a
+kind renders to without importing the module that imports it. The read is **guarded** with
+`Object.hasOwn`, and db's `proto-index` pin dropped 5 → 4 in the same commit — the ratchet reports a
+count that drops as `stale`, so the two could not land apart. `kind` is data: unguarded,
+`SQL_TYPES['constructor']` answered the `Object` function and its source went into the type position
+of an `alter` statement, and `'__proto__'` answered `[object Object]`. Guarded, both pass through as
+themselves like any other unknown kind, and no other input's answer moves.
+
+**A generated column's REBUILD moves its dependents aside too, `As of 2026-08-25`, and it reuses
+`retypeDependents` rather than answering again.** Plain → generated has no `set expression`, so
+`regenerate` drops the column and adds it back — and `drop column` silently takes every partial
+index whose PREDICATE names it and every CHECK whose expression does (measured, 18.4). The `rebuilt`
+set `diffTable` carries into its index loop is keyed on an index's COLUMNS, so neither is a name it
+can find: the table came back without them, the snapshot still recording both, and `down` unable to
+restore either. `regenerate` therefore takes `live` and `moved` and calls `moveDependentsAside`,
+which drops each explicitly, restores it in `down`, and puts the name where the ordinary diff will
+CREATE it. `generate-generated-rebuild.live.test.ts` applies it both ways.
+
+**A generated column's own `alter … type` deliberately does NOT move them, and the reason is
+measured.** It trips the same `42883` (`operator does not exist: text > integer`, on a generated
+`integer` column under `where (doubled > 0)`) — but moving the index aside only relocates the
+failure to the `create index` that puts it back, because a predicate whose operator the NEW type has
+no resolution for cannot be written either. The plain path's dependents survive precisely because an
+untyped literal re-resolves (`status = 'published'` under an enum and under `text`), and a generated
+column reaching that shape needs its EXPRESSION changed in the same migration, which `regenerate`
+emits AFTER the type statement. Left open with the failure named in the source rather than closed
+with a change no test could fail on.
+
+And **what no migration wrote down** is still invisible to the generator by construction — `x db gen`
+runs with no database open, so a hand-added expression index over the column is `42883` whatever
+this does, since `SchemaDescription` has a field for it nowhere.
+
+**A VIEW is NOT discoverable from anything this generator reads, and the honest ceiling is a
+refusal one statement earlier, `As of 2026-08-25`.** `SchemaDescription` has no field for a view,
+`introspect()` reads none by construction (`app-relation.ts` excludes every non-table relation), and
+no `entity()` can declare one — so a `GenerateOptions.views` with no caller to fill it would be the
+declared-and-never-wired defect this release exists to eliminate, and the caller is
+`@ultimat3/cli`'s. What DOES have a connection is `migrate()`. `dependent-view.ts` is the preflight:
+`refuseDependentViews(tx, script)` runs inside each migration's own transaction, before its first
+statement, and both `migrate()` and `rollback()` call it.
+
+It repairs nothing and does not claim to — the deploy still stops. What it replaces is
+`X_DB_UNAVAILABLE: cannot reach the database`, whose registered `fix:` is "set `DATABASE_URL` to a
+reachable Postgres url", on a database the migrator is connected to and mid-transaction on. The
+server's own words name the view in a **DETAIL** field nothing printed:
+`0A000 cannot alter type of a column used by a view or rule` /
+`rule _RETURN on view dv_docs_published depends on column "rank"`. `X_MIGRATION_VIEW_DEPENDS` names
+the view, the table and the column, and its `fix:` is the `drop view` plus the `create view` built
+from `pg_get_viewdef(oid, true)` — a paste, not an archaeology.
+
+Four rules.
+
+| Rule | Why |
+|---|---|
+| `retypeTargets` is a WORD scan over `sql-scan.ts`, never a regex | a retype inside a `--` comment is prose and one inside a literal is data, and both reach the scan when they sit inside an `alter table` statement — read as code either invents a target on a column the statement never touches. A **quoted** name is never a keyword: `alter table "t" alter "column" type text` retypes a column called `column`, and read as the keyword it names `type` and matches nothing |
+| the matcher is **narrow on purpose** | a miss costs exactly what happens today — the server's own `0A000`, one statement later — while a false positive refuses a migration that would have applied. Every retype `generateMigration` emits is `alter table <t> … alter [column] <c> type`; a hand-written `ALTER TABLE ONLY t …` is not, and is left to the server |
+| one catalog round trip, and the PAIR is filtered in JS | the query asks every retyped table against every retyped column, so it answers pairs nobody retypes — `dv_notes.rank` out of `dv_docs.rank` and `dv_notes.mark`. Refusing on one is a deploy stopped over a view standing in nobody's way, which is worse than the message this exists to improve. Pinned live |
+| the `fix:` is built through `identifier()` **inside a `try`** | `identifier()` refuses a name holding a quote, a space or a backslash, all three legal inside a quoted Postgres name, and a `fix:` may not throw — the rule `rebuildForeignKey` already states, with the same shape. `errors.ts` takes the finished string rather than importing `sql.ts`: that module imports `identifierUnsafe` from it, and an import cycle around the module whose evaluation REGISTERS every code is not one worth having for a quoted name |
+
+A script that retypes nothing costs one text scan and no round trip, which is nearly every migration
+an app writes.
 
 **`index-ddl.ts` holds `createIndex`, `redefineIndex`, `indexShape`, `dropIndex` and
 `asDeclared`**, split out of `generate.ts` at the 500-line ceiling along the seam `check-ddl.ts` and

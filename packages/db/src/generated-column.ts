@@ -6,7 +6,9 @@
 import { assert } from '@ultimat3/core';
 import type { ColumnDescriptionLike } from './entity-shape';
 import type { Plan } from './foreign-key-plan';
-import type { ColumnDescription } from './introspect';
+import type { ColumnDescription, TableDescription } from './introspect';
+import type { MovedAside } from './retype-dependents';
+import { moveDependentsAside } from './retype-dependents';
 import { identifier } from './sql';
 
 /** How a column that moved was brought back into line — what the caller has to do next, if anything. */
@@ -68,14 +70,26 @@ export const isGenerated = (column: ColumnDescriptionLike): boolean =>
  * plain → generated (there is no `set expression` for a column that has none) and a column whose
  * recorded expression is unknown. `drop expression` is the one that HAS a statement, and it is the
  * generated → plain direction, which keeps the values it computed.
+ *
+ * **The rebuild moves the column's dependents aside first, and it is `retype-dependents.ts` that
+ * says which — never a second answer written here.** The `rebuilt`
+ * set `diffTable` carries into its index loop is keyed on an index's COLUMNS, so a partial index
+ * whose `where` names this column and whose key columns do not was dropped with the column by
+ * `drop column` and re-created by nothing: measured, the table came back with the index gone, the
+ * snapshot still recording it, and `down` unable to restore it. An invariant's CHECK reading the
+ * column is the same loss one arm over. `moveDependentsAside` drops each of them explicitly,
+ * restores them in `down`, and puts the name in `moved` — which is what makes the ordinary diff
+ * CREATE the declared one instead of comparing a definition that never moved.
  */
 export function regenerate(
-  table: string,
+  live: TableDescription,
   column: ColumnDescriptionLike,
   wantedType: string,
   recorded: ColumnDescription,
   plan: Plan,
+  moved: MovedAside,
 ): Regeneration {
+  const table = live.name;
   const wanted = column.generated ?? null;
   const held = recorded.generated ?? null;
   if (wanted === null && held === null) return 'unchanged';
@@ -89,6 +103,7 @@ export function regenerate(
   // column again. Reported as `rebuilt` so the caller can put the indexes back — an `add column`
   // implies none of them.
   if (held === null) {
+    moveDependentsAside(live, column.column, plan, moved);
     const dropColumn = `alter table ${identifier(table).text} drop column ${identifier(column.column).text};`;
     plan.up.push(
       dropColumn,
@@ -104,16 +119,26 @@ export function regenerate(
     );
     return 'rebuilt';
   }
-  let moved = false;
+  let changed = false;
+  // NOT `moveDependentsAside`, and the reason is measured rather than assumed. This ALTER trips the
+  // same `42883` (`operator does not exist: text > integer`, on a generated `integer` column under
+  // `where (doubled > 0)`) — but moving the index aside only relocates the failure to the
+  // `create index` that puts it back, because a predicate whose operator the NEW type has no
+  // resolution for cannot be written either. The plain path's dependents survive precisely because
+  // an untyped literal re-resolves (`status = 'published'` under an enum and under `text`), and a
+  // generated column reaching that shape needs its EXPRESSION changed in the same migration, which
+  // `regenerate` emits AFTER this statement. Left open deliberately, with the failure named.
   if (recorded.dataType !== wantedType) {
     plan.up.push(`${alterColumn(table, column.column)} type ${wantedType};`);
     plan.down.push(`${alterColumn(table, column.column)} type ${recorded.dataType};`);
-    moved = true;
+    changed = true;
   }
+  // Nothing moves for this one either, and here it is free: `set expression` recomputes every value
+  // and leaves the type alone, so nothing compiled against the type has anything to recompile.
   if (held !== wanted) {
     plan.up.push(`${alterColumn(table, column.column)} set expression as (${wanted});`);
     plan.down.push(`${alterColumn(table, column.column)} set expression as (${held});`);
-    moved = true;
+    changed = true;
   }
-  return moved ? 'altered' : 'unchanged';
+  return changed ? 'altered' : 'unchanged';
 }

@@ -3,7 +3,13 @@
 // BEFORE them. `generate.ts` assembles the plan; `foreign-key.ts` writes the SQL.
 
 import type { EntityDescriptionLike } from './entity-shape';
-import { addForeignKey, dropForeignKey, foreignKeyTarget, onDeleteRule } from './foreign-key';
+import {
+  addForeignKey,
+  dropForeignKey,
+  foreignKeyTarget,
+  keyId,
+  onDeleteRule,
+} from './foreign-key';
 import type { ForeignKeyDescription, TableDescription } from './introspect';
 import { identifier } from './sql';
 
@@ -77,15 +83,26 @@ export function foreignKeysOf(entity: EntityDescriptionLike): ForeignKeyDescript
  * leaves the snapshot correct by omission. The drop names the constraint the previous snapshot
  * recorded, never the name this generator would have chosen — a hand-written `fk_legacy` is
  * `42704` under the generated spelling.
+ *
+ * `plans.predropped` names the constraints a RETYPE already took out of the way (`retype-keys.ts`),
+ * and it is read as "the schema does not record this key" — the same reading `checkPlan` gives its
+ * own `predropped` set. That is what makes this function the one writer of an `add constraint`
+ * after a retype: a key still declared is added back here, in the bucket that already runs after
+ * every table statement; one the entity dropped is left where the retype left it, because dropping
+ * it a second time is `42704`; and one whose `on delete` moved comes back carrying the new rule.
+ * Its `down` is the retype's, pushed where reversal puts it after both ends are back.
  */
 export function foreignKeyPlan(
   entity: EntityDescriptionLike,
   live: TableDescription | undefined,
   plans: ConstraintPlans,
 ): void {
-  const { constraints, preDrops, doomed } = plans;
+  const { constraints, preDrops, doomed, predropped } = plans;
   const wanted = foreignKeysOf(entity);
-  const held = new Map((live?.foreignKeys ?? []).map((key) => [foreignKeyTarget(key), key]));
+  const recordedKeys = (live?.foreignKeys ?? []).filter(
+    (key) => !predropped.has(keyId(entity.table, key.name)),
+  );
+  const held = new Map(recordedKeys.map((key) => [foreignKeyTarget(key), key]));
   for (const key of wanted) {
     const recorded = held.get(foreignKeyTarget(key));
     if (doomed.has(key.referencedTable)) {
@@ -115,7 +132,7 @@ export function foreignKeyPlan(
   }
   const declared = new Set(wanted.map(foreignKeyTarget));
   const columns = new Set(entity.columns.map((column) => column.column));
-  for (const key of live?.foreignKeys ?? []) {
+  for (const key of recordedKeys) {
     if (declared.has(foreignKeyTarget(key))) continue;
     // `drop column` takes the constraint with it, so a `drop constraint` after that statement is
     // `42704` on a constraint that is already gone.
@@ -136,6 +153,12 @@ export interface ConstraintPlans {
   readonly preDrops: Plan;
   /** The tables this migration drops, by name. */
   readonly doomed: ReadonlySet<string>;
+  /**
+   * Recorded keys a retype already dropped ahead of the ALTERs, by `keyId` (`retype-keys.ts`).
+   * Read as "not recorded", never as "leave it alone": the declared side still needs its
+   * `add constraint`, and it is this function that writes it.
+   */
+  readonly predropped: ReadonlySet<string>;
 }
 
 /**

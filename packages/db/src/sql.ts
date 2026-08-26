@@ -132,19 +132,37 @@ export function identifier(name: string): SqlFragment {
 }
 
 /**
- * A quoted string literal. Postgres utility statements (`CREATE DATABASE`, `COMMENT ON`) reject
- * bound parameters, so this is the only place a value may be inlined — and it escapes quotes.
- * Never reach for it in a query: `sql` binds parameters there.
+ * A quoted string literal Postgres reads IDENTICALLY under both settings of
+ * `standard_conforming_strings`. Utility and DDL statements (`CREATE DATABASE`, `COMMENT ON`,
+ * `create table … default …`) reject bound parameters, so this is the only place a value may be
+ * inlined. Never reach for it in a query: `sql` binds parameters there.
  *
- * The doubling is only an escape while `standard_conforming_strings` is `on`, which has been the
- * server default since 9.1: with it OFF, a backslash escapes the quote that follows and a value
- * ending in one closes the literal early. So this is safe for framework-supplied names — a
- * database, a schema, a comment this repo writes — and is NOT an escape for untrusted text under
- * an arbitrary server configuration. Nothing passes it caller input today; if something must,
- * bind a parameter instead, or send `E''`-style quoting from a statement that can take one.
+ * **It DOES receive caller input, and this comment said otherwise until 2026-08-25.**
+ * `column-default.ts:43` renders `ColumnDefaultLike` here, which is an app's own
+ * `.default('C:\\logs')` crossing the tier seam from `@ultimat3/entity` — nothing validates it and
+ * no `identifier()` guards it. (The package's two other callers are safe by CONSTRUCTION, not by
+ * input: `readonly-role.ts:71` sits in the same `sql` template as an `identifier(role)` that throws
+ * first, and `branch.ts:85` runs after an already-awaited `identifier(base)`.)
+ *
+ * Doubling the quote is not the whole rule. That GUC is settable per session, per database and per
+ * role and `SET` needs no privilege, and with it `off` a backslash escapes the character after it
+ * inside an ordinary `'…'`. Measured on 18.4 through `generateMigration`: `.default('C:\\logs')`
+ * emits `default 'C:\logs'`, which stores `C:\logs` with the GUC on and **`C:logs`** with it off —
+ * a column defaulting to a value nobody wrote, with no error anywhere. A value ENDING in a
+ * backslash is worse than wrong: the escaped quote leaves the literal unterminated and the text
+ * after it is string data until the next `'` puts the remainder back into code position.
+ *
+ * `E'…'` fixes the dialect in the text itself rather than trusting a setting, so both readings
+ * agree — **only** when the value actually carries a backslash. Without one there is no escape
+ * mechanism for the two settings to disagree about, so every migration already generated stays byte
+ * for byte what it was and nothing regenerates spuriously; both tracked apps have applied
+ * migrations on disk with hashes over this text. Same rule, same measurement, as
+ * `packages/entity/src/sql-literal.ts`, which is where it was first written and which adopts this
+ * one — tier 1 holds it, tier 2 imports down.
  */
 export function literal(value: string): SqlFragment {
-  return raw(`'${value.replaceAll("'", "''")}'`);
+  const quoted = value.replaceAll("'", "''");
+  return raw(value.includes('\\') ? `E'${quoted.replaceAll('\\', '\\\\')}'` : `'${quoted}'`);
 }
 
 /** `a, b, c` — the one blessed way to build an IN list or a column list. */

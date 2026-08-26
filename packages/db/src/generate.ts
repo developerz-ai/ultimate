@@ -9,7 +9,6 @@ import { defaultExpression } from './column-default';
 import { isDestructive } from './destructive';
 import { dropOrder } from './drop-order';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
-import { migrationIrreversible } from './errors';
 import { type ConstraintPlans, foreignKeyPlan, foreignKeysOf, type Plan } from './foreign-key-plan';
 import type { Regeneration } from './generated-column';
 import { generatedClause, isGenerated, regenerate } from './generated-column';
@@ -21,30 +20,13 @@ import {
   type TableDescription,
 } from './introspect';
 import { declaredIndexes } from './invariant-ddl';
+import { migrationIrreversible } from './migration-errors';
 import type { MovedAside } from './retype-dependents';
 import { moveDependentsAside } from './retype-dependents';
+import { moveKeysAside, retypedColumns, retypedIn } from './retype-keys';
 import { identifier } from './sql';
+import { sqlType } from './sql-type';
 import { type UnrenderedDeclaration, unrenderedComment, unrenderedOf } from './unrendered';
-
-const SQL_TYPES: Readonly<Record<string, string>> = {
-  uuid: 'uuid',
-  text: 'text',
-  // Bare `char` is `char(1)` in Postgres, and the only column carrying this kind is money's
-  // currency — a three-letter ISO 4217 code whose CHECK the entity emits on the same line.
-  // Without the length no currency ever fits the constraint the same statement demands.
-  char: 'char(3)',
-  boolean: 'boolean',
-  integer: 'integer',
-  bigint: 'bigint',
-  numeric: 'numeric',
-  timestamptz: 'timestamptz',
-  date: 'date',
-  jsonb: 'jsonb',
-};
-
-function sqlType(kind: string): string {
-  return SQL_TYPES[kind] ?? kind;
-}
 
 function columnClause(column: ColumnDescriptionLike): string {
   // The generation clause sits directly after the type, and `generatedClause` refuses the pairs
@@ -160,15 +142,19 @@ function retypeColumn(
   recorded: ColumnDescription,
   plan: Plan,
   moved: MovedAside,
+  retyped: ReadonlySet<string>,
 ): Regeneration {
   const wanted = sqlType(column.kind);
   const table = live.name;
   // A generated column moves by its own rules — see `generated-column.ts`. Asked whenever EITHER
   // side is one, because becoming generated and ceasing to be are both changes with a statement.
   if (isGenerated(column) || recorded.generated !== undefined) {
-    return regenerate(table, column, wanted, recorded, plan);
+    return regenerate(live, column, wanted, recorded, plan, moved);
   }
-  if (recorded.dataType === wanted) return 'unchanged';
+  // The set, never `recorded.dataType === wanted` a second time: `retypedColumns` decided this for
+  // the whole schema before any statement was written, because the foreign keys a retype breaks
+  // are recorded on tables this diff is not looking at (`retype-keys.ts`).
+  if (!retyped.has(column.column)) return 'unchanged';
   moveDependentsAside(live, column.column, plan, moved);
   const alter = (type: string): string =>
     `alter table ${identifier(table).text} alter column ${identifier(column.column).text} ` +
@@ -178,7 +164,12 @@ function retypeColumn(
   return 'altered';
 }
 
-function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: Plan): void {
+function diffTable(
+  entity: EntityDescriptionLike,
+  live: TableDescription,
+  plan: Plan,
+  retyped: ReadonlySet<string>,
+): void {
   const existing = new Map(live.columns.map((column) => [column.name, column]));
   const added = new Set<string>();
   // A column `regenerate` had to replace outright: `add column` implies no index, so every index
@@ -189,7 +180,7 @@ function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: 
   for (const column of entity.columns) {
     const recorded = existing.get(column.column);
     if (recorded !== undefined) {
-      if (retypeColumn(live, column, recorded, plan, moved) === 'rebuilt') {
+      if (retypeColumn(live, column, recorded, plan, moved, retyped) === 'rebuilt') {
         rebuilt.add(column.column);
       }
       continue;
@@ -292,12 +283,20 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   // Merged in BEFORE them, for the mirror-image reason: a key still pointing at a table this
   // migration drops makes that `drop table` `2BP01`.
   const preDrops: Plan = { up: [], down: [] };
+  // Ahead of EVERYTHING, and at the far end of `down`: a foreign key compiled against a column
+  // being retyped has to be gone before the first ALTER and back after the last one, and both ends
+  // of one key can move in two different entities' diffs (`retype-keys.ts`).
+  const preAlters: Plan = { up: [], down: [] };
   const wanted = new Set(options.entities.map((entity) => entity.table));
 
   const doomed = new Set(
     current.tables.filter((table) => !wanted.has(table.name)).map((table) => table.name),
   );
-  const plans: ConstraintPlans = { constraints, preDrops, doomed };
+  // Before the loop, because the answer spans it: `diffTable` is handed one entity's recorded row
+  // and the key that a retype of its column breaks is recorded on whichever table OWNS the key.
+  const retyped = retypedColumns(options.entities, current);
+  const predropped = moveKeysAside(current, retyped, doomed, preAlters);
+  const plans: ConstraintPlans = { constraints, preDrops, doomed, predropped };
 
   for (const entity of options.entities) {
     const live = findTable(current, entity.table);
@@ -307,7 +306,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
       plan.down.push(`drop table ${identifier(entity.table).text};`);
       continue;
     }
-    diffTable(entity, live, plan);
+    diffTable(entity, live, plan, retypedIn(retyped, entity.table));
     const kept = new Set(entity.columns.map((column) => column.column));
     for (const column of live.columns) {
       if (kept.has(column.name)) continue;
@@ -365,15 +364,17 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   // `current`, not the entities alone: an `assert` whose CHECK a previous migration recorded is a
   // loss only because THIS plan drops it, and the recorded schema is the only thing that knows.
   const unrendered = unrenderedOf(options.entities, current);
-  const body = plan.up.join('\n');
+  const body = [...preAlters.up, ...plan.up].join('\n');
   const up = body.length === 0 ? body : unrenderedComment(unrendered) + body;
   return {
     id,
     name: options.name,
     fileName: `migrations/${id}.sql`,
     up,
-    // Reverse order: the last thing created is the first thing dropped.
-    down: [...plan.down].reverse().join('\n'),
+    // Reverse order: the last thing created is the first thing dropped. `preAlters` goes in at the
+    // FRONT here precisely so reversal puts it last — a key is added back only once both of its
+    // ends have been retyped back, which is every other statement in the script.
+    down: [...preAlters.down, ...plan.down].reverse().join('\n'),
     snapshot: snapshotOf(options.entities),
     destructive: isDestructive(up),
     unrendered,

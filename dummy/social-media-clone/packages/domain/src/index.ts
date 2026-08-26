@@ -5,6 +5,7 @@
 export type { Handle, UserId } from './ids';
 export {
   BLOCKED_BOTH_WAYS,
+  HANDLE_RE,
   handle,
   isValidHandle,
   MAX_HANDLE,

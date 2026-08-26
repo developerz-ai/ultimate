@@ -93,6 +93,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_MIGRATION_DESTRUCTIVE',
     'X_MIGRATION_IRREVERSIBLE',
     'X_MIGRATION_SNAPSHOT_MISSING',
+    'X_MIGRATION_VIEW_DEPENDS',
     'X_SQL_UNSAFE',
   ],
   // tier 1 — flag declaration and evaluation faults, raised at registration or at an evaluation

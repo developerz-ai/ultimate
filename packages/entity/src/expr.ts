@@ -7,10 +7,30 @@
 // A JS predicate (`matches(isValidSlug)`, `satisfies(fn, [...])`) cannot be translated to SQL.
 // It still runs in the app, and reports `sql: null` so `x verify` can warn that the database
 // does not know this rule — silently pretending it reached Postgres would be worse.
+//
+// A `RegExp` is the other case and it DOES reach SQL, because nothing about it is translated: the
+// source `pattern.test` runs is the source spliced into the CHECK. `pattern-portability.ts` is what
+// makes that legal, and `@ultimat3/db`'s `literal()` is what keeps the splice inside its own quotes.
 
+import { literal as sqlLiteral } from '@ultimat3/db';
 import { invariantViolated } from './errors';
+import { isNullish } from './is-null';
+import { unportableConstruct } from './pattern-portability';
 import { refuseInvariant } from './refuse';
 import type { ColumnMap } from './types';
+
+/**
+ * A declared operand as SQL TEXT. The escape itself is `@ultimat3/db`'s `literal()` — tier 1 owns
+ * that rule and this is an ordinary downward import — and nothing here re-spells it; the wrapper
+ * exists for two narrower reasons.
+ *
+ * It takes the four types a CHECK operand can be, rather than `unknown`: every call below already
+ * knows which one it holds, and a widened parameter would put `String(someObject)` into statement
+ * text as `[object Object]`. And it unwraps `.text`, because `Invariant.sql` is a bare string that
+ * `@ultimat3/db` re-renders at DDL time — a `SqlFragment` cannot survive that round trip.
+ */
+const literal = (value: string | number | boolean | bigint): string =>
+  typeof value === 'string' ? sqlLiteral(value).text : String(value);
 
 export type Row = Readonly<Record<string, unknown>>;
 
@@ -38,11 +58,24 @@ export interface ColumnExpr {
   trimmed(): ColumnExpr;
   minLength(length: number): Expr;
   contains(value: string): Expr;
-  /** A `RegExp` reaches the database; a function is app-only. */
+  /**
+   * A `RegExp` reaches the database as `~`/`~*` over its own source; a function is app-only. A
+   * construct the two engines read differently is refused at declaration, never emitted as a
+   * lookalike — `pattern-portability.ts` names the subset and why each exclusion is in it.
+   */
   matches(pattern: RegExp | ((value: string) => boolean)): Expr;
   atLeast(value: number | bigint): Expr;
   eq(value: string | number | boolean | bigint | ColumnExpr): Expr;
   isTrue(): Expr;
+  /**
+   * `col is null` / `col is not null`, and the only pair in this vocabulary that is TOTAL over
+   * NULL in both halves: Postgres' `IS NULL` answers true or false for every input including NULL,
+   * and the app side reads absent and `null` as one value (`is-null.ts`). Every other operator
+   * here answers NULL in SQL for a NULL operand, and a CHECK PASSES on NULL — which is why these
+   * two are what an `iff` can be built out of.
+   */
+  isNull(): Expr;
+  isNotNull(): Expr;
   /** Money is two physical columns; these are how a rule names one of them. */
   readonly minor: ColumnExpr;
   readonly currency: ColumnExpr;
@@ -75,9 +108,6 @@ const walk = (row: Row, path: readonly string[]): unknown =>
     row,
   );
 
-const literal = (value: unknown): string =>
-  typeof value === 'string' ? `'${value.replaceAll("'", "''")}'` : String(value);
-
 /**
  * The Postgres operator a `RegExp`'s flags mean — the second half of "one declaration, two
  * enforcement points". `toSql` used to emit `~ <pattern.source>` and nothing else, so
@@ -104,6 +134,41 @@ const matchOperator = (pattern: RegExp): string => {
     );
   }
   return pattern.ignoreCase ? '~*' : '~';
+};
+
+/**
+ * The SQL a `RegExp` becomes — or the refusal naming the construct that would have made the two
+ * halves mean different things.
+ *
+ * Nothing is TRANSLATED here and nothing ever should be: the string handed to `pattern.test` and
+ * the string spliced into the CHECK are the SAME string, and `unportableConstruct` is what makes
+ * that legal. Emitting a "close enough" POSIX rewrite of a JavaScript-only construct would ship two
+ * rules under one name, which is strictly worse than the `assert` a predicate already gives you.
+ *
+ * Flags are judged first: a flag is a property of the whole pattern and a construct is one position
+ * inside it, so the refusal an author can act on without reading an index goes out first.
+ *
+ * The source is spliced through `literal`, never quoted here, and a PATTERN is the sharpest case
+ * for why that rule is `@ultimat3/db`'s and not a doubled quote: measured on 18.4, `'dd' ~ '^\d+$'`
+ * is FALSE with `standard_conforming_strings` on and **TRUE** with it off, because the server
+ * compiles `^d+$` — a CHECK enforcing a pattern the author never wrote, with no error anywhere.
+ * A backslash is in almost every real pattern, so almost every real pattern depends on the `E'…'`
+ * half. `pg-invariant-pattern.live.test.ts` runs that exact pair under both settings.
+ */
+const patternSql = (pattern: RegExp): string => {
+  const operator = matchOperator(pattern);
+  const unportable = unportableConstruct(pattern.source);
+  const spelled = `/${pattern.source}/${pattern.flags}`;
+  if (unportable !== undefined) {
+    return refuseInvariant(
+      'matches',
+      `${spelled} uses ${unportable.construct} at index ${unportable.at}, which ${unportable.why} — the CHECK and pattern.test() would answer differently for the same row`,
+      unportable.instead === undefined
+        ? `matches((value) => ${spelled}.test(value))   # app-only: the rule stays in TS and reports sql: null, so no CHECK claims to enforce it`
+        : `write ${unportable.instead} where ${spelled} has ${unportable.construct} — one meaning in both engines — then x db gen`,
+    );
+  }
+  return `${operator} ${literal(pattern.source)}`;
 };
 
 const check = (
@@ -158,10 +223,7 @@ const expr = (term: Term): ColumnExpr => {
       // Read at DECLARATION, not inside `toSql`: an unsupported flag is the author's mistake and
       // the entity file is where it is repaired, so the refusal lands on the line that wrote it
       // rather than during migration generation, where the entity name is all anyone would see.
-      const emitted =
-        pattern instanceof RegExp
-          ? `${matchOperator(pattern)} ${literal(pattern.source)}`
-          : undefined;
+      const emitted = pattern instanceof RegExp ? patternSql(pattern) : undefined;
       return one(
         `${term.label} must match ${pattern instanceof RegExp ? pattern.source : pattern.name || 'the rule'}`,
         (resolve) => (emitted === undefined ? null : `${term.sql(resolve)} ${emitted}`),
@@ -192,6 +254,16 @@ const expr = (term: Term): ColumnExpr => {
         `${term.label} must be true`,
         (resolve) => term.sql(resolve),
         (value) => value === true,
+      ),
+
+    isNull: () =>
+      one(`${term.label} is not set`, (resolve) => `${term.sql(resolve)} is null`, isNullish),
+
+    isNotNull: () =>
+      one(
+        `${term.label} is set`,
+        (resolve) => `${term.sql(resolve)} is not null`,
+        (value) => !isNullish(value),
       ),
 
     get minor() {
@@ -260,6 +332,64 @@ const satisfies = (predicate: RowPredicate, columns: readonly string[]): Expr =>
         columns.map((column) => row[column]),
       ) === true,
   );
+
+/**
+ * `a` and `b` hold together or not at all — the biconditional, rendered `(a) = (b)`, which is what
+ * Postgres spells one as: `=` between two booleans IS iff there.
+ *
+ * A FUNCTION and not a method on `Expr`, for two reasons that both come from the type. `Expr` is
+ * exported, so a required member is a breaking change to anything implementing it structurally; and
+ * `kind: 'unique'` is an `Expr` whose `toSql` is a COLUMN LIST, so `c.unique([…]).iff(…)` would be a
+ * method that exists on the type and is meaningless for some of its values. Refusing that operand in
+ * one place beats putting the method where it cannot mean anything. Symmetric reads symmetric, too.
+ *
+ * **`=` and not `is not distinct from`, decided on a measurement.** With both operands total the two
+ * are identical for all four boolean pairs. They part when an operand is NULL — a predicate on a
+ * nullable column — and there `=` answers NULL, which a CHECK PASSES, while `is not distinct from`
+ * answers false, which a CHECK REFUSES. The app side reads a NULL operand as false either way, so
+ * the total form is the one that refuses a row TypeScript ACCEPTED: `(NULL) is not distinct from
+ * (false)` is false where `false === false` is true. That is the raw `23514` in place of
+ * `X_INVARIANT_VIOLATED` this whole file exists against, and it is why the more permissive spelling
+ * is the safer one. `pg-invariant-null.live.test.ts` measures both.
+ *
+ * So an operand that can be NULL leaves the CHECK permissive — the language's one existing
+ * disagreement, inherited here and not widened. `isNull()`/`isNotNull()` are total, which is what
+ * makes a rule built from them exact.
+ */
+export const iff = (left: Expr, right: Expr): Expr => {
+  for (const side of [left, right] as const) {
+    if (side.kind !== 'unique') continue;
+    // The columns it names, so the pasted line is the rule the author already meant to declare —
+    // never a `<name>` for them to fill in, which is the placeholder `refuse.test.ts` refuses.
+    const columns = side.paths.map((path) => path.join('.'));
+    const list = columns.map((column) => `'${column}'`).join(', ');
+    refuseInvariant(
+      'iff',
+      `${side.message} is a unique constraint, whose SQL is a column list and not a predicate`,
+      `invariant('${columns.join('_')}_unique', c.unique([${list}]))   # uniqueness is its own invariant; iff takes two predicates, e.g. iff(c.status.eq('published'), c.publishedAt.isNotNull())`,
+    );
+  }
+  const seen = new Set<string>();
+  const paths: (readonly string[])[] = [];
+  for (const path of [...left.paths, ...right.paths]) {
+    const key = path.join('.');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    paths.push(path);
+  }
+  return check(
+    paths,
+    `${left.message} exactly when ${right.message}`,
+    (resolve) => {
+      // One app-only operand makes the WHOLE rule app-only: `(null) = (…)` is not a predicate, and
+      // emitting half of a biconditional would enforce something the author never wrote.
+      const a = left.toSql(resolve);
+      const b = right.toSql(resolve);
+      return a === null || b === null ? null : `(${a}) = (${b})`;
+    },
+    (row) => left.holds(row) === right.holds(row),
+  );
+};
 
 /**
  * The `c` an invariant is written against. Still a Proxy even though `InvariantColumns<C>` now

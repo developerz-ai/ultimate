@@ -11,9 +11,9 @@ import {
   type DbError,
   dbUnavailable,
   driverError,
-  migrateConcurrent,
   poolAcquireTimeout,
 } from './errors';
+import { migrateConcurrent } from './migration-errors';
 
 /**
  * Sampled at MODULE SCOPE — before any hook runs, and therefore before the `beforeEach` below.

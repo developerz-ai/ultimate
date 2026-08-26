@@ -3,17 +3,11 @@
  * bounded and deterministic; the `likePost` mutator owns keeping it true.
  */
 
-import {
-  EXCERPT_MAX,
-  hasCoherentPublishState,
-  isValidSlug,
-  POST_STATUSES,
-  SLUG_MAX,
-  TITLE_MAX,
-} from '@postly/domain';
+import { EXCERPT_MAX, POST_STATUSES, SLUG_MAX, SLUG_PATTERN, TITLE_MAX } from '@postly/domain';
 import {
   entity,
   enumerated,
+  iff,
   integer,
   invariant,
   text,
@@ -46,17 +40,15 @@ export const posts = entity('posts', {
   },
   invariants: (c) => [
     /**
-     * `matches` is TS-only: it takes a JS `RegExp` and yields `sql: null`, so this reaches no
-     * CHECK. `0001_init.sql:64` carries `CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$')` because it
-     * was hand-written — and `x db gen` therefore reports it as UNRENDERED and would DROP it.
+     * The PATTERN, not the predicate — `matches(SLUG_PATTERN)` renders `slug ~ '…'` into a real
+     * CHECK, where `matches(isValidSlug)` reported `sql: null` and reached no database. One
+     * declaration feeds both engines: `pattern.source` is the string `.test()` runs AND the
+     * string spliced into the constraint, so the two cannot drift.
      *
-     * That is why this app's migrations are not regenerated. The guard is correct and the repair
-     * is a FRAMEWORK gap, measured 2026-08-25: `invariant()` has no SQL-expressible pattern form,
-     * so a regex constraint can only be hand-written and can only be lost. `c.slug.matches('^…$')`
-     * over a string, rendering `~`, is the missing capability; until it exists this stays an
-     * assert and the CHECK stays hand-written.
+     * `isValidSlug`'s `length <= SLUG_MAX` clause is not carried here — `text({ max })` above
+     * enforces length in SQL, and `createDraft` still calls `isValidSlug` at its own call site.
      */
-    invariant('post_slug_shape', c.slug.matches(isValidSlug)),
+    invariant('post_slug_shape', c.slug.matches(SLUG_PATTERN)),
     /**
      * Global, not per-org. The public blog URL is `/blog/{slug}` with no tenant anywhere in it,
      * and `repo.publishedBySlug` resolves it by slug alone — so a per-org constraint let two orgs
@@ -76,11 +68,19 @@ export const posts = entity('posts', {
      */
     invariant('post_slug_unique', c.unique(['slug'])),
     invariant('post_like_count_non_negative', c.likeCount.atLeast(0)),
-    /** One declaration → one CHECK constraint → one runtime guard. */
-    invariant(
-      'post_publish_coherent',
-      c.satisfies(hasCoherentPublishState, ['status', 'publishedAt']),
-    ),
+    /**
+     * One declaration → one CHECK constraint → one runtime guard, and now literally so: `iff`
+     * renders `(status = 'published') = (published_at is not null)`, which is `0001_init.sql:67`
+     * byte for byte. `c.satisfies(hasCoherentPublishState, …)` was the same rule as a JS function,
+     * and a function reports `sql: null` — so the constraint here was hand-written and `x db gen`
+     * would have dropped it.
+     *
+     * `=` and not `is not distinct from`: both operands are total (`status` is not nullable,
+     * `IS NOT NULL` never yields NULL), so the two spellings agree on this table — and where they
+     * would not, `=` leaves the CHECK permissive while the total form makes Postgres refuse rows
+     * TypeScript accepted, which reaches a caller as a raw 23514 instead of X_INVARIANT_VIOLATED.
+     */
+    invariant('post_publish_coherent', iff(c.status.eq('published'), c.publishedAt.isNotNull())),
   ],
   indexes: [
     /** The feed's exact access path: tenant, then reverse chronological, bounded. */

@@ -73,7 +73,7 @@ export const PostView = posts.$view(['id', 'title', 'excerpt', 'cover', 'publish
 
 - `entity(name, init)` is name-first; `init` is `{ columns, tenant?, primaryKey?, invariants?, indexes?, tags? }`. `invariants` is one callback over the list, and its `c` is typed from `columns`.
 - Tenancy is `.tenant()` on the column or `tenant: 'orgId'` in `init`; with neither, a column named `orgId` is inferred. The repo injects the filter, you never write it.
-- Each invariant emits its own `CHECK`/`UNIQUE` automatically; only `c.satisfies(fn, [...])` and `c.matches(fn)` stay TS-only, and a rule the DB does not know is a rule a migration can violate.
+- Each invariant emits its own `CHECK`/`UNIQUE` automatically; only `c.satisfies(fn, [...])` and `c.matches(fn)` — a **predicate** — stay TS-only, and a rule the DB does not know is a rule a migration can violate. Pass the **`RegExp`** instead of a function wrapping it (`c.slug.matches(SLUG_PATTERN)`) and the rule reaches a CHECK; a construct the two regex engines read differently is refused at declaration rather than emitted as a lookalike.
 - Money → `money()`; dates → `timestamp()` (always `timestamptz`) ([`10-cross-cutting.md`](./10-cross-cutting.md)).
 
 ## 3–4. Migration

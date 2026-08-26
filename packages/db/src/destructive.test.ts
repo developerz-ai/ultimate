@@ -9,7 +9,7 @@ import {
   hasDestructiveMarker,
   isDestructive,
 } from './destructive';
-import { migrationDestructive } from './errors';
+import { migrationDestructive } from './migration-errors';
 
 describe('unit · the destructive marker', () => {
   test('the marker declares the file', () => {

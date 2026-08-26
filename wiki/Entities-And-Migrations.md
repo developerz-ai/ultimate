@@ -71,6 +71,52 @@ The entity name is the first argument. Everything else is the init object:
 
 Presence of a `deletedAt` column is what makes an entity soft-deletable — not a flag.
 
+### Which invariants reach the database
+
+"Where expressible" is a rule, not a hedge. An invariant reports a `sql:` string or `sql: null`, and
+`$describe()` tells you which — a rule the database does not know is a rule a bulk `UPDATE` from a
+migration or a psql session can violate.
+
+| Written as | Reaches SQL | Note |
+|---|---|---|
+| `c.title.trimmed().minLength(1)` · `c.likeCount.atLeast(0)` · `c.email.contains('@')` · `c.a.eq(c.b)` · `c.flag.isTrue()` · `c.publishedAt.isNull()` / `.isNotNull()` | yes | `CHECK` |
+| `iff(c.status.eq('published'), c.publishedAt.isNotNull())` | yes | `(a) = (b)` — a rule that holds *exactly when* another does. The **one** combinator: `and`/`or`/`not` are deliberately absent |
+| `c.unique(['orgId', 'userId'])` | yes | `UNIQUE`, not a CHECK — a single row cannot see a duplicate |
+| `c.slug.matches(SLUG_PATTERN)` — a **`RegExp`** | yes | `slug ~ '…'` |
+| `c.slug.matches(isValidSlug)` — a **function** | **no** | `sql: null` |
+| `c.satisfies(fn, ['status', 'publishedAt'])` | **no** | `sql: null`, by construction — a JS function over several columns |
+
+**`iff` renders `=`, not `IS NOT DISTINCT FROM`, and that is not an oversight.** Every operator in
+this language is *false* on a null operand in TypeScript, and `=` between two booleans where either
+is NULL yields NULL — which a CHECK **passes**. The total form fixes that row and breaks a worse
+one: with a partial operand it makes Postgres **refuse a row TypeScript accepted**, which reaches
+the caller as a raw `23514` instead of `X_INVARIANT_VIOLATED`. `=` keeps the disagreement in the
+direction where the app refuses first, so no write reaches a CHECK that would have refused it.
+Where both operands are total — a non-nullable column, an `IS NOT NULL` — the two spellings are the
+same predicate, measured.
+
+Pass the pattern, not a function wrapping it. `matches(isValidSlug)` and `matches(SLUG_PATTERN)`
+read almost identically and only one of them reaches a constraint.
+
+**Nothing is translated.** `pattern.source` is the string `.test()` runs *and* the string spliced
+into the CHECK — one string, two engines, so they cannot drift. That is only safe because the
+constructs where the two engines disagree are **refused at declaration**:
+
+| Refused | Because | Write instead |
+|---|---|---|
+| `\b` | Postgres reads it as BACKSPACE — `'foo' ~ '\bfoo'` is **false** | a predicate; the rule stays app-only |
+| `.` | matches `\n` in Postgres, not in JS | `[^\n\r]` |
+| `\w` `\W` | locale alphanumeric — `'é' ~ '^\w$'` is **true** | `[A-Za-z0-9_]` |
+| `\s` `\S` | `'\u00a0'` is whitespace to JS, not to Postgres | `[ \t\n\r\f\v]` |
+| `\A` `\Z` | anchors in Postgres, letters in JS | `^` `$` |
+| `\1`–`\9`, `(?<name>…)`, `(?i)`, `[[:alpha:]]`, a non-ASCII range endpoint | backreference, named group, embedded flag, POSIX class, collation-ordered range | a predicate |
+
+The refusal is `X_INVARIANT_VIOLATED` at `entity()` time — before a migration exists — and names the
+construct, its index, both readings, and the portable spelling where there is one. The subset is
+measured against a live server and re-measured by its own tests, so a future Postgres that closes a
+gap turns those tests red rather than leaving a stale exclusion in place.
+
+
 ## The fluent surface
 
 Every projection is a method on the entity — `posts.$view(['id', 'title'])`, never `view(posts, ['id', 'title'])` — and every declared field is lifted onto it under a `$`. An entity has no `.def`.

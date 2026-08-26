@@ -65,6 +65,7 @@ export {
   writeUnfiltered,
 } from './errors';
 export type { ColumnExpr, Expr, InvariantColumns, Resolve } from './expr';
+export { iff } from './expr';
 /** The two DECLARED capabilities' refusals — a third-party driver raises the same ones. */
 export type { IllegalTransition } from './feature-errors';
 export {

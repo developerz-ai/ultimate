@@ -3,7 +3,7 @@
  * multi-tenancy is a column, declared once, not a filter someone remembers to add.
  */
 
-import { BILLING_CURRENCIES, isValidSlug, PLAN_CODES, SLUG_MAX } from '@postly/domain';
+import { BILLING_CURRENCIES, PLAN_CODES, SLUG_MAX, SLUG_PATTERN } from '@postly/domain';
 import { entity, enumerated, invariant, text, timestamp, uuid } from '@ultimat3/entity';
 
 export const orgs = entity('orgs', {
@@ -19,7 +19,7 @@ export const orgs = entity('orgs', {
     updatedAt: timestamp().defaultNow().onUpdateNow(),
   },
   invariants: (c) => [
-    invariant('org_slug_shape', c.slug.matches(isValidSlug)),
+    invariant('org_slug_shape', c.slug.matches(SLUG_PATTERN)),
     invariant('org_name_present', c.name.trimmed().minLength(1)),
   ],
   indexes: [{ on: ['planCode'] }],

@@ -37,6 +37,7 @@
     "secret-compare": "bun run scripts/secret-compare.ts",
     "setup": "bun run scripts/setup.ts",
     "side-effects": "bun run scripts/side-effects.ts",
+    "sql-literal-copies": "bun run scripts/sql-literal-copies.ts",
     "test": "bun test --isolate --path-ignore-patterns='**/dist/**' --path-ignore-patterns='**/examples/**' --path-ignore-patterns='**/dummy/**'",
     "test:watch": "bun test --watch --isolate --path-ignore-patterns='**/dist/**' --path-ignore-patterns='**/examples/**' --path-ignore-patterns='**/dummy/**'",
     "typecheck": "tsc -b --pretty",

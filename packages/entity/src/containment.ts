@@ -7,8 +7,7 @@
 // Every rule here is Postgres', reproduced rather than approximated. Where the two could not be
 // made to agree the operator is refused instead (`memory-match.ts`), never guessed at.
 
-/** Absent and NULL are one thing, exactly as they are to every other predicate. */
-const isNull = (value: unknown): boolean => value === null || value === undefined;
+import { isNullish as isNull } from './is-null';
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);

@@ -481,6 +481,78 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   identifier and says nothing, so two names sharing their first 63 bytes are one index on the
   server — the same silent collapse one layer down, and invisible to a drift check comparing
   DECLARED names, which still differ.
+- **`isNull()`/`isNotNull()` are the ONLY total members of the invariant vocabulary, and `iff` is
+  built out of them — `As of 2026-08-25`.** Postgres' `IS NULL` answers true or false for every
+  input NULL included; every other operator here answers NULL for a NULL operand and **a CHECK
+  PASSES on NULL**, so the database is the more permissive half wherever a predicate reads a
+  nullable column. The app side reads an ABSENT key and a stored `null` as one value, which is
+  `is-null.ts` — one rule, because `memory-match.ts` and `containment.ts` each had a private copy
+  and `expr.ts` was about to be the third. `iff(a, b)` renders `(a) = (b)`, byte for byte the shape
+  `examples/dummy`'s hand-written `0001_init.sql:67` already holds.
+  **`=` and not `is not distinct from`, decided on a measurement, and the reasoning inverts the
+  obvious one.** With both operands total the two spellings are identical on all four boolean pairs
+  (measured, PG 18.4). They part only on a NULL operand, and there the TOTAL form is the DANGEROUS
+  one: `(NULL) is not distinct from (false)` is false and refuses the row, while TypeScript reads a
+  NULL operand as false and `false === false` ACCEPTS it — a raw `23514` in place of
+  `X_INVARIANT_VIOLATED`, which is the exact failure `matchOperator`'s flag refusal exists against.
+  `=` leaves the disagreement in the safe direction, where the app refuses first and no write ever
+  reaches a CHECK that would have refused it. `pg-invariant-null.live.test.ts` measures both
+  spellings on a real table, and `expr.test.ts` pins the permissive direction so a half-fix that
+  flips it fails loudly. **`iff` is a FUNCTION, not a method on `Expr`**: `Expr` is exported, so a
+  required member breaks a structural implementer, and `kind: 'unique'` is an `Expr` whose `toSql`
+  is a column LIST — a `.iff()` there would be a method that cannot mean anything for some values
+  of its own type. That operand is refused in one place, with the `c.unique([…])` invariant the
+  author meant spelled out from its own columns. **One app-only operand makes the WHOLE rule
+  app-only** (`sql: null`, so `bindInvariant` lands it as `assert`): emitting half a biconditional
+  would enforce something nobody wrote.
+- **A `matches()` pattern reaches the CHECK as the SAME STRING `pattern.test` runs, or it is
+  refused — `As of 2026-08-25`.** Nothing is translated and nothing ever may be: a "close enough"
+  POSIX rewrite of a JavaScript-only construct ships two rules under one name, which is worse than
+  the `assert` a predicate already gives you. What makes one string in front of two engines legal is
+  `pattern-portability.ts`, a scanner over the source that names the first construct ARE and
+  ECMAScript read differently, and every entry on it is a MEASUREMENT against a real server, not a
+  reading of the docs. The flagship: `'foo' ~ '\bfoo'` is FALSE on Postgres 18.4 and
+  `/\bfoo/.test('foo')` is true, because ARE reads `\b` as a BACKSPACE — both compile, neither
+  errors, and the CHECK enforces a rule the entity never wrote. So are `.` (matches a newline there
+  and never here), `\w` (the locale's alnum class, which matches `é`), `\s` (JavaScript adds
+  U+00A0), `[[:alpha:]]`, a leading `]` in a class, `\x` (three hex digits there, two here), `\A`
+  and `\Z`, and a named group. `\d` is IN, measured rather than assumed — POSIX fixes
+  `[[:digit:]]` at the ten ASCII digits, so `'٣'` and `'５'` are false on both sides. `\uwxyz` is in
+  for a reason that is not convenience: **Bun escapes a regex LITERAL's non-ASCII characters**,
+  `/^é$/.source` is `^\u00E9$` while `new RegExp('^é$').source` is `^é$`, so refusing the escape
+  would refuse every i18n pattern written the ordinary way. The refusal carries the portable
+  spelling where one exists and the app-only predicate where none does, and it lands at DECLARATION
+  beside `matchOperator`'s flag refusal, on the line that wrote it. `pg-invariant-pattern.live.test.ts`
+  runs both halves against a server: every kept construct must AGREE and every refused one must
+  still DISAGREE — so a future Postgres that grows JavaScript's `\b` turns the list red instead of
+  leaving a stale exclusion in place.
+- **A declared string is spliced by `@ultimat3/db`'s `literal()` and by nothing in this package —
+  `As of 2026-08-25`, and doubling the quote is only HALF the rule.** `expr.ts` and
+  `column-values.ts` each carried `'${v.replaceAll("'", "''")}'`; a CHECK takes no bind parameters,
+  so a `matches()` pattern, a `contains()` needle and every `enumerated()` member an app declares
+  reach statement text unescaped against the one character that is not a quote. With
+  `standard_conforming_strings = off` — a SESSION setting, `SET`table by anyone — a backslash
+  escapes the character after it inside an ordinary literal: measured on 18.4, `'dd' ~ '^\d+$'` is
+  FALSE with the GUC on and **TRUE** with it off, because the server compiles `^d+$` and the CHECK
+  silently enforces a pattern nobody wrote; and `'\''` leaves the literal UNTERMINATED, so
+  following text becomes string data until the next `'` puts the remainder back into code position
+  (reproduced as `syntax error at or near "x') > 0 , '"`). `E'…'` fixes the dialect in the TEXT
+  rather than trusting the setting, and **only** when the value carries a backslash — without one
+  there is no escape mechanism to disagree about, so every CHECK already generated stays byte for
+  byte what it was and nothing regenerates; both tracked apps hold applied migrations whose
+  checksums are taken over that text.
+  **The rule lives in tier 1 and this package imports it down.** It was written here first, as
+  `sql-literal.ts`, and that file is deleted: `@ultimat3/db`'s `literal()` now carries the same
+  transformation and the same measurement, `packages/entity` already depends on `@ultimat3/db`, and
+  `bun run sql-literal-copies` refuses any module outside `packages/db/src/sql.ts` that turns `'`
+  into `''` — matched on the TRANSFORMATION, because the three copies were called `literal`,
+  `literalText` and an unnamed inline splice, and a name-based rule reads past the third exactly as
+  one spelled `RenderMode` read past `PwaRenderMode`. `expr.ts` keeps a four-type wrapper that
+  delegates and unwraps `.text` — `Invariant.sql` is a bare string and a `SqlFragment` cannot
+  survive that round trip — and it re-spells nothing. **The half that ratchet cannot see is a
+  producer DROPPING the call**: `` `'${value}'` `` doubles no quote, so it matches no rule, which is
+  why `expr.test.ts` pins all four splice sites (`contains`, `eq`, `matches`, `oneOf`) against a
+  quote-bearing and a backslash-bearing value. A fifth producer added without the call fails there.
 - **Every physical name is checked, including the DERIVED one — `As of 2026-08-24`, and it was a
   DDL injection.** `columnName` is `meta.name ?? snake(property)` and only the first branch reached
   `assertColumnName` for three majors, while `snake()` lower-cases and does nothing else. A column
