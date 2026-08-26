@@ -5,7 +5,7 @@
 // by wiring, not by design.
 
 import type { Actor, Clock } from '@ultimat3/core';
-import { systemClock } from '@ultimat3/core';
+import { finiteCount, systemClock } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import {
   configuredAuthenticator,
@@ -102,7 +102,13 @@ export function syncAuthenticator(
   // this per connection otherwise.
   const config = upgradeConfig(buildId);
   const clock = options.clock ?? systemClock;
-  const ttlMs = options.ttlMs ?? SYNC_GRANT_TTL_MS;
+  // A credential lifetime, screened where it is declared. `expiresAt` is `now + ttlMs`, and
+  // `GrantBook.expired()` asks `expiresAt <= now` — false for every `now` when the sum is `NaN`,
+  // so the grant never reaches a sweep and the socket keeps a revoked actor's authority for as
+  // long as the tab is open. That is the hole this whole file was written to close, and a `??`
+  // does not close it: `NaN` is not nullish. At least 1ms — a window that has already shut when
+  // the grant is minted is not a window.
+  const ttlMs = finiteCount('syncAuthenticator', 'ttlMs', options.ttlMs ?? SYNC_GRANT_TTL_MS, 1);
 
   const resolve = async (credential: Credential): Promise<SyncGrant | null> => {
     const request = new Request(credential.url, {

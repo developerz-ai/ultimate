@@ -134,3 +134,40 @@ describe('the scrape endpoint', () => {
     expect(second).toContain('http_requests_total{method="GET",route="/public",status="2xx"} 1');
   });
 });
+
+/**
+ * The scrape port, when it is not a number. `serve.ts`'s `portValue` screens the env path
+ * (`METRICS_PORT`), but `metricsPortFor(env, port, override)` takes an OVERRIDE — a
+ * `ServeOptions.metricsPort` an app's own `apps/web/server.ts` supplies — and `override ?? …` does
+ * not fire for a `NaN`, so it reaches this listener unscreened.
+ *
+ * Measured on Bun 1.4.0: `Bun.serve({ port: NaN })` throws a bare `RangeError`, "The value of
+ * options.port is out of range. It must be an integer. Received NaN" — no code, no `fix:`, out of
+ * the boot path this file's own header says it exists to stop reporting that way. `isAddressInUse`
+ * is false for it, so it was re-thrown untouched.
+ */
+describe('a scrape port that is not a number', () => {
+  const NOT_A_BOUND = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+  test('a non-finite port is a coded refusal, never Bun’s own uncoded RangeError', () => {
+    for (const port of NOT_A_BOUND) {
+      expect(() => startMetricsEndpoint({ port })).toThrow('X_INVARIANT');
+    }
+  });
+
+  test('a fractional port is refused too — a port is a whole number', () => {
+    expect(() => startMetricsEndpoint({ port: 1.5 })).toThrow('X_INVARIANT');
+    expect(() => startMetricsEndpoint({ port: -1 })).toThrow('X_INVARIANT');
+  });
+
+  // `PORT_RANGE.min` is 0 across this package because 0 asks the kernel for a free port, which is
+  // what `dev-roles.ts` passes for an ephemeral boot and what this suite's own `beforeEach` uses.
+  test('port 0 still asks the kernel for one, and gets a real one', () => {
+    const ephemeral = startMetricsEndpoint({ port: PORT_RANGE.min });
+    try {
+      expect(Number(new URL(ephemeral.url).port)).toBeGreaterThan(0);
+    } finally {
+      ephemeral.stop();
+    }
+  });
+});

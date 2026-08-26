@@ -2,11 +2,14 @@
 // If it isn't logged, it didn't happen — so denied and failed attempts are logged too, and
 // there is deliberately no update or delete on this interface.
 
-import { canonicalJson } from '@ultimat3/core';
+import { canonicalJson, finiteCount } from '@ultimat3/core';
 import type { AdminActor, AdminDecision } from './authz';
 import type { AdminRow } from './registry';
 
 export const REDACTED = '[redacted]';
+
+/** Named once, so both refusals below say the same thing about the same call. */
+const SUBJECT = 'memoryAuditLog';
 
 export interface AuditFieldDiff {
   readonly field: string;
@@ -91,7 +94,10 @@ export function auditEntry(draft: AuditDraft, id: string, at: Date): AuditEntry 
 export function memoryAuditLog(opts: AuditLogOptions = {}): AuditLog {
   const now = opts.now ?? ((): Date => new Date());
   const nextId = opts.nextId ?? ((): string => crypto.randomUUID());
-  const capacity = opts.capacity ?? 1000;
+  // `log.length > NaN` is false for every length, so a capacity that is not a number does not make
+  // the ring bigger — it removes the ring, and this buffer then grows for the life of the process.
+  // At least 1, because a ring that keeps nothing is an audit log that records nothing.
+  const capacity = finiteCount(SUBJECT, 'capacity', opts.capacity ?? 1000, 1);
   const sinks = opts.sinks ?? [];
   const log: AuditEntry[] = [];
 
@@ -113,7 +119,12 @@ export function memoryAuditLog(opts: AuditLogOptions = {}): AuditLog {
           (query.actorId === undefined || entry.actor.id === query.actorId),
       );
       const newestFirst = [...filtered].reverse();
-      return query.limit === undefined ? newestFirst : newestFirst.slice(0, query.limit);
+      // The opposite failure to `capacity`, from the same missing check: `slice(0, NaN)` is `[]`,
+      // so an unreadable limit answers "nothing was ever logged" and reads as a successful read.
+      // 0 stays legal — asking for none is a coherent request.
+      return query.limit === undefined
+        ? newestFirst
+        : newestFirst.slice(0, finiteCount(SUBJECT, 'entries limit', query.limit));
     },
   };
 }

@@ -162,3 +162,48 @@ describe('the sync node reads the app’s own authenticator', () => {
     expect(syncAuthenticator('test')).toBeDefined();
   });
 });
+
+/**
+ * The grant's window, when it is not a number — the sharpest failure in this file, because it is a
+ * credential lifetime and the guard it feeds is an EXPIRY check.
+ *
+ * `??` guards nullish and `NaN` is not, so a `ttlMs` computed from a deployment value reaches
+ * `clock.now().getTime() + ttlMs`, which is `NaN`. `GrantBook.expired()` asks
+ * `grant.expiresAt <= now`, and that is FALSE for every `now` — so the grant never appears in the
+ * sweep, `sweepGrants` never calls `refresh`, and `logout` / `revokeSession` / `disableUser` /
+ * `updatePrivileges` close the HTTP session and never the websocket. Measured before the screen
+ * landed, with the session deleted and the clock advanced one YEAR:
+ * `{ refreshed: 0, revoked: 0, failed: 0 }` and the book still holding the socket — the exact hole
+ * `expiresAt` was added to close, reopened by a number nobody checked.
+ */
+describe('a grant window that is not a number is not a window', () => {
+  const NOT_A_BOUND = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+  test('a non-finite ttlMs is refused when the node is wired, not when a socket is swept', () => {
+    configureAuthenticator(() => userActor({ id: 'u1' }));
+    for (const ttlMs of NOT_A_BOUND) {
+      expect(() => syncAuthenticator('test', { ttlMs })).toThrow('X_INVARIANT');
+    }
+  });
+
+  test('a ttlMs of 0 is refused — a grant expired at the instant it is minted is not one', () => {
+    configureAuthenticator(() => userActor({ id: 'u1' }));
+    expect(() => syncAuthenticator('test', { ttlMs: 0 })).toThrow('X_INVARIANT');
+    expect(syncAuthenticator('test', { ttlMs: 1 })).toBeDefined();
+  });
+
+  test('the window the deployment declared is still the one the grant carries', async () => {
+    configureAuthenticator(() => userActor({ id: 'u1' }));
+    const clock = frozenClock(NOW);
+    const grant = await syncAuthenticator('test', { clock, ttlMs: 30_000 })?.(upgrade());
+    expect(grant?.expiresAt).toBe(NOW + 30_000);
+  });
+
+  // The refusal must land before an authenticator exists, not on the first upgrade: a node that
+  // accepted the wiring and refused every socket is an outage, and one that accepted both is the
+  // hole above.
+  test('an unwired app is still UNDEFINED, and the bound is judged only where there is one', () => {
+    resetAuthenticator();
+    expect(syncAuthenticator('test', { ttlMs: Number.NaN })).toBeUndefined();
+  });
+});

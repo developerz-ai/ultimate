@@ -319,3 +319,32 @@ describe('adminResource overrides and failures', () => {
     expect(() => resourceFor([resource], 'comment')).toThrow(/comment/);
   });
 });
+
+/**
+ * The page bound, when it is not a number. `??` guards nullish and `NaN` is not nullish, so
+ * `Number(process.env.ADMIN_PAGE_SIZE)` on an unset variable reaches `pagination.ts` intact —
+ * where `Math.max(1, Math.min(NaN, 200))` is `NaN`, because neither `Math.max` nor `Math.min`
+ * validates anything. Measured against this same fixture before the screen landed:
+ * `listQuery().limit` was `NaN`, `pageFrom()` returned every row the repo answered with,
+ * `hasMore` was `false` and `nextCursor` was `null` — the Next control dead, the bound gone, and
+ * the repo asked for `limit: NaN`.
+ */
+describe('adminResource · a page size that is not a number is not a page size', () => {
+  const NOT_A_BOUND = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+  test('a non-finite pageSize is refused at declaration, not at the first listing', () => {
+    for (const pageSize of NOT_A_BOUND) {
+      expect(() => adminResource(post, { pageSize })).toThrow('X_INVARIANT');
+    }
+  });
+
+  test('a pageSize of 0 is refused — a page with no rows on it is not a page', () => {
+    expect(() => adminResource(post, { pageSize: 0 })).toThrow('X_INVARIANT');
+    expect(adminResource(post, { pageSize: 1 }).pageSize).toBe(1);
+  });
+
+  test('the declared page size is still what the resource carries', () => {
+    expect(adminResource(post, { pageSize: 10 }).pageSize).toBe(10);
+    expect(adminResource(post).pageSize).toBe(25);
+  });
+});

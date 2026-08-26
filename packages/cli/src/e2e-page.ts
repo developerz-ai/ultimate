@@ -2,6 +2,7 @@
 // e2e test drives and `@ultimat3/scraping` owns the only driver that can drive one, and neither
 // may import the other — so the join is here, in the one package allowed to know about both.
 
+import { finiteCount } from '@ultimat3/core';
 import type { LocatorLike, PageLike } from '@ultimat3/testing';
 import { E2eServiceWorkerAbsentError } from './e2e-errors';
 import { evaluateClosure } from './e2e-evaluate';
@@ -29,6 +30,9 @@ export interface E2ePageOptions {
   /** How long `waitForServiceWorker()` waits before refusing. Bounded IN THE PAGE. */
   readonly serviceWorkerTimeoutMs?: number | undefined;
 }
+
+/** Named once, so both refusals below name the call an app's test preload actually makes. */
+const SUBJECT = 'installE2eDriver';
 
 export const DEFAULT_E2E_TIMEOUT_MS = 30_000;
 export const DEFAULT_SERVICE_WORKER_TIMEOUT_MS = 10_000;
@@ -82,8 +86,18 @@ const serviceWorkerExpression = (timeoutMs: number): string =>
  */
 export function e2ePage(options: E2ePageOptions): PageLike {
   const page = options.page;
-  const timeout = options.timeoutMs ?? DEFAULT_E2E_TIMEOUT_MS;
-  const swTimeout = options.serviceWorkerTimeoutMs ?? DEFAULT_SERVICE_WORKER_TIMEOUT_MS;
+  // Both are screened HERE, at construction, and not where they land: `timeout` is handed to a
+  // driver that reads it as a deadline, and `swTimeout` is INTERPOLATED into the in-page source,
+  // where `setTimeout(fn, NaN)` is `setTimeout(fn, 0)` — so a NaN budget makes every
+  // `waitForServiceWorker()` refuse a worker that really did take control. A misdiagnosis reported
+  // as a test failure is worse than the failure. Floor 0, because a driver reads `timeout: 0` as
+  // "no deadline" and that is a value an app is entitled to declare.
+  const timeout = finiteCount(SUBJECT, 'timeoutMs', options.timeoutMs ?? DEFAULT_E2E_TIMEOUT_MS);
+  const swTimeout = finiteCount(
+    SUBJECT,
+    'serviceWorkerTimeoutMs',
+    options.serviceWorkerTimeoutMs ?? DEFAULT_SERVICE_WORKER_TIMEOUT_MS,
+  );
   const absolute = (url: string): string => new URL(url, options.baseUrl).toString();
   const locate = (selection: E2eSelection): LocatorLike => e2eLocator(page, selection);
 

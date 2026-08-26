@@ -5,6 +5,7 @@
 // It covers BOTH legs. `fakeBrowser({ pages, http })` replays the browser walk and the JSON
 // endpoints behind it from one declaration, so a hybrid scrape is tested the way it runs.
 
+import { finiteCount } from '@ultimat3/core';
 import type { ScrapeClock } from './clock';
 import { systemScrapeClock } from './clock';
 import type { ScrapeDriver, ScrapeSession, SessionInit } from './driver';
@@ -113,7 +114,10 @@ export function fakePage(dom: string, options: FakePageOptions = {}): ScrapePage
   return pageOverTarget(target, {
     clock,
     allowHosts,
-    defaultTimeoutMs: options.timeoutMs ?? 1_000,
+    // The default budget for every wait AND every navigation on this page, so the floor is 1: a
+    // session default of 0 is already out of time everywhere, which a per-call `{ timeout: 0 }` —
+    // "is it there right now" — is not. Non-finite is the loop that never leaves.
+    defaultTimeoutMs: finiteCount('fakePage', 'timeoutMs', options.timeoutMs ?? 1_000, 1),
     ...options.context,
   });
 }

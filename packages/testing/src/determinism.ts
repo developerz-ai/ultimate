@@ -2,6 +2,7 @@
 // bug: a frozen clock means "advance it", a seeded RNG means "same values every run", and both are
 // restorable so a test that genuinely needs real time can opt out explicitly.
 
+import { finiteCount, finiteOption } from '@ultimat3/core';
 import { NondeterministicError } from './errors';
 
 export const DEFAULT_SEED = 20260101;
@@ -15,6 +16,22 @@ const dateGetTime = RealDate.prototype.getTime;
 
 let frozenAt = new RealDate(DEFAULT_NOW).getTime();
 let installed = false;
+
+/**
+ * The epoch milliseconds `value` names, or a refusal — the ONE writer's screen for `frozenAt`.
+ *
+ * `new Date('yesterday').getTime()` is `NaN`, and `frozenAt` is process state the preload installs
+ * for the whole run: one unreadable instant makes `Date.now()` answer `NaN` and `new Date()`
+ * answer `Invalid Date` in every test file after it, where every `expiresAt > Date.now()` reads
+ * false and no assertion anywhere names the clock. Nothing can repair it either — `NaN + ms` is
+ * `NaN`, so `advanceClock` only carries it forward.
+ *
+ * `finiteOption` and not `finiteCount`: an instant before 1970 is negative, and `Date.getTime()`
+ * is already integral. `defineIslandStates` refuses an unpinned `now` at declaration for the same
+ * reason one hop away (`isPinnedInstant`); this is that rule where the clock is actually set.
+ */
+const instantMs = (subject: string, value: string | number): number =>
+  finiteOption(subject, 'now', new RealDate(value).getTime());
 
 /** mulberry32: 32 bits of state, uniform enough for tests, identical across platforms and runs. */
 export function seededRandom(seed: number): () => number {
@@ -81,8 +98,20 @@ export interface DeterminismOptions {
 
 /** Install the frozen clock and the seeded RNG globally. Idempotent. */
 export function installDeterminism(options: DeterminismOptions = {}): void {
-  frozenAt = new RealDate(options.now ?? DEFAULT_NOW).getTime();
-  const next = seededRandom(options.seed ?? DEFAULT_SEED);
+  // Both screens run BEFORE anything is installed, so a refusal leaves the process on whatever
+  // clock and RNG it already had rather than half-way onto a new one.
+  const at = instantMs('installDeterminism', options.now ?? DEFAULT_NOW);
+  // A seed is not a bound and nothing compares against it — MEASURED, and the answer is why it is
+  // screened anyway: `seededRandom` starts at `seed >>> 0`, so `NaN`, `±Infinity`, `0.5`, `-1` and
+  // `2 ** 32` all produce the SAME sequence as `seed: 0`. Determinism survives; the record of which
+  // seed produced the run does not, and that record is this package's whole promise. The one caller
+  // that reads a seed from the environment (`preload.ts`) already screens it by hand, which is the
+  // repair-in-another-file shape — `harness.ts` passes an app's `seedValue` through unscreened.
+  // What this does NOT claim: `>>>` is modulo 2**32, so a seed above that still wraps onto another.
+  const next = seededRandom(
+    finiteCount('installDeterminism', 'seed', options.seed ?? DEFAULT_SEED),
+  );
+  frozenAt = at;
   globalThis.Date = FrozenDate as unknown as DateConstructor;
   Math.random = next;
   installed = true;
@@ -127,20 +156,27 @@ export const isDeterminismInstalled = (): boolean => installed;
 
 /** Move the frozen clock forward. The only legal way for time to pass inside a test. */
 export function advanceClock(ms: number): Date {
-  frozenAt += ms;
+  // A required parameter with no default, so no `??` and no ratchet can see it — and it writes the
+  // same single number `installDeterminism` does. `frozenAt += NaN` is `NaN` for the rest of the
+  // process, which no later `advance` and no later `set` undoes. Negative is legal: a test may
+  // move the clock backwards.
+  frozenAt += finiteOption('advanceClock', 'ms', ms);
   return new RealDate(frozenAt);
 }
 
 export const frozenNow = (): Date => new RealDate(frozenAt);
 
 export function setFrozenClock(now: string | number): void {
-  frozenAt = new RealDate(now).getTime();
+  frozenAt = instantMs('setFrozenClock', now);
 }
 
 /** Run `body` with the clock frozen at `now`, then restore whatever was there before. */
 export async function frozenClock<T>(now: string, body: () => T | Promise<T>): Promise<T> {
+  // Resolved before `previous` is spent: a refusal here must not run the body and must not leave
+  // the outer instant behind a `finally` that restores something already overwritten.
+  const at = instantMs('frozenClock', now);
   const previous = frozenAt;
-  frozenAt = new RealDate(now).getTime();
+  frozenAt = at;
   try {
     return await body();
   } finally {

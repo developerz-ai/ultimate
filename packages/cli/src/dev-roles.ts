@@ -189,6 +189,23 @@ function warnIfUnauthenticatable(routes: readonly Route[]): void {
 }
 
 /**
+ * How many proxies is too many, and the number is **`@ultimat3/http`'s**, not this file's.
+ *
+ * `defineHttpConfig` screens the same setting — `assertFiniteCount('trustedProxyHops', …,
+ * MAX_PROXY_HOPS)` — and this screen used to say 16 where that one says 64, so one setting had two
+ * ceilings and a deployment behind 20 hops was accepted by the library and refused by the boot.
+ * Widened rather than narrowed: tightening the library would break a shipped public API, while
+ * this end only ever refused topologies http already supports.
+ *
+ * It is a duplicated literal because `@ultimat3/http` does not export the constant — the real
+ * repair is `export const MAX_PROXY_HOPS` there and an import here, which is a downward edge and
+ * legal. Until then the duplication is ENFORCED rather than documented:
+ * `runtime-overrides.test.ts` probes both screens for the highest count each accepts and fails
+ * naming both numbers the moment they disagree.
+ */
+const MAX_TRUSTED_PROXY_HOPS = 64;
+
+/**
  * How many proxies append to `x-forwarded-for` between the client and this process, or `null`
  * when nothing in front of it is trusted.
  *
@@ -207,7 +224,7 @@ export function trustedHopsFromEnv(env: Env): number | null {
   const hops = Number(raw);
   // A malformed count is refused rather than defaulted: reading the header at the wrong index is
   // trusting a value the client typed, which is the failure trusting a proxy exists to avoid.
-  if (!Number.isInteger(hops) || hops < 1 || hops > 16) {
+  if (!Number.isInteger(hops) || hops < 1 || hops > MAX_TRUSTED_PROXY_HOPS) {
     throw new PortInvalidError({ value: raw, name: 'TRUSTED_PROXY_HOPS' });
   }
   return hops;

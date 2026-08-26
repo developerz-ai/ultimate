@@ -5,6 +5,7 @@
 
 // why: no Bun native joins a path; `Bun.write` and `Bun.file` both take one already joined.
 import { join } from 'node:path';
+import { finiteCount } from '@ultimat3/core';
 import type { ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
 import { systemScrapeClock } from '@ultimat3/scraping';
 import type { IslandShotTarget, IslandStatesManifest, IslandViewport } from '@ultimat3/testing';
@@ -157,6 +158,7 @@ async function captureOne(
   options: IslandShotRun,
   server: ShotServer,
   target: IslandShotTarget,
+  floor: number,
 ): Promise<IslandStateShot> {
   const url = new URL(`${ISLAND_HARNESS_PATH}${target.query}`, server.url).toString();
   let session: ScrapeSession | undefined;
@@ -203,7 +205,6 @@ async function captureOne(
     // Never `fullPage`: the frame is the state's own declared viewport, and a full-page capture
     // would grow with whatever the component scrolled.
     const bytes = await page.screenshot({ fullPage: false });
-    const floor = options.minBytes ?? MIN_SHOT_BYTES;
     if (bytes.byteLength < floor) {
       throw new IslandUnphotographableError({
         island: target.island,
@@ -257,6 +258,11 @@ export async function runIslandShot(options: IslandShotRun): Promise<IslandArtif
   const targets = islandShotTargets(options.manifest).filter(
     (target) => chosen === null || chosen.has(target.state),
   );
+  // Before the boot, and before a browser: `bytes.byteLength < NaN` is false for every picture, so
+  // an unchecked floor does not lower the backstop — it removes it, and "produced nothing and
+  // exited 0" is the one outcome a reader cannot tell from success. 0 stays legal and is what
+  // `island-shot.test.ts` passes: the fake driver answers an 8-byte PNG signature.
+  const floor = finiteCount('runIslandShot', 'minBytes', options.minBytes ?? MIN_SHOT_BYTES);
   const server = await options.boot();
   const shots: IslandStateShot[] = [];
   const failures: unknown[] = [];
@@ -266,7 +272,7 @@ export async function runIslandShot(options: IslandShotRun): Promise<IslandArtif
       // the app CAN produce plus a named reason for each one it cannot, and the missing-shot gate
       // below is what turns those reasons into a non-zero exit.
       try {
-        shots.push(await captureOne(options, server, target));
+        shots.push(await captureOne(options, server, target, floor));
       } catch (error) {
         failures.push(error);
       }

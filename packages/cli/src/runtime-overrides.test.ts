@@ -10,7 +10,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { noopPurgeDriver } from '@ultimat3/cache';
 import type { UltimateError } from '@ultimat3/core';
 import { logger, resetLifecycle } from '@ultimat3/core';
-import { memoryRateLimitStore } from '@ultimat3/http';
+import { defineHttpConfig, memoryRateLimitStore } from '@ultimat3/http';
 import {
   createMemoryDriver,
   createMemoryEventBus,
@@ -206,5 +206,52 @@ describe('unit · TRUSTED_PROXY_HOPS', () => {
     for (const value of ['2abc', '0', '-1', '1.5', 'yes', '99']) {
       expect(() => trustedHopsFromEnv({ TRUSTED_PROXY_HOPS: value })).toThrow(/X_PORT_INVALID/);
     }
+  });
+
+  /**
+   * One setting, one ceiling. This screen said 16 and `defineHttpConfig`'s said
+   * `MAX_PROXY_HOPS = 64`, so a deployment behind 20 proxies was accepted by the library and
+   * refused by the boot that configures it — axiom 1, in two packages.
+   *
+   * Neither number is exported, so this asks each screen what it accepts rather than comparing
+   * constants: the moment either moves, this fails naming both. Replace the whole test with an
+   * `import { MAX_PROXY_HOPS }` comparison as soon as `@ultimat3/http` exports it.
+   */
+  test('the boot and @ultimat3/http hold the SAME ceiling for one setting', () => {
+    const cliAccepts = (hops: number): boolean => {
+      try {
+        trustedHopsFromEnv({ TRUSTED_PROXY_HOPS: String(hops) });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const httpAccepts = (hops: number): boolean => {
+      try {
+        // The rate-limit scope is a REQUIRED declaration of its own; naming it here keeps the
+        // probe about the hop count and nothing else, exactly as `sync-authenticator.ts` does.
+        defineHttpConfig({
+          rateLimit: { enabled: false, scope: 'process' },
+          trustProxy: true,
+          trustedProxyHops: hops,
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    // A probe that refuses everything would make the two ceilings agree at 0, which is the one way
+    // this test could pass while saying nothing.
+    expect([cliAccepts(1), httpAccepts(1)]).toEqual([true, true]);
+
+    const ceilingOf = (accepts: (hops: number) => boolean): number => {
+      let highest = 0;
+      for (let hops = 1; hops <= 512; hops += 1) if (accepts(hops)) highest = hops;
+      return highest;
+    };
+    expect(ceilingOf(cliAccepts)).toBe(ceilingOf(httpAccepts));
+    // And the floor from the other end: 0 means "trust nothing", which is not a topology
+    // `trustProxy: true` can describe. Both packages refuse it.
+    expect([cliAccepts(0), httpAccepts(0)]).toEqual([false, false]);
   });
 });

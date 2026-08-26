@@ -5,6 +5,7 @@
 
 import type { RequestTrace, SpanKind, TimelineSpan } from '@ultimat3/admin/dev';
 import type { ReadableSpan, SpanExporter } from '@ultimat3/core';
+import { finiteCount } from '@ultimat3/core';
 // The attribute name is `@ultimat3/db`'s to declare — this reads it rather than restating it, so
 // renaming it there is a compile error here instead of a panel that silently groups nothing.
 import { STATEMENT_ATTRIBUTE } from '@ultimat3/db';
@@ -130,7 +131,10 @@ function toTrace(root: ReadableSpan, spans: readonly ReadableSpan[]): RequestTra
  * root is what keeps a half-finished request, and a job's spans, out of a panel about requests.
  */
 export function createTraceRecorder(options: { limit?: number } = {}): TraceRecorder {
-  const limit = options.limit ?? DEFAULT_LIMIT;
+  // `byTrace.size > NaN` is false on every pass, so an unchecked limit does not widen the buffer —
+  // it deletes the eviction loop, and a dev session then holds every span of every request it has
+  // ever seen. At least 1: a recorder that retains nothing is what `/_x/timeline` reads.
+  const limit = finiteCount('createTraceRecorder', 'limit', options.limit ?? DEFAULT_LIMIT, 1);
   // Insertion-ordered: the oldest trace id is the first key, which is the one eviction drops.
   const byTrace = new Map<string, ReadableSpan[]>();
 

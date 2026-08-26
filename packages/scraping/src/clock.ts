@@ -5,6 +5,7 @@
 // `clock-discipline.test.ts` fails the build if a second file reaches for a timer directly.
 
 import type { Clock } from '@ultimat3/core';
+import { finiteCount } from '@ultimat3/core';
 
 export interface ScrapeClock extends Clock {
   /**
@@ -90,8 +91,14 @@ export interface Deadline {
   expired(): boolean;
 }
 
-export function deadline(clock: Clock, totalMs: number): Deadline {
+export function deadline(clock: Clock, totalMs: number, subject = 'a scrape wait'): Deadline {
+  // Screened HERE because this is the one constructor of a budget, and every `for (;;)` in this
+  // package asks `expired()` to leave it. `Math.max(0, NaN - elapsed)` is `NaN` and `NaN <= 0` is
+  // false, so a budget that is not a number never expires: the loop in `awaitActionable` and the
+  // one in `page-over-target.ts`'s `frame()` both become unbounded, re-reading a live browser once
+  // per `Math.min(pollMs, NaN)` — which is `NaN`, which `setTimeout` reads as 0.
+  const budgetMs = finiteCount(subject, 'timeoutMs', totalMs);
   const startedAt = clock.monotonic();
-  const remainingMs = (): number => Math.max(0, totalMs - (clock.monotonic() - startedAt));
-  return { totalMs, remainingMs, expired: () => remainingMs() <= 0 };
+  const remainingMs = (): number => Math.max(0, budgetMs - (clock.monotonic() - startedAt));
+  return { totalMs: budgetMs, remainingMs, expired: () => remainingMs() <= 0 };
 }

@@ -3,6 +3,7 @@
 // where the data went. `expect` turns that into a red run: a yield under `minRows`, or under
 // `maxDrop` of what this scrape normally returns, throws.
 
+import { finiteCount, finiteOption } from '@ultimat3/core';
 import { yieldCollapsed } from './error-throws';
 import type { ScrapeError } from './errors';
 
@@ -61,7 +62,23 @@ export interface YieldCheck {
  * fifty histories without a queue, a browser or a clock.
  */
 export function yieldProblem(check: YieldCheck): ScrapeError | undefined {
-  const { minRows, maxDrop } = check.expect;
+  // Screened where the rule is, because this is the alarm and both directions are silent. A `NaN`
+  // minRows makes `rows < minRows` false for every yield, so the floor never fires and the scrape
+  // is green on zero rows forever — the exact failure this file exists to prevent. A `NaN` maxDrop
+  // makes `rows >= baseline * (1 - NaN)` false for every yield, which fires the alarm on every run
+  // instead, and an alarm that always fires is an alarm somebody turns off.
+  //
+  // `minRows: 0` is legal and stays legal: this file asks an author whose answer is legitimately
+  // sometimes zero to declare exactly that. `maxDrop` is a FRACTION of a median, so `finiteOption`
+  // and not `finiteCount` — `0.5` is the documented value.
+  const minRows =
+    check.expect.minRows === undefined
+      ? undefined
+      : finiteCount('the scrape expect', 'minRows', check.expect.minRows);
+  const maxDrop =
+    check.expect.maxDrop === undefined
+      ? undefined
+      : finiteOption('the scrape expect', 'maxDrop', check.expect.maxDrop);
   if (minRows !== undefined && check.rows < minRows) {
     return yieldCollapsed({ scrape: check.scrape, rows: check.rows, reason: 'min-rows', minRows });
   }
@@ -101,7 +118,15 @@ export async function guardYield(input: YieldGuardInput): Promise<void> {
   // `maxDrop` needs `MIN_BASELINE_RUNS` runs after it is declared before it can fire — a delay,
   // not a hole. `expect.test.ts` pins both halves.
   if (input.expect === undefined) return;
-  const window = input.expect.window ?? DEFAULT_YIELD_WINDOW;
+  // At least 1: `[…].slice(-0)` is `slice(0)`, the WHOLE history, so a zero window is the largest
+  // baseline rather than no baseline — and the number is handed to an app's own `recent()`, where
+  // it is usually a SQL `limit`.
+  const window = finiteCount(
+    'the scrape expect',
+    'window',
+    input.expect.window ?? DEFAULT_YIELD_WINDOW,
+    1,
+  );
   const history =
     input.history === undefined ? [] : await input.history.recent(input.scrape, window);
   const problem = yieldProblem({

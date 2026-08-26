@@ -3,6 +3,7 @@
 // the default sort, i18n keys become labels. Every derived decision is overridable per
 // field, but the zero-config result is the one the generator emits and the one the docs show.
 
+import { finiteCount } from '@ultimat3/core';
 import { type AdminColumnFacts, adminColumnsOf } from './entity-columns';
 import {
   AdminEntityUnknownError,
@@ -278,7 +279,11 @@ export function adminResource<Row extends AdminRow = AdminRow>(
     filters: fields.filter((field) => field.filterable),
     searchFields: fields.filter((field) => field.searchable),
     defaultSort: opts.defaultSort ?? defaultSortOf(fields, idField),
-    pageSize: opts.pageSize ?? DEFAULT_PAGE_SIZE,
+    // Refused here rather than at the first listing, because `pagination.ts` clamps with
+    // `Math.max(1, Math.min(x, 200))` and neither of those validates: a `NaN` survives both, so
+    // `fetched.length > NaN` is false, the page is never trimmed, `hasMore` is false and the repo
+    // is asked for `limit: NaN`. At least 1 — a page with no rows on it is not a page.
+    pageSize: finiteCount('adminResource', 'pageSize', opts.pageSize ?? DEFAULT_PAGE_SIZE, 1),
     operations: opts.operations ?? ADMIN_OPERATIONS,
     actions,
     ...(opts.repo === undefined ? {} : { repo: opts.repo }),

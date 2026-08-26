@@ -18,6 +18,7 @@
 // is written into the session record so the NEXT attempt fails before reaching the login form.
 
 import type { Logger } from '@ultimat3/core';
+import { finiteCount } from '@ultimat3/core';
 import type { ScrapeClock } from './clock';
 import { authFailed, promptUnanswered, sessionExpired } from './error-throws';
 import type { ScrapePage } from './page';
@@ -121,8 +122,17 @@ export async function restorableSession<I>(
   if (plan.auth?.reuse === false) return undefined;
   const maxAge = plan.auth?.maxAge;
   if (maxAge !== undefined) {
+    // Screened, because `age > NaN` is false and false here means RESTORED: a `NaN` maxAge hands
+    // back a session of any age, with no re-login and nothing in the report. `0` is legal — it
+    // means "restore nothing stored before now" — so the floor stays there.
+    const limit = finiteCount('the scrape auth', 'maxAge', maxAge);
     const age = plan.clock.now().getTime() - new Date(found.savedAt).getTime();
-    if (age > maxAge) return undefined;
+    // `!(age <= limit)` and not `age > limit`, which is the same test for every finite age and the
+    // OPPOSITE one for a `NaN`. `savedAt` is data, not configuration: it comes back off a bucket
+    // and `parseSessionState` only asks that it is a string, so an edited or half-written record
+    // produces a `NaN` age against a perfectly good `maxAge`. Failing closed costs one re-login;
+    // failing open acts as somebody else, indefinitely.
+    if (!(age <= limit)) return undefined;
   }
   plan.logger.debug('scrape.session.restored', sessionDigest(found));
   return found;

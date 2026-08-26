@@ -266,3 +266,44 @@ describe('unit · one session per picture, so a console error lands on the right
     expect(opened).toBe(3);
   });
 });
+
+/**
+ * The byte floor, when it is not a number. `bytes.byteLength < NaN` is false for every picture, so
+ * an unchecked floor is not a lower floor — it is no floor at all, and this backstop is the last
+ * assertion between a run and "produced nothing and exited 0", which is the one outcome the file's
+ * own header says a reader cannot tell from success.
+ *
+ * Refused before `boot()`, so a typo costs neither an embedded Postgres nor a browser launch —
+ * the same rule the expansion above it already follows.
+ */
+describe('unit · a byte floor that is not a number is not a floor', () => {
+  const NOT_A_BOUND = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+  test('a non-finite minBytes is refused, and nothing is booted', async () => {
+    for (const minBytes of NOT_A_BOUND) {
+      let booted = 0;
+      await expect(
+        runIslandShot({
+          manifest,
+          outDir: join(dir, 'unbounded'),
+          driver: browserOf(cleanDriver()),
+          boot: () => {
+            booted += 1;
+            return Promise.resolve(stubServer());
+          },
+          settleMs: 0,
+          timeoutMs: 1_000,
+          minBytes,
+        }),
+      ).rejects.toThrow('X_INVARIANT');
+      expect(booted).toBe(0);
+    }
+  });
+
+  // 0 is "no floor", and it is what every case above passes: the fake driver answers an 8-byte
+  // PNG signature, so refusing 0 would refuse this suite's own subject.
+  test('a minBytes of 0 is still accepted, because it is the seam a fake driver needs', async () => {
+    const artifacts = await run(cleanDriver(), 'floor-zero');
+    expect(artifacts.verdict.ok).toBe(true);
+  });
+});
