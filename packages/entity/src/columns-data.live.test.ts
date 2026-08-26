@@ -65,7 +65,6 @@ describe.skipIf(!hasPostgres)('live · postgres · the wide column vocabulary', 
     await client.execute(raw(DROP));
     await client.close();
     setDbClient(undefined);
-    clearRegistry();
   });
 
   const db = () => database({ records }, { driver: postgresDriver() });
@@ -155,4 +154,10 @@ describe.skipIf(!hasPostgres)('live · postgres · the wide column vocabulary', 
       }),
     ).rejects.toThrow(/decimal places/);
   });
+});
+
+// Outside the block above and unconditional: bun runs no hook inside a skipped `describe`, and the
+// registry is process-wide. `live-registry-cleanup.test.ts` is the rule that keeps it here.
+afterAll(() => {
+  clearRegistry();
 });

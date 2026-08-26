@@ -127,6 +127,9 @@ describe('lock_timeout', () => {
 
     const order = client.texts;
     expect(order).toContain('SET LOCAL lock_timeout = 3000');
+    // `BEGIN` is asserted present before it is used as the lower bound: `indexOf` answers -1 for
+    // a text that was never sent, and every real index is greater than -1.
+    expect(order).toContain('BEGIN');
     expect(order.indexOf('SET LOCAL lock_timeout = 3000')).toBeGreaterThan(order.indexOf('BEGIN'));
     expect(order.indexOf('SET LOCAL lock_timeout = 3000')).toBeLessThan(
       order.findIndex((text) => text.includes('create table "posts"')),

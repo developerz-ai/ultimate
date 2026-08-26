@@ -22,6 +22,7 @@ import { text, uuid } from './columns';
 import { entity } from './entity';
 import { invariantColumns } from './expr';
 import { invariant } from './invariants';
+import { unportableConstruct } from './pattern-portability';
 import { clearRegistry } from './registry';
 
 const adminUrl = Bun.env['TEST_DATABASE_URL'];
@@ -107,7 +108,6 @@ afterAll(async () => {
   if (!hasPostgres) return;
   await client.execute(raw(DROP));
   await client.close();
-  clearRegistry();
 });
 
 /** `undefined` when the server stored the row, otherwise the SQLSTATE that stopped it. */
@@ -344,8 +344,57 @@ describe.skipIf(!hasPostgres)('live · postgres · the subset and what it leaves
       [/^(?=[^\n\r]*[0-9])[a-z0-9]+$/, 'abc'],
       [/^(?!x)[a-z]+$/, 'abc'],
       [/^(?!x)[a-z]+$/, 'xbc'],
+      // LOOKBEHIND, both polarities. In `GROUP_OPENINGS` since the scanner was written and in this
+      // table only since 2026-08-25 — the source called them measured and only the two LOOKAHEADS
+      // above were. ARE has had `(?<=` and `(?<!` since 9.6, the variable-length form included.
+      [/(?<=a)b/, 'ab'],
+      [/(?<=a)b/, 'xb'],
+      [/(?<=ab+)c/, 'abbc'],
+      [/(?<=ab+)c/, 'ac'],
+      [/^[a-z]*(?<!a)b$/, 'xxb'],
+      [/^[a-z]*(?<!a)b$/, 'ab'],
+      // A CAPTURING group and an alternation: kept by the scanner's default branch, which is the
+      // half of the subset easiest to forget is in it.
+      [/^(a|b)+$/, 'abab'],
+      [/^(a|b)+$/, 'abc'],
+      [/^cat$|^dog$/, 'cat'],
+      [/^cat$|^dog$/, 'cow'],
+      // The two open quantifier forms `QUANTIFIER` accepts beside the `{4}` above.
+      [/^a{2,}$/, 'aaa'],
+      [/^a{2,}$/, 'a'],
+      [/^a{2,3}$/, 'aaa'],
+      [/^a{2,3}$/, 'aaaa'],
+      // The lazy forms. Greediness cannot change whether a match EXISTS, which is what both engines
+      // answer — measured rather than reasoned about, even with backreferences refused.
       [/^a+?b$/, 'aab'],
+      [/^a*?b$/, 'aab'],
+      [/^a*?b$/, 'aa'],
+      [/^a{2,3}?b$/, 'aab'],
+      [/^a{2,3}?b$/, 'ab'],
+      // The control escapes `PORTABLE_ESCAPES` keeps. `[^\n\r]` in the lookahead above reaches two
+      // of the five; these are the other three, and the emitted form is an `E'…'` literal.
+      [/^\n\r\t\f\v$/, '\n\r\t\f\v'],
+      [/^\t$/, '\t'],
+      [/^\t$/, 't'],
+      // An escaped punctuation OUTSIDE a bracket expression — `escapeAt`'s last branch, where the
+      // `[\]]` below only covers the inside.
+      [/^a\.b$/, 'a.b'],
+      [/^a\.b$/, 'axb'],
+      [/^\$$/, '$'],
+      [/^-$/, '-'],
+      [/^\]$/, ']'],
+      [/^\\$/, '\\'],
+      // A quote is an ordinary member of the subset, and the emitted literal has to survive it.
+      [/^'$/, "'"],
+      [/^--$/, '--'],
+      // `]` and `}` with no class open and nothing to repeat: a literal to both engines.
+      [/^]$/, ']'],
+      [/^}$/, '}'],
+      [/^}$/, 'x'],
+      // A `-` at either END of a class is a member rather than a range.
       [/^[-a]$/, '-'],
+      [/^[a-]$/, '-'],
+      [/^[a-]$/, 'b'],
       [/^[\]]$/, ']'],
       [/^\D$/, 'x'],
       [/^\D$/, '4'],
@@ -357,6 +406,12 @@ describe.skipIf(!hasPostgres)('live · postgres · the subset and what it leaves
       [/^k$/i, 'K'],
     ];
     for (const [pattern, value] of agreeing) {
+      // A row for a construct the scanner REFUSES would measure something `matches()` can never
+      // emit — coverage that reads like coverage and is none.
+      expect([pattern.source, unportableConstruct(pattern.source)]).toEqual([
+        pattern.source,
+        undefined,
+      ]);
       const server = await rawMatch(pattern.source, value);
       // The OPERATOR the flags choose is part of the meaning, so the emitted form is what runs:
       // `~` and `~*` are two different questions over one source.
@@ -377,4 +432,10 @@ describe.skipIf(!hasPostgres)('live · postgres · the subset and what it leaves
       }
     }
   });
+});
+
+// Outside the block above and unconditional: bun runs no hook inside a skipped `describe`, and the
+// registry is process-wide. `live-registry-cleanup.test.ts` is the rule that keeps it here.
+afterAll(() => {
+  clearRegistry();
 });

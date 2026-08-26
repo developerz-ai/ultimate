@@ -71,7 +71,6 @@ describe.skipIf(!hasPostgres)('live · postgres · iff over a null test becomes 
   afterAll(async () => {
     await client.execute(raw(DROP));
     await client.close();
-    clearRegistry();
   });
 
   const storePost = (status: string, at: string | null): Promise<string | undefined> =>
@@ -187,4 +186,10 @@ describe.skipIf(!hasPostgres)('live · postgres · iff over a null test becomes 
       ]);
     }
   });
+});
+
+// Outside the block above and unconditional: bun runs no hook inside a skipped `describe`, and the
+// registry is process-wide. `live-registry-cleanup.test.ts` is the rule that keeps it here.
+afterAll(() => {
+  clearRegistry();
 });

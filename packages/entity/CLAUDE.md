@@ -502,7 +502,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   required member breaks a structural implementer, and `kind: 'unique'` is an `Expr` whose `toSql`
   is a column LIST — a `.iff()` there would be a method that cannot mean anything for some values
   of its own type. That operand is refused in one place, with the `c.unique([…])` invariant the
-  author meant spelled out from its own columns. **One app-only operand makes the WHOLE rule
+  author meant spelled out from its own columns — **each path through `JSON.stringify`, `As of
+  2026-08-25`**: a `fix:` is TypeScript to PASTE, so a column name reaching it is a value spliced
+  into source, and `'${column}'` produced `invariant('o'brien_unique', …)` on a name carrying a
+  quote. `columns: { "o'brien": text() }` is a legal declaration and `unique()` is reached untyped
+  by a JS caller besides; a backslash is the half that doubling the quote would still have missed.
+  The same defect as an unescaped pattern, one layer up in the error message. **One app-only operand makes the WHOLE rule
   app-only** (`sql: null`, so `bindInvariant` lands it as `assert`): emitting half a biconditional
   would enforce something nobody wrote.
 - **A `matches()` pattern reaches the CHECK as the SAME STRING `pattern.test` runs, or it is
@@ -525,7 +530,15 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   beside `matchOperator`'s flag refusal, on the line that wrote it. `pg-invariant-pattern.live.test.ts`
   runs both halves against a server: every kept construct must AGREE and every refused one must
   still DISAGREE — so a future Postgres that grows JavaScript's `\b` turns the list red instead of
-  leaving a stale exclusion in place.
+  leaving a stale exclusion in place. **The kept half is only as broad as its table, and the table
+  was narrower than the claim from the day it landed, closed 2026-08-25**:
+  `pattern-portability.ts` called `(?<=` and `(?<!`
+  measured and neither had ever been run, and nor had a capturing group, a top-level `|`, `{n,}`,
+  `{n,m}`, `\t`/`\f`/`\v`, an escaped punctuation outside a bracket expression, a bare `]`/`}`, or
+  a trailing `-` in a class. All of them agree on 18.4 (73 pairs, 0 disagreements) and all of them
+  now have rows; every row is also asserted to be a construct `unportableConstruct` KEEPS, since a
+  row for a refused one measures something `matches()` can never emit. What remains unmechanised is
+  the direction no source can enumerate — a construct added to the kept set with no row here.
 - **A declared string is spliced by `@ultimat3/db`'s `literal()` and by nothing in this package —
   `As of 2026-08-25`, and doubling the quote is only HALF the rule.** `expr.ts` and
   `column-values.ts` each carried `'${v.replaceAll("'", "''")}'`; a CHECK takes no bind parameters,
@@ -1094,8 +1107,18 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   legal list — because an unknown state has no outgoing moves either, and a check that skipped it
   reported a typo as "the row is terminal in `pendign`".
 - Never throw a bare `Error` — use `errors.ts`.
-- Tests restore the process-global registry in `afterAll` (`clearRegistry()`): a leaked registry
-  breaks an unrelated package's tests, as it did in `@ultimat3/policy`.
+- **Tests restore the process-global registry in `afterAll` (`clearRegistry()`), and the hook is at
+  FILE scope — a build error since 2026-08-25, because the prose form was violated by 19 of the 19
+  live suites that had it.** A leaked registry breaks an unrelated package's tests, as it did in
+  `@ultimat3/policy`. Bun evaluates a skipped file's module body and then runs no hook inside
+  `describe.skipIf(true)` (measured in `live-registry-cleanup.test.ts`), so a `clearRegistry()`
+  parked in the suite's teardown — beside `drop table`, where it reads as belonging — never ran in
+  the ONE configuration a live suite is never deliberately run in: **36 entities stayed registered**
+  across `packages/entity/src/*.live.test.ts` with `TEST_DATABASE_URL` unset, which is every CI run
+  of the unit gate. An `if (!hasPostgres) return` above the call is the same hole by a second route.
+  So the cleanup is its own top-level `afterAll(() => { clearRegistry(); })` at the end of the file,
+  matched on exact text by `live-registry-cleanup.test.ts`, which also refuses a live suite that
+  registers on import and imports no seam. Never put it back in the teardown.
 
 ## Files
 
@@ -1137,6 +1160,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `n-plus-one.ts` | a repeated statement → the error whose `fix` is the preload or bulk call that ends it |
 | `seed.ts` | `defineSeed` — the replayable fixture graph: `insert` (the seed's own ids), `upsert` (a natural key), the sentinel reads, and the tier table `x db seed` refuses from |
 | `type-pins.ts` | compile-time assertions `tsc` checks — the column proxy, `Invariant` variance, the branded id |
+| `live-registry-cleanup.test.ts` | the build error behind the registry rule above: a live suite that registers on import clears unconditionally, in a top-level hook a skip cannot swallow |
 
 ## Commands
 

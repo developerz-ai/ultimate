@@ -112,6 +112,26 @@ export function dropForeignKey(table: string, constraint: string): string {
 }
 
 /**
+ * What a `down` says in place of an `add constraint` it cannot run: the key's table or its target
+ * is dropped by this migration, so there is nothing to add the constraint back onto.
+ *
+ * ONE text, two writers — `foreign-key-plan.ts`'s `unrestorableDrop` (a key pointing at a doomed
+ * table) and `retype-keys.ts`'s `restore` (a key a retype moved aside whose ends are doomed).
+ * They spelled the same fact two ways and had already drifted, so an operator reading a failed
+ * rollback saw whichever module emitted last. It lives here because both import this module and
+ * neither imports the other.
+ *
+ * Every name goes through `identifier`, including `gone`: a `--` comment ends at the first
+ * newline, so a name holding one puts a second command on the line after it.
+ */
+export function unrestorableNote(table: string, constraint: string, gone: string): string {
+  return (
+    `-- constraint ${identifier(constraint).text} on ${identifier(table).text} ` +
+    `cannot be restored; ${identifier(gone).text} is gone`
+  );
+}
+
+/**
  * The drop/add pair that moves a key's `on delete` rule — a rebuild, because Postgres has no
  * `alter constraint` for it — for a `fix:` line an author pastes into a new migration.
  *

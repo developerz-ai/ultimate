@@ -9,9 +9,9 @@ import {
   foreignKeyTarget,
   keyId,
   onDeleteRule,
+  unrestorableNote,
 } from './foreign-key';
 import type { ForeignKeyDescription, TableDescription } from './introspect';
-import { identifier } from './sql';
 
 /** The two directions of one migration, pushed in `up` order; `down` is reversed at assembly. */
 export interface Plan {
@@ -79,8 +79,9 @@ export function foreignKeysOf(entity: EntityDescriptionLike): ForeignKeyDescript
  * Both directions, because a snapshot may not lie: a removed `references()` used to emit nothing
  * while the snapshot beside it recorded `foreignKeys: []`, so the orphan constraint stayed on the
  * database *and* the record denied one the catalog holds — and `compareForeignKeys` judges the
- * declared side, so no drift check could ever see it. Not parity with a removed index either: that
- * leaves the snapshot correct by omission. The drop names the constraint the previous snapshot
+ * declared side, so no drift check could ever see it. This comment used to add "not parity with a
+ * removed index either: that leaves the snapshot correct by omission", which was **wrong** — a
+ * removed index lied in the identical way, and `index-plan.ts` is the arm that closed it. The drop names the constraint the previous snapshot
  * recorded, never the name this generator would have chosen — a hand-written `fk_legacy` is
  * `42704` under the generated spelling.
  *
@@ -164,14 +165,11 @@ export interface ConstraintPlans {
 /**
  * A key whose target is being dropped: gone on the way up, a note on the way back.
  *
- * The note goes through `identifier` too. A `--` comment ends at the first newline, so a name
- * holding one is a second command on the line after it — the same escape `columnClause` closed,
- * one quoting rule short of the statement above it.
+ * The note itself is `unrestorableNote` (`foreign-key.ts`) and not a string built here —
+ * `retype-keys.ts` says the same thing about the same failed rollback, and two spellings of one
+ * fact is whichever module emitted last deciding what an operator reads.
  */
 function unrestorableDrop(table: string, constraint: string, target: string, preDrops: Plan): void {
   preDrops.up.push(dropForeignKey(table, constraint));
-  preDrops.down.push(
-    `-- constraint ${identifier(constraint).text} on ${identifier(table).text} ` +
-      `cannot be restored; ${identifier(target).text} is gone`,
-  );
+  preDrops.down.push(unrestorableNote(table, constraint, target));
 }

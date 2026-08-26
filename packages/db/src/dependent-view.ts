@@ -142,12 +142,33 @@ async function dependentViews(
 }
 
 /**
+ * One SQL statement as a single argv word for `psql -c`.
+ *
+ * SINGLE quotes, unlike `migrationConflict`'s `-c "…"`: `identifier()` writes the view's name in
+ * DOUBLE quotes, so a double-quoted shell word would end at the name. The definition is the
+ * server's own text and may hold a `'` of its own — `where status = 'published'` — so the one
+ * escape a POSIX shell has for it is spelled out here. This is not the SQL literal escape
+ * (`sql.ts`'s `literal()`, the tree's one copy of that); nothing below is sent to a server.
+ */
+const shellArg = (statement: string): string => `'${statement.replaceAll("'", `'\\''`)}'`;
+
+/** The invocation `migrationConflict` already writes, with the statement as its own argv word. */
+const psql = (statement: string): string => `psql "$DATABASE_URL" -c ${shellArg(statement)}`;
+
+/**
  * The two statements that unblock the deploy, as one line an operator pastes.
+ *
+ * It leads with the command to RUN and carries the follow-up in a `#` comment, the shape
+ * `migrateConcurrent` and `migrationSnapshotMissing` already write. It used to lead with bare DDL
+ * and a `#`: `#` is not a comment in Postgres, so psql read the whole line and failed on it, while
+ * a shell read `drop` as a program that does not exist. Neither reader could run it (axiom 4).
  *
  * `identifier()` REFUSES a name holding a quote, a space or a backslash — all three legal inside a
  * quoted Postgres name — and a `fix:` may not throw: the rule `rebuildForeignKey` already states,
  * with the same shape. A refusal that raised `X_SQL_UNSAFE` in place of the finding would hand the
  * operator an exception where a verdict was asked for, over a view name that is perfectly legal.
+ * The fallback still leads with a command that runs — a psql session — because quoting that name
+ * is the one step this package will not do twice: `identifier()` is its only identifier writer.
  *
  * The definition is collapsed to one line because `pg_get_viewdef(oid, true)` pretty-prints across
  * several and a `fix:` is read as a command.
@@ -156,11 +177,14 @@ function restoreView(view: string, definition: string): string {
   const body = definition.replace(/\s+/g, ' ').replace(/;\s*$/, '').trim();
   try {
     const name = identifier(view).text;
-    return `drop view ${name};   # then x db migrate, then: create view ${name} as ${body};`;
+    return (
+      `${psql(`drop view ${name}`)}   # then x db migrate, then: ` +
+      `${psql(`create view ${name} as ${body}`)}`
+    );
   } catch {
     return (
-      `drop the view named ${JSON.stringify(view)}, run x db migrate, then create it again as: ` +
-      body
+      `psql "$DATABASE_URL"   # quote the view name ${JSON.stringify(view)} yourself, then: ` +
+      `drop view <name>; \\q; x db migrate; and create it again as: create view <name> as ${body}`
     );
   }
 }

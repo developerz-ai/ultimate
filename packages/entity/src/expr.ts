@@ -361,12 +361,19 @@ export const iff = (left: Expr, right: Expr): Expr => {
     if (side.kind !== 'unique') continue;
     // The columns it names, so the pasted line is the rule the author already meant to declare —
     // never a `<name>` for them to fill in, which is the placeholder `refuse.test.ts` refuses.
+    //
+    // `JSON.stringify` and never `'${column}'`: a column path is a VALUE reaching TypeScript
+    // SOURCE, which is this file's own hazard one layer up. `columns: { "o'brien": text() }` is a
+    // legal declaration and `unique()` is reached untyped besides, so a quote ends the literal and
+    // the fix stops parsing; a backslash is the half doubling the quote would still have missed.
+    // `errors.ts`'s `asLiteral` is the same rule for the same reason.
     const columns = side.paths.map((path) => path.join('.'));
-    const list = columns.map((column) => `'${column}'`).join(', ');
+    const list = columns.map((column) => JSON.stringify(column)).join(', ');
+    const name = JSON.stringify(`${columns.join('_')}_unique`);
     refuseInvariant(
       'iff',
       `${side.message} is a unique constraint, whose SQL is a column list and not a predicate`,
-      `invariant('${columns.join('_')}_unique', c.unique([${list}]))   # uniqueness is its own invariant; iff takes two predicates, e.g. iff(c.status.eq('published'), c.publishedAt.isNotNull())`,
+      `invariant(${name}, c.unique([${list}]))   # uniqueness is its own invariant; iff takes two predicates, e.g. iff(c.status.eq('published'), c.publishedAt.isNotNull())`,
     );
   }
   const seen = new Set<string>();

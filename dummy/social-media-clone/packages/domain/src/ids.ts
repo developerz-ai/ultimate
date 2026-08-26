@@ -15,8 +15,12 @@ export const MAX_HANDLE = 30;
 export const HANDLE_RE = /^[a-z0-9](?:[a-z0-9_]{0,28}[a-z0-9])?$/;
 
 /**
- * No leading, trailing or doubled separators, and never all-numeric-looking edge cases that
- * collide with an id in a route.
+ * No leading or trailing separator. It permits a doubled `__` and an all-numeric handle, and this
+ * comment claimed otherwise until 2026-08-26 — `HANDLE_RE.test('a__b')` and `.test('123')` are
+ * both true. That mattered more once the pattern became a real Postgres CHECK (`users.ts`): a
+ * database now enforces exactly this, so a stricter sentence here described a rule nothing had.
+ * Tightening the pattern is a separate decision with existing rows behind it; `/u/:handle` does
+ * not in fact collide with an id, because ids here are uuids.
  *
  * The CHECK is declared from `HANDLE_RE` directly (`users.ts`), not from this function: a
  * predicate cannot be translated and reports `sql: null`, so passing it here claimed a

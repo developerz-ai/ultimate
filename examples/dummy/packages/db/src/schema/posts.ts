@@ -58,13 +58,16 @@ export const posts = entity('posts', {
      * before stops holding; `createDraft` derives the slug from the title, so a cross-org title
      * collision is now a write that fails loudly instead of a public page that resolves at random.
      *
-     * **This database does not have it yet**, and since 2026-08-25 that is a finding rather than a
-     * note: `0001_init.sql` created `post_slug_unique_per_org UNIQUE (org_id, slug)`, no migration
-     * has replaced it, and the newest migration's sidecar records what the SQL did — so `x verify`'s
-     * `drift` step reports `posts_post_slug_unique_key` unmigrated beside `post_slug_unique_per_org`
-     * undeclared. Until one `x db gen` closes it, two orgs CAN publish the same slug and
-     * `/blog/{slug}` serves whichever row the planner reaches first. Check for an existing
-     * collision before generating: the index cannot be created over one.
+     * **The database has it, since 2026-08-26.** `0001_init.sql` created
+     * `post_slug_unique_per_org UNIQUE (org_id, slug)` — per-org, so two orgs COULD publish the
+     * same slug and `/blog/{slug}` served whichever row the planner reached first. The generated
+     * migration creates `posts_post_slug_unique_key` over `(slug)` alone and drops the per-org
+     * constraint, in that order.
+     *
+     * The order is not cosmetic: the new index is NARROWER, so it cannot be created over an
+     * existing cross-org collision. On a populated database, look first —
+     * `select slug from posts group by slug having count(*) > 1` — and resolve every row it
+     * returns before applying, or the migration fails at that statement with `23505`.
      */
     invariant('post_slug_unique', c.unique(['slug'])),
     invariant('post_like_count_non_negative', c.likeCount.atLeast(0)),

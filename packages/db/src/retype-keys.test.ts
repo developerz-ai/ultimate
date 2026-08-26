@@ -5,6 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
+import { unrestorableNote } from './foreign-key';
 import type { Plan } from './foreign-key-plan';
 import { generateMigration, snapshotOf } from './generate';
 import type { SchemaDescription } from './introspect';
@@ -121,7 +122,9 @@ describe('moveKeysAside', () => {
     const { plan, moved } = run([orgs('text')], new Set(['posts']));
     expect([...moved]).toEqual([JSON.stringify(['posts', 'posts_org_code_fkey'])]);
     expect(plan.up).toEqual(['alter table "posts" drop constraint "posts_org_code_fkey";']);
-    expect(plan.down[0]).toStartWith('-- constraint "posts_org_code_fkey" on "posts"');
+    // The note is `foreign-key.ts`'s ONE text, never a second spelling here: `unrestorableDrop`
+    // says the same thing about the same failed rollback, and the two had already drifted.
+    expect(plan.down[0]).toBe(unrestorableNote('posts', 'posts_org_code_fkey', 'posts'));
   });
 
   test('a key touching no retyped column is left alone — the ALTER never sees it', () => {
@@ -144,7 +147,8 @@ describe('moveKeysAside', () => {
   test('a key whose target is being dropped gets a note in down, never an add it cannot run', () => {
     const { plan } = run([posts('text')], new Set(['orgs']));
     expect(plan.up).toEqual(['alter table "posts" drop constraint "posts_org_code_fkey";']);
-    expect(plan.down[0]).toStartWith('-- constraint "posts_org_code_fkey" on "posts"');
+    // The TARGET is what is gone here, and the note names it — the same wording, one writer.
+    expect(plan.down[0]).toBe(unrestorableNote('posts', 'posts_org_code_fkey', 'orgs'));
   });
 });
 
@@ -156,10 +160,15 @@ describe('the assembled migration', () => {
       .map((each, index) => (each.includes('alter column') ? index : -1))
       .filter((index) => index >= 0);
     expect(alters.length).toBe(2);
-    expect(indexOf(up, 'drop constraint "posts_org_code_fkey"')).toBeLessThan(Math.min(...alters));
-    expect(indexOf(up, 'add constraint "posts_org_code_fkey"')).toBeGreaterThan(
-      Math.max(...alters),
-    );
+    // Presence FIRST, in both directions: `findIndex` answers -1 for a needle it never found, and
+    // -1 is less than every real index — so `drop < min(alters)` passed with the drop deleted from
+    // `moveKeysAside` outright. The same shape `generate-retype-key.live.test.ts` already writes.
+    const dropped = indexOf(up, 'drop constraint "posts_org_code_fkey"');
+    const added = indexOf(up, 'add constraint "posts_org_code_fkey"');
+    expect(dropped).toBeGreaterThanOrEqual(0);
+    expect(added).toBeGreaterThanOrEqual(0);
+    expect(dropped).toBeLessThan(Math.min(...alters));
+    expect(added).toBeGreaterThan(Math.max(...alters));
   });
 
   test('down drops the new key first and re-adds the recorded one last', () => {

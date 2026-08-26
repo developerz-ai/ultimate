@@ -37,10 +37,11 @@ export const migrationIrreversible = (cause: string, fix: string): DbError =>
 /**
  * A view standing in the way of a retype, refused one statement before Postgres would have.
  *
- * `restore` is the caller's, the way `migrationIrreversible`'s `fix:` is: it is DDL built out of
- * live catalog values through `identifier()`, and this file may not import `sql.ts` — that module
- * imports `identifierUnsafe` from here, and an import cycle around the module whose evaluation
- * REGISTERS every code is not a cycle worth having for one quoted name.
+ * `restore` is the caller's, the way `migrationIrreversible`'s `fix:` is: it is a pair of
+ * `psql "$DATABASE_URL" -c '…'` invocations — the shape `migrationConflict` above already writes —
+ * built out of live catalog values through `identifier()`. This file may not import `sql.ts`: that
+ * module imports `identifierUnsafe` from here, and an import cycle around the module whose
+ * evaluation REGISTERS every code is not a cycle worth having for one quoted name.
  */
 export const migrationViewDepends = (
   view: string,

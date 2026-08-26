@@ -60,7 +60,6 @@ describe.skipIf(!hasPostgres)('live · postgres · a bigint minor unit at a writ
     await client.execute(raw(DROP));
     await client.close();
     setDbClient(undefined);
-    clearRegistry();
   });
 
   const repo = () => postgresRepo(invoices);
@@ -112,4 +111,10 @@ describe.skipIf(!hasPostgres)('live · postgres · a bigint minor unit at a writ
     // exists, so the good row ahead of the bad one is never sent either.
     expect(await repo().count()).toBe(before);
   });
+});
+
+// Outside the block above and unconditional: bun runs no hook inside a skipped `describe`, and the
+// registry is process-wide. `live-registry-cleanup.test.ts` is the rule that keeps it here.
+afterAll(() => {
+  clearRegistry();
 });
