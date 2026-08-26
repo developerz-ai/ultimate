@@ -27,9 +27,12 @@ describe('unit · the deploy plan', () => {
   test('migrate is first and backfill is LAST — deploy triggers, deploy never gates', () => {
     expect(DEPLOY_ROLES[0]).toBe('migrate');
     expect(DEPLOY_ROLES.at(-1)).toBe('backfill');
+    // The whole order, as a literal — never `[...DEPLOY_ROLES]`, which is the plan's own input and
+    // would stay green for a role deleted from the constant. A pairwise `indexOf` comparison cannot
+    // stand alone here either: a plan missing `web` answers -1, which is below `backfill`'s real
+    // index, so "backfill runs last" held for a deploy that never started the web role.
     const roles = compose().steps.map((step) => step.role);
-    expect(roles.indexOf('backfill')).toBeGreaterThan(roles.indexOf('web'));
-    expect(roles.indexOf('backfill')).toBeGreaterThan(roles.indexOf('worker'));
+    expect(roles).toEqual(['migrate', 'web', 'sync', 'worker', 'scheduler', 'backfill']);
   });
 
   test('the two run-once roles take `run --rm`, and every serving role takes `up -d`', () => {

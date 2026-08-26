@@ -35,6 +35,18 @@ const fakeRunner = (
   };
 };
 
+/**
+ * The planned steps among `wanted`, in plan order. Deliberately not `indexOf`: it answers -1 for a
+ * step the plan does not hold, and -1 is below every real index — so a pairwise ordering assertion
+ * passes for a plan missing the very step it claims to order (measured: dropping `db gen initial`
+ * from `firstRunPlan` left `indexOf(…) < indexOf(…)` GREEN, on the test whose whole subject it is).
+ * Compared with `toEqual`, presence, order and multiplicity are one assertion.
+ */
+const stepsAmong = (wanted: readonly string[]): readonly string[] =>
+  firstRunPlan()
+    .map((step) => step.name)
+    .filter((name) => wanted.includes(name));
+
 describe('firstRunPlan', () => {
   // The defect was four of THIRTEEN generators, so a sample would likely have missed it. This is
   // what makes a fourteenth generator covered the day it lands.
@@ -49,9 +61,11 @@ describe('firstRunPlan', () => {
   // `packages/db/migrations`. So the first apply runs over an empty directory, and it runs first so
   // that a scaffold which became a second writer again is red here, alone, before anything else.
   test('applies over the empty migrations directory before generating one', () => {
-    const names = firstRunPlan().map((step) => step.name);
-    expect(names[0]).toBe('db migrate (empty)');
-    expect(names.indexOf('db migrate (empty)')).toBeLessThan(names.indexOf('db gen initial'));
+    expect(firstRunPlan()[0]?.name).toBe('db migrate (empty)');
+    expect(stepsAmong(['db migrate (empty)', 'db gen initial'])).toEqual([
+      'db migrate (empty)',
+      'db gen initial',
+    ]);
   });
 
   /**
@@ -62,17 +76,21 @@ describe('firstRunPlan', () => {
    * 16 of 17 with only `budgets` red.
    */
   test('generates the initial migration, and applies it, before any generator runs', () => {
-    const names = firstRunPlan().map((step) => step.name);
-    expect(names.indexOf('db gen initial')).toBeLessThan(names.indexOf('db migrate (initial)'));
-    expect(names.indexOf('db migrate (initial)')).toBeLessThan(names.indexOf('g entity'));
+    expect(stepsAmong(['db gen initial', 'db migrate (initial)', 'g entity'])).toEqual([
+      'db gen initial',
+      'db migrate (initial)',
+      'g entity',
+    ]);
   });
 
   // Eight of the thirteen generators emit an entity, and this is the only migration in CI written
   // from generator output rather than from the scaffold's own example entity.
   test('regenerates and re-applies after the generators, in that order', () => {
-    const names = firstRunPlan().map((step) => step.name);
-    expect(names.indexOf('g entity')).toBeLessThan(names.indexOf('db gen generated'));
-    expect(names.indexOf('db gen generated')).toBeLessThan(names.indexOf('db migrate (generated)'));
+    expect(stepsAmong(['g entity', 'db gen generated', 'db migrate (generated)'])).toEqual([
+      'g entity',
+      'db gen generated',
+      'db migrate (generated)',
+    ]);
   });
 
   /**

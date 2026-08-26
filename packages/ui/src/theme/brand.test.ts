@@ -62,7 +62,10 @@ describe('defineTheme', () => {
     const a = defineTheme({ colors: { light: { accent: '1 1 1', bg: '2 2 2' } } }).css;
     const b = defineTheme({ colors: { light: { bg: '2 2 2', accent: '1 1 1' } } }).css;
     expect(a).toBe(b);
-    expect(a.indexOf('--color-bg:')).toBeLessThan(a.indexOf('--color-accent:'));
+    // The two declarations adjacent and in `COLOR_ROLES` order, not a pairwise `indexOf`: a role
+    // that stopped being emitted answers -1, which is less than every real index, so the pairwise
+    // form read as ordered for a stylesheet that had dropped `--color-bg` altogether.
+    expect(a).toContain('--color-bg: 2 2 2;\n  --color-accent: 1 1 1;');
   });
 
   test('the brand is frozen — a rendered stylesheet cannot be mutated after validation', () => {

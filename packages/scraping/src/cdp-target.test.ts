@@ -102,10 +102,13 @@ describe('unit · restored localStorage lands on the session ORIGIN, never on ab
     const page = await target;
     await page.restore(SESSION);
     await page.goto('https://shop.test/orders', { timeoutMs: 1_000 });
-    expect(storageWrites(rec.calls)).toHaveLength(1);
-    expect(rec.calls.indexOf('goto https://shop.test/orders')).toBeLessThan(
-      rec.calls.findIndex((call) => call.includes('setItem')),
-    );
+    // The whole recorded sequence, not a pairwise `indexOf`: a navigation that stopped being made
+    // at all answers -1, which is less than every real index, so "the goto came first" read as
+    // satisfied for a page that never left about:blank.
+    expect(rec.calls).toEqual([
+      'goto https://shop.test/orders',
+      expect.stringContaining('localStorage.setItem'),
+    ]);
   });
 
   test('and never on another origin — a bearer token is not handed to a site it is not for', async () => {

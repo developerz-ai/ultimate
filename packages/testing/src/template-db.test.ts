@@ -159,6 +159,10 @@ describe('unit · template-db', () => {
       { adminUrl: ADMIN },
       { connect, env: { BUN_TEST_WORKER_ID: '2' } },
     );
+    // The drop has to be PRESENT for the comparison below to mean anything: a drop that is never
+    // issued answers -1 from `indexOf`, and -1 is less than every real index, so the ordering read
+    // as satisfied for a run that cloned straight over a crashed worker's leftover database.
+    expect(statements).toContain(dropSql(db.database));
     expect(statements.indexOf(dropSql(db.database))).toBeLessThan(
       statements.indexOf(cloneSql(DEFAULT_TEMPLATE, db.database)),
     );

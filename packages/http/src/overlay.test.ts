@@ -153,7 +153,12 @@ describe('renderOverlay notices', () => {
   test('the card sits between the error and the terminal, never after the json dump', () => {
     const markup = renderOverlay(error, { notices: [nPlusOne] });
 
-    expect(markup.indexOf('<h1>')).toBeLessThan(markup.indexOf('<h2>notices</h2>'));
+    // Both receivers are pinned present first — a heading this render never emitted is `-1`,
+    // which sits before every real offset, so "the card is between them" would hold on a page
+    // with no error headline and no notices card at all.
+    expect(markup).toContain(`<h1>${error.code} `);
+    expect(markup).toContain('<h2>notices</h2>');
+    expect(markup.indexOf(`<h1>${error.code} `)).toBeLessThan(markup.indexOf('<h2>notices</h2>'));
     expect(markup.indexOf('<h2>notices</h2>')).toBeLessThan(markup.indexOf('<h2>terminal</h2>'));
     expect(markup).toContain(TERMINAL_JOIN);
   });

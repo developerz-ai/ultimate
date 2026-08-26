@@ -64,6 +64,9 @@ describe('unit · reading and writing recorded scores', () => {
       });
       const text = await Bun.file(path).text();
       expect(text.endsWith('\n')).toBe(true);
+      // The name has to be IN the file before its position means anything: `indexOf` answers -1
+      // for a case the writer never recorded, and -1 sorts before every real offset.
+      expect(text).toContain('"alpha"');
       expect(text.indexOf('alpha')).toBeLessThan(text.indexOf('zeta'));
       expect(await readBaseline(path)).toEqual({
         ...BASELINE,

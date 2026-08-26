@@ -140,6 +140,10 @@ test('a cleartext session upgrades with STARTTLS and re-issues EHLO', async () =
   const commands = stream.commands();
   // Capabilities are re-read after the upgrade: the pre-TLS ones are not the post-TLS ones.
   expect(commands.filter((line) => line.startsWith('EHLO'))).toHaveLength(2);
+  // Presence first: `indexOf` answers -1 for a command that was never sent, and -1 is less than
+  // every real index — so a client that silently skipped STARTTLS and sent everything in the
+  // clear would read as correctly ordered.
+  expect(commands).toContain('STARTTLS');
   expect(commands.indexOf('STARTTLS')).toBeLessThan(commands.lastIndexOf('EHLO postly.test'));
 });
 

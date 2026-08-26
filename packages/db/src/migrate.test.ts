@@ -243,11 +243,14 @@ describe('a multi-statement migration', () => {
     const reverted = await rollback({ migrations: [migration], client });
 
     expect(reverted).toEqual([migration.id]);
-    expect(client.texts).toContain('drop index "posts_org_id_idx"');
-    expect(client.texts).toContain('drop table "posts"');
-    expect(client.texts.indexOf('drop table "posts"')).toBeGreaterThan(
-      client.texts.indexOf('drop index "posts_org_id_idx"'),
-    );
+    // The two drops as a SEQUENCE, never a pair of `indexOf` comparisons: `indexOf` answers -1 for
+    // a text the client was never sent, and -1 is below every real index — so "the table is dropped
+    // after its index" held for a rollback that sent neither. Presence, order and "no other drop
+    // slipped in" are one assertion here.
+    expect(client.texts.filter((text) => text.startsWith('drop '))).toEqual([
+      'drop index "posts_org_id_idx"',
+      'drop table "posts"',
+    ]);
   });
 });
 

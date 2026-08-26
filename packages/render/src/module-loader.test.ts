@@ -152,6 +152,11 @@ describe('stylesFor', () => {
     loadStylesheet(SITE, '.hero{color:red}');
     loadStylesheet(GLOBAL, GLOBAL_CSS);
     const css = stylesFor('site');
+    // Present before ordered: a global layer that stopped being emitted makes `indexOf` answer
+    // -1, which is less than every real index, so the comparison below would read as satisfied
+    // for a document carrying no tokens at all.
+    expect(css).toContain('--color-fg:');
+    expect(css).toContain(GLOBAL_CSS);
     expect(css.indexOf('--color-fg:')).toBeLessThan(css.indexOf('.hero'));
     expect(css.startsWith(':root')).toBe(true);
   });
