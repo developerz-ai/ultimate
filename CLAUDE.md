@@ -16,11 +16,16 @@ CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 `create-ultimate` — 31 in all — **versioned** in lockstep and **published** in lockstep: one version,
 one commit, one tag, 31 tarballs.
 
-**`@ultimat3/notify` is the 31st and has never been published**, so it needs step 1 of
-[`PUBLISHING.md`](PUBLISHING.md) — the one-time hand publish that gives npm a package for a trusted
-publisher to attach to — **before** the next release run, or `release.yml` publishes 30 of 31 and
-`scripts/registry-audit.ts` files the drift issue. That step is a package's only manual publish,
-ever; `@ultimat3/scraping` and `@ultimat3/flags` were the last two to need it.
+**There is no package awaiting its first publish**, `As of 2026-08-26` —
+`bun run scripts/registry-audit.ts --json` answers `31/31 publishable packages are on npm at
+<version>, every one attested`. This block said `@ultimat3/notify` "has never been published" and
+owed step 1 of [`PUBLISHING.md`](PUBLISHING.md) **before** the next release run; that was true when
+written and the 16.0.0 run published it, so the sentence outlived its fact and would have sent the
+next agent to perform a hand publish npm answers with `E403 … cannot publish over the previously
+published versions`. Step 1 comes due again for the **next package added after a release run**, and
+for nothing else: it is a package's only manual publish, ever, and `@ultimat3/notify`,
+`@ultimat3/scraping` and `@ultimat3/flags` were the last three to need it. Ask the audit rather than
+this paragraph — that is the rule this whole table exists for.
 
 **This page states no version number, deliberately.** It carried one for two majors after the tree
 moved past it, and a version written here is read as the installable one. Every row below is a

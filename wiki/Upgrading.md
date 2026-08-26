@@ -6,6 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 16.x → 17.0.0 | **3**, all one sweep — a numeric option that used to accept `NaN` refuses it, at boot or at the call boundary rather than mid-request | the `17.0.0` section, in order |
 | 15.x → 16.0.0 | **1** — `matches(/re/)` refuses a construct the two regex engines read differently, at `entity()` time | the `16.0.0` section, in order |
 | 14.x → 15.0.0 | **1** — `DriftKind` gains a member, so an exhaustive `switch` with no `default` stops compiling | the `15.0.0` section, in order |
 | 13.x → 14.0.0 | **8** — two are security fixes with a behaviour change (a frame verb, a session key), four are types that refused what the runtime already did, and two remove API nothing called | the `14.0.0` section, in order |
@@ -21,13 +22,13 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 11.x → 16.0.0 | **35** | every major section `CHANGELOG.md` still carries, oldest first |
+| 11.x → 17.0.0 | **38** | every major section `CHANGELOG.md` still carries, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' <(awk '/^## /{u = ($0 == "## [Unreleased]")} !u' CHANGELOG.md)
-# 35 As of 2026-08-26 — every RELEASED section, which is the sum of every row above whose section
+# 38 As of 2026-08-26 — every RELEASED section, which is the sum of every row above whose section
 # the changelog still carries. `[Unreleased]` is cut by the awk deliberately: a bare whole-file
 # grep agrees with this number only while that section is empty, so it moved on every PR that
 # landed a breaking change and moved BACK when the release promoted the section — a count that can
@@ -61,6 +62,28 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 16.x → 17.0.0, entry by entry
+
+**Three breaking entries, and all three are the same sweep**: a numeric option that used to accept
+`NaN`, `±Infinity`, a fraction or a negative now refuses it. The refusal is at **boot or at the call
+boundary**, never mid-request, so one `bun test` or one `x verify` surfaces every one of them at
+once and each `fix:` line carries the edit.
+
+**An app passing real numbers is unaffected.** An app that was passing `NaN` was not working: the
+bound it declared was not being enforced, and nothing said so. `??` guards *nullish*, and `NaN` is
+not nullish — so `Number(process.env.X)` on an unset variable walked past the default and landed on
+the bound intact. `Math.max`, `Math.min` and `Math.floor` all propagate `NaN`, and this repo was
+relying on all three as guards.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | Every numeric option in the table under 17.0.0's **Changed** heading — across `http`, `query`, `jobs`, `realtime`, `auth`, `ai`, `render`, `pwa`, `mail`, `manifest`, `mcp`, `notify`, `ui`, `scraping`, `testing`, `cli`, `admin`, `core`, `time` | you pass one a value that is not finite, or is fractional or negative where the option counts things. Read the row for the floor: **`0` stays legal wherever it means something** — `port: 0` asks the OS for a free port, `timeout: 0` is one look, `seed: 0` is a seed, `maxAgeSeconds: 0` is "revalidate every time", `concurrency: 0` is one worker |
+| 2 | `http.trustedProxyHops` | you declare `0`. That was the **failure state, not a setting**: `forwarded.ts` returns `undefined` for `hops < 1`, so a declared `0` silently trusted nothing while reading as configured. The domain is `1…64`. It is a boot-owned key, so no app can write it — the blast radius is embedders calling `defineHttpConfig` directly |
+| 3 | `search().page(input, { first })` | your page would **cut rows**. A window narrower than the read is now served when nothing is dropped, and refused — naming both edits — when rows would be lost. This is a *widening* against 16.x for the common case: `limit` defaults to 20 and `first` has no default, so `search({…}) + .page(input, { first: 10 })` used to mint a cursor that page two then threw on |
+
+**`TRUSTED_PROXY_HOPS` widened from 1–16 to 1–64** and is listed here only so the change is not a
+surprise: it accepts strictly more than 16.x did, so no configuration that worked stops working.
 
 ## 15.x → 16.0.0, entry by entry
 

@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/entity",
-  "version": "16.0.0",
+  "version": "17.0.0",
   "description": "A table + its domain type + invariants the database also enforces",
   "license": "MIT",
   "type": "module",
@@ -31,9 +31,9 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "16.0.0",
-    "@ultimat3/db": "16.0.0",
-    "@ultimat3/schema": "16.0.0",
-    "@ultimat3/time": "16.0.0"
+    "@ultimat3/core": "17.0.0",
+    "@ultimat3/db": "17.0.0",
+    "@ultimat3/schema": "17.0.0",
+    "@ultimat3/time": "17.0.0"
   }
 }
