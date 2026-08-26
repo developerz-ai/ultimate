@@ -10,7 +10,7 @@
 // become — the checkpoints are transactional with the work, and this row is not.
 
 import type { Clock } from '@ultimat3/core';
-import { systemClock } from '@ultimat3/core';
+import { finiteOption, systemClock } from '@ultimat3/core';
 import { nowMs } from './clock';
 
 /**
@@ -176,7 +176,7 @@ export function createMemoryBackfillLedger(clock: Clock = systemClock): Backfill
         .filter((run) => filter.name === undefined || run.name === filter.name)
         .filter((run) => filter.status === undefined || run.status === filter.status)
         .filter((run) => filter.runId === undefined || run.runId === filter.runId)
-        .slice(0, filter.limit ?? 100);
+        .slice(0, finiteOption('the backfill ledger list', 'limit', filter.limit ?? 100));
       return Promise.resolve(rows);
     },
   };

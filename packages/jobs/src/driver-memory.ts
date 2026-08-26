@@ -3,7 +3,7 @@
 // real claim/ack/nack paths rather than a mock that always succeeds.
 
 import type { Clock } from '@ultimat3/core';
-import { assert, systemClock, uuid } from '@ultimat3/core';
+import { assert, finiteOption, systemClock, uuid } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { createMemoryBackfillLedger } from './backfill-ledger';
 import { nowMs } from './clock';
@@ -112,7 +112,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
         // `x jobs ls` answered one thing against `x dev` and the opposite in production — and,
         // because the limit is applied after the sort, a default page of the hundred OLDEST rows.
         .sort((a, b) => b.createdAt - a.createdAt)
-        .slice(0, filter.limit ?? 100);
+        .slice(0, finiteOption('the memory driver list', 'limit', filter.limit ?? 100));
       return Promise.resolve(rows);
     },
     deadLetters(limit = 100) {

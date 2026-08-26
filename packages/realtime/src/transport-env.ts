@@ -5,6 +5,7 @@
 // two sides, and a caller that had to pass each one separately could quietly set them apart.
 
 import type { Clock } from '@ultimat3/core';
+import { finiteOption } from '@ultimat3/core';
 import type { Transport } from './fanout';
 import { InProcessTransport } from './fanout';
 import type { NatsConnect } from './nats-client';
@@ -67,7 +68,11 @@ export function selectTransport(
   env: TransportEnvironment,
   options: SelectTransportOptions = {},
 ): TransportSelection {
-  const presenceTtlMs = options.presenceTtlMs ?? DEFAULT_PRESENCE_TTL_MS;
+  const presenceTtlMs = finiteOption(
+    'the transport env',
+    'presenceTtlMs',
+    options.presenceTtlMs ?? DEFAULT_PRESENCE_TTL_MS,
+  );
   const url = nonEmpty(env['NATS_URL']);
 
   if (url === undefined) {

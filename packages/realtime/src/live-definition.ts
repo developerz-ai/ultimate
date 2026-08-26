@@ -9,6 +9,7 @@
 // every time. Collapsing the second onto the first is privilege escalation with a cache hit rate.
 
 import type { Ctx } from '@ultimat3/core';
+import { finiteOption } from '@ultimat3/core';
 import { type AnyQuery, queryHash, queryName } from '@ultimat3/query';
 import { LiveRowUnidentifiedError } from './errors';
 import { isRow, type JsonValue, type Row } from './json';
@@ -120,7 +121,7 @@ export function liveQueryDefinition(
       },
     };
     windows.set(qid, built);
-    evictOldest(windows, options.maxWindows ?? 256);
+    evictOldest(windows, finiteOption('live()', 'maxWindows', options.maxWindows ?? 256));
     return built;
   };
 

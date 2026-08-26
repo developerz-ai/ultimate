@@ -4,6 +4,7 @@
 // the only thing that knows what exists. Every question it answers is indexed, never scanned.
 
 import type { Actor } from '@ultimat3/core';
+import { finiteOption } from '@ultimat3/core';
 import { SubscriptionIdTakenError, SubscriptionLimitError } from './errors';
 import type { LiveSubscription } from './live-contract';
 import type { SyncSocket } from './socket';
@@ -160,7 +161,11 @@ export class SubscriptionBook {
    * node to an entry, a matcher and a read.
    */
   assertCapacity(socket: SyncSocket): void {
-    const perSocket = this.#caps.maxPerSocket ?? DEFAULT_MAX_PER_SOCKET;
+    const perSocket = finiteOption(
+      'the subscription caps',
+      'maxPerSocket',
+      this.#caps.maxPerSocket ?? DEFAULT_MAX_PER_SOCKET,
+    );
     const claimed = this.#claimedBySocket.get(socket.id)?.size ?? 0;
     if (socket.queries.size + claimed >= perSocket) {
       throw new SubscriptionLimitError({

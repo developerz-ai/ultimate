@@ -6,7 +6,7 @@
 // policy is never sent to that actor — it arrives as a `delete` if they hold it, and is dropped
 // otherwise.
 
-import { type Actor, type Clock, systemClock, uuid } from '@ultimat3/core';
+import { type Actor, type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
 import type { ChangeEvent } from './changefeed';
 import {
@@ -76,7 +76,11 @@ export class LiveQueryRegistry {
     this.#options = options;
     this.#clock = options.clock ?? systemClock;
     this.#gate = new SubscriberGate(options);
-    this.#maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
+    this.#maxEntries = finiteOption(
+      'the live-query registry',
+      'maxEntries',
+      options.maxEntries ?? DEFAULT_MAX_ENTRIES,
+    );
     // The book owns the caps because it is the only thing that can answer them in O(1).
     this.#book = new SubscriptionBook(options);
     this.#fanout = { gate: this.#gate, source: options.source, clock: this.#clock };

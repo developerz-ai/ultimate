@@ -163,6 +163,22 @@ describe('the memory store is bounded', () => {
     }
   });
 
+  /**
+   * The cap on this table is the only thing between a rotating-address scan and the process's
+   * memory — the test above is exactly that scenario. It was `Math.max(1, Math.floor(maxKeys))`,
+   * which is a clamp and not a validator: `Math.floor(NaN)` is `NaN`, `Math.max(1, NaN)` is `NaN`,
+   * and `buckets.size <= NaN` is false in the sweep AND `buckets.size > NaN` is false in `take`,
+   * so the sweep is never triggered and would evict nothing if it were. The cap is gone, and the
+   * keys are addresses the caller chooses.
+   */
+  test('a cap that is not a number is refused, never a table with no cap', () => {
+    for (const maxKeys of [Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5]) {
+      expect(() => memoryRateLimitStore({ maxKeys })).toThrow(/X_CONFIG_INVALID/);
+    }
+    expect(() => memoryRateLimitStore({ maxKeys: 1 })).not.toThrow();
+    expect(() => memoryRateLimitStore()).not.toThrow();
+  });
+
   test('the cap evicts the least-throttled key, never the most', async () => {
     const store = memoryRateLimitStore({ maxKeys: 4 });
     const slow: Bucket = { capacity: 1, refillPerSecond: 0.001 };
@@ -189,12 +205,19 @@ describe('the memory store is bounded', () => {
     expect(store.size).toBe(1);
   });
 
-  test('reset() drops the key, and a nonsense cap still holds one entry', async () => {
-    const store = memoryRateLimitStore({ maxKeys: 0 });
+  test('reset() drops the key', async () => {
+    const store = memoryRateLimitStore({ maxKeys: 1 });
     await store.take('k', FAST, 1, 0);
     expect(store.size).toBe(1);
     await store.reset('k');
     expect(store.size).toBe(0);
+  });
+
+  // This used to read "a nonsense cap still holds one entry" and pass `maxKeys: 0`, which
+  // `Math.max(1, …)` clamped to 1 — a store that forgets every second key is not a rate limiter,
+  // and the clamp is what let `NaN` through beside it. A cap of zero is now a refusal.
+  test('a cap of zero is refused rather than clamped to one', () => {
+    expect(() => memoryRateLimitStore({ maxKeys: 0 })).toThrow(/X_CONFIG_INVALID/);
   });
 
   test('the shipped cap is a few megabytes, not unbounded', () => {

@@ -18,6 +18,7 @@ import {
   verifyPassword,
 } from './password';
 import { type PolicyActor, resolveActor } from './policy-bridge';
+import { assertPasswordPolicy, assertRateLimitPolicy, assertSessionPolicy } from './policy-numbers';
 import {
   type AuthLimiter,
   type AuthRateLimitPolicy,
@@ -176,6 +177,12 @@ export function defineAuth(config: AuthConfigInput): Auth {
   const session: SessionPolicy = { ...DEFAULT_SESSION_POLICY, ...config.session };
   const password: PasswordPolicy = { ...DEFAULT_PASSWORD_POLICY, ...config.password };
   const rateLimit: AuthRateLimitPolicy = { ...DEFAULT_AUTH_RATE_LIMIT, ...config.rateLimit };
+  // Screened on the MERGED policy, before anything is built from it: an override is spread over
+  // defaults the author never restated, so the resolved object is the only one that can be judged
+  // — the same reason `defineHttpConfig` judges the merged `cors` rather than the input.
+  assertSessionPolicy(session);
+  assertPasswordPolicy(password);
+  assertRateLimitPolicy(rateLimit);
   // Three answers in precedence order, and the middle one is why the seam exists: what this call
   // passed, then what the HOST installed (`configureAuthLimiters`, filled by the boot that owns
   // the database connection), then one process' worth of state. Without the middle arm a

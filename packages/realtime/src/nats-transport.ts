@@ -3,7 +3,14 @@
 // re-establishing subscriptions, which is what makes a `sync` node stateless: a lost connection is
 // re-dialled and re-subscribed underneath the caller, and this file keeps no socket state at all.
 
-import { type Clock, isUltimateError, logger, renderThrowable, systemClock } from '@ultimat3/core';
+import {
+  type Clock,
+  finiteOption,
+  isUltimateError,
+  logger,
+  renderThrowable,
+  systemClock,
+} from '@ultimat3/core';
 import { TransportUnavailableError } from './errors';
 import type { Transport, TransportHandler, TransportSet, TransportSubscription } from './fanout';
 import type { NatsClient, NatsConnect } from './nats-client';
@@ -56,7 +63,11 @@ export class NatsTransport implements Transport {
     this.#options = options;
     this.#connect = options.connect ?? openNatsClient;
     this.#backoff = options.backoff ?? defaultBackoff;
-    this.#attempts = options.maxReconnectAttempts ?? DEFAULT_ATTEMPTS;
+    this.#attempts = finiteOption(
+      'createNatsTransport',
+      'maxReconnectAttempts',
+      options.maxReconnectAttempts ?? DEFAULT_ATTEMPTS,
+    );
     this.#rng = options.rng ?? Math.random;
     this.shared = new NatsKvSet({
       client: () => this.#ensure(),
@@ -172,7 +183,11 @@ export class NatsTransport implements Transport {
     return ensureKvBucket(
       client,
       this.#options.bucket,
-      this.#options.presenceTtlMs ?? DEFAULT_PRESENCE_TTL_MS,
+      finiteOption(
+        'createNatsTransport',
+        'presenceTtlMs',
+        this.#options.presenceTtlMs ?? DEFAULT_PRESENCE_TTL_MS,
+      ),
     );
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { type Clock, frozenClock } from '@ultimat3/core';
+import { type Clock, frozenClock, isUltimateError } from '@ultimat3/core';
 import { type Auth, defineAuth, login, register } from './auth';
 import { AuthError } from './errors';
 import { MemoryAdapter } from './memory-adapter';
@@ -126,6 +126,25 @@ describe('auth rate limiting', () => {
       expect(await limiter.lockedUntil(victim)).not.toBeNull();
       expect(limiter.size).toBe(2);
     });
+
+    /**
+     * `Math.max(1, Math.floor(x))` was the guard and `Math.floor(NaN)` is `NaN`, so
+     * `buckets.size > maxKeys` was false for every size and the sweep that bounds this table never
+     * ran. Half these keys are attacker-chosen (`ipKey`), so the ceiling is the only thing between
+     * a rotating-address spray and this process's memory.
+     */
+    test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+      'refuses a maxKeys of %p rather than clamping it into a table with no ceiling',
+      (maxKeys) => {
+        let code = 'no-error-thrown';
+        try {
+          createAuthLimiter(frozenClock(0), policy({ maxKeys }));
+        } catch (error) {
+          code = isUltimateError(error) ? error.code : `not-an-ultimate-error: ${String(error)}`;
+        }
+        expect(code).toBe('X_CONFIG_INVALID');
+      },
+    );
 
     test('a rotating-address spray cannot grow the table past its cap', async () => {
       const limiter = createAuthLimiter(frozenClock(0), policy({ maxKeys: 10 }));

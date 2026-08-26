@@ -3,7 +3,7 @@
 // 12:00:10, so a fire-and-forget emitter would silently strand every waiting run.
 
 import type { Clock } from '@ultimat3/core';
-import { logger, systemClock, uuid } from '@ultimat3/core';
+import { finiteOption, logger, systemClock, uuid } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { nowMs, toMs } from './clock';
 import type { EventLookup } from './steps';
@@ -40,7 +40,7 @@ export interface MemoryEventBusOptions {
 export function createMemoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
   const clock = options.clock ?? systemClock;
   const defaultTtl = options.defaultTtl ?? 604_800_000;
-  const maxEvents = options.maxEvents ?? 10_000;
+  const maxEvents = finiteOption('the memory event bus', 'maxEvents', options.maxEvents ?? 10_000);
   const events = new Map<string, JobEvent>();
 
   const purgeExpired = (): number => {
@@ -64,7 +64,13 @@ export function createMemoryEventBus(options: MemoryEventBusOptions = {}): Event
         name,
         payload,
         publishedAt: at,
-        expiresAt: at + toMs(publishOptions.ttl ?? defaultTtl),
+        expiresAt:
+          at +
+          finiteOption(
+            'the memory event bus',
+            'defaultTtl',
+            toMs(publishOptions.ttl ?? defaultTtl),
+          ),
         ...(publishOptions.correlationKey === undefined
           ? {}
           : { correlationKey: publishOptions.correlationKey }),

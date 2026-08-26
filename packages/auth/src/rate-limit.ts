@@ -11,6 +11,7 @@ import {
   authLimiterNotShared,
   authLimiterPolicyMismatch,
 } from './errors';
+import { assertFiniteAuthCount } from './policy-numbers';
 
 /**
  * Where a limiter's counters live. A limiter says which it provides; `AuthRateLimitPolicy` says
@@ -157,7 +158,15 @@ export function createAuthLimiter(
   policy: AuthRateLimitPolicy = DEFAULT_AUTH_RATE_LIMIT,
 ): MemoryAuthLimiter {
   const buckets = new Map<string, Bucket>();
-  const maxKeys = Math.max(1, Math.floor(policy.maxKeys ?? DEFAULT_MAX_AUTH_LIMIT_KEYS));
+  // Screened, not clamped: `Math.floor(NaN)` is `NaN`, so `buckets.size > maxKeys` is false and
+  // the sweep that bounds this table never runs. Half these keys are attacker-chosen (`ipKey`),
+  // which is what makes the ceiling the only thing between a spray and this process's memory.
+  const maxKeys = assertFiniteAuthCount(
+    'rateLimit.maxKeys',
+    policy.maxKeys ?? DEFAULT_MAX_AUTH_LIMIT_KEYS,
+    'the in-memory table has no ceiling, so a spray of distinct keys is memory the attacker chooses',
+    1,
+  );
   const evictTo = Math.max(1, Math.floor(maxKeys * 0.9));
   let lastSweepMs = Number.NEGATIVE_INFINITY;
 

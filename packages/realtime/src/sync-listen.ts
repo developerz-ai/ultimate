@@ -2,7 +2,7 @@
 // so the node itself stays testable with no server: this file is the only place realtime calls
 // `Bun.serve`, and the only thing in the package that knows a port exists.
 
-import { markListening, onShutdown } from '@ultimat3/core';
+import { finiteOption, markListening, onShutdown } from '@ultimat3/core';
 import type { SyncNode } from './sync-node';
 
 export interface ListenOptions {
@@ -21,7 +21,7 @@ export interface SyncListener {
  */
 export function listenSyncNode(node: SyncNode, options: ListenOptions = {}): SyncListener {
   const server = Bun.serve({
-    port: options.port ?? 3001,
+    port: finiteOption('listenSyncNode', 'port', options.port ?? 3001),
     fetch: node.fetch,
     websocket: node.websocket,
   });

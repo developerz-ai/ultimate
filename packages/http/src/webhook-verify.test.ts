@@ -15,7 +15,11 @@ import {
   WEBHOOK_SIGNATURE_HEADER,
   WEBHOOK_TOPIC_HEADER,
 } from '@ultimat3/core';
-import { DEFAULT_WEBHOOK_TOLERANCE_MS, verifyWebhookSignature } from './webhook-verify';
+import {
+  DEFAULT_WEBHOOK_BODY_LIMIT,
+  DEFAULT_WEBHOOK_TOLERANCE_MS,
+  verifyWebhookSignature,
+} from './webhook-verify';
 
 /** The one literal both packages assert. Recomputing it here would prove nothing. */
 const WEBHOOK_VECTOR = {
@@ -245,5 +249,71 @@ describe('a refusal never carries the secret or the signature', () => {
     const rendered = `${thrown.cause} ${thrown.fix} ${JSON.stringify(thrown.meta ?? {})}`;
     expect(rendered).not.toContain(WEBHOOK_VECTOR.secret);
     expect(rendered).not.toContain('d0c20033');
+  });
+});
+
+/**
+ * `toleranceMs` IS the replay window. `skewMs > NaN` is false, so a non-finite tolerance does not
+ * widen the window — it removes it, and a correctly signed webhook captured a year ago verifies
+ * forever. `Number(process.env.WEBHOOK_TOLERANCE_MS)` on an unset variable is how it arrives, and
+ * nothing downstream can notice: the signature is valid, so every other check passes.
+ */
+describe('the replay window is screened before it is compared against', () => {
+  const verifyWith = async (toleranceMs: number, nowMs: number): Promise<string> => {
+    try {
+      await verifyWebhookSignature(signed({}), {
+        secret: WEBHOOK_VECTOR.secret,
+        clock: clockAt(nowMs),
+        toleranceMs,
+      });
+    } catch (error) {
+      return isUltimateError(error) ? error.code : 'not-an-ultimate-error';
+    }
+    return 'accepted';
+  };
+
+  const A_YEAR_LATER = SIGNED_AT_MS + 365 * 24 * 60 * 60 * 1000;
+
+  test('a tolerance that is not a number is refused, never an unbounded window', async () => {
+    for (const toleranceMs of [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5]) {
+      expect(await verifyWith(toleranceMs, A_YEAR_LATER)).toBe('X_CONFIG_INVALID');
+    }
+  });
+
+  test('zero is a window a deployment may choose: only a same-instant signature passes', async () => {
+    expect(await verifyWith(0, SIGNED_AT_MS)).toBe('accepted');
+    expect(await verifyWith(0, SIGNED_AT_MS + 1)).toBe('X_WEBHOOK_SIGNATURE_STALE');
+  });
+
+  /**
+   * The body cap is the SECOND bound on this path and it was closed only at the far end:
+   * `readWithinLimit` refuses a non-finite limit with core's `X_INVARIANT`, whose `fix:` names
+   * core's reader rather than the `maxBytes` the caller wrote. Refused here too, which is the
+   * layered form `backfill()` and `inBatches()` already use.
+   */
+  test('a body cap that is not a usable byte count is refused, naming maxBytes', async () => {
+    const capOf = async (maxBytes: number): Promise<string> => {
+      try {
+        await verifyWebhookSignature(signed({}), {
+          secret: WEBHOOK_VECTOR.secret,
+          clock: clockAt(SIGNED_AT_MS),
+          maxBytes,
+        });
+      } catch (error) {
+        return isUltimateError(error) ? error.code : 'not-an-ultimate-error';
+      }
+      return 'accepted';
+    };
+    for (const maxBytes of [Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5]) {
+      expect(await capOf(maxBytes)).toBe('X_CONFIG_INVALID');
+    }
+    expect(await capOf(DEFAULT_WEBHOOK_BODY_LIMIT)).toBe('accepted');
+  });
+
+  test('the shipped default still accepts a fresh delivery and refuses a stale one', async () => {
+    expect(await verifyWith(DEFAULT_WEBHOOK_TOLERANCE_MS, SIGNED_AT_MS)).toBe('accepted');
+    expect(await verifyWith(DEFAULT_WEBHOOK_TOLERANCE_MS, A_YEAR_LATER)).toBe(
+      'X_WEBHOOK_SIGNATURE_STALE',
+    );
   });
 });

@@ -7,7 +7,7 @@
 // it is applied once at boot and never by a driver method. Re-exported from here so the install
 // point keeps the ONE import path every caller already uses.
 
-export { SQL_JOBS_TABLE, SQL_OUTBOX_TABLE } from './driver-pg-ddl';
+export { SQL_JOBS_TABLE } from './driver-pg-ddl';
 // The whole-`x_jobs`-row reads, split off at this file's size ceiling and re-exported for the
 // same reason the DDL is. `JOB_ROW_COLUMNS` is imported as a value because `SQL_CANCEL` also
 // returns a whole row and must project it identically — two spellings of one row shape is how

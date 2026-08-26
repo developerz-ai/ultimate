@@ -14,7 +14,7 @@
 // This header said "every failure leaves here as an `UltimateError`" until 2026-08, which a reader
 // took as a guarantee it never was.
 
-import { renderThrowable } from '@ultimat3/core';
+import { finiteOption, renderThrowable } from '@ultimat3/core';
 import { connect, Events, headers, Match, type Msg, type MsgHdrs, type NatsConnection } from 'nats';
 import { TransportUnavailableError } from './errors';
 import {
@@ -76,7 +76,11 @@ class LibNatsClient implements NatsClient {
   constructor(connection: NatsConnection, target: NatsTarget, options: NatsClientOptions) {
     this.#connection = connection;
     this.#target = target;
-    this.#timeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.#timeoutMs = finiteOption(
+      'the nats client',
+      'requestTimeoutMs',
+      options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+    );
     this.#report = options.onError ?? ((): void => undefined);
     void this.#watch(options);
   }

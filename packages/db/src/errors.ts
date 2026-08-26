@@ -285,15 +285,6 @@ export const serializationExhausted = (attempts: number, sourceError: unknown): 
     sourceError,
   });
 
-/** The contract's pinned wording. Mirror of `@ultimat3/entity`'s `dbDrift()` — keep in sync. */
-export const dbDrift = (tableName: string, columnName: string): DbError =>
-  new DbError({
-    code: 'X_DB_DRIFT',
-    cause: `table "${tableName}" has column "${columnName}" not present in any migration`,
-    fix: `x db gen "add ${columnName}"`,
-    meta: { table: tableName, column: columnName },
-  });
-
 export const sqlUnsafe = (received: string, position: number): DbError =>
   new DbError({
     code: 'X_SQL_UNSAFE',

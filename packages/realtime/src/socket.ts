@@ -10,6 +10,7 @@ import {
   type Clock,
   type Counter,
   counter,
+  finiteOption,
   logger,
   recordConnection,
   systemClock,
@@ -102,6 +103,14 @@ export function actorIdOf(actor: Actor | null): string | null {
   return actor === null ? null : actor.id;
 }
 
+/**
+ * MEASURED, both directions: with `maxBufferedBytes: NaN`, `getBufferedAmount() > NaN` is false and
+ * `send()` answered TRUE with 10 MB already buffered — backpressure never trips, the caller is told
+ * the frame left, and the drop reaches neither `channel_frames_dropped_total` nor the desync mark;
+ * with `idleTimeoutMs: NaN`, `idleFor(now) > NaN` is false and a socket idle for 10,000,000 ms is
+ * not in `idle()`, so a wedged client holds its grant, its subscriptions and its topic membership
+ * forever. `@ultimat3/core`'s `finiteOption` is the one refusal; `bun run finite-bounds` is the ratchet over it.
+ */
 export class SyncSocket {
   readonly id: string;
   readonly clientBuildId: string;
@@ -150,10 +159,16 @@ export class SyncSocket {
     this.serverBuildId = options.serverBuildId;
     this.actor = options.actor ?? null;
     this.#maxBufferedBytes = options.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES;
+    finiteOption('SyncSocket', 'maxBufferedBytes', this.#maxBufferedBytes);
     this.#maxDroppedFrames = options.maxDroppedFrames ?? 32;
+    finiteOption('SyncSocket', 'maxDroppedFrames', this.#maxDroppedFrames);
     this.frameBudget = new AcceptBudget({
-      perSecond: options.maxFramesPerSecond ?? DEFAULT_MAX_FRAMES_PER_SECOND,
-      burst: options.frameBurst ?? DEFAULT_FRAME_BURST,
+      perSecond: finiteOption(
+        'SyncSocket',
+        'maxFramesPerSecond',
+        options.maxFramesPerSecond ?? DEFAULT_MAX_FRAMES_PER_SECOND,
+      ),
+      burst: finiteOption('SyncSocket', 'frameBurst', options.frameBurst ?? DEFAULT_FRAME_BURST),
       clock: this.#clock,
     });
     // Two clocks on purpose: `openedAt` is an instant a human reads, `lastSeenMonotonicMs` is the
@@ -287,6 +302,7 @@ export class SocketRegistry {
   constructor(options: SocketRegistryOptions = {}) {
     this.#clock = options.clock ?? systemClock;
     this.#idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+    finiteOption('SocketRegistry', 'idleTimeoutMs', this.#idleTimeoutMs);
   }
 
   /**

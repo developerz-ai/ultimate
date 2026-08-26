@@ -7,7 +7,7 @@
 // catches it and re-queues the job for `resumeAt` instead of holding a process for three days.
 
 import type { Clock } from '@ultimat3/core';
-import { logger, renderThrowable } from '@ultimat3/core';
+import { finiteOption, logger, renderThrowable } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { nowMs, toMs } from './clock';
 import { JobAbortedError, JobTimeoutError, StepDuplicateError } from './errors';
@@ -199,7 +199,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
   const used: string[] = [];
   const replayed: string[] = [];
   const clock = options.clock;
-  const pollMs = options.eventPollMs ?? 30_000;
+  const pollMs = finiteOption('step.waitForEvent', 'eventPollMs', options.eventPollMs ?? 30_000);
   const runSignal = options.signal ?? NEVER_ABORTED;
 
   /**
@@ -387,7 +387,9 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
 
     const at = now();
     const startedAt = existing?.startedAt ?? at;
-    const deadline = startedAt + toMs(waitOptions.timeout ?? 86_400_000);
+    const deadline =
+      startedAt +
+      finiteOption('step.waitForEvent', 'timeout', toMs(waitOptions.timeout ?? 86_400_000));
     const correlationKey = waitOptions.match;
 
     const hit = await options.events?.find(event, correlationKey, startedAt);
@@ -411,7 +413,11 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
         throw new JobTimeoutError({
           job: jobName,
           step: name,
-          timeoutMs: toMs(waitOptions.timeout ?? 86_400_000),
+          timeoutMs: finiteOption(
+            'step.waitForEvent',
+            'timeout',
+            toMs(waitOptions.timeout ?? 86_400_000),
+          ),
         });
       }
       logger.warn('jobs.step.wait-timeout', { job: jobName, step: name, event });

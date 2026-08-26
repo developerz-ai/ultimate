@@ -344,6 +344,27 @@ describe('responseFields / describeFields / serverError', () => {
     expect(fix).not.toInclude('x db replication');
   });
 
+  test('a SQLSTATE naming an Object.prototype member falls back, and does not THROW', () => {
+    // `FIXES` is `Readonly<Record<string, string>>` and `code` is `fields['C']`, read off the wire.
+    // `FIXES['constructor']` answered the `Object` FUNCTION — not nullish, so `?? …` never fired —
+    // and `UltimateError` then ran `singleLine(fn)`, whose `.replace` does not exist: a TypeError
+    // thrown from inside the constructor of the error that exists to explain the failure, so the
+    // caller lost `X_REPLICATION_FAILED` and its instruction both. Same shape as `schema/errors.ts`.
+    const generic = 'x doctor db — the postgres message above names the object to change';
+    for (const sqlstate of ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty']) {
+      const error = serverError(
+        'auth',
+        errorBody([
+          ['C', sqlstate],
+          ['M', 'boom'],
+        ]),
+      );
+      expect(error).toBeInstanceOf(ReplicationFailedError);
+      expect(typeof error.fix).toBe('string');
+      expect(error.fix).toBe(generic);
+    }
+  });
+
   test('serverError falls back to the generic x doctor db fix for an unknown SQLSTATE', () => {
     const error = serverError(
       'auth',

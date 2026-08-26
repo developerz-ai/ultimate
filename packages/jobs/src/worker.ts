@@ -16,7 +16,7 @@ import {
 import { nowMs } from './clock';
 import { settleAllBy } from './drain-wait';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
-import { DEFAULT_QUEUE, DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
+import { DEFAULT_QUEUE } from './driver';
 import { ConcurrencyUnenforceableError } from './errors';
 import type { JobExecution, JobOutcome } from './execute';
 import { getJob, registeredJobs } from './job';
@@ -25,6 +25,7 @@ import { createLimiter } from './limits';
 import { recordQueueDeadJobs, recordQueueOldestReady } from './metrics';
 import type { EventLookup } from './steps';
 import { createFleetSlots } from './worker-fleet-slots';
+import { resolveWorkerTimings } from './worker-options';
 import { runClaimedJob } from './worker-run';
 
 /**
@@ -89,13 +90,10 @@ export interface Worker {
 export function createWorker(options: WorkerOptions): Worker {
   const workerId = options.workerId ?? `worker-${uuid()}`;
   const queues = options.queues ?? [DEFAULT_QUEUE];
-  const visibilityTimeoutMs = options.visibilityTimeoutMs ?? DEFAULT_VISIBILITY_TIMEOUT_MS;
-  const pollIntervalMs = options.pollIntervalMs ?? 250;
-  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? Math.floor(visibilityTimeoutMs / 3);
-  const slotsFor = (queue: string): number =>
-    typeof options.concurrency === 'number'
-      ? options.concurrency
-      : (options.concurrency?.[queue] ?? 5);
+  // Every numeric knob, read and refused in one place — `worker-options.ts` says why a non-finite
+  // one is a refusal rather than a clamp, and carries the slot table's own-key read with it.
+  const { visibilityTimeoutMs, pollIntervalMs, heartbeatIntervalMs, slotsFor } =
+    resolveWorkerTimings(options);
   const limiter = options.limiter ?? createLimiter({});
   const driverLeases = options.driver.leases;
   // `job.concurrency`, held as a row every replica sees. The TTL is the visibility timeout and the

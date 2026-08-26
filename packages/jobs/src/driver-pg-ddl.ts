@@ -177,29 +177,3 @@ create table if not exists x_job_events (
 create index if not exists x_job_events_lookup_idx
   on x_job_events (name, published_at);
 `.trim();
-
-/**
- * Kept as its own constant because it is a public export and `x_outbox` is a table an operator
- * may need to create alone. It is ALSO inside `SQL_JOBS_TABLE`, which is the one boot applies —
- * two install points for one table is how the outbox came to be documented and never created.
- */
-export const SQL_OUTBOX_TABLE = `
-create table if not exists x_outbox (
-  id              uuid primary key,
-  job             text        not null,
-  queue           text        not null default 'default',
-  input           jsonb       not null,
-  idempotency_key text        not null,
-  max_attempts    int         not null default 3,
-  run_at          timestamptz not null default now(),
-  staged_at       timestamptz not null default now(),
-  tenant_id       text,
-  traceparent     text,
-  enqueued_by     text,
-  published_at    timestamptz
-);
-create index if not exists x_outbox_unpublished_idx
-  on x_outbox (staged_at) where published_at is null;
-alter table x_outbox add column if not exists claimed_at timestamptz;
-alter table x_outbox add column if not exists claimed_by text;
-`.trim();

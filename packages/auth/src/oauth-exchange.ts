@@ -22,12 +22,17 @@ import {
 } from './oauth';
 import { oauthExchangeFailed, restartAt } from './oauth-errors';
 import { providerFor } from './oauth-registry';
+import { assertFiniteAuthCount } from './policy-numbers';
 
 /** Just the call. `typeof fetch` also carries `preconnect`, which no test double should have to. */
 export type OAuthFetch = (input: string, init: RequestInit) => Promise<Response>;
 
 /** GitHub answers 403 to a request with no user agent, so every call this package makes has one. */
 export const OAUTH_USER_AGENT = 'ultimate-auth';
+
+/** Named in the refusal above the one `fetch` this file makes. */
+const TIMEOUT_CONSEQUENCE =
+  'AbortSignal.timeout throws a bare TypeError on it, several frames below the option that set it, so the leg fails with an error that names neither this package nor the option';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_DETAIL_LENGTH = 200;
@@ -158,6 +163,15 @@ async function postForm(
   options: OAuthExchangeOptions,
 ): Promise<Record<string, unknown>> {
   const doFetch: OAuthFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  // Screened OUTSIDE the try below, deliberately: `AbortSignal.timeout(NaN)` throws, and the
+  // catch around this fetch renders every throw as a provider failure — so a typo in the app's
+  // own config read as the identity provider being unreachable.
+  const timeoutMs = assertFiniteAuthCount(
+    'oauth.exchange.timeoutMs',
+    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    TIMEOUT_CONSEQUENCE,
+    1,
+  );
   const url = providerFor(provider).tokenUrl;
 
   let response: Response;
@@ -171,7 +185,7 @@ async function postForm(
         'User-Agent': OAUTH_USER_AGENT,
       },
       body: body.toString(),
-      signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     // The rendered value goes to the LOG, never into the `detail:`.

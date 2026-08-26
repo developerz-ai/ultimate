@@ -236,3 +236,36 @@ describe('the fleet slot is handed back before the driver goes', () => {
     expect(await store.held('job:cappedJob')).toBe(0);
   });
 });
+
+describe('the concurrency table is read by OWN keys, so a queue name is only ever data', () => {
+  test('a queue called `constructor` gets the default slot count, never the Object function', async () => {
+    const asked: { queue: string; limit: number }[] = [];
+    const base = createMemoryDriver();
+    const driver: JobDriver = {
+      ...base,
+      claim(options: ClaimOptions) {
+        for (const queue of options.queues) asked.push({ queue, limit: options.limit });
+        return base.claim(options);
+      },
+    };
+    // `concurrency` is a caller-supplied map keyed by queue NAME, and a queue name is deployment
+    // data: an inherited member reached `Math.max(0, <function> - inFlight)` and the loop then
+    // asked the driver for `limit: NaN`.
+    const worker = createWorker({
+      driver,
+      queues: ['imports', 'constructor', '__proto__', 'toString'],
+      concurrency: { imports: 3 },
+      context,
+      drainOnShutdown: false,
+    });
+
+    await worker.tick();
+
+    expect(asked).toEqual([
+      { queue: 'imports', limit: 3 },
+      { queue: 'constructor', limit: 5 },
+      { queue: '__proto__', limit: 5 },
+      { queue: 'toString', limit: 5 },
+    ]);
+  });
+});

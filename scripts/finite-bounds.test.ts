@@ -209,16 +209,36 @@ describe('the real tree', () => {
     // Named individually rather than counted: the total moving is what a future edit is allowed to
     // do, and one of THESE regressing is what it is not.
     //
-    // This list is the tier-0/1 band, because that is the slice of the 17.0.0 sweep this tree
-    // holds. The later slices repair the tiers above and each ADDS its own names here as it lands —
-    // `jobs`, `realtime` and `query` next, which were swept by hand on 2026-08-26 and are pinned in
-    // `finite-bounds-pins.ts` until that slice merges. A name may only ever be ADDED to this list:
+    // Tiers 0 through 3, which is what the sweep has landed so far. Each remaining slice ADDS its
+    // own band here as it merges — tier 4, then tier 5 — and lowers its rows in
+    // `finite-bounds-pins.ts` in the same commit, because `X_FINITE_BOUND_PIN_STALE` fires the
+    // moment a repair lands and leaves a pin behind. A name may only ever be ADDED to this list:
     // taking one out is the regression the test exists to catch.
     const sites = finiteBoundSites(await collectSourceFiles(repoRoot()));
     const total = [...sites.values()].reduce((sum, list) => sum + list.length, 0);
     // Non-vacuity: a scan that found nothing at all would satisfy every assertion below.
     expect(total).toBeGreaterThan(10);
-    const swept = ['core', 'schema', 'db', 'cache', 'storage', 'time', 'money', 'i18n', 'seo'];
+    const swept = [
+      // tier 0–1, swept in the first slice
+      'core',
+      'schema',
+      'db',
+      'cache',
+      'storage',
+      'time',
+      'money',
+      'i18n',
+      'seo',
+      // tier 2–3, swept in this one
+      'entity',
+      'policy',
+      'http',
+      'auth',
+      'action',
+      'query',
+      'jobs',
+      'realtime',
+    ];
     for (const pkg of swept) {
       expect(sites.get(pkg) ?? [], `${pkg} has no unchecked numeric option`).toEqual([]);
     }

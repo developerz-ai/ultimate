@@ -26,17 +26,33 @@ interface Recorded {
   limit: number | null;
 }
 
-const chainFor = (recorded: Recorded): SearchChain<Post> => {
+/**
+ * A relevance ordering, which is what a real `.searchable()` chain serves and what no key in this
+ * layer's `QueryShape` can name. Deliberately NOT id-ascending: `ROWS` is `a, b, c`, so a wrapper
+ * that re-sorts by the id tiebreak is invisible against it — the shape that let `.page()` ship
+ * returning different rows from `runQuery` for the same window.
+ */
+const RANKED: readonly Post[] = [
+  { id: 'z', title: 'cats, mostly' },
+  { id: 'm', title: 'cats and dogs' },
+  { id: 'a', title: 'a passing mention of cats' },
+];
+
+const chainFor = (recorded: Recorded, rows: readonly Post[] = ROWS): SearchChain<Post> => {
   const chain: SearchChain<Post> = {
     search: (term) => {
       recorded.term = term;
       return chain;
     },
-    limit: (rows) => {
-      recorded.limit = rows;
+    limit: (count) => {
+      recorded.limit = count;
       return chain;
     },
-    all: async () => ROWS,
+    // The fixture HONOURS `limit`, because a real chain does and `.page()`'s "there is no next
+    // page" rests on it: `search()` caps the read at `limit` rows, so a window that covers
+    // `limit` covers everything. A fixture that ignored the contract it stands in for would let
+    // the wart back in under a green test.
+    all: async () => rows.slice(0, recorded.limit ?? rows.length),
     plan: () => ({ entity: 'posts' }),
   };
   return chain;
@@ -125,18 +141,85 @@ describe('search()', () => {
     expect(seen.org).toBe('org-1');
   });
 
-  test('page one is served, and page TWO is refused rather than silently truncated', async () => {
+  test('a window that would CUT the read page is refused at page one, not at page two', async () => {
+    // The read serves 20 rows (`limit`'s default) and the caller asked for 2. There is no page two
+    // to carry the other 18, so serving page one would put them on no page at all — the defect
+    // 12.0.0 spent a release removing from the timestamp seek, arriving through a different door.
     const recorded: Recorded = { term: null, limit: null };
     const searchPosts = search<Post>({
       policy: can('search:read'),
       in: () => chainFor(recorded),
     });
     registerQuery('searchPosts', searchPosts);
-    const first = await paginate(searchPosts, { q: 'cats' }, { first: 2, ctx });
-    expect(first.rows).toHaveLength(2);
-    expect(first.endCursor).not.toBeNull();
+    const refused = paginate(searchPosts, { q: 'cats' }, { first: 2, ctx });
+    await expect(refused).rejects.toBeInstanceOf(UltimateError);
+    const caught = await refused.catch((thrown: unknown) => thrown);
+    // Both edits, spelled out — widen the window, or narrow the read's own page.
+    const instruction = caught instanceof UltimateError ? caught.fix : '';
+    expect(instruction).toContain('first: 20');
+    expect(instruction).toContain('limit: 2');
+    expect(caught instanceof UltimateError ? caught.code : '').toBe('X_INVARIANT');
+  });
+
+  test('a window that COVERS the read page serves it whole and advertises no next page', async () => {
+    const recorded: Recorded = { term: null, limit: null };
+    const searchPosts = search<Post>({
+      policy: can('search:read'),
+      in: () => chainFor(recorded),
+    });
+    registerQuery('searchPosts', searchPosts);
+    const page = await paginate(searchPosts, { q: 'cats', limit: 3 }, { first: 3, ctx });
+    expect(page.rows).toHaveLength(3);
+    // The pair that invited a call this read refuses. `hasNextPage` can only be false on a search
+    // page now, so a cursor client stops here instead of being handed a cursor page two throws on.
+    expect(page.hasNextPage).toBe(false);
+    expect(page.endCursor).not.toBeNull();
+  });
+
+  test('a cursor handed back is still refused — one page, and no second', async () => {
+    const recorded: Recorded = { term: null, limit: null };
+    const searchPosts = search<Post>({
+      policy: can('search:read'),
+      in: () => chainFor(recorded),
+    });
+    registerQuery('searchPosts', searchPosts);
+    const page = await paginate(searchPosts, { q: 'cats', limit: 3 }, { first: 3, ctx });
     await expect(
-      paginate(searchPosts, { q: 'cats' }, { first: 2, after: first.endCursor ?? '', ctx }),
+      paginate(
+        searchPosts,
+        { q: 'cats', limit: 3 },
+        { first: 3, after: page.endCursor ?? '', ctx },
+      ),
     ).rejects.toBeInstanceOf(UltimateError);
+  });
+
+  test(".page() serves the chain's own order — the top row is never sorted off page one", async () => {
+    const recorded: Recorded = { term: null, limit: null };
+    const searchPosts = search<Post>({
+      policy: can('search:read'),
+      in: () => chainFor(recorded, RANKED),
+    });
+    registerQuery('searchPosts', searchPosts);
+
+    const served = await runQuery(searchPosts, { q: 'cats', limit: 2 }, { ctx });
+    expect(served.map((row) => row.id)).toEqual(['z', 'm']);
+
+    const page = await paginate(searchPosts, { q: 'cats', limit: 2 }, { first: 2, ctx });
+    // The rows `runQuery` answers, in that order — not a different two in a different order.
+    expect(page.rows.map((row) => row.id)).toEqual(['z', 'm']);
+    expect(page.rows.map((row) => row.id)).toEqual(served.map((row) => row.id));
+    expect(page.hasNextPage).toBe(false);
+  });
+
+  test('.page() serves every row when the chain returns fewer than the window', async () => {
+    const recorded: Recorded = { term: null, limit: null };
+    const searchPosts = search<Post>({
+      policy: can('search:read'),
+      in: () => chainFor(recorded, RANKED),
+    });
+    registerQuery('searchPosts', searchPosts);
+    const page = await paginate(searchPosts, { q: 'cats', limit: 3 }, { first: 5, ctx });
+    expect(page.rows.map((row) => row.id)).toEqual(['z', 'm', 'a']);
+    expect(page.hasNextPage).toBe(false);
   });
 });

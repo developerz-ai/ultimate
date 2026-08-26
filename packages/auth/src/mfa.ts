@@ -5,6 +5,7 @@
 
 import type { Auth } from './auth';
 import { mfaSecretInvalid } from './errors';
+import { assertFiniteAuthCount } from './policy-numbers';
 import { randomBytes, sha256Hex, timingSafeEqual } from './tokens';
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -166,7 +167,17 @@ export function verifyTotp(input: VerifyTotpInput): TotpVerification {
   // "this account's secret is malformed" to whoever asked. It also keeps `totpCode`'s refusal off
   // the login path entirely — nothing below can reach it with a zero-length key.
   if (base32Decode(input.secret).length === 0) return { ok: false, step: null };
+  // A LOOP BOUND, screened before it becomes one: measured, `drift: Infinity` never terminates
+  // (`-Infinity + 1` is `-Infinity`) — a synchronous infinite loop on the login path, past every
+  // AbortSignal — and `drift: NaN` makes `-NaN <= NaN` false, so the loop never runs and every
+  // correct code is rejected as if it were wrong. Zero is legitimate: the current step only.
   const drift = input.drift ?? TOTP_DRIFT_STEPS;
+  assertFiniteAuthCount(
+    'mfa.drift',
+    drift,
+    'the verification loop either never terminates (Infinity) or never runs at all (NaN), and the second answers "wrong code" to every correct one',
+    0,
+  );
   const current = totpStep(input.at);
   const candidate = input.code.replaceAll(' ', '');
   for (let offset = -drift; offset <= drift; offset += 1) {

@@ -63,6 +63,29 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   for a hand-written definition and `live-definition.test.ts` proves it for a real declared
   `query({ live: true })` — the second one matters, because a rule that only holds for test fakes
   is a rule no declaration can reach.
+- **Every numeric option is refused when it is not a FINITE number, `As of 2026-08-26`.**
+  `finite.ts`'s `finiteOption()` is the one refusal — `bun run finite-bounds --explain --json`
+  is the count, never a number written here — and this package is pinned at **zero**. `??` guards nullish and
+  `NaN` is not, so `Number(process.env.X)` on an unset variable reaches the bound intact, and
+  `Math.max`/`Math.min`/`Math.floor` propagate rather than validate — `AcceptBudget` was
+  `Math.max(1, options.perSecond)` and admitted every accept, because `NaN < 1` is false.
+- **Every ceiling is refused when it is not a FINITE number, `As of 2026-08-26`.**
+  `AcceptBudget`'s `perSecond`/`burst`, `SyncSocket`'s `maxBufferedBytes`/`maxDroppedFrames` and
+  `SocketRegistry`'s `idleTimeoutMs` throw `X_INVARIANT` at construction on `NaN` and `±Infinity`.
+  Every comparison against a non-finite bound is FALSE, so each guard did not loosen — it switched
+  off, silently. Measured: `tryAccept()` asks `tokens < 1`, so `perSecond: NaN` admitted every
+  accept, herd included, on the node path AND on the per-socket frame flood budget;
+  `maxBufferedBytes: NaN` made `send()` answer TRUE with 10 MB queued, so a discarded frame was
+  neither counted in `channel_frames_dropped_total` nor desync-marked — the delivery-accounting
+  guarantee this file states, voidable through one option; `idleTimeoutMs: NaN` left a socket idle
+  for 10,000,000 ms out of `idle()`. `??` guards only nullish and `Math.max` is a clamp, not a
+  validator: `Number(process.env.X)` on an unset variable reaches the comparison intact.
+- **A SQLSTATE off the wire is DATA, so `pg-wire.ts`'s `FIXES` is read with `Object.hasOwn`.**
+  `FIXES['constructor']` answered the `Object` function — not nullish, so `?? GENERIC_FIX` never
+  fired — and `UltimateError` then ran `singleLine(fn)`: a `TypeError` out of the constructor of
+  the error that exists to explain the failure, so the caller lost `X_REPLICATION_FAILED`, its
+  cause and its fix at once. This was `realtime`'s one `proto-index` pin, and the pin's stated
+  reason ("keyed by a replication op this package declares") described a different read.
 - **A name nothing registered is `X_LIVE_QUERY_UNKNOWN`, never `X_PROTOCOL_VERSION`.** The frame
   parsed and the version matched — one string in it names nothing — so "x build && redeploy the
   client" is the one instruction that cannot work: a rebuilt client spells the typo the same way,

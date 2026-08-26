@@ -15,6 +15,11 @@ import {
   providerDetail,
 } from './oauth-exchange';
 import { providerFor } from './oauth-registry';
+import { assertFiniteAuthCount } from './policy-numbers';
+
+/** Named in the refusal above the one `fetch` this file makes. */
+const TIMEOUT_CONSEQUENCE =
+  'AbortSignal.timeout throws a bare TypeError on it, several frames below the option that set it, so the leg fails with an error that names neither this package nor the option';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -49,6 +54,15 @@ async function getJson(
   options: OAuthProfileOptions,
 ): Promise<{ ok: true; body: unknown } | { ok: false; status: number; detail: string }> {
   const doFetch: OAuthFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  // Screened OUTSIDE the try below, deliberately: `AbortSignal.timeout(NaN)` throws, and the
+  // catch around this fetch renders every throw as a provider failure — so a typo in the app's
+  // own config read as the identity provider being unreachable.
+  const timeoutMs = assertFiniteAuthCount(
+    'oauth.profile.timeoutMs',
+    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    TIMEOUT_CONSEQUENCE,
+    1,
+  );
   let response: Response;
   try {
     response = await doFetch(url, {
@@ -58,7 +72,7 @@ async function getJson(
         Authorization: `Bearer ${accessToken}`,
         'User-Agent': OAUTH_USER_AGENT,
       },
-      signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     // `renderThrowable`, never `error.message` behind an `instanceof`: `fetch` is INJECTED here,

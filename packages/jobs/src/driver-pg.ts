@@ -5,7 +5,7 @@
 // they run against in `driver-pg-ddl.ts`, and the row-to-record decoding in `driver-pg-rows.ts`.
 
 import type { Clock } from '@ultimat3/core';
-import { systemClock, uuid } from '@ultimat3/core';
+import { finiteOption, systemClock, uuid } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { nowMs } from './clock';
 import type {
@@ -135,7 +135,7 @@ function pgBackfillLedger(exec: () => PgExecutor): BackfillLedger {
         filter.name ?? null,
         filter.status ?? null,
         filter.runId ?? null,
-        filter.limit ?? 100,
+        finiteOption('the pg driver list', 'limit', filter.limit ?? 100),
       ]);
       return rows.map(toBackfillRun);
     },
@@ -200,7 +200,7 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
         filter.queue ?? null,
         filter.name ?? null,
         filter.state ?? null,
-        filter.limit ?? 100,
+        finiteOption('the pg driver list', 'limit', filter.limit ?? 100),
       ]);
       return rows.map(toJobRecord);
     },

@@ -8,6 +8,11 @@ import { isRecord } from './json';
 import type { OAuthProvider } from './oauth';
 import { oauthExchangeFailed } from './oauth-errors';
 import type { OAuthFetch } from './oauth-exchange';
+import { assertFiniteAuthCount } from './policy-numbers';
+
+/** Named in the refusal above the one `fetch` this file makes. */
+const TIMEOUT_CONSEQUENCE =
+  'AbortSignal.timeout throws a bare TypeError on it, several frames below the option that set it, so the leg fails with an error that names neither this package nor the option';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -50,13 +55,22 @@ export async function discoverOAuthProvider(
 ): Promise<OAuthProvider> {
   const url = discoveryUrl(input.issuer);
   const doFetch: OAuthFetch = input.fetch ?? ((target, init) => globalThis.fetch(target, init));
+  // Screened OUTSIDE the try below, deliberately: `AbortSignal.timeout(NaN)` throws, and the
+  // catch around this fetch renders every throw as a provider failure — so a typo in the app's
+  // own config read as the identity provider being unreachable.
+  const timeoutMs = assertFiniteAuthCount(
+    'oauth.discovery.timeoutMs',
+    input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    TIMEOUT_CONSEQUENCE,
+    1,
+  );
 
   let response: Response;
   try {
     response = await doFetch(url, {
       method: 'GET',
       headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(input.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     throw oauthExchangeFailed({

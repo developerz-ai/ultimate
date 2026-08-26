@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isSqlFragment, join, literal, raw, sql } from './sql';
+import { identifier, isSqlFragment, join, literal, raw, shellInertIdentifier, sql } from './sql';
 import { statementsOf } from './statement-split';
 
 describe('sql', () => {
@@ -124,5 +124,41 @@ describe('literal', () => {
     const script = `select ${literal("a\\'b; drop table posts; --").text};`;
     expect(statementsOf(script)).toHaveLength(1);
     expect(statementsOf(script)[0]).toContain('drop table posts');
+  });
+});
+
+/**
+ * The screen every `fix:` puts a catalog name through, and the reason it is not `identifier`
+ * alone: a `fix:` is pasted into a SHELL at least as often as into a psql session, and a name
+ * `identifier` happily quotes can still open a command substitution there.
+ */
+describe('shellInertIdentifier', () => {
+  test('identifier ACCEPTS both characters a shell substitutes, which is why this exists', () => {
+    // The mutation this pins: reuse `identifier` unchanged and every assertion below still
+    // passes on the benign names while `$(id)` gets its executable fix line back.
+    expect(identifier('$(id)').text).toBe('"$(id)"');
+    expect(identifier('`id`').text).toBe('"`id`"');
+  });
+
+  test('a command substitution and a backtick are refused', () => {
+    expect(shellInertIdentifier('$(id)')).toBeNull();
+    expect(shellInertIdentifier('$(whoami)')).toBeNull();
+    expect(shellInertIdentifier('`id`')).toBeNull();
+    // A bare `$` is refused with them: `$IFS` and `$1` substitute inside double quotes too, and
+    // the price is a legal `a$b` losing its executable fix line.
+    expect(shellInertIdentifier('a$b')).toBeNull();
+  });
+
+  test('what identifier refuses is refused here too, through it and never a second rule', () => {
+    for (const name of ['', 'two words', 'has"quote', 'back\\slash']) {
+      expect(() => identifier(name)).toThrow('X_SQL_UNSAFE');
+      expect(shellInertIdentifier(name)).toBeNull();
+    }
+  });
+
+  test('an ordinary name comes back quoted, and an apostrophe is deliberately kept', () => {
+    expect(shellInertIdentifier('publish_at')).toBe('"publish_at"');
+    // Legal in an identifier, inert in a psql session and inside shell double quotes.
+    expect(shellInertIdentifier("o'brien")).toBe(`"o'brien"`);
   });
 });

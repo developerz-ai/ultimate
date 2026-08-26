@@ -3,6 +3,7 @@
 // `createServer({ rateLimitStore })`, and refused at boot when its scope cannot keep the app's
 // declaration; the bucket maths lives here so every driver agrees on the numbers.
 import { type Clock, systemClock } from '@ultimat3/core';
+import { httpCountInvalid } from './errors';
 import {
   rateLimited,
   rateLimitInvalid,
@@ -243,10 +244,26 @@ export interface MemoryRateLimitStore extends RateLimitStore {
  * closest to full go first: throwing away a spent bucket is what would hand the scanner a free
  * reset, so the most-throttled key is the last one to go.
  */
+/** A whole positive count, or the config refusal that names it. */
+const assertFiniteKeyCap = (option: string, value: number): number => {
+  if (Number.isSafeInteger(value) && value >= 1) return value;
+  throw httpCountInvalid(
+    `rate limit store ${option}`,
+    value,
+    'a whole number of at least 1',
+    `maxKeys: ${DEFAULT_MAX_RATE_LIMIT_KEYS}`,
+  );
+};
+
 export const memoryRateLimitStore = (
   options: { readonly maxKeys?: number | undefined } = {},
 ): MemoryRateLimitStore => {
-  const maxKeys = Math.max(1, Math.floor(options.maxKeys ?? DEFAULT_MAX_RATE_LIMIT_KEYS));
+  // Screened, not clamped. `Math.max(1, Math.floor(x))` was the guard, and `Math.floor(NaN)` is
+  // `NaN`: `buckets.size > maxKeys` in `take` is then false so the sweep never runs, and
+  // `buckets.size <= maxKeys` in the sweep is false so it would evict nothing if it did. The cap
+  // is the only thing between a rotating-address scan and this process's memory, and the keys are
+  // addresses the caller chooses — a clamp that quietly answers `NaN` removes it.
+  const maxKeys = assertFiniteKeyCap('maxKeys', options.maxKeys ?? DEFAULT_MAX_RATE_LIMIT_KEYS);
   const evictTo = Math.max(1, Math.floor(maxKeys * 0.9));
   const buckets = new Map<string, BucketState>();
   let lastSweepMs = Number.NEGATIVE_INFINITY;

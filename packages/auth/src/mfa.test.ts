@@ -317,3 +317,49 @@ describe('X_MFA_REQUIRED', () => {
     expect(error.meta?.['userId']).toBe('user-42');
   });
 });
+
+/**
+ * `drift` is a LOOP BOUND, not a comparison, and that makes it the worst of the four shapes.
+ * Measured before the screen landed, on the login path, synchronously:
+ *   `drift: Infinity` — `for (offset = -Infinity; offset <= Infinity; offset += 1)` never
+ *     terminates (`-Infinity + 1` is `-Infinity`). Killed at 6s by a probe's timeout.
+ *   `drift: NaN` — `-NaN <= NaN` is false, so the loop never runs and every CORRECT code is
+ *     rejected: `{ ok: false, step: null }`, indistinguishable from a wrong one.
+ *
+ * HANG HAZARD for whoever edits `verifyTotp` next: removing the screen makes the `Infinity` case
+ * below wedge this file rather than fail it. Mutate with the `NaN` case.
+ */
+describe('the TOTP drift window is screened before it becomes a loop bound', () => {
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5])(
+    'refuses drift %p rather than looping or denying in silence',
+    (drift) => {
+      expect(codeOf(() => verifyTotp({ secret: SECRET, code: '000000', at: AT, drift }))).toBe(
+        'X_CONFIG_INVALID',
+      );
+      expect(
+        messageOf(() => verifyTotp({ secret: SECRET, code: '000000', at: AT, drift })),
+      ).toContain('drift');
+    },
+  );
+
+  test('zero is a window a deployment may choose: the current step and nothing either side', () => {
+    const step = totpStep(AT);
+    expect(verifyTotp({ secret: SECRET, code: totpCode(SECRET, step), at: AT, drift: 0 })).toEqual({
+      ok: true,
+      step,
+    });
+    expect(
+      verifyTotp({ secret: SECRET, code: totpCode(SECRET, step - 1), at: AT, drift: 0 }),
+    ).toEqual({ ok: false, step: null });
+  });
+
+  test('the shipped default still accepts the step either side', () => {
+    const step = totpStep(AT);
+    for (const offset of [-1, 0, 1]) {
+      expect(verifyTotp({ secret: SECRET, code: totpCode(SECRET, step + offset), at: AT }).ok).toBe(
+        true,
+      );
+    }
+    expect(TOTP_DRIFT_STEPS).toBe(1);
+  });
+});

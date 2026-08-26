@@ -107,6 +107,24 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   `createWorker().start()` THROW `X_JOB_CONCURRENCY_UNENFORCEABLE` when a registered job declares
   `concurrency`: a documented guarantee that silently does nothing is the worst of the three
   options, and refusing is what axiom 3 asks for.
+- **`WorkerOptions.concurrency` is read by OWN key, because a queue NAME is deployment data**
+  (`worker.ts`, `As of 2026-08-26`). `options.concurrency?.[queue]` answered
+  `Object.prototype.constructor` for a queue called `constructor`, so
+  `Math.max(0, <function> - inFlight)` was `NaN`, the `free === 0` guard did not catch it, and the
+  pass issued `driver.claim({ limit: NaN })`. `bun run proto-index` cannot reach this one — the
+  table is a **parameter**, not an object literal in the file — so `worker-slots.test.ts` is the
+  enforcement, over `constructor`, `__proto__` and `toString` at once.
+- **Every numeric knob is refused when it is not a FINITE number** — `finite.ts`'s `finiteOption()` is the one
+  refusal, `bun run finite-bounds --explain --json` is the count rather than a number written here,
+  and this package is pinned at **zero**. `worker-options.ts` is the one place `createWorker` reads them
+  (`As of 2026-08-26`), and `createOutboxRelay` refuses its own two.
+  Measured: `visibilityTimeoutMs: NaN` makes `visibleAt` `NaN`, the reclaim scan asks
+  `visibleAt <= now`, and a job whose worker DIED is never claimable again — at-least-once becomes
+  never, on a row `x jobs ls` still prints as `running`. `concurrency: NaN` slices `(0, NaN)`, so
+  the worker claims nothing and reports healthy; `pollIntervalMs: NaN` is `setTimeout(fn, 0)`, so
+  the claim loop spins on the database. `??` guards only nullish and `Math.max`/`Math.floor`
+  propagate `NaN`: `Number(process.env.X)` on an unset variable arrives intact. Same refusal
+  `createLimiter`'s `maxTenants` and `backfill()`'s `batch` already made.
 - **`enqueuedBy` is ATTRIBUTION, never authority — decided 2026-08, do not re-litigate.** Both
   answers were defensible. Impersonating the enqueuer at claim time gives correct authz and is
   rejected because a job that sleeps three days, or dead-letters and is retried next quarter, then
@@ -850,7 +868,7 @@ picture from the other side.
 | `events-pg.ts` | `createPgEventBus` — `step.waitForEvent` across processes |
 | `driver.ts` | `JobDriver` contract + wire records |
 | `driver-pg.ts` | default driver, real SQL constants, and `createPgLeader` — the advisory-lock election that is **not** what a scheduler uses; `scheduler-pg.ts` above owns the lease-row one boot wires |
-| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` + `SQL_OUTBOX_TABLE` — the schema the driver installs. Whichever file holds the DDL is the one whose comments may carry no `;` and no `'` |
+| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` — the schema the driver installs, and the ONE install point: every durable table this package owns, `x_outbox` included, is declared in it. Whichever file holds the DDL is the one whose comments may carry no `;` and no `'` |
 | `driver-pg-jobs-sql.ts` | every statement returning a whole `x_jobs` row, and the `JOB_ROW_COLUMNS` projection they share. Split off at `driver-pg-sql.ts`'s size ceiling and re-exported from it |
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
 | `driver-memory.ts` | `x dev` / tests |

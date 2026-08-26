@@ -19,6 +19,23 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 
 ## Rules
 
+- **Every numeric knob `defineHttpConfig` resolves is screened, `As of 2026-08-26`** — `port`,
+  `bodyLimitBytes`, `requestTimeoutMs`, `maxInflight`, `drainTimeoutMs` and `trustedProxyHops`,
+  each a whole non-negative number or `X_CONFIG_INVALID` (core's code, borrowed as
+  `@ultimat3/auth` borrows it). Measured with `NaN`, which is what `Number(process.env.…)` answers
+  for an unset variable: `total > NaN` is false so the body cap stopped capping and the whole
+  payload was buffered; `NaN <= 0` is false so a deadline armed and `setTimeout(fn, NaN)` is 1ms,
+  which 504s every request; `ceiling > 0` is false so `admit` shed nothing; and
+  `Math.max(0, Math.floor(NaN))` is `NaN`, so `trustProxy: true` silently trusted no hop and every
+  caller's ip became the proxy's. `Math.max(0, …)` was the guard for the last of those — a clamp is
+  not a validator, and this package relied on one. `webhook-verify.ts` screens its own two
+  (`toleranceMs`, `maxBytes`) and `rate-limit.ts` its `maxKeys`; the helper names carry `Finite`
+  (`assertFiniteCount`, `assertFiniteKeyCap`, `assertFiniteBodyLimit`) because
+  `bun run finite-bounds` recognises a repair by the shape of the CALL — spelled `count`, all five
+  config options read as unchecked to the ratchet while every one was screened. `maxBytes` is
+  refused HERE as well as inside `readWithinLimit`: that one is a file away and its `fix:` names
+  core's reader rather than the option the caller wrote.
+
 - Route `meta.auth` is required. Never default a route to public.
 - **An app declares its half of `HttpConfig` through `configureHttp()`, and the boot lays its own
   facts over it** (`As of 2026-08-24`). Until 12.0.0 the entire tuning surface was **unreachable

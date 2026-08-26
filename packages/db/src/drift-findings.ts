@@ -14,7 +14,7 @@
 import { onDeleteRule, rebuildForeignKey } from './foreign-key';
 import type { CheckDescription, ForeignKeyDescription } from './introspect';
 import type { Migration } from './migrate';
-import { identifier } from './sql';
+import { shellInertIdentifier } from './sql';
 
 export type DriftKind =
   | 'unexpected-column'
@@ -46,9 +46,10 @@ export interface DriftReport {
  * The one `fix:` here whose second layer no quoting closes. `x db gen "add C"` puts the column
  * inside SHELL DOUBLE QUOTES, where `$(…)` and a backtick substitute before `x` is reached at all
  * — and the argument is a migration DESCRIPTION, not an identifier, so there is no quoted form
- * that would make a hostile name safe to pass. A name `writableName` refuses is therefore left out
- * of the command rather than escaped into it: the command still runs and still generates the
- * migration, and the name is read off `cause` and `column`, which are prose nobody pastes.
+ * that would make a hostile name safe to pass. A name `shellInertIdentifier` (`sql.ts`) refuses
+ * is therefore left out of the command rather than escaped into it: the command still runs and
+ * still generates the migration, and the name is read off `cause` and `column`, which are prose
+ * nobody pastes.
  */
 export function unexpectedColumn(table: string, column: string): DriftDifference {
   return {
@@ -58,7 +59,7 @@ export function unexpectedColumn(table: string, column: string): DriftDifference
     // Pinned by the contract. Do not reword without changing docs/errors/X_DB_DRIFT.
     cause: `table "${table}" has column "${column}" not present in any migration`,
     fix:
-      writableName(column) === null
+      shellInertIdentifier(column) === null
         ? 'x db gen "add the undeclared column"   # the live column name carries a backtick, a ' +
           'dollar sign, a quote, a backslash or whitespace, so it is in the cause and not in ' +
           'this command'
@@ -96,8 +97,8 @@ export function changedColumn(
   liveNullable: boolean,
 ): DriftDifference {
   const clause = liveNullable ? 'set not null' : 'drop not null';
-  const relation = writableName(table);
-  const attribute = writableName(column);
+  const relation = shellInertIdentifier(table);
+  const attribute = shellInertIdentifier(column);
   return {
     kind: 'changed-column',
     table,
@@ -132,7 +133,7 @@ export function changedColumn(
  * keeps its migrations is the CLI's fact, not this package's.
  */
 export function unexpectedTable(table: string): DriftDifference {
-  const name = writableName(table);
+  const name = shellInertIdentifier(table);
   return {
     kind: 'unexpected-table',
     table,
@@ -147,42 +148,6 @@ export function unexpectedTable(table: string): DriftDifference {
           'then accepts a table its own SQL creates — or, if nothing owns it, run ' +
           `drop table ${name}; inside psql "$DATABASE_URL"`,
   };
-}
-
-/**
- * The ONE screen every `fix:` on this page puts a catalog name through: the quoted identifier a
- * statement may carry, or `null` for a name no line here may spell.
- *
- * The name is DATA — `unexpected-table` is by definition a relation nothing here created, and
- * `create table "x""; drop table users; --" ("id" int)` is legal DDL, so whoever can create a
- * table or a column picks the text that lands in a `fix:`. `identifier` is the rule
- * `foreign-key.ts` states for every name this package writes, and a refusal degrades to prose the
- * way `rebuildForeignKey`'s does: a fix naming no command beats one running a second command the
- * reader never read.
- *
- * TWO layers, and `identifier` closes only the first. A `fix:` is pasted into a SHELL at least as
- * often as into a migration, and `identifier` answers about SQL: it refuses `"`, `\` and
- * whitespace, and accepts a backtick and a `$`, which are exactly the two characters a shell
- * substitutes INSIDE DOUBLE QUOTES. `unexpectedColumn`'s `x db gen "add C"` is that context and no
- * quoting rescues it, because the argument is a description and not an identifier — so the screen
- * is `identifier` AND those two, once, here, rather than a second predicate per context.
- *
- * `'` is deliberately NOT refused: it is legal in an identifier, it is inert in a psql session and
- * inside shell double quotes, and no line on this page puts a name inside shell SINGLE quotes any
- * more — `unexpectedTable`'s drop names `psql` and leaves the statement outside it, where a
- * `-c '…'` payload used to end early and hand the rest to the shell. The price of the two that ARE
- * refused is a legal `a$b` losing its executable fix line, which is a fix that reads as prose
- * rather than a fix that runs something nobody read.
- */
-const SHELL_ACTIVE = /[`$]/;
-
-function writableName(name: string): string | null {
-  if (SHELL_ACTIVE.test(name)) return null;
-  try {
-    return identifier(name).text;
-  } catch {
-    return null;
-  }
 }
 
 export function missingTable(table: string): DriftDifference {
@@ -254,8 +219,8 @@ export function changedIndex(table: string, index: string, detail: string): Drif
  * the predicate, which is what makes an executable fix possible at all.
  */
 export function missingCheck(table: string, check: CheckDescription): DriftDifference {
-  const relation = writableName(table);
-  const constraint = writableName(check.name);
+  const relation = shellInertIdentifier(table);
+  const constraint = shellInertIdentifier(check.name);
   return {
     kind: 'missing-check',
     table,

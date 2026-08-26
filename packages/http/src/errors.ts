@@ -56,6 +56,12 @@ export const HTTP_BORROWED_ERROR_CODES = [
   // the lifecycle that answers `isDraining()` is core's. The `admit` stage is its first thrower:
   // this package documented answering 503 while draining and had no reader of the flag at all.
   'X_DRAINING',
+  // Core's, and the code `app.config.ts is invalid` already means — borrowed for the numeric knobs
+  // `defineHttpConfig` screens, the same way `@ultimat3/auth` borrows it for a `defineAuth`
+  // declaration it cannot honour. A per-knob code of our own would be a second answer to a
+  // question core has already answered, and the throw happens while config resolves, so no request
+  // is ever answered with it.
+  'X_CONFIG_INVALID',
 ] as const;
 
 /** Every code http can throw: the ones it owns plus the two it borrows. */
@@ -332,6 +338,30 @@ export const trustProxyUnset = (): HttpError =>
     cause:
       'http.trustProxy is true and http.trustedProxyHops is not set, so x-forwarded-for would be read from a position the client controls',
     fix: 'set TRUSTED_PROXY_HOPS in the deployment environment to the number of proxies that append to x-forwarded-for — 1 for a single ingress or ALB, 2 for a CDN in front of one — and leave it unset for a process that is reached directly; an embedder calling defineHttpConfig itself passes { trustProxy: true, trustedProxyHops: 1 }',
+  });
+
+/**
+ * A numeric knob that is not a count, refused where `app.config.ts` still names it.
+ *
+ * Every one of these arrives as `Number(process.env.X)` as often as a literal, and `NaN` is not
+ * nullish — so `??` passes it through, `Math.max`/`Math.floor` propagate it, and every comparison
+ * downstream then answers FALSE. What that produces is never a wrong number, it is the guard
+ * switching itself off: `bodyLimitBytes` stops capping the body, `maxInflight` stops shedding,
+ * `trustedProxyHops` stops trusting the proxy it was set for, and `requestTimeoutMs` arms a
+ * `setTimeout(fn, NaN)` — which is 1ms — so every request 504s. `Math.max(1, x)` is not a
+ * validator, which is exactly what `trustedProxyHops` was using.
+ */
+export const httpCountInvalid = (
+  name: string,
+  value: number,
+  expected: string,
+  example: string,
+): HttpError =>
+  new HttpError({
+    code: 'X_CONFIG_INVALID',
+    cause: `http.${name} is ${String(value)}; it must be ${expected}, and NaN is what Number(process.env.…) answers for an unset variable — every comparison against it is false, so the limit it names stops being enforced rather than being enforced wrongly`,
+    fix: `set ${name} to ${expected} in configureHttp({ ${example} }), and parse an environment value before you pass it: Number.parseInt(process.env.${name.replace(/[A-Z]/g, (c) => `_${c}`).toUpperCase()} ?? '', 10) is NaN when the variable is unset`,
+    meta: { option: name, value: String(value) },
   });
 
 /**

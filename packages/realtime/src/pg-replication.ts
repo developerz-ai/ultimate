@@ -3,7 +3,7 @@
 // the framing and the pgoutput decode live next door; what is decided here is *ordering*, because
 // the lsn is the only authority the pipeline has.
 
-import { type Clock, logger, renderThrowable, systemClock } from '@ultimat3/core';
+import { type Clock, finiteOption, logger, renderThrowable, systemClock } from '@ultimat3/core';
 import type { ChangeEvent, ChangeOp, PgLogicalReplicationOptions } from './changefeed';
 import { ReplicationProtocolError } from './errors';
 import { isRow, type Row } from './json';
@@ -184,9 +184,16 @@ export class PgReplicationStream {
     // supervisor that reads it never sees the replicator come back.
     this.#failure = null;
     this.#confirmFailures = 0;
-    this.#timer = setInterval(() => {
-      void this.#confirmOnTimer();
-    }, this.#options.statusIntervalMs ?? DEFAULT_STATUS_INTERVAL_MS);
+    this.#timer = setInterval(
+      () => {
+        void this.#confirmOnTimer();
+      },
+      finiteOption(
+        'the replication stream',
+        'statusIntervalMs',
+        this.#options.statusIntervalMs ?? DEFAULT_STATUS_INTERVAL_MS,
+      ),
+    );
     // A pending timer must not be what keeps `x dev` alive after the app is done with it.
     this.#timer.unref?.();
     this.#pump = this.#drain(connection, handlers);

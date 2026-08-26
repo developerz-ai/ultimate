@@ -26,6 +26,7 @@ await withTransaction(async (tx) => {
 | Export | |
 |---|---|
 | `sql` / `raw` / `identifier` / `literal` / `join` | fragment builders |
+| `shellInertIdentifier()` | `As of 2026-08-26`: a quoted identifier that is also inert wherever a human PASTES it — or `null`. The one screen a catalog name goes through before it reaches a `fix:`. `identifier()` answers about SQL and **accepts** a backtick and a `$`, which are exactly what a shell substitutes inside double quotes, so a column called `$(id)` inside `x db gen "add $(id)"` runs `id` on paste |
 | `db()` / `baseClient()` / `setDbClient()` | the ambient client; `db()` returns the open tx if any |
 | `DbTx.origin` | `As of 2026-08`: the client the transaction was **opened on** — `options.client` or `baseClient()`, never the reservation it runs statements through. `@ultimat3/entity` compares a pinned repository's client against it, so a pinned repo joins its own shard's transaction instead of being refused |
 | `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam. `{ retry: n }` (`As of 2026-08`) re-runs `fn` from the top on a `40001`/`40P01` and on nothing else — default 0, so `fn` must be idempotent before you ask for it. Each re-run **waits first**, `As of 2026-08-23`: exponential from 10ms, capped at 500ms, full jitter (`@ultimat3/core`'s `backoffDelay`). A budget of 0 waits not at all |
@@ -216,9 +217,9 @@ X_DB_DRIFT: schema differs from migrations
 
 | Difference | cause | fix |
 |---|---|---|
-| live column, no migration | `table "T" has column "C" not present in any migration` | `x db gen "add C"` |
+| live column, no migration | `table "T" has column "C" not present in any migration` | `x db gen "add C"` — the name goes through `shellInertIdentifier()`, and one it refuses is left OUT of the command rather than escaped into it (`x db gen "add the undeclared column"`, the name in the cause) |
 | migrated column, not live | `table "T" is missing column "C" that migrations declare` | `x db migrate` |
-| live table, no migration | `table "T" is not present in any migration` | a `create table if not exists` in a migration, then `x db migrate` — or `drop table` in `psql` where nothing owns it. Never `x db gen`, which diffs a table nothing declares against nothing and writes no file (issue #345). The name goes through `identifier()`, and one it refuses leaves the fix as prose |
+| live table, no migration | `table "T" is not present in any migration` | a `create table if not exists` in a migration, then `x db migrate` — or `drop table` in `psql` where nothing owns it. Never `x db gen`, which diffs a table nothing declares against nothing and writes no file (issue #345). The name goes through `shellInertIdentifier()`, and one it refuses leaves the fix as prose |
 | migrated table, not live | `table "T" is declared by migrations but does not exist` | `x db migrate` |
 | index rebuilt differently | `index "I" on "T" covers (…)` / `is unique` / `is descending` / `is partial`, `not what migrations declare` | `x db migrate` |
 | foreign key, rule moved | `foreign key on "T" (C) to "R" is on delete cascade, not what migrations declare` | the `drop constraint` + `add constraint` pair, in a new migration |

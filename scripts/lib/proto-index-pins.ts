@@ -69,11 +69,6 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
     count: 1,
     reason: '`strategies.ts:66` maps a route `RenderMode` to a caching strategy.',
   },
-  realtime: {
-    count: 1,
-    reason:
-      'one table keyed by a replication op this package declares and narrows before the read.',
-  },
   render: {
     count: 7,
     reason:

@@ -195,13 +195,25 @@ export const FIXES: Readonly<Record<string, string>> = {
   '0A000': 'set wal_level = logical in postgresql.conf and restart the server',
 };
 
-/** An `ErrorResponse` becomes the one error class whose `fix` names the command to run. */
+/** What a SQLSTATE this table has no entry for is answered with. */
+const GENERIC_FIX = 'x doctor db — the postgres message above names the object to change';
+
+/**
+ * An `ErrorResponse` becomes the one error class whose `fix` names the command to run.
+ *
+ * `Object.hasOwn`, because `code` is `fields['C']` — read off the WIRE, so it is data and this
+ * table is keyed by it. `FIXES['constructor']` answered the `Object` function, which is not
+ * nullish, so `?? GENERIC_FIX` never fired and `UltimateError` ran `singleLine(fn)`: a `TypeError`
+ * out of the constructor of the error that exists to explain the failure, so the caller lost
+ * `X_REPLICATION_FAILED`, its cause and its fix at once. `packages/schema/src/errors.ts` shipped
+ * the same shape and `scripts/proto-index.ts` was written for it.
+ */
 export const serverError = (stage: string, body: Uint8Array): ReplicationFailedError => {
   const fields = responseFields(body);
   const code = fields['C'] ?? '';
   return new ReplicationFailedError({
     stage,
     detail: describeFields(fields),
-    fix: FIXES[code] ?? 'x doctor db — the postgres message above names the object to change',
+    fix: Object.hasOwn(FIXES, code) ? (FIXES[code] ?? GENERIC_FIX) : GENERIC_FIX,
   });
 };

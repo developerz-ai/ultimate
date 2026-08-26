@@ -16,6 +16,28 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 
 ## Non-negotiables
 
+- **A policy NUMBER is screened at `defineAuth`, `As of 2026-08-26`** (`policy-numbers.ts`,
+  `X_CONFIG_INVALID`). `session.absoluteTtlMs`, `session.idleTtlMs`, `session.idleSlideMs`,
+  `password.minLength`, the two argon2 costs and every `rateLimit` number. Measured with `NaN` —
+  what `Number(process.env.SESSION_TTL_MS)` answers when the variable is unset, and not nullish, so
+  the spread over the defaults keeps it: `now >= NaN` is false, so a session idle since 2000
+  reported `absoluteExpired: false` AND `idleExpired: false`; `password.length < NaN` is false and
+  the two-distinct-characters rule is guarded by `length > 0`, so the EMPTY password was accepted.
+  A rule whose comparison is false for every input is not a loose rule, it is no rule.
+
+- **Every RUNTIME number this package bounds anything with is screened too, `As of 2026-08-26`** —
+  `assertFiniteAuthCount` in `policy-numbers.ts`, one file for both halves. `jwks.ttlMs`
+  (`now >= fetchedAt + NaN` is false, so a provider's key rotation is never refetched and every
+  login against the new `kid` fails until the process restarts), the three OAuth legs' `timeoutMs`
+  (`AbortSignal.timeout(NaN)` THROWS, and it is screened OUTSIDE each leg's `try` — inside it, the
+  catch rendered an app config typo as the identity provider being unreachable), the limiter's
+  `maxKeys` (`Math.max(1, Math.floor(NaN))` is `NaN`, so the sweep bounding a table half of whose
+  keys are attacker-chosen never ran) and `mfa.drift`. **`drift` is the one that hangs**: it is a
+  LOOP BOUND, not a comparison — `for (offset = -Infinity; offset <= Infinity; offset += 1)` never
+  terminates, measured, synchronously, on the login path — and `NaN` makes the loop never run at
+  all, so every correct code is rejected as if it were wrong. Editing `verifyTotp` with the screen
+  removed WEDGES `mfa.test.ts` rather than failing it; mutate with the `NaN` case.
+
 - Every credential failure throws `loginFailed()` — one code, one cause, one fix. Adding a
   parameter to it re-opens account enumeration.
 - **A stored hash Bun cannot read is the generic failure, and it burns the same KDF** (`As of
@@ -394,7 +416,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 
 | File | Job |
 |---|---|
-| `auth.ts` | `defineAuth`, entity schemas, `login`/`register`/`authenticate`/`logout` |
+| `auth.ts` | `defineAuth`, entity schemas, `login`/`register`/`authenticate`/`logout`. Three suites, split at the line ceiling along the three subjects: `auth.test.ts` (the credential flow), `auth-config.test.ts` (`defineAuth`'s defaults and refusals) and `auth-lockout.test.ts` (the tenant and address buckets) |
 | `policy-bridge.ts` | the one funnel: identity → `Actor`, all four `ActorKind`s |
 | `session.ts` | two expiries, rotation, revocation, device list, the cookie |
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
@@ -414,6 +436,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `oauth-exchange.ts` | `oauthCredentials` + the one POST to the token endpoint |
 | `id-token.ts` | id token → claims this handshake may believe |
 | `id-token-fixture.ts` | the one string-input JWT builder the OAuth tests share. Off `index.ts` |
+| `auth-fixture.ts` | the KDF parameters, the password and the `AuthError` catcher the three `auth*.test.ts` suites share. Off `index.ts` |
 | `oauth-profile.ts` | claims or userinfo → one `OAuthProfile` |
 | `oauth-login.ts` | profile → account link → session. `completeOAuthLogin` is the entry point |
 | `oauth-login-fixture.ts` | the adapter, clock and profile the three `oauth-login*` suites share. Off `index.ts` |

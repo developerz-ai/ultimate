@@ -4,7 +4,7 @@
  * without it, `replicas: 3` means a retry that lands elsewhere re-runs a committed handler.
  * Statements are spelled out so an agent can run the exact one it saw in a log.
  */
-import { logger, uuid } from '@ultimat3/core';
+import { finiteCount, logger, uuid } from '@ultimat3/core';
 import { IdempotencyStatusUnknownError } from './errors';
 import type {
   IdempotencyFailure,
@@ -172,7 +172,14 @@ export interface PostgresIdempotencyStore extends IdempotencyStore {
 export function postgresIdempotencyStore(
   options: PostgresIdempotencyStoreOptions,
 ): PostgresIdempotencyStore {
-  const windowMs = Math.max(1, Math.floor(options.windowMs ?? DEFAULT_IDEMPOTENCY_WINDOW_MS));
+  // The same screen as the memory store's, on the number that becomes `windowSecs` and is bound
+  // into every statement below: `Math.floor(NaN)` is `NaN`, and NaN/1000 is what reaches Postgres.
+  const windowMs = finiteCount(
+    'postgresIdempotencyStore',
+    'windowMs',
+    options.windowMs ?? DEFAULT_IDEMPOTENCY_WINDOW_MS,
+    1,
+  );
   const windowSecs = windowMs / 1000;
   const exec = options.executor;
   const now = options.now ?? ((): number => Date.now());

@@ -23,6 +23,7 @@ import {
 } from './socket';
 import { GrantBook, type SyncAuthenticator, sweepGrants } from './sync-auth';
 import { ackRefOf, createFrameRouter, type MutationHandler } from './sync-frames';
+import { drainGraceMs, syncNodeBounds } from './sync-node-bounds';
 import { decode, type Frame, PROTOCOL_VERSION, toWireError } from './sync-protocol';
 import { handleUpgrade, type UpgradeTarget, type WsData } from './sync-upgrade';
 import {
@@ -38,29 +39,13 @@ export type { UpgradeTarget, WsData } from './sync-upgrade';
 
 export type SyncWs = WsLike & { readonly data: WsData };
 
-/**
- * How often an expired grant is re-decided. A third of the shortest TTL worth issuing: a grant is
- * re-checked on the pass after it expires, so the window a revoked actor keeps its socket is this
- * interval and not its token's lifetime.
- */
-export const DEFAULT_REAUTH_INTERVAL_MS = 30_000;
-
-/**
- * Concurrent sockets one node will hold. The accept budget bounds the accept RATE and nothing
- * bounded the COUNT: at the 500/s that budget permits, an attacker holding each socket open with
- * one keepalive frame a minute reaches 1.8M sockets an hour, each carrying a `GrantBook` entry.
- *
- * The number clears the 50,000 real clients this repo has measured on one node
- * (`scripts/bench/restart-bench.ts`) with room to spare, because a ceiling that refuses a proven
- * workload is an outage the framework caused.
- */
-export const DEFAULT_MAX_CONNECTIONS = 250_000;
-
-/**
- * Inbound bytes one frame may carry. Bun's own default is 16 MiB, which one authenticated socket
- * can push continuously; a `subscribe` frame carrying a full 512-id cursor is under 32 KiB.
- */
-export const DEFAULT_MAX_FRAME_BYTES = 256 * 1024;
+// Moved to `sync-node-bounds.ts` with the refusals that read them, and re-exported here because
+// `server.ts` publishes all three and a moved constant must not become a moved import path.
+export {
+  DEFAULT_MAX_CONNECTIONS,
+  DEFAULT_MAX_FRAME_BYTES,
+  DEFAULT_REAUTH_INTERVAL_MS,
+} from './sync-node-bounds';
 
 export interface SyncNodeOptions {
   readonly hub: ChannelHub;
@@ -153,7 +138,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     });
   const clock = options.clock ?? systemClock;
   const accept = options.accept ?? new AcceptBudget({ perSecond: 500, burst: 2000, clock });
-  const maxConnections = options.maxConnections ?? DEFAULT_MAX_CONNECTIONS;
+  const bounds = syncNodeBounds(options);
   const path = options.path ?? '/_x/sync';
   const presence = options.presence;
   const grants = new GrantBook();
@@ -318,7 +303,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       if (options.authenticate) {
         reauthing = setInterval(
           () => detach(reauthenticate(), 'sync.reauthenticate'),
-          options.reauthenticateIntervalMs ?? DEFAULT_REAUTH_INTERVAL_MS,
+          bounds.reauthenticateIntervalMs,
         );
         reauthing.unref();
       } else {
@@ -348,7 +333,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         {
           path,
           buildId: options.buildId,
-          maxConnections,
+          maxConnections: bounds.maxConnections,
           accept,
           rng: options.rng ?? Math.random,
           // Read per call, never captured: `ready` and the socket count both move while a request
@@ -377,7 +362,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       // one filtered `send` per socket through `SocketRegistry.deliver`, which is the only path
       // that can count the frame it dropped — a flag configuring a mechanism nothing uses reads
       // as a live one to the next person who has to decide how delivery works.
-      maxPayloadLength: options.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES,
+      maxPayloadLength: bounds.maxFrameBytes,
       sendPings: true,
 
       open(ws: SyncWs): void {
@@ -452,7 +437,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       ready = false;
       const ids = [...sockets.all()].map((socket) => socket.id);
       const spread = drainPlan(ids, {
-        spreadMs: options.drainSpreadMs ?? 30_000,
+        spreadMs: bounds.drainSpreadMs,
         ...(options.rng ? { rng: options.rng } : {}),
       });
       // The answer is read, not assumed: this frame IS the socket's slot, so a client that never
@@ -467,7 +452,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       if (notified < plan.length) {
         logger.warn('sync.drain_frames_dropped', { sockets: plan.length, notified });
       }
-      const graceMs = drainOptions.graceMs ?? 5_000;
+      const graceMs = drainGraceMs(drainOptions.graceMs);
       if (graceMs > 0) await new Promise((resolve) => setTimeout(resolve, graceMs));
       // Through `evict`, never `sockets.remove` + `grants.delete`: those are three of `teardown`'s
       // five steps, and the two they skip are the ones the rest of the fleet can see. A drained

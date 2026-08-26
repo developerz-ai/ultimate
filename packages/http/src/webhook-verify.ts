@@ -22,7 +22,12 @@ import {
   WEBHOOK_TOPIC_HEADER,
   webhookMac,
 } from '@ultimat3/core';
-import { bodyInvalid, webhookSignatureInvalid, webhookSignatureStale } from './errors';
+import {
+  bodyInvalid,
+  httpCountInvalid,
+  webhookSignatureInvalid,
+  webhookSignatureStale,
+} from './errors';
 
 /**
  * How far a delivery's timestamp may sit from this clock, either way. Five minutes is the window
@@ -33,11 +38,45 @@ import { bodyInvalid, webhookSignatureInvalid, webhookSignatureStale } from './e
 export const DEFAULT_WEBHOOK_TOLERANCE_MS = 300_000;
 
 /**
+ * The screen above `toleranceMs`, kept beside the constant it defaults to.
+ *
+ * The `Finite` in the name is load-bearing: `bun run finite-bounds` recognises a repair by the
+ * shape of the CALL, so a screen named for what it guards is invisible to the ratchet that would
+ * otherwise catch the next one of these.
+ */
+const assertFiniteToleranceMs = (toleranceMs: number): number => {
+  if (Number.isSafeInteger(toleranceMs) && toleranceMs >= 0) return toleranceMs;
+  throw httpCountInvalid(
+    'webhook toleranceMs',
+    toleranceMs,
+    'a whole number of milliseconds, zero or more',
+    'toleranceMs: 300_000',
+  );
+};
+
+/**
  * Restated rather than read from `HttpConfig.bodyLimitBytes` (same number, `config.ts`): this
  * function runs inside a route handler with a raw `Request` and no pipeline config in scope, and a
  * receiver that must hold a 4 MB payload says so here rather than by widening every route's cap.
  */
 export const DEFAULT_WEBHOOK_BODY_LIMIT = 1_048_576;
+
+/**
+ * The same screen above `maxBytes`, refused HERE and not only where it lands.
+ *
+ * `readWithinLimit` refuses a non-finite limit as well, and that is one file away: its `fix:` names
+ * core's reader, while the edit the caller has to make is the `maxBytes` written on this call. Zero
+ * is excluded on purpose — a cap of nothing refuses every delivery a sender can make.
+ */
+const assertFiniteBodyLimit = (maxBytes: number): number => {
+  if (Number.isSafeInteger(maxBytes) && maxBytes >= 1) return maxBytes;
+  throw httpCountInvalid(
+    'webhook maxBytes',
+    maxBytes,
+    'a whole number of bytes, at least 1',
+    `maxBytes: ${DEFAULT_WEBHOOK_BODY_LIMIT}`,
+  );
+};
 
 export interface WebhookVerifyOptions {
   /** The shared secret for THIS sender. Never logged, never rendered into a refusal. */
@@ -97,7 +136,7 @@ export async function verifyWebhookSignature(
     );
   }
 
-  const maxBytes = options.maxBytes ?? DEFAULT_WEBHOOK_BODY_LIMIT;
+  const maxBytes = assertFiniteBodyLimit(options.maxBytes ?? DEFAULT_WEBHOOK_BODY_LIMIT);
   // Through core's counting reader, the same one `UltimateRequest.#read` uses: a sender that
   // announces no length must not be able to make this handler hold an unbounded payload before the
   // signature it was never going to pass is even computed.
@@ -123,7 +162,11 @@ export async function verifyWebhookSignature(
   }
 
   const signedAtMs = signature.timestampSeconds * 1_000;
-  const toleranceMs = options.toleranceMs ?? DEFAULT_WEBHOOK_TOLERANCE_MS;
+  // The tolerance IS the replay window, so it is screened before it is compared against: `skewMs >
+  // NaN` is false, which does not widen the window — it removes it, and a webhook captured a year
+  // ago verifies forever with every other check passing. Refused as the config it is, and not by
+  // the sender's error: nothing the caller sends can fix it.
+  const toleranceMs = assertFiniteToleranceMs(options.toleranceMs ?? DEFAULT_WEBHOOK_TOLERANCE_MS);
   const skewMs = Math.abs((options.clock ?? systemClock).now().getTime() - signedAtMs);
   // Both directions: a sender whose clock runs ahead is the same replay window pointed the other
   // way, and accepting the future half doubles it.

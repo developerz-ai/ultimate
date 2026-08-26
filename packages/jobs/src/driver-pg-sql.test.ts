@@ -10,7 +10,7 @@
 // of its comments.
 
 import { describe, expect, test } from 'bun:test';
-import { SQL_JOBS_TABLE, SQL_OUTBOX_TABLE } from './driver-pg-sql';
+import { SQL_JOBS_TABLE } from './driver-pg-sql';
 
 /** Prose quotes both forms on purpose — a scan that reads comments reports its own explanation. */
 const withoutComments = (source: string): string =>
@@ -93,12 +93,14 @@ describe('the queue DDL', () => {
     expect(SQL_JOBS_TABLE).not.toMatch(/on x_jobs \(name, idempotency_key\)/);
   });
 
-  test('the standalone x_outbox constant matches the one inside the install point', () => {
-    // Two declarations of one table is how the outbox came to be documented and never created.
-    for (const line of SQL_OUTBOX_TABLE.split('\n')) {
-      if (line.trim().length === 0) continue;
-      expect(SQL_JOBS_TABLE).toContain(line.trim());
-    }
+  test('x_outbox is created by the install point, and by nothing else', () => {
+    // `SQL_OUTBOX_TABLE` was a byte-for-byte second copy of these statements, exported and applied
+    // by nothing — two install points for one table is how the outbox came to be documented and
+    // never created. `scripts/framework-tables.ts` is the standing guard; this pins the survivor.
+    expect(SQL_JOBS_TABLE).toContain('create table if not exists x_outbox');
+    expect(SQL_JOBS_TABLE).toContain('create index if not exists x_outbox_unpublished_idx');
+    expect(SQL_JOBS_TABLE).toContain('alter table x_outbox add column if not exists claimed_at');
+    expect(SQL_JOBS_TABLE).toContain('alter table x_outbox add column if not exists claimed_by');
   });
 });
 

@@ -240,8 +240,8 @@ const OWNED_CODES: readonly string[] = HTTP_OWNED_ERROR_CODES;
 const BORROWED_CODES: readonly string[] = HTTP_BORROWED_ERROR_CODES;
 
 describe('HTTP_ERROR_CODES', () => {
-  test('contains exactly the 30 documented codes', () => {
-    expect(HTTP_ERROR_CODES.length).toBe(30);
+  test('contains exactly the 31 documented codes', () => {
+    expect(HTTP_ERROR_CODES.length).toBe(31);
     expect([...EVERY_CODE].sort()).toEqual(
       [
         'X_ROUTE_NOT_FOUND',
@@ -274,6 +274,7 @@ describe('HTTP_ERROR_CODES', () => {
         'X_WEBHOOK_SIGNATURE_STALE',
         'X_TIMEOUT',
         'X_DRAINING',
+        'X_CONFIG_INVALID',
       ].sort(),
     );
   });
@@ -286,6 +287,10 @@ describe('HTTP_BORROWED_ERROR_CODES', () => {
       'X_FORBIDDEN',
       'X_TIMEOUT',
       'X_DRAINING',
+      // Core's, for the numeric knobs `defineHttpConfig` screens — `app.config.ts is invalid` is
+      // exactly what a `bodyLimitBytes` of NaN is, and `@ultimat3/auth` borrows it for the same
+      // shape of boot-time refusal.
+      'X_CONFIG_INVALID',
     ]);
   });
 
