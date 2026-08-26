@@ -28,6 +28,16 @@ export function cachedFormatter<T>(cache: Map<string, T>, key: string, build: ()
 }
 
 /**
+ * The cap on the tag an `X_LOCALE_INVALID` cause quotes back, in code points.
+ *
+ * 35 is RFC 5646 §4.4.1's own number — Figure 7 derives it as the longest tag the registry can
+ * form (language 8 + script 5 + region 4 + two variants 9+9), and the same section says a protocol
+ * with a fixed buffer "MUST allow for language tags of at least 35 characters". So every tag a
+ * caller could legitimately have meant fits, and nothing longer is a tag being debugged.
+ */
+export const MAX_LOCALE_EXCERPT = 35;
+
+/**
  * The canonical BCP 47 spelling, or `undefined` when the tag is not structurally valid at all
  * (`en_US`, `''`, `not a locale`). Well-formed but unknown to ICU (`zz`) is a locale — `Intl`
  * falls back for it, and refusing here would be stricter than the formatters this feeds.
@@ -53,9 +63,45 @@ export function canonicalLocale(locale: string): string | undefined {
 export function localeInvalid(locale: string): UltimateError {
   return new UltimateError({
     code: 'X_LOCALE_INVALID',
-    cause: `"${locale}" is not a well-formed BCP 47 language tag`,
+    cause: `${localeExcerpt(locale)} is not a well-formed BCP 47 language tag`,
     fix: "pass a tag like 'en', 'en-GB' or 'de-DE' — screen a header-supplied value with Intl.DateTimeFormat.supportedLocalesOf([tag]) before it reaches a formatter",
+    // The raw tag, under a NAME. A `cause` is copied into the 400 body and into the log line by
+    // `@ultimat3/http`'s `toProblem`, and a logger redacts by key — so a caller's value spliced
+    // into prose has no key left to redact, which is the whole argument `describeValue` rests on.
+    // `meta` is the key, and it is machine-read, so it carries the value WHOLE: an excerpt here
+    // would be a value a redactor or a bug report reads as complete when it is not.
+    meta: { locale },
   });
+}
+
+/**
+ * The tag as a reader can act on it: the first `MAX_LOCALE_EXCERPT` code points, quoted, and SAID
+ * to be cut when there were more.
+ *
+ * `describeValue` is the usual answer for a caller-supplied value in a `cause` and it is the wrong
+ * one here — it renders `en_US` as "a 5-character string", deleting the only actionable content in
+ * a sentence whose entire job is to say WHICH tag was refused. Bounding it keeps the diagnostic and
+ * removes the part a stranger chooses: without a cap the whole of an `Accept-Language` value —
+ * megabytes, at the caller's option — became the error's `message`, its 400 body and its log line.
+ *
+ * Code points, never `slice`: cutting between a surrogate pair leaves a lone surrogate, which is
+ * not text and survives no encoder between here and the log index. The string iterator is lazy, so
+ * a megabyte tag costs 35 steps rather than a megabyte-long array.
+ *
+ * No escaping here: `UltimateError`'s constructor runs `singleLine` over every line-bearing field
+ * exactly once, which is what keeps a newline in a tag from writing a second line an operator reads
+ * as a genuine framework message. A second pass at this call site would be a second place that has
+ * to be right.
+ */
+function localeExcerpt(locale: string): string {
+  let head = '';
+  let taken = 0;
+  for (const char of locale) {
+    if (taken === MAX_LOCALE_EXCERPT) return `"${head}" (truncated at ${taken} characters)`;
+    head += char;
+    taken += 1;
+  }
+  return `"${head}"`;
 }
 
 /**

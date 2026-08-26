@@ -79,7 +79,9 @@ describe('describeCron', () => {
   test('a malformed locale tag fails as X_LOCALE_INVALID, not a bare RangeError', () => {
     const error = errorOf(() => describeCron('0 3 * * *', 'en_US', EN));
     expect(error.code).toBe('X_LOCALE_INVALID');
-    expect(String(error.cause)).toContain('en_US');
+    // `meta.locale`, never the prose: the cause is a BOUNDED excerpt `@ultimat3/core` owns
+    // (issue #366), and an assertion on its wording made one message edit an eight-file edit.
+    expect(error.meta?.['locale']).toBe('en_US');
     expect(String(error.fix)).toContain('en-GB');
     expect(errorOf(() => describeCron('0 3 * * *', 'not a locale', EN)).code).toBe(
       'X_LOCALE_INVALID',
@@ -90,11 +92,18 @@ describe('describeCron', () => {
   });
 });
 
-function errorOf(run: () => unknown): { code?: unknown; cause?: unknown; fix?: unknown } {
+type ThrownFacts = {
+  code?: unknown;
+  cause?: unknown;
+  fix?: unknown;
+  meta?: Readonly<Record<string, unknown>>;
+};
+
+function errorOf(run: () => unknown): ThrownFacts {
   try {
     run();
   } catch (error) {
-    return error as { code?: unknown; cause?: unknown; fix?: unknown };
+    return error as ThrownFacts;
   }
   return { code: 'no-throw', cause: 'no-throw', fix: 'no-throw' };
 }

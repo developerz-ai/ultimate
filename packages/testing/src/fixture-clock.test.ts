@@ -1,6 +1,7 @@
 // The clock fixture moves process-global state, so what it puts back is the whole subject here.
 
 import { expect, test } from 'bun:test';
+import { UltimateError } from '@ultimat3/core';
 import { frozenNow } from './determinism';
 import { createTestClock } from './fixture-clock';
 import { runWithFixtures } from './fixtures';
@@ -32,4 +33,21 @@ test('a fixtureTest body that advances time leaves the clock where it found it',
     expect(frozenNow().getTime()).toBeGreaterThan(before);
   });
   expect(frozenNow().getTime()).toBe(before);
+});
+
+// The refusal names `clock.advance`, the knob the test author actually wrote — not `toMs`, which
+// is a `@ultimat3/time` internal they never typed and cannot find in their own file (issue #376).
+test('a non-finite advance names clock.advance, not the conversion behind it', async () => {
+  const clock = await createTestClock();
+  try {
+    clock.advance(Number.NaN);
+    expect.unreachable('advance(NaN) must be refused');
+  } catch (error) {
+    if (!(error instanceof UltimateError)) throw error;
+    expect(error.code).toBe('X_INVARIANT');
+    expect(error.fix).toContain('pass a finite duration to clock.advance');
+    expect(error.fix).not.toContain('toMs');
+  } finally {
+    await clock[Symbol.asyncDispose]?.();
+  }
 });

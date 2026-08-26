@@ -487,6 +487,17 @@ string, and the cap alone lets one locale evict itself under three spellings. A 
 `Intl` construction, never a wrong answer, which is what makes the bound safe. It lives here rather
 than in `@ultimat3/time` because `@ultimat3/money` needs it too and tier 1 may not import sideways.
 
+The **refusal** is bounded for the same reason the cache is. `X_LOCALE_INVALID` answers 400 and
+`@ultimat3/http`'s `toProblem` copies a `cause` into the response `detail` **and** into the log
+line, so a tag echoed verbatim is a stranger-chosen string of unbounded length in a shared log
+index. `localeInvalid` quotes back the first `MAX_LOCALE_EXCERPT` (35) code points — RFC 5646
+§4.4.1's own figure for the longest tag the registry can form — and appends
+`(truncated at 35 characters)` when there were more, so a cut value is never read as a whole one.
+`describeValue` is deliberately **not** used here: "a 5-character string" deletes the only
+actionable content in a sentence whose job is to name the tag. The whole tag rides in
+`meta.locale`, which is the half that gives a redactor a key to address; a value spliced into
+prose has none.
+
 ## One flight layer — wait, classify, share, bound, fence
 
 ```ts

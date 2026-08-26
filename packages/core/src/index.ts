@@ -461,6 +461,7 @@ export {
   canonicalLocale,
   localeInvalid,
   MAX_CACHED_FORMATTERS,
+  MAX_LOCALE_EXCERPT,
 } from './intl-cache';
 export { isJsonObject } from './json-object';
 export type {

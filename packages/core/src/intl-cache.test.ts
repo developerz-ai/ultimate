@@ -8,7 +8,9 @@ import {
   assertLocale,
   cachedFormatter,
   canonicalLocale,
+  localeInvalid,
   MAX_CACHED_FORMATTERS,
+  MAX_LOCALE_EXCERPT,
 } from './intl-cache';
 
 describe('cachedFormatter', () => {
@@ -110,5 +112,58 @@ describe('assertLocale', () => {
 
   test('the cause names the tag it refused', () => {
     expect(() => assertLocale('en_US')).toThrow(/en_US/);
+  });
+});
+
+// A locale reaches this refusal from `?locale=`, a path segment or an action input, so the tag in
+// it is a stranger's string on its way into a 400 body AND the shared log index (issue #366).
+// Three properties, and the message is only one of them: bounded, escaped, and carried under a key
+// a redactor can name.
+describe('localeInvalid', () => {
+  test('carries the tag under `meta.locale`, the one key a redactor can address', () => {
+    // The half that did not exist at all: a value baked into a message string has no key left to
+    // redact, which is the same argument `describeValue` is built on.
+    expect(localeInvalid('en_US').meta?.['locale']).toBe('en_US');
+  });
+
+  test('a tag of a plausible length reads exactly as it always did', () => {
+    // The diagnostic IS the message here — `describeValue` would render "a 5-character string" and
+    // delete the only actionable content in a sentence whose whole job is to name the tag.
+    expect(localeInvalid('en_US').cause).toContain('"en_US"');
+    expect(localeInvalid('en_US').cause).not.toContain('truncated');
+  });
+
+  test('a tag past the cap is cut, and SAYS it was cut', () => {
+    const long = 'x'.repeat(4096);
+    const error = localeInvalid(long);
+    expect(error.cause).toContain(`"${'x'.repeat(MAX_LOCALE_EXCERPT)}"`);
+    expect(error.cause).not.toContain('x'.repeat(MAX_LOCALE_EXCERPT + 1));
+    expect(error.cause).toContain('truncated');
+    expect(error.cause.length).toBeLessThan(200);
+    // The whole value still exists where a redactor — and only a redactor — has to deal with it.
+    expect(error.meta?.['locale']).toBe(long);
+  });
+
+  test('a tag of exactly the cap is not marked truncated', () => {
+    // A truncation marker on a complete value is the same lie in the other direction.
+    const exact = 'y'.repeat(MAX_LOCALE_EXCERPT);
+    expect(localeInvalid(exact).cause).toContain(`"${exact}"`);
+    expect(localeInvalid(exact).cause).not.toContain('truncated');
+  });
+
+  test('the cap counts code points, so the excerpt never ends in half a pair', () => {
+    // A lone surrogate is not text: it survives no encoder the log line crosses. The closing quote
+    // sitting directly after 35 whole emoji is what proves the cut landed on a boundary.
+    const error = localeInvalid('👍'.repeat(MAX_LOCALE_EXCERPT + 5));
+    expect(error.cause).toContain(`"${'👍'.repeat(MAX_LOCALE_EXCERPT)}"`);
+  });
+
+  test('a control character cannot reach the rendered cause, so a tag cannot forge a log line', () => {
+    const error = localeInvalid('en\nFAKE-LOG-LINE');
+    expect(error.cause).not.toContain('\n');
+    expect(error.cause).toContain(String.raw`\n`);
+    expect(error.format().split('\n')).toHaveLength(3);
+    // Escaped for the reader, intact for the machine.
+    expect(error.meta?.['locale']).toBe('en\nFAKE-LOG-LINE');
   });
 });

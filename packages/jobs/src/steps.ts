@@ -9,7 +9,7 @@
 import type { Clock } from '@ultimat3/core';
 import { finiteOption, logger, renderThrowable } from '@ultimat3/core';
 import type { DurationInput } from './clock';
-import { nowMs, toMs } from './clock';
+import { finiteDurationMs, nowMs } from './clock';
 import { JobAbortedError, JobTimeoutError, StepDuplicateError } from './errors';
 import { createRunSignal } from './run-signal';
 
@@ -361,7 +361,8 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
       throw new StepSuspension({ step: name, resumeAt: existing.wakeAt, reason: 'sleep' });
     }
 
-    const wakeAt = at + toMs(duration);
+    const wakeAt =
+      at + finiteDurationMs(duration, `job "${jobName}" step.sleep("${name}")`, 'duration');
     await put({
       runId,
       name,
@@ -389,7 +390,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
     const startedAt = existing?.startedAt ?? at;
     const deadline =
       startedAt +
-      finiteOption('step.waitForEvent', 'timeout', toMs(waitOptions.timeout ?? 86_400_000));
+      finiteDurationMs(waitOptions.timeout ?? 86_400_000, 'step.waitForEvent', 'timeout');
     const correlationKey = waitOptions.match;
 
     const hit = await options.events?.find(event, correlationKey, startedAt);
@@ -413,10 +414,10 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
         throw new JobTimeoutError({
           job: jobName,
           step: name,
-          timeoutMs: finiteOption(
+          timeoutMs: finiteDurationMs(
+            waitOptions.timeout ?? 86_400_000,
             'step.waitForEvent',
             'timeout',
-            toMs(waitOptions.timeout ?? 86_400_000),
           ),
         });
       }

@@ -75,10 +75,22 @@ export function parseDuration(input: string): number {
  * accepts a leading `-` and `toSeconds(-3000)` is a tested `-3` — and legitimately fractional.
  * A caller that needs whole non-negative milliseconds narrows on top of this, which is what
  * `@ultimat3/notify`'s `toDurationMs` does; narrowing here would break both.
+ *
+ * `subject` and `option` name the knob the APP AUTHOR wrote, for the refusal only. They default to
+ * this function's own name, which is the right answer for the caller who typed `toMs(…)` and the
+ * wrong one for every caller reached THROUGH it: `clock.advance('3s')` in `@ultimat3/testing`
+ * passes its argument straight down, and `pass a finite duration to toMs` sends that author
+ * looking for a knob their code does not contain. Same two names, same order, as
+ * `@ultimat3/jobs`' `finiteDurationMs` — one shape, not two.
+ *
+ * OPTIONAL rather than required, unlike that one, because this function is published API: a
+ * required parameter is `TS2554` at every existing call site in every app, which is a major for a
+ * better sentence. The default reproduces today's message byte for byte, so supplying them is the
+ * only observable change.
  */
-export function toMs(duration: string | number): number {
+export function toMs(duration: string | number, subject = 'toMs', option = 'duration'): number {
   return typeof duration === 'number'
-    ? finiteOption('toMs', 'duration', duration)
+    ? finiteOption(subject, option, duration)
     : parseDuration(duration);
 }
 
@@ -87,9 +99,17 @@ export function toMs(duration: string | number): number {
  * and `'-1500ms'` was -1, so a signed duration and its mirror did not answer mirrored seconds.
  * The sign is carried out and the MAGNITUDE rounded — `packages/money/src/rounding.ts` is the
  * framework's one statement of this, and `signed()` there is why zero never comes back as `-0`.
+ *
+ * The screen is `toMs`'s, threaded — but the default subject is `toSeconds`, because that is the
+ * name a direct caller wrote. Naming the delegate would point them at a function they never typed,
+ * which is the whole defect this pair of parameters exists to fix.
  */
-export function toSeconds(duration: string | number): number {
-  const ms = toMs(duration);
+export function toSeconds(
+  duration: string | number,
+  subject = 'toSeconds',
+  option = 'duration',
+): number {
+  const ms = toMs(duration, subject, option);
   const seconds = Math.round(Math.abs(ms) / SECOND);
   if (seconds === 0) return 0;
   return ms < 0 ? -seconds : seconds;

@@ -240,7 +240,7 @@ the same place rather than clearing it. The rejection still reaches the caller o
 (`pglite.ts` swallows a failed *boot*, which is a different thing: there is nothing to close).
 
 `execute()` trusts the command tag only when it is `> 0`, in **both** drivers — `rowsOf`
-(`pglite.ts`) and `affectedBy` (`client.ts`) are one rule written twice, not two rules. PGlite
+(`pglite.ts`) and `affectedBy` (`statement-funnel.ts`) are one rule written twice, not two rules. PGlite
 counts MODIFIED rows, so a SELECT that returned rows is tagged `0` and `??` would report 0 for
 every read; a driver that tags a read `0` on the pooled side would have diverged from PGlite the
 same way, and the same guard closes both. A write that modified nothing returned no rows either, so
@@ -257,7 +257,7 @@ the seam swallows nothing** — a throw from `onStatement` is how strict test mo
 N+1 happened in, so a guarding facade here would silently delete that mode. `onStatement` is
 synchronous, runs on the caller's stack after the statement settled, and must not issue SQL: a
 statement from inside it re-enters the funnel and observes itself. Only two places may invoke it —
-`runOn` (`client.ts`) and `statement()` (`pglite.ts`), the funnels every statement already passes
+`runOn` (`statement-funnel.ts`) and `statement()` (`pglite.ts`), the funnels every statement already passes
 through. Reserving a connection, booting PGlite and closing a pool are not statements and stay out.
 
 Both funnels are now split in two, and the split is the whole design: `sendOn`/`send` is the raw
@@ -271,7 +271,7 @@ timeouts are still fifty statements; **notify outside the statement's own `try`*
 that succeeded as `X_DB_UNAVAILABLE` and delete strict test mode's failure. On the failing path
 the observer's throw replaces the DB error instead, which is the price of never swallowing — an
 observer that only reports must not throw. `rows` comes from the same helper `execute()` uses
-(`affectedBy` in `client.ts`, `rowsOf` in `pglite.ts`, hoisted to module scope for it), so the
+(`affectedBy` in `statement-funnel.ts`, `rowsOf` in `pglite.ts`, hoisted to module scope for it), so the
 report and the return value cannot disagree about one statement.
 
 `attribution.ts` is `StatementEvent.attribution`'s producer: `withStatementAttribution(entity, op,
@@ -289,8 +289,8 @@ is the same fact written five times, with every path an author forgot it emittin
 **Nesting keeps the innermost pair**, exactly as `expectedQueryLoop` keeps the innermost reason: a
 relation preloaded during `findMany` reads through the *related* repository, so its statement is
 attributed to that entity and its own operation, not to the read that triggered the preload.
-**The funnels stamp, on both settle paths** — `runOn` (`client.ts`) and `statement()` (`pglite.ts`)
-read `statementAttribution()` inside the branch that already found an observer, next to
+**The funnels stamp, on both settle paths** — `runOn` (`statement-funnel.ts`) and
+`statement()` (`pglite.ts`) read `statementAttribution()` inside the branch that already found an observer, next to
 `expectedQueryLoopReason()`, and put it on the event whether the statement succeeded or failed, the
 same argument as `expected`: a diagnostic that judges a whole request runs long after every scope
 in it closed. `@ultimat3/entity`'s `postgresRepo` is the one producer — the last caller that still
@@ -1295,14 +1295,43 @@ survives the round trip whole.
   `application_name` label); `bun-sql.ts` declares the slice of `Bun.SQL` this package uses and
   looks the global up lazily;
   `pool-reserve.ts` is `reserve()` under the acquire deadline; `db-health.ts` is `checkDb`, the
-  `/readyz` report. `client.ts` keeps connecting, the statement funnel and the ambient `db()` —
+  `/readyz` report. `client.ts` keeps connecting, the client object and the ambient `db()` —
   and it still opens no socket at import, because `bunSqlFactory()` is reached from inside
-  `connect()`. **The public surface did not move**: `src/index.ts` exports every one of those
+  `connect()`. The **statement funnel** left with it on the same day, once the 500-line ceiling
+  turned out not to be the bound this package is held to: `packages/db/src/**/*.ts` carries a
+  path instruction of 200, and 263 lines is over it. `statement-funnel.ts` is `sendOn`/`runOn`
+  plus the two shape helpers (`rowsOf`, `affectedBy`) — the seam this file already documents, and
+  the one piece of `createPostgresClient` that closed over none of its state, so the move is a
+  cut and a paste with no signature invented for it. Nothing outside this package imported any of
+  the four, so no test's imports moved and no assertion changed. **The public surface did not move**: `src/index.ts` exports every one of those
   names from its new module, so `@ultimat3/db` is byte-identical to what it was. The same day,
   `drift.test.ts` split three ways along the three questions it was asking — `drift.test.ts`
   (tables and columns), `drift-index.test.ts` and `drift-ledger.test.ts` (what the migrations
   declare, and the post-migrate check) — over one shared `drift-fixtures.ts`, which
   `drift-foreign-key.test.ts` now imports instead of carrying its own byte-identical copy.
+
+- **`DATABASE_URL`'s SCHEME is screened at boot, `As of 2026-08-26`** (issue #367). `new URL()`
+  accepts a scheme-less connection string — `db.internal:5432/app` parses with `db.internal:` as
+  the SCHEME and `5432/app` as the path — so `connectionUrl` saw a well-formed url and handed it
+  on. Measured on bun 1.4.0, `Bun.SQL` then reads it as host `db.internal`, port 5432, database
+  `app` and opens a Postgres pool on it, so the first symptom is a connect failure at the first
+  QUERY, in another process phase, worded by the driver and naming neither the variable nor the
+  missing `postgres://`. `POSTGRES_SCHEMES` is closed at **`postgres:` and `postgresql:`** —
+  measured, not assumed: those two answer `adapter: 'postgres'`, while `pg:`, `tcp:` and
+  `postgresql+ssl:` are refused by the driver itself (`Unsupported protocol: … Supported adapters:
+  "postgres", "sqlite", "mysql", "mariadb"`), so excluding them costs a capability nobody has. The
+  direction that matters is the one the driver ACCEPTS: `mysql:`, `mariadb:`, `sqlite:` and
+  `file:` open a **different engine** and every statement generated here is Postgres. A
+  **behaviour change**, not a defect repair — it narrows what the framework accepts, which is why
+  it was deferred out of #364.
+  **The received scheme is deliberately never echoed**, and this is the one refusal in the package
+  that withholds the actionable token. `URL` reads the first token as the scheme, and for the value
+  this exists for that token is the HOST (`db.internal:`); one dashboard field over
+  (`app:hunter2@db.internal/app`) it is the USERNAME. Naming "the scheme" therefore puts a host or
+  a credential in the boot log and the `--json` payload, where the logger has no key left to redact
+  it by. The REQUIRED scheme is a constant and carries the whole instruction, and `describeValue`
+  still keeps the shape, so an empty variable is told apart from a truncated one.
+  `connection-url.test.ts` asserts the absence, so echoing it back is a failing test.
 
 - **`unexpectedTable`'s `fix:` no longer names `x db gen`, `As of 2026-08-26`** (issue #345). That
   command diffs the ENTITY REGISTRY against the newest snapshot, and a table nothing declares is on

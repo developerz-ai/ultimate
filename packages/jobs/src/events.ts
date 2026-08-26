@@ -5,7 +5,7 @@
 import type { Clock } from '@ultimat3/core';
 import { finiteOption, logger, systemClock, uuid } from '@ultimat3/core';
 import type { DurationInput } from './clock';
-import { nowMs, toMs } from './clock';
+import { finiteDurationMs, nowMs } from './clock';
 import type { EventLookup } from './steps';
 
 export interface JobEvent {
@@ -44,10 +44,10 @@ export function createMemoryEventBus(options: MemoryEventBusOptions = {}): Event
   // told a caller who wrote `{ ttl: NaN }` to "pass a finite defaultTtl" — an instruction naming an
   // option they never set, on a constructor usually in another file. `steps.ts` names `timeout` for
   // the same value shape.
-  const defaultTtlMs = finiteOption(
+  const defaultTtlMs = finiteDurationMs(
+    options.defaultTtl ?? 604_800_000,
     'the memory event bus',
     'defaultTtl',
-    toMs(options.defaultTtl ?? 604_800_000),
   );
   const maxEvents = finiteOption('the memory event bus', 'maxEvents', options.maxEvents ?? 10_000);
   const events = new Map<string, JobEvent>();
@@ -77,7 +77,7 @@ export function createMemoryEventBus(options: MemoryEventBusOptions = {}): Event
           at +
           (publishOptions.ttl === undefined
             ? defaultTtlMs
-            : finiteOption('the memory event bus', 'ttl', toMs(publishOptions.ttl))),
+            : finiteDurationMs(publishOptions.ttl, 'the memory event bus', 'ttl')),
         ...(publishOptions.correlationKey === undefined
           ? {}
           : { correlationKey: publishOptions.correlationKey }),

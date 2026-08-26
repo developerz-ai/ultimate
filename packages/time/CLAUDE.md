@@ -156,6 +156,15 @@
   `parseDuration` accepts a leading `-`, and `toSeconds(-3000)` is a tested `-3` — and legitimately
   fractional. A caller that needs whole non-negative milliseconds narrows on top; narrowing here
   breaks the signed-duration contract `toSeconds` is built on.
+- **`toMs(duration, subject?, option?)` names the caller's knob in the refusal, `As of 2026-08-26`.**
+  `pass a finite duration to toMs` names a function an app author reached THROUGH rather than
+  wrote: `@ultimat3/testing`'s `clock.advance('3s')` hands its argument straight down, and so does
+  any wrapper an app builds. The two names are the same two, in the same order, that
+  `@ultimat3/jobs`' `finiteDurationMs` takes — one shape, not two. They are **optional** here and
+  required there because this one is published API: making them required is `TS2554` at every
+  existing call site in every app, a major for a better sentence. The defaults reproduce today's
+  message byte for byte, so the only observable change is at a call site that supplies them.
+  `toSeconds` threads them too and defaults its subject to **`toSeconds`**, not to the delegate.
 - Tests must cover a spring-forward gap, a fall-back overlap and a non-hour offset zone.
 
 ## Commands

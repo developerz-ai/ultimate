@@ -3,7 +3,7 @@
 // `client.ts` because which settings reach a connection is a rule, not a step of connecting.
 
 import { describeValue } from '@ultimat3/core';
-import { dbUnavailable } from './errors';
+import { DbError, dbUnavailable } from './errors';
 import { declaresLibpqOption, mergeLibpqOptions } from './libpq-options';
 import type { PoolProfile } from './pool-profile';
 
@@ -11,6 +11,41 @@ export interface ConnectionUrlOptions {
   readonly url?: string | undefined;
   readonly applicationName?: string | undefined;
 }
+
+/**
+ * The schemes on which `Bun.SQL` opens a POSTGRES connection — measured against bun 1.4.0, never
+ * assumed. `postgres:` and `postgresql:` both answer `adapter: 'postgres'`; `pg:`, `tcp:` and
+ * `postgresql+ssl:` are refused by the driver itself (`Unsupported protocol: … Supported adapters:
+ * "postgres", "sqlite", "mysql", "mariadb"`), so excluding them costs a capability nobody has.
+ * The two that matter are the ones the driver ACCEPTS and this package cannot speak: `mysql:`,
+ * `mariadb:`, `sqlite:` and `file:` open a different engine, and every statement generated here is
+ * Postgres — a pool that connects and then answers a syntax error to the migration is strictly
+ * worse than one that refuses at boot.
+ */
+const POSTGRES_SCHEMES: ReadonlySet<string> = new Set(['postgres:', 'postgresql:']);
+
+/**
+ * The received scheme is deliberately NOT named, which is the one place this refusal differs from
+ * every other "errors are instructions" case in the package. `new URL()` accepts a scheme-less
+ * string by reading the first token as the scheme, and that token is exactly the value this must
+ * not echo: `db.internal:5432/app` parses with `db.internal:` — the HOST — as its protocol, and
+ * `app:hunter2@db.internal/app`, the same typo copied one dashboard field over, parses with the
+ * USERNAME as its protocol. Naming "the scheme" therefore puts a host or a credential in the boot
+ * log AND the `--json` payload, where the logger has no key left to redact it by (see the block in
+ * the parse `catch` below). The REQUIRED scheme is a constant and carries the whole instruction, so
+ * nothing actionable is lost by withholding the received one; `describeValue` keeps the shape, so
+ * an empty variable is still told apart from a truncated one.
+ */
+const schemeUnsupported = (raw: string): DbError =>
+  new DbError({
+    code: 'X_DB_UNAVAILABLE',
+    cause:
+      'DATABASE_URL does not name a postgres:// or postgresql:// url: ' +
+      `received ${describeValue(raw)}`,
+    fix:
+      'set DATABASE_URL to postgres://user@host:5432/database — a value with no scheme parses ' +
+      'as a url whose scheme is its own first token — or run `x dev` to use the embedded PGlite',
+  });
 
 export function connectionUrl(options: ConnectionUrlOptions, profile: PoolProfile): string {
   const raw = options.url ?? process.env['DATABASE_URL'];
@@ -30,6 +65,13 @@ export function connectionUrl(options: ConnectionUrlOptions, profile: PoolProfil
     // `maskedEnvValues`.
     throw dbUnavailable(`DATABASE_URL is not a valid url: received ${describeValue(raw)}`, error);
   }
+  // Screened here because `Bun.SQL` will not screen it: measured on bun 1.4.0, it reads
+  // `db.internal:5432/app` as host `db.internal`, port 5432, database `app` and opens a Postgres
+  // pool on it, so the first symptom is a connect failure at the first QUERY, in another process
+  // phase, worded by the driver and naming neither `DATABASE_URL` nor the missing scheme. Worse,
+  // `sqlite://./dev.db` succeeds outright on a different engine. A boot-time refusal is the only
+  // point at which the value is still nameable.
+  if (!POSTGRES_SCHEMES.has(url.protocol)) throw schemeUnsupported(raw);
   // libpq `options` is the portable way to pin a statement timeout for every pooled connection —
   // MERGED into the operator's own, never assigned over it, and emitted for every role including
   // the two whose bound is 0. `set` here dropped a `?options=-c search_path=app` on `web`, `sync`,

@@ -38,7 +38,10 @@ export async function createTestClock(): Promise<TestClock> {
   const captured = captureDeterminism();
   return {
     now: frozenNow,
-    advance: (duration) => advanceClock(toMs(duration)),
+    // The two names are the CALLER's: an author who wrote `clock.advance('3s')` never typed
+    // `toMs`, and `pass a finite duration to toMs` sends them looking for a knob their code does
+    // not contain. `@ultimat3/time`'s `toMs` takes them optionally for exactly this.
+    advance: (duration) => advanceClock(toMs(duration, 'clock.advance', 'duration')),
     set: (instant) => {
       setFrozenClock(instant);
       return frozenNow();
