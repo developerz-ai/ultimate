@@ -73,3 +73,20 @@ describe('AGENTS.md is validated, never generated', () => {
     expect(check.warnings.join(' ')).toContain('human-authored');
   });
 });
+
+/**
+ * `bytes > maxBytes` is false when `maxBytes` is `NaN`, so `assertAgentsMd` passed a file of any
+ * size while the `AgentsMdCheck` it returned reported `ok: false` — the gate's throw and the gate's
+ * report disagreeing about the same file, with nothing raising.
+ */
+describe('a budget that is not a number is refused', () => {
+  test('assertAgentsMd refuses a NaN maxBytes instead of admitting every file', async () => {
+    const path = await write('nan.md', 'x'.repeat(500));
+    await expect(assertAgentsMd({ path, maxBytes: Number.NaN })).rejects.toThrow(/maxBytes/);
+  });
+
+  test('checkAgentsMd refuses it too, rather than reporting ok: false against a phantom budget', async () => {
+    const path = await write('nan-check.md', 'x'.repeat(500));
+    await expect(checkAgentsMd({ path, maxBytes: Number.NaN })).rejects.toThrow(/maxBytes/);
+  });
+});

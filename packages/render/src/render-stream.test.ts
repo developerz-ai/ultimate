@@ -7,6 +7,7 @@ import {
   REVEAL_SCRIPT,
   renderStreamHtml,
   revealChunk,
+  streamResult,
 } from './render-stream';
 
 function deferred(): {
@@ -293,5 +294,42 @@ describe('a hole that rejects with a value String() cannot render', () => {
     const html = await collectStream(renderStreamHtml(plan, { buildId: 'b1' }));
     expect(html).toContain('data-x-hole="x:feed"');
     expect(html).toContain('$X("x:feed")');
+  });
+});
+
+/**
+ * A deadline is the one bound whose non-finite value does not disable it — it MOVES it to zero:
+ * `setTimeout(fn, NaN)` is `setTimeout(fn, 0)`, so every hole misses a deadline nobody set and
+ * the document is all fallbacks. `null` is the declared "wait forever" opt-out; there is no
+ * spelling of `holeTimeoutMs` that means "immediately".
+ */
+describe('a non-finite hole deadline is refused, not turned into zero', () => {
+  test('a NaN holeTimeoutMs is refused instead of failing every hole on the next tick', () => {
+    const plan: StreamPlan = {
+      head: '<html><body>',
+      shell: holeMarker('h1', 'skeleton'),
+      holes: [{ id: 'h1', fallback: 'skeleton', resolve: async () => '<p>late</p>' }],
+    };
+    expect(() => renderStreamHtml(plan, { buildId: 'b1', holeTimeoutMs: Number.NaN })).toThrow(
+      /holeTimeoutMs/,
+    );
+  });
+
+  test('null still means "this hole owns its own timeout"', async () => {
+    const plan: StreamPlan = {
+      head: '<html><body>',
+      shell: holeMarker('h1', 'skeleton'),
+      holes: [{ id: 'h1', fallback: 'skeleton', resolve: async () => '<p>late</p>' }],
+    };
+    const html = await collectStream(
+      renderStreamHtml(plan, { buildId: 'b1', holeTimeoutMs: null }),
+    );
+    expect(html).toContain('<p>late</p>');
+  });
+
+  test('streamResult refuses a status the Response boundary would RangeError on', () => {
+    const plan: StreamPlan = { head: '<html><body>', shell: '', holes: [] };
+    expect(() => streamResult(plan, { buildId: 'b1' }, Number.NaN)).toThrow(/status/);
+    expect(streamResult(plan, { buildId: 'b1' }, 404).status).toBe(404);
   });
 });

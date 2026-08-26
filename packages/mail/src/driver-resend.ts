@@ -5,6 +5,7 @@
 import {
   ConfigInvalidError,
   EnvMissingError,
+  finiteCount,
   // The status table is core's: this package's copy and `packages/cache/src/purge-http.ts`'s were
   // byte-identical in two packages that cannot import each other, so one was always going to be
   // edited alone. A throttle or a transient conflict can land unchanged; every other 4xx here is a
@@ -130,7 +131,17 @@ export function createResendDriver(options: ResendDriverOptions): MailDriver {
   const apiKey = requireApiKey(options.apiKey);
   const from = requireFrom(options.from);
   const baseUrl = options.baseUrl ?? RESEND_BASE_URL;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  // Refused here, where `apiKey` and `from` already are, and not on the first send:
+  // `AbortSignal.timeout(NaN)` raises a bare TypeError INSIDE the try below, so a misconfigured
+  // deadline was reported as a retryable egress failure whose fix said to curl the endpoint — and
+  // the queue retried it to the dead-letter table for a value no network could change. `0` is not
+  // "no deadline" either: the signal aborts on the next tick, before a byte leaves the host.
+  const timeoutMs = finiteCount(
+    'createResendDriver',
+    'timeoutMs',
+    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    1,
+  );
   // A bare reference to `globalThis.fetch` risks "Illegal invocation" on some hosts; closing
   // over the call keeps it detached from any receiver, in production and in tests alike.
   const doFetch: MailFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));

@@ -63,11 +63,42 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
 | `eval-errors.ts` | the five `X_EVAL_*` classes; their codes and titles stay in `errors.ts` |
 | `llm-cache.ts` | the semantic cache half of `llm()`: what a declaration may partition on, and the store it reaches |
 | `llm-fixture.ts` | the harness `llm.test.ts` and `llm-cache.test.ts` share. Not shipped (`!src/**/*-fixture.ts`) |
+| `bounds-fixture.ts` | the one `refusal`/`asyncRefusal` every numeric-bound suite here asserts through. Not shipped, same rule |
+| `agent-bounds.test.ts` | the agent loop's ceilings, split out because `agent.test.ts` is at the 500-line ceiling |
 | `runtime.ts` | the ambient gateway / embedder / semantic caches an `llm()` reaches |
 | `fix-line.ts` / `fix-line.evals.ts` / `fix-line.v1.baseline.json` / `fix-line.eval.test.ts` | the package's own dogfood eval — the first framework-level `*.eval.test.ts`, proving the `defineEval`/baseline convention actually fails a build |
 
 ## Invariants
 
+- **Every numeric option in this package is screened, and `??` is not the screen — `As of
+  2026-08-26`.** `NaN` is not nullish, so a default never fires for it, and `Math.max`, `Math.min`
+  and `Math.floor` all PROPAGATE it. `finiteOption`/`finiteCount` from `@ultimat3/core` are the one
+  form (never a local copy — `scripts/flight-copies.ts` exists because four grew once), and
+  `bun run finite-bounds` is the ratchet — it saw 21 of these sites, and the ones it CANNOT see (a
+  required option with no `??`, a default parameter, a cross-field product like
+  `Math.max(input.k * 4, 20)`) were the worse half. What they DID:
+  `chunk({ size: NaN })` was a synchronous infinite loop past every `AbortSignal`;
+  `embedBatched(…, 0)` re-issued the same empty batch to a paid endpoint forever;
+  `hive({ concurrency: NaN })` ran `Array.from({ length: NaN })` workers, i.e. none, and returned
+  `0 ok / 0 failed / 0 skipped` as a clean run; `RemoteEmbedder({ batchSize: NaN })` sent ONE
+  request of zero inputs and answered zero vectors; `k1`, `k`, `rrfK` each turned a search into an
+  empty list or an unranked one. **The worst is `maxTokens`, and it is not about the request**: it
+  IS the pre-flight estimate, `BudgetLedger.assertScope` asks `want > remaining`, every comparison
+  against a `NaN` is false, and `debit` then writes that `NaN` onto the ambient ledger AND the
+  per-process `BudgetStore` — measured, a 5,000,000-token call passed a 1,000-token ceiling on the
+  next reserve. One unscreened declaration turns every actor and org ceiling in the process off for
+  the life of the process. Hence `Gateway.generate`/`stream` screen it at the one seam every model
+  call passes, `registerModel` screens `maxOutput` (which reaches the same estimate through
+  `Math.min`), and `llm()`/`agent()` screen theirs at DECLARATION, beside `respondToolFor` and the
+  `X_AGENT_TOOL_UNEXPOSED` check, so a module-scope declaration fails the boot rather than the
+  ninetieth second of a run.
+- **A bound is screened under the key the DECLARATION uses, even when that costs a second check.**
+  `budget.tokensPerRun` reaches `BudgetLimits` as `request`, so `limitsOf` in `llm.ts`, `agent.ts`
+  and `hive.ts` screens it before the ledger's own constructor does — a `fix:` naming a key the app
+  never wrote is not a fix. Same reason `retrieve()` screens its own `k` rather than letting the
+  store refuse the `k * 3` it becomes, and `RemoteEmbedder` screens `maxResponseBytes` itself
+  rather than letting core's reader answer `readWithinLimit was given a limit of NaN` — which is
+  correct, unactionable, and only arrives after the request has been paid for.
 - **`llm()` returns an `action`. It is not a ninth primitive** (root `CLAUDE.md`, 2026-08). It
   never re-implements parse, authz or invoke — `action()` owns those and `invoke` runs them.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so an `llm` file imports one

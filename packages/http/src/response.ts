@@ -1,5 +1,6 @@
 // Response constructors. Every response in the framework is built here so that
 // content types, charsets and cache semantics are decided once instead of per route.
+import { logger } from '@ultimat3/core';
 import { TIMEZONE_HEADER } from '@ultimat3/time';
 import { toProblem } from './error-facts';
 
@@ -116,17 +117,58 @@ export interface CacheHint {
 
 export const NO_STORE: CacheHint = { mode: 'no-store' };
 
+/** A year, the only age at which `immutable` says anything a shorter one does not. */
+const IMMUTABLE_MAX_AGE_SECONDS = 31_536_000;
+
+/**
+ * RFC-9111 delta-seconds is `1*DIGIT`, so `max-age=NaN` is not a shorter age or a longer one — it
+ * is an unparseable directive, and a conforming cache IGNORES a directive it cannot parse. The
+ * response then falls back to HEURISTIC caching (a fraction of `Last-Modified`'s age), which is
+ * the one behaviour no `CacheHint` ever asked for and the one nothing downstream can detect.
+ * `??` guards nullish and `NaN` is not nullish, so an age computed from a timestamp difference or
+ * read out of an env value arrives here intact; a fraction (`ms / 1000`) and a negative (a clock
+ * that went backwards) are the same unparseable token.
+ *
+ * The name carries `finite` deliberately: `bun run finite-bounds` recognises a repair by the shape
+ * of the CALL, so this screen spelled `deltaSeconds` read as no screen at all.
+ *
+ * TOTAL, never a throw: this is the response path, where refusing turns a bad cache hint into a
+ * 500. A dropped age is always the SAFER direction — no `s-maxage` means a shared cache falls back
+ * to `max-age`, and a `max-age` of 0 means revalidate — so nothing here can lengthen an age the
+ * caller did not ask for. The warning is what keeps it from being silent; the fix belongs at the
+ * declaration, and `field` names which one.
+ */
+const finiteDeltaSeconds = (field: string, value: number): number | undefined => {
+  if (Number.isSafeInteger(value) && value >= 0) return value;
+  logger.warn('http.cache_hint_not_delta_seconds', { field, value: String(value) });
+  return undefined;
+};
+
 export const cacheControl = (hint: CacheHint): string => {
   if (hint.mode === 'no-store') return 'no-store';
   if (hint.mode === 'immutable') {
-    return `public, max-age=${hint.maxAgeSeconds ?? 31_536_000}, immutable`;
+    const age = finiteDeltaSeconds(
+      'maxAgeSeconds',
+      hint.maxAgeSeconds ?? IMMUTABLE_MAX_AGE_SECONDS,
+    );
+    // 0 rather than the year: a declared age that is not a number is not evidence for the longest
+    // age in the file, and an over-long `immutable` is the one cache mistake a purge cannot undo.
+    return `public, max-age=${String(age ?? 0)}, immutable`;
   }
-  const parts = [hint.mode, `max-age=${hint.maxAgeSeconds ?? 0}`];
+  const parts = [
+    hint.mode,
+    `max-age=${String(finiteDeltaSeconds('maxAgeSeconds', hint.maxAgeSeconds ?? 0) ?? 0)}`,
+  ];
   if (hint.mode === 'public' && hint.sMaxAgeSeconds !== undefined) {
-    parts.push(`s-maxage=${hint.sMaxAgeSeconds}`);
+    const shared = finiteDeltaSeconds('sMaxAgeSeconds', hint.sMaxAgeSeconds);
+    if (shared !== undefined) parts.push(`s-maxage=${String(shared)}`);
   }
   if (hint.staleWhileRevalidateSeconds !== undefined) {
-    parts.push(`stale-while-revalidate=${hint.staleWhileRevalidateSeconds}`);
+    const stale = finiteDeltaSeconds(
+      'staleWhileRevalidateSeconds',
+      hint.staleWhileRevalidateSeconds,
+    );
+    if (stale !== undefined) parts.push(`stale-while-revalidate=${String(stale)}`);
   }
   return parts.join(', ');
 };

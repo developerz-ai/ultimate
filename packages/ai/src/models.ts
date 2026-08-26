@@ -3,6 +3,7 @@
 // has never heard of — a closed union made them untypeable, so the only way past `tsc` was to
 // claim a Claude id and be billed Anthropic list prices for a model nobody ran. As of 2026-08.
 
+import { finiteCount } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import { AiModelUnknownError, AiRequestInvalidError } from './errors';
 
@@ -103,6 +104,9 @@ const usd = (minor: number): Money => ({ minor, currency: 'USD' });
  */
 const registry = new Map<ModelId, ModelSpec>();
 
+/** Named in every bound refusal, so the fix names the call an app makes at boot. */
+const SUBJECT = 'registerModel';
+
 /**
  * Add a model to the catalogue, or restate one that is already in it. **The three built-ins
  * register through this same call**, at the bottom of this file — so the default path is the
@@ -119,6 +123,19 @@ const registry = new Map<ModelId, ModelSpec>();
  * catalogue in the order it wants, re-registering the built-in ids it keeps.
  */
 export function registerModel(spec: ModelSpec): ModelSpec {
+  // Screened at the ONE seam every model in the catalogue passes through, and at boot, which is
+  // the earliest a wrong row can be caught. Not a formality: `maxOutput` reaches the pre-flight
+  // estimate through `Math.min(request.maxTokens, spec.maxOutput)` — which propagates a `NaN`
+  // rather than screening it — and a `NaN` estimate passes every `want > remaining` budget check
+  // and then writes itself onto the ledger and the per-process `BudgetStore`, where every later
+  // comparison against it is false too. A price is the same story for the money ceiling, and
+  // `costOf` answers confidently either way, so a row nobody can price is refused rather than
+  // billed. Minor units are whole by the framework's money rule, so `finiteCount` is the check.
+  finiteCount(SUBJECT, `${spec.id} contextWindow`, spec.contextWindow, 1);
+  finiteCount(SUBJECT, `${spec.id} maxOutput`, spec.maxOutput, 1);
+  finiteCount(SUBJECT, `${spec.id} cacheMinimumTokens`, spec.cacheMinimumTokens);
+  finiteCount(SUBJECT, `${spec.id} inputPerMillion.minor`, spec.inputPerMillion.minor);
+  finiteCount(SUBJECT, `${spec.id} outputPerMillion.minor`, spec.outputPerMillion.minor);
   registry.set(spec.id, spec);
   return spec;
 }

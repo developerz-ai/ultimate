@@ -352,3 +352,35 @@ test('a rejection that is not an object at all is never interpolated into the ca
   expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
   expect(causeOf(error)).toContain('egress, DNS or TLS');
 });
+
+// `AbortSignal.timeout(NaN)` does not "wait forever" and does not take the default: it raises a
+// bare TypeError, INSIDE the try that wraps the fetch, so a misconfigured deadline was reported as
+// a retryable egress failure whose fix said to curl the endpoint. The queue then retried it to the
+// dead-letter table, once per attempt, for a value no network could change.
+test('a non-finite timeout is refused when the driver is built, not on the first send', () => {
+  const error = thrown(() =>
+    createResendDriver({ apiKey: API_KEY, from: FROM, timeoutMs: Number.NaN }),
+  );
+  expect(causeOf(error)).toContain('timeoutMs');
+});
+
+// Zero is not "no deadline" here — the value goes straight to `AbortSignal.timeout`, which aborts
+// on the next tick, so every send would fail before a byte left the host.
+test('a zero timeout is refused rather than aborting every send immediately', () => {
+  const error = thrown(() => createResendDriver({ apiKey: API_KEY, from: FROM, timeoutMs: 0 }));
+  expect(causeOf(error)).toContain('timeoutMs');
+});
+
+test('a real timeout still builds a driver that sends', async () => {
+  const driver = createResendDriver({
+    apiKey: API_KEY,
+    from: FROM,
+    timeoutMs: 1_000,
+    fetch: (async () =>
+      new Response(JSON.stringify({ id: 're_1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as MailFetch,
+  });
+  expect((await driver.send(messageFixture())).id).toBe('re_1');
+});

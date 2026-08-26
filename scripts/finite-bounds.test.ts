@@ -277,7 +277,7 @@ describe('the real tree', () => {
       'money',
       'i18n',
       'seo',
-      // tier 2–3, swept in this one
+      // tier 2–3
       'entity',
       'policy',
       'http',
@@ -286,6 +286,15 @@ describe('the real tree', () => {
       'query',
       'jobs',
       'realtime',
+      // tier 4, swept in this one. `ui` is NOT here and must not be added while it holds a pin:
+      // three of its props are audited and deliberately unscreened, and the pin carries the reason.
+      'ai',
+      'render',
+      'pwa',
+      'mail',
+      'manifest',
+      'mcp',
+      'notify',
     ];
     for (const pkg of swept) {
       expect(sites.get(pkg) ?? [], `${pkg} has no unchecked numeric option`).toEqual([]);

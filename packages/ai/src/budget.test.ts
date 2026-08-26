@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { BudgetStore } from './budget';
+import { NOT_A_BOUND, refusal } from './bounds-fixture';
+import type { BudgetLimits, BudgetStore } from './budget';
 import { BudgetLedger, estimateSpend, MemoryBudgetStore } from './budget';
 import type { GenerateRequest } from './provider';
 
@@ -272,5 +273,44 @@ describe('the ceiling holds under parallelism', () => {
     );
 
     expect(store.spent('actor:u1')).toBe(15);
+  });
+});
+
+/**
+ * A ceiling that is not a number does not become a wrong ceiling — it stops being one.
+ *
+ * `assertScope` asks `want > limit - spent`, and every comparison against a `NaN` is false, so the
+ * scope is silently unlimited while `report()`, a log line and a manifest row all still show a
+ * declared ceiling. Measured before this screen: a 5,000,000-token call passed a `request` limit
+ * of `NaN` outright. Screened in the constructor, which `derive` also goes through.
+ */
+describe('the ledger refuses a ceiling that cannot hold', () => {
+  /** One builder per scope, written out: a computed key would give up the type this file checks. */
+  const LIMIT = {
+    request: (request: number): BudgetLimits => ({ request }),
+    tokensIn: (tokensIn: number): BudgetLimits => ({ tokensIn }),
+    actor: (actor: number): BudgetLimits => ({ actor }),
+    org: (org: number): BudgetLimits => ({ org }),
+  };
+
+  test('every scope is named, and the honest ones are untouched', () => {
+    for (const [scope, limits] of Object.entries(LIMIT)) {
+      for (const value of NOT_A_BOUND) {
+        const error = refusal(() => new BudgetLedger({ limits: limits(value) }));
+        expect(error.code).toBe('X_INVARIANT');
+        expect(error.cause).toContain(scope);
+      }
+    }
+    // An ABSENT limit is "unlimited" by design and stays absent — the screen is about a declared
+    // one, which is exactly why a `NaN` was the dangerous value: it reads as declared.
+    expect(() => new BudgetLedger({ limits: {} })).not.toThrow();
+    expect(() => new BudgetLedger({ limits: { request: 0 } })).not.toThrow();
+  });
+
+  test('a derived ledger is screened by the same constructor it is built through', async () => {
+    const parent = new BudgetLedger({ limits: { request: 1_000 } });
+    expect(refusal(() => parent.derive({ tokensIn: Number.NaN })).cause).toContain('tokensIn');
+    // And the honest derivation still tightens, which is the rule this file exists for.
+    expect((await parent.derive({ request: 100 }).report()).limits.request).toBe(100);
   });
 });

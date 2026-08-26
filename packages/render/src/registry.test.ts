@@ -362,3 +362,41 @@ describe('routeCount', () => {
     expect(routeCount()).toBe(0);
   });
 });
+
+/**
+ * `ctx.suspenseBoundaries < 1` is the only thing standing between `render: 'stream'` and a route
+ * that streams nothing — and `NaN < 1` is false, so a count that arrived non-finite does not
+ * report a route with no boundary, it stops reporting any route at all.
+ */
+describe('the suspense count is a number or it is refused', () => {
+  test('a NaN count no longer lets a stream route with no <Suspense> register', () => {
+    const error = thrownBy(() =>
+      registerRoute({
+        file: 'apps/web/app/feed/page.tsx',
+        config: defineRoute({
+          render: 'stream',
+          offline: 'network-only',
+          hydrate: 'never',
+          meta: (() => ({ title: 'T', description: 'd'.repeat(60) })) as unknown as RouteMetaFn,
+        }),
+        suspenseBoundaries: Number.NaN,
+      }),
+    );
+    expect(error.cause).toMatch(/suspenseBoundaries/);
+  });
+
+  test('a real count still registers', () => {
+    expect(
+      registerRoute({
+        file: 'apps/web/app/feed/page.tsx',
+        config: defineRoute({
+          render: 'stream',
+          offline: 'network-only',
+          hydrate: 'never',
+          meta: (() => ({ title: 'T', description: 'd'.repeat(60) })) as unknown as RouteMetaFn,
+        }),
+        suspenseBoundaries: 1,
+      }).suspenseBoundaries,
+    ).toBe(1);
+  });
+});

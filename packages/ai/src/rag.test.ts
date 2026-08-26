@@ -5,8 +5,11 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
+import { HashEmbedder } from './embeddings';
 import { estimateTextTokens } from './provider';
-import { chunk } from './rag';
+import { assembleContext, chunk, retrieve } from './rag';
+import { MemoryVectorStore } from './vector';
 
 const SIZE = 128;
 const OVERLAP = 32;
@@ -95,5 +98,54 @@ describe('chunk() wraps what the sentence split could not break', () => {
     });
     expect(chunks.map((piece) => piece.id)).toEqual(chunks.map((_, i) => `doc#${i}`));
     expect(chunks[0]?.metadata).toEqual({ source: 'doc', lang: 'en' });
+  });
+});
+
+/**
+ * The pipeline's four bounds. `chunk`'s `size` is the one that made this a sweep rather than a
+ * tidy-up: `Math.max(1, Math.floor(NaN))` is `NaN`, every `<= size` in the wrap reads false, and
+ * `cutToBudget` slices at `NaN` forever — a SYNCHRONOUS loop, on the only thread, past every
+ * `AbortSignal` and past the job timeout. Measured before the screen existed: 10s under `timeout`,
+ * killed, never returned. The other three fail as successes instead.
+ */
+describe('a chunk, a retrieval and an assembly all refuse a bound that is not one', () => {
+  test('chunk() refuses a size no clamp can repair, and it is the clamp that hid it', () => {
+    for (const size of NOT_A_BOUND) {
+      const error = refusal(() => chunk({ id: 'doc', text: 'alpha beta gamma', size }));
+      expect(error.code).toBe('X_INVARIANT');
+      expect(error.cause).toContain('size');
+      expect(error.fix).toContain('chunk');
+    }
+    // The deliberate flooring is untouched: a fractional budget is still floored, `size: 0` is
+    // still read as one token, and both are what `rag.ts`'s own comment promises.
+    expect(chunk({ id: 'doc', text: 'alpha beta gamma', size: 0 }).length).toBeGreaterThan(0);
+    expect(chunk({ id: 'doc', text: 'alpha beta gamma', size: 12.5 }).length).toBeGreaterThan(0);
+  });
+
+  test('an overlap that is not a number is refused rather than silently dropping the carry', () => {
+    expect(refusal(() => chunk({ id: 'doc', text: 'a b c', overlap: Number.NaN })).cause).toContain(
+      'overlap',
+    );
+    // Zero stays legal — two tests above rely on it to join chunks back into the document.
+    expect(chunk({ id: 'doc', text: 'a b c', size: 8, overlap: 0 }).length).toBeGreaterThan(0);
+  });
+
+  test('assembleContext refuses the ceiling that has no default at all', () => {
+    const hits = [{ id: 'a', score: 1, text: 'x '.repeat(2_000), metadata: {} }];
+    const error = refusal(() => assembleContext({ hits, maxTokens: Number.NaN }));
+    expect(error.cause).toContain('maxTokens');
+    // What it was doing instead: `tokens + cost > NaN` is false, so every document was accepted
+    // and `dropped` stayed empty — a context budget that reported a clean fill of any size.
+    expect(assembleContext({ hits, maxTokens: 10 }).dropped).toEqual(['a']);
+  });
+
+  test('retrieve() names its own k, not the k * 3 the store is asked for', async () => {
+    const store = new MemoryVectorStore({ dimension: 256 });
+    const embedder = new HashEmbedder();
+    const error = await asyncRefusal(() =>
+      retrieve({ store, embedder, query: 'drift', k: Number.NaN }),
+    );
+    expect(error.cause).toContain('retrieve');
+    expect(error.cause).toContain('k');
   });
 });

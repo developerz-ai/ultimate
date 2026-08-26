@@ -46,12 +46,29 @@
 //   1. an option with NO `??` default — `AcceptBudget`'s required `perSecond` was exactly this, and
 //      only its `burst` sibling was visible. A required numeric option is invisible to this rule.
 //   2. a number that arrives as a function PARAMETER rather than a property of an options object.
+//      MEASURED 2026-08-26 and it is REAL: 32 numeric parameter defaults in `packages/*/src`, three
+//      of them on a public secret-generating surface. `randomToken(NaN)` is `""` — the function
+//      whose whole job is an unguessable secret returns the empty string; `nanoid(NaN)` likewise;
+//      `generateRecoveryCodes(NaN)` enrols a user with ZERO recovery codes in a well-formed
+//      `RecoveryCodeSet`. Issue #371, its own slice — a parameter default is not a `??` expression,
+//      so closing it needs a SECOND matcher, and a matcher shipped without a measurement is how the
+//      next blind spot hides. This line named the gap from day one and nobody had measured it,
+//      which is the failure axiom 3 describes.
 //   3. a repair in a DIFFERENT file. `socket.ts` passing `maxFramesPerSecond` into `AcceptBudget`'s
 //      own assert reads as unchecked here, and the answer is to refuse it where it is written too —
 //      which is the layered form `backfill()` and `inBatches()` already use.
 //   4. a default that is not a numeric LITERAL and not a `SCREAMING_SNAKE` constant this corpus
 //      declares as one. `?? 0` and `?? 1` are excluded outright: they are accumulator identities
 //      (`map.get(k) ?? 0`), not configuration, and they were the whole of the noise floor.
+//
+// WHAT WAS LOOKED FOR AND FOUND CLEAN, 2026-08-26, so the next agent does not re-derive it:
+//   `Number(process.env.…)` — 24 hits, every one a COMMENT or a `fix:` string. This tree never does
+//   it; the idiom is only ever quoted as the thing that produces the `NaN`.
+//   `parseInt` / `parseFloat` — 42 call sites, all guarded. `realtime/src/pg-auth.ts:215` tests
+//   `/^[1-9]\d*$/` BEFORE parsing, `auth/src/password.ts:86` checks `Number.isFinite` on both
+//   parameters, `http/src/config.ts:213` feeds `assertFiniteCount`, and every remaining one reads a
+//   regex capture group that is already `\d+`.
+//   a DESTRUCTURED numeric default (`const { limit = 10 } = opts`) — zero in shipped source.
 //
 //   bun run finite-bounds  ·  bun run scripts/finite-bounds.ts [--json] [--explain]
 //   bun run scripts/finite-bounds.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet

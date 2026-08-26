@@ -44,45 +44,10 @@ export const FINITE_BOUNDS_PINS: Readonly<Record<string, FiniteBoundPin>> = {
     reason:
       '`audit.ts`, `layout.tsx`, `resource.ts`, `search.ts` — `capacity`, `limitPerResource`, `pageSize`, `width`. NOT AUDITED — this count falls when the tier 5 slice of the 17.0.0 sweep lands.',
   },
-  ai: {
-    count: 21,
-    reason:
-      '`agent.ts`, `embeddings.ts`, `evals.ts`, `hive.ts`, `llm.ts` and more — `b`, `batchSize`, `concurrency`, `dimension`, `k`, `k1`, …. NOT AUDITED — this count falls when the tier 4 slice of the 17.0.0 sweep lands.',
-  },
   cli: {
     count: 6,
     reason:
       '`dev-traces.ts`, `e2e-page.ts`, `island-shot.ts`, `metrics-endpoint.ts`, `sync-authenticator.ts` — `limit`, `minBytes`, `port`, `serviceWorkerTimeoutMs`, `timeoutMs`, `ttlMs`, …. NOT AUDITED — this count falls when the tier 5 slice of the 17.0.0 sweep lands.',
-  },
-  mail: {
-    count: 2,
-    reason:
-      '`driver-resend.ts`, `driver-smtp.ts` — `timeoutMs`. NOT AUDITED — this count falls when the tier 4 slice of the 17.0.0 sweep lands.',
-  },
-  manifest: {
-    count: 1,
-    reason:
-      '`agents-md.ts` — `maxBytes`. NOT AUDITED — this count falls when the tier 4 slice of the 17.0.0 sweep lands.',
-  },
-  mcp: {
-    count: 2,
-    reason:
-      '`transport-http.ts`, `transport-stdio.ts` — `bodyLimitBytes`, `lineLimitBytes`. NOT AUDITED — this count falls when the tier 4 slice of the 17.0.0 sweep lands.',
-  },
-  notify: {
-    count: 4,
-    reason:
-      '`inbox-pg.ts`, `inbox.ts`, `ledger.ts`, `notifier.ts` — `limit`, `max`, `maxRecipients`. NOT AUDITED — this count falls when the tier 4 slice of the 17.0.0 sweep lands.',
-  },
-  pwa: {
-    count: 2,
-    reason:
-      '`install.ts`, `precache.ts` — `minEngagementMs`, `warnBytes`. NOT AUDITED — this count falls when the tier 4 slice of the 17.0.0 sweep lands.',
-  },
-  render: {
-    count: 3,
-    reason:
-      '`head.ts`, `render-isr.ts`, `render-ssr.ts` — `maxBytes`, `maxEntries`, `status`. NOT AUDITED — this count falls when the tier 4 slice of the 17.0.0 sweep lands.',
   },
   scraping: {
     count: 9,
@@ -95,9 +60,9 @@ export const FINITE_BOUNDS_PINS: Readonly<Record<string, FiniteBoundPin>> = {
       '`determinism.ts` — `seed`. NOT AUDITED — this count falls when the tier 5 slice of the 17.0.0 sweep lands.',
   },
   ui: {
-    count: 4,
+    count: 3,
     reason:
-      '`Combobox.tsx`, `DataTable.tsx`, `Section.tsx`, `Textarea.tsx` — `debounceMs`, `level`, `rows`, `skeletonRows`. NOT AUDITED — this count falls when the tier 4 slice of the 17.0.0 sweep lands.',
+      '`Combobox.tsx`, `Section.tsx`, `Textarea.tsx` — `debounceMs`, `level`, `rows`. AUDITED in the tier 4 slice of the 17.0.0 sweep, and left on purpose. `debounceMs` and `level` are screened ONE HOP AWAY, which this rule cannot see (its own blind spot 3): `debounce()` throws `X_UI_INVALID_VALUE` for a non-finite delay and `headingTag()` throws it for a level off the 1-6 scale, so a second screen at the prop would give one value two codes. `rows` is the only genuinely unscreened one, and it is the only prop of the four whose bad value produces neither silent zero-work nor a throw: a `rows` attribute the HTML parser rejects falls back to the element default, a two-row box instead of three, so there is no unbounded read and no crash — and throwing an X_INVARIANT out of a render would blank a whole form over a cosmetic typo. `layout.test.ts` and `file-controls.test.ts` hold the evidence for the first two. Overturn `rows` with one `finiteCount("Textarea", "rows", props.rows ?? 3, 1)` at Textarea.tsx:42.',
   },
 };
 

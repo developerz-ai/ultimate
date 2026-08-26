@@ -5,6 +5,8 @@
  * permanently on some platforms.
  */
 
+import { finiteCount } from '@ultimat3/core';
+
 /** A minimal signal so this file needs no framework runtime. */
 export interface ReadSignal<T> {
   (): T;
@@ -77,7 +79,14 @@ export interface InstallController {
 
 export function createInstallController(options: InstallOptions): InstallController {
   const host = options.host;
-  const minEngagementMs = options.minEngagementMs ?? MIN_ENGAGEMENT_MS;
+  // `now() - startedAt < NaN` is false at every instant, so a threshold that arrived non-finite
+  // does not shorten the wait — it deletes it, and the prompt fires on first paint. `0` stays
+  // legal: "ask as soon as the browser offers" is a decision, and it is a comparison that works.
+  const minEngagementMs = finiteCount(
+    'createInstallController',
+    'minEngagementMs',
+    options.minEngagementMs ?? MIN_ENGAGEMENT_MS,
+  );
   const startedAt = host.now();
 
   const canInstall = createSignal(false);

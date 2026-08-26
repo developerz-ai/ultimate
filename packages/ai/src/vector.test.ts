@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
 import { HashEmbedder, normalize } from './embeddings';
 import { assembleContext, chunk } from './rag';
 import { fuse, MemoryVectorStore } from './vector';
@@ -246,5 +247,73 @@ describe('unit · RRF fusion breaks ties the way the SQL does', () => {
     ]);
     expect(forward.map((h) => h.id)).toEqual(reversed.map((h) => h.id));
     expect(forward.map((h) => h.id)).toEqual(['d', 'm']);
+  });
+});
+
+/**
+ * The store's five numeric bounds, none of which the code they land in can screen.
+ *
+ * Each one fails as a SUCCESS, which is why none of them was ever reported: `k1: NaN` makes every
+ * BM25 score `NaN`, `hit.score > 0` false, and `searchText` answers an empty list; `k: NaN` makes
+ * `slice(0, NaN)` an empty list too; and `rrfK: NaN` scores every document `NaN`, so the fusion
+ * this store exists to perform silently stops being a ranking while a full result list comes back.
+ */
+describe('a bound that is not a number is refused, in the store a developer runs against', () => {
+  const seed = async (store: MemoryVectorStore): Promise<MemoryVectorStore> => {
+    await store.upsert([
+      { id: 'a', text: 'X_DB_DRIFT means the schema differs', vector: vec(1, 0, 0, 0) },
+      { id: 'b', text: 'the schema of a table', vector: vec(0, 1, 0, 0) },
+    ]);
+    return store;
+  };
+
+  test('the BM25 constants are screened where they are declared', () => {
+    for (const value of NOT_A_BOUND) {
+      expect(refusal(() => new MemoryVectorStore({ dimension: 4, k1: value })).code).toBe(
+        'X_INVARIANT',
+      );
+      expect(refusal(() => new MemoryVectorStore({ dimension: 4, b: value })).cause).toContain('b');
+    }
+    // Fractional and finite is the whole point of these two: 1.2 and 0.75 are the paper's values.
+    expect(() => new MemoryVectorStore({ dimension: 4, k1: 1.6, b: 0.5 })).not.toThrow();
+  });
+
+  test('the hybrid read refuses k, candidates and rrfK, and names which one', async () => {
+    const store = await seed(new MemoryVectorStore({ dimension: 4 }));
+    const query = { query: 'schema', vector: vec(1, 0, 0, 0) };
+    const k = await asyncRefusal(() => store.hybrid({ ...query, k: Number.NaN }));
+    expect(k.code).toBe('X_INVARIANT');
+    expect(k.cause).toContain('k');
+    expect(k.fix).toContain('hybrid search');
+    expect(
+      (await asyncRefusal(() => store.hybrid({ ...query, k: 2, candidates: Number.NaN }))).cause,
+    ).toContain('candidates');
+    expect(
+      (await asyncRefusal(() => store.hybrid({ ...query, k: 2, rrfK: Number.NaN }))).cause,
+    ).toContain('rrfK');
+  });
+
+  test('a k with no default is screened on the plain reads too', async () => {
+    const store = await seed(new MemoryVectorStore({ dimension: 4 }));
+    expect((await asyncRefusal(() => store.search(vec(1, 0, 0, 0), Number.NaN))).cause).toContain(
+      'k',
+    );
+    expect((await asyncRefusal(() => store.searchText('schema', Number.NaN))).cause).toContain('k');
+    // Zero stays legal: `limit 0` is a read that asks for nothing, and it answers the same in
+    // both stores. Refusing it would be a new rule rather than this repair.
+    expect(await store.search(vec(1, 0, 0, 0), 0)).toEqual([]);
+  });
+
+  test('fuse screens its own default parameter, because a reranker calls it directly', () => {
+    const hits = [[{ id: 'a', score: 1, text: 'a', metadata: {} }]];
+    expect(refusal(() => fuse(hits, Number.NaN)).cause).toContain('rrfK');
+    expect(fuse(hits)[0]?.id).toBe('a');
+  });
+
+  test('an honest hybrid read still ranks — the non-vacuity half', async () => {
+    const store = await seed(new MemoryVectorStore({ dimension: 4 }));
+    const hits = await store.hybrid({ query: 'schema', vector: vec(1, 0, 0, 0), k: 2 });
+    expect(hits).toHaveLength(2);
+    expect(hits.every((hit) => Number.isFinite(hit.score))).toBe(true);
   });
 });

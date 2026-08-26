@@ -217,3 +217,23 @@ describe('the layout primitives', () => {
     });
   });
 });
+
+/**
+ * NOT A REPAIR — the evidence for a pin. `Section`'s `level` is screened one hop away, in
+ * `headingTag`, which `scripts/finite-bounds.ts` cannot see (its own header, blind spot 3: "a
+ * repair in a DIFFERENT file"). There is no `<hNaN>`, so the value has no rendering at all and the
+ * refusal is the only honest answer; a second screen at the prop would trade a shipped
+ * `X_UI_INVALID_VALUE` for an `X_INVARIANT` and give one value two codes.
+ */
+describe('Section: a heading level that is not a level', () => {
+  beforeAll(probe);
+  afterAll(unprobe);
+
+  for (const level of [Number.NaN, Number.POSITIVE_INFINITY, 2.5]) {
+    test(`level: ${String(level)} is X_UI_INVALID_VALUE, never an invalid element`, () => {
+      expect(() => renderNodes(Section, { children: 'b', title: 'T', level })).toThrow(
+        /X_UI_INVALID_VALUE/,
+      );
+    });
+  }
+});

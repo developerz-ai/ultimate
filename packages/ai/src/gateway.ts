@@ -7,6 +7,7 @@
 import type { Random } from '@ultimat3/core';
 import {
   backoffDelay,
+  finiteCount,
   isRetryableStatus,
   isUltimateError,
   renderThrowable,
@@ -91,6 +92,15 @@ class GatewayImpl implements Gateway {
   constructor(config: CreateGatewayInput) {
     this.config = config;
     this.retry = config.retry ?? DEFAULT_RETRY;
+    // `attempts` is the retry loop's only exit condition and nothing screened it: `attempt <= NaN`
+    // is false on the first comparison, so `attempt()` calls no provider at all and raises
+    // `X_AI_PROVIDER_UNAVAILABLE` with an EMPTY attempt list — measured, "no provider could serve
+    // model claude-opus-5 ()" for a provider that was never asked. A floor of 1 because the field
+    // is documented as total attempts INCLUDING the first, so zero of them is not a policy.
+    // `baseDelayMs` and `maxDelayMs` are deliberately not screened here: `backoffDelay` refuses a
+    // non-finite one already, and a NEGATIVE base is clamped to a zero wait on purpose
+    // (`gateway-backoff.test.ts` pins it), which a count check here would start refusing.
+    finiteCount('createGateway', 'retry.attempts', this.retry.attempts, 1);
     this.sleep = config.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.random = config.random;
   }
@@ -113,7 +123,7 @@ class GatewayImpl implements Gateway {
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
     const model = request.model ?? this.config.defaultModel ?? DEFAULT_MODEL;
-    const resolved: GenerateRequest = { ...request, model };
+    const resolved: GenerateRequest = { ...request, model, maxTokens: ceilingOf(request) };
 
     const cacheKey = cacheKeyFor(resolved);
     const cached = await this.config.cache?.get(cacheKey);
@@ -150,7 +160,7 @@ class GatewayImpl implements Gateway {
 
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
     const model = request.model ?? this.config.defaultModel ?? DEFAULT_MODEL;
-    const resolved: GenerateRequest = { ...request, model };
+    const resolved: GenerateRequest = { ...request, model, maxTokens: ceilingOf(request) };
 
     // Routed BEFORE the reservation, not after it. `providerFor` throws for a registered model no
     // configured provider serves — an ordinary boot misconfiguration — and a debit taken first has
@@ -259,14 +269,33 @@ class GatewayImpl implements Gateway {
 }
 
 /**
+ * The request's completion ceiling, screened at the one seam every model call in an app passes
+ * through — `llm()`, `agent()`, an eval, a judge and a hand-built `generate()` alike.
+ *
+ * It is not the request that a `NaN` here breaks, and that is why it is refused before anything
+ * else happens: `maxTokens` IS the pre-flight estimate, `want > remaining` is false for a `NaN`
+ * want, and `BudgetLedger.debit` then writes it onto the ambient ledger and the per-process
+ * `BudgetStore`. Both counters are `NaN` from then on, so every later comparison against them is
+ * false too — one unscreened declaration turns off every actor and org ceiling in the process,
+ * permanently, and reports nothing. Screened before the reservation, so the ledger never sees it.
+ */
+function ceilingOf(request: GenerateRequest): number {
+  return finiteCount('the AI gateway', 'maxTokens', request.maxTokens, 1);
+}
+
+/**
  * Full jitter: a uniform pick from [0, exponential], capped BEFORE the roll.
  *
  * The arithmetic is core's `backoffDelay` — this is the mapping from the gateway's own field names
  * onto it, and nothing else. Two things came with the delegation and neither is cosmetic: the
  * result is ROUNDED where this floored it (a shift of at most 1ms, and the same rounding
  * `@ultimat3/jobs` and `@ultimat3/realtime` already use), and a policy carrying a `NaN` — which is
- * what `Number(process.env.…)` answers for an unset variable — waits 0 instead of handing
- * `setTimeout` a `NaN` it fires on the next tick, i.e. a backoff that is a tight spin.
+ * what `Number(process.env.…)` answers for an unset variable — is REFUSED rather than clamped.
+ * This paragraph said "waits 0" until 2026-08-26, which was the safe answer to the wrong question
+ * and had already stopped being true: a schedule of zeroes still spins, it just spins on purpose,
+ * so core's `backoffDelay` refuses a non-finite bound before it clamps and this gateway inherits
+ * the refusal with the curve. `gateway-backoff.test.ts` pins both halves — the refusal, and the
+ * negative base that IS still clamped to zero.
  */
 export function backoffMs(policy: RetryPolicy, attempt: number, random?: Random): number {
   return backoffDelay({

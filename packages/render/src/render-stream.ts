@@ -11,7 +11,8 @@
  * contains no interactive island costs literally zero JS.
  */
 
-import { logger, renderThrowable } from '@ultimat3/core';
+import { finiteCount, logger, renderThrowable } from '@ultimat3/core';
+import { finiteStatus } from './finite-status';
 import { escapeAttribute, escapeRawTextContent } from './html';
 import type { RenderResult } from './route';
 
@@ -98,6 +99,18 @@ export interface StreamOptions {
 }
 
 /**
+ * `null` is the declared "this hole owns its own timeout" opt-out; every other value is a
+ * deadline, and a deadline of 0 is not one — `setTimeout(fn, 0)` fires on the next tick and the
+ * document becomes all fallbacks.
+ */
+const declaredTimeoutMs = (declared: number | null | undefined): number | null =>
+  declared === undefined
+    ? DEFAULT_HOLE_TIMEOUT_MS
+    : declared === null
+      ? null
+      : finiteCount('renderStreamHtml', 'holeTimeoutMs', declared, 1);
+
+/**
  * Flush order is completion order, not declaration order — a fast hole never waits behind
  * a slow one. The stream closes only after every hole has settled, so a rejected boundary
  * degrades to its error fallback instead of truncating the document.
@@ -110,8 +123,10 @@ export function renderStreamHtml(
   const tail = plan.tail ?? '</body></html>';
   const errorFallback =
     options.errorFallback ?? ((id) => `<div data-x-hole-error="${id}" hidden></div>`);
-  const timeoutMs =
-    options.holeTimeoutMs === undefined ? DEFAULT_HOLE_TIMEOUT_MS : options.holeTimeoutMs;
+  // A deadline is the bound a non-finite value does not disable but MOVES: `setTimeout(fn, NaN)`
+  // is `setTimeout(fn, 0)`, so every hole would miss a deadline nobody set and the document would
+  // be all fallbacks. `null` is the declared opt-out; there is no spelling that means "immediately".
+  const timeoutMs = declaredTimeoutMs(options.holeTimeoutMs);
   /**
    * The response's own lifetime. A client that disconnects mid-stream cancels the stream, and
    * both halves of that have to be honoured: nothing more may be enqueued — `settle`'s
@@ -202,7 +217,7 @@ export function renderStreamHtml(
 
 export function streamResult(plan: StreamPlan, options: StreamOptions, status = 200): RenderResult {
   return {
-    status,
+    status: finiteStatus('streamResult', status),
     headers: {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'private, no-store',

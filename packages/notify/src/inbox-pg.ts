@@ -1,7 +1,7 @@
 // The shared in-app inbox: one Postgres table, applied by the boot the way `x_jobs` is.
 // Statements are spelled out so an agent can run the exact one it saw in a log.
 
-import { uuid } from '@ultimat3/core';
+import { finiteCount, uuid } from '@ultimat3/core';
 import type { PgExecutor } from '@ultimat3/jobs';
 import type { InboxRow, InboxStore, InboxWrite } from './inbox';
 import { DEFAULT_INBOX_PAGE } from './inbox';
@@ -132,10 +132,19 @@ export function createPgInboxStore(options: PgInboxStoreOptions): InboxStore {
       return row === undefined ? { id: newId(), ...write, seenAt: null, readAt: null } : toRow(row);
     },
     async list(query) {
+      // Screened here and not left to Postgres: this number is bound straight into `limit $3`, and
+      // what a driver does with a `NaN` parameter is the driver's business — the memory store beside
+      // it answered `[]` for the same input. `??` cannot see it, because `NaN` is not nullish.
+      const limit = finiteCount(
+        'createPgInboxStore',
+        'limit',
+        query.limit ?? DEFAULT_INBOX_PAGE,
+        0,
+      );
       const rows = await executor.query<InboxDbRow>(SQL_NOTIFY_INBOX_PAGE, [
         query.recipient,
         query.unreadOnly === true,
-        query.limit ?? DEFAULT_INBOX_PAGE,
+        limit,
       ]);
       return rows.map(toRow);
     },

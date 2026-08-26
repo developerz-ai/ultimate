@@ -101,3 +101,63 @@ describe('cache headers', () => {
     ).toBeNull();
   });
 });
+
+/**
+ * A `cache-control` age is RFC-9111 delta-seconds: `1*DIGIT`. `max-age=NaN` is not a smaller age
+ * and not a bigger one — it is an unparseable directive, and a conforming cache IGNORES a
+ * directive it cannot parse, so the response silently falls back to HEURISTIC caching instead of
+ * the age the hint declared. `??` guards nullish and `NaN` is not nullish, so a hint computed from
+ * a timestamp difference or read from an env value arrives here intact.
+ *
+ * This runs on the response path, so the repair is TOTAL rather than a throw: a bad cache hint
+ * must not become a 500.
+ */
+describe('cacheControl never emits a directive a cache cannot parse', () => {
+  const AGE = /^[a-z-]+(?:=\d+)?(?:, [a-z-]+(?:=\d+)?)*$/;
+
+  test('a NaN max-age becomes the safe age, never the token NaN', () => {
+    const value = cacheControl({ mode: 'public', maxAgeSeconds: Number.NaN });
+    expect(value).toMatch(AGE);
+    expect(value).toContain('max-age=0');
+  });
+
+  test('a NaN s-maxage is dropped, so the shared cache falls back to max-age', () => {
+    const value = cacheControl({
+      mode: 'public',
+      maxAgeSeconds: 0,
+      sMaxAgeSeconds: Number.NaN,
+      staleWhileRevalidateSeconds: 600,
+    });
+    expect(value).toMatch(AGE);
+    expect(value).not.toContain('s-maxage');
+    expect(value).toContain('stale-while-revalidate=600');
+  });
+
+  test('a NaN stale-while-revalidate is dropped rather than emitted', () => {
+    const value = cacheControl({
+      mode: 'public',
+      maxAgeSeconds: 30,
+      staleWhileRevalidateSeconds: Number.NaN,
+    });
+    expect(value).toBe('public, max-age=30');
+  });
+
+  test('an immutable hint with a non-finite age revalidates rather than guessing a year', () => {
+    const value = cacheControl({ mode: 'immutable', maxAgeSeconds: Number.POSITIVE_INFINITY });
+    expect(value).toMatch(AGE);
+    expect(value).toBe('public, max-age=0, immutable');
+  });
+
+  test('a negative or fractional age is a directive too, and is refused the same way', () => {
+    expect(cacheControl({ mode: 'private', maxAgeSeconds: -1 })).toBe('private, max-age=0');
+    expect(cacheControl({ mode: 'private', maxAgeSeconds: 1.5 })).toBe('private, max-age=0');
+  });
+
+  test('the response that carries it is still built, never a 500', () => {
+    const response = applyCacheHeaders(text('body'), {
+      mode: 'public',
+      maxAgeSeconds: Number.NaN,
+    });
+    expect(response.headers.get('cache-control')).toMatch(AGE);
+  });
+});

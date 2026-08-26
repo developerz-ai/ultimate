@@ -2,6 +2,7 @@
 // real list always has (loading, error, empty, data). The error state renders an
 // UltimateError with the same code/cause/fix strings the terminal prints.
 
+import { finiteCount } from '@ultimat3/core';
 import type { JSX } from 'solid-js';
 import { ariaBool } from '../a11y';
 import { cx } from '../cx';
@@ -61,7 +62,13 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
 
   const body = (): JSX.Element => {
     if (props.loading === true) {
-      return Array.from({ length: props.skeletonRows ?? 5 }, () => (
+      // `Array.from({ length: NaN })` is `[]`, so a busy tbody with no placeholders in it is the
+      // collapsed layout this state exists to prevent, reported as healthy; `Infinity` asks for
+      // 2^53 - 1 elements and dies with a bare, uncoded `RangeError` out of a render. `??` reaches
+      // neither, because `NaN` is not nullish. 0 stays legal: a loading table with no placeholders
+      // is a choice, and it is a visible one.
+      const placeholders = finiteCount('DataTable', 'skeletonRows', props.skeletonRows ?? 5, 0);
+      return Array.from({ length: placeholders }, () => (
         <tr>
           {props.columns.map(() => (
             <td>

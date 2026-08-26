@@ -5,6 +5,8 @@
 // count is DERIVED from `readAt is null`, never stored, because a stored counter and a row set
 // drift the first time a write half-lands.
 
+import { finiteCount } from '@ultimat3/core';
+
 export interface InboxRow {
   /** Stable within a store. `(recipient, notifier, key)` is what makes it unique. */
   readonly id: string;
@@ -94,11 +96,22 @@ export function createMemoryInboxStore(): MemoryInboxStore {
       rows.set(id, row);
       return Promise.resolve(row);
     },
-    list(query) {
-      const page = own(query.recipient)
+    // `async` and not `Promise.resolve`, so a refused `limit` REJECTS here exactly as it does in
+    // `createPgInboxStore`: two drivers behind one interface must not answer one question two ways,
+    // and a sync throw against a rejected promise is a difference a caller can see.
+    async list(query) {
+      // `slice(0, NaN)` is `[]` — an empty inbox reported as the whole of it — and
+      // `slice(0, Infinity)` is every row the recipient ever received, which is the unbounded read
+      // `limit`'s own doc forbids. `??` reaches neither: `NaN` is not nullish.
+      const limit = finiteCount(
+        'createMemoryInboxStore',
+        'limit',
+        query.limit ?? DEFAULT_INBOX_PAGE,
+        0,
+      );
+      return own(query.recipient)
         .filter((row) => query.unreadOnly !== true || row.readAt === null)
-        .slice(0, query.limit ?? DEFAULT_INBOX_PAGE);
-      return Promise.resolve(page);
+        .slice(0, limit);
     },
     unreadCount(recipient) {
       return Promise.resolve(own(recipient).filter((row) => row.readAt === null).length);

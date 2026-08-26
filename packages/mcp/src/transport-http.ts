@@ -20,7 +20,7 @@
 //     refuse what a human would be allowed.
 
 import type { Actor, Clock } from '@ultimat3/core';
-import { readWithinLimit, systemClock } from '@ultimat3/core';
+import { finiteCount, readWithinLimit, systemClock } from '@ultimat3/core';
 import type { RateLimitStore } from '@ultimat3/http';
 import { memoryRateLimitStore, toBucket } from '@ultimat3/http';
 import { McpRateLimitedError } from './errors';
@@ -91,7 +91,17 @@ const JSON_HEADERS = { 'content-type': 'application/json' } as const;
 
 export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
   const { server } = input;
-  const bodyLimitBytes = input.bodyLimitBytes ?? DEFAULT_MCP_BODY_LIMIT_BYTES;
+  // At CONSTRUCTION, beside the two buckets and for the same reason: `readWithinLimit` refuses a
+  // non-finite cap, but it does so on the first request an agent makes and only after
+  // `resolveToken` has run — a number that cannot be enforced must fail where an author can act on
+  // it. Floor of 0 because `@ultimat3/http`'s `bodyLimitBytes` accepts 0, and these two must not
+  // answer one question two ways.
+  const bodyLimitBytes = finiteCount(
+    'mcpHttpRoute',
+    'bodyLimitBytes',
+    input.bodyLimitBytes ?? DEFAULT_MCP_BODY_LIMIT_BYTES,
+    0,
+  );
   const limits = input.rateLimits ?? MCP_RATE_LIMITS;
   const clock = input.clock ?? systemClock;
   const store = input.rateLimitStore ?? memoryRateLimitStore();

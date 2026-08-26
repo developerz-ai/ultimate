@@ -3,6 +3,7 @@
 // declaration, so the run body never re-parses a duration or re-decides a default per recipient.
 
 import type { Ctx } from '@ultimat3/core';
+import { finiteCount } from '@ultimat3/core';
 import { parseDuration } from '@ultimat3/time';
 import type { AnyNotifyChannel } from './channel';
 import type { NotifyEvent, Recipient } from './notification';
@@ -10,8 +11,21 @@ import type { NotifyEvent, Recipient } from './notification';
 /** `'5m'` | `300_000`. Numbers pass through so a caller may stay explicit, exactly as jobs does. */
 export type NotifyDuration = string | number;
 
-export const toDurationMs = (duration: NotifyDuration): number =>
-  typeof duration === 'number' ? duration : parseDuration(duration);
+/**
+ * `parseDuration` refuses every string it cannot read, so the STRING arm is already total. The
+ * number arm is the hole: it passes straight through, and a `NaN` there makes `waitMs > slept`
+ * false for every delivery (a declared delay that silently does not happen) and `at + windowMs`
+ * `NaN` (a digest bucket whose `endsAt > at` never holds, so every event opens its own window and
+ * the coalescer coalesces nothing). `option` names which declaration was wrong, since one notifier
+ * may hold several.
+ */
+export const toDurationMs = (duration: NotifyDuration, option = 'duration'): number =>
+  finiteCount(
+    'notifier',
+    option,
+    typeof duration === 'number' ? duration : parseDuration(duration),
+    0,
+  );
 
 /**
  * What a notifier is enqueued with.

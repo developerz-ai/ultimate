@@ -100,3 +100,33 @@ describe('ssrHeaders', () => {
     expect(ssrHeaders(entry, { buildId: 'build-42' })['x-ultimate-build']).toBe('build-42');
   });
 });
+
+/**
+ * A status reaches `new Response(body, { status })`, which answers a bare `RangeError` — not an
+ * `UltimateError` — for anything outside [200, 599]. `NaN` gets there because `??` guards nullish
+ * and `NaN` is not nullish, and it is the one value the boundary reports as
+ * `-9223372036854775808`, naming nothing a caller can act on.
+ */
+describe('renderSsr screens the status before the Response boundary does', () => {
+  test('a NaN status is refused with a coded error, not a RangeError two frames later', async () => {
+    const input = ssrInput('apps/web/site/pricing/page.tsx');
+    await expect(
+      renderSsr(input, () => '<p>pricing</p>', { buildId: 'b1', status: Number.NaN }),
+    ).rejects.toThrow(/status/);
+  });
+
+  test('a status outside 200-599 is refused at the same place', async () => {
+    const input = ssrInput('apps/web/site/pricing/page.tsx');
+    await expect(
+      renderSsr(input, () => '<p>pricing</p>', { buildId: 'b1', status: 700 }),
+    ).rejects.toThrow(/status/);
+  });
+
+  test('every status the boundary accepts still passes', async () => {
+    const input = ssrInput('apps/web/site/pricing/page.tsx');
+    for (const status of [200, 404, 503]) {
+      const result = await renderSsr(input, () => '<p>p</p>', { buildId: 'b1', status });
+      expect(new Response(result.body, { status: result.status }).status).toBe(status);
+    }
+  });
+});

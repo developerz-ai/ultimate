@@ -8,6 +8,7 @@
 // Reciprocal-rank fusion combines the two rankings without needing the two score scales to
 // be comparable — which they never are.
 
+import { finiteCount, finiteOption } from '@ultimat3/core';
 import { cosine, tokenize } from './embeddings';
 import { VectorDimMismatchError } from './errors';
 import { NO_TENANT, narrowScope, scopeAdmits, UNSCOPED, type VectorScope } from './vector-scope';
@@ -69,6 +70,12 @@ export interface MemoryVectorStoreInput {
   readonly records?: Map<string, StoredRecord>;
 }
 
+/** Named in every bound refusal below, so a caller knows which call it is about to edit. */
+const SUBJECT = 'MemoryVectorStore';
+
+/** The same subject for the hybrid read, whose options are the caller's per-call arguments. */
+const HYBRID = 'hybrid search';
+
 /** A record plus the tenant it was written under — the in-memory twin of the `tenant` column. */
 export interface StoredRecord extends VectorRecord {
   readonly tenant: string;
@@ -89,8 +96,12 @@ export class MemoryVectorStore implements VectorStore {
     this.dimension = input.dimension;
     this.scope = input.scope ?? UNSCOPED;
     this.records = input.records ?? new Map<string, StoredRecord>();
-    this.k1 = input.k1 ?? 1.2;
-    this.b = input.b ?? 0.75;
+    // Screened, not clamped: a `NaN` here makes every BM25 score `NaN`, `hit.score > 0` reads
+    // false for every document, and `searchText` answers an empty list — zero work reported as a
+    // successful search. `finiteOption` and not `finiteCount`, because both are tuning constants
+    // and fractional by nature (1.2 and 0.75 are the values the BM25 paper settled on).
+    this.k1 = finiteOption(SUBJECT, 'k1', input.k1 ?? 1.2);
+    this.b = finiteOption(SUBJECT, 'b', input.b ?? 0.75);
   }
 
   /**
@@ -119,10 +130,12 @@ export class MemoryVectorStore implements VectorStore {
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
     this.assertDimension(vector.length);
+    // `k` carries no default, so `??` never sees it and nothing else does either: `slice(0, NaN)`
+    // is `[]`, which is a search that answers "no matches" for every query and reports success.
     return this.candidates(filter)
       .map((record) => this.hit(record, cosine(vector, record.vector)))
       .sort(byScoreDesc)
-      .slice(0, k);
+      .slice(0, finiteCount(SUBJECT, 'k', k));
   }
 
   /** BM25 over the stored text. Real lexical scoring, so a rare exact term actually wins. */
@@ -131,6 +144,7 @@ export class MemoryVectorStore implements VectorStore {
     k: number,
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
+    const width = finiteCount(SUBJECT, 'k', k);
     const candidates = this.candidates(filter);
     if (candidates.length === 0) return [];
     const docs = candidates.map((record) => ({ record, tokens: tokenize(record.text) }));
@@ -152,7 +166,7 @@ export class MemoryVectorStore implements VectorStore {
       })
       .filter((hit) => hit.score > 0)
       .sort(byScoreDesc)
-      .slice(0, k);
+      .slice(0, width);
   }
 
   /**
@@ -161,13 +175,17 @@ export class MemoryVectorStore implements VectorStore {
    * by exact term match beats one that merely leads a flat vector ranking.
    */
   async hybrid(input: HybridSearchInput): Promise<readonly SearchHit[]> {
-    const width = input.candidates ?? Math.max(input.k * 4, 20);
-    const rrfK = input.rrfK ?? 60;
+    // Three bounds, none of which `Math.max` screens — it PROPAGATES a `NaN`. A `NaN` `k` collapses
+    // both candidate widths and the final slice to `[]`; a `NaN` `rrfK` makes every fused score
+    // `NaN`, and the ranking this method exists to produce becomes whatever order the sort left.
+    const k = finiteCount(HYBRID, 'k', input.k);
+    const width = finiteCount(HYBRID, 'candidates', input.candidates ?? Math.max(k * 4, 20));
+    const rrfK = finiteOption(HYBRID, 'rrfK', input.rrfK ?? 60);
     const [dense, lexical] = await Promise.all([
       this.search(input.vector, width, input.filter),
       this.searchText(input.query, width, input.filter),
     ]);
-    return fuse([dense, lexical], rrfK).slice(0, input.k);
+    return fuse([dense, lexical], rrfK).slice(0, k);
   }
 
   /** Scoped, exactly like the SQL `delete ... where id in (...) and <scope>`. */
@@ -203,8 +221,17 @@ export class MemoryVectorStore implements VectorStore {
   }
 }
 
-/** Fuse ranked lists by reciprocal rank. Exported so a reranker can reuse it. */
-export function fuse(rankings: readonly (readonly SearchHit[])[], rrfK = 60): readonly SearchHit[] {
+/**
+ * Fuse ranked lists by reciprocal rank. Exported so a reranker can reuse it — which is why the
+ * damping is screened HERE too and not only in `hybrid`: a default parameter is a bound like any
+ * other, and `1 / (NaN + rank)` scores every document `NaN`, so the fused order is no longer a
+ * ranking while every caller still reads a full result list.
+ */
+export function fuse(
+  rankings: readonly (readonly SearchHit[])[],
+  rrfK: number = 60,
+): readonly SearchHit[] {
+  finiteOption('fuse', 'rrfK', rrfK);
   const scores = new Map<string, number>();
   const hits = new Map<string, SearchHit>();
   for (const ranking of rankings) {

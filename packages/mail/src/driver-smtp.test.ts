@@ -333,3 +333,22 @@ test('a url that is not SMTP is a config error at construction, not at the first
     codeOf(thrown(() => createSmtpDriver({ url: 'smtp://mail.example.test', from: '  ' }))),
   ).toBe('X_CONFIG_INVALID');
 });
+
+// The deadline reaches `setTimeout(fn, timeoutMs)` in the conversation and in the socket, and
+// `setTimeout(fn, NaN)` is `setTimeout(fn, 0)` — so a non-finite deadline does not disable itself,
+// it fires on the next tick and every send fails "the server sent nothing for NaNms". Refused
+// where `poolSize` already is: at construction, naming the argument an operator passes.
+test('a non-finite timeout is refused at construction, like poolSize', () => {
+  const error = thrown(() =>
+    createSmtpDriver({ url: 'smtp://mail.test:587', from: FROM, timeoutMs: Number.NaN }),
+  );
+  expect(codeOf(error)).not.toContain('not an UltimateError');
+  expect(isUltimateError(error) ? error.cause : '').toContain('timeoutMs');
+});
+
+test('a zero timeout is refused rather than expiring every read on the next tick', () => {
+  const error = thrown(() =>
+    createSmtpDriver({ url: 'smtp://mail.test:587', from: FROM, timeoutMs: 0 }),
+  );
+  expect(isUltimateError(error) ? error.cause : '').toContain('timeoutMs');
+});

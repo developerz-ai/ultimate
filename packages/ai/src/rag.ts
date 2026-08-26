@@ -4,6 +4,7 @@
 // discover at request time that they don't fit is a truncation bug waiting to happen; the
 // assembler fills to a declared ceiling and reports what it dropped.
 
+import { finiteCount, finiteOption } from '@ultimat3/core';
 import type { Embedder } from './embeddings';
 import { embedBatched, embedOne } from './embeddings';
 import { estimateTextTokens as estimateChunkTokens } from './provider';
@@ -34,8 +35,14 @@ export function chunk(input: ChunkInput): readonly Chunk[] {
   // Floored at one token: `size: 0` makes every comparison below meaningless and the wrap's cut
   // point zero-width, which is a loop that never advances rather than a chunker that produces
   // nothing. A budget under one token is not a budget.
-  const size = Math.max(1, Math.floor(input.size ?? 512));
-  const overlap = Math.min(input.overlap ?? 64, size - 1);
+  //
+  // The floor is not a SCREEN, and that is a separate line for a separate reason: `Math.max` and
+  // `Math.floor` both propagate a `NaN`, so `size: NaN` walked past both, made `<= size` false at
+  // every cut point and put `cutToBudget` in a loop with no exit — measured, a SYNCHRONOUS spin
+  // past every `AbortSignal`, on a worker's only thread. `finiteOption` and not `finiteCount`,
+  // because the `Math.floor` above is a deliberate acceptance of a fractional budget.
+  const size = Math.max(1, Math.floor(finiteOption('chunk', 'size', input.size ?? 512)));
+  const overlap = Math.min(finiteOption('chunk', 'overlap', input.overlap ?? 64), size - 1);
   const units = splitUnits(input.text, size);
   const chunks: Chunk[] = [];
   let buffer: string[] = [];
@@ -196,7 +203,10 @@ export interface RetrieveInput {
 
 /** Hybrid retrieval then rerank. Hybrid by default because pure vector loses on exact terms. */
 export async function retrieve(input: RetrieveInput): Promise<readonly SearchHit[]> {
-  const k = input.k ?? 8;
+  // Screened here as well as in the store, so the refusal names the argument this caller wrote
+  // rather than the `k * 3` it becomes: `k: NaN` retrieved nothing and reported a successful
+  // retrieval of zero documents, which downstream is an answer given with no context at all.
+  const k = finiteCount('retrieve', 'k', input.k ?? 8);
   const vector = await embedOne(input.embedder, input.query);
   const hits = await input.store.hybrid({
     query: input.query,
@@ -248,6 +258,10 @@ export function assembleContext(input: {
   /** Between BLOCKS, never inside one — the block fence is what separates documents. */
   readonly separator?: string;
 }): AssembledContext {
+  // The one bound in this function, and it carries no default — so nothing screened it: `tokens +
+  // cost > NaN` is false for every hit, every document is accepted, and the ceiling that exists to
+  // keep an assembled context inside the model's window stops existing while `dropped` stays empty.
+  const maxTokens = finiteCount('assembleContext', 'maxTokens', input.maxTokens);
   const separator = input.separator ?? '\n\n';
   const separatorTokens = estimateChunkTokens(separator);
   const parts: string[] = [];
@@ -258,7 +272,7 @@ export function assembleContext(input: {
   for (const hit of input.hits) {
     const block = documentBlock(hit.id, hit.text);
     const cost = estimateChunkTokens(block) + (parts.length === 0 ? 0 : separatorTokens);
-    if (tokens + cost > input.maxTokens) {
+    if (tokens + cost > maxTokens) {
       dropped.push(hit.id);
       continue;
     }

@@ -87,3 +87,25 @@ describe('unit · delivery ledger', () => {
     expect(isDeliveryStatus(undefined)).toBe(false);
   });
 });
+
+/**
+ * `while (rows.size > max)` is the whole eviction, and `NaN > NaN` is false for every size the map
+ * will ever hold — so a cap that is not a number is not a small cap, it is NO cap, and this ledger
+ * grows into the heap of a process that was told it was bounded. `??` does not screen it: `NaN` is
+ * not nullish, so `Number(process.env.NOTIFY_LEDGER_MAX)` on an unset variable arrives intact.
+ */
+describe('unit · delivery ledger, a cap that is not a cap', () => {
+  for (const max of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1, 0]) {
+    test(`max: ${String(max)} is refused where it is written, never silently unbounded`, () => {
+      expect(() => createMemoryDeliveryLedger({ max })).toThrow(/X_INVARIANT/);
+    });
+  }
+
+  test('a real cap still evicts, so the refusal did not replace the behaviour', async () => {
+    const ledger = createMemoryDeliveryLedger({ max: 1 });
+    await ledger.claim(claim, AT);
+    await ledger.claim({ ...claim, recipient: 'bo' }, AT);
+    expect(ledger.size).toBe(1);
+    expect(ledger.dropped).toBe(1);
+  });
+});

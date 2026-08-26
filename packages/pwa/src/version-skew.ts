@@ -10,6 +10,7 @@
  * The app decides what to do with that message. This package never navigates a client.
  */
 
+import { finiteCount } from '@ultimat3/core';
 import { BuildIdMissingError } from './errors';
 
 export const BUILD_ID_HEADER = 'x-ultimate-build';
@@ -90,9 +91,13 @@ export interface RetentionPlan {
  * before it is allowed to break; 3 is the sane default for a daily-deploy team.
  */
 export function retentionPlan(deploys: readonly Deploy[], keep = 3): RetentionPlan {
+  // `Math.max` is not a validator, it PROPAGATES: `Math.max(1, NaN)` is `NaN`, `slice(0, NaN)` is
+  // `[]`, and the plan then retains nothing and evicts every deploy — the running one included,
+  // which is the case `never evicts everything` pins as impossible. `0` keeps its meaning below.
+  const bound = Math.max(1, finiteCount('retentionPlan', 'keep', keep));
   const ordered = [...deploys].sort((a, b) => b.deployedAt - a.deployedAt);
-  const retained = ordered.slice(0, Math.max(1, keep));
-  const evicted = ordered.slice(Math.max(1, keep));
+  const retained = ordered.slice(0, bound);
+  const evicted = ordered.slice(bound);
   return {
     retain: retained.map((d) => d.buildId),
     evict: evicted.map((d) => d.buildId),

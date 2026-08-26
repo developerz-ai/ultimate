@@ -5,6 +5,7 @@
 import {
   type Clock,
   ConfigInvalidError,
+  finiteCount,
   isUltimateError,
   nanoid,
   renderThrowable,
@@ -139,7 +140,16 @@ export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
   }
   const clock = options.clock ?? systemClock;
   const connect = options.connect ?? bunSmtpStream;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  // Refused where `poolSize` already is. The deadline reaches `setTimeout(fn, timeoutMs)` in the
+  // conversation and in the socket, and `setTimeout(fn, NaN)` is `setTimeout(fn, 0)` — so a
+  // non-finite deadline does not disable itself, it fires on the next tick and every send fails
+  // "the server sent nothing for NaNms". `0` is the same failure spelled deliberately.
+  const timeoutMs = finiteCount(
+    'createSmtpDriver',
+    'timeoutMs',
+    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    1,
+  );
   const limit = createLimiter(resolvePoolSize(options.poolSize));
   const session: SmtpSessionOptions = {
     clientName: options.clientName ?? addressDomain(options.from),

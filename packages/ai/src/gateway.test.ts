@@ -3,6 +3,7 @@
 // is `gateway-budget.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
+import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
 import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
 import { createGateway } from './gateway';
 import { ANTHROPIC_MODEL_IDS } from './models';
@@ -323,5 +324,81 @@ describe('a local refusal reaches the caller with its own code', () => {
     });
     expect(served).toBe(true);
     expect(result.provider).toBe('healthy');
+  });
+});
+
+/**
+ * The gateway's own two bounds, and neither had anything checking it.
+ *
+ * `retry.attempts` is the retry loop's only exit condition: `attempt <= NaN` is false on the first
+ * comparison, so `attempt()` calls NO provider and raises `X_AI_PROVIDER_UNAVAILABLE` carrying an
+ * EMPTY attempt list — measured, `no provider could serve model "claude-opus-5" ()` about a
+ * provider that was never asked. `maxTokens` is screened here because this is the one seam every
+ * model call in an app passes through, and because of where it goes next: it IS the pre-flight
+ * estimate, and a `NaN` estimate passes every ceiling and then writes itself onto the ledger and
+ * the per-process `BudgetStore`, turning the budget off for the life of the process.
+ */
+describe('the gateway screens its own bounds', () => {
+  const counting = (): { provider: Provider; calls: () => number } => {
+    let calls = 0;
+    const provider: Provider = {
+      name: 'counting',
+      models: ANTHROPIC_MODEL_IDS,
+      generate(request): Promise<GenerateResult> {
+        calls += 1;
+        return echo.generate(request);
+      },
+      stream: (request) => echo.stream(request),
+    };
+    return { provider, calls: () => calls };
+  };
+
+  test('retry.attempts is refused when the gateway is built, not on the first failure', () => {
+    for (const attempts of [...NOT_A_BOUND, 0]) {
+      const error = refusal(() =>
+        createGateway({
+          providers: [echo],
+          retry: { attempts, baseDelayMs: 0, maxDelayMs: 0 },
+        }),
+      );
+      expect(error.code).toBe('X_INVARIANT');
+      expect(error.cause).toContain('retry.attempts');
+      expect(error.fix).toContain('createGateway');
+    }
+  });
+
+  test('a completion ceiling that is not a count never reaches a provider', async () => {
+    const { provider, calls } = counting();
+    const gateway = createGateway({ providers: [provider] });
+    for (const maxTokens of [...NOT_A_BOUND, 0]) {
+      const error = await asyncRefusal(() =>
+        gateway.generate({ messages: [{ role: 'user', content: 'ping' }], maxTokens }),
+      );
+      expect(error.cause).toContain('maxTokens');
+    }
+    // The streamed half is the same request shape and the same screen.
+    const stream = gateway.stream({
+      messages: [{ role: 'user', content: 'ping' }],
+      maxTokens: Number.NaN,
+    });
+    const drain = await asyncRefusal(async () => {
+      for await (const chunk of stream) void chunk;
+    });
+    expect(drain.cause).toContain('maxTokens');
+    expect(calls()).toBe(0);
+  });
+
+  test('an honest gateway still answers — the non-vacuity half', async () => {
+    const { provider, calls } = counting();
+    const gateway = createGateway({
+      providers: [provider],
+      retry: { attempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
+    });
+    const result = await gateway.generate({
+      messages: [{ role: 'user', content: 'ping' }],
+      maxTokens: 16,
+    });
+    expect(result.text).toBe('ping');
+    expect(calls()).toBe(1);
   });
 });

@@ -5,6 +5,7 @@
 // queried with another is a silent relevance collapse, and the only place to catch it is
 // where the two meet. `VectorStore` compares the declared dimension and refuses.
 
+import { finiteCount } from '@ultimat3/core';
 import { AiEmbedderInvalidError } from './errors';
 
 export interface Embedder {
@@ -29,8 +30,14 @@ export async function embedOne(embedder: Embedder, text: string): Promise<Float3
 export async function embedBatched(
   embedder: Embedder,
   texts: readonly string[],
-  size = 96,
+  size: number = 96,
 ): Promise<readonly Float32Array[]> {
+  // A default PARAMETER is a bound like any option, and this one is the loop's stride: `size: 0`
+  // never advances `i` and issues the same empty batch to a paid endpoint forever — measured, a
+  // synchronous-looking `await` loop that never returns — while `size: NaN` sends ONE request of
+  // zero inputs and answers with zero vectors for however many texts it was given. Hence a floor
+  // of 1: there is no batch of nothing.
+  finiteCount('embedBatched', 'size', size, 1);
   const out: Float32Array[] = [];
   for (let i = 0; i < texts.length; i += size) {
     out.push(...(await embedder.embed(texts.slice(i, i + size))));
@@ -53,7 +60,10 @@ export class HashEmbedder implements Embedder {
   readonly dimension: number;
 
   constructor(input: HashEmbedderInput = {}) {
-    this.dimension = input.dimension ?? 256;
+    // Floored at 1: `new Float32Array(NaN)` is a vector of LENGTH ZERO, so every embedding is
+    // empty, `cosine` answers 0 for every pair, and the ranking collapses with nothing thrown —
+    // the silent relevance collapse this file's own header says the dimension exists to catch.
+    this.dimension = finiteCount('HashEmbedder', 'dimension', input.dimension ?? 256, 1);
   }
 
   async embed(texts: readonly string[]): Promise<readonly Float32Array[]> {

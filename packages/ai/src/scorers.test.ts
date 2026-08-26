@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { asyncRefusal } from './bounds-fixture';
 import { createGateway } from './gateway';
 import { definePrompt, resetPrompts } from './prompt';
 import type { GenerateRequest, Provider } from './provider';
@@ -126,5 +127,45 @@ describe('unit · llm judge', () => {
     expect(seen.length).toBe(1);
     expect(seen[0]?.effort).toBe('low');
     expect(seen[0]?.thinking).toBe('disabled');
+  });
+});
+
+/**
+ * A judge is a model call, so it carries the same completion ceiling — and the same failure. A
+ * `NaN` `maxTokens` becomes the pre-flight estimate, passes every budget scope, and then writes
+ * itself onto the ledger and the per-process store: the eval that was measuring quality turns off
+ * the spend ceiling for everything that runs after it. Refused per score, because `llmJudge` takes
+ * the number as a plain field and there is no earlier seam to hold it at.
+ */
+describe('the judge screens its completion ceiling', () => {
+  test('a maxTokens that is not a count never reaches the gateway', async () => {
+    const judge = definePrompt<{ output: string; expected: string }>({
+      id: 'judge.bounded',
+      version: '1',
+      template: 'Score 0..1. Answer: {{output}}. Reference: {{expected}}.',
+    });
+    const gateway = createGateway({ providers: [new EchoProvider()] });
+    const scorer = llmJudge({ gateway, judge, maxTokens: Number.NaN });
+    const error = await asyncRefusal(() => scorer.score({ output: 'good', expected: 'ref' }));
+    expect(error.code).toBe('X_INVARIANT');
+    expect(error.cause).toContain('maxTokens');
+    expect(error.fix).toContain('llmJudge');
+  });
+
+  test('an honest ceiling still scores — the non-vacuity half', async () => {
+    const judge = definePrompt<{ output: string; expected: string }>({
+      id: 'judge.bounded.ok',
+      version: '1',
+      template: 'Score 0..1. Answer: {{output}}. Reference: {{expected}}.',
+    });
+    const gateway = createGateway({
+      providers: [
+        new EchoProvider({
+          replies: { [judge.render({ output: 'good', expected: 'ref' })]: '0.9' },
+        }),
+      ],
+    });
+    const scorer = llmJudge({ gateway, judge, maxTokens: 128 });
+    expect(await scorer.score({ output: 'good', expected: 'ref' })).toBe(0.9);
   });
 });

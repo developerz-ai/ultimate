@@ -385,3 +385,22 @@ describe('a head tag attribute name is validated, not just its value', () => {
     expect(html).toBe('<link rel="alternate" hreflang="en-GB" data-x="1" xlink:href="/a">');
   });
 });
+
+/**
+ * `bytes > NaN` is false for every byte count, so a `maxBytes` that arrived non-finite does not
+ * cap a smaller script — it removes the cap. The only script a 0kb `site/` route may ship is the
+ * one this budget exists to bound.
+ */
+describe('the theme script budget refuses a bound it cannot enforce', () => {
+  test('a NaN maxBytes is refused rather than passing every script through', () => {
+    expect(() => themeScript({ maxBytes: Number.NaN })).toThrow(/maxBytes/);
+  });
+
+  test('an Infinity maxBytes is refused too — a budget of everything is not a budget', () => {
+    expect(() => themeScript({ maxBytes: Number.POSITIVE_INFINITY })).toThrow(/maxBytes/);
+  });
+
+  test('the shipped default still admits the script it was measured against', () => {
+    expect(themeScript({ maxBytes: THEME_SCRIPT_MAX_BYTES }).kind).toBe('script');
+  });
+});

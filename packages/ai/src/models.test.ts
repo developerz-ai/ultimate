@@ -6,6 +6,7 @@
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { NOT_A_BOUND, refusal } from './bounds-fixture';
 import { AiModelUnknownError, AiRequestInvalidError } from './errors';
 import {
   ANTHROPIC_MODEL_IDS,
@@ -173,5 +174,60 @@ describe('reasoningBody omits what nobody asked for', () => {
     expect(reasoningBody(DEFAULT_MODEL, 'high', 'disabled')['thinking']).toEqual({
       type: 'disabled',
     });
+  });
+});
+
+/**
+ * A row an app registers carries five numbers, and two of them reach places nothing screens.
+ *
+ * `maxOutput` reaches the pre-flight ESTIMATE through `Math.min(request.maxTokens, spec.maxOutput)`
+ * — which propagates a `NaN` rather than screening it — and a `NaN` estimate passes every budget
+ * check and then writes itself onto the ledger and the per-process `BudgetStore`, where every
+ * later comparison against it is false too. A price is the same story for the money ceiling, and
+ * `costOf` answers confidently either way: a wrong price is worse than a missing one, which is
+ * why three OpenAI models are deliberately absent from this catalogue rather than guessed at.
+ */
+describe('registerModel refuses a row it cannot price or bound', () => {
+  const spec = (over: Partial<Parameters<typeof registerModel>[0]>) => () =>
+    registerModel({
+      id: GATEWAY_MODEL,
+      contextWindow: 128_000,
+      maxOutput: 8_192,
+      inputPerMillion: { minor: 20, currency: 'USD' },
+      outputPerMillion: { minor: 40, currency: 'USD' },
+      cacheMinimumTokens: 0,
+      reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
+      ...over,
+    });
+
+  test('every numeric field is refused under a name carrying the model id', () => {
+    for (const value of NOT_A_BOUND) {
+      expect(refusal(spec({ maxOutput: value })).cause).toContain('maxOutput');
+      expect(refusal(spec({ contextWindow: value })).cause).toContain('contextWindow');
+      expect(refusal(spec({ cacheMinimumTokens: value })).cause).toContain('cacheMinimumTokens');
+      expect(refusal(spec({ inputPerMillion: { minor: value, currency: 'USD' } })).cause).toContain(
+        'inputPerMillion',
+      );
+      expect(
+        refusal(spec({ outputPerMillion: { minor: value, currency: 'USD' } })).cause,
+      ).toContain('outputPerMillion');
+    }
+    // The id is in the option name, because a boot that registers a catalogue needs to know WHICH
+    // row it has to go and edit.
+    expect(refusal(spec({ maxOutput: Number.NaN })).cause).toContain(GATEWAY_MODEL);
+    expect(refusal(spec({ maxOutput: Number.NaN })).fix).toContain('registerModel');
+  });
+
+  test('a price is integer minor units, so a fractional one is refused with the rest', () => {
+    // The framework's money rule, enforced where a price enters the catalogue rather than
+    // discovered as a rounding difference in a recorded cost.
+    expect(refusal(spec({ inputPerMillion: { minor: 20.5, currency: 'USD' } })).code).toBe(
+      'X_INVARIANT',
+    );
+  });
+
+  test('a free model still registers — a zero price is a price', () => {
+    expect(spec({ inputPerMillion: { minor: 0, currency: 'USD' } })).not.toThrow();
+    expect(isModelRegistered(GATEWAY_MODEL)).toBe(true);
   });
 });

@@ -30,6 +30,13 @@ by the CLI, not imported.
 
 ## Invariants
 
+- **`checkAgentsMd`'s `maxBytes` is a whole number of 0 or more** (`As of 2026-08-26`),
+  `finiteCount('checkAgentsMd', 'maxBytes', …)`, and it is screened in `checkAgentsMd` rather than
+  in `assertAgentsMd` because that is the function that READS the option — "inspect without
+  throwing" is a promise about the repository's state, not about a caller passing a budget that is
+  not a number. `bytes > maxBytes` is false when `maxBytes` is `NaN`, so `assertAgentsMd` passed an
+  `AGENTS.md` of any size while the `AgentsMdCheck` it returned reported `ok: false`: the gate's
+  throw and the gate's report disagreeing about one file, with nothing raising.
 - **No nondeterminism.** No timestamp, git sha, hostname, counter, or unsorted iteration.
   `buildManifest` is pure — it must never read a registry, a clock, or the filesystem.
 - Top-level key order in the file is fixed by `KEY_ORDER` in `emit.ts` — `as const satisfies

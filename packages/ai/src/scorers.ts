@@ -4,6 +4,7 @@
 // is a model call, which means it is itself a measuring instrument that can drift — so its
 // prompt is a versioned artifact and its hash is part of the scorer's name.
 
+import { finiteCount } from '@ultimat3/core';
 import type { Gateway } from './gateway';
 import type { Prompt } from './prompt';
 
@@ -109,7 +110,10 @@ export function llmJudge(input: {
             content: input.judge.render({ output, expected: expected ?? '' }),
           },
         ],
-        maxTokens: input.maxTokens ?? 256,
+        // Same rule as every other completion ceiling here, and this one is read per SCORE: a
+        // `NaN` reaches the gateway as the estimate, and an estimate that is not a number turns
+        // the ambient budget off rather than exceeding it.
+        maxTokens: finiteCount('llmJudge', 'maxTokens', input.maxTokens ?? 256, 1),
         ...(input.judge.system !== undefined ? { system: input.judge.system } : {}),
         ...(input.judge.model !== undefined ? { model: input.judge.model } : {}),
         // The judge prompt's hash is this scorer's NAME, and `contentHash` covers `effort` and
