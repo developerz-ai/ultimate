@@ -299,3 +299,37 @@ describe('the barrel', () => {
     expect(exported).not.toMatch(/\bIMAGE_FORMATS\b/);
   });
 });
+
+/**
+ * Quality reaches TWO places and only one of them decodes: `transformImage` hands it to the
+ * encoder, which CLAMPS silently (measured in core: `NaN` and `-5` both wrote the worst encoding
+ * the codec can make, `Infinity` the best), while `variantKey` never reaches the encoder at all and
+ * simply spells the number into the key — `qNaN`, or `q1000000000`, one distinct object per value
+ * a caller can name.
+ */
+describe('the variant quality is screened against core, not beside it', () => {
+  const codeOfSync = (fn: () => unknown): string => {
+    try {
+      fn();
+    } catch (error) {
+      return isUltimateError(error)
+        ? `${error.code} ${error.cause}`
+        : `unexpected: ${String(error)}`;
+    }
+    return 'no-error-thrown';
+  };
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, -5, 0, 101, 80.5])(
+    'variantKey refuses quality %p rather than spelling it into a key',
+    (quality) => {
+      const rendered = codeOfSync(() => variantKey('a/b.png', { quality }));
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('quality');
+    },
+  );
+
+  test('a real quality still mints the key it always did', () => {
+    expect(variantKey('a.png', { width: 10, quality: 55 })).toBe('a@w10-q55.webp');
+    expect(variantKey('a.png', { width: 10, quality: DEFAULT_QUALITY })).toBe('a@w10.webp');
+  });
+});

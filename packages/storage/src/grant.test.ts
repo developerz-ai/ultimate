@@ -158,3 +158,46 @@ describe('grantUpload', () => {
     expect(first.key).not.toBe(second.key);
   });
 });
+
+/**
+ * `expiresAt: clock.now().getTime() + NaN` is `NaN` in the grant this function RETURNS, and the
+ * presigner one call down refuses in terms of `buildSignedUrl`'s own option — so the caller's
+ * report named a function they never called. Refused here too, which is the layered form.
+ */
+describe('the grant TTL is screened where the caller writes it', () => {
+  const grantWith = async (expiresInMs: number): Promise<string> =>
+    codeOf(async () =>
+      grantUpload({
+        disk,
+        orgId: 'org-1',
+        request: { filename: 'report.png', contentType: 'image/png' },
+        policy: IMAGES,
+        uploadId: () => 'u-1',
+        clock,
+        expiresInMs,
+      }),
+    );
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses expiresInMs %p, naming createUploadGrant',
+    async (expiresInMs) => {
+      const rendered = await grantWith(expiresInMs);
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('expiresInMs');
+      expect(rendered).toContain('createUploadGrant');
+    },
+  );
+
+  test('a real TTL still mints a grant that expires when it says', async () => {
+    const grant = await grantUpload({
+      disk,
+      orgId: 'org-1',
+      request: { filename: 'report.png', contentType: 'image/png' },
+      policy: IMAGES,
+      uploadId: () => 'u-1',
+      clock,
+      expiresInMs: 900_000,
+    });
+    expect(grant.expiresAt).toBe(new Date(START).getTime() + 900_000);
+  });
+});

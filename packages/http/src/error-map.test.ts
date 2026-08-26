@@ -278,6 +278,16 @@ describe('codes other packages throw ON a request', () => {
     expect(statusFor('X_LOCALE_UNSUPPORTED')).toBe(400);
   });
 
+  // Its sibling, and the one that had NO row: not a tag at all. It was pinned in
+  // `scripts/error-map-backlog.ts` as a code that can never reach a request, on the strength of
+  // the http `locale` stage never throwing — which is true of that stage and says nothing about a
+  // `?locale=` query, a path segment or an action input reaching `formatDate` / `formatMoney`.
+  // Strictly more the caller's fault than the row above, so it cannot be a harsher status.
+  test('a tag that is not a tag at all is a 400 too, never a 500', () => {
+    expect(statusFor('X_LOCALE_INVALID')).toBe(400);
+    expect(ERROR_STATUS.X_LOCALE_INVALID).toBe(400);
+  });
+
   // Two codes that arrived with the same change as the rows above. A header the caller chose and
   // an OpenAPI parameter bound, so 400; and a lifecycle refusal raised while a role STARTS, which
   // no request can be answered with, so 500 with a row rather than 500 by omission. Both are owned

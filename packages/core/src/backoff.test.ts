@@ -34,9 +34,37 @@ describe('backoffDelay', () => {
     expect(backoffDelay({ attempt: 3, base: 100, max: 1_000_000 })).toBe(400);
   });
 
-  test('a non-finite or negative input answers 0 rather than NaN', () => {
-    expect(backoffDelay({ attempt: 2, base: Number.NaN, max: 1_000 })).toBe(0);
+  test('a negative base answers 0 rather than a negative delay', () => {
     expect(backoffDelay({ attempt: 2, base: -1_000, max: 1_000 })).toBe(0);
+  });
+
+  /**
+   * Measured before the refusal landed, with `retry({ attempts: 5 })` counting its own sleeps:
+   * `max: NaN` slept `[0, 0, 0, 0]` and `factor: NaN` slept `[1000, 0, 0, 0]` — a retry loop with
+   * no wait at all, which is the failure backoff exists to prevent, on the tree's ONE curve.
+   */
+  test.each([
+    ['base', { attempt: 2, base: Number.NaN, max: 1_000 }],
+    ['max', { attempt: 2, base: 1_000, max: Number.NaN }],
+    ['max', { attempt: 2, base: 1_000, max: Number.POSITIVE_INFINITY }],
+    ['factor', { attempt: 2, base: 1_000, max: 30_000, factor: Number.NaN }],
+    ['factor', { attempt: 2, base: 1_000, max: 30_000, factor: Number.POSITIVE_INFINITY }],
+    ['attempt', { attempt: Number.NaN, base: 1_000, max: 30_000 }],
+  ] as const)('refuses a non-finite %s, naming it in the fix', (option, options) => {
+    try {
+      backoffDelay(options);
+      expect.unreachable('a non-finite bound is a delay of 0 on every attempt, not a schedule');
+    } catch (error) {
+      const rendered = String(error);
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain(option);
+      expect(rendered).toContain('backoffDelay');
+    }
+  });
+
+  /** Still reachable with four finite inputs: `2 ** 1999` overflows and `0 * Infinity` is NaN. */
+  test('a zero base whose curve overflows answers 0, not NaN', () => {
+    expect(backoffDelay({ attempt: 2_000, base: 0, max: 30_000 })).toBe(0);
   });
 });
 

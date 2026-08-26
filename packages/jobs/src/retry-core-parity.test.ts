@@ -125,9 +125,10 @@ describe('invalid inputs answer core’s number, not the old one', () => {
     jitter: false,
   };
 
-  test('a NaN attempt is 0, where it used to be NaN', () => {
-    // `setTimeout(NaN)` fires IMMEDIATELY: the old NaN was a retry loop with no wait at all.
-    expect(backoffDelayMs(policy, Number.NaN)).toBe(0);
+  test('a NaN attempt is refused, where it used to answer 0', () => {
+    // 0 was a retry with no wait at all, which is the same failure one step quieter: this file
+    // exists so a change in core's one curve is visible here rather than discovered downstream.
+    expect(() => backoffDelayMs(policy, Number.NaN)).toThrow('attempt');
   });
 
   test('a fractional attempt truncates, where it used to be raised to a fractional power', () => {

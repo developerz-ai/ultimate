@@ -214,3 +214,33 @@ describe('the default upload policy', () => {
     expect(validated.contentType).toBe('image/svg+xml');
   });
 });
+
+/**
+ * `size > policy.maxBytes` is FALSE when the ceiling is `NaN`, so the one number deciding how much
+ * a caller may store stops deciding anything. Measured before the screen landed:
+ * `uploadPolicy({ maxBytes: Number.NaN })` accepted a 5,000,016-byte PNG through `validateUpload`,
+ * with no error and no log line. `Number(process.env.MAX_UPLOAD_BYTES)` on an unset variable is
+ * how it arrives.
+ */
+describe('the upload ceiling is screened where it is declared', () => {
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 0, 1.5])(
+    'refuses maxBytes %p, naming it',
+    (maxBytes) => {
+      const rendered = codeOf(() => uploadPolicy({ maxBytes }));
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('maxBytes');
+    },
+  );
+
+  test('a real ceiling still builds a policy and still refuses what is over it', () => {
+    expect(uploadPolicy({ maxBytes: 1024 }).maxBytes).toBe(1024);
+    expect(
+      codeOf(() =>
+        validateUpload(
+          { key: 'a/b.png', declaredContentType: 'image/png', bytes: genuinePng(2048) },
+          IMAGES,
+        ),
+      ),
+    ).toBe('X_STORAGE_TOO_LARGE');
+  });
+});

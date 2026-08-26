@@ -12,8 +12,15 @@ import {
 } from './error-retry';
 import { errorRetry, isUltimateError, UltimateError } from './errors';
 
+/**
+ * What was registered before this file ran — the preload's packages, whose module bodies will not
+ * run again. A bare `resetErrorRetry()` deletes those too, and every file loaded after this one
+ * then reads its own package's codes as unclassified.
+ */
+const BASELINE = registeredErrorRetry();
+
 afterEach(() => {
-  resetErrorRetry();
+  resetErrorRetry(BASELINE);
 });
 
 const codeOf = (fn: () => unknown): string => {
@@ -56,7 +63,14 @@ describe('registerErrorRetry', () => {
 
   test('lists what the app declared, sorted', () => {
     registerErrorRetry({ X_ZED: 'retryable', X_ALPHA: 'terminal' });
-    expect(Object.keys(registeredErrorRetry())).toEqual(['X_ALPHA', 'X_ZED']);
+    // The registry is PROCESS-WIDE and the preload has already filled it, so this asserts the two
+    // keys this test added and their order relative to each other. Comparing the whole key list
+    // against two entries only passed because the `afterEach` beside it was deleting every other
+    // package's registrations — the defect `resetErrorRetry`'s own doc now names.
+    const mine = Object.keys(registeredErrorRetry()).filter(
+      (key) => key.startsWith('X_ALPHA') || key.startsWith('X_ZED'),
+    );
+    expect(mine).toEqual(['X_ALPHA', 'X_ZED']);
   });
 });
 

@@ -11,6 +11,7 @@ import {
   withChildContext,
 } from './context';
 import { createLogger } from './logger';
+import { remainingBudgetMs } from './request-budget';
 
 describe('request context', () => {
   test('throws X_NO_CONTEXT outside a request', () => {
@@ -239,6 +240,57 @@ describe('the server path is unchanged by the lazy storage', () => {
     await runWithContext(ctx, async () => {
       await Bun.sleep(1);
       expect(useContext().locale).toBe('fr-FR');
+    });
+  });
+});
+
+/**
+ * One request, one budget. The comment above `withChildContext`'s `deadlineAt` said a patch may
+ * only SHORTEN it and the code was `patch.deadlineAt ?? parent.deadlineAt` — no `Math.min` — so a
+ * one-second request budget became a one-hour one inside a child scope, and `remainingBudgetMs`
+ * put the extended figure on `x-request-timeout-ms` for the next hop to honour.
+ */
+describe('a child scope inherits the deadline and can only shorten it', () => {
+  const at = (ms: number): number => Date.parse('2026-01-01T00:00:00.000Z') + ms;
+
+  const childDeadline = (
+    parentAt: number | undefined,
+    patchAt: number | undefined,
+  ): number | null =>
+    runWithContext(createContext(parentAt === undefined ? {} : { deadlineAt: parentAt }), () =>
+      withChildContext(patchAt === undefined ? {} : { deadlineAt: patchAt }, () => {
+        return useContext().deadlineAt;
+      }),
+    );
+
+  test('a patch that tries to LENGTHEN the budget is clamped to the parent', () => {
+    expect(childDeadline(at(1_000), at(3_600_000))).toBe(at(1_000));
+  });
+
+  test('a patch that shortens it wins — a step with its own budget', () => {
+    expect(childDeadline(at(1_000), at(250))).toBe(at(250));
+  });
+
+  test('no patch inherits the parent', () => {
+    expect(childDeadline(at(1_000), undefined)).toBe(at(1_000));
+  });
+
+  test('no parent bound means the patch is the only bound', () => {
+    expect(childDeadline(undefined, at(500))).toBe(at(500));
+  });
+
+  test('neither side bounded stays unbounded', () => {
+    expect(childDeadline(undefined, undefined)).toBeNull();
+  });
+
+  test('the header the next hop reads carries the clamped budget, not the extended one', () => {
+    const now = Date.now();
+    runWithContext(createContext({ deadlineAt: now + 1_000 }), () => {
+      withChildContext({ deadlineAt: now + 3_600_000 }, () => {
+        const left = remainingBudgetMs(useContext());
+        expect(left).toBeDefined();
+        expect(left ?? 0).toBeLessThanOrEqual(1_000);
+      });
     });
   });
 });

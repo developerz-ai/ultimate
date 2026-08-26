@@ -38,6 +38,10 @@ export const ERROR_STATUS = {
   // Thrown while `app.config.ts` resolves, so no request is ever answered with it — the row exists
   // because a code with no status is a 500 anyway and this table is the closed one.
   X_CORS_CONFIG_INVALID: 500,
+  // Core's code, borrowed by `defineHttpConfig` for a numeric knob that is not a count. Same
+  // construction-time shelf as the row above, and it needs a row for the same reason: this table
+  // is closed over every code the package can throw, borrowed ones included.
+  X_CONFIG_INVALID: 500,
   X_CSP_DIRECTIVE_INVALID: 500,
   // Thrown while the server is being constructed, so no request is ever answered with it either.
   // The row exists because this table is the closed one: a code missing from it is a 500 anyway,
@@ -271,6 +275,13 @@ export const ERROR_STATUS = {
   // negotiates `Accept-Language` and never throws, so the tag that reaches here came from a path,
   // query or body the caller wrote — the same place `X_IMAGE_QUERY_INVALID` comes from.
   X_LOCALE_UNSUPPORTED: 400,
+  // @ultimat3/core (declared beside `assertLocale`; `@ultimat3/time` owned it until 16.x) — the
+  // sibling of the row above, and strictly more the caller's fault: not a tag at all. It was
+  // pinned as unable to reach a request because the `locale` stage negotiates and never throws,
+  // which is true of that stage and irrelevant to `?locale=`, a path segment or an action input
+  // reaching `formatDate` / `formatMoney` / `describeCron`. Those raised it and answered 500,
+  // paging the on-call for a string the caller typed.
+  X_LOCALE_INVALID: 400,
   // @ultimat3/money — a well-formed code this process carries no row for. The currency table is
   // OPEN (`registerCurrency`), and every surface between the wire and the throw accepts any
   // `^[A-Z]{3}$`: `@ultimat3/schema`'s `CURRENCY_CODE_PATTERN`, the OpenAPI `pattern` emitted from

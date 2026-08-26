@@ -18,6 +18,7 @@ import {
   purgePost,
   requireCredential,
 } from './purge-http';
+import { assertFiniteDurationMs } from './tiers';
 
 export const CLOUDFLARE_API_URL = 'https://api.cloudflare.com/client/v4';
 
@@ -73,7 +74,11 @@ export function cloudflarePurgeDriver(options: CloudflarePurgeOptions): PurgeDri
   const apiToken = requireCredential(options.apiToken, 'CLOUDFLARE_API_TOKEN', 'cloudflare');
   const zoneId = requireCredential(options.zoneId, 'CLOUDFLARE_ZONE_ID', 'cloudflare');
   const baseUrl = options.baseUrl ?? CLOUDFLARE_API_URL;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_PURGE_TIMEOUT_MS;
+  const timeoutMs = assertFiniteDurationMs(
+    'cloudflare',
+    'timeoutMs',
+    options.timeoutMs ?? DEFAULT_PURGE_TIMEOUT_MS,
+  );
   const doFetch = options.fetch ?? defaultPurgeFetch;
   const headers = { Authorization: `Bearer ${apiToken}` };
 

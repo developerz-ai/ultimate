@@ -232,6 +232,17 @@ export function hasContext(): boolean {
 }
 
 /**
+ * The tighter of two instants, where absent means "no bound" — the bounded form
+ * `lifecycle.ts`'s drain budget uses, over two optional values instead of one. Returns
+ * `undefined` rather than `null` because that is what `CtxInit.deadlineAt` spells.
+ */
+function earliest(left: number | undefined, right: number | null | undefined): number | undefined {
+  if (left === undefined) return right ?? undefined;
+  if (right === undefined || right === null) return left;
+  return Math.min(left, right);
+}
+
+/**
  * Derive a narrowed context — impersonation, a locale switch, a per-step abort signal.
  * `requestId` is deliberately not patchable: one request, one id.
  */
@@ -256,8 +267,10 @@ export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
     logger: patch.logger ?? parent.logger,
     // One request, one budget: a child scope inherits the deadline for the same reason it
     // inherits `requestId`. A patch may SHORTEN it (a step with its own budget); nothing here
-    // lengthens it, because the socket the parent is answering does not move.
-    deadlineAt: patch.deadlineAt ?? parent.deadlineAt ?? undefined,
+    // lengthens it, because the socket the parent is answering does not move. `??` alone said
+    // that and did not do it — a patched hour replaced a parent's second outright, and
+    // `remainingBudgetMs` then put the hour on `x-request-timeout-ms` for the next hop.
+    deadlineAt: earliest(patch.deadlineAt, parent.deadlineAt),
     signal: patch.signal ?? parent.signal,
     services: { ...carried, ...(patch.services ?? {}) },
   });

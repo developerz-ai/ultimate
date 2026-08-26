@@ -282,6 +282,27 @@ describe('s3Driver', () => {
         { key: 'org/org-1/i.txt', options: { method: 'PUT', expiresIn: 2, type: 'image/png' } },
       ]);
     });
+
+    /**
+     * The two drivers have to refuse the same inputs — that is what `driver-parity.test.ts` is
+     * for. `buildSignedUrl` (the local driver's presigner) screens the TTL, and this one did not:
+     * `Math.ceil(NaN / 1000)` is `NaN`, so `X-Amz-Expires=NaN` went to AWS, which answers 403 on a
+     * link the app believed it had just minted. A number that is not a number must fail at the
+     * mint on both disks or on neither.
+     */
+    test('a TTL that is not a TTL is refused here too, as the local driver refuses it', async () => {
+      const fake = new FakeS3Client();
+      const driver = s3Driver({ bucket: 'b', client: fake });
+
+      for (const expiresInMs of [Number.NaN, Number.POSITIVE_INFINITY, 0, -1]) {
+        // `X_INVARIANT`, the code `resolveListLimit` already raises for the same class of input:
+        // storage borrows it, so this is an `UltimateError` and not a `StorageError`.
+        expect(
+          String(await catchError(() => driver.signedUrl('org/org-1/j.txt', { expiresInMs }))),
+        ).toContain('X_INVARIANT');
+      }
+      expect(fake.presignCalls).toEqual([]);
+    });
   });
 
   describe('toDate via stat() and list entries', () => {
@@ -339,5 +360,28 @@ describe('s3Driver', () => {
       const error = caught as ConfigInvalidError;
       expect(error.code).toBe('X_CONFIG_INVALID');
     });
+  });
+});
+
+/** The same ceiling on the other driver — `driver-parity.test.ts`'s rule, applied to a refusal. */
+describe('the s3 driver byte ceiling is screened at construction', () => {
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses maxPutBytes %p, naming it',
+    (maxPutBytes) => {
+      let rendered = 'no-error-thrown';
+      try {
+        s3Driver({ bucket: 'b', client: new FakeS3Client(), maxPutBytes });
+      } catch (error) {
+        rendered = String(error);
+      }
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('maxPutBytes');
+    },
+  );
+
+  test('a real ceiling still builds a driver', () => {
+    expect(
+      typeof s3Driver({ bucket: 'b', client: new FakeS3Client(), maxPutBytes: 1024 }).put,
+    ).toBe('function');
   });
 });

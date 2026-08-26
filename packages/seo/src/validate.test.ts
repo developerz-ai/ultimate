@@ -172,3 +172,49 @@ describe('validateMeta', () => {
     expect(report).toEqual({ ok: true, checked: 1, issues: [] });
   });
 });
+
+/**
+ * A ceiling is only ever read as `length > ceiling`, and that comparison is false for every string
+ * when the ceiling is `NaN` — so `validateMeta(routes, { titleMaxLength: Number(process.env.X) })`
+ * with the variable unset reported a clean site whose every title is truncated in the SERP. A rule
+ * whose comparison can never fire is not a loose rule, it is no rule.
+ */
+describe('the length ceilings are screened before anything is compared against them', () => {
+  const LONG = route({
+    path: '/long',
+    file: 'apps/web/site/long/page.tsx',
+    meta: { title: 'x'.repeat(200), description: 'y'.repeat(400) },
+  });
+
+  const refusedFor = (options: Record<string, number>): string => {
+    try {
+      validateMeta([LONG], options);
+    } catch (error) {
+      return String(error);
+    }
+    return 'no-error-thrown';
+  };
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses titleMaxLength %p, naming it',
+    (titleMaxLength) => {
+      const rendered = refusedFor({ titleMaxLength });
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('titleMaxLength');
+    },
+  );
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
+    'refuses descriptionMaxLength %p, naming it',
+    (descriptionMaxLength) => {
+      const rendered = refusedFor({ descriptionMaxLength });
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('descriptionMaxLength');
+    },
+  );
+
+  test('a real ceiling still reports the over-long title it is there to catch', () => {
+    const report = validateMeta([LONG], { titleMaxLength: 60 });
+    expect(report.ok).toBe(false);
+  });
+});

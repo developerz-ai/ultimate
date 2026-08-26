@@ -4,15 +4,9 @@
 // exhaustion arrived as a hang rather than as a 503.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import {
-  baseClient,
-  createPostgresClient,
-  POOL_MAX_ENV,
-  type PostgresClient,
-  poolProfileFor,
-  setDbClient,
-} from './client';
+import { baseClient, createPostgresClient, type PostgresClient, setDbClient } from './client';
 import type { DbError } from './errors';
+import { POOL_MAX_ENV, poolProfileFor } from './pool-profile';
 
 const TEST_URL = 'postgres://app@127.0.0.1:5432/ultimate_test';
 

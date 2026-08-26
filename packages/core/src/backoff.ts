@@ -3,6 +3,8 @@
 // (equal jitter), `@ultimat3/ai` (full jitter, `Math.random` inline and so untestable),
 // `@ultimat3/realtime` (full jitter, 0-based attempt) and `@ultimat3/db` (no backoff at all).
 
+import { finiteOption } from './finite-option';
+
 export type BackoffCurve = 'exponential' | 'linear' | 'fixed';
 
 /**
@@ -11,6 +13,9 @@ export type BackoffCurve = 'exponential' | 'linear' | 'fixed';
  * in production — a burst of failures retrying in lockstep is the thundering herd itself.
  */
 export type JitterMode = 'full' | 'equal' | 'none';
+
+/** Named in every refusal below, so a reader knows which call built the schedule. */
+const SUBJECT = 'backoffDelay';
 
 /** Injected everywhere. A delay only provable by observing a range is a delay no test pins. */
 export type Random = () => number;
@@ -38,19 +43,26 @@ export interface BackoffOptions {
  * jitter exists to remove.
  */
 export function backoffDelay(options: BackoffOptions): number {
-  const step = Math.max(1, Math.trunc(options.attempt));
-  const base = Math.max(0, options.base);
-  const factor = options.factor ?? 2;
+  // Every bound is REFUSED before it is clamped, because the clamps are not validators: measured,
+  // `retry({ attempts: 5, max: NaN })` slept `[0, 0, 0, 0]` and `factor: NaN` slept
+  // `[1000, 0, 0, 0]` — `Math.max`, `Math.min` and `Math.trunc` each propagate it,
+  // `Math.min(raw, Infinity)` is `Infinity`, and the `return 0` below then turns the whole
+  // schedule into a spin.
+  const step = Math.max(1, Math.trunc(finiteOption(SUBJECT, 'attempt', options.attempt)));
+  const base = Math.max(0, finiteOption(SUBJECT, 'base', options.base));
+  const max = finiteOption(SUBJECT, 'max', options.max);
+  const factor = finiteOption(SUBJECT, 'factor', options.factor ?? 2);
 
   let raw: number;
   if (options.curve === 'fixed') raw = base;
   else if (options.curve === 'linear') raw = base * step;
   else raw = base * factor ** (step - 1);
 
-  const capped = Math.max(0, Math.min(raw, options.max));
-  // A NaN reaches here from an unvalidated config value, and `setTimeout(NaN)` fires IMMEDIATELY —
-  // a retry loop with no wait at all, which is the failure mode backoff exists to prevent. 0 is
-  // wrong too, but it is wrong loudly: the next attempt still happens once, not in a tight spin.
+  const capped = Math.max(0, Math.min(raw, max));
+  // Still reachable with four finite inputs, and only one way: `factor ** (step - 1)` overflows to
+  // `Infinity` around attempt 1030, and `0 * Infinity` is `NaN`. A zero base is a caller asking
+  // for no wait, so 0 is the answer it asked for — it is no longer the answer an unvalidated
+  // config value gets, which is what this line used to be.
   if (!Number.isFinite(capped)) return 0;
 
   const roll = options.random ?? Math.random;

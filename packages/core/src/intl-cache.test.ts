@@ -3,7 +3,13 @@
 // spelling of a locale, because the keys are locales and zones a request header chooses.
 
 import { describe, expect, test } from 'bun:test';
-import { cachedFormatter, canonicalLocale, MAX_CACHED_FORMATTERS } from './intl-cache';
+import { isUltimateError, type UltimateError } from './errors';
+import {
+  assertLocale,
+  cachedFormatter,
+  canonicalLocale,
+  MAX_CACHED_FORMATTERS,
+} from './intl-cache';
 
 describe('cachedFormatter', () => {
   test('answers from the cache on the second ask', () => {
@@ -76,5 +82,33 @@ describe('canonicalLocale', () => {
     // `Intl` falls back for `zz`; refusing it here would be stricter than the formatters this
     // feeds, and would turn a fallback into an error for a tag that renders fine.
     expect(canonicalLocale('zz')).toBe('zz');
+  });
+});
+
+describe('assertLocale', () => {
+  test('canonicalizes a well-formed tag, so validating and keying are one step', () => {
+    expect(assertLocale('EN-us')).toBe('en-US');
+    expect(assertLocale('zz')).toBe('zz');
+  });
+
+  test('a tag Intl cannot parse is X_LOCALE_INVALID, never a bare RangeError', () => {
+    // The tag arrives from `Accept-Language`, so a `RangeError` several frames from the header is
+    // a caller-reachable uncoded throw. `@ultimat3/time` closed it at nine entry points and
+    // `@ultimat3/money` at four; both read this one screen, because tier 1 has no sideways import.
+    for (const tag of ['en_US', '', 'not a locale']) {
+      let caught: unknown;
+      try {
+        assertLocale(tag);
+      } catch (thrown) {
+        caught = thrown;
+      }
+      expect(isUltimateError(caught)).toBe(true);
+      expect((caught as UltimateError).code).toBe('X_LOCALE_INVALID');
+      expect((caught as UltimateError).fix).toContain('supportedLocalesOf');
+    }
+  });
+
+  test('the cause names the tag it refused', () => {
+    expect(() => assertLocale('en_US')).toThrow(/en_US/);
   });
 });

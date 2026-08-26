@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { MAX_CACHED_FORMATTERS } from '@ultimat3/core';
+import { isUltimateError, MAX_CACHED_FORMATTERS, type UltimateError } from '@ultimat3/core';
 import { currencySymbol, formatMoney, formatMoneyDecimal, formatMoneyParts } from './format';
 import { fromDecimal, money } from './money';
 
@@ -174,6 +174,43 @@ describe('currencySymbol', () => {
 
   test('an unknown currency is refused rather than answered with its own code', () => {
     expect(codeOf(() => currencySymbol('XTS', 'en-US'))).toBe('X_CURRENCY_UNKNOWN');
+  });
+});
+
+/**
+ * A locale tag arrives from `Accept-Language`, so a malformed one is caller input and must be a
+ * coded refusal, not the bare `RangeError` `Intl`'s constructor throws several frames from the
+ * header it came out of. `@ultimat3/time` closed the identical hole across nine entry points with
+ * `X_LOCALE_INVALID`; the screen now lives in `@ultimat3/core` so both tier-1 packages share one.
+ */
+describe('a malformed locale tag', () => {
+  const MALFORMED = ['en_US', 'en-US@x', '', 'not a locale'];
+
+  for (const tag of MALFORMED) {
+    test(`${JSON.stringify(tag)} is X_LOCALE_INVALID at every money entry point`, () => {
+      expect(codeOf(() => formatMoney(money(1299, 'EUR'), tag))).toBe('X_LOCALE_INVALID');
+      expect(codeOf(() => formatMoneyParts(money(1299, 'EUR'), tag))).toBe('X_LOCALE_INVALID');
+      expect(codeOf(() => formatMoneyDecimal(money(1299, 'EUR'), tag))).toBe('X_LOCALE_INVALID');
+      expect(codeOf(() => currencySymbol('EUR', tag))).toBe('X_LOCALE_INVALID');
+    });
+  }
+
+  test('the refusal names the tag and carries a runnable fix', () => {
+    let caught: unknown;
+    try {
+      formatMoney(money(1299, 'EUR'), 'en_US');
+    } catch (thrown) {
+      caught = thrown;
+    }
+    expect(isUltimateError(caught)).toBe(true);
+    expect((caught as UltimateError).cause).toContain('en_US');
+    expect((caught as UltimateError).fix).toContain('supportedLocalesOf');
+  });
+
+  test('a well-formed tag this runtime has no data for is still rendered', () => {
+    // `zz` is structurally valid and unknown to ICU: `Intl` falls back, and a user carrying it
+    // must still get a page. Refusing it here would be stricter than the formatter itself.
+    expect(formatMoney(money(1299, 'EUR'), 'zz')).toContain('12.99');
   });
 });
 

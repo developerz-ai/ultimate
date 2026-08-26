@@ -1,6 +1,10 @@
 /**
  * The X_* error codes owned by @ultimat3/time.
  * DST ambiguity is a real state of the world, so it gets a code instead of a guess.
+ *
+ * `X_LOCALE_INVALID` is NOT here: it moved to `@ultimat3/core` beside `assertLocale`, because
+ * `@ultimat3/money` needs the same screen and tier 1 may not import sideways. A code has exactly
+ * one declaration — a second `registerErrorCodes` claim is `X_ERROR_CODE_DUPLICATE`.
  */
 
 import { registerErrorCodes, renderCauseValue, UltimateError } from '@ultimat3/core';
@@ -13,7 +17,6 @@ export const TIME_ERROR_CODES = [
   'X_DST_NONEXISTENT',
   'X_INSTANT_INVALID',
   'X_SCHEDULE_INVALID',
-  'X_LOCALE_INVALID',
   'X_CRON_NOT_DESCRIBABLE',
 ] as const;
 
@@ -27,7 +30,6 @@ export const TIME_ERROR_TITLES: Readonly<Record<TimeErrorCode, string>> = {
   X_DST_NONEXISTENT: 'the local time does not exist',
   X_INSTANT_INVALID: 'not a parseable instant',
   X_SCHEDULE_INVALID: 'a wall-clock field is out of range',
-  X_LOCALE_INVALID: 'not a well-formed BCP 47 tag',
   X_CRON_NOT_DESCRIBABLE: 'a valid cron expression describeCron has no vocabulary for',
 };
 
@@ -120,19 +122,6 @@ export function dstNonexistent(wall: string, zone: string): TimeError {
     code: 'X_DST_NONEXISTENT',
     cause: `${wall} never happens in ${zone} (the spring-forward gap skips it)`,
     fix: "pass { gap: 'next' } to shift forward past the gap or { gap: 'previous' } to shift back before it",
-  });
-}
-
-/**
- * A tag `Intl` cannot parse. Distinct from i18n's `X_LOCALE_UNSUPPORTED`, which is a
- * well-formed tag outside the app's supported set — this one is not a tag at all, and a raw
- * `RangeError` from a formatter says nothing about which caller supplied it.
- */
-export function localeInvalid(locale: string): TimeError {
-  return new TimeError({
-    code: 'X_LOCALE_INVALID',
-    cause: `"${locale}" is not a well-formed BCP 47 language tag`,
-    fix: "pass a tag like 'en', 'en-GB' or 'de-DE' — screen a header-supplied value with Intl.DateTimeFormat.supportedLocalesOf([tag]) before it reaches a formatter",
   });
 }
 

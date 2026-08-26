@@ -16,7 +16,7 @@ import type {
   TierInvalidation,
   TtlJitter,
 } from './tiers';
-import { assertTtl, nowMs } from './tiers';
+import { assertFiniteDurationMs, assertTtl, nowMs } from './tiers';
 
 /** The slice of Bun's Redis client this tier uses. Narrow on purpose: easy to fake in tests. */
 export interface RedisLike {
@@ -191,7 +191,11 @@ function raiseSweepFailure(failures: readonly unknown[], attempted: number): nev
 
 export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
   const ns = namespaceFor(options.prefix ?? 'x', options.buildId);
-  const defaultTtlMs = options.defaultTtlMs ?? 300_000;
+  const defaultTtlMs = assertFiniteDurationMs(
+    'redis',
+    'defaultTtlMs',
+    options.defaultTtlMs ?? 300_000,
+  );
   const clock = options.clock ?? systemClock;
   const jitter: TtlJitter = {
     ...(options.jitterFraction === undefined ? {} : { jitterFraction: options.jitterFraction }),

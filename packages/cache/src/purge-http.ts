@@ -73,14 +73,20 @@ export function requireCredential(value: string, envKey: string, driver: string)
 // Every CDN splits a key list on whitespace or a comma, so a key carrying either purges two
 // things that do not exist instead of the one that does — silently, since the request succeeds.
 const UNSAFE_KEY = /[\s,]/;
-const MAX_KEY_LENGTH = 1024;
+const MAX_KEY_BYTES = 1024;
+
+// The CDN's limit is on the HEADER, so it is bytes — and `String.length` is UTF-16 code units,
+// which for a non-ASCII tag is a third of the answer: 900 CJK characters measured 900 against a
+// 1024 limit and put 2,700 bytes on the wire, where the provider refuses or truncates the key.
+// That is the accepted purge that cleared nothing, arriving through the guard meant to stop it.
+const keyBytes = (key: string): number => new TextEncoder().encode(key).byteLength;
 
 const keyProblem = (key: string): string | undefined => {
   if (key === '') return 'is empty';
   if (UNSAFE_KEY.test(key))
     return 'contains whitespace or a comma, which a CDN reads as a separator';
-  if (key.length > MAX_KEY_LENGTH)
-    return `is ${key.length} characters, over the 1024-byte key limit`;
+  const bytes = keyBytes(key);
+  if (bytes > MAX_KEY_BYTES) return `is ${bytes} bytes, over the ${MAX_KEY_BYTES}-byte key limit`;
   return undefined;
 };
 

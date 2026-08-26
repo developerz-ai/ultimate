@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Clock } from '@ultimat3/core';
+import { type Clock, isUltimateError, type UltimateError } from '@ultimat3/core';
 import { CacheTooLargeError } from './errors';
 import { estimateBytes, LruCache } from './lru';
 import { tag } from './tags';
@@ -150,9 +150,18 @@ describe('the one TTL rule', () => {
     expect(cache.get('k')).toBeUndefined();
   });
 
-  test('a tier default that is not positive is refused on the write that relies on it', () => {
-    const cache = new LruCache({ maxBytes: 10_000, defaultTtlMs: 0 });
-    expect(codeOf(() => cache.set('k', 1))).toBe('X_CACHE_TTL_INVALID');
+  /**
+   * Moved from the first WRITE to the construction: a default nobody can spend is a defect in the
+   * config line that set it, and refusing it on the write reported it one caller too late — as
+   * `X_CACHE_TTL_INVALID` on a `set` whose own `ttlMs` was fine.
+   */
+  test('a tier default that is not a usable duration is refused where it is declared', () => {
+    for (const defaultTtlMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1.5]) {
+      expect(codeOf(() => new LruCache({ maxBytes: 10_000, defaultTtlMs }))).toBe(
+        'X_CACHE_LIMIT_INVALID',
+      );
+    }
+    expect(new LruCache({ maxBytes: 10_000, defaultTtlMs: 1_000 }).stats().entries).toBe(0);
   });
 
   test('a refused overwrite leaves the entry it would have replaced', () => {
@@ -222,3 +231,43 @@ function codeOf(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+/**
+ * `maxBytes` is an `app.config.ts` knob — `CacheTooLargeError`'s own `fix:` says so — which makes
+ * it a value that arrives as `Number(process.env.CACHE_MAX_BYTES)`. `NaN` is not nullish, so `??`
+ * passes it through, and every comparison it then reaches answers FALSE: the too-large refusal
+ * never fires and, worse, `while (bytes > maxBytes)` never evicts. A cache that never evicts is
+ * an unbounded `Map` keyed by whatever the app caches, which is the one failure this class exists
+ * to prevent. `assertTtl` in `tiers.ts` has screened the sibling knob from the start.
+ */
+describe('LruCache refuses a byte budget that is not a budget', () => {
+  test('NaN is refused at construction, not silently turned into "never evict"', () => {
+    expect(() => new LruCache({ maxBytes: Number.NaN })).toThrow(/X_CACHE_LIMIT_INVALID/);
+  });
+
+  test('zero, negative and Infinity are refused too', () => {
+    expect(() => new LruCache({ maxBytes: 0 })).toThrow(/X_CACHE_LIMIT_INVALID/);
+    expect(() => new LruCache({ maxBytes: -1 })).toThrow(/X_CACHE_LIMIT_INVALID/);
+    expect(() => new LruCache({ maxBytes: Number.POSITIVE_INFINITY })).toThrow(
+      /X_CACHE_LIMIT_INVALID/,
+    );
+  });
+
+  test('the refusal names the value and the config key that carries it', () => {
+    let caught: unknown;
+    try {
+      new LruCache({ maxBytes: Number.NaN });
+    } catch (thrown) {
+      caught = thrown;
+    }
+    expect(isUltimateError(caught)).toBe(true);
+    expect((caught as UltimateError).code).toBe('X_CACHE_LIMIT_INVALID');
+    expect((caught as UltimateError).cause).toContain('NaN');
+    expect((caught as UltimateError).fix).toContain('lru.maxBytes');
+  });
+
+  test('the default and an ordinary budget still construct', () => {
+    expect(() => new LruCache()).not.toThrow();
+    expect(new LruCache({ maxBytes: 1 }).stats().maxBytes).toBe(1);
+  });
+});

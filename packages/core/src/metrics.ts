@@ -2,10 +2,12 @@
 // aggregated in process, read through one `collectMetrics()`. Shaped exactly like `telemetry.ts`:
 // always on, a no-op exporter by default, and the wire format supplied by a driver, never here.
 
+import { assert } from './assert';
 import { type Clock, systemClock } from './clock';
 import { renderThrowable } from './error-render';
 import { type CodedErrorInit, UltimateError } from './errors';
 import { logger } from './logger';
+import { assertLabelNames, assertMetricName, MetricNameInvalidError } from './metric-names';
 import type {
   Counter,
   Gauge,
@@ -22,8 +24,10 @@ import type {
 } from './metrics-types';
 import { serviceResource } from './telemetry';
 
-// The data model is a module of its own; the public surface is unchanged, so nothing that imports
-// a metric type from here has to learn a second path.
+// The data model and the identifier grammar are modules of their own; the public surface is
+// unchanged, so nothing that imports a metric type or the name error from here learns a second
+// path.
+export { MetricNameInvalidError } from './metric-names';
 export type {
   Counter,
   Gauge,
@@ -41,14 +45,6 @@ export type {
   MetricPoint,
   ReadableMetric,
 } from './metrics-types';
-
-export class MetricNameInvalidError extends UltimateError {
-  static readonly code = 'X_METRIC_NAME_INVALID';
-  override readonly name = 'MetricNameInvalidError';
-  constructor(init: CodedErrorInit) {
-    super({ ...init, code: MetricNameInvalidError.code });
-  }
-}
 
 export class MetricValueInvalidError extends UltimateError {
   static readonly code = 'X_METRIC_VALUE_INVALID';
@@ -87,12 +83,6 @@ const OVERFLOW_ATTRIBUTES: MetricAttributes = Object.freeze({ [OVERFLOW_ATTRIBUT
 export const DEFAULT_HISTOGRAM_BOUNDS: readonly number[] = Object.freeze([
   0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
 ]);
-
-/**
- * Lowercase snake, the intersection of what every exposition format accepts. OTel's dotted names
- * survive an OTLP hop but not a Prometheus scrape, and the autoscaler reads the scrape.
- */
-const METRIC_NAME_RE = /^[a-z_][a-z0-9_]*$/;
 
 export const noopMetricExporter: MetricExporter = Object.freeze({
   export(): void {
@@ -231,13 +221,7 @@ function assertBounds(name: string, bounds: readonly number[] | undefined): void
 }
 
 function declare(name: string, kind: MetricKind, options: GaugeOptions & HistogramOptions) {
-  if (!METRIC_NAME_RE.test(name)) {
-    throw new MetricNameInvalidError({
-      cause: `"${name}" is not lowercase snake_case matching ${METRIC_NAME_RE.source}`,
-      fix: `rename the instrument to lowercase snake_case, e.g. ${name.toLowerCase().replaceAll(/[^a-z0-9_]/g, '_')}`,
-      meta: { name },
-    });
-  }
+  assertMetricName(name);
   assertBounds(name, options.bounds);
   const existing = instruments.get(name);
   if (existing !== undefined) {
@@ -349,6 +333,7 @@ function reportObserveFailure(instrument: Instrument, thrown: unknown): void {
 }
 
 function createSeries(instrument: Instrument, key: string, attributes: MetricAttributes): Series {
+  assertLabelNames(instrument.descriptor.name, attributes);
   const created: Series = {
     attributes,
     value: 0,
@@ -485,6 +470,14 @@ export function exportMetrics(): void {
  * — the drain hook, not this timer, decides when the process may leave.
  */
 export function startMetricExport(intervalMs = 60_000): () => void {
+  // A timer given a non-finite delay does not export less often — `setInterval(fn, NaN)` runs at
+  // 1ms in this Bun, measured, so a `Number(process.env.METRICS_INTERVAL_MS)` on an unset variable
+  // pushes a thousand collections a second for the life of the process.
+  assert(
+    Number.isSafeInteger(intervalMs) && intervalMs >= 1,
+    `startMetricExport was given ${String(intervalMs)}ms; an export interval is a whole number of at least 1ms, and a timer given anything else runs at 1ms`,
+    "pass a whole number of milliseconds — startMetricExport(60_000) — and parse an environment value first: Number(process.env.METRICS_INTERVAL_MS ?? '') is NaN when the variable is unset",
+  );
   const timer = setInterval(exportMetrics, intervalMs);
   timer.unref();
   return () => clearInterval(timer);

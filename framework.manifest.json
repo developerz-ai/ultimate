@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "58963b704fe93eeae102e86f8bb560232087ad519d5283d36d39116f4ddf9fbc",
+  "buildId": "65fd9783ba898fcf528e29e38e18d1d2eeb8c53892456f5af035506911215df4",
   "tiers": {
     "0": [
       "core",
@@ -576,6 +576,11 @@
     },
     {
       "code": "X_CACHE_JITTER_INVALID",
+      "owner": "cache",
+      "at": "packages/cache/src/errors.ts"
+    },
+    {
+      "code": "X_CACHE_LIMIT_INVALID",
       "owner": "cache",
       "at": "packages/cache/src/errors.ts"
     },
@@ -1581,8 +1586,8 @@
     },
     {
       "code": "X_LOCALE_INVALID",
-      "owner": "time",
-      "at": "packages/time/src/errors.ts"
+      "owner": "core",
+      "at": "packages/core/src/error-codes.ts"
     },
     {
       "code": "X_LOCALE_UNSUPPORTED",

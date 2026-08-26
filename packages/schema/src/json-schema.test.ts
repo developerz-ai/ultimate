@@ -20,6 +20,16 @@ const publishPost = t.object({
 });
 
 describe('toJsonSchema', () => {
+  test('publishes a `__proto__` field as an own property, never through the setter', () => {
+    // Same defect one file over: `properties[key] = convert(child)` on a `{}` literal drops the
+    // one key `Object.prototype` has an accessor for, so the document omits a field the server
+    // enforces and a generated client never sends it.
+    const schema = toJsonSchema(t.object({ ['__proto__']: t.string }), { includeDialect: false });
+    const properties = (schema['properties'] ?? {}) as Record<string, unknown>;
+    expect(Object.hasOwn(properties, '__proto__')).toBe(true);
+    expect(schema['required']).toEqual(['__proto__']);
+  });
+
   test('emits the exact shape OpenAPI and MCP consume', () => {
     const schema = toJsonSchema(publishPost, { includeDialect: false });
 

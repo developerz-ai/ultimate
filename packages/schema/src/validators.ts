@@ -155,7 +155,11 @@ function makeNumberSchema(node: SchemaNode): NumberSchema {
 }
 
 export function objectSchema<S extends Shape>(shape: S): ObjectSchema<S> {
-  const properties: Record<string, SchemaNode> = {};
+  // `Object.create(null)` for the same reason the parse output below uses one, on the other side
+  // of the same rule: a DECLARED `__proto__` field assigned into a `{}` literal hits the prototype
+  // setter and never becomes a key, so the field vanished from the IR `json-schema.ts` publishes
+  // and `coerce.ts` walks while the `checks` list beside it went on validating it.
+  const properties: Record<string, SchemaNode> = Object.create(null) as Record<string, SchemaNode>;
   const checks: [string, Check<unknown>][] = [];
   for (const [key, member] of Object.entries(shape)) {
     properties[key] = member.node;

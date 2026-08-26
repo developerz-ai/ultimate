@@ -125,7 +125,7 @@ shape against a locally declared sample interface for exactly that reason.
 | the five above, composed into one typed-client call | `client-flight.ts` + `client-wire.ts` | `@ultimat3/action` and `@ultimat3/query` both project a typed client and are both tier 3, so neither could import the other: it shipped as a byte-identical 288-line + 85-line copy in each, policed by a `client-twin.test.ts` in both. Both packages re-export these names, so their public surface is unchanged. Declares NO code of its own — `X_SUPERSEDED`, `X_TIMEOUT` and `X_FLIGHT_GATE_OVERLOADED` are already here |
 | is this `unknown` a keyed record? | `json-object.ts` | `isJsonObject`, which was the same three terms in both those packages' `stable.ts`. A `Date` and a class instance PASS: it narrows a shape, it does not certify provenance |
 | a value that must not be printed | `secret.ts` | redacted by VALUE; `revealSecret()` is the one way out, on purpose greppable |
-| an `Intl` formatter cache | `intl-cache.ts` (`cachedFormatter`, `canonicalLocale`, `MAX_CACHED_FORMATTERS`) | a locale and a zone arrive from a request header, so the key must be canonical AND the cache bounded — never a second copy of either half |
+| an `Intl` formatter cache, and the screen in front of it | `intl-cache.ts` (`cachedFormatter`, `canonicalLocale`, `assertLocale`, `MAX_CACHED_FORMATTERS`) | a locale and a zone arrive from a request header, so the tag must be REFUSED when it is not a tag (`X_LOCALE_INVALID`), the key must be canonical AND the cache bounded — never a second copy of any of the three |
 | the committed encrypted values | `secrets.ts` (envelope) + `secrets-store.ts` (files, `installSecrets`) | plaintext is a flat map of ENV NAMES; there is no `secrets.get()` |
 
 `installSecrets()` is the ONLY path from `secrets.enc.json` to an app value, and it lands in
@@ -143,6 +143,15 @@ import `bun run boundaries` refuses. The bound and the canonical key are **two h
 and live in one file for that reason: a canonical key bounds nothing (an unknown `-u-` extension
 value survives canonicalization as a distinct string) and the cap alone lets one locale evict
 itself under three spellings. Never build an `Intl` formatter on a caller string without both.
+
+`assertLocale` and `X_LOCALE_INVALID` moved here from `@ultimat3/time` in 16.x, for the third
+time the same argument was made: `@ultimat3/money` handed a malformed `Accept-Language` tag
+straight to `Intl.NumberFormat` at four entry points and let a bare `RangeError` out, and copying
+time's screen down would have been a second answer to one question. Validating and keying are ONE
+step — `getCanonicalLocales` runs exactly the check `supportedLocalesOf` throws on and hands back
+the spelling the cache keys on — which is why the screen lives in this file and not beside it. A
+code has one declaration: `X_LOCALE_INVALID` left `TIME_ERROR_CODES` in the same change, or
+`registerErrorCodes` would raise `X_ERROR_CODE_DUPLICATE` the moment both packages loaded.
 
 `secrets-errors.ts` registers its seven codes through `registerErrorCodes()` rather than joining
 `CORE_CODE_TITLES` — the codes and the module that throws them ship together, and `registerErrorCodes`
@@ -217,6 +226,28 @@ each other, FOUR bounded pools and FOUR dedupers. `error-retry.ts` had declared 
 the layer imports anything but this package, nothing runs at import time, and every source of
 non-determinism — the roll, the sleep, the clock, the timer — is injected, because a schedule
 provable only by waiting is a schedule no test pins.
+
+**`backoffDelay` REFUSES a non-finite bound, `As of 2026-08-26`, and that is a behaviour change.**
+It used to answer `0`, on the argument that 0 is "wrong loudly". It is not: measured,
+`retry({ attempts: 5, max: NaN })` slept `[0, 0, 0, 0]` and `factor: NaN` slept `[1000, 0, 0, 0]` —
+a retry loop with no wait at all, which is the failure backoff exists to prevent, on the tree's ONE
+curve (`bun run flight-copies`), reaching every retry in the framework. `attempt`, `base`, `max`
+and `factor` each go through `finiteOption` before the clamps, because `Math.max`, `Math.min` and
+`Math.trunc` propagate rather than validate and `Math.min(raw, Infinity)` is `Infinity`. The
+`return 0` below them stays and is still reachable, by exactly one route: `factor ** (step - 1)`
+overflows around attempt 1030 and `0 * Infinity` is `NaN` — a zero base is a caller asking for no
+wait, which is the answer it gets.
+
+**`finiteOption` / `finiteCount` (`finite-option.ts`) are the framework's ONE screen for a numeric
+option, `As of 2026-08-26`.** They landed here because `@ultimat3/jobs`, `@ultimat3/realtime` and
+`@ultimat3/query` each held a byte-identical copy; all three were deleted and now import these.
+`finiteCount(subject, option, value, min)` takes `min: 0 | 1` as a DEFAULT PARAMETER rather than
+shipping a third `finitePositive`, because only the caller knows what zero means —
+`requestTimeoutMs: 0` is "no deadline", a pool `max: 0` is a pool nothing can run on.
+`bun run finite-bounds` is the ratchet, and it recognises a repair by the SHAPE OF THE CALL: a
+package screen that does not carry `Finite` in its name is invisible to it, which is why
+`assertFiniteImageQuality`, `assertFiniteOtlpBound` and their siblings in five other packages are
+spelled that way.
 
 Two rules that are not preferences. `backoffDelay` clamps to `max` **before** jitter: capping after
 turns `full` into a distribution whose upper half is a single value at `max`, which is the

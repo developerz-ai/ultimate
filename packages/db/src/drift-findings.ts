@@ -95,13 +95,26 @@ export function changedColumn(
   };
 }
 
+/**
+ * The `fix:` names the two edits that actually resolve this, and neither is `x db gen` (issue
+ * #345). That command diffs the ENTITY REGISTRY against the newest snapshot, and a table nothing
+ * declares is absent from both sides of that diff — so it wrote an EMPTY migration, and the
+ * generator's own empty-diff branch writes no file at all, leaving the reader with nothing to run
+ * and the same finding on the next deploy.
+ *
+ * What is left once `@ultimat3/cli`'s `acceptCreatedTables` has run is a table no migration's SQL
+ * creates and no entity declares — so either a migration should claim it (`if not exists`, because
+ * the relation is already there, and `x db migrate` then accepts a table its own SQL creates), or
+ * nothing owns it and it should not be in this schema. No migration PATH is named: where an app
+ * keeps its migrations is the CLI's fact, not this package's.
+ */
 export function unexpectedTable(table: string): DriftDifference {
   return {
     kind: 'unexpected-table',
     table,
     column: null,
     cause: `table "${table}" is not present in any migration`,
-    fix: `x db gen "add ${table}"`,
+    fix: `put a create table if not exists "${table}" (…) statement in a migration — x db migrate then accepts a table its own SQL creates — or, if nothing owns it: psql "$DATABASE_URL" -c 'drop table "${table}"'`,
   };
 }
 

@@ -13,6 +13,7 @@ import {
   memoryMetricExporter,
   OVERFLOW_ATTRIBUTE,
   resetMetrics,
+  startMetricExport,
 } from './metrics';
 
 afterEach(() => {
@@ -213,6 +214,51 @@ describe('the instrument registry', () => {
     expect(() => counter('HTTP.Requests')).toThrow('X_METRIC_NAME_INVALID');
   });
 
+  /**
+   * A label name obeys the same Prometheus grammar the metric name does, and `metrics-text.ts`
+   * escapes the VALUE and interpolates the KEY raw — so `bad"key` rendered
+   * `orders_total{bad"key="x"} 1`, a line no scraper parses, and a scraper that cannot parse one
+   * line rejects the WHOLE body: `http_requests_total`, `connections` and `queue_depth` all
+   * vanish at once and the HPA reads no signal rather than a bad one. Refused where the series is
+   * created, never sanitised at render: a silently renamed label is a different series.
+   */
+  describe.each([
+    ['bad"key', 'a quote closes the label list early'],
+    ['route,status', 'a comma starts a label the value belongs to'],
+    ['2digits', 'a leading digit is not an identifier'],
+    ['with space', 'whitespace ends the label name'],
+    ['line\nbreak', 'a newline splits the body into another series'],
+  ])('a label key %j is refused — %s', (key) => {
+    test('with X_METRIC_NAME_INVALID, before it can reach the exposition body', () => {
+      const orders = counter('test_label_grammar_total');
+      let caught: unknown;
+      try {
+        orders.add(1, { [key]: 'x' });
+      } catch (thrown) {
+        caught = thrown;
+      }
+      expect(isUltimateError(caught)).toBe(true);
+      expect((caught as UltimateError).code).toBe('X_METRIC_NAME_INVALID');
+      // Nothing was recorded under it: a refused series is not a series.
+      expect(pointsOf('test_label_grammar_total')).toHaveLength(0);
+    });
+  });
+
+  test('a gauge and a histogram screen their labels too, not just a counter', () => {
+    expect(() => gauge('test_label_gauge').record(1, { 'bad-key': 'x' })).toThrow(
+      'X_METRIC_NAME_INVALID',
+    );
+    expect(() => histogram('test_label_hist_seconds').record(1, { 'bad-key': 'x' })).toThrow(
+      'X_METRIC_NAME_INVALID',
+    );
+  });
+
+  test('the labels every recorder already passes are still accepted', () => {
+    const served = counter('test_label_ok_total');
+    served.add(1, { route: '/posts', http_status: 200, otel_metric_overflow: false });
+    expect(pointsOf('test_label_ok_total')).toHaveLength(1);
+  });
+
   test('a second declaration stating different bounds is refused, not silently dropped', () => {
     // The first declaration won and the second's bounds were discarded without a word, so a
     // module recording into buckets it chose was reading another module's.
@@ -291,11 +337,31 @@ describe('export', () => {
   });
 });
 
+describe('startMetricExport', () => {
+  /**
+   * `setInterval(fn, NaN)` runs at 1ms in this Bun (measured, with a `TimeoutNaNWarning`), so an
+   * interval of `Number(process.env.METRICS_INTERVAL_MS)` on an unset variable does not export
+   * less often or more often by some wrong amount — it exports a thousand times a second, for the
+   * life of the process, through whatever exporter is installed.
+   */
+  test('an interval that is not a number is refused, never a 1ms export loop', () => {
+    expect(() => startMetricExport(Number.NaN)).toThrow(/X_INVARIANT/);
+    expect(() => startMetricExport(0)).toThrow(/X_INVARIANT/);
+    expect(() => startMetricExport(-1)).toThrow(/X_INVARIANT/);
+  });
+
+  test('an ordinary interval still starts and stops', () => {
+    const stop = startMetricExport(60_000);
+    expect(typeof stop).toBe('function');
+    stop();
+  });
+});
+
 describe('cardinality ceiling', () => {
   test('an unbounded label does NOT create an unbounded number of series', () => {
     const orders = counter('test_cardinality_orders_total', { maxSeries: 3 });
     for (let index = 0; index < 500; index += 1) {
-      orders.add(1, { orderId: `order-${index}` });
+      orders.add(1, { order_id: `order-${index}` });
     }
     const points = pointsOf('test_cardinality_orders_total');
     expect(points).toHaveLength(4);

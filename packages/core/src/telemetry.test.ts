@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
 import { createContext, runWithContext } from './context';
 import { traceId as newTraceId, spanId, uuid } from './ids';
-import { alwaysOffSampler, alwaysOnSampler, parentBasedRatioSampler } from './sampler';
+import {
+  alwaysOffSampler,
+  alwaysOnSampler,
+  parentBasedRatioSampler,
+  ratioSampler,
+} from './sampler';
 import type { SpanContext } from './telemetry';
 import {
   configureTelemetry,
@@ -219,6 +224,31 @@ describe('sampling', () => {
     expect(exporter.spans).toHaveLength(1);
     expect(exporter.spans[0]?.parentSpanId).toBe(parent.spanId);
     expect(exporter.spans[0]?.context.traceId).toBe(parent.traceId);
+  });
+
+  /**
+   * Measured before the fix, `OTEL_TRACES_SAMPLER=traceidratio` at 0.5: the root came back
+   * unsampled and 8 of 20 children sampled, so the collector was handed eight orphans under a
+   * trace whose root it never saw. `traceidratio` means a hash of the TRACE ID — one trace, one
+   * decision — and the sampler was re-rolling per span.
+   */
+  test('traceidratio decides once per trace, root and children alike', () => {
+    const exporter = memoryExporter();
+    let rolls = 0;
+    configureTelemetry({
+      exporter,
+      sampler: ratioSampler(0.5, () => (rolls++ % 2 === 0 ? 0.1 : 0.9)),
+    });
+
+    const root = startSpan('root');
+    const children = Array.from({ length: 20 }, () => startSpan('child', { parent: root.context }));
+
+    expect(children.map((child) => child.context.traceId)).toEqual(
+      children.map(() => root.context.traceId),
+    );
+    expect(new Set(children.map((child) => child.context.traceFlags))).toEqual(
+      new Set([root.context.traceFlags]),
+    );
   });
 });
 

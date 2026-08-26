@@ -8,6 +8,7 @@ export {
   CACHE_ERROR_TITLES,
   CacheDriverUnavailableError,
   CacheJitterInvalidError,
+  CacheLimitInvalidError,
   CachePurgeFailedError,
   CacheTagUnknownError,
   CacheTooLargeError,
@@ -109,6 +110,9 @@ export type {
   TtlScope,
 } from './tiers';
 export {
+  assertFiniteCapacity,
+  assertFiniteDurationMs,
+  assertFiniteSimilarityFloor,
   assertTtl,
   createCacheStack,
   DEFAULT_LOAD_DEADLINE_MS,

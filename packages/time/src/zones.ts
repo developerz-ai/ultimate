@@ -4,10 +4,9 @@
  * is no offset table to keep in sync and no `date-fns-tz` dependency.
  */
 
-import { cachedFormatter } from '@ultimat3/core';
+import { assertLocale, cachedFormatter } from '@ultimat3/core';
 import { timezoneInvalid } from './errors';
 import type { Instant } from './instant';
-import { assertLocale } from './locale';
 import { canonicalTimeZone } from './zone-canonical';
 
 /** An IANA identifier: `Europe/Berlin`, `Asia/Kathmandu`, `UTC`. Never `CET`, never `+01:00`. */

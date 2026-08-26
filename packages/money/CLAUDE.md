@@ -99,10 +99,19 @@ the wide shape and answer with the row type.
 - **Never cache an `Intl` formatter on a raw caller string.** `locale` arrives from
   `Accept-Language`, so an unbounded `Map` keyed on it is memory the client chooses: 20,000 valid
   `en-US-x-*` tags through `formatMoney` retained +55.1 MB of RSS, at ~2.7 KB per
-  `Intl.NumberFormat`. Both halves, always — `canonicalLocale` for the key, `cachedFormatter` for
+  `Intl.NumberFormat`. Both halves, always — `assertLocale` for the key, `cachedFormatter` for
   the bound, both `@ultimat3/core`'s and shared with `@ultimat3/time` (tier 1 may not import
   sideways, so the mechanism lives a tier down rather than twice). Every formatter in `format.ts`
   goes through that pair; a `new Intl.NumberFormat` outside one is the bug written again.
+- **A malformed locale tag is `X_LOCALE_INVALID`, never a bare `RangeError`, `As of 2026-08-26`.**
+  `formatMoney`, `formatMoneyParts`, `formatMoneyDecimal` and `currencySymbol` all screen through
+  `assertLocale` (`@ultimat3/core`), which validates and canonicalizes in ONE step — so the key the
+  cache is bounded on is the tag the screen accepted. The pass-through it replaced was argued as
+  "this seam decides a cache key, never whether a locale is acceptable", which is true of the cache
+  and was never an argument for handing the tag to `Intl.NumberFormat`: `en_US` off an
+  `Accept-Language` header took the request down with an uncoded throw several frames away.
+  `@ultimat3/time` had closed the identical hole one release earlier, and money was the last
+  tier-1 package still doing what time deleted.
 - **One place decides a sign.** `formatMoney` is `formatMoneyParts` joined, and `accounting`
   reaches `Intl` as `currencySign` — so the locale places the minus and picks the parenthesised
   form, and a UI styling the parts cannot render a different format from the label beside it.

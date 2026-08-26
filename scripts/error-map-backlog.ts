@@ -26,7 +26,6 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
   // request, and it has a row.
   core: [
     'X_ASYNC_CONTEXT_UNAVAILABLE',
-    'X_CONFIG_INVALID',
     'X_CURSOR_SECRET_DEV',
     'X_ENVIRONMENT_INVALID',
     'X_ENV_EXAMPLE_DRIFT',
@@ -74,6 +73,12 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
   cache: [
     'X_CACHE_DRIVER_UNAVAILABLE',
     'X_CACHE_JITTER_INVALID',
+    // A tier's ceiling or similarity floor, screened where `app.config.ts` still names it: raised
+    // by `new LruCache(...)` and `createMemorySemanticCache(...)`, which a boot builds once. The
+    // one argument-shaped route in is `lookup(embedding, override)`, which is app code passing its
+    // own number — the same shape as `remember({ ttlMs })` under `X_CACHE_TTL_INVALID` below, and
+    // classified the same way.
+    'X_CACHE_LIMIT_INVALID',
     'X_CACHE_PURGE_FAILED',
     'X_CACHE_TAG_UNKNOWN',
     'X_CACHE_TOO_LARGE',
@@ -162,7 +167,6 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_DST_NONEXISTENT',
     'X_DURATION_INVALID',
     'X_INSTANT_INVALID',
-    'X_LOCALE_INVALID',
     'X_SCHEDULE_INVALID',
     'X_TIMEZONE_INVALID',
   ],

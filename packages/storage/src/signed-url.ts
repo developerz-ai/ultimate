@@ -4,7 +4,7 @@
 // a 2GB executable. Verification never throws and never short-circuits on expiry before the
 // signature, so a forged URL can never learn "the signature was fine, just late".
 
-import { type Clock, systemClock, timingSafeEqual } from '@ultimat3/core';
+import { assert, type Clock, systemClock, timingSafeEqual } from '@ultimat3/core';
 import type { SignedUrlMethod } from './driver';
 import { assertSafeKey, isSafeKey } from './path';
 
@@ -102,13 +102,38 @@ export async function signConstraints(
 const trimBase = (base: string): string => base.replace(/\/+$/, '');
 const encodeKey = (key: string): string => key.split('/').map(encodeURIComponent).join('/');
 
+/**
+ * The mint's side of the screen `parseConstraints` already applies to the read. Exported because
+ * the S3 driver presigns through the provider rather than through `buildSignedUrl`, and two
+ * presigners that refuse different inputs is the disagreement `driver-parity.test.ts` exists to
+ * catch. A URL is minted
+ * here and verified elsewhere, so a number this function writes and that one refuses is a link
+ * that is dead on arrival — the app's own call succeeded, and the only report is a 400 at a
+ * recipient who cannot fix it. `expiresInMs: NaN` is exactly that: `now + NaN` is `NaN`, `String`
+ * writes the literal `NaN` into `x-exp`, and `Number.isSafeInteger` on the other side says no.
+ */
+export function assertFiniteSignedUrlBound(option: string, value: number, min: 0 | 1): number {
+  assert(
+    Number.isSafeInteger(value) && value >= min,
+    `buildSignedUrl was given ${option}=${String(value)}; verifySignedUrl accepts only a whole number of ${min === 1 ? 'at least 1' : '0 or more'}, so this URL would be refused as malformed by its own recipient`,
+    `pass a whole number for ${option} — buildSignedUrl({ ..., expiresInMs: 900_000 }) — and parse an environment value first: Number(process.env.SIGNED_URL_TTL_MS ?? '') is NaN when the variable is unset`,
+  );
+  return value;
+}
+
 export async function buildSignedUrl(input: SignedUrlInput): Promise<string> {
   const key = assertSafeKey(input.key);
   const clock = input.clock ?? systemClock;
+  const expiresInMs = assertFiniteSignedUrlBound(
+    'expiresInMs',
+    input.expiresInMs ?? DEFAULT_SIGNED_URL_TTL_MS,
+    1,
+  );
+  if (input.maxBytes !== undefined) assertFiniteSignedUrlBound('maxBytes', input.maxBytes, 0);
   const constraints: SignedUrlConstraints = {
     key,
     method: input.method ?? 'GET',
-    expiresAt: clock.now().getTime() + (input.expiresInMs ?? DEFAULT_SIGNED_URL_TTL_MS),
+    expiresAt: clock.now().getTime() + expiresInMs,
     maxBytes: input.maxBytes,
     // An empty string is not a content type, and `canonicalRequest` renders it and `undefined`
     // identically — so minting one would produce a URL indistinguishable from an unconstrained

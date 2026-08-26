@@ -105,6 +105,21 @@ describe('objectSchema', () => {
     }
   });
 
+  /**
+   * The published IR, not the parse output beside it: `properties[key] = member.node` on a `{}`
+   * literal hits the prototype SETTER for `__proto__`, so the field was absent from
+   * `node.properties` — the map `json-schema.ts` publishes and `coerce.ts` walks. Validation still
+   * ran it (the `checks` array is a list of pairs), so a field was enforced on the wire, missing
+   * from the OpenAPI document and never coerced from a query string, with nothing red anywhere.
+   */
+  test('a declared `__proto__` field is an own key of the published IR', () => {
+    const schema = objectSchema({ ['__proto__']: builtinT.string });
+    const properties = schema.node.properties ?? {};
+    expect(Object.hasOwn(properties, '__proto__')).toBe(true);
+    expect(Object.keys(properties)).toEqual(['__proto__']);
+    expect(Object.getPrototypeOf(properties)).toBe(null);
+  });
+
   test('extend adds fields to the shape and to validation', () => {
     const base = objectSchema({ id: builtinT.uuid });
     const extended = base.extend({ title: builtinT.string });

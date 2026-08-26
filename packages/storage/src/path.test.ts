@@ -146,3 +146,45 @@ describe('the sidecar namespace is reserved', () => {
     expect(assertSafeKey('.metaphor.txt')).toBe('.metaphor.txt');
   });
 });
+
+/**
+ * "S3's own limit", says the constant — and S3's limit is 1,024 **UTF-8 bytes**, while the guard
+ * counted UTF-16 code units and the message said "chars". Neither number is the one the store
+ * enforces, and the two disagree in the dangerous direction: `.length` is never MORE than the
+ * UTF-8 byte count, so a non-ASCII key over the real limit passed this check and was refused by
+ * S3 at PUT time — the exact "keeping local and remote disks interchangeable requires the same
+ * ceiling" this constant exists for. Same defect and same fix as `@ultimat3/cache`'s surrogate-key
+ * guard, which measured a 1,024-BYTE CDN limit in code units.
+ */
+describe('the key ceiling is the one the store enforces: UTF-8 bytes', () => {
+  test('a key under the limit in characters and over it in bytes is refused', () => {
+    // 400 three-byte characters: 400 code units, 1,200 UTF-8 bytes.
+    const key = '中'.repeat(400);
+    expect(key.length).toBeLessThan(1024);
+    expect(new TextEncoder().encode(key).byteLength).toBeGreaterThan(1024);
+    expect(codeOf(() => assertSafeKey(key))).toBe(UNSAFE);
+  });
+
+  test('the refusal counts bytes and says bytes', () => {
+    let message = '';
+    try {
+      assertSafeKey('中'.repeat(400));
+    } catch (error) {
+      message = isStorageError(error) ? error.cause : '';
+    }
+    expect(message).toContain('1200 bytes');
+    expect(message).not.toContain('chars');
+  });
+
+  test('exactly at the limit passes, one byte over does not', () => {
+    expect(codeOf(() => assertSafeKey('a'.repeat(1024)))).toBe('no-error-thrown');
+    expect(codeOf(() => assertSafeKey('a'.repeat(1025)))).toBe(UNSAFE);
+    // 1,023 ASCII + one two-byte character is 1,025 bytes and 1,024 code units.
+    expect(codeOf(() => assertSafeKey(`${'a'.repeat(1023)}é`))).toBe(UNSAFE);
+  });
+
+  test('a multi-byte key that fits in bytes is still a key', () => {
+    // 341 three-byte characters is 1,023 bytes: under the ceiling on the wire, so not this rule's.
+    expect(codeOf(() => assertSafeKey('中'.repeat(341)))).toBe('no-error-thrown');
+  });
+});

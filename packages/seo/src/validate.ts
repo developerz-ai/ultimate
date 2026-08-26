@@ -3,6 +3,7 @@
 // catches the three failures that only show up weeks later in Search Console:
 // duplicate meta, an over-length title, and a canonical that lies.
 
+import { finiteCount } from '@ultimat3/core';
 import {
   canonicalMismatch,
   duplicateMeta,
@@ -48,8 +49,21 @@ export function validateMeta(
   routes: readonly RouteRecord[],
   options: ValidateMetaOptions = {},
 ): MetaValidationReport {
-  const titleMax = options.titleMaxLength ?? TITLE_MAX_LENGTH;
-  const descriptionMax = options.descriptionMaxLength ?? DESCRIPTION_MAX_LENGTH;
+  // `rendered.length > NaN` is false for every title, so a ceiling that is not a number is not a
+  // loose rule — it is no rule, and the report comes back clean on a site whose every title is
+  // truncated in the SERP.
+  const titleMax = finiteCount(
+    'validateMeta',
+    'titleMaxLength',
+    options.titleMaxLength ?? TITLE_MAX_LENGTH,
+    1,
+  );
+  const descriptionMax = finiteCount(
+    'validateMeta',
+    'descriptionMaxLength',
+    options.descriptionMaxLength ?? DESCRIPTION_MAX_LENGTH,
+    1,
+  );
   const checked = indexableRoutes(routes);
   const issues: MetaIssue[] = [];
 

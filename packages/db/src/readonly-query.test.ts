@@ -50,13 +50,26 @@ describe('readOnlyQuery', () => {
     expect(result.guards).toEqual(['txn:read-only']);
   });
 
-  test('only 0 disables the timeout — NaN falls back to the default', async () => {
-    const client = createRecordingClient();
-    const result = await readOnlyQuery('select 1', { client, timeoutMs: Number.NaN });
-
-    expect(client.texts).toContain(`SET LOCAL statement_timeout = ${READONLY_TIMEOUT_MS}`);
-    expect(result.guards).toContain(`timeout:${READONLY_TIMEOUT_MS}ms`);
-  });
+  /**
+   * Only 0 disables the timeout, and a number that is not one is now REFUSED rather than
+   * normalised. It used to fall back to the default silently, which meant an agent read ran under
+   * a ceiling nobody wrote and nothing said so — the intent (never silently skip the layer) is
+   * kept, and the caller is told which option it was.
+   */
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5])(
+    'refuses timeoutMs %p instead of taking the default in silence',
+    async (timeoutMs) => {
+      const client = createRecordingClient();
+      let rendered = 'no-error-thrown';
+      try {
+        await readOnlyQuery('select 1', { client, timeoutMs });
+      } catch (error) {
+        rendered = String(error);
+      }
+      expect(rendered).toContain('X_INVARIANT');
+      expect(rendered).toContain('timeoutMs');
+    },
+  );
 
   test('a rejecting statement still rolls back and rethrows the original error', async () => {
     const calls: string[] = [];

@@ -8,7 +8,13 @@ import type { Clock } from '@ultimat3/core';
 import { systemClock } from '@ultimat3/core';
 import type { CacheTag } from './tags';
 import { tagsIntersect } from './tags';
-import { assertTtl, nowMs } from './tiers';
+import {
+  assertFiniteCapacity,
+  assertFiniteDurationMs,
+  assertFiniteSimilarityFloor,
+  assertTtl,
+  nowMs,
+} from './tiers';
 
 export type Embedding = readonly number[];
 
@@ -73,9 +79,15 @@ interface SemanticRecord {
 }
 
 export function createMemorySemanticCache(options: SemanticCacheOptions = {}): SemanticCache {
-  const threshold = options.threshold ?? 0.92;
-  const maxEntries = options.maxEntries ?? 1000;
-  const defaultTtlMs = options.defaultTtlMs ?? 3_600_000;
+  // Screened at construction, both of them: this tier's two knobs are the ones whose failure is
+  // silent — a floor of NaN matches everything, a ceiling of NaN evicts nothing.
+  const threshold = assertFiniteSimilarityFloor('semantic', 'threshold', options.threshold ?? 0.92);
+  const maxEntries = assertFiniteCapacity('semantic', 'maxEntries', options.maxEntries ?? 1000);
+  const defaultTtlMs = assertFiniteDurationMs(
+    'semantic',
+    'defaultTtlMs',
+    options.defaultTtlMs ?? 3_600_000,
+  );
   const clock = options.clock ?? systemClock;
   const records = new Map<string, SemanticRecord>();
 
@@ -93,7 +105,12 @@ export function createMemorySemanticCache(options: SemanticCacheOptions = {}): S
     name: 'memory',
 
     lookup<T>(embedding: Embedding, override?: number): Promise<SemanticHit<T> | undefined> {
-      const floor = override ?? threshold;
+      // The override is the same boundary, arriving per call — screened for the same reason, and
+      // this is the one that can carry a value straight off a request.
+      const floor =
+        override === undefined
+          ? threshold
+          : assertFiniteSimilarityFloor('semantic', 'threshold', override);
       let best: SemanticHit<T> | undefined;
       for (const record of live()) {
         const similarity = cosineSimilarity(embedding, record.embedding);

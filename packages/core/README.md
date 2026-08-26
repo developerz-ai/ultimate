@@ -316,7 +316,9 @@ nothing and still reports healthy.
 - **Sampling is honoured, not just propagated.** `startSpan` takes the parent's bit when there is
   one, else asks the `Sampler`; `span.end()` exports nothing when the bit is 0. The default reads
   `OTEL_TRACES_SAMPLER` / `OTEL_TRACES_SAMPLER_ARG` at the first span, and
-  `configureTelemetry({ sampler })` replaces it.
+  `configureTelemetry({ sampler })` replaces it. `shouldSample` is handed the TRACE ID of the span
+  being created, so `traceidratio` decides once per trace by hashing it — a roll per span left one
+  trace half exported, which is orphan children under a root the collector never saw.
 - **The OTLP exporters ship**, speaking OTLP/HTTP JSON, no dependency:
   `otlpSpanExporter({ endpoint })` (batched, with `flush()` / `shutdown()`) and
   `otlpMetricExporter({ endpoint })`. Both default to `OTEL_EXPORTER_OTLP_ENDPOINT`;
@@ -457,13 +459,16 @@ never a silently wrong page.
 ## One bounded cache for every `Intl` formatter
 
 ```ts
-import { cachedFormatter, canonicalLocale } from '@ultimat3/core';
+import { assertLocale, cachedFormatter } from '@ultimat3/core';
 
 const cache = new Map<string, Intl.NumberFormat>();
 
 export function euroFormatter(locale: string): Intl.NumberFormat {
-  // `EN-us` and `en-latn-us` collapse to one key, so one locale cannot evict itself.
-  const tag = canonicalLocale(locale) ?? locale;
+  // Validates AND canonicalizes: `EN-us` and `en-latn-us` collapse to one key, and a tag `Intl`
+  // cannot parse is `X_LOCALE_INVALID` here rather than a bare `RangeError` out of the constructor
+  // below. `canonicalLocale(locale) ?? locale` is the same call with the refusal deleted — it is
+  // what `@ultimat3/money` did, and an `Accept-Language` value of `en_US` took the request down.
+  const tag = assertLocale(locale);
   return cachedFormatter(
     cache,
     `${tag}|EUR`,

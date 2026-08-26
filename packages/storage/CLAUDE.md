@@ -14,6 +14,23 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
   fits the table is `@ultimat3/auth`'s: ship the server function (`grantUpload`), let the app
   wrap it in its own `action()` with its own policy. See `docs/architecture/17-uploads.md`.
 
+- **Every byte ceiling and every TTL is screened where it is DECLARED, `As of 2026-08-26`** —
+  `uploadPolicy({ maxBytes })`, both drivers' `maxPutBytes`, `createUploadGrant({ expiresInMs })`
+  and `buildSignedUrl`'s two, through core's `finiteCount` or `assertFiniteSignedUrlBound`.
+  Measured: `uploadPolicy({ maxBytes: Number.NaN })` accepted a 5,000,016-byte PNG through
+  `validateUpload`, because `size > NaN` is false — the one number deciding how much a caller may
+  store stopped deciding anything. Variant `quality` is core's `assertFiniteImageQuality` and NOT a
+  second screen: `variantKey` never reaches the encoder, so a copy that disagreed would mint
+  `q150` keys for bytes `transformImageBytes` then refuses.
+
+- **`MAX_KEY_LENGTH` is BYTES, and is measured in bytes, `As of 2026-08-26`.** S3's limit is "a
+  sequence of Unicode characters whose UTF-8 encoding is at most 1,024 bytes long", and `path.ts`
+  measured `key.length` — UTF-16 code units — while its message said "chars". A code-unit count is
+  never MORE than the UTF-8 byte count, so a non-ASCII key over the real limit passed this guard
+  and was refused by the store instead: 400 CJK characters is 400 units and 1,200 bytes. Keeping
+  local and remote disks interchangeable is the whole reason the ceiling exists, so it has to be
+  the store's ceiling. Same defect and same fix as `@ultimat3/cache`'s surrogate-key guard.
+
 | Rule | |
 |---|---|
 | Errors | `StorageError` + one factory per code in `errors.ts`; never `throw new Error` |
@@ -162,8 +179,11 @@ Gotchas:
   a test fixture) got the verdict from one table and the behaviour from another, in the dangerous
   direction: a production boot with no secret, launched from a development shell that has one,
   signing every grant with the published literal. All three reads now come off `options.env ??
-  process.env`, so a bare `localDriver({ root })` is unchanged and additive. `driver-local.test.ts`
-  pins it by mutation — reverting any one read to `process.env` fails.
+  process.env`, so a bare `localDriver({ root })` is unchanged and additive.
+  `driver-local-boot.test.ts` pins it by mutation — reverting any one read to `process.env` fails.
+  That file is the CONSTRUCTION half, split off `driver-local.test.ts` at the line ceiling along
+  the seam the guard already draws: nothing in it writes a byte, so it needs no temporary
+  directory, and `driver-local.test.ts` keeps everything the disk actually does with an object.
 - **The mounted read half is `@ultimat3/cli`'s `dev-storage.ts`, not this package.** `GET
   /_storage/:disk/*key` gates on `@ultimat3/policy`'s `evaluate()` (`storage:read`), which is tier
   2 and unreachable from here — so a "serve this object" helper in this package could only ever be

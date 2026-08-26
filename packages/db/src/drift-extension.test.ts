@@ -82,7 +82,7 @@ describe('drift against a database carrying an extension in `public` (issue #340
         table: 'scratch',
         column: null,
         cause: 'table "scratch" is not present in any migration',
-        fix: 'x db gen "add scratch"',
+        fix: 'put a create table if not exists "scratch" (…) statement in a migration — x db migrate then accepts a table its own SQL creates — or, if nothing owns it: psql "$DATABASE_URL" -c \'drop table "scratch"\'',
       },
     ]);
   });

@@ -5,6 +5,7 @@
 
 import {
   type Clock,
+  finiteCount,
   isLocal,
   type ResolveEnvironmentOptions,
   resolveEnvironment,
@@ -159,7 +160,12 @@ const isMissingFile = (error: unknown): boolean => stringField(error, 'code') ==
 
 export function localDriver(options: LocalDriverOptions): StorageDriver {
   const root = options.root.replace(/\/+$/, '');
-  const maxPutBytes = options.maxPutBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
+  const maxPutBytes = finiteCount(
+    'the local disk driver',
+    'maxPutBytes',
+    options.maxPutBytes ?? DEFAULT_MAX_UPLOAD_BYTES,
+    1,
+  );
   const clock = options.clock ?? systemClock;
   // The segment is the disk's REGISTERED name, learned from `defineStorage` at boot — the driver
   // kind is not a mount point, and minting under it made every disk not literally named `local`

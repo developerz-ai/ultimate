@@ -3,6 +3,7 @@
 // enforcing read-only beats a regex, and the timeout bounds a runaway scan the agent never
 // meant to ask for.
 
+import { finiteCount } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { multipleStatements } from './errors';
 import { identifier, raw, sql } from './sql';
@@ -107,11 +108,16 @@ export async function readOnlyQuery<T>(
     // Clamped and truncated to an integer: the result is a JS number the caller never touches
     // as text, so there is nothing here for `raw()` to inject — `SET LOCAL` can't bind `$n`
     // parameters, which is why this can't go through `sql` the normal, parameterised way.
-    // NaN normalises to the default first: only an explicit 0 disables the timeout, and
-    // `Math.min(3_600_000, NaN)` is NaN, which would fail `ms > 0` and silently skip the layer.
-    const asked = options.timeoutMs ?? READONLY_TIMEOUT_MS;
-    const requested = Number.isNaN(asked) ? READONLY_TIMEOUT_MS : asked;
-    const ms = Math.max(0, Math.min(3_600_000, Math.trunc(requested)));
+    // REFUSED rather than normalised: `NaN` used to take the default silently, so a config typo
+    // ran under a timeout nobody wrote. Only an explicit 0 disables the layer, which is why the
+    // floor is 0 and not 1; the hour ceiling is a clamp on a number that IS one.
+    const asked = finiteCount(
+      'readonlyQuery',
+      'timeoutMs',
+      options.timeoutMs ?? READONLY_TIMEOUT_MS,
+      0,
+    );
+    const ms = Math.min(3_600_000, asked);
     if (ms > 0) {
       // `LOCAL`, so the setting dies with the transaction — one agent read must not re-time
       // every request the pool serves afterwards. Caveat: embedded PGlite applies the setting

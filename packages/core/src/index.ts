@@ -390,6 +390,7 @@ export {
   writeMasterKeyFile,
   writeSecretsFile,
 } from './exports/secrets';
+export { finiteCount, finiteOption } from './finite-option';
 export type {
   FlightGate,
   FlightGateLimits,
@@ -432,6 +433,7 @@ export type {
   ImageTransformSpec,
 } from './image/pipeline';
 export {
+  assertFiniteImageQuality,
   blurDataUrl,
   canDecode,
   canEncode,
@@ -453,7 +455,13 @@ export {
   rasterFrom,
 } from './image/raster';
 export { impersonate, impersonationReason, isImpersonating } from './impersonate';
-export { cachedFormatter, canonicalLocale, MAX_CACHED_FORMATTERS } from './intl-cache';
+export {
+  assertLocale,
+  cachedFormatter,
+  canonicalLocale,
+  localeInvalid,
+  MAX_CACHED_FORMATTERS,
+} from './intl-cache';
 export { isJsonObject } from './json-object';
 export type {
   HealthPayload,
