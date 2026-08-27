@@ -96,8 +96,13 @@ export function pwaIssues(pwa: PwaConfig, issues: string[]): boolean {
   if (typeof name !== 'string' || name.trim() === '') {
     issues.push(`pwa.name is required when pwa.enabled is true, and is ${describeValue(name)}`);
   }
-  if (colors === undefined) {
-    issues.push('pwa.colors is required when pwa.enabled is true, for both light and dark');
+  // `typeof !== 'object' || null`, never `=== undefined`: an untyped `app.config.ts` writing
+  // `pwa.colors: null` reached `null[scheme]` one line down and took the boot out with a native
+  // `TypeError`, from the validator whose whole job is producing an instruction instead of one.
+  if (colors === null || typeof colors !== 'object') {
+    issues.push(
+      `pwa.colors is required when pwa.enabled is true, for both light and dark, and is ${describeValue(colors)}`,
+    );
   } else {
     for (const scheme of PWA_SCHEMES) {
       for (const key of PWA_COLOR_KEYS) {

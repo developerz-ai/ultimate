@@ -89,8 +89,6 @@ export { QuerySubscribesUnknownError, replicaIdentityTables } from './db-subscri
 export type { AssetRoutesOptions } from './dev-assets';
 export {
   assetRoutes,
-  ICON_BASE_PATH,
-  ICON_SOURCE,
   MEDIA_BASE_PATH,
 } from './dev-assets';
 export type { DevDashboardInput, DevStatus } from './dev-dashboard';
@@ -237,6 +235,13 @@ export {
 } from './framework-schema';
 export type { Guard } from './guards';
 export { findingProblem, GUARD_DIR, guardFindings, guardPaths } from './guards';
+export {
+  hasSourceIcon,
+  ICON_BASE_PATH,
+  ICON_SOURCE,
+  iconPlan,
+  iconRenderer,
+} from './icon-assets';
 // The island bundler, and only its entry point. An island is the one module Ultimate ships to a
 // browser, so an app has to be able to build one to TEST one — `mountIsland` from
 // `@ultimat3/testing` takes this function as its `build` parameter (issue #260). `discoverIslands`,
@@ -278,7 +283,12 @@ export { flagBool, flagList, flagString, GLOBAL_FLAGS, nearest, parseArgs } from
 export type { PrerenderedPage, PrerenderOptions, PrerenderReport } from './prerender';
 export { DEFAULT_ORIGIN, isPrerenderable, prerenderSite } from './prerender';
 export type { PwaArtifacts } from './pwa-artifacts';
-export { loadPwaArtifacts, pwaManifestRoute, WEB_MANIFEST_PATH } from './pwa-artifacts';
+export {
+  loadPwaArtifacts,
+  pwaManifestRoute,
+  WEB_MANIFEST_PATH,
+  writePwaIcons,
+} from './pwa-artifacts';
 export { COMMANDS, cliVersion, commandFor, SPECS } from './registry';
 export type { SchemaDifference, SchemaDirection, SchemaPart } from './schema-diff';
 export { diffDeclaredSchema } from './schema-diff';

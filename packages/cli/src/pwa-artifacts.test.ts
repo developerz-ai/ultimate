@@ -9,8 +9,15 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { createRaster, encodeImage } from '@ultimat3/core';
 import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
-import { loadPwaArtifacts, pwaManifestRoute, WEB_MANIFEST_PATH } from './pwa-artifacts';
+import { ICON_SOURCE } from './icon-assets';
+import {
+  loadPwaArtifacts,
+  pwaManifestRoute,
+  WEB_MANIFEST_PATH,
+  writePwaIcons,
+} from './pwa-artifacts';
 
 let root = '';
 
@@ -22,6 +29,10 @@ afterEach(async () => {
 });
 
 const writeConfig = (body: string) => Bun.write(join(root, 'app.config.ts'), body);
+
+/** The one file the whole icon matrix derives from. `dev-assets.test.ts`'s fixture, verbatim. */
+const writeSourceIcon = () =>
+  Bun.write(join(root, ICON_SOURCE), encodeImage(createRaster(1024, 1024, 'fixture'), 'png'));
 
 const COLORS =
   "{ light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' }, " +
@@ -59,6 +70,7 @@ describe('unit · the web manifest an installable app promises', () => {
   // off ONE `planIcons` call. Apple-touch icons are not manifest members and must arrive as links.
   test('the icons it names are the ones the asset surface serves', async () => {
     await installable();
+    await writeSourceIcon();
     const artifacts = await loadPwaArtifacts(root);
     const manifest = JSON.parse(artifacts?.body ?? 'null') as {
       icons: readonly { src: string; sizes: string; purpose: string }[];
@@ -70,6 +82,42 @@ describe('unit · the web manifest an installable app promises', () => {
     // Never in `icons`, always a link — Safari reads the link and ignores the manifest member.
     expect(manifest.icons.some((icon) => icon.src.includes('apple-touch'))).toBe(false);
     expect(artifacts?.head).toContain('rel="apple-touch-icon"');
+  });
+
+  // `planIcons` answers the same fourteen entries whether the source exists or not, so a manifest
+  // built off it unconditionally promises twelve icons and three apple-touch links that are twelve
+  // 404s in an install prompt. `examples/dummy` is exactly that app — `pwa.enabled: true`, no
+  // committed icon — so this is the live case and not a hypothetical one.
+  test('an app with no source icon names no icon, rather than naming twelve 404s', async () => {
+    await installable();
+    const artifacts = await loadPwaArtifacts(root);
+    const manifest = JSON.parse(artifacts?.body ?? 'null') as { icons: readonly unknown[] };
+
+    expect(manifest.icons).toEqual([]);
+    expect(artifacts?.head).not.toContain('apple-touch-icon');
+    // Still installable, still themed: the icon is the part the app owes, and the rest stands.
+    expect(artifacts?.head).toContain('rel="manifest"');
+  });
+
+  // A static host runs no `assetRoutes()`, so the bytes have to be IN the artifact or the manifest
+  // names files nothing answers — the gap `favicon.ico` and `404.html` are already written for.
+  test('writePwaIcons puts every named icon in the export, and nothing when there is no source', async () => {
+    const out = join(root, 'out');
+    expect(await writePwaIcons(root, out)).toEqual([]);
+
+    await writeSourceIcon();
+    const written = await writePwaIcons(root, out);
+    expect(written.length).toBeGreaterThan(0);
+    // Every path the MANIFEST names is one of them — the assertion the 404 depends on, and the
+    // reason both sides come off one plan rather than two lists that agree today.
+    await installable();
+    const manifest = JSON.parse((await loadPwaArtifacts(root))?.body ?? 'null') as {
+      icons: readonly { src: string }[];
+    };
+    for (const icon of manifest.icons) expect(written).toContain(icon.src);
+    for (const path of written) {
+      expect(await Bun.file(join(out, path.slice(1))).exists()).toBe(true);
+    }
   });
 
   // The whole point of the key. `enabled: false` must produce nothing at all rather than an empty

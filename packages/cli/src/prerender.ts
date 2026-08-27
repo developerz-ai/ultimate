@@ -17,7 +17,7 @@ import { errorPageDocument, STATIC_ERROR_PAGE } from './error-pages';
 import { FAVICON_PATH, faviconBytes } from './favicon';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands, writeIslands } from './island-bundle';
-import { loadPwaArtifacts, WEB_MANIFEST_PATH } from './pwa-artifacts';
+import { loadPwaArtifacts, WEB_MANIFEST_PATH, writePwaIcons } from './pwa-artifacts';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
 
@@ -156,6 +156,11 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const pwa = await loadPwaArtifacts(options.root);
   if (pwa !== undefined) {
     await Bun.write(join(options.out, WEB_MANIFEST_PATH.slice(1)), pwa.body);
+    // And the icons that manifest NAMES. A static host runs no `assetRoutes()`, so every
+    // `/icons/*` entry would be a 404 in the install prompt — the manifest half of the same
+    // promise `favicon.ico` above keeps. Nothing when the app committed no source icon, which is
+    // also when the manifest names no icon.
+    await writePwaIcons(options.root, options.out);
   }
 
   // Every render below goes through `routeDocument`, which is the function a REQUEST reaches — and

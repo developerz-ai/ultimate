@@ -19,8 +19,9 @@ import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@u
 import { responsiveImage } from '@ultimat3/seo';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver, resetStorage, variantKey } from '@ultimat3/storage';
-import { assetRoutes, ICON_SOURCE, MEDIA_BASE_PATH } from './dev-assets';
+import { assetRoutes, MEDIA_BASE_PATH } from './dev-assets';
 import { STORAGE_READ_PERMISSION } from './dev-storage';
+import { ICON_SOURCE } from './icon-assets';
 
 const SOURCE_KEY = 'covers/hero.png';
 

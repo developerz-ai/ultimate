@@ -22,6 +22,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   remain declarations with no build behind them; a bad `sw.js` is sticky and nothing in the gate can
   drive a real service worker, so that half lands behind a real browser check.
 
+  The manifest names icons **only when the app committed the one source they derive from**, and
+  `x build --target static` writes those bytes into the export: `planIcons` answers the same
+  fourteen entries whether `apps/web/site/icon.png` exists or not, and a static host runs no
+  `assetRoutes()`, so either gap turns an install prompt into twelve 404s. `examples/dummy` is
+  exactly that app — `pwa.enabled: true`, no committed icon.
+
 ### Changed
 
 - **BREAKING — `pwa.enabled: true` now requires `pwa.name` and `pwa.colors`.** `AppConfig.pwa`

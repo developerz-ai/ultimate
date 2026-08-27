@@ -410,6 +410,23 @@ describe('defineConfig · the pwa block an install can be built from', () => {
     expect(fix).toContain('pwa.enabled: false');
   });
 
+  // An untyped `app.config.ts` is what this validator is FOR, so `null` has to reach the refusal
+  // rather than `null[scheme]`: a native TypeError out of the function whose job is producing an
+  // instruction is the one failure it must not have. `false`/a string take the same branch.
+  test.each([null, false, 'themeColor: #fff', 7])(
+    'pwa.colors set to %p is refused with an instruction, never a TypeError',
+    (colors) => {
+      const cause = causeOf(() =>
+        defineConfig({
+          name: 'myapp',
+          // The cast IS the case: this validator's inputs come from a JS file nothing typechecked.
+          pwa: { enabled: true, name: 'My App', colors: colors as never },
+        }),
+      );
+      expect(cause).toContain('pwa.colors is required');
+    },
+  );
+
   test('enabled with no colours is refused', () => {
     expect(
       causeOf(() => defineConfig({ name: 'myapp', pwa: { enabled: true, name: 'My App' } })),

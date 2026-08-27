@@ -5,14 +5,9 @@
 // thing it does NOT decide is who may read a stored object: `/media` borrows that whole answer
 // from `dev-storage.ts`, because the same bytes are reachable through both.
 
-// `join` is `node:`-only by necessity: Bun exposes no path-join primitive, and `ICON_SOURCE` is
-// app-root-relative, so resolving it against the root is string work no `Bun.file` overload does.
-import { join } from 'node:path';
 import { probeImage } from '@ultimat3/core';
 import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
-import type { IconPlan } from '@ultimat3/pwa';
-import { BuiltinImagePipeline, PwaIconMissingError, planIcons } from '@ultimat3/pwa';
 import type { ImageQuery, ImageTransformDriver } from '@ultimat3/seo';
 import { builtinImageDriver, DEFAULT_WIDTHS, parseImageQuery } from '@ultimat3/seo';
 import type { ImageTransform, Storage, VariantFormat } from '@ultimat3/storage';
@@ -24,18 +19,13 @@ import {
   STORAGE_READ_PERMISSION,
 } from './dev-storage';
 import { faviconRoute } from './favicon';
+// The icon matrix's source, its base path and its renderer live in their own module so that
+// `pwa-artifacts.ts` — which this file imports for the manifest route — can reach them without
+// importing this one back. A cycle between the two would be the manifest and the icons it names
+// resolving through each other.
+import { iconPlan, iconRenderer } from './icon-assets';
 import type { PwaArtifacts } from './pwa-artifacts';
 import { pwaManifestRoute } from './pwa-artifacts';
-
-/**
- * The one source image every generated icon derives from. `x new` scaffolds it, `x doctor` checks
- * it and this file reads it — one constant, because a second spelling is an app that passes the
- * diagnostic and still serves no icons. PNG, not SVG: core's pipeline decodes PNG and JPEG only.
- */
-export const ICON_SOURCE = 'apps/web/site/icon.png';
-
-/** Where `planIcons` writes, and therefore the paths the generated web manifest names. */
-export const ICON_BASE_PATH = '/icons';
 
 /**
  * Storage-backed images. `responsiveImage({ src: '/media/<key>' })` mints its variants under it.
@@ -173,44 +163,6 @@ async function mediaResponse(
   return imageResponse(read.bytes, read.object.contentType, mediaCache(key));
 }
 
-/**
- * Rendered once per process, not per request: the fourteen matrix entries are pure functions of
- * one source file, and re-encoding a 512px PNG on every hit would be work no caller can observe.
- */
-function iconRenderer(root: string): (plan: IconPlan, path: string) => Promise<Uint8Array> {
-  const pipeline = new BuiltinImagePipeline();
-  const rendered = new Map<string, Promise<Uint8Array>>();
-  const sourceBytes = async (): Promise<Uint8Array> => {
-    const file = Bun.file(join(root, ICON_SOURCE));
-    if (!(await file.exists())) {
-      throw new PwaIconMissingError(
-        `${ICON_SOURCE} does not exist, so every icon the web manifest declares is unbacked and ` +
-          'the app is not installable',
-        // The same edit `x doctor` reports for the same condition, in `@ultimat3/pwa`'s own words.
-        // `x new` was here and takes an app name, so it could never run inside the broken app.
-        `add a 1024x1024 square PNG at ${ICON_SOURCE}`,
-      );
-    }
-    return file.bytes();
-  };
-  return async (plan, path) => {
-    const entry = plan.entries.find((candidate) => candidate.outputPath === path);
-    if (entry === undefined) {
-      throw new PwaIconMissingError(
-        `${path} is not in the icon matrix, so no transform describes it`,
-        `request one of ${plan.entries.map((one) => one.outputPath).join(', ')}`,
-      );
-    }
-    const existing = rendered.get(path);
-    if (existing !== undefined) return existing;
-    const bytes = sourceBytes().then((source) => pipeline.resize(source, entry.transform));
-    rendered.set(path, bytes);
-    // A failed render must not be remembered — the next request comes after the source was added.
-    bytes.catch(() => rendered.delete(path));
-    return bytes;
-  };
-}
-
 export interface AssetRoutesOptions {
   /** App root. The source icon is resolved against it; storage keys never are. */
   readonly root: string;
@@ -233,7 +185,9 @@ export interface AssetRoutesOptions {
  * this package's own rule forbids. `x dev` owns the runtime half, the diagnostic owns the other.
  */
 export function assetRoutes(options: AssetRoutesOptions): readonly Route[] {
-  const plan = planIcons({ sourceIcon: ICON_SOURCE, outDir: ICON_BASE_PATH });
+  // `iconPlan()`, never a second `planIcons` call: the icons this mounts and the icons
+  // `manifest.webmanifest` names are one list, or the manifest promises a size nothing mints.
+  const plan = iconPlan();
   const render = iconRenderer(options.root);
 
   const routes: Route[] = plan.entries.map((entry) => ({

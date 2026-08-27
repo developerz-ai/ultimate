@@ -28,14 +28,13 @@ import { applyCacheHeaders } from '@ultimat3/http';
 import {
   appleTouchLinks,
   generateWebManifest,
-  planIcons,
   renderThemeColorMeta,
   serializeWebManifest,
 } from '@ultimat3/pwa';
 import { escapeAttribute } from '@ultimat3/seo';
 import { APP_CONFIG_EXPORT } from './app-auth';
 import { APP_CONFIG_FILE } from './app-root';
-import { ICON_BASE_PATH, ICON_SOURCE } from './dev-assets';
+import { hasSourceIcon, iconPlan, iconRenderer } from './icon-assets';
 
 /** What a browser fetches from `<link rel="manifest">`. The spec's own extension, not `.json`. */
 export const WEB_MANIFEST_PATH = '/manifest.webmanifest';
@@ -121,23 +120,52 @@ async function loadInstallable(root: string): Promise<InstallableApp | undefined
 export async function loadPwaArtifacts(root: string): Promise<PwaArtifacts | undefined> {
   const app = await loadInstallable(root);
   if (app === undefined) return undefined;
-  // The icons the manifest promises are exactly the ones `/icons/*` serves — one plan, so a
-  // manifest cannot name a size the route will not mint. A missing source file is NOT reported
-  // here: `x doctor` and the icon route both already refuse it with `X_PWA_ICON_MISSING`, and a
-  // third reporter of one condition is the duplication this package's own rule forbids.
-  const icons = planIcons({ sourceIcon: ICON_SOURCE, outDir: ICON_BASE_PATH });
+  // The icons the manifest promises are exactly the ones `/icons/*` serves and `x build` writes —
+  // ONE plan, so no surface can name a size another will not produce.
+  //
+  // AND ONLY WHEN THE APP HAS A SOURCE FOR THEM. `planIcons` answers the same fourteen entries
+  // whether `apps/web/site/icon.png` exists or not, so a manifest built off it unconditionally
+  // promises twelve icons and three apple-touch links that are twelve 404s in an install prompt —
+  // the promise-nothing-keeps shape this whole module exists to close, one level down.
+  // `examples/dummy` is exactly that app: it declares `pwa.enabled: true` and commits no icon.
+  // A missing source is NOT reported here — `x doctor` already refuses it by name with
+  // `X_PWA_ICON_MISSING`, and a second reporter of one condition is the duplication this package's
+  // own rule forbids. Read at boot, like the rest of this function: adding the file takes effect
+  // on the next start, because the manifest is generated once and served as bytes.
+  const icons = (await hasSourceIcon(root)) ? iconPlan() : undefined;
   const result = generateWebManifest({
     name: app.name,
     tokens: app.colors,
-    icons: icons.manifestIcons,
+    icons: icons?.manifestIcons ?? [],
   });
   return {
     body: serializeWebManifest(result.manifest),
     head:
       `<link rel="manifest" href="${escapeAttribute(WEB_MANIFEST_PATH)}">` +
       renderThemeColorMeta(result.themeColorMeta) +
-      appleTouchLinks(icons),
+      (icons === undefined ? '' : appleTouchLinks(icons)),
   };
+}
+
+/**
+ * The icon bytes a STATIC export has to carry, written under `out`. Answers the paths it wrote.
+ *
+ * A static host runs no `assetRoutes()`, so every `/icons/*` entry the manifest names is a 404
+ * unless the bytes are in the artifact — the same rule `prerenderSite` already applies to
+ * `favicon.ico` and `404.html`, one asset class further along. Nothing when the app has no source
+ * icon, which is also when the manifest names none.
+ */
+export async function writePwaIcons(root: string, out: string): Promise<readonly string[]> {
+  if (!(await hasSourceIcon(root))) return [];
+  const plan = iconPlan();
+  const render = iconRenderer(root);
+  const written: string[] = [];
+  for (const entry of plan.entries) {
+    // `outputPath` is `/icons/<file>`; `out` is the export root, so the leading slash goes.
+    await Bun.write(join(out, entry.outputPath.slice(1)), await render(plan, entry.outputPath));
+    written.push(entry.outputPath);
+  }
+  return written;
 }
 
 /**
