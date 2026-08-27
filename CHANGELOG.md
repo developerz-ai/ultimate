@@ -89,12 +89,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `COMPILE_EXTERNALS` on either Bun, and "dev boxes and CI must agree" is satisfied by agreeing on
   1.3 just as well.
 
-  What refused it: **on Bun 1.3.14 a service shutdown against a destroyed database never resolves.**
-  `packages/cli/src/dev-runtime.live.test.ts` drops the probe database out from under a running web
-  role; the teardown's first release step is `queue.stop()`, and there it neither resolves nor
-  rejects — 2.0s and green on 1.4.0, a hung `afterEach` on 1.3.14, reproduced twice on CI and
-  locally. An app on a runtime the floor declared supported would hang on graceful shutdown the
-  moment its database went away, and drain by SIGKILL.
+  What refused it, for now: a shutdown hang. `packages/cli/src/dev-runtime.live.test.ts` drops the
+  probe database out from under a running web role and the teardown never returns on 1.3.14, against
+  green on 1.4.0 — reproduced twice on CI and repeatedly locally.
+
+  **The mechanism is not the version.** Reduced to a repro with no `@ultimat3/*` and run three times
+  per case ([#394](https://github.com/developerz-ai/ultimate/issues/394)): `Bun.SQL`'s `end()` waits
+  on an outstanding **reserved** connection, identically on both runtimes. The divergence appears
+  only once that connection's backend has been terminated, and there it is a **race** — 1.3.14 hangs
+  3 of 3, 1.4.0 hangs 1 of 3. 1.4.0 is lucky, not correct, and the same hang is latent in what ships
+  today. The repair is therefore probably ours — `releaseQueue` awaits `db.close()` with a reserve
+  outstanding — and fixing it likely makes the 1.3 floor admissible.
 
   Also measured, and recorded so the next attempt need not re-derive it: the whole gate is green on
   1.3.14 once the budgets above are fixed, at **337s against 144s on 1.4.0** (`unit` 230s against

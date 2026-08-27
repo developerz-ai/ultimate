@@ -47,14 +47,22 @@ runs:
         #      two must name ONE series; agreeing on 1.3 satisfies it exactly as well. What enforces
         #      it now is `scripts/bun-pin.test.ts`, which did not exist on 2026-08-20.
         #
-        # What DOES hold the line is a Bun 1.3.14 defect nothing had looked for, reproduced twice on
-        # CI and once locally in two minutes: **a service shutdown against a destroyed database
-        # never resolves.** `packages/cli/src/dev-runtime.live.test.ts` drops the probe database out
-        # from under a running web role; the teardown's first release step is `queue.stop()`, and on
-        # 1.3.14 it neither resolves nor rejects — 2.0s and green on 1.4.0, a hung `afterEach` on
-        # 1.3.14. That is not a test problem. An app on a runtime this repo declared supported would
-        # hang on graceful shutdown the moment its database went away, and drain by SIGKILL. A floor
-        # is a claim about a runtime somebody tested, so it may not name that one.
+        # What holds the line, for now, is a shutdown hang: `dev-runtime.live.test.ts` drops the
+        # probe database out from under a running web role and the teardown never returns on
+        # 1.3.14 — reproduced twice on CI and repeatedly here, against green on 1.4.0.
+        #
+        # **The MECHANISM is not the version, and that correction matters** (#394). Reduced to a
+        # repro with no `@ultimat3/*` and run three times per case: `Bun.SQL`'s `end()` waits on an
+        # outstanding RESERVED connection, identically on both runtimes — unreleased, it hangs on
+        # 1.3.14 and on 1.4.0 alike. The divergence appears only once that connection's backend has
+        # been terminated, and there it is a RACE: 1.3.14 hangs 3 times out of 3, 1.4.0 hangs 1 time
+        # out of 3. So 1.4.0 is not correct here, it is lucky, and the same hang is latent in what
+        # this repo ships today.
+        #
+        # Which means the repair is probably OURS: `releaseQueue` awaits `db.close()` with a reserve
+        # outstanding whose backend has just died. Release it first, or bound the close, and the
+        # 1.3 floor likely becomes admissible — so treat this paragraph as a blocker with an expiry
+        # date, not a verdict on the series.
         #
         # Two other differences were measured and neither blocks anything, recorded so the next
         # attempt does not re-measure them:
