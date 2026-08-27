@@ -108,14 +108,14 @@ x build --target static     # site/ output only: HTML, assets, sitemap, feeds
 | `binary` | `.x/app` — `bun build --compile`, all roles inside. Boots `As of 2026-08`; **not yet served from a bare VM** ([Known gaps](Known-Gaps)) | VMs, systemd, air-gapped, a CLI-shaped product |
 | `static` | `.x/static` — 0kb-JS pages, hashed assets, `sitemap.xml`, `robots.txt`, feeds | CDN / object storage, deployed independently |
 
-All targets share one build ID (content hash), stamped into the image, the HTML, the assets, `sw.js`, and `x.manifest.json`.
+All targets share one build ID (content hash), stamped into the image, the HTML, the assets and `x.manifest.json`. **Not `sw.js`** — no target emits one, `As of 2026-08-27`; `@ultimat3/pwa`'s generator has no caller anywhere in the tree ([#362](https://github.com/developerz-ai/ultimate/issues/362), and [PWA and offline](PWA-And-Offline) leads with the same warning).
 
 ```
 $ x build --target docker
   ✓ typecheck + boundaries           ✓ site/  12 routes  static   0kb js
   ✓ app/   31 routes  stream         ✓ static assets     avif+webp, 214 files
-  ✓ sw.js  precache 1.9MB / 3MB      ✓ manifest + openapi emitted
-  ✓ image  myapp:8f2a1c9  118MB      build id 8f2a1c9
+  ✓ manifest + openapi emitted       ✓ image  myapp:8f2a1c9  118MB
+                                       build id 8f2a1c9
 ```
 
 `x build` runs six of `x verify`'s steps first — `typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors` — and produces no artifact if any fail. It also refuses before spawning the builder when the target's entry file is missing (`X_BUILD_ENTRY_MISSING`) → [CLI reference](CLI-Reference).

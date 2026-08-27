@@ -110,10 +110,10 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | `X_BUILD_SKEW` on an action | the input schema changed incompatibly since the client's build | the `fix:` line names the action; version the action instead of changing it in place |
 | Users stuck on an old version | your app never renders the `AppUpdateAvailable` affordance | subscribe to the signal and show "Update available — reload". The framework never force-navigates |
 | Need everyone off a build now | security patch | **You cannot — the framework force-reloads nothing, `As of 2026-08`.** The forced-reload half of `version-skew` was deleted in 9.0.0: nothing performed the reload it described, and no runtime could have called it (`http` is tier 2 and `sync` is tier 3, both below `pwa` at tier 4). What ships is *notification*: read `useConnection().updateAvailable` from `@ultimat3/realtime` and render your own affordance. A deploy has no channel to a running client either way |
-| `X_SW_HAND_EDITED` | `sw.js` was edited — its checksum no longer matches | revert it and change the **route**; `sw.js` is a build artifact |
-| `X_SW_UNCACHEABLE` | `offline: 'precache'` on an `ssr` route | caching a per-request render is a correctness bug. Use `runtime` or `network-only` |
-| Precache budget failure | too many `precache` routes or oversized assets | `x build --json` reports the set; drop routes to `runtime` |
-| Offline shows the browser dinosaur | `pwa.offline.fallback` missing — normally a compile error | add `offline: { fallback: '/offline' }` |
+| `X_SW_HAND_EDITED` | **reserved, never raised** — `sw.js` carries no checksum, and no build writes one to edit ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)) | nothing to do today; change the **route**, which is the input the generator is designed around |
+| `X_SW_UNCACHEABLE` | **reserved, never raised** — `offline: 'precache'` on an `ssr` route is accepted | caching a per-request render is a correctness bug. Use `runtime` or `network-only`, and review the pairing yourself |
+| Precache budget failure | **cannot happen, `As of 2026-08-27`** — nothing builds a precache manifest, so nothing weighs one ([#362](https://github.com/developerz-ai/ultimate/issues/362)) | — |
+| Offline shows the browser dinosaur | there is no service worker: no build emits one, whatever `pwa.enabled` says | → [PWA and offline](PWA-And-Offline), which leads with the same warning |
 | Preview build poisoned a cache | impossible via the framework — build ID scopes the SW cache namespace and scope | confirm the branch build ID in `x manifest --json` |
 
 ## Tests
