@@ -10,6 +10,49 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A pool shutdown that could never finish, and the release that could never be handed back.**
+  `PostgresClient.close()` awaited a bare `pool.close()`, and `Bun.SQL`'s `end()` waits on an
+  outstanding RESERVED connection **without ever giving up**. Measured against a real server, three
+  runs per case: it never returns — on Bun 1.3.14 **and** on 1.4.0, with the database perfectly
+  healthy. `@ultimat3/cli`'s `releaseQueue` awaits that method, so a role whose database went away
+  mid-shutdown never finished shutting down; a container that will not drain is drained by SIGKILL,
+  and the operator's only signal is a pod that took its whole termination grace period. This was
+  filed as a Bun 1.3 defect ([#394](https://github.com/developerz-ai/ultimate/issues/394)) and the
+  filing was wrong: 1.4.0 was not correct here, it was lucky — with the connection's backend
+  terminated the hang is a race 1.3.14 loses 3 times of 3 and 1.4.0 loses 1 time of 3.
+
+  The capability was already in the seam and passed by nobody: `BunSqlDriver.close` has declared
+  `{ timeout }` since this package's `Bun.SQL` slice was written — the same shape as
+  `setOfflineMode` on the CDP port, one entry above. `PoolProfile` gains `drainTimeoutMs` (`web`
+  and `sync` 5s, `worker` 15s, `scheduler` 5s; `migrate` and `replicator` **0**, which still waits
+  forever, deliberately — a run-once role cutting off its own session mid-statement is worse than a
+  slow exit) and `close()` passes it. **The unit is seconds**: `timeout: 5000` would be an
+  eighty-three minute budget, which is the same hang with extra steps.
+
+  A drain that used its whole budget raises the new `X_DB_DRAIN_TIMEOUT`, because the driver
+  **resolves** when it gives up rather than rejecting — an abandoned drain looked exactly like a
+  clean one, and the work still in flight was lost with no line anywhere saying so. That verdict is
+  measured with `performance.now()` and never `Date.now()`, and the reason is this repo rather than
+  NTP: the framework preload freezes `Date` for every test in the tree, so a duration off
+  `Date.now()` is 0 in all of them and the branch could not have fired.
+
+  Bounding the close is what made the second half reachable, and the second half is the worse one.
+  `BunSqlReserved.release()` was typed `void` and **answers a promise**, which on 1.3.14 REJECTS
+  with `ERR_POSTGRES_CONNECTION_CLOSED` once the pool has closed — floated by both callers, so it
+  surfaced as an unhandled rejection, which Bun takes the process down for. And `release()` is
+  `DbConnection[Symbol.dispose]`, so a throw there replaces whatever error reached the `using`
+  block. `releaseReserved()` (`bun-sql.ts`) is now the one way a pin goes back — `client.ts` and
+  `pool-reserve.ts` both route through it — and it handles the sync throw and the rejected promise
+  alike, reporting `db.release_failed` at debug rather than swallowing silently.
+
+  Pinned both ways: `pool-drain.test.ts` asserts what `close()` **asks** the driver for, against a
+  fake pool, and `pool-drain.live.test.ts` asserts a real server's driver honours it — a fake's
+  `close()` is whatever the fake decided, and the finding is about the real one. Both are
+  mutation-proved, including against a real Postgres, where deleting the bound reproduces the hang.
+  `dev-runtime.live.test.ts`, the suite this was found in, now passes on **both** runtimes with no
+  flags; its `afterEach` gained an explicit budget, because Bun's 5000ms hook default was racing
+  `web`'s own 5000ms drain.
+
 - **`E2eFixtures.offline()` and `online()` forward to the browser instead of refusing, and the
   reason they refused was never true.** `packages/cli/src/e2e-driver.ts` said `CdpPageLike`
   "declares twelve methods and none of them is `setOfflineMode`". It declares it at

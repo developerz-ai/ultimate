@@ -5,12 +5,12 @@
 // importing this module never opens a socket.
 
 import { type Role, resolveRole } from '@ultimat3/core';
-import { type BunSqlDriver, type BunSqlReserved, bunSqlFactory } from './bun-sql';
+import { type BunSqlDriver, type BunSqlReserved, bunSqlFactory, releaseReserved } from './bun-sql';
 import { connectionUrl } from './connection-url';
 // Deliberate cycle, the same shape as `client.ts ⇄ transaction.ts`: nothing here is referenced at
 // module evaluation, and both sides are `function` declarations, so hoisting covers the TDZ.
 import { defaultClient } from './default-client';
-import { DbError, driverError } from './errors';
+import { DbError, drainTimeout, driverError } from './errors';
 import { assertPoolProfile, type PoolProfile, poolProfileFor } from './pool-profile';
 import { reserveWithin } from './pool-reserve';
 import { type SqlFragment, sql } from './sql';
@@ -120,7 +120,8 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       const release = (): void => {
         if (!held) return;
         held = false;
-        reserved.release();
+        // Total by construction — `releaseReserved` owns the reason (`bun-sql.ts`).
+        releaseReserved(reserved);
       };
       return {
         query: async <T>(fragment: SqlFragment) => rowsOf<T>(await on(fragment)),
@@ -141,7 +142,40 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       // rejection still reaches the caller — a shutdown that could not drain wants to know.
       const pool = driver;
       driver = undefined;
-      await pool?.close();
+      if (pool === undefined) return;
+      // BOUNDED, `As of 2026-08-27`, and through the driver's OWN option rather than a race here.
+      // This was a bare `await pool.close()`, and `Bun.SQL`'s `end()` waits on an outstanding
+      // reserved connection without ever giving up — measured three runs per case on Bun 1.3.14
+      // AND 1.4.0, no database outage involved (#394). So a role whose database went away
+      // mid-shutdown never finished shutting down, and the operator's only signal was a container
+      // that burned its whole termination grace period before SIGKILL.
+      //
+      // `BunSqlDriver.close` has declared `{ timeout }` since this port was written and NOTHING
+      // ever passed it — the capability was in the seam, unused, exactly like `setOfflineMode` on
+      // the CDP port. Measured with a reserve outstanding: `close({ timeout: 1 })` returns in
+      // ~1002ms on 1.3.14, 1.4.0 and 1.4.1-canary alike, where a bare `close()` never returns.
+      //
+      // **The unit is SECONDS**, not milliseconds. `timeout: 5000` would be an eighty-three minute
+      // shutdown budget, which is the same hang with extra steps.
+      if (profile.drainTimeoutMs === 0) {
+        // `migrate` and `replicator`, for `acquireTimeoutMs`' reason: a run-once role cutting off
+        // its own session mid-statement is worse than a slow exit.
+        await pool.close();
+        return;
+      }
+      // `performance.now()`, never `Date.now()`, and the reason is this repo rather than NTP: the
+      // framework preload freezes `Date` for every test in the tree (`installDeterminism`), so a
+      // duration subtracted from `Date.now()` is 0 in all of them — the branch below could not
+      // fire, and the test asserting it would have been one that cannot fail.
+      const started = performance.now();
+      await pool.close({ timeout: profile.drainTimeoutMs / 1000 });
+      // The driver RESOLVES when it gives up — it does not reject — so the elapsed time is the only
+      // thing that separates "drained" from "abandoned". Reporting it is the point: a drain that
+      // silently gave up looks exactly like a clean one, and the work still in flight is lost with
+      // no line anywhere saying so. The pool is gone either way, which is why this is terminal.
+      if (performance.now() - started >= profile.drainTimeoutMs) {
+        throw drainTimeout(profile.drainTimeoutMs, role);
+      }
     },
   };
   return client;

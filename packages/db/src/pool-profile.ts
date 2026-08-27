@@ -1,4 +1,4 @@
-// Single responsibility: the five numbers a Postgres pool runs on — the per-role defaults, the one
+// Single responsibility: the six numbers a Postgres pool runs on — the per-role defaults, the one
 // environment override an operator may layer over them, and the screen every resolved profile
 // passes. Split from `client.ts`, which now owns connecting and nothing about sizing.
 
@@ -25,6 +25,24 @@ export interface PoolProfile {
    * kills the pod, and the replacement inherits the same saturated database.
    */
   readonly acquireTimeoutMs: number;
+  /**
+   * How long `close()` may wait for the pool to drain before `X_DB_DRAIN_TIMEOUT`. 0 waits forever.
+   *
+   * **A drain that cannot finish is the failure this bounds, and it is not hypothetical.** Measured
+   * against a real Postgres, three runs per case: `Bun.SQL`'s `end()` waits on an outstanding
+   * RESERVED connection and never stops waiting — 3 of 3 on Bun 1.3.14 *and* 3 of 3 on 1.4.0, with
+   * no database outage involved at all. Once that connection's backend has been terminated it
+   * becomes a race, which 1.3.14 loses 3 of 3 and 1.4.0 loses 1 of 3. So the runtime is not the
+   * variable; an unbounded await is (#394).
+   *
+   * What that cost, before this: `releaseQueue` awaits `db.close()`, so a role whose database went
+   * away mid-shutdown never finished shutting down. A container that will not drain is drained by
+   * SIGKILL, and the operator's only signal is a pod that took its full termination grace period.
+   *
+   * `migrate` and `replicator` wait forever, deliberately, for `acquireTimeoutMs`' reason: a
+   * run-once role cutting off its own session mid-statement is worse than a slow exit.
+   */
+  readonly drainTimeoutMs: number;
 }
 
 /** Sized per role because the failure modes differ: RPS bursts vs. queue depth vs. run-once. */
@@ -35,6 +53,7 @@ export const POOL_PROFILES = Object.freeze<Record<Role, PoolProfile>>({
     idleTimeoutMs: 30_000,
     lockTimeoutMs: 0,
     acquireTimeoutMs: 5_000,
+    drainTimeoutMs: 5_000,
   },
   sync: {
     max: 10,
@@ -42,6 +61,7 @@ export const POOL_PROFILES = Object.freeze<Record<Role, PoolProfile>>({
     idleTimeoutMs: 60_000,
     lockTimeoutMs: 0,
     acquireTimeoutMs: 5_000,
+    drainTimeoutMs: 5_000,
   },
   worker: {
     max: 8,
@@ -49,6 +69,7 @@ export const POOL_PROFILES = Object.freeze<Record<Role, PoolProfile>>({
     idleTimeoutMs: 30_000,
     lockTimeoutMs: 0,
     acquireTimeoutMs: 10_000,
+    drainTimeoutMs: 15_000,
   },
   scheduler: {
     max: 2,
@@ -56,6 +77,7 @@ export const POOL_PROFILES = Object.freeze<Record<Role, PoolProfile>>({
     idleTimeoutMs: 60_000,
     lockTimeoutMs: 0,
     acquireTimeoutMs: 10_000,
+    drainTimeoutMs: 5_000,
   },
   // `migrate` waits: its pool is `max: 1` and the advisory-lock pin holds it for the whole run, so
   // a deadline here would refuse the migration's own session. The wait that needed bounding is the
@@ -66,6 +88,7 @@ export const POOL_PROFILES = Object.freeze<Record<Role, PoolProfile>>({
     idleTimeoutMs: 10_000,
     lockTimeoutMs: 3_000,
     acquireTimeoutMs: 0,
+    drainTimeoutMs: 0,
   },
   replicator: {
     max: 4,
@@ -73,6 +96,7 @@ export const POOL_PROFILES = Object.freeze<Record<Role, PoolProfile>>({
     idleTimeoutMs: 60_000,
     lockTimeoutMs: 0,
     acquireTimeoutMs: 0,
+    drainTimeoutMs: 0,
   },
 });
 
@@ -99,13 +123,13 @@ export function poolMaxFromEnv(): Partial<PoolProfile> {
 }
 
 /**
- * The five numbers a pool runs on, screened on the MERGED profile — an override is spread over a
+ * The six numbers a pool runs on, screened on the MERGED profile — an override is spread over a
  * role default the caller never restated, so the resolved object is the only one that can be
  * judged. Every one of them is a plausible `Number(process.env.…)`, which is `NaN` for an unset
- * variable and not nullish, so `??` and the spread both keep it. None of the five then fails
+ * variable and not nullish, so `??` and the spread both keep it. None of the six then fails
  * loudly: `idleTimeout: NaN` goes to `Bun.SQL`, `statement_timeout=NaN` goes into the libpq
  * options string for the SERVER to reject on connect, and a timer given `NaN` fires at 1ms in this
- * Bun — so a pool with free connections reports itself exhausted. `0` stays legal for the three
+ * Bun — so a pool with free connections reports itself exhausted. `0` stays legal for the five
  * budgets that document it as "no bound"; `max` is at least one connection, or nothing can run.
  */
 export function assertPoolProfile(profile: PoolProfile): PoolProfile {
@@ -121,5 +145,6 @@ export function assertPoolProfile(profile: PoolProfile): PoolProfile {
   whole('idleTimeoutMs', profile.idleTimeoutMs, 0);
   whole('lockTimeoutMs', profile.lockTimeoutMs, 0);
   whole('acquireTimeoutMs', profile.acquireTimeoutMs, 0);
+  whole('drainTimeoutMs', profile.drainTimeoutMs, 0);
   return profile;
 }

@@ -88,6 +88,10 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
   // two a request produces (unique / foreign-key violation) are unpinned and have rows.
   db: [
     'X_BRANCH_EXISTS',
+    // Raised only by `close()`, which is the shutdown path: the pool handle is cleared before the
+    // await, so nothing inside a request can reach a client that is draining. A status for it would
+    // describe a response no handler is alive to send.
+    'X_DB_DRAIN_TIMEOUT',
     'X_DB_LOCK_TIMEOUT',
     'X_DB_POOL_EXHAUSTED',
     'X_DB_SERIALIZATION_FAILURE',

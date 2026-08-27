@@ -2,7 +2,7 @@
 // and giving back a reservation that arrives after the deadline has passed. Split from `client.ts`,
 // which now asks for a pin rather than owning what "waited too long" means.
 
-import type { BunSqlDriver, BunSqlReserved } from './bun-sql';
+import { type BunSqlDriver, type BunSqlReserved, releaseReserved } from './bun-sql';
 import { poolAcquireTimeout } from './errors';
 import type { PoolProfile } from './pool-profile';
 
@@ -42,7 +42,7 @@ export async function reserveWithin(
     // Attached unconditionally so a rejection arriving after we gave up is handled, not unhandled.
     void pending.then(
       (late) => {
-        if (expired) late.release();
+        if (expired) releaseReserved(late);
       },
       () => undefined,
     );

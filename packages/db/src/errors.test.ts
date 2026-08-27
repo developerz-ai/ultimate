@@ -24,6 +24,7 @@ describe('DB_OWNED_ERROR_CODES', () => {
     // consumer uses (`@ultimat3/mcp`'s parse guard, over `readOnlyQuery`'s `BEGIN READ ONLY`).
     expect([...DB_OWNED_ERROR_CODES].sort()).toEqual([
       'X_BRANCH_EXISTS',
+      'X_DB_DRAIN_TIMEOUT',
       'X_DB_DRIFT',
       'X_DB_FOREIGN_KEY_VIOLATION',
       'X_DB_LOCK_TIMEOUT',

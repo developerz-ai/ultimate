@@ -66,7 +66,11 @@ afterEach(async () => {
   root = undefined;
   resetLifecycle();
   if (url !== undefined) await admin(`drop database if exists ${PROBE_DB} with (force)`);
-});
+  // `BOOT_TIMEOUT_MS`, because Bun's hook default is 5000ms and `web`'s own drain budget is 5000ms
+  // — a hook that tears down a role whose database was just dropped is racing a bound it can only
+  // lose. Measured on Bun 1.3.14: the hook timed out at 5.6s while `close()` was returning at ~5s,
+  // and the whole file then cascaded, because a torn-down `root` is `undefined` for the next test.
+}, BOOT_TIMEOUT_MS);
 
 interface Readyz {
   readonly status: number;

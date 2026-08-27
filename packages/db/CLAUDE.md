@@ -233,6 +233,30 @@ means the nested scope never opened, and a release that failed means its work is
 the outer one. Swallowing either would keep running against a transaction that is not the one the
 caller thinks it is in.
 
+**`close()` is BOUNDED, `As of 2026-08-27`, and by the driver's OWN option rather than a race here**
+(#394). `BunSqlDriver.close` has declared `{ timeout }` since this package's `Bun.SQL` slice was
+written and **nothing ever passed it** — a capability sitting unused in the seam, the same shape as
+`setOfflineMode` on the CDP port. Measured against a real server, three runs per case: `end()` waits
+on an outstanding RESERVED connection and never returns, on Bun 1.3.14 **and** on 1.4.0, with the
+database perfectly healthy; once that connection's backend has been terminated it becomes a race
+1.3.14 loses 3 of 3 and 1.4.0 loses 1 of 3. So the runtime was never the variable — an unbounded
+await was, and `@ultimat3/cli`'s `releaseQueue` awaits this method. A container that will not drain
+is drained by SIGKILL, and the operator's only signal is a pod that took its full grace period.
+
+Three rules ride with it. **The unit is SECONDS** — `close({ timeout: profile.drainTimeoutMs /
+1000 })`, and `timeout: 5000` would be an eighty-three minute budget, which is the same hang with
+extra steps. **`drainTimeoutMs: 0` sends no option at all**, rather than `{ timeout: 0 }`: `migrate`
+and `replicator` mean "wait", for `acquireTimeoutMs`' reason, and a zero handed to the driver is an
+instruction whose reading is the driver's. **The verdict is the elapsed time**, because the driver
+RESOLVES when it gives up rather than rejecting — a drain that abandoned in-flight work looks exactly
+like a clean one, so `X_DB_DRAIN_TIMEOUT` is raised on the clock or nothing is said at all. That
+clock is `performance.now()` and never `Date.now()`, and the reason is this repo rather than NTP:
+the framework preload freezes `Date` for every test in the tree (`installDeterminism`), so a duration
+subtracted from `Date.now()` is 0 in all of them and the branch could not fire — a test asserting it
+would have been one that cannot fail. `pool-drain.test.ts` pins what is ASKED for, against a fake
+pool; `pool-drain.live.test.ts` pins that a real server's driver honours it, because a fake's
+`close()` is whatever the fake decided and the finding is about the real one.
+
 `close()` reads its cached driver into a local, clears the field, **then** awaits the teardown —
 `client.ts` and `pglite.ts` both. A teardown that rejects has still torn the pool down, so clearing
 after the await left the corpse cached for the next `connect()`, and a second `close()` threw in
@@ -1312,7 +1336,7 @@ survives the round trip whole.
   is 0 and not 1.
 
 - **`client.ts` reached the 500-line ceiling on 2026-08-26, and shed the five jobs that were not
-  "open a connection and send a statement".** `pool-profile.ts` owns the five numbers a pool runs
+  "open a connection and send a statement".** `pool-profile.ts` owns the six numbers a pool runs
   on — the per-role table, `DATABASE_POOL_MAX` and the screen every merged profile passes;
   `connection-url.ts` builds the connection string (the libpq `options` merge and the
   `application_name` label); `bun-sql.ts` declares the slice of `Bun.SQL` this package uses and
