@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/i18n",
-  "version": "17.0.0",
+  "version": "18.0.0",
   "description": "Dependency-free translator, catalog flattening, locale negotiation and loud missing-key rendering",
   "license": "MIT",
   "type": "module",
@@ -35,6 +35,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "17.0.0"
+    "@ultimat3/core": "18.0.0"
   }
 }
