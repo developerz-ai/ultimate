@@ -50,6 +50,42 @@ describe('scanBareErrorThrows separates the verdict from the input', () => {
     const source = 'const bad = "throw new Error(\'nope\');";\n';
     expect(scanBareErrorThrows('packages/x/src/a.test.ts', source)).toEqual([]);
   });
+
+  // The defect: a comment quoting the shape in order to EXPLAIN it was counted as committing it.
+  // Measured — `packages/auth/src/oauth-profile.test.ts:51` and
+  // `packages/entity/src/tenancy.test.ts:43` are two doc comments that each said why a bare throw
+  // is wrong, and each cost its package a pin. `dead-docs-host.ts` states the same carve-out for
+  // the same reason: naming the banned thing is not doing it.
+  test('the shape quoted in a line comment is prose about a throw, not a throw', () => {
+    const source = "// a sentinel throw new Error('expected a throw') would be a bare Error\n";
+    expect(scanBareErrorThrows('packages/x/src/a.test.ts', source)).toEqual([]);
+  });
+
+  test('the shape quoted in a block comment or a JSDoc is prose too', () => {
+    const block = "/* throw new Error('nope') is what this used to do */\n";
+    const jsdoc = [
+      '/**',
+      " * A `throw new Error('unreachable')` inside a try/catch lands in its own catch.",
+      ' */',
+      'const rejection = 1;',
+    ].join('\n');
+    expect(scanBareErrorThrows('packages/x/src/a.test.ts', block)).toEqual([]);
+    expect(scanBareErrorThrows('packages/x/src/a.test.ts', jsdoc)).toEqual([]);
+  });
+
+  // THE REGRESSION DIRECTION, and the one that matters: an exemption wider than a comment switches
+  // the rule off. The throw sits on the line AFTER a comment that quotes it, so a scanner that
+  // blanked one character too many, or gave up on the rest of the line, reports nothing here.
+  test('a real throw beside a comment quoting one is still the verdict, at its own line', () => {
+    const source = [
+      "// never write throw new Error('x') as a verdict — use expect.unreachable",
+      "throw new Error('expected a refusal'); // and this one is real",
+      '/** and this JSDoc mentions throw new Error() again */',
+      "throw new Error('second');",
+    ].join('\n');
+    const found = scanBareErrorThrows('packages/x/src/a.test.ts', source);
+    expect(found.map((site) => site.line)).toEqual([2, 4]);
+  });
 });
 
 describe('the ratchet', () => {

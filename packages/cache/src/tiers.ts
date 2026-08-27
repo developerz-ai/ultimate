@@ -122,9 +122,10 @@ export function assertFiniteCapacity(tier: TtlScope, option: string, value: numb
  * transport failure that never happened) and a tier's own `defaultTtlMs`, which is otherwise only
  * screened by `assertTtl` at the first `set`, one write into the process's life.
  *
- * The `Finite` in all three names here is load-bearing: `bun run finite-bounds` recognises a repair
- * by the shape of the CALL, so `assertCapacity` and `assertTimeoutMs` left all nine of this
- * package's options reading as unchecked while every one of them was screened.
+ * The `Finite` in all three names here is NOT load-bearing, `As of 2026-08-26`. It was: a name
+ * regex meant `assertCapacity` and `assertTimeoutMs` left all nine of this package's options
+ * reading as unchecked while every one of them was screened. `bun run finite-bounds` now reads
+ * `SCREENING_CALLEES` in `scripts/lib/finite-screens.ts` — rename freely, move the rows.
  */
 export function assertFiniteDurationMs(
   tier: string,

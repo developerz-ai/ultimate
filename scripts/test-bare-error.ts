@@ -9,6 +9,7 @@
 //   bun run scripts/test-bare-error.ts [--json]
 //   bun run scripts/test-bare-error.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
+import { stripComments } from '@ultimat3/cli';
 import { flagList, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -51,9 +52,17 @@ export interface BareErrorSite {
 }
 
 export function scanBareErrorThrows(path: string, source: string): readonly BareErrorSite[] {
+  // A COMMENT quoting the shape is prose ABOUT a throw, never one — and reading it as a throw is
+  // this rule punishing the only sentence that can explain it. It fired: a `packages/db` test
+  // whose header read "reads a literal `throw new Error(…)` as a verdict wherever it appears" took
+  // that package 24 -> 25 with no throw in the file, and the comment was reworded to clear a gate.
+  // `dead-docs-host.ts` already carries the same carve-out in the same words — a comment naming
+  // the banned thing as the thing that was removed cannot commit it. `stripComments` blanks a
+  // comment to spaces and preserves every offset, so the string exemption below still lines up.
+  const code = stripComments(source);
   const literals = sourceStrings(source);
   const out: BareErrorSite[] = [];
-  for (const match of source.matchAll(THROWN)) {
+  for (const match of code.matchAll(THROWN)) {
     const at = match.index ?? 0;
     // A rule's own test spells the bad shape as a STRING and feeds it to the pure function below.
     // Same exemption `to-throw-returns.ts` and `test-fix-citations.ts` rest on, same tokenizer.

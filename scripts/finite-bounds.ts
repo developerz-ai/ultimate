@@ -31,16 +31,19 @@
 // `Math.max(1, options.maxMembers ?? …)`, `worker.ts` was `Math.max(0, slots - inFlight)`. A `??`
 // default is not a validator either, for the reason in the first line.
 //
-// WHAT COUNTS AS THE REPAIR, recognised rather than pinned: `Number.isFinite` /
-// `Number.isSafeInteger` / `Number.isInteger` naming the option or the name it lands in, or a call
-// whose own name carries `Finite` (`assertFiniteCeiling`, `assertFiniteRate`, `finite`) naming the
-// same. In-repo form, eight times over: `packages/jobs/src/limits.ts:122`, `backfill.ts:158`,
-// `export.ts:142`, `job.ts:201`, `worker-options.ts`, `scraping/src/scrape.ts:137`,
-// `mail/src/driver-smtp.ts:97`.
+// WHAT COUNTS AS THE REPAIR: a call to one of `SCREENING_CALLEES`
+// (`scripts/lib/finite-screens.ts`) naming the option or the name it lands in. A DECLARED table —
+// one row, one sentence — and never the callee's spelling, which is what it replaced on
+// 2026-08-26: `[\w$]*[Ff]inite[\w$]*` read `InfiniteScroll(` as a repair, read a correct screen
+// called `toMs` as none, and had already put "the `Finite` in the name is load-bearing" into three
+// shipped files. In-repo form, eight times over: `packages/jobs/src/limits.ts:122`,
+// `backfill.ts:158`, `export.ts:142`, `job.ts:201`, `worker-options.ts`,
+// `scraping/src/scrape.ts:137`, `mail/src/driver-smtp.ts:97`.
 //
-// MATCHED ON SHAPE, NEVER ON NAME. A rule spelled `RenderMode` read straight past `PwaRenderMode`,
-// and a backoff rule looking for a roll called `random`/`rng`/`roll` read past a copy whose
-// parameter was `r`. Nothing here asks whether an option is called `timeout`, `limit` or `size`.
+// THE DETECTOR IS MATCHED ON SHAPE, NEVER ON NAME. A rule spelled `RenderMode` read straight past
+// `PwaRenderMode`, and a backoff rule looking for a roll called `random`/`rng`/`roll` read past a
+// copy whose parameter was `r`. Nothing here asks whether an option is called `timeout`, `limit` or
+// `size`. The repair is the one half a name cannot answer and a declaration can.
 //
 // WHAT IT THEREFORE CANNOT SEE, stated so nobody trusts it for more than it does:
 //   1. an option with NO `??` default — `AcceptBudget`'s required `perSecond` was exactly this, and
@@ -82,6 +85,7 @@ import {
   FINITE_BOUNDS_PINS_FILE,
   finiteBoundsPinnedFor,
 } from './lib/finite-bounds-pins';
+import { FINITE_SCREENS_FILE, SCREENING_CALL } from './lib/finite-screens';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -187,9 +191,6 @@ const DEFAULTED =
 /** `DEFAULT_TTL_MS[input.purpose]` — a table read, whose TABLE name is what settles it. */
 const INDEXED_FALLBACK = /^([A-Za-z_$][\w$]*)\[/;
 
-/** Repairs, in one alternation: `Number.is*` or any callee carrying `Finite`. */
-const REPAIR_CALL = /(?:Number\.is(?:Finite|SafeInteger|Integer)|\b[\w$]*[Ff]inite[\w$]*)\s*\(/g;
-
 /** The `}` closing the `{` at `open`, or the end of the source. */
 const closingBrace = (code: string, open: number): number => {
   let depth = 0;
@@ -236,10 +237,14 @@ const ASSIGNED = /(?:(?:const|let|var)\s+|this\.#?|#)([A-Za-z_$][\w$]*)\s*(?::[^
  * The SPAN and not the line, because Biome wraps a call past 100 columns and the callee then sits
  * on a different line from its arguments — the first draft compared line by line and read nine of
  * its own repairs as unrepaired. Balanced parens, so a nested `toMs(...)` stays inside the span.
+ *
+ * WHICH callees count is `SCREENING_CALLEES`, a declared table, and never their spelling: the name
+ * pattern this replaced read `InfiniteScroll(` as a repair and a correct screen called `toMs` as
+ * none. That file carries the measurement.
  */
-const repairSpans = (source: string): readonly string[] => {
+const repairSpans = (source: string, screens: RegExp): readonly string[] => {
   const spans: string[] = [];
-  for (const match of source.matchAll(REPAIR_CALL)) {
+  for (const match of source.matchAll(screens)) {
     const open = match.index + match[0].length - 1;
     spans.push(source.slice(open, closingParen(source, open) + 1));
   }
@@ -274,9 +279,10 @@ export function scanFiniteBounds(
   source: string,
   numeric: ReadonlySet<string>,
   tables: ReadonlySet<string> = new Set(),
+  screens: RegExp = SCREENING_CALL,
 ): readonly FiniteBoundSite[] {
   const code = maskLiterals(source);
-  const spans = repairSpans(source);
+  const spans = repairSpans(source, screens);
   const sites: FiniteBoundSite[] = [];
   for (const match of code.matchAll(DEFAULTED)) {
     const fallback = (match[2] as string).trim();
@@ -376,7 +382,7 @@ const at = (site: FiniteBoundSite | undefined): string =>
 const overFinding = (gap: FiniteBoundGap): Finding => ({
   code: 'X_FINITE_BOUND_UNCHECKED',
   cause: `${gap.pkg} defaults ${String(gap.found)} numeric option(s) with ?? and never checks them for finiteness, and is pinned at ${String(gap.pinned)} — ${at(gap.first)} writes ${gap.first?.expression ?? ''}, and ?? guards nullish while NaN is not nullish, so Number(process.env.X) on an unset variable reaches the bound intact`,
-  fix: `assert(Number.isFinite(${gap.first?.option ?? 'value'}), '…', '…') beside ${at(gap.first)} — as packages/jobs/src/limits.ts:122 does — or Number.isSafeInteger where it counts rows. Math.max/Math.min/Math.floor are NOT the fix: all three propagate NaN`,
+  fix: `assert(Number.isFinite(${gap.first?.option ?? 'value'}), '…', '…') beside ${at(gap.first)} — as packages/jobs/src/limits.ts:122 does — or Number.isSafeInteger where it counts rows. Math.max/Math.min/Math.floor are NOT the fix: all three propagate NaN. If a helper already screens it, add that callee to SCREENING_CALLEES in ${FINITE_SCREENS_FILE} instead — the table is what this rule reads, never the callee's name`,
   at: at(gap.first),
 });
 
