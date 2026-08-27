@@ -79,12 +79,10 @@ export type {
   ManifestShortcut,
   Orientation,
   ProtocolHandler,
-  PwaConfig,
-  SchemeColors,
   ShareTarget,
   ThemeColorMeta,
-  ThemeTokens,
   WebManifest,
+  WebManifestInput,
   WebManifestResult,
 } from './manifest';
 export { generateWebManifest, renderThemeColorMeta, serializeWebManifest } from './manifest';

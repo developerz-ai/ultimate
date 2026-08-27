@@ -49,9 +49,9 @@ function register(fixture: RouteFixture): void {
   registerRoute(input);
 }
 
-const serve = (): ReturnType<typeof createServer> =>
+const serve = (pwaHead?: string): ReturnType<typeof createServer> =>
   createServer({
-    routes: appRoutes({ buildId: BUILD_ID }),
+    routes: appRoutes({ buildId: BUILD_ID, ...(pwaHead === undefined ? {} : { pwaHead }) }),
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
   });
@@ -243,5 +243,47 @@ describe('unit · x dev renders the app routes', () => {
       component: () => h('section', null, 'feed'),
     });
     expect(await (await get('/feed')).text()).toContain('<section>feed</section>');
+  });
+
+  // #362: `pwa.enabled` had no reader, so no document any Ultimate app served ever carried a
+  // manifest link and no browser would offer to install one. The head is a document-level string
+  // rather than a per-route `meta()` member because an installable app is one whose EVERY page
+  // carries it — a visitor lands on whichever page they land on.
+  describe('the install head, on every mode and every page', () => {
+    const PWA_HEAD = '<link rel="manifest" href="/manifest.webmanifest">';
+
+    // Every (surface, mode) pair the framework allows, DERIVED from `SURFACE_SPECS` rather than
+    // listed: a mode added to a surface joins this test on its own, and `documentFrom` is not the
+    // only place a head is assembled.
+    const PAGES = [
+      { surface: 'site', file: 'apps/web/site/page.tsx', url: '/' },
+      { surface: 'app', file: 'apps/web/app/feed/page.tsx', url: '/feed' },
+    ] as const;
+    const CASES = PAGES.flatMap((page) =>
+      SURFACE_SPECS[page.surface].allowedModes.map((render) => ({ ...page, render })),
+    );
+
+    test.each(CASES)('$surface/ in $render carries it', async ({ file, url, render }) => {
+      // `isr` is the one mode whose shape check demands a TTL; every other one takes none.
+      register({ file, render, ...(render === 'isr' ? { revalidate: { ttl: '5m' } } : {}) });
+      const response = await serve(PWA_HEAD).fetch(new Request(`http://dev.test${url}`));
+      expect(await response.text()).toContain(PWA_HEAD);
+    });
+
+    // The `stream` branch builds its head separately from `documentFrom`, so it is the one that
+    // could carry the link and lose the title, or the reverse. Both, in the first flush.
+    test('a streamed page carries it beside its own title, in the first flush', async () => {
+      register({ file: 'apps/web/app/feed/page.tsx', render: 'stream' });
+      const body = await (await serve(PWA_HEAD).fetch(new Request('http://dev.test/feed'))).text();
+      expect(body).toContain('<title>title of apps/web/app/feed/page.tsx</title>');
+      expect(body).toContain(PWA_HEAD);
+    });
+
+    // The 0kb baseline: an app that is not installable pays nothing, and a `<link>` to a file no
+    // route serves is a 404 in every visitor's console.
+    test('an app that is not installable carries nothing', async () => {
+      register({ file: 'apps/web/site/page.tsx', render: 'static' });
+      expect(await (await get('/')).text()).not.toContain('rel="manifest"');
+    });
   });
 });

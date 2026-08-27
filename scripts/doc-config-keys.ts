@@ -16,7 +16,7 @@
 //
 //   bun run scripts/doc-config-keys.ts [--json]
 
-import { CONFIG_FILE, configLeaves } from './config-readers';
+import { CONFIG_FILE, configDeclaration, configLeaves } from './config-readers';
 import { parseScriptArgs } from './lib/args';
 import type { DocConfigKeyAllowance } from './lib/doc-config-key-pins';
 import { DOC_CONFIG_KEY_ALLOWANCES, DOC_CONFIG_PINS_FILE } from './lib/doc-config-key-pins';
@@ -139,7 +139,7 @@ export async function unknownConfigKeys(
   root: string,
   allow: readonly DocConfigKeyAllowance[] = DOC_CONFIG_KEY_ALLOWANCES,
 ): Promise<ConfigKeyReport> {
-  const leaves = configLeaves(await Bun.file(`${root}/${CONFIG_FILE}`).text());
+  const leaves = configLeaves(await configDeclaration(root));
   const found: ConfigCitation[] = [];
   const used = new Set<DocConfigKeyAllowance>();
   for (const glob of DOC_GLOBS) {

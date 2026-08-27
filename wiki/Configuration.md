@@ -253,7 +253,9 @@ pwa: { enabled: true, offline: 'runtime' },
 
 | field | type | default | notes |
 |---|---|---|---|
-| `pwa.enabled` | `boolean` | `false` | **read by nothing, `As of 2026-08-27`** — on and off produce the identical build, because no target generates a service worker at all ([#362](https://github.com/developerz-ai/ultimate/issues/362)). Pinned as suspect by `bun run scripts/config-readers.ts` |
+| `pwa.enabled` | `boolean` | `false` | **read, `As of 2026-08-27`** — `true` makes `x dev`, the container and `x build --target static` emit `manifest.webmanifest` and the `<head>` that names it, and requires `pwa.name` and `pwa.colors` beside it. It still generates no service worker ([#362](https://github.com/developerz-ai/ultimate/issues/362)); `pwa.offline`, `pwa.backgroundSync` and `pwa.push` are the half with no build behind them |
+| `pwa.name` | `string` | `''` | The install title a browser shows a person. **Required when `pwa.enabled` is `true`** — `app.name` is a slug (`^[a-z][a-z0-9-]{1,63}$`), so it is the wrong answer rather than a rough one |
+| `pwa.colors` | `{ light, dark }` of `{ themeColor, backgroundColor }` | `undefined` | `theme_color` and `background_color`, per colour scheme. **Required when `pwa.enabled` is `true`**: a browser paints the install splash and the address bar from these before a stylesheet has loaded, so there is nothing to derive them from and no defensible default. One of the two places a raw colour is legal in an app, alongside `theme.tokens` |
 | `pwa.offline` | `'precache' \| 'runtime' \| 'network-only'` | `'network-only'` | the app-wide strategy; a `route` may narrow its own |
 | `pwa.backgroundSync` | `boolean` | `false` | wires the SW sync event to the mutator queue |
 | `pwa.push` | `boolean` | `false` | generates the SW handler, the subscription action and the send job |

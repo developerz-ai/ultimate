@@ -17,6 +17,7 @@ import { errorPageDocument, STATIC_ERROR_PAGE } from './error-pages';
 import { FAVICON_PATH, faviconBytes } from './favicon';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands, writeIslands } from './island-bundle';
+import { loadPwaArtifacts, WEB_MANIFEST_PATH } from './pwa-artifacts';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
 
@@ -147,6 +148,15 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     join(options.out, STATIC_ERROR_PAGE),
     await errorPageDocument(options.root, NOT_FOUND_STATUS),
   );
+  // And the file every document above is about to name. A static export is served with no process
+  // behind it, so `<link rel="manifest">` resolves to a 404 unless the bytes are in the artifact —
+  // an installable app that is installable only under `x dev` is the dev/prod split this whole
+  // wiring exists to close. `undefined` when the app is not installable, and then no document
+  // names it either.
+  const pwa = await loadPwaArtifacts(options.root);
+  if (pwa !== undefined) {
+    await Bun.write(join(options.out, WEB_MANIFEST_PATH.slice(1)), pwa.body);
+  }
 
   // Every render below goes through `routeDocument`, which is the function a REQUEST reaches — and
   // a request arrives inside `runWithContext`, installed by the HTTP pipeline (`dev-render.ts`).
@@ -161,6 +171,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     runWithContext(ctx, () =>
       routeDocument(entry, data, {
         resolveIsland: (file: string) => islands.resolverFor(file),
+        ...(pwa === undefined ? {} : { pwaHead: pwa.head }),
       }),
     );
 

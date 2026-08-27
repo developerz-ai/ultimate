@@ -49,7 +49,16 @@ export const config = defineConfig({
   // multi-node shape. There is no `tier:` key: nothing ever read it, so it is deleted.
   realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' },
 
-  pwa: { enabled: true, offline: 'runtime', backgroundSync: true },
+  pwa: {
+    enabled: true,
+    offline: 'runtime',
+    backgroundSync: true,
+    name: 'Ultimate Dummy',
+    colors: {
+      light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
+      dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' },
+    },
+  },
 
   ai: { mcp: { expose: true, path: '/mcp' } },
 });

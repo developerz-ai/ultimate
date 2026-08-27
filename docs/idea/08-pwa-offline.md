@@ -54,7 +54,7 @@ From `app.config.ts` plus **one** source icon (SVG or >=1024px PNG):
 
 | Generated | Detail |
 |---|---|
-| `manifest.webmanifest` | name, short_name, description, `start_url`, `scope`, display, theme + background from design tokens |
+| `manifest.webmanifest` | name, short_name, description, `start_url`, `scope`, display, theme + background from `pwa.colors` — **emitted**, `As of 2026-08-27` ([#362](https://github.com/developerz-ai/ultimate/issues/362)); every other row on this page is still designed, not shipped |
 | Icons | 192/256/384/512 + maskable variants + `apple-touch-icon` |
 | Favicons | `.ico` + SVG |
 | iOS splash screens | full device matrix |

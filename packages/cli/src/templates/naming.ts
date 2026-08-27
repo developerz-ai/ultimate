@@ -79,6 +79,17 @@ export const plural = (input: string): string => {
 
 export const titleKey = (input: string): string => `app.${kebab(input)}.title`;
 
+/**
+ * A human title from a slug: `ledger-demo` -> `Ledger Demo`. Its one caller is the scaffolded
+ * `pwa.name`, which is what a browser shows a person in the install prompt — `app.name` is a slug
+ * by `NAME_RE` and `pascal` would offer to install `LedgerDemo`. Not a `NameSet` member: every
+ * other field there names a code identifier, and this one is prose.
+ */
+export const titleCase = (input: string): string =>
+  words(input)
+    .map((word) => `${word[0]?.toUpperCase() ?? ''}${word.slice(1)}`)
+    .join(' ');
+
 export interface NameSet {
   readonly raw: string;
   readonly kebab: string;

@@ -8,6 +8,7 @@ import { ENV_EXAMPLE_PATH } from '@ultimat3/core';
 import { VERIFY_FLOOR_FILE } from '../verify-floor';
 import type { VerifyStepName } from '../verify-step';
 import type { GeneratedFile, NameSet } from './naming';
+import { titleCase } from './naming';
 import { dbPackageFiles } from './scaffold-db-package';
 import { docsFiles } from './scaffold-docs';
 import { domainPackageFiles } from './scaffold-domain-package';
@@ -180,7 +181,19 @@ export const config = defineConfig({
   jobs: { queues: ['${app.kebab}-default'], concurrency: 4 },
   // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
   realtime: { enabled: true, transport: 'memory' },
-  pwa: { enabled: true, offline: 'runtime' },
+  // \`name\` and \`colors\` are what an install prompt shows and what a browser paints the splash
+  // with before any stylesheet has loaded — the four values the framework cannot derive, so
+  // \`defineConfig\` refuses \`pwa.enabled: true\` without them. Raw hex is legal here and nowhere
+  // else in an app.
+  pwa: {
+    enabled: true,
+    offline: 'runtime',
+    name: '${titleCase(app.raw)}',
+    colors: {
+      light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
+      dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' },
+    },
+  },
   ai: { mcp: { expose: true, path: '/mcp' } },
 });
 `;

@@ -7,13 +7,11 @@ import { CURRENCY_CODE_PATTERN } from '@ultimat3/schema';
 // them. Declaring them here is what let `cache.tiers` and the ladder `@ultimat3/cache` orders by
 // drift into two vocabularies with no map between them (issue #293).
 import { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
+import type { PwaConfig } from './config-pwa';
+import { PWA_FIX, pwaIssues } from './config-pwa';
 import { describeValue } from './error-render';
 import { ConfigInvalidError } from './errors';
 import { ROLES, type Role } from './roles';
-// `app.config.ts` CONSUMES the route vocabulary; it does not own it. Declaring `OfflineStrategy`
-// here is what made it copyable — `render`, `manifest` and `pwa` each wrote their own rather than
-// import a name that reads like a config key.
-import type { OfflineStrategy } from './route-vocabulary';
 import { isIanaZoneName } from './time-zone-name';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -40,18 +38,6 @@ export interface ThemeConfig {
  */
 export interface AuthConfig {
   readonly signInPath: string | null;
-}
-
-/**
- * `installPrompt` was removed 2026-08, same rule: `@ultimat3/pwa`'s `createInstallController` is
- * real and complete, nothing ever threaded the flag into it, and both tracked apps plus every
- * scaffolded app set a switch with no wire. Call the controller from your own affordance instead.
- */
-export interface PwaConfig {
-  readonly enabled: boolean;
-  readonly offline: OfflineStrategy;
-  readonly backgroundSync: boolean;
-  readonly push: boolean;
 }
 
 /**
@@ -86,7 +72,6 @@ export interface NotifyConfig {
  * lists agree so the omission is a red test rather than a silent hole.
  */
 export const INBOX_RETENTION_KEYS = ['inboxReadRetentionMs', 'inboxUnreadRetentionMs'] as const;
-
 /**
  * Deliberately thin. `urlEnv`, `poolSize` and `schema` were removed 2026-08 because **nothing
  * read them** — the only reader of any `config.database.*` field in the repo was this file's own
@@ -273,7 +258,14 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
     defaultCurrency: 'USD',
     theme: { defaultMode: 'system', tokens: {} },
     auth: { signInPath: null },
-    pwa: { enabled: false, offline: 'network-only', backgroundSync: false, push: false },
+    pwa: {
+      enabled: false,
+      offline: 'network-only',
+      backgroundSync: false,
+      push: false,
+      name: '',
+      colors: undefined,
+    },
     roles: [...ROLES],
     database: { driver: 'postgres', ssl: false },
     cache: { defaultTtlMs: 60_000, tiers: ['request-memo', 'lru'] },
@@ -317,6 +309,8 @@ function validate(config: AppConfig): void {
   // Same shape, and it exists for the upgrade: an 8.0.0 app carrying `['memo', 'shared']` in an
   // untyped config file reaches here rather than the compiler, and needs the new spelling.
   const tierFix: string[] = [];
+  // Same shape again: carried only when an installable app is missing what an install needs.
+  const pwaFix: string[] = [];
 
   if (!NAME_RE.test(config.name)) {
     issues.push(`name "${config.name}" must match ${String(NAME_RE)}`);
@@ -362,6 +356,11 @@ function validate(config: AppConfig): void {
     }
   }
 
+  // What an install needs, asked at BOOT and not at emit — `config-pwa.ts` owns the rules and the
+  // remedy, because `pwa.enabled` turning four other requirements on is a question about that block
+  // and nothing else here.
+  if (pwaIssues(config.pwa, issues)) pwaFix.push(PWA_FIX);
+
   // A rung the ladder cannot build is the defect this key had: `sortTiers` places a name by its
   // index in `CACHE_TIERS`, and a name missing from it sorts to `-1` — AHEAD of the request memo.
   // So an unknown tier is refused at boot rather than silently ignored or silently placed first.
@@ -376,7 +375,7 @@ function validate(config: AppConfig): void {
       cause: issues.join('; '),
       // The generic instruction goes LAST so the fix line still ends in a command that can be
       // pasted — a trailing `.` after `x verify` is a command nobody can run.
-      fix: [...zoneFix, ...tierFix, BASE_FIX].join('. '),
+      fix: [...zoneFix, ...tierFix, ...pwaFix, BASE_FIX].join('. '),
       meta: { issues },
     });
   }

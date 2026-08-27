@@ -5,6 +5,11 @@
  * app gets a light status bar on every launch.
  */
 
+// `PwaColors`/`PwaSchemeColors` are tier 0's, not this package's. They were declared here as
+// `ThemeTokens`/`SchemeColors` — structurally identical to what `app.config.ts` already carried,
+// with no map between them and nothing asserting they agreed, which is the same axiom-1 defect the
+// two `PwaConfig`s were. An app writes them once, in the one config file.
+import type { PwaColors } from '@ultimat3/core';
 import { escapeAttribute } from '@ultimat3/seo';
 import type { CapabilityFlags, ResolvedCapabilities } from './capabilities';
 import { isEnabled, resolveCapabilities } from './capabilities';
@@ -81,19 +86,15 @@ export interface WebManifest {
   readonly protocol_handlers?: readonly ProtocolHandler[];
 }
 
-/** Resolved token values for one colour scheme. Never a hex literal in framework code. */
-export interface SchemeColors {
-  readonly themeColor: string;
-  readonly backgroundColor: string;
-}
-
-export interface ThemeTokens {
-  readonly light: SchemeColors;
-  readonly dark: SchemeColors;
-}
-
-/** The `pwa` block of `app.config.ts`. */
-export interface PwaConfig {
+/**
+ * Everything `generateWebManifest` needs, which is NOT the `pwa` block of `app.config.ts` — this
+ * type was called `PwaConfig` and said it was, while `@ultimat3/core` exported a different type of
+ * the same name that really is the block. Two exported `PwaConfig`s with no map between them is
+ * axiom 1, and the one that lied is this one: an app declares `name` and `colors`, and every other
+ * member here is a caller's — `icons` comes from `planIcons`, `capabilities` from the build.
+ * `packages/cli/src/pwa-artifacts.ts` is what composes the two into this.
+ */
+export interface WebManifestInput {
   readonly name: string;
   readonly shortName?: string;
   readonly description?: string;
@@ -104,7 +105,7 @@ export interface PwaConfig {
   readonly orientation?: Orientation;
   readonly lang?: string;
   readonly dir?: 'ltr' | 'rtl' | 'auto';
-  readonly tokens: ThemeTokens;
+  readonly tokens: PwaColors;
   readonly categories?: readonly string[];
   readonly icons?: readonly ManifestIcon[];
   readonly shortcuts?: readonly ManifestShortcut[];
@@ -127,7 +128,7 @@ export interface WebManifestResult {
   readonly capabilities: ResolvedCapabilities;
 }
 
-export function generateWebManifest(config: PwaConfig): WebManifestResult {
+export function generateWebManifest(config: WebManifestInput): WebManifestResult {
   assertValid(config);
   const capabilities = resolveCapabilities(config.capabilities);
   const scope = config.scope ?? '/';
@@ -178,7 +179,7 @@ export function generateWebManifest(config: PwaConfig): WebManifestResult {
 
 type MutableManifest = { -readonly [K in keyof WebManifest]?: WebManifest[K] };
 
-function assertValid(config: PwaConfig): void {
+function assertValid(config: WebManifestInput): void {
   if (config.name.trim() === '') {
     throw new PwaManifestInvalidError(
       'pwa.name is empty, so the install prompt would have no title',

@@ -46,6 +46,7 @@ import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
 import { flagString } from './parse';
+import { loadPwaArtifacts } from './pwa-artifacts';
 import { metricsPortFor } from './serve';
 import { loopFacts, loopFinding, loopNotice } from './statement-loop';
 
@@ -171,6 +172,11 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   };
   const panels = devPanels(dashboard).map((panel) => panel.key);
 
+  // Resolved once, before the first route: the manifest's bytes and the three head elements that
+  // name it. `undefined` for an app that is not installable, and then nothing is mounted and no
+  // document changes — the 0kb baseline is not spent on a `<link>` to a file that does not exist.
+  const pwa = await loadPwaArtifacts(options.root);
+
   const routes: readonly Route[] = [
     ...devDashboardRoutes(dashboard),
     // The same API table the container serves: a read that answers here and 404s in production
@@ -179,7 +185,11 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     // The image pipeline's only HTTP surface: the icons the web manifest declares, and the
     // variants every `srcset` promises. Mounted before the app's own routes so a page route can
     // never shadow `/icons` or `/media`.
-    ...assetRoutes({ root: options.root, storage: runtime.storage }),
+    ...assetRoutes({
+      root: options.root,
+      storage: runtime.storage,
+      ...(pwa === undefined ? {} : { pwa }),
+    }),
     ...storageRoutes({ storage: runtime.storage }),
     // The chunks the documents below name. Mounted before the app's routes for the reason
     // `/icons` and `/media` are: a page route must not be able to shadow an asset URL.
@@ -193,7 +203,11 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
       islands: () => state.islands,
       states: () => loadIslandStates(options.root),
     }),
-    ...appRoutes({ buildId, resolveIsland: (file) => state.islands.resolverFor(file) }),
+    ...appRoutes({
+      buildId,
+      resolveIsland: (file) => state.islands.resolverFor(file),
+      ...(pwa === undefined ? {} : { pwaHead: pwa.head }),
+    }),
   ];
 
   const replicaOverride = replicaOverrides(undefined, services.db, options.env);

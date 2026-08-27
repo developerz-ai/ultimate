@@ -24,6 +24,8 @@ import {
   STORAGE_READ_PERMISSION,
 } from './dev-storage';
 import { faviconRoute } from './favicon';
+import type { PwaArtifacts } from './pwa-artifacts';
+import { pwaManifestRoute } from './pwa-artifacts';
 
 /**
  * The one source image every generated icon derives from. `x new` scaffolds it, `x doctor` checks
@@ -215,6 +217,12 @@ export interface AssetRoutesOptions {
   readonly storage: Storage;
   /** Replaces `builtinImageDriver` for `/media/*`. Omitted, core's PNG/JPEG pipeline. */
   readonly images?: ImageTransformDriver;
+  /**
+   * `manifest.webmanifest`, resolved at boot by `pwa-artifacts.ts`. Absent when the app declares
+   * `pwa.enabled: false` — and then no route is mounted at all, rather than one answering an empty
+   * document: a manifest a browser can fetch is a promise the app is installable.
+   */
+  readonly pwa?: PwaArtifacts;
 }
 
 /**
@@ -260,6 +268,9 @@ export function assetRoutes(options: AssetRoutesOptions): readonly Route[] {
   // container is the dev/prod difference this package's own rule forbids. `favicon.ts` owns what
   // the answer IS — this file only says the app's asset surface is where it hangs.
   routes.push(faviconRoute(options.root));
+  // Same rule one asset further along: the icons above are the ones this manifest NAMES, so the
+  // two belong to one surface and cannot be mounted from two places without drifting apart.
+  if (options.pwa !== undefined) routes.push(pwaManifestRoute(options.pwa));
 
   return routes;
 }

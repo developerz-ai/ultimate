@@ -97,7 +97,15 @@ describe('unit · the app.config.ts x new writes', () => {
       cache: { tiers: ['request-memo', 'lru'] },
       jobs: { queues: ['ledger-demo-default'], concurrency: 4 },
       realtime: { enabled: true, transport: 'memory' },
-      pwa: { enabled: true, offline: 'runtime' },
+      pwa: {
+        enabled: true,
+        offline: 'runtime',
+        name: 'Ledger Demo',
+        colors: {
+          light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
+          dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' },
+        },
+      },
       ai: { mcp: { expose: true, path: '/mcp' } },
     }) as unknown as Record<string, unknown>;
 
@@ -113,17 +121,44 @@ describe('unit · the app.config.ts x new writes', () => {
     );
   });
 
-  test('the pwa block it does write is the half that is wired', () => {
-    expect(source()).toContain("pwa: { enabled: true, offline: 'runtime' }");
+  // Every key of it is wired now (#362): `offline` is still the one half with no build behind it,
+  // and `name`/`colors` are what `packages/cli/src/pwa-artifacts.ts` reads to emit the manifest a
+  // browser needs before it will offer to install the app.
+  test('the pwa block it does write says what an install needs', () => {
+    const emitted = source();
+    expect(emitted).toContain("offline: 'runtime',");
+    // A HUMAN title, never the slug: `app.name` is `ledger-demo` by `NAME_RE`, and that is what an
+    // install prompt would have shown a person.
+    expect(emitted).toContain("name: 'Ledger Demo',");
+    expect(emitted).toContain("light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },");
+    expect(emitted).toContain("dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' },");
   });
 
   test('the block it writes is one defineConfig accepts, and it grows no key back', () => {
     // The half that makes the deletion safe rather than merely tidy: the scaffold's literal block
     // still builds, and the RESULT carries no `installPrompt` — `section()` copies every own key of
     // the patch, so a default reinstated in core would reappear here without a scaffold change.
-    const built = defineConfig({ name: 'ledger-demo', pwa: { enabled: true, offline: 'runtime' } });
+    const built = defineConfig({
+      name: 'ledger-demo',
+      pwa: {
+        enabled: true,
+        offline: 'runtime',
+        name: 'Ledger Demo',
+        colors: {
+          light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
+          dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' },
+        },
+      },
+    });
 
     expect(built.pwa.offline).toBe('runtime');
-    expect(Object.keys(built.pwa).sort()).toEqual(['backgroundSync', 'enabled', 'offline', 'push']);
+    expect(Object.keys(built.pwa).sort()).toEqual([
+      'backgroundSync',
+      'colors',
+      'enabled',
+      'name',
+      'offline',
+      'push',
+    ]);
   });
 });

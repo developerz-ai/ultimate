@@ -67,6 +67,14 @@ export const config = defineConfig({
   jobs: { queues: ['social-media-clone-default'], concurrency: 4 },
   // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
   realtime: { enabled: true, transport: 'memory' },
-  pwa: { enabled: true, offline: 'runtime' },
+  pwa: {
+    enabled: true,
+    offline: 'runtime',
+    name: 'Social Demo',
+    colors: {
+      light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
+      dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' },
+    },
+  },
   ai: { mcp: { expose: true, path: '/mcp' } },
 });

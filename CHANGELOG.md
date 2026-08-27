@@ -8,8 +8,52 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+- **Every installable app now gets the web manifest it promised.** `x dev`, the container and
+  `x build --target static` emit `manifest.webmanifest` and the `<head>` that names it —
+  `<link rel="manifest">`, a `theme-color` meta per colour scheme, and every apple-touch icon link,
+  on every page and in every render mode. `packages/cli/src/pwa-artifacts.ts` is the reader, and it
+  is the first caller `generateWebManifest` has ever had: `pwa.enabled` was a switch nothing read
+  for the whole life of the framework, so no Ultimate app has ever been installable in any browser,
+  however its config was written (#362). The manifest's icon list is `planIcons`' own, the same call
+  `/icons/*` serves from, so it cannot name a size nothing mints. **The service worker is still not
+  wired** — `pwa.offline`, `pwa.backgroundSync`, `pwa.push` and every route's `offline:` field
+  remain declarations with no build behind them; a bad `sw.js` is sticky and nothing in the gate can
+  drive a real service worker, so that half lands behind a real browser check.
+
+### Changed
+
+- **BREAKING — `pwa.enabled: true` now requires `pwa.name` and `pwa.colors`.** `AppConfig.pwa`
+  could not express what a web manifest needs, which is why the generator had no caller: the
+  install title and the two colours per scheme are the values nothing can derive. `app.name` is a
+  slug by `NAME_RE`, so an install prompt offering `ledger-demo` is the wrong answer rather than a
+  rough one, and a browser paints the install splash and the address bar before a stylesheet has
+  loaded, so there is no token to resolve a colour against and no defensible default. `defineConfig`
+  refuses the incomplete block at boot rather than at `x build`, and the `fix:` carries the whole
+  block plus `pwa.enabled: false`. **The edit:** add `name` and `colors.light`/`colors.dark`
+  (`themeColor`, `backgroundColor`) to the `pwa` block of `app.config.ts`, or set
+  `pwa.enabled: false`. Raw hex is legal there — one of the two places in an app it is, beside
+  `theme.tokens`.
+- **BREAKING — `@ultimat3/pwa` no longer exports `PwaConfig`, `ThemeTokens` or `SchemeColors`.**
+  `PwaConfig` is `WebManifestInput`: two exported types of one name with no map between them is
+  axiom 1, and the one that lied was this one — its doc said "the `pwa` block of `app.config.ts`"
+  while `@ultimat3/core` exported the type that really is the block. `ThemeTokens` and
+  `SchemeColors` are core's `PwaColors` and `PwaSchemeColors`, which they were structurally
+  identical to, with nothing asserting they agreed. **The edit:** import `WebManifestInput` from
+  `@ultimat3/pwa`, and `PwaColors`/`PwaSchemeColors` from `@ultimat3/core`.
+
 ### Fixed
 
+- **The `@ultimat3/ui` barrel-parity test flapped red on a second module, on a loaded machine.**
+  `barrel-bytes.test.ts` allows Bun 1.4.0's non-deterministic drop of
+  `packages/core/src/schema-error-codes.ts` and asserted the difference was **exactly** that one
+  path — but the `core -> schema` edge declared in 17.0.0 means dropping it also drops
+  `packages/schema/src/errors.ts`, which nothing else in a `useUi` graph reaches. Reproduced once in
+  an eight-way `x test unit` shard, green on the same file run alone: this file's own documented
+  load correlation, wearing a new shape. The allowance is now the flap's named FOOTPRINT rather than
+  one path, so a planted extra module is still red (mutation-proved) and only the two modules that
+  move together are waved through.
 - **Six documentation pages promised a service-worker pipeline no build runs.** `x build` emits no
   `sw.js`, no `manifest.webmanifest` and no `<link rel="manifest">`, for any target, whatever
   `pwa.enabled` says: `generateServiceWorker`, `generateWebManifest`, `buildPrecacheManifest` and 25

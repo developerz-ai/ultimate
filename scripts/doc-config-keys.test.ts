@@ -3,7 +3,7 @@
 // whole job is to record that the key was deleted.
 
 import { describe, expect, test } from 'bun:test';
-import { CONFIG_FILE, configLeaves } from './config-readers';
+import { configDeclaration, configLeaves } from './config-readers';
 import {
   configCitations,
   configKeyFindingFor,
@@ -14,7 +14,7 @@ import {
 import { DOC_CONFIG_KEY_ALLOWANCES, DOC_CONFIG_PINS_FILE } from './lib/doc-config-key-pins';
 import { repoRoot } from './lib/run';
 
-const leaves = configLeaves(await Bun.file(`${repoRoot()}/${CONFIG_FILE}`).text());
+const leaves = configLeaves(await configDeclaration(repoRoot()));
 
 const cited = (markdown: string): readonly string[] =>
   configCitations('wiki/Page.md', markdown, leaves)
