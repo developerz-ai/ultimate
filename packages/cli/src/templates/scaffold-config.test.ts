@@ -99,7 +99,7 @@ describe('unit · the app.config.ts x new writes', () => {
       realtime: { enabled: true, transport: 'memory' },
       pwa: {
         enabled: true,
-        offline: 'runtime',
+        offline: { fallback: '/offline' },
         name: 'Ledger Demo',
         colors: {
           light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
@@ -121,12 +121,15 @@ describe('unit · the app.config.ts x new writes', () => {
     );
   });
 
-  // Every key of it is wired now (#362): `offline` is still the one half with no build behind it,
-  // and `name`/`colors` are what `packages/cli/src/pwa-artifacts.ts` reads to emit the manifest a
-  // browser needs before it will offer to install the app.
+  // Every key of it is wired, `As of 2026-08-27` (#362, then #390): `name`/`colors` are what
+  // `packages/cli/src/pwa-artifacts.ts` reads to emit the manifest a browser needs before it will
+  // offer to install the app, and `offline.fallback` is what `sw-artifacts.ts` reads to emit the
+  // worker that makes the installed app work without a network.
   test('the pwa block it does write says what an install needs', () => {
     const emitted = source();
-    expect(emitted).toContain("offline: 'runtime',");
+    // The path `apps/web/site/offline/page.tsx` serves — a scaffolded app whose config named a
+    // route it did not write would be refused by `defineConfig` on its first boot.
+    expect(emitted).toContain("offline: { fallback: '/offline' },");
     // A HUMAN title, never the slug: `app.name` is `ledger-demo` by `NAME_RE`, and that is what an
     // install prompt would have shown a person.
     expect(emitted).toContain("name: 'Ledger Demo',");
@@ -142,7 +145,7 @@ describe('unit · the app.config.ts x new writes', () => {
       name: 'ledger-demo',
       pwa: {
         enabled: true,
-        offline: 'runtime',
+        offline: { fallback: '/offline' },
         name: 'Ledger Demo',
         colors: {
           light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
@@ -151,7 +154,15 @@ describe('unit · the app.config.ts x new writes', () => {
       },
     });
 
-    expect(built.pwa.offline).toBe('runtime');
+    expect(built.pwa.offline).toEqual({
+      fallback: '/offline',
+      // The three the scaffold does NOT write, kept from the defaults one level down: `section`
+      // applies a patch a level at a time, and a flat merge would have left them absent at run
+      // time while the type said they were there.
+      image: null,
+      font: null,
+      neverCache: [],
+    });
     expect(Object.keys(built.pwa).sort()).toEqual([
       'backgroundSync',
       'colors',

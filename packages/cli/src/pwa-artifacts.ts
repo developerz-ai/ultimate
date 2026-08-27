@@ -22,7 +22,7 @@ import { existsSync } from 'node:fs';
 // why: Bun exposes no path-join primitive, and `APP_CONFIG_FILE` is app-root-relative — the same
 // necessity `favicon.ts` and `dev-assets.ts` each record for their own root-relative constant.
 import { join } from 'node:path';
-import type { PwaColors } from '@ultimat3/core';
+import type { PwaColors, PwaOfflineConfig } from '@ultimat3/core';
 import type { CacheHint, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
 import {
@@ -56,6 +56,15 @@ export interface PwaArtifacts {
    * no manifest is an iOS icon for an app iOS will not add.
    */
   readonly head: string;
+  /**
+   * The three `pwa` keys the SERVICE WORKER needs, carried here because this is the one module
+   * that reads an app's config file — `sw-artifacts.ts` needs the route table and the island
+   * bundle as well, and a second `await import` of `app.config.ts` would be a second answer to
+   * "what did this app declare".
+   */
+  readonly offline: PwaOfflineConfig;
+  readonly backgroundSync: boolean;
+  readonly push: boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -93,6 +102,9 @@ function colorsOf(value: unknown): PwaColors | undefined {
 interface InstallableApp {
   readonly name: string;
   readonly colors: PwaColors;
+  readonly offline: PwaOfflineConfig;
+  readonly backgroundSync: boolean;
+  readonly push: boolean;
 }
 
 async function loadInstallable(root: string): Promise<InstallableApp | undefined> {
@@ -109,8 +121,35 @@ async function loadInstallable(root: string): Promise<InstallableApp | undefined
   const name = text(pwa['name']);
   const colors = colorsOf(pwa['colors']);
   if (name === undefined || colors === undefined) return undefined;
-  return { name, colors };
+  return { name, colors, offline: offlineOf(pwa['offline']), ...flags(pwa) };
 }
+
+/**
+ * The offline block, read structurally for `colorsOf`'s reason: `defineConfig` refuses
+ * `enabled: true` without an absolute `offline.fallback`, but a HAND-WRITTEN config object never
+ * passed through it. A missing or relative fallback answers `null`, and `serviceWorkerArtifacts`
+ * then emits no worker at all — never a path the framework invented, which offline would be a
+ * cached 404 answering every navigation.
+ */
+function offlineOf(value: unknown): PwaOfflineConfig {
+  const block = isRecord(value) ? value : {};
+  const fallback = text(block['fallback']);
+  const patterns = block['neverCache'];
+  return {
+    fallback: fallback?.startsWith('/') === true ? fallback : null,
+    image: text(block['image']) ?? null,
+    font: text(block['font']) ?? null,
+    neverCache: Array.isArray(patterns)
+      ? patterns.filter((entry): entry is string => typeof entry === 'string')
+      : [],
+  };
+}
+
+/** `=== true` for `enabled`'s reason: a hand-written `backgroundSync: 'yes'` wires nothing. */
+const flags = (pwa: Record<string, unknown>): { backgroundSync: boolean; push: boolean } => ({
+  backgroundSync: pwa['backgroundSync'] === true,
+  push: pwa['push'] === true,
+});
 
 /**
  * Resolved ONCE at boot, like `loadSignInPath` and `loadCacheTiers` and unlike `faviconBytes`:
@@ -139,6 +178,9 @@ export async function loadPwaArtifacts(root: string): Promise<PwaArtifacts | und
     icons: icons?.manifestIcons ?? [],
   });
   return {
+    offline: app.offline,
+    backgroundSync: app.backgroundSync,
+    push: app.push,
     body: serializeWebManifest(result.manifest),
     head:
       `<link rel="manifest" href="${escapeAttribute(WEB_MANIFEST_PATH)}">` +

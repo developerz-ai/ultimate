@@ -1,6 +1,6 @@
 // The offline fallback's own layer: one heading, then the shared empty state does the rest.
 
-@use '../shared/tokens' as t;
+@use '../../shared/tokens' as t;
 
 .title {
   margin-block-end: t.space(8);

@@ -28,7 +28,7 @@ export const config = defineConfig({
   // `REDIS_URL` — there is no second `driver` field to agree with, and no env key to name.
   cache: { tiers: ['request-memo', 'lru', 'redis'] },
   jobs: { queues: ['postly-default'], concurrency: 8 },
-  pwa: { enabled: true, offline: 'runtime' },
+  pwa: { enabled: true, offline: { fallback: '/offline' } },
 });
 ```
 
@@ -245,12 +245,12 @@ FASTLY_API_TOKEN)`. The env **key** is reported, never its value.
 
 ## `pwa`
 
-`offline` is an `OfflineStrategy` **string**, not an object. Three booleans, one strategy — every field is optional and every default is off.
+`offline` is a **block**, not a string, `As of 2026-08` — see [Upgrading](Upgrading). Two booleans, one block; every field is optional except `pwa.name`, `pwa.colors` and `pwa.offline.fallback`, which `enabled: true` makes required.
 
 ```ts
 pwa: {
   enabled: true,
-  offline: 'runtime',
+  offline: { fallback: '/offline' },
   name: 'My App',
   colors: {
     light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
@@ -261,12 +261,16 @@ pwa: {
 
 | field | type | default | notes |
 |---|---|---|---|
-| `pwa.enabled` | `boolean` | `false` | **read, `As of 2026-08-27`** — `true` makes `x dev`, the container and `x build --target static` emit `manifest.webmanifest` and the `<head>` that names it, and requires `pwa.name` and `pwa.colors` beside it. It still generates no service worker ([#362](https://github.com/developerz-ai/ultimate/issues/362)); `pwa.offline`, `pwa.backgroundSync` and `pwa.push` are the half with no build behind them |
+| `pwa.enabled` | `boolean` | `false` | **read** — `true` makes `x dev`, the container and `x build --target static` emit `manifest.webmanifest`, `sw.js`, `x-sw-register.js` and the `<head>` that names all three, and requires `pwa.name`, `pwa.colors` and `pwa.offline.fallback` beside it. It generated no service worker until 2026-08-27 ([#390](https://github.com/developerz-ai/ultimate/issues/390)) |
 | `pwa.name` | `string` | `''` | The install title a browser shows a person. **Required when `pwa.enabled` is `true`** — `app.name` is a slug (`^[a-z][a-z0-9-]{1,63}$`), so it is the wrong answer rather than a rough one |
 | `pwa.colors` | `{ light, dark }` of `{ themeColor, backgroundColor }` | `undefined` | `theme_color` and `background_color`, per colour scheme. **Required when `pwa.enabled` is `true`**: a browser paints the install splash and the address bar from these before a stylesheet has loaded, so there is nothing to derive them from and no defensible default. One of the two places a raw colour is legal in an app, alongside `theme.tokens` |
-| `pwa.offline` | `'precache' \| 'runtime' \| 'network-only'` | `'network-only'` | **read by nothing, `As of 2026-08-27`** — the app-wide strategy a `route` may narrow, and the thing that reads it is the service worker no build emits ([#362](https://github.com/developerz-ai/ultimate/issues/362)) |
-| `pwa.backgroundSync` | `boolean` | `false` | **read by nothing, `As of 2026-08-27`** — designed to wire the SW sync event to the mutator queue, and no build emits a service worker to wire ([#362](https://github.com/developerz-ai/ultimate/issues/362)) |
-| `pwa.push` | `boolean` | `false` | **read by nothing, `As of 2026-08-27`** — designed to generate the SW handler, the subscription action and the send job; same missing build ([#362](https://github.com/developerz-ai/ultimate/issues/362)) |
+| `pwa.offline.fallback` | `string \| null` | `null` | **read** — the absolute route path of the document an offline navigation gets when the cache has no answer. **Required when `pwa.enabled` is `true`**, and it must start with `/`: a relative path resolves against whatever document registered the worker, so `offline` under `/posts/1` is `/posts/offline` — a 404 cached as the answer to every offline navigation |
+| `pwa.offline.image` | `string \| null` | `null` | **read** — placeholder served for an image request the cache cannot answer |
+| `pwa.offline.font` | `string \| null` | `null` | **read** — placeholder served for a font request the cache cannot answer |
+| `pwa.offline.neverCache` | `string[]` | `[]` | **read** — path prefixes the worker passes straight through. Auth and payments belong here: a stale 200 is worse than a failure |
+| ~~`pwa.offline` as a string~~ | — | — | **Changed in the release that closed [#390](https://github.com/developerz-ai/ultimate/issues/390).** It was `'precache' \| 'runtime' \| 'network-only'`, an app-wide default for a field `defineRoute` makes **required** on every route — so it defaulted nothing and was read by nobody. Migration: `offline: 'runtime'` → `offline: { fallback: '/offline' }`, plus a route at that path ([Upgrading](Upgrading)) |
+| `pwa.backgroundSync` | `boolean` | `false` | **read** — wires the emitted worker's `sync` event to the mutator queue |
+| `pwa.push` | `boolean` | `false` | **read, and it wires nothing yet** — `generateServiceWorker` emits a push handler only when a VAPID key comes with the capability, and there is no `pwa.vapid` key. Setting it makes `x build --json` report a `serviceWorkerWarnings` entry saying so, rather than leaving the switch quietly inert |
 | ~~`pwa.installPrompt`~~ | — | — | **Deleted in 8.0.0.** Declared, defaulted and merged, and read by nothing — `@ultimat3/pwa`'s `createInstallController` is real and complete and no code ever threaded this flag into it, so both tracked apps and every scaffolded app carried a switch with no wire. Migration: delete the key and call `createInstallController` from your own affordance ([PWA and offline](PWA-And-Offline)) |
 
 ## `http`

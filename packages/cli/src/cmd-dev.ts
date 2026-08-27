@@ -14,6 +14,7 @@ import type { OverlayNotice, RequestContext, Route } from '@ultimat3/http';
 import { asCtx } from '@ultimat3/http';
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { describeRoutes } from '@ultimat3/render';
 import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { loadApp } from './app-load';
@@ -49,6 +50,8 @@ import { flagString } from './parse';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { metricsPortFor } from './serve';
 import { loopFacts, loopFinding, loopNotice } from './statement-loop';
+import { serviceWorkerArtifacts } from './sw-artifacts';
+import { serviceWorkerRoutes } from './sw-routes';
 
 const DEFAULT_PORT = 3000;
 
@@ -176,6 +179,14 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   // name it. `undefined` for an app that is not installable, and then nothing is mounted and no
   // document changes — the 0kb baseline is not spent on a `<link>` to a file that does not exist.
   const pwa = await loadPwaArtifacts(options.root);
+  // Built once at boot, from this process's own route table and island bundle. `x dev` rebuilds
+  // islands on the watcher tick and the worker is NOT rebuilt with them, deliberately: a service
+  // worker that changes under a page it already controls is the update path, and re-emitting one
+  // per keystroke would exercise it on every save.
+  const serviceWorker =
+    pwa === undefined
+      ? undefined
+      : serviceWorkerArtifacts({ pwa, buildId, routes: describeRoutes(), islands: state.islands });
 
   const routes: readonly Route[] = [
     ...devDashboardRoutes(dashboard),
@@ -203,10 +214,11 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
       islands: () => state.islands,
       states: () => loadIslandStates(options.root),
     }),
+    ...(serviceWorker === undefined ? [] : serviceWorkerRoutes(serviceWorker)),
     ...appRoutes({
       buildId,
       resolveIsland: (file) => state.islands.resolverFor(file),
-      ...(pwa === undefined ? {} : { pwaHead: pwa.head }),
+      ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
     }),
   ];
 

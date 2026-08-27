@@ -29,6 +29,7 @@ const fakeConnection = (
       return Promise.resolve({ result: answer ?? {} });
     },
     once: () => Promise.resolve(true),
+    on: () => () => undefined,
     close: () => undefined,
   };
   return { connection, calls };
@@ -48,6 +49,10 @@ describe('cdpE2ePage', () => {
       'Page.enable',
       'Runtime.enable',
       'Network.enable',
+      // A SERVICE WORKER fetches on its own target: without this, `offline()` set the condition on
+      // the page's session alone and the worker kept answering from the network, which made every
+      // offline assertion on a PWA read as proof of something that had not happened.
+      'Target.setAutoAttach',
     ]);
     expect(calls[1]?.params['flatten']).toBe(true);
     // Every page call carries the session, or it addresses the BROWSER and silently does nothing
@@ -56,7 +61,15 @@ describe('cdpE2ePage', () => {
       'session-1',
       'session-1',
       'session-1',
+      'session-1',
     ]);
+    expect(calls[5]?.params).toEqual({
+      autoAttach: true,
+      // `false`, or every worker starts PAUSED and the page that registered it never becomes
+      // controlled — which is the whole subject of the suite that drives a real one.
+      waitForDebuggerOnStart: false,
+      flatten: true,
+    });
   });
 
   test('url() starts at the tab’s own url and follows a navigation', async () => {
@@ -88,6 +101,7 @@ describe('cdpE2ePage', () => {
       // False, because an unreachable host loads no page and fires no load event — which is the
       // only configuration in which the navigate reply is the thing that answers.
       once: () => Promise.resolve(false),
+      on: () => () => undefined,
       close: () => undefined,
     };
     const page = await cdpE2ePage({ connection, loadTimeoutMs: 100 });
@@ -120,6 +134,7 @@ describe('cdpE2ePage', () => {
         return Promise.resolve({ result: {} });
       },
       once: () => Promise.resolve(true),
+      on: () => () => undefined,
       close: () => undefined,
     };
     const page = await cdpE2ePage({ connection, loadTimeoutMs: 100 });

@@ -187,7 +187,10 @@ export const config = defineConfig({
   // else in an app.
   pwa: {
     enabled: true,
-    offline: 'runtime',
+    // The document an offline navigation gets when the cache has no answer, and the path
+    // \`apps/web/site/offline/page.tsx\` serves. Required once \`enabled\` is true: an installable
+    // app that shows the browser's error page offline is the failure the block exists to prevent.
+    offline: { fallback: '/offline' },
     name: '${titleCase(app.raw)}',
     colors: {
       light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
