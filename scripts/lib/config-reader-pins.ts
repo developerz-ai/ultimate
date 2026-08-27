@@ -51,8 +51,6 @@ export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {
 export const CONFIG_AMBIGUOUS_PINS: Readonly<Record<string, string>> = {
   'realtime.enabled':
     "SUSPECT, the same shape as `realtime.tier`: 10 files match the bare `enabled` and none is under `packages/realtime/`. `x dev` decides whether to start the sync role from the ROLE env and the CLI's own flags, never from this key — settled by a reader under `packages/realtime/src/` spelling `realtime.enabled`, or by deleting it.",
-  'pwa.enabled':
-    'SUSPECT, the same shape: 10 bare `enabled` matches, none under `packages/pwa/`. The service-worker generator runs when `x build` is asked for it — settled by a reader under `packages/pwa/src/` spelling `pwa.enabled`, or by deleting it.',
   'theme.tokens':
     "SUSPECT, the widest of the four: 24 files match the bare `tokens` — `@ultimat3/ui`'s own `tokens/` directory and every i18n token walker among them — and none is under `packages/ui/`. `@ultimat3/ui` takes tokens as props and reads no config, which is the sentence `theme.defaultMode` already carries one table up.",
 };

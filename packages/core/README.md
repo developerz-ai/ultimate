@@ -30,6 +30,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | the committed encrypted secrets envelope, AES-256-GCM | `secrets.ts` |
 | the two secrets files, and decrypted values → `defineEnv` | `secrets-store.ts` |
 | `defineConfig()` for `app.config.ts` | `config.ts` |
+| the `pwa` block — what an install needs, and the boot refusal when it is not there | `config-pwa.ts` |
 | the closed route vocabulary every renderer names | `route-vocabulary.ts` |
 | runtime roles + `ROLE` resolution | `roles.ts` |
 | `Clock` — the only source of "now" | `clock.ts` |

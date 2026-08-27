@@ -248,15 +248,25 @@ FASTLY_API_TOKEN)`. The env **key** is reported, never its value.
 `offline` is an `OfflineStrategy` **string**, not an object. Three booleans, one strategy — every field is optional and every default is off.
 
 ```ts
-pwa: { enabled: true, offline: 'runtime' },
+pwa: {
+  enabled: true,
+  offline: 'runtime',
+  name: 'My App',
+  colors: {
+    light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
+    dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' },
+  },
+},
 ```
 
 | field | type | default | notes |
 |---|---|---|---|
-| `pwa.enabled` | `boolean` | `false` | **read by nothing, `As of 2026-08-27`** — on and off produce the identical build, because no target generates a service worker at all ([#362](https://github.com/developerz-ai/ultimate/issues/362)). Pinned as suspect by `bun run scripts/config-readers.ts` |
-| `pwa.offline` | `'precache' \| 'runtime' \| 'network-only'` | `'network-only'` | the app-wide strategy; a `route` may narrow its own |
-| `pwa.backgroundSync` | `boolean` | `false` | wires the SW sync event to the mutator queue |
-| `pwa.push` | `boolean` | `false` | generates the SW handler, the subscription action and the send job |
+| `pwa.enabled` | `boolean` | `false` | **read, `As of 2026-08-27`** — `true` makes `x dev`, the container and `x build --target static` emit `manifest.webmanifest` and the `<head>` that names it, and requires `pwa.name` and `pwa.colors` beside it. It still generates no service worker ([#362](https://github.com/developerz-ai/ultimate/issues/362)); `pwa.offline`, `pwa.backgroundSync` and `pwa.push` are the half with no build behind them |
+| `pwa.name` | `string` | `''` | The install title a browser shows a person. **Required when `pwa.enabled` is `true`** — `app.name` is a slug (`^[a-z][a-z0-9-]{1,63}$`), so it is the wrong answer rather than a rough one |
+| `pwa.colors` | `{ light, dark }` of `{ themeColor, backgroundColor }` | `undefined` | `theme_color` and `background_color`, per colour scheme. **Required when `pwa.enabled` is `true`**: a browser paints the install splash and the address bar from these before a stylesheet has loaded, so there is nothing to derive them from and no defensible default. One of the two places a raw colour is legal in an app, alongside `theme.tokens` |
+| `pwa.offline` | `'precache' \| 'runtime' \| 'network-only'` | `'network-only'` | **read by nothing, `As of 2026-08-27`** — the app-wide strategy a `route` may narrow, and the thing that reads it is the service worker no build emits ([#362](https://github.com/developerz-ai/ultimate/issues/362)) |
+| `pwa.backgroundSync` | `boolean` | `false` | **read by nothing, `As of 2026-08-27`** — designed to wire the SW sync event to the mutator queue, and no build emits a service worker to wire ([#362](https://github.com/developerz-ai/ultimate/issues/362)) |
+| `pwa.push` | `boolean` | `false` | **read by nothing, `As of 2026-08-27`** — designed to generate the SW handler, the subscription action and the send job; same missing build ([#362](https://github.com/developerz-ai/ultimate/issues/362)) |
 | ~~`pwa.installPrompt`~~ | — | — | **Deleted in 8.0.0.** Declared, defaulted and merged, and read by nothing — `@ultimat3/pwa`'s `createInstallController` is real and complete and no code ever threaded this flag into it, so both tracked apps and every scaffolded app carried a switch with no wire. Migration: delete the key and call `createInstallController` from your own affordance ([PWA and offline](PWA-And-Offline)) |
 
 ## `http`

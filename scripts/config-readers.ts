@@ -45,9 +45,29 @@ import { repoRoot } from './lib/run';
 
 const SCRIPT = 'config-readers';
 
-/** The declaration, and the interface the walk starts from. One file, by design — see `AppConfig`. */
-export const CONFIG_FILE = 'packages/core/src/config.ts';
+/**
+ * The declaration, and the interface the walk starts from.
+ *
+ * A LIST, not one file, `As of 2026-08-27`. It was one path, and `config.ts` then reached its
+ * 500-line ceiling and the `pwa` block moved to `config-pwa.ts` — at which point the walk stopped
+ * finding `PwaConfig`, the derived leaf set silently LOST five keys, and this rule reported green
+ * over every one of them. That is the rule's own defect class, wearing the shape of a file split:
+ * a derivation whose source is a single hardcoded path is a hand list with extra steps. Text is
+ * concatenated before the walk, so a section declared anywhere in the list resolves.
+ *
+ * The FIRST entry is what a finding cites — the file that declares `AppConfig` itself, and the one
+ * an author edits to delete a section.
+ */
+export const CONFIG_FILES = [
+  'packages/core/src/config.ts',
+  'packages/core/src/config-pwa.ts',
+] as const;
+export const CONFIG_FILE = CONFIG_FILES[0];
 export const ROOT_INTERFACE = 'AppConfig';
+
+/** Every declaring file's text, joined — what `configLeaves` walks. */
+export const configDeclaration = async (root: string): Promise<string> =>
+  (await Promise.all(CONFIG_FILES.map((path) => Bun.file(`${root}/${path}`).text()))).join('\n');
 
 /** Shipped source of every package. The declaring file is excluded by the caller, not by a glob. */
 const SOURCE_GLOB = 'packages/*/src/**/*.{ts,tsx}';
@@ -309,12 +329,12 @@ export const configReaderFindingFor = (gap: ConfigReaderGap): Finding => FINDING
 
 /** The tree's own answer: the declaration parsed, every shipped file but the declaration read. */
 export async function configReaderInput(root: string): Promise<ConfigReaderInput> {
-  const declaration = await Bun.file(`${root}/${CONFIG_FILE}`).text();
+  const declaration = await configDeclaration(root);
   const files: ConfigSource[] = [];
   for (const found of new Bun.Glob(SOURCE_GLOB).scanSync({ cwd: root })) {
     const path = found.split('\\').join('/');
     // A test reading a key is not the key being wired — `config.test.ts` reads all thirty.
-    if (path.includes('.test.') || path === CONFIG_FILE) continue;
+    if (path.includes('.test.') || CONFIG_FILES.some((one) => one === path)) continue;
     files.push({ path, text: await Bun.file(`${root}/${path}`).text() });
   }
   return {

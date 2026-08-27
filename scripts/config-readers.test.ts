@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import {
   AMBIGUOUS_LIMIT,
   checkConfigReaders,
+  configDeclaration,
   configLeaves,
   configReaderFindingFor,
   configReaderGaps,
@@ -54,12 +55,38 @@ describe('unit · every AppConfig leaf key is derived, never listed', () => {
   test('and the real declaration yields twenty-seven, ai.mcp.path among them', () => {
     expect(input.leaves).toContain('ai.mcp.path');
     expect(input.leaves).toContain('jobs.visibilityTimeoutMs');
+    // A key of the section declared in the OTHER file of `CONFIG_FILES`, so a walk that reads only
+    // the first one is red here rather than five keys shorter in silence. `pwa.colors` stays ONE
+    // leaf: its type is `PwaColors | undefined`, which is not a bare named type, and the walk
+    // descends only into those — the same reason every `notify` window is a leaf.
+    expect(input.leaves).toContain('pwa.name');
+    expect(input.leaves).toContain('pwa.colors');
     // A vacuity FLOOR, not the surface: it says the scan reached the real `config.ts` rather than
     // an empty parse. Thirty until `cache.driver` and `cache.urlEnv` were deleted, twenty-eight
     // until `realtime.tier` went the same way — a key this rule reported as having no reader at
     // all once `ambiguityOf` could see past nineteen bare-name collisions. It moves DOWN with a
     // deleted key and never with an added one.
     expect(input.leaves.length).toBeGreaterThanOrEqual(27);
+  });
+
+  // THE FILE SPLIT IS THE HOLE THIS CLOSES. `configLeaves` treats a member whose named type it
+  // cannot find as a LEAF — so when `PwaConfig` moved to `config-pwa.ts` and `CONFIG_FILES` was
+  // still one path, `pwa` became one leaf where six had been, the five that vanished stopped being
+  // asked about, and this rule printed `✓`. A derivation that silently shrinks is the defect the
+  // whole check exists to catch, one level up, so the next split has to be red rather than quiet.
+  test('every section AppConfig names resolves in the declaration the walk reads', async () => {
+    const declaration = await configDeclaration(repoRoot());
+    const root = /export interface AppConfig\s*\{([\s\S]*?)\n\}/.exec(declaration);
+    expect(root).not.toBeNull();
+    const sections = [...(root?.[1] ?? '').matchAll(/readonly\s+(\w+)\s*:\s*(\w*Config)\s*;/g)];
+    // The scan is worthless if it found nothing. A FLOOR: it moves down with a deleted section.
+    expect(sections.length).toBeGreaterThanOrEqual(9);
+    const unresolved = sections
+      .filter(([, , type]) => !declaration.includes(`export interface ${String(type)} {`))
+      .map(([, key, type]) => `${String(key)}: ${String(type)}`);
+    expect(`sections CONFIG_FILES does not declare: ${unresolved.join(', ')}`).toBe(
+      'sections CONFIG_FILES does not declare: ',
+    );
   });
 
   test('a declaration this cannot parse is UNSCANNED, never a wired config', () => {

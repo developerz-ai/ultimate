@@ -89,7 +89,7 @@ capability nothing implements.
 | `strategyFor`, `MODE_STRATEGY`, `cacheFirst`, … | the four strategies + the mapping table |
 | `buildPrecacheManifest` | precache entries (url + content-hash revision), size warnings |
 | `buildId`, `detectSkew`, `retentionPlan` | version skew |
-| `generateWebManifest` | the manifest + `theme-color` metas for both schemes |
+| `generateWebManifest` | the manifest + `theme-color` metas for both schemes, from a `WebManifestInput`. Called by `@ultimat3/cli` (`pwa-artifacts.ts`) `As of 2026-08-27`, so `x dev`, the container and the static export all emit `manifest.webmanifest` |
 | `planIcons`, `requireSourceIcon`, `maskableSafeZone` | icons and splashes from one source |
 | `BuiltinImagePipeline` | renders that plan: one square PNG per entry, deterministic |
 | `requireOfflineFallback` | the mandatory offline route |
@@ -103,7 +103,16 @@ capability nothing implements.
 - **Theme colours come from the design tokens for both schemes.** The manifest spec carries
   one `theme_color`, so the dark value is emitted as a media-scoped
   `<meta name="theme-color">` — otherwise an installed dark app launches with a light status
-  bar every time.
+  bar every time. The shape is `@ultimat3/core`'s `PwaColors`, which is what an app writes in
+  `app.config.ts` as `pwa.colors`; this package declared its own identical `ThemeTokens` until
+  2026-08-27, with nothing asserting the two agreed.
+- **`WebManifestInput` is not the `pwa` block of `app.config.ts`.** It was called `PwaConfig` and
+  said it was, while `@ultimat3/core` exported a different type of that name that really is the
+  block. An app writes `name` and `colors`; every other member is a caller's.
+- **The service worker still has no build behind it, `As of 2026-08-27`.** `generateServiceWorker`,
+  `buildPrecacheManifest`, `offlineFallbackSource`, `backgroundSyncSource` and `pushSource` have no
+  caller outside this package ([#362](https://github.com/developerz-ai/ultimate/issues/362)) — the
+  manifest half is wired, the worker half is not.
 - **Precache revisions are content hashes, never the build id.** Keying on the build id
   re-downloads every asset on every deploy.
 - **The mutation queue lives in `@ultimat3/realtime`, not here** (SRP). This package owns

@@ -45,6 +45,17 @@ export type IslandResolver = (routeFile: string) => (src: string) => string;
 
 export interface DocumentOptions {
   readonly resolveIsland?: IslandResolver;
+  /**
+   * `<link rel="manifest">`, both `theme-color` metas and the apple-touch links — `PwaArtifacts.head`
+   * from `pwa-artifacts.ts`, or absent when the app is not installable.
+   *
+   * A document-level string rather than something a route's `meta()` returns: it is the same three
+   * elements on every page of the app, an installable app is one whose EVERY page carries them
+   * (a browser offers the install on whichever page the visitor landed on), and `headFromMeta`
+   * projects per-route SEO. Passed through `DocumentOptions` for `resolveIsland`'s reason — the
+   * boot knows it, the renderer cannot ask.
+   */
+  readonly pwaHead?: string;
 }
 
 export interface DevRenderOptions extends DocumentOptions {
@@ -68,13 +79,18 @@ export interface DevRouteData extends Record<string, unknown> {
  */
 const lang = (): string => currentLocale();
 
-const headFor = async (entry: RouteEntry, ctx: DevRouteData, data: RouteData): Promise<string> =>
+const headFor = async (
+  entry: RouteEntry,
+  ctx: DevRouteData,
+  data: RouteData,
+  options: DocumentOptions,
+): Promise<string> =>
   renderHead(
     headFromMeta(
       await entry.config.meta(metaContextFor(ctx, data)),
       seoRenderers({ path: new URL(ctx.url).pathname }),
     ),
-  );
+  ) + (options.pwaHead ?? '');
 
 /** `<style>` for the surface's own stylesheets, or nothing at all when the surface imports none. */
 const styleTag = (entry: RouteEntry): string => {
@@ -155,7 +171,7 @@ async function documentFrom(
 ): Promise<string> {
   const islands = collectorFor(entry, options);
   const [head, body] = await Promise.all([
-    headFor(entry, ctx, data),
+    headFor(entry, ctx, data, options),
     routeBody(entry, ctx, data, islands),
   ]);
   return (
@@ -203,7 +219,7 @@ async function resultFor(
       // correct output, no streaming benefit.
       const islands = collectorFor(entry, options);
       const [head, shell] = await Promise.all([
-        headFor(entry, request, data),
+        headFor(entry, request, data, options),
         routeBody(entry, request, data, islands),
       ]);
       return streamResult(

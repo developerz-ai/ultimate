@@ -57,8 +57,29 @@ import { join, relative, resolve } from 'node:path';
 const TMP_ROOT = join(import.meta.dir, '..', '.tmp');
 const FIXTURE_DIR = join(TMP_ROOT, `barrel-bytes-${process.pid}`);
 
-/** The one module Bun 1.4.0's tree-shaker answers differently from one build to the next. */
+/** The module Bun 1.4.0's tree-shaker answers differently from one build to the next. */
 const SHAKEN_MODULE = resolve(import.meta.dir, '..', '..', 'core', 'src', 'schema-error-codes.ts');
+
+/**
+ * The flap's whole FOOTPRINT: the module above, and what only that module reaches.
+ *
+ * A LIST, `As of 2026-08-27`, and it was one path. `schema-error-codes.ts` imports
+ * `SCHEMA_ERROR_CODES` from `@ultimat3/schema` — the `core -> schema` edge declared 2026-08-26 —
+ * so dropping it also drops `packages/schema/src/errors.ts`, which nothing else in a `useUi` graph
+ * reaches. The difference is then TWO modules, and an assertion spelled `toEqual([SHAKEN_MODULE])`
+ * failed on a flap it was written to allow: reproduced once in an eight-way `x test unit` shard,
+ * green on the same file run alone and green on the rerun, which is this test's own documented
+ * load correlation wearing a new shape.
+ *
+ * A LIST rather than a widened byte allowance, for the reason the header already gives: what may
+ * differ is a NAMED set of modules, so a genuine retention regression is still one unexpected path
+ * away from red. Adding an entry here is a claim that the module is reachable ONLY through the
+ * shaken one, and the test below proves each entry is a real file rather than a stale path.
+ */
+const SHAKEN_FOOTPRINT: readonly string[] = [
+  SHAKEN_MODULE,
+  resolve(import.meta.dir, '..', '..', 'schema', 'src', 'errors.ts'),
+];
 const CORE_MANIFEST = resolve(import.meta.dir, '..', '..', 'core', 'package.json');
 
 async function bundle(name: string, source: string, minify: boolean): Promise<string> {
@@ -164,6 +185,10 @@ describe('the @ultimat3/ui barrel', () => {
     expect(await Bun.file(SHAKEN_MODULE).exists()).toBe(true);
     const manifest = (await Bun.file(CORE_MANIFEST).json()) as { sideEffects?: readonly string[] };
     expect(manifest.sideEffects ?? []).toContain('./src/schema-error-codes.ts');
+    // Every entry of the footprint too: a stale path there widens the allowance to nothing real
+    // while reading as a rule still in force, which is the `sideEffects` lesson in this file's own
+    // header applied to this file.
+    for (const path of SHAKEN_FOOTPRINT) expect(await Bun.file(path).exists()).toBe(true);
   });
 
   /**
@@ -192,7 +217,13 @@ describe('the @ultimat3/ui barrel', () => {
       expect(barrel.modules).toContain(own);
       expect(deep.modules).toContain(own);
 
-      if (barrel.modules.includes(SHAKEN_MODULE) === deep.modules.includes(SHAKEN_MODULE)) {
+      // The difference decides the branch, not the shaken module's presence: dropping it also drops
+      // what only it reaches, so the two sides can agree about `SHAKEN_MODULE` and still differ.
+      const difference = [
+        ...barrel.modules.filter((path) => !deep.modules.includes(path)),
+        ...deep.modules.filter((path) => !barrel.modules.includes(path)),
+      ];
+      if (difference.length === 0) {
         // The shaker answered the same way for both, so the two paths owe the same modules AND the
         // same bytes — no allowance, because there is nothing left for one to differ by. The list
         // is asserted first so a retention failure names its module instead of printing 25 kB.
@@ -201,15 +232,14 @@ describe('the @ultimat3/ui barrel', () => {
         expect(barrel.code).toBe(deep.code);
         return;
       }
-      // It answered differently, and then the flap is the WHOLE difference. A second module riding
-      // along is the retention regression this file exists to catch, and it fails here rather than
-      // hiding under a byte budget. A mismatched pair has no byte statement to make, which is why
-      // the equality branch above is what holds a second difference riding along.
-      const difference = [
-        ...barrel.modules.filter((path) => !deep.modules.includes(path)),
-        ...deep.modules.filter((path) => !barrel.modules.includes(path)),
-      ];
-      expect(difference).toEqual([SHAKEN_MODULE]);
+      // It answered differently, and then the flap's own footprint is the WHOLE difference. Any
+      // other module riding along is the retention regression this file exists to catch, and it
+      // fails here rather than hiding under a byte budget. A mismatched pair has no byte statement
+      // to make, which is why the equality branch above is what holds a second difference.
+      const unexpected = difference.filter((path) => !SHAKEN_FOOTPRINT.includes(path));
+      expect(`modules outside the known shaker flap: ${unexpected.join(', ')}`).toBe(
+        'modules outside the known shaker flap: ',
+      );
     },
     30_000,
   );

@@ -10,8 +10,8 @@ import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/stor
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { checkMigrationSnapshots } from './db-snapshot';
-import { ICON_SOURCE } from './dev-assets';
 import { intFlagOr, neighbouringPort, PORT_RANGE } from './flag-number';
+import { ICON_SOURCE } from './icon-assets';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import type { ParsedArgs } from './parse';

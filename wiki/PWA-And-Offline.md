@@ -1,25 +1,31 @@
 # PWA and offline
 
-> ## ⚠️ NOT WIRED — no build produces a service worker, `As of 2026-08-27`
+> ## ⚠️ HALF WIRED — the manifest ships, the service worker does not, `As of 2026-08-27`
 >
-> **`x build` emits no `sw.js`, no `manifest.webmanifest` and no `<link rel="manifest">`, for any
-> target, whatever `pwa.enabled` says.** `generateServiceWorker`, `generateWebManifest`,
-> `buildPrecacheManifest` and 25 other exports of `@ultimat3/pwa` have **zero callers** outside the
-> package itself — measured across `packages/`, `examples/`, `dummy/`, `scripts/` and `docker/`
-> ([#362](https://github.com/developerz-ai/ultimate/issues/362)).
+> **`x dev`, the container and `x build --target static` all emit `manifest.webmanifest` and the
+> `<head>` that names it**, `As of 2026-08-27` — `<link rel="manifest">`, a `theme-color` meta per
+> colour scheme, and every apple-touch icon link, on every page of the app. The reader is
+> [`packages/cli/src/pwa-artifacts.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/pwa-artifacts.ts),
+> and it is what `pwa.enabled` finally turns on. `planIcons` and `BuiltinImagePipeline` were already
+> wired through `dev-assets.ts`, and the manifest names the icons that route serves — one plan, so
+> it cannot promise a size nothing mints.
 >
-> Two exports ARE wired: `planIcons` and `BuiltinImagePipeline`, through
-> `packages/cli/src/dev-assets.ts`. `X_PWA_ICON_MISSING` and `X_PWA_NO_OFFLINE_FALLBACK` are raised
-> by `x doctor` as **diagnostics** — prerequisites for a pipeline that is not called.
+> **No build produces a `sw.js`.** `generateServiceWorker`, `buildPrecacheManifest`,
+> `offlineFallbackSource`, `backgroundSyncSource` and `pushSource` have **zero callers** outside
+> `@ultimat3/pwa` itself — measured across `packages/`, `examples/`, `dummy/`, `scripts/` and
+> `docker/` ([#362](https://github.com/developerz-ai/ultimate/issues/362)). So `pwa.offline`,
+> `pwa.backgroundSync` and `pwa.push` are still declarations with no build behind them, and so is
+> every route's own `offline:` field. `X_PWA_NO_OFFLINE_FALLBACK` is raised by `x doctor` as a
+> **diagnostic** — a prerequisite for a pipeline that is not called.
 >
-> So read the rest of this page as the **library's** behaviour, which is real, tested and stable —
-> and not as something `x build` does for you. Every table below describes what the generator
-> answers when you call it. Nothing calls it. The blocker is stated in #362: `AppConfig.pwa` cannot
-> express the manifest's `name`, its theme colours, or the offline fallback ROUTE, and two of the
-> three have no source anywhere in the framework yet.
+> **Installability is what the two halves buy separately.** A browser needs the manifest, a name,
+> icons and a scheme-correct theme colour before it will offer to install; it needs a service worker
+> before the installed app works offline. The first is done; the second is not.
 >
-> `pwa.enabled` is one of the config keys `bun run scripts/config-readers.ts` pins as **suspect**
-> for exactly this reason.
+> So read every section below marked against the worker as the **library's** behaviour — real,
+> tested and stable — and not as something `x build` does for you. The worker lands behind a real
+> browser check rather than beside the manifest, deliberately: a bad `sw.js` is **sticky**, and
+> nothing in this repo's gate can drive a real service worker (`X_E2E_SERVICE_WORKER_ABSENT`).
 
 `sw.js` is designed as a build artifact, generated from the route table. Hand-editing one is **not** caught: `As of 2026-08` `sw.js` carries no checksum, so an edit would survive a build. `X_SW_HAND_EDITED` is a **reserved** name — nothing raises it, and `x errors explain X_SW_HAND_EDITED` refuses it ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)).
 
@@ -83,7 +89,7 @@ Mutations are never cached. **Offline writes go through the tier-3 mutator queue
 
 ### Manifest, icons, splash
 
-From `app.config.ts` plus **one** source icon (SVG or >=1024px PNG). **`generateWebManifest` is not called by any build** — this is what it answers when you call it, and `assertValid` refuses a blank `name` or blank theme colours, neither of which `AppConfig.pwa` can supply yet (#362):
+From `app.config.ts` plus **one** source icon (SVG or >=1024px PNG). **Emitted at `/manifest.webmanifest` by `x dev`, by the container and into the static export**, `As of 2026-08-27` — `packages/cli/src/pwa-artifacts.ts` composes `pwa.name` and `pwa.colors` with `planIcons`' own list, so the manifest names exactly the icons `/icons/*` serves. `defineConfig` refuses `pwa.enabled: true` without a name and both schemes' colours, so `assertValid`'s two refusals now arrive at boot rather than at build:
 
 | Generated | Detail |
 |---|---|

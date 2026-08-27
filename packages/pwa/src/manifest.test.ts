@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { PwaManifestInvalidError } from './errors';
-import type { PwaConfig } from './manifest';
+import type { WebManifestInput } from './manifest';
 import { generateWebManifest, renderThemeColorMeta, serializeWebManifest } from './manifest';
 
 // Resolved token values, not literals chosen here: colours come from the design tokens.
@@ -9,7 +9,7 @@ const tokens = {
   dark: { themeColor: 'oklch(21% 0.01 260)', backgroundColor: 'oklch(17% 0.01 260)' },
 };
 
-const base: PwaConfig = {
+const base: WebManifestInput = {
   name: 'Ultimate Demo',
   shortName: 'Demo',
   tokens,

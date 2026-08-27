@@ -44,6 +44,7 @@ import { islandRoutes } from './island-routes';
 import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
 import { readMigrations } from './migrations';
 import { startOtlpExport } from './otlp-export';
+import { loadPwaArtifacts } from './pwa-artifacts';
 import type { RuntimeOverrides } from './runtime-overrides';
 
 export const DEFAULT_PORT = 3000;
@@ -298,18 +299,24 @@ async function bootRoles(boot: {
   // does from the same source — the alternative is a second bundler invocation in the image build
   // whose output nothing compares against the one the dev loop proved.
   const islands = await buildIslands(options.root);
+  // The same two strings `x dev` resolves, from the same reader: a `<link rel="manifest">` served
+  // on a laptop and absent in the image is exactly the dev/prod difference this file exists to
+  // prevent, and it is the one an operator cannot see without installing the app.
+  const pwa = await loadPwaArtifacts(options.root);
   const routes: readonly Route[] = [
     ...apiRoutes(),
     ...assetRoutes({
       root: options.root,
       storage: runtime.storage,
       ...(options.runtime?.images === undefined ? {} : { images: options.runtime.images }),
+      ...(pwa === undefined ? {} : { pwa }),
     }),
     ...storageRoutes({ storage: runtime.storage }),
     ...islandRoutes(() => islands),
     ...appRoutes({
       buildId,
       resolveIsland: (file) => islands.resolverFor(file),
+      ...(pwa === undefined ? {} : { pwaHead: pwa.head }),
       // Only when a store was supplied. `createIsrController` defaults to a per-process memory
       // store, so twelve replicas hold twelve of them and a purge tag regenerates one twelfth of
       // the fleet while the other eleven keep serving the page it just invalidated.
