@@ -7,6 +7,7 @@
 
 import type { CaptureClip } from './capture-clip';
 import type { ScrapeClock } from './clock';
+import type { ColorScheme } from './color-scheme';
 import {
   browserUnreachable,
   downloadTimeout,
@@ -38,15 +39,27 @@ import type {
 const FAKE_PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /**
- * A clipped capture answers DIFFERENT deterministic bytes, one picture per rectangle. CI has no
- * Chrome, so the offline drivers are the only place a crop can be proved at all: a fake that
- * answered the same eight bytes whatever the rectangle would let a driver that silently drops the
- * clip pass every test there is. Unclipped bytes are unchanged, byte for byte.
+ * A capture answers DIFFERENT deterministic bytes for every framing fact that was set — one
+ * picture per rectangle, one per colour preference. CI has no Chrome, so the offline drivers are
+ * the only place a framing knob can be proved at all: a fake that answered the same eight bytes
+ * whatever the rectangle would let a driver that silently drops the clip pass every test there is.
+ *
+ * The colour scheme joined that rule on 2026-08-26, and it is the same defect one axis over. `x
+ * shot --island` photographed every state twice and delivered the second picture as a byte-for-
+ * byte COPY of the first (issue #338), and no test could see it because this fake answered one
+ * constant for both themes.
+ *
+ * Bytes with NO framing fact set are unchanged, and clip-only bytes are unchanged too — the notes
+ * append in a fixed order, so every digest asserted before this existed still holds.
  */
-const clippedPng = (clip: CaptureClip): Uint8Array => {
-  const suffix = new TextEncoder().encode(
-    ` clip ${String(clip.x)},${String(clip.y)},${String(clip.width)},${String(clip.height)}`,
-  );
+const framedPng = (clip: CaptureClip | undefined, scheme: ColorScheme | null): Uint8Array => {
+  const notes =
+    (clip === undefined
+      ? ''
+      : ` clip ${String(clip.x)},${String(clip.y)},${String(clip.width)},${String(clip.height)}`) +
+    (scheme === null ? '' : ` scheme ${scheme}`);
+  if (notes === '') return FAKE_PNG;
+  const suffix = new TextEncoder().encode(notes);
   const out = new Uint8Array(FAKE_PNG.length + suffix.length);
   out.set(FAKE_PNG);
   out.set(suffix, FAKE_PNG.length);
@@ -127,6 +140,9 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
   const frameOverlays = new Map<string, Map<string, string>>();
   let page: PageRecording = init.start ?? EMPTY;
   let armed: string | undefined;
+  // `null` and not `'no-preference'`: nothing set one, which is the launcher's own default and not
+  // a value this driver invents — and it is what keeps an unframed picture's bytes unchanged.
+  let colorScheme: ColorScheme | null = null;
   let closed = false;
   let session: SessionSnapshot = init.session ?? {
     ...EMPTY_SESSION,
@@ -333,8 +349,34 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
         'run this assertion on localBrowser()/remoteBrowser(), whose setOfflineMode() reaches a real browser — an offline driver has no network to cut, so it cannot prove an offline behaviour',
       );
     },
+    /**
+     * ACCEPTED and recorded, where `setOfflineMode` refuses — and the line between them is which
+     * side of a capture the verb is on, not whether this driver has a browser.
+     *
+     * `setOfflineMode` is refused because an offline ASSERTION is reachable here: this driver
+     * answers content, so `expect(page).toShow('queued')` would go green against an app that was
+     * online the whole time. A colour preference has no such assertion to pass. Nothing here
+     * evaluates CSS, and the only thing a preference could be wrong ABOUT is a picture — which on
+     * this driver is `FAKE_PNG`, a constant that claims nothing about a theme, exactly as `pdf()`
+     * answers `FAKE_PDF` rather than refusing.
+     *
+     * Refusing would cost the capability its unit test. `x shot --island` is proved end to end on
+     * a machine with no Chrome by driving this driver, so a refusal here makes the command
+     * untestable offline — and the picture it would be protecting does not exist.
+     *
+     * Observable through the PICTURE, which is the only place it could ever be wrong: `framedPng`
+     * answers different deterministic bytes per scheme, exactly as it already does per clip, so a
+     * driver that silently dropped the preference fails a test rather than passing every one.
+     */
+    setColorScheme(scheme: ColorScheme): Promise<void> {
+      // `'no-preference'` is a CLEAR on the real driver, so it is a clear here — and the picture
+      // goes back to the unframed bytes, which is the same fact stated in the one place a fake can
+      // state it.
+      colorScheme = scheme === 'no-preference' ? null : scheme;
+      return Promise.resolve();
+    },
     screenshot: (options: CaptureOptions): Promise<Uint8Array> =>
-      Promise.resolve(options.clip === undefined ? FAKE_PNG : clippedPng(options.clip)),
+      Promise.resolve(framedPng(options.clip, colorScheme)),
     pdf: (_options: CaptureOptions): Promise<Uint8Array> => Promise.resolve(FAKE_PDF),
     cookies: (): Promise<readonly ScrapeCookie[]> => Promise.resolve(session.cookies),
     session: (): Promise<SessionSnapshot> => Promise.resolve(session),

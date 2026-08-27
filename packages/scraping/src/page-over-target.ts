@@ -10,6 +10,7 @@ import { awaitActionable } from './actionability';
 import { assertCaptureFraming } from './capture-clip';
 import type { ScrapeClock } from './clock';
 import { deadline } from './clock';
+import type { ColorScheme } from './color-scheme';
 import { hostBlocked, secretExposed, selectorMissing } from './error-throws';
 import { hostDecision } from './hosts';
 import type {
@@ -242,6 +243,11 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
     // a driver that throws synchronously from a promise-typed method would escape `.catch()`.
     async offline(enabled: boolean): Promise<void> {
       await target.setOfflineMode(enabled);
+    },
+    // `async`, for `offline()`'s reason: a driver that throws synchronously from a promise-typed
+    // method would escape the caller's `.catch()`.
+    async colorScheme(scheme: ColorScheme): Promise<void> {
+      await target.setColorScheme(scheme);
     },
     cookies: (): Promise<readonly ScrapeCookie[]> => target.cookies(),
     session: () => target.session(),

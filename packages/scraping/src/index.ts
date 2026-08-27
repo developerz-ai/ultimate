@@ -34,6 +34,8 @@ export type { CdpTargetInit } from './cdp-target';
 export { CDP_DRIVER, cdpTarget } from './cdp-target';
 export type { Deadline, ScrapeClock, TestScrapeClock } from './clock';
 export { deadline, systemScrapeClock, testClock, throwIfAborted } from './clock';
+export type { ColorScheme } from './color-scheme';
+export { COLOR_SCHEME_FEATURE, COLOR_SCHEMES, isColorScheme } from './color-scheme';
 export {
   cookieDomainMatches,
   cookieHeaderFor,

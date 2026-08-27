@@ -70,6 +70,22 @@ export interface CdpPageLike {
    */
   setOfflineMode?(enabled: boolean): Promise<void>;
   /**
+   * The browser's own media features — `Emulation.setEmulatedMedia` under CDP. `prefers-color-scheme`
+   * is the one this package sets; the array shape is the library's and is restated, not narrowed,
+   * because this file is the shape of somebody ELSE's object.
+   *
+   * OPTIONAL, read defensively, for `setOfflineMode`'s reason: a provider SDK or a launcher that
+   * predates the method must still satisfy the port. It does not go unwired by being optional —
+   * `cdp-target.ts` refuses BY NAME with `X_NOT_IMPLEMENTED` and a fix when a launcher lacks it.
+   *
+   * `name` stays a bare `string`. A union of the features this package sets would be this file
+   * naming somebody else's vocabulary, and a launcher accepting more would then fail to satisfy
+   * the port for no reason — the argument `on(event: string, …)` already makes.
+   */
+  emulateMediaFeatures?(
+    features: readonly { readonly name: string; readonly value: string }[],
+  ): Promise<void>;
+  /**
    * `event` stays a bare `string` — a union of the four names this package subscribes to would be
    * this file naming somebody else's event vocabulary, which is the thing it exists not to do, and
    * a launcher whose emitter is wider would then fail to satisfy the port for no reason.

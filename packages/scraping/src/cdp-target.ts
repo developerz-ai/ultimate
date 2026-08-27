@@ -8,6 +8,7 @@ import { browserRecord } from './browser-record';
 import type { CdpBrowserLike, CdpFrameLike, CdpPageLike, CdpRequestLike } from './cdp-port';
 import { clearExpression, parseSnapshots, snapshotExpression } from './cdp-snapshot';
 import type { ScrapeClock } from './clock';
+import { type ColorScheme, colorSchemeFeatures } from './color-scheme';
 import { browserUnreachable, pageCrashed, scrapeNotImplemented } from './error-throws';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict, refusalEntry } from './intercept';
@@ -360,6 +361,23 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
           );
         }
         await source.setOfflineMode(enabled);
+      }),
+    setColorScheme: (scheme: ColorScheme): Promise<void> =>
+      guard('setColorScheme', async () => {
+        // `CdpPageLike` already declares the member optional, so it is READ, never re-declared in
+        // a local cast: a second copy of somebody else's shape is a copy that can drift from the
+        // seam it is standing in for (axiom 2). `setOfflineMode` above still casts and is the
+        // older spelling.
+        const emulate = init.page.emulateMediaFeatures;
+        if (typeof emulate !== 'function') {
+          throw scrapeNotImplemented(
+            'setColorScheme() on a CDP page with no emulateMediaFeatures() method',
+            'upgrade the launcher to a puppeteer-core that exposes page.emulateMediaFeatures(), or have the page under test set its own theme',
+          );
+        }
+        // `.call`, because the member is read off the object: an unbound method loses `this` and
+        // puppeteer's own `Page` needs it.
+        await emulate.call(init.page, colorSchemeFeatures(scheme));
       }),
     screenshot: (options: CaptureOptions) =>
       guard('screenshot', async () => {

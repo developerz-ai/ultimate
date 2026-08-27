@@ -8,7 +8,38 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`page.colorScheme(scheme)` on `@ultimat3/scraping`** — what the browser reports as the user's
+  OS colour preference, emulated through CDP's `prefers-color-scheme`. `ColorScheme` is
+  `'light' | 'dark' | 'no-preference'`, CSS's own closed set; `no-preference` is the way back to
+  the launcher's default.
+
+### Fixed
+
+- **`x shot --island` produced two pictures per state and delivered one.** `<state>-light.png` and
+  `<state>-dark.png` came back **byte-identical**, same md5, on `examples/dummy` (#338). The
+  harness set `data-theme` on the document — the OUTCOME of a theme decision — and a component
+  that resolves `'system'` itself deletes or overwrites the attribute on mount, so both pictures
+  fell through to `:root` and converged. Everything upstream was correct: two addresses, two
+  documents, the CSS present, the dark token block present, and Chrome rendering the two URLs
+  differently *pre-hydration*. `x shot` now emulates the INPUT before navigating, and keeps the
+  attribute for components that read a theme they do not own.
+- **The picture is the component, not the viewport it sits in.** `island-shot.ts` passed no clip
+  rectangle, so every capture was the state's whole viewport — measured 720x560 for a component
+  whose own box the verdict reported as 688x104. The clip is the readiness probe's box translated
+  out of viewport coordinates into the page coordinates a capture is in.
+- **The verdict's `blind` list claimed a limitation the tool did not have.** It read "the browser
+  port takes no clip rectangle", which stopped being true when `CaptureClip` landed. A blind spot
+  naming a capability is the same lie as one hiding a gap.
+
+### Changed
+
+- **BREAKING — `ScrapeTarget` gains `setColorScheme` and `ScrapePage` gains `colorScheme`.** Both
+  are REQUIRED, for `setOfflineMode`'s reason: the asymmetry against the optional
+  `CdpPageLike.emulateMediaFeatures` is what makes a driver author get a type error rather than a
+  silent no-op. A third party implementing either port adds one method; every driver the framework
+  ships already has it. Apps calling `page.*` are unaffected.
 
 ## 17.0.0 - 2026-08-26
 

@@ -6,7 +6,7 @@
 // why: no Bun native joins a path; `Bun.write` and `Bun.file` both take one already joined.
 import { join } from 'node:path';
 import { finiteCount } from '@ultimat3/core';
-import type { ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
+import type { CaptureClip, ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
 import { systemScrapeClock } from '@ultimat3/scraping';
 import type { IslandShotTarget, IslandStatesManifest, IslandViewport } from '@ultimat3/testing';
 import { islandShotTargets, islandStatesFile } from '@ultimat3/testing';
@@ -139,6 +139,21 @@ export function photographFault(
   return undefined;
 }
 
+/**
+ * The capture rectangle for a readiness answer, in PAGE coordinates.
+ *
+ * `seen` is non-null and its box has area by the time this is reached — `photographFault` refuses
+ * both above, and it refuses them BEFORE the shutter for exactly this reason: a zero-area clip is
+ * `X_SCRAPE_CAPTURE_CLIP_EMPTY` from the port, which is a worse report of the same fault than
+ * "rendered nothing". The `?? 0` pair is the parser's floor and not a second opinion.
+ */
+const clipFor = (seen: IslandReadiness | null): CaptureClip => ({
+  x: (seen?.box.x ?? 0) + (seen?.scroll.x ?? 0),
+  y: (seen?.box.y ?? 0) + (seen?.scroll.y ?? 0),
+  width: seen?.box.width ?? 0,
+  height: seen?.box.height ?? 0,
+});
+
 const hostFix = (target: IslandShotTarget): string =>
   `in ${islandStatesFile(target.island)} set island to a path that exports mount(el, props)`;
 
@@ -171,6 +186,17 @@ async function captureOne(
       timeoutMs: options.timeoutMs,
     });
     const page = session.page;
+    // BEFORE the navigation, so the first paint already has it: `prefers-color-scheme` is a live
+    // media query, and the theme a component resolves on mount is the one it will keep.
+    //
+    // This is the INPUT and the harness's `data-theme` attribute is the OUTCOME, and both are set
+    // deliberately. The attribute is right for a component that READS a theme it does not own; the
+    // preference is the only thing that reaches one that RESOLVES its own. `examples/dummy`'s
+    // settings island is the second kind — its state's `theme` prop is `'system'`, so on mount it
+    // DELETES the attribute the harness set, both pictures fall through to `:root`, and the two
+    // came back byte-identical with the same md5 (issue #338). Re-setting the attribute after
+    // readiness is not the repair: it photographs a state the component would never reach.
+    await page.colorScheme(target.theme);
     await page.goto(url, { timeout: options.timeoutMs });
     const expression = readinessProbe(target.target ?? '[data-x-island]');
     const probe = (): Promise<IslandReadiness | null> =>
@@ -202,9 +228,16 @@ async function captureOne(
         ...fault,
       });
     }
-    // Never `fullPage`: the frame is the state's own declared viewport, and a full-page capture
-    // would grow with whatever the component scrolled.
-    const bytes = await page.screenshot({ fullPage: false });
+    // The COMPONENT, not the viewport it happens to sit in — the crop this feature was designed
+    // around, and which nothing passed until 2026-08-26 (issue #338). The rectangle is the
+    // readiness probe's own box, which is the crop target the manifest declared, translated from
+    // the DOM's viewport coordinates into the page coordinates a capture clip is in.
+    //
+    // The clip ALONE. `fullPage: false` beside it is accepted — `assertCaptureFraming` refuses only
+    // `=== true`, and `cdp-target.ts` sends `{ clip }` and nothing else either way, so all four
+    // pictures really were written with the pair — but it is a field that says nothing: the two
+    // are exclusive, and spelling out the default of the one you did not ask for reads as a choice.
+    const bytes = await page.screenshot({ clip: clipFor(seen) });
     if (bytes.byteLength < floor) {
       throw new IslandUnphotographableError({
         island: target.island,

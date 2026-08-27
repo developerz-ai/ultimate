@@ -212,7 +212,7 @@ const CATALOG = {
   'cli.shot.island.picture': '  pictures {path}',
   'cli.shot.island.verdict': '  verdict  {path}',
   'cli.shot.island.blind.crop':
-    'the picture is the viewport, not a crop — the browser port takes no clip rectangle, so a state sizes its own frame with viewport',
+    'the picture is the crop target and nothing around it — a component that overflows its own box, or whose fault is the space beside it, is outside the frame',
   'cli.shot.island.blind.locale':
     'toLocaleString() on a Date resolves its zone inside the engine — only an explicit timeZone is pinned by this harness',
   'cli.ci.failed':
