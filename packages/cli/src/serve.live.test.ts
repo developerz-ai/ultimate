@@ -7,7 +7,8 @@
 // here would prove that some server boots, which is not the claim.
 
 import { describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { METRICS_PATH } from '@ultimat3/core';
 // The package specifier, because `cli -> testing` is now a DECLARED sideways edge

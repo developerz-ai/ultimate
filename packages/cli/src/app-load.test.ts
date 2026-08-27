@@ -3,11 +3,13 @@
 // will not import is a finding keyed by its app-root-relative path.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-// `node:` and not Bun: Bun has no API for a temporary directory (`mkdtempSync` + `tmpdir`) and none
-// for a recursive delete (`rmSync`). `node:path` comes with them — `Bun.write` takes the joined
-// path, but only `node:path` can build one.
+// why: `node:` and not Bun: Bun has no API for a temporary directory (`mkdtempSync` + `tmpdir`) and
+// none for a recursive delete (`rmSync`). `node:path` comes with them — `Bun.write` takes the
+// joined path, but only `node:path` can build one.
 import { mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { LocaleConfig } from '@ultimat3/i18n';
 import { configureLocales, localeConfig } from '@ultimat3/i18n';

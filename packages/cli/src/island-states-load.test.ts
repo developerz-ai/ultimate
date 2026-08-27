@@ -6,7 +6,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 // why: no Bun native creates or removes a directory tree; this test needs a real one on disk.
 import { mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import {
   discoverIslandStates,

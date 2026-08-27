@@ -3,10 +3,12 @@
 // The fake runner is the point — a real `bun test` here would be testing Bun, not this command.
 
 import { describe, expect, test } from 'bun:test';
-// Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway trees these
-// tests discover over, `tmpdir` says where, and `join` is the host-separator path into them.
+// why: Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway trees
+// these tests discover over, `tmpdir` says where, and `join` is the host-separator path into them.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { testCommand } from './cmd-test';
 import type { CommandContext } from './command';

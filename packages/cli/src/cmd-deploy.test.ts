@@ -4,8 +4,11 @@
 // arrangement this file exists to keep out.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp, and Bun.write is async in these synchronous fixture helpers.
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { isUltimateError } from '@ultimat3/core';
 import {

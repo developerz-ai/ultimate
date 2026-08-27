@@ -3,7 +3,7 @@
 // regression nor a stale pin, so both app gates stayed green over a suite that no longer existed.
 
 import { describe, expect, test } from 'bun:test';
-// `join` builds the host-separator path to each app root; Bun ships no equivalent.
+// why: `join` builds the host-separator path to each app root; Bun ships no equivalent.
 import { join } from 'node:path';
 import { readVerifyFloor } from '@ultimat3/cli';
 import { GATED_APPS } from './lib/gated-apps';

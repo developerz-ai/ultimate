@@ -3,8 +3,12 @@
 // that the refusal lands before the app is loaded, and the two projections of one route table.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp and no recursive remove, and Bun.write is async in these synchronous
+// fixture helpers.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { RouteDescriptor } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute, SURFACES } from '@ultimat3/render';

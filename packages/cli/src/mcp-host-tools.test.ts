@@ -6,7 +6,8 @@
 // `db.migrate`, `queue.depth`) are deliberately absent — they belong in a `.live.` suite.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import type { JsonRpcResponse, ToolArgs } from '@ultimat3/mcp';

@@ -3,9 +3,12 @@
 // are that file's subject, and a disk is this one's.
 
 import { describe, expect, test } from 'bun:test';
-// `node:` by necessity: Bun has no temp-directory, no mkdtemp, no chmod and no recursive remove.
+// why: `node:` by necessity: Bun has no temp-directory, no mkdtemp, no chmod and no recursive
+// remove.
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import { startStorage } from './dev-runtime';

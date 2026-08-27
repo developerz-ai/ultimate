@@ -4,6 +4,7 @@
 // thing a test may redirect without taking the whole runner down with it.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { writeErrorLine, writeLine } from './write-line';
 

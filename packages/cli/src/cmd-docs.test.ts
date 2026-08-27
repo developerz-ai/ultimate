@@ -3,7 +3,7 @@
 // nothing is refused rather than answered plausibly, and that every answer names a real file.
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { docsCommand } from './cmd-docs';
 import type { CommandContext } from './command';
@@ -82,10 +82,10 @@ describe('unit · x docs', () => {
 });
 
 describe('live · x docs against the installed framework', () => {
-  test('the framework scope directory resolves from the CLI itself, with no app and no network', () => {
+  test('the framework scope directory resolves from the CLI itself, with no app and no network', async () => {
     const scope = frameworkScopeDir();
     expect(scope).toBeDefined();
-    expect(existsSync(join(scope ?? '', 'jobs/package.json'))).toBe(true);
+    expect(await Bun.file(join(scope ?? '', 'jobs/package.json')).exists()).toBe(true);
   });
 
   // The acceptance test from the brief, end to end: one step, no filename known in advance.
@@ -106,7 +106,7 @@ describe('live · x docs against the installed framework', () => {
     expect(matches.length).toBeGreaterThan(0);
     for (const match of matches) {
       const dir = String(match['package']).split('/').at(-1) ?? '';
-      expect(existsSync(join(scope, dir, String(match['source'])))).toBe(true);
+      expect(await Bun.file(join(scope, dir, String(match['source']))).exists()).toBe(true);
     }
   });
 

@@ -9,6 +9,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 // why: Bun has no path joiner and no recursive remove — the rule `cmd-db.test.ts` records.
 import { rm } from 'node:fs/promises';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { clearRoutes } from '@ultimat3/render';
 import { appRoutes } from './dev-render';

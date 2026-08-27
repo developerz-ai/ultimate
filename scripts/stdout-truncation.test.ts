@@ -13,8 +13,10 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and no recursive remove.
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 
 /** Comfortably past the 64KB pipe buffer, so a truncating write cannot pass by accident. */
@@ -42,7 +44,7 @@ async function runScript(
   const dir = await mkdtemp(join(tmpdir(), 'ultimate-stdout-'));
   try {
     const file = join(dir, 'emit.ts');
-    await writeFile(file, body);
+    await Bun.write(file, body);
     const proc = Bun.spawn(['bun', file, String(payload)], { stdout: 'pipe', stderr: 'pipe' });
     if (drain === 'after-exit') {
       const code = await proc.exited;

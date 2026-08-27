@@ -5,6 +5,7 @@
 // matcher surface that would let the two drift apart.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { TestDiagnostic } from './lib/test-typecheck';

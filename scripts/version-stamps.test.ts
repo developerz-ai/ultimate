@@ -3,10 +3,12 @@
 // stamps nothing would otherwise let this rule compare the shipped version against no sentence.
 
 import { describe, expect, test } from 'bun:test';
-// `node:fs/promises`'s `mkdtemp` + `node:os`'s `tmpdir` — Bun ships no temp-directory API;
+// why: `node:fs/promises`'s `mkdtemp` + `node:os`'s `tmpdir` — Bun ships no temp-directory API;
 // `node:path`'s `join` — no Bun path joiner. No `mkdir`: `Bun.write()` creates the parents.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { repoRoot } from './lib/run';
 import { readStampPages, readStamps, STAMP_PAGE, skipStampPath } from './lib/version-stamp-scan';

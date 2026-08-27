@@ -3,9 +3,11 @@
 // them for real.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-// `node:` by necessity: Bun has no temp-directory, no mkdtemp and no recursive remove.
+// why: `node:` by necessity: Bun has no temp-directory, no mkdtemp and no recursive remove.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { defineAuth, MemoryAdapter, resetAuthLimiters } from '@ultimat3/auth';
 import type { PurgeDriver } from '@ultimat3/cache';

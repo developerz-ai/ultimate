@@ -3,6 +3,7 @@
 // type said `string`. This pins the loader to the CLI's own manifest.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { VERSION_DEFINE } from '@ultimat3/core';
 import { cliVersion } from './registry';

@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-// Bun ships no `Bun.*` equivalent for either: `mkdtemp`/`rm` own a throwaway app root's lifetime,
-// and `join` builds the host-separator paths the committed contract files are written to.
+// why: Bun ships no `Bun.*` equivalent for either: `mkdtemp`/`rm` own a throwaway app root's
+// lifetime, and `join` builds the host-separator paths the committed contract files are written to.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { OPENAPI_FILE } from './app-openapi';

@@ -4,7 +4,8 @@
 // It was the slowest test in the unit suite by an order of magnitude while being typed as one.
 
 import { describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 
 /**

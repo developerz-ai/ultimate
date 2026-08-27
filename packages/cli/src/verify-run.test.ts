@@ -3,10 +3,11 @@
 // about the loop that executes one, including the narrowed run that is deliberately not a gate.
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
-// Bun ships no temp-directory primitive, and `join` builds the host-separator path into it.
+// why: Bun ships no temp-directory primitive, and `join` builds the host-separator path into it.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { msg } from './messages';
 import { exitCodeFor } from './output';
@@ -114,7 +115,7 @@ describe('unit · x verify --only is an iteration loop, never the gate', () => {
     const root = await mkdtemp(join(tmpdir(), 'x-verify-only-'));
     try {
       await runVerify(STEPS, { root, runner, only: 'lint' });
-      expect(existsSync(join(root, VERIFY_FLOOR_FILE))).toBe(false);
+      expect(await Bun.file(join(root, VERIFY_FLOOR_FILE)).exists()).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

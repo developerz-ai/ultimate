@@ -3,9 +3,11 @@
 // file, and a test that rewrote it to prove a failure would race the gate it guards.
 
 import { describe, expect, test } from 'bun:test';
-// `node:` — Bun has no temporary-directory or path-join primitive of its own.
+// why: `node:` — Bun has no temporary-directory or path-join primitive of its own.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
 import { listWorkspaces, publishOrder } from './lib/workspaces';

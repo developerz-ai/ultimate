@@ -4,7 +4,7 @@
 // a failure names the template that emitted them.
 
 import { describe, expect, test } from 'bun:test';
-// `node:` by necessity: Bun exposes no path-join primitive, and the Biome binary is found by
+// why: `node:` by necessity: Bun exposes no path-join primitive, and the Biome binary is found by
 // walking out of this file's directory to the repo root.
 import { join } from 'node:path';
 import type { GenerateOptions } from '../cmd-generate';

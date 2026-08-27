@@ -2,10 +2,12 @@
 // projects and nothing else, so the gate's `typecheck` step reports green over code it never read.
 
 import { describe, expect, test } from 'bun:test';
-// Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway root each
-// case reads, `tmpdir` says where, and `join` is the host-separator path into it.
+// why: Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway root
+// each case reads, `tmpdir` says where, and `join` is the host-separator path into it.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { fixProblem } from './error-contract';
 import { checkRootReferences, unreferencedFinding } from './tsconfig-references';

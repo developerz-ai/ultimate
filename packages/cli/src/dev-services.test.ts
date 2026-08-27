@@ -4,9 +4,10 @@
 // the one thing that must never be in that report.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-// `node:` by necessity: Bun has no temp-directory helper, and `resolveServices` creates `.x/`.
+import { mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp and no recursive remove.
+// why: `node:` by necessity: Bun has no temp-directory helper, and `resolveServices` creates `.x/`.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { reportedUrls, resolveServices } from './dev-services';
 import { safeUrlLabel } from './safe-url-label';

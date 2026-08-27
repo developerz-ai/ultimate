@@ -10,7 +10,7 @@
 // value an operator could set anywhere that would change one of them.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 import { configureHttp, resetHttpConfig } from '@ultimat3/http';
 import { appRoutes } from './dev-render';
 import type { RunningRoles } from './dev-roles';

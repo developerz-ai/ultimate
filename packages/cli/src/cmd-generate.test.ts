@@ -3,12 +3,11 @@
 // are `generate-catalogs.test.ts` — this file owns the filesystem and the command surface.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// Bun ships no `Bun.*` equivalent for any of these: `existsSync` proves a write did or did not
-// happen, `mkdtemp`/`rm` own a throwaway app root's lifetime, and `join`/`resolve` build the
-// host-separator paths — `resolve` because only resolving proves a path stayed inside the root.
-import { existsSync } from 'node:fs';
+// why: Bun has no mkdtemp and no recursive remove, so a throwaway app root's lifetime is node:fs's.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path API — nothing native joins, resolves or relativises a path.
 import { join, resolve } from 'node:path';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { resetAppLoad } from './app-load';
@@ -40,7 +39,7 @@ describe('unit · x g writes inside the app and nowhere else', () => {
         false,
       );
       expect(report.written).toEqual(['apps/web/app/a.ts']);
-      expect(existsSync(join(root, 'apps/web/app/a.ts'))).toBe(true);
+      expect(await Bun.file(join(root, 'apps/web/app/a.ts')).exists()).toBe(true);
     });
   });
 
@@ -57,8 +56,8 @@ describe('unit · x g writes inside the app and nowhere else', () => {
       expect(failure.code).toBe('X_SCAFFOLD_PATH_ESCAPE');
       expect(failure.cause).toContain('../escaped.ts');
       // Proven before the first write, so the file ahead of the offender never landed either.
-      expect(existsSync(join(root, 'apps/web/app/first.ts'))).toBe(false);
-      expect(existsSync(resolve(root, '../escaped.ts'))).toBe(false);
+      expect(await Bun.file(join(root, 'apps/web/app/first.ts')).exists()).toBe(false);
+      expect(await Bun.file(resolve(root, '../escaped.ts')).exists()).toBe(false);
     });
   });
 
@@ -71,7 +70,7 @@ describe('unit · x g writes inside the app and nowhere else', () => {
         false,
       ).catch((error: unknown) => error)) as { code?: string };
       expect(failure.code).toBe('X_SCAFFOLD_PATH_ESCAPE');
-      expect(existsSync(outside)).toBe(false);
+      expect(await Bun.file(outside).exists()).toBe(false);
     });
   });
 
@@ -158,8 +157,8 @@ describe('unit · x g writes inside the app and nowhere else', () => {
       expect(report.conflicts).toHaveLength(1);
       expect(report.conflicts[0]?.at).toBe('apps/web/app/second.ts');
       expect(report.written).toEqual([]);
-      expect(existsSync(join(root, 'apps/web/app/first.ts'))).toBe(false);
-      expect(existsSync(join(root, 'apps/web/app/third.ts'))).toBe(false);
+      expect(await Bun.file(join(root, 'apps/web/app/first.ts')).exists()).toBe(false);
+      expect(await Bun.file(join(root, 'apps/web/app/third.ts')).exists()).toBe(false);
       expect(await Bun.file(join(root, 'apps/web/app/second.ts')).text()).toBe(
         'export const existing = 1;',
       );
@@ -182,7 +181,7 @@ describe('unit · x g writes inside the app and nowhere else', () => {
       );
       expect(report.conflicts).toHaveLength(1);
       expect(report.written).toEqual([]);
-      expect(existsSync(join(root, catalog))).toBe(false);
+      expect(await Bun.file(join(root, catalog)).exists()).toBe(false);
     });
   });
 
@@ -308,7 +307,7 @@ describe('unit · x g refreshes a manifest and never invents one', () => {
 
   test('an app with no committed manifest does not get one, and the count matches the lines', async () => {
     const result = await generateCommand.run(contextFor('uninvited'));
-    expect(existsSync(join(ROOT, MANIFEST_FILENAME))).toBe(false);
+    expect(await Bun.file(join(ROOT, MANIFEST_FILENAME)).exists()).toBe(false);
     expect(result.lines?.some((line) => line.includes(MANIFEST_FILENAME))).toBe(false);
     expect(result.summary).toContain(`wrote ${result.lines?.length} file(s)`);
   });

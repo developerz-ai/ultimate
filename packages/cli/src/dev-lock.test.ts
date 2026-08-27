@@ -2,8 +2,12 @@
 // what matters here is that each refusal names the right cause and offers a remedy that RUNS.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp and no recursive remove, and Bun.write is async in these synchronous
+// fixture helpers.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import {

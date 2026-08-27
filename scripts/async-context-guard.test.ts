@@ -4,6 +4,7 @@
 // so this needs no step of its own.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import {
   ASYNC_CONTEXT_SEAM,

@@ -5,9 +5,11 @@
 // correct page gives.
 
 import { describe, expect, test } from 'bun:test';
-// `node:` — Bun has neither a temporary-directory nor a path-join primitive of its own.
+// why: `node:` — Bun has neither a temporary-directory nor a path-join primitive of its own.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { repoRoot } from './lib/run';
 import type { GraphWorkspace } from './package-map-graph';

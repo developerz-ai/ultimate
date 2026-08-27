@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp and no recursive remove, and Bun.write is async in these synchronous
+// fixture helpers.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { DoctorProbe } from './cmd-doctor';
 import { doctorCommand, doctorPort, OFFLINE_FALLBACK, probeFor, runDoctor } from './cmd-doctor';

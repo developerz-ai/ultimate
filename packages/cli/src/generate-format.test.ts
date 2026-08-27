@@ -10,8 +10,10 @@
 // is edited; catching it here costs one subprocess, once, and nothing at all on a user's machine.
 
 import { afterAll, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and no recursive remove.
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { GENERATORS, generate } from './cmd-generate';
 import { planNewApp } from './cmd-new';

@@ -4,8 +4,11 @@
 // that is asserted against the expansion computed before any browser existed.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp, no recursive remove and no synchronous existence check.
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
 import { fakeBrowser } from '@ultimat3/scraping';

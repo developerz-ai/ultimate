@@ -3,6 +3,7 @@
 // formatted, and — the test that matters in a year — it still reads the real pins file's shape.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path'; // `node:`-only by necessity: Bun ships no path-join primitive.
 import { GATED_APPS, PINS_FILE } from './gated-apps';
 import { repoRoot } from './run';

@@ -3,11 +3,13 @@
 // line widens the ratchet silently. Every case here runs against a COPY of the real pins file.
 
 import { describe, expect, test } from 'bun:test';
-// `mkdtemp`/`rm`/`join`: the copy needs a real throwaway directory, and Bun ships no equivalent —
-// `Bun.write` creates files but never the scratch root, and `Bun.file().unlink()` cannot remove a
-// directory tree.
+// why: `mkdtemp`/`rm`/`join`: the copy needs a real throwaway directory, and Bun ships no
+// equivalent — `Bun.write` creates files but never the scratch root, and `Bun.file().unlink()`
+// cannot remove a directory tree.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { GATED_APPS, PINS_FILE } from './lib/gated-apps';
 import { repoRoot } from './lib/run';

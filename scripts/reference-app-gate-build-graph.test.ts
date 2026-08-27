@@ -3,10 +3,12 @@
 // comes off) and the disk read that answers whether the root solution names the app at all.
 
 import { describe, expect, test } from 'bun:test';
-// `referencesApp` reads a real root config off disk, so the test needs a real throwaway directory
-// to put one in. Bun ships no temp-dir, no recursive remove and no path-join primitive.
+// why: `referencesApp` reads a real root config off disk, so the test needs a real throwaway
+// directory to put one in. Bun ships no temp-dir, no recursive remove and no path-join primitive.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { repoRoot } from './lib/run';
 import { gateFindings, ROOT_TSCONFIG, referencesApp } from './reference-app-gate';

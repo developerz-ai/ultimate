@@ -4,8 +4,11 @@
 // because nothing ever asked the shipped specs the question.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+// why: Bun has no mkdtemp, no recursive remove and no way to make an empty directory.
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { checkFlagReads, declaredFlags, readsFlag } from './flag-reads';
 import type { CommandSpec } from './parse';
@@ -61,8 +64,8 @@ describe('checkFlagReads', () => {
   let root = '';
 
   const write = async (path: string, text: string): Promise<void> => {
-    await mkdir(join(root, path, '..'), { recursive: true });
-    await writeFile(join(root, path), text);
+    // `Bun.write` creates the intermediate directories, so it is this repo's `mkdir -p` too.
+    await Bun.write(join(root, path), text);
   };
 
   beforeEach(async () => {
