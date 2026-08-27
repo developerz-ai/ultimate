@@ -110,7 +110,7 @@ export const testCommand: CliCommand = {
       {
         name: 'workers',
         type: 'string',
-        summary: `process count (default: ${WORKER_OVERSUBSCRIBE}x CPUs, min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
+        summary: `bun worker count (default: ${WORKER_OVERSUBSCRIBE}x CPUs, min ${WORKER_FLOOR}, max ${WORKER_CEILING}); clamped to the file count, and to 1 for ${SERIAL_TYPES.join(' and ')}`,
       },
       {
         name: 'worker',

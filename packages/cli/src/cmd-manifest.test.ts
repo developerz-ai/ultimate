@@ -2,8 +2,6 @@
 // `x.manifest.json` reports the same code `x verify` reports for it, and a partial load never
 // persists — `x.manifest.json` is the compatibility contract, so a subset of the app is a lie.
 
-// Bun ships no `Bun.*` equivalent for either: `rm` tears each fixture tree down recursively, and
-// `join` builds the host-separator paths the fixtures are written to and read from.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -18,6 +16,9 @@ import { resetRegistry as resetQueries } from '@ultimat3/query';
 import { clearRoutes } from '@ultimat3/render';
 import { resetAppLoad } from './app-load';
 import { OPENAPI_FILE } from './app-openapi';
+// Bun ships no `Bun.*` equivalent for either: `rm` tears each fixture tree down recursively, and
+// `join` builds the host-separator paths the fixtures are written to and read from.
+import { REQUIRED_BUN } from './app-root';
 import { manifestCommand } from './cmd-manifest';
 import type { CommandContext } from './command';
 import { msg } from './messages';
@@ -87,7 +88,7 @@ const contextFor = (root: string, flags: Readonly<Record<string, FlagValue>>): C
     durationMs: 0,
   }),
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 const exists = (root: string, file: string): Promise<boolean> =>

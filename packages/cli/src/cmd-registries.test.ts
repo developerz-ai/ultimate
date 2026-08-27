@@ -31,6 +31,7 @@ import {
   resetRegistry as resetQueries,
 } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
+import { REQUIRED_BUN } from './app-root';
 import { actionsCommand, entitiesCommand, queriesCommand } from './cmd-registries';
 import type { CommandContext } from './command';
 import { msg } from './messages';
@@ -102,7 +103,7 @@ const contextFor = (
     durationMs: 0,
   }),
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 /** The thrown value, so a test can assert on `code`/`fix` — `run()` rejects, it never returns

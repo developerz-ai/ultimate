@@ -2,13 +2,12 @@
 // files belong to a type and this one owns what happens to them once selected — a wrong file list
 // is never a race, and a race is never a selection bug.
 
-import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
 import type { Finding } from './output';
 import { countsOf } from './test-counts';
 import type { TestFile } from './test-select';
-import { reproduceFor, testArgs } from './test-shards';
+import { failureOf, testArgs } from './test-shards';
 import type { StepOutcome } from './verify-step';
 // Type-only, so nothing here evaluates verify-tests.ts and the two files cannot form a cycle.
 import type { TestType } from './verify-tests';
@@ -40,18 +39,12 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
   const files = options.files.map((file) => file.path);
   const workers = Math.max(1, Math.min(Math.trunc(options.workers), files.length || 1));
   const result = await options.runner(testArgs({ files, workers }), { cwd: options.root });
-  const findings: Finding[] = result.ok
+  // `failureOf` is `x test`'s own, imported rather than restated: the two paths report the SAME
+  // failed `bun test`, so a second literal here is two `cause:` strings and two `fix:` lines free
+  // to drift — and the one that drifts is the gate's, which is the one an agent reads first.
+  const findings: readonly Finding[] = result.ok
     ? []
-    : [
-        {
-          code: 'X_TEST_FAILED',
-          cause: `${options.type} run exited ${result.code} across ${workers} worker(s) (${files.length} file(s))`,
-          // The reproduction has to name every input to the selection or it reruns a different
-          // file set: `reproduceFor` is the one place that rule lives, shared with `x test`.
-          fix: reproduceFor({ workers, type: options.type }),
-          docs: ERROR_DOCS_URL,
-        } satisfies Finding,
-      ];
+    : [failureOf(result.code, files.length, { workers, type: options.type })];
   return {
     ok: findings.length === 0,
     findings,

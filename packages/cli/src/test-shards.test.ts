@@ -188,14 +188,17 @@ describe('unit · x test execution', () => {
   test('--json reports the width, the file count, the exit code and the rerun', async () => {
     const { runner } = recorder(true);
     const result = await runShards({ root: '/repo', runner, files: corpus(40), workers: 4 });
-    const parsed: unknown = JSON.parse(renderJson(result));
-    expect(parsed).toBeDefined();
-    const data = result.data as {
-      readonly workers: number;
-      readonly files: number;
-      readonly ok: boolean;
-      readonly exitCode: number;
-      readonly reproduce: string;
+    // The RENDERED payload, never `result.data`: this test names the `--json` contract, and an
+    // agent parses what `renderJson` emitted. `JSON.parse` either throws or answers, so asserting
+    // it is defined is an assertion that cannot fail.
+    const { data } = JSON.parse(renderJson(result)) as {
+      readonly data: {
+        readonly workers: number;
+        readonly files: number;
+        readonly ok: boolean;
+        readonly exitCode: number;
+        readonly reproduce: string;
+      };
     };
     expect(data.workers).toBe(4);
     expect(data.files).toBe(40);

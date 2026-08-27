@@ -8,6 +8,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import { resetAppLoad } from './app-load';
+import { REQUIRED_BUN } from './app-root';
 import type { McpHttpServer } from './cmd-mcp';
 import { mcpCommand, startMcpHttp, stdioResult } from './cmd-mcp';
 import type { CommandContext } from './command';
@@ -40,7 +41,7 @@ const context = (argv: readonly string[]): CommandContext => ({
   cwd: ROOT,
   runner,
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 interface ToolRow {

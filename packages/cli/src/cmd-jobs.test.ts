@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { JobDriver } from '@ultimat3/jobs';
 import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { REQUIRED_BUN } from './app-root';
 import { buildDrainTarget, JOBS_SUBCOMMANDS, jobsCommand } from './cmd-jobs';
 import type { CommandContext } from './command';
 import { BadFlagError, MissingPositionalError } from './errors';
@@ -51,7 +52,7 @@ const contextFor = (root: string, options: RunOptions): CommandContext => ({
       durationMs: 0,
     }),
   env: options.env ?? {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 /** Install the driver `withJobDriver` must reuse, so no command under test boots a second queue. */

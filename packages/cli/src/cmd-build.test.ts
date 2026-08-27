@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { frameworkVersion, VERSION_DEFINE } from '@ultimat3/core';
+import { REQUIRED_BUN } from './app-root';
 import {
   argsFor,
   BUILD_ENTRY,
@@ -175,7 +176,7 @@ const buildContext = (argv: readonly string[], cwd: string, runner: Runner): Com
   cwd,
   runner,
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 test('x build runs the static gate FIRST and only then the builder', async () => {

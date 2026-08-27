@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Catalog } from '@ultimat3/i18n';
 import { loadCatalog, registerCatalog, resetCatalogs } from '@ultimat3/i18n';
+import { REQUIRED_BUN } from './app-root';
 import { I18N_SUBCOMMANDS, i18nCommand } from './cmd-i18n';
 import type { CommandContext } from './command';
 import { msg } from './messages';
@@ -98,7 +99,7 @@ function contextFor(appRoot: string, args: readonly string[]): CommandContext {
         durationMs: 0,
       }),
     env: {},
-    bunVersion: '1.3.0',
+    bunVersion: REQUIRED_BUN,
   };
 }
 

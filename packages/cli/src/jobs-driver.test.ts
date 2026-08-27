@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 import type { JobDriver } from '@ultimat3/jobs';
 import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { REQUIRED_BUN } from './app-root';
 import type { CommandContext } from './command';
 import { withJobDriver } from './jobs-driver';
 
@@ -33,7 +34,7 @@ const contextFor = (): CommandContext => ({
       durationMs: 0,
     }),
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 describe('unit · withJobDriver', () => {

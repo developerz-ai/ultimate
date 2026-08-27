@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RouteDescriptor } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute, SURFACES } from '@ultimat3/render';
+import { REQUIRED_BUN } from './app-root';
 import { readSurfaceFilter, renderRouteTable, routesCommand } from './cmd-routes';
 import type { CommandContext } from './command';
 import { parseArgs } from './parse';
@@ -36,7 +37,7 @@ const contextFor = (argv: readonly string[]): CommandContext => ({
     throw new Error(`x routes spawned ${command.join(' ')}`);
   },
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 const descriptor = (overrides: Partial<RouteDescriptor>): RouteDescriptor =>

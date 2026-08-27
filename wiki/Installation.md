@@ -15,7 +15,7 @@ Bun below the floor fails before anything else runs:
 
 ```
 X_BUN_VERSION: bun version is below the framework floor
-  cause: Bun 1.2.9 is older than the required >=1.3.0
+  cause: Bun 1.3.12 is older than the required >=1.4.0
   fix:   bun upgrade
 ```
 

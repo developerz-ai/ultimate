@@ -7,7 +7,19 @@ import { BunVersionError, NotInAppError } from './errors';
 
 export const APP_CONFIG_FILE = 'app.config.ts';
 export const MANIFEST_FILE = 'x.manifest.json';
-export const REQUIRED_BUN = '1.3.0';
+/**
+ * The floor the shipped `x` enforces, and it must not sit below what `x` EMITS. It said `1.3.0`
+ * through 2026-08-27 while `x test` spent `bun test --isolate` — a flag Bun introduced in
+ * **1.3.13** — so a user on a Bun this file declared supported got an unknown-flag failure out of
+ * the gate's dominant step, with `x doctor` reporting the runtime as fine. `--parallel` arrived in
+ * the same release and is emitted now.
+ *
+ * `1.4.0` rather than `1.3.13` because a floor is a claim about a runtime somebody TESTED: CI pins
+ * `1.4.x`, both images build on `oven/bun:1.4-*`, and the per-worker database rests on
+ * `BUN_TEST_WORKER_ID`'s numbering, probed on 1.4.0 and on nothing older. `scripts/bun-pin.test.ts`
+ * holds this to the same series as every other pin.
+ */
+export const REQUIRED_BUN = '1.4.0';
 
 export interface AppRoot {
   readonly dir: string;

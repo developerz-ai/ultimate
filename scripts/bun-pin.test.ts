@@ -54,6 +54,41 @@ const requiredBunSeries = (source: string): string => {
   return `${found?.[1]}.${found?.[2]}`;
 };
 
+/**
+ * The floor the SHIPPED `x` enforces (`packages/cli/src/app-root.ts`). Outside this test until
+ * 2026-08-27, and it had drifted a whole minor below every other pin: `1.3.0`, while `x test`
+ * emitted `bun test --isolate`, a flag Bun added in 1.3.13. A user on a runtime the CLI declared
+ * supported got an unknown-flag failure and an `x doctor` that called the runtime fine.
+ */
+const cliFloorSeries = (source: string): string => {
+  const found = /export const REQUIRED_BUN = '(\d+)\.(\d+)\.(\d+)';/.exec(source);
+  expect(found, 'REQUIRED_BUN not found in packages/cli/src/app-root.ts').not.toBeNull();
+  return `${found?.[1]}.${found?.[2]}`;
+};
+
+/**
+ * The floor NPM enforces on anyone installing an `@ultimat3/*` package. The widest site of all and
+ * the last one anybody edits — 42 manifests, each free to disagree in silence, because a workspace
+ * install never reads its own `engines`. Derived by glob so a new package is covered by existing.
+ */
+const enginesFloors = async (): Promise<Record<string, string>> => {
+  const found: Record<string, string> = {};
+  // The ROOT manifest is a site too and lives under none of the workspace roots — it was the one
+  // the first draft of this glob missed, which is the same shape of hole as the whole file.
+  for (const path of [
+    'package.json',
+    ...new Bun.Glob('{packages,examples,dummy}/**/package.json').scanSync({ cwd: ROOT }),
+  ].sort()) {
+    if (path.includes('node_modules')) continue;
+    const manifest = (await Bun.file(join(ROOT, path)).json()) as {
+      engines?: { bun?: string };
+    };
+    const declared = manifest.engines?.bun;
+    if (declared !== undefined) found[path] = seriesOf(declared.replace(/^[^\d]*/, ''));
+  }
+  return found;
+};
+
 describe('the Bun series is pinned once, in agreement', () => {
   test('CI, the release job, both images and the contributor floor name one series', async () => {
     const setupAction = await slurp('.github/actions/setup/action.yml');
@@ -61,6 +96,10 @@ describe('the Bun series is pinned once, in agreement', () => {
     const frameworkImage = await slurp('docker/Dockerfile');
     const appImage = await slurp('packages/cli/src/templates/scaffold-container.ts');
     const setupScript = await slurp('scripts/setup.ts');
+    const cliFloor = cliFloorSeries(await slurp('packages/cli/src/app-root.ts'));
+    const engines = await enginesFloors();
+    // A glob matching nothing would agree with every other pin.
+    expect(Object.keys(engines).length).toBeGreaterThanOrEqual(42);
 
     const ciPins = workflowPins(setupAction);
     const releasePins = workflowPins(release);
@@ -88,6 +127,8 @@ describe('the Bun series is pinned once, in agreement', () => {
       appImage: appTags.map(seriesOf),
       trackedApps: tracked,
       contributorFloor: requiredBunSeries(setupScript),
+      cliFloor,
+      engines,
     };
 
     const every = [
@@ -97,6 +138,8 @@ describe('the Bun series is pinned once, in agreement', () => {
       ...found.appImage,
       ...Object.values(tracked).flat(),
       found.contributorFloor,
+      found.cliFloor,
+      ...Object.values(engines),
     ];
     expect(
       new Set(every).size,

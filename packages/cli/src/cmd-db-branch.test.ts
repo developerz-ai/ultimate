@@ -11,6 +11,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { REQUIRED_BUN } from './app-root';
 import { dbCommand } from './cmd-db';
 import type { CommandContext } from './command';
 import { exec } from './exec';
@@ -26,7 +27,7 @@ const ctxFor = (
   cwd,
   runner: exec,
   env,
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 /** An app root whose embedded database exists on disk, so `x db branch` has something to clone. */

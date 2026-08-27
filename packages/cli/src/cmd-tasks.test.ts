@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { job, resetJobs, resetTasks, t, task } from '@ultimat3/jobs';
+import { REQUIRED_BUN } from './app-root';
 import { tasksCommand } from './cmd-tasks';
 import type { CommandContext } from './command';
 import { msg } from './messages';
@@ -59,7 +60,7 @@ const contextFor = (root: string, options: RunOptions = {}): CommandContext => (
       durationMs: 0,
     }),
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 /** The thrown value, so a test can assert on `code`/`fix` — `run()` rejects on a bad flag or an

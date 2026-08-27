@@ -20,6 +20,7 @@ import {
   resetJobs,
   setJobDriver,
 } from '@ultimat3/jobs';
+import { REQUIRED_BUN } from './app-root';
 import { DB_SUBCOMMANDS, dbCommand } from './cmd-db';
 import type { CommandContext } from './command';
 import { BadFlagError } from './errors';
@@ -34,7 +35,7 @@ const ctxFor = (argv: readonly string[], cwd: string): CommandContext => ({
   cwd,
   runner: exec,
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 /** An app root the command will accept: `app.config.ts` is what `requireAppRoot` looks for. */

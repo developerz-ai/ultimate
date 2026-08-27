@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Seed, SeedRun } from '@ultimat3/entity';
+import { REQUIRED_BUN } from './app-root';
 import { dbCommand } from './cmd-db';
 import type { CommandContext } from './command';
 import type { DiscoveredSeed, SeedPassRow } from './db-seed';
@@ -39,7 +40,7 @@ const ctxFor = (
   cwd,
   runner: exec,
   env,
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 /** The package under test, by path: a temp directory outside the repo resolves no workspace. */

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { resetAppLoad } from './app-load';
+import { REQUIRED_BUN } from './app-root';
 import { GENERATORS, generateCommand, writeFiles } from './cmd-generate';
 import type { CommandContext } from './command';
 import { exec } from './exec';
@@ -234,7 +235,7 @@ describe('unit · x g keeps the manifest off a partial load', () => {
       durationMs: 0,
     }),
     env: {},
-    bunVersion: '1.3.0',
+    bunVersion: REQUIRED_BUN,
   });
 
   beforeAll(async () => {
@@ -287,7 +288,7 @@ describe('unit · x g refreshes a manifest and never invents one', () => {
     cwd: ROOT,
     runner: exec,
     env: {},
-    bunVersion: '1.3.0',
+    bunVersion: REQUIRED_BUN,
   });
 
   beforeAll(async () => {
@@ -330,7 +331,7 @@ describe('unit · the command surface an agent reads', () => {
     cwd: EXAMPLE_APP,
     runner: exec,
     env: {},
-    bunVersion: '1.3.0',
+    bunVersion: REQUIRED_BUN,
   });
 
   // `x g route --json` answered X_CLI_UNKNOWN_COMMAND — for a command form that IS known — with

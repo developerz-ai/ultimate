@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { REQUIRED_BUN } from './app-root';
 import { ERRORS_SUBCOMMANDS, errorsCommand } from './cmd-errors';
 import type { CommandContext } from './command';
 import { exec } from './exec';
@@ -16,7 +17,7 @@ const ctxFor = (argv: readonly string[]): CommandContext => ({
   cwd: '/tmp',
   runner: exec,
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 const run = (argv: readonly string[]): Promise<CommandResult> => errorsCommand.run(ctxFor(argv));

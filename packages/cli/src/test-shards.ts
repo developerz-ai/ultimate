@@ -162,7 +162,7 @@ const planOf = (options: RunShardsOptions, workers: number): ReproduceOptions =>
  * codes already exist and both are already documented — a third would be a new name for a failed
  * `bun test`.
  */
-const failureOf = (code: number, files: number, plan: ReproduceOptions): Finding => ({
+export const failureOf = (code: number, files: number, plan: ReproduceOptions): Finding => ({
   code: plan.shard === undefined ? 'X_TEST_FAILED' : 'X_TEST_SHARD_FAILED',
   cause:
     plan.shard === undefined
@@ -203,6 +203,9 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       name: `${label} · ${files.length} files`,
       ok: result.ok,
       durationMs: result.durationMs,
+      // `output.ts` documents this field as absent for a NON-test step, so omitting it here made
+      // `renderJson` describe the test step as one — recoverable only by parsing `name`.
+      workers,
       findings: result.ok ? [] : [failureOf(result.code, files.length, plan)],
       output: execOutput(result),
     },
