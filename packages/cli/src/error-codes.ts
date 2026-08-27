@@ -108,6 +108,14 @@ export const CLI_OWNED_ERROR_CODES = [
   // code, because the only remedy available for all of them is a line in the migration file, and
   // where that file lives is this package's fact.
   'X_MIGRATION_UNGENERATABLE',
+  // The third `subscribes:` condition, and the only one neither @ultimat3/query nor
+  // @ultimat3/db can ask. Query owns X_QUERY_SUBSCRIBES_INVALID (a declaration that cannot
+  // be acted on) and X_QUERY_SUBSCRIBES_DRIFT (it disagrees with the resolved shape); db
+  // keeps only the declared names an entity's table matches and DROPS the rest, because it
+  // has no way to tell a typo from a table another migration owns. Neither package holds
+  // both registries, so a name matching nothing was granted REPLICA IDENTITY FULL on
+  // nothing while its author read the declaration as granted (#357).
+  'X_QUERY_SUBSCRIBES_UNKNOWN',
   'X_DB_MIGRATE_FAILED',
   'X_DB_BRANCH_FAILED',
   'X_DB_STUDIO_FAILED',
@@ -258,6 +266,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_DB_SCHEMA_UNMIGRATED: 'an entity declaration no migration recorded',
   X_DB_SCHEMA_UNDECLARED: 'a migration records schema no entity declares',
   X_MIGRATION_UNGENERATABLE: 'this migration holds SQL no declaration carries and does not say so',
+  X_QUERY_SUBSCRIBES_UNKNOWN: 'a live query subscribes to a table no entity declares',
   X_DB_MIGRATE_FAILED: 'x db migrate failed',
   X_DB_BRANCH_FAILED: 'an x db branch step failed',
   X_DB_STUDIO_FAILED: 'x db studio failed',

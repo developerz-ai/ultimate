@@ -73,6 +73,8 @@ export {
   QueryNotPageableError,
   QueryPolicyMissingError,
   QueryRequestFailedError,
+  QuerySubscribesDriftError,
+  QuerySubscribesInvalidError,
   QueryUnregisteredError,
 } from './errors';
 /** The HTTP projection: `GET /_x/query/<kebab>`, the URL `client()` derives. */

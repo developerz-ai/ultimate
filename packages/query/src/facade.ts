@@ -25,6 +25,7 @@ export function facadeFor<TInput extends StandardSchemaV1, TRow extends object>(
   return {
     input: def.input,
     policy: def.policy,
+    ...(def.subscribes === undefined ? {} : { subscribes: def.subscribes }),
     ...(def.cache === undefined ? {} : { cache: def.cache }),
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
     ...(def.rateLimit === undefined ? {} : { rateLimit: def.rateLimit }),

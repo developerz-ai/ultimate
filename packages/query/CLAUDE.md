@@ -22,6 +22,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `naming.ts` | export name → `/_x/query/<kebab>`. Pure string math. **Paths only** — no tool name |
 | `registry.ts` | export-name registration, `describeQueries()`, and the `registerPrimitiveRegistrar('query', …)` announcement |
 | `live.ts` | `LiveQuery` descriptor + cursor arithmetic |
+| `subscribes.ts` | the relations a live read declares, and the two assertions that keep them true |
 | `matcher.ts` | change event → minimal patch, `refill` when the window cannot place the row, or `X_MATCHER_UNSUPPORTED` |
 | `pagination.ts` | `paginate()` over core's cursor codec — no offset, ever |
 | `cursor-value.ts` | what a sort value becomes inside a cursor, and what it becomes again |
@@ -242,6 +243,28 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   `total` is how `SqlSource` says the source already serves one order it can be resumed in. The
   fixture in `search.test.ts` must stay NOT id-ascending: `ROWS` is `a, b, c`, which is why the
   shipped page test could not see this.
+- **`subscribes:` is DECLARED because nothing can derive it, and CROSS-CHECKED because a
+  declaration drifts** (`subscribes.ts`, `As of 2026-08-26`). `@ultimat3/realtime` refuses a
+  subscription to a table that is not `REPLICA IDENTITY FULL` — logical replication carries no old
+  row on an `UPDATE`, so no patch is computable — and nothing emitted the `alter`, so a scaffolded
+  app with a live query generated a schema its own preflight rejected (#357). It cannot be derived:
+  the relation name is a string inside `sql:`, a callback no generator can invoke without valid
+  input, so `QueryDescriptor` carried no table and `x db gen` had no live-query set to read. The
+  field is optional and a read that declares nothing is unchanged — the emitter sees no table.
+  The cross-check is what makes it worth shipping: `toLiveQuery` asserts `shape.entity` is among the
+  declared names at the first subscribe (`X_QUERY_SUBSCRIBES_DRIFT`), one line under
+  `assertMatchable` and for its reason — a live read whose old row never arrives cannot be patched,
+  so a WARNING would preserve only a subscription that silently stops updating, and the stale
+  declaration has already granted the identity to the wrong table. `pg-preflight.ts`'s
+  `warnPartialIdentity` warns instead, and that precedent does NOT transfer: it fires for every app
+  on the postgres default, which nobody wrote, while this fires only on a declaration an author
+  wrote wrong. **Membership, never equality** — a `QueryShape` names one relation and a read may
+  join several, and `@ultimat3/db` keeps only the declared names an entity's table matches, so an
+  extra name costs nothing and the resolved one going missing is the whole failure. An empty list,
+  or one on a read that is not `live: true`, is refused at `query()`
+  (`X_QUERY_SUBSCRIBES_INVALID`) beside `assertCacheTtl`: a declaration nothing can act on is wrong
+  for every subscriber, and one on a non-live read would never reach the cross-check at all —
+  declared and never wired, which is the defect this field exists to close.
 - Policy runs per subscriber for live queries. Never cache a decision across actors.
 - The matcher patches from `QueryShape`, never from SQL text.
 - `paginate` has no `offset` parameter and must never grow one, and it is reachable **only** as

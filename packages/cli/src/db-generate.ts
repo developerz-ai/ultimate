@@ -13,7 +13,9 @@ import {
   snapshotJson,
 } from '@ultimat3/db';
 import { describeEntities } from '@ultimat3/entity';
+import { describeQueries } from '@ultimat3/query';
 import { loadApp } from './app-load';
+import { replicaIdentityTables } from './db-subscribes';
 import { reconcileSchemaHash, writeSchemaHash } from './drift';
 import { hashFileName, MIGRATIONS_DIR, readMigrations, snapshotFileName } from './migrations';
 import type { Finding } from './output';
@@ -103,10 +105,25 @@ export async function generateAppMigration(
     throw migrationSnapshotMissing(id, join(MIGRATIONS_DIR, snapshotFileName(id)));
   }
 
+  const entities = describeEntities();
+  // Read AFTER the findings check above, never before: a module that would not import leaves the
+  // registry short, and every `subscribes:` name whose entity lives in that module would then look
+  // like a typo. The refusal below is only sound over a whole registry.
+  //
+  // `describeQueries()` is the manifest's own source — `frameworkSources` copies this exact field
+  // onto `QueryFact.subscribes` and changes nothing — so this is the manifest fact one hop earlier.
+  // Building the manifest here would re-load the app and demand a `package.json`, which `x db gen`
+  // has never needed: generation reads declarations and writes files.
+  const replicaIdentityFull = replicaIdentityTables(
+    describeQueries(),
+    new Set(entities.map((entity) => entity.table)),
+  );
+
   const migration = generateMigration({
-    entities: describeEntities(),
+    entities,
     current,
     name: options.name,
+    replicaIdentityFull,
     ...(options.allowDestructive === true ? { allowDestructive: true } : {}),
   });
   // An empty diff writes no MIGRATION — one with no statement still takes a ledger row, a checksum

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
 import type { Transport } from '@ultimat3/realtime/server';
 import { InProcessTransport } from '@ultimat3/realtime/server';
-import { startReplicator } from './dev-replicator';
+import { replicatedRelations, startReplicator } from './dev-replicator';
 import type { DevServices } from './dev-services';
 
 const embedded: DevServices = {
@@ -90,6 +90,64 @@ describe('x dev --role replicator', () => {
         transport,
       }),
     ).rejects.toThrow(/REPLICATION_URL names/);
+  });
+
+  /**
+   * The feed's filter is a list of RELATION names: `PgReplicationStream` matches every pgoutput
+   * Relation message with `#entities.has(relation.name)`, and `warnPartialIdentity` matches the
+   * same list against `pg_class.relname`. Both are the physical table. An entity NAME is the
+   * framework's own registry key and is a different string the moment `table:` is declared.
+   *
+   * `examples/dummy` cannot catch this: all six of its entities have `name === table`, so a
+   * fixture built from them passes with either projection. This one is `billingAccount` on
+   * `billing_accounts` — different strings, and only one of them is a relation.
+   */
+  test('the feed is filtered by the physical TABLE, never by the entity name', () => {
+    entity('billingAccount', {
+      table: 'billing_accounts',
+      columns: { id: uuid().primaryKey(), note: text() },
+    });
+    expect(replicatedRelations()).toEqual(['billing_accounts']);
+  });
+
+  test('two entities on one table give the feed that relation once', () => {
+    entity('billingAccount', {
+      table: 'billing_accounts',
+      columns: { id: uuid().primaryKey(), note: text() },
+    });
+    entity('billingArchive', {
+      table: 'billing_accounts',
+      columns: { id: uuid().primaryKey(), note: text() },
+    });
+    expect(replicatedRelations()).toEqual(['billing_accounts']);
+  });
+
+  /**
+   * The same fact through the real call chain, so the projection above is proved to be the one
+   * `selectChangeFeed` is handed. `PgReplicationStream`'s constructor screens every entry with
+   * `assertIdentifier`, and `billingAccount` is not a lower-case postgres identifier while
+   * `billing_accounts` is — so the entity name is refused *before any connection* and the table
+   * gets past the screen to fail on the database that is not there.
+   */
+  test('the value that reaches selectChangeFeed passes the identifier screen', async () => {
+    entity('billingAccount', {
+      table: 'billing_accounts',
+      columns: { id: uuid().primaryKey(), note: text() },
+    });
+
+    let thrown: unknown;
+    try {
+      await startReplicator({ services: external, env: ENV, transport });
+    } catch (error) {
+      thrown = error;
+    }
+
+    // It must still fail — there is no database — so the assertion below cannot pass vacuously.
+    if (thrown === undefined) expect.unreachable('the replicator started without a database');
+    const raw = (thrown as { cause?: unknown }).cause;
+    const cause = typeof raw === 'string' ? raw : '';
+    expect(cause).not.toContain('not a lower-case postgres identifier');
+    expect(cause).not.toContain('billingAccount');
   });
 
   test('the entity list comes from the app registry, so the feed filters what the app declared', () => {

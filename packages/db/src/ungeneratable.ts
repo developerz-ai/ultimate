@@ -59,6 +59,17 @@ export const GENERATABLE_FORMS: readonly GeneratableForm[] = [
     name: 'alter column drop expression',
     pattern: /^alter\s+table\s[\s\S]*?\balter\s+column\s[\s\S]*?\bdrop\s+expression\b/,
   },
+  // The form the doc block above calls "the statement that started this", finally on the list:
+  // `GenerateOptions.replicaIdentityFull` emits it `As of 2026-08-26`, so without this entry the
+  // rail reports SQL the generator itself just wrote. Covers `full` and `default` in one phrase —
+  // the down side is as generated as the up side.
+  {
+    name: 'alter table … replica identity full/default',
+    // `full` and `default` ONLY — the two modes `replicaIdentityPlan` emits. `using index` and
+    // `nothing` are hand-written configuration no entity declares, and admitting them here would
+    // read them as generatable and let a squash discard the replication setup in silence.
+    pattern: /^alter\s+table\s[\s\S]*?\breplica\s+identity\s+(?:full|default)\b/,
+  },
 ];
 
 /**

@@ -25,6 +25,7 @@ import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
+import { acceptCreatedTables } from './db-accept-created';
 import { assetRoutes } from './dev-assets';
 import { startQueue } from './dev-queue';
 import { appRoutes } from './dev-render';
@@ -200,7 +201,11 @@ export async function runMigrations(options: ServeOptions): Promise<MigratedApp>
       available: migrations.length,
       appVersion: report.appVersion,
     });
-    const drift = await checkDrift({ migrations });
+    // Every migration above has just been applied, so a `create table` in one of them is proof
+    // the app owns that relation — and a snapshot records only what ENTITIES declare, so without
+    // this a hand-written table is `unexpected-table` on this deploy and on every deploy after it
+    // (issue #345). Only that one difference, only for a name a migration's SQL creates.
+    const drift = acceptCreatedTables(await checkDrift({ migrations }), migrations);
     // Logged with the first difference, not just a count: a release phase's log is the only place
     // an operator sees this, and "3 differences" names nothing to act on.
     if (!drift.ok) {

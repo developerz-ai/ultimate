@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "44617c8bb921a0d8ee4fa15e45b0b4720b9a7fa9b21e88a288b1a0c6b1e17e75",
+  "buildId": "0c7c0add1f459f3d8d966b87301fa35cd2baffec04bf22d9776f6f0208bb0457",
   "tiers": {
     "0": [
       "core",
@@ -2143,6 +2143,21 @@
       "code": "X_QUERY_POLICY_MISSING",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_SUBSCRIBES_DRIFT",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_SUBSCRIBES_INVALID",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_SUBSCRIBES_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_QUERY_UNREGISTERED",

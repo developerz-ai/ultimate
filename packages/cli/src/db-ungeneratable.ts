@@ -58,8 +58,20 @@ export function declaredUngeneratable(up: string): number {
  * the statement stays, and the next author to squash these migrations is told by the file itself
  * that regenerating it loses something. Re-declaring is available only for the statements an
  * entity can express — an enum is a text column plus a check invariant, which `x db gen` writes —
- * and never for `REPLICA IDENTITY FULL`, which nothing in the framework emits, so a `fix:` naming
- * only the second branch would be an instruction half its readers cannot carry out.
+ * so a `fix:` naming only the second branch would be an instruction some of its readers cannot
+ * carry out.
+ *
+ * `REPLICA IDENTITY FULL` used to be the example of a statement with no second branch at all, and
+ * it stopped being one on 2026-08-26 (#357): a live query DECLARES the relations it is patched
+ * from (`subscribes:`), `db-subscribes.ts` reads them off the registry the manifest is built from,
+ * and `x db gen` emits the ALTER and records it on the snapshot. So the re-declare branch now
+ * covers it too: declare `subscribes:` on the live query and regenerate.
+ *
+ * A committed `replica identity full`/`default` ALTER is NOT counted, `As of 2026-08-26`:
+ * `GENERATABLE_FORMS` carries the verb phrase, so a squash no longer loses it and no marker is
+ * owed for one. Measured on `examples/dummy/packages/db/migrations/0001_init.sql`: 7 found and 7
+ * declared before that entry, 5 and 5 after. `using index` and `nothing` are NOT on the list —
+ * the generator emits neither, so those stay hand-written and stay counted.
  */
 export class MigrationUngeneratableError extends UltimateError {
   constructor(input: { file: string; declared: number; statements: readonly string[] }) {

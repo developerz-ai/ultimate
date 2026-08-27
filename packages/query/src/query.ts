@@ -24,6 +24,7 @@ import type { QueryPolicy, QuerySurface } from './policy-gate';
 import { policyCapability, policyPermissions } from './policy-gate';
 import { hasDef, queryName, runQuery, stashDef } from './read';
 import type { SqlSource } from './source';
+import { assertSubscribes } from './subscribes';
 
 export interface QueryCache {
   /** Tags this read depends on. An action's `invalidates` drops exactly these keys. */
@@ -72,6 +73,22 @@ export interface QueryDef<TInput extends StandardSchemaV1, TRow extends object> 
   readonly policy: QueryPolicy;
   /** `true` makes the read subscribable — see `toLiveQuery`. */
   readonly live?: boolean;
+  /**
+   * The relations this live read is patched from — the tables `x db gen` grants
+   * `REPLICA IDENTITY FULL`, without which logical replication carries no old row on an UPDATE
+   * and `@ultimat3/realtime` refuses the subscription.
+   *
+   * A DECLARATION because nothing can derive it: the relation name lives inside `sql:`, a callback
+   * no generator can invoke without valid input, so there is no live-query set to read off the
+   * registry (#357). Optional, and a read that declares nothing behaves exactly as before —
+   * the emitter sees no table and emits no statement.
+   *
+   * Checked, never trusted. An empty list or a read that is not live is refused here
+   * (`X_QUERY_SUBSCRIBES_INVALID`); a list the resolved shape is missing from is refused at the
+   * first subscribe (`X_QUERY_SUBSCRIBES_DRIFT`). Naming MORE relations than the shape resolves to
+   * is legal — a join reads relations the shape's single `entity` cannot name.
+   */
+  readonly subscribes?: readonly string[];
   sql(input: InferOutput<TInput>, ctx: Ctx): SqlSource<TRow>;
   readonly cache?: QueryCache;
   readonly mcp?: QueryMcp;
@@ -140,6 +157,13 @@ export interface QueryDescriptor {
    */
   readonly permissions: readonly string[];
   readonly tags: readonly string[];
+  /**
+   * The relations declared on a live read, or `null` when it declared none — the fact
+   * `@ultimat3/cli` reads out of the manifest to tell `x db gen` which tables need
+   * `REPLICA IDENTITY FULL`. `null` and not `[]`: an empty list is refused at `query()`, so
+   * absence has exactly one meaning and the manifest can drop the key rather than write it empty.
+   */
+  readonly subscribes: readonly string[] | null;
   readonly ttlMs: number | null;
   readonly rateLimit: QueryRateLimit | null;
   readonly deprecated: Deprecation | null;
@@ -154,6 +178,7 @@ export interface AnyQueryDef {
   readonly input: StandardSchemaV1;
   readonly policy: QueryPolicy;
   readonly live?: boolean;
+  readonly subscribes?: readonly string[];
   sql(input: unknown, ctx: Ctx): SqlSource<object>;
   readonly cache?: QueryCache;
   readonly mcp?: QueryMcp;
@@ -169,6 +194,8 @@ export interface AnyQuery {
   /** The declaration, minus `sql`: readable, and never a way to run it. */
   readonly input: StandardSchemaV1;
   readonly policy: QueryPolicy;
+  /** Lifted for the same reason `rateLimit` is: `toLiveQuery` cross-checks it without `defOf`. */
+  readonly subscribes?: readonly string[];
   readonly cache?: QueryCache;
   readonly mcp?: QueryMcp;
   /** Lifted so `toQueryRoute` reads the declaration without reaching through `defOf`. */
@@ -212,6 +239,7 @@ export type QueryFacade<TInput extends StandardSchemaV1, TRow extends object> = 
   Query<TInput, TRow>,
   | 'input'
   | 'policy'
+  | 'subscribes'
   | 'cache'
   | 'mcp'
   | 'rateLimit'
@@ -231,7 +259,13 @@ export function query<TInput extends StandardSchemaV1, TRow extends object>(
   // cannot carry is wrong for every call, and the file that declared it is where it is repaired.
   assertEncodableInput(def.input);
   assertCacheTtl(def.cache);
-  return build(def, '');
+  assertSubscribes(def.subscribes, def.live);
+  // Snapshot and freeze BEFORE registration. `build()` stores `def` and `facadeFor()` exposes the
+  // same array, so a caller holding the literal it passed could mutate the list AFTER validation
+  // — and that list is what the manifest publishes and what `x db gen` grants REPLICA IDENTITY
+  // FULL from. A frozen copy makes the declaration the descriptor carries the one that was checked.
+  const subscribes = def.subscribes === undefined ? undefined : Object.freeze([...def.subscribes]);
+  return build(subscribes === undefined ? def : { ...def, subscribes }, '');
 }
 
 /**
@@ -302,6 +336,7 @@ export function describeQuery(target: AnyQuery): QueryDescriptor {
     // The flattened list, beside the label and never instead of it: one is read, one is matched.
     permissions: policyPermissions(target.policy),
     tags: tagKeys(target.cache?.tags ?? []),
+    subscribes: target.subscribes ?? null,
     ttlMs: target.cache?.ttlMs ?? null,
     rateLimit: target.rateLimit ?? null,
     deprecated: target.deprecated ?? null,

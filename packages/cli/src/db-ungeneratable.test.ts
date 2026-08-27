@@ -38,25 +38,31 @@ async function appWith(files: Readonly<Record<string, string>>): Promise<string>
   return root;
 }
 
-const REPLICA = 'alter table "posts" replica identity full;';
+// A form the generator provably cannot write, and the fixture's whole job is to STAY one. This
+// was `alter table … replica identity full` until 2026-08-26, when `GenerateOptions.
+// replicaIdentityFull` made that a statement `x db gen` emits — at which point four tests here
+// were asserting the rail reports SQL the generator itself writes. A trigger has no entity
+// declaration behind it in any shape this framework has, so it cannot be declassified the same way.
+const HANDWRITTEN =
+  'create trigger posts_audit after update on "posts" for each row execute function audit();';
 const ENUM = "create type plan_code as enum ('free', 'team');";
 
 describe('unit · the ungeneratable rail', () => {
   test('an undeclared hand-written statement is X_MIGRATION_UNGENERATABLE, naming file and statement', async () => {
-    const root = await appWith({ '0001_init.sql': `-- 0001_init\n${REPLICA}\n` });
+    const root = await appWith({ '0001_init.sql': `-- 0001_init\n${HANDWRITTEN}\n` });
 
     const [finding, ...rest] = await checkUngeneratableMigrations(root);
     expect(rest).toEqual([]);
     expect(finding?.code).toBe('X_MIGRATION_UNGENERATABLE');
     expect(finding?.at).toBe(`${MIGRATIONS_DIR}/0001_init.sql`);
-    expect(finding?.cause).toContain('alter table "posts" replica identity full');
+    expect(finding?.cause).toContain('create trigger posts_audit');
     expect(finding?.fix).toContain(ungeneratableMarker(1));
     expect(finding?.fix).toContain(`${MIGRATIONS_DIR}/0001_init.sql`);
     expect(finding?.docs).toBe(ERROR_DOCS_URL);
   });
 
   test('the cause carries the count, so a rewrite reads differently from a typo', async () => {
-    const root = await appWith({ '0001_init.sql': `-- 0001_init\n${ENUM}\n${REPLICA}\n` });
+    const root = await appWith({ '0001_init.sql': `-- 0001_init\n${ENUM}\n${HANDWRITTEN}\n` });
 
     const [finding, ...rest] = await checkUngeneratableMigrations(root);
     // One finding per FILE: the header line declares the whole migration, so a second finding
@@ -69,14 +75,14 @@ describe('unit · the ungeneratable rail', () => {
 
   test('the header marker declaring the exact count silences it', async () => {
     const root = await appWith({
-      '0001_init.sql': `-- 0001_init\n${ungeneratableMarker(2)}\n\n${ENUM}\n${REPLICA}\n`,
+      '0001_init.sql': `-- 0001_init\n${ungeneratableMarker(2)}\n\n${ENUM}\n${HANDWRITTEN}\n`,
     });
     expect(await checkUngeneratableMigrations(root)).toEqual([]);
   });
 
   test('a marker declaring fewer than the file holds still reports, and names both numbers', async () => {
     const root = await appWith({
-      '0001_init.sql': `-- 0001_init\n${ungeneratableMarker(1)}\n\n${ENUM}\n${REPLICA}\n`,
+      '0001_init.sql': `-- 0001_init\n${ungeneratableMarker(1)}\n\n${ENUM}\n${HANDWRITTEN}\n`,
     });
     const [finding] = await checkUngeneratableMigrations(root);
     expect(finding?.code).toBe('X_MIGRATION_UNGENERATABLE');
@@ -86,7 +92,7 @@ describe('unit · the ungeneratable rail', () => {
 
   test('a marker below the first statement declares nothing — it is a HEADER line', async () => {
     const root = await appWith({
-      '0001_init.sql': `-- 0001_init\n${ENUM}\n${ungeneratableMarker(2)}\n${REPLICA}\n`,
+      '0001_init.sql': `-- 0001_init\n${ENUM}\n${ungeneratableMarker(2)}\n${HANDWRITTEN}\n`,
     });
     expect((await checkUngeneratableMigrations(root))[0]?.code).toBe('X_MIGRATION_UNGENERATABLE');
   });
@@ -101,12 +107,12 @@ describe('unit · the ungeneratable rail', () => {
     expect(declaredUngeneratable(`create function f() as $$\n${ungeneratableMarker(9)}\n$$;`)).toBe(
       0,
     );
-    expect(declaredUngeneratable(`/*\n${ungeneratableMarker(9)}\n*/\n${REPLICA}`)).toBe(0);
+    expect(declaredUngeneratable(`/*\n${ungeneratableMarker(9)}\n*/\n${HANDWRITTEN}`)).toBe(0);
   });
 
   test('only `up` is judged: hand SQL under `-- down` reports nothing', async () => {
     const root = await appWith({
-      '0001_init.sql': `-- 0001_init\ncreate table "posts" ("id" uuid primary key);\n\n-- down\n${REPLICA}\n${ENUM}\n`,
+      '0001_init.sql': `-- 0001_init\ncreate table "posts" ("id" uuid primary key);\n\n-- down\n${HANDWRITTEN}\n${ENUM}\n`,
     });
     expect(await checkUngeneratableMigrations(root)).toEqual([]);
   });
@@ -196,7 +202,7 @@ describe('unit · the ungeneratable rail', () => {
 // a check nothing calls is a check that passes forever.
 describe('unit · the rail is wired into `x verify`', () => {
   test('the `drift` step reports an undeclared hand-written statement', async () => {
-    const root = await appWith({ '0001_init.sql': `-- 0001_init\n${REPLICA}\n` });
+    const root = await appWith({ '0001_init.sql': `-- 0001_init\n${HANDWRITTEN}\n` });
     await Bun.write(join(root, APP_CONFIG_FILE), 'export const config = {};\n');
 
     const drift = VERIFY_STEPS.find((step) => step.name === 'drift');

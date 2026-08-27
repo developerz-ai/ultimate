@@ -573,6 +573,8 @@ regex and `+` is a quantifier — `n1` is what actually selects these tests.
 | `db-branch.ts` | what a branch IS: the closed verb set, the name it takes on disk and in `pg_database`, and list/create/drop per mode |
 | `cmd-db-branch.ts` | `x db branch`'s wiring alone — which verb, which refusal, and the one connection an external clone runs on |
 | `db-finding.ts` | one thrown value → one `Finding`, shared by `cmd-db.ts` and `cmd-db-branch.ts` |
+| `db-accept-created.ts` | `acceptCreatedTables`: the post-migrate report minus the tables the applied migrations' own SQL creates — the half `@ultimat3/db`'s `unexpectedTable` names |
+| `db-subscribes.ts` | `replicaIdentityTables`: the tables `x db gen` grants `REPLICA IDENTITY FULL`, read off each live query's declared `subscribes:` — and `X_QUERY_SUBSCRIBES_UNKNOWN` for a name no entity's table matches |
 | `drift.ts` | `checkSourceDrift`: the `.hash` sidecar the `drift` step compares, no database needed |
 | `schema-diff.ts` | what two GENERATED snapshots disagree about, as data — the pure half |
 | `schema-drift.ts` | `checkMigrationDrift`: entity declarations against the newest `.snapshot.json`, and the composition the `drift` step and `x doctor` both read |
@@ -674,6 +676,47 @@ is only the channel each has. `ROLE=migrate` logged and exited 0 until it did no
 whose only signal is the exit code reported success over a schema nobody can reconstruct, which is
 the failure the post-migrate check exists to catch.
 
+**`x db gen` emits `REPLICA IDENTITY FULL`, and the set is DECLARED rather than derived**,
+`As of 2026-08-26` (#357). `@ultimat3/realtime` refuses a live subscription to a table without it —
+logical replication carries no old row on an UPDATE, so no patch can be computed — and for two
+years nothing in the framework emitted one. It could not be derived, and that is the load-bearing
+fact: the relation name lives inside the query's `sql:` callback, which no generator can invoke
+without valid input (`describeSql` says so itself — "`null` when no sample input was supplied").
+So a live query DECLARES it (`subscribes:`, `@ultimat3/query`), the declaration is machine-checked
+against the resolved `shape.entity` on the first subscribe (`X_QUERY_SUBSCRIBES_DRIFT`), and
+`db-subscribes.ts` reads it off `describeQueries()` — the same source `frameworkSources` copies onto
+`QueryFact.subscribes`, one hop earlier, because building the manifest here would re-load the app
+and demand a `package.json` that `x db gen` has never needed.
+
+**The third `subscribes:` refusal is this package's, because no other tier can ask it.**
+`@ultimat3/db` keeps only the declared names an entity's table matches and DROPS the rest — it has
+no way to tell a typo from a table another migration owns — and `@ultimat3/query` holds no table
+catalog at all. So `subscribes: ['posts', 'user']` granted the identity to `posts`, dropped `user`
+in silence, and read as granted. `X_QUERY_SUBSCRIBES_UNKNOWN` refuses it BEFORE anything is
+written, naming the query and offering the tables the app does declare. It is checked after
+`loadApp`'s findings, never before: a module that would not import leaves the registry short, and
+every name whose entity lives in it would then look like a typo.
+
+**And it accepts a table the migrations it just applied demonstrably created**, `As of 2026-08-26`
+(issue #345). A snapshot records only what ENTITIES declare, so a table created by a HAND-WRITTEN
+migration reached no sidecar and was `unexpected-table` on every deploy forever — with a `fix:`
+that generated an empty migration, because `x db gen` diffs the entity registry against the newest
+snapshot and the table is on neither side. `@ultimat3/db` fixed the wording; `acceptCreatedTables`
+(`db-accept-created.ts`) is the half that file's `unexpectedTable` names, and it is composed around
+`checkDrift` inside `runMigrations`, so `x db migrate` and `ROLE=migrate` accept the same set.
+**Only `unexpected-table`, and only for a name a migration's SQL creates** — which is what keeps it
+an acceptance rather than the check switched off: a table absent from the snapshot produces exactly
+one difference (`diffSchema` reports it and never compares its columns), and a table nobody
+declared and no migration created is still reported, cause and `fix:` intact. The evidence is the
+applied list itself: `migrate()` runs first, so every file on disk has been applied by the time the
+question is asked. The verb phrase is read ANCHORED off the raw statement, which is the whole
+protection — a `create table` can only be at position 0 by being one, so `values ('create table
+ghost')` opens with `insert` and a comment-only chunk is not a statement at all. A `stripSqlNoise`
+pass was written first and deleted: it could not change one answer, and a defence that cannot fail
+is one nobody can test. Everything the anchor admits and the name grammar does not — a comment
+between the keywords, a `temp` table, a qualifier naming a schema `checkDrift` never introspected —
+contributes nothing, which reports drift that could have been accepted and never the reverse.
+
 **The `drift` step asks a third thing, off the same directory and with no database either: is every
 destructive statement declared?** `db-destructive.ts` reads each committed migration through
 `migrations.ts` — the reader `x db migrate` applies from, because a rail checking a list the
@@ -751,8 +794,15 @@ decisions behind that shape:
 Regenerating is exactly what *discards* these statements, so the command every other db code
 answers with is the one this one must not lead with — `X_MIGRATION_UNGENERATABLE`'s `CLI_FIXES` row
 is `x verify --only drift`, and the re-declare branch (an enum is a text column plus a check
-invariant) rides behind an em-dash because it is available for some of the statements and never
-for `REPLICA IDENTITY FULL`, which nothing in the framework emits.
+invariant) rides behind an em-dash because it is available for some of the statements and not all.
+**`REPLICA IDENTITY FULL` was the statement with no second branch, and stopped being one on
+2026-08-26** (#357): a live query declares the relations it is patched from (`subscribes:`),
+`db-subscribes.ts` reads them off the same registry the manifest is projected from, `x db gen`
+emits the ALTER and `@ultimat3/db` records it on the snapshot so it is emitted once. The re-declare
+branch covers it now: declare `subscribes:` and regenerate. A statement already committed is a
+different question and still counts — `GENERATABLE_FORMS` (`@ultimat3/db`) matches a leading verb
+phrase and does not carry this one, measured at 7 found / 7 declared on `examples/dummy`'s
+`0001_init.sql`, `As of 2026-08-26` — so the marker branch remains the only remedy for SQL on disk.
 
 **`x db gen` reports what it could not write, and exits 0.** `GeneratedMigration.unrendered` reached
 the committed `.sql` as a `-- UNRENDERED` comment and nothing else read it; `db-generate.ts` now
@@ -824,6 +874,7 @@ hand-written layout and `readMigrations` skips it — read as a migration it sor
 | `favicon.ts` | `/favicon.ico`: the app's own file, and the bytes the framework answers with when there is none |
 | `dev-hooks.ts` | the pipeline's `authorize` seam, decided from the app's own `Policy` objects |
 | `dev-replica.ts` | which boot gets a standby, and the one middleware frame that opens the read scope |
+| `dev-replicator.ts` | the `replicator` role: the feed selected, locked and pumped — and `replicatedRelations()`, the entity TABLES it filters on |
 | `dev-roles.ts` | `--role` selection plus start/stop for `web`, `sync`, `worker`, `scheduler` |
 | `dev-dashboard.ts` | the `DevSources` hooks only this process can answer, and the two CLI panels |
 | `dev-traces.ts` | core's spans → the `/_x` timeline's request traces |
@@ -911,6 +962,19 @@ The per-TENANT subscription cap is deliberately unset, and **both halves of it a
 `assertCapacity` returns early unless `maxPerTenant` AND `tenantOf` are given, so passing one arms
 nothing — and no default is defensible when one tenant is a person and the next is five thousand
 seats. The per-socket 128 stands because a socket is one browser tab.
+
+**The change feed is filtered by TABLE, never by entity name**, `As of 2026-08-26`.
+`replicatedRelations()` (`dev-replicator.ts`) is the one projection, and both of its readers are
+catalog readers: `PgReplicationStream` keeps a change only when `#entities.has(relation.name)` and a
+pgoutput Relation message names the table, while `warnPartialIdentity` matches the same list against
+`pg_class.relname`. An entity NAME is the framework's own registry key — a cache tag, a policy and
+`x entities describe` are all keyed by it — and `entity('user', { table: 'users' })` makes the two
+different strings. It passed `.name`, so a renamed table matched on neither side: **every change
+skipped** and a replica-identity warning that could never fire, with no error anywhere. Invisible to
+every fixture in the tree, because `table` defaults to the name verbatim and all six entities in
+`examples/dummy` have `name === table` — `dev-replicator.test.ts` uses `billingAccount` on
+`billing_accounts` for exactly that reason, and proves the value through the real call chain:
+`assertIdentifier` refuses `billingAccount` before any connection and accepts `billing_accounts`.
 
 `trustProxy` is read from `TRUSTED_PROXY_HOPS` in `startWeb`, the way `PORT` and `ROLE` are read: it
 is a fact about the deployment, not an app config choice, and one image runs behind an ingress in

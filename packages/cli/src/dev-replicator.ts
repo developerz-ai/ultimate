@@ -42,6 +42,24 @@ const embeddedRefusal = (): BadFlagError =>
   });
 
 /**
+ * The relations the feed decodes: every registered entity's PHYSICAL TABLE, never its name.
+ *
+ * Both readers of this list are catalog readers. `PgReplicationStream` keeps a change only when
+ * `#entities.has(relation.name)`, and a pgoutput Relation message names the table; `warnPartialIdentity`
+ * matches the same list against `pg_class.relname`. An entity NAME is the framework's own registry
+ * key — what a cache tag, a policy and `x entities describe` are keyed by — and `entity('user',
+ * { table: 'users' })` makes the two different strings. Passing the name meant a renamed table
+ * matched nothing on either side: every change SKIPPED, and a replica-identity warning that could
+ * never fire. Latent wherever the two agree, which is every entity in `examples/dummy`.
+ *
+ * Deduplicated and sorted: two entities may share one table, and the same registry must hand the
+ * feed the same list whatever order it was registered in.
+ */
+export function replicatedRelations(): readonly string[] {
+  return [...new Set(describeEntities().map((entity) => entity.table))].sort();
+}
+
+/**
  * An entity list is the feed's filter, so an empty one is a replicator that decodes every change
  * and forwards none. Refused here rather than inside the feed: this is the layer that knows the
  * list came from the app's own registry, so it can name the command that adds to it.
@@ -61,7 +79,7 @@ const noEntitiesRefusal = (): BadFlagError =>
  */
 export async function startReplicator(options: StartReplicatorOptions): Promise<RunningReplicator> {
   if (options.services.db.mode === 'embedded') throw embeddedRefusal();
-  const entities = describeEntities().map((entity) => entity.name);
+  const entities = replicatedRelations();
   if (entities.length === 0) throw noEntitiesRefusal();
 
   const selection = selectChangeFeed(options.env, { entities });

@@ -403,8 +403,12 @@ describe('the newest migration records the schema this chain creates', () => {
     const enums = [...whole.matchAll(/^CREATE TYPE (\w+) AS ENUM/gim)].map((one) => one[1] ?? '');
     const replicas = [...whole.matchAll(/^ALTER TABLE \w+ REPLICA IDENTITY FULL/gim)];
     expect(enums).toHaveLength(5);
+    // Both ALTERs are still ON DISK and are no longer COUNTED. `x db gen` emits
+    // `alter table … replica identity` as of 2026-08-26, from a live query's declared
+    // `subscribes:`, so a squash no longer loses them and counting them would send an author to
+    // hand-write SQL the generator writes. It was `enums.length + replicas.length` until then.
     expect(replicas).toHaveLength(2);
-    expect(Number(declared?.[1])).toBe(enums.length + replicas.length);
+    expect(Number(declared?.[1])).toBe(enums.length);
     // And the sidecar cannot name one: a column on an enum type is recorded as the `text` the
     // generator would emit, which is a difference the chain's own ALTERs already performed.
     const types = recorded.flatMap((table) => table.columns.map((column) => column.dataType));

@@ -106,6 +106,15 @@ export function diffQueries(
     if (canonicalJson(query.cacheTags) !== canonicalJson(next.cacheTags)) {
       changes.push({ kind: 'internal', path: `${path}.cacheTags`, detail: 'cache tags changed' });
     }
+    // Internal for the same reason, and reported for a sharper one: this list is what `x db gen`
+    // grants REPLICA IDENTITY FULL to, so a move here is a migration the release owes.
+    if (canonicalJson(query.subscribes ?? null) !== canonicalJson(next.subscribes ?? null)) {
+      changes.push({
+        kind: 'internal',
+        path: `${path}.subscribes`,
+        detail: 'subscribed relations changed',
+      });
+    }
   }
   for (const query of after) {
     if (!beforeByName.has(query.name)) {

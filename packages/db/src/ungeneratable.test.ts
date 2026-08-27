@@ -70,11 +70,13 @@ ALTER TABLE likes REPLICA IDENTITY FULL;
 
   // The separator is not part of a statement — `statementsOf` cuts on it, and the destructive
   // rail beside this one reports the same way.
-  test('the three statements a regenerated migration would lose are named, not counted', () => {
+  // It was THREE until 2026-08-26, and the two that left are the point of the change: the
+  // generator now emits `replica identity` from `GenerateOptions.replicaIdentityFull`, so a
+  // squash no longer loses them and counting them would send an author to hand-write SQL
+  // `x db gen` writes. The enum is what a squash still discards, because no entity declares it.
+  test('the one statement a regenerated migration would still lose is named, not counted', () => {
     expect(ungeneratableStatements(up)).toEqual([
       "CREATE TYPE plan_code AS ENUM ('free', 'team', 'business')",
-      'ALTER TABLE posts REPLICA IDENTITY FULL',
-      'ALTER TABLE likes REPLICA IDENTITY FULL',
     ]);
   });
 
@@ -241,6 +243,10 @@ describe('unit · the generatable list is the generators own output', () => {
       name: 'every form',
       now: new Date('2026-01-01T00:00:00.000Z'),
       allowDestructive: true,
+      // Without this the corpus holds no `replica identity` statement, so the invariant below
+      // holds VACUOUSLY for that form — which is exactly how the generator came to emit SQL its
+      // own rail then reported.
+      replicaIdentityFull: ['posts'],
     });
     return [migration.up, migration.down];
   };

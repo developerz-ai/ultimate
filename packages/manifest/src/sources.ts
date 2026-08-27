@@ -81,6 +81,9 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       policy: query.capability,
       permissions: query.permissions,
       live: query.live,
+      // Written only when declared — `null` is the descriptor's "the read named none", and an
+      // empty list is refused at `query()`, so absence carries the whole meaning.
+      ...(query.subscribes === null ? {} : { subscribes: query.subscribes }),
       cacheTags: query.tags,
     })),
     jobs: describeJobs().map((job) => ({

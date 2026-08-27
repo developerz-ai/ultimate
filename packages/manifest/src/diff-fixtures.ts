@@ -27,6 +27,7 @@ export const fixtureQuery = (name: string, policy: string, permissions = [policy
   policy,
   permissions,
   live: true,
+  subscribes: ['posts'],
   cacheTags: ['post'],
 });
 

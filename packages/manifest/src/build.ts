@@ -147,6 +147,9 @@ const normalizeQuery = (query: QueryFact): QueryFact => ({
   ...query,
   permissions: [...query.permissions].sort(),
   cacheTags: [...query.cacheTags].sort(),
+  // Conditional, not `?? []`: the fact is absent when the read declared nothing, and writing an
+  // empty array would make every plain read carry a key that means the same as no key.
+  ...(query.subscribes === undefined ? {} : { subscribes: [...query.subscribes].sort() }),
 });
 
 // Job steps keep their DECLARED order — a job's steps are a sequence, not a set, and

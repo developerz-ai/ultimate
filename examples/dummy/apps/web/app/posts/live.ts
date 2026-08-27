@@ -33,6 +33,12 @@ export const liveFeed = query({
   input: t.object({ orgId: t.uuid, limit: t.number.int().min(1).max(50).default(50) }),
   policy: feedRead,
   live: true,
+  // The relation this read is patched from, said out loud: it lives inside `sql:` below, which no
+  // generator can invoke without valid input, so `x db gen` reads THIS to emit
+  // `alter table "posts" replica identity full` — without which logical replication carries no old
+  // row on an UPDATE and `@ultimat3/realtime` can compute no patch. Machine-checked against the
+  // resolved `shape.entity` on the first subscribe, so a stale name is X_QUERY_SUBSCRIBES_DRIFT.
+  subscribes: ['posts'],
   sql: ({ orgId, limit }) =>
     // 'posts' — the entity's snake_case table, not the feature name: `from()` quotes the
     // identifier straight into the SQL text an agent reads back.
