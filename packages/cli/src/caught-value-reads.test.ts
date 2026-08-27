@@ -13,7 +13,7 @@
 // these were.
 
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { stripComments } from './ts-scan';
 
@@ -31,12 +31,12 @@ const CAUGHT_BINDING = /\bcatch\s*\((?<name>[A-Za-z_$][\w$]*)\)/g;
 const castReadOf = (name: string): RegExp => new RegExp(`\\(\\s*${name}\\s+as\\s+[^)]*\\)\\s*[.[]`);
 
 /** Every `<file>: <line>` in this package that casts a caught value and then reads off it. */
-export function castReadsOfCaughtValues(): readonly string[] {
+export async function castReadsOfCaughtValues(): Promise<readonly string[]> {
   const hits: string[] = [];
   for (const path of shippedSources()) {
     // Comments blanked first: this file's own doc block spells the pattern out, and a scanner that
     // read prose as code would report findings nobody can fix.
-    const source = stripComments(readFileSync(join(SRC, path), 'utf8'));
+    const source = stripComments(await Bun.file(join(SRC, path)).text());
     const names = new Set(
       [...source.matchAll(CAUGHT_BINDING)].map((match) => match.groups?.['name'] ?? ''),
     );
@@ -70,7 +70,7 @@ describe('unit · a caught value is never cast and then read', () => {
 
   // ZERO, and the number may only stay zero. `stringField(error, '<key>')` from `@ultimat3/core`
   // is the one form; `metrics-endpoint.ts`'s `isAddressInUse` is the worked example.
-  test('no shipped CLI source does it', () => {
-    expect(castReadsOfCaughtValues()).toEqual([]);
+  test('no shipped CLI source does it', async () => {
+    expect(await castReadsOfCaughtValues()).toEqual([]);
   });
 });

@@ -3,7 +3,9 @@
 // fails on Bun 1.3 and passes on Bun 1.4 — which is exactly how it reached `main`.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun has no readdir, no stat and no synchronous read.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { binaryArgs } from './cmd-build';
 import { COMPILE_EXTERNALS, externalArgs } from './compile-externals';

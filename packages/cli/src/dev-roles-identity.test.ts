@@ -9,7 +9,7 @@
 // function. Every case here is driven end to end rather than off a hook table.
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 import { logger, userActor } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { configureAuthenticator, resetAuthenticator } from '@ultimat3/http';

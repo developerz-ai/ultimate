@@ -23,7 +23,8 @@
 // an authenticated Postgres to everyone on the café wifi.
 
 import { describe, expect, test } from 'bun:test';
-// `join` builds the host-separator paths to ROOT and each compose file; Bun ships no path join.
+// why: `join` builds the host-separator paths to ROOT and each compose file; Bun ships no path
+// join.
 import { join } from 'node:path';
 import { DEFAULT_PORT, planDeploy, planNewApp } from '@ultimat3/cli';
 import { YAML } from 'bun';

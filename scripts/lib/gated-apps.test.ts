@@ -3,10 +3,7 @@
 // this file exists for, no app in the repo that the gate does not run at all.
 
 import { describe, expect, test } from 'bun:test';
-// Both `node:`-only by necessity: Bun exposes no path-join primitive, and its only existence check
-// (`Bun.file().exists()`) is async — these assertions sit in synchronous `test()` bodies, where an
-// unawaited promise is a passing test that checked nothing.
-import { existsSync } from 'node:fs';
+// why: Bun exposes no path-join primitive, and `Bun.file()` takes a path already joined.
 import { join } from 'node:path';
 import { VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import { GATED_APPS, PINS_FILE } from './gated-apps';
@@ -47,9 +44,9 @@ describe('GATED_APPS', () => {
     expect(GATED_APPS.map((app) => app.dir)).toContain('dummy/social-media-clone');
   });
 
-  test('each app is a real directory, so a pin cannot outlive the app it excuses', () => {
+  test('each app is a real directory, so a pin cannot outlive the app it excuses', async () => {
     for (const app of GATED_APPS) {
-      expect(existsSync(join(repoRoot(), app.dir, 'package.json'))).toBe(true);
+      expect(await Bun.file(join(repoRoot(), app.dir, 'package.json')).exists()).toBe(true);
     }
   });
 
@@ -74,7 +71,7 @@ describe('GATED_APPS', () => {
     }
   });
 
-  test('PINS_FILE points at this file, so the stale-pin fix names somewhere real', () => {
-    expect(existsSync(join(repoRoot(), PINS_FILE))).toBe(true);
+  test('PINS_FILE points at this file, so the stale-pin fix names somewhere real', async () => {
+    expect(await Bun.file(join(repoRoot(), PINS_FILE)).exists()).toBe(true);
   });
 });

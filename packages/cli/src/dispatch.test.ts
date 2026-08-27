@@ -3,10 +3,12 @@
 // the one branch that has no `ParsedArgs` to read `--json` off.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs'; // why: Bun has no mkdtemp.
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
-// `node:process`, and unavoidable: the assertion below is about which of the process's OWN streams
-// core's default log writer reaches, so the writers it targets are what this test has to intercept.
+// why: `node:process`, and unavoidable: the assertion below is about which of the process's OWN
+// streams core's default log writer reaches, so the writers it targets are what this test has to
+// intercept.
 import process from 'node:process';
 import { logger, setLogStream } from '@ultimat3/core';
 import { PLANNED_COMMANDS } from './cmd-planned';

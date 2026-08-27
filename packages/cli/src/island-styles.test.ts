@@ -3,9 +3,10 @@
 // asset PATH — a string — so every `styles['x']` is `undefined` and `Bun.build` says `success: true`.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-// `node:` by necessity: Bun ships no path API, and `rm(…, { force: true })` removes a fixture
+// why: `node:` by necessity: Bun ships no path API, and `rm(…, { force: true })` removes a fixture
 // root that may not exist without a branch.
 import { rm } from 'node:fs/promises';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import {
   clearStylesheets,

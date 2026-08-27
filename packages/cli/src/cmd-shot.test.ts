@@ -3,8 +3,12 @@
 // this command is deliberately not a step of `x verify` — so its suite must not need one either.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp, no recursive remove and no synchronous existence check, and Bun.write is
+// async in these synchronous fixture helpers.
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { ConsoleLine, ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
 import { fakeBrowser } from '@ultimat3/scraping';

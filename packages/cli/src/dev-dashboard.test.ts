@@ -3,8 +3,10 @@
 // replaced — a CLI that re-implemented four JSON endpoints of its own next to the real ones.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and no recursive remove.
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { DevPanel, PanelPayload, TimelinePanelData } from '@ultimat3/admin/dev';
 import { DEV_PANELS, panelPayload, staticDevSources, timelinePanel } from '@ultimat3/admin/dev';

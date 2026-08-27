@@ -4,8 +4,11 @@
 // naming a command that cannot close the code.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp, no recursive remove and no symlink.
 import { mkdtemp, rm, symlink } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { loadErrorCatalog, registeredErrorCodes } from './error-catalog';
 import { CLI_ERROR_CODES } from './error-codes';

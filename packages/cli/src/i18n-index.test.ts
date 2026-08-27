@@ -4,8 +4,10 @@
 // the catalogs on disk, and the refusal an app can still reach names a command that repairs it.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and no recursive remove.
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { catalogLocales, I18N_INDEX_PATH, syncI18nIndex } from './i18n-index';
 import { unregisteredFix } from './i18n-registration';

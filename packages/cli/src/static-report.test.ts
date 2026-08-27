@@ -3,9 +3,10 @@
 // report in #242 — an `app/` route and a non-static `site/` route are not skipped for one reason.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-// `node:` by necessity: Bun ships no path API, and `rm(…, { force: true })` removes a fixture
+// why: `node:` by necessity: Bun ships no path API, and `rm(…, { force: true })` removes a fixture
 // root that may not exist without a branch.
 import { rm } from 'node:fs/promises';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { RENDER_MODES } from '@ultimat3/core';
 import { SURFACE_SPECS, SURFACES, surfaceAllows } from '@ultimat3/render';

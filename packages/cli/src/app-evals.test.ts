@@ -5,7 +5,8 @@
 // Bun ships no `Bun.*` equivalent for either: `rm` tears the fixture tree down between runs, and
 // `join` builds the host-separator paths it is written to and read from.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { RECORD_ENV, resetEvals, resetPrompts } from '@ultimat3/ai';
 import { checkEvalBaselines, checkEvalCoverage, checkEvalRecording } from './app-evals';

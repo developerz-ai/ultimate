@@ -3,10 +3,12 @@
 // The runner is fake on purpose: a real `bun test` here would be testing Bun.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway tree these
-// steps discover over, `tmpdir` says where, and `join` is the host-separator path into it.
+// why: Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway tree
+// these steps discover over, `tmpdir` says where, and `join` is the host-separator path into it.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { TEST_TYPES as TESTING_TEST_TYPES } from '@ultimat3/testing';
 import type { ExecOptions, ExecResult } from './exec';

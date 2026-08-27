@@ -4,10 +4,12 @@
 // because every one of those is a case where answering with bytes is the bug.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-// `node:` by necessity: Bun has no temp-directory helper, and a shared root would let one case's
-// object decide the next case's answer.
+// why: `node:` by necessity: Bun has no temp-directory helper, and a shared root would let one
+// case's object decide the next case's answer.
 import { mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { userActor } from '@ultimat3/core';
 import type { RequestContext, Route } from '@ultimat3/http';

@@ -9,6 +9,7 @@
 // A series nothing in CI exercises, installing a lockfile written by 1.4 under `--frozen-lockfile`.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { APP_ROOTS } from './boundaries';
 

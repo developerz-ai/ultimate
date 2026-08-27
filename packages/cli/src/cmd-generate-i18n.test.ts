@@ -3,8 +3,8 @@
 // it), one at the pure `dedupe()` level and one through the real `x g` command end to end.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { resetAppLoad } from './app-load';
 import { dedupe, generateCommand } from './cmd-generate';
@@ -149,6 +149,6 @@ describe('unit · x g regenerates the app catalog index for every locale on disk
     );
     // `x g` still writes the catalog a route or resource asked for; it just never fabricates the
     // index file for an app that has no `packages/i18n/src/index.ts` to regenerate.
-    expect(existsSync(INDEX_PATH)).toBe(false);
+    expect(await Bun.file(INDEX_PATH).exists()).toBe(false);
   });
 });

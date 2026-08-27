@@ -4,9 +4,10 @@
 // process-global, so every test resets them.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-// Bun ships no recursive delete and no path API: `rm` tears down the two fixture app roots this
-// suite writes, and `join` is what builds their paths in the first place.
+// why: Bun ships no recursive delete and no path API: `rm` tears down the two fixture app roots
+// this suite writes, and `join` is what builds their paths in the first place.
 import { rm } from 'node:fs/promises';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { action, registerActions, resetRegistry as resetActions, t } from '@ultimat3/action';
 import type { Policy } from '@ultimat3/policy';

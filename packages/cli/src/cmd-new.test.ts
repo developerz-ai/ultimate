@@ -4,9 +4,11 @@
 // an app that scaffolds with an icon nothing can ever turn into `/icons/icon-192.png`.
 
 import { describe, expect, test } from 'bun:test';
-// `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
+// why: `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { decodeImage, probeImage } from '@ultimat3/core';
 import type { NestedCatalog } from '@ultimat3/i18n';

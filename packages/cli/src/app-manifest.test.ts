@@ -3,9 +3,10 @@
 // a fixture that only pretended to be a module would prove nothing.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// Bun ships no `Bun.*` equivalent for either: `rm` tears the fixture tree down recursively between
-// runs, and `join` builds the host-separator paths the fixture is written to and read from.
+// why: Bun ships no `Bun.*` equivalent for either: `rm` tears the fixture tree down recursively
+// between runs, and `join` builds the host-separator paths the fixture is written to and read from.
 import { rm } from 'node:fs/promises';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { resetRegistry as resetActions } from '@ultimat3/action';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';

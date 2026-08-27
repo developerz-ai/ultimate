@@ -4,10 +4,12 @@
 // app believes its convention is enforced.
 
 import { describe, expect, test } from 'bun:test';
-// Bun ships no equivalent for any of these: `mkdtemp`/`rm` own a throwaway app root's lifetime,
-// `join` builds the host-separator path a guard file is written at.
+// why: Bun ships no equivalent for any of these: `mkdtemp`/`rm` own a throwaway app root's
+// lifetime, `join` builds the host-separator path a guard file is written at.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { VERIFY_STEPS } from './cmd-verify';
 import { exec } from './exec';

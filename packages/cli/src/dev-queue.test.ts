@@ -4,7 +4,7 @@
 // process reuses it over a closed database; a missing table is invisible until the first request.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 import { getIdempotencyStore } from '@ultimat3/action';
 import { raw, setDbClient } from '@ultimat3/db';
 import { jobDriver, resetJobDriver } from '@ultimat3/jobs';

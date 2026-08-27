@@ -3,7 +3,8 @@
 // real protocol with the token the command minted.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import { resetAppLoad } from './app-load';

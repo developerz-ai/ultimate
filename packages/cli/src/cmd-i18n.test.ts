@@ -6,11 +6,13 @@
 // names this command and not the router — `ParsedArgs` still comes from the real `parseArgs`.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-// `node:` and not Bun: Bun has no API for a temporary directory (`mkdtempSync` + `tmpdir`) and none
-// for a recursive delete (`rmSync`). `node:path` comes with them — `Bun.write` takes the joined
-// path, but only `node:path` can build one.
+// why: `node:` and not Bun: Bun has no API for a temporary directory (`mkdtempSync` + `tmpdir`) and
+// none for a recursive delete (`rmSync`). `node:path` comes with them — `Bun.write` takes the
+// joined path, but only `node:path` can build one.
 import { mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { Catalog } from '@ultimat3/i18n';
 import { loadCatalog, registerCatalog, resetCatalogs } from '@ultimat3/i18n';

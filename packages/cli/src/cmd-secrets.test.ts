@@ -4,9 +4,12 @@
 // reaches the repository, the terminal or `--json`.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway app roots.
+// why: Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway app
+// roots.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import {
   generateMasterKey,

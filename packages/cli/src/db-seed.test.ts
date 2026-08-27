@@ -3,9 +3,11 @@
 // is a real command invocation against a temp app root with no database anywhere near it.
 
 import { describe, expect, test } from 'bun:test';
-// `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
+// why: `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Seed, SeedRun } from '@ultimat3/entity';

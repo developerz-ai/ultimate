@@ -2,7 +2,7 @@
 // breaks either is one that talks to the wrong database or leaves the next command locked out.
 
 import { describe, expect, test } from 'bun:test';
-// `node:path` — Bun ships no path joiner, and the boundary assertion below reads this module's
+// why: `node:path` — Bun ships no path joiner, and the boundary assertion below reads this module's
 // own source off disk rather than trusting an import graph a bundler could have rewritten.
 import { join } from 'node:path';
 import type { JobDriver } from '@ultimat3/jobs';

@@ -4,10 +4,13 @@
 // in two packages and answered by neither is what this whole path exists to close.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-// `node:` by necessity: Bun has no temp-directory, no mkdtemp and no recursive remove — and each
-// case needs its own root, or a leftover `apps/web/site/icon.png` decides the next one's answer.
+// why: `node:` by necessity: Bun has no temp-directory, no mkdtemp and no recursive remove — and
+// each case needs its own root, or a leftover `apps/web/site/icon.png` decides the next one's
+// answer.
 import { mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { createRaster, encodeImage, probeImage, userActor } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';

@@ -7,7 +7,8 @@
 // own payloads, so a CLI that grew a second copy of one would fail this file.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { resetRegistry as resetActions } from '@ultimat3/action';
 import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';

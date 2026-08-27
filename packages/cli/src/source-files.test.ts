@@ -2,6 +2,7 @@
 // `errors` and `x i18n check` can never report on — a hole none of them can see from the inside.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { eachSourceFile, isGenerated, isTest, isVendored, SOURCE_GLOBS } from './source-files';
 

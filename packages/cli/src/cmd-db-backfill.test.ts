@@ -5,9 +5,11 @@
 // are two questions.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-// `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
+// why: `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
 import { mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { entity, memoryRepo, tableFor, uuid } from '@ultimat3/entity';
 import type { JobDriver } from '@ultimat3/jobs';

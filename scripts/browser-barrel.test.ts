@@ -28,9 +28,10 @@
 // program, statically and with no bundle at all.
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises'; // why: Bun has no mkdtemp.
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import {
   browserBarrels,
@@ -319,10 +320,10 @@ describe('the barrel set', () => {
     expect(barrelChunk(name)).toBe(barrelChunk(name));
   });
 
-  test('and every derived entry has a barrel this suite can build', () => {
+  test('and every derived entry has a barrel this suite can build', async () => {
     for (const name of BARRELS) {
       const barrel = join(repoRoot(), 'packages', name, 'src/index.ts');
-      expect(existsSync(barrel)).toBe(true);
+      expect(await Bun.file(barrel).exists()).toBe(true);
     }
   });
 });

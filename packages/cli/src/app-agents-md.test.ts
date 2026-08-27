@@ -3,10 +3,12 @@
 // actually engages — a check nothing invokes reads exactly like a check that always passes.
 
 import { describe, expect, test } from 'bun:test';
-// Bun ships no `Bun.*` equivalent: `mkdtemp`/`rm` own a throwaway repo root's lifetime, and
+// why: Bun ships no `Bun.*` equivalent: `mkdtemp`/`rm` own a throwaway repo root's lifetime, and
 // `join` builds the host-separator paths the check reads.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { AGENTS_MD_FILENAME, AGENTS_MD_MAX_BYTES } from '@ultimat3/manifest';
 import { checkAgentsMd } from './app-agents-md';

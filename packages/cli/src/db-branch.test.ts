@@ -4,9 +4,11 @@
 // that made `x db branch ls` clone a database called `ls`.
 
 import { describe, expect, test } from 'bun:test';
-// `node:fs` — Bun has no temp-directory API and no directory listing; `node:path` — no joiner.
+// why: `node:fs` — Bun has no temp-directory API and no directory listing; `node:path` — no joiner.
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { createRecordingClient } from '@ultimat3/db';
 import {

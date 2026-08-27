@@ -3,9 +3,11 @@
 // through the reader that applies it, and its snapshot must be the schema the next diff starts from.
 
 import { afterAll, expect, test } from 'bun:test';
-// `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
+// why: `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
 import { mkdtempSync, rmSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { declaredSchema, generateMigration, snapshotJson } from '@ultimat3/db';
 import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';

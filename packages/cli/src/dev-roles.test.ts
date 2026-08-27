@@ -4,7 +4,7 @@
 // (`dev-roles-identity.test.ts`) and what its responses admit (`dev-roles-csp.test.ts`).
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 import { METRICS_PATH } from '@ultimat3/core';
 import type { OutboxRecord, OutboxStore } from '@ultimat3/jobs';
 import { job, t, task } from '@ultimat3/jobs';

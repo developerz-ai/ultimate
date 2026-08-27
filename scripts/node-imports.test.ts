@@ -94,18 +94,81 @@ describe('what counts as saying why', () => {
 describe('what the rule stays silent about', () => {
   test('a commented-out import is not an import', () => {
     expect(found("// import { writeSync } from 'node:fs';")).toEqual([]);
-    expect(found(" * import { writeSync } from 'node:fs';")).toEqual([]);
+    expect(found("/**\n * import { writeSync } from 'node:fs';\n */")).toEqual([]);
+  });
+
+  /**
+   * The half a line-prefix test cannot see, and the reason the mask replaced one: the comment does
+   * not start the line, so `trimStart().startsWith('//')` reads straight past it.
+   */
+  test('a trailing comment on a line of real code is still a comment', () => {
+    expect(found("const a = 1; // import { writeSync } from 'node:fs';")).toEqual([]);
   });
 
   test('a package specifier that merely starts with the letters is not a builtin', () => {
     expect(found("import { x } from 'nodemailer';")).toEqual([]);
     expect(found("import { x } from './node-imports';")).toEqual([]);
   });
+});
 
-  test('a test file is a test — its imports are the harness, not the shipped surface', () => {
+/**
+ * INPUT vs IMPORT. A rule's own test spells the forbidden shape as DATA and hands it to the pure
+ * function above — this file does it two dozen times — and a checker that reports its own fixtures
+ * is a checker whose count nobody can drain. Both carriers are exempt, and the COMMENT one is the
+ * half a string-literal exemption alone misses: `scripts/async-context-guard.test.ts:106` explains
+ * the shape by quoting it in a doc comment. `dead-docs-host.ts` states the same carve-out — "a
+ * comment naming the host as the thing that was removed cannot 404".
+ */
+describe('a fixture is not an import', () => {
+  test('inside a string literal — the shape as this test own data', () => {
+    expect(found(`const fixture = "import { tmpdir } from 'node:os';";`)).toEqual([]);
+    expect(found("const fixture = `import { tmpdir } from 'node:os';`;")).toEqual([]);
+  });
+
+  test('inside a comment — prose ABOUT the shape, which no process evaluates', () => {
+    const source = [
+      '/**',
+      " * A module may not write `import { tmpdir } from 'node:os';` without saying why.",
+      ' */',
+      'export const RULE = 1;',
+    ].join('\n');
+    expect(found(source)).toEqual([]);
+  });
+
+  test('a real import in the same file as a fixture is still reported', () => {
+    const source = [
+      `const fixture = "import { tmpdir } from 'node:os';";`,
+      "import { join } from 'node:path';",
+    ].join('\n');
+    expect(found(source)).toEqual(['node:path']);
+    expect(scanNodeImports('packages/x/src/a.ts', source)[0]?.line).toBe(2);
+  });
+});
+
+describe('a test file is source', () => {
+  /**
+   * The whole of #365. `checkNodeImports` opened `if (isTestPath(file.path)) continue`, so a
+   * package could hold a dozen unexplained imports in its suites under a green gate — and one did:
+   * `storage` was flagged by review on #364 with no row in the pin table at all.
+   */
+  test('an unexplained node: import in a .test.ts is reported', () => {
+    const gaps = checkNodeImports({
+      files: [{ path: 'packages/x/src/a.test.ts', source: "import { tmpdir } from 'node:os';" }],
+      pins: {},
+    });
+    expect(gaps.map((gap) => `${gap.pkg}:${String(gap.found)}`)).toEqual(['x:1']);
+    expect(nodeImportFindingFor(gaps[0] as never).at).toBe('packages/x/src/a.test.ts:1');
+  });
+
+  test('and a why: in a test file clears it, the same sentence a driver writes', () => {
     expect(
       checkNodeImports({
-        files: [{ path: 'packages/x/src/a.test.ts', source: "import { tmpdir } from 'node:os';" }],
+        files: [
+          {
+            path: 'packages/x/src/a.test.ts',
+            source: "// why: Bun exposes no tmpdir()\nimport { tmpdir } from 'node:os';",
+          },
+        ],
         pins: {},
       }),
     ).toEqual([]);
@@ -132,17 +195,26 @@ describe('the ratchet', () => {
    * The pins are a MEASUREMENT and may only fall. A ceiling rather than an equality, so a slice
    * that writes ten `why:` lines does not have to come back here to be allowed to.
    */
-  test('no pin has been raised past what day one measured', () => {
+  test('no pin has been raised past what the widened corpus measured', () => {
+    // 2026-08-26, the run in which a test file entered the corpus (#365) — 545 across 16 packages.
+    // The 2026-08-23 ceiling it replaces (146 across 10) measured shipped source alone, so it is
+    // not comparable and cannot be the ratchet's floor. This one may only fall.
     const dayOne: Readonly<Record<string, number>> = {
-      ai: 1,
-      cli: 100,
-      core: 5,
-      db: 2,
+      admin: 1,
+      ai: 9,
+      cli: 360,
+      core: 17,
+      db: 8,
       entity: 1,
-      manifest: 2,
-      render: 3,
-      scripts: 28,
-      testing: 3,
+      i18n: 3,
+      jobs: 2,
+      manifest: 11,
+      notify: 1,
+      render: 15,
+      scraping: 4,
+      scripts: 99,
+      testing: 12,
+      time: 1,
       ui: 1,
     };
     for (const [pkg, count] of Object.entries(NODE_IMPORT_PINS)) {

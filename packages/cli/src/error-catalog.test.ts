@@ -2,8 +2,8 @@
 // new package is added: the list is checked against the workspace on disk, not against itself.
 
 import { describe, expect, test } from 'bun:test';
-// `node:` by necessity: Bun exposes no path-join primitive. `import.meta.dir` gives the directory
-// this file is in, and joining the repo root onto it still needs `node:path`.
+// why: `node:` by necessity: Bun exposes no path-join primitive. `import.meta.dir` gives the
+// directory this file is in, and joining the repo root onto it still needs `node:path`.
 import { join } from 'node:path';
 import { hasErrorCode, listErrorCodes } from '@ultimat3/core';
 import {

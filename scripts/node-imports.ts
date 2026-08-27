@@ -13,6 +13,14 @@
 // reaching for one without saying which Bun native was missing, because that sentence is the only
 // thing that lets the next agent delete the import when Bun ships the native.
 //
+// A TEST FILE IS SOURCE, `As of 2026-08-26`. `checkNodeImports` opened with
+// `if (isTestPath(file.path)) continue` at both of its walks, so the SCANNER read every test file
+// and the RATCHET dropped every finding: measured, 404 unexplained imports across 164 test files
+// under a green `bun run node-imports`, and `storage` — flagged by review on #364 — had no row in
+// the pin table at all. `CLAUDE.md`'s non-negotiable exempts nothing, and it records this exact
+// mechanism happening once before: "`checkErrorFixes` skips test files, so the rule was prose there
+// and 422 sites accumulated under a green gate". Issue #365.
+//
 // A LITERAL `why:`, not "a comment nearby". A token is greppable and a paragraph is not, and the
 // rule has to be decidable from text: `scripts/lib/log.ts` already writes the sentence this asks
 // for, in a doc comment ending "A node: API, and unavoidable — Bun has no synchronous stdout write
@@ -21,6 +29,7 @@
 //   bun run node-imports  ·  bun run scripts/node-imports.ts [--json]
 //   bun run scripts/node-imports.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
+import { maskLiterals } from '@ultimat3/cli';
 import { collectSourceFiles, type SourceFile } from './boundaries';
 import { flagList, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
@@ -32,7 +41,7 @@ import {
   nodeImportPinnedFor,
 } from './lib/node-import-pins';
 import { repoRoot } from './lib/run';
-import { isTestPath } from './lib/source-scan';
+import { isCode, lineOf } from './lib/source-scan';
 import { packageOf } from './test-fix-citations';
 
 const SCRIPT = 'node-imports';
@@ -71,19 +80,29 @@ export function hasWhy(lines: readonly string[], index: number): boolean {
   return false;
 }
 
-/** Every unexplained `node:` import in one file, in source order. */
+/**
+ * Every unexplained `node:` import in one file, in source order.
+ *
+ * INPUT vs IMPORT, and BOTH carriers are exempt. `maskLiterals` blanks comment text and string
+ * contents alike while preserving every offset, so a match survives it exactly when the process
+ * would really evaluate the import. A rule's own fixture spells the forbidden shape as DATA — this
+ * file's own test does, `browser-barrel.test.ts` and `async-context-guard.test.ts` do, and
+ * `packages/cli/src/templates/` emits app source inside template literals the CLI writes and never
+ * runs. A COMMENT is the half a string-literal exemption misses, and missing it is not theoretical:
+ * `async-context-guard.test.ts:106` explains the shape by quoting it. `dead-docs-host.ts` states
+ * the same carve-out — "a comment naming the host as the thing that was removed cannot 404".
+ * One mask closes both, and it is the one `render-modes`, `frozen-records`, `secret-compare` and
+ * `proto-index` already read, so there is no second tokenizer here.
+ */
 export function scanNodeImports(path: string, source: string): readonly NodeImportSite[] {
   const lines = source.split('\n');
+  const masked = maskLiterals(source);
   const out: NodeImportSite[] = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? '';
-    // A commented-out import is not an import. The `//` test is cheap and exact here because an
-    // import statement is always at the start of its own line in this tree — Biome writes it.
-    if (line.trimStart().startsWith('//') || line.trimStart().startsWith('*')) continue;
-    for (const match of line.matchAll(NODE_IMPORT)) {
-      if (hasWhy(lines, index)) continue;
-      out.push({ path, line: index + 1, specifier: match[1] as string });
-    }
+  for (const match of source.matchAll(NODE_IMPORT)) {
+    if (!isCode(masked, match.index, match[0] as string)) continue;
+    const line = lineOf(source, match.index);
+    if (hasWhy(lines, line - 1)) continue;
+    out.push({ path, line, specifier: match[1] as string });
   }
   return out;
 }
@@ -110,7 +129,6 @@ export function checkNodeImports(input: NodeImportInput): readonly NodeImportGap
   }
   const found = new Map<string, NodeImportSite[]>();
   for (const file of input.files) {
-    if (isTestPath(file.path)) continue;
     for (const site of scanNodeImports(file.path, file.source)) {
       const pkg = packageOf(site.path);
       const list = found.get(pkg) ?? [];
@@ -181,7 +199,6 @@ export const nodeImportFindings = async (root: string): Promise<readonly Finding
 export async function nodeImportCounts(root: string): Promise<Readonly<Record<string, number>>> {
   const counts: Record<string, number> = {};
   for (const file of await collectSourceFiles(root)) {
-    if (isTestPath(file.path)) continue;
     for (const site of scanNodeImports(file.path, file.source)) {
       counts[packageOf(site.path)] = (counts[packageOf(site.path)] ?? 0) + 1;
     }

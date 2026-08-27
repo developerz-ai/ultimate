@@ -6,8 +6,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, no temp-directory and no recursive remove, and each case needs its own
 // root; `join` because Bun exposes no path-join primitive.
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { checkErrorFixes } from './error-contract';
 
@@ -15,8 +17,8 @@ describe('the path rule, over a repo', () => {
   let root = '';
 
   const write = async (path: string, text: string): Promise<void> => {
-    await mkdir(join(root, path, '..'), { recursive: true });
-    await writeFile(join(root, path), text);
+    // `Bun.write` creates the intermediate directories, so it is this repo's `mkdir -p` too.
+    await Bun.write(join(root, path), text);
   };
 
   beforeEach(async () => {

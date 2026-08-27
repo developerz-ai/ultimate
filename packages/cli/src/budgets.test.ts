@@ -3,7 +3,9 @@
 // weighed is the false green axiom 5 forbids.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { RouteFact } from '@ultimat3/manifest';
 import { buildManifest } from '@ultimat3/manifest';

@@ -2,9 +2,10 @@
 // test is what lands in the chunk table, and a fake builder would prove nothing about it.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-// `node:` by necessity: Bun ships no path API, and `rm(…, { force: true })` removes a fixture
+// why: `node:` by necessity: Bun ships no path API, and `rm(…, { force: true })` removes a fixture
 // root that may not exist without a branch.
 import { rm } from 'node:fs/promises';
+// why: Bun exposes no path API — nothing native joins, resolves or relativises a path.
 import { dirname, join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import type { MountedIsland } from '@ultimat3/testing';

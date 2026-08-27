@@ -4,10 +4,12 @@
 // checkout, which is the very failure the ref-diff default exists to avoid.
 
 import { describe, expect, test } from 'bun:test';
-// Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway tree, and
-// `join` is the host-separator path into it.
+// why: Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway tree,
+// and `join` is the host-separator path into it.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { DEFAULT_BASE } from './affected';
 import { AFFECTED_MESSAGE_KEYS, affectedCommand } from './cmd-affected';

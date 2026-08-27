@@ -47,6 +47,8 @@ describe('the tier table in CLAUDE.md matches the executable one', () => {
   test('every package directory appears in exactly one tier', async () => {
     // The other direction: a package can also be added to `packages/` and to neither table, which
     // reads as "no tier" and imports nothing until someone notices.
+    // why: Bun has no readdir — Bun.Glob matches paths and never reports a Dirent, so nothing
+    // native answers "which entries here are directories".
     const { readdir } = await import('node:fs/promises');
     const dirs = await readdir(`${import.meta.dir}/../packages`, { withFileTypes: true });
     const onDisk = dirs

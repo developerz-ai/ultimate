@@ -3,8 +3,10 @@
 // again — the same split `error-contract-paths.test.ts` already made, along the other seam: that
 // file keeps "is this fix an instruction", this one keeps "which codes exist, and can we read them".
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and no recursive remove.
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import {
   checkErrorCodeDocs,
@@ -27,8 +29,8 @@ describe('the code checks, over a repo', () => {
   let root = '';
 
   const write = async (path: string, text: string): Promise<void> => {
-    await mkdir(join(root, path, '..'), { recursive: true });
-    await writeFile(join(root, path), text);
+    // `Bun.write` creates the intermediate directories, so it is this repo's `mkdir -p` too.
+    await Bun.write(join(root, path), text);
   };
 
   beforeEach(async () => {

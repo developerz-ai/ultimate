@@ -7,9 +7,12 @@
 // test, and a mocked one would test the mock.
 
 import { describe, expect, test } from 'bun:test';
-// `node:fs` — Bun has no temp-directory, symlink or realpath API; `node:path` — no path joiner.
+// why: `node:fs` — Bun has no temp-directory, symlink or realpath API; `node:path` — no path
+// joiner.
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path API — nothing native joins, resolves or relativises a path.
 import { join, relative } from 'node:path';
 import { frameworkScopeDir } from './framework-scope';
 
