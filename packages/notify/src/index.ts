@@ -44,13 +44,14 @@ export {
 // with it the retry policy, the cancellation and the manifest row.
 export type { InboxQuery, InboxRow, InboxStore, InboxWrite, MemoryInboxStore } from './inbox';
 export { createMemoryInboxStore, DEFAULT_INBOX_PAGE } from './inbox';
-export type { PgInboxStoreOptions } from './inbox-pg';
+export type { InboxPurgeBefore, PgInboxStore, PgInboxStoreOptions } from './inbox-pg';
 export {
   createPgInboxStore,
   SQL_NOTIFY_INBOX_ADD,
   SQL_NOTIFY_INBOX_MARK_READ,
   SQL_NOTIFY_INBOX_MARK_SEEN,
   SQL_NOTIFY_INBOX_PAGE,
+  SQL_NOTIFY_INBOX_PURGE,
   SQL_NOTIFY_INBOX_TABLE,
   SQL_NOTIFY_INBOX_UNREAD,
 } from './inbox-pg';
@@ -68,10 +69,12 @@ export {
   DELIVERY_STATUSES,
   isDeliveryStatus,
 } from './ledger';
-export type { PgDeliveryLedgerOptions } from './ledger-pg';
+export type { PgDeliveryLedger, PgDeliveryLedgerOptions } from './ledger-pg';
 export {
   createPgDeliveryLedger,
+  DEFAULT_DELIVERY_WINDOW_MS,
   SQL_NOTIFY_CLAIM,
+  SQL_NOTIFY_DELIVERIES_PURGE,
   SQL_NOTIFY_DELIVERIES_TABLE,
   SQL_NOTIFY_FIND,
   SQL_NOTIFY_SETTLE,
@@ -94,6 +97,7 @@ export type {
 export { toDurationMs } from './plan';
 export type { MemoryPreferenceStore, PreferenceQuery, PreferenceStore } from './preferences';
 export { allowAllPreferences, createMemoryPreferenceStore } from './preferences';
+export { purgeNotifyDeliveries, purgeNotifyInbox } from './retention';
 export type { InstalledNotifyStores, NotifyStores } from './stores';
 export {
   notifyStores,

@@ -65,13 +65,14 @@ export type {
   DatabaseConfig,
   JobsConfig,
   McpConfig,
+  NotifyConfig,
   PwaConfig,
   RealtimeConfig,
   RealtimeTransport,
   ThemeConfig,
   ThemeMode,
 } from './config';
-export { defineConfig } from './config';
+export { defineConfig, INBOX_RETENTION_KEYS } from './config';
 export type { Ctx, CtxFacts, CtxInit, CtxPatch, CtxServices, ServiceBag } from './context';
 export {
   createContext,

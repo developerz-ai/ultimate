@@ -27,7 +27,14 @@ import {
   resetJobs,
   resetTasks,
 } from '@ultimat3/jobs';
+import {
+  createPgDeliveryLedger,
+  createPgInboxStore,
+  resetNotifyStores,
+  setNotifyStores,
+} from '@ultimat3/notify';
 import { PURGE_JOB_NAME } from './dev-purge';
+import { pgExecutorFor } from './dev-queue';
 import type { RunningServices } from './dev-runtime';
 import { startServices } from './dev-runtime';
 import { resolveServices } from './dev-services';
@@ -69,9 +76,17 @@ const countIn = async (table: string): Promise<number> => {
   }
 };
 
-/** The boot every role runs, over a database this test owns. */
-async function boot(): Promise<RunningServices> {
+/**
+ * The boot every role runs, over a database this test owns.
+ *
+ * `config` is written as a real `app.config.ts`, because that is the ONLY path the inbox windows
+ * travel: `startServices` holds no `AppConfig` and `loadInboxRetention` reads the file. A test that
+ * handed the windows to `installRetentionSweep` directly would prove the sweep and not the wiring,
+ * and the wiring is the half a config key loses.
+ */
+async function boot(config?: string): Promise<RunningServices> {
   root = mkdtempSync(join(tmpdir(), 'x-purge-'));
+  if (config !== undefined) await Bun.write(join(root, 'app.config.ts'), config);
   await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
   await on(url ?? '', `create database ${PROBE_DB}`);
   const dbUrl = probeUrl();
@@ -152,9 +167,13 @@ describeLive('live · postgres · what the boot installs for auth and retention'
         'x_idempotency',
         'x_rate_limit',
         'x_auth',
+        'x_notify_deliveries',
+        'x_notify_inbox',
       ]);
       // Three dead rows gone, the live failure kept: the purge measures against the caller's
-      // clock, so a sweep that read `now()` on the server would take a different set.
+      // clock, so a sweep that read `now()` on the server would take a different set. The two
+      // notify targets contribute nothing here — no `setNotifyStores` ran, which is the state of
+      // an app that never wired the Postgres stores, and it must be zero rather than a throw.
       expect(report.removed).toBe(3);
       expect(await countIn('x_auth_failures')).toBe(1);
       expect(await countIn('x_auth_lockouts')).toBe(0);
@@ -162,6 +181,90 @@ describeLive('live · postgres · what the boot installs for auth and retention'
       // relation would have failed on.
       expect(report.swept.find((sweep) => sweep.name === 'x_rate_limit')?.removed).toBe(0);
       expect(report.swept.find((sweep) => sweep.name === 'x_idempotency')?.removed).toBe(0);
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
+  // The whole reason this file exists, applied to the two newest targets: `dev-purge.test.ts`
+  // proves the wiring against stubs and can prove nothing about the SQL. `x_notify_inbox` shipped
+  // with no sweep at all and `x_notify_deliveries` was documented as having one it did not have,
+  // so a statement that never executed is exactly the state both tables were in.
+  test(
+    'the notify sweeps really execute, against the tables the boot created',
+    async () => {
+      // 60s read window, and deliberately NO unread window — the default, and the axiom-8
+      // promise this key exists to keep.
+      const started = await boot(
+        'export const config = { notify: { inboxReadRetentionMs: 60_000 } };\n',
+      );
+      const executor = pgExecutorFor(started.db);
+      const ledger = createPgDeliveryLedger({ executor, windowMs: 60_000 });
+      const inbox = createPgInboxStore({ executor });
+      setNotifyStores({ ledger, inbox });
+      try {
+        const now = systemClock.now();
+        const old = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+        // One claim past the window and one inside it.
+        await ledger.claim(
+          { notifier: 'post.liked', key: 'k1', recipient: 'ada', channel: 'email' },
+          old,
+        );
+        await ledger.claim(
+          { notifier: 'post.liked', key: 'k2', recipient: 'bo', channel: 'email' },
+          now,
+        );
+
+        // An old READ row, an old UNREAD row and a fresh read one. Only the first is in range.
+        //
+        // `read_at` is stamped with SQL rather than through `inbox.markRead`, and NOT to route
+        // around a failure: this test's subject is retention, and `markRead` binds a uuid ARRAY,
+        // which Bun does not encode as a Postgres array parameter at all — issue #384, found by
+        // this very test and fixed in its own change across all three affected statements. Using
+        // it here would make a retention test fail for a reason that has nothing to do with
+        // retention. Do not "simplify" this back to `markRead` before #384 lands.
+        await inbox.add({
+          recipient: 'ada',
+          notifier: 'n',
+          key: 'old-read',
+          params: {},
+          createdAt: old,
+        });
+        await on(
+          probeUrl(),
+          `update x_notify_inbox set read_at = '${old.toISOString()}' where key = 'old-read'`,
+        );
+        await inbox.add({
+          recipient: 'ada',
+          notifier: 'n',
+          key: 'old-unread',
+          params: {},
+          createdAt: old,
+        });
+        await inbox.add({
+          recipient: 'ada',
+          notifier: 'n',
+          key: 'fresh-read',
+          params: {},
+          createdAt: now,
+        });
+        await on(
+          probeUrl(),
+          `update x_notify_inbox set read_at = '${now.toISOString()}' where key = 'fresh-read'`,
+        );
+
+        const report = await runSweep();
+
+        expect(report.swept.find((sweep) => sweep.name === 'x_notify_deliveries')?.removed).toBe(1);
+        expect(await countIn('x_notify_deliveries')).toBe(1);
+        // ONE, not two: the unread row is out of range because no unread window was configured,
+        // which is the default and the axiom-8 promise — a message nobody read is never deleted
+        // by a framework the app did not ask to delete it.
+        expect(report.swept.find((sweep) => sweep.name === 'x_notify_inbox')?.removed).toBe(1);
+        expect(await countIn('x_notify_inbox')).toBe(2);
+      } finally {
+        resetNotifyStores();
+      }
     },
     BOOT_TIMEOUT_MS,
   );

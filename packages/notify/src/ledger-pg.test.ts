@@ -7,7 +7,9 @@ import type { PgExecutor } from '@ultimat3/jobs';
 import type { DeliveryClaim } from './ledger';
 import {
   createPgDeliveryLedger,
+  DEFAULT_DELIVERY_WINDOW_MS,
   SQL_NOTIFY_CLAIM,
+  SQL_NOTIFY_DELIVERIES_PURGE,
   SQL_NOTIFY_DELIVERIES_TABLE,
   SQL_NOTIFY_SETTLE,
 } from './ledger-pg';
@@ -88,5 +90,43 @@ describe('unit · postgres delivery ledger', () => {
     // Only `sent` suppresses a resend, so nothing unknown may be allowed to imply it.
     expect(record?.status).toBe('failed');
     expect(record?.at).toEqual(AT);
+  });
+});
+
+describe('unit · delivery retention', () => {
+  // The cutoff is `nowMs - windowMs`, computed from the JOB's clock. A cutoff computed inside
+  // Postgres (`now() - interval`) measures the offset between two clocks instead of the age of the
+  // row, because `at` is written by whichever process took the delivery.
+  test('the cutoff is the caller clock minus the ledger own window', async () => {
+    const calls: Call[] = [];
+    const ledger = createPgDeliveryLedger({
+      executor: executorOf([[]], calls),
+      windowMs: 60_000,
+    });
+    await ledger.purgeExpired(AT.getTime());
+    expect(SQL_NOTIFY_DELIVERIES_PURGE).toContain('at < $1');
+    expect(calls[0]?.params).toEqual([new Date(AT.getTime() - 60_000)]);
+  });
+
+  test('the window defaults to 24h and is readable, so a caller can copy it', () => {
+    const ledger = createPgDeliveryLedger({ executor: executorOf([[]], []) });
+    expect(DEFAULT_DELIVERY_WINDOW_MS).toBe(24 * 60 * 60 * 1000);
+    expect(ledger.windowMs).toBe(DEFAULT_DELIVERY_WINDOW_MS);
+  });
+
+  // The statement the store RUNS carries `returning`, and the exported constant deliberately does
+  // not — a caller pasting it into psql wants the delete, and the count is this store's business.
+  // Without it `rows.length` is zero on every sweep while the delete succeeds.
+  test('the count is read off returned rows, not off an unreturning delete', async () => {
+    const calls: Call[] = [];
+    const ledger = createPgDeliveryLedger({ executor: executorOf([[{ key: 'a' }]], calls) });
+    expect(await ledger.purgeExpired(AT.getTime())).toBe(1);
+    expect(calls[0]?.sql).toContain('returning');
+  });
+
+  test('a window that is not a positive finite number is refused at construction', () => {
+    for (const windowMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1.5]) {
+      expect(() => createPgDeliveryLedger({ executor: executorOf([[]], []), windowMs })).toThrow();
+    }
   });
 });

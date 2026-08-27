@@ -10,6 +10,7 @@ import { replicatedRelations, startReplicator } from './dev-replicator';
 import type { DevServices } from './dev-services';
 
 const embedded: DevServices = {
+  root: '/tmp',
   stateDir: '/tmp/x-replicator-test',
   db: { name: 'db', mode: 'embedded', url: 'pglite:///tmp/pgdata', detail: 'PGlite' },
   events: { name: 'events', mode: 'embedded', url: 'inproc://events', detail: 'in-process' },

@@ -350,6 +350,7 @@ describe('unit · the local caller', () => {
 });
 
 const services = (url: string, mode: 'embedded' | 'external'): DevServices => ({
+  root: '/app',
   stateDir: '/app/.x',
   db: { name: 'db', mode, url, detail: 'test' },
   events: { name: 'events', mode: 'embedded', url: 'inproc://events', detail: 'test' },

@@ -395,6 +395,44 @@ Two disks may not share one driver **instance**: a driver learns its disk name a
 
 An empty `spanId` means "no inbound decision" and every reader honours it: a synthesised parent used to make the ratio sampler inherit a bit nobody sent, which exported **every HTTP root span at every ratio**.
 
+## `notify`
+
+Retention for `x_notify_inbox`, and **the only framework table whose window the framework refuses to
+pick for you.** Every other one holds bookkeeping whose job ends — an idempotency key, a rate-limit
+bucket, an auth challenge, a delivery claim — so a sweep is unambiguously right. An inbox row is a
+message a person has not read yet, and when that disappears is a product decision (axiom 8).
+
+| field | type | default | notes |
+|---|---|---|---|
+| `notify.inboxReadRetentionMs` | `number` | — | age of a row's `read_at`. A read row ages from when it was **read**, never from when it arrived |
+| `notify.inboxUnreadRetentionMs` | `number` | — | age of an unread row's `created_at`. Setting this deletes messages nobody has read |
+
+**Absent means never swept, and that is the default for both.** The failure mode of keeping rows is
+a table that grows; the failure mode of guessing a number is a notification the recipient never got
+to read. Two windows rather than one because the objection is specifically about *unread* messages —
+an app that wants read notices gone in a month and unread ones kept forever writes exactly that:
+
+```ts
+notify: { inboxReadRetentionMs: 30 * 24 * 60 * 60 * 1000 }
+```
+
+Milliseconds and not a duration string: `DurationInput` lives in `@ultimat3/jobs` (tier 3) and
+`AppConfig` is tier 0 — the same reason `cache.defaultTtlMs` and `jobs.visibilityTimeoutMs` are
+spelled this way. A value that is not a positive finite number is `X_CONFIG_INVALID` at boot; zero
+is refused rather than read as "immediately", because a sweep at age 0 is an inbox that silently
+receives nothing.
+
+**The sweep only runs against the Postgres inbox.** `createPgInboxStore` carries `purgeBefore`; the
+memory inbox does not, and a boot that installed the memory one — or no inbox at all — sweeps
+nothing and logs nothing. Installing the store is `setNotifyStores`, your app's boot line; the
+framework applies the DDL either way.
+
+**`x_notify_deliveries` has no config key**, deliberately. Its window is
+`createPgDeliveryLedger({ executor, windowMs })`, stated beside the statement that reads it, and it
+must **never be shorter than your idempotency window**: a job replayed inside the idempotency window
+against a claim that has already been purged claims cleanly and sends the notification a second
+time. Pass `idempotency.windowMs` and the two cannot disagree.
+
 ## `ai`
 
 Two fields, and `ai.mcp` is where the app's own MCP surface is configured — there is no top-level `mcp` block.
