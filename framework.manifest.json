@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "b1412fc684a61883368edc3306e82f11e1c9dd1bdf6ed27c7b6b03b1cc928d5f",
+  "buildId": "fee9546c435c2716ee1f8f3d44d4e21a54b2d73805d0b8c89a22e9081ec77391",
   "tiers": {
     "0": [
       "core",
@@ -48,187 +48,187 @@
   "packages": [
     {
       "name": "@ultimat3/core",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 0,
       "private": false
     },
     {
       "name": "@ultimat3/schema",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 0,
       "private": false
     },
     {
       "name": "@ultimat3/cache",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/db",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/flags",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/i18n",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/money",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/seo",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/storage",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/time",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/auth",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/entity",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/http",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/policy",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/action",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/jobs",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/query",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/realtime",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/ai",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/mail",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/manifest",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/mcp",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/notify",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/pwa",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/render",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/ui",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/admin",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/cli",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/scraping",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/testing",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "create-ultimate",
-      "version": "18.0.0",
+      "version": "19.0.0",
       "tier": 6,
       "private": false
     }

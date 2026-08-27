@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 19.0.0 - 2026-08-27
+
 ### Added
 
 - **`x build`, `x dev` and the container emit a service worker â€” the half of the PWA story that
@@ -334,6 +338,16 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `new Intl.DateTimeFormat('en', { timeZone: 'CET' })` throws on 1.3.14 where 1.4.0 resolves it â€”
   which `isIanaZoneName` never sees, being structural. The full record is in
   [`.github/actions/setup/action.yml`](.github/actions/setup/action.yml).
+
+### Commits
+
+- feat(cli,core,pwa): a build that emits the service worker, and a real browser that proves it offline (#401)
+- feat(cli): a real browser behind installE2eDriver, over raw CDP, with no dependency (#400)
+- fix(build): anchor the three registrations the sideEffects array never kept (#399)
+- fix(db): bound the drain, and give back the pin the pool already lost (#397)
+- correct the Bun 1.3 refusal: the hang is a race both runtimes have, not a 1.3 defect (#396)
+- e2e offline() forwards, and the reason it refused was never true (#395)
+- the Bun 1.3 trial: a glob that read nothing, budgets sized against no contention, and the hang that refused the floor (#393)
 
 ## 18.0.0 - 2026-08-27
 

@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/core",
-  "version": "18.0.0",
+  "version": "19.0.0",
   "description": "Ultimate's foundation: errors, context, env, config, clock, ids, logging, telemetry, lifecycle",
   "license": "MIT",
   "type": "module",
@@ -37,6 +37,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/schema": "18.0.0"
+    "@ultimat3/schema": "19.0.0"
   }
 }

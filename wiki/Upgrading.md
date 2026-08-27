@@ -2,10 +2,11 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Thirteen majors have shipped, and this page walks all thirteen** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Eighteen majors have shipped, and this page walks all eighteen** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 18.x → 19.0.0 | **2**, both from the same hole — the service worker had no build behind it, so the config key that steers it and the route it falls back to both had to move | the `19.0.0` section, in order |
 | 17.x → 18.0.0 | **5** — a runtime floor that was a minor behind what the CLI emits, two PWA config surfaces that had to grow before an app could be installable, a `--json` shape, and one scraping interface | the `18.0.0` section, in order |
 | 16.x → 17.0.0 | **3**, all one sweep — a numeric option that used to accept `NaN` refuses it, at boot or at the call boundary rather than mid-request | the `17.0.0` section, in order |
 | 15.x → 16.0.0 | **1** — `matches(/re/)` refuses a construct the two regex engines read differently, at `entity()` time | the `16.0.0` section, in order |
@@ -29,7 +30,7 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' <(awk '/^## /{u = ($0 == "## [Unreleased]")} !u' CHANGELOG.md)
-# 43 As of 2026-08-27 — every RELEASED section, which is the sum of every row above whose section
+# 45 As of 2026-08-27 — every RELEASED section, which is the sum of every row above whose section
 # the changelog still carries. `[Unreleased]` is cut by the awk deliberately: a bare whole-file
 # grep agrees with this number only while that section is empty, so it moved on every PR that
 # landed a breaking change and moved BACK when the release promoted the section — a count that can
@@ -63,6 +64,25 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 18.x → 19.0.0, entry by entry
+
+**Both entries cost an edit only if you had `pwa.enabled: true`** — the same block 18.0.0 grew, for
+the same reason one release later: 18.0.0 wired the web manifest and left the service worker with
+zero callers, so `pwa.offline` steered nothing and `/offline` was a path no build precached.
+`x dev`, the container and `x build --target static` all emit `sw.js` and `x-sw-register.js` now,
+and the config had to be able to say what they emit.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `AppConfig.pwa.offline` | you set `pwa.enabled: true`. It was `'precache' \| 'runtime' \| 'network-only'` — an app-wide **default** for a field `defineRoute` makes **required** on every route, so it defaulted nothing and was read by nobody. It is now `{ fallback, image, font, neverCache }`, and **`fallback` is required** once `enabled` is true: an absolute route path, screened at `defineConfig` rather than at `x build`. The edit is one line — `offline: 'runtime'` → `offline: { fallback: '/offline' }` — plus a route at that path. A relative value is refused because it resolves against whatever document registered the worker, so `offline` served under `/posts/1` is `/posts/offline`: a 404 cached as the answer to every offline navigation. **Or set `pwa.enabled: false`.** Per-route `offline:` is unchanged, and is still where the strategy is declared |
+| 2 | `x new`'s scaffold | you regenerate an app, or you copied the old scaffold. The offline fallback is `apps/web/site/offline/page.tsx`, not `apps/web/app/offline.tsx`: the directory is the URL and `<name>.tsx` is not a route file, so the old path shipped a component nothing imported and left `/offline` a URL that did not exist. `site/` and `render: 'static'` deliberately — the document that answers a lost network must render with no network, no session and no database, which `app/` (`ssr \| stream`) cannot promise. An existing app moves the file and adds `offline: 'precache'`, `hydrate: 'never'` and `robots: { index: false }` to its `defineRoute` |
+
+**`x build --json` renames one field**: `precacheWarnings` → `serviceWorkerWarnings`, and the
+terminal row is labelled `service-worker`. It is listed here rather than as a third entry because
+no released build ever wrote the old key — `PrecacheManifest.warnings` had no reader at all until
+this release. The list carries the precache byte ceiling **and** `pwa.push: true` with no VAPID key
+to sign a subscription with, which is the one PWA capability still unwired.
 
 ## 17.x → 18.0.0, entry by entry
 
