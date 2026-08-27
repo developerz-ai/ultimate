@@ -1,5 +1,12 @@
 /** Public surface of @ultimat3/i18n. Explicit exports only. */
 
+// Anchored on purpose, and NOT by the `sideEffects` array: Bun reads any array as `false` and drops
+// the module regardless (oven-sh/bun#40650). `registerBaseCatalog` here fills the catalog `t()`
+// falls back to, and `t()` never imports this module — so without the bare import every framework
+// string renders as its ⟦key⟧ placeholder. `SIDE_EFFECTS_ANCHORS` carries the argument and
+// `bun run side-effects` enforces it.
+import './framework';
+
 export {
   type Catalog,
   catalogKeys,

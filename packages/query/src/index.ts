@@ -6,6 +6,13 @@
  * authorize or execute on its own. One authz system, structurally.
  */
 
+// Anchored on purpose, and NOT by the `sideEffects` array: Bun reads any array as `false` and drops
+// the module regardless (oven-sh/bun#40650). `registerPrimitiveRegistrar('query', …)` here is read
+// by @ultimat3/core's registrar table on behalf of `x` and the manifest, and nothing that registers
+// a query imports this module for a binding. `SIDE_EFFECTS_ANCHORS` carries the argument and
+// `bun run side-effects` enforces it.
+import './registry';
+
 /**
  * Flight control for the typed client, and OPT-IN by construction: `client.ts` names `ClientFlight`
  * as a TYPE only, so a caller that never mentions `createClientFlight` pays nothing for the fence,
