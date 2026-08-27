@@ -5,6 +5,17 @@
 // secrets — because each is one subject spread over a dozen modules. Every name they carry is
 // still written out below: `export *` would make the contract something a reader has to resolve.
 
+// Anchored on purpose, and NOT by the `sideEffects` array: Bun reads any array as `false` and drops
+// the module regardless (oven-sh/bun#40650). This module registers @ultimat3/schema's error TITLES,
+// because schema is tier 0 and cannot register its own — and what reads them is `UltimateError`'s
+// constructor, which never imports this file. Shaken out, every X_VALIDATION_FAILED renders
+// untitled in the browser with nothing to say why. `SIDE_EFFECTS_ANCHORS` carries the argument and
+// `bun run side-effects` enforces it. `context.ts`, `lifecycle-errors.ts` and `secrets-errors.ts`
+// are declared side-effecting too and are deliberately NOT anchored: each is reached by whatever
+// uses it, and anchoring `context.ts` alone measured +3,485 B on a browser chunk for a provider a
+// browser can never fire.
+import './schema-error-codes';
+
 export type {
   Actor,
   ActorFactKey,

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "a7ccab32e6a2e12abc08fbd56bae55a89941c6f203cfd753b3779d4fd27389b5",
+  "buildId": "33a53291f24bee551014aa5d58703648e89a0a9a8966a2b48223f3389fba5e31",
   "tiers": {
     "0": [
       "core",
@@ -2780,6 +2780,11 @@
       "at": "packages/core/src/error-codes.ts"
     },
     {
+      "code": "X_SIDE_EFFECTS_ANCHOR_STALE",
+      "owner": "scripts",
+      "at": "scripts/side-effects.ts"
+    },
+    {
       "code": "X_SIDE_EFFECTS_ENTRY_STALE",
       "owner": "scripts",
       "at": "scripts/side-effects.ts"
@@ -2791,6 +2796,11 @@
     },
     {
       "code": "X_SIDE_EFFECTS_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/side-effects.ts"
+    },
+    {
+      "code": "X_SIDE_EFFECTS_UNANCHORED",
       "owner": "scripts",
       "at": "scripts/side-effects.ts"
     },

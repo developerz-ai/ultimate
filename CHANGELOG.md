@@ -10,6 +10,54 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **Every `sideEffects` array in the tree was inert, and a shipped island was missing five declared
+  effects.** `bun run side-effects` is a ratchet that moved 30 packages onto an honest `sideEffects`
+  array, and its own header stated the premise: *"a lie here is silent — Bun honours the field"*.
+  Bun does not. It reads any `sideEffects` **array** as if it were `false` and shakes the named
+  module away regardless — reduced to four files with no `@ultimat3/*`, deterministic on 1.4.0,
+  1.4.1-canary and 1.3.14 alike, where esbuild keeps it on the same input. Filed as
+  [oven-sh/bun#40650](https://github.com/oven-sh/bun/issues/40650).
+
+  Measured on `examples/dummy`'s `feed.island.tsx`, unminified so Bun's per-module banners survive:
+  `@ultimat3/core`'s `context.ts`, `lifecycle-errors.ts` and `secrets-errors.ts`,
+  `@ultimat3/query`'s `registry.ts` and `@ultimat3/i18n`'s `errors.ts` were all absent from the
+  chunk. The one that mattered is the one that was there by luck — `core/schema-error-codes.ts`,
+  which registers **`@ultimat3/schema`'s** error titles because schema is tier 0 and cannot register
+  its own. What reads them is `UltimateError`'s constructor, which never imports it, so a build that
+  shook it out rendered every `X_VALIDATION_FAILED` untitled in the browser with nothing to say why.
+
+  **A bare `import './schema-error-codes';` is the form that holds** — a statement rather than a
+  binding, so no shaker has a reason to drop it, on any bundler. The array **stays**: rollup, webpack
+  and esbuild do honour it and `@ultimat3/*` are packages other people bundle, so this is additive
+  and costs those consumers nothing. `SIDE_EFFECTS_ANCHORS` is the enforced table —
+  `X_SIDE_EFFECTS_UNANCHORED` for a listed module no entry imports bare,
+  `X_SIDE_EFFECTS_ANCHOR_STALE` for a row nothing declares.
+
+  **A list and not a predicate, and both predicates that were tried are why.** "Anchor every
+  declared module" put `core/context.ts` in every browser chunk — **+3,485 B** for
+  `setLoggerContextFields`, whose provider can only answer where a request context exists and which
+  in a browser can never fire at all — and took `like.island.tsx` **over its route's declared 50 kB
+  budget**. "Anchor every `register*` call" put `@ultimat3/ui`'s `errors.ts` on the barrel, dragging
+  core's error registry (~5.6 kB) into every chunk importing any `@ultimat3/ui` name, which is the
+  exact regression `packages/ui/src/barrel-bytes.test.ts` exists to catch. The discriminator neither
+  could see: a package's own `errors.ts` registers titles for errors whose **constructors live in
+  that same file**, so importing the constructor imports the registration — anchored by use, and an
+  anchor there is pure weight. Three modules register on behalf of a module that does not import
+  them, and only those three are listed.
+
+  The price, measured rather than assumed: **0 B** on all four of `examples/dummy`'s islands. And
+  retention became **deterministic** — the `schema-error-codes.ts` flap that
+  `island-bytes.test.ts` and `barrel-bytes.test.ts` both work around
+  ([#354](https://github.com/developerz-ai/ultimate/issues/354)) went from 12 flaps in 60 pairs on
+  1.4.0 and 28 in 60 on 1.3.14 to **0 in 60 on 1.4.0, 1.3.14 and 1.4.1-canary alike**.
+
+  Backed by the test that would have caught it: every other rule here reasons about the
+  *declaration*, so the new one **bundles a consumer entry for the browser and looks** — asserting
+  the module is in the chunk when the entry imports only `uuid`, which reaches it through nothing,
+  and asserting the three unanchored ones are **not** dragged in. Mutation-proved in both
+  directions. `scripts/side-effects.ts` split at the 500-line ceiling along the seam it already
+  drew: `scripts/lib/side-effects-scan.ts` gathers the facts, the script judges them.
+
 - **A pool shutdown that could never finish, and the release that could never be handed back.**
   `PostgresClient.close()` awaited a bare `pool.close()`, and `Bun.SQL`'s `end()` waits on an
   outstanding RESERVED connection **without ever giving up**. Measured against a real server, three

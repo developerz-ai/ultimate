@@ -1,8 +1,26 @@
 #!/usr/bin/env bun
-// One rule: a package's `sideEffects` field must be TRUE of the package. A module that runs a
-// statement at import time and is reachable from `exports` has to be listed; an entry matching no
-// file on disk is a claim that has stopped being true. A lie here is silent — Bun honours the
-// field, so an omitted module is a `registerErrorCodes()` deleted from a real browser bundle.
+// Two rules, and the second exists because the first was resting on something untrue.
+//
+// 1. A package's `sideEffects` field must be TRUE of the package. A module that runs a statement at
+//    import time and is reachable from `exports` has to be listed; an entry matching no file on
+//    disk is a claim that has stopped being true.
+// 2. A module the array names must also be ANCHORED — an entry itself, or bare-imported by one.
+//
+// **This header said "Bun honours the field" until 2026-08-27, and it does not.** Bun reads any
+// `sideEffects` ARRAY as if it were `false` and shakes the named module away regardless
+// (oven-sh/bun#40650, reduced to four files with no `@ultimat3/*`, deterministic on 1.4.0,
+// 1.4.1-canary and 1.3.14 alike; esbuild keeps it on the same input). So rule 1 was enforcing a
+// declaration nothing read: measured on `examples/dummy`'s feed island, 5 of the 8 declared effects
+// in this tree — `core/context.ts`, `core/lifecycle-errors.ts`, `core/secrets-errors.ts`,
+// `query/registry.ts`, `i18n/errors.ts` — were simply missing from the chunk, which is exactly the
+// `registerErrorCodes()` deletion the rule exists to prevent, happening under a green gate.
+//
+// Rule 2 is what actually holds it: a bare `import './errors';` is a statement rather than a
+// binding, so no shaker has a reason to drop it, on any bundler. The array STAYS — rollup, webpack
+// and esbuild do honour it, and `@ultimat3/*` are published packages their consumers bundle — so
+// this is additive and costs those consumers nothing. Real price, measured: +4,166 B on
+// `feed.island.tsx` and +4,162 B on `like.island.tsx` (both still inside the 60 kB route budget),
+// and 0 B on the two islands that reach none of these packages.
 //
 //
 // Hazard a reader will hit, measured on Bun 1.4.0 and NOT this rule's doing: a package that
@@ -16,13 +34,27 @@
 //   bun run scripts/side-effects.ts --explain [--json]     # the array this tree measures, per package
 //   bun run scripts/side-effects.ts --unpin <pkg>[,<pkg>]  # shrink the ratchet
 
-import { dirname, join } from 'node:path';
-import { maskLiterals, stripComments } from '@ultimat3/cli';
+// why: Bun exposes no path-join primitive, and the pins file is rewritten by absolute path.
+import { join } from 'node:path';
 import { flagBool, flagList, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { isTestPath } from './lib/source-scan';
+import type { PackageFacts } from './lib/side-effects-scan';
+import { readPackageFacts, SIDE_EFFECTS_ANCHORS } from './lib/side-effects-scan';
+
+// Re-exported because they are this rule's vocabulary and its test imports them from here: the
+// split at the 500-line ceiling is a file boundary, not a change to the surface.
+export type { EffectModule, PackageFacts, TopLevelEffect } from './lib/side-effects-scan';
+export {
+  anchoredModules,
+  PACKAGE_GLOB,
+  reachableEffects,
+  readPackageFacts,
+  SIDE_EFFECTS_ANCHORS,
+  scanTopLevelEffects,
+  topLevelEffects,
+} from './lib/side-effects-scan';
 
 const SCRIPT = 'side-effects';
 export const PINS_FILE = 'scripts/side-effects.ts';
@@ -65,81 +97,16 @@ export const SIDE_EFFECTS_UNDECLARED: readonly string[] = [
  * anchored there and shaped like a call or an assignment IS one — that is the whole heuristic, and
  * its limits are stated on `scanTopLevelEffects` rather than guessed at by a reader.
  */
-const KEYWORDS = new Set(
-  (
-    'export import const let var function class type interface enum declare namespace abstract ' +
-    'async default return if for while switch try catch finally else do case break continue ' +
-    'throw new with from await yield'
-  ).split(' '),
-);
-
-/** `foo(`, `foo.bar(`, `foo?.bar(` or `foo = ` — a call or an assignment, at column 0. */
-const STATEMENT = /^([A-Za-z_$][\w$]*)(?:\??\.[\w$]+)*\s*(?:\(|=[^=>])/;
-
-/** `import './x'` and `import x from './y'` and `export … from './z'` and `import('./w')`. */
-const SPECIFIER =
-  /(?:^|[\s;}])(?:import|export)\s[^'"`;]*?from\s*['"]([^'"]+)['"]|(?:^|[\s;}])import\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
-
-/**
- * The 1-based lines on which this module runs something at import time.
- *
- * Read from `stripComments` so a commented-out call is not a finding, and cross-checked against
- * `maskLiterals` so a call quoted inside a template literal is not either — `packages/render/src/
- * hydrate.ts` emits the browser boot script as a string with `if(!e)return…` at column 0, and
- * `packages/cli/src/templates/` emits whole modules that way. Reporting one invents a finding no
- * edit can clear, which is worse than no guard.
- *
- * What it does NOT see, and therefore what needs review rather than a green check: an effect
- * indented inside a top-level block or IIFE, a top-level `await`, a class `static {}` block, and a
- * constructor that registers itself when its `const` is evaluated. Those are silence, not findings
- * — the vacuity guard in `checkSideEffects` is what keeps that silence from becoming the answer.
- */
-export function scanTopLevelEffects(source: string): readonly number[] {
-  const lines = stripComments(source).split('\n');
-  const masked = maskLiterals(source).split('\n');
-  const found: number[] = [];
-  lines.forEach((line, index) => {
-    const match = STATEMENT.exec(line);
-    if (match === null || KEYWORDS.has(match[1] as string)) return;
-    // Column 0 of the masked line is a space exactly when the text was inside a string literal.
-    if ((masked[index] ?? '')[0] === ' ') return;
-    found.push(index + 1);
-  });
-  return found;
-}
-
-/**
- * Whether one `sideEffects` entry covers one package-relative path. Entries are globs rooted at the
- * package, so `./src/errors.ts` and `src/errors.ts` are the same entry, and a recursive glob reaches
- * any depth. A `false` field covers nothing, which is what makes it the strongest claim a package
- * can make and the one this rule checks hardest.
- */
 export const entryMatches = (entry: string, path: string): boolean =>
   new Bun.Glob(entry.replace(/^\.\//, '')).match(path);
 
-export interface EffectModule {
-  /** Package-relative POSIX path, e.g. `src/errors.ts`. */
-  readonly path: string;
-  readonly line: number;
-}
-
-export interface PackageFacts {
-  /** Repo-relative directory, e.g. `packages/core` — the key the ratchet pins on. */
-  readonly dir: string;
-  readonly name: string;
-  /** The field verbatim: an array, `false`, or `undefined` when the package declares none. */
-  readonly declared: readonly string[] | false | undefined;
-  /** Every file the package ships, package-relative — what a stale entry is checked against. */
-  readonly files: readonly string[];
-  /** Import-time effects in modules reachable from `exports`, first line each. */
-  readonly effects: readonly EffectModule[];
-}
-
 export type SideEffectGapKind =
   | 'undeclared'
+  | 'unanchored'
   | 'stale-entry'
   | 'missing'
   | 'pin-stale'
+  | 'anchor-stale'
   | 'unscanned';
 
 export interface SideEffectGap {
@@ -153,6 +120,13 @@ export interface SideEffectGap {
 export interface SideEffectInput {
   readonly packages: readonly PackageFacts[];
   readonly pins: readonly string[];
+  /**
+   * `SIDE_EFFECTS_ANCHORS` in production. A parameter and not a module read, for the reason `pins`
+   * is one: the staleness half below judges the table against the packages it was handed, so a
+   * fixture that knows nothing about the real tree must be able to hand over its own — otherwise
+   * every fixture check reports all three real anchors as stale.
+   */
+  readonly anchors: Readonly<Record<string, string>>;
 }
 
 /**
@@ -182,8 +156,35 @@ export function checkSideEffects(input: SideEffectInput): readonly SideEffectGap
       gaps.push({ kind: 'undeclared', dir: pkg.dir, subject: effect.path, line: effect.line });
     }
     for (const entry of entries) {
-      if (pkg.files.some((file) => entryMatches(entry, file))) continue;
-      gaps.push({ kind: 'stale-entry', dir: pkg.dir, subject: entry });
+      if (!pkg.files.some((file) => entryMatches(entry, file))) {
+        gaps.push({ kind: 'stale-entry', dir: pkg.dir, subject: entry });
+        continue;
+      }
+      // Only a `.ts`/`.tsx` module can be anchored by an import. `@ultimat3/ui`'s `**/*.scss` is a
+      // stylesheet the bundler reaches through the component that uses it, and there is no import
+      // statement that would make it unconditional.
+      if (!/\.tsx?$/.test(entry)) continue;
+      const path = entry.replace(/^\.\//, '');
+      if (pkg.anchored.some((one) => one === path)) continue;
+      // Only a REGISTRAR has to survive with none of its exports used — `isRegistrar` carries the
+      // argument, and the cost of getting this wrong in the other direction is measured there.
+      if (!Object.hasOwn(input.anchors, `${pkg.dir}/${path}`)) continue;
+      gaps.push({ kind: 'unanchored', dir: pkg.dir, subject: path });
+    }
+  }
+  // The same rule the table above is held to: a row naming a module no package declares
+  // side-effecting is an argument for an anchor that protects nothing, and it reads as a rule still
+  // in force. `X_TIER_FLOOR_STALE` is the identical half of `FLOOR_ABOVE`.
+  const declaredModules = new Set(
+    input.packages.flatMap((pkg) =>
+      (pkg.declared === false || pkg.declared === undefined ? [] : pkg.declared)
+        .filter((entry) => /\.tsx?$/.test(entry))
+        .map((entry) => `${pkg.dir}/${entry.replace(/^\.\//, '')}`),
+    ),
+  );
+  for (const anchor of Object.keys(input.anchors)) {
+    if (!declaredModules.has(anchor)) {
+      gaps.push({ kind: 'anchor-stale', dir: PINS_FILE, subject: anchor });
     }
   }
   // A pin nobody removes is a pin nobody reads — the ratchet only ratchets if it shrinks on its own.
@@ -203,6 +204,12 @@ const FINDINGS: Readonly<Record<SideEffectGapKind, (gap: SideEffectGap) => Findi
     fix: `add "./${gap.subject}" to "sideEffects" in ${gap.dir}/package.json — bun run side-effects --explain --json prints the array this tree measures`,
     at: `${gap.dir}/${gap.subject}:${String(gap.line ?? 1)}`,
   }),
+  unanchored: (gap) => ({
+    code: 'X_SIDE_EFFECTS_UNANCHORED',
+    cause: `${gap.dir}/package.json names ${JSON.stringify(gap.subject)} in "sideEffects" and no entry module of ${gap.dir} imports it for effect, so nothing keeps it: Bun reads any sideEffects ARRAY as false and shakes the module out anyway (oven-sh/bun#40650), which deleted 5 of the 8 declared effects in this tree from examples/dummy's feed island`,
+    fix: `add \`import './${gap.subject.replace(/^src\//, '').replace(/\.tsx?$/, '')}';\` to ${gap.dir}/src/index.ts — a bare import is in the module graph unconditionally, on every bundler, and costs nothing where the array was already honoured`,
+    at: `${gap.dir}/package.json`,
+  }),
   'stale-entry': (gap) => ({
     code: 'X_SIDE_EFFECTS_ENTRY_STALE',
     cause: `${gap.dir}/package.json declares sideEffects entry ${JSON.stringify(gap.subject)} and no file in ${gap.dir} matches it, so the entry protects nothing and reads as a rule that is still in force`,
@@ -211,9 +218,15 @@ const FINDINGS: Readonly<Record<SideEffectGapKind, (gap: SideEffectGap) => Findi
   }),
   missing: (gap) => ({
     code: 'X_SIDE_EFFECTS_MISSING',
-    cause: `${gap.dir}/package.json declares no "sideEffects", so every module of it is retained in every bundle that imports one binding — measured 2026-08-21 with buildIslands: an island importing @ultimat3/time weighed 22,214 B and 5,948 B once @ultimat3/core declared one`,
+    cause: `${gap.dir}/package.json declares no "sideEffects", so every module of it is retained in every bundle that imports one binding — measured 2026-08-21 with buildIslands: an island importing @ultimat3/time weighed 22,214 B and 5,948 B once @ultimat3/core declared one. That number is still the reason to declare one, and it is NOT a claim that Bun then keeps the named modules: it does not (oven-sh/bun#40650), which is what X_SIDE_EFFECTS_UNANCHORED is for`,
     fix: `run bun run side-effects --explain --json, copy this package's array into ${gap.dir}/package.json, then bun run scripts/side-effects.ts --unpin ${gap.dir}`,
     at: `${gap.dir}/package.json`,
+  }),
+  'anchor-stale': (gap) => ({
+    code: 'X_SIDE_EFFECTS_ANCHOR_STALE',
+    cause: `SIDE_EFFECTS_ANCHORS names ${gap.subject} and no package declares that module side-effecting, so the row argues for an anchor that protects nothing while reading as a rule still in force`,
+    fix: `delete the ${JSON.stringify(gap.subject)} row from SIDE_EFFECTS_ANCHORS in scripts/lib/side-effects-scan.ts, or point it at the module it was written for`,
+    at: 'scripts/lib/side-effects-scan.ts',
   }),
   'pin-stale': (gap) => ({
     code: 'X_SIDE_EFFECTS_PIN_STALE',
@@ -231,111 +244,12 @@ const FINDINGS: Readonly<Record<SideEffectGapKind, (gap: SideEffectGap) => Findi
 
 export const sideEffectFinding = (gap: SideEffectGap): Finding => FINDINGS[gap.kind](gap);
 
-export const PACKAGE_GLOB = 'packages/*/package.json';
-
-const SKIP = /(?:^|\/)(?:node_modules|dist|\.turbo)\//;
-
-/** The `exports` map's own targets, flattened across conditions. */
-const exportTargets = (exports: unknown): readonly string[] => {
-  if (typeof exports === 'string') return [exports];
-  if (exports === null || typeof exports !== 'object') return [];
-  return Object.values(exports as Record<string, unknown>).flatMap(exportTargets);
-};
-
-/**
- * Under the package, and not merely reachable from it. `join` collapses `..`, so a relative
- * specifier CAN leave: `../../core/src/errors` resolves to a real file, and `path` below is then
- * `file.slice(absolute.length + 1)` — ANOTHER package's absolute path sliced at this one's length.
- * Measured on a scratch tree: `packages/beta/src/effect.ts` reached from `packages/alpha` reported
- * `packages/alpha/rc/effect.ts`, a file in neither, and the two findings chase each other —
- * `X_SIDE_EFFECTS_UNDECLARED` demands the entry, `X_SIDE_EFFECTS_ENTRY_STALE` refuses it because
- * nothing on disk matches, and no edit clears either. The exact shape lines 92-93 argue against.
- */
-const inside = (absolute: string, file: string): boolean => file.startsWith(`${absolute}/`);
-
-const CANDIDATES = ['', '.ts', '.tsx', '/index.ts', '/index.tsx'];
-
-async function resolveRelative(from: string, spec: string): Promise<string | null> {
-  if (!spec.startsWith('.')) return null;
-  const base = join(dirname(from), spec);
-  for (const suffix of CANDIDATES) {
-    const candidate = `${base}${suffix}`;
-    if (!/\.tsx?$/.test(candidate)) continue;
-    if (await Bun.file(candidate).exists()) return candidate;
-  }
-  return null;
-}
-
-/**
- * Every module reachable from the package's `exports`, and the import-time effects in each. One
- * walk for both, because they are one question: a build script under `src/` that nothing exports
- * (`if (import.meta.main)`, `bin.ts`) must NOT be demanded in the field — noise in `sideEffects` is
- * how the field stops being read, and this is where the noise is filtered out.
- *
- * Relative specifiers only, and only INSIDE the package — a cross-package import stops at the
- * boundary, which is the other package's `sideEffects` to answer for. `inside` is what makes that
- * sentence true rather than merely written.
- */
-export async function reachableEffects(
-  root: string,
-  dir: string,
-  exports: unknown,
-): Promise<readonly EffectModule[]> {
-  const absolute = join(root, dir);
-  const queue = exportTargets(exports)
-    .filter((target) => /\.tsx?$/.test(target))
-    .map((target) => join(absolute, target))
-    .filter((file) => inside(absolute, file));
-  const seen = new Set<string>();
-  const effects: EffectModule[] = [];
-  while (queue.length > 0) {
-    const file = queue.pop() as string;
-    if (seen.has(file) || !(await Bun.file(file).exists())) continue;
-    seen.add(file);
-    const source = await Bun.file(file).text();
-    const lines = scanTopLevelEffects(source);
-    const first = lines[0];
-    if (first !== undefined && !isTestPath(file)) {
-      effects.push({ path: file.slice(absolute.length + 1), line: first });
-    }
-    for (const match of stripComments(source).matchAll(SPECIFIER)) {
-      const spec = match[1] ?? match[2] ?? match[3];
-      if (spec === undefined) continue;
-      const resolved = await resolveRelative(file, spec);
-      if (resolved !== null && inside(absolute, resolved)) queue.push(resolved);
-    }
-  }
-  return effects.sort((a, b) => a.path.localeCompare(b.path));
-}
-
-const declaredField = (value: unknown): readonly string[] | false | undefined => {
-  if (value === false) return false;
-  if (Array.isArray(value)) return value.filter((one): one is string => typeof one === 'string');
-  return undefined;
-};
-
-export async function readPackageFacts(root: string): Promise<readonly PackageFacts[]> {
-  const facts: PackageFacts[] = [];
-  for (const manifest of new Bun.Glob(PACKAGE_GLOB).scanSync({ cwd: root })) {
-    const dir = dirname(manifest);
-    const parsed: unknown = await Bun.file(join(root, manifest)).json();
-    const pkg = parsed as { name?: string; sideEffects?: unknown; exports?: unknown };
-    const files = [...new Bun.Glob('**/*').scanSync({ cwd: join(root, dir), onlyFiles: true })]
-      .map((path) => path.split('\\').join('/'))
-      .filter((path) => !SKIP.test(`/${path}`));
-    facts.push({
-      dir,
-      name: pkg.name ?? dir,
-      declared: declaredField(pkg.sideEffects),
-      files,
-      effects: await reachableEffects(root, dir, pkg.exports),
-    });
-  }
-  return facts.sort((a, b) => a.dir.localeCompare(b.dir));
-}
-
 export const sideEffectGaps = async (root: string): Promise<readonly SideEffectGap[]> =>
-  checkSideEffects({ packages: await readPackageFacts(root), pins: SIDE_EFFECTS_UNDECLARED });
+  checkSideEffects({
+    packages: await readPackageFacts(root),
+    pins: SIDE_EFFECTS_UNDECLARED,
+    anchors: SIDE_EFFECTS_ANCHORS,
+  });
 
 /** What this repo contributes to `x verify`'s `unit` step, through `side-effects.test.ts`. */
 export const sideEffectFindings = async (root: string): Promise<readonly Finding[]> =>
