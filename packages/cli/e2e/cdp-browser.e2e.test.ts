@@ -5,17 +5,21 @@
 //
 //   bun test packages/cli/e2e
 //
-// **It SKIPS when this machine has no browser, and that is a requirement rather than a gap.**
-// `openE2eBrowserIfAvailable` answers `undefined` and the whole describe skips, so a CI box
-// without Chrome never turns the `e2e` step red for a reason unrelated to the change. What keeps
-// that from being a green step over nothing is that GitHub-hosted `ubuntu-latest` ships Chrome at
-// `/usr/bin/google-chrome` — so in this repo's CI the browser is always there, and the skip is the
-// door for a laptop rather than the normal case.
+// **It SKIPS when this machine has no browser, and REFUSES to skip where one was promised.**
+// `openE2eBrowserIfAvailable` answers `undefined` and the whole describe skips, so a laptop
+// without Chrome never turns the `e2e` step red for a reason unrelated to the change.
+//
+// A silent skip is the false green this tree keeps re-shipping, and it shipped here too: the
+// first CI run of this file spent **2,958ms** on an `e2e` step that takes 31s locally, and the
+// step reported green having driven no browser at all. So `E2E_BROWSER_REQUIRED=1` — which
+// `ci.yml` sets — turns the skip into a refusal, and the file always prints which browser it
+// found or that it found none. `@ultimat3/ai`'s `pg-vector.live.test.ts` is the precedent: it
+// refuses to skip when the extension is missing, for the same reason.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { PageLike } from '@ultimat3/testing';
 import type { E2eBrowser } from '../src/cdp-browser';
-import { openE2eBrowserIfAvailable } from '../src/cdp-browser';
+import { openE2eBrowser, openE2eBrowserIfAvailable } from '../src/cdp-browser';
 import { findChrome } from '../src/cdp-launch';
 import { e2ePage } from '../src/e2e-page';
 
@@ -44,9 +48,20 @@ const server = Bun.serve({
 });
 const baseUrl = `http://localhost:${String(server.port)}`;
 
+/** Set where a browser is guaranteed, so an absent one is a finding rather than a quiet skip. */
+export const BROWSER_REQUIRED_ENV = 'E2E_BROWSER_REQUIRED';
+
 // Asked at module scope, because `describe.skipIf` takes a value and not a promise. The launch
 // itself is still in `beforeAll` — one browser for the file, closed in `afterAll`.
 const chrome = await findChrome(process.env);
+const required = process.env[BROWSER_REQUIRED_ENV] === '1';
+
+// Printed on every run, both ways. A skip that says nothing reads exactly like a pass.
+console.log(
+  chrome === undefined
+    ? `e2e browser: none found${required ? ' — and one was required' : ' — skipping'}`
+    : `e2e browser: ${chrome}`,
+);
 
 // Bun's default is 5000ms for a test AND for a hook, and a cold Chrome launch alone can spend
 // most of that. A budget that expires mid-launch reports "timed out" over whatever the browser was
@@ -61,9 +76,11 @@ const status = (): Promise<unknown> =>
 let browser: E2eBrowser | undefined;
 let page: PageLike;
 
-describe.skipIf(chrome === undefined)('the raw-CDP browser drives a real page', () => {
+describe.skipIf(chrome === undefined && !required)('the raw-CDP browser drives a real page', () => {
   beforeAll(async () => {
-    browser = await openE2eBrowserIfAvailable();
+    // `openE2eBrowser`, not the `IfAvailable` door, when one was required: its refusal is
+    // `X_CDP_BROWSER_MISSING`, which names every path it tried and how to point it at a binary.
+    browser = required ? await openE2eBrowser() : await openE2eBrowserIfAvailable();
     if (browser === undefined) expect.unreachable('a browser was found and then would not open');
     page = e2ePage({ page: browser.page, baseUrl });
   }, HOOK_TIMEOUT_MS);
