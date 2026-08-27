@@ -260,7 +260,12 @@ export function query<TInput extends StandardSchemaV1, TRow extends object>(
   assertEncodableInput(def.input);
   assertCacheTtl(def.cache);
   assertSubscribes(def.subscribes, def.live);
-  return build(def, '');
+  // Snapshot and freeze BEFORE registration. `build()` stores `def` and `facadeFor()` exposes the
+  // same array, so a caller holding the literal it passed could mutate the list AFTER validation
+  // — and that list is what the manifest publishes and what `x db gen` grants REPLICA IDENTITY
+  // FULL from. A frozen copy makes the declaration the descriptor carries the one that was checked.
+  const subscribes = def.subscribes === undefined ? undefined : Object.freeze([...def.subscribes]);
+  return build(subscribes === undefined ? def : { ...def, subscribes }, '');
 }
 
 /**

@@ -17,6 +17,17 @@ import { statementsOf } from '@ultimat3/db';
 const CREATE_TABLE = /^create\s+(?:unlogged\s+)?table\s+(?:if\s+not\s+exists\s+)?/i;
 
 /**
+ * `drop table`, with `if exists`. A migration that creates a relation and later drops it OWNS
+ * neither: re-creating `legacy_audit` by hand afterwards is drift, and a set that only ever grew
+ * accepted it forever. `cascade`/`restrict` and a comma list are handled by the caller.
+ */
+const DROP_TABLE = /^drop\s+table\s+(?:if\s+exists\s+)?/i;
+
+/** `alter table … rename to …` — the old name stops existing and the new one starts. */
+const ALTER_TABLE = /^alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?/i;
+const RENAME_TO = /^\s*rename\s+to\s+/i;
+
+/**
  * One identifier: quoted (with `""` for a literal quote) or bare. The bare form is Postgres' own
  * charset — a letter or `_` to open, then letters, digits, `_` and `$` — with everything above
  * ASCII admitted, since the server accepts any multibyte letter and a name it accepts must be
@@ -81,12 +92,86 @@ function createdBy(statement: string): string | null {
  * inside a literal, an identifier or a dollar-quoted body is not a statement boundary here either.
  */
 export function createdTables(up: string): readonly string[] {
-  const created: string[] = [];
+  const owned = new Set<string>();
+  applyOwnership(up, owned);
+  return [...owned];
+}
+
+/**
+ * Fold one migration's statements over the owned set, IN ORDER.
+ *
+ * A set that only ever grew was the defect: `create table legacy_audit` followed by
+ * `drop table legacy_audit` left the name accepted, so a `legacy_audit` somebody re-created by
+ * hand afterwards lost its `unexpected-table` finding — real drift, silenced, which is the one
+ * thing this module may not do.
+ *
+ * Fail-closed on anything the grammar cannot read: a `drop`/`rename` this cannot parse REMOVES
+ * nothing it is unsure about only when it could not name a relation at all; when it can name one,
+ * dropping it from the set is always the safe direction, because the cost of being wrong is a
+ * difference reported that could have been accepted.
+ */
+function applyOwnership(up: string, owned: Set<string>): void {
   for (const statement of statementsOf(up)) {
-    const name = createdBy(statement);
-    if (name !== null) created.push(name);
+    const created = createdBy(statement);
+    if (created !== null) {
+      owned.add(created);
+      continue;
+    }
+    for (const dropped of droppedBy(statement)) owned.delete(dropped);
+    const renamed = renamedBy(statement);
+    if (renamed === null) continue;
+    // Only inherit ownership when the OLD name was owned: renaming a hand-made table into a name
+    // a migration once created must not launder it into an accepted one.
+    owned.delete(renamed.from);
+    if (renamed.owned) owned.add(renamed.to);
   }
-  return created;
+}
+
+/** Every relation one `drop table` names — the form takes a comma list. */
+function droppedBy(statement: string): readonly string[] {
+  const text = statement.trimStart();
+  const head = DROP_TABLE.exec(text);
+  if (head === null) return [];
+  const dropped: string[] = [];
+  let rest = text.slice(head[0].length);
+  for (;;) {
+    const name = qualifiedName(rest);
+    if (name === null) break;
+    if (name.table !== null) dropped.push(name.table);
+    if (!/^\s*,/.test(name.rest)) break;
+    rest = name.rest.replace(/^\s*,\s*/, '');
+  }
+  return dropped;
+}
+
+/** `alter table <old> rename to <new>`, or `null`. `owned` is filled in by the caller's set. */
+function renamedBy(statement: string): { from: string; to: string; owned: boolean } | null {
+  const text = statement.trimStart();
+  const head = ALTER_TABLE.exec(text);
+  if (head === null) return null;
+  const source = qualifiedName(text.slice(head[0].length));
+  if (source === null || source.table === null) return null;
+  const verb = RENAME_TO.exec(source.rest);
+  if (verb === null) return null;
+  const target = qualifiedName(source.rest.slice(verb[0].length));
+  if (target === null || target.table === null) return null;
+  return { from: source.table, to: target.table, owned: true };
+}
+
+/**
+ * One optionally schema-qualified relation name and what follows it. `table` is `null` when the
+ * qualifier names a schema `checkDrift` never introspected — the same rule `createdBy` applies.
+ */
+function qualifiedName(input: string): { table: string | null; rest: string } | null {
+  const first = NAME.exec(input);
+  if (first === null) return null;
+  const tail = input.slice(first[0].length);
+  const dot = DOT.exec(tail);
+  if (dot === null) return { table: unquote(first), rest: tail };
+  const second = NAME.exec(tail.slice(dot[0].length));
+  if (second === null) return null;
+  const rest = tail.slice(dot[0].length + second[0].length);
+  return { table: unquote(first) === COMPARED_SCHEMA ? unquote(second) : null, rest };
 }
 
 /**
@@ -109,7 +194,10 @@ export function acceptCreatedTables(
   report: DriftReport,
   migrations: readonly Migration[],
 ): DriftReport {
-  const created = new Set(migrations.flatMap((migration) => createdTables(migration.up)));
+  // In migration ORDER, across the whole list: ownership is a running state, not a union. A
+  // relation created by 0003 and dropped by 0007 is owned by neither.
+  const created = new Set<string>();
+  for (const migration of migrations) applyOwnership(migration.up, created);
   if (created.size === 0) return report;
   const differences = report.differences.filter(
     (difference) => !(difference.kind === 'unexpected-table' && created.has(difference.table)),

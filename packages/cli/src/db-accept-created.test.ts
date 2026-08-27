@@ -161,3 +161,61 @@ describe('unit · which tables a migration script creates', () => {
     expect(createdTables(script)).toEqual([]);
   });
 });
+
+/**
+ * Ownership is a running state across the whole migration list, not a union over it. The union
+ * was the shipped defect: a name every `create table` ever wrote stayed accepted forever, so a
+ * relation a later migration DROPPED laundered a hand-made table of the same name into an
+ * accepted one — real drift, silenced, which is the one thing this module may not do.
+ */
+describe('unit · ownership ends when a migration gives the relation up', () => {
+  test('a table created then dropped is NOT accepted when it reappears by hand', () => {
+    const migrations = [
+      migration('0001_init', 'create table legacy_audit (id text);'),
+      migration('0002_drop', 'drop table legacy_audit;'),
+    ];
+    const before = driftOver(['posts', 'legacy_audit'], ['posts']);
+
+    const after = acceptCreatedTables(before, migrations);
+
+    expect(after.ok).toBe(false);
+    expect(after.differences.map((d) => d.table)).toEqual(['legacy_audit']);
+  });
+
+  test('drop and re-create in a later migration owns it again', () => {
+    const migrations = [
+      migration('0001_init', 'create table legacy_audit (id text);'),
+      migration('0002_drop', 'drop table if exists legacy_audit;'),
+      migration('0003_again', 'create table legacy_audit (id text, note text);'),
+    ];
+    const after = acceptCreatedTables(driftOver(['legacy_audit'], []), migrations);
+
+    expect(after.ok).toBe(true);
+  });
+
+  test('a comma list drops every relation it names', () => {
+    const migrations = [
+      migration('0001_init', 'create table a_t (id text);\ncreate table b_t (id text);'),
+      migration('0002_drop', 'drop table a_t, b_t cascade;'),
+    ];
+    const after = acceptCreatedTables(driftOver(['a_t', 'b_t'], []), migrations);
+
+    expect(after.differences.map((d) => d.table).sort()).toEqual(['a_t', 'b_t']);
+  });
+
+  test('a rename moves ownership to the new name and off the old one', () => {
+    const migrations = [
+      migration('0001_init', 'create table old_audit (id text);'),
+      migration('0002_rename', 'alter table old_audit rename to new_audit;'),
+    ];
+
+    // The new name is owned…
+    expect(acceptCreatedTables(driftOver(['new_audit'], []), migrations).ok).toBe(true);
+    // …and the old one is not, so re-creating it by hand is still drift.
+    expect(acceptCreatedTables(driftOver(['old_audit'], []), migrations).ok).toBe(false);
+  });
+
+  test('createdTables answers the surviving set, not every name ever written', () => {
+    expect(createdTables('create table gone (id text);\ndrop table gone;')).toEqual([]);
+  });
+});

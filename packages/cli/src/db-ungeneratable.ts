@@ -67,11 +67,11 @@ export function declaredUngeneratable(up: string): number {
  * and `x db gen` emits the ALTER and records it on the snapshot. So the re-declare branch now
  * covers it too: declare `subscribes:` on the live query and regenerate.
  *
- * A committed ALTER is still COUNTED here, and that is `GENERATABLE_FORMS`' answer, not this
- * file's — `@ultimat3/db` classifies on the leading verb phrase and does not yet carry this one.
- * Measured on `examples/dummy/packages/db/migrations/0001_init.sql`: 7 statements found, 7
- * declared, `As of 2026-08-26`. Until that entry lands, the marker branch is still the only
- * remedy for a statement already on disk.
+ * A committed `replica identity full`/`default` ALTER is NOT counted, `As of 2026-08-26`:
+ * `GENERATABLE_FORMS` carries the verb phrase, so a squash no longer loses it and no marker is
+ * owed for one. Measured on `examples/dummy/packages/db/migrations/0001_init.sql`: 7 found and 7
+ * declared before that entry, 5 and 5 after. `using index` and `nothing` are NOT on the list —
+ * the generator emits neither, so those stay hand-written and stay counted.
  */
 export class MigrationUngeneratableError extends UltimateError {
   constructor(input: { file: string; declared: number; statements: readonly string[] }) {

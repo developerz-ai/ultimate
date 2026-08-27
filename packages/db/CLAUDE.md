@@ -1021,8 +1021,12 @@ honest, checked against the resolved shape at first subscribe. It is still a PAR
 `EntityDescriptionLike` field — this package is tier 1 and can see neither the manifest nor
 `@ultimat3/query` — so such a field would have been a declared-and-never-wired key, the defect class
 this release exists to eliminate. `GenerateOptions.replicaIdentityFull: readonly string[] |
-undefined` is the shape, passed by `@ultimat3/cli`'s `db-generate.ts` from `x.manifest.json`'s
-`queries[].subscribes`; `replica-identity.ts` owns every rule that rides with it.
+undefined` is the shape, passed by `@ultimat3/cli`'s `db-generate.ts` from `describeQueries()` —
+the descriptor, one hop BEFORE the manifest. `x.manifest.json` projects the same declaration
+(`QueryFact.subscribes`) and is what any other reader should use, but `appManifest(root)` re-loads
+the app and calls `appIdentity(root)`, which throws `X_APP_PACKAGE_INVALID` where there is no
+`package.json` — and `x db gen` has never needed one. `replica-identity.ts` owns every rule that
+rides with it.
 
 | Rule | Why |
 |---|---|

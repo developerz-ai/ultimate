@@ -8,7 +8,7 @@ import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toLiveQuery } from './live';
-import { query } from './query';
+import { describeQuery, query } from './query';
 import { registerQuery, resetRegistry } from './registry';
 import { from } from './source';
 
@@ -122,4 +122,17 @@ describe('unit · a declaration that disagrees with the read is refused', () => 
     expect(thrown).toBeUltimateError('X_QUERY_SUBSCRIBES_INVALID');
     expect((thrown as { fix: string }).fix).toContain('live: true');
   });
+});
+
+// `build()` stores the def and `facadeFor()` exposes the same array, so without a frozen snapshot
+// a caller could mutate the list AFTER `query()` validated it — and that list is what the manifest
+// publishes and what `x db gen` grants REPLICA IDENTITY FULL from.
+test('mutating the array after query() returns cannot change the descriptor', () => {
+  const declared = ['posts'];
+  const read = defineFeed(declared);
+  registerQuery('liveFeed', read);
+
+  declared.push('ghost');
+
+  expect(describeQuery(read).subscribes).toEqual(['posts']);
 });

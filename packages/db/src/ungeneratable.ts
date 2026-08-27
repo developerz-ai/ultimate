@@ -64,8 +64,11 @@ export const GENERATABLE_FORMS: readonly GeneratableForm[] = [
   // rail reports SQL the generator itself just wrote. Covers `full` and `default` in one phrase —
   // the down side is as generated as the up side.
   {
-    name: 'alter table … replica identity',
-    pattern: /^alter\s+table\s[\s\S]*?\breplica\s+identity\b/,
+    name: 'alter table … replica identity full/default',
+    // `full` and `default` ONLY — the two modes `replicaIdentityPlan` emits. `using index` and
+    // `nothing` are hand-written configuration no entity declares, and admitting them here would
+    // read them as generatable and let a squash discard the replication setup in silence.
+    pattern: /^alter\s+table\s[\s\S]*?\breplica\s+identity\s+(?:full|default)\b/,
   },
 ];
 

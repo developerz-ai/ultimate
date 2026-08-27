@@ -19,7 +19,7 @@ const roots: string[] = [];
 
 /** `Bun.write` creates intermediate directories, so it is this repo's `mkdir -p`. */
 const tempRoot = async (): Promise<string> => {
-  const root = `${process.env['TMPDIR'] ?? '/tmp'}/x-subscribes-${Bun.randomUUIDv7()}`;
+  const root = `${Bun.env['TMPDIR'] ?? '/tmp'}/x-subscribes-${Bun.randomUUIDv7()}`;
   await Bun.write(`${root}/package.json`, '{"name":"subscribes-fixture","version":"0.0.0"}\n');
   roots.push(root);
   return root;
