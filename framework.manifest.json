@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "6ee4bbd945a1b0549c02b7400ff4a856ac27d66da69f674a4d78c39b4fdb9a6d",
+  "buildId": "a7ccab32e6a2e12abc08fbd56bae55a89941c6f203cfd753b3779d4fd27389b5",
   "tiers": {
     "0": [
       "core",
@@ -783,6 +783,11 @@
       "code": "X_DB_BRANCH_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DB_DRAIN_TIMEOUT",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
     },
     {
       "code": "X_DB_DRIFT",

@@ -95,6 +95,7 @@ describe('createPostgresClient', () => {
       idleTimeoutMs: 30_000,
       lockTimeoutMs: 0,
       acquireTimeoutMs: 10_000,
+      drainTimeoutMs: 15_000,
     });
     // The RAW query string, not `searchParams.get()`. `.get()` decodes `+` back to a space, so the
     // old assertion passed on the working encoding AND on a broken one — a test that cannot fail.

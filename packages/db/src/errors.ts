@@ -25,6 +25,7 @@ export const DB_OWNED_ERROR_CODES = [
   'X_DB_STATEMENT_TIMEOUT',
   'X_DB_LOCK_TIMEOUT',
   'X_DB_POOL_EXHAUSTED',
+  'X_DB_DRAIN_TIMEOUT',
   'X_DB_DRIFT',
   'X_MIGRATION_CONFLICT',
   'X_MIGRATION_IRREVERSIBLE',
@@ -66,6 +67,7 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_DB_STATEMENT_TIMEOUT: 'the statement ran past its statement_timeout',
   X_DB_LOCK_TIMEOUT: 'the statement waited past its lock_timeout',
   X_DB_POOL_EXHAUSTED: 'no connection was available',
+  X_DB_DRAIN_TIMEOUT: 'the pool did not drain inside its shutdown budget',
   X_DB_DRIFT: 'schema differs from migrations',
   X_MIGRATION_CONFLICT: 'the migration ledger disagrees with this build',
   X_MIGRATE_CONCURRENT: 'another migrator holds the migration lock',
@@ -237,6 +239,24 @@ export const driverError = (detail: string, sourceError: unknown): DbError => {
     sourceError,
   });
 };
+
+/**
+ * `close()` gave up waiting for the pool. TERMINAL, and deliberately not retryable: the pool is
+ * gone either way — `close()` clears the handle before it awaits — so a caller that retried would
+ * be closing a pool that no longer exists. What this reports is that connections were still held
+ * when the process stopped waiting, which is a fact about the shutdown an operator has to see.
+ *
+ * The alternative was to resolve quietly on the deadline, and that is the version that hides the
+ * bug: a drain that silently gave up looks exactly like a clean one, and the rows still in flight
+ * are lost with no line anywhere saying so.
+ */
+export const drainTimeout = (ms: number, role: string): DbError =>
+  new DbError({
+    code: 'X_DB_DRAIN_TIMEOUT',
+    cause: `the ${role} pool still held connections after ${String(ms)}ms, so close() stopped waiting`,
+    fix: `find the statement that will not finish — psql "$DATABASE_URL" -c "select pid, state, query from pg_stat_activity where state <> 'idle'" — or raise drainTimeoutMs in createPostgresClient({ profile }) for the ${role} role`,
+    meta: { drainTimeoutMs: ms, role },
+  });
 
 /**
  * The pool answered nothing inside `acquireTimeoutMs`. Distinct from the server's own `53300` and
