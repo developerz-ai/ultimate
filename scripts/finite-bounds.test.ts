@@ -326,6 +326,27 @@ describe('the screening table', () => {
       expect(screeningCallPattern(SCREENING_CALLEES).test(`${callee}(x)`), callee).toBe(true);
     }
   });
+
+  // A PROPERTY of something is not the declared callee, and `\b` cannot say so: `.` is a word
+  // boundary, so a bare row matched `other.finiteOption(` and a dotted row — carrying no left
+  // guard at all — matched `OtherNumber.isFinite(`. Both are screens this table never declared,
+  // and `finite-bounds.ts` suppresses a finding wherever the pattern hits, so each phantom match
+  // is one numeric bound that stops being checked with nothing to say it stopped. Reported by
+  // review on #381; these two are the cases, one per row shape.
+  test('a callee reached through a property is not the declared callee', () => {
+    for (const source of ['other.finiteOption(x)', 'OtherNumber.isFinite(x)']) {
+      expect(screeningCallPattern(SCREENING_CALLEES).test(source), source).toBe(false);
+    }
+  });
+
+  // The other side of the same guard, and it has to be asserted separately: a rule that answers
+  // `false` to everything would pass the test above.
+  test('a name the declared callee is only a PREFIX of is not the declared callee', () => {
+    for (const source of ['finiteOptionish(x)', 'InfiniteScroll(x)', 'myfinite(x)']) {
+      expect(screeningCallPattern(SCREENING_CALLEES).test(source), source).toBe(false);
+    }
+    expect(screeningCallPattern(SCREENING_CALLEES).test('finiteOption(x)')).toBe(true);
+  });
 });
 
 describe('the real tree', () => {

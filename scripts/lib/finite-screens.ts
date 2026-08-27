@@ -147,8 +147,15 @@ export const SCREENING_CALLEES: readonly FiniteScreen[] = [
 
 /**
  * The call shape for a table, in one alternation — never hand-written, so a row and the pattern
- * can never disagree. A dotted callee is escaped whole; a bare one takes a `\b`, so `myfinite(`
- * and `InfiniteScroll(` are not it.
+ * can never disagree. Every callee is escaped whole and bounded on BOTH sides, so `myfinite(`,
+ * `InfiniteScroll(` and `finiteOptionish(` are not it.
+ *
+ * `.` IS A WORD BOUNDARY, which is why the left guard is `(?<![\w$.])` and not `\b`. Under `\b`
+ * an undeclared `other.finiteOption(…)` matched — the `.` supplied the boundary — and a dotted row
+ * carried no left guard at all, so `OtherNumber.isFinite(…)` matched `Number.isFinite`. Either one
+ * is a screen this table never declared, which is the exact hole the table replaced the name regex
+ * to close: `finite-bounds.ts` suppresses a finding wherever this pattern hits, so a phantom match
+ * is a bound that stops being checked in silence.
  *
  * Takes the table rather than closing over it so a test can prove the recogniser reads the ROW and
  * not the spelling: a table whose only row is `toMs` must recognise `toMs(…)`, which is the site
@@ -156,9 +163,7 @@ export const SCREENING_CALLEES: readonly FiniteScreen[] = [
  */
 export const screeningCallPattern = (callees: readonly FiniteScreen[]): RegExp =>
   new RegExp(
-    `(?:${callees
-      .map(({ callee }) => (callee.includes('.') ? RegExp.escape(callee) : `\\b${callee}`))
-      .join('|')})\\s*\\(`,
+    `(?:${callees.map(({ callee }) => `(?<![\\w$.])${RegExp.escape(callee)}(?![\\w$])`).join('|')})\\s*\\(`,
     'g',
   );
 
