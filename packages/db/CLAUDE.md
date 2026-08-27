@@ -1393,6 +1393,46 @@ survives the round trip whole.
   both declarations true; `packages/entity/src/errors.test.ts` asserts the two texts are equal,
   so a one-sided edit is a failing test rather than a comment nobody read.
 
+- **A JS array bound as a parameter is rendered here, because `Bun.SQL` does not render it,
+  `As of 2026-08-26`** (issue #384). `Bun.SQL`'s positional form serialises an array by JOINING ITS
+  ELEMENTS WITH COMMAS, so `unsafe('select $1::text[]', [['x', 'y']])` sends the string `x,y` and
+  Postgres answers `22P02 malformed array literal: "x,y"` — measured on bun 1.4.0 against Postgres
+  17. **Three shipped statements bind an array and all three failed**: `@ultimat3/jobs`' `SQL_CLAIM`
+  (the whole loop of every `ROLE=worker` container the framework produces, so a real deployment
+  claimed nothing and every job sat in its queue), `SQL_OUTBOX_RELEASE` (the relay giving an
+  unpublished batch back) and `@ultimat3/notify`'s `SQL_NOTIFY_INBOX_MARK_READ`.
+  `array-parameter.ts` is the encoder and `sendOn` (`statement-funnel.ts`) is the one caller — this
+  driver's only `unsafe` call, so one encoder is every caller fixed and a helper each site imports
+  is three chances to forget and a fourth site tomorrow that does (axiom 1).
+
+  **Why nothing caught it, and why the repair test is in `@ultimat3/cli`.** `pglite.ts` is a
+  separate driver that encodes an array correctly, and `x dev` runs the embedded default — so the
+  framework's own dev loop is blind by construction and only a container with `DATABASE_URL` ever
+  meets the failure. Every other test of those three statements runs against a recording executor
+  and asserts their SQL as TEXT, which cannot see whether a parameter PARSES;
+  `grep -rln '\.claim(' --include=*.live.test.ts packages/` answered ONE file before this landed.
+  `packages/db/src/array-parameter.live.test.ts` pins the grammar against a real server — and
+  asserts the RAW array is still refused, so deleting the encoder fails rather than passing on any
+  driver that happens to encode. `packages/cli/src/pg-array.live.test.ts` is the composition test:
+  it is in `cli` because nothing else can see all three — this package is tier 1 and may not import
+  `jobs` (3) or `notify` (4), and neither of those can build a db-backed `PgExecutor` — so
+  `pgExecutorFor(createPostgresClient(...))`, the executor every booted role actually gets, is the
+  only place the three real statements meet the real driver.
+
+  Three grammar rules earn their line. **`NULL` bare is the array null and `"NULL"` is the
+  four-character string**, so a JS `null` renders bare and a queue really spelled `NULL` must not
+  become one. **Quoting is by content, not by type** — a comma, a brace, a quote, a backslash,
+  surrounding whitespace or the empty string, which unquoted is not an element at all. **A
+  `Uint8Array` is BYTEA and is deliberately not an array**: `Array.isArray` answers `false` for a
+  typed array, which is behaviour this relies on rather than a case it writes. **A RAGGED nest is
+  REFUSED**, never rendered — Postgres has no jagged array and `{{a,b},{c}}` is the same `22P02`,
+  measured on 17 beside the rectangular `{{a,b},{c,d}}` that parses, so a literal this module is
+  willing to emit is one the server is willing to read. `X_INVARIANT` through core's `assert`, the
+  code this package already borrows for a value this build cannot honour; mixed depth (`{a,{b,c}}`)
+  is caught by the same guard, which a rule comparing row LENGTHS alone would let through. And the
+  common path allocates nothing — one `some` over a short list, then the caller's own array by identity, because
+  every statement the framework runs passes through here and almost none binds an array (axiom 6).
+
 ```bash
 bun test                      # from packages/db
 bun run typecheck
