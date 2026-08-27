@@ -307,6 +307,9 @@
     "packages/core": {
       "name": "@ultimat3/core",
       "version": "17.0.0",
+      "dependencies": {
+        "@ultimat3/schema": "17.0.0",
+      },
     },
     "packages/create-ultimate": {
       "name": "create-ultimate",

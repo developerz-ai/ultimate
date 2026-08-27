@@ -23,6 +23,7 @@ tier 5  admin, testing, cli, scraping               (may import tier 0-4)
 
 | Sideways exception | Why |
 |---|---|
+| `core` → `schema` | five declarations were duplicated on the core side and held equal by 394 lines of pin test in a **tier-5** package — `CURRENCY_CODE_PATTERN`, `describeValue`, `charCount`, `SCHEMA_ERROR_CODES` and `isIanaZoneName`. `describeValue` prints *instead of* a rejected password, so the safety property of the framework's most security-sensitive renderer rested on a 63-line behavioural pin in `@ultimat3/cli` that no rule required to exist. The lower-tier extraction is what `schema` already **is**: it imports nothing, and there is nowhere below tier 0 for a sixth package to go. Declared 2026-08-27, and [measured first](#what-the-edge-costs-a-browser-chunk). |
 | `realtime` → `query` | tier 3 is one feature: a live query is a query plus a subscription. Splitting duplicates the SQL shape. |
 | `cli` → `admin` | `x dev` **mounts** `/_x`; it does not reimplement it. The panels are a tier-5 product, and the alternative is a second dev dashboard inside the CLI. |
 | `cli` → `scraping` | `x shot` drives a real browser and `@ultimat3/scraping` is the one package that can: it declares the CDP library's shape structurally (`cdp-port.ts`) and takes no runtime dependency, so the CLI passes the app's own `puppeteer` in. Declared 2026-08-21, and moving `scraping` down to 4 instead was refused — see [Floors](#floors-the-other-half-of-the-rule). |
@@ -30,7 +31,9 @@ tier 5  admin, testing, cli, scraping               (may import tier 0-4)
 | `create-ultimate` → `cli` | a published shim whose whole job is `x new`. The alternative is a second copy of the templates. `create-ultimate` sits above the table at tier 6, and this is its **only** permitted import. |
 | everything else | none. Siblings share **types only**, declared in the lowest tier that needs them — see [`00-conventions.md`](00-conventions.md#one-declaration-at-the-lowest-tier-that-can-hold-it). |
 
-**Two rows left this table and neither was a rule change.** `schema` → `core` never existed: `packages/schema/src/errors.ts:2` says `SchemaError` reproduces `UltimateError`'s shape **structurally** rather than importing it, so tier 0 imports nothing and needs no exception. `admin` → `ui` is now an ordinary **downward** import: `ui` imports `core`, `i18n`, `money` and `time`, so tier 5 was two tiers above its floor, and moving it to 4 made the edge legal on the plain rule. `ui` sits at 4 rather than at its floor so `render` → `ui` stays forbidden — the static bundle graph may not reach the design system, which is axiom 6. An exception line in an enforcement table is a rule with a hole in it, and deleting the hole beats arguing for it.
+**`schema` → `core` is still forbidden, and is the half that stays forbidden on its merits.** `packages/schema/src/errors.ts:2` says `SchemaError` reproduces `UltimateError`'s shape **structurally** rather than importing it, and that is not a workaround: `t` is in every bundle graph an app has, so a dependency there is a dependency everywhere. Three declarations are still copied in that direction — `singleLine`, `ERROR_DOCS_URL` and the `Symbol.for('ultimate.error')` key — and `packages/core/src/single-line-pin.test.ts` is what holds them equal, at tier 0 rather than at tier 5.
+
+**One row left this table and it was not a rule change.** `admin` → `ui` is now an ordinary **downward** import: `ui` imports `core`, `i18n`, `money` and `time`, so tier 5 was two tiers above its floor, and moving it to 4 made the edge legal on the plain rule. `ui` sits at 4 rather than at its floor so `render` → `ui` stays forbidden — the static bundle graph may not reach the design system, which is axiom 6. An exception line in an enforcement table is a rule with a hole in it, and deleting the hole beats arguing for it.
 
 ### Floors: the other half of the rule
 
@@ -68,7 +71,7 @@ Decided **2026-08**, when the Postgres entity driver needed a home. `db` imports
 
 | Package | Tier | Responsibility (one line) | Owns | Must never |
 |---|---|---|---|---|
-| `core` | 0 | `UltimateError`, ALS request context, ids, build ID, typed env, the image pipeline, the flight layer | the error base + code registry, `ctx` shape, cross-tier interface types, the logger, the one decode/resize/encode path, the one backoff curve and the one concurrency gate ([`20-flight-control.md`](./20-flight-control.md)) | import any `@ultimat3/*`; do I/O beyond `process.env` and stdout |
+| `core` | 0 | `UltimateError`, ALS request context, ids, build ID, typed env, the image pipeline, the flight layer | the error base + code registry, `ctx` shape, cross-tier interface types, the logger, the one decode/resize/encode path, the one backoff curve and the one concurrency gate ([`20-flight-control.md`](./20-flight-control.md)) | import any `@ultimat3/*` **but `schema`**, which is the one declared edge; do I/O beyond `process.env` and stdout |
 | `schema` | 0 | Standard Schema façade; the dependency-free builtin provider exposed as `t`; JSON Schema emit | `t`, `parse`, `toJsonSchema`, `configureSchemaProvider()` — the swap point a third-party adapter plugs into | know about HTTP, DB, or locales; ship an adapter for ArkType, Zod or Valibot |
 | `i18n` | 1 | translator, catalog flattening, locale negotiation, loud misses | `t()`, catalog format, `⟦key⟧` rendering, plural selection via CLDR | read a request object; format money |
 | `money` | 1 | integer minor units with an attached currency | `Money`, arithmetic, `allocate`, ISO exponent table, `Intl` formatting | floats; cross-currency arithmetic; a bare number as a total |
@@ -183,9 +186,24 @@ graph TD
   i18n --> core
   money --> schema
   time --> core
+
+  core --> schema
 ```
 
-`schema` has no arrow out of it: it declares no `@ultimat3/*` dependency at all, which is why `schema` → `core` needs no sideways exception — `packages/schema/src/errors.ts:2` reproduces `UltimateError`'s shape structurally and brands it with the same `Symbol.for('ultimate.error')`.
+`schema` has no arrow out of it: it declares no `@ultimat3/*` dependency at all, and that is what keeps `t` free to appear in any bundle. The arrow now runs the other way — `core` → `schema` — and `packages/schema/src/errors.ts:2` still reproduces `UltimateError`'s shape structurally and brands it with the same `Symbol.for('ultimate.error')`, because the reverse direction is not opening.
+
+### What the edge costs a browser chunk
+
+Measured before declaring it, 2026-08-27, `bun build --target=browser --minify`, one entry per row. The middle column is the edge alone; the right column is the edge with `@ultimat3/schema` finally declaring `sideEffects: false`, which `bun run side-effects` had already **measured** as true of the package and which nothing had written down.
+
+| one import | before | edge only | edge + honest `sideEffects` |
+|---|---|---|---|
+| `UltimateError` from `core` | 6,362 B | 19,018 B | **7,352 B** |
+| `describeValue` from `core` | 7,170 B | 19,016 B | **8,160 B** |
+| `useUi` from `@ultimat3/ui` | 15,583 B | 28,284 B | **16,593 B** |
+| `moneyText` from `@ultimat3/ui` | 27,203 B | 26,838 B | **19,417 B** |
+
+The edge alone triples a core-only chunk, because importing schema's barrel with no `sideEffects` field forces a bundler to keep every module it reaches. With the field, the cost is **~1 kB** on a chunk that did not already carry schema — and `moneyText`, which always did (`@ultimat3/money` puts it in the graph), comes out **7.8 kB smaller**, because the duplicates are gone. Axiom 6 is what made this a measurement rather than an argument.
 
 ## One reason to change
 

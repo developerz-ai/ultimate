@@ -2,6 +2,7 @@
 // defaults, validated eagerly, and composable so a big app can split it across `config/*.ts`
 // without inventing a second config mechanism.
 
+import { CURRENCY_CODE_PATTERN } from '@ultimat3/schema';
 // Same rule for the same reason: `app.config.ts` CONSUMES the cache tier names, it does not own
 // them. Declaring them here is what let `cache.tiers` and the ladder `@ultimat3/cache` orders by
 // drift into two vocabularies with no map between them (issue #293).
@@ -248,18 +249,13 @@ function section<T extends object>(base: T, patch: Input<T> | undefined): T {
 const NAME_RE = /^[a-z][a-z0-9-]{1,63}$/;
 
 /**
- * A deliberate duplicate of `CURRENCY_CODE_PATTERN` in `packages/schema/src/money-value.ts`, which
- * is the framework's ONE declaration of what an ISO 4217 code looks like and the source
- * `isCurrencyCode`, the published OpenAPI `pattern` and `@ultimat3/entity`'s Postgres CHECK all
- * derive from. This file cannot import it: `core` and `schema` are both tier 0 and `core → schema`
- * is not in `SIDEWAYS_ALLOW` (`scripts/lib/tiers.ts`), the same wall that makes `describeValue` a
- * character-for-character copy in `error-render.ts`.
- *
- * So keep the two identical, and keep the pattern inside the syntax ECMAScript, JSON Schema and
- * POSIX ERE spell identically — a `defaultCurrency` this accepts and `t.money` refuses is an app
- * whose configured currency cannot be written to a row.
+ * Built from `@ultimat3/schema`'s `CURRENCY_CODE_PATTERN`, the framework's ONE declaration of what
+ * an ISO 4217 code looks like — the same source `isCurrencyCode`, the published OpenAPI `pattern`
+ * and `@ultimat3/entity`'s Postgres CHECK all derive from. It was a character-for-character copy
+ * here until the `core -> schema` edge was declared (`scripts/lib/tiers.ts`), held equal only by a
+ * pin test in `@ultimat3/cli`.
  */
-const CURRENCY_RE = /^[A-Z]{3}$/;
+const CURRENCY_RE = new RegExp(CURRENCY_CODE_PATTERN);
 
 function isLocale(value: string): boolean {
   try {

@@ -36,5 +36,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@ultimat3/schema": "17.0.0"
+  }
 }

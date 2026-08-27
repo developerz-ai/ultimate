@@ -220,13 +220,18 @@ describe('builtinT.date', () => {
 });
 
 /**
- * **A MIRROR of `isIanaZoneName`'s corpus in `packages/core/src/time-zone-name.test.ts` and of
- * `isValidTimeZone`'s in `packages/time/src/zones.test.ts`, name for name, and it must move with
- * them.** `schema` is tier 0 and may import neither, so the rule is stated a third time; the
- * mechanical half is `timezone-validator-pin.test.ts` in `@ultimat3/cli`, which is the lowest tier
- * that may import all three. This is the local half, and the reason it is not merely a pin: this
- * predicate is the only one of the three that judges **caller input** — `t.timezone` is a field on
- * a request body, so a name accepted here reaches a `format` call that refuses it.
+ * **A MIRROR of `isValidTimeZone`'s corpus in `packages/time/src/zones.test.ts`, name for name, and
+ * it must move with it.**
+ *
+ * There is no longer a third statement to mirror: `@ultimat3/core` re-exports THIS predicate over
+ * the declared `core -> schema` edge `As of 2026-08-27`, so the config validator and `t.timezone`
+ * are one function and `timezone-validator-pin.test.ts` is deleted. `@ultimat3/time`'s
+ * `canonicalTimeZone` remains its own, because it answers the canonical SPELLING with a memo a
+ * request header can hit — a different question with a different cost.
+ *
+ * This is the local half of that comparison, and the reason it is not merely a pin: this predicate
+ * is the one that judges **caller input** — `t.timezone` is a field on a request body, so a name
+ * accepted here reaches a `format` call that refuses it.
  */
 describe('builtinT.timezone', () => {
   test('accepts a valid IANA time zone', () => {

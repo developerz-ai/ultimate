@@ -77,17 +77,28 @@ It is not a general sanitiser: a cause is prose and keeps its quotes,
 its backslashes and its percent signs — only the control range is touched. Line breaks are the
 structural half; the rest of C0 and DEL ride along because a terminal reads a raw `\u001b` as an ANSI
 escape, so a cause could repaint the screen or hide the line above it. `@ultimat3/schema` carries a
-deliberate duplicate for the tier-0 reason below, pinned behaviourally by
-`single-line-pin.test.ts` in `@ultimat3/cli`.
+deliberate duplicate — `schema -> core` stays forbidden, so that direction cannot be collapsed —
+pinned behaviourally by `single-line-pin.test.ts`, which lives HERE `As of 2026-08-27`, at the tier
+the invariant belongs to, and pins `ERROR_DOCS_URL` and the brand key beside it.
 
-`describeValue` in `error-render.ts` is a deliberate duplicate of `describeValue` in
-`packages/schema/src/describe-value.ts`, for the same tier-0 reason `SCHEMA_ERROR_CODE_TITLES` is
-one: schema and core are both tier 0 and `core → schema` is **not** a declared edge in
-`scripts/lib/tiers.ts`, so neither may import the other. Keep the two ANSWERING identically — that
-is the contract, and the source is no longer character-for-character: schema counts characters
-through `char-count.ts`, which core copies privately. A pin test in
-`@ultimat3/cli` (which may legally import both) is the mechanical half, the same shape as
-`schema-error-codes-pin.test.ts`. **A string's length is CODE POINTS in both, `As of 2026-08-22`**
+**`core -> schema` is a declared edge `As of 2026-08-27`, and FIVE copies went with it.**
+`describeValue`, `charCount`, `CURRENCY_CODE_PATTERN`, `SCHEMA_ERROR_CODES` and `isIanaZoneName`
+were all restated here because both packages are tier 0 and neither could import the other; they
+were held equal by 394 lines of pin test in `@ultimat3/cli`, a TIER-5 package pinning a tier-0
+invariant that no rule required to exist. `describeValue` is the one that made it urgent — it
+prints INSTEAD of a rejected password, so the safety property of the framework's most
+security-sensitive renderer rested on a 63-line behavioural pin at tier 5. `error-render.ts`
+re-exports schema's now, and the four pin files are deleted.
+
+The edge cost was MEASURED before it was declared, because axiom 6 makes it a measurement and not
+an argument — `docs/architecture/01-package-map.md` carries the table. Short version: the edge
+alone TRIPLED a core-only browser chunk (6,362 → 19,018 B), because importing schema's barrel with
+no `sideEffects` field forces a bundler to keep every module it reaches; `@ultimat3/schema` now
+declares `sideEffects: false`, which `bun run side-effects` had already measured as true of it, and
+the cost drops to ~1 kB — while `moneyText` from `@ultimat3/ui`, which always carried schema, comes
+out 7.8 kB SMALLER.
+
+**A string's length is CODE POINTS, `As of 2026-08-22`**
 — `validators.ts` rejects in that unit and `json-schema.ts` publishes `minLength` in it, so
 `.length` made `t.string.min(3).safeParse('👍a')` say "at least 3 chars, received a string of 3
 characters". The rule it enforces: a `cause` reaches the log index AND the
@@ -162,12 +173,14 @@ the master key) purely so *wrong key* and *edited file* are two codes and not on
 cannot tell them apart.
 
 `schema-error-codes.ts` is the same shape a second time, for codes this package does not even own.
-`@ultimat3/schema` is tier 0 like `core` and so can neither call `registerErrorCodes()` itself nor
-import core to reach it — the four codes' titles are a deliberate, tested duplicate of
-`SCHEMA_ERROR_CODES` in `packages/schema/src/errors.ts`, registered unconditionally at import time
-so any process that imports core (not just `@ultimat3/cli`, which used to be the only registrant)
-renders schema's real titles. Neither tier-0 package can check the duplicate against its source, so
-the pin (`schema-error-codes-pin.test.ts`) lives in `@ultimat3/cli`, which may legally import both.
+`@ultimat3/schema` is tier 0 like `core` and cannot call `registerErrorCodes()` itself — that would
+be `schema -> core`, which stays forbidden. So core READS `SCHEMA_ERROR_CODES` over the declared
+edge and registers it unconditionally at import time, and any process that imports core (not just
+`@ultimat3/cli`, which used to be the only registrant) renders schema's real titles. The retry
+classification is derived from the same set rather than typed out beside it: a fifth code would
+have been silently absent from a hand-written list, and an unregistered code reads as UNCLASSIFIED,
+so a schema refusal inside a job body burns the whole retry policy re-proving an answer no attempt
+can change.
 
 `timing-safe-equal.ts` holds the one constant-time string comparison `@ultimat3/auth` and
 `@ultimat3/storage` both need — core is the lowest tier both can reach, so the shared code lives

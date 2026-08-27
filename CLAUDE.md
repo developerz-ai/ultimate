@@ -259,7 +259,7 @@ A package may import from strictly lower tiers. Never sideways within a tier, ne
 | 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui`, `notify` |
 | 5 | `admin`, `testing`, `cli`, `scraping` |
 
-Declared sideways edges, each earning its line: `realtime → query`, `cli → admin`, `cli → scraping`, `cli → testing`, `create-ultimate → cli`.
+Declared sideways edges, each earning its line: `core → schema`, `realtime → query`, `cli → admin`, `cli → scraping`, `cli → testing`, `create-ultimate → cli`.
 
 **`cli → scraping` was declared 2026-08-21, and moving `scraping` down to tier 4 instead was refused.** `x shot` drives a real browser and `@ultimat3/scraping` is the one package that can. Its real imports are `core`, `jobs`, `schema` and `storage` — highest tier 3 — so tier 4 *is* its floor, and the `admin → ui` argument above would say to move it and delete the exception. That argument does not apply here, because tier 5 is not a misplacement: [`packages/scraping/CLAUDE.md`](packages/scraping/CLAUDE.md) puts it at 5 to reserve room for `recover: 'agent'` to import `@ultimat3/ai` (tier 4), and a package at 4 cannot import a package at 4. That file named this edge before anything imported the package: it wrote that because `cli` is also tier 5, a CLI command driving a browser would one day need a declared `cli → scraping` edge in the table. A tier that is holding a position is not a hole; deleting it would trade a documented future capability for one fewer line in a table.
 
@@ -289,6 +289,34 @@ clearest case: `render → pwa` becomes an ordinary downward import, the service
 joins the static bundle graph, and axiom 6 loses the build error both packages' `CLAUDE.md` rely on.
 
 **`cli → testing` was declared 2026-08**, when `bun run boundaries` learned to follow relative specifiers. `packages/cli/src/serve.live.test.ts` had been importing `../../testing/src/sealed-network` with a comment saying the package specifier "is a sideways import the boundary check refuses" — an evasion the check could not see. `@ultimat3/testing` was already a runtime `dependencies` entry of `@ultimat3/cli`, so the manifest had crossed the edge all along; declaring it makes the rule enforce what shipping already assumed. `create-ultimate` sits above the table at tier 6 and its declared edge is its *only* permitted import.
+
+**`core → schema` was declared 2026-08-27, and the reverse stays forbidden.** Five declarations
+were duplicated on the core side — `CURRENCY_CODE_PATTERN`, `describeValue`, `charCount`,
+`SCHEMA_ERROR_CODES`, `isIanaZoneName` — held equal by **394 lines of pin test in `@ultimat3/cli`**,
+a tier-5 package pinning a tier-0 invariant that no rule required to exist. `describeValue` is what
+prints *instead of* a rejected password, so the safety property of the framework's most
+security-sensitive renderer rested on a 63-line behavioural pin at tier 5. The lower-tier
+extraction option (b) has no home: `schema` already imports nothing, and there is nowhere below
+tier 0 for a sixth package. `schema → core` stays forbidden **on its merits** — `t` is in every
+bundle graph an app has — so the three copies going THAT way (`singleLine`, `ERROR_DOCS_URL`, the
+`Symbol.for('ultimate.error')` key) remain, now pinned at tier 0 by
+`packages/core/src/single-line-pin.test.ts`.
+
+**The cost was measured, not argued** — axiom 6 makes it a measurement.
+`bun build --target=browser --minify`, one entry per row:
+
+| one import | before | edge only | edge + honest `sideEffects` |
+|---|---|---|---|
+| `UltimateError` from `core` | 6,362 B | 19,018 B | **7,352 B** |
+| `useUi` from `@ultimat3/ui` | 15,583 B | 28,284 B | **16,593 B** |
+| `moneyText` from `@ultimat3/ui` | 27,203 B | 26,838 B | **19,417 B** |
+
+The edge ALONE triples a core-only chunk: importing schema's barrel with no `sideEffects` field
+forces a bundler to keep every module it reaches, and `@ultimat3/schema` declared none.
+`bun run side-effects` had already **measured** the package as having no import-time effect and
+nothing had written it down; with `sideEffects: false` the edge costs ~1 kB on a chunk that did not
+already carry schema, and `moneyText` — which always did, through `@ultimat3/money` — comes out
+**7.8 kB smaller** because the duplicates are gone.
 
 **`db` is tier 1, decided 2026-08.** It imports `core` and nothing else, so tier 1 is the lowest its real imports allow — and that is what lets `entity` (tier 2) hold its own Postgres driver (`postgresDriver()`) instead of exiling it to a tier-3 package. Two things would have been wrong: a second package owning `Driver`'s only production implementation (two places to look for "where rows live"), and `database()` callers importing the seam from one package and the driver from another. Same shape as `auth → db`.
 

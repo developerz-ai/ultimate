@@ -1,7 +1,8 @@
 // One declaration, six readers, one answer: the pin that makes "one predicate" checkable.
 // `mcp: { expose }` is read across `action`, `query`, `mcp` and `ai` — three tiers that cannot
 // import each other, so no one of them can prove the others agree. `@ultimat3/cli` is tier 5 and
-// may import all of them, which is why the pin lives here, like `schema-error-codes-pin.test.ts`.
+// may import all of them, which is why the pin lives here. It is now the LAST cross-package pin in
+// this package: the tier-0 four went with the declared `core -> schema` edge (2026-08-27).
 
 import { describe, expect, test } from 'bun:test';
 import { action, describeAction, toMcpTools, toOpenApiOperation } from '@ultimat3/action';

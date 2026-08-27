@@ -54,7 +54,6 @@ export const SIDE_EFFECTS_UNDECLARED: readonly string[] = [
   'packages/mcp',
   'packages/policy',
   'packages/pwa',
-  'packages/schema',
   'packages/scraping',
   'packages/seo',
   'packages/storage',

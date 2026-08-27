@@ -282,7 +282,12 @@ describe('this repository', () => {
     // was 42 while the scan matched at column 0 only; the seven it gained are the INDENTED
     // freezes — `context.ts`, `execute.ts`, `impersonate.ts` — that used to be invisible.
     expect(counts.explicit).toBeGreaterThanOrEqual(21);
-    expect(counts['annotated-open']).toBeGreaterThanOrEqual(4);
+    // 4 until 2026-08-27, and the one that left is the shape this floor exists to notice: core's
+    // `SCHEMA_ERROR_CODE_TITLES` was `Object.freeze({ …four literal keys… })` and is now
+    // `Object.freeze(Object.fromEntries(…))` over `@ultimat3/schema`'s own declarations, over the
+    // declared `core -> schema` edge. It is not a freeze the scan lost sight of — it is a literal
+    // that stopped existing, which is the direction this repo wants.
+    expect(counts['annotated-open']).toBeGreaterThanOrEqual(3);
     expect(counts.unconstrained).toBeGreaterThanOrEqual(49);
   });
 
