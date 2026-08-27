@@ -141,31 +141,65 @@ describe('e2e driver — the fixtures an e2eTest body receives', () => {
   const page = e2ePage(options);
 
   test('page is the real one', () => {
-    expect(e2eFixtures(page).page.url()).toBe('http://127.0.0.1:3000/feed');
+    expect(e2eFixtures(page, browser).page.url()).toBe('http://127.0.0.1:3000/feed');
   });
 
-  test('offline() REFUSES rather than no-opping', async () => {
-    await expect(e2eFixtures(page).offline()).rejects.toThrow(/X_TEST_FIXTURE_UNAVAILABLE/);
+  /**
+   * The condition, not the call. `offline()` refused until 2026-08-27 on a reason the tree
+   * contradicted in the commit that wrote it — `CdpPageLike` has declared `setOfflineMode` since
+   * #351 and `ScrapePage.offline()` forwards to it — and #390 recorded a real browser check as out
+   * of reach because of it. Asserting the value the driver was left in, rather than that a spy
+   * fired, is what makes this fail if the forward is inverted.
+   */
+  const withNetwork = (): { readonly browser: E2eBrowserPage; readonly state: boolean[] } => {
+    const state: boolean[] = [];
+    return {
+      browser: {
+        ...browser,
+        offline: (enabled: boolean) => {
+          state.push(enabled);
+          return Promise.resolve();
+        },
+      },
+      state,
+    };
+  };
+
+  test('offline() drops the browser network, and online() puts it back', async () => {
+    const { browser: driver, state } = withNetwork();
+    const fixtures = e2eFixtures(page, driver);
+    await fixtures.offline();
+    expect(state).toEqual([true]);
+    await fixtures.online();
+    expect(state).toEqual([true, false]);
   });
 
-  test('online() refuses the same way', async () => {
-    await expect(e2eFixtures(page).online()).rejects.toThrow(/X_TEST_FIXTURE_UNAVAILABLE/);
+  test('a driver with no offline() still REFUSES rather than no-opping', async () => {
+    // The whole reason this half is a refusal: an `offline()` that silently did nothing would let
+    // the app's ONLINE page pass an offline test, and the assertion after it would read as proof.
+    await expect(e2eFixtures(page, browser).offline()).rejects.toThrow(
+      /X_TEST_FIXTURE_UNAVAILABLE/,
+    );
+    await expect(e2eFixtures(page, browser).online()).rejects.toThrow(/X_TEST_FIXTURE_UNAVAILABLE/);
   });
 
-  test('the offline refusal names the CDP method it would need', async () => {
+  test('and that refusal names the method the double is missing, not a missing capability', async () => {
     let message = '';
     try {
-      await e2eFixtures(page).offline();
+      await e2eFixtures(page, browser).offline();
     } catch (error) {
       message = String(error);
     }
-    expect(message).toContain('setOfflineMode');
+    expect(message).toContain('offline(enabled)');
+    // It must NOT send the reader after a CDP method the framework already has — that sentence is
+    // what kept #390 blocked.
+    expect(message).not.toContain('setOfflineMode');
   });
 
   test('update() refuses, and names the second build it would need', async () => {
     let message = '';
     try {
-      await e2eFixtures(page).update();
+      await e2eFixtures(page, browser).update();
     } catch (error) {
       message = String(error);
     }

@@ -10,15 +10,27 @@ import { e2eLocator } from './e2e-locator';
 import type { E2eSelection } from './e2e-selection';
 
 /**
- * What this adapter needs of a browser: four members, every one of them on `ScrapePage`. Declared
- * structurally rather than as `ScrapePage` so a test can stand one up in six lines — the same
- * bargain `cdp-port.ts` makes about puppeteer, one layer up.
+ * What this adapter needs of a browser: four required members, every one of them on `ScrapePage`.
+ * Declared structurally rather than as `ScrapePage` so a test can stand one up in six lines — the
+ * same bargain `cdp-port.ts` makes about puppeteer, one layer up.
  */
 export interface E2eBrowserPage {
   url(): string;
   goto(url: string, options?: { readonly timeout?: number | undefined }): Promise<unknown>;
   evaluate(expression: string): Promise<unknown>;
   click(selector: string): Promise<void>;
+  /**
+   * The browser's own network condition, which `E2eFixtures.offline()`/`online()` forward to.
+   * `ScrapePage` has it (`page-over-target.ts`), reaching `CdpPageLike.setOfflineMode` through
+   * `cdp-target.ts`'s guard.
+   *
+   * OPTIONAL for the reason the four above are structural: this port is the shape of somebody
+   * ELSE's object, and requiring it would cost every six-line double a type error for a capability
+   * a test that never goes offline does not need. Absent, `e2e-driver.ts` keeps refusing by name —
+   * a coded refusal, never a silent no-op, because an `offline()` that did nothing would let the
+   * app's ONLINE page pass an offline test.
+   */
+  offline?(enabled: boolean): Promise<void>;
 }
 
 export interface E2ePageOptions {

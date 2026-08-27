@@ -11,34 +11,52 @@ import {
   unavailableFixture,
   useE2eDriver,
 } from '@ultimat3/testing';
-import type { E2ePageOptions } from './e2e-page';
+import type { E2eBrowserPage, E2ePageOptions } from './e2e-page';
 import { e2ePage } from './e2e-page';
 
 export type E2eDriverOptions = E2ePageOptions;
 
 /**
- * The three `E2eFixtures` members this driver cannot build, and why each is a REFUSAL rather than
- * a no-op. A fixture that silently did nothing would make the assertion after it read as proof:
- * `offline()` followed by "the fallback rendered" is the app's ONLINE page passing an offline test.
- *
- * All three are genuinely out of reach of the shipped port, not merely unimplemented:
- * `CdpPageLike` (`packages/scraping/src/cdp-port.ts`) declares twelve methods and none of them is
- * `setOfflineMode`, and a new build id is a fact about the SERVER, which no page port has ever
- * been able to speak for.
+ * A member this driver cannot build is a REFUSAL, never a no-op. A fixture that silently did
+ * nothing would make the assertion after it read as proof: `offline()` followed by "the fallback
+ * rendered" is the app's ONLINE page passing an offline test.
  */
 const refuse =
   (name: string, needs: string): (() => Promise<void>) =>
   () =>
     Promise.reject(new FixtureUnavailableError({ name, needs }));
 
-/** What `e2eTest` hands its body: a real page, and three members that say what they are missing. */
-export const e2eFixtures = (page: PageLike): E2eFixtures => ({
+/**
+ * `offline()`/`online()` FORWARD, `As of 2026-08-27`. They refused until then on a reason the tree
+ * contradicted on the day it was written: this file said `CdpPageLike`
+ * (`packages/scraping/src/cdp-port.ts`) "declares twelve methods and none of them is
+ * `setOfflineMode`". It declares it at line 71 — optional, guarded, with a coded
+ * `X_NOT_IMPLEMENTED` in `cdp-target.ts` for a launcher that lacks it — and `page-over-target.ts`
+ * exposes it as `ScrapePage.offline()`. All of that landed in **the same commit as the comment**
+ * (#351), so the refusal was never true, and it is the reason issue #390 records a real browser
+ * check as out of reach.
+ *
+ * Optional on `E2eBrowserPage` rather than required, for the reason `CdpPageLike` gives about the
+ * same method: this port is the shape of somebody ELSE's object, and a six-line test double must
+ * still satisfy it. Absent, the refusal stands — and now it names the method the double is missing
+ * rather than a capability the framework does not have.
+ */
+const networkFixtures = (browser: E2eBrowserPage): Pick<E2eFixtures, 'offline' | 'online'> => {
+  const setOffline = browser.offline?.bind(browser);
+  if (setOffline === undefined) {
+    const needs =
+      "a page whose driver implements offline(enabled) — @ultimat3/scraping's ScrapePage does; a hand-rolled E2eBrowserPage may not";
+    return { offline: refuse('offline', needs), online: refuse('online', needs) };
+  }
+  return { offline: () => setOffline(true), online: () => setOffline(false) };
+};
+
+/** What `e2eTest` hands its body: a real page, the network condition, and one honest refusal. */
+export const e2eFixtures = (page: PageLike, browser: E2eBrowserPage): E2eFixtures => ({
   page,
-  offline: refuse(
-    'offline',
-    "a CDP method for the browser's own network state — the shipped CdpPageLike has no setOfflineMode",
-  ),
-  online: refuse('online', 'the same CDP method offline() needs, in order to undo it'),
+  ...networkFixtures(browser),
+  // The one that is still genuinely out of reach, and it is not a port gap: a new build id is a
+  // fact about the SERVER, which no page port has ever been able to speak for.
   update: refuse(
     'update',
     'a second build served under a new immutable build id, which is a server fact',
@@ -65,7 +83,7 @@ export function installE2eDriver(options: E2eDriverOptions): () => void {
   const page = e2ePage(options);
   defineFixtures({ page: () => page });
   useE2eDriver((name, body: E2eBody) => {
-    bunTest(name, () => body(e2eFixtures(page)));
+    bunTest(name, () => body(e2eFixtures(page, options.page)));
   });
   return () => {
     // Both halves, because both were installed. Putting the DECLARATION back — rather than
