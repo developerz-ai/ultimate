@@ -863,6 +863,7 @@ hand-written layout and `readMigrations` skips it — read as a migration it sor
 | `dev-runtime.ts` | start the rest on top of it and install the remaining accessors (storage, mail, transport) |
 | `dev-cache.ts` | which cache tiers this process reads through, and the cross-instance invalidation hop |
 | `dev-purge.ts` | the hourly retention sweep: which framework tables this boot owns, the `purge()` job over them and the `task` that fires it |
+| `dev-notify-retention.ts` | `notify.inboxReadRetentionMs` / `inboxUnreadRetentionMs` off the app's own `app.config.ts` — the sibling of `loadSignInPath` and `loadCacheTiers`, because `startServices` holds no `AppConfig` |
 | `dev-sync.ts` | the `sync` role: its live-query registry, who is dialling it, and the socket it owns |
 | `runtime-overrides.ts` | the one field a host hands the framework a driver through |
 | `sync-authenticator.ts` | the app's HTTP authenticator, seen as the sync node's |

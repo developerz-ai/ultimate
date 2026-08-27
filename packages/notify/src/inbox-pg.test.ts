@@ -12,6 +12,7 @@ import {
   SQL_NOTIFY_INBOX_MARK_READ,
   SQL_NOTIFY_INBOX_MARK_SEEN,
   SQL_NOTIFY_INBOX_PAGE,
+  SQL_NOTIFY_INBOX_PURGE,
   SQL_NOTIFY_INBOX_TABLE,
 } from './inbox-pg';
 
@@ -148,5 +149,50 @@ describe('unit · both inbox drivers answer one question one way', () => {
     expect(await store.list({ recipient: 'ana', limit: 0 })).toEqual([]);
     expect(calls[0]?.params[2]).toBe(0);
     expect(await createMemoryInboxStore().list({ recipient: 'ana', limit: 0 })).toEqual([]);
+  });
+});
+
+describe('unit · inbox retention', () => {
+  // The half a `delete` gets wrong in silence: a read row must age from `read_at` and an unread one
+  // from `created_at`. Ageing a read row from `created_at` deletes a notification the moment the
+  // recipient opens an old one, which is the opposite of what a read window means.
+  test('each half of the statement reads the column its window is about', () => {
+    const read = SQL_NOTIFY_INBOX_PURGE.indexOf('$1::timestamptz is not null');
+    const unread = SQL_NOTIFY_INBOX_PURGE.indexOf('$2::timestamptz is not null');
+    expect(read, 'the read half is present').toBeGreaterThanOrEqual(0);
+    expect(unread, 'the unread half is present').toBeGreaterThanOrEqual(0);
+    expect(SQL_NOTIFY_INBOX_PURGE.slice(read, unread)).toContain('read_at < $1');
+    expect(SQL_NOTIFY_INBOX_PURGE.slice(read, unread)).toContain('read_at is not null');
+    expect(SQL_NOTIFY_INBOX_PURGE.slice(unread)).toContain('created_at < $2');
+    expect(SQL_NOTIFY_INBOX_PURGE.slice(unread)).toContain('read_at is null');
+  });
+
+  // `returning id` is what makes the count real. A bare `delete` answers no rows through
+  // `PgExecutor`, so the sweep would report zero forever while deleting everything — which reads in
+  // a log exactly like a sweep that is not wired at all.
+  test('the statement returns the rows it deleted, so the count is not always zero', async () => {
+    const calls: Call[] = [];
+    const store = createPgInboxStore({
+      executor: recording([{ id: 'a' }, { id: 'b' }], calls),
+    });
+    const deleted = await store.purgeBefore({ read: AT });
+    expect(SQL_NOTIFY_INBOX_PURGE).toContain('returning id');
+    expect(deleted).toBe(2);
+  });
+
+  test('an absent window binds null, so its half of the statement is inert', async () => {
+    const calls: Call[] = [];
+    const store = createPgInboxStore({ executor: recording([], calls) });
+    await store.purgeBefore({ unread: AT });
+    expect(calls[0]?.params).toEqual([null, AT]);
+  });
+
+  // Neither window set is the DEFAULT state of every app, and the sweep runs hourly. A statement
+  // that matches nothing still costs the scan, so this path must not reach the database at all.
+  test('neither window set issues no statement', async () => {
+    const calls: Call[] = [];
+    const store = createPgInboxStore({ executor: recording([], calls) });
+    expect(await store.purgeBefore({})).toBe(0);
+    expect(calls).toHaveLength(0);
   });
 });

@@ -4,6 +4,7 @@
 //
 // Statements are spelled out so an agent can run the exact one it saw in a log.
 
+import { finiteCount } from '@ultimat3/core';
 import type { PgExecutor } from '@ultimat3/jobs';
 import type { DeliveryClaim, DeliveryLedger, DeliveryRecord, DeliveryStatus } from './ledger';
 import { isDeliveryStatus } from './ledger';
@@ -80,13 +81,75 @@ const argsOf = (claim: DeliveryClaim): readonly unknown[] => [
   claim.channel,
 ];
 
+/**
+ * Delete every claim older than the window, and answer how many. `at` is the claim's own
+ * timestamp and `SQL_NOTIFY_SETTLE` moves it, so a row ages from its LAST attempt rather than its
+ * first — a delivery still being retried is never swept out from under the retry.
+ *
+ * Unconditional on status, deliberately. A `sending` row past the window belonged to a process
+ * that died and never came back; keeping it forever protects nothing, because a re-claim is
+ * already allowed on it (see `DeliveryLedger.claim`).
+ */
+export const SQL_NOTIFY_DELIVERIES_PURGE = `
+delete from x_notify_deliveries where at < $1
+`;
+
+/**
+ * The statement the store actually runs. A bare `delete` answers NO ROWS through `PgExecutor`, so
+ * a count read off it is zero forever — a sweep that reports it deleted nothing while deleting
+ * everything, which is indistinguishable in a log from a sweep that is not wired at all.
+ * `SQL_IDEMPOTENCY_PURGE` is spliced the same way for the same reason.
+ */
+const SQL_NOTIFY_DELIVERIES_PURGE_COUNTED = `${SQL_NOTIFY_DELIVERIES_PURGE} returning key`;
+
 export interface PgDeliveryLedgerOptions {
   readonly executor: PgExecutor;
+  /**
+   * How long a settled claim is kept. Defaults to `DEFAULT_DELIVERY_WINDOW_MS`.
+   *
+   * NEVER SHORTER THAN YOUR IDEMPOTENCY WINDOW, and this is the one dangerous direction: a job
+   * replayed inside the idempotency window, against a delivery claim that has already been
+   * purged, claims cleanly and sends the notification a second time. `createPgDeliveryLedger({
+   * executor, windowMs: idempotency.windowMs })` makes that impossible by construction rather
+   * than by two defaults that happen to agree.
+   */
+  readonly windowMs?: number | undefined;
 }
 
-export function createPgDeliveryLedger(options: PgDeliveryLedgerOptions): DeliveryLedger {
+/** 24 hours — the same default `postgresIdempotencyStore` carries, for the reason above. */
+export const DEFAULT_DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The Postgres ledger's own wider type. `purgeExpired` is HERE and not on `DeliveryLedger`
+ * because a heap map bounded by process life has nothing to delete, and adding a method to the
+ * seam every implementation must satisfy is a breaking change for an app that wrote its own.
+ * Exactly the shape `PostgresIdempotencyStore` already has.
+ */
+export interface PgDeliveryLedger extends DeliveryLedger {
+  readonly windowMs: number;
+  purgeExpired(nowMs: number): Promise<number>;
+}
+
+export function createPgDeliveryLedger(options: PgDeliveryLedgerOptions): PgDeliveryLedger {
   const { executor } = options;
+  const windowMs = finiteCount(
+    'createPgDeliveryLedger',
+    'windowMs',
+    options.windowMs ?? DEFAULT_DELIVERY_WINDOW_MS,
+    1,
+  );
   return {
+    windowMs,
+    async purgeExpired(nowMs) {
+      // The JOB's clock, not the server's, and the same rule `x_rate_limit`'s target states: `at`
+      // is written by whichever process took the delivery, so a cutoff computed from `now()` in
+      // Postgres measures the offset between two clocks instead of the age of the row.
+      const before = new Date(finiteCount('purgeExpired', 'nowMs', nowMs, 0) - windowMs);
+      const rows = await executor.query<{ key: string }>(SQL_NOTIFY_DELIVERIES_PURGE_COUNTED, [
+        before,
+      ]);
+      return rows.length;
+    },
     async claim(claim, at) {
       const rows = await executor.query<{ attempts: number }>(SQL_NOTIFY_CLAIM, [
         ...argsOf(claim),

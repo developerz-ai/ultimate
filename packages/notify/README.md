@@ -105,13 +105,16 @@ import {
 } from '@ultimat3/notify';
 
 declare const executor: PgExecutor;   // `@ultimat3/cli`'s pgExecutorFor(client)
+declare const idempotency: { readonly windowMs: number };   // the boot's own store
 // The app's preference table, behind whatever taxonomy it named.
 declare const prefs: {
   allows(recipient: string, notifier: string, channel: string, at: Date): boolean;
 };
 
 setNotifyStores({
-  ledger: createPgDeliveryLedger({ executor }),
+  // `windowMs` is how long a settled claim is kept. NEVER SHORTER than your idempotency window —
+  // a job replayed inside that window against a purged claim claims cleanly and sends twice.
+  ledger: createPgDeliveryLedger({ executor, windowMs: idempotency.windowMs }),
   inbox: createPgInboxStore({ executor }),
   digest: createMemoryDigestStore(),
   preferences: {
@@ -131,6 +134,33 @@ setNotifyStores({
 
 `executor` is a structural `{ query(sql, params) }` — `@ultimat3/cli`'s `pgExecutorFor(client)` over
 a `DbClient` is the framework's own. `Bun.sql` does **not** satisfy it.
+
+## Retention
+
+Both tables grow with traffic, and the boot's hourly `x.purge` job sweeps both — but only against
+the **Postgres** stores. `createPgInboxStore` carries `purgeBefore` and `createPgDeliveryLedger`
+carries `purgeExpired`; the memory ones do not, and a boot that installed a memory store sweeps
+nothing. The methods are on those stores' own wider types (`PgInboxStore`, `PgDeliveryLedger`), not
+on `InboxStore`/`DeliveryLedger`, so an app that wrote its own implementation is unaffected.
+
+| Table | Window | Default |
+|---|---|---|
+| `x_notify_deliveries` | `createPgDeliveryLedger({ windowMs })` | 24 h. A settled claim ages from its **last** attempt — `settle` moves `at` |
+| `x_notify_inbox` | `notify.inboxReadRetentionMs` / `notify.inboxUnreadRetentionMs` in `app.config.ts` | **neither** — never swept |
+
+The inbox default is deliberate and is not a missing number. An inbox row is a message a person has
+not read yet, so when it disappears is your decision, not the framework's — which is why the key
+lives in **your** config and why there are two of them: read notices gone in a month with unread
+ones kept forever is the shape most apps want, and it is only expressible if the two windows are
+separate.
+
+```ts
+// app.config.ts
+notify: { inboxReadRetentionMs: 30 * 24 * 60 * 60 * 1000 }
+```
+
+A read row ages from `read_at` and an unread one from `created_at` — ageing a read row from
+`created_at` would delete a notification the moment the recipient opened an old one.
 
 ## Channels
 

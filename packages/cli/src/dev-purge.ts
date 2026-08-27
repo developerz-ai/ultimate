@@ -1,5 +1,10 @@
-// The retention sweep this boot owns: the three framework tables that grow with traffic, the
-// `purge()` job that empties them and the `task` that fires it hourly.
+// The retention sweep this boot owns: the framework tables that grow with traffic, the `purge()`
+// job that empties them and the `task` that fires it hourly.
+//
+// FIVE TARGETS over six tables, `As of 2026-08-27` — `x_idempotency`, `x_rate_limit`, the two
+// `x_auth` tables under one target, `x_notify_deliveries` and `x_notify_inbox`. Counted nowhere in
+// prose but here: this header said "three" for two releases after the notify tables joined the
+// boot's DDL, which is how `x_notify_inbox` became the one framework table nothing swept.
 //
 // WHY here and not in the packages that own the tables: `postgresIdempotencyStore` (tier 3),
 // `postgresRateLimitStore` (tier 2) and `postgresAuthLimiter` (tier 2) cannot see each other and
@@ -17,6 +22,9 @@ import { purgeAuthLimits } from '@ultimat3/auth';
 import type { PostgresRateLimitStore } from '@ultimat3/http';
 import type { JobHandle, PurgeInput, PurgeTarget } from '@ultimat3/jobs';
 import { DEFAULT_PURGE_CRON, getJob, getTask, purge, task } from '@ultimat3/jobs';
+import { purgeNotifyDeliveries, purgeNotifyInbox } from '@ultimat3/notify';
+import type { InboxRetention } from './dev-notify-retention';
+import { NO_INBOX_RETENTION } from './dev-notify-retention';
 
 /** The durable queue key. Pinned, like every framework-owned job name — rows carry it. */
 export const PURGE_JOB_NAME = 'x.purge';
@@ -36,6 +44,42 @@ export const PURGE_TASK_NAME = 'x.purge.hourly';
 export interface RetentionStores {
   readonly idempotency: PostgresIdempotencyStore;
   readonly rateLimit: PostgresRateLimitStore;
+  /**
+   * The app's own answer to "how long is an unread message kept", loaded from `app.config.ts` by
+   * `loadInboxRetention`. Absent windows mean the inbox is never swept, which is the default and a
+   * decision rather than an oversight — see `NotifyConfig` in `@ultimat3/core`.
+   */
+  readonly inboxRetention?: InboxRetention | undefined;
+}
+
+/**
+ * The two notify tables, and neither store is in `RetentionStores` — deliberately, and for the
+ * reason `authTarget` is not either. `setNotifyStores` is an APP's boot line and runs when the
+ * app's modules import, which is AFTER this install; `framework-schema.ts` says so where it
+ * applies the DDL "whether or not this boot calls `setNotifyStores`". So the sweep can only ask,
+ * per attempt, what is installed now — `purgeNotifyInbox`/`purgeNotifyDeliveries` answer 0 for a
+ * memory store or none at all, which is a boot that made a decision, not a failure.
+ */
+function notifyTargets(retention: InboxRetention): readonly PurgeTarget[] {
+  return [
+    {
+      name: 'x_notify_deliveries',
+      // The job's clock, exactly as `x_rate_limit` below: `at` is written by whichever process took
+      // the delivery, so a cutoff computed inside Postgres measures the offset between two clocks
+      // rather than the age of the row. The WINDOW is the ledger's own, never named here — one
+      // number, beside the statement that reads it.
+      purgeExpired: (nowMs: number): Promise<number> => purgeNotifyDeliveries(nowMs),
+    },
+    {
+      name: 'x_notify_inbox',
+      purgeExpired: (nowMs: number): Promise<number> =>
+        purgeNotifyInbox({
+          read: retention.readMs === undefined ? undefined : new Date(nowMs - retention.readMs),
+          unread:
+            retention.unreadMs === undefined ? undefined : new Date(nowMs - retention.unreadMs),
+        }),
+    },
+  ];
 }
 
 /**
@@ -76,6 +120,7 @@ function retentionTargets(stores: RetentionStores): readonly PurgeTarget[] {
       purgeExpired: (nowMs: number): Promise<number> => stores.rateLimit.purgeExpired(nowMs),
     },
     authTarget,
+    ...notifyTargets(stores.inboxRetention ?? NO_INBOX_RETENTION),
   ];
 }
 

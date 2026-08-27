@@ -70,6 +70,7 @@ const SERVICES: DevServices = {
   events: binding('events', 'inproc://events'),
   storage: binding('storage', 'file:///tmp/storage'),
   stateDir: '/tmp/state',
+  root: '/tmp',
 };
 
 const STATUS: DevStatus = {

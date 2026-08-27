@@ -74,6 +74,23 @@ where recipient = $1 and id = any($2::uuid[]) and read_at is null
 returning id
 `;
 
+/**
+ * Both windows in ONE statement, and each half is inert when its window is absent: a `null`
+ * cutoff makes its `is not null` guard false, so the other half runs alone. One round trip, and
+ * — more importantly — no way to express "purge read rows" and "purge unread rows" as two
+ * statements that could disagree about which rows are which.
+ *
+ * A READ row ages from `read_at` and an UNREAD one from `created_at`. Ageing a read row from
+ * `created_at` would delete a notification the moment the recipient opened it, if it happened to
+ * be old — which is the opposite of what a read window means.
+ */
+export const SQL_NOTIFY_INBOX_PURGE = `
+delete from x_notify_inbox
+where ($1::timestamptz is not null and read_at is not null and read_at < $1)
+   or ($2::timestamptz is not null and read_at is null and created_at < $2)
+returning id
+`;
+
 export const SQL_NOTIFY_INBOX_MARK_SEEN = `
 update x_notify_inbox set seen_at = $2 where recipient = $1 and seen_at is null returning id
 `;
@@ -112,7 +129,27 @@ export interface PgInboxStoreOptions {
   readonly newId?: () => string;
 }
 
-export function createPgInboxStore(options: PgInboxStoreOptions): InboxStore {
+/**
+ * The two cutoffs, each `undefined` where its window is unset. Never a single window: the axiom-8
+ * objection to sweeping an inbox is only about UNREAD messages, so the two have to be separately
+ * expressible or an app that wants read notices gone in a month is forced to choose between
+ * deleting unread ones too and sweeping nothing.
+ */
+export interface InboxPurgeBefore {
+  readonly read?: Date | undefined;
+  readonly unread?: Date | undefined;
+}
+
+/**
+ * The Postgres inbox's own wider type. `purgeBefore` is HERE and not on `InboxStore` for the
+ * reason `PgDeliveryLedger.purgeExpired` is not on `DeliveryLedger`: adding a method to the seam
+ * every implementation must satisfy is a breaking change for an app that wrote its own.
+ */
+export interface PgInboxStore extends InboxStore {
+  purgeBefore(before: InboxPurgeBefore): Promise<number>;
+}
+
+export function createPgInboxStore(options: PgInboxStoreOptions): PgInboxStore {
   const { executor } = options;
   const newId = options.newId ?? uuid;
   return {
@@ -157,6 +194,17 @@ export function createPgInboxStore(options: PgInboxStoreOptions): InboxStore {
         input.recipient,
         [...input.ids],
         input.at,
+      ]);
+      return rows.length;
+    },
+    async purgeBefore(before) {
+      // Neither window set is not an error and not a no-op to leave to Postgres: the statement
+      // would run, match nothing and cost a scan on every hourly sweep of every app that never
+      // configured retention, which is every app by default.
+      if (before.read === undefined && before.unread === undefined) return 0;
+      const rows = await executor.query<{ id: string }>(SQL_NOTIFY_INBOX_PURGE, [
+        before.read ?? null,
+        before.unread ?? null,
       ]);
       return rows.length;
     },

@@ -6,6 +6,7 @@
 // them. Declaring them here is what let `cache.tiers` and the ladder `@ultimat3/cache` orders by
 // drift into two vocabularies with no map between them (issue #293).
 import { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
+import { describeValue } from './error-render';
 import { ConfigInvalidError } from './errors';
 import { ROLES, type Role } from './roles';
 // `app.config.ts` CONSUMES the route vocabulary; it does not own it. Declaring `OfflineStrategy`
@@ -51,6 +52,39 @@ export interface PwaConfig {
   readonly backgroundSync: boolean;
   readonly push: boolean;
 }
+
+/**
+ * Retention for `x_notify_inbox`, and the one framework table whose window the framework may not
+ * pick. Every other one holds bookkeeping whose job ENDS — an idempotency key, a rate-limit
+ * bucket, an auth challenge, a delivery claim — and a sweep is unambiguously right. An inbox row
+ * is a message a person has not read yet, so when it disappears is a product decision, which is
+ * axiom 8: Ultimate ships mechanism, your app ships convention.
+ *
+ * BOTH DEFAULT TO `undefined`, meaning never swept, and that is the only safe default here: the
+ * failure mode of keeping rows is a table that grows, and the failure mode of guessing a number is
+ * a notification the recipient never got to read.
+ *
+ * TWO WINDOWS RATHER THAN ONE, because the axiom-8 objection is only about UNREAD messages. An app
+ * that wants read notices gone in a month and unread ones kept forever must be able to say exactly
+ * that, and `SQL_NOTIFY_INBOX_MARK_READ` already stamps the time that makes it expressible.
+ *
+ * Milliseconds and not a `DurationInput`: that type lives in `@ultimat3/jobs` (tier 3) and this
+ * package is tier 0, which is the same reason `cache.defaultTtlMs` and `jobs.visibilityTimeoutMs`
+ * are spelled this way.
+ */
+export interface NotifyConfig {
+  /** Age of a row's `read_at`, not its `created_at` — a row ages from when it was READ. */
+  readonly inboxReadRetentionMs: number | undefined;
+  /** Age of an unread row's `created_at`. Setting this deletes messages nobody has read. */
+  readonly inboxUnreadRetentionMs: number | undefined;
+}
+
+/**
+ * Every window `validate` screens, derived from nothing — a third one added to `NotifyConfig`
+ * without a row here is a window an app can set to `-1`, and `config.test.ts` asserts the two
+ * lists agree so the omission is a red test rather than a silent hole.
+ */
+export const INBOX_RETENTION_KEYS = ['inboxReadRetentionMs', 'inboxUnreadRetentionMs'] as const;
 
 /**
  * Deliberately thin. `urlEnv`, `poolSize` and `schema` were removed 2026-08 because **nothing
@@ -166,6 +200,7 @@ export interface AppConfig {
   readonly cache: CacheConfig;
   readonly jobs: JobsConfig;
   readonly realtime: RealtimeConfig;
+  readonly notify: NotifyConfig;
   readonly ai: AiConfig;
 }
 
@@ -190,6 +225,7 @@ export interface AppConfigInput {
   readonly cache?: Input<CacheConfig> | undefined;
   readonly jobs?: Input<JobsConfig> | undefined;
   readonly realtime?: Input<RealtimeConfig> | undefined;
+  readonly notify?: Input<NotifyConfig> | undefined;
   readonly ai?: AiConfigInput | undefined;
 }
 
@@ -253,6 +289,7 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
       visibilityTimeoutMs: 30_000,
     },
     realtime: { enabled: false, transport: 'memory', urlEnv: undefined },
+    notify: { inboxReadRetentionMs: undefined, inboxUnreadRetentionMs: undefined },
     ai: { mcp: { expose: true, path: '/mcp' } },
   };
 }
@@ -313,6 +350,22 @@ function validate(config: AppConfig): void {
   if (config.realtime.transport !== 'memory' && config.realtime.urlEnv === undefined) {
     issues.push(`realtime.transport "${config.realtime.transport}" requires realtime.urlEnv`);
   }
+  // BOTH RETENTION WINDOWS OR NEITHER — `undefined` is a real value here (never swept) and the
+  // only other legal one is a positive, finite count of milliseconds. Zero is refused rather than
+  // read as "immediately": a sweep at age 0 deletes every row the instant it is written, which is
+  // an inbox that silently receives nothing, and nobody types it on purpose. `describeValue`
+  // rather than `${…}`: this validator is the boundary a JS app's untyped config crosses, so the
+  // value here is `unknown` in practice however the interface types it.
+  for (const key of INBOX_RETENTION_KEYS) {
+    const ms: unknown = config.notify[key];
+    if (ms === undefined) continue;
+    if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) {
+      issues.push(
+        `notify.${key} must be a positive number of milliseconds, not ${describeValue(ms)}`,
+      );
+    }
+  }
+
   // A rung the ladder cannot build is the defect this key had: `sortTiers` places a name by its
   // index in `CACHE_TIERS`, and a name missing from it sorts to `-1` — AHEAD of the request memo.
   // So an unknown tier is refused at boot rather than silently ignored or silently placed first.
@@ -363,6 +416,7 @@ export function defineConfig(
     cache: section(base.cache, merged.cache),
     jobs: section(base.jobs, merged.jobs),
     realtime: section(base.realtime, merged.realtime),
+    notify: section(base.notify, merged.notify),
     ai: { mcp: section(base.ai.mcp, merged.ai?.mcp) },
   };
 

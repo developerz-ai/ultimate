@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { CacheTierName } from './cache-vocabulary';
-import { type AppConfig, defineConfig } from './config';
+import { type AppConfig, defineConfig, INBOX_RETENTION_KEYS } from './config';
 import { isUltimateError, type UltimateError } from './errors';
 
 describe('defineConfig', () => {
@@ -303,5 +303,59 @@ describe('defaultTimeZone answers what @ultimat3/time answers', () => {
     expect(fix).toContain("Intl.supportedValuesOf('timeZone')");
     // The generic instruction survives — a config can be wrong in more than one field at once.
     expect(fix).toContain('x verify');
+  });
+});
+
+describe('notify retention', () => {
+  // ABSENT IS THE DEFAULT and it is a decision, not a missing number: an inbox row is a message a
+  // person has not read yet, so the framework picking a window silently is the whole failure this
+  // key exists to avoid (axiom 8). A default of any duration here is a regression.
+  test('both windows default to undefined — never swept', () => {
+    const config = defineConfig({ name: 'app' });
+    expect(config.notify.inboxReadRetentionMs).toBeUndefined();
+    expect(config.notify.inboxUnreadRetentionMs).toBeUndefined();
+  });
+
+  test('one window set leaves the other undefined', () => {
+    const config = defineConfig({ name: 'app', notify: { inboxReadRetentionMs: 60_000 } });
+    expect(config.notify.inboxReadRetentionMs).toBe(60_000);
+    expect(config.notify.inboxUnreadRetentionMs).toBeUndefined();
+  });
+
+  // Zero is refused rather than read as "immediately": a sweep at age 0 deletes every row the
+  // instant it is written, which is an inbox that silently receives nothing.
+  test('a window that is not a positive finite number is refused at boot', () => {
+    for (const ms of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(
+        () => defineConfig({ name: 'app', notify: { inboxReadRetentionMs: ms } }),
+        String(ms),
+      ).toThrow(/inboxReadRetentionMs/);
+    }
+  });
+
+  test('the refusal names the value it refused without pasting it back raw', () => {
+    try {
+      defineConfig({
+        name: 'app',
+        notify: { inboxUnreadRetentionMs: '30d' as unknown as number },
+      });
+      expect.unreachable('a string window is refused');
+    } catch (error) {
+      if (!isUltimateError(error)) return expect.unreachable('defineConfig threw its own error');
+      expect(error.code).toBe('X_CONFIG_INVALID');
+      expect(error.cause).toContain('inboxUnreadRetentionMs');
+      // `describeValue`, not the value: this validator is the boundary an untyped JS config
+      // crosses, so what arrives here is `unknown` however the interface types it.
+      expect(error.cause).toContain('string');
+      expect(error.cause).not.toContain('30d');
+    }
+  });
+
+  // The screen is a LIST, so a third window added to `NotifyConfig` with no row in it is a window
+  // an app can set to -1. This is the assertion that makes the omission red rather than silent.
+  test('every window the interface declares is a window validate screens', () => {
+    const config = defineConfig({ name: 'app' });
+    const declared: string[] = [...INBOX_RETENTION_KEYS];
+    expect(declared.sort()).toEqual(Object.keys(config.notify).sort());
   });
 });

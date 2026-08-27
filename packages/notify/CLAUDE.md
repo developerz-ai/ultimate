@@ -71,6 +71,7 @@ rather than hidden, and a durable store can close it.
 | `inbox.ts` · `inbox-pg.ts` | the in-app inbox, memory and Postgres |
 | `preferences.ts` · `digest.ts` | the gate and the window, as seams |
 | `stores.ts` | the one installer for all four |
+| `retention.ts` | the two sweeps, read off the installed seam |
 | `errors.ts` | this package's `X_NOTIFY_*` codes and their titles |
 
 One entry point, deliberately: every module runs on the server, so there is no browser half to split
@@ -83,12 +84,28 @@ off.
 | Files | one responsibility each, < 200 lines, tests beside the source |
 | Durations | one vocabulary — `@ultimat3/time`'s. `toDurationMs` is a **narrowing** of `toMs`, never a copy of it: `toMs` screens finiteness and stops, because a negative or fractional duration is real there (`toSeconds(-3000)` is a tested `-3`); a `wait` and a digest `window` are counts of whole FORWARD milliseconds, and the refusal names which declaration was wrong since one notifier holds several. `plan-bounds.test.ts` calls BOTH on the same inputs — the two disagreed once (#372), when only this side was screened, and only a test that calls both can see it come back |
 
-## Homeless work this package cannot do
+## Retention
 
-`packages/cli/src/dev-queue.ts`'s `applySchema` installs the jobs, idempotency, rate-limit and
-auth-limit tables. **It does not install `x_notify_deliveries` or `x_notify_inbox`**, so an app using
-the Postgres stores runs that DDL itself until they join the list — the same gap
-`SQL_AUDIT_TABLE` has.
+Both tables are swept by the boot's hourly `x.purge` job, and neither store is handed to it:
+`setNotifyStores` is an APP's boot line that runs when the app's modules import, after the boot that
+installs the sweep. So `retention.ts` reads the seam **per attempt** — the same shape as
+`purgeAuthLimits()` — and answers `0` for a memory store or none at all, which is a boot that made a
+decision rather than a failure.
+
+| Table | Window | Named where |
+|---|---|---|
+| `x_notify_deliveries` | `PgDeliveryLedgerOptions.windowMs`, default 24 h | beside the statement that reads it. **Never shorter than the app's idempotency window** — a job replayed inside that window against a purged claim claims cleanly and sends twice. Pass `idempotency.windowMs` |
+| `x_notify_inbox` | `notify.inboxReadRetentionMs` / `notify.inboxUnreadRetentionMs` in `AppConfig`, **both absent by default** | the app's `app.config.ts`, because an inbox row is a message a person has not read yet and when it disappears is a product decision (axiom 8) |
+
+`purgeBefore` and `purgeExpired` live on the **Postgres stores' own wider types**
+(`PgInboxStore`, `PgDeliveryLedger`), never on `InboxStore`/`DeliveryLedger`: adding a method to the
+seam every implementation must satisfy is a breaking change for an app that wrote its own, and a
+heap map bounded by process life has nothing to delete. Exactly the shape `PostgresIdempotencyStore`
+already has.
+
+`packages/cli/src/framework-schema.ts` applies both tables' DDL on every boot, **whether or not that
+boot calls `setNotifyStores`** — this file said it did not until 2026-08-27, which is a sentence that
+outlived its fact.
 
 Commands: `bun test packages/notify/src`, `bun run boundaries`,
 `bunx biome check packages/notify`.

@@ -31,6 +31,7 @@ import { selectTransport } from '@ultimat3/realtime/server';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
 import { loadCacheTiers, startCacheTiers } from './dev-cache';
+import { loadInboxRetention } from './dev-notify-retention';
 import { installRetentionSweep } from './dev-purge';
 import type { DevDbClient } from './dev-queue';
 import { pgExecutorFor, startQueue } from './dev-queue';
@@ -327,11 +328,19 @@ export async function startServices(
       postgresAuthLimiter({ executor, clock: systemClock, policy }),
     );
     started.push(() => resetAuthLimiters());
-    // The hourly sweep over the three framework tables this boot is responsible for. Every one of
-    // them ships a `purgeExpired()` that nothing called, so every row written was a row kept —
+    // The hourly sweep over the framework tables this boot is responsible for. Every one of them
+    // ships a `purgeExpired()` that nothing called, so every row written was a row kept —
     // `x_rate_limit` takes one upsert per request the web role serves, assets included.
+    //
+    // `inboxRetention` is READ HERE and not defaulted in `dev-purge.ts`: the two windows are the
+    // app's, `startServices` holds no `AppConfig`, and a loader that silently answered "never
+    // sweep" from inside the sweep would be indistinguishable from an app that chose it.
     started.push(
-      installRetentionSweep({ idempotency: queue.idempotency, rateLimit: rateLimitStore }),
+      installRetentionSweep({
+        idempotency: queue.idempotency,
+        rateLimit: rateLimitStore,
+        inboxRetention: await loadInboxRetention(services.root),
+      }),
     );
     // One readiness check per resource this boot OWNS, released with it. Nothing in the tree
     // registered one, so `/readyz` was `markReady()` alone — "this process bound a socket" — and
