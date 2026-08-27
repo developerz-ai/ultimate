@@ -25,6 +25,33 @@ export type { BoundaryCut, BoundarySplit } from './boundary-cuts';
 export { planBoundaryCuts } from './boundary-cuts';
 export type { BuildStats, RouteStats } from './budgets';
 export { BUILD_STATS_FILE, checkBudgets, readBuildStats } from './budgets';
+// The raw-CDP browser the driver above runs on. `openE2eBrowserIfAvailable()` is what an app's
+// test preload calls: it answers `undefined` on a machine with no Chrome, so the browser-backed
+// suite SKIPS rather than turning a gate red for a reason unrelated to the change.
+export type { E2eBrowser, OpenE2eBrowserOptions } from './cdp-browser';
+export {
+  DEFAULT_CDP_TIMEOUT_MS,
+  openE2eBrowser,
+  openE2eBrowserIfAvailable,
+} from './cdp-browser';
+export type { CdpConnection, CdpConnectionOptions, CdpResult } from './cdp-connection';
+export { cdpConnect } from './cdp-connection';
+export type { CdpE2ePageOptions } from './cdp-e2e-page';
+export { cdpE2ePage } from './cdp-e2e-page';
+export {
+  CdpBrowserMissingError,
+  CdpCallFailedError,
+  CdpLaunchFailedError,
+  CdpTimeoutError,
+} from './cdp-errors';
+export type { LaunchedBrowser, LaunchOptions } from './cdp-launch';
+export {
+  CHROME_CANDIDATES,
+  CHROME_PATH_ENV,
+  findChrome,
+  launchChrome,
+  launchFoundChrome,
+} from './cdp-launch';
 export type { BuildTarget } from './cmd-build';
 export {
   argsFor,

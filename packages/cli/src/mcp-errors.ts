@@ -78,6 +78,15 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_E2E_LOCATOR_AMBIGUOUS:
     'x test e2e --json   # the fix line carries the same call with .first() on it',
   X_E2E_SERVICE_WORKER_ABSENT: 'x build --target static --json',
+  // The four raw-CDP codes. `x doctor` for the missing browser, because that is the command whose
+  // whole job is reporting what this machine does not have; the other three are raised inside a
+  // running suite, so the runnable half is the command that re-runs it.
+  X_CDP_BROWSER_MISSING:
+    'x doctor --json   # or set CHROME_PATH to a Chrome binary; unset, the browser-backed suite skips',
+  X_CDP_LAUNCH_FAILED:
+    'x test e2e --json   # the cause carries the last lines of the browser\u2019s own stderr',
+  X_CDP_CALL_FAILED: 'x test e2e --json   # the cause names the DevTools call the browser refused',
+  X_CDP_TIMEOUT: 'x test e2e --json   # the cause names the call that never answered',
   X_GH_UNAVAILABLE: 'gh auth login   # install first from https://cli.github.com',
   X_GH_NOT_AUTHENTICATED: 'gh auth login',
   X_GH_COMMAND_FAILED: 'x ci --json   # the finding carries the gh invocation that failed',

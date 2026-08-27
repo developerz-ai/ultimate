@@ -44,6 +44,12 @@ permissions:
 env:
   # Deterministic tests: frozen clock, seeded RNG, sealed network (scripts/test-setup.ts).
   ULTIMATE_TEST_SEED: '20260101'
+  # A browser IS present on `ubuntu-latest`, so an e2e suite that skips for want of one here is a
+  # green step over nothing — which is exactly what the first run of
+  # `packages/cli/e2e/cdp-browser.e2e.test.ts` was: 2,958ms on a step that takes 31s with a
+  # browser. Set, the suite refuses by name (`X_CDP_BROWSER_MISSING`) instead of skipping, so the
+  # day the runner image drops Chrome is a red job naming the paths it tried rather than silence.
+  E2E_BROWSER_REQUIRED: '1'
 
 jobs:
   # The whole gate, exactly as `x verify` runs it. Green here means shippable.
