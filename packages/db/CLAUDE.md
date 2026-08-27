@@ -1424,8 +1424,13 @@ survives the round trip whole.
   become one. **Quoting is by content, not by type** — a comma, a brace, a quote, a backslash,
   surrounding whitespace or the empty string, which unquoted is not an element at all. **A
   `Uint8Array` is BYTEA and is deliberately not an array**: `Array.isArray` answers `false` for a
-  typed array, which is behaviour this relies on rather than a case it writes. And the common path
-  allocates nothing — one `some` over a short list, then the caller's own array by identity, because
+  typed array, which is behaviour this relies on rather than a case it writes. **A RAGGED nest is
+  REFUSED**, never rendered — Postgres has no jagged array and `{{a,b},{c}}` is the same `22P02`,
+  measured on 17 beside the rectangular `{{a,b},{c,d}}` that parses, so a literal this module is
+  willing to emit is one the server is willing to read. `X_INVARIANT` through core's `assert`, the
+  code this package already borrows for a value this build cannot honour; mixed depth (`{a,{b,c}}`)
+  is caught by the same guard, which a rule comparing row LENGTHS alone would let through. And the
+  common path allocates nothing — one `some` over a short list, then the caller's own array by identity, because
   every statement the framework runs passes through here and almost none binds an array (axiom 6).
 
 ```bash

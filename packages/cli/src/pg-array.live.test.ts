@@ -33,7 +33,16 @@ import { pgExecutorFor } from './dev-queue';
 const url = Bun.env['TEST_DATABASE_URL'];
 const describeLive = url === undefined ? describe.skip : describe;
 
-const ID = '019b76da-a800-7397-9d07-a63ca80b3c96';
+// EVERY value this file writes or matches on is minted per run. `TEST_DATABASE_URL` may name a
+// database that already holds jobs — CI's does — and a claim over the literal `default` and `mail`
+// queues would claim somebody else's row, leave it claimed, and make `toEqual([ID])` fail on a
+// statement that worked. A run-scoped queue name is the isolation; the ids are minted for the same
+// reason a fixed one collides with an interrupted run's leftovers.
+const RUN = crypto.randomUUID().slice(0, 8);
+const QUEUES = [`q-${RUN}-a`, `q-${RUN}-b`] as const;
+const UNCLAIMED_QUEUE = `q-${RUN}-c`;
+const ID = crypto.randomUUID();
+const MISS_ID = crypto.randomUUID();
 
 let client: PostgresClient | undefined;
 let executor: PgExecutor | undefined;
@@ -59,7 +68,7 @@ describeLive('live · postgres · the shipped statements that bind an array', ()
   // a real Postgres never claimed anything and every job sat in the queue forever.
   test('SQL_CLAIM executes — the loop every ROLE=worker container runs', async () => {
     expect(SQL_CLAIM).toContain('any($1::text[])');
-    const rows = await executor?.query(SQL_CLAIM, [['default', 'mail'], 1, 'w1', 30_000]);
+    const rows = await executor?.query(SQL_CLAIM, [[...QUEUES], 1, `w-${RUN}`, 30_000]);
     expect(rows).toEqual([]);
   });
 
@@ -81,15 +90,15 @@ describeLive('live · postgres · the shipped statements that bind an array', ()
       // `$2` and not `$1` again: one placeholder in both a uuid and a text column deduces two
       // types and Postgres refuses the statement (42P08) before any array is bound.
       `insert into x_jobs (id, name, queue, input, idempotency_key, run_id)
-       values ($1, 'probe', 'mail', '{}'::jsonb, $2, $1) returning id, queue`,
-      [ID, ID],
+       values ($1, 'probe', $3, '{}'::jsonb, $2, $1) returning id, queue`,
+      [ID, ID, QUEUES[1]],
     );
-    expect(rows?.[0]?.queue).toBe('mail');
+    expect(rows?.[0]?.queue).toBe(QUEUES[1]);
     try {
       const claimed = await executor?.query<{ id: string }>(SQL_CLAIM, [
-        ['default', 'mail'],
+        [...QUEUES],
         5,
-        'w-match',
+        `w-match-${RUN}`,
         30_000,
       ]);
       expect(claimed?.map((row) => row.id)).toEqual([ID]);
@@ -103,14 +112,14 @@ describeLive('live · postgres · the shipped statements that bind an array', ()
   test('a queue the array does not name is not claimed', async () => {
     await executor?.query(
       `insert into x_jobs (id, name, queue, input, idempotency_key, run_id)
-       values ($1, 'probe', 'reports', '{}'::jsonb, $2, $1)`,
-      [ID, ID],
+       values ($1, 'probe', $3, '{}'::jsonb, $2, $1)`,
+      [MISS_ID, MISS_ID, UNCLAIMED_QUEUE],
     );
     try {
-      const claimed = await executor?.query(SQL_CLAIM, [['default', 'mail'], 5, 'w-miss', 30_000]);
+      const claimed = await executor?.query(SQL_CLAIM, [[...QUEUES], 5, `w-miss-${RUN}`, 30_000]);
       expect(claimed).toEqual([]);
     } finally {
-      await executor?.query('delete from x_jobs where id = $1', [ID]);
+      await executor?.query('delete from x_jobs where id = $1', [MISS_ID]);
     }
   });
 });

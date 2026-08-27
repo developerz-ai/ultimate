@@ -40,7 +40,25 @@ describe('unit · pgArrayLiteral', () => {
   });
 
   test('a nested array is a dimension, never a flattened list', () => {
-    expect(pgArrayLiteral([['a', 'b'], ['c']])).toBe('{{a,b},{c}}');
+    expect(
+      pgArrayLiteral([
+        ['a', 'b'],
+        ['c', 'd'],
+      ]),
+    ).toBe('{{a,b},{c,d}}');
+  });
+
+  // Postgres has no jagged array, so a literal this function is willing to emit must be one the
+  // server is willing to read. Measured on 17: `{{a,b},{c}}` is 22P02 while `{{a,b},{c,d}}` parses
+  // (`array-parameter.live.test.ts`), which is what makes this a refusal rather than a taste.
+  test('a ragged nest is refused, never rendered', () => {
+    expect(() => pgArrayLiteral([['a', 'b'], ['c']])).toThrow(/ragged/);
+  });
+
+  // Mixed depth is the same malformed literal, and a rule comparing row LENGTHS alone lets it
+  // through — there is no row to measure.
+  test('a scalar beside a dimension is refused too', () => {
+    expect(() => pgArrayLiteral(['a', ['b', 'c']])).toThrow(/mixes scalars and arrays/);
   });
 
   test('a Date renders as the instant, not as a locale string', () => {

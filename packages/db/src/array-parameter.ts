@@ -17,6 +17,8 @@
 // embedded default, so the framework's own dev loop is systematically blind to a defect that only
 // appears once `DATABASE_URL` selects `Bun.SQL`. A container is where it bites.
 
+import { assert } from '@ultimat3/core';
+
 /**
  * One element, quoted only when it has to be.
  *
@@ -44,8 +46,31 @@ function element(value: unknown): string {
  * NESTED ARRAYS ARE RENDERED, not refused: Postgres reads `{{a,b},{c,d}}` as a 2-dimensional
  * array, and rendering one is strictly closer to right than sending `a,b,c,d`. Nothing in this
  * tree binds one today.
+ *
+ * A RAGGED nest is REFUSED, never rendered. Postgres has no jagged array — every extent of a
+ * dimension must match — and `{{a,b},{c}}` is `22P02 malformed array literal`, measured on 17
+ * beside the rectangular `{{a,b},{c,d}}` that parses (`array-parameter.live.test.ts`). So a
+ * literal this function is willing to emit is one the server is willing to read: rendering the
+ * jagged one puts the fault two layers away, in the driver's words, naming neither the parameter
+ * nor which row is short. `X_INVARIANT` through core's `assert`, the code this package already
+ * borrows for a value this build cannot honour (`createIndex`'s unique GIN, `generatedClause`'s
+ * generated-and-defaulted column).
  */
 export function pgArrayLiteral(values: readonly unknown[]): string {
+  const nested = values.filter((value): value is readonly unknown[] => Array.isArray(value));
+  // Mixed depth is ragged too — `{a,{b,c}}` is a scalar beside a dimension, which Postgres reads
+  // as the same malformed literal. Comparing counts alone would let it through.
+  assert(
+    nested.length === 0 || nested.length === values.length,
+    'a nested array parameter mixes scalars and arrays at one level, and Postgres has no such array',
+    'bind one array of scalars, or one array whose every element is an array of equal length',
+  );
+  const width = nested[0]?.length;
+  assert(
+    nested.every((row) => row.length === width),
+    `a nested array parameter is ragged — its rows are ${nested.map((row) => row.length).join(', ')} long, and Postgres has no jagged array`,
+    'give every row the same length, or bind one array per row',
+  );
   return `{${values.map((value) => (Array.isArray(value) ? pgArrayLiteral(value) : element(value))).join(',')}}`;
 }
 

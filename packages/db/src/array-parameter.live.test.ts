@@ -84,6 +84,31 @@ describeLive('live · postgres · an array bound as a statement parameter', () =
     expect(rows).toHaveLength(1);
   });
 
+  // The refusal `pgArrayLiteral` performs, checked against the server it claims to be speaking
+  // for. A guard whose only proof is its own unit test is a rule somebody invented; these two
+  // cases say the rectangular nest really parses and the ragged one really does not, so the
+  // refusal is the server's shape and not this module's taste.
+  test('a rectangular nest is a real 2-dimensional array', async () => {
+    const rows = await run<{ a: readonly (readonly string[])[] }>('select $1::text[][] as a', [
+      [
+        ['a', 'b'],
+        ['c', 'd'],
+      ],
+    ]);
+    expect(rows[0]?.a).toEqual([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+  });
+
+  test('the ragged literal this module refuses to build is one Postgres refuses to read', async () => {
+    // `on` and not `run`: the encoder never emits this string, so the only way to ask Postgres
+    // about it is to hand it over already built.
+    await expect(on('select $1::text[][] as a', ['{{a,b},{c}}'])).rejects.toThrow(
+      /malformed array literal/,
+    );
+  });
+
   // A negative control on the same statement: an id that is NOT in the array must not match, or
   // the test above is satisfied by an encoder that turns every array into a wildcard.
   test('a uuid the array does not hold does not match', async () => {
