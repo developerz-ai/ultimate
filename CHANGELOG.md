@@ -10,6 +10,94 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **`x build`, `x dev` and the container emit a service worker — the half of the PWA story that
+  had no build behind it.** `generateServiceWorker`, `buildPrecacheManifest`,
+  `offlineFallbackSource`, `backgroundSyncSource` and `pushSource` had **zero callers** outside
+  `@ultimat3/pwa` itself, so `pwa.offline`, `pwa.backgroundSync`, `pwa.push` and every route's own
+  `offline:` field were declarations with no build behind them, and no Ultimate app had ever worked
+  offline however its config was written (#390, following #362's manifest half).
+
+  `packages/cli/src/sw-artifacts.ts` is the caller. It takes the route table (`describeRoutes()` —
+  the same projection `x.manifest.json`, `/_x` and the sitemap are built from) plus the island
+  bundle, and emits `sw.js` and `x-sw-register.js`. All three surfaces mount them: `x dev`, the
+  container (`serve.ts`) and the static export (`prerender.ts`), which writes both as files because
+  a static host runs no route table.
+
+  **Registration is an EXTERNAL script, never inline.** `startWeb` computes a `script-src` sha256
+  per inline script, so an unhashed one is blocked in the container while passing report-only under
+  `x dev` — which is how the hydration runtime shipped broken once already.
+
+  **`sw.js` is served `no-store` with `Service-Worker-Allowed: /`.** A cached `sw.js` is a worker
+  that cannot be replaced; without the header the browser refuses to let a worker served from `/`
+  control `/`, which `assertScope` cannot see because the scope a *registration* asks for has to be
+  allowed by the script's own response.
+
+  **`PrecacheManifest.warnings` has a reader**: `x build --target static --json` reports them under
+  `precacheWarnings`, and the human table gets a `precache` row. The ceiling was, in
+  `wiki/Troubleshooting.md`'s own words, "a designed thing that is not one".
+
+- **A real browser proves it, which is why it could ship at all.** #390's fourth requirement was
+  *"a real browser check that the emitted worker installs, activates and serves the fallback
+  offline. Until it exists, do not ship the worker"* — a bad `sw.js` is sticky in a way a manifest
+  is not. `packages/cli/e2e/service-worker.e2e.test.ts` registers the emitted file in a real
+  Chrome, waits for it to take control, takes the network away and asserts that a runtime route
+  with nothing cached renders the **offline document**. Both mutations were proved: dropping `app/`
+  routes from the worker's table, and breaking the registration call, each take exactly one test
+  down.
+
+### Fixed
+
+- **`E2eFixtures.offline()` did not take the SERVICE WORKER offline, so an offline assertion made
+  on a PWA tested nothing.** Measured against the framework's own emitted `sw.js`: with the page
+  session offline, a `networkFirst` route the cache had never seen still answered from the network,
+  because a service worker fetches on its own CDP target and the condition was only ever set on the
+  page's. The driver now auto-attaches worker targets
+  (`Target.setAutoAttach { waitForDebuggerOnStart: false, flatten: true }`) and carries the
+  condition onto each, including one that attaches *after* `offline(true)` — which is the ordinary
+  case for a PWA. `cdpConnect().on()` is the subscription that makes it possible; `once()` cannot
+  express "every occurrence, including the ones that have not happened yet".
+
+- **`sw.js`'s own `regenerate:` header named a function call instead of a command**, because no
+  command emitted the file. It says `x build` now, which is true.
+
+### Changed
+
+- **BREAKING — `pwa.offline` is a block, not a string.** It was
+  `'precache' | 'runtime' | 'network-only'`: an app-wide DEFAULT for a field `defineRoute` makes
+  **required** on every route (`route.ts` refuses a route without one), so it defaulted nothing,
+  was read by nobody, and could not be given a reader without inventing a meaning for it.
+
+  It is now `{ fallback, image, font, neverCache }`, and **`fallback` is required once
+  `pwa.enabled` is true** — an absolute route path, screened at `defineConfig`. A relative one
+  resolves against whatever document registered the worker, so `offline` served under `/posts/1` is
+  `/posts/offline`: a 404 cached as the answer to every offline navigation. An installable app that
+  shows the browser's error page offline is the failure the whole block exists to prevent, which is
+  why this is required rather than optional — the alternative is two meanings for one switch.
+
+  Migration, per app:
+
+  ```ts
+  // before
+  pwa: { enabled: true, offline: 'runtime', name: 'My App', colors: { … } },
+  // after
+  pwa: { enabled: true, offline: { fallback: '/offline' }, name: 'My App', colors: { … } },
+  ```
+
+  and add a route at that path. `x new` scaffolds `apps/web/site/offline/page.tsx`; both tracked
+  apps gained one. `AppConfigInput.pwa` is `PwaConfigInput`, which nests `offline` — `section`
+  applies a patch one level deep, so a flat `Input<PwaConfig>` would have replaced the whole block
+  and left `image`, `font` and `neverCache` absent at run time while the type said otherwise.
+
+- **BREAKING — `x new` writes `apps/web/site/offline/page.tsx`, not `apps/web/app/offline.tsx`.**
+  The old path shipped a component exporting `OfflineFallback` that no module imported and no route
+  table carried: `<name>.tsx` is not a route file, so `/offline` was never a URL. Same edit in
+  `dummy/social-media-clone`, which had the identical orphan. `site/` and `render: 'static'`
+  deliberately — the document that answers a lost network must render with no network, no session
+  and no database, which `app/` (`ssr | stream`) cannot promise.
+
+- `StaticReport` gains `precacheWarnings`. A report written before the field existed reads as none
+  rather than as unparseable, for the reason `unmeasured` already earned one field earlier.
+
 - **A real browser behind `installE2eDriver`, over raw CDP, with no dependency.** `PageLike` has
   been declared since 1.0.0 and `installE2eDriver({ page })` has taken an `E2eBrowserPage` since
   the adapter landed — and nothing in the tree could produce one, so `hasE2eDriver()` answered

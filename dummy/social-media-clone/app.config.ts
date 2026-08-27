@@ -69,7 +69,10 @@ export const config = defineConfig({
   realtime: { enabled: true, transport: 'memory' },
   pwa: {
     enabled: true,
-    offline: 'runtime',
+    // The document an offline navigation gets when the cache has no answer. Required once
+    // `enabled` is true: an installable app that shows the browser's error page offline is the
+    // failure the block exists to prevent.
+    offline: { fallback: '/offline' },
     name: 'Social Demo',
     colors: {
       light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },

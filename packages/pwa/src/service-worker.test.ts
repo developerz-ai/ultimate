@@ -166,15 +166,21 @@ const resolve = (rules: readonly RouteRule[], pathname: string): RouteRule | und
   rules.find((rule) => new RegExp(rule.pattern).test(pathname));
 
 // A generated file's header is read by whoever finds it in a diff, and its `regenerate:` line is
-// the one instruction it carries. `x build` emits no service worker — nothing in the tree calls
-// `generateServiceWorker` at all — so the header sent that reader to a command that would leave
-// the file exactly as they found it.
+// the one instruction it carries. It named the CALL until 2026-08-27, because `x build` emitted no
+// service worker — nothing in the tree called `generateServiceWorker` at all — so `x build` would
+// have sent that reader to a command that left the file exactly as they found it.
+//
+// `packages/cli/src/sw-artifacts.ts` is the caller now (#390), so the instruction is a COMMAND and
+// this test asserts the direction it flipped to. The rule is unchanged and is the reason the test
+// exists: the header may only name something that really regenerates the file.
 describe('the generated header names something that regenerates it', () => {
-  test('it does not claim an `x` command that does not emit this file', () => {
+  test('it names the command that emits this file, and not the function that shapes it', () => {
     const output = generateServiceWorker(routes, config, 'build-1');
     const head = output.source.split('\n').slice(0, 4).join('\n');
-    expect(head).not.toContain('x build');
-    expect(head).toContain('generateServiceWorker(');
+    expect(head).toContain('regenerate: x build');
+    // A reader who pastes `generateServiceWorker(routes, config, buildId)` into a shell gets
+    // nothing; the whole point of the line is that it runs.
+    expect(head).not.toContain('generateServiceWorker(');
     expect(head).toContain('build-1');
   });
 });

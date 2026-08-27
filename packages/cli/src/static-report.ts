@@ -13,6 +13,7 @@ import { RENDER_MODES } from '@ultimat3/core';
 import type { Surface } from '@ultimat3/render';
 import { SURFACE_SPECS, SURFACES, surfaceAllows } from '@ultimat3/render';
 import type { JsonValue } from './output';
+import { SERVICE_WORKER_PATH } from './sw-artifacts';
 
 /** Beside `.x/build-stats.json`, and written by the same call — see `readStaticReport` below. */
 export const STATIC_REPORT_FILE = join('.x', 'static-report.json');
@@ -84,6 +85,15 @@ export type StaticReport = {
    * the reader.
    */
   readonly unmeasured: readonly UnmeasuredRoute[];
+  /**
+   * The service worker's own findings: a capability declared with nothing to wire it to, and a
+   * precache manifest over its byte ceiling. `PrecacheManifest.warnings` had no reader anywhere in
+   * the tree (#390), so the ceiling was — in `wiki/Troubleshooting.md`'s own words — "a designed
+   * thing that is not one". Written here for `unmeasured`'s reason: `cmd-build.ts` discards a
+   * successful subprocess's stdout, so a warning that lives only on the in-process report reaches
+   * nobody. Empty for an app with no service worker.
+   */
+  readonly precacheWarnings: readonly string[];
 };
 
 /**
@@ -177,7 +187,7 @@ const isEmitted = (value: unknown): value is EmittedPage =>
  */
 export function parseStaticReport(value: unknown): StaticReport | undefined {
   if (!isRecord(value)) return undefined;
-  const { target, out, buildId, emitted, skipped, unmeasured } = value;
+  const { target, out, buildId, emitted, skipped, unmeasured, precacheWarnings } = value;
   if (target !== 'static' || typeof out !== 'string' || typeof buildId !== 'string') {
     return undefined;
   }
@@ -190,7 +200,25 @@ export function parseStaticReport(value: unknown): StaticReport | undefined {
   if (unmeasured !== undefined && (!Array.isArray(unmeasured) || !unmeasured.every(isUnmeasured))) {
     return undefined;
   }
-  return { target, out, buildId, emitted, skipped, unmeasured: unmeasured ?? [] };
+  // Optional on the way in for `unmeasured`'s reason, and a non-string entry drops the whole
+  // report for a malformed skip row's reason: a warning list with a hole in it is a build that
+  // says less than it measured, which is how the precache ceiling went unread in the first place.
+  if (
+    precacheWarnings !== undefined &&
+    (!Array.isArray(precacheWarnings) ||
+      !precacheWarnings.every((entry) => typeof entry === 'string'))
+  ) {
+    return undefined;
+  }
+  return {
+    target,
+    out,
+    buildId,
+    emitted,
+    skipped,
+    unmeasured: unmeasured ?? [],
+    precacheWarnings: (precacheWarnings as readonly string[] | undefined) ?? [],
+  };
 }
 
 export async function writeStaticReport(root: string, report: StaticReport): Promise<string> {
@@ -232,7 +260,12 @@ export function staticReportData(report: StaticReport | undefined): Record<strin
   // which the inventory is about — `data` already carries `artifact` and the build's own id.
   return report === undefined
     ? {}
-    : { emitted: report.emitted, skipped: report.skipped, unmeasured: report.unmeasured };
+    : {
+        emitted: report.emitted,
+        skipped: report.skipped,
+        unmeasured: report.unmeasured,
+        precacheWarnings: report.precacheWarnings,
+      };
 }
 
 /**
@@ -247,6 +280,11 @@ export function renderStaticReport(report: StaticReport): readonly string[] {
     // whose budget could not be weighed is invisible in `emitted` and, when it also rendered, in
     // `skipped` too — and it is the row `X_BUDGET_UNMEASURED` sends its reader here to read.
     ...report.unmeasured.map((route) => ['unmeasured', route.path, route.reason]),
+    // The service worker's own findings, in the same three columns. `sw.js` is the one artifact
+    // that keeps serving after a deploy is over, so a precache manifest over its ceiling is a
+    // build-time fact that has to be visible in the build's own output — `PrecacheManifest`
+    // computed these and nothing read them (#390).
+    ...report.precacheWarnings.map((warning) => ['precache', SERVICE_WORKER_PATH, warning]),
   ];
   const widths = [0, 1].map((index) =>
     Math.max(...rows.map((row) => (row[index] ?? '').length), 0),

@@ -20,6 +20,7 @@ import {
   migrate,
 } from '@ultimat3/db';
 import type { Route } from '@ultimat3/http';
+import { describeRoutes } from '@ultimat3/render';
 import { createIsrController } from '@ultimat3/render/server';
 import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
@@ -46,6 +47,7 @@ import { readMigrations } from './migrations';
 import { startOtlpExport } from './otlp-export';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import type { RuntimeOverrides } from './runtime-overrides';
+import { serviceWorkerArtifacts, serviceWorkerRoutes } from './sw-artifacts';
 
 export const DEFAULT_PORT = 3000;
 
@@ -303,8 +305,16 @@ async function bootRoles(boot: {
   // on a laptop and absent in the image is exactly the dev/prod difference this file exists to
   // prevent, and it is the one an operator cannot see without installing the app.
   const pwa = await loadPwaArtifacts(options.root);
+  // The worker, from the SAME route table this process is about to serve — `describeRoutes()` is
+  // the one projection `x.manifest.json`, `/_x`, the sitemap and `sw.js` are all built from, so a
+  // route added here cannot be missing from the precache manifest.
+  const serviceWorker =
+    pwa === undefined
+      ? undefined
+      : serviceWorkerArtifacts({ pwa, buildId, routes: describeRoutes(), islands });
   const routes: readonly Route[] = [
     ...apiRoutes(),
+    ...(serviceWorker === undefined ? [] : serviceWorkerRoutes(serviceWorker)),
     ...assetRoutes({
       root: options.root,
       storage: runtime.storage,
@@ -316,7 +326,7 @@ async function bootRoles(boot: {
     ...appRoutes({
       buildId,
       resolveIsland: (file) => islands.resolverFor(file),
-      ...(pwa === undefined ? {} : { pwaHead: pwa.head }),
+      ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
       // Only when a store was supplied. `createIsrController` defaults to a per-process memory
       // store, so twelve replicas hold twelve of them and a purge tag regenerates one twelfth of
       // the fleet while the other eleven keep serving the page it just invalidated.

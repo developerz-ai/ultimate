@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "edb334dabe4cd1a5",
+  "buildId": "205ca4cde01ba88a",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -156,6 +156,18 @@
       "budget": {
         "js": "0kb",
         "lcp": 2000
+      }
+    },
+    {
+      "url": "/offline",
+      "render": "static",
+      "offline": "precache",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb",
+        "lcp": 1500
       }
     },
     {

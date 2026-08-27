@@ -7,7 +7,7 @@ import { CURRENCY_CODE_PATTERN } from '@ultimat3/schema';
 // them. Declaring them here is what let `cache.tiers` and the ladder `@ultimat3/cache` orders by
 // drift into two vocabularies with no map between them (issue #293).
 import { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
-import type { PwaConfig } from './config-pwa';
+import type { PwaConfig, PwaOfflineConfig } from './config-pwa';
 import { PWA_FIX, pwaIssues } from './config-pwa';
 import { describeValue } from './error-render';
 import { ConfigInvalidError } from './errors';
@@ -197,6 +197,17 @@ export interface AiConfigInput {
   readonly mcp?: Input<McpConfig> | undefined;
 }
 
+/**
+ * `offline` is NESTED for `AiConfigInput`'s reason, and here it is load-bearing rather than
+ * ergonomic: `section` applies a patch ONE level deep, so an app writing
+ * `offline: { fallback: '/offline' }` under a flat `Input<PwaConfig>` would replace the whole
+ * default block — leaving `image`, `font` and `neverCache` absent at run time while the type says
+ * they are there, which is the exact shape of defect this repo keeps re-shipping.
+ */
+export interface PwaConfigInput extends Omit<Input<PwaConfig>, 'offline'> {
+  readonly offline?: Input<PwaOfflineConfig> | undefined;
+}
+
 export interface AppConfigInput {
   readonly name: string;
   readonly locales?: readonly string[] | undefined;
@@ -205,7 +216,7 @@ export interface AppConfigInput {
   readonly defaultCurrency?: string | undefined;
   readonly theme?: Input<ThemeConfig> | undefined;
   readonly auth?: Input<AuthConfig> | undefined;
-  readonly pwa?: Input<PwaConfig> | undefined;
+  readonly pwa?: PwaConfigInput | undefined;
   readonly roles?: readonly Role[] | undefined;
   readonly database?: Input<DatabaseConfig> | undefined;
   readonly cache?: Input<CacheConfig> | undefined;
@@ -260,7 +271,7 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
     auth: { signInPath: null },
     pwa: {
       enabled: false,
-      offline: 'network-only',
+      offline: { fallback: null, image: null, font: null, neverCache: [] },
       backgroundSync: false,
       push: false,
       name: '',
@@ -405,7 +416,13 @@ export function defineConfig(
     defaultCurrency: merged.defaultCurrency ?? base.defaultCurrency,
     theme: section(base.theme, merged.theme),
     auth: section(base.auth, merged.auth),
-    pwa: section(base.pwa, merged.pwa),
+    // Two `section` calls, one per level: the outer one may not see `offline` at all, or it would
+    // drop the nested defaults `PwaConfigInput` exists to keep. Hence the cast — the outer patch is
+    // this block minus the key the inner call owns.
+    pwa: {
+      ...section(base.pwa, { ...merged.pwa, offline: undefined } as Input<PwaConfig>),
+      offline: section(base.pwa.offline, merged.pwa?.offline),
+    },
     roles: merged.roles ?? base.roles,
     database: section(base.database, merged.database),
     cache: section(base.cache, merged.cache),

@@ -32,6 +32,14 @@ export interface CdpConnection {
    * deadline on the most ordinary navigation there is.
    */
   once(method: string, sessionId: string | undefined, timeoutMs: number): Promise<boolean>;
+  /**
+   * Subscribe to every occurrence of one CDP event, until the returned function is called.
+   *
+   * `once` cannot express what this is for: a target that attaches AFTER the driver stopped
+   * listening is a service worker whose network conditions nobody set, which is an `offline()`
+   * that silently does nothing to the one thing serving the page.
+   */
+  on(method: string, listener: (params: Record<string, unknown>) => void): () => void;
   close(): void;
 }
 
@@ -64,6 +72,7 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
   const socket = new WebSocket(options.endpoint);
   const pending = new Map<number, Pending>();
   const waiters = new Set<(method: string, sessionId: string | undefined) => void>();
+  const listeners = new Map<string, Set<(params: Record<string, unknown>) => void>>();
   let nextId = 0;
   let closed = false;
 
@@ -98,6 +107,14 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
       if (typeof method !== 'string') return;
       const on = frame['sessionId'];
       for (const waiter of [...waiters]) waiter(method, typeof on === 'string' ? on : undefined);
+      const subscribed = listeners.get(method);
+      if (subscribed !== undefined) {
+        const params = frame['params'];
+        const payload: Record<string, unknown> =
+          typeof params === 'object' && params !== null ? (params as Record<string, unknown>) : {};
+        // A copy, because a listener may unsubscribe itself while this loop is running.
+        for (const listener of [...subscribed]) listener(payload);
+      }
       return;
     }
     const one = pending.get(id);
@@ -176,7 +193,17 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
         waiters.add(waiter);
       });
     },
+    on(method, listener): () => void {
+      const subscribed = listeners.get(method) ?? new Set();
+      subscribed.add(listener);
+      listeners.set(method, subscribed);
+      return () => {
+        subscribed.delete(listener);
+        if (subscribed.size === 0) listeners.delete(method);
+      };
+    },
     close(): void {
+      listeners.clear();
       abandon('the driver closed the CDP connection');
       socket.close();
     },

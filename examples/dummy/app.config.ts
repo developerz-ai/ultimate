@@ -51,7 +51,10 @@ export const config = defineConfig({
 
   pwa: {
     enabled: true,
-    offline: 'runtime',
+    // The document an offline navigation gets when the cache has no answer. Required once
+    // `enabled` is true: an installable app that shows the browser's error page offline is the
+    // failure the block exists to prevent.
+    offline: { fallback: '/offline' },
     backgroundSync: true,
     name: 'Ultimate Dummy',
     colors: {

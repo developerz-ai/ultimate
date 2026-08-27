@@ -1,33 +1,37 @@
 # PWA and offline
 
-> ## ⚠️ HALF WIRED — the manifest ships, the service worker does not, `As of 2026-08-27`
+> ## ✅ WIRED END TO END, `As of 2026-08-27`
 >
-> **`x dev`, the container and `x build --target static` all emit `manifest.webmanifest` and the
-> `<head>` that names it**, `As of 2026-08-27` — `<link rel="manifest">`, a `theme-color` meta per
-> colour scheme, and every apple-touch icon link, on every page of the app. The reader is
-> [`packages/cli/src/pwa-artifacts.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/pwa-artifacts.ts),
-> and it is what `pwa.enabled` finally turns on. `planIcons` and `BuiltinImagePipeline` were already
-> wired through `dev-assets.ts`, and the manifest names the icons that route serves — one plan, so
-> it cannot promise a size nothing mints.
+> **`x dev`, the container and `x build --target static` all emit `manifest.webmanifest`, `sw.js`
+> and `x-sw-register.js`**, plus the `<head>` that names all three. The manifest reader is
+> [`packages/cli/src/pwa-artifacts.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/pwa-artifacts.ts)
+> and the worker's is
+> [`packages/cli/src/sw-artifacts.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/sw-artifacts.ts).
 >
-> **No build produces a `sw.js`.** `generateServiceWorker`, `buildPrecacheManifest`,
-> `offlineFallbackSource`, `backgroundSyncSource` and `pushSource` have **zero callers** outside
-> `@ultimat3/pwa` itself — measured across `packages/`, `examples/`, `dummy/`, `scripts/` and
-> `docker/` ([#362](https://github.com/developerz-ai/ultimate/issues/362)). So `pwa.offline`,
-> `pwa.backgroundSync` and `pwa.push` are still declarations with no build behind them, and so is
-> every route's own `offline:` field. `X_PWA_NO_OFFLINE_FALLBACK` is raised by `x doctor` as a
-> **diagnostic** — a prerequisite for a pipeline that is not called.
+> This box said the opposite until 2026-08-27 — `generateServiceWorker`, `buildPrecacheManifest`,
+> `offlineFallbackSource`, `backgroundSyncSource` and `pushSource` had **zero callers** outside
+> `@ultimat3/pwa` itself, so `pwa.offline`, `pwa.backgroundSync`, `pwa.push` and every route's own
+> `offline:` field were declarations with no build behind them ([#390](https://github.com/developerz-ai/ultimate/issues/390),
+> [#362](https://github.com/developerz-ai/ultimate/issues/362)).
 >
-> **Installability is what the two halves buy separately.** A browser needs the manifest, a name,
-> icons and a scheme-correct theme colour before it will offer to install; it needs a service worker
-> before the installed app works offline. The first is done; the second is not.
+> **What unblocked it was the browser check, not the emitter.** A bad `sw.js` is **sticky** — a
+> manifest a browser dislikes is ignored, a worker that caches wrong keeps serving wrong bytes until
+> the user clears site data — so the rule was: no worker until something can drive a real one.
+> `packages/cli/e2e/service-worker.e2e.test.ts` is that check. It registers the emitted file in a
+> real Chrome, waits for it to take control, takes the network away, and asserts that a runtime
+> route with nothing cached renders the **offline document**. It runs on every push.
 >
-> So read every section below marked against the worker as the **library's** behaviour — real,
-> tested and stable — and not as something `x build` does for you. The worker lands behind a real
-> browser check rather than beside the manifest, deliberately: a bad `sw.js` is **sticky**, and
-> nothing in this repo's gate can drive a real service worker (`X_E2E_SERVICE_WORKER_ABSENT`).
+> **`pwa.offline` is now a block, not a string** — `{ fallback, image, font, neverCache }`, and
+> `fallback` is **required** once `enabled` is true. See [Upgrading](Upgrading) for the one-line
+> edit; the old `offline: 'runtime'` was an app-wide default for a field `defineRoute` makes
+> required on every route, so it defaulted nothing and was read by nobody.
+>
+> **Still not wired: `pwa.push`.** `generateServiceWorker` emits a push handler only when a VAPID
+> key comes with the capability, there is no `pwa.vapid` config key, and it drops the handler in
+> silence otherwise. `x build --json` now reports that as a `precacheWarnings` entry rather than
+> leaving the switch quietly inert.
 
-`sw.js` is designed as a build artifact, generated from the route table. Hand-editing one is **not** caught: `As of 2026-08` `sw.js` carries no checksum, so an edit would survive a build. `X_SW_HAND_EDITED` is a **reserved** name — nothing raises it, and `x errors explain X_SW_HAND_EDITED` refuses it ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)).
+`sw.js` is a build artifact, generated from the route table and written by `x build`. Hand-editing one is **not** caught: `As of 2026-08` `sw.js` carries no checksum, so an edit would survive a build. `X_SW_HAND_EDITED` is a **reserved** name — nothing raises it, and `x errors explain X_SW_HAND_EDITED` refuses it ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)).
 
 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
@@ -35,7 +39,7 @@
 
 A service worker is a cache-policy compiler whose input is already declared on every route: render mode, offline strategy, asset graph. Hand-writing it duplicates that information, and the duplicate drifts. Every notorious PWA bug — the page serving last month's HTML, the chunk 404 after deploy, the user stuck on a version until they clear site data — is a service worker that disagreed with the app.
 
-The edit an agent should make is the route's `offline` field — and `x build` does not yet read it. Nothing enforces the rule either, per the reserved-code note above.
+The edit an agent should make is the route's `offline` field, and `x build` reads it, `As of 2026-08-27`. Hand-editing the emitted `sw.js` is still not caught, per the reserved-code note above.
 
 ## Derived from the route
 

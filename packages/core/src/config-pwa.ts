@@ -11,18 +11,37 @@
 // subjects (a config file, and a function argument a library caller supplies directly).
 
 import { describeValue } from './error-render';
-// `app.config.ts` CONSUMES the route vocabulary; it does not own it — `config.ts`'s rule, and the
-// reason `OfflineStrategy` is imported rather than restated.
-import type { OfflineStrategy } from './route-vocabulary';
 
 /**
  * `installPrompt` was removed 2026-08, same rule: `@ultimat3/pwa`'s `createInstallController` is
  * real and complete, nothing ever threaded the flag into it, and both tracked apps plus every
  * scaffolded app set a switch with no wire. Call the controller from your own affordance instead.
  */
+/**
+ * What the service worker needs that no route can say for itself.
+ *
+ * `fallback` is the document a navigation gets when the network is gone and the cache has no
+ * answer — the one thing an offline app cannot do without, and the reason this block replaced a
+ * bare `offline: OfflineStrategy`. That key was an app-wide DEFAULT for a field `defineRoute`
+ * makes **required** on every route (`route.ts` refuses a route without one), so it defaulted
+ * nothing, was read by nobody, and could not be given a reader without inventing a meaning for it
+ * (#390).
+ *
+ * The other three are `@ultimat3/pwa`'s `OfflineConfig` verbatim, and each is read by the emitter
+ * that builds `sw.js`: a placeholder image, a placeholder font, and the request patterns that must
+ * never be answered from a cache — auth and payments, where a stale 200 is worse than a failure.
+ */
+export interface PwaOfflineConfig {
+  /** Absolute route path of the offline document, e.g. `/offline`. Required once `enabled`. */
+  readonly fallback: string | null;
+  readonly image: string | null;
+  readonly font: string | null;
+  readonly neverCache: readonly string[];
+}
+
 export interface PwaConfig {
   readonly enabled: boolean;
-  readonly offline: OfflineStrategy;
+  readonly offline: PwaOfflineConfig;
   readonly backgroundSync: boolean;
   readonly push: boolean;
   /**
@@ -95,6 +114,18 @@ export function pwaIssues(pwa: PwaConfig, issues: string[]): boolean {
   const { name, colors } = pwa;
   if (typeof name !== 'string' || name.trim() === '') {
     issues.push(`pwa.name is required when pwa.enabled is true, and is ${describeValue(name)}`);
+  }
+  // An ABSOLUTE path, screened here rather than at emit for this file's own stated reason: a
+  // relative one resolves against whatever document registered the worker, so `offline` served
+  // under `/posts/1` is `/posts/offline` — a 404 cached as the answer to every offline navigation.
+  // `pwa.enabled` means an installable app, and an installable app that shows the browser's error
+  // page offline is the failure the whole block exists to prevent, so this is required rather
+  // than optional: the alternative is two meanings for one switch (axiom 1).
+  const fallback: unknown = pwa.offline?.fallback;
+  if (typeof fallback !== 'string' || !fallback.startsWith('/')) {
+    issues.push(
+      `pwa.offline.fallback is required when pwa.enabled is true and must be an absolute route path like "/offline", and is ${describeValue(fallback)}`,
+    );
   }
   // `typeof !== 'object' || null`, never `=== undefined`: an untyped `app.config.ts` writing
   // `pwa.colors: null` reached `null[scheme]` one line down and took the boot out with a native

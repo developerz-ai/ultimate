@@ -6,7 +6,7 @@
 import { join } from 'node:path';
 import { createContext, renderThrowable, runWithContext } from '@ultimat3/core';
 import type { RouteEntry } from '@ultimat3/render';
-import { routeEntries } from '@ultimat3/render';
+import { describeRoutes, routeEntries } from '@ultimat3/render';
 import { renderStatic } from '@ultimat3/render/server';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
@@ -20,6 +20,7 @@ import { buildIslands, writeIslands } from './island-bundle';
 import { loadPwaArtifacts, WEB_MANIFEST_PATH, writePwaIcons } from './pwa-artifacts';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
+import { SERVICE_WORKER_PATH, SW_REGISTER_PATH, serviceWorkerArtifacts } from './sw-artifacts';
 
 // Re-exported, never re-declared: `static-report.ts` owns the shape because the report on disk
 // carries it, and this file already imports that module.
@@ -76,6 +77,15 @@ export interface PrerenderReport {
   readonly report: string;
   /** Client entries emitted, one chunk each. Reported so "which JS shipped?" needs no unzip. */
   readonly islands: readonly string[];
+  /**
+   * What the service worker could not express, and what its precache manifest weighs too much of.
+   *
+   * `PrecacheManifest.warnings` had no reader anywhere in the tree — the precache budget was, in
+   * `wiki/Troubleshooting.md`'s own words, "a designed thing that is not one" (#390). An install
+   * that stalls on a bad connection is invisible on a laptop and fatal on a phone, so the number
+   * has to reach the build's own report. Empty for an app with no service worker.
+   */
+  readonly precacheWarnings: readonly string[];
 }
 
 /**
@@ -154,6 +164,18 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // wiring exists to close. `undefined` when the app is not installable, and then no document
   // names it either.
   const pwa = await loadPwaArtifacts(options.root);
+  // The worker and its registration script, written as FILES. A static host runs no route table,
+  // so a `<script src="/x-sw-register.js">` in every document is a 404 unless the bytes are in the
+  // artifact — the same promise `favicon.ico` and the icons above keep, for the asset that decides
+  // whether the export works offline at all.
+  const serviceWorker =
+    pwa === undefined
+      ? undefined
+      : serviceWorkerArtifacts({ pwa, buildId, routes: describeRoutes(), islands });
+  if (serviceWorker !== undefined) {
+    await Bun.write(join(options.out, SERVICE_WORKER_PATH.slice(1)), serviceWorker.source);
+    await Bun.write(join(options.out, SW_REGISTER_PATH.slice(1)), serviceWorker.register);
+  }
   if (pwa !== undefined) {
     await Bun.write(join(options.out, WEB_MANIFEST_PATH.slice(1)), pwa.body);
     // And the icons that manifest NAMES. A static host runs no `assetRoutes()`, so every
@@ -176,7 +198,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     runWithContext(ctx, () =>
       routeDocument(entry, data, {
         resolveIsland: (file: string) => islands.resolverFor(file),
-        ...(pwa === undefined ? {} : { pwaHead: pwa.head }),
+        ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
       }),
     );
 
@@ -267,6 +289,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     // stdout — so the one command the finding tells an author to run printed no `unmeasured` key
     // and no reason. Written into the report is what makes the instruction true.
     unmeasured,
+    precacheWarnings: serviceWorker?.warnings ?? [],
   });
   return {
     out: options.out,
@@ -277,5 +300,6 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     stats,
     report,
     islands: islands.chunks.map((chunk) => chunk.file),
+    precacheWarnings: serviceWorker?.warnings ?? [],
   };
 }

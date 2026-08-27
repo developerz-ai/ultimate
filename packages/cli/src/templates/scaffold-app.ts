@@ -192,14 +192,37 @@ unitTest('the dashboard renders on the server, is gated, and has an offline stra
 
 const offlineFallback = (
   app: NameSet,
-): string => `// The offline fallback. Every app/ route with offline: 'runtime' falls back here, so a train
-// tunnel shows the product's own shell instead of the browser's error page.
+): string => `// The offline fallback, and it is a ROUTE — \`pwa.offline.fallback\` in app.config.ts names this
+// path, the generated sw.js precaches it, and every app/ route with offline: 'runtime' falls back
+// here. So a train tunnel shows the product's own shell instead of the browser's error page.
+//
+// site/ and render: 'static', deliberately: the document that answers a lost network has to render
+// with no network, no session and no database, which is what site/ guarantees and app/ (ssr |
+// stream) cannot. \`offline: 'precache'\` for the same reason one level down — a fallback fetched
+// over the network when the network is gone is not a fallback.
 
 // \`useT()\`, not \`t\` from @ultimat3/i18n — see apps/web/site/page.tsx for why.
-import { useT } from '@${app.kebab}/i18n';
-import styles from './offline.module.scss';
+${sortedImports([
+  `import { useT } from '@${app.kebab}/i18n';`,
+  `import { defineRoute } from '@ultimat3/render';`,
+])}
+import styles from './page.module.scss';
 
-export function OfflineFallback() {
+export const config = defineRoute({
+  render: 'static',
+  offline: 'precache',
+  hydrate: 'never',
+  budget: { js: '0kb' },
+  meta: ({ t }) => ({
+    title: t('app.offline.title'),
+    description: t('app.offline.description'),
+    // A cached error page has nothing to index, and an indexed one outranks the page it stood in
+    // for on the day the crawler happened to be offline.
+    robots: { index: false },
+  }),
+});
+
+export function OfflinePage() {
   const t = useT();
 
   return (
@@ -390,8 +413,11 @@ export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile
     // policy and `shared/roles.ts` declares the grants, and until this file existed nothing
     // answered "who is this?" — so every one of those routes refused every request.
     ...authFiles(app),
-    { path: 'apps/web/app/offline.tsx', contents: offlineFallback(app) },
-    { path: 'apps/web/app/offline.module.scss', contents: offlineStyle() },
+    // `site/offline/page.tsx`, not `app/offline.tsx`: the directory is the URL and `<name>.tsx` is
+    // not a route file, so the old path shipped a component nothing rendered and left `/offline` a
+    // URL the generated service worker could not fall back to.
+    { path: 'apps/web/site/offline/page.tsx', contents: offlineFallback(app) },
+    { path: 'apps/web/site/offline/page.module.scss', contents: offlineStyle() },
     // The third surface, and the one call that registers what the app declares — `scaffold-api.ts`.
     ...apiFiles(example),
     { path: 'apps/web/shared/tokens.scss', contents: sharedTokens() },

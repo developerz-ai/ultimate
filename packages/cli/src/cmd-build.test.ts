@@ -260,6 +260,7 @@ const REPORT: StaticReport = {
   unmeasured: [
     { path: '/posts/new', reason: 'X_NO_CONTEXT: useContext() outside runWithContext()' },
   ],
+  precacheWarnings: ['precache total 6.1 MB exceeds the 5 MB budget'],
 };
 
 test('a static build reports emitted and skipped, with a why per skipped route', () => {
@@ -322,6 +323,11 @@ test('the HUMAN output says it too — a silent terminal is the same bug in a di
   // Same three lists in both renderers, or the terminal reader is sent to `--json` for a fact the
   // finding told them this command reports.
   expect(text).toContain('unmeasured');
+  // The precache ceiling, in the same table. `PrecacheManifest.warnings` was computed by
+  // `@ultimat3/pwa` and read by nothing anywhere in the tree (#390) — a byte budget nobody could
+  // see is a budget that is not one.
+  expect(text).toContain('precache');
+  expect(text).toContain('exceeds the 5 MB budget');
   expect(text).toContain('/posts/new');
 });
 

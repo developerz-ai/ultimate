@@ -386,6 +386,64 @@ proof — `offline()` followed by "the fallback rendered" is the app's ONLINE pa
 test — so an `E2eBrowserPage` that declares no `offline` still gets the refusal, now naming the
 method the double is missing rather than a capability the framework does not have.
 
+## The service worker is emitted here, because the emitter needs facts only a build has
+
+`@ultimat3/pwa` shipped `generateServiceWorker`, `buildPrecacheManifest`, `offlineFallbackSource`,
+`backgroundSyncSource` and `pushSource` since it existed, and every one had **zero callers** outside
+its own package. So `pwa.offline`, `pwa.backgroundSync`, `pwa.push` and every route's own `offline:`
+were declarations with no build behind them, and no Ultimate app worked offline however its config
+was written (#390). `sw-artifacts.ts` is the caller.
+
+**Why here and not beside the manifest.** `loadPwaArtifacts(root)` needs a root and a config file;
+the worker needs the ROUTE TABLE and the ISLAND BUNDLE as well — facts only a booted app and a
+finished build have. Splitting them keeps `loadPwaArtifacts` callable before either exists, which
+`x doctor` and the icon writer rely on. The route table is `describeRoutes()`, the one projection
+`x.manifest.json`, `/_x`, the sitemap and `sw.js` are all built from, so a route added to the app
+cannot be missing from the precache manifest.
+
+| Surface | What it does with the worker |
+|---|---|
+| `cmd-dev.ts` | mounts `/sw.js` and `/x-sw-register.js`; built ONCE at boot and deliberately not rebuilt on the watcher tick — a worker that changes under a page it already controls is the update path, and re-emitting one per keystroke exercises it on every save |
+| `serve.ts` | the same two routes in the container, from the same call |
+| `prerender.ts` | writes both as FILES into the export — a static host runs no route table, so a `<script src="/x-sw-register.js">` in every document is a 404 unless the bytes are in the artifact |
+
+**Registration is an EXTERNAL script, never inline**, and that is a CSP fact rather than a
+preference: `startWeb` computes a `script-src` sha256 per inline script, so an unhashed one is
+blocked in the container while passing report-only under `x dev` — which is how the hydration
+runtime shipped broken once already.
+
+**`sw.js` is served `no-store` with `Service-Worker-Allowed: /`.** A cached `sw.js` is a worker that
+cannot be replaced: the browser re-fetches it to decide whether an update exists, and an
+intermediary answering the old bytes pins every client to the deploy that shipped them. Without the
+header the browser refuses to let a worker served from `/` control `/` — the failure `assertScope`
+cannot see, because the scope a REGISTRATION asks for has to be allowed by the script's own response
+and not only by its path.
+
+**`api/` and `shared/` never cross.** An API response is a JSON document whose freshness is the
+app's business, and precaching one serves a stale answer to a client that had a network; `shared/`
+is not a URL at all. The filter is a `flatMap` rather than `filter().map()` because the predicate
+does not narrow `surface` for the map that follows it, and a cast would hide the day a fifth surface
+arrives.
+
+**`pwa.push` is read and still wires nothing, and it says so.** `generateServiceWorker` emits a push
+handler only when a VAPID key comes with the capability, there is no `pwa.vapid` config key, and it
+drops the handler in SILENCE otherwise. `pushWarning` is this module's own finding, reported through
+`x build --json`'s `precacheWarnings` — `jobs.driver`'s shape one package over, refused the same way.
+
+**The browser check is what let any of this ship.** #390's fourth requirement was *"a real browser
+check that the emitted worker installs, activates and serves the fallback offline. Until it exists,
+do not ship the worker"* — a bad `sw.js` is sticky in a way a manifest is not.
+`e2e/service-worker.e2e.test.ts` registers the emitted file in a real Chrome, waits for it to take
+control, takes the network away, and asserts that a runtime route with nothing cached renders the
+offline document.
+
+**And it found the driver bug first.** `E2eFixtures.offline()` did not take the SERVICE WORKER
+offline: a worker fetches on its own CDP target, the condition was only ever set on the page's, and
+a `networkFirst` route the cache had never seen still answered from the network. So an offline
+assertion made on a PWA tested nothing. `cdp-e2e-page.ts` now auto-attaches worker targets and
+carries the condition onto each, including one that attaches AFTER `offline(true)` — the ordinary
+case for a PWA.
+
 ## The `errors` step enforces the error contract
 
 | File | Job |
