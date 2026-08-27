@@ -18,8 +18,10 @@
  * for one bug, and only the second is a fix: pinning the whole repository to the Bun that TOLERATES
  * an unresolvable `require` leaves the `--compile` graph still reaching one, so the next Bun that
  * tightens resolution breaks the build again. Marking the specifier external means the graph never
- * reaches it, on either Bun — which is why CI moving back to `1.3.x` on 2026-08-27 cost this file
- * nothing but this comment, and why `bun build --compile` is green on 1.3.14.
+ * reaches it, on either Bun — measured on 2026-08-27, when the 1.4 pin was trialled in reverse:
+ * `docker build -f docker/Dockerfile` is green on `oven/bun:1.3-slim` and the image answers
+ * `--version`. So this file does not depend on the series above it, and a future move of that pin
+ * costs it nothing.
  *
  * Marking the dead specifier external rather than the two live ones: `serve.ts` calls
  * `buildIslands` on every boot, unconditionally, so a binary with `@babel/core` external is a

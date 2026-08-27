@@ -83,14 +83,15 @@ export function scanDocCitations(file: MarkdownFile): readonly DocCitation[] {
  * ```
  *
  * Four scanners share this reader — `gate-steps`, `doc-commands`, `release-facts`,
- * `version-stamp-scan` — and `STEP_GLOBS` names `.github/workflows/*.yml` and a deep `.claude` markdown glob
- * precisely because a workflow and an agent brief each state the gate's step count. On Bun 1.3
- * those two globs selected **zero files** and the rule reported green: not a wrong answer, a
- * question never asked. The runtime was the only thing closing the hole, which is the same shape as
- * a floor that names a runtime nobody tested.
+ * `version-stamp-scan` — and `STEP_GLOBS` names `.github/workflows/*.yml` and a deep `.claude`
+ * markdown glob precisely because a workflow and an agent brief each state the gate's step count.
+ * On Bun 1.3 those two globs selected **zero files** and the rule reported green: not a wrong
+ * answer, a question never asked, with the runtime as the only thing closing the hole.
  *
- * Passing it unconditionally rather than branching on `Bun.version`: the flag is a no-op on the
- * runtime that already does this, and a scan whose CORPUS depends on the minor is the defect.
+ * Found by trialling the repo on 1.3.14 (`.github/actions/setup/action.yml` records why that trial
+ * was refused) and fixed regardless, because **a scan whose CORPUS depends on the Bun minor is the
+ * defect** — the pin above this reader is one line and moves. Passed unconditionally rather than
+ * branched on `Bun.version`: the flag is a no-op on the runtime that already does this.
  */
 export async function readMarkdown(
   root: string,

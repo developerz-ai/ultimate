@@ -34,7 +34,7 @@ myapp:dev  194MB
 
 `x build` runs the static gate steps first — `typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors` — and exits non-zero without building if any fail. A build that would fail `x verify` produces no artifact.
 
-The scaffolded image is `oven/bun:1.3-alpine`, runs as the non-root `bun` user, and its `ENTRYPOINT` is `["bun", "apps/web/server.ts"]`. There is no build stage and no second gate inside it: re-running `tsc` and `biome` there would need the devDependencies the `--production` install deliberately omits.
+The scaffolded image is `oven/bun:1.4-alpine`, runs as the non-root `bun` user, and its `ENTRYPOINT` is `["bun", "apps/web/server.ts"]`. There is no build stage and no second gate inside it: re-running `tsc` and `biome` there would need the devDependencies the `--production` install deliberately omits.
 
 > `docs/ops/README.md` describes a distroless, single-binary, ~80MB image. That is not what `x new` writes at 1.1.0 — read the scaffolded [`docker/Dockerfile`](https://github.com/developerz-ai/ultimate/blob/main/docker/Dockerfile) as the authority.
 

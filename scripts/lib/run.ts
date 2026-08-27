@@ -71,14 +71,15 @@ export const repoRoot = (): string => new URL('../..', import.meta.url).pathname
  * both are the point of their test, and each takes ~5s alone against ~30s under eight competing
  * workers. Raise this, never narrow a scan, and never delete a test for being slow.
  *
- * **90s -> 180s on 2026-08-27, and this time the number was not the finding.** Moving the repo from
- * Bun 1.4.0 to 1.3.14 turned 21 of these tests red — every one a timeout, none a wrong answer — and
- * the runtime is only ~1.3x slower here (`x test unit`: 81s against 205s, same machine, same 1,299
- * files, back to back). `scripts/verify.test.ts` is the shape of it: **12.5s alone**, and it did not
+ * **90s -> 180s on 2026-08-27, and this time the number was not the finding.** Trialling the repo
+ * on Bun 1.3.14 turned 21 of these tests red — every one a timeout, none a wrong answer — and that
+ * runtime is only ~1.3x slower here (`x test unit`: 64s against 230s, same machine, same corpus,
+ * back to back). `scripts/verify.test.ts` is the shape of it: **12.5s alone**, and it did not
  * finish inside 90s in the pool. A 7x stretch means the budget was never sized against contention,
  * only against the last runtime anyone measured, and a gate that passes only on the fastest Bun
  * anybody has run it on is a flake with a release date — free `ubuntu-latest` runners vary by more
- * than 1.3x on their own.
+ * than 1.3x on their own. The trial was refused for other reasons
+ * (`.github/actions/setup/action.yml`); this half of what it found is a defect either way.
  *
  * The other half of the same finding: **six whole-tree scanners had never joined this convention**
  * and sat on Bun's 5000ms default — `config-readers`, `frozen-records`, `node-imports`,

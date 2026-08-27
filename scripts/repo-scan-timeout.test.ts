@@ -1,7 +1,8 @@
 // The rule that keeps `REPO_SCAN_TIMEOUT_MS` from being a convention six files never heard of.
 // A `scripts/` test that reads the real tree contends with every other one under `--parallel`, so
 // it runs on the repo-scan backstop; nothing was checking, and the six newest scanners sat on Bun's
-// 5000ms default until a runtime 1.3x slower turned 21 of them red at once.
+// 5000ms default until a runtime 1.3x slower turned 21 of them red at once — a gap smaller than
+// what one noisy free runner adds, so this was never really about the Bun trial that exposed it.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.

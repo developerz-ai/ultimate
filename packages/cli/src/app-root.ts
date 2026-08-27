@@ -14,19 +14,21 @@ export const MANIFEST_FILE = 'x.manifest.json';
  * the gate's dominant step, with `x doctor` reporting the runtime as fine. `--parallel` arrived in
  * the same release and is emitted now, so the floor may never fall below that patch.
  *
- * **`1.3.14`, not `1.4.0`.** 18.0.0 shipped `1.4.0` here and in all 42 `engines.bun`, on the
- * argument that a floor is a claim about a runtime somebody TESTED and CI happened to run `1.4.x`.
- * The premise is right and the conclusion was backwards: it let CI's convenience decide who may
- * install `@ultimat3/*`, and barred every user on Bun 1.3 for a capability no package here calls —
- * there is no 1.4-only API anywhere in the tree. So the tree moved to the runtime instead. The
- * whole gate now runs on 1.3.14, CI pins `1.3.x`, every image is `oven/bun:1.3-*`, and the claim
- * this constant makes is true of the runtime that proved it.
+ * `1.4.0` rather than `1.3.13` because a floor is a claim about a runtime somebody TESTED: CI pins
+ * `1.4.x`, both images build on `oven/bun:1.4-*`, and the per-worker database rests on
+ * `BUN_TEST_WORKER_ID`'s numbering, probed on 1.4.0 and on nothing older. `scripts/bun-pin.test.ts`
+ * holds this to the same series as every other pin.
  *
- * `.14` rather than `.13` for the same reason: 1.3.13 is where the flags landed, 1.3.14 is the
- * patch the gate was actually run on. `scripts/bun-pin.test.ts` holds this to the same series as
- * every other pin in the repository, in both directions.
+ * **Lowering it to 1.3.14 was tried on 2026-08-27 and refused**, and the argument for trying was
+ * sound — `--isolate` and `--parallel` are 1.3.13 features, no package here calls a 1.4-only API
+ * (`bun run typecheck` is clean against `@types/bun@1.3.14`), and `>=1.4.0` therefore bars Bun 1.3
+ * users for a capability the framework does not use. What refused it is a Bun 1.3.14 defect, not
+ * the paperwork: a service shutdown against a destroyed database never resolves there
+ * (`queue.stop()`, reproduced by `dev-runtime.live.test.ts`), so an app on a runtime this line
+ * declared supported would hang on graceful shutdown the moment its database went away. The full
+ * measurement is in `.github/actions/setup/action.yml`; read it before lowering this.
  */
-export const REQUIRED_BUN = '1.3.14';
+export const REQUIRED_BUN = '1.4.0';
 
 export interface AppRoot {
   readonly dir: string;

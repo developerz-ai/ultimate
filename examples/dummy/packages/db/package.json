@@ -10,7 +10,7 @@
     "./seeds/dev": "./seeds/dev.ts"
   },
   "engines": {
-    "bun": ">=1.3.14"
+    "bun": ">=1.4.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

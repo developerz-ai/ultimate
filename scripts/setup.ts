@@ -11,7 +11,7 @@ import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
 
 // A floor on CONTRIBUTORS to this repo. It tracks the series CI runs
-// (`.github/actions/setup/action.yml`, `1.3.x`), because that is the only thing this check can
+// (`.github/actions/setup/action.yml`, `1.4.x`), because that is the only thing this check can
 // usefully say: a contributor whose Bun differs from CI's is not running the gate CI runs, and on
 // 2026-08-20 that gap merged a red PR behind a green local `bun run verify`. Matching the pin is
 // the whole point; a floor a series away from it blesses a machine that agrees with nothing here.
@@ -19,16 +19,16 @@ import { repoRoot, run } from './lib/run';
 // The paragraph that stood here called this a DIFFERENT question from `engines.bun` and argued that
 // one should stay `>=1.3.0` — two `REQUIRED_BUN` constants, deliberately holding different numbers.
 // That split is gone, `As of 2026-08-27`, and it is the same number in all three places now
-// (`packages/cli/src/app-root.ts` is the third). It cost a real defect twice, in both directions:
-// the consumer floor sat at `1.3.0` while `x test` emitted `bun test --isolate`, a flag Bun added
-// in 1.3.13, and 18.0.0 then over-corrected it to `1.4.0` — barring every user on Bun 1.3 from
-// installing `@ultimat3/*` for a capability no package here calls. A floor nobody can compare
-// against another floor drifts in whichever direction the last edit pushed it, which is axiom 3.
+// (`packages/cli/src/app-root.ts` is the third). It had already cost a real defect: the consumer
+// floor sat at `1.3.0` while `x test` emitted `bun test --isolate`, a flag Bun added in 1.3.13. A
+// floor nobody can compare against another floor drifts in whichever direction the last edit
+// pushed it, which is axiom 3, and `scripts/bun-pin.test.ts` is what makes one number safe.
 //
-// `scripts/bun-pin.test.ts` is what makes one number safe: it reads this constant, the CLI's,
-// every `engines.bun`, both workflow pins and every `FROM oven/bun:` tag, and fails when any two
-// name different series.
-const REQUIRED_BUN = [1, 3, 14] as const;
+// Whether `1.4.0` is too HIGH — `--isolate` is a 1.3.13 feature and no package here calls a
+// 1.4-only API — was tried on 2026-08-27 and refused on a measured Bun 1.3.14 shutdown hang. The
+// evidence lives in `.github/actions/setup/action.yml`; do not re-derive it, and do not lower this
+// constant without reading it.
+const REQUIRED_BUN = [1, 4, 0] as const;
 
 const bunTooOld = (version: string): boolean => {
   const parts = version.split('.').map((part) => Number.parseInt(part, 10) || 0);

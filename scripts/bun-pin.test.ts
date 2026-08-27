@@ -90,14 +90,14 @@ const enginesFloors = async (): Promise<Record<string, string>> => {
 };
 
 /**
- * `@types/bun` is a pin site, `As of 2026-08-27`, and it was the one nobody counted. It read
- * `^1.4.0` — a CARET, so it resolved to a 1.4 API surface while `bun --version` answered 1.3.14:
- * the tree typechecked against a runtime nothing in the repo ran, which is the floor defect one
- * layer up, with the same failure mode. A 1.4-only call would have compiled clean and thrown at run
- * time, and `bun run typecheck` — the step whose whole job is catching that — would have blessed it.
+ * `@types/bun` is a pin site, `As of 2026-08-27`, and it was the one nobody counted — a `^1.4.0`
+ * caret where every other Bun pin in the repository names an exact series. It decides which Bun API
+ * surface `bun run typecheck` believes in, so a range here is the same defect as a range on the
+ * runtime, one layer up: the step whose whole job is catching a call the runtime cannot answer,
+ * type-checking against a Bun nobody has pinned. Found while trialling the 1.3 series, where the
+ * caret held the types a whole minor ahead of the runtime under test.
  *
- * Exact, not a range, for the reason the pinning rule already gives: a range is a silent upgrade,
- * and here the thing silently upgrading is which Bun the type-checker believes in.
+ * Exact, not a range, for the reason the pinning rule already gives: a range is a silent upgrade.
  */
 const typesFloor = async (): Promise<string> => {
   const manifest = (await Bun.file(join(ROOT, 'package.json')).json()) as {
