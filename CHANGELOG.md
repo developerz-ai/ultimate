@@ -8,6 +8,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Fixed
+
+- **Six documentation pages promised a service-worker pipeline no build runs.** `x build` emits no
+  `sw.js`, no `manifest.webmanifest` and no `<link rel="manifest">`, for any target, whatever
+  `pwa.enabled` says: `generateServiceWorker`, `generateWebManifest`, `buildPrecacheManifest` and 25
+  other `@ultimat3/pwa` exports have **zero callers** outside the package (#362). The pages now say
+  so — `wiki/PWA-And-Offline.md` leads with it, and `wiki/Deployment.md`'s fabricated
+  `✓ sw.js precache 1.9MB / 3MB` build line, `wiki/Configuration.md`'s "off means no service worker
+  is generated at all", `wiki/Troubleshooting.md`'s two reserved codes and its precache-budget row,
+  and the `sw.js` half of two build-ID claims are all corrected. No code changed.
+
 ### Changed
 
 - **`core → schema` is a declared sideways edge, and five duplicated declarations are gone.**

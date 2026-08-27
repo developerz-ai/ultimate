@@ -253,7 +253,7 @@ pwa: { enabled: true, offline: 'runtime' },
 
 | field | type | default | notes |
 |---|---|---|---|
-| `pwa.enabled` | `boolean` | `false` | off means no service worker is generated at all |
+| `pwa.enabled` | `boolean` | `false` | **read by nothing, `As of 2026-08-27`** — on and off produce the identical build, because no target generates a service worker at all ([#362](https://github.com/developerz-ai/ultimate/issues/362)). Pinned as suspect by `bun run scripts/config-readers.ts` |
 | `pwa.offline` | `'precache' \| 'runtime' \| 'network-only'` | `'network-only'` | the app-wide strategy; a `route` may narrow its own |
 | `pwa.backgroundSync` | `boolean` | `false` | wires the SW sync event to the mutator queue |
 | `pwa.push` | `boolean` | `false` | generates the SW handler, the subscription action and the send job |

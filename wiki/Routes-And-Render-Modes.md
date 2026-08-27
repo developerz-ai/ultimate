@@ -27,7 +27,7 @@ export const config = defineRoute({
 
 ## The descriptor
 
-`route` is the one primitive whose façade is a **normalized descriptor** rather than a set of projection methods, because a route declares no behaviour to project. It is read by the router, the prerenderer, `sw.js` generation, the sitemap and the budget check, and the descriptor's job is to hand all five **one shape** so none of them branches. There is no `.describe()` on a route either — `describeRoutes()` is the one route list.
+`route` is the one primitive whose façade is a **normalized descriptor** rather than a set of projection methods, because a route declares no behaviour to project. It is read by the router, the prerenderer, the sitemap and the budget check — and is designed to be read by `sw.js` generation, which no build calls yet ([#362](https://github.com/developerz-ai/ultimate/issues/362)). The descriptor's job is to hand all of them **one shape** so none of them branches. There is no `.describe()` on a route either — `describeRoutes()` is the one route list.
 
 | Member | Is | Rule |
 |---|---|---|

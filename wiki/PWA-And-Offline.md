@@ -1,6 +1,27 @@
 # PWA and offline
 
-`sw.js` is a build artifact, generated from the route table. Hand-editing it is **not** caught: `As of 2026-08` `sw.js` carries no checksum, so an edit survives the build and is silently overwritten by the next one. `X_SW_HAND_EDITED` is a **reserved** name — nothing raises it, and `x errors explain X_SW_HAND_EDITED` refuses it ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)). Treat "do not edit `sw.js`" as a convention, not a rule, until the checksum ships.
+> ## ⚠️ NOT WIRED — no build produces a service worker, `As of 2026-08-27`
+>
+> **`x build` emits no `sw.js`, no `manifest.webmanifest` and no `<link rel="manifest">`, for any
+> target, whatever `pwa.enabled` says.** `generateServiceWorker`, `generateWebManifest`,
+> `buildPrecacheManifest` and 25 other exports of `@ultimat3/pwa` have **zero callers** outside the
+> package itself — measured across `packages/`, `examples/`, `dummy/`, `scripts/` and `docker/`
+> ([#362](https://github.com/developerz-ai/ultimate/issues/362)).
+>
+> Two exports ARE wired: `planIcons` and `BuiltinImagePipeline`, through
+> `packages/cli/src/dev-assets.ts`. `X_PWA_ICON_MISSING` and `X_PWA_NO_OFFLINE_FALLBACK` are raised
+> by `x doctor` as **diagnostics** — prerequisites for a pipeline that is not called.
+>
+> So read the rest of this page as the **library's** behaviour, which is real, tested and stable —
+> and not as something `x build` does for you. Every table below describes what the generator
+> answers when you call it. Nothing calls it. The blocker is stated in #362: `AppConfig.pwa` cannot
+> express the manifest's `name`, its theme colours, or the offline fallback ROUTE, and two of the
+> three have no source anywhere in the framework yet.
+>
+> `pwa.enabled` is one of the config keys `bun run scripts/config-readers.ts` pins as **suspect**
+> for exactly this reason.
+
+`sw.js` is designed as a build artifact, generated from the route table. Hand-editing one is **not** caught: `As of 2026-08` `sw.js` carries no checksum, so an edit would survive a build. `X_SW_HAND_EDITED` is a **reserved** name — nothing raises it, and `x errors explain X_SW_HAND_EDITED` refuses it ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)).
 
 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
@@ -8,7 +29,7 @@
 
 A service worker is a cache-policy compiler whose input is already declared on every route: render mode, offline strategy, asset graph. Hand-writing it duplicates that information, and the duplicate drifts. Every notorious PWA bug — the page serving last month's HTML, the chunk 404 after deploy, the user stuck on a version until they clear site data — is a service worker that disagreed with the app.
 
-The edit an agent should make is the route's `offline` field, then `x build`. Nothing enforces that today — see the reserved-code note above.
+The edit an agent should make is the route's `offline` field — and `x build` does not yet read it. Nothing enforces the rule either, per the reserved-code note above.
 
 ## Derived from the route
 
@@ -36,7 +57,7 @@ export const config = defineRoute({
 
 Excluded always: `api/` responses, anything under an authenticated path unless `offline: 'precache'` is explicit, and any asset over the configured single-file cap.
 
-Total precache size is a **budget** — exceeding it fails `x verify` rather than shipping a 40MB install.
+Total precache size is a **warning, not a budget, `As of 2026-08-27`**: `buildPrecacheManifest` puts `DEFAULT_PRECACHE_WARN_BYTES` overruns on `PrecacheManifest.warnings`, and **nothing reads that field** — no `x verify` step loads a precache manifest, because nothing builds one. Designed as a budget; not one today.
 
 ### Runtime strategy from render mode
 
@@ -62,7 +83,7 @@ Mutations are never cached. **Offline writes go through the tier-3 mutator queue
 
 ### Manifest, icons, splash
 
-From `app.config.ts` plus **one** source icon (SVG or >=1024px PNG):
+From `app.config.ts` plus **one** source icon (SVG or >=1024px PNG). **`generateWebManifest` is not called by any build** — this is what it answers when you call it, and `assertValid` refuses a blank `name` or blank theme colours, neither of which `AppConfig.pwa` can supply yet (#362):
 
 | Generated | Detail |
 |---|---|

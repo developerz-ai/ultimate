@@ -32,7 +32,7 @@ export const config = defineRoute({
 | The offline fallback route | required (see below) |
 | The app shell for `spa` routes | build output |
 
-Excluded always: `api/` responses, anything under an authenticated path unless `offline: 'precache'` is explicit, and any asset over the configured single-file cap. Total precache size is a **budget** — exceeding it fails `x verify` rather than shipping a 40MB install.
+Excluded always: `api/` responses, anything under an authenticated path unless `offline: 'precache'` is explicit, and any asset over the configured single-file cap. Total precache size is a **budget** — exceeding it fails `x verify` rather than shipping a 40MB install. (Designed, not shipped: `PrecacheManifest.warnings` carries the overrun and nothing reads it, because nothing builds a precache manifest — [#362](https://github.com/developerz-ai/ultimate/issues/362).)
 
 ### Runtime strategy from render mode
 

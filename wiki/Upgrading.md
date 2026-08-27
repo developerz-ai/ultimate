@@ -1856,7 +1856,7 @@ A client running build `A` requesting an asset from build `B` is the failure mod
 
 | Mechanism | Behavior |
 |---|---|
-| Immutable build ID | content hash of the build, stamped into `sw.js`, the HTML, every asset path, and `x.manifest.json`. Never a timestamp, never `latest` |
+| Immutable build ID | content hash of the build, stamped into the HTML, every asset path and `x.manifest.json` — **not `sw.js`**, which no build emits ([#362](https://github.com/developerz-ai/ultimate/issues/362)). Never a timestamp, never `latest` |
 | Client sends its build ID | `X-Ultimate-Build` on RPC, query, and WS handshake — so the server answers "you are stale" instead of guessing |
 | N-deploy asset retention | the last **3** builds' assets stay served — `retentionPlan(deploys, keep = 3)` in [`packages/pwa/src/version-skew.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/pwa/src/version-skew.ts). A count of deploys, with **no time component**: there is no 7-day half, and **no `pwa.retention` field** — `PwaConfig` was `{ enabled, offline, installPrompt, backgroundSync, push }` at 7.0.0 (`installPrompt` is deleted in 8.0.0). Pass `keep` at the call site to hold more |
 | `AppUpdateAvailable` signal | a Solid signal flips when the server reports a newer build. Your app renders its own "Update available — reload". No forced navigation, no lost form state |
