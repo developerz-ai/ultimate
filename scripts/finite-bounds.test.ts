@@ -14,6 +14,7 @@ import {
   scanFiniteBounds,
 } from './finite-bounds';
 import { FINITE_BOUNDS_PINS } from './lib/finite-bounds-pins';
+import { SCREENING_CALLEES, screeningCallPattern } from './lib/finite-screens';
 import { repoRoot } from './lib/run';
 
 const UNCHECKED = 'X_FINITE_BOUND_UNCHECKED';
@@ -156,9 +157,46 @@ describe('what counts as the repair — and what emphatically does not', () => {
     );
   });
 
-  test('a callee carrying `Finite` is the repair too, wherever the check itself lives', () => {
+  test('a DECLARED screening callee is the repair, wherever the check itself lives', () => {
     expect(options("const n = options.ms ?? 250;\nfiniteOption('S', 'ms', n);")).toEqual([]);
-    expect(options("const n = options.ms ?? 250;\nassertFiniteCeiling('ms', n);")).toEqual([]);
+    expect(options("const n = options.ms ?? 250;\nfiniteCount('S', 'ms', n, 1);")).toEqual([]);
+  });
+
+  // THE DEFECT, in the direction that cost real work: the recogniser used to read the callee's
+  // NAME, so a correct screen called `toMs` reported four sites in a package pinned at 0 and was
+  // renamed to satisfy a regex. A row in the table is now what settles it, and the row's name is
+  // arbitrary — `toMs` carries nothing this rule could have matched on.
+  test('a row in the table is recognised whatever the callee is called', () => {
+    const table = [
+      { callee: 'toMs', screens: 'a duration, in a package that folded its screen in' },
+    ];
+    const screened = scanFiniteBounds(
+      'packages/a/src/one.ts',
+      "const n = toMs(options.pollMs ?? 250, 'worker', 'pollMs');",
+      ALL_NUMERIC,
+      new Set(),
+      screeningCallPattern(table),
+    );
+    expect(screened).toEqual([]);
+    // And the same source against the tree's real table is still a finding — the row is doing the
+    // work, not the shape of the call.
+    expect(options("const n = toMs(options.pollMs ?? 250, 'worker', 'pollMs');")).toEqual([
+      'pollMs',
+    ]);
+  });
+
+  // THE REGRESSION DIRECTION, and the one that matters: a table read too widely switches the rule
+  // off. `assertFiniteCeiling` is invented — it carries `Finite`, which the old pattern accepted
+  // outright, and no row declares it. `InfiniteScroll` is real and was accepted for the same
+  // reason: a SolidJS component that screens nothing silenced every bound inside its call.
+  test('an UNDECLARED callee is not a screen, however it is spelled', () => {
+    expect(options("const n = options.ms ?? 250;\nassertFiniteCeiling('ms', n);")).toEqual(['ms']);
+    expect(options('const n = InfiniteScroll({ pageSize: options.ms ?? 250 });')).toEqual(['ms']);
+  });
+
+  test('a callee that merely CONTAINS a declared name is not that name', () => {
+    // `\b` on every bare row: `myfiniteOption(` and `unfinite(` are other functions entirely.
+    expect(options("const n = options.ms ?? 250;\nmyfiniteOption('S', 'ms', n);")).toEqual(['ms']);
   });
 
   test('a repair WRAPPED across lines is recognised — Biome wraps past 100 columns', () => {
@@ -249,6 +287,65 @@ describe('the ratchet', () => {
       expect(finiteBoundFindingFor({ kind, pkg: 'a', found: 1, pinned: 0 }).code).toBe(code);
     }
     expect(new Set([UNCHECKED, STALE, UNSCANNED]).size).toBe(3);
+  });
+});
+
+describe('the screening table', () => {
+  // A row nothing declares is the staleness `X_TIER_FLOOR_STALE` refuses for `FLOOR_ABOVE`: it
+  // reads as a rule still in force over a helper that was deleted or renamed, and it silently
+  // widens what counts as a repair. Asked of the tree rather than of a second list.
+  test('every declared screen is a function this corpus declares', async () => {
+    const files = await collectSourceFiles(repoRoot());
+    const declared = new Set<string>();
+    for (const one of files) {
+      for (const match of one.source.matchAll(
+        /(?:function\s+([A-Za-z_$][\w$]*)\s*[(<]|(?:const|let)\s+([A-Za-z_$][\w$]*)\s*[:=])/g,
+      )) {
+        declared.add((match[1] ?? match[2]) as string);
+      }
+    }
+    expect(declared.size, 'the declaration scan read something').toBeGreaterThan(100);
+    for (const { callee } of SCREENING_CALLEES) {
+      // `Number.*` is the language's, not this tree's — the three irreducible screens.
+      if (callee.startsWith('Number.')) continue;
+      expect(declared.has(callee), `${callee} is declared in packages/*/src`).toBe(true);
+    }
+  });
+
+  test('every row carries a sentence, and no callee is listed twice', () => {
+    const seen = new Set<string>();
+    for (const { callee, screens } of SCREENING_CALLEES) {
+      expect(screens.length, callee).toBeGreaterThan(40);
+      expect(seen.has(callee), `${callee} is listed once`).toBe(false);
+      seen.add(callee);
+    }
+  });
+
+  test('the pattern is BUILT from the table, so a row can never be unreachable', () => {
+    for (const { callee } of SCREENING_CALLEES) {
+      expect(screeningCallPattern(SCREENING_CALLEES).test(`${callee}(x)`), callee).toBe(true);
+    }
+  });
+
+  // A PROPERTY of something is not the declared callee, and `\b` cannot say so: `.` is a word
+  // boundary, so a bare row matched `other.finiteOption(` and a dotted row — carrying no left
+  // guard at all — matched `OtherNumber.isFinite(`. Both are screens this table never declared,
+  // and `finite-bounds.ts` suppresses a finding wherever the pattern hits, so each phantom match
+  // is one numeric bound that stops being checked with nothing to say it stopped. Reported by
+  // review on #381; these two are the cases, one per row shape.
+  test('a callee reached through a property is not the declared callee', () => {
+    for (const source of ['other.finiteOption(x)', 'OtherNumber.isFinite(x)']) {
+      expect(screeningCallPattern(SCREENING_CALLEES).test(source), source).toBe(false);
+    }
+  });
+
+  // The other side of the same guard, and it has to be asserted separately: a rule that answers
+  // `false` to everything would pass the test above.
+  test('a name the declared callee is only a PREFIX of is not the declared callee', () => {
+    for (const source of ['finiteOptionish(x)', 'InfiniteScroll(x)', 'myfinite(x)']) {
+      expect(screeningCallPattern(SCREENING_CALLEES).test(source), source).toBe(false);
+    }
+    expect(screeningCallPattern(SCREENING_CALLEES).test('finiteOption(x)')).toBe(true);
   });
 });
 

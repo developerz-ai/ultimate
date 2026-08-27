@@ -40,9 +40,10 @@ export function nowMs(clock: Clock = systemClock): number {
  * call site that does not name the key the app author actually wrote is `TS2554: Expected 3
  * arguments` at the call. `@ultimat3/time`'s screen names the subject `toMs`, a framework internal
  * that tells an app author nothing about which knob of theirs is wrong — the shape
- * `@ultimat3/notify`'s `toDurationMs` already has. The callee carrying `Finite` is load-bearing
- * too: `bun run finite-bounds` reads a repair off the callee's NAME, so every
- * `finiteDurationMs(x.y ?? DEFAULT, …)` site is recognised as screened without a second wrapper.
+ * `@ultimat3/notify`'s `toDurationMs` already has. The name no longer has to carry `Finite`:
+ * `bun run finite-bounds` read a repair off the callee's NAME until 2026-08-26 — which is what
+ * forced this rename — and now reads `SCREENING_CALLEES` in `scripts/lib/finite-screens.ts`.
+ * Rename it freely; move the row with it.
  */
 export function finiteDurationMs(duration: DurationInput, subject: string, option: string): number {
   if (typeof duration === 'number') return finiteOption(subject, option, duration);

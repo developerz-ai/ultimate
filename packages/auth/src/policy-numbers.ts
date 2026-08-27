@@ -17,8 +17,10 @@ const WHOLE_NON_NEGATIVE = 'a whole number of zero or more';
  * counts, and past 2^53 a double cannot name its own successor — a "duration" up there is already
  * a rounded one, and `now + it` no longer moves.
  *
- * The `Finite` in the name is load-bearing: `bun run finite-bounds` recognises a repair by the
- * shape of the CALL, so a screen named `whole` left every call site reading as unchecked.
+ * The `Finite` in the name is NOT load-bearing, `As of 2026-08-26`. It was: `bun run
+ * finite-bounds` matched a repair on the callee's NAME, so a screen named `whole` left every call
+ * site reading as unchecked. It now reads `SCREENING_CALLEES` in `scripts/lib/finite-screens.ts`,
+ * so a rename is a row edit rather than a gate failure.
  */
 export function assertFiniteAuthCount(
   key: string,

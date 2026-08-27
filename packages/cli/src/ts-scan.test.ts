@@ -281,3 +281,36 @@ describe('isCodeRegistry', () => {
     expect(isCodeRegistry("import { HTTP_ERROR_CODES } from './errors';")).toBe(false);
   });
 });
+
+// The mask is read by offset: eight scanning rules match a regex against it and then index the
+// ORIGINAL source at `match.index`. So the mask must be the same LENGTH as its input, in the same
+// index space. `[...text]` is not — it yields one element per code point, while every index in
+// `blankRegions` runs over UTF-16 units. Measured before the fix: 22 files in this tree desynced,
+// and in `packages/entity/src/repo.test.ts` a real `throw` 46 lines below an emoji was blanked out
+// of existence, which is a rule silently missing a finding.
+describe('the mask stays aligned with its input', () => {
+  const astral = 'const label = "café — piñata 🎉";\n';
+
+  test('an astral character does not shift every later offset', () => {
+    const source = `${astral}const b = 2; // trailing\n`;
+    expect(stripComments(source)).toHaveLength(source.length);
+    expect(maskLiterals(source)).toHaveLength(source.length);
+  });
+
+  test('a token after an emoji is found at its real offset', () => {
+    const source = `${astral}throw new Error('boom');\n`;
+    const masked = stripComments(source);
+    const at = masked.indexOf('throw new Error');
+    expect(at).toBeGreaterThanOrEqual(0);
+    // The mask's offset must address the same token in the ORIGINAL — that is the whole contract.
+    expect(source.slice(at, at + 15)).toBe('throw new Error');
+  });
+
+  test('several astral characters compound, and still do not shift', () => {
+    const source = `const e = "🎉🎊🎈🥳";\nconst f = 3; /* tail */\n`;
+    expect(stripComments(source)).toHaveLength(source.length);
+    const masked = stripComments(source);
+    const at = masked.indexOf('const f');
+    expect(source.slice(at, at + 7)).toBe('const f');
+  });
+});

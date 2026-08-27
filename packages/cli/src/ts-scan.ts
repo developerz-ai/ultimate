@@ -106,7 +106,12 @@ function endOfRegex(text: string, from: number): number {
  * reading one as an opening quote desyncs every literal after it.
  */
 function blankRegions(text: string, strings: boolean): string {
-  const out = [...text];
+  // `split('')` and NOT `[...text]`: the spread yields one element per CODE POINT while every
+  // index below runs over UTF-16 units (`text.length`, `text[i]`). One astral character — an emoji
+  // in a fixture, `piñata 🎉` — and `out` is shorter than `text`, so every write past it lands a
+  // slot early and the returned mask no longer aligns with the input. Measured: 22 files in this
+  // tree desynced, shipped source included, and eight rules read this mask.
+  const out = text.split('');
   const blank = (from: number, to: number): void => {
     for (let n = from; n < to; n += 1) if (out[n] !== '\n') out[n] = ' ';
   };
