@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "33a53291f24bee551014aa5d58703648e89a0a9a8966a2b48223f3389fba5e31",
+  "buildId": "b1412fc684a61883368edc3306e82f11e1c9dd1bdf6ed27c7b6b03b1cc928d5f",
   "tiers": {
     "0": [
       "core",
@@ -638,6 +638,26 @@
       "code": "X_CATCH_RENDER_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/catch-render.ts"
+    },
+    {
+      "code": "X_CDP_BROWSER_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_CDP_CALL_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_CDP_LAUNCH_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_CDP_TIMEOUT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_CHART_VERSION_STALE",

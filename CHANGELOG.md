@@ -8,6 +8,41 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+- **A real browser behind `installE2eDriver`, over raw CDP, with no dependency.** `PageLike` has
+  been declared since 1.0.0 and `installE2eDriver({ page })` has taken an `E2eBrowserPage` since
+  the adapter landed — and nothing in the tree could produce one, so `hasE2eDriver()` answered
+  `false` everywhere and every `e2eTest` was a skip. Issue #390's fourth requirement is a real
+  browser check, and it was recorded as out of reach on two premises that were both false:
+  `packages/cli/CLAUDE.md` said "CI has no Chrome" (GitHub-hosted `ubuntu-latest` ships one at
+  `/usr/bin/google-chrome`) and a browser was assumed to mean a `puppeteer-core` dependency.
+
+  `E2eBrowserPage` is **five methods**, and CDP's wire format is one JSON object with an `id` — so
+  the browser half is four modules on Bun's own `WebSocket`: `cdp-launch.ts` (find a Chrome, start
+  it, read its endpoint off **stderr**, which is the only place `--remote-debugging-port=0` states
+  the port it took), `cdp-connection.ts` (framing, correlation by `id`, one-shot event waiters, a
+  per-call deadline), `cdp-e2e-page.ts` (the five methods over a flattened session) and
+  `cdp-browser.ts` (the composition, and the close that undoes both halves).
+  `packages/cli/e2e/cdp-browser.e2e.test.ts` drives a real Chrome against a real `Bun.serve` and
+  asserts every one of them.
+
+  **`openE2eBrowserIfAvailable()` answers `undefined` when there is no browser**, so a laptop
+  without Chrome SKIPS rather than turning the `e2e` step red for a reason unrelated to the change;
+  `openE2eBrowser()` refuses by name for a caller that has already decided it needs one.
+
+  **The load EVENT is the completion signal, never `Page.navigate`'s reply.** Measured on Chrome
+  150: a navigation that swaps the render process — `about:blank` → `http://localhost:<port>/`,
+  the most ordinary one there is — loads the page, hits the server, and answers a later
+  `Runtime.evaluate` from the new document, while the navigate frame never comes back at all. The
+  first draft awaited it and hung for its full deadline on every first navigation. The reply is now
+  raced against a `Page.loadEventFired` waiter registered before the send, and is still read for
+  `errorText` — the one place a refused navigation is named, and the only signal an unreachable
+  host produces.
+
+  Four new codes, because they are four repairs: `X_CDP_BROWSER_MISSING`, `X_CDP_LAUNCH_FAILED`,
+  `X_CDP_CALL_FAILED`, `X_CDP_TIMEOUT`.
+
 ### Fixed
 
 - **Every `sideEffects` array in the tree was inert, and a shipped island was missing five declared

@@ -329,10 +329,41 @@ to know about everything — so the join is here, and it is the same rule
 | `e2e-evaluate.ts` | the closure→string crossing, which is the only lossy edge in the adapter |
 | `e2e-errors.ts` | one constructor per refusal |
 | `e2e-dom-fixture.ts` | a document small enough to hold in a test and real enough to RUN the expressions above |
+| `cdp-browser.ts` | the two doors: `openE2eBrowserIfAvailable()` (undefined when there is no browser) and `openE2eBrowser()` (refuses by name), and the close that undoes both halves |
+| `cdp-launch.ts` | which Chrome, and starting it — the candidate list, the flags, and the endpoint read off its stderr |
+| `cdp-connection.ts` | CDP over Bun's own `WebSocket`: request framing, reply correlation by `id`, one-shot event waiters, the per-call deadline |
+| `cdp-e2e-page.ts` | `E2eBrowserPage`'s five methods over an attached, flattened session |
+| `cdp-errors.ts` | one constructor per way the browser half refuses |
 
-**Absent by default, and that is a requirement rather than a state.** CI has no Chrome. Nothing here
-runs until `installE2eDriver` is called, so `hasE2eDriver()` still answers `false` and the gate's
-`e2e` step still refuses instead of passing over a browser it does not have.
+**Absent by default, and that is a requirement rather than a state.** Nothing here runs until
+`installE2eDriver` is called, so `hasE2eDriver()` still answers `false` and the gate's `e2e` step
+still refuses instead of passing over a browser it does not have. This paragraph also said "CI has
+no Chrome" until 2026-08-27, and that is false and was the reason issue #390's fourth requirement
+— a real browser check — was recorded as out of reach: GitHub-hosted `ubuntu-latest` ships one at
+`/usr/bin/google-chrome`, preinstalled, with no download step and no new dependency.
+
+**The browser is RAW CDP over Bun's own `WebSocket`, and carries no dependency.**
+`packages/scraping/src/cdp-port.ts` declares a ~25-method port because `ScrapePage` is a full
+scraping surface and its intended implementation is `puppeteer-core`. `E2eBrowserPage` is FIVE
+methods, and CDP's wire format is one JSON object with an `id` — so the whole thing an e2e driver
+needs is four small modules, which is why `x test e2e` needs nothing installed that `bun install`
+did not already put there. `e2e/cdp-browser.e2e.test.ts` drives a real Chrome against a real
+`Bun.serve` and asserts all five methods; `openE2eBrowserIfAvailable()` answering `undefined` is
+what makes it a SKIP on a laptop without one rather than a red step.
+
+**The load EVENT is the completion signal, never `Page.navigate`'s reply.** Measured on Chrome 150:
+a navigation that swaps the render process — `about:blank` → `http://localhost:<port>/`, the most
+ordinary one there is — loads the page, hits the server and answers a later `Runtime.evaluate` from
+the new document, and the navigate frame **never comes back at all**. A driver that awaited the
+reply waited out its full deadline on every first navigation. So `cdpConnect().once()` registers a
+`Page.loadEventFired` waiter BEFORE the send, and the reply is raced against it — still read, but
+only for `errorText`, which is the one place a refused navigation is named.
+
+**A CDP call is deadlined and a close settles every call in flight.** Without that, a suite whose
+browser died waits out one full deadline per call and reports a timeout, where the true fault is a
+dead browser. The four codes are four repairs, which is why they are not one:
+`X_CDP_BROWSER_MISSING` (install one), `X_CDP_LAUNCH_FAILED` (read the browser's own stderr, which
+the cause carries), `X_CDP_CALL_FAILED` (look at the page), `X_CDP_TIMEOUT` (raise the deadline).
 
 **`evaluate` is the edge that cannot be lossless.** `PageLike.evaluate` takes a closure and every
 browser port in this framework takes a string, so what crosses is `Function.prototype.toString()`
@@ -344,11 +375,16 @@ runs**, so a captured PRIMITIVE can vanish from the source and never fail at all
 reference always survives as its name. No static rule in this process can see the difference — which
 is why the refusal is raised from the page's answer rather than from a scan of the source.
 
-**Three of `E2eFixtures`' four members refuse, deliberately.** `offline()` and `online()` need a CDP
-method for the browser's own network state and `CdpPageLike` declares none; `update()` needs a second
-build served under a new id, which is a fact about the server. A fixture that silently no-opped would
-make the assertion after it read as proof — `offline()` followed by "the fallback rendered" is the
-app's ONLINE page passing an offline test.
+**One of `E2eFixtures`' four members still refuses, and it is the one that is not a port gap.**
+`update()` needs a second build served under a new immutable build id, which is a fact about the
+SERVER, and no page port has ever been able to speak for one. `offline()`/`online()` FORWARD — to
+`E2eBrowserPage.offline`, which `cdp-e2e-page.ts` implements as
+`Network.emulateNetworkConditions` and `@ultimat3/scraping` implements through
+`CdpPageLike.setOfflineMode`. They refused until 2026-08-27 on a reason the tree contradicted on
+the day it was written. A fixture that silently no-opped would make the assertion after it read as
+proof — `offline()` followed by "the fallback rendered" is the app's ONLINE page passing an offline
+test — so an `E2eBrowserPage` that declares no `offline` still gets the refusal, now naming the
+method the double is missing rather than a capability the framework does not have.
 
 ## The `errors` step enforces the error contract
 
