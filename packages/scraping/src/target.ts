@@ -4,6 +4,7 @@
 // fixture replayer and the fake alike.
 
 import type { CaptureFraming } from './capture-clip';
+import type { ColorScheme } from './color-scheme';
 import type { ConsoleRing, NetworkRing, PageErrorRing } from './rings';
 import type { SessionSnapshot } from './session-state';
 
@@ -141,6 +142,18 @@ export interface ScrapeTarget {
    * green against an app that was online the whole time.
    */
   setOfflineMode(enabled: boolean): Promise<void>;
+  /**
+   * What the browser reports as the user's OS colour preference — the INPUT to a theme decision.
+   * REQUIRED here where `CdpPageLike.emulateMediaFeatures` is optional, for `setOfflineMode`'s
+   * reason: the asymmetry is the enforcement, and a driver with no CSS engine answers
+   * `X_NOT_IMPLEMENTED` rather than a resolved promise.
+   *
+   * The INPUT and never the outcome. Setting `data-theme` on the document models the outcome, and
+   * the component owns that: one that resolves `'system'` itself overwrites or deletes the
+   * attribute on mount, so a harness that set it is silently overruled and every theme converges
+   * on one picture — measured, and byte-identical, in issue #338.
+   */
+  setColorScheme(scheme: ColorScheme): Promise<void>;
   screenshot(options: CaptureOptions): Promise<Uint8Array>;
   pdf(options: CaptureOptions): Promise<Uint8Array>;
   cookies(): Promise<readonly ScrapeCookie[]>;

@@ -8,6 +8,7 @@ import { browserRecord } from './browser-record';
 import type { CdpBrowserLike, CdpFrameLike, CdpPageLike, CdpRequestLike } from './cdp-port';
 import { clearExpression, parseSnapshots, snapshotExpression } from './cdp-snapshot';
 import type { ScrapeClock } from './clock';
+import { COLOR_SCHEME_FEATURE, type ColorScheme } from './color-scheme';
 import { browserUnreachable, pageCrashed, scrapeNotImplemented } from './error-throws';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict, refusalEntry } from './intercept';
@@ -360,6 +361,21 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
           );
         }
         await source.setOfflineMode(enabled);
+      }),
+    setColorScheme: (scheme: ColorScheme): Promise<void> =>
+      guard('setColorScheme', async () => {
+        const source = init.page as {
+          emulateMediaFeatures?: (
+            features: readonly { readonly name: string; readonly value: string }[],
+          ) => Promise<void>;
+        };
+        if (typeof source.emulateMediaFeatures !== 'function') {
+          throw scrapeNotImplemented(
+            'setColorScheme() on a CDP page with no emulateMediaFeatures() method',
+            'upgrade the launcher to a puppeteer-core that exposes page.emulateMediaFeatures(), or have the page under test set its own theme',
+          );
+        }
+        await source.emulateMediaFeatures([{ name: COLOR_SCHEME_FEATURE, value: scheme }]);
       }),
     screenshot: (options: CaptureOptions) =>
       guard('screenshot', async () => {

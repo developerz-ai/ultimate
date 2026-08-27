@@ -10,6 +10,7 @@
 import type { Secret } from '@ultimat3/core';
 import type { ActionabilityState } from './actionability';
 import type { CaptureFraming } from './capture-clip';
+import type { ColorScheme } from './color-scheme';
 import type { ConsoleLine, NetworkEntry, PageError } from './rings';
 import type { SessionSnapshot } from './session-state';
 import type { ElementSnapshot, ScrapeCookie, ScrapeDownloadFile } from './target';
@@ -109,6 +110,16 @@ export interface ScrapePage extends ScrapeFrame {
    * "done" would let an offline assertion pass against an app that never went offline.
    */
   offline(enabled: boolean): Promise<void>;
+  /**
+   * Tell the browser what the user's OS colour preference is, so a component that resolves its own
+   * theme resolves to this one. `'no-preference'` is the way back to the launcher's default.
+   *
+   * The INPUT, never the outcome: an attribute on the document is the outcome of a theme decision
+   * and the component owns that — one honouring `'system'` overwrites or deletes it on mount, and
+   * the picture then shows the theme the component chose rather than the one that was asked for.
+   * Refused with `X_NOT_IMPLEMENTED` on a driver with no CSS engine, for `offline()`'s reason.
+   */
+  colorScheme(scheme: ColorScheme): Promise<void>;
   /**
    * The handoff, made explicit: what the HTTP leg will send, as a value an author can inspect and
    * a fixture can assert on. `http` uses it automatically — this is for seeing what carried over.

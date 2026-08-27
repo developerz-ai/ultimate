@@ -47,6 +47,7 @@ const READY: IslandReadiness = {
   failed: null,
   filled: true,
   box: { x: 8, y: 8, width: 420, height: 260 },
+  scroll: { x: 0, y: 0 },
 };
 
 const PROBE = readinessProbe('[data-x-island]');
@@ -114,6 +115,48 @@ describe('unit · every declared state becomes a file', () => {
     expect(artifacts.verdict.missing).toEqual([]);
     expect(existsSync(artifacts.verdictFile)).toBe(true);
     expect(artifacts.verdictFile.endsWith(join('settings', ISLAND_VERDICT))).toBe(true);
+  });
+
+  /**
+   * ISSUE #338, as a test. `x shot --island` produced four pictures and delivered two: the two
+   * themes came back byte-identical, same md5, because setting `data-theme` on the document is
+   * the OUTCOME of a theme decision and a component that resolves `'system'` itself deletes the
+   * attribute on mount. The repair emulates the INPUT — `prefers-color-scheme` — and the offline
+   * driver answers different deterministic bytes per scheme so the axis is provable with no
+   * Chrome, exactly as `clip` already was.
+   *
+   * It fails on the code this replaced: without the `page.colorScheme()` call the fake never
+   * receives a scheme and both files are the same eight bytes.
+   */
+  test('the two themes are two pictures, and not one picture written twice', async () => {
+    await run(cleanDriver(), 'themed');
+
+    const light = await Bun.file(join(dir, 'themed', 'settings/empty-options-light.png')).bytes();
+    const dark = await Bun.file(join(dir, 'themed', 'settings/empty-options-dark.png')).bytes();
+    expect(light).not.toEqual(dark);
+    // Not merely different — each one has to be ITS OWN theme. A harness that swapped the two
+    // would satisfy the inequality above and photograph every state under the wrong label.
+    expect(new TextDecoder().decode(light)).toContain('scheme light');
+    expect(new TextDecoder().decode(dark)).toContain('scheme dark');
+  });
+
+  /**
+   * The crop this feature is designed around, and which nothing passed until 2026-08-26: the
+   * picture was the whole 720x560 viewport while the component's own box was 688x104, and the
+   * verdict's `blind` list said the port could not take a clip — which had stopped being true.
+   *
+   * SCROLLED on purpose. `getBoundingClientRect()` answers VIEWPORT coordinates and a capture clip
+   * is in PAGE coordinates; they agree only at the origin, which is the one case a harness happens
+   * to be in. A component below the fold would otherwise crop a band it is not in, with a picture
+   * that looks like a picture and nothing to report it.
+   */
+  test('the clip is the crop target, translated out of viewport coordinates', async () => {
+    const scrolled: IslandReadiness = { ...READY, scroll: { x: 12, y: 400 } };
+    await run(cleanDriver(scrolled), 'cropped');
+
+    const bytes = await Bun.file(join(dir, 'cropped', 'settings/empty-options-light.png')).bytes();
+    // 8 + 12 and 8 + 400 — the box's own origin plus the page's scroll, never the raw rect.
+    expect(new TextDecoder().decode(bytes)).toContain('clip 20,408,420,260');
   });
 
   test('--state narrows the expansion, so only that state is owed a picture', async () => {

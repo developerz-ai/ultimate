@@ -9,6 +9,7 @@
 // Precedent: `packages/storage/src/driver-s3-fixture.ts` ships the same way.
 
 import type { CdpBrowserLike, CdpFrameLike, CdpLauncherLike, CdpPageLike } from './cdp-port';
+import { COLOR_SCHEME_FEATURE } from './color-scheme';
 import { queryHtml } from './html-query';
 import type { ElementSnapshot, ScrapeCookie } from './target';
 
@@ -70,6 +71,12 @@ export interface FakeCdpBrowser extends CdpBrowserLike {
   readonly closed: boolean;
   /** What `page.setOfflineMode()` last set, so a test asserts on the CONDITION, not on a call. */
   readonly offline: boolean;
+  /**
+   * What `page.emulateMediaFeatures()` last set `prefers-color-scheme` to, for `offline`'s reason
+   * — the condition the page is now in, never the fact that a method was called. `null` until
+   * something sets one, which is the launcher's own default and not a value this fake invents.
+   */
+  readonly colorScheme: string | null;
 }
 
 /** A layout box every element gets, so the CDP path exercises the fields the fake target lacks. */
@@ -113,6 +120,7 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
   let html = init.html;
   let closed = false;
   let offline = false;
+  let colorScheme: string | null = null;
   const covered = new Set(init.covered ?? []);
   const storage: Record<string, string> = { ...init.storage };
   let cookies: readonly ScrapeCookie[] = init.cookies ?? [];
@@ -202,6 +210,13 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
       offline = enabled;
       return Promise.resolve();
     },
+    // Read out of the array by NAME, never `features[0].value`: the port's shape is a list and a
+    // caller setting `prefers-reduced-motion` beside the scheme must not overwrite the scheme.
+    emulateMediaFeatures: (features: readonly { name: string; value: string }[]) => {
+      const found = features.find((feature) => feature.name === COLOR_SCHEME_FEATURE);
+      if (found !== undefined) colorScheme = found.value;
+      return Promise.resolve();
+    },
     on: (event: string, handler: (payload: unknown) => void) => {
       const listeners = handlers.get(event) ?? [];
       listeners.push(handler);
@@ -249,6 +264,9 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
     },
     get offline(): boolean {
       return offline;
+    },
+    get colorScheme(): string | null {
+      return colorScheme;
     },
   };
 }

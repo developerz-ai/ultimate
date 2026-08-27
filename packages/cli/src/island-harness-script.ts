@@ -144,4 +144,11 @@ export const readinessProbe = (selector: string): string =>
   // Children OR text: a component that renders one text node has painted, and one that mounted
   // and rendered nothing is the silence a non-zero box would otherwise read as success.
   'filled:box?(box.children.length>0||(box.textContent||"").trim().length>0):false,' +
-  'box:{x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width),height:Math.round(r.height)}};})()';
+  'box:{x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width),height:Math.round(r.height)},' +
+  // The box is VIEWPORT coordinates — what `getBoundingClientRect()` answers — and a capture clip
+  // is PAGE coordinates. They agree only while the page is at the origin, which is the one case a
+  // harness happens to be in and is not a rule anything enforces: a state whose component sits
+  // below the fold scrolls, and a clip taken from the raw rect then crops the wrong band with
+  // nothing to report it. The offset is returned rather than added here so `box` keeps meaning
+  // exactly what the verdict already publishes.
+  'scroll:{x:Math.round(window.scrollX||0),y:Math.round(window.scrollY||0)}};})()';

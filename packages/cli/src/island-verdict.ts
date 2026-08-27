@@ -27,10 +27,13 @@ export const ISLAND_SHOT_MESSAGE_KEYS = [
  * this tool cannot support — and both are properties of the port rather than of a run, which is
  * why they are a constant and not a per-run list.
  *
- * The crop one is the honest limit of the shipped browser port: `CaptureRequest` is `fullPage`
- * alone (`packages/scraping/src/page.ts`), so a picture is the VIEWPORT and the framing knob is the
- * state's own `viewport`, not a clip rectangle. The locale one is the reach of a page-side clock
- * patch: `date.toLocaleString()` resolves the zone inside the engine and never through the patched
+ * The crop one is what a rectangle still cannot see: the picture IS the component's own box now
+ * (`clipFor`, `island-shot.ts`), so what a reader loses is the surroundings — a component that
+ * overflows its box, or one whose fault is the space around it, is outside the frame. It said the
+ * opposite until 2026-08-26 — "the browser port takes no clip rectangle" — which stopped being
+ * true when the port gained `CaptureClip`, and a blind spot that names a capability the tool has
+ * is the same lie as one that hides a gap. The locale one is the reach of a page-side clock patch:
+ * `date.toLocaleString()` resolves the zone inside the engine and never through the patched
  * `Intl.DateTimeFormat`.
  */
 export const ISLAND_BLIND_SPOTS = [
@@ -54,7 +57,15 @@ export interface IslandReadiness {
   readonly mounted: boolean;
   readonly failed: string | null;
   readonly filled: boolean;
+  /** The crop target's rectangle in VIEWPORT coordinates, which is what the DOM answers. */
   readonly box: IslandBox;
+  /**
+   * The page's scroll offset at the moment the box was measured. A capture clip is in PAGE
+   * coordinates, so this is what turns one into the other — and it is a separate field rather than
+   * an addition inside the probe because `box` is published in the verdict and means the DOM's own
+   * answer there.
+   */
+  readonly scroll: { readonly x: number; readonly y: number };
 }
 
 const readinessSchema: StandardSchemaV1<unknown, IslandReadiness> = t.object({
@@ -66,6 +77,7 @@ const readinessSchema: StandardSchemaV1<unknown, IslandReadiness> = t.object({
   failed: t.nullable(t.string),
   filled: t.boolean,
   box: t.object({ x: t.number, y: t.number, width: t.number, height: t.number }),
+  scroll: t.object({ x: t.number, y: t.number }),
 }) as unknown as StandardSchemaV1<unknown, IslandReadiness>;
 
 /**

@@ -956,6 +956,32 @@ Three rules decide which browser a run gets, and the third is the one worth know
 
 **Never a step of `x verify`.** A gate that needs a browser goes red for reasons unrelated to the change, and CI does not install one.
 
+### x shot --island
+
+```bash
+x shot --island <name> [--state <id>] [--settle 2000] [--json]
+```
+
+One **component**, in the states it declares, photographed one address at a time. A route shot answers "what does this page look like"; this answers "what does this component look like in the state a reviewer cannot click their way to" — an empty result set, a save the server refused, a quota banner.
+
+The states come from a sibling `<name>.island.states.ts` beside the island, and that file is **pure data**: no JSX, no `solid-js`, one erased `import type`. It has to be, because the complete expected picture list is computed from it **before a browser exists**, which is what lets the run diff what it owed against what landed and refuse `X_SHOT_ISLAND_MISSING` rather than reporting a clean run with no pictures in it. An import of the component itself is `X_TEST_ISLAND_STATES_NOT_PURE`.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--island <name>` | required | the manifest's own `name`. A route positional beside it is refused — they are two different subjects, not two spellings of one |
+| `--state <id>` | every declared state | one state. An id the manifest does not declare is refused by name, with the known ids |
+| `--settle` | `2000` | the readiness window. Ready is **quiet**, not idle: fonts, then N consecutive frames with an unchanged network-activity counter — never "nothing in flight", which never comes for a fixture declared `pending` |
+
+Everything else — `--out`, `--timeout`, `--browser`, `--cdp-url`, `--allow-hosts` — is the route shot's, unchanged. Pictures land at `.x/shot/island/<name>/<state>-<theme>.png`, one per state per theme, beside a `verdict.json` of the same shape.
+
+**One session per picture**, and it costs a browser launch each: `page.console()` and `page.pageErrors()` are bounded rings over the whole *session*, so a shared one files state A's console errors under state B — and per-state attribution is the half of the artifact that gates.
+
+**An unstubbed request fails the run.** The page's seal replaces `fetch`, `WebSocket`, `EventSource` and `XMLHttpRequest` before the island's chunk is imported, answers the state's `routes`, and publishes everything else; the capture refuses with `X_SHOT_ISLAND_UNSTUBBED_REQUEST` naming each method and path. A component whose fetch quietly hangs paints its own loading branch, and the picture then shows a fixture gap dressed up as a real component state.
+
+**The picture is the crop target**, `As of 2026-08-26` — the state's declared selector, or the island's host element. Measured before it: 720×560 for a component whose own box the same verdict reported as 688×104.
+
+**Both themes are photographed by emulating `prefers-color-scheme`**, not by setting an attribute — `As of 2026-08-26`. An attribute on the document is the *outcome* of a theme decision and the component owns it: one that resolves `'system'` itself deletes or overwrites it on mount, so the harness is silently overruled and both pictures converge. Measured on the reference app, `<state>-light.png` and `<state>-dark.png` came back byte-identical, same md5, from two addresses that really did serve different documents. The attribute is still set, because it is right for a component that *reads* a theme it does not own.
+
 ## x pr · x ci
 
 ```bash

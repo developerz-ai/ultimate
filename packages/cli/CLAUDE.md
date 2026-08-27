@@ -273,11 +273,28 @@ image of the wrong thing.
 `page.pageErrors()` are bounded rings over the whole SESSION, so a shared one files state A's
 console errors under state B — and per-state attribution is the half of the artifact that gates.
 
-**The picture is the VIEWPORT, not a crop.** `@ultimat3/scraping`'s `CaptureRequest` is `fullPage`
-alone, so there is no clip rectangle to ask for; the framing knob is the state's own `viewport`,
-passed to `launch()` as `defaultViewport` through `LocalBrowserOptions.options`. That is why there
-is one browser per declared viewport, memoised. The verdict names it as a blind spot rather than
-implying a crop it did not perform.
+**The picture is the CROP TARGET, `As of 2026-08-26`** — the readiness probe's own box, which is
+the selector the manifest declared or the island's host element. Measured on `examples/dummy`
+before it: 720x560 for a component whose box the verdict reported, in the same run, as 688x104.
+`CaptureClip` had been on the port since #336 and `island-shot.ts` passed none, and this paragraph
+said the port "takes no clip rectangle" — so did the verdict's own `blind` list, which is a blind
+spot naming a capability the tool has, the same lie as one hiding a gap. The state's `viewport` is
+still what the page is LAID OUT in, so there is still one browser per declared viewport, memoised;
+it is no longer what the picture is.
+
+**The clip is translated, not copied.** `getBoundingClientRect()` answers VIEWPORT coordinates and
+a capture clip is in PAGE coordinates; they agree only at the origin, which is the one case a
+harness happens to be in and is a rule nothing enforces. So the probe returns `scroll` beside `box`
+and `clipFor` adds them — a component below the fold would otherwise crop a band it is not in, with
+a picture that looks like a picture and nothing anywhere to report it. `box` keeps meaning the DOM's
+own answer, because that is what the verdict publishes.
+
+**Both themes are photographed by emulating the PREFERENCE.** `page.colorScheme(target.theme)`
+before the navigation, so the first paint already has it. The harness's `data-theme` attribute stays
+— it is right for a component that READS a theme it does not own — but it is the OUTCOME of a theme
+decision, and a component that resolves `'system'` itself deletes it on mount: `x shot --island`
+reported four pictures and wrote two, byte-identical, same md5 (#338). Re-setting the attribute
+after readiness is not the repair; it photographs a state the component would never reach.
 
 **`loadApp` does not import a states file**, for the reason it does not import an island: it
 registers no primitive, and importing it would put `@ultimat3/testing` in the server module graph of

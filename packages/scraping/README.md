@@ -93,6 +93,7 @@ gate, offline included.
 | `page.query(selector)` | `ElementSnapshot[]` — the same matches PLUS `visible`, `enabled`, and the layout `box`/`hitTarget` a driver with a layout engine can answer. The read for a decision ABOUT an element |
 | `page.frame(nameOrSelector)` | a `ScrapeFrame`, re-resolved on every call through it |
 | `page.offline(enabled)` | cuts the BROWSER's network, or restores it |
+| `page.colorScheme(scheme)` | what the browser reports as the user's OS colour preference — `'light'`, `'dark'` or `'no-preference'` |
 
 `query()` exists because there is exactly one definition of "visible" in this framework and it is
 the port's. A caller that had to compute its own wrote
@@ -110,6 +111,22 @@ NAVIGATE a frame: a recorded frame is one static document, so a click inside one
 `X_NOT_IMPLEMENTED` rather than resolving: patching `fetch` in a test process cannot reach a
 browser's own requests, so a driver that quietly answered "done" would let "a like taken offline is
 queued" pass against an app that was online for the whole test.
+
+**`page.colorScheme()` sets the INPUT to a theme decision, never its outcome.** An attribute on the
+document — `data-theme`, `class="dark"` — is the outcome, and the component owns it: one that
+resolves `'system'` itself overwrites or deletes the attribute on mount, so a harness that set it is
+silently overruled. Measured on `examples/dummy`: `x shot --island` photographed every state in both
+themes and the two files came back byte-identical, same md5, from two addresses that really did
+serve different documents. Emulating the preference is what reaches a component that decides for
+itself; set the attribute as well for one that reads a theme it does not own.
+
+Accepted and RECORDED on the offline drivers rather than refused, which is the opposite of
+`offline()` — and the line between them is which side of a capture the verb is on. An offline
+*assertion* is reachable on a driver that answers content, so a resolved `setOfflineMode` would let
+it pass against an app that never went offline; a colour preference has no such assertion, and the
+only thing it could be wrong about is a picture. So the offline drivers answer **different
+deterministic bytes per scheme**, exactly as they already do per `clip` — a fake returning one
+constant for both themes is precisely what let the defect above ship.
 
 ## What the page reports back, and the one thing a picture cannot say
 
