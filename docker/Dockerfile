@@ -40,7 +40,7 @@
 #
 # Manifests only, not source: that is what makes the deps layer below cache on dependencies rather
 # than on every line of code, which the header there had claimed and never done.
-FROM oven/bun:1.4-slim AS manifests
+FROM oven/bun:1.3-slim AS manifests
 WORKDIR /src
 COPY . .
 # `bunfig.toml` survives with the manifests, and it is not a convenience: its `[install]` section is
@@ -50,14 +50,14 @@ RUN find . ! -type d ! -name package.json ! -name bunfig.toml -delete \
  && find . -type d -empty -delete
 
 # ---------- deps: cached on the lockfile and the workspace manifests ----------
-FROM oven/bun:1.4-slim AS deps
+FROM oven/bun:1.3-slim AS deps
 WORKDIR /src
 COPY --from=manifests /src ./
 COPY bun.lock ./
 RUN bun install --frozen-lockfile
 
 # ---------- build: one self-contained binary ----------
-FROM oven/bun:1.4-slim AS build
+FROM oven/bun:1.3-slim AS build
 WORKDIR /src
 # The WHOLE installed tree, not just the root `node_modules`. Bun's default isolated linker — still
 # the default on 1.4, re-checked on that bump — stores every package once under `node_modules/.bun/`
@@ -97,19 +97,21 @@ RUN VERSION_DEFINE="$(bun --print 'JSON.stringify(require("./packages/core/packa
 # ---------- runtime: distroless, non-root, no shell ----------
 # `cc-*` rather than `base-*`: a Bun single-file executable links against libstdc++, which base does
 # not carry. The header here claimed "roughly 80MB total" and no version of this image has ever been
-# that: `--compile` bakes the Bun runtime in, so `/app/x` alone is 92MB and the image measures
-# 184MB (`docker images`, linux/amd64, re-measured on the Bun 1.4 bump, `As of 2026-08-20`). It read
-# 104MB / 189MB on `oven/bun:1.3-slim` — the runtime Bun bakes in is what moved, so this pair is
-# re-measured whenever the series above does, not carried forward.
+# that: `--compile` bakes the Bun runtime in, so `/app/x` alone is **104MB** and the image measures
+# **197MB** (`docker images`, linux/amd64, re-measured on the Bun 1.4 -> 1.3 reversal, `As of
+# 2026-08-27`). It read 92MB / 184MB on `oven/bun:1.4-slim` and 104MB / 189MB the last time this
+# series was 1.3 — the runtime Bun bakes in is what moves, so this pair is re-measured whenever the
+# series above does, in either direction, and never carried forward.
 #
 # `-debian13`, and the digit is load-bearing: it must be the SAME Debian as the build stage above.
-# `oven/bun:1.4-slim` is trixie (glibc 2.41) and `cc-debian12` is bookworm (glibc 2.36), so a binary
+# `oven/bun:1.3-slim` is trixie (glibc 2.41) and `cc-debian12` is bookworm (glibc 2.36), so a binary
 # built there could not have run here even if it had been built at all.
 #
-# So the Bun series above cannot be bumped without re-reading this line. Checked on the 1.3 → 1.4
-# move (2026-08-20): `oven/bun:1.4-slim` is still trixie, still glibc 2.41 —
-# `docker run --rm --entrypoint sh oven/bun:1.4-slim -c 'cat /etc/os-release; ldd --version'`. The
-# day it becomes forky, this stage moves to `cc-debian14` in the same commit or every container
+# So the Bun series above cannot be MOVED — in either direction — without re-reading this line.
+# Checked on the 1.3 → 1.4 move (2026-08-20) and again on the 1.4 → 1.3 reversal (2026-08-27):
+# `docker run --rm --entrypoint sh oven/bun:1.3-slim -c 'cat /etc/os-release; ldd --version'`
+# answers trixie / `Debian GLIBC 2.41-12+deb13u2`, the same pair `oven/bun:1.4-slim` answers. The
+# day either becomes forky, this stage moves to `cc-debian14` in the same commit or every container
 # dies on exec, which is the failure the paragraph below records.
 #
 # It was worse than a version skew before this branch: the build stage was `oven/bun:1.3-alpine`, so

@@ -10,22 +10,25 @@ import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
 
-// A floor on CONTRIBUTORS to this repo, and a different question from `engines.bun`, which is a
-// floor on who may INSTALL `@ultimat3/*`. That one deliberately stays `>=1.3.0`: no package here
-// uses a 1.4-only API, so forbidding an install that demonstrably works would be a false claim.
+// A floor on CONTRIBUTORS to this repo. It tracks the series CI runs
+// (`.github/actions/setup/action.yml`, `1.3.x`), because that is the only thing this check can
+// usefully say: a contributor whose Bun differs from CI's is not running the gate CI runs, and on
+// 2026-08-20 that gap merged a red PR behind a green local `bun run verify`. Matching the pin is
+// the whole point; a floor a series away from it blesses a machine that agrees with nothing here.
 //
-// So there are deliberately TWO constants named `REQUIRED_BUN` holding different numbers, and the
-// other one is not stale: `packages/cli/src/app-root.ts` is `1.3.0` because `x doctor` runs on a
-// USER's machine, where the consumer floor is the right answer. Raising that one to match this one
-// would red every app on Bun 1.3 for a rule that is about this repository's CI.
+// The paragraph that stood here called this a DIFFERENT question from `engines.bun` and argued that
+// one should stay `>=1.3.0` — two `REQUIRED_BUN` constants, deliberately holding different numbers.
+// That split is gone, `As of 2026-08-27`, and it is the same number in all three places now
+// (`packages/cli/src/app-root.ts` is the third). It cost a real defect twice, in both directions:
+// the consumer floor sat at `1.3.0` while `x test` emitted `bun test --isolate`, a flag Bun added
+// in 1.3.13, and 18.0.0 then over-corrected it to `1.4.0` — barring every user on Bun 1.3 from
+// installing `@ultimat3/*` for a capability no package here calls. A floor nobody can compare
+// against another floor drifts in whichever direction the last edit pushed it, which is axiom 3.
 //
-// This one tracks the series CI runs (`.github/actions/setup/action.yml`, `1.4.x`), because that is
-// the only thing this check can usefully say. Bun 1.3 and 1.4 do not build identically — 1.3.14
-// fails a bundle on an unresolvable `require()` inside a `catch` where 1.4 emits a runtime throw —
-// so a contributor whose Bun differs from CI's is not running the gate CI runs, and on 2026-08-20
-// that gap merged a red PR behind a green local `bun run verify`. Matching the pin is the whole
-// point; a floor a series behind it blesses a machine that agrees with nothing in the repo.
-const REQUIRED_BUN = [1, 4, 0] as const;
+// `scripts/bun-pin.test.ts` is what makes one number safe: it reads this constant, the CLI's,
+// every `engines.bun`, both workflow pins and every `FROM oven/bun:` tag, and fails when any two
+// name different series.
+const REQUIRED_BUN = [1, 3, 14] as const;
 
 const bunTooOld = (version: string): boolean => {
   const parts = version.split('.').map((part) => Number.parseInt(part, 10) || 0);

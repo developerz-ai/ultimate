@@ -3,9 +3,14 @@
 // a `Bun.Glob` brace pattern that matched zero files, and a regex that stopped at the `)` inside
 // `indexOf(...)` and so matched no assertion at all.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { checkOrdering, orderingSites, packageOfTest, scanTree } from './index-of-order';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const UNGUARDED = 'X_INDEX_ORDER_UNGUARDED';
 const STALE = 'X_INDEX_ORDER_PIN_STALE';

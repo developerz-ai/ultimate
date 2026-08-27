@@ -3,7 +3,7 @@
 // rule living beside its script — the gate's `unit` step already collects `scripts/**/*.test.ts`,
 // so this needs no step of its own.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import {
@@ -13,7 +13,12 @@ import {
   checkAsyncStorage,
   collectGuardedFiles,
 } from './async-context-guard';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const one = (source: string, path = 'packages/thing/src/scope.ts'): readonly AsyncStorageSite[] =>
   checkAsyncStorage([{ path, source }]);

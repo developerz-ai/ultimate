@@ -40,7 +40,7 @@ Root also holds `scripts/` (verify, boundaries, manifest, setup), `docs/idea/` (
   "publishConfig": { "access": "public", "provenance": true },
   "exports": { ".": "./src/index.ts" },
   "files": ["src", "README.md", "LICENSE"],
-  "engines": { "bun": ">=1.4.0" },
+  "engines": { "bun": ">=1.3.14" },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"

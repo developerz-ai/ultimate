@@ -33,7 +33,7 @@ is bounded at `DEFAULT_DEADLINE_MS` — 25s — so a `stop_grace_period` or a
 
 | File | For |
 |---|---|
-| `Dockerfile` | the framework's **CLI** image: multi-stage → distroless, non-root, 189MB, one binary, no shell. Not an app image |
+| `Dockerfile` | the framework's **CLI** image: multi-stage → distroless, non-root, 197MB, one binary, no shell. Not an app image |
 | `docker-compose.dev.yml` | optional local Postgres + NATS + MinIO |
 | `docker-compose.prod.yml` | the production topology: one service per role, one box. Point `IMAGE` at an app image |
 | `helm/` | Kubernetes chart with **per-role HPAs** — where `web` and `sync` actually scale out |
@@ -98,12 +98,14 @@ CPU is a lagging proxy for all three serving roles and scales the wrong one at t
 | `runtime` | `distroless/cc-debian13:nonroot` + the binary. No Bun, no npm, no shell |
 
 `cc` rather than `base`: a Bun single-file executable links against `libstdc++`. **`debian13`, and
-the digit is load-bearing** — it must be the same Debian as the build stage (`oven/bun:1.4-slim`,
+the digit is load-bearing** — it must be the same Debian as the build stage (`oven/bun:1.3-slim`,
 trixie). The build stage was `oven/bun:1.3-alpine` until 2026-08, so the binary asked for
 `ld-musl-x86_64.so.1` on a glibc-only runtime and *every container this image started* died with
 `exec /app/x: no such file or directory`. The runtime stage now ends in
 `RUN ["/app/x", "--version"]` — exec form, because distroless has no shell — so that class of
 failure is a red build rather than a red pod.
 
-`As of 2026-08`, linux/amd64: `/app/x` is 104MB (`--compile` bakes in the Bun runtime) and the image
-is 189MB (`docker images`). The "roughly 80MB" this file claimed was never true of any build.
+`As of 2026-08-27`, linux/amd64: `/app/x` is 104MB (`--compile` bakes in the Bun runtime) and the
+image is 197MB (`docker images`), re-measured on the Bun 1.4 -> 1.3 reversal and confirmed runnable
+— the build ends in `/out/app --version` and `docker run --rm <image> --version` answers. The
+"roughly 80MB" this file claimed was never true of any build.

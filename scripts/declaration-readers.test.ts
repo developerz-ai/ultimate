@@ -4,7 +4,7 @@
 // whose root regex stopped matching reports zero leaves, zero findings and the same green a
 // truthful tree does, which is the one failure mode this rule cannot survive.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import {
   checkDeclarationReaders,
   type DeclarationReaderGap,
@@ -13,7 +13,12 @@ import {
 } from './declaration-readers';
 import { DECLARATION_PINS_FILE, declarationReaderPinnedFor } from './lib/declaration-reader-pins';
 import { declarationLeaves, interfaceTable } from './lib/declaration-scan';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const ROOT = repoRoot();
 

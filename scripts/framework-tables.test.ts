@@ -3,12 +3,12 @@
 // which is the answer a correct tree gives, and is exactly how five auth tables went unnoticed
 // under a green gate from the initial commit through all 21 released versions.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { FRAMEWORK_SCHEMA } from '@ultimat3/cli';
 import { collectSourceFiles, type SourceFile } from './boundaries';
 import type { DeclaredTable } from './framework-tables';
 import { checkFrameworkTables, declaredTables } from './framework-tables';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 const UNAPPLIED = 'X_FRAMEWORK_TABLE_UNAPPLIED';
 const UNSCANNED = 'X_FRAMEWORK_TABLE_UNSCANNED';
@@ -19,6 +19,11 @@ const declared = (table: string, path = 'packages/auth/src/tables.ts'): Declared
   file: path,
   line: 1,
 });
+
+// Every test below scans the whole tree, so the budget is the file's default rather than a third
+// argument per test — see `REPO_SCAN_TIMEOUT_MS`. This file ran on Bun's 5000ms default until
+// 2026-08-27 and went red on a runtime 1.3x slower, which is less than one noisy CI runner.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 describe('what counts as a declared framework table', () => {
   test('a literal name is read, `if not exists` or not', () => {

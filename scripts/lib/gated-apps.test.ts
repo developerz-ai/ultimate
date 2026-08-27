@@ -2,12 +2,17 @@
 // gate cannot report, no anonymous pin, no pin for an app that no longer exists — and, the one
 // this file exists for, no app in the repo that the gate does not run at all.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun exposes no path-join primitive, and `Bun.file()` takes a path already joined.
 import { join } from 'node:path';
 import { VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import { GATED_APPS, PINS_FILE } from './gated-apps';
-import { repoRoot } from './run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 /**
  * Every app this repo tracks, read off the root package.json rather than hardcoded: an app root is

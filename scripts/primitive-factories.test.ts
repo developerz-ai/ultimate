@@ -7,9 +7,14 @@
 // Here rather than in `@ultimat3/core`, where the table lives: the table is tier 0 and the scan
 // must read `ai`, `jobs`, `scraping` and `action`, which only a host check may do.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { PRIMITIVE_FACTORIES, PRIMITIVE_KINDS } from '@ultimat3/core';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 /** `export function name<…>(…): Return {` — the return type read off the declaration, not inferred. */
 const FUNCTION =

@@ -2,7 +2,7 @@
 // stamping one at all, and a workspace out of lockstep. Then the vacuity guard — a footer that
 // stamps nothing would otherwise let this rule compare the shipped version against no sentence.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: `node:fs/promises`'s `mkdtemp` + `node:os`'s `tmpdir` — Bun ships no temp-directory API;
 // `node:path`'s `join` — no Bun path joiner. No `mkdir`: `Bun.write()` creates the parents.
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -10,7 +10,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { readStampPages, readStamps, STAMP_PAGE, skipStampPath } from './lib/version-stamp-scan';
 import { readRootManifest, workspaceManifests } from './lib/workspaces';
 import {
@@ -21,6 +21,11 @@ import {
   versionGapFindingFor,
   versionStampFindings,
 } from './version-stamps';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const footer = (text: string) => ({ path: STAMP_PAGE, text });
 const lockstep = { '@ultimat3/core': '1.2.0', '@ultimat3/cli': '1.2.0' };

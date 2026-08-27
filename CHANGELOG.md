@@ -8,7 +8,99 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The Bun floor is `>=1.3.14`, and the whole tree runs the 1.3 series.** 18.0.0 raised the floor
+  from `>=1.3.0` to `>=1.4.0` at both sites — correctly finding that the declared floor named
+  runtimes the CLI could not run on, because `x test` emits `bun test --isolate` — and then set it
+  a full minor above where that flag actually landed. `--isolate` and `--parallel` are **1.3.13**
+  features. Nothing in this repository calls a 1.4-only API, so `>=1.4.0` barred every user on Bun
+  1.3 from installing `@ultimat3/*` for a capability the framework does not use. Lowering a floor
+  breaks no install, so this is not a BREAKING entry: anyone 18.0.0 admitted, this admits.
+
+  The number was picked the same way 18.0.0's was — a floor is a claim about a runtime somebody
+  tested — but the tree moved to the runtime rather than the reverse. **The full gate runs on Bun
+  1.3.14**, CI and the release job pin `1.3.x`, `docker/Dockerfile` builds on `oven/bun:1.3-slim`,
+  and every app image (`x new`'s scaffold and both tracked apps) is `oven/bun:1.3-alpine`. `.14`
+  rather than `.13` because .14 is the patch the gate was run on.
+
+  It is not free: `bun run verify` is **144s on Bun 1.4.0 and 337s on 1.3.14**, green on both, same
+  machine, back to back — the `unit` step 64s against 230s. Per file the gap is only ~1.3x; the long
+  whole-tree scanner tests set the wall clock.
+
+  Two arguments had put CI on 1.4 on 2026-08-20, and neither survived being read again. The
+  **bundling skew** was real — Bun 1.3 refused `bun build --compile` with `Could not resolve:
+  "@babel/preset-typescript/package.json"` where 1.4 bundled the unresolvable `require` as a
+  runtime throw — but `COMPILE_EXTERNALS` marks that specifier external on **either** Bun, so the
+  version pin had been protecting nothing since the day the external landed; keeping it meant
+  shipping the workaround and the fix for one bug. The **dev-box/CI skew** argument says the two
+  must name ONE series, which agreeing on 1.3 satisfies exactly as well, and what enforces it now is
+  `scripts/bun-pin.test.ts` rather than a pin somebody remembered to move.
+
+  Two measured differences from 1.4.0, neither reaching the framework:
+  `Intl.supportedValuesOf('timeZone')` lists 445 zones on both, and
+  `new Intl.DateTimeFormat('en', { timeZone: 'CET' })` throws on 1.3.14 where 1.4.0 resolves it —
+  which `isIanaZoneName` never sees, because 6.0.0 made that judgement structural and it refuses
+  `CET` before any `Intl` probe runs. `oven/bun:1.3-slim` is trixie / glibc 2.41, the same pair the
+  distroless `cc-debian13` runtime stage requires, re-checked rather than carried forward.
+
+- **`@types/bun` is pinned exactly, to the series the runtime runs.** It was `^1.4.0` — a caret, so
+  it resolved to a 1.4 API surface while `bun --version` answered 1.3.14, which is the same defect
+  as the floor one layer up: a 1.4-only call would have typechecked clean and thrown at run time.
+  `scripts/bun-pin.test.ts` reads it as a site now, so it cannot drift away from the runtime again.
+
+### Fixed
+
+- **A gate rule that scanned zero files on Bun 1.3 and reported green.** `Bun.Glob` on 1.3.14
+  matches nothing under a dot-directory unless the scan asks for `dot: true` — even when the
+  pattern spells the dot itself — where 1.4.0 matches either way. Measured on this tree:
+  `.github/workflows/*.yml` selects **0** files on 1.3.14 and **5** on 1.4.0. `STEP_GLOBS` names
+  that glob and a deep `.claude` one precisely because a workflow and an agent brief each state the
+  gate's step count, so on Bun 1.3 `bun run gate-steps` never read either and passed. Not a wrong
+  answer — a question never asked, with the runtime as the only thing closing the hole. The shared
+  `readMarkdown` now passes `dot: true` unconditionally, which fixes it for all four scanners that
+  share it (`gate-steps`, `doc-commands`, `release-facts`, `version-stamp-scan`).
+
+  The behavioural test cannot catch this on Bun 1.4 — it passes there either way — so
+  `gate-steps.test.ts` also reads the OPTION off the `scan` call, which reds on both runtimes.
+  Proved by mutation.
+
+- **`mountIsland` built every island in the app to mount one.** `island-bundle.ts` added its `only`
+  option for exactly this caller — "a test that mounts a single island otherwise pays every OTHER
+  island's Babel pass and `Bun.build` on every file, and the reference app is the one that feels
+  it" — and nothing ever passed it. `IslandBuilder` gains an optional second parameter, so a builder
+  of your own written as `(root) => …` is still assignable and `buildIslands` already satisfies it.
+
+  It is also the difference between green and red on Bun 1.3.14, which is how it was found: building
+  the reference app's four islands in a test process that has already imported `@ultimat3/realtime`
+  at module scope makes `Bun.build` throw `Unexpected reading file:
+  packages/realtime/src/index.ts`. One island does not, and neither does `x build` — measured,
+  `x build --target static` is green on 1.3.14 with byte-identical output to 1.4.0 — so the defect
+  is confined to `bun test` and is fixed in Bun 1.4.0.
+
+- **21 gate tests that only passed on the fastest Bun anyone had run them on.** `REPO_SCAN_TIMEOUT_MS`
+  is 90s → **180s**, and the six newest whole-tree scanners — `config-readers`, `frozen-records`,
+  `node-imports`, `flight-copies`, `sql-literal-copies`, `framework-tables` — joined the convention
+  they had never heard of, having run on Bun's 5,000 ms default since they were written. A ~1.3x
+  slower runtime turned all 21 red at once, every one a timeout and none a wrong answer;
+  `scripts/verify.test.ts` runs in **12.5 s alone** and did not finish inside 90 s under
+  `--parallel=8`, so the budget had never been sized against contention. A free `ubuntu-latest`
+  runner varies by more than 1.3x on its own.
+
+  `packages/cli`'s three framework-scan budgets moved with it — `cmd-mcp.test.ts`,
+  `error-catalog.test.ts`, `cmd-errors.test.ts` — and they were the worse half: each carries the
+  number as a **literal**, because a published package's suite may not import the host monorepo's
+  `scripts/`, and each says in a comment that the literal mirrors `REPO_SCAN_TIMEOUT_MS`. They read
+  `30_000` while the constant read `90_000`. A mirror nothing compares is a wish, so
+  `scripts/repo-scan-timeout.test.ts` compares them now and the drift is a build error. `x mcp
+  tools` walks every published package's `src` to resolve each code's fix, runs in **3.3s alone** on
+  1.4.0 and **4.0s on 1.3.14**, and blew 30s in the pool.
+
+  `scripts/repo-scan-timeout.test.ts` is the new rule: a `scripts/` test that calls `repoRoot()`
+  declares the budget, in one of the two legal forms, or the gate fails. Pinned at **zero** — the
+  sweep landed first, 39 files. A first draft asked whether the source merely *named* the constant
+  and could not fail, every enrolled file naming it in the comment above the call; it matches the
+  call and the third argument as code now, proved by mutation on both forms.
 
 ## 18.0.0 - 2026-08-27
 

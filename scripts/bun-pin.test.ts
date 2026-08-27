@@ -89,6 +89,28 @@ const enginesFloors = async (): Promise<Record<string, string>> => {
   return found;
 };
 
+/**
+ * `@types/bun` is a pin site, `As of 2026-08-27`, and it was the one nobody counted. It read
+ * `^1.4.0` — a CARET, so it resolved to a 1.4 API surface while `bun --version` answered 1.3.14:
+ * the tree typechecked against a runtime nothing in the repo ran, which is the floor defect one
+ * layer up, with the same failure mode. A 1.4-only call would have compiled clean and thrown at run
+ * time, and `bun run typecheck` — the step whose whole job is catching that — would have blessed it.
+ *
+ * Exact, not a range, for the reason the pinning rule already gives: a range is a silent upgrade,
+ * and here the thing silently upgrading is which Bun the type-checker believes in.
+ */
+const typesFloor = async (): Promise<string> => {
+  const manifest = (await Bun.file(join(ROOT, 'package.json')).json()) as {
+    devDependencies?: Record<string, string>;
+  };
+  const declared = manifest.devDependencies?.['@types/bun'];
+  expect(declared, '@types/bun is not declared in the root manifest').toBeDefined();
+  expect(declared, '@types/bun must be pinned exactly — a range re-opens the skew').toMatch(
+    /^\d+\.\d+\.\d+$/,
+  );
+  return seriesOf(declared ?? '');
+};
+
 describe('the Bun series is pinned once, in agreement', () => {
   test('CI, the release job, both images and the contributor floor name one series', async () => {
     const setupAction = await slurp('.github/actions/setup/action.yml');
@@ -97,6 +119,7 @@ describe('the Bun series is pinned once, in agreement', () => {
     const appImage = await slurp('packages/cli/src/templates/scaffold-container.ts');
     const setupScript = await slurp('scripts/setup.ts');
     const cliFloor = cliFloorSeries(await slurp('packages/cli/src/app-root.ts'));
+    const typesSeries = await typesFloor();
     const engines = await enginesFloors();
     // A glob matching nothing would agree with every other pin.
     expect(Object.keys(engines).length).toBeGreaterThanOrEqual(42);
@@ -128,6 +151,7 @@ describe('the Bun series is pinned once, in agreement', () => {
       trackedApps: tracked,
       contributorFloor: requiredBunSeries(setupScript),
       cliFloor,
+      typesSeries,
       engines,
     };
 
@@ -139,6 +163,7 @@ describe('the Bun series is pinned once, in agreement', () => {
       ...Object.values(tracked).flat(),
       found.contributorFloor,
       found.cliFloor,
+      found.typesSeries,
       ...Object.values(engines),
     ];
     expect(

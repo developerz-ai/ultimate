@@ -10,7 +10,7 @@ Series: **1** · [2 — first feature](Tutorial-02-First-Feature) · [3 — auth
 
 | Need | Version | Check |
 |---|---|---|
-| Bun | ≥ 1.4.0 | `bun --version` |
+| Bun | ≥ 1.3.14 | `bun --version` |
 | Docker | only for [tutorial 5](Tutorial-05-Deploy-Free) | `docker --version` |
 | Postgres | never, locally | — |
 

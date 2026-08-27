@@ -2,7 +2,7 @@
 // ways this rule could stop being one — an allowance nothing uses, and a glob that reads no file at
 // all, which is how a check written to close a false green ships with one.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import type { CommandCatalog } from '@ultimat3/cli';
 import {
   checkDocCommands,
@@ -15,7 +15,12 @@ import type { DocCommandAllowance } from './doc-commands-allow';
 import { DOC_COMMAND_ALLOWANCES } from './doc-commands-allow';
 import type { MarkdownFile } from './lib/doc-citations';
 import { scanDocCitations } from './lib/doc-citations';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const catalog: CommandCatalog = {
   specs: [

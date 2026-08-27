@@ -4,14 +4,14 @@
 // copy — a parser that read nothing would report "no unbacked arrows", which is the answer a
 // correct page gives.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: `node:` — Bun has neither a temporary-directory nor a path-join primitive of its own.
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { GraphWorkspace } from './package-map-graph';
 import {
   checkPackageMapGraph,
@@ -22,6 +22,11 @@ import {
   readGraphWorkspaces,
   readPackageGraph,
 } from './package-map-graph';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const STALE = 'X_DOC_PACKAGE_GRAPH_STALE';
 const UNSCANNED = 'X_DOC_PACKAGE_GRAPH_UNSCANNED';

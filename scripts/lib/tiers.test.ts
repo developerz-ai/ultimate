@@ -8,11 +8,16 @@
  * non-blank row. Blank one row and it reds.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { collectSourceFiles, packageEdges } from '../boundaries';
-import { repoRoot } from './run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 import type { FloorViolation } from './tiers';
 import { ALL_PACKAGES, checkFloors, FLOOR_ABOVE, floorFindingFor, floorFor, TIERS } from './tiers';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const edgesOf = (
   graph: Record<string, readonly string[]>,

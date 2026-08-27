@@ -6,13 +6,13 @@
 // `timingSafeEqual` call sites, each rewritten to `===` exactly as the mutation run did, asserted
 // to be REPORTED. That mutation left the package at 432 pass · 14 skip · 0 fail.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdtemp } from 'node:fs/promises'; // why: Bun has no mkdtemp.
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import {
   applySecretCompareUnpin,
   SECRET_COMPARE_PINS,
@@ -29,6 +29,11 @@ import {
   secretCompareFindingFor,
   secretCompareGaps,
 } from './secret-compare';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const names = (source: string): readonly string[] =>
   scanSecretCompares('packages/auth/src/a.ts', source).map((site) => site.name);

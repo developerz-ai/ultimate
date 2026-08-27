@@ -27,7 +27,7 @@
 // reason and is where the set is derived. `scripts/async-context-guard.ts` is what still covers a
 // program, statically and with no bundle at all.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdtemp } from 'node:fs/promises'; // why: Bun has no mkdtemp.
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
@@ -39,7 +39,12 @@ import {
   isProgramPackage,
   seamPackages,
 } from './lib/browser-barrel-set';
-import { repoRoot, run } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 /**
  * DERIVED, never typed out, and it lives in `lib/browser-barrel-set.ts` because `describe.each`

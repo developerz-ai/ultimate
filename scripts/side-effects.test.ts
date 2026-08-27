@@ -3,11 +3,11 @@
 // its package fails `bun run verify` with no extra wiring. The real repo is asserted
 // NON-VACUOUSLY — a scan that read nothing reports the same clean answer a truthful tree does.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { PackageFacts, SideEffectGap } from './side-effects';
 import {
   checkSideEffects,
@@ -20,6 +20,11 @@ import {
   sideEffectGaps,
   unknownPins,
 } from './side-effects';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const ROOT = repoRoot();
 const FIXTURE = join(ROOT, 'scripts', '.side-effects-fixture');

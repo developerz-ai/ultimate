@@ -171,7 +171,7 @@ The shipped chart already sets all of this. Keep it.
 
 | Setting | Value | Why |
 |---|---|---|
-| `runAsNonRoot` / `runAsUser` | `true` / `65532` | correct for **this repo's** distroless image. An app scaffolded by `x new` runs on `oven/bun:1.4-alpine` as user `bun` — read the uid out of your own image (`docker run --rm <image> id -u`) rather than copying 65532, or every pod fails to start |
+| `runAsNonRoot` / `runAsUser` | `true` / `65532` | correct for **this repo's** distroless image. An app scaffolded by `x new` runs on `oven/bun:1.3-alpine` as user `bun` — read the uid out of your own image (`docker run --rm <image> id -u`) rather than copying 65532, or every pod fails to start |
 | `readOnlyRootFilesystem` | `true` | with an `emptyDir` at `/tmp` — the binary writes nothing else |
 | `allowPrivilegeEscalation` | `false` | — |
 | `capabilities.drop` | `[ALL]` | but see below |

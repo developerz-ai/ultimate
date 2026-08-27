@@ -36,7 +36,12 @@
   agreeing.** ICU 78 (Bun 1.4) RESOLVES `CET`, `EST`, `EST5EDT`, `GMT`, `MST` and their families
   where ICU 75 threw, so a runtime upgrade alone reopened the golden rule above — silently, and in
   the direction that fails dangerous: an abbreviation names no DST rule. So the judgement is never
-  delegated to `Intl`. `canonicalTimeZone` asserts the structural property itself: a zone is
+  delegated to `Intl`. **The divergence is live in the supported range, not history** — `engines.bun`
+  is `>=1.3.14` and this repo's own gate runs 1.3.14, where
+  `new Intl.DateTimeFormat('en', { timeZone: 'CET' })` still THROWS, while a user on 1.4 gets a
+  formatter; re-measured 2026-08-27, both runtimes list the same 445 zones. One structural rule is
+  the only thing that answers the same on both, which is the whole argument, and it is why moving
+  the tree back to Bun 1.3 changed nothing here. `canonicalTimeZone` asserts the structural property itself: a zone is
   `Area/Location`, and `UTC` is the one legal exception. Never a denylist of the names ICU newly
   accepts — that list grows with every tzdata and ICU release, and no rule in it keeps `CET` out
   while letting `Japan` in, both being one label. The single-label `backward` links go with them

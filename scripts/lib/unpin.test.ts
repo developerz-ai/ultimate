@@ -2,12 +2,17 @@
 // ratchet quietly widening. So: it removes exactly what it was asked for, it leaves the file
 // formatted, and — the test that matters in a year — it still reads the real pins file's shape.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path'; // `node:`-only by necessity: Bun ships no path-join primitive.
 import { GATED_APPS, PINS_FILE } from './gated-apps';
-import { repoRoot } from './run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 import { parseUnpin, pinnedSteps, removePins } from './unpin';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const FIXTURE = [
   'export const GATED_APPS: readonly GatedApp[] = [',

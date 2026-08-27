@@ -9,7 +9,7 @@
 
 [![CI](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml/badge.svg)](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Bun](https://img.shields.io/badge/bun-%E2%89%A5%201.4-black.svg?logo=bun)](https://bun.sh)
+[![Bun](https://img.shields.io/badge/bun-%E2%89%A5%201.3-black.svg?logo=bun)](https://bun.sh)
 [![Version](https://img.shields.io/npm/v/%40ultimat3%2Fcore?label=version&color=blue)](https://www.npmjs.com/package/@ultimat3/core)
 
 [Wiki — the reference manual](https://github.com/developerz-ai/ultimate/wiki) ·

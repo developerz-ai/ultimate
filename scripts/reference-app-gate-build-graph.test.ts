@@ -2,7 +2,7 @@
 // here — the decision (`X_REFERENCE_APP_UNREFERENCED`, which fires the moment the `typecheck` pin
 // comes off) and the disk read that answers whether the root solution names the app at all.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: `referencesApp` reads a real root config off disk, so the test needs a real throwaway
 // directory to put one in. Bun ships no temp-dir, no recursive remove and no path-join primitive.
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -10,9 +10,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { gateFindings, ROOT_TSCONFIG, referencesApp } from './reference-app-gate';
 import { app, appWith, namesOf, step } from './reference-app-gate.fixtures';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 describe('the build-graph rule', () => {
   test('an app that typechecks must be in the root build graph', () => {

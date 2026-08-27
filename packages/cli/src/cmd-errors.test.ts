@@ -61,7 +61,7 @@ describe('unit · x errors explain', () => {
     ]);
     // Reads every installed package's source once: `REPO_SCAN_TIMEOUT_MS`'s value as a literal,
     // for the reason `error-catalog.test.ts` repeats it too.
-  }, 30_000);
+  }, 180_000);
 
   test("a CLI code answers with the CLI's own fix, not the generic gate", async () => {
     const result = await run(['errors', 'explain', 'X_BUN_VERSION']);

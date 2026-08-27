@@ -15,10 +15,10 @@ runs:
   steps:
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
-        # The 1.4 series, not `latest`. `latest` let a Bun major or minor land unannounced in every
+        # The 1.3 series, not `latest`. `latest` let a Bun major or minor land unannounced in every
         # job in the repo — a runtime change nobody chose, arriving first in whatever ran next.
-        # `1.4.x` is the same series `docker/Dockerfile` builds on (`oven/bun:1.4-slim`) and the same
-        # series a scaffolded app's image runs (`oven/bun:1.4-alpine`, written by
+        # `1.3.x` is the same series `docker/Dockerfile` builds on (`oven/bun:1.3-slim`) and the same
+        # series a scaffolded app's image runs (`oven/bun:1.3-alpine`, written by
         # packages/cli/src/templates/scaffold-container.ts), so CI, the framework image and the app
         # image cannot disagree; patch releases still arrive, which is the point of a series and not
         # an exact pin nothing in this repo would ever bump (Dependabot ignores `bun`).
@@ -26,24 +26,56 @@ runs:
         # `.github/workflows/release.yml` pins this same series and has to move with this line — it
         # is the job that publishes, so a runtime skew there ships rather than fails.
         #
-        # It moved 1.3 → 1.4 on 2026-08-20 because the pin had become worse than a wrong number: dev
-        # boxes were on 1.4 and CI on 1.3, so a green local `bun run verify` was not evidence of a
-        # green CI, and a PR merged red on a bundling difference between the two. `@types/bun@1.4.0`
-        # publishing that morning removed the last blocker.
+        # **It moved 1.4 → 1.3 on 2026-08-27, reversing the 2026-08-20 bump**, and the floor moved
+        # with it: `>=1.3.14` in all 42 manifests, `scripts/setup.ts`, and the shipped CLI's own
+        # `REQUIRED_BUN`. `>=1.4.0` barred every user on Bun 1.3 from installing `@ultimat3/*` for a
+        # capability no package here uses — no 1.4-only API is called anywhere in the tree. The one
+        # thing that genuinely needs a modern Bun is `x test`, which emits `bun test --isolate`
+        # (`--parallel` with it), and BOTH landed in **1.3.13**. So the honest floor was always in
+        # this series; 1.4.0 was a floor set by what CI happened to run.
         #
-        # `engines.bun` DOES track this series, `As of 2026-08-27`, in all 42 manifests — reversing
-        # the paragraph that stood here, which argued 1.3 should stay because `Bun.Image` answers
-        # `function` on 1.3.14 and `oven/bun:1.3-slim` reads this repo's `bun.lock` under
-        # `--frozen-lockfile`. Both are still true and both measured the wrong verb: they tested
-        # whether Bun 1.3 could INSTALL `@ultimat3/*`, and the floor is broken by what the CLI
-        # RUNS. `x test` emits `bun test --isolate`, a flag Bun introduced in 1.3.13 (`--parallel`
-        # with it), so on 1.3.0..1.3.12 the gate's dominant step died on an unknown flag while
-        # `x doctor` called the runtime fine — an install that works and a framework that does not.
-        # 1.4.0 rather than 1.3.13 because a floor is a claim about a runtime somebody TESTED: this
-        # series, these images, and `BUN_TEST_WORKER_ID`'s numbering probed on 1.4.0 and nothing
-        # older. `scripts/bun-pin.test.ts` now reads every `engines.bun` and the CLI's own
-        # `REQUIRED_BUN` alongside `scripts/setup.ts`'s contributor floor, so all three move here.
-        bun-version: '1.4.x'
+        # The two arguments that put CI on 1.4, and what became of each:
+        #
+        #   1. **The bundling skew was real and is closed by the fix, not by the pin.** Bun 1.3
+        #      refused `bun build --compile` with `Could not resolve:
+        #      "@babel/preset-typescript/package.json"` where 1.4 bundled the unresolvable `require`
+        #      as a runtime throw, so one tree compiled on a laptop and not in CI.
+        #      `packages/cli/src/compile-externals.ts` marks that specifier external on EITHER Bun
+        #      and says so in its own header — "it is the `--compile` graph that must not reach an
+        #      unresolvable `require`". Once the graph stopped reaching it, the version pin was
+        #      protecting nothing.
+        #   2. **"Dev boxes and CI must agree" is a skew argument, not a 1.4 argument.** It says the
+        #      two must name ONE series; agreeing on 1.3 satisfies it exactly as well as agreeing on
+        #      1.4. What actually enforces it is `scripts/bun-pin.test.ts`, which did not exist on
+        #      2026-08-20 — the bump was a hand-fix for a problem that now has a rule.
+        #
+        # `1.3.14` rather than `1.3.13` for the floors, because a floor is a claim about a runtime
+        # somebody TESTED, and 1.3.14 is the one the whole gate was run on before this landed —
+        # `x verify` green, 14 of 20 steps, the usual 6 skipped.
+        #
+        # Three differences from 1.4.0 were measured, and ONE of them reached the framework:
+        #
+        #   * `Bun.Glob` matches nothing under a dot-directory on 1.3.14 without `dot: true`, even
+        #     when the pattern spells the dot — `.github/workflows/*.yml` selects 0 files where
+        #     1.4.0 selects 5. `STEP_GLOBS` names that glob, so `bun run gate-steps` never read this
+        #     very file on Bun 1.3 and passed. Fixed at the shared reader
+        #     (`scripts/lib/doc-citations.ts`), which now asks for it unconditionally.
+        #   * `new Intl.DateTimeFormat('en', { timeZone: 'CET' })` throws on 1.3.14 and resolves on
+        #     1.4.0 — which `isIanaZoneName` never sees, because it refuses `CET` structurally,
+        #     before any probe. `Intl.supportedValuesOf('timeZone')` lists 445 zones on both.
+        #   * The gate is slower, and this is the real price of the reversal. Green on both, same
+        #     machine, back to back: `bun run verify` is **144s on 1.4.0** and **337s on 1.3.14**,
+        #     the `unit` step 64s against 230s. Per file the gap is only ~1.3x; the long whole-tree
+        #     scanners set the wall clock. It is why `REPO_SCAN_TIMEOUT_MS` moved 90s -> 180s in the
+        #     same commit, and it is what to weigh if this line is ever moved back.
+        #
+        # `oven/bun:1.3-slim` is trixie / glibc 2.41, the same pair `docker/Dockerfile`'s distroless
+        # runtime stage requires; the image rebuilds on it and answers `--version`.
+        #
+        # `scripts/bun-pin.test.ts` reads every `engines.bun`, both `REQUIRED_BUN` constants, every
+        # `FROM oven/bun:` and both workflow pins, and fails when any two name different series — so
+        # this line cannot move alone in either direction.
+        bun-version: '1.3.x'
     - uses: actions/cache@v6
       with:
         path: ~/.bun/install/cache

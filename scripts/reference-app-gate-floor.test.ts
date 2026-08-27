@@ -2,14 +2,19 @@
 // `x.verify.json` a deleted suite turns its step from red into skipped, which is neither a
 // regression nor a stale pin, so both app gates stayed green over a suite that no longer existed.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: `join` builds the host-separator path to each app root; Bun ships no equivalent.
 import { join } from 'node:path';
 import { readVerifyFloor } from '@ultimat3/cli';
 import { GATED_APPS } from './lib/gated-apps';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { floorFindings, reproduce } from './reference-app-gate';
 import { app, step } from './reference-app-gate.fixtures';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 describe('floorFindings', () => {
   const ran = [step('unit', true), step('contract', false)];

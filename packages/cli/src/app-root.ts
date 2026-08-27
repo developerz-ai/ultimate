@@ -12,14 +12,21 @@ export const MANIFEST_FILE = 'x.manifest.json';
  * through 2026-08-27 while `x test` spent `bun test --isolate` — a flag Bun introduced in
  * **1.3.13** — so a user on a Bun this file declared supported got an unknown-flag failure out of
  * the gate's dominant step, with `x doctor` reporting the runtime as fine. `--parallel` arrived in
- * the same release and is emitted now.
+ * the same release and is emitted now, so the floor may never fall below that patch.
  *
- * `1.4.0` rather than `1.3.13` because a floor is a claim about a runtime somebody TESTED: CI pins
- * `1.4.x`, both images build on `oven/bun:1.4-*`, and the per-worker database rests on
- * `BUN_TEST_WORKER_ID`'s numbering, probed on 1.4.0 and on nothing older. `scripts/bun-pin.test.ts`
- * holds this to the same series as every other pin.
+ * **`1.3.14`, not `1.4.0`.** 18.0.0 shipped `1.4.0` here and in all 42 `engines.bun`, on the
+ * argument that a floor is a claim about a runtime somebody TESTED and CI happened to run `1.4.x`.
+ * The premise is right and the conclusion was backwards: it let CI's convenience decide who may
+ * install `@ultimat3/*`, and barred every user on Bun 1.3 for a capability no package here calls —
+ * there is no 1.4-only API anywhere in the tree. So the tree moved to the runtime instead. The
+ * whole gate now runs on 1.3.14, CI pins `1.3.x`, every image is `oven/bun:1.3-*`, and the claim
+ * this constant makes is true of the runtime that proved it.
+ *
+ * `.14` rather than `.13` for the same reason: 1.3.13 is where the flags landed, 1.3.14 is the
+ * patch the gate was actually run on. `scripts/bun-pin.test.ts` holds this to the same series as
+ * every other pin in the repository, in both directions.
  */
-export const REQUIRED_BUN = '1.4.0';
+export const REQUIRED_BUN = '1.3.14';
 
 export interface AppRoot {
   readonly dir: string;

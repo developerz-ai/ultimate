@@ -3,7 +3,7 @@
 // Object.freeze({…})` re-entering the tree fails `bun run verify` with no extra wiring. The failure
 // cases come first, and the real repo is asserted NON-VACUOUSLY.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import type { SourceFile } from './frozen-records';
 import {
   aliasTable,
@@ -14,7 +14,7 @@ import {
   recordKeyType,
   scanFreezeSites,
 } from './frozen-records';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 const ROOT = repoRoot();
 
@@ -23,6 +23,11 @@ const good: SourceFile = {
   at: 'packages/core/src/roles.ts',
   text: 'export const ROLE_INFO = Object.freeze<Record<Role, RoleInfo>>({\n  web: 1,\n});\n',
 };
+
+// Every test below scans the whole tree, so the budget is the file's default rather than a third
+// argument per test — see `REPO_SCAN_TIMEOUT_MS`. This file ran on Bun's 5000ms default until
+// 2026-08-27 and went red on a runtime 1.3x slower, which is less than one noisy CI runner.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const file = (at: string, text: string): SourceFile => ({ at, text });
 

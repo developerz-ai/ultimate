@@ -2,10 +2,15 @@
 // `unit` step runs every `scripts/**/*.test.ts`, so an `ultimate.dev` URL re-entering shipped source
 // fails `bun run verify` with no extra wiring.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { checkDeadHost, deadHostFindingFor, deadHostGaps, scanDeadHost } from './dead-docs-host';
 import { DEAD_HOST_PINS } from './lib/dead-docs-host-pins';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const lines = (source: string): readonly number[] =>
   scanDeadHost('packages/x/src/errors.ts', source).map((site) => site.line);
