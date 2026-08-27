@@ -210,9 +210,16 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
       offline = enabled;
       return Promise.resolve();
     },
-    // Read out of the array by NAME, never `features[0].value`: the port's shape is a list and a
-    // caller setting `prefers-reduced-motion` beside the scheme must not overwrite the scheme.
+    // CDP's own two rules, both of them. An EMPTY list is a RESET — measured on Chrome 150, after
+    // `emulateMediaFeatures([])` the page answers exactly what an untouched one does — so it must
+    // clear here rather than be ignored, or `'no-preference'` records the previous scheme forever.
+    // And a non-empty list is read by NAME, never `features[0].value`: the port's shape is a list,
+    // and a caller setting `prefers-reduced-motion` beside the scheme must not overwrite it.
     emulateMediaFeatures: (features: readonly { name: string; value: string }[]) => {
+      if (features.length === 0) {
+        colorScheme = null;
+        return Promise.resolve();
+      }
       const found = features.find((feature) => feature.name === COLOR_SCHEME_FEATURE);
       if (found !== undefined) colorScheme = found.value;
       return Promise.resolve();

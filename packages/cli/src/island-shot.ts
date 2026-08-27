@@ -233,9 +233,11 @@ async function captureOne(
     // readiness probe's own box, which is the crop target the manifest declared, translated from
     // the DOM's viewport coordinates into the page coordinates a capture clip is in.
     //
-    // Never `fullPage`: it is exclusive with a clip at the library and at `assertCaptureFraming`,
-    // and a full-page capture would grow with whatever the component scrolled.
-    const bytes = await page.screenshot({ fullPage: false, clip: clipFor(seen) });
+    // The clip ALONE. `fullPage: false` beside it is accepted — `assertCaptureFraming` refuses only
+    // `=== true`, and `cdp-target.ts` sends `{ clip }` and nothing else either way, so all four
+    // pictures really were written with the pair — but it is a field that says nothing: the two
+    // are exclusive, and spelling out the default of the one you did not ask for reads as a choice.
+    const bytes = await page.screenshot({ clip: clipFor(seen) });
     if (bytes.byteLength < floor) {
       throw new IslandUnphotographableError({
         island: target.island,

@@ -112,12 +112,17 @@ export interface ScrapePage extends ScrapeFrame {
   offline(enabled: boolean): Promise<void>;
   /**
    * Tell the browser what the user's OS colour preference is, so a component that resolves its own
-   * theme resolves to this one. `'no-preference'` is the way back to the launcher's default.
+   * theme resolves to this one. `'no-preference'` CLEARS the override and gives the browser's own
+   * answer back — it is not a third value a stylesheet can match.
    *
    * The INPUT, never the outcome: an attribute on the document is the outcome of a theme decision
    * and the component owns that — one honouring `'system'` overwrites or deletes it on mount, and
    * the picture then shows the theme the component chose rather than the one that was asked for.
-   * Refused with `X_NOT_IMPLEMENTED` on a driver with no CSS engine, for `offline()`'s reason.
+   *
+   * ACCEPTED on every driver, unlike `offline()`: the offline drivers evaluate no CSS, but they
+   * answer different deterministic bytes per scheme, so the one thing a preference could be wrong
+   * about is still under test. `X_NOT_IMPLEMENTED` is reserved for a LAUNCHER that lacks the
+   * method, which is a fact about the build rather than about the driver.
    */
   colorScheme(scheme: ColorScheme): Promise<void>;
   /**

@@ -144,14 +144,24 @@ export interface ScrapeTarget {
   setOfflineMode(enabled: boolean): Promise<void>;
   /**
    * What the browser reports as the user's OS colour preference — the INPUT to a theme decision.
-   * REQUIRED here where `CdpPageLike.emulateMediaFeatures` is optional, for `setOfflineMode`'s
-   * reason: the asymmetry is the enforcement, and a driver with no CSS engine answers
-   * `X_NOT_IMPLEMENTED` rather than a resolved promise.
+   * `'no-preference'` CLEARS the override rather than setting one (`color-scheme.ts`).
    *
    * The INPUT and never the outcome. Setting `data-theme` on the document models the outcome, and
    * the component owns that: one that resolves `'system'` itself overwrites or deletes the
    * attribute on mount, so a harness that set it is silently overruled and every theme converges
    * on one picture — measured, and byte-identical, in issue #338.
+   *
+   * REQUIRED here where `CdpPageLike.emulateMediaFeatures` is optional, for `setOfflineMode`'s
+   * reason: the asymmetry is the enforcement, and a driver author gets a type error naming this
+   * member rather than a silent no-op. A launcher without the method is `X_NOT_IMPLEMENTED`.
+   *
+   * A DRIVER WITH NO CSS ENGINE ACCEPTS IT, which is the one place this parts company with
+   * `setOfflineMode`, and the line between them is which side of a capture the verb is on. An
+   * offline ASSERTION is reachable on a driver that answers content, so a resolved
+   * `setOfflineMode` would let it pass against an app that never went offline. A colour preference
+   * has no such assertion: the only thing it could be wrong about is a picture, and the offline
+   * drivers answer different deterministic bytes per scheme — exactly as they do per `clip` —
+   * so a driver that dropped the preference fails a test rather than passing every one.
    */
   setColorScheme(scheme: ColorScheme): Promise<void>;
   screenshot(options: CaptureOptions): Promise<Uint8Array>;

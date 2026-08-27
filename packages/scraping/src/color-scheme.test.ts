@@ -7,7 +7,12 @@ import { describe, expect, test } from 'bun:test';
 import { fakeCdpBrowser } from './cdp-fake';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';
-import { COLOR_SCHEME_FEATURE, COLOR_SCHEMES, isColorScheme } from './color-scheme';
+import {
+  COLOR_SCHEME_FEATURE,
+  COLOR_SCHEMES,
+  colorSchemeFeatures,
+  isColorScheme,
+} from './color-scheme';
 import { htmlTarget } from './html-target';
 import type { PageRecording } from './recording';
 
@@ -40,9 +45,29 @@ describe('unit · the CDP driver', () => {
 
     await target.setColorScheme('dark');
     expect(browser.colorScheme).toBe('dark');
-    // Back to the launcher's own default, which is what makes the axis resettable within a session.
+  });
+
+  /**
+   * `'no-preference'` is a CLEAR and not a value, and this is where the difference is enforced.
+   * CDP treats an explicit `prefers-color-scheme: no-preference` as an OVERRIDE and an empty
+   * feature list as a reset — measured on Chrome 150 headless, the two are indistinguishable on a
+   * machine with no preference (both answer `dark: false, light: true`) and diverge on one that
+   * has a real preference, where the override forces the light answer and the reset gives the
+   * machine's own back. The reset is what this value promises.
+   */
+  test("'no-preference' sends the EMPTY feature list, which is CDP's own reset", async () => {
+    expect(colorSchemeFeatures('dark')).toEqual([{ name: COLOR_SCHEME_FEATURE, value: 'dark' }]);
+    expect(colorSchemeFeatures('no-preference')).toEqual([]);
+
+    const browser = fakeCdpBrowser({ url: URL, html: '<p>hi</p>' });
+    const page = await browser.newPage();
+    const target = await cdpTarget({ page, browser, rules: RULES, clock: testClock() });
+
+    await target.setColorScheme('dark');
     await target.setColorScheme('no-preference');
-    expect(browser.colorScheme).toBe('no-preference');
+    // `null`, and never the string: the override is GONE, which is a different state from one set
+    // to a value that happens to look like the default.
+    expect(browser.colorScheme).toBeNull();
   });
 
   // The half that keeps OPTIONAL from meaning UNWIRED, exactly as `setOfflineMode` is refused: a
@@ -111,5 +136,10 @@ describe('unit · the offline drivers', () => {
     // holds, and "nothing set one" is the launcher's default rather than a value this fake invents.
     expect(before).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
     expect(new TextDecoder().decode(dark)).toContain('scheme dark');
+
+    // The clear is a clear here too, or the offline driver would say `'no-preference'` is a third
+    // picture where the real one says it is the absence of an override.
+    await target.setColorScheme('no-preference');
+    expect(await target.screenshot({})).toEqual(before);
   });
 });

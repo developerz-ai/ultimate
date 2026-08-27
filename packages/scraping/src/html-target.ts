@@ -369,7 +369,10 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
      * driver that silently dropped the preference fails a test rather than passing every one.
      */
     setColorScheme(scheme: ColorScheme): Promise<void> {
-      colorScheme = scheme;
+      // `'no-preference'` is a CLEAR on the real driver, so it is a clear here — and the picture
+      // goes back to the unframed bytes, which is the same fact stated in the one place a fake can
+      // state it.
+      colorScheme = scheme === 'no-preference' ? null : scheme;
       return Promise.resolve();
     },
     screenshot: (options: CaptureOptions): Promise<Uint8Array> =>
