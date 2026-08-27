@@ -20,8 +20,8 @@
   },
   "dependencies": {
     "@postly/domain": "0.0.1",
-    "@ultimat3/cache": "18.0.0",
-    "@ultimat3/core": "18.0.0",
-    "@ultimat3/entity": "18.0.0"
+    "@ultimat3/cache": "19.0.0",
+    "@ultimat3/core": "19.0.0",
+    "@ultimat3/entity": "19.0.0"
   }
 }
