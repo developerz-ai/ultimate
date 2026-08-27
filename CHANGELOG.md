@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 18.0.0 - 2026-08-27
+
 ### Added
 
 - **Every installable app now gets the web manifest it promised.** `x dev`, the container and
@@ -65,11 +69,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   about isolation changed — `--parallel` implies `--isolate`, and the per-worker database is
   untouched because `@ultimat3/testing`'s `workerId` already read `BUN_TEST_WORKER_ID`, which Bun
   sets 1..N.
-  **BREAKING — the `--json` shape and the removed exports:** `data.shards[]` and `data.failed` are gone, replaced by `data.ok`,
-  `data.exitCode` and `data.reproduce`; a gate failure is `X_TEST_FAILED` naming the whole type,
-  and `X_TEST_SHARD_FAILED` is now `x test --worker I`'s alone. **Exports:** `planShards`,
-  `shardArgs`, `SHARD_COMMAND_PREFIX` and `Shard` are gone from `@ultimat3/cli`; `testArgs` and
-  `filesIn` replace them.
+- **BREAKING — `x test --json` drops `data.shards[]` and `data.failed`, and four `@ultimat3/cli`
+  exports are gone.** The entry above deletes the thing they described, so both surfaces follow it.
+  `data.ok`, `data.exitCode` and `data.reproduce` replace the two removed fields; a gate failure is
+  `X_TEST_FAILED` naming the whole type, and `X_TEST_SHARD_FAILED` is now `x test --worker I`'s
+  alone — one process, so it is the only run that still has a shard to name. `planShards`,
+  `shardArgs`, `SHARD_COMMAND_PREFIX` and `Shard` no longer exist; `testArgs(…)` builds the argv and
+  `filesIn(command)` reads the file list back out of one. **The edit:** read `data.ok` instead of
+  scanning `data.shards[]` for a failure, and `data.reproduce` instead of rebuilding the rerun.
 - **BREAKING — `pwa.enabled: true` now requires `pwa.name` and `pwa.colors`.** `AppConfig.pwa`
   could not express what a web manifest needs, which is why the generator had no caller: the
   install title and the two colours per scheme are the values nothing can derive. `app.name` is a
@@ -177,6 +184,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `CdpPageLike.emulateMediaFeatures` is what makes a driver author get a type error rather than a
   silent no-op. A third party implementing either port adds one method; every driver the framework
   ships already has it. Apps calling `page.*` are unaffected.
+
+### Commits
+
+- Bun owns the test pool, and a serial type is serial in both entry points (#391)
+- a config that can say what an install needs, and the manifest every build now emits (#389)
+- docs(pwa): say that no build emits a service worker (#388)
+- refactor(core,schema): declare the edge, and stop pinning a tier-0 invariant at tier 5 (#387)
+- fix(scraping,cli): a theme the component wins, and a crop the port already had (#386)
+- fix(db): an array Bun does not encode, and the worker loop it silenced (#385)
+- feat(notify,core,cli): the two notify tables get a sweep, and the inbox window is the app's to name (#383)
+- fix(scripts): a test file is source — the Bun-only rule stops skipping it (#382)
+- fix(scripts,cli): a mask that desyncs on one emoji, and a rule spelled by name (#381)
+- fix(query,db,cli): a live query now declares the table it subscribes to, and drift stops reporting what a migration created (#380)
+- fix(jobs,core,db): a sleep that never ends, a locale echoed into a log, and a URL that opened a pool on the wrong engine (#379)
 
 ## 17.0.0 - 2026-08-26
 

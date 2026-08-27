@@ -42,6 +42,7 @@ import {
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { ALL_PACKAGES } from './lib/tiers';
 
 const SCRIPT = 'config-readers';
 
@@ -76,7 +77,7 @@ const INTERFACE = /export interface (\w+)\s*\{([\s\S]*?)\n\}/g;
 /** A member at one indent level: `readonly queues: readonly string[];`. */
 const MEMBER = /^ {2}readonly\s+([A-Za-z_$][\w$]*)\??\s*:\s*([^;]+);/gm;
 /** A member whose type is a single named interface — the one shape the walk descends into. */
-const NAMED_TYPE = /^([A-Z]\w*)$/;
+const NAMED_TYPE = /^([A-Z]\w*)(?:\s*\|\s*undefined)?$/;
 
 /**
  * Every leaf key of `AppConfig`, dotted. Derived from the declaration's own text rather than typed
@@ -95,7 +96,7 @@ export function configLeaves(source: string, root = ROOT_INTERFACE): readonly st
     for (const member of body.matchAll(MEMBER)) {
       const key = member[1] as string;
       const type = (member[2] as string).trim();
-      const target = NAMED_TYPE.test(type) ? type : undefined;
+      const target = NAMED_TYPE.exec(type)?.[1];
       if (target !== undefined && bodies.has(target))
         walk(target, `${prefix}${key}.`, [...seen, name]);
       else leaves.push(`${prefix}${key}`);
@@ -141,11 +142,28 @@ export const qualifiedPattern = (leaf: string): RegExp | undefined => {
  */
 export const SECTION_PACKAGE: Readonly<Record<string, string>> = { database: 'db', theme: 'ui' };
 
-/** `realtime.tier` -> `realtime`; `ai.mcp.path` -> `mcp`; a top-level leaf -> undefined. */
+/**
+ * `realtime.tier` -> `realtime`; `ai.mcp.path` -> `mcp`; a top-level leaf -> undefined.
+ *
+ * THE DEEPEST ANCESTOR THAT NAMES A PACKAGE, not simply the second-to-last segment, `As of
+ * 2026-08-27`. `ai.mcp.path` wants `mcp` rather than `ai`, which is why the deepest one is tried
+ * first — but `pwa.colors.light.themeColor` wants `pwa`, and `at(-2)` answered `light`, a value
+ * shape rather than a subsystem. Every key of that section would then have been looked for in a
+ * `packages/light/` that does not exist, which switches the ambiguity check off silently for all
+ * four — the failure mode this rule's own header names. Nothing had a four-level key until the
+ * walk learned to descend into an OPTIONAL section.
+ */
 export const owningPackage = (leaf: string): string | undefined => {
   const parts = leaf.split('.');
   if (parts.length < 2) return undefined;
-  const section = parts.at(-2) as string;
+  const ancestors = parts.slice(0, -1).reverse();
+  for (const segment of ancestors) {
+    const mapped = Object.hasOwn(SECTION_PACKAGE, segment) ? SECTION_PACKAGE[segment] : segment;
+    if (mapped !== undefined && ALL_PACKAGES.includes(mapped)) return mapped;
+  }
+  // A section naming no package at all is still an owner — the ambiguity rule looks for a hit
+  // inside `packages/<owner>/` and simply finds none, which is the same answer it gave before.
+  const section = parts[0] as string;
   return Object.hasOwn(SECTION_PACKAGE, section) ? SECTION_PACKAGE[section] : section;
 };
 

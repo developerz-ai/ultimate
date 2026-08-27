@@ -2,10 +2,11 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Twelve majors have shipped, and this page walks all twelve** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Thirteen majors have shipped, and this page walks all thirteen** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 17.x → 18.0.0 | **5** — a runtime floor that was a minor behind what the CLI emits, two PWA config surfaces that had to grow before an app could be installable, a `--json` shape, and one scraping interface | the `18.0.0` section, in order |
 | 16.x → 17.0.0 | **3**, all one sweep — a numeric option that used to accept `NaN` refuses it, at boot or at the call boundary rather than mid-request | the `17.0.0` section, in order |
 | 15.x → 16.0.0 | **1** — `matches(/re/)` refuses a construct the two regex engines read differently, at `entity()` time | the `16.0.0` section, in order |
 | 14.x → 15.0.0 | **1** — `DriftKind` gains a member, so an exhaustive `switch` with no `default` stops compiling | the `15.0.0` section, in order |
@@ -28,7 +29,7 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' <(awk '/^## /{u = ($0 == "## [Unreleased]")} !u' CHANGELOG.md)
-# 38 As of 2026-08-26 — every RELEASED section, which is the sum of every row above whose section
+# 43 As of 2026-08-27 — every RELEASED section, which is the sum of every row above whose section
 # the changelog still carries. `[Unreleased]` is cut by the awk deliberately: a bare whole-file
 # grep agrees with this number only while that section is empty, so it moved on every PR that
 # landed a breaking change and moved BACK when the release promoted the section — a count that can
@@ -62,6 +63,26 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 17.x → 18.0.0, entry by entry
+
+**Two of the five cost an edit only if you had `pwa.enabled: true`**, which until this release did
+nothing at all — no Ultimate app had ever served a web manifest, so the block was a switch with no
+reader. **One is `bun upgrade`.** The other two are types.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | the Bun floor, `>=1.4.0` in `engines.bun` and in `x`'s own check | you run Bun below 1.4.0. **The edit is `bun upgrade`.** The floor said `>=1.3.0` while `x test` emitted `bun test --isolate`, a flag Bun introduced in **1.3.13** — so on 1.3.0..1.3.12 the gate's dominant step died on an unknown flag and `x doctor` called the runtime fine. `1.4.0` rather than `1.3.13` because a floor is a claim about a runtime somebody tested: CI pins `1.4.x` and both images build on `oven/bun:1.4-*` |
+| 2 | `AppConfig.pwa` | you set `pwa.enabled: true`. It now also requires `pwa.name` and `pwa.colors.light` / `pwa.colors.dark`, each with `themeColor` and `backgroundColor`. `defineConfig` refuses an incomplete block **at boot**, not at `x build`, and the `fix:` carries the whole block. There is nothing to derive them from: `app.name` is a slug, so an install prompt offering `ledger-demo` is wrong rather than rough, and a browser paints the install splash before a stylesheet loads. Raw hex is legal here — one of two places in an app it is, beside `theme.tokens`. **Or set `pwa.enabled: false`**, which is what it effectively was |
+| 3 | `@ultimat3/pwa`'s exports | you import `PwaConfig`, `ThemeTokens` or `SchemeColors` from it. `PwaConfig` is now `WebManifestInput` — two exported types of one name with no map between them is axiom 1, and this was the one that lied: its doc said "the `pwa` block of `app.config.ts`" and it was the generator's input. `ThemeTokens`/`SchemeColors` are `PwaColors`/`PwaSchemeColors` from `@ultimat3/core`, which is where the config lives |
+| 4 | `x test --json`, and four `@ultimat3/cli` exports | you read `data.shards[]` or `data.failed`, or import `planShards`, `shardArgs`, `SHARD_COMMAND_PREFIX` or `Shard`. `x test` runs one `bun test --parallel=N` now, so there are no shards to report: read `data.ok` instead of scanning for a failure and `data.reproduce` instead of rebuilding the rerun. `testArgs(…)` builds the argv, `filesIn(command)` reads the file list back out. `X_TEST_SHARD_FAILED` still exists and is `x test --worker I`'s alone |
+| 5 | `ScrapeTarget` / `ScrapePage` | you implement either interface yourself. `ScrapeTarget` gains `setColorScheme` and `ScrapePage` gains `colorScheme`; a driver of your own stops compiling until it has both. Calling `@ultimat3/scraping` rather than implementing it costs nothing |
+
+**`x test live --workers 8` now runs one worker, and that is a fix rather than a regression.** The
+gate always ran `live` and `e2e` serially and the command did not, so the same files ran eight
+processes under one entry point and one under the other. A logical replication slot is named at the
+Postgres **cluster** level, so a per-worker database never isolated it. `--workers` is still
+accepted and clamps to 1.
 
 ## 16.x → 17.0.0, entry by entry
 

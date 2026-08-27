@@ -56,11 +56,17 @@ describe('unit · every AppConfig leaf key is derived, never listed', () => {
     expect(input.leaves).toContain('ai.mcp.path');
     expect(input.leaves).toContain('jobs.visibilityTimeoutMs');
     // A key of the section declared in the OTHER file of `CONFIG_FILES`, so a walk that reads only
-    // the first one is red here rather than five keys shorter in silence. `pwa.colors` stays ONE
-    // leaf: its type is `PwaColors | undefined`, which is not a bare named type, and the walk
-    // descends only into those — the same reason every `notify` window is a leaf.
+    // the first one is red here rather than five keys shorter in silence.
     expect(input.leaves).toContain('pwa.name');
-    expect(input.leaves).toContain('pwa.colors');
+    // AN OPTIONAL SECTION IS STILL A SECTION, `As of 2026-08-27`. `pwa.colors` was ONE leaf until
+    // then because its type is `PwaColors | undefined` and the walk descended only into a BARE
+    // named type — so the four values an installable app cannot boot without were never asked for
+    // a reader, which is the whole point of this rule. `wiki/Upgrading.md` naming them is what
+    // surfaced it: `doc-config-keys` reads the same walk and called two real keys unknown.
+    for (const scheme of ['light', 'dark'])
+      for (const key of ['themeColor', 'backgroundColor'])
+        expect(input.leaves).toContain(`pwa.colors.${scheme}.${key}`);
+    expect(input.leaves).not.toContain('pwa.colors');
     // A vacuity FLOOR, not the surface: it says the scan reached the real `config.ts` rather than
     // an empty parse. Thirty until `cache.driver` and `cache.urlEnv` were deleted, twenty-eight
     // until `realtime.tier` went the same way — a key this rule reported as having no reader at
