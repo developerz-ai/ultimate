@@ -15,10 +15,10 @@ import type { CommandContext } from './command';
 import type { Runner } from './exec';
 import { parseArgs } from './parse';
 import { discoverTests } from './test-select';
-import { SHARD_COMMAND_PREFIX } from './test-shards';
+import { filesIn } from './test-shards';
 import { defaultWorkers, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
 import type { TestType } from './verify-tests';
-import { TEST_TYPES } from './verify-tests';
+import { SERIAL_TYPES, TEST_TYPES } from './verify-tests';
 
 interface Recorder {
   readonly calls: readonly (readonly string[])[];
@@ -46,7 +46,7 @@ const context = (argv: readonly string[], cwd: string, runner: Runner): CommandC
 });
 
 const filesRun = (calls: readonly (readonly string[])[]): readonly string[] =>
-  [...calls.flatMap((command) => command.slice(SHARD_COMMAND_PREFIX.length))].sort();
+  [...calls.flatMap((command) => filesIn(command))].sort();
 
 describe('unit · x test discovery', () => {
   test('it finds the test files next to it and sizes every one of them', async () => {
@@ -238,7 +238,7 @@ describe('unit · x test --sample', () => {
     }
   });
 
-  test('the shard reproductions carry --sample, so a rerun splits the same corpus', async () => {
+  test('the reproduction carries --sample, so a rerun selects the same corpus', async () => {
     const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-sample-repro-'));
     try {
       for (let i = 0; i < 5; i += 1) {
@@ -247,11 +247,11 @@ describe('unit · x test --sample', () => {
       const result = await testCommand.run(
         context(['test', '--sample', '3', '--workers', '2'], root, recorder().runner),
       );
-      const data = result.data as { readonly shards: readonly { readonly reproduce: string }[] };
-      expect(data.shards.map((shard) => shard.reproduce)).toEqual([
-        'x test --sample 3 --workers 2 --worker 0',
-        'x test --sample 3 --workers 2 --worker 1',
-      ]);
+      // One run, so one reproduction — and it must name the sample rather than the whole tree,
+      // which is the input a rerun most easily drops.
+      expect((result.data as { readonly reproduce: string }).reproduce).toBe(
+        'x test --sample 3 --workers 2',
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -320,6 +320,28 @@ describe('unit · x test --worker names a shard that exists', () => {
           (error: unknown) => error,
         );
       expect((thrown as { cause?: string }).cause).toContain('in a 2-worker split (0..1)');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // `x verify` routes `live` and `e2e` through `runSerial`; this command read no such list, so the
+  // same files ran one process under the gate and eight under the command a human types. What is
+  // at stake is not tidiness: a logical replication slot is named at the Postgres CLUSTER level,
+  // so a per-worker database does not isolate it, and PGlite hides that until a real
+  // `TEST_DATABASE_URL` is set. `--parallel=N` is the whole width, so N must be 1 here.
+  test.each([...SERIAL_TYPES])('x test %s never widens past one worker', async (type) => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-serial-'));
+    try {
+      for (let i = 0; i < 4; i += 1) {
+        await Bun.write(join(root, `f${i}.${type}.test.ts`), 'export {};\n');
+      }
+      const { calls, runner } = recorder();
+      const result = await testCommand.run(context(['test', type, '--workers', '8'], root, runner));
+      expect(result.ok).toBe(true);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toContain('--parallel=1');
+      expect(result.summary).toContain('1 worker(s)');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

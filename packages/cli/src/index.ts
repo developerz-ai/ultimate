@@ -338,8 +338,8 @@ export type { TestCounts } from './test-counts';
 export { countsOf } from './test-counts';
 export type { TestFile } from './test-select';
 export { belongsToType, discoverTests, sampleFiles } from './test-select';
-export type { ReproduceOptions, RunShardsOptions, Shard } from './test-shards';
-export { planShards, reproduceFor, runShards, shardArgs } from './test-shards';
+export type { ReproduceOptions, RunShardsOptions } from './test-shards';
+export { filesIn, reproduceFor, runShards, testArgs } from './test-shards';
 export { availableCpus, defaultWorkers, WORKER_CEILING } from './test-workers';
 export type {
   CodeFixSite,
