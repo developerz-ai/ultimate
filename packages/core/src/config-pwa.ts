@@ -98,7 +98,7 @@ export const PWA_COLOR_KEYS = ['themeColor', 'backgroundColor'] as const;
  * boolean needs to see the complete shape and the opt-out in the same line.
  */
 export const PWA_FIX =
-  "in app.config.ts, complete the pwa block: pwa: { enabled: true, offline: 'runtime', name: 'My App', colors: { light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' }, dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' } } } — a browser paints the install splash and the address bar from those four values before any stylesheet loads, so there is nothing for the framework to derive them from; or set pwa.enabled: false";
+  "in app.config.ts, complete the pwa block: pwa: { enabled: true, offline: { fallback: '/offline' }, name: 'My App', colors: { light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' }, dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' } } } — a browser paints the install splash and the address bar from those four values before any stylesheet loads, so there is nothing for the framework to derive them from, and offline.fallback is the document the emitted sw.js serves when the network is gone, so add a route at that path too; or set pwa.enabled: false";
 
 /**
  * Every rule `validate` applies to the block, appended to the caller's own issue list. Answers

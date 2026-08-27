@@ -47,7 +47,8 @@ import { readMigrations } from './migrations';
 import { startOtlpExport } from './otlp-export';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import type { RuntimeOverrides } from './runtime-overrides';
-import { serviceWorkerArtifacts, serviceWorkerRoutes } from './sw-artifacts';
+import { serviceWorkerArtifacts } from './sw-artifacts';
+import { serviceWorkerRoutes } from './sw-routes';
 
 export const DEFAULT_PORT = 3000;
 

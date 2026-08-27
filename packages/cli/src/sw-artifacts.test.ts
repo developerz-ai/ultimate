@@ -1,20 +1,14 @@
 // The emitter, without a browser. What belongs here is what the browser check cannot say cheaply:
-// which routes cross into the worker, which do not, what the register script is, and the two
-// headers a worker that must be replaceable depends on. The behaviour — installs, activates,
-// serves the fallback offline — is `e2e/service-worker.e2e.test.ts`, in a real Chrome.
+// which routes cross into the worker, which do not, and what the register script is. The two
+// headers are `sw-routes.test.ts`; the behaviour — installs, activates, serves the fallback
+// offline — is `e2e/service-worker.e2e.test.ts`, in a real Chrome.
 
 import { describe, expect, test } from 'bun:test';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
 import { routeDescriptor } from '../e2e/route-descriptor-fixture';
 import { islandBundle } from './island-bundle';
 import type { PwaArtifacts } from './pwa-artifacts';
 import type { ServiceWorkerArtifacts } from './sw-artifacts';
-import {
-  SERVICE_WORKER_PATH,
-  SW_REGISTER_PATH,
-  serviceWorkerArtifacts,
-  serviceWorkerRoutes,
-} from './sw-artifacts';
+import { SERVICE_WORKER_PATH, SW_REGISTER_PATH, serviceWorkerArtifacts } from './sw-artifacts';
 
 const BUILD_ID = 'build-7';
 
@@ -117,37 +111,5 @@ describe('serviceWorkerArtifacts', () => {
     }).source;
 
     expect(source).toContain('/auth');
-  });
-});
-
-describe('serviceWorkerRoutes', () => {
-  const routes = serviceWorkerRoutes(build());
-
-  test('mounts both files, public, at the paths the head and the register script name', () => {
-    expect(routes.map((route) => route.path)).toEqual([SERVICE_WORKER_PATH, SW_REGISTER_PATH]);
-    // A browser fetches a worker before anyone has signed in, and an app that needs a session to
-    // describe its own offline behaviour has none.
-    expect(routes.every((route) => route.meta.auth === 'public')).toBe(true);
-  });
-
-  test('sw.js is served uncacheable and scope-allowed', async () => {
-    const route = routes[0];
-    if (route === undefined) expect.unreachable('the sw route was not mounted');
-    // Through a real `UltimateRequest` and a real `RequestContext`, `pwa-artifacts.test.ts`'s
-    // shape: a cast would hide a dependency on either appearing later.
-    const url = new URL(`http://dev.test${SERVICE_WORKER_PATH}`);
-    const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-    const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
-    const response = await route.handler(new UltimateRequest(new Request(url), ctx), ctx);
-
-    // A cached `sw.js` is a worker that cannot be replaced: the browser re-fetches it to decide
-    // whether an update exists, and an intermediary answering the old bytes pins every client to
-    // the deploy that shipped them.
-    expect(response.headers.get('cache-control')).toContain('max-age=0');
-    // Without it the browser refuses to let a worker served from `/` control `/` — the failure
-    // `assertScope` cannot see, because the scope a REGISTRATION asks for has to be allowed by the
-    // script's own response and not only by its path.
-    expect(response.headers.get('service-worker-allowed')).toBe('/');
-    expect(response.headers.get('content-type')).toContain('javascript');
   });
 });

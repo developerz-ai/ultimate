@@ -190,6 +190,30 @@ unitTest('the dashboard renders on the server, is gated, and has an offline stra
 });
 `;
 
+const offlineTest =
+  (): string => `// The offline fallback has to render with nothing: no network, no session, no database, and no
+// JavaScript. Every one of those is a config field here, and every one of them rots the moment
+// someone adds an import or a policy — at which point the page the service worker precaches is a
+// page that cannot render when it is finally needed.
+import { metaContextFor, routeDataFor } from '@ultimat3/render';
+import { expect, unitTest } from '@ultimat3/testing';
+import { config } from './page';
+
+const ctx = { params: {}, url: 'https://example.test/offline' };
+
+unitTest('the offline fallback is static, precached, and ships no JavaScript', async () => {
+  expect(config.render).toBe('static');
+  // 'precache', or the document that answers a lost network is itself fetched over the network.
+  expect(config.offline).toBe('precache');
+  expect(config.hydrate).toBe('never');
+  expect(config.budget.js).toBe('0kb');
+  // A cached error page has nothing to index, and an indexed one outranks the page it stood in for
+  // on the day the crawler happened to be offline.
+  const meta = await config.meta(metaContextFor(ctx, await routeDataFor(config, ctx)));
+  expect(meta.robots?.index).toBe(false);
+});
+`;
+
 const offlineFallback = (
   app: NameSet,
 ): string => `// The offline fallback, and it is a ROUTE — \`pwa.offline.fallback\` in app.config.ts names this
@@ -418,6 +442,7 @@ export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile
     // URL the generated service worker could not fall back to.
     { path: 'apps/web/site/offline/page.tsx', contents: offlineFallback(app) },
     { path: 'apps/web/site/offline/page.module.scss', contents: offlineStyle() },
+    { path: 'apps/web/site/offline/page.test.ts', contents: offlineTest() },
     // The third surface, and the one call that registers what the app declares — `scaffold-api.ts`.
     ...apiFiles(example),
     { path: 'apps/web/shared/tokens.scss', contents: sharedTokens() },

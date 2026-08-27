@@ -11,6 +11,10 @@ const CATALOG = {
   'cli.commands.heading': 'commands',
   'cli.build.done': 'built {target}',
   'cli.build.failed': '{target} build failed',
+  // A build-output line, so it belongs here rather than inline beside the emitter: `x build` is a
+  // human surface and every other word it prints comes from this catalog.
+  'cli.build.pushUnwired':
+    'pwa.push is true and no VAPID key is configured, so the emitted sw.js carries no push handler',
   // `describeCron`'s vocabulary. `@ultimat3/time` is tier 1 and reaches no i18n runtime, so the
   // caller supplies the words — and the caller here is a rendered `x tasks show` line, which is
   // exactly what this catalog holds. `msg()` leaves an un-supplied `{n}`/`{time}`/`{days}`/

@@ -39,7 +39,7 @@ const EMPTY_REPORT: StaticReport = {
   emitted: [],
   skipped: [],
   unmeasured: [],
-  precacheWarnings: [],
+  serviceWorkerWarnings: [],
 };
 
 /**

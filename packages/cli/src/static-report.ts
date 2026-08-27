@@ -93,7 +93,7 @@ export type StaticReport = {
    * successful subprocess's stdout, so a warning that lives only on the in-process report reaches
    * nobody. Empty for an app with no service worker.
    */
-  readonly precacheWarnings: readonly string[];
+  readonly serviceWorkerWarnings: readonly string[];
 };
 
 /**
@@ -187,7 +187,7 @@ const isEmitted = (value: unknown): value is EmittedPage =>
  */
 export function parseStaticReport(value: unknown): StaticReport | undefined {
   if (!isRecord(value)) return undefined;
-  const { target, out, buildId, emitted, skipped, unmeasured, precacheWarnings } = value;
+  const { target, out, buildId, emitted, skipped, unmeasured, serviceWorkerWarnings } = value;
   if (target !== 'static' || typeof out !== 'string' || typeof buildId !== 'string') {
     return undefined;
   }
@@ -202,11 +202,11 @@ export function parseStaticReport(value: unknown): StaticReport | undefined {
   }
   // Optional on the way in for `unmeasured`'s reason, and a non-string entry drops the whole
   // report for a malformed skip row's reason: a warning list with a hole in it is a build that
-  // says less than it measured, which is how the precache ceiling went unread in the first place.
+  // says less than it measured, which is how the worker's findings went unread in the first place.
   if (
-    precacheWarnings !== undefined &&
-    (!Array.isArray(precacheWarnings) ||
-      !precacheWarnings.every((entry) => typeof entry === 'string'))
+    serviceWorkerWarnings !== undefined &&
+    (!Array.isArray(serviceWorkerWarnings) ||
+      !serviceWorkerWarnings.every((entry) => typeof entry === 'string'))
   ) {
     return undefined;
   }
@@ -217,7 +217,7 @@ export function parseStaticReport(value: unknown): StaticReport | undefined {
     emitted,
     skipped,
     unmeasured: unmeasured ?? [],
-    precacheWarnings: (precacheWarnings as readonly string[] | undefined) ?? [],
+    serviceWorkerWarnings: (serviceWorkerWarnings as readonly string[] | undefined) ?? [],
   };
 }
 
@@ -264,7 +264,7 @@ export function staticReportData(report: StaticReport | undefined): Record<strin
         emitted: report.emitted,
         skipped: report.skipped,
         unmeasured: report.unmeasured,
-        precacheWarnings: report.precacheWarnings,
+        serviceWorkerWarnings: report.serviceWorkerWarnings,
       };
 }
 
@@ -280,11 +280,16 @@ export function renderStaticReport(report: StaticReport): readonly string[] {
     // whose budget could not be weighed is invisible in `emitted` and, when it also rendered, in
     // `skipped` too — and it is the row `X_BUDGET_UNMEASURED` sends its reader here to read.
     ...report.unmeasured.map((route) => ['unmeasured', route.path, route.reason]),
-    // The service worker's own findings, in the same three columns. `sw.js` is the one artifact
-    // that keeps serving after a deploy is over, so a precache manifest over its ceiling is a
-    // build-time fact that has to be visible in the build's own output — `PrecacheManifest`
-    // computed these and nothing read them (#390).
-    ...report.precacheWarnings.map((warning) => ['precache', SERVICE_WORKER_PATH, warning]),
+    // The service worker's own findings, in the same three columns — a precache manifest over its
+    // byte ceiling AND a capability declared with nothing to wire it to, which is why neither the
+    // field nor this label says `precache`. `sw.js` is the one artifact that keeps serving after a
+    // deploy is over, so both are build-time facts that have to be visible in the build's own
+    // output — `PrecacheManifest` computed the first and nothing read it (#390).
+    ...report.serviceWorkerWarnings.map((warning) => [
+      'service-worker',
+      SERVICE_WORKER_PATH,
+      warning,
+    ]),
   ];
   const widths = [0, 1].map((index) =>
     Math.max(...rows.map((row) => (row[index] ?? '').length), 0),

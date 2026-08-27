@@ -108,7 +108,7 @@ x build --target static     # site/ output only: HTML, assets, sitemap, feeds
 | `binary` | `.x/app` — `bun build --compile`, all roles inside. Boots `As of 2026-08`; **not yet served from a bare VM** ([Known gaps](Known-Gaps)) | VMs, systemd, air-gapped, a CLI-shaped product |
 | `static` | `.x/static` — 0kb-JS pages, hashed assets, `sitemap.xml`, `robots.txt`, feeds | CDN / object storage, deployed independently |
 
-All targets share one build ID (content hash), stamped into the image, the HTML, the assets and `x.manifest.json`. **Not `sw.js`** — no target emits one, `As of 2026-08-27`; `@ultimat3/pwa`'s service-worker generator has no caller anywhere in the tree ([#362](https://github.com/developerz-ai/ultimate/issues/362), and [PWA and offline](PWA-And-Offline) leads with the same warning). The web manifest is a different half and IS emitted, by every target that serves or writes a document.
+All targets share one build ID (content hash), stamped into the image, the HTML, the assets, `x.manifest.json` — **and `sw.js`**, `As of 2026-08`: the worker's cache names carry the build id, so a deploy retires the previous build's caches instead of serving them ([#390](https://github.com/developerz-ai/ultimate/issues/390)). Every target that serves or writes a document emits `manifest.webmanifest`, `sw.js` and `x-sw-register.js` alike ([PWA and offline](PWA-And-Offline)).
 
 ```
 $ x build --target docker

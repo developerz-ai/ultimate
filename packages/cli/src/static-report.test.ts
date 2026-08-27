@@ -116,7 +116,7 @@ const REPORT: StaticReport = {
   unmeasured: [
     { path: '/posts/new', reason: 'X_NO_CONTEXT: useContext() outside runWithContext()' },
   ],
-  precacheWarnings: ['precache total 6.1 MB exceeds the 5 MB budget'],
+  serviceWorkerWarnings: ['precache total 6.1 MB exceeds the 5 MB budget'],
 };
 
 describe('the report on disk', () => {
@@ -170,7 +170,7 @@ describe('the --json rendering', () => {
     // is this run's — neither is the inventory, and both would be noise an agent diffs on.
     expect(Object.keys(staticReportData(REPORT)).sort()).toEqual([
       'emitted',
-      'precacheWarnings',
+      'serviceWorkerWarnings',
       'skipped',
       'unmeasured',
     ]);
@@ -185,7 +185,7 @@ describe('the --json rendering', () => {
     // `PrecacheManifest.warnings` had no reader anywhere in the tree, which is what made the
     // precache ceiling — in `wiki/Troubleshooting.md`'s own words — a designed thing that is not
     // one (#390). `x build --json` is the reader.
-    expect(staticReportData(REPORT)['precacheWarnings']).toEqual(REPORT.precacheWarnings);
+    expect(staticReportData(REPORT)['serviceWorkerWarnings']).toEqual(REPORT.serviceWorkerWarnings);
   });
 
   test('no report is no keys, never an empty inventory', () => {
@@ -217,16 +217,16 @@ describe('the human rendering', () => {
     expect(lines).toContain('exceeds the 5 MB budget');
   });
 
-  test('a report written before precacheWarnings existed reads as none, not as unparseable', () => {
+  test('a report written before serviceWorkerWarnings existed reads as none, not as unparseable', () => {
     // `.x/` survives a checkout of an older commit, and refusing such a report would answer
     // `X_BUDGET_UNMEASURED` for every route on a build that had weighed them all — the rule
     // `unmeasured` already earned one field earlier.
-    const { precacheWarnings: _dropped, ...older } = REPORT;
-    expect(parseStaticReport(older)?.precacheWarnings).toEqual([]);
+    const { serviceWorkerWarnings: _dropped, ...older } = REPORT;
+    expect(parseStaticReport(older)?.serviceWorkerWarnings).toEqual([]);
   });
 
   test('a warning list with a non-string in it is no report, never a half-read one', () => {
-    expect(parseStaticReport({ ...REPORT, precacheWarnings: ['ok', 7] })).toBeUndefined();
+    expect(parseStaticReport({ ...REPORT, serviceWorkerWarnings: ['ok', 7] })).toBeUndefined();
   });
 });
 

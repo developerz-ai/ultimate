@@ -428,7 +428,7 @@ arrives.
 **`pwa.push` is read and still wires nothing, and it says so.** `generateServiceWorker` emits a push
 handler only when a VAPID key comes with the capability, there is no `pwa.vapid` config key, and it
 drops the handler in SILENCE otherwise. `pushWarning` is this module's own finding, reported through
-`x build --json`'s `precacheWarnings` — `jobs.driver`'s shape one package over, refused the same way.
+`x build --json`'s `serviceWorkerWarnings` — `jobs.driver`'s shape one package over, refused the same way.
 
 **The browser check is what let any of this ship.** #390's fourth requirement was *"a real browser
 check that the emitted worker installs, activates and serves the fallback offline. Until it exists,

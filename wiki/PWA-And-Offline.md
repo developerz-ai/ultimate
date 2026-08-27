@@ -1,6 +1,6 @@
 # PWA and offline
 
-> ## ✅ WIRED END TO END, `As of 2026-08-27`
+> ## ✅ WIRED END TO END, `As of 2026-08`
 >
 > **`x dev`, the container and `x build --target static` all emit `manifest.webmanifest`, `sw.js`
 > and `x-sw-register.js`**, plus the `<head>` that names all three. The manifest reader is
@@ -28,10 +28,10 @@
 >
 > **Still not wired: `pwa.push`.** `generateServiceWorker` emits a push handler only when a VAPID
 > key comes with the capability, there is no `pwa.vapid` config key, and it drops the handler in
-> silence otherwise. `x build --json` now reports that as a `precacheWarnings` entry rather than
+> silence otherwise. `x build --json` now reports that as a `serviceWorkerWarnings` entry rather than
 > leaving the switch quietly inert.
 
-`sw.js` is a build artifact, generated from the route table and written by `x build`. Hand-editing one is **not** caught: `As of 2026-08` `sw.js` carries no checksum, so an edit would survive a build. `X_SW_HAND_EDITED` is a **reserved** name — nothing raises it, and `x errors explain X_SW_HAND_EDITED` refuses it ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)).
+`sw.js` is a build artifact, generated from the route table and written by `x build`. Hand-editing one is **not** caught, and it does not survive either: `As of 2026-08` `sw.js` carries no checksum, so the next build overwrites the edit in silence — no warning, no diff, nothing in `--json`. `X_SW_HAND_EDITED` is a **reserved** name — nothing raises it, and `x errors explain X_SW_HAND_EDITED` refuses it ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)).
 
 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
@@ -39,7 +39,7 @@
 
 A service worker is a cache-policy compiler whose input is already declared on every route: render mode, offline strategy, asset graph. Hand-writing it duplicates that information, and the duplicate drifts. Every notorious PWA bug — the page serving last month's HTML, the chunk 404 after deploy, the user stuck on a version until they clear site data — is a service worker that disagreed with the app.
 
-The edit an agent should make is the route's `offline` field, and `x build` reads it, `As of 2026-08-27`. Hand-editing the emitted `sw.js` is still not caught, per the reserved-code note above.
+The edit an agent should make is the route's `offline` field, and `x build` reads it, `As of 2026-08`. Hand-editing the emitted `sw.js` is still not caught, per the reserved-code note above.
 
 ## Derived from the route
 
@@ -67,7 +67,7 @@ export const config = defineRoute({
 
 Excluded always: `api/` responses, anything under an authenticated path unless `offline: 'precache'` is explicit, and any asset over the configured single-file cap.
 
-Total precache size is a **warning, not a budget, `As of 2026-08-27`**: `buildPrecacheManifest` puts `DEFAULT_PRECACHE_WARN_BYTES` overruns on `PrecacheManifest.warnings`, and **nothing reads that field** — no `x verify` step loads a precache manifest, because nothing builds one. Designed as a budget; not one today.
+Total precache size is a **warning, not a budget, `As of 2026-08`**: `buildPrecacheManifest` puts `DEFAULT_PRECACHE_WARN_BYTES` overruns on `PrecacheManifest.warnings`, and **nothing reads that field** — no `x verify` step loads a precache manifest, because nothing builds one. Designed as a budget; not one today.
 
 ### Runtime strategy from render mode
 
@@ -93,7 +93,7 @@ Mutations are never cached. **Offline writes go through the tier-3 mutator queue
 
 ### Manifest, icons, splash
 
-From `app.config.ts` plus **one** source icon (SVG or >=1024px PNG). **Emitted at `/manifest.webmanifest` by `x dev`, by the container and into the static export**, `As of 2026-08-27` — `packages/cli/src/pwa-artifacts.ts` composes `pwa.name` and `pwa.colors` with `planIcons`' own list, so the manifest names exactly the icons `/icons/*` serves. `defineConfig` refuses `pwa.enabled: true` without a name and both schemes' colours, so `assertValid`'s two refusals now arrive at boot rather than at build:
+From `app.config.ts` plus **one** source icon (SVG or >=1024px PNG). **Emitted at `/manifest.webmanifest` by `x dev`, by the container and into the static export**, `As of 2026-08` — `packages/cli/src/pwa-artifacts.ts` composes `pwa.name` and `pwa.colors` with `planIcons`' own list, so the manifest names exactly the icons `/icons/*` serves. `defineConfig` refuses `pwa.enabled: true` without a name and both schemes' colours, so `assertValid`'s two refusals now arrive at boot rather than at build:
 
 | Generated | Detail |
 |---|---|

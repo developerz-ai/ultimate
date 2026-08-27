@@ -260,7 +260,7 @@ const REPORT: StaticReport = {
   unmeasured: [
     { path: '/posts/new', reason: 'X_NO_CONTEXT: useContext() outside runWithContext()' },
   ],
-  precacheWarnings: ['precache total 6.1 MB exceeds the 5 MB budget'],
+  serviceWorkerWarnings: ['precache total 6.1 MB exceeds the 5 MB budget'],
 };
 
 test('a static build reports emitted and skipped, with a why per skipped route', () => {

@@ -50,7 +50,8 @@ import { flagString } from './parse';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { metricsPortFor } from './serve';
 import { loopFacts, loopFinding, loopNotice } from './statement-loop';
-import { serviceWorkerArtifacts, serviceWorkerRoutes } from './sw-artifacts';
+import { serviceWorkerArtifacts } from './sw-artifacts';
+import { serviceWorkerRoutes } from './sw-routes';
 
 const DEFAULT_PORT = 3000;
 

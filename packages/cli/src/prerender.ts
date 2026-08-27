@@ -85,7 +85,7 @@ export interface PrerenderReport {
    * that stalls on a bad connection is invisible on a laptop and fatal on a phone, so the number
    * has to reach the build's own report. Empty for an app with no service worker.
    */
-  readonly precacheWarnings: readonly string[];
+  readonly serviceWorkerWarnings: readonly string[];
 }
 
 /**
@@ -289,7 +289,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     // stdout — so the one command the finding tells an author to run printed no `unmeasured` key
     // and no reason. Written into the report is what makes the instruction true.
     unmeasured,
-    precacheWarnings: serviceWorker?.warnings ?? [],
+    serviceWorkerWarnings: serviceWorker?.warnings ?? [],
   });
   return {
     out: options.out,
@@ -300,6 +300,6 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     stats,
     report,
     islands: islands.chunks.map((chunk) => chunk.file),
-    precacheWarnings: serviceWorker?.warnings ?? [],
+    serviceWorkerWarnings: serviceWorker?.warnings ?? [],
   };
 }

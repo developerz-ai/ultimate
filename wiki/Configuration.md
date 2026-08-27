@@ -245,7 +245,7 @@ FASTLY_API_TOKEN)`. The env **key** is reported, never its value.
 
 ## `pwa`
 
-`offline` is a **block**, not a string, `As of 2026-08-27` — see [Upgrading](Upgrading). Two booleans, one block; every field is optional except `pwa.name`, `pwa.colors` and `pwa.offline.fallback`, which `enabled: true` makes required.
+`offline` is a **block**, not a string, `As of 2026-08` — see [Upgrading](Upgrading). Two booleans, one block; every field is optional except `pwa.name`, `pwa.colors` and `pwa.offline.fallback`, which `enabled: true` makes required.
 
 ```ts
 pwa: {
@@ -270,7 +270,7 @@ pwa: {
 | `pwa.offline.neverCache` | `string[]` | `[]` | **read** — path prefixes the worker passes straight through. Auth and payments belong here: a stale 200 is worse than a failure |
 | ~~`pwa.offline` as a string~~ | — | — | **Changed in the release that closed [#390](https://github.com/developerz-ai/ultimate/issues/390).** It was `'precache' \| 'runtime' \| 'network-only'`, an app-wide default for a field `defineRoute` makes **required** on every route — so it defaulted nothing and was read by nobody. Migration: `offline: 'runtime'` → `offline: { fallback: '/offline' }`, plus a route at that path ([Upgrading](Upgrading)) |
 | `pwa.backgroundSync` | `boolean` | `false` | **read** — wires the emitted worker's `sync` event to the mutator queue |
-| `pwa.push` | `boolean` | `false` | **read, and it wires nothing yet** — `generateServiceWorker` emits a push handler only when a VAPID key comes with the capability, and there is no `pwa.vapid` key. Setting it makes `x build --json` report a `precacheWarnings` entry saying so, rather than leaving the switch quietly inert |
+| `pwa.push` | `boolean` | `false` | **read, and it wires nothing yet** — `generateServiceWorker` emits a push handler only when a VAPID key comes with the capability, and there is no `pwa.vapid` key. Setting it makes `x build --json` report a `serviceWorkerWarnings` entry saying so, rather than leaving the switch quietly inert |
 | ~~`pwa.installPrompt`~~ | — | — | **Deleted in 8.0.0.** Declared, defaulted and merged, and read by nothing — `@ultimat3/pwa`'s `createInstallController` is real and complete and no code ever threaded this flag into it, so both tracked apps and every scaffolded app carried a switch with no wire. Migration: delete the key and call `createInstallController` from your own affordance ([PWA and offline](PWA-And-Offline)) |
 
 ## `http`

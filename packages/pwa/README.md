@@ -109,10 +109,13 @@ capability nothing implements.
 - **`WebManifestInput` is not the `pwa` block of `app.config.ts`.** It was called `PwaConfig` and
   said it was, while `@ultimat3/core` exported a different type of that name that really is the
   block. An app writes `name` and `colors`; every other member is a caller's.
-- **The service worker still has no build behind it, `As of 2026-08-27`.** `generateServiceWorker`,
-  `buildPrecacheManifest`, `offlineFallbackSource`, `backgroundSyncSource` and `pushSource` have no
-  caller outside this package ([#362](https://github.com/developerz-ai/ultimate/issues/362)) — the
-  manifest half is wired, the worker half is not.
+- **The service worker has a build behind it, `As of 2026-08`.** `generateServiceWorker` — and
+  through it `buildPrecacheManifest`, `offlineFallbackSource`, `backgroundSyncSource` and
+  `pushSource` — is called by `packages/cli/src/sw-artifacts.ts`, so `x dev`, the container and the
+  static export all emit `sw.js` and `x-sw-register.js`
+  ([#390](https://github.com/developerz-ai/ultimate/issues/390)). It landed a release after the
+  manifest half because a bad `sw.js` is sticky: it waited on a real browser check
+  (`packages/cli/e2e/service-worker.e2e.test.ts`), which the tree could not run until #400.
 - **Precache revisions are content hashes, never the build id.** Keying on the build id
   re-downloads every asset on every deploy.
 - **The mutation queue lives in `@ultimat3/realtime`, not here** (SRP). This package owns

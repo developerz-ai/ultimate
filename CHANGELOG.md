@@ -33,7 +33,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   allowed by the script's own response.
 
   **`PrecacheManifest.warnings` has a reader**: `x build --target static --json` reports them under
-  `precacheWarnings`, and the human table gets a `precache` row. The ceiling was, in
+  `serviceWorkerWarnings`, and the human table gets a `precache` row. The ceiling was, in
   `wiki/Troubleshooting.md`'s own words, "a designed thing that is not one".
 
 - **A real browser proves it, which is why it could ship at all.** #390's fourth requirement was
@@ -59,6 +59,16 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 - **`sw.js`'s own `regenerate:` header named a function call instead of a command**, because no
   command emitted the file. It says `x build` now, which is true.
+
+- **`PWA_FIX` told the reader to write the spelling this release removed.** It is the `fix:` line on
+  every `pwa` config finding, and it printed `offline: 'runtime'` â€” an instruction that now fails
+  the validator it is printed by. It writes `offline: { fallback: '/offline' }` and says to add a
+  route at that path, which is axiom 4's whole point.
+
+- **`x build`'s worker findings are `serviceWorkerWarnings`, not `precacheWarnings`.** The list
+  carries the push warning too, and a capability declared with nothing to wire it to is not a
+  precache fact; the terminal row is labelled `service-worker` for the same reason. Renamed before
+  it shipped, so no released report carries the old key.
 
 ### Changed
 
@@ -95,7 +105,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   deliberately â€” the document that answers a lost network must render with no network, no session
   and no database, which `app/` (`ssr | stream`) cannot promise.
 
-- `StaticReport` gains `precacheWarnings`. A report written before the field existed reads as none
+- `StaticReport` gains `serviceWorkerWarnings`. A report written before the field existed reads as none
   rather than as unparseable, for the reason `unmeasured` already earned one field earlier.
 
 - **A real browser behind `installE2eDriver`, over raw CDP, with no dependency.** `PageLike` has
