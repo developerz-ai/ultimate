@@ -293,7 +293,7 @@ describe('describeValue', () => {
 
   test('counts characters, staying byte-identical to schema`s copy on an astral value', () => {
     // The deliberate twin in `packages/schema/src/describe-value.ts` counts code points because
-    // the rules that reject a string do; `packages/cli/src/describe-value-pin.test.ts` holds the
+    // the rules that reject a string do; `@ultimat3/schema` owns the one implementation and holds the
     // two equal, and it cannot see a divergence its cases never reach.
     expect(describeValue('👍')).toBe('a string of 1 character');
     expect(describeValue('👍a')).toBe('a string of 2 characters');

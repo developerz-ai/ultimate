@@ -1,8 +1,12 @@
-// Single responsibility: is a string an IANA zone NAME? Tier 0's second statement of the one rule
+// Single responsibility: is a string an IANA zone NAME? TIER 0'S ONE STATEMENT of the rule
 // `@ultimat3/time` enforces everywhere above it — a zone is `Area/Location`, and `UTC` is the one
-// exception. It is stated a third time because `schema` is tier 0 and may import neither
-// `@ultimat3/time` nor `@ultimat3/core`; `packages/time/src/zone-canonical.ts` is where the rule
-// and its reasoning are written down.
+// exception. `@ultimat3/core` imported its own copy of this predicate until 2026-08-27 and now
+// re-exports this one, over the declared `core -> schema` edge.
+//
+// `@ultimat3/time`'s `canonicalTimeZone` is NOT a fourth copy and is deliberately left alone: it
+// answers a different question (the canonical SPELLING, memoised over ~445 listed zones plus a
+// probe cache) and shares only the leading-sign rule below. Collapsing it into this predicate
+// would trade a cache a request header can hit for one it cannot.
 
 /**
  * A LEADING sign is a fixed offset, which carries no DST rules. `Etc/GMT+2` keeps its `+`.
@@ -22,10 +26,9 @@ const NUMERIC_OFFSET = /^[+-]/;
  * file enforces is that same rule at the EDGE: an identifier is `Area/Location`, `UTC` is the one
  * legal exception, and a leading sign is an offset rather than a name.
  *
- * `@ultimat3/core`'s `isIanaZoneName` is the same predicate for `app.config.ts`. Nothing below
- * tier 5 can compare the two, so `timezone-validator-pin.test.ts` in `@ultimat3/cli` is the
- * mechanical half — the arrangement `schema-error-codes-pin.test.ts` already uses for tier 0's
- * other deliberate duplicate.
+ * `@ultimat3/core` re-exports THIS function for `app.config.ts`, so the edge validator and the
+ * config validator are one predicate. They were two, held equal by a 123-line pin test in
+ * `@ultimat3/cli` that no rule required to exist.
  *
  * Of the three copies this is the one that guards CALLER input: `t.timezone` is a request body
  * field and a query parameter through `coerceQuery`, so the bare `new Intl.DateTimeFormat(…)`

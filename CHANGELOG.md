@@ -8,6 +8,42 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Changed
+
+- **`core → schema` is a declared sideways edge, and five duplicated declarations are gone.**
+  `CURRENCY_CODE_PATTERN`, `describeValue`, `charCount`, `SCHEMA_ERROR_CODES` and `isIanaZoneName`
+  were restated in `@ultimat3/core` because both packages are tier 0 and neither could import the
+  other, held equal by **394 lines of pin test in `@ultimat3/cli`** — a tier-5 package pinning a
+  tier-0 invariant that no rule required to exist (#361). `describeValue` prints *instead of* a
+  rejected password, so the safety property of the framework's most security-sensitive renderer
+  rested on a 63-line behavioural pin at tier 5. Core imports all five now; four pin files are
+  deleted. **Not breaking**: every name core exported it still exports.
+- **`@ultimat3/schema` declares `sideEffects: false`**, which `bun run side-effects` had already
+  measured as true of the package and which nothing had written down. It is what makes the edge
+  nearly free — see below.
+- **`isIanaZoneName` is exported from `@ultimat3/schema`.** Additive; `@ultimat3/core` re-exports
+  the same function, so `app.config.ts` and `t.timezone` judge a zone with one predicate.
+- **`schema → core` stays forbidden**, on its merits rather than by the tier rule alone: `t` is in
+  every bundle graph an app has. The three copies going that way — `singleLine`, `ERROR_DOCS_URL`
+  and the `Symbol.for('ultimate.error')` key — remain, and `single-line-pin.test.ts` moved from
+  `@ultimat3/cli` to `packages/core/src/`, gaining assertions for the other two. `ERROR_DOCS_URL`
+  had **no pin at all** and its own doc-block said so.
+
+### Fixed
+
+- **A browser chunk that reaches `@ultimat3/core` no longer drags all of `@ultimat3/schema`.**
+  Measured, `bun build --target=browser --minify`:
+
+  | one import | before | edge only | edge + honest `sideEffects` |
+  |---|---|---|---|
+  | `UltimateError` from `core` | 6,362 B | 19,018 B | **7,352 B** |
+  | `describeValue` from `core` | 7,170 B | 19,016 B | **8,160 B** |
+  | `useUi` from `@ultimat3/ui` | 15,583 B | 28,284 B | **16,593 B** |
+  | `moneyText` from `@ultimat3/ui` | 27,203 B | 26,838 B | **19,417 B** |
+
+  `moneyText` always carried schema (`@ultimat3/money` puts it in the graph) and comes out
+  **7.8 kB smaller**, because the duplicates are gone.
+
 ### Added
 
 - **`page.colorScheme(scheme)` on `@ultimat3/scraping`** — what the browser reports as the user's

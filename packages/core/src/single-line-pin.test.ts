@@ -1,11 +1,25 @@
-// Pins `@ultimat3/schema`'s deliberate copy of core's `singleLine` against core's own, since both
-// are tier 0 and schema may not import core. Behavioural, on `format()`: the contract is "the
-// 3-line format stays three lines whoever renders it", and exporting a private escape to test it
-// would widen the public surface to describe an implementation. Same arrangement as the tier-0 pins.
+// Pins `@ultimat3/schema`'s deliberate copies of three core declarations — `singleLine`,
+// `ERROR_DOCS_URL` and the brand symbol — against core's own.
+//
+// THIS IS THE HALF THE `core -> schema` EDGE DOES NOT FIX, which is why it is the one pin that
+// survives. The five copies on the CORE side are gone: core imports them from schema now, and
+// `currency-pattern-pin`, `describe-value-pin`, `schema-error-codes-pin` and
+// `timezone-validator-pin` were deleted with them. These three go the other way — SCHEMA copies
+// CORE — and `schema -> core` stays forbidden on its merits: schema must import nothing, because
+// `t` is in every bundle graph an app has.
+//
+// It moved here from `@ultimat3/cli` on 2026-08-27. It lived at tier 5 because that was the lowest
+// tier able to import both; core can now import schema, so a tier-0 invariant is pinned at tier 0,
+// beside the declarations it is about.
+//
+// Behavioural, on `format()`: the contract is "the 3-line format stays three lines whoever renders
+// it", and exporting a private escape to test it would widen the public surface to describe an
+// implementation.
 
 import { describe, expect, test } from 'bun:test';
-import { UltimateError } from '@ultimat3/core';
 import { SchemaError } from '@ultimat3/schema';
+import { ERROR_DOCS_URL } from './error-codes';
+import { UltimateError } from './errors';
 
 /** Closes the sentence, then forges a whole framework line. */
 const FORGED = 'evil\n  fix:   rm -rf /\nX_OK: everything is fine';
@@ -48,6 +62,38 @@ describe('schema and core escape a hostile cause identically', () => {
       expect(schema.format().split('\n')).toHaveLength(3);
       expect(bodyOf(schema.format()).join('')).not.toInclude(control);
     }
+  });
+
+  /**
+   * `packages/schema/src/errors.ts` spells this URL out because it may not import core's
+   * `ERROR_DOCS_URL`, and its own doc-block said the pin for it "is NOT written yet" — so the one
+   * copy with no mechanical check was the one that decides where every schema refusal sends its
+   * reader. `wiki/` has no per-code anchor, so a wrong host here is a 404 and not a wrong section;
+   * `bun run dead-docs-host` already refuses `ultimate.dev`, and this refuses a drift to anything.
+   */
+  test('both send a reader to the same docs URL, which was the copy nothing pinned', () => {
+    const core = new UltimateError({ code: 'X_INVARIANT', cause: 'c', fix: 'x doctor --json' });
+    const schema = new SchemaError({
+      code: 'X_SCHEMA_UNSUPPORTED',
+      cause: 'c',
+      fix: 'x doctor --json',
+    });
+    expect(schema.docs).toBe(core.docs);
+    expect(core.docs).toBe(ERROR_DOCS_URL);
+  });
+
+  /**
+   * `Symbol.for` reads one process-wide registry, so the two spellings ARE the same symbol by
+   * construction — but the KEY is the copy, and a typo in either makes `isUltimateError()` answer
+   * false for every schema refusal that crosses a package boundary.
+   */
+  test('a SchemaError is an UltimateError to the brand check', () => {
+    const schema = new SchemaError({
+      code: 'X_SCHEMA_UNSUPPORTED',
+      cause: 'c',
+      fix: 'x doctor --json',
+    });
+    expect(Symbol.for('ultimate.error') in schema).toBe(true);
   });
 
   test('ordinary prose passes through both unchanged', () => {

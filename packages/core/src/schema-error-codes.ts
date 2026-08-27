@@ -1,32 +1,33 @@
 // Single responsibility: register `@ultimat3/schema`'s error codes so their titles render for any
 // process that imports `@ultimat3/core` — not just the CLI. `@ultimat3/schema` is tier 0 alongside
-// this package, so it cannot call `registerErrorCodes()` itself (that would mean importing core,
-// a same-tier import) and this package cannot import schema to read its declarations back (same
-// reason, the other direction). The codes below are a deliberate, tested duplicate of
-// `SCHEMA_ERROR_CODES` in `packages/schema/src/errors.ts` — `schema-error-codes-pin.test.ts`, in a
-// package that may legally import both (`@ultimat3/cli`), asserts them equal so a title edited in
-// one place and not the other fails the build instead of quietly disagreeing at runtime.
+// this package and cannot call `registerErrorCodes()` itself: that would be `schema -> core`, an
+// import this package's own dependency-free promise forbids in that direction and always will.
+// The other direction is DECLARED (`core -> schema`, `scripts/lib/tiers.ts`), so the titles are
+// READ from schema rather than restated here.
+//
+// They were a hand-kept duplicate until 2026-08-27, held equal by `schema-error-codes-pin.test.ts`
+// in `@ultimat3/cli` — a tier-5 package pinning a tier-0 invariant, which nothing required to
+// exist. It is deleted with this change.
 
+import { SCHEMA_ERROR_CODES } from '@ultimat3/schema';
 import { registerErrorCodes } from './error-codes';
 import { registerErrorRetry } from './error-retry';
 
-/** Mirrors `SCHEMA_ERROR_CODES` in `packages/schema/src/errors.ts`. Keep the titles identical. */
-export const SCHEMA_ERROR_CODE_TITLES: Readonly<Record<string, string>> = Object.freeze({
-  X_VALIDATION_FAILED: 'value did not match its schema',
-  X_SCHEMA_UNSUPPORTED: 'the active schema provider cannot do this',
-  X_SCHEMA_DISCRIMINANT_INVALID: 'a discriminated union member can never be dispatched to',
-  X_SCHEMA_DEFAULT_UNSHAREABLE: 'a schema default cannot be copied per parse',
-});
+/**
+ * Schema's own declarations, projected to titles. Kept as an export because it is public API
+ * shipped since 1.0; it is now DERIVED and can no longer disagree with its source.
+ */
+export const SCHEMA_ERROR_CODE_TITLES: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(
+    Object.entries(SCHEMA_ERROR_CODES).map(([code, declared]) => [code, declared.title]),
+  ),
+);
 
 // Registered here rather than in `error-codes.ts`'s `CORE_CODE_TITLES` because core does not own
 // these codes — `@ultimat3/schema` does — and `registerErrorCodes` is the one mechanism that
 // raises `X_ERROR_CODE_DUPLICATE` if a package that DOES own one of them ever tries to register it
-// too, which pins ownership even though the titles live in two files.
-registerErrorCodes(
-  Object.fromEntries(
-    Object.entries(SCHEMA_ERROR_CODE_TITLES).map(([code, title]) => [code, { title }]),
-  ),
-);
+// too, which pins ownership even though the registration happens here.
+registerErrorCodes(SCHEMA_ERROR_CODES);
 
 // And how each is RETRIED, here for the same tier reason the titles are here.
 //
@@ -41,9 +42,10 @@ registerErrorCodes(
 // `packages/scraping/src/cdp-target.ts` names the gap and says it cannot be closed from there.
 //
 // A value that does not match its schema does not match it on attempt five either.
-registerErrorRetry({
-  X_VALIDATION_FAILED: 'terminal',
-  X_SCHEMA_UNSUPPORTED: 'terminal',
-  X_SCHEMA_DISCRIMINANT_INVALID: 'terminal',
-  X_SCHEMA_DEFAULT_UNSHAREABLE: 'terminal',
-});
+//
+// DERIVED from the same set, so a code schema adds cannot arrive unclassified: the list was typed
+// out here and a fifth code would have been silently missing from it, which is precisely the
+// "unregistered reads as unclassified" failure the paragraph above describes.
+registerErrorRetry(
+  Object.fromEntries(Object.keys(SCHEMA_ERROR_CODES).map((code) => [code, 'terminal' as const])),
+);

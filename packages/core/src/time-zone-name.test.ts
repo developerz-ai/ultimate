@@ -3,12 +3,18 @@ import { isIanaZoneName } from './time-zone-name';
 
 /**
  * **A MIRROR of `isValidTimeZone`'s corpus in `packages/time/src/zones.test.ts`, name for name, and
- * it must move with it.** `core` is tier 0 and may not import `@ultimat3/time`, so the rule is
- * stated twice and nothing below tier 5 can compare the two implementations mechanically — a pin
- * test in a package that may import both (the shape of `schema-error-codes-pin.test.ts` in
- * `@ultimat3/cli`) is the mechanical half and does not exist yet. This is the local half: a name
- * added to either corpus and not the other shows up as a divergence in review rather than as an
- * `app.config.ts` that boots on a zone every `format` call below it refuses.
+ * it must move with it.**
+ *
+ * The predicate itself is no longer duplicated: `core -> schema` is a declared edge `As of
+ * 2026-08-27` and this module re-exports `@ultimat3/schema`'s `isIanaZoneName`, so the config
+ * validator and `t.timezone` are one function. What is still stated twice is
+ * `@ultimat3/time`'s `canonicalTimeZone`, which answers a DIFFERENT question — the canonical
+ * spelling, memoised over the runtime's ~445 listed zones plus a probe cache — and shares only the
+ * leading-sign rule. Collapsing it would trade a cache a request header can hit for one it cannot.
+ *
+ * So this corpus is the local half of THAT comparison: a name added to either and not the other
+ * shows up as a divergence in review rather than as an `app.config.ts` that boots on a zone every
+ * `format` call below it refuses.
  */
 describe('isIanaZoneName', () => {
   // ICU 78 (Bun 1.4) RESOLVES every one of these where ICU 75 threw, which is exactly how the bare

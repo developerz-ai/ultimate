@@ -91,6 +91,7 @@ export {
 } from './standard';
 export type { Infer } from './t';
 export { t } from './t';
+export { isIanaZoneName } from './time-zone-name';
 export type {
   NumberSchema,
   ObjectSchema,

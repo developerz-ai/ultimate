@@ -80,7 +80,7 @@ describe('defineConfig', () => {
     // or narrowed regex in `config.ts` fails here, which is the only place in this package that a
     // divergence from the tier-0 declaration can be made visible at all. Comparing the two
     // patterns mechanically needs a package that may import both (the shape of
-    // `schema-error-codes-pin.test.ts` in `@ultimat3/cli`); this is the local half.
+    // `single-line-pin.test.ts`); this is the local half — the pattern itself is schema's now.
     const cases: readonly (readonly [string, boolean])[] = [
       ['USD', true],
       ['EUR', true],

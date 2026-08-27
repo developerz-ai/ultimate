@@ -252,57 +252,14 @@ export function renderMetaRecord(
  * There is no dev-only escape hatch on purpose — a flag is one misconfigured environment away
  * from being the same breach.
  *
- * A deliberate duplicate of `describeValue` in `packages/schema/src/describe-value.ts`, for the
- * reason `SCHEMA_ERROR_CODE_TITLES` is one: `@ultimat3/schema` is tier 0 alongside this package,
- * so neither may import the other. Keep the two answering IDENTICALLY — that is what
- * `packages/cli/src/describe-value-pin.test.ts` holds — and changing one alone is the bug.
+ * DECLARED IN `@ultimat3/schema` and re-exported here, `As of 2026-08-27`. It was a
+ * character-for-character copy of `packages/schema/src/describe-value.ts` — the two tier-0
+ * packages could not import each other — held equal by a 63-line behavioural pin in
+ * `@ultimat3/cli`, a TIER-5 package, that no rule required to exist. Whose function it is has not
+ * changed: schema's `expected()` is the other reader, and a widening that leaks a value is now one
+ * edit in one file rather than two files that can drift apart in silence.
+ *
+ * `charCount` went with it — the same duplication, one call deep — so the unit a message quotes
+ * and the unit a length rule counts in are the same code, not two files that agree today.
  */
-export function describeValue(value: unknown): string {
-  if (value === undefined) return 'undefined';
-  if (value === null) return 'null';
-  switch (typeof value) {
-    case 'string':
-      return countOf(charCount(value), 'string', 'character');
-    case 'number':
-      return describeNumber(value);
-    case 'boolean':
-      return 'a boolean';
-    case 'bigint':
-      return 'a bigint';
-    case 'symbol':
-      return 'a symbol';
-    case 'function':
-      return 'a function';
-    default:
-      break;
-  }
-  if (Array.isArray(value)) return countOf(value.length, 'array', 'item');
-  // `getTime()` rather than a value: an invalid Date is the one Date fact a caller can act on.
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? 'an invalid Date' : 'a Date';
-  return 'an object';
-}
-
-function describeNumber(value: number): string {
-  if (Number.isNaN(value)) return 'NaN';
-  if (value === Number.POSITIVE_INFINITY) return 'Infinity';
-  if (value === Number.NEGATIVE_INFINITY) return '-Infinity';
-  return 'a number';
-}
-
-function countOf(size: number, noun: string, unit: string): string {
-  if (size === 0) return `an empty ${noun}`;
-  const article = noun === 'array' ? 'an' : 'a';
-  return `${article} ${noun} of ${size} ${unit}${size === 1 ? '' : 's'}`;
-}
-
-/**
- * The twin of `@ultimat3/schema`'s `char-count.ts`, duplicated for the same reason `describeValue`
- * is: both packages are tier 0 and neither may import the other. Code points, because the rules
- * that reject a string count in them and the message must quote the same unit — `'👍'.length` is 2.
- * Only a surrogate makes the two counts differ, so every ASCII value keeps the O(1) read.
- */
-const HAS_SURROGATE = /[\uD800-\uDBFF]/;
-
-function charCount(value: string): number {
-  return HAS_SURROGATE.test(value) ? [...value].length : value.length;
-}
+export { describeValue } from '@ultimat3/schema';
