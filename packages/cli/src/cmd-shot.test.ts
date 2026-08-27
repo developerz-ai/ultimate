@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ConsoleLine, ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
 import { fakeBrowser } from '@ultimat3/scraping';
+import { REQUIRED_BUN } from './app-root';
 import {
   allowHostsFrom,
   devServerFor,
@@ -419,7 +420,7 @@ describe('unit · x shot refuses before it boots anything', () => {
     cwd: root,
     runner: (command) => expect.unreachable(`x shot spawned ${command.join(' ')}`),
     env: {},
-    bunVersion: '1.3.0',
+    bunVersion: REQUIRED_BUN,
   });
 
   test('a port that is not a port is a flag error, not a NaN handed to Bun.serve', async () => {

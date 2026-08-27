@@ -3,6 +3,7 @@
 // build actually ships. Each of those three is one assertion below.
 
 import { describe, expect, test } from 'bun:test';
+import { REQUIRED_BUN } from './app-root';
 import {
   PLANNED_COMMANDS,
   PLANNED_SUBCOMMANDS,
@@ -20,7 +21,7 @@ const ctxFor = (argv: readonly string[]): CommandContext => ({
   cwd: '/tmp',
   runner: exec,
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 /** The first word of a fix line, which is the binary the caller is being told to run. */

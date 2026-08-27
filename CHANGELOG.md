@@ -30,6 +30,46 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- **BREAKING — the Bun floor is `>=1.4.0`, in `engines` and in the CLI's own check.** It said
+  `1.3.0` at both sites while `x test` emitted `bun test --isolate`, a flag Bun introduced in
+  **1.3.13** — so a user on a runtime this framework declared supported got an unknown-flag failure
+  out of the gate's dominant step, and `x doctor` called the runtime fine. `--parallel` arrives from
+  the same release and is emitted now. `1.4.0` rather than `1.3.13` because a floor is a claim about
+  a runtime somebody tested: CI pins `1.4.x`, both images build on `oven/bun:1.4-*`, and the
+  per-worker database rests on `BUN_TEST_WORKER_ID`'s numbering, probed on 1.4.0 and nothing older.
+  **The edit:** `bun upgrade`. `scripts/bun-pin.test.ts` already held CI, the release job, both
+  images and the contributor floor to one series and read **neither consumer-facing floor** — it now
+  reads `REQUIRED_BUN` and every `engines.bun` across all 42 manifests, so the two sites that
+  actually gate a user cannot drift a minor behind again.
+- **`x test live` and `x test e2e` are serial, like the gate's own steps.** `verify-tests.ts` routes
+  both through `runSerial`; `cmd-test.ts` never read `SERIAL_TYPES`, so `x test live --workers 8`
+  spawned eight processes over the very files `x verify` ran one over — two answers to one question
+  (axiom 1), and the widened one is the command a human types while debugging. The declaration is
+  not a preference: a logical replication slot is named at the Postgres **cluster** level, so a
+  per-worker database does not isolate it and two workers race
+  `pg_create_logical_replication_slot`; `e2e` shares one built `dist/` and one browser profile.
+  Neither is visible without a real `TEST_DATABASE_URL`, which is why it measured green for as long
+  as it did. `--workers` is still accepted on both and clamps to 1.
+- **`x test` runs one `bun test --parallel=N`, not N processes it packs itself.** Bun 1.4 runs the
+  pool, so `test-shards.ts`'s largest-first bin-packer over file SIZE is deleted rather than
+  improved. **This is a deletion, not a speed-up, and the measurement is why:** four interleaved
+  runs of each form on the same 1296-file unit corpus, 8 workers, gave 58.2/60.0/65.0/66.5s
+  hand-packed against 54.5/57.8/61.7/64.5s under `--parallel=8` — within noise. Both are already
+  work-bound: `--update-timings` measures the corpus at 436.7s of file time, so eight workers
+  cannot beat 54.6s however the files are dealt, and the slowest single file is 20.5s, far under
+  that floor. A greedy pack of 1296 small items lands near-optimal by accident, which is why bytes
+  being a poor proxy for time never showed up as a wall. What the change buys is the packer and its
+  `Shard` type gone, one process instead of eight, and Bun's own summary instead of eight merged
+  ones. `--timings` is refused on the same evidence — at most the ~5s between the 59.8s median and
+  the 54.6s floor, against a committed JSON that goes stale on every test edit (#342). Nothing
+  about isolation changed — `--parallel` implies `--isolate`, and the per-worker database is
+  untouched because `@ultimat3/testing`'s `workerId` already read `BUN_TEST_WORKER_ID`, which Bun
+  sets 1..N.
+  **BREAKING — the `--json` shape and the removed exports:** `data.shards[]` and `data.failed` are gone, replaced by `data.ok`,
+  `data.exitCode` and `data.reproduce`; a gate failure is `X_TEST_FAILED` naming the whole type,
+  and `X_TEST_SHARD_FAILED` is now `x test --worker I`'s alone. **Exports:** `planShards`,
+  `shardArgs`, `SHARD_COMMAND_PREFIX` and `Shard` are gone from `@ultimat3/cli`; `testArgs` and
+  `filesIn` replace them.
 - **BREAKING — `pwa.enabled: true` now requires `pwa.name` and `pwa.colors`.** `AppConfig.pwa`
   could not express what a web manifest needs, which is why the generator had no caller: the
   install title and the two colours per scheme are the values nothing can derive. `app.name` is a

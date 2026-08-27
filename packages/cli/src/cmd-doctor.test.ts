@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { REQUIRED_BUN } from './app-root';
 import type { DoctorProbe } from './cmd-doctor';
 import { doctorCommand, doctorPort, OFFLINE_FALLBACK, probeFor, runDoctor } from './cmd-doctor';
 import type { CommandContext } from './command';
@@ -16,7 +17,7 @@ import type { ParsedArgs } from './parse';
 import { parseArgs } from './parse';
 
 const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
-  bunVersion: '1.3.14',
+  bunVersion: REQUIRED_BUN,
   root: '/app',
   port: 3000,
   // The ordinary developer: the shipped cursor key, off production. Every case below that does
@@ -300,7 +301,7 @@ describe('unit · x doctor · the command', () => {
       throw new Error(`x doctor spawned ${command.join(' ')}`);
     },
     env: {},
-    bunVersion: '1.3.14',
+    bunVersion: REQUIRED_BUN,
   });
 
   test('a port that is taken is reported as X_PORT_IN_USE, and --json lists the codes', async () => {

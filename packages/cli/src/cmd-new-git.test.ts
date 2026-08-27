@@ -12,6 +12,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { REQUIRED_BUN } from './app-root';
 import { initRepository, newCommand, SKIPPED } from './cmd-new';
 import type { CommandContext } from './command';
 import type { Runner } from './exec';
@@ -102,7 +103,7 @@ describe('unit · x new · the repository it initializes', () => {
         cwd: parent,
         runner,
         env: {},
-        bunVersion: '1.3.0',
+        bunVersion: REQUIRED_BUN,
       });
       const target = join(parent, 'unsigned-app');
       expect(written.ok).toBe(true);
@@ -123,7 +124,7 @@ describe('unit · x new · the repository it initializes', () => {
         cwd: parent,
         runner: exec,
         env: {},
-        bunVersion: '1.3.0',
+        bunVersion: REQUIRED_BUN,
       });
       const withGit = await newCommand.run(ctx(['new', 'repo-app', '--no-example']));
       expect(withGit.ok).toBe(true);

@@ -7,6 +7,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { resetAppLoad } from './app-load';
+import { REQUIRED_BUN } from './app-root';
 import { dedupe, generateCommand } from './cmd-generate';
 import type { CommandContext } from './command';
 import type { GeneratedFile } from './templates';
@@ -91,7 +92,7 @@ describe('unit · x g regenerates the app catalog index for every locale on disk
       durationMs: 0,
     }),
     env: {},
-    bunVersion: '1.3.0',
+    bunVersion: REQUIRED_BUN,
   });
 
   const seedApp = async (): Promise<void> => {

@@ -4,6 +4,7 @@
 // comes back out as findings.
 
 import { describe, expect, test } from 'bun:test';
+import { REQUIRED_BUN } from './app-root';
 import { findingsFrom, jobsInLog, parseLogLines, tailOf } from './ci-log';
 import type { CiRun } from './ci-runs';
 import { isFailed, latestPerWorkflow, RUN_FIELDS } from './ci-runs';
@@ -194,7 +195,7 @@ const contextFor = (argv: readonly string[], runner: Runner): CommandContext => 
   cwd: '/repo',
   runner,
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 /**

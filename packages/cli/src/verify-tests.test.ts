@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { TEST_TYPES as TESTING_TEST_TYPES } from '@ultimat3/testing';
 import type { ExecOptions, ExecResult } from './exec';
 import { belongsToType } from './test-select';
-import { SHARD_COMMAND_PREFIX } from './test-shards';
+import { filesIn } from './test-shards';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import {
   ownerOf,
@@ -64,37 +64,33 @@ afterAll(async () => {
 });
 
 describe('unit · the gate runs its test steps in parallel', () => {
-  test('unit spreads over N processes, each with its own worker index', async () => {
+  test('unit is ONE bun test at the asked width, not one process per worker', async () => {
     calls.length = 0;
     const outcome = await stepFor('unit').run(ctx(4));
     expect(outcome.ok).toBe(true);
     expect(outcome.workers).toBe(4);
-    expect(calls.length).toBe(4);
-    expect(calls.map((call) => call.worker).sort()).toEqual(['0', '1', '2', '3']);
+    expect(calls.length).toBe(1);
+    expect(calls[0]?.command).toContain('--parallel=4');
+    // Bun numbers its own workers; pinning them all to one database would switch the numbered
+    // test databases off without changing a line of `@ultimat3/testing`.
+    expect(calls[0]?.worker).toBeUndefined();
   });
 
-  test('every shard isolates the module registry per file — an arbitrary split needs it', async () => {
-    calls.length = 0;
-    await stepFor('unit').run(ctx(3));
-    for (const call of calls) {
-      expect(call.command.slice(0, SHARD_COMMAND_PREFIX.length)).toEqual([...SHARD_COMMAND_PREFIX]);
-    }
-  });
-
-  test('every file lands in exactly one shard, so nothing is run twice or dropped', async () => {
+  test('a file is passed once, so nothing is run twice or dropped', async () => {
     calls.length = 0;
     await stepFor('unit').run(ctx(4));
-    const files = calls.flatMap((call) => call.command.slice(SHARD_COMMAND_PREFIX.length));
+    const files = filesIn(calls[0]?.command ?? []);
     expect(files.length).toBe(12);
     expect(new Set(files).size).toBe(12);
   });
 
-  test('--workers 1 is one process, and the split is still every file', async () => {
+  test('--workers 1 is one worker, and the selection is still every file', async () => {
     calls.length = 0;
     const outcome = await stepFor('unit').run(ctx(1));
     expect(outcome.workers).toBe(1);
     expect(calls.length).toBe(1);
-    expect(calls[0]?.command.slice(SHARD_COMMAND_PREFIX.length).length).toBe(12);
+    expect(calls[0]?.command).toContain('--parallel=1');
+    expect(filesIn(calls[0]?.command ?? []).length).toBe(12);
   });
 });
 
@@ -111,15 +107,17 @@ describe('unit · a step reports what bun actually ran, not just how it exited',
     runner: async (command) => ({ command, ok: true, code: 0, stdout, stderr: '', durationMs: 1 }),
   });
 
-  test('a parallel step sums every shard summary into what it ran and what it skipped', async () => {
+  // ONE summary now, because the step is one `bun test --parallel=N` rather than N processes
+  // whose summaries were summed. The number is what the whole run reported, and it is still what
+  // the suite ratchet reads to tell "this step ran" from "this step skipped itself to nothing".
+  test('a parallel step reads the run summary into what it ran and what it skipped', async () => {
     const outcome = await stepFor('unit').run(counting(skippedSummary));
-    // Two shards, each reporting the same all-skipped summary: nothing ran, four were skipped.
-    expect(outcome.tests).toEqual({ ran: 0, skipped: 4 });
+    expect(outcome.tests).toEqual({ ran: 0, skipped: 2 });
   });
 
   test('pass and fail both count as ran — a suite that failed is a suite that executed', async () => {
     const outcome = await stepFor('unit').run(counting(ranSummary));
-    expect(outcome.tests).toEqual({ ran: 14, skipped: 2 });
+    expect(outcome.tests).toEqual({ ran: 7, skipped: 1 });
   });
 
   test('a serial step reads its one summary the same way', async () => {

@@ -1,6 +1,12 @@
-// The split has to be reproducible: the same files in produce the same shards out, and the line a
-// failed shard prints has to reselect exactly those files. Determinism, balance, the argv each
-// child receives, and every input the reproduction carries back are asserted here — nowhere else.
+// The run has to be reproducible: the line a failure prints has to reselect exactly the files that
+// ran. The argv one `bun test` receives, the shard form `--worker` takes, and every input the
+// reproduction carries back are asserted here — nowhere else.
+//
+// WHAT LEFT WHEN THE PACKER DID. The determinism and balance cases below used to be about
+// `planShards`, a largest-first greedy bin-packer over file SIZE. There is no packer any more —
+// `bun test --parallel=N` hands each free worker the next file — so "is the split balanced?" is
+// not a question this repo can answer about itself, and pretending otherwise with a fixture would
+// be a test that cannot fail. What is left is what is still ours: the argv, and the reproduction.
 
 import { describe, expect, test } from 'bun:test';
 import { testCommand } from './cmd-test';
@@ -8,17 +14,7 @@ import type { ExecOptions, Runner } from './exec';
 import { renderJson } from './output';
 import { flagBool, flagString, parseArgs } from './parse';
 import type { TestFile } from './test-select';
-import type { Shard } from './test-shards';
-import {
-  planShards,
-  reproduceFor,
-  runShards,
-  SHARD_COMMAND_PREFIX,
-  shardArgs,
-} from './test-shards';
-
-/** Where a shard's file list starts in its argv, derived so a new fixed flag needs no edits. */
-const PREFIX = SHARD_COMMAND_PREFIX.length;
+import { filesIn, reproduceFor, runShards, testArgs } from './test-shards';
 
 interface Call {
   readonly command: readonly string[];
@@ -31,14 +27,13 @@ interface Recorder {
   readonly runner: Runner;
 }
 
-/** The exec seam, faked: these tests assert on the split and the argv, never on a real process. */
-const recorder = (failing: readonly number[] = []): Recorder => {
+/** The exec seam, faked: these tests assert on the argv, never on a real process. */
+const recorder = (fails = false): Recorder => {
   const calls: Call[] = [];
   const runner: Runner = async (command, options) => {
     calls.push({ command, env: options.env, cwd: options.cwd });
-    const worker = Number.parseInt(options.env?.['ULTIMATE_TEST_WORKER'] ?? '-1', 10);
-    const code = failing.includes(worker) ? 1 : 0;
-    return { command, code, ok: code === 0, stdout: `worker ${worker}`, stderr: '', durationMs: 7 };
+    const code = fails ? 1 : 0;
+    return { command, code, ok: code === 0, stdout: 'ran', stderr: '', durationMs: 7 };
   };
   return { calls, runner };
 };
@@ -50,128 +45,123 @@ const corpus = (count: number): readonly TestFile[] =>
     bytes: index % 7 === 0 ? 40_000 - index * 13 : 400 + ((index * 37) % 900),
   }));
 
-const shuffled = (files: readonly TestFile[]): readonly TestFile[] => {
-  const out = [...files];
-  // Reverse plus a rotation: a fixed permutation, so the test itself stays deterministic.
-  return [...out.slice(17), ...out.slice(0, 17)].reverse();
-};
-
-const totalBytes = (files: readonly TestFile[]): number =>
-  files.reduce((sum, file) => sum + file.bytes, 0);
-
-const paths = (shards: readonly Shard[]): readonly (readonly string[])[] =>
-  shards.map((shard) => shard.files);
-
 const firstFix = (result: {
   steps?: readonly { findings: readonly { fix: string }[] }[];
 }): string => result.steps?.flatMap((step) => [...step.findings])[0]?.fix ?? '';
 
-describe('unit · x test sharding', () => {
-  test('the same file set produces the same split, every run', () => {
-    const files = corpus(120);
-    expect(paths(planShards(files, 6))).toEqual(paths(planShards(files, 6)));
-  });
+const firstCode = (result: {
+  steps?: readonly { findings: readonly { code: string }[] }[];
+}): string => result.steps?.flatMap((step) => [...step.findings])[0]?.code ?? '';
 
-  test('discovery order cannot change the assignment', () => {
-    const files = corpus(120);
-    expect(paths(planShards(shuffled(files), 6))).toEqual(paths(planShards(files, 6)));
-  });
-
-  test('every file is assigned exactly once', () => {
-    const files = corpus(97);
-    const assigned = planShards(files, 8).flatMap((shard) => [...shard.files]);
-    expect(assigned.length).toBe(files.length);
-    expect(new Set(assigned).size).toBe(files.length);
-  });
-
-  test('largest-first greedy keeps every bin under average + largest file', () => {
-    const files = corpus(200);
-    const shards = planShards(files, 8);
-    const largest = Math.max(...files.map((file) => file.bytes));
-    const ceiling = totalBytes(files) / 8 + largest;
-    for (const shard of shards) expect(shard.bytes).toBeLessThanOrEqual(ceiling);
-  });
-
-  test('the slow files are spread, not piled onto one worker', () => {
-    // Four slow files whose names sort adjacently: round-robin over discovery order would put
-    // every one of them on the same worker, which is the failure mode this algorithm exists for.
-    const files: readonly TestFile[] = [
-      { path: 'a/slow-1.test.ts', bytes: 90_000 },
-      { path: 'a/slow-2.test.ts', bytes: 90_000 },
-      { path: 'a/slow-3.test.ts', bytes: 90_000 },
-      { path: 'a/slow-4.test.ts', bytes: 90_000 },
-      ...Array.from({ length: 12 }, (_unused, index) => ({
-        path: `b/fast-${index}.test.ts`,
-        bytes: 500,
-      })),
-    ];
-    const shards = planShards(files, 4);
-    for (const shard of shards) {
-      expect(shard.files.filter((path) => path.includes('slow')).length).toBe(1);
-    }
-  });
-
-  test('worker count never exceeds the file count, and never drops below one', () => {
-    expect(planShards(corpus(3), 16).length).toBe(3);
-    expect(planShards(corpus(50), 0).length).toBe(1);
-    expect(planShards([], 8).length).toBe(1);
-  });
-
-  test('shardArgs never re-globs in the child: the file list is explicit', () => {
-    const shard: Shard = { index: 1, files: ['a.test.ts', 'b.test.ts'], bytes: 2 };
-    expect(shardArgs(shard)).toEqual(['bun', 'test', '--isolate', 'a.test.ts', 'b.test.ts']);
+describe('unit · the argv one bun test receives', () => {
+  test('the whole selection is one --parallel run, files listed explicitly', () => {
+    expect(testArgs({ files: ['b.test.ts', 'a.test.ts'], workers: 4 })).toEqual([
+      'bun',
+      'test',
+      '--parallel=4',
+      'a.test.ts',
+      'b.test.ts',
+    ]);
   });
 
   // The rule an arbitrary partition depends on. Half the framework's registries are
   // process-global, and a serial run only passes because glob order happens to put every
-  // declaring file before every file that reads what it left behind; re-partition without
-  // `--isolate` and that accident is gone.
-  test('every shard runs with a fresh module registry per file', () => {
-    const shard: Shard = { index: 0, files: ['a.test.ts'], bytes: 1 };
-    expect(shardArgs(shard)).toContain('--isolate');
-    expect(SHARD_COMMAND_PREFIX).toEqual(['bun', 'test', '--isolate']);
+  // declaring file before every file that reads what it left behind — measured, a bare
+  // `bun test packages/` is 282 failures and the same corpus under `--isolate` is 0.
+  // `--parallel` implies it; the shard form has to say it, and that is the whole reason this
+  // case names both branches rather than one.
+  test('every file gets a fresh module registry, in both forms', () => {
+    // `--parallel` implies `--isolate` (bun 1.4.0), so the flag is deliberately NOT repeated.
+    expect(testArgs({ files: ['a.test.ts'], workers: 2 })).toContain('--parallel=2');
+    expect(testArgs({ files: ['a.test.ts'], workers: 2, shard: 0 })).toContain('--isolate');
+  });
+
+  // 0-based on the flag, 1-based in bun's own grammar. Off by one here is a rerun of the wrong
+  // eighth of the corpus, reported as the one that failed.
+  test('--worker I is bun shard I+1 of N, serial within the shard', () => {
+    expect(testArgs({ files: ['a.test.ts', 'b.test.ts'], workers: 8, shard: 3 })).toEqual([
+      'bun',
+      'test',
+      '--isolate',
+      '--shard=4/8',
+      'a.test.ts',
+      'b.test.ts',
+    ]);
+  });
+
+  // Bun partitions round-robin over the list it is given, so a sorted list is what makes
+  // `--shard=2/8` the same eighth on CI and on a laptop. Discovery order must not reach it.
+  test('discovery order cannot change which file lands in which shard', () => {
+    const files = corpus(20).map((file) => file.path);
+    expect(testArgs({ files: [...files].reverse(), workers: 4, shard: 1 })).toEqual(
+      testArgs({ files, workers: 4, shard: 1 }),
+    );
+  });
+
+  test('filesIn is the inverse, and reads no flag as a filename', () => {
+    const command = testArgs({ files: ['a.test.ts', 'b.test.ts'], workers: 8, shard: 3 });
+    expect(filesIn(command)).toEqual(['a.test.ts', 'b.test.ts']);
   });
 });
 
 describe('unit · x test execution', () => {
-  test('each shard is one `bun test` carrying its own files and worker index', async () => {
+  test('one bun test carries every selected file, once', async () => {
     const { calls, runner } = recorder();
     const files = corpus(40);
     await runShards({ root: '/repo', runner, files, workers: 4 });
-    expect(calls.length).toBe(4);
-    const workers = calls.map((call) => call.env?.['ULTIMATE_TEST_WORKER']);
-    expect([...workers].sort()).toEqual(['0', '1', '2', '3']);
-    for (const call of calls) {
-      expect(call.command.slice(0, PREFIX)).toEqual([...SHARD_COMMAND_PREFIX]);
-      expect(call.command.length).toBeGreaterThan(PREFIX);
-      expect(call.cwd).toBe('/repo');
-    }
-    const passed = calls.flatMap((call) => call.command.slice(PREFIX));
-    expect(new Set(passed).size).toBe(files.length);
-  });
 
-  test('--worker reruns exactly the shard CI ran, with the same files', async () => {
-    const files = corpus(40);
-    const expected = planShards(files, 4)[2];
-    const { calls, runner } = recorder();
-    await runShards({ root: '/repo', runner, files, workers: 4, only: 2 });
     expect(calls.length).toBe(1);
-    expect(calls[0]?.env?.['ULTIMATE_TEST_WORKER']).toBe('2');
-    expect(calls[0]?.command.slice(PREFIX)).toEqual([...(expected?.files ?? [])]);
+    expect(calls[0]?.cwd).toBe('/repo');
+    expect(filesIn(calls[0]?.command ?? [])).toEqual([...files.map((f) => f.path)].sort());
+    // Bun numbers its own workers with `BUN_TEST_WORKER_ID`, which `@ultimat3/testing`'s
+    // `workerId` already reads — so a `--parallel` run must NOT pin every worker to one database
+    // by exporting `ULTIMATE_TEST_WORKER`, which is that function's first key.
+    expect(calls[0]?.env?.['ULTIMATE_TEST_WORKER']).toBeUndefined();
   });
 
-  test('a failing shard fails the run and names the command that reproduces it', async () => {
-    const { runner } = recorder([1]);
+  test('--worker reruns one shard, and names its own database', async () => {
+    const { calls, runner } = recorder();
+    await runShards({ root: '/repo', runner, files: corpus(40), workers: 4, only: 2 });
+
+    expect(calls.length).toBe(1);
+    expect(calls[0]?.command).toContain('--shard=3/4');
+    // One process, so the database is this file's to name — the case above is the other half.
+    expect(calls[0]?.env?.['ULTIMATE_TEST_WORKER']).toBe('2');
+  });
+
+  test('the width is clamped to the file count, so the reproduction is runnable', async () => {
+    const { calls, runner } = recorder();
+    const result = await runShards({ root: '/repo', runner, files: corpus(3), workers: 16 });
+    expect(calls[0]?.command).toContain('--parallel=3');
+    expect((result.data as { workers: number }).workers).toBe(3);
+  });
+
+  test('a failing run fails the command and names what reproduces it', async () => {
+    const { runner } = recorder(true);
     const result = await runShards({ root: '/repo', runner, files: corpus(40), workers: 4 });
     expect(result.ok).toBe(false);
     expect(result.exitCode).toBe(1);
-    const finding = result.steps?.flatMap((step) => [...step.findings])[0];
-    expect(finding?.code).toBe('X_TEST_SHARD_FAILED');
-    expect(finding?.fix).toBe('x test --workers 4 --worker 1');
+    expect(firstCode(result)).toBe('X_TEST_FAILED');
+    expect(firstFix(result)).toBe('x test --workers 4');
+  });
+
+  // Two codes because they name two different reruns, and both already exist: a shard is
+  // reproduced by naming it, a whole run by rerunning it.
+  test('a failing --worker run is the SHARD code, and its fix names the shard', async () => {
+    const { runner } = recorder(true);
+    const result = await runShards({
+      root: '/repo',
+      runner,
+      files: corpus(40),
+      workers: 4,
+      only: 1,
+    });
+    expect(firstCode(result)).toBe('X_TEST_SHARD_FAILED');
+    expect(firstFix(result)).toBe('x test --workers 4 --worker 1');
   });
 
   test('a filter is carried into the reproduction command as --filter, not a bare positional', async () => {
-    const { runner } = recorder([0]);
+    const { runner } = recorder(true);
     const result = await runShards({
       root: '/repo',
       runner,
@@ -179,11 +169,11 @@ describe('unit · x test execution', () => {
       workers: 2,
       filter: 'packages/http',
     });
-    expect(firstFix(result)).toBe('x test --filter packages/http --workers 2 --worker 0');
+    expect(firstFix(result)).toBe('x test --filter packages/http --workers 2');
   });
 
   test('a type is carried into the reproduction command ahead of --filter', async () => {
-    const { runner } = recorder([0]);
+    const { runner } = recorder(true);
     const result = await runShards({
       root: '/repo',
       runner,
@@ -192,41 +182,38 @@ describe('unit · x test execution', () => {
       filter: 'packages/http',
       type: 'contract',
     });
-    expect(firstFix(result)).toBe('x test contract --filter packages/http --workers 2 --worker 0');
+    expect(firstFix(result)).toBe('x test contract --filter packages/http --workers 2');
   });
 
-  test('every shard reports its files, pass/fail and duration in --json', async () => {
-    const { runner } = recorder([3]);
+  test('--json reports the width, the file count, the exit code and the rerun', async () => {
+    const { runner } = recorder(true);
     const result = await runShards({ root: '/repo', runner, files: corpus(40), workers: 4 });
-    const parsed: unknown = JSON.parse(renderJson(result));
-    expect(parsed).toBeDefined();
-    const data = result.data as {
-      readonly workers: number;
-      readonly failed: readonly number[];
-      readonly shards: readonly {
-        readonly index: number;
+    // The RENDERED payload, never `result.data`: this test names the `--json` contract, and an
+    // agent parses what `renderJson` emitted. `JSON.parse` either throws or answers, so asserting
+    // it is defined is an assertion that cannot fail.
+    const { data } = JSON.parse(renderJson(result)) as {
+      readonly data: {
+        readonly workers: number;
         readonly files: number;
+        readonly ok: boolean;
         readonly exitCode: number;
-        readonly durationMs: number;
         readonly reproduce: string;
-      }[];
+      };
     };
     expect(data.workers).toBe(4);
-    expect(data.failed).toEqual([3]);
-    expect(data.shards.length).toBe(4);
-    expect(data.shards.reduce((sum, shard) => sum + shard.files, 0)).toBe(40);
-    expect(data.shards[3]?.exitCode).toBe(1);
-    expect(data.shards[0]?.durationMs).toBe(7);
-    expect(data.shards[2]?.reproduce).toBe('x test --workers 4 --worker 2');
+    expect(data.files).toBe(40);
+    expect(data.ok).toBe(false);
+    expect(data.exitCode).toBe(1);
+    expect(data.reproduce).toBe('x test --workers 4');
   });
 
-  test('a whole-suite pass exits zero and every step is named for its shard', async () => {
+  test('a pass exits zero and the step is named for the width it ran at', async () => {
     const { runner } = recorder();
     const result = await runShards({ root: '/repo', runner, files: corpus(9), workers: 3 });
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(0);
-    expect(result.steps?.map((step) => step.ok)).toEqual([true, true, true]);
-    expect(result.steps?.[0]?.name).toContain('shard 0');
+    expect(result.steps?.map((step) => step.ok)).toEqual([true]);
+    expect(result.steps?.[0]?.name).toContain('3 worker(s) · 9 files');
   });
 
   test('a typed run uses the .type. summary keys and names its type in data', async () => {
@@ -243,11 +230,11 @@ describe('unit · x test execution', () => {
   });
 });
 
-describe('unit · x test --sample is part of the split', () => {
+describe('unit · x test --sample is part of the selection', () => {
   const sampled = (only?: number) =>
     runShards({
       root: '/repo',
-      runner: recorder([0, 1]).runner,
+      runner: recorder(true).runner,
       files: corpus(10).slice(0, 3),
       workers: 2,
       type: 'eval',
@@ -262,31 +249,29 @@ describe('unit · x test --sample is part of the split', () => {
   });
 
   test('the reproduction carries --sample, so the rerun selects the same corpus', async () => {
-    const result = await sampled();
-    expect(firstFix(result)).toBe('x test eval --sample 3 --workers 2 --worker 0');
+    expect(firstFix(await sampled())).toBe('x test eval --sample 3 --workers 2');
   });
 
   test('a --worker report names the sample it split, not the one shard that ran', async () => {
-    // The bug this pins: kept was counted from the shards that ran, so `--worker 1` of a 3-file
-    // sample reported its own 2 files as the corpus and printed a fix with no --sample at all.
+    // The bug this pins: kept was counted from what ran, so `--worker 1` of a 3-file sample
+    // reported its own files as the corpus and printed a fix with no --sample at all.
     const result = await sampled(1);
-    expect(result.data).toMatchObject({ sample: { kept: 3, total: 10 }, files: 2 });
+    expect(result.data).toMatchObject({ sample: { kept: 3, total: 10 } });
     expect(result.lines?.[0]).toContain('sampled 3 of 10');
     expect(firstFix(result)).toBe('x test eval --sample 3 --workers 2 --worker 1');
   });
 });
 
 describe('unit · reproduceFor', () => {
-  const shard = (index: number): Shard => ({ index, files: ['a.test.ts'], bytes: 1 });
-
   // Against the command's real spec, not a fixture: a reproduction the shipped parser rejects is
   // not a reproduction, and a fixture would go on agreeing with itself after the flags changed.
   test('round-trips through parseArgs to the same type, filter, sample, workers and worker', () => {
-    const command = reproduceFor(shard(2), {
+    const command = reproduceFor({
       workers: 5,
       filter: 'packages/http',
       type: 'contract',
       sample: 4,
+      shard: 2,
     });
     expect(command).toBe(
       'x test contract --filter packages/http --sample 4 --workers 5 --worker 2',
@@ -299,18 +284,24 @@ describe('unit · reproduceFor', () => {
     expect(flagString(parsed, 'worker')).toBe('2');
   });
 
-  test('no type, filter or sample matches today’s bare form', () => {
-    expect(reproduceFor(shard(0), { workers: 3 })).toBe('x test --workers 3 --worker 0');
+  // No shard means the whole selection, so `--worker` must be ABSENT rather than `--worker 0`:
+  // that would rerun one eighth of the corpus and report it as the run that failed.
+  test('no shard reproduces the whole run, with no --worker at all', () => {
+    const command = reproduceFor({ workers: 3 });
+    expect(command).toBe('x test --workers 3');
+    expect(flagString(parseArgs(command.split(' ').slice(1), [testCommand.spec]), 'worker')).toBe(
+      undefined,
+    );
   });
 
-  // The fourth input to the split, and the one that was silently dropped: `--affected` decides
-  // which files exist to shard at all, so a rerun without it re-splits the whole corpus and its
-  // shard 2 is a DIFFERENT shard 2. Round-tripped through the real spec for the same reason the
-  // case above is: a reproduction the shipped parser rejects reproduces nothing.
+  // The input most easily dropped: `--affected` decides which files exist to run at all, so a
+  // rerun without it selects the whole corpus. Round-tripped through the real spec for the reason
+  // the case above is.
   test('the --affected narrowing survives into the rerun, base and all', () => {
-    const command = reproduceFor(shard(2), {
+    const command = reproduceFor({
       workers: 4,
       affected: { base: 'origin/main', dirty: false },
+      shard: 2,
     });
     expect(command).toBe('x test --affected --base origin/main --workers 4 --worker 2');
 
@@ -320,28 +311,28 @@ describe('unit · reproduceFor', () => {
     expect(flagString(parsed, 'worker')).toBe('2');
   });
 
-  test('--dirty survives too, because it changes which files the split saw', () => {
-    expect(reproduceFor(shard(1), { workers: 2, affected: { base: 'main', dirty: true } })).toBe(
+  test('--dirty survives too, because it changes which files the run saw', () => {
+    expect(reproduceFor({ workers: 2, affected: { base: 'main', dirty: true }, shard: 1 })).toBe(
       'x test --affected --base main --dirty --workers 2 --worker 1',
     );
   });
 
   test('a filter with whitespace stays one argument, not two', () => {
-    expect(reproduceFor(shard(0), { workers: 2, filter: 'my tests/http' })).toBe(
-      "x test --filter 'my tests/http' --workers 2 --worker 0",
+    expect(reproduceFor({ workers: 2, filter: 'my tests/http' })).toBe(
+      "x test --filter 'my tests/http' --workers 2",
     );
   });
 
   test('a filter with shell punctuation cannot become a second command', () => {
-    expect(reproduceFor(shard(1), { workers: 2, filter: 'a; rm -rf b' })).toBe(
+    expect(reproduceFor({ workers: 2, filter: 'a; rm -rf b', shard: 1 })).toBe(
       "x test --filter 'a; rm -rf b' --workers 2 --worker 1",
     );
   });
 
   test('a single quote is escaped the one way a single-quoted string allows', () => {
     // `'it'\''s slow'` — close, an escaped quote, reopen. Anything else truncates the argument.
-    expect(reproduceFor(shard(0), { workers: 1, filter: "it's slow" })).toBe(
-      "x test --filter 'it'\\''s slow' --workers 1 --worker 0",
+    expect(reproduceFor({ workers: 1, filter: "it's slow" })).toBe(
+      "x test --filter 'it'\\''s slow' --workers 1",
     );
   });
 });

@@ -4,6 +4,7 @@
 // the command.
 
 import { describe, expect, test } from 'bun:test';
+import { REQUIRED_BUN } from './app-root';
 import {
   BODY_LINES,
   clampBody,
@@ -94,7 +95,7 @@ const contextFor = (argv: readonly string[], runner: Runner): CommandContext => 
   cwd: '/repo',
   runner,
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 /** `expect.unreachable` returns `never`, so this satisfies `Runner` without a bare throw. */

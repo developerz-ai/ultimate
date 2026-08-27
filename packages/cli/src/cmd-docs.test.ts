@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { REQUIRED_BUN } from './app-root';
 import { docsCommand } from './cmd-docs';
 import type { CommandContext } from './command';
 import { exec } from './exec';
@@ -18,7 +19,7 @@ const ctxFor = (argv: readonly string[]): CommandContext => ({
   cwd: '/tmp',
   runner: exec,
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 const run = (argv: readonly string[]): Promise<CommandResult> => docsCommand.run(ctxFor(argv));

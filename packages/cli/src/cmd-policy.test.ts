@@ -13,6 +13,7 @@ import { action, registerActions, resetRegistry as resetActions, t } from '@ulti
 import type { Policy } from '@ultimat3/policy';
 import { can, clearPermissions, clearRoles } from '@ultimat3/policy';
 import { resetRegistry as resetQueries } from '@ultimat3/query';
+import { REQUIRED_BUN } from './app-root';
 import { policyCommand } from './cmd-policy';
 import type { CommandContext } from './command';
 import { msg } from './messages';
@@ -49,7 +50,7 @@ const contextFor = (
     durationMs: 0,
   }),
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 /** The thrown value, so a test can assert on `code`/`fix` — `run()` rejects, it never returns an

@@ -1,15 +1,13 @@
-// Running one test type across N worker processes and reporting it as one gate step. Split from
-// verify-tests.ts because that file owns which files belong to a type and this one owns what
-// happens to them once selected — a wrong file list is never a race, and a race is never a
-// selection bug.
+// Running one test type as one gate step. Split from verify-tests.ts because that file owns which
+// files belong to a type and this one owns what happens to them once selected — a wrong file list
+// is never a race, and a race is never a selection bug.
 
-import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
 import type { Finding } from './output';
 import { countsOf } from './test-counts';
 import type { TestFile } from './test-select';
-import { planShards, reproduceFor, shardArgs } from './test-shards';
+import { failureOf, testArgs } from './test-shards';
 import type { StepOutcome } from './verify-step';
 // Type-only, so nothing here evaluates verify-tests.ts and the two files cannot form a cycle.
 import type { TestType } from './verify-tests';
@@ -18,55 +16,42 @@ export interface ParallelRunOptions {
   readonly root: string;
   readonly runner: Runner;
   readonly files: readonly TestFile[];
-  /** The ask. `planShards` clamps it to the file count, and the report carries what it became. */
+  /** The ask. Clamped to the file count, and the report carries what it became. */
   readonly workers: number;
-  /** Carried into the `fix:` so a failed shard reproduces as `x test <type> --workers N …`. */
+  /** Carried into the `fix:` so a failure reproduces as `x test <type> --workers N`. */
   readonly type: TestType;
 }
 
 /**
- * The whole point is wall-clock, so every shard starts at once. Two things make that safe and
- * neither is optional: `shardArgs` gives each FILE its own module registry (`--isolate`), and
- * `ULTIMATE_TEST_WORKER` gives each PROCESS its own database — `@ultimat3/testing`'s
- * `acquireWorkerDatabase` reads exactly that variable first and clones the migrated template into
- * `…_w<index>`. Rails' numbered test databases, with Postgres doing the copy.
+ * ONE `bun test --parallel=N`, not N processes this file spawns and packs itself.
+ *
+ * Two things make an arbitrary partition safe here and neither is optional. `--parallel` implies
+ * `--isolate`, so every FILE gets a fresh module registry — half a dozen registries in this
+ * framework are process-global by design, and a serial run only passes because glob order happens
+ * to put every declaring file before every file that reads what it left behind (measured: a bare
+ * `bun test packages/` is 282 failures, the same corpus under `--isolate` is 0). And the database
+ * is per WORKER: `@ultimat3/testing`'s `workerId` reads `BUN_TEST_WORKER_ID`, which Bun sets 1..N,
+ * one per real process — so the numbered test databases keep working with nothing threaded here.
+ *
+ * `test-shards.ts`'s header carries what replacing the hand-written packer measured.
  */
 export async function runParallel(options: ParallelRunOptions): Promise<StepOutcome> {
-  const shards = planShards(options.files, options.workers);
-  const runs = await Promise.all(
-    shards.map(async (shard) => ({
-      shard,
-      result: await options.runner(shardArgs(shard), {
-        cwd: options.root,
-        env: { ULTIMATE_TEST_WORKER: String(shard.index) },
-      }),
-    })),
-  );
-  const findings: Finding[] = [];
-  for (const { shard, result } of runs) {
-    if (result.ok) continue;
-    findings.push({
-      code: 'X_TEST_SHARD_FAILED',
-      cause: `${options.type} shard ${shard.index} of ${shards.length} exited ${result.code} (${shard.files.length} file(s))`,
-      // The reproduction has to name every input to the split, or it reruns a different file set:
-      // `reproduceFor` is the one place that rule lives, shared with `x test`.
-      fix: reproduceFor(shard, { workers: shards.length, type: options.type }),
-      docs: ERROR_DOCS_URL,
-    });
-  }
-  // Only the failing shards' output: a green 8-way split would otherwise print eight summaries,
-  // and the reader of a red gate needs the assertion diff, not the seven runs that passed.
-  const output = runs
-    .filter((run) => !run.result.ok)
-    .map((run) => `— shard ${run.shard.index}\n${execOutput(run.result)}`)
-    .join('\n');
+  const files = options.files.map((file) => file.path);
+  const workers = Math.max(1, Math.min(Math.trunc(options.workers), files.length || 1));
+  const result = await options.runner(testArgs({ files, workers }), { cwd: options.root });
+  // `failureOf` is `x test`'s own, imported rather than restated: the two paths report the SAME
+  // failed `bun test`, so a second literal here is two `cause:` strings and two `fix:` lines free
+  // to drift — and the one that drifts is the gate's, which is the one an agent reads first.
+  const findings: readonly Finding[] = result.ok
+    ? []
+    : [failureOf(result.code, files.length, { workers, type: options.type })];
   return {
     ok: findings.length === 0,
     findings,
-    workers: shards.length,
-    // Every shard's summary, including the green ones whose output is dropped above: the counts
-    // are how the ratchet tells a suite that passed from a suite that skipped itself to nothing.
-    tests: countsOf(runs.map((run) => run.result)),
-    ...(output === '' ? {} : { output }),
+    workers,
+    tests: countsOf([result]),
+    // Only on failure: a green run's summary is already the step table's, and the reader of a red
+    // gate needs the assertion diff.
+    ...(result.ok ? {} : { output: execOutput(result) }),
   };
 }

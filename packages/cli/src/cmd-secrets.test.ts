@@ -18,6 +18,7 @@ import {
   SECRETS_KEY_ENV,
   SECRETS_KEY_FILE,
 } from '@ultimat3/core';
+import { REQUIRED_BUN } from './app-root';
 import { createSecretsCommand, type SecretsIo, secretsCommand } from './cmd-secrets';
 import type { CommandContext } from './command';
 import type { ExecResult } from './exec';
@@ -53,7 +54,7 @@ const context = (
     cwd,
     runner,
     env,
-    bunVersion: '1.3.0',
+    bunVersion: REQUIRED_BUN,
   }) as CommandContext;
 
 const record = (value: JsonValue | undefined): Record<string, JsonValue> =>

@@ -14,6 +14,7 @@ import { decodeImage, probeImage } from '@ultimat3/core';
 import type { NestedCatalog } from '@ultimat3/i18n';
 import { catalogKeys, defineCatalogs, loadCatalog } from '@ultimat3/i18n';
 import { BuiltinImagePipeline } from '@ultimat3/pwa';
+import { REQUIRED_BUN } from './app-root';
 import { renderHelp } from './cmd-help';
 import { appNamePath, newCommand, planNewApp, writeNewApp } from './cmd-new';
 import type { CommandContext } from './command';
@@ -114,7 +115,7 @@ describe('unit · x new · x db gen is the only writer of packages/db/migrations
       cwd: tmpdir(),
       runner: exec,
       env: {},
-      bunVersion: '1.3.0',
+      bunVersion: REQUIRED_BUN,
     };
     const thrown: unknown = await newCommand.run(ctx).then(
       () => undefined,
@@ -135,7 +136,7 @@ describe('unit · x new · x db gen is the only writer of packages/db/migrations
       cwd: tmpdir(),
       runner: exec,
       env: {},
-      bunVersion: '1.3.0',
+      bunVersion: REQUIRED_BUN,
     };
     const thrown: unknown = await newCommand.run(ctx).then(
       () => undefined,
@@ -167,7 +168,7 @@ describe('unit · x new · x db gen is the only writer of packages/db/migrations
       cwd: tmpdir(),
       runner: exec,
       env: {},
-      bunVersion: '1.3.0',
+      bunVersion: REQUIRED_BUN,
     };
     const result = await newCommand.run(ctx);
     expect(result.ok).toBe(true);
@@ -276,7 +277,7 @@ describe('unit · x new · writing into the parent directory', () => {
     cwd,
     runner: exec,
     env: {},
-    bunVersion: '1.3.0',
+    bunVersion: REQUIRED_BUN,
   });
 
   // `--no-git`, so the report is the count line and nothing else on every box. The default path

@@ -9,10 +9,11 @@ Which process a test runs in decides which database it gets. `workerId` reads `U
 | Command | Processes | Databases |
 |---|---|---|
 | `bun test` | 1, worker 0 | 1 |
-| `x test [type] --workers N` | N file shards, each child run with `ULTIMATE_TEST_WORKER=0..N-1` | N |
+| `x test [type] --workers N` | 1 parent, N Bun workers — `bun test --parallel=N`, which sets `BUN_TEST_WORKER_ID` 1..N | N |
+| `x test [type] --worker I --workers N` | 1, `--shard=I+1/N --isolate`, run with `ULTIMATE_TEST_WORKER=I` | 1 |
 | `bun test --parallel=N` | N, Bun's own split — implies `--isolate`, workers 1..N | N |
 
-**There is no `bun test --workers` flag.** `--workers` belongs to `x test` ([`packages/cli/src/cmd-test.ts`](../../packages/cli/src/cmd-test.ts), [`test-shards.ts`](../../packages/cli/src/test-shards.ts), largest-first bin packing over file size); `--parallel` belongs to Bun.
+**There is no `bun test --workers` flag.** `--workers` belongs to `x test` ([`packages/cli/src/cmd-test.ts`](../../packages/cli/src/cmd-test.ts), [`test-shards.ts`](../../packages/cli/src/test-shards.ts)) and is spent as Bun's `--parallel`; `--parallel` belongs to Bun. `x test` packed the files itself until 2026-08-27 and no longer does — the packer measured the same as Bun's pool and was deleted for it (#342).
 
 | Step | Mechanism |
 |---|---|
@@ -29,10 +30,11 @@ Not shipped, and not implied: per-file truncation, a `readonly` savepoint mode, 
 
 | Claim | Reality |
 |---|---|
-| `x verify` shards tests | **yes**, since the gate was routed through the same shard machinery `x test` uses. `unit`, `contract`, `job` and `eval` run N `bun test` children over an LPT bin-packed split; `--workers N` overrides the default |
-| every step shards | **no.** `live` and `e2e` are serial by declaration (`SERIAL_TYPES`). A logical replication slot is named at the Postgres **cluster** level, not inside a database, so a per-worker database does not isolate it and two workers race `pg_create_logical_replication_slot`. `e2e` runs against one built `dist/` and one browser profile |
+| `x verify` runs tests in parallel | **yes**, since the gate was routed through the same machinery `x test` uses. `unit`, `contract`, `job` and `eval` each run one `bun test --parallel=N`; `--workers N` overrides the default |
+| every step runs in parallel | **no.** `live` and `e2e` are serial by declaration (`SERIAL_TYPES`), and `x test live` reads that same list `As of 2026-08-27` — it did not until then, so the command a human types while debugging ran eight processes over files the gate ran one over. A logical replication slot is named at the Postgres **cluster** level, not inside a database, so a per-worker database does not isolate it and two workers race `pg_create_logical_replication_slot`. `e2e` runs against one built `dist/` and one browser profile |
 | a scaffolded app tests in parallel | **still no.** `x new` writes `"test": "bun test"` ([`templates/scaffold-repo.ts`](../../packages/cli/src/templates/scaffold-repo.ts)) |
-| parallel is faster here | **measured, and it depends on the machine.** On this 12-core box `unit` went 63s → 24s. On a free 4-core `ubuntu-latest`: serial 43.2s, 3 workers 44.8s, 6 workers 34.8s — which is why the default oversubscribes rather than leaving a core spare |
+| parallel is faster here | **measured, and it depends on the machine.** On this 12-core box `unit` went 63s → 24s at 454 files. On a free 4-core `ubuntu-latest`: serial 43.2s, 3 workers 44.8s, 6 workers 34.8s — which is why the default oversubscribes rather than leaving a core spare |
+| HOW the files are dealt is faster | **no, measured 2026-08-27.** At 1296 files the corpus is 436.7s of file time, so 8 workers cannot beat 54.6s however it is split, and the slowest single file is 20.5s. A hand-packed split and Bun's pool both land near that floor — 58.2..66.5s against 54.5..64.5s, four interleaved runs each. Parallelism pays; the packing does not, which is why there is none (#342) |
 | `[test] parallel = N` in `bunfig.toml` turns it on | **no.** The flag is CLI-only; the config key is ignored |
 
 **Sharding is not free, and one line of the cost is a bug we are paying to hide.** Each worker

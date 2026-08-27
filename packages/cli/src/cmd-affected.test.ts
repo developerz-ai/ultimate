@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { DEFAULT_BASE } from './affected';
+import { REQUIRED_BUN } from './app-root';
 import { AFFECTED_MESSAGE_KEYS, affectedCommand } from './cmd-affected';
 import type { CommandContext } from './command';
 import type { ExecResult, Runner } from './exec';
@@ -76,7 +77,7 @@ const context = (argv: readonly string[], cwd: string, runner: Runner): CommandC
   cwd,
   runner,
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 interface AffectedData {

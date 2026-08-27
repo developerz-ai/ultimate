@@ -16,6 +16,7 @@ import { entity, uuid } from '@ultimat3/entity';
 // value-imports `@ultimat3/entity`, and off the barrel it loaded the entity registry into every
 // test that wanted the general harness.
 import { isolateEntityRegistry } from '@ultimat3/testing/registry-isolation';
+import { REQUIRED_BUN } from './app-root';
 import { DB_SUBCOMMANDS, dbCommand, driftFindings } from './cmd-db';
 import type { CommandContext } from './command';
 import { checkSourceDrift, schemaHash } from './drift';
@@ -32,7 +33,7 @@ const ctxFor = (argv: readonly string[], cwd: string): CommandContext => ({
   cwd,
   runner: exec,
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 /**

@@ -10,6 +10,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { REQUIRED_BUN } from './app-root';
 import { envCommand } from './cmd-env';
 import type { CommandContext } from './command';
 import type { ExecResult } from './exec';
@@ -43,7 +44,7 @@ const context = (argv: readonly string[], cwd: string, env: Record<string, strin
     cwd,
     runner,
     env,
-    bunVersion: '1.3.0',
+    bunVersion: REQUIRED_BUN,
   } as CommandContext;
 };
 

@@ -31,13 +31,18 @@ runs:
         # green CI, and a PR merged red on a bundling difference between the two. `@types/bun@1.4.0`
         # publishing that morning removed the last blocker.
         #
-        # `engines.bun` does NOT track this series and is deliberately left at `>=1.3.0`, in all 41
-        # manifests. It is a floor on who may INSTALL `@ultimat3/*`, and Bun 1.3 demonstrably can:
-        # `Bun.Image`, the newest surface the framework touches, answers `function` on 1.3.14, and
-        # `oven/bun:1.3-slim` reads this repo's committed `bun.lock` under `--frozen-lockfile`.
-        # Raising it would forbid an install that works, which is a false claim and a breaking
-        # change to boot. What DOES move with this pin is `scripts/setup.ts`'s `REQUIRED_BUN` — a
-        # floor on CONTRIBUTORS, whose only useful value is the series CI runs.
+        # `engines.bun` DOES track this series, `As of 2026-08-27`, in all 42 manifests — reversing
+        # the paragraph that stood here, which argued 1.3 should stay because `Bun.Image` answers
+        # `function` on 1.3.14 and `oven/bun:1.3-slim` reads this repo's `bun.lock` under
+        # `--frozen-lockfile`. Both are still true and both measured the wrong verb: they tested
+        # whether Bun 1.3 could INSTALL `@ultimat3/*`, and the floor is broken by what the CLI
+        # RUNS. `x test` emits `bun test --isolate`, a flag Bun introduced in 1.3.13 (`--parallel`
+        # with it), so on 1.3.0..1.3.12 the gate's dominant step died on an unknown flag while
+        # `x doctor` called the runtime fine — an install that works and a framework that does not.
+        # 1.4.0 rather than 1.3.13 because a floor is a claim about a runtime somebody TESTED: this
+        # series, these images, and `BUN_TEST_WORKER_ID`'s numbering probed on 1.4.0 and nothing
+        # older. `scripts/bun-pin.test.ts` now reads every `engines.bun` and the CLI's own
+        # `REQUIRED_BUN` alongside `scripts/setup.ts`'s contributor floor, so all three move here.
         bun-version: '1.4.x'
     - uses: actions/cache@v6
       with:

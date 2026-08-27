@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { isUltimateError } from '@ultimat3/core';
+import { REQUIRED_BUN } from './app-root';
 import {
   DEPLOY_METHODS,
   DEPLOY_ROLES,
@@ -132,7 +133,7 @@ const contextFor = (argv: readonly string[], cwd: string): CommandContext => ({
     throw new Error(`x deploy spawned ${command.join(' ')}`);
   },
   env: {},
-  bunVersion: '1.3.0',
+  bunVersion: REQUIRED_BUN,
 });
 
 // `flagString(...) === 'helm' ? 'helm' : 'compose'` made every OTHER spelling a Compose deploy that
@@ -195,7 +196,13 @@ const runContext = (
   argv: readonly string[],
   cwd: string,
   runner: CommandContext['runner'],
-): CommandContext => ({ args: parseArgs(argv, SPECS), cwd, runner, env: {}, bunVersion: '1.3.0' });
+): CommandContext => ({
+  args: parseArgs(argv, SPECS),
+  cwd,
+  runner,
+  env: {},
+  bunVersion: REQUIRED_BUN,
+});
 
 describe('unit · x deploy actually runs the plan it printed', () => {
   test('every step is spawned, in plan order, in the app root', async () => {

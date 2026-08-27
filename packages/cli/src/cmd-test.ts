@@ -20,7 +20,7 @@ import { discoverTests, missingSelection, readSample, readType, sampleFiles } fr
 import { runShards } from './test-shards';
 import { defaultWorkers, WORKER_CEILING, WORKER_FLOOR, WORKER_OVERSUBSCRIBE } from './test-workers';
 import type { TestType } from './verify-tests';
-import { TEST_TYPES } from './verify-tests';
+import { SERIAL_TYPES, TEST_TYPES } from './verify-tests';
 
 /**
  * `--workers` and `--shard`. `Number.parseInt` alone accepted `4abc` and `4.9` as four, while
@@ -33,10 +33,10 @@ const readIndex = (args: ParsedArgs, name: string, min: number): number | undefi
     command: 'test',
     min,
     // The ceiling the summary already claimed and the reader never enforced: `--workers 5000` was
-    // accepted, `planShards` clamps only to the file count, and `runParallel` `Promise.all`s them —
-    // one Bun process per test FILE, each with the framework module graph and a cloned database.
-    // `--worker` is an index into that split, so the same bound holds it (the exact upper index is
-    // `workers - 1`, refused a line below by the check that knows the real width).
+    // accepted and the run clamps only to the file count, which is one Bun worker per test FILE,
+    // each with the framework module graph and a cloned database. `--worker` is an index into an
+    // N-way split, so the same bound holds it (the exact upper index is `workers - 1`, refused a
+    // line below by the check that knows the real width).
     max: WORKER_CEILING,
     example: `x test --${name} ${Math.max(min, 1)}`,
   });
@@ -103,19 +103,20 @@ export const testCommand: CliCommand = {
   spec: {
     name: 'test',
     summary:
-      'run one test type — or the whole suite — across N processes, one isolated database per worker',
+      'run one test type — or the whole suite — across N workers, one isolated database per worker',
     usage: `x test [${TEST_TYPES.join('|')}] [--filter text] [--sample N] [--affected [--base ref] [--dirty]] [--workers N] [--worker I] [--json]`,
     positionalChoices: TEST_TYPES,
     flags: [
       {
         name: 'workers',
         type: 'string',
-        summary: `process count (default: ${WORKER_OVERSUBSCRIBE}x CPUs, min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
+        summary: `bun worker count (default: ${WORKER_OVERSUBSCRIBE}x CPUs, min ${WORKER_FLOOR}, max ${WORKER_CEILING}); clamped to the file count, and to 1 for ${SERIAL_TYPES.join(' and ')}`,
       },
       {
         name: 'worker',
         type: 'string',
-        summary: 'rerun only shard I of the same split — reproduces a CI worker failure locally',
+        summary:
+          'run only shard I of an N-way split of the selection, serially — one CI job\u2019s share',
       },
       { name: 'filter', type: 'string', summary: 'only files whose path contains this substring' },
       {
@@ -172,7 +173,17 @@ export const testCommand: CliCommand = {
     }
     const files = sample === undefined ? selected : sampleFiles(selected, sample);
     const requested = readIndex(ctx.args, 'workers', 1) ?? defaultWorkers();
-    const workers = Math.max(1, Math.min(requested, files.length));
+    // A serial type is serial HERE TOO, `As of 2026-08-27`. `verify-tests.ts` routes `live` and
+    // `e2e` through `runSerial` and this command never read the same list, so `x verify` ran one
+    // process over the very files `x test live --workers 8` ran eight over — two answers to one
+    // question, which is axiom 1, and the dangerous one is the command a human types while
+    // debugging. What makes them serial is not a preference: a logical replication slot is named
+    // at the Postgres CLUSTER level, so a per-worker database does not isolate it and two workers
+    // race `pg_create_logical_replication_slot`; `e2e` shares one built `dist/` and one browser
+    // profile. Neither is visible without a real `TEST_DATABASE_URL`, which is why the split
+    // measured green for as long as it did.
+    const ceiling = type !== undefined && SERIAL_TYPES.includes(type) ? 1 : files.length;
+    const workers = Math.max(1, Math.min(requested, ceiling));
     const only = readIndex(ctx.args, 'worker', 0);
     if (only !== undefined && only >= workers) {
       throw new BadFlagError({

@@ -425,11 +425,22 @@ the two edits that resolve it. A repo with no such file is not ratcheted, and a 
 not run is refused by the `manifest` step (`X_CONFIG_INVALID`) rather than silently covering
 nothing. Removing a line is allowed; it just has to be a diff somebody reviews.
 
-`--workers` widens the test steps only. `unit`, `contract`, `job` and `eval` shard across worker
-processes, each with its own database; `live` and `e2e` are serial by declaration and say so in the
-output. The default oversubscribes the cores — `clamp(round(cpus * 1.5), 2, 8)` — because leaving a
-core spare measured *slower than not sharding at all* on a 4-core runner, where sharding's own cost
-is not covered by three workers.
+`--workers` widens the test steps only. `unit`, `contract`, `job` and `eval` run as one
+`bun test --parallel=N`, each worker with its own database; `live` and `e2e` are serial by
+declaration and say so in the output. **`x test live` and `x test e2e` obey the same declaration,
+`As of 2026-08-27`** — they did not, so `x test live --workers 8` ran eight processes over the very
+files `x verify` ran one over. `--workers` is accepted there and clamps to 1. The default oversubscribes the cores —
+`clamp(round(cpus * 1.5), 2, 8)` — because leaving a core spare measured *slower than not sharding
+at all* on a 4-core runner, where the split's own cost is not covered by three workers.
+
+**Bun owns the pool, `As of 2026-08-27`.** The CLI used to pack the files into N bins itself
+(largest-first greedy over file SIZE) and spawn one `bun test` per bin; `--parallel=N` hands each
+free worker the next file instead. **Expect no speed-up** — the two forms measure the same. Four
+interleaved runs each on this repo's 1296-file unit corpus, 8 workers: 58.2/60.0/65.0/66.5s
+hand-packed against 54.5/57.8/61.7/64.5s under `--parallel=8`. Both are work-bound — the corpus is
+436.7s of file time, so eight workers cannot beat 54.6s however the files are dealt, and the
+slowest single file is 20.5s. The packer is gone because it was 233 lines buying nothing, not
+because it was slow ([#342](https://github.com/developerz-ai/ultimate/issues/342)).
 
 | Step | Checks |
 |---|---|
@@ -873,15 +884,15 @@ x test [unit|contract|live|job|e2e|eval] [--filter text] [--sample N]
 | *(positional)* | test type | every type | one of the six; a test's type is its filename suffix |
 | `--filter` | string | — | only files whose path contains this substring |
 | `--sample` | string | — | run at most N files of the selection, deterministically. A fast signal for the eval loop — **never a gate** |
-| `--workers` | string | CPUs | process count; each worker gets its own template-cloned database |
-| `--worker` | string | — | rerun only shard I of the same split, reproducing a CI worker failure locally |
+| `--workers` | string | CPUs | worker count; each worker gets its own template-cloned database |
+| `--worker` | string | — | run only shard I of an N-way split of the selection, serially — one CI job's share, and the flag `--workers` bounds |
 | `--affected` | boolean | off | narrow the selection to the workspaces the diff touches and everything that depends on them. `--base`/`--dirty` without it are refused, not ignored |
 | `--base` | string | `main` | the ref to diff against, merge-base (`<base>...HEAD`). Needs `--affected` |
 | `--dirty` | boolean | off | union the working tree in — uncommitted and untracked. Needs `--affected` |
 
 The type rule is `x verify`'s, not a second one — so `x test contract` runs exactly what the gate's `contract` step runs. A selection that matches no files is `X_TEST_NO_FILES`; an unknown type is `X_CLI_BAD_FLAG` naming the six and suggesting the nearest.
 
-`--affected` narrows the FEEDBACK, never the gate. The GATE stays un-narrowable — `x verify` with no flag is the gate, and `x verify --only <step>` announces `NOT A GATE RUN` in both renderers precisely so a narrowed run can never be read as one — because a gate that can be scoped is a gate that can be scoped wrong. Nothing affected is **green with zero spawns**, not a failure: editing a `.md` should not fail a build. A failing shard's `fix:` carries `--affected --base <ref>` back with it, because `--affected` decides which files exist to shard at all and a rerun without it re-splits the whole corpus into a different shard 2.
+`--affected` narrows the FEEDBACK, never the gate. The GATE stays un-narrowable — `x verify` with no flag is the gate, and `x verify --only <step>` announces `NOT A GATE RUN` in both renderers precisely so a narrowed run can never be read as one — because a gate that can be scoped is a gate that can be scoped wrong. Nothing affected is **green with zero spawns**, not a failure: editing a `.md` should not fail a build. A failure's `fix:` carries `--affected --base <ref>` back with it, because `--affected` decides which files exist to run at all and a rerun without it selects the whole corpus.
 
 ## x affected
 

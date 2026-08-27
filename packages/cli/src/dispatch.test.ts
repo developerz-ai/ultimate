@@ -11,12 +11,11 @@ import { tmpdir } from 'node:os';
 // intercept.
 import process from 'node:process';
 import { logger, setLogStream } from '@ultimat3/core';
+import { REQUIRED_BUN } from './app-root';
 import { PLANNED_COMMANDS } from './cmd-planned';
 import { dispatch, sinkFor } from './dispatch';
 import type { CommandResult } from './output';
 import { SPECS } from './registry';
-
-const REQUIRED_BUN = '1.3.14';
 
 async function run(
   argv: readonly string[],
