@@ -3,6 +3,7 @@
 // settle paths. Split from `client.ts` at the file-size rule; `pglite.ts` holds the mirror pair
 // (`send`/`statement`) for the embedded driver, and the two must keep answering the same way.
 
+import { encodeArrayParameters } from './array-parameter';
 import { statementAttribution } from './attribution';
 import type { BunSqlDriver } from './bun-sql';
 import { driverError } from './errors';
@@ -31,7 +32,11 @@ async function sendOn(
   fragment: SqlFragment,
 ): Promise<unknown> {
   try {
-    return await driver.unsafe(fragment.text, fragment.values);
+    // `encodeArrayParameters`, never `fragment.values` raw: `Bun.SQL` joins a JS array's elements
+    // with commas, so every `any($n::T[])` in this framework sent Postgres a malformed literal and
+    // failed — the worker's claim loop among them (#384). One encoder here rather than one import
+    // per call site, because this is the only place this driver's `unsafe` is called.
+    return await driver.unsafe(fragment.text, encodeArrayParameters(fragment.values));
   } catch (error) {
     // `driverError`, not `dbUnavailable`: the SQLSTATE has always been on this error and nothing
     // read it, so a `23505` from two clicks racing a signup told the operator the database was
