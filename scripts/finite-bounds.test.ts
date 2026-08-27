@@ -3,7 +3,7 @@
 // is the answer a correct tree gives, and is how `??`-defaulted options went unchecked in twenty
 // packages under a green gate.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import type { SourceFile } from './boundaries';
 import { collectSourceFiles } from './boundaries';
 import {
@@ -15,7 +15,12 @@ import {
 } from './finite-bounds';
 import { FINITE_BOUNDS_PINS } from './lib/finite-bounds-pins';
 import { SCREENING_CALLEES, screeningCallPattern } from './lib/finite-screens';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const UNCHECKED = 'X_FINITE_BOUND_UNCHECKED';
 const STALE = 'X_FINITE_BOUND_PIN_STALE';

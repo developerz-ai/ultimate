@@ -3,10 +3,15 @@
 // SQL string literal", which is the answer a correct tree gives, and is exactly how three copies of
 // the escape shipped with two of them wrong.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { collectSourceFiles, type SourceFile } from './boundaries';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { checkLiteralCopies, literalCopies, OWNER } from './sql-literal-copies';
+
+// Every test below scans the whole tree, so the budget is the file's default rather than a third
+// argument per test — see `REPO_SCAN_TIMEOUT_MS`. This file ran on Bun's 5000ms default until
+// 2026-08-27 and went red on a runtime 1.3x slower, which is less than one noisy CI runner.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const COPY = 'X_SQL_LITERAL_COPY';
 const UNSCANNED = 'X_SQL_LITERAL_UNSCANNED';

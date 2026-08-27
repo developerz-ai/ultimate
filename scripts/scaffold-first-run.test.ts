@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { GENERATORS } from '@ultimat3/cli';
 import type { RunResult } from './lib/run';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { FirstRunStep, Runner } from './scaffold-first-run';
 import {
   appBin,
@@ -13,6 +13,11 @@ import {
   stepFinding,
   verdict,
 } from './scaffold-first-run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const result = (over: Partial<RunResult> = {}): RunResult => ({
   command: ['x', 'g', 'route', 'smoke-route'],

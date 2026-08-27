@@ -2,9 +2,9 @@
 // `unit` step runs every `scripts/**/*.test.ts`, so a new unexplained `node:` import fails
 // `bun run verify` with no extra wiring.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { NODE_IMPORT_PINS } from './lib/node-import-pins';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import {
   checkNodeImports,
   hasWhy,
@@ -12,6 +12,11 @@ import {
   nodeImportGaps,
   scanNodeImports,
 } from './node-imports';
+
+// Every test below scans the whole tree, so the budget is the file's default rather than a third
+// argument per test — see `REPO_SCAN_TIMEOUT_MS`. This file ran on Bun's 5000ms default until
+// 2026-08-27 and went red on a runtime 1.3x slower, which is less than one noisy CI runner.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const found = (source: string): readonly string[] =>
   scanNodeImports('packages/x/src/a.ts', source).map((site) => site.specifier);

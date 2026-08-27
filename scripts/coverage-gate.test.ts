@@ -1,10 +1,15 @@
 // The two halves that decide a package's verdict, driven directly: the lcov scoping that undoes
 // Bun's cross-package dilution, and the ratchet that fails in both directions.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { hasExecutableCode, judge, scopeLcov, unimportedSources } from './coverage-gate';
 import { COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 /** Two records for the package under test, one for a package it merely imported. */
 const LCOV = [

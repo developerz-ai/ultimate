@@ -1,7 +1,7 @@
 // The derivation, over synthetic trees with a known answer and over this one — so "it names the
 // right packages today" and "it would name a new one tomorrow" stay separate claims.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: `mkdtemp` is the only temp-directory API in the runtime, and a synthetic tree is what makes
 // each half of the derivation provable without editing a package another agent holds.
 import { mkdtemp } from 'node:fs/promises';
@@ -18,7 +18,12 @@ import {
   programPackages,
   seamPackages,
 } from './browser-barrel-set';
-import { repoRoot } from './run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const tree = (name: string): Promise<string> => mkdtemp(join(tmpdir(), `ultimate-${name}-`));
 

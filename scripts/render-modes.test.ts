@@ -3,7 +3,7 @@
 // fails `bun run verify` with no extra wiring. The real repo is asserted NON-VACUOUSLY — a scanner
 // that read nothing would otherwise report "no copies", the same answer a clean repo gives.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import {
   CACHE_TIERS,
   HYDRATE_STRATEGIES,
@@ -13,7 +13,7 @@ import {
 } from '@ultimat3/core';
 import { JOB_STATES } from '@ultimat3/jobs';
 import { TEST_TYPES } from '@ultimat3/testing';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { SourceFile } from './render-modes';
 import {
   COPY_THRESHOLD,
@@ -24,6 +24,11 @@ import {
   VOCABULARY_MODULE,
   vocabularyFindings,
 } from './render-modes';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const ROOT = repoRoot();
 

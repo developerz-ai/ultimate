@@ -3,7 +3,7 @@
 // fails `bun run verify` with no extra wiring. The real repo is asserted NON-VACUOUSLY — a scanner
 // that read nothing reports "no copies", which is the answer a clean repo gives too.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import type { SourceFile } from './flight-copies';
 import {
   BACKOFF_MODULE,
@@ -11,7 +11,12 @@ import {
   flightCopyFindings,
   readSources,
 } from './flight-copies';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Every test below scans the whole tree, so the budget is the file's default rather than a third
+// argument per test — see `REPO_SCAN_TIMEOUT_MS`. This file ran on Bun's 5000ms default until
+// 2026-08-27 and went red on a runtime 1.3x slower, which is less than one noisy CI runner.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const ROOT = repoRoot();
 

@@ -68,14 +68,38 @@ export function scanDocCitations(file: MarkdownFile): readonly DocCitation[] {
   return found;
 }
 
-/** Every markdown file under a glob, sorted, so two runs on one tree report in one order. */
+/**
+ * Every markdown file under a glob, sorted, so two runs on one tree report in one order.
+ *
+ * **`dot: true`, and it is load-bearing rather than tidy, `As of 2026-08-27`.** `Bun.Glob` on
+ * **1.3.14** matches nothing under a dot-directory without it — even when the pattern spells the
+ * dot itself — where **1.4.0** matches either way. Measured, this tree, same patterns:
+ *
+ * ```
+ *                                    1.3.14   1.4.0
+ *   .github/workflows/*.yml               0       5
+ *   .github/workflows/*.yml  dot:true     5       5
+ *   the deep `.claude` markdown glob        0      15
+ * ```
+ *
+ * Four scanners share this reader — `gate-steps`, `doc-commands`, `release-facts`,
+ * `version-stamp-scan` — and `STEP_GLOBS` names `.github/workflows/*.yml` and a deep `.claude`
+ * markdown glob precisely because a workflow and an agent brief each state the gate's step count.
+ * On Bun 1.3 those two globs selected **zero files** and the rule reported green: not a wrong
+ * answer, a question never asked, with the runtime as the only thing closing the hole.
+ *
+ * Found by trialling the repo on 1.3.14 (`.github/actions/setup/action.yml` records why that trial
+ * was refused) and fixed regardless, because **a scan whose CORPUS depends on the Bun minor is the
+ * defect** — the pin above this reader is one line and moves. Passed unconditionally rather than
+ * branched on `Bun.version`: the flag is a no-op on the runtime that already does this.
+ */
 export async function readMarkdown(
   root: string,
   glob: string,
   skip: (path: string) => boolean = () => false,
 ): Promise<readonly MarkdownFile[]> {
   const files: MarkdownFile[] = [];
-  for await (const path of new Bun.Glob(glob).scan({ cwd: root, absolute: false })) {
+  for await (const path of new Bun.Glob(glob).scan({ cwd: root, absolute: false, dot: true })) {
     if (skip(path)) continue;
     files.push({ path, text: await Bun.file(`${root}/${path}`).text() });
   }

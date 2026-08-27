@@ -99,18 +99,20 @@ RUN VERSION_DEFINE="$(bun --print 'JSON.stringify(require("./packages/core/packa
 # not carry. The header here claimed "roughly 80MB total" and no version of this image has ever been
 # that: `--compile` bakes the Bun runtime in, so `/app/x` alone is 92MB and the image measures
 # 184MB (`docker images`, linux/amd64, re-measured on the Bun 1.4 bump, `As of 2026-08-20`). It read
-# 104MB / 189MB on `oven/bun:1.3-slim` — the runtime Bun bakes in is what moved, so this pair is
-# re-measured whenever the series above does, not carried forward.
+# 104MB / 189MB on `oven/bun:1.3-slim`, and 104MB / 197MB when the 1.3 reversal was trialled on
+# 2026-08-27 — the runtime Bun bakes in is what moved, so this pair is re-measured whenever the
+# series above does, not carried forward.
 #
 # `-debian13`, and the digit is load-bearing: it must be the SAME Debian as the build stage above.
 # `oven/bun:1.4-slim` is trixie (glibc 2.41) and `cc-debian12` is bookworm (glibc 2.36), so a binary
 # built there could not have run here even if it had been built at all.
 #
-# So the Bun series above cannot be bumped without re-reading this line. Checked on the 1.3 → 1.4
-# move (2026-08-20): `oven/bun:1.4-slim` is still trixie, still glibc 2.41 —
-# `docker run --rm --entrypoint sh oven/bun:1.4-slim -c 'cat /etc/os-release; ldd --version'`. The
-# day it becomes forky, this stage moves to `cc-debian14` in the same commit or every container
-# dies on exec, which is the failure the paragraph below records.
+# So the Bun series above cannot be MOVED — in either direction — without re-reading this line.
+# Checked on the 1.3 → 1.4 move (2026-08-20) and again when the reversal was trialled (2026-08-27):
+# both `oven/bun:1.4-slim` and `oven/bun:1.3-slim` answer trixie / `Debian GLIBC 2.41-12+deb13u2` to
+# `docker run --rm --entrypoint sh <image> -c 'cat /etc/os-release; ldd --version'`. The day either
+# becomes forky, this stage moves to `cc-debian14` in the same commit or every container dies on
+# exec, which is the failure the paragraph below records.
 #
 # It was worse than a version skew before this branch: the build stage was `oven/bun:1.3-alpine`, so
 # the binary requested `/lib/ld-musl-x86_64.so.1` on a glibc-only runtime. Every container this

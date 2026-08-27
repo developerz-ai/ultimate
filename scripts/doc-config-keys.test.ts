@@ -2,7 +2,7 @@
 // must stay QUIET: a property of a runtime object that shares a section's name, and a page whose
 // whole job is to record that the key was deleted.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { configDeclaration, configLeaves } from './config-readers';
 import {
   configCitations,
@@ -12,7 +12,12 @@ import {
   unknownConfigKeys,
 } from './doc-config-keys';
 import { DOC_CONFIG_KEY_ALLOWANCES, DOC_CONFIG_PINS_FILE } from './lib/doc-config-key-pins';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const leaves = configLeaves(await configDeclaration(repoRoot()));
 

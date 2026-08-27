@@ -1,7 +1,9 @@
 // The gate-step rule, over fixtures rather than over the tree: a page three other agents are
 // rewriting is not a place to assert a negative case from.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+// why: Bun exposes no path-join primitive; Bun.file takes one already joined.
+import { join } from 'node:path';
 import { VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import {
   checkGateSteps,
@@ -11,7 +13,12 @@ import {
   STEP_GLOBS,
   skipStepPath,
 } from './gate-steps';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const STEPS = ['typecheck', 'lint', 'contract', 'contract-diff', 'seo', 'i18n', 'roadmap'];
 const page = (text: string) => ({ path: 'wiki/Fixture.md', text });
@@ -204,6 +211,21 @@ describe('the surfaces the scan reaches', () => {
     expect(paths).toContain('.github/workflows/ci.yml');
     expect(paths).toContain('scripts/reference-app-gate.ts');
     expect(paths.some((path) => path.startsWith('.claude/'))).toBe(true);
+  });
+
+  /**
+   * The assertion above reads a REAL corpus, so on Bun 1.4.0 it passes whether or not the reader
+   * asks for dot-directories — 1.4 matches them anyway. On **1.3.14 it does not**, and every glob
+   * in `STEP_GLOBS` beginning with a dot selected zero files: `ci.yml` and every `.claude/` brief
+   * went unread and this rule reported green. So the behavioural test alone is a test that cannot
+   * fail on half the supported range, and this one reads the OPTION instead — it reds on both.
+   */
+  test('the shared reader asks for dot-directories, which Bun 1.3 needs and 1.4 does not', async () => {
+    const source = await Bun.file(join(repoRoot(), 'scripts/lib/doc-citations.ts')).text();
+    expect(source).toContain('dot: true');
+    // On the same `scan` call, not merely somewhere in the file: a `dot: true` in a comment or in
+    // an unrelated option bag protects nothing, which is the hole this whole test exists to close.
+    expect(source).toMatch(/\.scan\(\{[^}]*dot:\s*true[^}]*\}\)/);
   });
 
   /**

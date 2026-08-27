@@ -4,9 +4,9 @@
 //
 // The first block is the four worst of the thirteen shipped instances, reduced to their shape.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { PROTO_INDEX_PINS } from './lib/proto-index-pins';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import {
   checkProtoIndex,
   protoIndexFindingFor,
@@ -14,6 +14,11 @@ import {
   recordTables,
   scanProtoIndex,
 } from './proto-index';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const keys = (source: string): readonly string[] =>
   scanProtoIndex('packages/x/src/a.ts', source).map((site) => `${site.table}[${site.key}]`);

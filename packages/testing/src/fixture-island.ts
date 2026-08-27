@@ -22,8 +22,18 @@ export interface IslandBundleLike {
   readonly chunks: readonly IslandChunkLike[];
 }
 
-/** `buildIslands` from `@ultimat3/cli` satisfies this structurally — no import, no new tier edge. */
-export type IslandBuilder = (root: string) => Promise<IslandBundleLike>;
+/**
+ * `buildIslands` from `@ultimat3/cli` satisfies this structurally — no import, no new tier edge.
+ *
+ * The second parameter is OPTIONAL on both sides, `As of 2026-08-27`, which is what keeps that true:
+ * a builder of your own written as `(root) => …` is still assignable, and `buildIslands`' own
+ * `options` argument is already optional. Widening it is what lets `mountIsland` name the one island
+ * it is about to mount — see the call site for what building all of them was costing.
+ */
+export type IslandBuilder = (
+  root: string,
+  options?: { readonly only?: string },
+) => Promise<IslandBundleLike>;
 
 export interface MountIslandOptions {
   readonly build: IslandBuilder;
@@ -168,7 +178,20 @@ function installGlobals(values: Readonly<Record<string, unknown>>): () => void {
  * `document` to every later FILE in the run.
  */
 export async function mountIsland(options: MountIslandOptions): Promise<MountedIsland> {
-  const bundle = await options.build(options.root);
+  // `only`, because this fixture has always KNOWN which island it wants and asked for all of them
+  // anyway — `island-bundle.ts` added the option for exactly this caller ("a test that mounts a
+  // single island otherwise pays every OTHER island's Babel pass and `Bun.build` on every file, and
+  // the reference app is the one that feels it") and nothing ever passed it.
+  //
+  // It is also the difference between green and red on Bun 1.3.14, which is how it was found:
+  // building the reference app's four islands in a test process that has already imported
+  // `@ultimat3/realtime` at module scope makes `Bun.build` throw `Unexpected reading file:
+  // packages/realtime/src/index.ts`. One island does not, and neither does `x build` — measured,
+  // `x build --target static` is green on 1.3.14 — so this is a bundler defect confined to
+  // `bun test`, fixed in 1.4.0, and asking for the island we actually want walks around it while
+  // being the faster and more honest call regardless. A builder that ignores the argument still
+  // works: the `find` below is unchanged.
+  const bundle = await options.build(options.root, { only: options.file });
   const chunk = bundle.chunks.find((each) => each.file === options.file);
   if (chunk === undefined) {
     throw islandNotBuilt(

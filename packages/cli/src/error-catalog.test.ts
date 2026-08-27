@@ -89,7 +89,7 @@ describe('unit · loading it', () => {
     expect(hasErrorCode('X_UNAUTHENTICATED')).toBe(true);
     expect(hasErrorCode('X_PWA_ICON_MISSING')).toBe(true);
     expect(hasErrorCode('X_CURRENCY_UNKNOWN')).toBe(true);
-  }, 30_000);
+  }, 180_000);
 
   test('reports what it could not import rather than dropping it silently', async () => {
     const catalog = await loadErrorCatalog();
@@ -210,6 +210,10 @@ describe('unit · every code shipped source hands a reader is registered', () =>
     }
     expect([...orphans.entries()]).toEqual([]);
     // Loads every package AND walks every shipped source file in the monorepo — the same reason
-    // the test above carries an explicit budget rather than Bun's 5s default.
-  }, 30_000);
+    // the test above carries an explicit budget rather than Bun's 5s default. The number is
+    // `REPO_SCAN_TIMEOUT_MS`'s, written as a literal because a published package's suite may not
+    // import the host monorepo's `scripts/`; `scripts/repo-scan-timeout.test.ts` compares them, so
+    // the mirror is a build error rather than a claim in a comment. It said 30s while the constant
+    // said 90s.
+  }, 180_000);
 });

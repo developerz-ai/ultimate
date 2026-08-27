@@ -11,10 +11,17 @@
  * anyway, and that is the whole failure: Bun 1.3 refuses the build with
  * `Could not resolve: "@babel/preset-typescript/package.json"`, while Bun 1.4 bundles the
  * unresolvable `require` as a runtime throw — so one tree compiled on a laptop and did not in CI.
- * That skew is closed `As of 2026-08-20`: CI pins `1.4.x` (`.github/actions/setup/action.yml`),
- * `docker/Dockerfile` builds on `oven/bun:1.4-slim` and `scripts/setup.ts` holds contributors to
- * 1.4.0, so every builder now takes the second branch. The external stays regardless — it is the
- * `--compile` graph that must not reach an unresolvable `require`, on either Bun.
+ *
+ * **This list is what closed that, and the version pin never was.** The paragraph here said the
+ * skew was closed `As of 2026-08-20` by CI moving to `1.4.x`, "so every builder now takes the
+ * second branch", and added that the external stays regardless. Read together those are two fixes
+ * for one bug, and only the second is a fix: pinning the whole repository to the Bun that TOLERATES
+ * an unresolvable `require` leaves the `--compile` graph still reaching one, so the next Bun that
+ * tightens resolution breaks the build again. Marking the specifier external means the graph never
+ * reaches it, on either Bun — measured on 2026-08-27, when the 1.4 pin was trialled in reverse:
+ * `docker build -f docker/Dockerfile` is green on `oven/bun:1.3-slim` and the image answers
+ * `--version`. So this file does not depend on the series above it, and a future move of that pin
+ * costs it nothing.
  *
  * Marking the dead specifier external rather than the two live ones: `serve.ts` calls
  * `buildIslands` on every boot, unconditionally, so a binary with `@babel/core` external is a

@@ -2,10 +2,15 @@
 // the two ways this rule stops being one — a page that is gone, and a page whose tables no longer
 // declare a Fix column at all, either of which would otherwise read as "every fix is runnable".
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import type { CommandCatalog } from '@ultimat3/cli';
 import { checkDocFixes, docFixFindingFor, docFixGaps, readFixCells } from './doc-fixes';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const catalog: CommandCatalog = {
   specs: [

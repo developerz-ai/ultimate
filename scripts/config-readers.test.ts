@@ -2,7 +2,7 @@
 // against `repoRoot()` — the pattern `changelog-check.test.ts` uses — because the finding that
 // matters is a fact about THIS tree, not about a fixture.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: `node:fs/promises`'s `mkdtemp` + `node:os`'s `tmpdir` — Bun ships no temp-directory API;
 // `node:path`'s `join` — no Bun path joiner. No `mkdir`: `Bun.write()` creates the parents.
 import { mkdtemp } from 'node:fs/promises';
@@ -27,7 +27,12 @@ import {
   CONFIG_PINS_FILE,
   CONFIG_READER_PINS,
 } from './lib/config-reader-pins';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+// Every test below scans the whole tree, so the budget is the file's default rather than a third
+// argument per test — see `REPO_SCAN_TIMEOUT_MS`. This file ran on Bun's 5000ms default until
+// 2026-08-27 and went red on a runtime 1.3x slower, which is less than one noisy CI runner.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const input = await configReaderInput(repoRoot());
 

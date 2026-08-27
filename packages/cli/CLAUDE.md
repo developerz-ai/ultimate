@@ -339,7 +339,7 @@ browser port in this framework takes a string, so what crosses is `Function.prot
 and nothing else. A zero-parameter closure naming only page globals is supported; a native or bound
 function, a declared parameter and a method shorthand are refused STATICALLY, before a byte leaves;
 a binding the page does not have comes back named, from the page's own `ReferenceError`. Measured on
-Bun 1.4.0 and load-bearing: **Bun's transpiler folds `wanted === 3` to `!0` before `toString()` ever
+Bun 1.3.14 and 1.4.0 alike — re-measured on both when the repo moved back to the 1.3 series, because a version-stamped claim that names one runtime is unread evidence on the other — and load-bearing: **Bun's transpiler folds `wanted === 3` to `!0` before `toString()` ever
 runs**, so a captured PRIMITIVE can vanish from the source and never fail at all, while a captured
 reference always survives as its name. No static rule in this process can see the difference — which
 is why the refusal is raised from the page's answer rather than from a scan of the source.

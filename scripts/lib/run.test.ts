@@ -2,9 +2,14 @@
 // `packages/cli/src/exec.ts` makes at the same seam, and for the same reason — it used to be a
 // bare `RangeError`: no code, no `fix:`, nothing a `--json` reader can act on.
 
-import { describe, expect, test } from 'bun:test';
-import { repoRoot, run } from './run';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './run';
 import { ScriptError } from './script-error';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 describe('unit · run()', () => {
   test('an empty command is a coded failure, not a bare RangeError', async () => {

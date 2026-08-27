@@ -12,12 +12,21 @@ export const MANIFEST_FILE = 'x.manifest.json';
  * through 2026-08-27 while `x test` spent `bun test --isolate` — a flag Bun introduced in
  * **1.3.13** — so a user on a Bun this file declared supported got an unknown-flag failure out of
  * the gate's dominant step, with `x doctor` reporting the runtime as fine. `--parallel` arrived in
- * the same release and is emitted now.
+ * the same release and is emitted now, so the floor may never fall below that patch.
  *
  * `1.4.0` rather than `1.3.13` because a floor is a claim about a runtime somebody TESTED: CI pins
  * `1.4.x`, both images build on `oven/bun:1.4-*`, and the per-worker database rests on
  * `BUN_TEST_WORKER_ID`'s numbering, probed on 1.4.0 and on nothing older. `scripts/bun-pin.test.ts`
  * holds this to the same series as every other pin.
+ *
+ * **Lowering it to 1.3.14 was tried on 2026-08-27 and refused**, and the argument for trying was
+ * sound — `--isolate` and `--parallel` are 1.3.13 features, no package here calls a 1.4-only API
+ * (`bun run typecheck` is clean against `@types/bun@1.3.14`), and `>=1.4.0` therefore bars Bun 1.3
+ * users for a capability the framework does not use. What refused it is a Bun 1.3.14 defect, not
+ * the paperwork: a service shutdown against a destroyed database never resolves there
+ * (`queue.stop()`, reproduced by `dev-runtime.live.test.ts`), so an app on a runtime this line
+ * declared supported would hang on graceful shutdown the moment its database went away. The full
+ * measurement is in `.github/actions/setup/action.yml`; read it before lowering this.
  */
 export const REQUIRED_BUN = '1.4.0';
 

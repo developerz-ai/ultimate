@@ -2,7 +2,7 @@
 // at every disagreement, because a pins file this cannot read is a hand edit and deleting the wrong
 // line widens the ratchet silently. Every case here runs against a COPY of the real pins file.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: `mkdtemp`/`rm`/`join`: the copy needs a real throwaway directory, and Bun ships no
 // equivalent — `Bun.write` creates files but never the scratch root, and `Bun.file().unlink()`
 // cannot remove a directory tree.
@@ -12,9 +12,14 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { GATED_APPS, PINS_FILE } from './lib/gated-apps';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { pinnedSteps } from './lib/unpin';
 import { unpin } from './reference-app-gate';
+
+// Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
+// default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
+// to take minutes, and a test that does has hung.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 describe('unpin', () => {
   /** A throwaway repo root holding a copy of the real pins file, so no test edits the real one. */
