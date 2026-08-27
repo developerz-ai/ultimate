@@ -10,6 +10,23 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`E2eFixtures.offline()` and `online()` forward to the browser instead of refusing, and the
+  reason they refused was never true.** `packages/cli/src/e2e-driver.ts` said `CdpPageLike`
+  "declares twelve methods and none of them is `setOfflineMode`". It declares it at
+  `packages/scraping/src/cdp-port.ts:71` — optional, with a coded `X_NOT_IMPLEMENTED` in
+  `cdp-target.ts` for a launcher that lacks it — and `page-over-target.ts` exposes it as
+  `ScrapePage.offline()`. All of that landed in **the same commit as the comment** (#351), so the
+  refusal was wrong on the day it was written, and [#390](https://github.com/developerz-ai/ultimate/issues/390)
+  records a real browser check for the service worker as out of reach because of it.
+
+  `E2eBrowserPage` gains an optional `offline(enabled)`, matching how `CdpPageLike` declares the
+  same method: the port is the shape of somebody else's object, and a six-line double must still
+  satisfy it. Absent, the fixture still REFUSES rather than no-opping — an `offline()` that did
+  nothing would let the app's ONLINE page pass an offline test — but it now names the method the
+  double is missing instead of sending the reader after a capability the framework already has.
+  `update()` still refuses on its own merits: a new build id is a fact about the server, which no
+  page port can speak for. Proved by mutation on both the forward and the refusal.
+
 - **A gate rule that scanned zero files on Bun 1.3 and reported green.** `Bun.Glob` on 1.3.14
   matches nothing under a dot-directory unless the scan asks for `dot: true` — even when the
   pattern spells the dot itself — where 1.4.0 matches either way. Measured on this tree:
