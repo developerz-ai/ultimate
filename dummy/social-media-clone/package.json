@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
-    "@electric-sql/pglite": "^0.5.4",
+    "@electric-sql/pglite": "^0.5.5",
     "@types/bun": "^1.4.0",
     "@ultimat3/testing": "19.0.0",
     "typescript": "^7.0.2"
