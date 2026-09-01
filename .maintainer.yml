@@ -1,0 +1,36 @@
+# developerz.ai maintainer policy for developerz-ai/ultimate.
+#
+# Committed for ONE reason, and it is a measurement rather than a preference.
+#
+# Without a `.maintainer.yml` this repo inherits the platform default, which
+# carries `review.force: false`. The platform then stands down whenever
+# CodeRabbit is active on the repo (`packages/review/src/dispatch.ts` — `if
+# (trigger.coderabbitActive && !review.force) return defer: coderabbit_active`).
+# CodeRabbit is inside the 14-day activity window here, so EVERY pull request
+# answered `defer` and was reviewed by developerz.ai zero times.
+#
+# The deference is a PREDICTION that the incumbent will review this PR, made
+# because its bot was seen recently on some OTHER PR, and nothing ever checks
+# whether the prediction came true. Measured on prod 2026-08-31 for
+# `developerz-ai/ultimate`: 202 of 202 swept pull requests never enqueued a
+# review, 140 individually audited `disposition: deferred, reason:
+# coderabbit_active` — while CodeRabbit itself filed a review on only 73 of the
+# 202. The other ~129 were reviewed by nobody at all, and carry no findings from
+# either side, so the gap is invisible to any metric counting what CodeRabbit
+# found on PRs we skipped.
+version: 1
+
+review:
+  # Run alongside an active CodeRabbit rather than standing down for it. The two
+  # reviewers are complementary; this repo keeps both, deliberately. Sanctioned
+  # by the schema docblock on `review.force` and by `docs/idea/principles.md`,
+  # which names running alongside an incumbent as the intended use.
+  force: true
+
+pr:
+  # Pinned explicitly, and NOT a default restated. `PrSchema.auto_merge` defaults
+  # `true` (`packages/policy/src/schema.ts`) while the no-file platform default
+  # pins it `false` (`packages/policy/src/defaults.ts`) — so committing this file
+  # AT ALL flips auto-merge on unless this line says otherwise. This file exists
+  # to add reviews, not to change what merges. Flip it deliberately or not at all.
+  auto_merge: false
