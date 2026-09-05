@@ -93,7 +93,7 @@
             "type": "string"
           },
           "body": {
-            "minLength": 1,
+            "maxLength": 2000,
             "type": "string"
           },
           "createdAt": {

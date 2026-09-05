@@ -113,6 +113,79 @@ export const liveFeed = query({ /* ... */ live: true, persist: true });
 
 Teams adopt tier 2 in week one and can afford tier 3 in year two without a migration project. That is the whole promise of the ladder.
 
+## Live query in the browser, end to end
+
+Written `As of 2026-09-05` because four agents building one app each **polled** a query from an
+island instead of subscribing: the pieces were all documented, and the sequence was not. It is
+five steps, and `examples/dummy/apps/web/app/feed/` is the worked copy of every one of them.
+
+| Step | Where | What |
+|---|---|---|
+| 1. the dependency | root `package.json` | `bun add @ultimat3/realtime` — `x new` installs `@ultimat3/query` and **not** `@ultimat3/realtime`, so a scaffolded app has `useLive` nowhere until this line |
+| 2. the query | `app/<feature>/live.ts` | `query({ …, live: true, subscribes: ['posts'] })` — bounded and ordered, or `X_QUERY_NOT_SUBSCRIBABLE`; `x g query <name> --live` writes it |
+| 3. the socket adapter | `shared/live-socket.ts` | `ClientSocket` over the browser's `WebSocket` — `send`, `close`, `onOpen`, `onMessage`, `onClose` — plus a `SignalFactory` over Solid's `createSignal`. ~30 lines, once per app |
+| 4. the sync URL | the page, as an island prop | the `sync` role listens on `PORT + 1`; the page computes the URL on the server (`shared/sync-url.ts`) and hands it to the island as a prop, because an island's props cross as JSON and `process.env` does not exist in a browser |
+| 5. the island | `app/<feature>/<name>.island.tsx` | `connect()` → `setLiveClient()` → render; `useLive` inside the component. **In an island, never a page body**: a page component never runs in a browser, so `useLive` there falls back to `serverRenderLiveClient()` and renders the loading branch forever |
+
+```tsx
+// app/feed/feed.island.tsx — the only module of /feed a browser downloads
+import { LiveClient, setLiveClient, useConnection, useLive } from '@ultimat3/realtime';
+import { For, Show } from 'solid-js';
+import { render } from 'solid-js/web';
+import { signal, socketFor } from '../../shared/live-socket';
+import { type FeedRow, LIVE_FEED } from './live'; // LIVE_FEED: keyof Api['queries'] = 'liveFeed'
+
+export function mount(el: HTMLElement, props: { syncUrl: string; buildId: string; actorId: string; orgId: string }) {
+  const client = new LiveClient({
+    signal,
+    connect: () => socketFor(props.syncUrl),
+    buildId: props.buildId,
+    actorId: props.actorId,
+  });
+  client.connect();          // 1. open the socket
+  setLiveClient(client);     // 2. register it — every hook reads this one
+  el.textContent = '';       // Solid's render APPENDS; the server's loading shell goes first
+  render(() => <Feed orgId={props.orgId} />, el);
+}
+
+function Feed(props: { orgId: string }) {
+  const feed = useLive<FeedRow>({ name: LIVE_FEED }, { orgId: props.orgId }); // 3. subscribe, once
+  const connection = useConnection();
+  return (
+    <Show when={feed.state() === 'live'} fallback={<p>loading…</p>}>
+      <Show when={connection.offline}><p>offline — showing the last rows</p></Show>
+      <ul><For each={feed()}>{(row) => <li>{row.title}</li>}</For></ul>
+    </Show>
+  );
+}
+```
+
+`feed()` is an accessor that re-renders on every patch the sync node sends — no timer, no refetch;
+`feed.state()` is `'offline'` until the node has answered and `'live'` after. The typed spelling,
+`liveHookFor(liveFeed)`, is a **server** module's binding; an island imports the query's **name**,
+never the query, so `live.ts` exports `LIVE_FEED: keyof Api['queries'] = 'liveFeed'` and the row
+type beside it. Polling `query.client()` from an island is the shape every rung of the ladder
+above exists to replace.
+
+### In development, the feed is this process
+
+`As of 2026-09-05`. The sync node's changes come from Postgres logical replication — a real
+`DATABASE_URL` and the `replicator` role (`x dev --role replicator`). The embedded database has no
+walsender, so under a plain `x dev` a subscription took its snapshot and then heard nothing: every
+`--live` query in every scaffolded app was dead in development, which is where an author first
+tries one. `x dev` now installs the in-process bridge (`@ultimat3/testing`'s `startLiveReplicator`
+— the row observer the framework's own live tests run on) whenever the database is embedded, and
+the ready line says so:
+
+| `db=` | `live=` | What reaches a subscriber |
+|---|---|---|
+| `embedded` | `in-process` | every repository write **this process** makes — a write made by another process is invisible, which is the bridge's honest bound and holds by construction under `x dev` |
+| `external` | `replication` | what the WAL decoder delivers, in this process (`--role replicator`) or in another |
+| no `sync` role | `none` | nothing; there is no node to feed |
+
+Never both: with a real database the decoder already carries this process's own writes, and a
+bridge beside it would deliver each of them twice. `--json` carries the same fact as `liveFeed`.
+
 ## Live query pipeline
 
 ```

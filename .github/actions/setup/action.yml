@@ -82,7 +82,18 @@ runs:
         # `scripts/bun-pin.test.ts` reads every `engines.bun`, both `REQUIRED_BUN` constants,
         # `@types/bun`, every `FROM oven/bun:` and both workflow pins, and fails when any two name
         # different series — so this line cannot move alone, in either direction.
-        bun-version: '1.4.x'
+        # THE EXACT PATCH, `As of 2026-09-05`, and the paragraphs above are why the SERIES was the
+        # pin until this morning. Bun 1.4.2 was published at 05:55 UTC on 2026-09-05, `1.4.x`
+        # admitted it on the next run, and its bundler retains MORE of a re-export barrel than
+        # 1.4.0's: `packages/ui/src/barrel-bytes.test.ts` — three pins that measure what a browser
+        # chunk pays for the `@ultimat3/ui` barrel — fails on `main` (b557be65) under 1.4.2 with
+        # nothing changed (`<= 1024` bytes measured 10,653; `useUi` and `moneyText` retain 31 lines
+        # the module path does not) and passes under 1.4.0; `examples/dummy`'s like island grew from
+        # under 50,426 bytes to 51,381 on the same runner for the same reason. A patch that changes
+        # what ships to a browser is a change this repository measures, so the pin names the patch
+        # somebody measured. Move it forward the way 1.3 → 1.4 moved: run the gate on the candidate
+        # and write the numbers here. 1.4.1 is untested and is not the pin for that reason alone.
+        bun-version: '1.4.0'
     - uses: actions/cache@v6
       with:
         path: ~/.bun/install/cache

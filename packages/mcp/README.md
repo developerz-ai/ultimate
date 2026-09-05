@@ -114,9 +114,20 @@ export const mcp = defineAppMcp({
   resolveToken: (token) => sessions.resolveAgentToken(token),
 });
 
-// app.config.ts
-routes: [mcp.route]                      // POST /mcp, rate-limited per method class
 ```
+
+**The web role mounts it, `As of 2026-09-05` — the contract is the file's location.** `app.config.ts`
+has no `routes:` key and never had one; this page said `routes: [mcp.route]` while nothing read it,
+and `POST /mcp` answered `X_ROUTE_NOT_FOUND` in every app ever scaffolded. Now: `apps/<app>/mcp.ts`
+exports `mcp` (the value `defineAppMcp` returns), and both boots — `x dev` and `runRole` — mount
+`POST config.ai.mcp.path` → `mcp.route.handle(request)` when `config.ai.mcp.expose` is `true`,
+which is the **default**, and say `app mcp mounted` in the boot log (`x dev` prints `mcp POST /mcp`
+in its summary). The http pipeline does not pre-judge the route (`auth: 'public'`,
+`enforcedBy: 'handler'`): `mcp.route.handle` reads `Authorization: Bearer` through `resolveToken`
+and decides per tool through the policy every other surface evaluates. `expose: true` with nothing
+to mount — no file exports `mcp`, or the export was built without `resolveToken` and so carries no
+`route` — logs `X_MCP_APP_UNMOUNTED` once, with the file to write; `expose: false` mounts nothing
+and says nothing.
 
 `include: 'exposed'` reads the action and query registries instead of asking for
 `actions: [...]` / `queries: [...]` — the registries already know who opted in, and a

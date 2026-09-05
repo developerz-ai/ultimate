@@ -77,6 +77,25 @@ No MCP-specific permission table, no service account with broad rights. Exposure
 
 The user's own agents can therefore operate the user's product — refund an order, re-run an import, publish a post — with the exact permissions that user has in the UI. See [Admin dashboard](Admin-Dashboard) and [Actions](Actions).
 
+### The app's own endpoint is mounted by the web role
+
+`As of 2026-09-05`. `defineAppMcp({ …, resolveToken })` builds `mcp.route`, and `app.config.ts`
+declares `ai: { mcp: { expose: true, path: '/mcp' } }` **by default** — and until this date nothing
+between the two served it: `POST /mcp` was `X_ROUTE_NOT_FOUND` under `x dev` and in every
+container. The contract is one file:
+
+| Piece | Where | Rule |
+|---|---|---|
+| the declaration | `apps/<app>/mcp.ts` | `export const mcp = defineAppMcp({ include: 'exposed', resolveToken })` |
+| the switch and the path | `app.config.ts` → `ai.mcp` | `expose` (default `true`), `path` (default `/mcp`) |
+| the mount | `x dev` **and** `runRole`, through one call | `POST <path>` → `mcp.route.handle(request)`; the boot log says `app mcp mounted`, `x dev`'s summary prints `mcp POST /mcp` |
+| auth | the route's own | `auth: 'public'`, `enforcedBy: 'handler'` on the http route — the bearer token is read by `resolveToken`, never pre-judged by the pipeline |
+| exposed and unmountable | `X_MCP_APP_UNMOUNTED`, logged once | no file exports `mcp`, or it was built without `resolveToken` (no `route`); the fix names the file to write |
+
+The same discovery serves an app's `RuntimeOverrides`: `apps/<app>/runtime.ts` exporting `runtime`
+reaches `x dev` (its middleware and rate-limit store) and `runRole` when `apps/web/server.ts`
+passes none — one middleware chain in development and in the container, not two.
+
 ## Three outcomes, deliberately different
 
 Role, scope and policy refuse in three distinguishable ways. The difference is the security property, not an implementation detail.

@@ -27,6 +27,13 @@ import { entity, invariant, money, text, timestamp, uuid } from '@ultimat3/entit
 export const ${name.camel} = entity('${table}', {
   // Naming the tenant column is what turns tenancy on: a read without an org predicate then
   // fails with X_TENANCY_UNSCOPED instead of leaking another org's rows.
+  //
+  // SINGLE-TENANT APP? There is no flag: \`x g action\`, \`x g query\` and \`x g policy\` decide on
+  // \`orgId\` too, so the edit is per slice and it is this: delete \`tenant: 'orgId'\` and the
+  // \`orgId: uuid()\` column below, drop \`'orgId'\` from \`indexes\`, and in repo.ts turn
+  // \`listByOrg(orgId, limit)\` into \`list(limit)\` with no \`org_id\` predicate and no \`org_id\` in
+  // the insert. entity.test.ts then expects \`$tenantColumn\` null and \`orgScoped\` false, and its
+  // \`row()\` fixture loses \`orgId\`. Nothing else reads the column.
   tenant: 'orgId',
   columns: {
     id: uuid().primaryKey(),

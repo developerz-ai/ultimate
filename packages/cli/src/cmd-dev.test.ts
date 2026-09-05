@@ -10,90 +10,19 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { resetRegistry as resetActions } from '@ultimat3/action';
 import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
-import { createContext, logger, runWithContext } from '@ultimat3/core';
+import { createContext, logger, runWithContext, userActor } from '@ultimat3/core';
 import { statementObserver } from '@ultimat3/db';
-import { clearRegistry as clearEntities } from '@ultimat3/entity';
 import { cspHashSource } from '@ultimat3/http';
-import { resetJobs, resetTasks } from '@ultimat3/jobs';
-import { clearPermissions, clearRoles } from '@ultimat3/policy';
-import { resetRegistry as resetQueries } from '@ultimat3/query';
-import { clearRoutes } from '@ultimat3/render';
-import { resetAppLoad } from './app-load';
+import { SyncSocket } from '@ultimat3/realtime/server';
 import type { DevServer } from './cmd-dev';
 import { devCommand, startDev } from './cmd-dev';
+import { FakeWs, DEV_FIXTURE_FILES as FILES, resetRegistries } from './cmd-dev-fixture';
 import { CliNotImplementedError } from './errors';
 
 // Under `packages/cli/` so the fixture's `@ultimat3/*` imports resolve through the same tsconfig
 // paths the framework's own sources use; a dot-prefixed name keeps it out of every workspace glob.
 const ROOT = join(import.meta.dir, '..', '.dev-fixture');
-
-const FILES: Readonly<Record<string, string>> = {
-  'package.json': JSON.stringify({ name: 'dev-fixture', version: '1.4.0' }),
-
-  'apps/web/app/posts/policy.ts': `import { allow, can, definePermissions, defineRoles } from '@ultimat3/policy';
-export const permissions = definePermissions(['post:publish'] as const);
-export const roles = defineRoles({
-  author: { grants: ['post:publish'] },
-  reader: { grants: [] },
-});
-export const canPostWrite = can('post:publish');
-export const anyone = allow();
-`,
-
-  'apps/web/app/posts/actions.ts': `import { action, t } from '@ultimat3/action';
-import { anyone, canPostWrite } from './policy';
-
-export const publishPost = action({
-  input: t.object({ id: t.uuid }),
-  output: t.object({ id: t.uuid }),
-  policy: canPostWrite,
-  async handle({ input }) {
-    return { id: input.id };
-  },
-});
-
-export const echoPost = action({
-  input: t.object({ word: t.string }),
-  output: t.object({ word: t.string }),
-  policy: anyone,
-  async handle({ input }) {
-    return { word: input.word };
-  },
-});
-`,
-
-  // A stylesheet the page imports, because that import is what registers it — and the document's
-  // inline `<style>` is what the CSP has to name. Without one this file served no styled page and
-  // could not have caught the policy that blanked every deployed app.
-  'apps/web/site/pricing/page.module.scss': `.price { color: #123456; }
-`,
-
-  'apps/web/site/pricing/page.tsx': `import { defineRoute } from '@ultimat3/render';
-import './page.module.scss';
-
-export const config = defineRoute({
-  render: 'static',
-  offline: 'precache',
-  hydrate: 'never',
-  budget: { js: '0kb' },
-  meta: () => ({ title: 'Pricing', description: 'What it costs' }),
-});
-`,
-};
-
-const resetRegistries = (): void => {
-  resetActions();
-  resetQueries();
-  clearEntities();
-  clearRoutes();
-  resetJobs();
-  resetTasks();
-  clearPermissions();
-  clearRoles();
-  resetAppLoad();
-};
 
 let server: DevServer;
 
@@ -122,7 +51,12 @@ beforeAll(async () => {
   // Port 0 asks the OS for a free one, so this suite never collides with a running `x dev`.
   // `METRICS_PORT` is named, because `x dev` ignoring it is the thing under test.
   const env = { METRICS_PORT: String(METRICS_PORT) };
-  server = await startDev({ root: ROOT, port: 0, env, roles: ['web', 'worker', 'scheduler'] });
+  server = await startDev({
+    root: ROOT,
+    port: 0,
+    env,
+    roles: ['web', 'sync', 'worker', 'scheduler'],
+  });
 }, BOOT_TIMEOUT_MS);
 
 /**
@@ -159,10 +93,10 @@ const fetchDev = (path: string, init?: RequestInit): Promise<Response> => {
 
 describe('unit · x dev boots the app', () => {
   test('every selected role is running, and the unselected ones are not', () => {
-    expect(server.roles).toEqual(['web', 'worker', 'scheduler']);
+    expect(server.roles).toEqual(['web', 'sync', 'worker', 'scheduler']);
     expect(server.running.worker).not.toBeNull();
     expect(server.running.scheduler).not.toBeNull();
-    expect(server.running.syncUrl).toBeNull();
+    expect(server.running.syncUrl).not.toBeNull();
     expect(server.findings).toEqual([]);
   });
 
@@ -223,7 +157,7 @@ describe('unit · x dev boots the app', () => {
       data: { roles: string[]; services: { db: { mode: string } }; reloads: number };
     };
     expect(payload.ok).toBe(true);
-    expect(payload.data.roles).toEqual(['web', 'worker', 'scheduler']);
+    expect(payload.data.roles).toEqual(['web', 'sync', 'worker', 'scheduler']);
     expect(payload.data.services.db.mode).toBe('embedded');
     expect(payload.data.reloads).toBe(0);
   });
@@ -434,15 +368,17 @@ describe('unit · x dev boots the app', () => {
     expect(refused).toEqual([]);
   });
 
-  test('/_x/live says there is no sync node rather than claiming no subscribers', async () => {
+  test('/_x/live names the live query, and says its subscriber source is unwired rather than empty', async () => {
     const payload = (await (await fetchDev('/_x/live?json=1')).json()) as {
       ok: boolean;
-      data: { subscribers: unknown[]; note: string | null };
+      data: { queries: { name: string }[]; subscribers: unknown[]; note: string | null };
     };
-    // `subscribers` is the one source still unwired — `@ultimat3/realtime` records no matcher
-    // trace, and that trace is the panel's whole question. The panel degrades to its note; an
+    // The queries come off the registry this boot's sync node holds. `subscribers` is the one
+    // source still unwired — `@ultimat3/realtime` records no matcher trace, and that trace is the
+    // panel's whole question — so the panel degrades to its note even with the node running; an
     // empty list with no note would read as "nobody is subscribed", which is a different claim.
     expect(payload.ok).toBe(true);
+    expect(payload.data.queries.map((query) => query.name)).toContain('liveNotes');
     expect(payload.data.subscribers).toEqual([]);
     expect(payload.data.note).toBe('dev.live.no-sync-node');
   });
@@ -462,6 +398,53 @@ describe('unit · x dev boots the app', () => {
       values: [],
     });
     expect(rows).toHaveLength(1);
+  });
+
+  // `POST /mcp` answered X_ROUTE_NOT_FOUND in every process the framework booted until 2026-09-05:
+  // `defineAppMcp` built the route and no boot mounted it. 401 is the route's own verdict on a
+  // request with no bearer token, and the boot report names the mount.
+  test("the app's MCP endpoint is mounted, and the boot report names it", async () => {
+    expect((await fetchDev('/mcp', { method: 'POST' })).status).not.toBe(404);
+    expect(server.mcp).toBe('/mcp');
+  });
+
+  // `x dev` passed no app middleware at all until 2026-09-05 — only the read-replica override —
+  // so an app's chain reached no development process. The fixture's `apps/web/runtime.ts` stamps
+  // every response; the stamp on a page the app serves is the chain, composed and running.
+  test("the app's apps/web/runtime.ts middleware runs in development", async () => {
+    const page = await fetchDev('/pricing');
+    expect(page.status).toBe(200);
+    expect(page.headers.get('x-dev-runtime')).toBe('app');
+  });
+
+  // Under the embedded database a subscription took its snapshot and then heard nothing — PGlite
+  // has no walsender and no boot installed a row observer — so every `--live` query in every
+  // scaffolded app was dead in development. A real subscription on the real node, one repository
+  // write through the fixture's own `database()` handle, one patch frame.
+  test('a repository write in this process reaches a live subscriber as a patch', async () => {
+    expect(server.running.liveFeed).toBe('in-process');
+    const registry = server.running.liveRegistry;
+    const bridge = server.running.liveBridge;
+    if (registry === null || bridge === null) expect.unreachable('the sync role has no bridge');
+    const ws = new FakeWs();
+    const socket = new SyncSocket({
+      ws,
+      clientBuildId: server.buildId,
+      serverBuildId: server.buildId,
+      actor: userActor({ id: 'u1' }),
+    });
+    const { frame } = await registry.subscribe({ socket, name: 'liveNotes', input: {} });
+    expect(frame.type).toBe('snapshot');
+    ws.frames.length = 0;
+
+    const { db } = (await import(join(ROOT, 'apps/web/app/notes/entity.ts'))) as {
+      db: { notes: { insert(row: { id: string; title: string }): Promise<unknown> } };
+    };
+    await db.notes.insert({ id: crypto.randomUUID(), title: 'first note' });
+    await bridge.settled();
+
+    expect(bridge.delivered).toBeGreaterThan(0);
+    expect(ws.frames.map((sent) => sent.type)).toContain('patch');
   });
 
   test('--role is a declared flag with the dev roles in its summary', () => {

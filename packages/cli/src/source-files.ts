@@ -29,12 +29,24 @@ export const isGenerated = (path: string): boolean => path.endsWith('.d.ts');
 /** Every opt-in suffix (`*.{contract,live,job,eval,e2e}.test.ts`) still ends `.test.ts`. */
 export const isTest = (path: string): boolean => /\.test\.tsx?$/.test(path);
 
-/** Every source file under `root`, repo-relative and deduplicated across the globs. */
+/**
+ * Every source file under `root`, repo-relative and deduplicated across the globs — in a SORTED
+ * order per pattern, `As of 2026-09-05`. `Bun.Glob.scan` yields in the filesystem's `readdir`
+ * order, which ext4 hashes: the first offender a scan names was `index.ts` on one machine and
+ * `tools.ts` on a GitHub runner, so a finding's `cause` depended on which disk held the checkout
+ * (`workspace-graph.test.ts`, red on CI and green everywhere else). Code-unit compare, never
+ * `localeCompare`, for the reason `describeRoutes` states: one order on every machine.
+ */
 export async function* eachSourceFile(root: string): AsyncGenerator<string> {
   const seen = new Set<string>();
   for (const pattern of SOURCE_GLOBS) {
+    const matches: string[] = [];
     for await (const path of new Bun.Glob(pattern).scan({ cwd: root, absolute: false })) {
-      if (isVendored(path) || seen.has(path)) continue;
+      if (!isVendored(path)) matches.push(path);
+    }
+    matches.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    for (const path of matches) {
+      if (seen.has(path)) continue;
       seen.add(path);
       yield path;
     }

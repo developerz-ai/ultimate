@@ -74,12 +74,16 @@ describe('sqlState', () => {
 });
 
 describe('sqlStateCode', () => {
-  test('an unclassified state is undefined, so the caller reports unavailability', () => {
-    expect(sqlStateCode(bunSqlError('42703'))).toBeUndefined();
+  test('an unclassified state is undefined — driverError decides what that means', () => {
+    // `42601` (syntax_error) has no row: the server answered, so `driverError` reports
+    // X_DB_STATEMENT_FAILED rather than unavailability, but that is its call and not this table's.
+    expect(sqlStateCode(bunSqlError('42601'))).toBeUndefined();
     expect(sqlStateCode(new Error('no socket'))).toBeUndefined();
   });
 
   test('every state in the table classifies, and nothing else does', () => {
+    expect(sqlStateCode(bunSqlError('42P01'))).toBe('X_DB_SCHEMA_STALE');
+    expect(sqlStateCode(bunSqlError('42703'))).toBe('X_DB_SCHEMA_STALE');
     expect(sqlStateCode(bunSqlError('23505'))).toBe('X_DB_UNIQUE_VIOLATION');
     expect(sqlStateCode(bunSqlError('23503'))).toBe('X_DB_FOREIGN_KEY_VIOLATION');
     expect(sqlStateCode(bunSqlError('40001'))).toBe('X_DB_SERIALIZATION_FAILURE');
@@ -96,6 +100,8 @@ describe('sqlStateCode', () => {
       '23505',
       '40001',
       '40P01',
+      '42703',
+      '42P01',
       '53200',
       '53300',
       '55P03',

@@ -111,14 +111,17 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
     });
     expect(read.guards).toEqual(['txn:read-only', 'timeout:4000ms', `role:${READONLY_ROLE}`]);
 
-    // The parse layer never ran here on purpose: Postgres itself has to be the one refusing.
+    // The parse layer never ran here on purpose: Postgres itself has to be the one refusing — and
+    // its refusal carries a SQLSTATE (`25006`, read_only_sql_transaction), so `As of 2026-09-05`
+    // it is X_DB_STATEMENT_FAILED, the server's verdict, and no longer the X_DB_UNAVAILABLE that
+    // told an operator to "set DATABASE_URL" about a database that had just answered.
     for (const statement of [
       `insert into widgets (name) values ('smuggled')`,
       `update widgets set name = 'smuggled'`,
       'create table smuggled (id int)',
     ]) {
       await expect(readOnlyQuery(statement, { client, role })).rejects.toBeUltimateError(
-        'X_DB_UNAVAILABLE',
+        'X_DB_STATEMENT_FAILED',
       );
     }
 

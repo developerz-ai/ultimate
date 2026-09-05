@@ -111,6 +111,13 @@ The framework repo's own `docker/helm` carries two templates the scaffold does n
 
 ## x dev
 
+**The ready line names the live feed, `As of 2026-09-05`:** `live=in-process` under the embedded
+database (repository writes in this process reach subscribers — the bridge PGlite's missing
+walsender needed), `live=replication` with a real `DATABASE_URL` (the WAL decoder, `--role
+replicator` here or elsewhere), `live=none` without the `sync` role. `--json` carries it as
+`liveFeed`. The app's MCP endpoint, when `apps/<app>/mcp.ts` exports one, prints as `mcp POST /mcp`
+in the summary and `mcp` in `--json`.
+
 ```bash
 x dev [--port 3000] [--role web,worker] [--once] [--json]
 ```
@@ -236,6 +243,8 @@ Alias: `x generate`.
 `repo.ts` is never planted alone: it imports `./entity` for its row type, so the pair goes in together or the unresolved import has only moved.
 
 **A module the slice already has is skipped — never a conflict, never overwritten, `--force` included.** A foundation module belongs to the slice, not to the generator that needed it, and `--force` is about the primitive you named: clobbering `policy.ts` to regenerate one action would delete every rule in it. Regenerating a slice module is its own generator — `x g entity`, `x g policy`. So a second `x g action` into a finished slice writes exactly its own 3 files, and one into a half-built slice writes only what is missing.
+
+**Every generated entity is tenant-scoped, and there is no `--no-tenant` flag**, `As of 2026-09-05` — decided rather than omitted. `orgId` is not one generator's: `x g action`, `x g query`, `x g policy` and `x g job` all decide on it too, so a flag on `x g entity` alone would leave `x g resource` emitting an action over a column its entity no longer has. A single-tenant app makes the edit per slice, and the emitted `entity.ts` names it in the comment above `tenant: 'orgId'`: delete that line and the `orgId: uuid()` column, drop `'orgId'` from `indexes`, turn the repo's `listByOrg(orgId, limit)` into `list(limit)` with no `org_id` in the predicate or the insert, and let `entity.test.ts` expect `$tenantColumn` null and `orgScoped` false.
 
 **The filename carries the test's type**, `As of 2026-08-19` — `x verify` selects a suite by it, so a generated test that landed in a plain `*.test.ts` ran under `unit` and `x test contract` answered `X_TEST_NO_FILES`:
 

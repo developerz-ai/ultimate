@@ -14,6 +14,8 @@ import { stringField } from '@ultimat3/core';
 export const SQLSTATE = Object.freeze({
   /** `undefined_table` — the ledger's absence is a class, not a message to match on. */
   undefinedTable: '42P01',
+  /** `undefined_column` — an entity edited before the migration that adds the column ran. */
+  undefinedColumn: '42703',
   uniqueViolation: '23505',
   foreignKeyViolation: '23503',
   serializationFailure: '40001',
@@ -70,6 +72,7 @@ export function sqlState(error: unknown): string | undefined {
 
 /** The codes a SQLSTATE can classify into. `errors.ts` owns their titles and their fixes. */
 export type DbSqlStateCode =
+  | 'X_DB_SCHEMA_STALE'
   | 'X_DB_UNIQUE_VIOLATION'
   | 'X_DB_FOREIGN_KEY_VIOLATION'
   | 'X_DB_SERIALIZATION_FAILURE'
@@ -84,6 +87,11 @@ export type DbSqlStateCode =
  * class 53, insufficient resources, and both are answered by asking for fewer connections.
  */
 export const DB_SQLSTATE_CODES: Readonly<Record<string, DbSqlStateCode>> = Object.freeze({
+  // Both class 42 "the schema does not have what this statement names": a table or a column
+  // declared in code whose migration has not run. One code, because the instruction is one
+  // instruction — generate the migration and apply it — and the cause names which it was.
+  [SQLSTATE.undefinedTable]: 'X_DB_SCHEMA_STALE',
+  [SQLSTATE.undefinedColumn]: 'X_DB_SCHEMA_STALE',
   [SQLSTATE.uniqueViolation]: 'X_DB_UNIQUE_VIOLATION',
   [SQLSTATE.foreignKeyViolation]: 'X_DB_FOREIGN_KEY_VIOLATION',
   [SQLSTATE.serializationFailure]: 'X_DB_SERIALIZATION_FAILURE',
@@ -94,7 +102,11 @@ export const DB_SQLSTATE_CODES: Readonly<Record<string, DbSqlStateCode>> = Objec
   [SQLSTATE.outOfMemory]: 'X_DB_POOL_EXHAUSTED',
 } as const);
 
-/** `undefined` when the state is unknown or absent — the caller then reports unavailability. */
+/**
+ * `undefined` when the state is absent or not in the table. What the caller does with that is
+ * `driverError`'s decision, not this file's: a state the table does not name still proves the
+ * statement REACHED a server, which is the opposite of unavailable.
+ */
 export function sqlStateCode(error: unknown): DbSqlStateCode | undefined {
   const state = sqlState(error);
   return state === undefined ? undefined : DB_SQLSTATE_CODES[state];

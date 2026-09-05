@@ -26,7 +26,11 @@ import {
   jobDriver,
   pgSchedulerState,
 } from '@ultimat3/jobs';
+import type { LiveQueryRegistry } from '@ultimat3/realtime/server';
+import type { LiveReplicator } from '@ultimat3/testing';
 import { devHooks } from './dev-hooks';
+import type { LiveFeed } from './dev-live-feed';
+import { startLiveFeed } from './dev-live-feed';
 import { pgExecutorFor } from './dev-queue';
 import type { RunningReplicator } from './dev-replicator';
 import { startReplicator } from './dev-replicator';
@@ -130,6 +134,12 @@ export interface RunningRoles {
   readonly scheduler: Scheduler | null;
   /** The slot and feed this process holds; null when the replicator was not selected. */
   readonly replicator: RunningReplicator | null;
+  /** What feeds the sync node: this process's own writes, the WAL decoder, or nothing. */
+  readonly liveFeed: LiveFeed;
+  /** The in-process bridge when `liveFeed` is `in-process`, so a test can await `settled()`. */
+  readonly liveBridge: LiveReplicator | null;
+  /** The sync node's registry, so a test can hold a real subscription; null without the role. */
+  readonly liveRegistry: LiveQueryRegistry | null;
   stop(): Promise<void>;
 }
 
@@ -426,6 +436,12 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       : null;
     if (replicator !== null) started.push(() => replicator.stop());
 
+    // What feeds the sync node this process booted. The embedded database has no log to decode,
+    // so under it the node is fed by this process's own repository writes (`dev-live-feed.ts`);
+    // with a real database the WAL decoder above is the feed, here or in another process.
+    const live = await startLiveFeed({ sync, dbMode: options.runtime.services.db.mode });
+    started.push(async () => live.stop());
+
     return {
       roles: selected,
       url: server === null ? null : server.url(),
@@ -435,8 +451,12 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       worker,
       scheduler,
       replicator,
+      liveFeed: live.feed,
+      liveBridge: live.bridge,
+      liveRegistry: sync?.registry ?? null,
       async stop() {
         // Reverse boot order, so the slot is released before the bus it published to closes.
+        live.stop();
         await replicator?.stop();
         await scheduler?.stop();
         // Before the worker, so nothing publishes into a queue whose consumer has already gone —

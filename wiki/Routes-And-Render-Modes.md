@@ -99,6 +99,13 @@ A render mode states the mode's **intent**; `@ultimat3/http`'s `cache-headers` s
 
 ## Why `stream` is the app default
 
+**Status, `As of 2026-09-05`: the design below is not what a generator emits.** `x g route`
+and `x new`'s dashboard both write `render: 'ssr'` on `app/`, deliberately: `stream` requires at
+least one `<Suspense>` boundary (`X_ROUTE_MODE_INVALID` without it), and the server JSX factory
+ships no hole marker yet — Solid's `<Suspense>` throws outside a Solid renderer. A page that
+declares `stream` today registers only with a boundary count it can prove, so the mode is
+available and the scaffold does not write it. Async data needs no boundary: `await` it in `load`.
+
 An authed page needs fresh data and fast first paint. `ssr` gives freshness and a slow TTFB — the whole page waits for the slowest query. `stream` gives both halves: shell now, data as it resolves. A page whose body belongs in the browser declares an `island({ src })`, budgeted in real bytes; there is no client-side-only mode and no client router.
 
 ```tsx
@@ -144,6 +151,12 @@ Hydration is per-island, never per-page. A blown `budget.js` is a build failure,
 ## Budgets
 
 Per route. `budget.js` in bytes, `budget.lcp` in milliseconds.
+
+**`budget.js` counts raw minified bytes on disk — uncompressed**, `As of 2026-09-05`: what the
+browser parses and executes, never the gzip or brotli size it transfers. A 350 kB library is 350 kB
+against the budget however well it compresses, because the number bounds execution cost, not
+bandwidth. `measureDocumentJs` in `packages/cli/src/budgets.ts` is the one reader, and the
+`X_BUDGET_EXCEEDED` line says `(minified, uncompressed)` so the unit is never inferred.
 
 | Check | Source of truth |
 |---|---|

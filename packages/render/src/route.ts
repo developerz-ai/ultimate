@@ -56,7 +56,13 @@ export interface RevalidateConfig {
  * framework's most repeated defect.
  */
 export interface RouteBudget {
-  /** `'40kb'` — measured from the real bundle graph, not the source size. */
+  /**
+   * `'40kb'` — measured from the real bundle graph, not the source size. The unit is RAW bytes of
+   * minified JS as written to disk, **uncompressed**: what the browser parses and executes, never
+   * the gzip or brotli size it transfers. A 350 kB library is 350 kB against this number however
+   * well it compresses, which is the point — a budget bounds execution cost, not bandwidth.
+   * `As of 2026-09-05`; `packages/cli/src/budgets.ts`'s `measureDocumentJs` is the one reader.
+   */
   readonly js?: string;
   /**
    * Milliseconds. PUBLISHED, not enforced: it reaches `x.manifest.json` and `x routes`, and no

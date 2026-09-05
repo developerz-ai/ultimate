@@ -44,6 +44,23 @@ describe('extractKeys', () => {
     const extraction = extractKeys(`ctx.t('skip.me'); format('nope'); shortest('no')`);
     expect(extraction.usages).toHaveLength(0);
   });
+
+  // The phantom key that shipped: a call written INSIDE a comment matched the shape, and
+  // `x i18n sync` would have written `"…": "⟦…⟧"` into every catalog for a string nobody renders.
+  test('a call inside a comment is not a usage, and a // inside a string is not a comment', () => {
+    const commented = [
+      "// `t('phantom.line', { count })` explains the call below",
+      "/* t('phantom.block') */",
+      "const real = t('kept.key');",
+      "const url = t('kept.url'); // https://example.test",
+    ].join('\n');
+    const extraction = extractKeys(commented, 'commented.ts');
+    expect(extraction.usages.map((usage) => usage.key)).toEqual(['kept.key', 'kept.url']);
+    // Positions are read off the original text: the mask keeps every newline in place.
+    expect(extraction.usages[0]?.line).toBe(3);
+    expect(extraction.usages[1]?.line).toBe(4);
+    expect(extraction.dynamic).toHaveLength(0);
+  });
 });
 
 describe('auditCatalogs', () => {

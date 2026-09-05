@@ -42,6 +42,68 @@ nightlyDigest.describe();                         // { kind: 'task', cron, tz, j
 | `enqueue(options?)` | `TaskHandle` | fires every declared entry now, one result per entry |
 | `describe()` | `TaskHandle` | `TaskDescriptor` — cron, tz, catch-up, jobs in declaration order |
 
+## Fan-out per row is a job, not a task
+
+A task's `enqueue` is **synchronous by design** — `(occurrenceMs) => [[job, input], …]` — and it
+stays that way, `As of 2026-09-05`, for two reasons that are the same reason. `describe()` reads
+`entries()` to project the task's job names into `x.manifest.json`, `/_x` and `x tasks show`, so an
+`enqueue` that awaited a database would make the manifest an I/O operation; and a task that reads
+the hosts table inside its tick is a task doing work, which the primitive's own header rules out.
+So "one job per row" cannot be written in the task. It is written as **one fan-out job**:
+
+```ts
+import { job, t, task } from '@ultimat3/jobs';
+
+declare const listHosts: () => Promise<readonly { readonly id: string }[]>;
+declare const probe: (hostId: string) => Promise<void>;
+
+// jobs/poll-host.ts — the unit of retry: one row
+export const pollHost = job({
+  input: t.object({ hostId: t.uuid, occurrenceMs: t.number.int() }),
+  idempotencyKey: ({ hostId, occurrenceMs }) => `poll-host:${hostId}:${occurrenceMs}`,
+  tenant: 'none',
+  retry: { attempts: 3, backoff: 'exponential' },
+  async run({ input }) {
+    await probe(input.hostId);
+  },
+});
+
+// jobs/poll-hosts.ts — the fan-out: list the rows, enqueue one child per row
+export const pollHosts = job({
+  input: t.object({ occurrenceMs: t.number.int() }),
+  idempotencyKey: ({ occurrenceMs }) => `poll-hosts:${occurrenceMs}`,
+  tenant: 'none',
+  retry: { attempts: 3, backoff: 'exponential' },
+  async run({ input, step }) {
+    const hosts = await step.run('list', () => listHosts());
+    for (const host of hosts) {
+      // One step per child, keyed by the row: a replayed attempt re-enqueues nothing it already did.
+      await step.run(`enqueue:${host.id}`, () =>
+        pollHost.enqueue({ hostId: host.id, occurrenceMs: input.occurrenceMs }),
+      );
+    }
+  },
+});
+
+// tasks/poll-fleet.ts — the tick hands its instant to ONE job
+export const pollFleet = task({
+  cron: '*/5 * * * *',
+  tz: 'UTC',
+  enqueue: (occurrenceMs) => [[pollHosts, { occurrenceMs }]],
+});
+```
+
+| Piece | Why it is this piece |
+|---|---|
+| the task enqueues one job | the tick stays cheap and deterministic; `describe()` names `pollHosts` and nothing else |
+| the fan-out is a `job` | it reads the database, so it gets a queue row, retries, a trace and `x jobs show` — a task gets none of those |
+| one `step.run` per child | at-least-once delivery would otherwise enqueue every child again on a replay; the step's name is the row's id, so the second attempt skips the ones that landed |
+| the child is its own `job` | retry, concurrency and the dead-letter path are per row — one host being down must not retry the other forty. `webhook()` is the same shape: one event, one endpoint, one job |
+| the child's `idempotencyKey` carries `occurrenceMs` | the same row for the same tick is one row in the queue however many times the fan-out replays |
+
+`webhook()` below is this pattern shipped as a factory; a fleet poll, a per-tenant digest and a
+per-subscriber notification are the same three files with different names.
+
 ## The export name is the job's name
 
 ```ts

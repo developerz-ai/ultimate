@@ -17,6 +17,7 @@ import { errorPageDocument, STATIC_ERROR_PAGE } from './error-pages';
 import { FAVICON_PATH, faviconBytes } from './favicon';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands, writeIslands } from './island-bundle';
+import { measurementActor } from './measurement-actor';
 import { loadPwaArtifacts, WEB_MANIFEST_PATH, writePwaIcons } from './pwa-artifacts';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
@@ -194,13 +195,25 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // documents, and this build's own id so a component reading `ctx.buildId` stamps the artifact
   // with the id the report and the stats carry.
   const ctx = createContext({ role: 'web', buildId });
-  const document = (entry: RouteEntry, data: { url: string; params: Record<string, string> }) =>
-    runWithContext(ctx, () =>
+  // A SECOND context, for the branch below that renders only to weigh. Its actor holds every
+  // permission (`measurement-actor.ts`), because an `app/` page's `load` calls policy-guarded
+  // queries and denied the anonymous one with `X_UNAUTHENTICATED` — every authed page unmeasured.
+  // `renderStatic` keeps `ctx`: its output is a published file, and a `site/` load that a policy
+  // refuses must fail the build, never render another actor's rows into it.
+  const measureCtx = createContext({ role: 'web', buildId, actor: measurementActor() });
+  const documentAs = (
+    as: typeof ctx,
+    entry: RouteEntry,
+    data: { url: string; params: Record<string, string> },
+  ) =>
+    runWithContext(as, () =>
       routeDocument(entry, data, {
         resolveIsland: (file: string) => islands.resolverFor(file),
         ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
       }),
     );
+  const document = (entry: RouteEntry, data: { url: string; params: Record<string, string> }) =>
+    documentAs(ctx, entry, data);
 
   for (const entry of routeEntries()) {
     const facts = { surface: entry.surface, render: entry.config.render, route: entry.path };
@@ -213,7 +226,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       // routes it never used to touch would be a worse regression than the gap it closes. A route
       // that will not render here is reported, gets no stats entry, and stays `X_BUDGET_UNMEASURED`.
       try {
-        const html = await document(entry, {
+        const html = await documentAs(measureCtx, entry, {
           url: new URL(entry.path, origin).href,
           params: {},
         });

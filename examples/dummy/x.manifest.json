@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "8c9a514d2b6b2c1c",
+  "buildId": "ffb38e8e15ca9c9b",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -590,7 +590,7 @@
           },
           "body": {
             "type": "string",
-            "minLength": 1
+            "maxLength": 2000
           },
           "createdAt": {
             "type": "string",

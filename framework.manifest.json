@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "fee9546c435c2716ee1f8f3d44d4e21a54b2d73805d0b8c89a22e9081ec77391",
+  "buildId": "017dae8f56f88ab8b6dde6f297f46c19959e5b845d937ba491db1a822cfac8e2",
   "tiers": {
     "0": [
       "core",
@@ -840,6 +840,11 @@
       "at": "packages/db/src/errors.ts"
     },
     {
+      "code": "X_DB_SCHEMA_STALE",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
       "code": "X_DB_SCHEMA_UNDECLARED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -851,6 +856,11 @@
     },
     {
       "code": "X_DB_SERIALIZATION_FAILURE",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_DB_STATEMENT_FAILED",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
     },
@@ -1708,6 +1718,11 @@
       "code": "X_MATCHER_UNSUPPORTED",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_APP_UNMOUNTED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
     },
     {
       "code": "X_MCP_ARGS_INVALID",

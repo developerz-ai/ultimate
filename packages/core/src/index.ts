@@ -550,6 +550,7 @@ export { safeUrl, URL_ATTRIBUTES } from './safe-url';
 export { defineService, resetServices, type ServiceFactory } from './service';
 export type { FlightJoin, Scheduler, SingleFlight, SingleFlightOptions } from './single-flight';
 export { createSingleFlight } from './single-flight';
+export { endOfLiteral, maskLiterals, QUOTES, stripComments } from './source-mask';
 export { timingSafeEqual } from './timing-safe-equal';
 export {
   frameworkVersion,

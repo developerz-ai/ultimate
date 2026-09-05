@@ -139,6 +139,18 @@ describe('unit · measureJsBytes weighs the document, not the graph', () => {
     expect(await jsBytesOf('<script>let a=1</script>', out)).toBe('let a=1'.length);
   });
 
+  // The unit, pinned: RAW bytes on disk, never a compressed size. A 350 kB library that gzips to
+  // 90 kB is 350 kB against the budget, because the number bounds what the browser executes. An
+  // app read "compressed" into the docs and could not see why its island never fit (2026-09-05).
+  test('a src is weighed at its raw size on disk, not what it would compress to', async () => {
+    const compressible = 'var a=1;'.repeat(2_048); // 16 kB of one phrase — gzips to a few hundred
+    await Bun.write(join(out, 'repeat.js'), compressible);
+    expect(await jsBytesOf('<script src="/repeat.js"></script>', out)).toBe(compressible.length);
+    expect(Bun.gzipSync(Buffer.from(compressible)).byteLength).toBeLessThan(
+      compressible.length / 8,
+    );
+  });
+
   test('a src the artifact does not contain contributes nothing it cannot prove', async () => {
     expect(await jsBytesOf('<script src="/missing.js"></script>', out)).toBe(0);
   });

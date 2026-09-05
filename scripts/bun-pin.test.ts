@@ -172,12 +172,17 @@ describe('the Bun series is pinned once, in agreement', () => {
     ).toBe(1);
   });
 
-  test('the pins are a series, never `latest` — a major may not land unannounced', async () => {
+  // A series (`1.4.x`) or an exact patch (`1.4.0`); never `latest`, never a bare major. The exact
+  // form joined on 2026-09-05: `1.4.x` admitted Bun 1.4.2 the morning it was published, and its
+  // bundler retains more of a re-export barrel than 1.4.0's — `packages/ui/src/barrel-bytes.test.ts`
+  // fails on `main` under it with nothing changed. A patch that changes what ships to a browser is
+  // a change this repository measures, so the pin may name the patch somebody measured.
+  test('the pins are a series or an exact patch, never `latest` — nothing lands unannounced', async () => {
     const setupAction = await slurp('.github/actions/setup/action.yml');
     const release = await slurp('.github/workflows/release.yml');
 
     for (const pin of [...workflowPins(setupAction), ...workflowPins(release)]) {
-      expect(pin).toMatch(/^\d+\.\d+\.x$/);
+      expect(pin).toMatch(/^\d+\.\d+\.(?:x|\d+)$/);
     }
   });
 

@@ -5,11 +5,12 @@
 
 import { statementAttribution } from './attribution';
 import type { DbConnection, ReservableClient } from './client';
-import { DbError, dbUnavailable } from './errors';
+import { DbError, driverError } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
 import { statementObserver } from './observe';
 import { createTurnQueue } from './pglite-turns';
 import type { SqlFragment } from './sql';
+import { statementExcerpt } from './statement-excerpt';
 import { withStatementSpan } from './statement-span';
 import { inLiveTx } from './transaction';
 
@@ -142,7 +143,12 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
     try {
       return await driver.query(fragment.text, fragment.values);
     } catch (error) {
-      throw dbUnavailable(`statement failed: ${fragment.text.slice(0, 120)}`, error);
+      // `driverError`, as `statement-funnel.ts` already does for Bun's driver: this site passed
+      // every failure to `dbUnavailable`, so under `x dev` — which IS this driver when no
+      // `DATABASE_URL` is set — a `select` naming a column whose migration had not run answered
+      // "cannot reach the database" with the fix "set DATABASE_URL", against a database that was
+      // answering fine (measured 2026-09-05). PGlite carries the SQLSTATE on `code`.
+      throw driverError(statementExcerpt(fragment.text), error);
     }
   }
 

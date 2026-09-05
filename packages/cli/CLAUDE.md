@@ -4,7 +4,7 @@ Tier 5. May import tiers 0–4. Nothing imports this except `create-ultimate`.
 
 | Rule | Detail |
 |---|---|
-| Entry | `src/bin.ts` (`#!/usr/bin/env bun`) — argv, stdout, exit code only |
+| Entry | `src/bin.ts` (`#!/usr/bin/env bun`) — argv, stdout, exit code only. Before `dispatch`, `local-cli.ts` decides whether THIS process is the app's own CLI: a global `x` inside an app re-executes `node_modules/@ultimat3/cli/src/bin.ts` when that is a different realpath, because a second module instance of `@ultimat3/entity` is an empty registry (a zero-entity manifest, green, 2026-09-05). Same realpath (a workspace symlink), no app, a compiled binary, or `ULTIMATE_KEEP_GLOBAL_CLI` set: no hand-over |
 | stdout | `write-line.ts`'s `writeLine` — synchronous fd 1, never `process.stdout.write`, which truncates at the 64KB pipe buffer when `process.exit` follows. Exported, because `create-ultimate`'s entry point needs the same one |
 | stderr | `write-line.ts`'s `writeErrorLine` — the same loop on fd 2, for a line that is not the command's answer. A `CommandResult` declaring `stream: 'stderr'` is routed there by `dispatch.ts`'s `sinkFor`, and `x mcp serve --transport stdio` is the one case: its fd 1 carries JSON-RPC frames, so the `✓ mcp stdio serving 13 tools` line rendered after the loop was a malformed frame. Neither renderer carries `stream`, exactly like `hold` |
 | Boot logs under `--json` | `dispatch.ts` calls core's `setLogStream('stderr')` when `args.json` is set, once, for all thirty commands. `x db migrate --json` printed the boot logger's `ultimate migrate applied` and then the command's own object, so `json.load` raised on the second document. A server's stdout stays its log stream; this is the CLI process only |

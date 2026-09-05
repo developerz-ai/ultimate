@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+// why: Bun exposes no path-join primitive; the fixture is joined to this file's directory.
+import { join } from 'node:path';
 import type { ErrorReport } from '@ultimat3/core';
 import {
   configureErrorReporting,
@@ -19,6 +22,7 @@ import {
   releaseBoot,
   roleFromEnv,
   runRole,
+  withAppRuntime,
 } from './serve';
 import type { ThrownShape } from './thrown-by';
 import { thrownBy } from './thrown-by';
@@ -86,6 +90,29 @@ test('metricsPortFor is the one answer both the container and x dev read', () =>
 
 test('a container binds every interface, and dev does not', () => {
   expect(CONTAINER_BINDING).toEqual({ dev: false, hostname: '0.0.0.0' });
+});
+
+// The app's `apps/<app>/runtime.ts`, resolved ONCE per public entry: a caller's own `runtime` wins,
+// the file fills in when none was passed, and a root with no `apps/` at all is handed back as is.
+test('withAppRuntime reads apps/<app>/runtime.ts only when the caller passed no runtime', async () => {
+  const root = join(import.meta.dir, '..', '.serve-runtime-fixture');
+  await rm(root, { recursive: true, force: true });
+  try {
+    await Bun.write(
+      join(root, 'apps/web/runtime.ts'),
+      'export const runtime = { middleware: [async (_ctx, next) => next()] };\n',
+    );
+    const found = await withAppRuntime({ root, env: {} });
+    expect(found.runtime?.middleware).toHaveLength(1);
+
+    const own = { middleware: [] };
+    expect((await withAppRuntime({ root, env: {}, runtime: own })).runtime).toBe(own);
+
+    const bare = { root: '/nonexistent-app-root', env: {} };
+    expect(await withAppRuntime(bare)).toBe(bare);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('runRole refuses a bad ROLE before it starts a single service', async () => {
