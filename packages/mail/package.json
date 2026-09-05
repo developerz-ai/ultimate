@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/mail",
-  "version": "19.0.0",
+  "version": "19.1.0",
   "description": "Transactional email as data: one template renders HTML and text, sent through a job.",
   "license": "MIT",
   "type": "module",
@@ -31,10 +31,10 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "19.0.0",
-    "@ultimat3/i18n": "19.0.0",
-    "@ultimat3/jobs": "19.0.0",
-    "@ultimat3/schema": "19.0.0",
-    "@ultimat3/time": "19.0.0"
+    "@ultimat3/core": "19.1.0",
+    "@ultimat3/i18n": "19.1.0",
+    "@ultimat3/jobs": "19.1.0",
+    "@ultimat3/schema": "19.1.0",
+    "@ultimat3/time": "19.1.0"
   }
 }
