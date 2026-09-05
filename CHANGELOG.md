@@ -142,6 +142,16 @@ below names its measurement. None is breaking.
   measured, and `scripts/bun-pin.test.ts` accepts an exact patch beside a series (never `latest`).
   Moving forward is the 1.3 → 1.4 procedure: run the gate on the candidate, write the numbers.
 
+- **The per-package coverage gate runs `bun test --isolate`, the flag `x test` already runs under.**
+  It ran a whole package in one process, and a process has one lifecycle: the second in-process
+  boot of `x dev` or `serveApp` is refused (`X_LIFECYCLE_DRAINED`, `X_READINESS_CHECK_DUPLICATE`),
+  so whichever boot file the filesystem listed first was measured and every later one failed in
+  silence, subtracting its coverage — `packages/cli` read 94.94% on a GitHub runner and 95.73% on a
+  laptop whose `readdir` listed the same files the other way round. Isolated, it reads 95.88% on
+  both. Same cause, one seam over: `eachSourceFile` yields each glob's matches SORTED now, because
+  `Bun.Glob.scan` yields in `readdir` order and `X_WORKSPACE_DEP_UNDECLARED` named `index.ts` on
+  one disk and `tools.ts` on another for the same tree.
+
 - **`budget.js` states its unit: raw minified bytes on disk, uncompressed.** `measureDocumentJs`
   always weighed `file.size`; the docs said "measured from the real bundle graph" and nothing said
   which bytes, so an app read "compressed" into it and could not see why a 350 kB library never

@@ -302,10 +302,19 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
 async function measure(root: string, pkg: string): Promise<CoverageReading> {
   const dir = join(root, '.x', 'coverage', pkg);
   rmSync(dir, { recursive: true, force: true });
+  // `--isolate`, the flag `x test` runs every suite under (`packages/cli/src/test-shards.ts`), and
+  // for the same reason: a module realm per file. Without it every file of a package shares one
+  // process, and a process has ONE lifecycle — the second in-process boot of `x dev` or `serveApp`
+  // is refused (`X_LIFECYCLE_DRAINED`, `X_READINESS_CHECK_DUPLICATE`), so whichever boot file the
+  // filesystem listed first was measured and every later one failed in silence, subtracting its
+  // coverage. Measured 2026-09-05 on `packages/cli`: 94.94% on a GitHub runner against 95.73% on a
+  // laptop whose `readdir` happened to list the files the other way round. Same numbers on every
+  // disk is what a ratchet needs. The lcov report is one file either way.
   const proc = Bun.spawn(
     [
       'bun',
       'test',
+      '--isolate',
       '--coverage',
       '--coverage-reporter=lcov',
       `--coverage-dir=${dir}`,
