@@ -8,7 +8,37 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`@ultimat3/core`'s `logger` no longer takes a browser bundle down at module init.**
+  `export const logger = createLogger()` runs when the module is evaluated, `createLogger()` calls
+  `envLevel()`, and `envLevel()` read a bare `process.env['LOG_LEVEL']` — a binding a browser does
+  not have. Core's barrel is what every other package imports, and `@ultimat3/realtime`'s
+  `channel.ts` calls `logger.warn`, so the shaker keeps `logger` in the chunk of any island that
+  reaches a live subscription. Measured on ai-maxxing's session console island: the chunk contains
+  `var pl=sr()` and threw `ReferenceError: process is not defined` at evaluation, the wrapper
+  rendered `data-x-failed="process is not defined"`, and the island never mounted — no line of the
+  app's own code had run. Both reads are now `typeof process === 'undefined'`-guarded, the same
+  form `version.ts` already uses for `ULTIMATE_FRAMEWORK_VERSION`, and never
+  `globalThis.process?.env`: an optional chain guards a *declared* binding that is nullish, so it
+  throws the very `ReferenceError` it looks like it is preventing while `@types/bun` tells the type
+  checker the guard is redundant. A browser takes the default level, `info`, which is the right
+  answer — there is no environment there to have said otherwise. `defaultWriter` is the second half
+  of the same defect one call deeper: a fixed init that still reached `process.stdout` would only
+  move the throw from load to the first line written, and `channel.ts` writes one. It falls back to
+  `console.error`/`console.log` on the same `toStderr` split, so a level does not change lane
+  between runtimes; where there is a `process` it writes to the fd exactly as before.
+  `packages/realtime/src/client.ts:51` had already worked around this locally — "the default
+  reporter: `console.error`, never core's `logger` — that writes `process.stderr`" — and that
+  workaround is now a preference rather than a necessity.
+
+  The test is the reproduction: `logger.test.ts` builds the barrel for `target: 'browser'` through
+  a re-exporting wrapper (never `index.ts` as the entry, which Bun 1.4.0 shakes down to its export
+  clause, #276) and evaluates the chunk in a **subprocess with `globalThis.process` deleted**.
+  That deletion is the whole point — `scripts/browser-barrel.test.ts` evaluates its chunks under
+  plain `bun run`, where the binding exists and this entire class of defect is invisible. A
+  negative control asserts a module-scope `process.env` read still throws in the same harness, so
+  the assertions cannot pass vacuously on a runtime that quietly kept the global.
 
 ## 19.1.1 - 2026-09-05
 
