@@ -234,10 +234,14 @@ version history is the shape a bootstrap leaves behind, and it is two versions l
 @ultimat3/flags versions` answers `2.0.0` (hand-published, no attestation) and then `3.0.0` and
 `4.0.0` (the workflow, with provenance). `@ultimat3/scraping` reads identically.
 
-### 2. Create the `npm-publish` environment with required reviewers
+### 2. Create the `npm-publish` environment — no reviewers, the tag rule is the gate
 
-Repo → **Settings** → **Environments** → **New environment** → name it `npm-publish` → enable
-**Required reviewers** and add at least one person.
+Repo → **Settings** → **Environments** → **New environment** → name it `npm-publish`. **No
+required reviewers**, by the owner's decision on 2026-09-05: a release is cut by the gate
+(`bun run verify` on the release commit, then again inside `release.yml`) and by the `v*` tag
+rule below, and a human click between "green on a tag" and "published" was one more thing to
+wait for at 9am. The environment's value is the tag rule (step 3) and the trusted-publisher
+binding (step 4), not a reviewer.
 
 **Cost of skipping: the release publishes anyway, ungated.** GitHub's own documentation:
 *"Running a workflow that references an environment that does not exist will create an environment
@@ -310,7 +314,7 @@ A release with nothing under `[Unreleased]` and no commit since the previous tag
 3. Publish a GitHub Release for that tag (or **Actions → release → Run workflow** with the tag
    selected and the version typed in). **A branch will not do**: the workflow's first step refuses
    any ref that is not `refs/tags/v*`.
-4. A reviewer approves the `npm-publish` environment.
+4. Nobody approves anything: the environment has no reviewers (step 2 above).
 5. The workflow installs, checks the repo is stamped at the tag's version, runs the full `verify`
    gate, then publishes each tier over OIDC.
 
@@ -345,30 +349,14 @@ What the credentials are actually for:
 | `NPM_TOTP_SECRET` | generating an OTP for `scripts/trust-publishers.ts --check --json`, which reads as `0/30 missing` without one | — |
 | `NPM_TOKEN` | `npm whoami`, and the **one-time bootstrap** of a package that has never been published (step 1) — the only publish a trusted publisher cannot do, because it cannot attach to a package that does not exist yet | every other publish |
 
-**Step 4 without a person.** The `npm-publish` environment still requires an approving reviewer;
-that is the last point an irreversible publish can be stopped, and it is not disabled. It is
-approved through the API rather than the UI, by an account that is a named reviewer:
-
-```sh
-RUN=$(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
-gh api "repos/developerz-ai/ultimate/actions/runs/$RUN/pending_deployments" \
-  --jq '.[] | {environment: .environment.name, waiting: .current_user_can_approve}'
-gh api -X POST "repos/developerz-ai/ultimate/actions/runs/$RUN/pending_deployments" \
-  -f environment_ids[]=<id> -f state=approved -f comment='<why this release is safe>'
-```
-
-`gh run view <id>` reporting `waiting` before that is the gate working, not a failure.
-
-**Before approving, an agent is expected to have checked the things a reviewer would**, because
-approving is the whole of the review:
-
-| Check | Command | Answer that means go |
-|---|---|---|
-| the tag is annotated and on the remote | `git ls-remote --tags origin 'refs/tags/vX.Y.Z*'` | both the ref **and** its peeled `^{}` line |
-| the tree is stamped at the tag | `bun run scripts/release.ts --check X.Y.Z` | ok |
-| every workspace is publishable | `bun run scripts/release-workflow.ts --json` | 30 |
-| the gate is green on the merge commit | `gh run list --branch main --limit 1` | `success` |
-| a major carries its upgrade section | `wiki/Upgrading.md` | the section exists and no longer says `unreleased` |
+**Step 4 without a person** is the default since 2026-09-05: the environment carries no
+reviewer, so a published GitHub Release for a `v*` tag publishes on its own. The checks a
+reviewer used to make are the ones the release commit and the workflow already run — the tree
+stamped at the tag (`bun run scripts/release.ts --check X.Y.Z`), the full gate, the publish
+order (`bun run scripts/release-workflow.ts --json`), and for a major the upgrade section in
+`wiki/Upgrading.md`. If a reviewer is ever wanted again, it is one `PUT
+/repos/{o}/{r}/environments/npm-publish` with `reviewers` set, and this section is what to
+rewrite.
 
 **A new package added since the last release still needs step 1 by hand**, and that is the one
 place `NPM_TOKEN` is correct. `bun run workspaces:list` naming a count higher than the last release
