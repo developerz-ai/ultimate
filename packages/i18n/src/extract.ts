@@ -4,6 +4,7 @@
  * a translation gap is a build error, not a ticket.
  */
 
+import { stripComments } from '@ultimat3/core';
 import { type Catalog, catalogKeys } from './catalog';
 import { catalogMissingKeys } from './errors';
 import { PLURAL_CATEGORIES } from './interpolate';
@@ -72,7 +73,11 @@ export function extractKeys(
   const usages: KeyUsage[] = [];
   const dynamic: DynamicUsage[] = [];
 
-  for (const match of source.matchAll(pattern)) {
+  // Over the COMMENT-STRIPPED text, never the raw file: a `// … t('…', { … })` in a comment matched
+  // the shape above and produced a phantom key that `x i18n sync` would have written into every
+  // catalog as `"…": "⟦…⟧"` (measured 2026-09-05). The mask keeps every newline and every string
+  // literal in place, so an index into it is an index into `source` and the positions below hold.
+  for (const match of stripComments(source).matchAll(pattern)) {
     const argument = (match[1] ?? '').trim();
     const index = match.index ?? 0;
     const position = positionOf(source, index);

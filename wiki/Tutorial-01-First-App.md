@@ -34,7 +34,7 @@ Counts are a derived fact — `x new --dry-run --json` lists every file, and one
 cd myapp && bun install
 ```
 
-`x` is a workspace dependency, not a global install. `bunx x <command>` resolves `node_modules/.bin/x`; the `package.json` scripts (`bun run verify`, `bun run dev`) resolve the same binary.
+`x` is a workspace dependency, not a global install. `bunx x <command>` resolves `node_modules/.bin/x`; the `package.json` scripts (`bun run verify`, `bun run dev`) resolve the same binary. A globally installed `x` (`bun link`, `bun add -g`) run inside the app **hands over** to that same file, `As of 2026-09-05`, and says so on stderr: a global copy carries its own `@ultimat3/entity` with an empty registry, and it wrote a zero-entity manifest under a green exit code before it did. `ULTIMATE_KEEP_GLOBAL_CLI=1` is the opt-out — [`@ultimat3/cli`'s README](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/README.md) has the measurement.
 
 ### Two shapes, one generator
 

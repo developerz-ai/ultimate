@@ -257,6 +257,30 @@ const handle = createServer({
 Static paths are registered in Bun's native `routes` table; param/wildcard paths fall
 through to `fetch`. Method resolution stays ours so a 405 still carries problem+json.
 
+### No WebSocket upgrade on the `web` role, and no hand-written `api/` route
+
+`As of 2026-09-05`, and stated because an app went looking for both. The `web` role's
+`Bun.serve` is built with no `websocket` handler (`server.ts`: "the `web` role does not use one"),
+so nothing under `/api` can `server.upgrade()` a request; and `/api/*` is a **projection** —
+`apiRoutes()` in `@ultimat3/cli` mounts every `action` and `query` the registries hold, and
+`x g route --surface api` does not exist (`readSurface` refuses `api` by name). A raw socket is
+not an action, so it has no home on this role.
+
+The framework's one WebSocket is the `sync` role's (`@ultimat3/realtime/server`, `PORT + 1`),
+authenticated by `SyncAuthenticator` and reached from the browser through `LiveClient`. A
+bidirectional stream — a PTY, a log tail — is written as **two halves that already exist**:
+
+| Direction | Primitive | Why |
+|---|---|---|
+| server → browser | a `channel` topic on the sync socket (`ChannelHub`, `topic(...)`, `client.subscribe(topic, …)`) | ordered frames, reconnect and backpressure are the sync node's, not a second socket's |
+| browser → server | an `action` — one call per keystroke batch | it gets a policy, a schema, rate limiting, audit and the typed client for free; a socket message gets none |
+
+A `web`-role upgrade hook was refused rather than half-built: the pipeline returns a `Response` at
+every stage (middleware, finalize, security headers), and an upgraded request must return
+`undefined` from `fetch` — a second exit from the pipeline with none of its guarantees. If the two
+halves above cannot carry a case, the fallback is a long-poll `action` (`GET`-shaped, returning
+`{ frames, cursor }` and re-called on return), which is what the app that asked shipped.
+
 ## Inbound webhooks
 
 `verifyWebhookSignature(request, { secret })` is the receiving half of the framework's webhook

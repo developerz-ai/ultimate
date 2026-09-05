@@ -6,7 +6,7 @@
  * primitive, so schema *is* its one import. Every primitive package re-exports the same object.
  */
 
-import type { Post } from '@postly/db';
+import { comments, type Post } from '@postly/db';
 import { EXCERPT_MAX, POST_STATUSES, SLUG_MAX, TITLE_MAX } from '@postly/domain';
 import { type Infer, t } from '@ultimat3/schema';
 
@@ -63,15 +63,15 @@ export const PostAuthor = t.object({ name: t.string });
 
 export type PostAuthor = Infer<typeof PostAuthor>;
 
-export const CommentView = t.object({
-  id: t.uuid,
-  postId: t.uuid,
-  authorId: t.uuid,
-  body: t.string,
-  createdAt: t.date,
-});
+/**
+ * A pure column pick, so it is the entity's own projection rather than a second declaration:
+ * every key is checked against `comments` at compile time and parsed by the column that owns it,
+ * and the same object reaches OpenAPI (`CreateCommentOutput`) and the MCP tool's `outputSchema`.
+ * `PostView` above cannot be written this way because `authorName` is a relation, not a column.
+ */
+export const CommentView = comments.$view(['id', 'postId', 'authorId', 'body', 'createdAt']);
 
-export type CommentView = Infer<typeof CommentView>;
+export type CommentView = typeof CommentView.$row;
 
 export const CreatePostInput = t.object({
   title: t.string.max(TITLE_MAX),

@@ -47,6 +47,7 @@ directly — `output: PostView` — and the projected type flows on to the clien
 | Values are the columns' | each key is parsed by the column that declared it; no second copy of the rule |
 | Nothing is invented | a view projects a row that exists — an absent required key is missing data, not a default |
 | `$name` | `posts.view.id_title_coverUrl_status` — stable, and legal as an OpenAPI `components.schemas` key |
+| It projects | a view carries the schema IR (`node`) the same way every `t.*` schema does, so `output: PostView` reaches OpenAPI, the MCP tool's `outputSchema` and the typed client — `As of 2026-09-05`; before that it validated fine and was refused at registration with `X_SCHEMA_UNSUPPORTED`, so every app re-declared its outputs as `t.object`. Column kinds publish the ROW value's shape: `bigint()`/`decimal()` are strings, `date()` is a `YYYY-MM-DD` string, `money()` is `{ minor, currency, scale? }`, `enumerated()` is an `enum`, a nullable column is `anyOf: [<type>, null]` and still required |
 
 There is no free `view(posts, [...])` function: a projection is reached through the entity, and
 every framework member is `$`-prefixed so a column may still be called `name`, `view` or `tenant`.

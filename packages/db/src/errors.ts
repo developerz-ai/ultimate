@@ -19,6 +19,8 @@ import { type DbSqlStateCode, sqlState, sqlStateCode } from './sqlstate';
  */
 export const DB_OWNED_ERROR_CODES = [
   'X_DB_UNAVAILABLE',
+  'X_DB_SCHEMA_STALE',
+  'X_DB_STATEMENT_FAILED',
   'X_DB_UNIQUE_VIOLATION',
   'X_DB_FOREIGN_KEY_VIOLATION',
   'X_DB_SERIALIZATION_FAILURE',
@@ -61,6 +63,8 @@ export type DbErrorCode = (typeof DB_ERROR_CODES)[number];
 
 export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_DB_UNAVAILABLE: 'cannot reach the database',
+  X_DB_SCHEMA_STALE: 'the statement names a table or column the database does not have',
+  X_DB_STATEMENT_FAILED: 'the database refused the statement',
   X_DB_UNIQUE_VIOLATION: 'a unique constraint rejected the row',
   X_DB_FOREIGN_KEY_VIOLATION: 'a foreign key constraint rejected the row',
   X_DB_SERIALIZATION_FAILURE: 'the transaction lost a serialization race',
@@ -127,7 +131,9 @@ export const DB_ERROR_RETRY = {
 // a typo or a renamed code is a build error rather than a classification for a code nothing throws.
 //
 // Left to the fail-closed default, deliberately, each for its own reason:
-//   X_DB_UNAVAILABLE            two failures in one code — see the note above
+//   X_DB_UNAVAILABLE            a connection failure — see the note above
+//   X_DB_SCHEMA_STALE           `42P01`/`42703`: the migration is the fix, and no attempt runs it
+//   X_DB_STATEMENT_FAILED       the server's verdict on the SQL; the same SQL gets the same verdict
 //   X_DB_STATEMENT_TIMEOUT      `57014`, and this package's fix for it is "add the index": an edit.
 //                               The queued-behind-a-lock case has its own code, above
 //   X_DB_UNIQUE_VIOLATION       the same row, the same constraint, the same refusal
@@ -171,7 +177,9 @@ export class DbError extends UltimateError {
 export const dbUnavailable = (detail: string, sourceError?: unknown): DbError =>
   new DbError({
     code: 'X_DB_UNAVAILABLE',
-    cause: detail,
+    // The driver's own words ride along when there are any: `ECONNREFUSED 127.0.0.1:5432` is the
+    // half of "cannot reach the database" an operator acts on, and it was dropped on the floor.
+    cause: sourceError === undefined ? detail : `${detail}: ${renderThrowable(sourceError)}`,
     fix: 'set DATABASE_URL to a reachable Postgres url, or run `x dev` to use the embedded PGlite',
     sourceError,
   });
@@ -186,6 +194,9 @@ export const dbUnavailable = (detail: string, sourceError?: unknown): DbError =>
  * of one; `driverError` substitutes the placeholder when the driver reported none.
  */
 const SQLSTATE_FIXES = Object.freeze<Record<DbSqlStateCode, string>>({
+  X_DB_SCHEMA_STALE:
+    'x db gen "<what changed>" && x db migrate   # the entity is ahead of the schema; ' +
+    'if the migration already exists, only the migrate half is due',
   X_DB_UNIQUE_VIOLATION:
     'upsertAll(rows, { onConflict: [...] }) over the columns {constraint} covers — ' +
     'or catch X_DB_UNIQUE_VIOLATION and answer 409, which is what a raced signup is',
@@ -219,19 +230,31 @@ const UNNAMED_CONSTRAINT = 'the constraint named in cause';
  * given where it is true, and a new SQLSTATE arrives as a new row here rather than as a new
  * `catch` at a call site.
  */
-export const driverError = (detail: string, sourceError: unknown): DbError => {
-  const code = sqlStateCode(sourceError);
-  if (code === undefined) return dbUnavailable(detail, sourceError);
+export const driverError = (statement: string, sourceError: unknown): DbError => {
   const state = sqlState(sourceError);
+  // No SQLSTATE means the failure never reached a server — a refused socket, a closed pool, a
+  // driver that would not load. THAT is unavailability, and it is the only thing that is.
+  if (state === undefined) return dbUnavailable(`statement failed: ${statement}`, sourceError);
+  // A state the table does not classify still proves the server answered: it read the statement
+  // and refused it. `X_DB_STATEMENT_FAILED` says so and carries the server's own words, where
+  // `X_DB_UNAVAILABLE` said "set DATABASE_URL" to a developer whose database was fine.
+  const code = sqlStateCode(sourceError) ?? 'X_DB_STATEMENT_FAILED';
   const constraint = stringField(sourceError, 'constraint');
   return new DbError({
     code,
-    cause: `${detail}: ${renderThrowable(sourceError)} [SQLSTATE ${state ?? '?????'}]`,
+    // The server's SQLSTATE and message FIRST, the statement after: a cause is rendered on one
+    // line and cut when long, and a column list of any width put the one thing an author needs —
+    // `column "host_id" does not exist` — past the cut. The statement is `statementExcerpt`'d by
+    // the caller, so the whole line has a known ceiling.
+    cause: `[SQLSTATE ${state}] ${renderThrowable(sourceError)} — statement: ${statement}`,
     // A FUNCTION as the replacement, never the string: `String.replace` expands `$&`, `` $` ``,
     // `$'` and `$$` inside a replacement literal, and a constraint name is the server's, not
     // ours — `$` is legal in a Postgres identifier, so `posts_$&_key` would splice the matched
     // `{constraint}` back into the fix line an author is meant to paste.
-    fix: SQLSTATE_FIXES[code].replace('{constraint}', () => constraint ?? UNNAMED_CONSTRAINT),
+    fix:
+      code === 'X_DB_STATEMENT_FAILED'
+        ? `psql "$DATABASE_URL" -c "<the statement in cause>"   # SQLSTATE ${state} is the server's verdict on it: fix the SQL or the data it names, not the connection`
+        : SQLSTATE_FIXES[code].replace('{constraint}', () => constraint ?? UNNAMED_CONSTRAINT),
     meta: {
       sqlState: state,
       ...(constraint === undefined ? {} : { constraint }),

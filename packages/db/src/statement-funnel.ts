@@ -10,6 +10,7 @@ import { driverError } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
 import { statementObserver } from './observe';
 import type { SqlFragment } from './sql';
+import { statementExcerpt } from './statement-excerpt';
 import { withStatementSpan } from './statement-span';
 
 export function rowsOf<T>(result: unknown): readonly T[] {
@@ -42,7 +43,7 @@ async function sendOn(
     // read it, so a `23505` from two clicks racing a signup told the operator the database was
     // unreachable and paged on-call for an outage that never happened. Everything the table does
     // not classify is still `X_DB_UNAVAILABLE`, byte for byte.
-    throw driverError(`statement failed: ${fragment.text.slice(0, 120)}`, error);
+    throw driverError(statementExcerpt(fragment.text), error);
   }
 }
 

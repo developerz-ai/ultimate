@@ -83,6 +83,7 @@ const CATALOG = {
   'cli.dev.panels': '  panels {panels}',
   'cli.dev.introspect': '  introspect {url}',
   'cli.dev.manifest': '  manifest {path}',
+  'cli.dev.mcp': '  mcp POST {path}',
   'cli.deploy.plan': 'containers only: {images} image, roles {roles}',
   'cli.doctor.clean': 'no findings — environment is shippable',
   'cli.doctor.findings': '{count} finding(s)',

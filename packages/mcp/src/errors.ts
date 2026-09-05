@@ -17,6 +17,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_SCOPE_UNKNOWN',
   'X_MCP_SCOPE_CONFLICT',
   'X_MCP_RATE_LIMITED',
+  'X_MCP_APP_UNMOUNTED',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -35,6 +36,7 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_SCOPE_UNKNOWN: 'defineAppMcp scopes a tool this server does not project',
   X_MCP_SCOPE_CONFLICT: 'two scopes claim one MCP tool',
   X_MCP_RATE_LIMITED: "the caller has spent its allowance for this request's class",
+  X_MCP_APP_UNMOUNTED: "the app's MCP endpoint is exposed in config and nothing can be mounted",
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -156,6 +158,33 @@ export class McpToolUndeclaredError extends UltimateError {
  * asking for the name reaches whichever copy won, which is the worst failure mode available —
  * a call that succeeds against the wrong handler and reports nothing.
  */
+/**
+ * `config.ai.mcp.expose` is `true` — the DEFAULT — and the web role found nothing to mount at
+ * `config.ai.mcp.path`. Two causes, one code: no `apps/<app>/mcp.ts` exports an `mcp`, or the one
+ * that does was built without `resolveToken`, so `defineAppMcp` built no `route` (a token resolver
+ * is what turns a bearer header into an actor, and an endpoint with no way to name its caller is
+ * not one the framework will serve). Logged once per boot by the web role, never thrown: an app
+ * with no agent surface yet is a working app, and this line is the instruction for the day it
+ * wants one.
+ */
+export class McpAppUnmountedError extends UltimateError {
+  readonly reason: 'missing' | 'no-route';
+  constructor(input: { reason: 'missing' | 'no-route'; path: string; file: string }) {
+    super({
+      code: 'X_MCP_APP_UNMOUNTED',
+      cause:
+        input.reason === 'missing'
+          ? `ai.mcp.expose is true and no ${input.file} exports mcp, so POST ${input.path} answers 404`
+          : `${input.file} exports mcp with no route — defineAppMcp was given no resolveToken — so POST ${input.path} answers 404`,
+      fix:
+        input.reason === 'missing'
+          ? `write ${input.file}: export const mcp = defineAppMcp({ include: 'exposed', resolveToken: (token) => resolveAgentToken(token) }) — or set ai: { mcp: { expose: false } } in app.config.ts`
+          : `add resolveToken: (token) => resolveAgentToken(token) to defineAppMcp({ ... }) in ${input.file} — the route is only built with one`,
+    });
+    this.reason = input.reason;
+  }
+}
+
 export class McpToolDuplicateError extends UltimateError {
   /**
    * Which declaration each copy came from, when the projector knows — carried the way

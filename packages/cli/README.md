@@ -34,6 +34,25 @@ Everything in [CLI reference](../../wiki/CLI-Reference.md)'s planned table is al
 and exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command — "not built yet"
 and "not a command" are different facts.
 
+## Which `x` runs
+
+**The app's own.** `x` is a workspace dependency, and `bunx x` / the `package.json` scripts resolve
+`node_modules/.bin/x`. A **globally** installed `x` — `bun link` of a checkout, `bun add -g` — is
+a second copy of every `@ultimat3/*` package, and a second copy of `@ultimat3/entity` is a second,
+**empty** registry: the app's entities register into the instance under its `node_modules`, and
+only the CLI under that same `node_modules` can see them. Measured 2026-09-05, in an app run with a
+linked checkout's `x`: `x entities list` answered `0 entities`, `x policy list` answered
+`0 permission(s), 0 role(s)`, and `x manifest` wrote a manifest with **zero entities and zero
+actions** — exit 0, green — which `x db gen` then read as "drop every table".
+
+So a global `x` inside an app **hands over** to `node_modules/@ultimat3/cli/src/bin.ts` when that
+is a different file (`local-cli.ts`), prints one line on stderr saying so, and exits with the
+child's code; fd 1 is the child's alone, so a `--json` consumer sees one document. A workspace
+symlink resolves to the same file and is not handed over (both tracked apps, and every scaffold
+CI installs), and a compiled `x` keeps itself — its own path is not one `realpath` can resolve.
+`ULTIMATE_KEEP_GLOBAL_CLI=1` keeps the CLI that was invoked, for the one deliberate case: running a
+checkout's `x` against an app pinned to an older release to see what the next one would say.
+
 ## The output contract
 
 Every command returns one `CommandResult`; the human renderer and the JSON renderer are
@@ -95,6 +114,11 @@ is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUAR
 | `cmd-*.ts` | one command group each |
 | `templates/` | scaffolding as typed string modules, not copied fixtures |
 | `app-load.ts` | import an app's modules so the framework registries hold it |
+| `app-mcp.ts` | the app's own MCP endpoint: `apps/<app>/mcp.ts` exports `mcp`, and both boots mount `POST config.ai.mcp.path` through this one call |
+| `app-runtime.ts` | the app's `RuntimeOverrides`: `apps/<app>/runtime.ts` exports `runtime`, read by `x dev` and by `runRole` when its caller passed none |
+| `local-cli.ts` | which `x` runs: a global CLI inside an app hands over to the app's own, because a second module instance is an empty registry |
+| `measurement-actor.ts` | the actor a weigh-and-discard render runs as — every permission, never served |
+| `dev-live-feed.ts` | what feeds the sync node this process booted: the in-process row observer under the embedded database, the WAL decoder with a real one, nothing without the role — `live=` on the ready line |
 | `app-manifest.ts` | `x.manifest.json`, projected by `@ultimat3/manifest` |
 | `app-openapi.ts` | `openapi.json`, projected by `@ultimat3/action` |
 | `app-boundaries.ts` | app import boundaries, over `@ultimat3/render`'s surface check |

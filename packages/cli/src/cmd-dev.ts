@@ -19,11 +19,14 @@ import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
+import { mountAppMcp } from './app-mcp';
 import { requireAppRoot } from './app-root';
+import { loadAppRuntime } from './app-runtime';
 import type { CliCommand, CommandContext } from './command';
 import { assetRoutes } from './dev-assets';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels } from './dev-dashboard';
+import { liveFeedLabel } from './dev-live-feed';
 import { clearLock, preflight, writeLock } from './dev-lock';
 import { createStatementLedger } from './dev-n-plus-one';
 import { appRoutes } from './dev-render';
@@ -71,6 +74,8 @@ export interface DevServer {
   readonly runtime: RunningServices;
   /** Panel keys `/_x` mounted, in tab order. Reported so `--json` names what is reachable. */
   readonly panels: readonly string[];
+  /** `POST <path>` of the app's own MCP endpoint, or `null` when nothing was mounted. */
+  readonly mcp: string | null;
   stop(): Promise<void>;
 }
 
@@ -188,11 +193,16 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
       ? undefined
       : serviceWorkerArtifacts({ pwa, buildId, routes: describeRoutes(), islands: state.islands });
 
+  // The app's own MCP endpoint, discovered from `apps/<app>/mcp.ts` and mounted through the SAME
+  // call `runRole` makes — `POST /mcp` answered 404 in every process the framework booted until
+  // one of them asked. Warned once here when `expose` is true and nothing can be mounted.
+  const mcpMount = await mountAppMcp(options.root);
   const routes: readonly Route[] = [
     ...devDashboardRoutes(dashboard),
     // The same API table the container serves: a read that answers here and 404s in production
     // is exactly the drift one composition exists to prevent.
     ...apiRoutes(),
+    ...mcpMount.routes,
     // The image pipeline's only HTTP surface: the icons the web manifest declares, and the
     // variants every `srcset` promises. Mounted before the app's own routes so a page route can
     // never shadow `/icons` or `/media`.
@@ -222,7 +232,14 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     }),
   ];
 
-  const replicaOverride = replicaOverrides(undefined, services.db, options.env);
+  // The app's `apps/<app>/runtime.ts`, composed exactly as `runRole` composes a caller's
+  // `runtime`: the replica scope in front, the app's own middleware behind it. Before this the
+  // first argument was `undefined` here and an app's middleware reached no development process.
+  const replicaOverride = replicaOverrides(
+    await loadAppRuntime(options.root),
+    services.db,
+    options.env,
+  );
   const running = await startRoles({
     roles: options.roles ?? DEV_ROLES,
     port: options.port,
@@ -278,6 +295,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     url: running.url ?? `http://localhost:${options.port}`,
     services,
     roles: running.roles,
+    mcp: mcpMount.path,
     get buildId(): string {
       return state.manifest.buildId;
     },
@@ -380,7 +398,7 @@ export const devCommand: CliCommand = {
         panels: server.panels.length,
         // Rendered text, so the mail and CDN halves come from the catalog; `data` below carries the
         // status values a script parses, which is why the two are different calls and not one.
-        services: `${describeServices(server.services)} ${mailLabel(server.runtime)} ${cdnLabel(server.runtime)}`,
+        services: `${describeServices(server.services)} ${mailLabel(server.runtime)} ${cdnLabel(server.runtime)} ${liveFeedLabel(server.running.liveFeed)}`,
       }),
       findings: server.findings,
       // Every fact `lines` prints is a fact `--json` carries, `manifest` included — or the two
@@ -405,10 +423,15 @@ export const devCommand: CliCommand = {
         // on one database is the one topology mistake that cannot be seen from the outside, so the
         // slot is a scriptable fact rather than a line in a log.
         replicationSlot: server.running.replicator?.slot ?? null,
+        // Which change feed the sync node has: `in-process` under the embedded database, where
+        // this process's own writes reach subscribers; `replication` with a real one; `none`
+        // when no sync role runs here. The label on the ready line is this same fact.
+        liveFeed: server.running.liveFeed,
         buildId: server.buildId,
         manifest: join(root, MANIFEST_FILENAME),
         introspect: `${server.url}/_x`,
         panels: [...server.panels],
+        mcp: server.mcp,
       },
       lines: [
         // A hard kill leaves the lock behind; clearing it is normal and worth one line, never a
@@ -418,6 +441,9 @@ export const devCommand: CliCommand = {
         msg('cli.dev.panels', { panels: server.panels.join(', ') }),
         msg('cli.dev.manifest', { path: join(root, MANIFEST_FILENAME) }),
         msg('cli.dev.introspect', { url: `${server.url}/_x` }),
+        // Only when something was mounted: the unmounted case has already said why, once, as a
+        // warning with a fix, and a summary line reading `mcp none` would be a second copy of it.
+        ...(server.mcp === null ? [] : [msg('cli.dev.mcp', { path: server.mcp })]),
       ],
     };
     await writeLock(services.stateDir, {

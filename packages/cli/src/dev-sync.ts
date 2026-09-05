@@ -96,6 +96,8 @@ export function syncPortFor(port: number): number {
 /** What `startRoles` holds on to: where the node listens, and how to take it down. */
 export interface RunningSync {
   readonly url: string;
+  /** The node's registry, so the boot can hand it a change feed the database cannot produce. */
+  readonly registry: LiveQueryRegistry;
   stop(): Promise<void>;
 }
 
@@ -154,9 +156,10 @@ export async function startSync(options: StartRolesOptions): Promise<RunningSync
   // override is how a deployment states a window its credential already declares (a token's
   // `exp`), or resolves identity from a header the adapter deliberately does not retain.
   const authenticate = options.overrides?.syncAuthenticate ?? syncAuthenticator(options.buildId);
+  const registry = registerLiveQueries(options);
   const node = createSyncNode({
     hub,
-    registry: registerLiveQueries(options),
+    registry,
     transport: options.runtime.transport,
     buildId: options.buildId,
     sockets,
@@ -177,6 +180,7 @@ export async function startSync(options: StartRolesOptions): Promise<RunningSync
     const listener = listenSyncNode(node, { port });
     return {
       url: listener.url,
+      registry,
       stop: async () => {
         listener.stop();
         await node.stop();

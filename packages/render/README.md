@@ -190,7 +190,8 @@ Both were required and both were punished: an island on a route still at `'never
 `X_ISLAND_NOT_HYDRATED`, and a `site/` route off `'never'` with no `budget.js` is refused at
 registration. Two failures for one omission the `island()` call above had already answered.
 
-20kb because a Solid island cannot cost less. Measured through `buildIslands`, minified, against
+20kb because a Solid island cannot cost less. Measured through `buildIslands`, minified and
+**uncompressed** — `budget.js` is raw bytes on disk, never a gzip or brotli size — against
 production Solid, `As of 2026-08`:
 
 | Island | Bytes |

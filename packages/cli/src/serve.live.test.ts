@@ -75,6 +75,14 @@ async function writeFixture(): Promise<void> {
       "export const config = defineConfig({ name: 'serve-fixture' });\n",
   );
   await Bun.write(join(ROOT, 'apps/web/server.ts'), scaffolded('apps/web/server.ts'));
+  // The app's own MCP endpoint, in the contract `app-mcp.ts` reads: `apps/<app>/mcp.ts` exports
+  // `mcp`. `resolveToken` answering `null` is "no bearer token is valid", which is enough to prove
+  // the ROUTE is mounted — the route answers 401 by its own hand where a missing mount is 404.
+  await Bun.write(
+    join(ROOT, 'apps/web/mcp.ts'),
+    "import { defineAppMcp } from '@ultimat3/mcp';\n" +
+      "export const mcp = defineAppMcp({ include: 'exposed', resolveToken: () => null });\n",
+  );
 }
 
 describe('the scaffolded production entry is a runnable artifact', () => {
@@ -111,6 +119,11 @@ describe('the scaffolded production entry is a runnable artifact', () => {
         expect(ready.status).toBe(200);
         expect(((await ready.json()) as { role?: string }).role).toBe('web');
         expect((await fetch(`http://127.0.0.1:${port}/healthz`)).status).toBe(200);
+        // The app's MCP endpoint is MOUNTED by this boot: 401 is the route's own verdict on a
+        // request with no bearer token; a 404 here is the defect every scaffolded app shipped.
+        const mcp = await fetch(`http://127.0.0.1:${port}/mcp`, { method: 'POST' });
+        expect(mcp.status).not.toBe(404);
+        expect(out() + err()).toContain('app mcp mounted');
 
         // The scrape a Kubernetes metric adapter takes, from a real deployed process — and NOT
         // from the port the ingress fronts: `/metrics` on the routed port would publish route

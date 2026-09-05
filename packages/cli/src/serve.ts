@@ -26,6 +26,8 @@ import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
+import { mountAppMcp } from './app-mcp';
+import { loadAppRuntime } from './app-runtime';
 import { acceptCreatedTables } from './db-accept-created';
 import { assetRoutes } from './dev-assets';
 import { startQueue } from './dev-queue';
@@ -252,7 +254,22 @@ export async function releaseBoot(
  * table is the same three contributions minus the dashboard — a `/_x` in production would expose
  * the app's policy matrix, its outbox and its spans to the internet.
  */
-export async function serveApp(options: ServeOptions): Promise<ServedApp> {
+/**
+ * A caller's `runtime` wins; with none, the app's own `apps/<app>/runtime.ts` is what this boot
+ * reads — the SAME file `x dev` reads — so the two boots compose one middleware chain, one
+ * rate-limit store, one ISR store, rather than a development set and a production set. Resolved
+ * ONCE, at each public entry, so every reader below (`startServices`, `startQueue`, the asset and
+ * ISR seams, the replica override) sees one object: a per-read fallback would be the partial read
+ * this repository names as its most repeated defect.
+ */
+async function withAppRuntime(options: ServeOptions): Promise<ServeOptions> {
+  if (options.runtime !== undefined) return options;
+  const runtime = await loadAppRuntime(options.root);
+  return runtime === undefined ? options : { ...options, runtime };
+}
+
+export async function serveApp(input: ServeOptions): Promise<ServedApp> {
+  const options = await withAppRuntime(input);
   const role = options.role ?? roleFromEnv(options.env);
   const runtime = await startServices(
     resolveServices(options.root, options.env),
@@ -313,8 +330,11 @@ async function bootRoles(boot: {
     pwa === undefined
       ? undefined
       : serviceWorkerArtifacts({ pwa, buildId, routes: describeRoutes(), islands });
+  // The app's own MCP endpoint, through the same call `x dev` makes — see `app-mcp.ts`.
+  const mcpMount = await mountAppMcp(options.root);
   const routes: readonly Route[] = [
     ...apiRoutes(),
+    ...mcpMount.routes,
     ...(serviceWorker === undefined ? [] : serviceWorkerRoutes(serviceWorker)),
     ...assetRoutes({
       root: options.root,
@@ -386,8 +406,11 @@ async function bootRoles(boot: {
  * holds for every other role until core's drain completes, so SIGTERM from a rolling restart takes
  * the three-phase path (stop accepting, finish in-flight, close) instead of killing a query.
  */
-export async function runRole(options: ServeOptions): Promise<StartedApp> {
-  const role = options.role ?? roleFromEnv(options.env);
+export async function runRole(input: ServeOptions): Promise<StartedApp> {
+  // The role FIRST: a bad `ROLE` is refused before the root is read at all, so a boot that was
+  // always going to fail creates nothing under it — the same order `resolveServices` is held to.
+  const role = input.role ?? roleFromEnv(input.env);
+  const options = await withAppRuntime(input);
   if (role === 'migrate') {
     const migrated = await runMigrations({ ...options, role });
     // The release phase has one channel — the exit code — so drift is thrown here rather than

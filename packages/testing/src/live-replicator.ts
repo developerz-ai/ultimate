@@ -12,6 +12,11 @@
 // WHAT IS NOT: a write another process made is invisible, because nothing here reads a log. That is
 // the honest bound, and it is why this is a fixture and not a `ChangeFeed` — `selectChangeFeed`
 // still decides what a real node reads, and this is never in that decision.
+//
+// `x dev` is the one boot that installs it outside a test, `As of 2026-09-05` (`@ultimat3/cli`'s
+// `dev-live-feed.ts`), and only under the EMBEDDED database: PGlite has no walsender, every role
+// runs in that one process, so the bound above holds by construction — and a real `DATABASE_URL`
+// gets the decoder instead, never both.
 
 import type { RowBulkChange, RowChange, RowObserver } from '@ultimat3/entity';
 import type { Row } from '@ultimat3/realtime';

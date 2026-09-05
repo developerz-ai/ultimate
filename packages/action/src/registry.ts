@@ -76,7 +76,7 @@ function assertProjectable(name: string, target: AnyAction): void {
       // ones a reader acts on.
       throw new SchemaUnsupportedError({
         cause: `${name}: \`${field}:\` cannot be projected to JSON Schema`,
-        fix: `declare ${name}'s \`${field}:\` with t.object({ ... }) from @ultimat3/action, or call configureSchemaProvider() with a provider that can introspect it`,
+        fix: `declare ${name}'s \`${field}:\` with t.object({ ... }) from @ultimat3/action or an entity's $view([...]) — both introspect — or call configureSchemaProvider() with a provider that can introspect it`,
         meta: { action: name, field },
       });
     }

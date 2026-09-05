@@ -159,16 +159,53 @@ describe('createPgliteClient', () => {
     );
   });
 
-  test('a statement failure surfaces as X_DB_UNAVAILABLE with the statement in the cause', async () => {
+  test('a failure carrying no SQLSTATE is X_DB_UNAVAILABLE with the statement in the cause', async () => {
     const client = createPgliteClient({
       driver: {
-        query: () => Promise.reject(new Error('syntax error')),
+        query: () => Promise.reject(new Error('socket closed')),
         close: async () => undefined,
       },
     });
     const error = await failure(() => client.query(sql`selct 1`));
     expect(error.code).toBe('X_DB_UNAVAILABLE');
     expect((error as unknown as { cause: string }).cause).toContain('selct 1');
+  });
+
+  /** What PGlite throws: node-postgres' protocol, the SQLSTATE on `code`, the message plain. */
+  const pgliteError = (code: string, message: string): Error =>
+    Object.assign(new Error(message), { name: 'PostgresError', code });
+
+  // The `x dev` case (2026-09-05): this driver is what runs with no DATABASE_URL, and every failure
+  // it raised went to `dbUnavailable`, so an entity edited before its migration ran said "cannot
+  // reach the database" — cause cut mid column-list, the Postgres message nowhere in it.
+  test('an undefined column through PGlite is X_DB_SCHEMA_STALE, the server’s words first', async () => {
+    const client = createPgliteClient({
+      driver: {
+        query: () => Promise.reject(pgliteError('42703', 'column "host_id" does not exist')),
+        close: async () => undefined,
+      },
+    });
+    const error = await failure(() =>
+      client.query(sql`select "id", "host_id", "name", "addr", "user", "port" from "hosts"`),
+    );
+    expect(error.code).toBe('X_DB_SCHEMA_STALE');
+    const cause = (error as unknown as { cause: string }).cause;
+    expect(cause.startsWith('[SQLSTATE 42703] ')).toBe(true);
+    expect(cause).toContain('column "host_id" does not exist');
+    expect(cause).toContain('statement: select "id", "host_id"');
+    expect((error as unknown as { fix: string }).fix).toContain('x db migrate');
+  });
+
+  test('a refused statement through PGlite is X_DB_STATEMENT_FAILED, never unavailable', async () => {
+    const client = createPgliteClient({
+      driver: {
+        query: () => Promise.reject(pgliteError('42601', 'syntax error at or near "selct"')),
+        close: async () => undefined,
+      },
+    });
+    const error = await failure(() => client.query(sql`selct 1`));
+    expect(error.code).toBe('X_DB_STATEMENT_FAILED');
+    expect((error as unknown as { cause: string }).cause).toContain('syntax error at or near');
   });
 
   test('concurrent first queries share one boot — PGlite is too slow to build twice', async () => {

@@ -29,7 +29,9 @@ describe('DB_OWNED_ERROR_CODES', () => {
       'X_DB_FOREIGN_KEY_VIOLATION',
       'X_DB_LOCK_TIMEOUT',
       'X_DB_POOL_EXHAUSTED',
+      'X_DB_SCHEMA_STALE',
       'X_DB_SERIALIZATION_FAILURE',
+      'X_DB_STATEMENT_FAILED',
       'X_DB_STATEMENT_TIMEOUT',
       'X_DB_UNAVAILABLE',
       'X_DB_UNIQUE_VIOLATION',
@@ -114,11 +116,43 @@ describe('driverError', () => {
     expect(error.fix).toContain('withTransaction(fn, { retry: 3 })');
   });
 
-  test('an unclassified state, and a failure that never reached the server, stay X_DB_UNAVAILABLE', () => {
-    expect(driverError('statement failed', serverError('42703')).code).toBe('X_DB_UNAVAILABLE');
-    expect(driverError('could not connect', new Error('econnrefused')).code).toBe(
-      'X_DB_UNAVAILABLE',
+  // The case that shipped (2026-09-05): a `select` naming a column whose migration had not run
+  // answered "cannot reach the database" with the cause cut mid column-list and the fix "set
+  // DATABASE_URL" — against a database that was answering. The server's verdict comes FIRST now,
+  // and a SQLSTATE of any kind is proof the server was reached.
+  test('an undefined table or column is X_DB_SCHEMA_STALE, with the migration as the fix', () => {
+    const column = driverError(
+      'select "id", "host_id", "name", "addr", "user", "port", "tags" from "hosts"',
+      serverError('42703', { message: 'column "host_id" does not exist' }),
     );
+    expect(column.code).toBe('X_DB_SCHEMA_STALE');
+    expect(column.cause.startsWith('[SQLSTATE 42703] ')).toBe(true);
+    expect(column.cause).toContain('column "host_id" does not exist');
+    expect(column.cause.indexOf('does not exist')).toBeLessThan(column.cause.indexOf('select'));
+    expect(column.fix).toContain('x db gen');
+    expect(column.fix).toContain('x db migrate');
+    expect(driverError('select 1 from "hosts"', serverError('42P01')).code).toBe(
+      'X_DB_SCHEMA_STALE',
+    );
+  });
+
+  test('any other SQLSTATE is X_DB_STATEMENT_FAILED — the server answered, so it is not unavailable', () => {
+    const error = driverError(
+      'select 1 +',
+      serverError('42601', { message: 'syntax error at end of input' }),
+    );
+    expect(error.code).toBe('X_DB_STATEMENT_FAILED');
+    expect(error.cause.startsWith('[SQLSTATE 42601] ')).toBe(true);
+    expect(error.cause).toContain('syntax error at end of input');
+    expect(error.cause.endsWith('— statement: select 1 +')).toBe(true);
+    expect(error.fix).toContain('psql');
+    expect(error.meta?.['sqlState']).toBe('42601');
+  });
+
+  test('a failure that never reached the server stays X_DB_UNAVAILABLE, now with the driver’s words', () => {
+    const error = driverError('could not connect', new Error('econnrefused 127.0.0.1:5432'));
+    expect(error.code).toBe('X_DB_UNAVAILABLE');
+    expect(error.cause).toContain('econnrefused 127.0.0.1:5432');
     // Byte-for-byte the wording that shipped, because that code's meaning has not changed.
     expect(driverError('x', new Error('y')).fix).toBe(
       'set DATABASE_URL to a reachable Postgres url, or run `x dev` to use the embedded PGlite',

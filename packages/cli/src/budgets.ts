@@ -111,7 +111,7 @@ export function checkBudgets(
     if (js !== null && measured.jsBytes > js) {
       findings.push({
         code: 'X_BUDGET_EXCEEDED',
-        cause: `${route.url} ships ${formatBytes(measured.jsBytes)} of JS over a ${formatBytes(js)} budget via ${chainOf(measured)}`,
+        cause: `${route.url} ships ${formatBytes(measured.jsBytes)} of JS (minified, uncompressed) over a ${formatBytes(js)} budget via ${chainOf(measured)}`,
         fix: `x routes --json to see the chain, then move the heavy import behind hydrate: 'interaction'`,
         docs: ERROR_DOCS_URL,
         at: route.url,

@@ -8,7 +8,188 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+Twelve defects surfaced by one app built on 19.0.0 — an AI-first control plane whose four UI
+agents and one data agent each hit the framework at a seam nothing had measured. Every entry
+below names its measurement. None is breaking.
+
+### Fixed
+
+- **A globally installed `x` inside an app wrote a manifest with zero entities, green.** A
+  `bun link` of a checkout — or `bun add -g` — is a second copy of every `@ultimat3/*` package, and
+  a second module instance of `@ultimat3/entity` is a second, EMPTY registry: the app's entities
+  register into the instance under its own `node_modules`, and the global CLI reads its own.
+  Reproduced on a fresh `x new` scaffold with every package copied (not linked) into
+  `node_modules`: `x entities list` → `0 entities`, `x policy list` → `0 permission(s), 0 role(s)`,
+  `x manifest` → `5 routes, 0 actions`, exit 0 — which `x db gen` then read as "drop every
+  table". The same split turned the `policy` step of `x verify` green over an undeclared grant:
+  `isKnownPermission` deliberately checks nothing while no permission is declared, and the global
+  instance had none. A second symptom: the app's own `@ultimat3/core` logger kept writing to
+  stdout while the CLI's had moved to stderr, so `--json` output carried a log line as its first
+  line.
+
+  `packages/cli/src/local-cli.ts`: before `dispatch`, a CLI whose `import.meta.path` is not the
+  realpath of the app's `node_modules/@ultimat3/cli/src/bin.ts` re-executes that file through
+  `process.execPath`, prints one line on stderr, and exits with the child's code. The chain stops at
+  one hop because the child's own path IS the local file. A workspace symlink (both tracked apps,
+  every scaffold-smoke install) resolves to the same file and is not handed over; a compiled `x`
+  keeps itself, because `/$bunfs/…` is no path `realpath` can resolve and the runtime image carries
+  no `bun` to hand over to; `ULTIMATE_KEEP_GLOBAL_CLI=1` keeps the invoked CLI on purpose. Nothing in this
+  repository's CI sets it — measured: `reference-app-gate.ts` runs `packages/cli/src/bin.ts`
+  inside `examples/dummy`, whose `node_modules/@ultimat3/cli` is `../../../../packages/cli`.
+
+- **`entity.$view([...])` could not be an action's `output:`.** It validated, and was refused at
+  registration with `X_SCHEMA_UNSUPPORTED: cannot be projected to JSON Schema`, whose `fix:` told
+  the author to re-declare it as `t.object({ ... })` — so every app kept a hand-copied object beside
+  its entity, and `examples/dummy`'s `CommentView` had already drifted from its column
+  (`minLength: 1` where the column says `max: 2000`). A view now carries the schema IR (`node`)
+  every `t.*` schema carries, built per column by `columnNode()` in `packages/entity/src/view.ts`,
+  and the projection publishes the ROW value's shape rather than the SQL type's: `bigint()` and
+  `decimal()` are strings (the digits — a JS number is inexact past ±2^53), `date()` is a
+  `YYYY-MM-DD` string, `money()` is `{ minor, currency, scale? }`, `enumerated()`/`tz()`/`locale()`
+  are `enum`, a nullable column is `anyOf: [<type>, null]` and still required, `jsonb`/`bytea` are
+  `unknown`. Proven end to end on the reference app: `CommentView` is `comments.$view([...])`,
+  `x manifest` regenerates `openapi.json` with `CreateCommentOutput.body.maxLength: 2000`, and
+  `x actions describe createComment` shows the same object on the MCP tool. The `fix:` names
+  `$view` beside `t.object` now.
+
+- **The `budgets` step rendered every authed page as the anonymous actor.** `prerender.ts` built one
+  context for the whole build, and an `app/` page's `load` that reads a policy-guarded query
+  denied it with `X_UNAUTHENTICATED` — so every authed route was `X_BUDGET_UNMEASURED` and an app
+  with a signed-in surface could not be green. Weighing bytes needs no data authority: the
+  weigh-and-discard branch now renders under `measurementActor()` (`kind: 'service'`,
+  `permissions: ['*']`, `packages/cli/src/measurement-actor.ts`). `renderStatic` keeps the
+  anonymous context, deliberately and pinned by test: a `site/` artifact is a published file, and
+  a guarded query inside its `load` must fail the build rather than render another actor's rows
+  into it. What this does not fix is stated: a page whose `load` needs a session's DATA (the
+  reference app's `/settings` resolves a member row and throws its own `X_ACTOR_UNRESOLVED`) is
+  still unmeasured, and the report says why.
+
+- **`@ultimat3/db` reported a stale schema as "cannot reach the database".** Under `x dev` — PGlite,
+  the driver that runs with no `DATABASE_URL` — every statement failure went to `dbUnavailable`,
+  so a `select` naming a column whose migration had not run answered
+  `X_DB_UNAVAILABLE: cannot reach the database — statement failed: select "id", "host_id", …`
+  with the cause cut mid column-list, the Postgres message nowhere in it, and the fix "set
+  DATABASE_URL" against a database that was answering. Three changes at the seam
+  (`packages/db/src/errors.ts`, `sqlstate.ts`, `pglite.ts`): `pglite.ts` uses `driverError` as
+  `statement-funnel.ts` already did; `42P01`/`42703` classify as **`X_DB_SCHEMA_STALE`** with the
+  fix `x db gen "<what changed>" && x db migrate`; any other SQLSTATE is **`X_DB_STATEMENT_FAILED`**
+  — the server answered, so it is not unavailable — and `X_DB_UNAVAILABLE` is now only what never
+  reached a server, with the driver's own words in its cause (`ECONNREFUSED 127.0.0.1:5432`). The
+  cause leads with `[SQLSTATE 42703] column "host_id" does not exist` and carries the statement
+  after it, through `statementExcerpt`, so no column list can push the message off the line.
+  Each mapping is tested through `createPgliteClient` with a PGlite-shaped error.
+
+- **`extractKeys` read `t()` calls inside comments.** A `// … t('…', { … })` explaining the call
+  below it was a usage, and `x i18n sync` would have written `"…": "⟦…⟧"` into every catalog for a
+  string nobody renders. The extractor scans the comment-stripped text now; the mask keeps every
+  newline and every string literal in place, so a `//` inside `t('http://…')` is still a key and
+  every position still points at the source. The masking (`stripComments`, `maskLiterals`,
+  `endOfLiteral`, `QUOTES`) moved from `@ultimat3/cli`'s `ts-scan.ts` to `@ultimat3/core`'s
+  `source-mask.ts`, because `@ultimat3/i18n` is tier 1 and could not import tier 5 — one
+  implementation, re-exported by `cli` under the names it had.
+
+- **The framework never mounted an app's own MCP server.** `defineAppMcp({ …, resolveToken })`
+  built `mcp.route`, `app.config.ts` declared `ai: { mcp: { expose: true, path: '/mcp' } }` by
+  DEFAULT, the mcp README told authors to write `routes: [mcp.route]` into a config that has no
+  such key — and neither `x dev` nor `runRole` mounted anything, so `POST /mcp` was
+  `X_ROUTE_NOT_FOUND` in every app ever scaffolded, `examples/dummy` included. `x dev` also passed
+  no app middleware at all (only the read-replica override), so an app could not mount it by hand.
+
+  The contract is one file per concern. `apps/<app>/mcp.ts` exports `mcp` (an `AppMcp`); both
+  boots go through `mountAppMcp()` (`packages/cli/src/app-mcp.ts`) and mount
+  `POST config.ai.mcp.path` → `mcp.route.handle(request)` when `expose` is true, log
+  `app mcp mounted`, and `x dev`'s summary prints `mcp POST /mcp`. The http route is
+  `auth: 'public'`, `enforcedBy: 'handler'`: the bearer token is `resolveToken`'s to read, and a
+  pipeline `auth: 'required'` would have demanded a session cookie an agent does not carry.
+  `expose: true` with nothing to mount — no file exports `mcp`, or it was built without
+  `resolveToken` and carries no `route` — logs **`X_MCP_APP_UNMOUNTED`** once per boot, with the
+  file to write; `expose: false` mounts nothing and says nothing. Tested in both boots:
+  `cmd-dev.test.ts` and `serve.live.test.ts` each assert `POST /mcp` is not a 404 (401 is the
+  route's own verdict on a missing bearer).
+
+  `apps/<app>/runtime.ts` exporting `runtime` (a `RuntimeOverrides`) is the same shape for
+  middleware: `x dev` composes it exactly as `runRole` composes a caller's `runtime` — replica
+  scope in front, the app's chain behind — and `runRole` reads the file when `apps/web/server.ts`
+  passes none, resolved once at each public entry so `startServices`, the ISR and image seams and
+  the middleware all see one object. The scaffolded `server.ts` never passed a `runtime`, so this
+  is the first path by which an app's middleware reaches any process the framework boots.
+
+- **Under `x dev` with the embedded database, live queries had no change feed.** The sync node is
+  fed by Postgres logical replication — `x dev --role replicator` and a real `DATABASE_URL` — and
+  PGlite has no walsender, so a subscription took its snapshot and then heard nothing: every
+  `--live` query in every scaffolded app was dead in development, which is where an author first
+  tries one. `packages/testing` already held the in-process bridge (`startLiveReplicator`, the row
+  observer the framework's own live tests run on); `x dev` now installs it whenever the database
+  is embedded (`packages/cli/src/dev-live-feed.ts`), and the ready line says which feed the node
+  has: `live=in-process`, `live=replication` (a real database — the WAL decoder, here or in another
+  process, and never a bridge beside it, which would deliver every write twice), or `live=none`
+  (no `sync` role). `--json` carries it as `liveFeed`. Proven under a real boot
+  (`dev-live-feed.test.ts`): embedded database, `web` and `sync` roles, a real `SyncSocket`
+  subscription on the node's registry, one repository insert, one `patch` frame. The bridge's
+  bound is unchanged and stated: a write another process makes is invisible, which holds by
+  construction when every role runs in one process.
+
+### Changed
+
+- **`budget.js` states its unit: raw minified bytes on disk, uncompressed.** `measureDocumentJs`
+  always weighed `file.size`; the docs said "measured from the real bundle graph" and nothing said
+  which bytes, so an app read "compressed" into it and could not see why a 350 kB library never
+  fit a 120 kB budget. Raw is the right number — a budget bounds what the browser parses and
+  executes, not what it transfers — so the unit is now written where the field is declared
+  (`RouteBudget.js`), where the finding is worded (`X_BUDGET_EXCEEDED` says
+  `(minified, uncompressed)`), in `wiki/Routes-And-Render-Modes.md` and the render README, and
+  pinned by a test that weighs a 16 kB file which gzips below 2 kB at 16 kB.
+
+- **`x g entity`'s tenant lines are documented in the output, and `--no-tenant` was refused.**
+  `orgId` is decided on by `x g action`, `x g query`, `x g policy` and `x g job` as well, so a
+  flag on the entity generator alone would leave `x g resource` emitting an action over a column
+  its entity no longer has. The emitted `entity.ts` names the whole edit for a single-tenant app in
+  the comment above `tenant: 'orgId'` — the two lines, the index, the repo's two `org_id` reads,
+  and the two test expectations — and `wiki/CLI-Reference.md` says why there is no flag.
+
+- **`@ultimat3/jobs`' README gains "Fan-out per row is a job, not a task".** `task.enqueue` stays
+  synchronous — `describe()` reads `entries()` to project the task's job names into the manifest,
+  and a task that reads a table in its tick is a task doing work — so "one job per row" is written
+  as one fan-out job with one `step.run` per child, which is `webhook()`'s own shape. The rule was
+  one sentence in `wiki/Scheduled-Tasks.md`; the pattern is now a compiled fence with all three
+  files under a heading. Async `enqueue` was considered and refused for the two reasons above.
+
+- **`wiki/Realtime.md` gains "Live query in the browser, end to end".** Four agents polled a query
+  from an island because the five steps — the dependency (`x new` installs `@ultimat3/query` and
+  not `@ultimat3/realtime`), the live query, the `ClientSocket` adapter, the sync URL as an island
+  prop, `connect()` → `setLiveClient()` → `useLive()` inside an island — were each documented and
+  nowhere in sequence. The section is the reference app's `feed.island.tsx`, condensed.
+
+- **`wiki/Routes-And-Render-Modes.md` states that `stream` is not what a generator emits.** Its
+  "Why `stream` is the app default" section described a design; `x g route` and `x new` both write
+  `render: 'ssr'` on `app/` because `stream` needs a `<Suspense>` boundary the server JSX factory
+  does not provide (`X_ROUTE_MODE_INVALID` without one). The section now leads with that status.
+
+### Not changed, and the evidence for why
+
+- **`defineRoles()` still accepts a grant nothing declared, and the gate is where that is refused.**
+  A role map runs at module scope and the permission set may be declared by a later import
+  (`@ultimat3/admin` declares `admin:*` on its barrel), so declaration time is not decidable; the
+  earliest decidable point is the whole-program view, which `x verify`'s `policy` step has taken
+  since 12.0.0 (`packages/cli/src/app-permissions.ts`, `X_PERMISSION_UNKNOWN` per undeclared grant
+  or route requirement). The scaffold declares its grants (`scaffold-roles.ts`) and
+  `scaffold-permissions.test.ts` pins every generated file to that rule. The app that reported this
+  saw a green gate because its gate ran under the global CLI's empty registry — the first entry
+  above — not because the step was missing.
+
+- **`x g route` on `app/` emits `ssr`, and has since the boundary check landed.** `templates/route.ts`
+  states the reason at the one place an author would change it, and
+  `templates/emitted-routes.test.ts` puts every generated route through `assertModeInvariants`.
+  The app's `dashboard/page.tsx` comment is the scaffold's own text; nothing in 19.0.0 emits
+  `stream`.
+
+- **No WebSocket upgrade on the `web` role, and no `x g route --surface api`.** `/api/*` is a
+  projection of the action and query registries (`apiRoutes()`), `readSurface` refuses `api` by
+  name, and the `web` role's `Bun.serve` is built with no `websocket` handler. An upgrade hook was
+  refused rather than half-built: every stage of the http pipeline returns a `Response`, and an
+  upgraded request must return `undefined` from `fetch` — a second exit with none of the pipeline's
+  guarantees. `packages/http/README.md` documents the two halves an app writes instead (a realtime
+  `channel` topic server→browser, an `action` browser→server) and the long-poll fallback.
 
 ## 19.0.0 - 2026-08-27
 

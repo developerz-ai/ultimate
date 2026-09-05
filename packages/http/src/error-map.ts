@@ -141,6 +141,12 @@ export const ERROR_STATUS = {
   X_INVARIANT_VIOLATED: 422,
   X_TENANCY_UNSCOPED: 500,
   X_DB_DRIFT: 500,
+  // Both are the server's verdict on a statement the app wrote, which is the app's fault and not
+  // the caller's: a request cannot repair a missing migration or a wrong column list.
+  X_DB_SCHEMA_STALE: 500,
+  X_DB_STATEMENT_FAILED: 500,
+  // Logged at boot, never thrown into a request; the row exists so the table stays closed.
+  X_MCP_APP_UNMOUNTED: 500,
   // The three tenancy refusals, all 403, and all deliberately NOT the 404 `X_STORAGE_ORG_MISMATCH`
   // takes: that one answers 404 because a 403 on a KEY the caller supplied confirms the key exists.
   // These three name no resource and read no row — the comparison is the actor against an argument

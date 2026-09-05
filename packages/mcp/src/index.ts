@@ -33,6 +33,7 @@ export type { McpErrorCode } from './errors';
 export {
   MCP_ERROR_CODES,
   MCP_ERROR_TITLES,
+  McpAppUnmountedError,
   McpArgsInvalidError,
   McpNotBranchDbError,
   McpProtocolError,

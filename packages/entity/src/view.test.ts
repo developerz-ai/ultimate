@@ -1,7 +1,9 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { integer, text, timestamp, uuid } from './columns';
+import { introspect, type MoneyValue, type StandardSchemaV1, toJsonSchema } from '@ultimat3/schema';
+import { integer, money, text, timestamp, uuid } from './columns';
+import { arrayOf, bigint, date, decimal } from './columns-data';
 import { entity } from './entity';
+import { enumerated } from './enum-column';
 import { clearRegistry } from './registry';
 import { viewFor } from './view';
 
@@ -78,6 +80,88 @@ describe('$view()', () => {
     const result = counts['~standard'].validate({});
     expect(result).not.toBeInstanceOf(Promise);
     expect('issues' in result && result.issues?.[0]?.message).toContain('is required');
+  });
+
+  test('is introspectable, so it can be an action output and reach OpenAPI', () => {
+    const columns = {
+      id: uuid().primaryKey(),
+      title: text({ max: 40 }),
+      count: integer().nullable(),
+    };
+    const view = viewFor<
+      { id: string; title: string; count: number | null },
+      'id' | 'title' | 'count'
+    >('things', columns, ['id', 'title', 'count']);
+    const node = introspect(view);
+    expect(node.kind).toBe('object');
+    expect(node.properties?.['id']).toEqual({ kind: 'string', format: 'uuid' });
+    expect(node.properties?.['title']).toEqual({ kind: 'string', maxLength: 40 });
+    expect(node.properties?.['count']).toEqual({ kind: 'number', integer: true, nullable: true });
+  });
+
+  test('projects to the JSON Schema an action output publishes: money, date, enum, nullable', () => {
+    const columns = {
+      id: uuid().primaryKey(),
+      price: money(),
+      publishedAt: timestamp().nullable(),
+      status: enumerated(['draft', 'live']),
+      views: bigint(),
+      rate: decimal(),
+      effectiveOn: date(),
+      tags: arrayOf(text()),
+    };
+    type Row = {
+      id: string;
+      price: MoneyValue;
+      publishedAt: Date | null;
+      status: 'draft' | 'live';
+      views: string;
+      rate: string;
+      effectiveOn: string;
+      tags: readonly string[];
+    };
+    const view = viewFor<Row, keyof Row>('things', columns, [
+      'id',
+      'price',
+      'publishedAt',
+      'status',
+      'views',
+      'rate',
+      'effectiveOn',
+      'tags',
+    ]);
+    const schema = toJsonSchema(view, { includeDialect: false });
+    expect(schema.type).toBe('object');
+    expect(schema.additionalProperties).toBe(false);
+    // Nullable is a value the field holds, never an absent key: still required, `null` in the union.
+    expect(schema.required).toEqual([
+      'id',
+      'price',
+      'publishedAt',
+      'status',
+      'views',
+      'rate',
+      'effectiveOn',
+      'tags',
+    ]);
+    expect(schema.properties?.['publishedAt']).toEqual({
+      anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+    });
+    expect(schema.properties?.['status']).toEqual({ type: 'string', enum: ['draft', 'live'] });
+    expect(schema.properties?.['price']?.type).toBe('object');
+    expect(schema.properties?.['price']?.required).toEqual(['minor', 'currency']);
+    expect(schema.properties?.['price']?.properties?.['minor']?.type).toBe('integer');
+    // The row value's shape, not the SQL type's: bigint and numeric are strings on a row, and a
+    // date column is a calendar-date string, so a generated client agrees with `$parse`.
+    expect(schema.properties?.['views']?.type).toBe('string');
+    expect(schema.properties?.['views']?.pattern).toBe('^-?\\d+$');
+    expect(schema.properties?.['rate']?.type).toBe('string');
+    expect(schema.properties?.['effectiveOn']).toEqual({
+      type: 'string',
+      pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+      description: 'calendar date, YYYY-MM-DD',
+    });
+    expect(schema.properties?.['tags']).toEqual({ type: 'array', items: { type: 'string' } });
   });
 
   test('$row is a type, not a value', () => {

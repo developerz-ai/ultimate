@@ -4,9 +4,72 @@
 // declaration-time failure, not a surprise on the first request.
 
 import { renderThrowable } from '@ultimat3/core';
-import { describeValue, type StandardSchemaV1 } from '@ultimat3/schema';
+import { describeValue, type SchemaNode, type StandardSchemaV1 } from '@ultimat3/schema';
 import { invariantViolated } from './errors';
 import type { AnyColumn, ColumnMap } from './types';
+
+/** What `bigint()` puts on a row: the digits, as a string — `columns-data.ts` parses by this. */
+const BIGINT_PATTERN = '^-?\\d+$';
+/** What `date()` puts on a row: `@ultimat3/time`'s `PlainDate`, a `YYYY-MM-DD` string. */
+const PLAIN_DATE_PATTERN = '^\\d{4}-\\d{2}-\\d{2}$';
+
+/**
+ * A column as the schema IR reads it. This is what lets `output: PostView` reach OpenAPI, the
+ * typed client and an MCP tool: before it, a view validated fine and was refused at projection
+ * time with `X_SCHEMA_UNSUPPORTED` (measured 2026-09-05), so every app re-declared its outputs as
+ * `t.object` and pinned them to the columns by hand.
+ *
+ * Each case publishes the ROW value's shape, which is not always the SQL type's: `bigint()` and
+ * `decimal()` are `Column<string>` — the digits, because a JS number is inexact past ±2^53 and a
+ * float is the money bug with a different name — and `date()` is a calendar-date string, not an
+ * instant. A generated client typed off this document has to agree with what `$parse` returns,
+ * so those three are strings here. `jsonb` and `bytea` are `unknown`: a `json()` column's schema
+ * is not on its `$meta`, and bytes have no JSON form at all.
+ */
+export const columnNode = (column: AnyColumn): SchemaNode => {
+  const meta = column.$meta;
+  const base = ((): SchemaNode => {
+    switch (meta.kind) {
+      case 'uuid':
+        return { kind: 'string', format: 'uuid' };
+      case 'text':
+      case 'char':
+        return meta.values !== undefined
+          ? { kind: 'enum', values: meta.values }
+          : { kind: 'string', ...(meta.length === undefined ? {} : { maxLength: meta.length }) };
+      case 'boolean':
+        return { kind: 'boolean' };
+      case 'integer':
+        return { kind: 'number', integer: true };
+      case 'bigint':
+        return {
+          kind: 'string',
+          pattern: BIGINT_PATTERN,
+          description: 'bigint as a decimal string',
+        };
+      case 'numeric':
+        return { kind: 'string', description: 'exact decimal as a string' };
+      case 'timestamptz':
+        return { kind: 'date' };
+      case 'date':
+        return {
+          kind: 'string',
+          pattern: PLAIN_DATE_PATTERN,
+          description: 'calendar date, YYYY-MM-DD',
+        };
+      case 'array':
+        return {
+          kind: 'array',
+          items: meta.element === undefined ? { kind: 'unknown' } : columnNode(meta.element),
+        };
+      case 'money':
+        return { kind: 'money' };
+      default:
+        return { kind: 'unknown' };
+    }
+  })();
+  return meta.notNull ? base : { ...base, nullable: true };
+};
 
 /**
  * A row projection, usable anywhere a schema is. `$row` is the phantom that carries the type
@@ -15,6 +78,8 @@ import type { AnyColumn, ColumnMap } from './types';
  */
 export interface EntityView<Row, K extends keyof Row & string>
   extends StandardSchemaV1<unknown, Pick<Row, K>> {
+  /** The schema IR, so a view is introspectable wherever a `t.object` is. */
+  readonly node: SchemaNode;
   readonly $name: string;
   readonly $keys: readonly K[];
   /** Phantom: `type PostView = typeof PostView.$row`. Reading it at runtime throws. */
@@ -48,6 +113,12 @@ export const viewFor = <Row, K extends keyof Row & string>(
     return [key, column] as const;
   });
   const name = viewName(entityName, keys);
+  // No `description`: the view's name is `$name`, and OpenAPI keys the component by the ACTION's
+  // output name, so a description repeating `posts.view.id_title` would be noise on every field.
+  const node: SchemaNode = {
+    kind: 'object',
+    properties: Object.fromEntries(picked.map(([key, column]) => [key, columnNode(column)])),
+  };
 
   const parse = (value: unknown): Pick<Row, K> => {
     if (typeof value !== 'object' || value === null) {
@@ -91,6 +162,8 @@ export const viewFor = <Row, K extends keyof Row & string>(
         }
       },
     },
+    // `node` is the duck-typed key `nodeOf()` reads — the same one every `t.*` schema carries.
+    node,
     $name: name,
     $keys: keys,
     get $row(): Pick<Row, K> {
