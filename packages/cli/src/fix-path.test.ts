@@ -2,8 +2,6 @@
 // exclusion has a case, because an exclusion nobody pinned is the one a later widening deletes.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive, and this test builds a repo-relative root.
 import { join } from 'node:path';
 import { citedPathProblem, FILE_TOKEN_PATTERN, pathCitations } from './fix-path';
@@ -32,13 +30,14 @@ describe('unit · which citations are judgeable', () => {
   test('never judges a path under a directory the root .gitignore never commits', async () => {
     // Measured 2026-09-05: an app's fixes name `.personal/fleet.yml`, the private fleet file that
     // exists on every developer's disk and on no CI runner — the repo's own `.gitignore` says so.
-    const root = await mkdtemp(join(tmpdir(), 'fix-path-private-'));
+    // A fixture root beside this file, Bun-only: the node-import ratchet counts every `node:` site.
+    const root = join(import.meta.dir, '.fix-path-private-fixture');
     try {
       await Bun.write(
         join(root, '.gitignore'),
         '# private\n.personal/\n/tmp/\nnode_modules\n!keep.md\n*.log\n',
       );
-      await mkdir(join(root, 'scripts', 'fleet'), { recursive: true });
+      await Bun.write(join(root, 'scripts', 'fleet', '.keep'), '');
       expect(
         pathCitations('edit .personal/fleet.yml, then bun scripts/fleet/list.ts', root),
       ).toEqual(['scripts/fleet/list.ts']);
@@ -49,7 +48,7 @@ describe('unit · which citations are judgeable', () => {
         'scripts/missing.ts',
       );
     } finally {
-      await rm(root, { recursive: true, force: true });
+      await Bun.$`rm -rf ${root}`.quiet();
     }
   });
 
