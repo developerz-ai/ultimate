@@ -6,7 +6,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; fixtures are joined to this file's directory.
 import { join } from 'node:path';
 import type { UltimateRequest } from '@ultimat3/http';
-import { APP_MCP_ROUTE_NAME, appMcpMount } from './app-mcp';
+import { APP_MCP_ROUTE_NAME, appMcpMount, mountAppMcp } from './app-mcp';
 
 const FIXTURES = join(import.meta.dir, '..', '.app-mcp-fixture');
 
@@ -95,5 +95,44 @@ describe('appMcpMount', () => {
   test('a directory with no app.config.ts is not an app that exposes anything', async () => {
     const root = await fixture('no-config', { 'apps/web/mcp.ts': MCP_WITH_ROUTE });
     expect(await appMcpMount(root)).toEqual({ routes: [], path: null, warning: undefined });
+  });
+
+  test('an mcp.ts that exports no `mcp` is the missing case, and the instruction names that file', async () => {
+    const root = await fixture('other-export', {
+      'app.config.ts': configWith("{ expose: true, path: '/mcp' }"),
+      'apps/web/mcp.ts': 'export const tools = [];\n',
+    });
+    const mount = await appMcpMount(root);
+    expect(mount.routes).toEqual([]);
+    expect(mount.warning?.reason).toBe('missing');
+    expect(mount.warning?.cause).toContain('apps/web/mcp.ts');
+  });
+
+  test('a config that declares no path mounts at /mcp, the default', async () => {
+    const root = await fixture('default-path', {
+      'app.config.ts': configWith('{ expose: true }'),
+      'apps/web/mcp.ts': MCP_WITH_ROUTE,
+    });
+    expect((await appMcpMount(root)).path).toBe('/mcp');
+  });
+});
+
+describe('mountAppMcp', () => {
+  test('answers the same mount the pure half does, mounted or warned', async () => {
+    const mounted = await mountAppMcp(
+      await fixture('mount-mounted', {
+        'app.config.ts': configWith("{ expose: true, path: '/mcp' }"),
+        'apps/web/mcp.ts': MCP_WITH_ROUTE,
+      }),
+    );
+    expect(mounted.path).toBe('/mcp');
+    expect(mounted.routes).toHaveLength(1);
+    const warned = await mountAppMcp(
+      await fixture('mount-warned', {
+        'app.config.ts': configWith("{ expose: true, path: '/mcp' }"),
+      }),
+    );
+    expect(warned.routes).toEqual([]);
+    expect(warned.warning?.code).toBe('X_MCP_APP_UNMOUNTED');
   });
 });

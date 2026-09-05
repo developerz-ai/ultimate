@@ -262,7 +262,7 @@ export async function releaseBoot(
  * ISR seams, the replica override) sees one object: a per-read fallback would be the partial read
  * this repository names as its most repeated defect.
  */
-async function withAppRuntime(options: ServeOptions): Promise<ServeOptions> {
+export async function withAppRuntime(options: ServeOptions): Promise<ServeOptions> {
   if (options.runtime !== undefined) return options;
   const runtime = await loadAppRuntime(options.root);
   return runtime === undefined ? options : { ...options, runtime };

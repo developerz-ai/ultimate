@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { resetRegistry as resetActions } from '@ultimat3/action';
 import { isolateDeclaredTags, resetTiers } from '@ultimat3/cache';
 import { userActor } from '@ultimat3/core';
-import { clearRegistry as clearEntities } from '@ultimat3/entity';
+import { clearRegistry as clearEntities, rowObserver } from '@ultimat3/entity';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
 import { clearPermissions, clearRoles } from '@ultimat3/policy';
 import { resetRegistry as resetQueries } from '@ultimat3/query';
@@ -137,13 +137,48 @@ describe('the live feed under an embedded database', () => {
 });
 
 describe('startLiveFeed decides by the database, never by guessing', () => {
+  test('a change nobody could fan out is logged and never takes the bridge down', async () => {
+    let attempts = 0;
+    const registry = {
+      deliver: (): Promise<number> => {
+        attempts += 1;
+        return Promise.reject(new Error('fanout refused'));
+      },
+      invalidate: () => 0,
+    } as never;
+    // The boot above installed its own bridge; this one stacks on it and must hand it back.
+    const before = rowObserver();
+    const live = await startLiveFeed({
+      sync: { url: 'ws://x', registry, stop: async () => undefined },
+      dbMode: 'embedded',
+    });
+    try {
+      expect(live.feed).toBe('in-process');
+      rowObserver()?.onChange({ entity: 'notes', op: 'insert', before: null, after: { id: 'n1' } });
+      rowObserver()?.onChange({ entity: 'notes', op: 'insert', before: null, after: { id: 'n2' } });
+      await live.bridge?.settled();
+      // Both were attempted: the first failure did not silence the change behind it.
+      expect(attempts).toBe(2);
+      expect(live.bridge?.delivered).toBe(0);
+    } finally {
+      live.stop();
+    }
+    expect(rowObserver()).toBe(before);
+  });
+
   test('no sync node is no feed; a real database is the WAL decoder, with no bridge beside it', async () => {
-    expect((await startLiveFeed({ sync: null, dbMode: 'embedded' })).feed).toBe('none');
+    const none = await startLiveFeed({ sync: null, dbMode: 'embedded' });
+    expect(none.feed).toBe('none');
     const external = await startLiveFeed({
       sync: { url: 'ws://x', registry: {} as never, stop: async () => undefined },
       dbMode: 'external',
     });
     expect(external.feed).toBe('replication');
     expect(external.bridge).toBeNull();
+    // Neither installed anything, so stopping either is a no-op that leaves the observer alone.
+    const before = rowObserver();
+    none.stop();
+    external.stop();
+    expect(rowObserver()).toBe(before);
   });
 });

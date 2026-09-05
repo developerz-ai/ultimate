@@ -131,6 +131,17 @@ below names its measurement. None is breaking.
 
 ### Changed
 
+- **CI pins Bun to the exact patch, `1.4.0`, not the series.** `1.4.x` admitted Bun 1.4.2 the
+  morning it was published (2026-09-05, 05:55 UTC), and its bundler retains more of a re-export
+  barrel than 1.4.0's: `packages/ui/src/barrel-bytes.test.ts` — three pins measuring what a
+  browser chunk pays for the `@ultimat3/ui` barrel — fails on `main` under 1.4.2 with nothing
+  changed (`<= 1024` bytes measured 10,653; `useUi` and `moneyText` retain 31 lines the module
+  path does not) and passes under 1.4.0; `examples/dummy`'s like island grew from under 50,426
+  bytes to 51,381 on the same runner. A patch that changes what ships to a browser is a change this
+  repository measures, so `.github/actions/setup` and `release.yml` name the patch somebody
+  measured, and `scripts/bun-pin.test.ts` accepts an exact patch beside a series (never `latest`).
+  Moving forward is the 1.3 → 1.4 procedure: run the gate on the candidate, write the numbers.
+
 - **`budget.js` states its unit: raw minified bytes on disk, uncompressed.** `measureDocumentJs`
   always weighed `file.size`; the docs said "measured from the real bundle graph" and nothing said
   which bytes, so an app read "compressed" into it and could not see why a 350 kB library never

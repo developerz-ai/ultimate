@@ -56,6 +56,22 @@ describe('resolveLocalCli', () => {
     expect(resolveLocalCli({ cwd: dir, selfPath: bunfs, env: {} }, compiled)).toBeUndefined();
   });
 
+  // Through the REAL filesystem, once: the reference app's `node_modules/@ultimat3/cli` is a
+  // workspace symlink to `packages/cli`, so this checkout's own `bin.ts` is the same file — the
+  // case every CI run and both tracked apps sit in, and the one that must never hand over.
+  test('this checkout inside its own reference app resolves to the same file, over the real fs', () => {
+    const checkout = join(import.meta.dir, '..', '..', '..');
+    const dummy = join(checkout, 'examples', 'dummy');
+    const self = join(checkout, 'packages', 'cli', 'src', 'bin.ts');
+    expect(resolveLocalCli({ cwd: dummy, selfPath: self, env: {} })).toBeUndefined();
+    // And a DIFFERENT real file — any other module of this checkout stands in for a global copy —
+    // is handed over to the app's own bin over the same real fs.
+    const foreign = join(checkout, 'packages', 'cli', 'src', 'dispatch.ts');
+    expect(resolveLocalCli({ cwd: dummy, selfPath: foreign, env: {} })).toBe(
+      join(dummy, LOCAL_CLI_BIN),
+    );
+  });
+
   test('the escape hatch keeps the global one on purpose', () => {
     const dir = app();
     const local = join(dir, LOCAL_CLI_BIN);
