@@ -302,19 +302,20 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
 async function measure(root: string, pkg: string): Promise<CoverageReading> {
   const dir = join(root, '.x', 'coverage', pkg);
   rmSync(dir, { recursive: true, force: true });
-  // `--isolate`, the flag `x test` runs every suite under (`packages/cli/src/test-shards.ts`), and
-  // for the same reason: a module realm per file. Without it every file of a package shares one
-  // process, and a process has ONE lifecycle — the second in-process boot of `x dev` or `serveApp`
-  // is refused (`X_LIFECYCLE_DRAINED`, `X_READINESS_CHECK_DUPLICATE`), so whichever boot file the
-  // filesystem listed first was measured and every later one failed in silence, subtracting its
-  // coverage. Measured 2026-09-05 on `packages/cli`: 94.94% on a GitHub runner against 95.73% on a
-  // laptop whose `readdir` happened to list the files the other way round. Same numbers on every
-  // disk is what a ratchet needs. The lcov report is one file either way.
+  // ONE process per package, deliberately and with the alternative measured. `--isolate` — the
+  // flag `x test` runs every suite under — was tried on 2026-09-05 because a package's files share
+  // this one process and a process has one lifecycle: the second in-process boot of `x dev` is
+  // refused (`X_LIFECYCLE_DRAINED`), so with two boot files whichever `readdir` listed first was
+  // measured and the other failed in silence (`packages/cli`: 94.94% on a runner, 95.73% on a
+  // laptop, same tree). But Bun's lcov writer keeps ONE record per source under `--isolate` —
+  // the last file's, not the union: `packages/admin` read 92.04% isolated against 99.73% here,
+  // with the same 578 tests passing both ways. So the rule the gate enforces instead is the
+  // tests': a package boots the framework in-process in exactly one test file
+  // (`cmd-dev.test.ts` for `cli`), and every assertion that needs a booted app lives there.
   const proc = Bun.spawn(
     [
       'bun',
       'test',
-      '--isolate',
       '--coverage',
       '--coverage-reporter=lcov',
       `--coverage-dir=${dir}`,
