@@ -21,6 +21,6 @@
     "@ultimat3/money": "19.1.1",
     "@ultimat3/render": "19.1.1",
     "@ultimat3/ui": "19.1.1",
-    "solid-js": "1.9.14"
+    "solid-js": "1.9.15"
   }
 }

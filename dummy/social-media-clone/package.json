@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
-    "@electric-sql/pglite": "^0.5.4",
+    "@electric-sql/pglite": "^0.5.6",
     "@types/bun": "^1.4.0",
     "@ultimat3/testing": "19.1.1",
     "typescript": "^7.0.2"
@@ -43,7 +43,7 @@
     "@ultimat3/realtime": "19.1.1",
     "@ultimat3/render": "19.1.1",
     "@ultimat3/ui": "19.1.1",
-    "solid-js": "1.9.14"
+    "solid-js": "1.9.15"
   },
   "engines": {
     "bun": ">=1.4.0"

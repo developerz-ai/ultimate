@@ -44,6 +44,6 @@
     "@ultimat3/testing": "19.1.1",
     "@ultimat3/time": "19.1.1",
     "@ultimat3/ui": "19.1.1",
-    "solid-js": "1.9.14"
+    "solid-js": "1.9.15"
   }
 }
