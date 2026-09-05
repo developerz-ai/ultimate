@@ -2,6 +2,8 @@
 // exclusion has a case, because an exclusion nobody pinned is the one a later widening deletes.
 
 import { describe, expect, test } from 'bun:test';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive, and this test builds a repo-relative root.
 import { join } from 'node:path';
 import { citedPathProblem, FILE_TOKEN_PATTERN, pathCitations } from './fix-path';
@@ -25,6 +27,30 @@ describe('unit · which citations are judgeable', () => {
     expect(pathCitations("add `import './global.scss';`", REPO_ROOT)).toEqual([]);
     expect(pathCitations("register it in its package's src/errors.ts", REPO_ROOT)).toEqual([]);
     expect(pathCitations('open it in apps/web/server.ts', REPO_ROOT)).toEqual([]);
+  });
+
+  test('never judges a path under a directory the root .gitignore never commits', async () => {
+    // Measured 2026-09-05: an app's fixes name `.personal/fleet.yml`, the private fleet file that
+    // exists on every developer's disk and on no CI runner — the repo's own `.gitignore` says so.
+    const root = await mkdtemp(join(tmpdir(), 'fix-path-private-'));
+    try {
+      await Bun.write(
+        join(root, '.gitignore'),
+        '# private\n.personal/\n/tmp/\nnode_modules\n!keep.md\n*.log\n',
+      );
+      await mkdir(join(root, 'scripts', 'fleet'), { recursive: true });
+      expect(
+        pathCitations('edit .personal/fleet.yml, then bun scripts/fleet/list.ts', root),
+      ).toEqual(['scripts/fleet/list.ts']);
+      expect(pathCitations('see tmp/notes.md and node_modules/x/y.ts', root)).toEqual([]);
+      expect(await citedPathProblem('write it in .personal/providers.yml', root)).toBeUndefined();
+      // A directory that is not ignored is still judged: the rule errs towards judging.
+      expect(await citedPathProblem('see scripts/missing.ts', root)).toContain(
+        'scripts/missing.ts',
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test('never judges a URL that is shaped like a path', () => {

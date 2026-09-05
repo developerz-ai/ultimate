@@ -5,7 +5,7 @@
 
 // why: Bun exposes no synchronous existence primitive — `Bun.file(p).exists()` is async and answers
 // false for a DIRECTORY, and this rule has to judge both. Delete when Bun ships one.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 // why: Bun exposes no path-join or dirname primitive. The same necessity `error-contract.ts`
 // already records for `join`.
 import { dirname, join } from 'node:path';
@@ -60,6 +60,11 @@ const URL_SPAN = /\b[a-z][\w+.-]*:\/\/\S+/gi;
  */
 function isJudgeable(token: string, root: string): boolean {
   if (token.startsWith('@') || token.startsWith('./') || token.startsWith('../')) return false;
+  // A FOURTH exclusion, measured 2026-09-05 on the first app whose fixes name its private files:
+  // `.personal/fleet.yml` is the right thing to tell a reader to edit, and the repository holds
+  // `.personal/` in its `.gitignore` on purpose — the file exists on every developer's disk and on
+  // no CI runner. A path the repo itself says it never commits is not a path this root can judge.
+  if (isPrivateByDesign(token, root)) return false;
   const star = token.indexOf('*');
   // A glob's FIXED prefix is what has to exist; the segments a `*` stands for are the answer. Cut
   // at the separator before the star rather than at the star — `dirname('packages/')` is `.`, and
@@ -67,6 +72,34 @@ function isJudgeable(token: string, root: string): boolean {
   const cut = star === -1 ? -1 : token.lastIndexOf('/', star);
   const base = star === -1 ? dirname(token) : token.slice(0, Math.max(cut, 0));
   return base !== '.' && base !== '' && existsSync(join(root, base));
+}
+
+/**
+ * The directories the root `.gitignore` lists as ignored, as `dir/` prefixes. Only the plain
+ * directory form is read (`.personal/`, `/tmp/`, `dist`): a negation, a glob or a nested pattern
+ * is a rule about files the repo may still hold, and this exclusion errs towards judging.
+ */
+const ignoredDirs = new Map<string, readonly string[]>();
+
+function ignoredDirectories(root: string): readonly string[] {
+  const known = ignoredDirs.get(root);
+  if (known !== undefined) return known;
+  const file = join(root, '.gitignore');
+  const lines = existsSync(file) ? readFileSync(file, 'utf8').split('\n') : [];
+  const dirs = lines
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#') && !line.startsWith('!'))
+    .filter((line) => !/[*?[\]]/.test(line))
+    .map((line) => line.replace(/^\//, '').replace(/\/$/, ''))
+    .filter((line) => line !== '' && !line.includes('/'))
+    .map((dir) => `${dir}/`);
+  ignoredDirs.set(root, dirs);
+  return dirs;
+}
+
+/** Whether the citation sits under a directory the repo's own `.gitignore` never commits. */
+function isPrivateByDesign(token: string, root: string): boolean {
+  return ignoredDirectories(root).some((dir) => token.startsWith(dir));
 }
 
 /** Every path-shaped citation on a fix line that this root can resolve, in the order written. */
