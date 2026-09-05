@@ -193,14 +193,24 @@ const ISLAND = 'apps/web/site/counter.island.tsx';
  * `only:` because these cases mount ONE island and `buildIslands` otherwise Babel-compiles and
  * bundles every other island in the fixture on every case.
  */
-async function mountCounter(props: unknown): Promise<MountedIsland> {
+async function mountCounter(props: unknown, file: string = ISLAND): Promise<MountedIsland> {
   return mountIsland({
-    build: (root: string) => buildIslands(root, { only: ISLAND }),
+    build: (root: string) => buildIslands(root, { only: file }),
     root: ROOT,
-    file: ISLAND,
+    file,
     props,
   });
 }
+
+/**
+ * The composed island lives in a directory NO earlier build in this process has resolved. CI
+ * (2026-09-05, main at the 19.1.0 release commit, six workers) failed this suite's composed case
+ * with `Could not resolve "./badge"` while `badge.tsx` had been written and awaited: the bundler
+ * had already walked `apps/web/site/` for the cases above, when the file was not there. A fresh
+ * directory is a listing nothing has cached.
+ */
+const COMPOSED_DIR = 'apps/web/site/composed';
+const COMPOSED_ISLAND_FILE = `${COMPOSED_DIR}/counter.island.tsx`;
 
 // The island an author actually writes: `{n()}` straight into the markup, `class={…}` straight onto
 // the element, no hand-written thunk anywhere. Solid's reactivity is a COMPILE-time contract, so
@@ -301,9 +311,9 @@ describe('an island that renders JSX', () => {
   });
 
   test('an island importing a plain .tsx compiles that component too', async () => {
-    await write(ISLAND, COMPOSED_ISLAND);
-    await write('apps/web/site/badge.tsx', BADGE_COMPONENT);
-    using mounted = await mountCounter({});
+    await write(`${COMPOSED_DIR}/badge.tsx`, BADGE_COMPONENT);
+    await write(COMPOSED_ISLAND_FILE, COMPOSED_ISLAND);
+    using mounted = await mountCounter({}, COMPOSED_ISLAND_FILE);
 
     // A `.island.tsx`-only filter leaves `badge.tsx` to Bun's own bundler, which reads the app's
     // `jsx: "preserve"` and emits `React.createElement("span", …)` — the original bug, one import
