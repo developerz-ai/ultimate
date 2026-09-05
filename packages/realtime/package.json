@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/realtime",
-  "version": "19.1.0",
+  "version": "19.1.1",
   "description": "Three-tier realtime: channels, live queries, local-first sync — one protocol, one mutator shape",
   "license": "MIT",
   "type": "module",
@@ -36,8 +36,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "19.1.0",
-    "@ultimat3/query": "19.1.0",
+    "@ultimat3/core": "19.1.1",
+    "@ultimat3/query": "19.1.1",
     "nats": "2.29.3"
   }
 }
