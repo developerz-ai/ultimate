@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 19.1.0 - 2026-09-05
+
 Twelve defects surfaced by one app built on 19.0.0 — an AI-first control plane whose four UI
 agents and one data agent each hit the framework at a seam nothing had measured. Every entry
 below names its measurement. None is breaking.
@@ -218,6 +222,11 @@ below names its measurement. None is breaking.
   upgraded request must return `undefined` from `fetch` — a second exit with none of the pipeline's
   guarantees. `packages/http/README.md` documents the two halves an app writes instead (a realtime
   `channel` topic server→browser, an `action` browser→server) and the long-poll fallback.
+
+### Commits
+
+- fix: the fourteen frictions ai-maxxing hit, at the seam (#405)
+- chore: commit .maintainer.yml so developerz.ai stops deferring every PR to CodeRabbit
 
 ## 19.0.0 - 2026-08-27
 
