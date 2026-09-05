@@ -8,7 +8,16 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`X_ERROR_FIX_PATH_MISSING` judged a path the repository never commits.** The first app whose
+  fixes name its private files (`.personal/fleet.yml`, `.personal/providers.yml` â€” the right
+  thing to tell a reader to edit) was green on every developer's disk and red on every CI runner,
+  where the file cannot exist because the repo's own `.gitignore` says so. A citation under a
+  directory the root `.gitignore` lists (`.personal/`, `/tmp/`, `node_modules`) is now the fourth
+  exclusion beside scoped specifiers, dot-relative paths and app-facing parents: not judged, by
+  design. Only the plain directory form is read; a glob, a negation or a nested pattern still
+  errs towards judging. `packages/cli/src/fix-path.ts`, measured 2026-09-05.
 
 ## 19.1.0 - 2026-09-05
 
