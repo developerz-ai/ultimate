@@ -22,8 +22,27 @@
 }
 
 /// Removed from the visual flow, still announced by screen readers.
+///
+/// `inset-inline-start` is the one line the canonical recipe (a11y-project's, Bootstrap's
+/// `.visually-hidden`) omits, and omitting it is what made this widen a document. `position:
+/// absolute` with no inset leaves the box at its STATIC position — where the content flow put it —
+/// and only takes it out of flow. After a long run of inline text the static position is already
+/// past the viewport edge; the box then escapes the truncating ancestor's `overflow: hidden`,
+/// because that ancestor is not positioned and so is not its containing block, and its right edge
+/// extends the scrollable area. Measured in ai-maxxing: `Link`'s `.hint` ("opens in a new tab")
+/// after truncated titles put seven boxes at right edges of 753–1119px, making the document 1119px
+/// wide in a 390px viewport and 1480px wide in a 1440px one — a whole page scrolling sideways for
+/// text no sighted user sees.
+///
+/// LOGICAL, never `left: -9999px`: this file's own header refuses a physical direction, and the
+/// classic idiom also puts the box a screen away from the content it annotates, which is where an
+/// RTL document and a focus scroll both go wrong. Only the INLINE start is set. The block position
+/// stays static on purpose — a `.hint` that is focusable (`Checkbox`, `Radio`, `Switch` and
+/// `Dropzone` each hide a real input through this) must scroll into view beside its own control,
+/// not at the top of the page, and a static block position cannot widen anything.
 @mixin visually-hidden {
   position: absolute;
+  inset-inline-start: 0;
   width: 1px;
   height: 1px;
   margin: -1px;

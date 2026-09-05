@@ -40,6 +40,28 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   negative control asserts a module-scope `process.env` read still throws in the same harness, so
   the assertions cannot pass vacuously on a runtime that quietly kept the global.
 
+- **`visually-hidden` no longer widens the document it annotates.** `@mixin visually-hidden` in
+  `packages/ui/src/tokens/_mixins.scss` set `position: absolute` and no inset, which is the
+  canonical recipe (a11y-project's, Bootstrap's `.visually-hidden`) and is the one line it gets
+  wrong. Absolute with no inset leaves the box at its STATIC position and only takes it out of
+  flow; after a long run of inline text that position is already past the viewport edge, and the
+  box escapes the truncating ancestor's `overflow: hidden` because that ancestor is not positioned
+  and so is not its containing block. Measured in ai-maxxing, where `Link`'s `.hint` ("opens in a
+  new tab") follows truncated titles: seven boxes with right edges from 753px to 1119px, making
+  the document **1119px wide inside a 390px viewport** and 1480px inside a 1440px one — a whole
+  page scrolling sideways for text no sighted user ever sees. Eight component stylesheets compose
+  this mixin (`Link`, `Combobox`, `Table`, `Avatar`, `Checkbox`, `Radio`, `Switch`, `Dropzone`),
+  so the defect was in every one of them. Now `inset-inline-start: 0` — logical, because this
+  file's own header refuses a physical direction and `left: -9999px` parks the box a screen away
+  on the wrong side in an RTL document. The INLINE start only: the block position stays static so
+  that a hidden but focusable input — `Checkbox`, `Radio`, `Switch` and `Dropzone` each hide a real
+  one through this mixin — still scrolls into view beside its own control, and a static block
+  position cannot widen anything. Verified in a browser at 390×844 and 1440×900:
+  `document.documentElement.scrollWidth === clientWidth`. `mixins.test.ts` reads the mixin's
+  declarations the way `reset.test.ts` reads the reset's — there is no CSS engine in this process,
+  so the source is the seam — and asserts the inset is present, that it is logical rather than
+  physical, and that the mixin still hides what it is named for.
+
 ## 19.1.1 - 2026-09-05
 
 ### Fixed
