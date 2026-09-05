@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 19.1.1 - 2026-09-05
+
 ### Fixed
 
 - **`X_ERROR_FIX_PATH_MISSING` judged a path the repository never commits.** The first app whose
@@ -18,6 +22,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   exclusion beside scoped specifiers, dot-relative paths and app-facing parents: not judged, by
   design. Only the plain directory form is read; a glob, a negation or a nested pattern still
   errs towards judging. `packages/cli/src/fix-path.ts`, measured 2026-09-05.
+
+### Commits
+
+- fix(cli): a fix may cite a file the repository never commits (#408)
+- chore(ci): bump docker/setup-buildx-action in the actions group (#403)
+- test(cli): the composed island builds from a directory no earlier build has resolved
+- docs(publishing): the npm-publish environment has no reviewers â€” the tag rule and the gate are the review
 
 ## 19.1.0 - 2026-09-05
 
