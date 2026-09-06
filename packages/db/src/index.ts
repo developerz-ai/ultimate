@@ -32,6 +32,11 @@ export type { ColumnDefaultLike } from './column-default';
 export { defaultExpression } from './column-default';
 export type { DbHealthReport } from './db-health';
 export { checkDb } from './db-health';
+export {
+  generatedExpressionUnsafe,
+  indexOrderInvalid,
+  indexPredicateUnsafe,
+} from './ddl-errors';
 export { defaultClient, REPLICA_URL_ENV } from './default-client';
 export type { DestructiveKind, DestructiveStatement } from './destructive';
 export {

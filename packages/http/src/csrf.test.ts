@@ -73,6 +73,34 @@ describe('checkCsrf', () => {
     expect(checkCsrf(input({ config: { mode: 'off' }, secFetchSite: 'cross-site' })).ok).toBe(true);
   });
 
+  // `origins: ['*']` with `credentials: false` is the ONLY legal wildcard form — `assertCorsConfig`
+  // refuses the other — and `'*'` is a RESPONSE header value: "any origin may read a public reply".
+  // Read as a per-origin allowance it says every origin on the internet is same-origin, so the one
+  // scenario this file exists for (a signed-in browser auto-submitting evil.test's form) passed.
+  test('a wildcard CORS list allows nobody to WRITE with the session cookie', () => {
+    const wildcard: CorsConfig = { ...DEFAULT_CORS, origins: ['*'], credentials: false };
+    expect(
+      checkCsrf(input({ cors: wildcard, origin: 'https://evil.test', secFetchSite: 'cross-site' }))
+        .ok,
+    ).toBe(false);
+    // The same request from a client that sends no `sec-fetch-site` at all — the other half of
+    // the wildcard hole, and the one no browser vocabulary check would have caught.
+    expect(checkCsrf(input({ cors: wildcard, origin: 'https://evil.test' })).ok).toBe(false);
+  });
+
+  test('an exact origin listed beside the wildcard is still allowed', () => {
+    const both: CorsConfig = {
+      ...DEFAULT_CORS,
+      origins: ['*', 'https://admin.example.com'],
+      credentials: false,
+    };
+    expect(
+      checkCsrf(
+        input({ cors: both, origin: 'https://admin.example.com', secFetchSite: 'same-site' }),
+      ).ok,
+    ).toBe(true);
+  });
+
   // The reason echoes the request back, and a non-browser writes whatever it likes there. The
   // rejected value never reaches the response body or the log store.
   test('an invented sec-fetch-site value is not quoted back verbatim', () => {

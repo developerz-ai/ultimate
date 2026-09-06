@@ -41,11 +41,27 @@ describe('readKind', () => {
     expect(thrownBy(() => readKind('zzzzzzzzzz')).fix).toBe('x help g');
   });
 
-  test('no kind at all is refused as `g`, not as `g undefined`', () => {
+  // `x g --json` answered `X_CLI_UNKNOWN_COMMAND: "x g" is not a command`, which is FALSE: `g` is
+  // in `x help`, the parser reaches it, and `x g route foo` runs. What was missing is the
+  // generator, and `readName`'s own doc block one function down makes exactly this argument about
+  // the missing `<name>`. The refusal now says which word is missing and lists the ones that fit.
+  test('no kind at all is a missing subcommand, never "x g is not a command"', () => {
     const thrown = thrownBy(() => readKind(undefined));
-    expect(thrown.code).toBe('X_CLI_UNKNOWN_COMMAND');
-    expect(thrown.cause).toContain('"x g" is not a command');
+    expect(thrown.code).toBe('X_CLI_BAD_FLAG');
+    expect(thrown.cause).toContain('"x g" takes a subcommand and got none');
+    expect(thrown.cause).not.toContain('is not a command');
     expect(thrown.cause).not.toContain('undefined');
+    for (const kind of GENERATORS) expect(thrown.cause).toContain(kind);
+    // `x help g`, and not an invented lead: which of thirteen was meant is exactly what the caller
+    // did not say — the same reason `x db` and `x mcp` answer with help rather than a default.
+    expect(thrown.fix).toBe('x help g');
+  });
+
+  // The other half, and the one that must not move: a WORD that is not a generator is still an
+  // unknown command form, because the caller did name something and it does not exist.
+  test('a word that is no generator is still X_CLI_UNKNOWN_COMMAND', () => {
+    expect(thrownBy(() => readKind('zzzzzzzzzz')).code).toBe('X_CLI_UNKNOWN_COMMAND');
+    expect(thrownBy(() => readKind('')).code).toBe('X_CLI_UNKNOWN_COMMAND');
   });
 });
 

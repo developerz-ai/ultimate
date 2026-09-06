@@ -290,7 +290,6 @@ export type {
   WaitForEventOptions,
 } from './steps';
 export {
-  createMemoryStepStore,
   createStepRunner,
   isStepStatus,
   isStepSuspension,
@@ -298,6 +297,7 @@ export {
   STEP_STATUSES,
   StepSuspension,
 } from './steps';
+export { createMemoryStepStore } from './steps-memory';
 export type {
   CatchUpPolicy,
   TaskDefinition,

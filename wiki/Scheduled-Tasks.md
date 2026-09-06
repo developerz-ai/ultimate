@@ -63,7 +63,7 @@ Manual `enqueue()` and a scheduled tick differ in exactly one place: the key. A 
 | `tz` | yes | explicit IANA zone (`'UTC'`, `'Europe/Berlin'`, `'America/New_York'`). Omitting it is a compile error |
 | `enqueue` | yes | `(occurrenceMs) => [[jobRef, input], …]`. Zero or more pairs; an empty list is a valid no-op tick. Read back through the handle as `entries()`, never as `.enqueue` — that name on the handle is the *fire* method |
 | `catchUp` | no — default `'skip'` | what to do when the scheduler was down across one or more occurrences. `'skip'` collapses them into one dispatch for the **latest** missed occurrence and drops the older ones, `'run-once'` fires a single catch-up for the **earliest** missed one, `'run-all'` fires one per missed occurrence |
-| `maxCatchUp` | no — default `10` | how many occurrences one tick walks forward from the last fire. Bounds `'run-all'` directly, and caps the lookback for every policy |
+| `maxCatchUp` | no — default `10` | how many occurrences one round of `'run-all'` fires; the rest wait for the next round. `'skip'` and `'run-once'` fire ONE occurrence whatever the gap — the latest missed and the earliest — so neither is capped by it |
 | `name` | no | the export name, stamped by `defineApi({ tasks: [scheduledTasks] })`. A module nobody hands over keeps `anonymous-task-<n>`; a definition carrying its own `name:` keeps that |
 
 Nothing else. There is no `timeout`, no `retry`, no `concurrency` on a task — those belong to the job it enqueues. No `queue` either: the queue is the job's, and a per-call override rides on the fire, as `<task>.enqueue({ queue })`.

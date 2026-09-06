@@ -4,6 +4,7 @@
  * ship today — so the rule is a fixed precedence, evaluated once, here.
  */
 
+import { byCodeUnit } from './code-unit-order';
 import type { JsxComponent } from './jsx';
 
 /** The page component of a route module: a function of props, sync or async. */
@@ -15,14 +16,17 @@ const isComponentExport = (name: string, value: unknown): value is RouteComponen
 /**
  * `Page` first, because that is the name `examples/dummy` uses and the one the generators should
  * converge on; then a single `…Page`; then a single capitalised function. Sorted before the last
- * fallback so a module with two components resolves to the same one on every machine.
+ * fallback so a module with two components resolves to the same one on every machine — by CODE
+ * UNIT, because `localeCompare` is what "every machine" fails on: with no locale argument it
+ * answers from the runtime's ICU default, which orders `A_Dash` before `ADash` where code units
+ * order them the other way.
  */
 export function pageComponentOf(
   module: Readonly<Record<string, unknown>>,
 ): RouteComponent | undefined {
   const components = Object.entries(module)
     .filter(([name, value]) => isComponentExport(name, value))
-    .sort(([a], [b]) => a.localeCompare(b)) as readonly (readonly [string, RouteComponent])[];
+    .sort(([a], [b]) => byCodeUnit(a, b)) as readonly (readonly [string, RouteComponent])[];
   if (components.length === 0) return undefined;
 
   const exact = components.find(([name]) => name === 'Page');

@@ -6,7 +6,7 @@
 // first-class surface here rather than a legacy one.
 
 import type { CorsConfig } from './cors';
-import { allowedOrigin } from './cors';
+import { originListed } from './cors';
 
 export type CsrfMode = 'origin' | 'off';
 
@@ -61,9 +61,12 @@ export const checkCsrf = (input: CsrfCheckInput): CsrfVerdict => {
   const site = input.secFetchSite;
   if (site === 'same-origin' || site === 'none') return { ok: true };
   if (input.origin === input.selfOrigin) return { ok: true };
-  if (input.origin !== null && allowedOrigin(input.cors, input.origin) !== null) {
-    return { ok: true };
-  }
+  // `originListed`, never `allowedOrigin`: that one answers the RESPONSE header, and for
+  // `origins: ['*'], credentials: false` — the only wildcard `assertCorsConfig` admits — its
+  // answer is `'*'`, which is not null and so read as "this origin is one we allow". A
+  // credentialed cross-site POST from evil.test was therefore accepted by the check that exists
+  // to refuse exactly it. An exact match is the only allowance a write may be built on.
+  if (originListed(input.cors, input.origin)) return { ok: true };
   // Only the four values a browser can send are quoted back. Anything else is a client that
   // wrote the header itself, and echoing what it wrote is how a rejected value reaches the log
   // store and the response body — the same defect the error-map stage's log line had.

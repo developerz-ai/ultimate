@@ -65,6 +65,26 @@ describe('checkSurfaceBoundary', () => {
     expect(checkSurfaceBoundary(graph).some((v) => v.rule === 'site-imports-app')).toBe(false);
   });
 
+  /**
+   * The report is sorted so a diff of two runs is a diff of the violations, not of the machine —
+   * and `localeCompare` with no locale argument answers from the runtime's ICU default locale and
+   * collation version, which orders `_` before a digit and a lowercase letter before its
+   * uppercase twin. Code units are the only order two machines agree on. Three importers whose
+   * names discriminate: code units give `A`, `_a`, `a`; the ICU default gives `_a`, `a`, `A`.
+   */
+  test('violations are ordered by code unit, so two machines report the same list', () => {
+    const graph = importGraph({
+      'apps/web/site/A/page.tsx': ['apps/web/app/heavy.tsx'],
+      'apps/web/site/_a/page.tsx': ['apps/web/app/heavy.tsx'],
+      'apps/web/site/a/page.tsx': ['apps/web/app/heavy.tsx'],
+    });
+    expect(checkSurfaceBoundary(graph).map((v) => v.importer)).toEqual([
+      'apps/web/site/A/page.tsx',
+      'apps/web/site/_a/page.tsx',
+      'apps/web/site/a/page.tsx',
+    ]);
+  });
+
   test('assertSurfaceBoundary is a build error, not a warning', () => {
     const graph = importGraph({
       'apps/web/site/index.tsx': ['apps/web/app/heavy.tsx'],

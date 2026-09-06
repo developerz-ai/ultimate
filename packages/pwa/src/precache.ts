@@ -34,13 +34,31 @@ export interface PrecacheInput {
   readonly buildId: string;
   readonly routes: readonly PwaRoute[];
   readonly assets?: readonly PrecacheAsset[];
-  /** The app shell URL, precached for every `spa` route. */
+  /**
+   * A single document precached for every route, whatever its render mode — an app shell.
+   *
+   * **Nothing in the framework's build path sets this trio.** It said "precached for every `spa`
+   * route" until `As of 2026-09`, and `spa` was deleted from `RENDER_MODES` — so the sentence
+   * named a mode that cannot be declared, over a branch no caller reaches. Today the only way to
+   * a `reason: 'shell'` entry is a hand-built `generateServiceWorker` call: `x build`'s composer
+   * (`packages/cli/src/sw-artifacts.ts`) passes routes and assets and never a shell. Kept because
+   * deleting a public field is a major; a candidate for the next one's declared-and-never-wired
+   * sweep, with `PwaRoute.dataUrl`.
+   */
   readonly shellUrl?: string;
+  /** Defaults to `buildId`, which re-downloads the shell on every deploy. */
   readonly shellRevision?: string;
   readonly shellBytes?: number;
   /** The mandatory offline document. */
   readonly offlineFallbackUrl?: string;
+  /**
+   * Content hash of the built offline document. Absent, the entry is stamped with `buildId` and
+   * every deploy re-downloads the one page an offline navigation depends on — the rule this file's
+   * header states for every other entry, which this one had no field to obey.
+   */
   readonly offlineFallbackRevision?: string;
+  /** Byte size of the same document. Absent, it counts as 0 against `warnBytes`. */
+  readonly offlineFallbackBytes?: number;
   /** Warn past this total. Default 5 MB: past that, install stalls on a bad connection. */
   readonly warnBytes?: number;
 }
@@ -75,7 +93,7 @@ export function buildPrecacheManifest(input: PrecacheInput): PrecacheManifest {
     add({
       url: input.offlineFallbackUrl,
       revision: input.offlineFallbackRevision ?? input.buildId,
-      bytes: 0,
+      bytes: input.offlineFallbackBytes ?? 0,
       reason: 'fallback',
     });
   }

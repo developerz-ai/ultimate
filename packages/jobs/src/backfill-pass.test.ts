@@ -19,7 +19,8 @@ import {
 import { resetJobDriver } from './driver';
 import { resetJobs } from './job';
 import type { StepStore } from './steps';
-import { createMemoryStepStore, createStepRunner } from './steps';
+import { createStepRunner } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 
 beforeEach(() => {
   resetJobs();

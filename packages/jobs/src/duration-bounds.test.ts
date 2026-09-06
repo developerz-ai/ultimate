@@ -11,7 +11,8 @@ import { finiteDurationMs } from './clock';
 import { createMemoryEventBus } from './events';
 import { job, resetJobs } from './job';
 import { backoffDelayMs } from './retry';
-import { createMemoryStepStore, createStepRunner } from './steps';
+import { createStepRunner } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {

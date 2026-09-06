@@ -191,6 +191,41 @@ describe('unit · measureJsBytes weighs the document, not the graph', () => {
     ).toBe(7);
   });
 
+  // A URL the document names twice is ONE fetch, and `budget.js` is a byte budget — so it is
+  // charged once, classic or module. The island half was already deduped through `booted`; the
+  // `<script src>` half was not, so a document that named one chunk from two places — a page and
+  // its layout, a preload beside the tag that uses it — was charged for it twice and could fail a
+  // budget it clears. Two instances of one island are one module, and so are two tags with one src.
+  //
+  // Both forms are asserted because they differ in EXECUTION and not in bytes: a repeated classic
+  // script runs once per element, a repeated module runs once per document. That difference is a
+  // CPU cost and this gate weighs what the browser downloads, so the two must agree here — and a
+  // test that only covered `type="module"` would leave the case the framework actually emits
+  // (`sw-artifacts.ts`'s classic `<script src="/x-sw-register.js">`) unpinned.
+  test.each([
+    ['classic', '<script src="/twice.js"></script>'],
+    ['module', '<script type="module" src="/twice.js"></script>'],
+  ])('a %s script the document names twice is charged once', async (_kind, once) => {
+    const dir = join(out, `case-${Bun.hash(`twice-${once}`).toString(16)}`);
+    await Bun.write(join(dir, 'twice.js'), 'console.log(1)');
+    expect(await jsBytesOf(once, dir)).toBe(14);
+    expect(await jsBytesOf(`${once}${once}`, dir)).toBe(14);
+    // And the entry list names it once, so `heaviestSource` cannot report a duplicate as the
+    // heaviest thing on the page.
+    expect((await measureDocumentJs(`${once}${once}`, dir)).entries).toEqual([
+      { url: '/twice.js', bytes: 14 },
+    ]);
+  });
+
+  // The two readers are one browser: a chunk reached by `<script src>` and the same URL named as an
+  // island entry is still one module fetch.
+  test('a src and a data-x-entry naming one url are one module', async () => {
+    const dir = join(out, `case-${Bun.hash('both').toString(16)}`);
+    await Bun.write(join(dir, 'both.js'), 'console.log(1)');
+    const document = '<script src="/both.js"></script><div data-x-entry="/both.js"></div>';
+    expect(await jsBytesOf(document, dir)).toBe(14);
+  });
+
   test('the rule is the type ending in json, not the one literal type', async () => {
     expect(await jsBytesOf('<script type="importmap+json">{"a":1}</script>', out)).toBe(0);
     expect(await jsBytesOf('<script type="APPLICATION/LD+JSON"> {"a":1} </script>', out)).toBe(0);

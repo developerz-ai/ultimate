@@ -8,7 +8,8 @@ import { resetJobs } from './job';
 import type { PurgeReport, PurgeTarget } from './purge';
 import { DEFAULT_PURGE_CRON, purge } from './purge';
 import type { StepStore } from './steps';
-import { createMemoryStepStore, createStepRunner } from './steps';
+import { createStepRunner } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 
 const START_MS = 1_700_000_000_000;
 

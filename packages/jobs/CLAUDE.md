@@ -4,7 +4,9 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 
 ## Boundary
 
-- May import: `core`, `schema`, `entity`, `policy`, `cache`, `time`. Never `http`, `render`, `ui`.
+- May import: `core`, `schema`, `entity`, `policy`, `cache`, `time` — and `db`, for
+  `expectedQueryLoop` ONLY: `steps.ts` declares the per-step write one-per-step to the N+1
+  detector there, and no client is ever taken from it. Never `http`, `render`, `ui`.
 - Consumers: `action` (`<job>.enqueue`, via the ambient jobs facade), `cli`, `mcp`, `admin`.
 - External deps: none. Postgres access goes through the injected `PgExecutor`.
 

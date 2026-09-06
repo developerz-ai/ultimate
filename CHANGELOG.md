@@ -8,7 +8,83 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Sweep 1 of a three-agent bug hunt over every package, 2026-09-06: three read-only hunters over
+tiers 0–1, 2–3 and 4–5, each finding reproduced before it was fixed, each fix landing with the
+test that failed first. No shipped `X_*` code changed, and one export leaves a barrel — named
+below rather than covered by a blanket "nothing is breaking", which is the sentence this file has
+outlived before. Deferred, by name:
+`@ultimat3/jobs`'s memory driver (`enqueue` throws synchronously under `onConflict: 'error'`;
+`introspect.cancel` keeps `claimedBy`/`visibleAt` where `SQL_CANCEL` nulls both) and
+`@ultimat3/seo`'s title/description limits counting UTF-16 units — both to the next sweep.
+
+Two seams measured from the same app on 2026-09-06 — on 19.1.3, and confirmed in 19.2.0 source.
+Neither is breaking.
+
+### Removed
+
+- **BREAKING — `OFFLINE_FALLBACK` is gone from the `@ultimat3/cli` barrel.** It was the literal
+  `apps/web/app/offline.tsx`: a filename `registerRoute` refuses with `X_ROUTE_FILE_INVALID` (the
+  directory is the URL, so a page is `page.tsx`), naming a path no route table has ever accepted —
+  so an importer held a value that could not be true of any app. `x doctor` now resolves the
+  fallback against `describeRoutes()` (`doctor-offline.ts`), which needs no path constant, and
+  there is nothing to alias it to: `@ultimat3/pwa`'s `pwa.offline.fallback` is a URL (`/offline`),
+  not a file. An app that imported it wanted the scaffolded page, which is
+  `apps/web/site/offline/page.tsx` — write that path, or read the URL off `app.config.ts`.
+
 ### Fixed
+
+- **`db`: an index's `order` is re-derived from `asc`/`desc`/absent and its partial `where` is screened through `statementsOf`**, so `order: 'desc; drop table users; --'` and `where: '1=1); drop table users; --'` are `X_SQL_UNSAFE` at `x db gen` instead of a second command inside a `create index` that `ROLE=migrate` runs. Both fields cross the seam structurally from `@ultimat3/entity` and nothing in `db` screened them, while `indexMethodSql` two lines down re-derives its literal from a closed set for exactly this reason.
+- **`db`: a generated column's expression is screened by the same lexer before it is spliced into `generated always as (…) stored`**, the rule `declaredChecks` already applied to a CHECK's predicate.
+- **`db`: `X_MIGRATION_CONFLICT`'s `fix:` screens the ledger row's id and app version through `shellInertIdentifier`** and degrades to prose naming no command when either is hostile, so a ledger row can no longer put `$(…)` into a line the error tells an operator to paste; the surviving command renders the id through `literal()`.
+- **`storage`: `validateUpload` refuses bytes no magic rule recognises when the declared type is one a signature could confirm** (`image/*`, `application/pdf`, `video/mp4`, every zip container); one trailing control byte used to make an HTML document acceptable as `image/png`, against the file's own header. Types no signature can confirm (`text/csv`, `application/json`) are still accepted.
+- **`flags`: `assertTargeting` refuses a `subjects` that is not a map with `X_FLAG_TARGETING_INVALID`**; `subjects: null` from a store snapshot used to escape as a bare `TypeError` out of `Object.entries`.
+- **`core`: `safeUrl` refuses `data:image/svg+xml` in `src` as well as in `href`**: an SVG is a script document, and every `src` a route renders passes through this function.
+- **`core`: a non-finite metric value is refused before its series is created**, on `gauge.add`, `gauge.record` and `histogram.record`; a rejected `NaN` used to consume one of the instrument's bounded series slots permanently.
+- **`http`: CSRF requires an EXACT origin listing, never the CORS response value.** `checkCsrf` asked `allowedOrigin(...) !== null`, which answers `'*'` for `origins: ['*'], credentials: false` — the one wildcard `assertCorsConfig` admits — so a credentialed cross-site `POST` from any origin was answered `{"ok":true}` by the stage that exists to refuse exactly it. `originListed` is the new companion in `cors.ts`, off the same array.
+- **`realtime`: a cold subscribe the database refused no longer leaks its query entry.** The entry is created before the snapshot read that fills it, and `unsubscribe` could only reach one through a subscription that was never attached, so `maxEntries` failed subscribes answered `X_SUBSCRIPTION_LIMIT` to every later subscriber for the life of the process — after the database had recovered.
+- **`realtime`: a channel patch id carries the publishing node.** It was a per-process counter, so two `sync` replicas on one topic minted the same id for one subscriber, with no cursor and no re-snapshot to repair it. `ChannelHubOptions.nodeId` declares the mark; it defaults to a per-hub id.
+- **`auth`: `verifySession({ ip: null })` clears a stale stored address.** `observed?.ip ?? session.ip` read an explicit null as silence, so an address recorded once was written forward on every verify and the device list showed it as current.
+- **`query`: a repeated `?__proto__=` in a search string cannot swap the input object's prototype.** `pageControlsOf` built its input as `{}`; it is `Object.create(null)` now, the rule `@ultimat3/http`'s query collector already followed.
+- **`x doctor`'s offline fallback is resolved against the route table, not a filename.** It probed the literal `apps/web/app/offline.tsx` — a name `registerRoute` refuses — while `x new` scaffolds `apps/web/site/offline/page.tsx` and its own `fix:` writes `apps/web/app/offline/page.tsx`, so every app the framework has ever produced reported `X_PWA_NO_OFFLINE_FALLBACK` from its first run and no invocation could clear it. It now matches the declared `pwa.offline.fallback` against `describeRoutes()`, on either navigable surface, and its `fix:` is `x g route offline --surface site` — the same line `@ultimat3/pwa` gives for the same code. `OFFLINE_FALLBACK` leaves the `@ultimat3/cli` barrel with it — it named a path no route table accepts.
+- **A precache revision is the document's content hash again, the offline page included.** `pwaRoutes` projected four of `PwaRoute`'s eight fields, so every route entry read `revision: <buildId>, bytes: 0`: a deploy of a byte-identical site re-fetched every precached page and the 5 MB precache budget could not count one byte of HTML. `x build --target static` now emits `sw.js` after the render pass and feeds each route its own `contentHash(html)` and byte count — and the offline document through `offlineFallbackRevision`/`offlineFallbackBytes`, the only channel that can reach it, since `buildPrecacheManifest` adds that entry ahead of every route. A fallback no route renders still keeps the build id.
+- **`X_ENV_MISSING` names the file write.** Its fix was `x new --force`, which answers `X_CLI_BAD_FLAG` inside an app and scaffolds a second app with a name; it is now `cp .env.example .env.development`.
+- **`testing`: a matcher no longer raises on the value it was handed.** `toRejectInput`, `toAcceptInput` and `toDenyPolicy` built their messages eagerly with `JSON.stringify`, so a schema that correctly rejected a BigInt or a cyclic input reported "Matcher returned a promise that rejected" instead. Messages are thunks now, rendered with core's `renderCauseValue`.
+- **`x g` with no generator is a missing subcommand.** It answered `X_CLI_UNKNOWN_COMMAND: "x g" is not a command`, which is false; the refusal now lists every generator and its fix is `x help g`.
+- **A script a document names twice is charged once against `budget.js`.** Only island entries were deduped, so a src repeated by a page and its layout could fail a budget the page clears.
+- **`pwa`: the offline outbox is drained on Safari and Firefox.** Where `registration.sync` is absent, `registerOutboxSync` falls back to posting `{type:'flush-outbox'}` to the controller, and the generated worker's message handler answered only `skip-waiting` and `build-id` — so on exactly the browsers the fallback exists for, queued offline mutations were never sent: no rejection, no request, no log. The branch is gated on the `backgroundSync` capability and carried in `CAPABILITY_SW_MARKERS`, so the both-directions marker test pins it. This was High #6 of the 2026-08-16 audit plan, which was marked done while the item never landed.
+- **`render`, `admin`: route, boundary-violation, page-component and dev-panel ordering is by UTF-16 code unit, never `localeCompare`.** With no locale argument `localeCompare` reads the runtime's ICU default locale and collation version, so `/A` sorted after `/a` on one machine and before it on the next — `describeRoutes()` promises an order "identical for identical input", and everything downstream of it (`x.manifest.json`, the sitemap, `sw.js`'s rule table) is diffed across deploys.
+- **`pwa`: `renotify` is never emitted without a `tag`.** `showNotification` rejects with a `TypeError` for the pair, so a push declaring `renotify` and no collapse key showed nothing at all. `renderPushPayload` drops the flag and reports it in `warnings`; the emitted handler recomputes it, because a push body is composed by whatever holds the VAPID key.
+- **`pwa`: the `short_name` fallback truncates by code point.** `name.slice(0, 12)` counts UTF-16 code units, so a name whose 12th unit was the high half of a surrogate pair emitted a lone surrogate — U+FFFD in the home-screen label of any app named with an emoji.
+- **`pwa` docs: `ServiceWorkerConfig.shellUrl`/`shellRevision`/`shellBytes` and `PwaRoute.dataUrl` have no producer in the framework's build path**; the shell trio's comment claimed it was "precached for every `spa` route" after `spa` was deleted from `RENDER_MODES`. Kept rather than removed — a public field is a major — and named as candidates for the next major's declared-and-never-wired sweep.
+- **`pwa`: `X_PWA_NO_OFFLINE_FALLBACK`'s `fix:` is an instruction that works.** It said `create app/offline.tsx and set offline.fallback` — a filename `registerRoute` refuses with `X_ROUTE_FILE_INVALID` (the directory is the URL) and a config key `app.config.ts` does not have. It is now `x g route offline --surface site`, then `pwa.offline.fallback`. `site/` deliberately: the document answering a lost network must render with no network, no session and no database.
+- **`pwa`: the offline document can carry a content hash.** `ServiceWorkerConfig` gained `offlineFallbackRevision` and `offlineFallbackBytes`, forwarded to `buildPrecacheManifest`; it had no field for either, so the one page an offline navigation depends on was the single precache entry stamped with the build id and counted as 0 bytes against the install-size warning. `x build --target static` passes both.
+
+- **`catchUp: 'skip'` did not skip: it fired once per `maxCatchUp` window per tick until the walk
+  reached now.** Measured on a minute cron (`* * * * *`, UTC, the defaults) whose dev server was
+  down 14:23Z–17:34Z: on boot the scheduler logged `jobs.scheduler.dispatched … catchUp=true`
+  twenty times a second apart — 14:23, 14:33, … 17:33 — for a policy documented as "collapses them
+  into ONE dispatch for the LATEST missed occurrence". `occurrencesSince` walks forward from the
+  watermark and is truncated at `maxCatchUp`, so its last element was the tenth minute after the
+  watermark and not the latest occurrence missed; `dispatch` then left the watermark there, and
+  the next tick found the next ten. `skip` now dispatches the real latest occurrence at or before
+  `at`, found by bisection over the resolver (`latestOccurrenceBy` — about 25 calls for a
+  three-hour gap, never one per missed minute), so the occurrence key names the occurrence the
+  payload is for and the tick after it dispatches nothing. `run-once` had no equivalent hole: it
+  fires the earliest missed occurrence, which truncation cannot move, and already advances its
+  watermark to `at`. `wiki/Scheduled-Tasks.md` stops saying `maxCatchUp` "caps the lookback for
+  every policy" — it bounds one round of `'run-all'`, and nothing else.
+
+- **The job queue's own step persistence tripped the N+1 write detector.** Every job of five or
+  more steps logged `X_N_PLUS_ONE_WRITE: insert into x_job_steps … on conflict (run_id, name) do
+  update … ran 5 times in one request — one write per row` under `x dev`, with a `fix:` naming
+  `expectedQueryLoop` that the app could not apply to a statement it never wrote. One row per
+  `step.run` is the design — each step completes at its own instant and its output has to be
+  durable before the next one starts, so the writes cannot be batched. `steps.ts` now issues the
+  write inside `expectedQueryLoop`, so it reaches the funnel with `expected` set — the field the
+  ledger reads before it counts — while the hydrating `list` and the job's own statements are
+  judged exactly as before; nothing is silenced globally. `@ultimat3/jobs` gains a declared
+  `@ultimat3/db` dependency for that one marker (tier 3 → 1, drawn on the package map). It still
+  takes no client from it: `PgExecutor` stays the only way the queue reaches Postgres.
 
 - **The sync node's drain no longer waits its grace for nobody.** `drain()` slept
   `DEFAULT_DRAIN_GRACE_MS` (5s) after sending its reconnect frames whether or not it held a socket

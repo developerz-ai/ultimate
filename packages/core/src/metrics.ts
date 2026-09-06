@@ -391,13 +391,20 @@ export function counter(name: string, options?: InstrumentOptions): Counter {
 export function gauge(name: string, options?: GaugeOptions): Gauge {
   const instrument = declare(name, 'gauge', options ?? {});
   return {
+    // The screen runs BEFORE the series is resolved, the order `counter.add` already had: a
+    // refused value must cost nothing, and `seriesFor` is not a read — it MINTS a series, one of
+    // a bounded number, keeps it for the life of the process and can trip the cardinality
+    // ceiling. `a.b += finite(…)` evaluates the reference first, so the two cannot be folded
+    // back into one expression.
     record(value, attributes = {}): void {
       if (!enabled) return;
-      seriesFor(instrument, attributes).value = finite(name, value);
+      const observed = finite(name, value);
+      seriesFor(instrument, attributes).value = observed;
     },
     add(delta, attributes = {}): void {
       if (!enabled) return;
-      seriesFor(instrument, attributes).value += finite(name, delta);
+      const observed = finite(name, delta);
+      seriesFor(instrument, attributes).value += observed;
     },
   };
 }
@@ -407,8 +414,9 @@ export function histogram(name: string, options?: HistogramOptions): Histogram {
   return {
     record(value, attributes = {}): void {
       if (!enabled) return;
-      const series = seriesFor(instrument, attributes);
+      // `finite` first, for `gauge`'s reason above.
       const observed = finite(name, value);
+      const series = seriesFor(instrument, attributes);
       series.value += observed;
       series.count += 1;
       series.min = Math.min(series.min, observed);

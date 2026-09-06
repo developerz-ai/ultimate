@@ -190,6 +190,55 @@ describe('scheduler', () => {
     expect(byCatching.length).toBe(4);
   });
 
+  // The measured failure: a minute cron on the defaults (`skip`, `maxCatchUp` 10), a dev server
+  // down 14:23–17:34 — twenty dispatches a second apart, 14:23, 14:33, … 17:33, every one
+  // `catchUp=true`. `due` is walked forward from the watermark and truncated at `maxCatchUp`, so
+  // its last element was the TENTH minute after the watermark, and dispatching it left the
+  // watermark there for the next tick to find ten more. The real resolver, deliberately: the
+  // truncation is a property of the walk, and the measurement was taken against `@ultimat3/time`.
+  test('catch-up: "skip" fires the real latest occurrence, once, past maxCatchUp', async () => {
+    const clock = fakeClock(T0);
+    const driver = createMemoryDriver({ clock });
+    const everyMinute = task({
+      name: 'pollFleet',
+      cron: '* * * * *',
+      tz: 'UTC',
+      enqueue: () => [[sendDigest, {}]],
+    });
+    const scheduler = createScheduler({
+      driver,
+      clock,
+      state: createMemorySchedulerState(),
+      tasks: [everyMinute],
+    });
+
+    await scheduler.tick(); // Arms it.
+    // Down three hours: 180 occurrences missed, 18 windows of `maxCatchUp`. Thirty seconds past
+    // the minute, so "the latest occurrence at or before now" is not simply "now".
+    clock.advance(3 * 3_600_000 + 30_000);
+
+    const first = await scheduler.tick();
+    expect(first.length).toBe(1);
+    expect(first[0]?.catchUp).toBe(true);
+    expect(new Date(first[0]?.occurrenceMs ?? 0).toISOString()).toBe('2026-07-26T03:00:00.000Z');
+
+    // Twenty further ticks at the real interval. Every one of these used to dispatch.
+    let later = 0;
+    for (let i = 0; i < 20; i += 1) {
+      clock.advance(1_000);
+      later += (await scheduler.tick()).length;
+    }
+    expect(later).toBe(0);
+    expect(((await driver.introspect?.list()) ?? []).length).toBe(1);
+
+    // The watermark moved to what was dropped and no further: 03:01 still fires, and on time.
+    clock.advance(10_000);
+    const next = await scheduler.tick();
+    expect(next.length).toBe(1);
+    expect(next[0]?.catchUp).toBe(false);
+    expect(new Date(next[0]?.occurrenceMs ?? 0).toISOString()).toBe('2026-07-26T03:01:00.000Z');
+  });
+
   // The measured failure: an hourly task, a scheduler down 24 hours, `run-once` — 24 dispatches
   // over 24 one-second ticks, occurrences 2..25, because the watermark was left on the occurrence
   // that just ran instead of past the ones the policy drops.

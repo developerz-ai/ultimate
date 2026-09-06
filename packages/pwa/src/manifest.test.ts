@@ -35,6 +35,27 @@ describe('generateWebManifest', () => {
     expect(renderThemeColorMeta(themeColorMeta)).toContain('(prefers-color-scheme: dark)');
   });
 
+  /**
+   * `short_name` falls back to a truncation of `name`, and a UTF-16 `slice` cuts inside a
+   * surrogate PAIR: the manifest then carries a lone high surrogate, which every UTF-8 encoder
+   * turns into U+FFFD — the app's home-screen label ends in `` on the one platform the label
+   * exists for. `'Notas Foto 🎉 Álbum'` puts the emoji's first code unit at index 11, so the
+   * default cut lands mid-character.
+   */
+  test('the short_name fallback cuts on code points, never inside a surrogate pair', () => {
+    const { shortName: _dropped, ...noShortName } = base;
+    const { manifest } = generateWebManifest({ ...noShortName, name: 'Notas Foto 🎉 Álbum' });
+
+    expect(manifest.short_name).toBe('Notas Foto 🎉');
+    // The observable damage, stated as bytes: a lone surrogate encodes as EF BF BD.
+    expect([...new TextEncoder().encode(manifest.short_name)]).not.toContain(0xef);
+  });
+
+  test('a declared short_name is never truncated, however long it is', () => {
+    const { manifest } = generateWebManifest({ ...base, shortName: 'A deliberately long one' });
+    expect(manifest.short_name).toBe('A deliberately long one');
+  });
+
   test('a disabled capability emits no manifest member', () => {
     const { manifest } = generateWebManifest(base);
     expect('share_target' in manifest).toBe(false);

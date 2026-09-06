@@ -400,3 +400,26 @@ describe('the suspense count is a number or it is refused', () => {
     ).toBe(1);
   });
 });
+
+/**
+ * `describeRoutes()` promises an order "identical for identical input", and `localeCompare` with
+ * no locale argument cannot keep it: it answers from the runtime's ICU default locale and
+ * collation version, so `'/A'` sorted AFTER `'/a'` on one machine and before it on the next for
+ * the same route table. Everything downstream — `x.manifest.json`, the sitemap, `sw.js`'s rule
+ * table — is diffed across deploys, so a machine-dependent order is a no-op deploy that reads as
+ * a change. The four paths below are the discriminating set: code units order them
+ * `/1 /A /_ /a`, the ICU default orders them `/_ /1 /a /A`, so no two of the four agree.
+ */
+describe('route order is by code unit, never by locale', () => {
+  const paths = ['/a', '/_', '/A', '/1'] as const;
+
+  test('routeEntries and describeRoutes both enumerate in code-unit order', () => {
+    for (const path of paths) {
+      registerRoute({ file: `apps/web/site${path}/page.tsx`, config: staticConfig });
+    }
+    const expected = [...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    expect(expected).toEqual(['/1', '/A', '/_', '/a']);
+    expect(routeEntries().map((entry) => entry.path)).toEqual(expected);
+    expect(describeRoutes().map((descriptor) => descriptor.path)).toEqual(expected);
+  });
+});

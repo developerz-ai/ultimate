@@ -52,6 +52,32 @@ describe('generateServiceWorker', () => {
     expect(a.source).not.toContain('Date.now()');
   });
 
+  /**
+   * `ServiceWorkerConfig` carried no way to hand the offline document a content hash, so the one
+   * page an offline navigation depends on was stamped with the build id and re-downloaded on every
+   * deploy — the exact thing the `Precache revision` rule forbids for every other entry. The
+   * revision reaches the emitted `PRECACHE_MANIFEST`, so the assertion is on the generated source
+   * as well as on the returned manifest.
+   */
+  test('the offline document is precached at the revision the caller passed', () => {
+    const output = generateServiceWorker(
+      routes,
+      { ...config, offlineFallbackRevision: 'deadbeef', offlineFallbackBytes: 3_072 },
+      'build-1',
+    );
+    const fallback = output.precache.entries.find((entry) => entry.url === '/offline');
+
+    expect(fallback?.revision).toBe('deadbeef');
+    expect(fallback?.bytes).toBe(3_072);
+    expect(output.source).toContain('"revision":"deadbeef"');
+    // The default is unchanged: the build id, which re-fetches the document per deploy.
+    expect(
+      generateServiceWorker(routes, config, 'build-1').precache.entries.find(
+        (entry) => entry.url === '/offline',
+      )?.revision,
+    ).toBe('build-1');
+  });
+
   test('derives the runtime strategy from each route render mode', () => {
     const output = generateServiceWorker(routes, config, 'build-1');
     const byPattern = new Map(output.rules.map((rule) => [rule.pattern, rule.strategy]));

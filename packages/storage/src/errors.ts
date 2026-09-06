@@ -179,6 +179,27 @@ export const contentTypeMismatch = (key: string, declared: string, sniffed: stri
     meta: { key, declared, sniffed },
   });
 
+/**
+ * The bytes match NO rule at all, under a type a signature could have confirmed. Its own
+ * constructor rather than `contentTypeMismatch` with a placeholder, because that error's `fix:`
+ * offers the sniffed type as the one to re-declare and here there is no such type — the whole
+ * finding is that nothing recognised these bytes. Same shipped code: what a client retries on is
+ * unchanged.
+ *
+ * The `fix:` names the CALL and the key, never "upload a genuine file". There is exactly one
+ * remedy — re-run the same validation over different bytes — and the reader's problem is which
+ * bytes, so the line has to name the operation it is re-running and the object it is re-running it
+ * for. `upload a genuine <type> file` restated the type the caller had already declared and gave a
+ * CLI, an MCP tool or an agent nothing to do.
+ */
+export const contentTypeUnrecognised = (key: string, declared: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_TYPE_REJECTED',
+    cause: `"${key}" declares ${declared}, and its first bytes match no known signature — every ${declared} carries one`,
+    fix: `re-send "${key}" through validateUpload(candidate, policy) with the bytes of a real ${declared}: the ones sent open with no ${declared} signature, so they are another format or truncated`,
+    meta: { key, declared },
+  });
+
 export const checksumMismatch = (key: string, declared: string, actual: string): StorageError =>
   new StorageError({
     code: 'X_STORAGE_CHECKSUM_MISMATCH',

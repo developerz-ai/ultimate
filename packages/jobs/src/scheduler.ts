@@ -139,8 +139,10 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
     resolveCron(handle.cron, { tz: handle.tz, from: from ?? new Date(nowMs(options.clock)) });
 
   /**
-   * Occurrences in `(after, until]`. Walking forward from the last fire is what makes
-   * catch-up possible at all — a scheduler that only knows "now" cannot know what it missed.
+   * Occurrences in `(after, until]`, the first `maxCatchUp` of them. Walking forward from the
+   * last fire is what makes catch-up possible at all — a scheduler that only knows "now" cannot
+   * know what it missed. TRUNCATED, so its last element is the tenth occurrence after the
+   * watermark and not the latest one missed; `latestOccurrenceBy` answers that question.
    */
   const occurrencesSince = (
     handle: TaskHandle,
@@ -156,6 +158,31 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
       cursor = next;
     }
     return out;
+  };
+
+  /**
+   * The latest occurrence at or before `until`, given one is known to lie in `(after, until]`.
+   *
+   * The resolver only answers "the first occurrence strictly after an instant", and walking it
+   * forward from the watermark is bounded by `maxCatchUp` — which is how `skip` came to dispatch
+   * the tenth minute after a three-hour outage and then the twentieth, one per tick, for a policy
+   * whose whole promise is ONE dispatch (measured: twenty `catchUp=true` dispatches a second apart
+   * for a minute cron down 14:23–17:34). So the latest is found by bisection over the instant the
+   * resolver is asked from, not by walking: `next(x) <= until` is monotone in `x`, the invariant
+   * is `next(lo) <= until < next(hi)`, and at `hi - lo === 1` the one occurrence in `(lo, until]`
+   * is `next(lo)`. About 25 resolver calls for a three-hour gap and 35 for a year, whatever the
+   * cron's period — never one per missed minute.
+   */
+  const latestOccurrenceBy = (handle: TaskHandle, after: number, until: number): number => {
+    const nextAfter = (from: number): number => nextRunFor(handle, new Date(from)).getTime();
+    let lo = after;
+    let hi = until;
+    while (hi - lo > 1) {
+      const mid = lo + Math.floor((hi - lo) / 2);
+      if (nextAfter(mid) <= until) lo = mid;
+      else hi = mid;
+    }
+    return nextAfter(lo);
   };
 
   const dispatch = async (
@@ -242,8 +269,13 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
       if (due.length === 0) continue;
 
       if (handle.catchUp === 'skip') {
-        const latest = due[due.length - 1];
-        if (latest !== undefined) dispatched.push(await dispatch(handle, latest, due.length > 1));
+        // The real latest occurrence, never `due`'s last element: that one is `maxCatchUp` steps
+        // past the watermark, and dispatching it leaves the watermark there — so the next tick
+        // found the next ten still due and fired again, until the walk reached `at`. The
+        // occurrence key stays honest (this IS the occurrence the payload is for), and the
+        // watermark `dispatch` leaves is that occurrence — nothing at or before `at` is due past it.
+        const latest = latestOccurrenceBy(handle, last, at);
+        dispatched.push(await dispatch(handle, latest, due.length > 1));
         continue;
       }
       if (handle.catchUp === 'run-once') {

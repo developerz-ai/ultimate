@@ -3,7 +3,12 @@
 // that held both had reached the 500-line ceiling, one generator short of failing its own gate.
 
 import { nearestName } from '@ultimat3/core';
-import { BadFlagError, MissingPositionalError, UnknownCommandError } from './errors';
+import {
+  BadFlagError,
+  MissingPositionalError,
+  MissingSubcommandError,
+  UnknownCommandError,
+} from './errors';
 import type { Surface } from './templates';
 
 export const GENERATORS = [
@@ -57,14 +62,26 @@ export function assertSurfaceSupported(kind: Generator, surface: Surface, name: 
  * pins for a command that resembles nothing, and the reason `nearestName` is never asked about an
  * ABSENT kind: the empty string is within the cutoff of `job`, so `x g` would "suggest" a
  * generator nobody typed.
+ *
+ * And a THIRD rule, for the word that is not there at all: no generator is a missing subcommand,
+ * never an unknown command — see the branch below.
  */
 export function readKind(raw: string | undefined): Generator {
   const kinds: readonly string[] = GENERATORS;
   if (raw !== undefined && kinds.includes(raw)) return raw as Generator;
-  const near = raw === undefined ? undefined : nearestName(raw, kinds);
+  // A MISSING generator is not an unknown command. `x g --json` answered `X_CLI_UNKNOWN_COMMAND:
+  // "x g" is not a command` — false, and it sends an agent hunting a typo it did not make: `g` is
+  // in `x help`, the parser reaches it, and `x g route foo` runs. The same argument `readName`
+  // makes below about the missing `<name>`, one word earlier. `MissingSubcommandError` because
+  // the generator is a closed vocabulary the caller did not choose from — its cause lists every
+  // one, which is the answer to "which of these did I leave out"; the near-miss reader below is
+  // deliberately never asked about an absent word, since the empty string is within `job`'s
+  // cutoff and would "suggest" a generator nobody typed.
+  if (raw === undefined) throw new MissingSubcommandError({ command: 'g', known: GENERATORS });
+  const near = nearestName(raw, kinds);
   const suggestion = GENERATORS.find((kind) => kind === near);
   throw new UnknownCommandError({
-    path: `g ${raw ?? ''}`.trim(),
+    path: `g ${raw}`.trim(),
     known: GENERATORS,
     suggestion: suggestion === undefined ? 'help g' : `g ${suggestion} ${EXAMPLE_NAME[suggestion]}`,
   });

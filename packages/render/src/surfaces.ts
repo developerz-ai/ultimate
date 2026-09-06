@@ -6,6 +6,7 @@
  */
 
 import type { RenderMode } from '@ultimat3/core';
+import { byCodeUnit } from './code-unit-order';
 import { SurfaceBoundaryError } from './errors';
 
 export type Surface = 'site' | 'app' | 'api' | 'shared';
@@ -147,7 +148,10 @@ export function checkSurfaceBoundary(graph: ImportGraph): readonly BoundaryViola
     walk(graph, entry, entrySurface, found);
   }
 
-  return [...found.values()].sort((a, b) => keyOf(a).localeCompare(keyOf(b)));
+  // Code units, never `localeCompare`: two machines running the same check must report the same
+  // list in the same order, and `localeCompare` with no locale argument reads the runtime's ICU
+  // default locale and collation version.
+  return [...found.values()].sort((a, b) => byCodeUnit(keyOf(a), keyOf(b)));
 }
 
 function keyOf(v: BoundaryViolation): string {

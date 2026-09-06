@@ -222,6 +222,45 @@ describe('the idle window slides, it does not grind', () => {
     expect(touched.lastSeenAt.getTime()).toBe(0);
   });
 
+  // `observed?.ip ?? session.ip` collapses two different statements: "this request had no client
+  // address" and "nobody looked". The stored address was therefore written forward on every
+  // verify, so a session that once recorded one could never lose it — the device list and every
+  // incident review then read a stale address as the caller's current one.
+  test('an explicit null address clears the stored one; an absent one keeps it', async () => {
+    const clock = frozenClock(0);
+    const { runtime: rt, writes } = slidingRuntime(clock);
+    const issued = await createSession(rt, { userId: 'user-1', ip: '203.0.113.7' });
+    const before = writes();
+
+    clock.advance(100);
+    const cleared = await verifySession(rt, issued.token, { ip: null });
+    expect(cleared.ip).toBeNull();
+    expect(writes()).toBe(before + 1);
+    expect((await rt.store.getSession(issued.session.id))?.ip).toBeNull();
+  });
+
+  test('an observation that names neither field leaves both as they were', async () => {
+    const clock = frozenClock(0);
+    const { runtime: rt, writes } = slidingRuntime(clock);
+    const issued = await createSession(rt, {
+      userId: 'user-1',
+      ip: '203.0.113.7',
+      userAgent: 'laptop',
+    });
+    const before = writes();
+
+    clock.advance(100);
+    // An empty observation and no observation at all are the same claim — silence — and neither
+    // may cost the row a field. The write count is the assertion: a "change" nobody reported
+    // would turn every authenticated request back into a write on the hottest table there is.
+    for (const observed of [undefined, {}]) {
+      const kept = await verifySession(rt, issued.token, observed);
+      expect(kept.ip).toBe('203.0.113.7');
+      expect(kept.userAgent).toBe('laptop');
+    }
+    expect(writes()).toBe(before);
+  });
+
   test('idleSlideMs is derived from idleTtlMs, so shortening the TTL cannot outrun it', () => {
     expect(idleSlideMs({ ...DEFAULT_SESSION_POLICY, idleTtlMs: 60 * 60 * 1000 })).toBe(180_000);
     // An explicit value wins, including zero — which restores the write-every-request behaviour

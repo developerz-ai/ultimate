@@ -13,7 +13,8 @@ import type { BackfillLedger } from './backfill-ledger';
 import { setJobDriver } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import type { StepRecord, StepStore } from './steps';
-import { createMemoryStepStore, createStepRunner } from './steps';
+import { createStepRunner } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 
 /**
  * What a failing `handle` raises. Deliberately NOT an `UltimateError`: a backfill handler is app

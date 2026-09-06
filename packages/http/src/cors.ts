@@ -37,14 +37,25 @@ export const assertCorsConfig = (config: CorsConfig): void => {
 };
 
 /**
- * The one answer to "may this origin talk to us?". Exported for `csrf.ts`, which asks the same
- * question about a *request* rather than a response — a second list of allowed origins would be
- * a CORS policy and a CSRF policy that quietly disagree.
+ * Did the app LIST this exact origin? Off the same array `allowedOrigin` reads, so the two can
+ * never disagree about what was declared — but the wildcard is deliberately not an answer here.
+ * `'*'` is a value for a RESPONSE header, meaning "any origin may read a public reply"; it says
+ * nothing about who may WRITE. `csrf.ts` asked `allowedOrigin(...) !== null` and got `'*'` back
+ * for the one legal wildcard form (`credentials: false`), which read as "evil.test is an origin
+ * this app allows" and let a cross-site form post through with the session cookie attached.
+ */
+export const originListed = (config: CorsConfig, origin: string | null): boolean =>
+  origin !== null && config.origins.includes(origin);
+
+/**
+ * The one answer to "may this origin READ our reply?" — the value of
+ * `access-control-allow-origin`, or `null` for no CORS headers at all. Never a proof that a
+ * request came from somewhere allowed to make it: that is `originListed`, above.
  */
 export const allowedOrigin = (config: CorsConfig, origin: string | null): string | null => {
   if (origin === null) return null;
   if (config.origins.includes('*')) return config.credentials ? null : '*';
-  return config.origins.includes(origin) ? origin : null;
+  return originListed(config, origin) ? origin : null;
 };
 
 /**

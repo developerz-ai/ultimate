@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { type Actor, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
+import type { ResumeSource } from './cursor';
 import type { JsonValue, Row } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
@@ -300,5 +301,93 @@ describe('a subscription is owned by the socket that opened it', () => {
 
     expect(registry.subscription('s-alice', 'S')).toBe(subscription);
     expect(registry.subscriberCount(subscription.qid)).toBe(1);
+  });
+});
+
+describe('an entry whose first read never lands', () => {
+  /** One `RingChangeBuffer`, with the one call the registry makes on the way out recorded. */
+  const recordingSource = (): { source: ResumeSource; forgotten: string[] } => {
+    const buffer = new RingChangeBuffer();
+    const forgotten: string[] = [];
+    return {
+      forgotten,
+      source: {
+        append: (qid, patch) => buffer.append(qid, patch),
+        since: (qid, lsn) => buffer.since(qid, lsn),
+        headLsn: (qid) => buffer.headLsn(qid),
+        forget: (qid) => {
+          forgotten.push(qid);
+          buffer.forget(qid);
+        },
+      },
+    };
+  };
+
+  // The entry is born in `#entryFor`, BEFORE the snapshot read that fills it, and `unsubscribe` —
+  // the one path that drops an entry — can only reach one through a subscription that was never
+  // attached. So every cold subscribe the database refused left a permanent entry behind, and a
+  // node that survived a short outage answered `X_SUBSCRIPTION_LIMIT` to every later subscriber
+  // for the rest of the process: `qid` derives from client-chosen input, so distinct inputs mint
+  // distinct orphans and `maxEntries` is reached by failures alone.
+  test('a failed cold subscribe leaves nothing behind, so the node recovers with the database', async () => {
+    let down = true;
+    const { source, forgotten } = recordingSource();
+    const registry = new LiveQueryRegistry({ source, maxEntries: 2 }).register({
+      ...definitionWith({}),
+      async snapshot() {
+        if (down) throw new PoolTimeout('connection pool exhausted');
+        return { rows, lsn: formatLsn(1) };
+      },
+    });
+    const alice = socketFor('s-alice', actor('alice'));
+
+    for (const orgId of ['o1', 'o2']) {
+      await expect(
+        registry.subscribe({ socket: alice.socket, name: 'liveFeed', input: { orgId } }),
+      ).rejects.toThrow(PoolTimeout);
+    }
+    expect(forgotten).toHaveLength(2);
+
+    down = false;
+    const { subscription } = await registry.subscribe({
+      socket: alice.socket,
+      name: 'liveFeed',
+      input: { orgId: 'o3' },
+    });
+
+    expect(registry.subscriberCount(subscription.qid)).toBe(1);
+  });
+
+  // The other half: an entry a live subscriber IS holding must survive a second subscriber's
+  // failure, or one client's broken resume would drop the window every other client is served
+  // from — the change stream then fans out to nobody.
+  test('a failure does not drop an entry another subscriber holds', async () => {
+    let breakNext = false;
+    const { source, forgotten } = recordingSource();
+    const registry = new LiveQueryRegistry({ source }).register({
+      ...definitionWith({}),
+      async snapshot() {
+        if (breakNext) throw new PoolTimeout('connection pool exhausted');
+        return { rows, lsn: formatLsn(1) };
+      },
+    });
+    const alice = socketFor('s-alice', actor('alice'));
+    const bob = socketFor('s-bob', actor('bob'));
+    const held = await registry.subscribe({ socket: alice.socket, name: 'liveFeed', input });
+
+    breakNext = true;
+    await expect(
+      // A cursor forces a fresh read on an entry that already has a window, so bob's subscribe
+      // fails where alice's succeeded, on the entry she is holding.
+      registry.subscribe({
+        socket: bob.socket,
+        name: 'liveFeed',
+        input,
+        cursor: { qid: held.subscription.qid, lsn: formatLsn(1), ids: [], at: 0 },
+      }),
+    ).rejects.toThrow(PoolTimeout);
+
+    expect(registry.subscriberCount(held.subscription.qid)).toBe(1);
+    expect(forgotten).toEqual([]);
   });
 });

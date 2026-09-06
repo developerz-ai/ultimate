@@ -4,7 +4,7 @@
 
 import type { ExpectExtendMatchers } from 'bun:test';
 import { expect } from 'bun:test';
-import { describeValue, isUltimateError, stringField } from '@ultimat3/core';
+import { describeValue, isUltimateError, renderCauseValue, stringField } from '@ultimat3/core';
 import { TestJobExpectedError, TestSchemaExpectedError } from './errors';
 import type { MatcherResult } from './matcher-result';
 import type { UltimateMatchers } from './matcher-surface';
@@ -144,10 +144,15 @@ export async function recordSteps(job: unknown, input: unknown = {}): Promise<re
   return names;
 }
 
-const result = (pass: boolean, message: string): MatcherResult => ({
-  pass,
-  message: () => message,
-});
+/**
+ * A THUNK, never a built string. `expect.extend` reads `message()` only when the verdict is the
+ * wrong one, and building the sentence eagerly made three matchers raise from inside the assertion
+ * library on values they were answering correctly: `JSON.stringify` refuses a BigInt and throws on
+ * anything cyclic, so `expect(schema).toRejectInput({ n: 1n })` — a schema that DID reject — came
+ * back as `Matcher \`toRejectInput\` returned a promise that rejected`, with the real answer gone.
+ * Deferred, a value that cannot be rendered costs nothing on the path that passes.
+ */
+const result = (pass: boolean, message: () => string): MatcherResult => ({ pass, message });
 
 const isOpenApiLike = (value: unknown): value is OpenApiLike =>
   isRecord(value) &&
@@ -221,11 +226,12 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
     if (actual === undefined) {
       return result(
         false,
-        `expected an UltimateError (an X_ code with a cause and a fix), received ${describeValue(received)}`,
+        () =>
+          `expected an UltimateError (an X_ code with a cause and a fix), received ${describeValue(received)}`,
       );
     }
-    if (code === undefined) return result(true, `expected not to be an UltimateError`);
-    return result(actual === code, `expected error code ${code}, received ${actual}`);
+    if (code === undefined) return result(true, () => 'expected not to be an UltimateError');
+    return result(actual === code, () => `expected error code ${code}, received ${actual}`);
   },
 
   async toDenyPolicy(received: unknown, context: Readonly<Record<string, unknown>>) {
@@ -233,10 +239,13 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
     if (allowed === undefined) {
       return result(
         false,
-        'expected a policy — an object with run() (@ultimat3/policy) or evaluate()',
+        () => 'expected a policy — an object with run() (@ultimat3/policy) or evaluate()',
       );
     }
-    return result(!allowed, `expected the policy to deny ${JSON.stringify(context)}`);
+    // `renderCauseValue`, never `JSON.stringify`: the context is a value a test authored, and this
+    // matcher is asked about policies whose input holds a BigInt id or a back-reference. It quotes
+    // what JSON can quote and names the shape of what it cannot, instead of throwing over either.
+    return result(!allowed, () => `expected the policy to deny ${renderCauseValue(context)}`);
   },
 
   // Not `async` — see `assertStandardSchema`. The guard is the synchronous prologue; the wait is
@@ -246,7 +255,7 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
     return recordSteps(job).then((names) =>
       result(
         JSON.stringify(names) === JSON.stringify(expected),
-        `expected steps ${expected.join(' -> ')}, ran ${names.join(' -> ')}`,
+        () => `expected steps ${expected.join(' -> ')}, ran ${names.join(' -> ')}`,
       ),
     );
   },
@@ -255,13 +264,15 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
     if (!isOpenApiLike(received)) {
       return result(
         false,
-        'expected an OpenAPI document — an object with operations: [{ operationId, required? }]',
+        () =>
+          'expected an OpenAPI document — an object with operations: [{ operationId, required? }]',
       );
     }
     const broke = breakingChanges(committed, received);
     return result(
       broke.length === 0,
-      `contract broke: ${broke.join('; ')} — bump the package version or restore the old shape`,
+      () =>
+        `contract broke: ${broke.join('; ')} — bump the package version or restore the old shape`,
     );
   },
 
@@ -269,23 +280,26 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
     if (typeof received !== 'number') {
       return result(
         false,
-        `expected a number to compare against the budget, got ${typeof received}`,
+        () => `expected a number to compare against the budget, got ${typeof received}`,
       );
     }
-    return result(received <= limit, `expected ${received} to be within the budget of ${limit}`);
+    return result(
+      received <= limit,
+      () => `expected ${received} to be within the budget of ${limit}`,
+    );
   },
 
   toRejectInput(received: unknown, input: unknown) {
     const schema = assertStandardSchema(received);
     return hasIssues(schema, input).then((rejected) =>
-      result(rejected, `expected the schema to reject ${JSON.stringify(input)}`),
+      result(rejected, () => `expected the schema to reject ${renderCauseValue(input)}`),
     );
   },
 
   toAcceptInput(received: unknown, input: unknown) {
     const schema = assertStandardSchema(received);
     return hasIssues(schema, input).then((rejected) =>
-      result(!rejected, `expected the schema to accept ${JSON.stringify(input)}`),
+      result(!rejected, () => `expected the schema to accept ${renderCauseValue(input)}`),
     );
   },
 };

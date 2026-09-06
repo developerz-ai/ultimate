@@ -189,6 +189,29 @@ export class LiveQueryRegistry {
 
     const qid = queryHash(args.name, args.input);
     const entry = this.#entryFor(qid, definition, args.input);
+    try {
+      return await this.#serve(entry, sid, args);
+    } catch (error) {
+      // The entry was born above, before anything could fill it. Everything below can throw — the
+      // snapshot, the resume, the window's own read deadline — and `unsubscribe` is the only other
+      // removal path, reachable only through a subscription that in this case was never attached.
+      this.#dropIfUnheld(qid, entry);
+      throw error;
+    }
+  }
+
+  /** The half of a subscribe that runs against a live entry, so its failures can be undone. */
+  async #serve(
+    entry: QueryEntry,
+    sid: string,
+    args: {
+      socket: SyncSocket;
+      name: string;
+      input: JsonValue;
+      cursor?: LiveCursor | null;
+    },
+  ): Promise<{ subscription: LiveSubscription; frame: Frame }> {
+    const qid = entry.qid;
     const now = this.#clock.now().getTime();
 
     if (args.cursor) {
@@ -258,6 +281,25 @@ export class LiveQueryRegistry {
     // the `ResumeSource` was never told, so its ring for that qid sat at full capacity until the
     // LRU happened to evict it — a client-chosen input's memory outliving the last subscriber.
     this.#options.source.forget?.(subscription.qid);
+  }
+
+  /**
+   * An entry nothing is holding, dropped with the retained patches that were kept for it — the
+   * same three steps `unsubscribe` takes when the last subscriber leaves, for the case where a
+   * subscriber never arrived. Five cold failures against `maxEntries: 5` used to refuse every
+   * later subscribe on the node with `X_SUBSCRIPTION_LIMIT`, forever, after the database recovered.
+   */
+  #dropIfUnheld(qid: string, entry: QueryEntry): void {
+    // Identity, never presence: an entry this subscribe did not create may already have been
+    // dropped and re-created under the same qid.
+    if (this.#entries.get(qid) !== entry) return;
+    if (entry.subscribers.size !== 0) return;
+    // A read published on the entry belongs to a subscriber that has not attached yet — it owns
+    // the entry's fate, and dropping it here would leave that subscriber holding a window no
+    // change is ever fanned out to.
+    if (entry.reading !== null) return;
+    this.#entries.delete(qid);
+    this.#options.source.forget?.(qid);
   }
 
   unsubscribeSocket(socketId: string): void {
