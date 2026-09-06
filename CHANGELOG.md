@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 19.1.2 - 2026-09-06
+
 ### Fixed
 
 - **`@ultimat3/core`'s `logger` no longer takes a browser bundle down at module init.**
@@ -65,6 +69,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   declarations the way `reset.test.ts` reads the reset's â€” there is no CSS engine in this process,
   so the source is the seam â€” and asserts the inset is present, that it is logical rather than
   physical, and that the mixin still hides what it is named for.
+
+### Commits
+
+- fix: a browser bundle survives core's logger, and visually-hidden stops widening the document (#410)
 
 ## 19.1.1 - 2026-09-05
 
