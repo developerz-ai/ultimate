@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 19.3.1 - 2026-09-06
+
 ### Fixed
 
 - `release.ts --bump` writes everything the gate reads at the tag, and `--check` refuses on any of
@@ -25,6 +29,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   copy â€” and refuses with the command that performs the one it could not; `--dry-run` names all
   three; `--check` reports each with a runnable `fix:`, so the workflow's own step refuses before
   `verify` spends the two and a half minutes finding out.
+
+### Commits
+
+- fix(release): the bump writes everything the gate reads at the tag
+- chore: lockfile pins at 19.3.0
 
 ## 19.3.0 - 2026-09-06
 
