@@ -3,12 +3,8 @@ import type { Clock } from '@ultimat3/core';
 import { StepDuplicateError } from './errors';
 import { createMemoryEventBus } from './events';
 import type { StepStore } from './steps';
-import {
-  createMemoryStepStore,
-  createStepRunner,
-  isStepSuspension,
-  MAX_TRACE_NAMES,
-} from './steps';
+import { createStepRunner, isStepSuspension, MAX_TRACE_NAMES } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 
 function fakeClock(startMs: number): Clock & { advance(ms: number): void } {
   let current = startMs;

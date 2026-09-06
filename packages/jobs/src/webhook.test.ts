@@ -18,7 +18,8 @@ import {
 } from '@ultimat3/core';
 import { getJob, isJobHandle, resetJobs } from './job';
 import { retrySchedule } from './retry';
-import { createMemoryStepStore, createStepRunner } from './steps';
+import { createStepRunner } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 import { type WebhookDefinition, type WebhookEndpoint, webhook } from './webhook';
 import { type MemoryWebhookLedger, memoryWebhookLedger } from './webhook-ledger';
 

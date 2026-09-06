@@ -5,7 +5,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { StepStore } from './steps';
-import { createMemoryStepStore, createStepRunner, MAX_TRACE_NAMES } from './steps';
+import { createStepRunner, MAX_TRACE_NAMES } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 
 function counting(inner: StepStore): StepStore & { gets: number; lists: number } {
   const counters = { gets: 0, lists: 0 };

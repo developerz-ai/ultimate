@@ -8,7 +8,37 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+Two seams measured from the same app on 2026-09-06 — on 19.1.3, and confirmed in 19.2.0 source.
+Neither is breaking.
+
+### Fixed
+
+- **`catchUp: 'skip'` did not skip: it fired once per `maxCatchUp` window per tick until the walk
+  reached now.** Measured on a minute cron (`* * * * *`, UTC, the defaults) whose dev server was
+  down 14:23Z–17:34Z: on boot the scheduler logged `jobs.scheduler.dispatched … catchUp=true`
+  twenty times a second apart — 14:23, 14:33, … 17:33 — for a policy documented as "collapses them
+  into ONE dispatch for the LATEST missed occurrence". `occurrencesSince` walks forward from the
+  watermark and is truncated at `maxCatchUp`, so its last element was the tenth minute after the
+  watermark and not the latest occurrence missed; `dispatch` then left the watermark there, and
+  the next tick found the next ten. `skip` now dispatches the real latest occurrence at or before
+  `at`, found by bisection over the resolver (`latestOccurrenceBy` — about 25 calls for a
+  three-hour gap, never one per missed minute), so the occurrence key names the occurrence the
+  payload is for and the tick after it dispatches nothing. `run-once` had no equivalent hole: it
+  fires the earliest missed occurrence, which truncation cannot move, and already advances its
+  watermark to `at`. `wiki/Scheduled-Tasks.md` stops saying `maxCatchUp` "caps the lookback for
+  every policy" — it bounds one round of `'run-all'`, and nothing else.
+
+- **The job queue's own step persistence tripped the N+1 write detector.** Every job of five or
+  more steps logged `X_N_PLUS_ONE_WRITE: insert into x_job_steps … on conflict (run_id, name) do
+  update … ran 5 times in one request — one write per row` under `x dev`, with a `fix:` naming
+  `expectedQueryLoop` that the app could not apply to a statement it never wrote. One row per
+  `step.run` is the design — each step completes at its own instant and its output has to be
+  durable before the next one starts, so the writes cannot be batched. `steps.ts` now issues the
+  write inside `expectedQueryLoop`, so it reaches the funnel with `expected` set — the field the
+  ledger reads before it counts — while the hydrating `list` and the job's own statements are
+  judged exactly as before; nothing is silenced globally. `@ultimat3/jobs` gains a declared
+  `@ultimat3/db` dependency for that one marker (tier 3 → 1, drawn on the package map). It still
+  takes no client from it: `PgExecutor` stays the only way the queue reaches Postgres.
 
 ## 19.2.0 - 2026-09-06
 

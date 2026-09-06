@@ -17,7 +17,8 @@ import { createMemoryDriver } from './driver-memory';
 import { executeJob } from './execute';
 import type { AnyJobHandle } from './job';
 import { job, resetJobs } from './job';
-import { createMemoryStepStore, createStepRunner } from './steps';
+import { createStepRunner } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 
 interface Watched {
   readonly signal: AbortSignal;

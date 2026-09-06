@@ -102,7 +102,9 @@ never calls `setStatementObserver`, so a production process always takes that br
 `entity`/`op` pair to each statement, via `withStatementAttribution(entity.$name, op, send)`. It is
 the last frame that still knows both a repository is calling `findById` on `members` before the SQL
 is compiled — below it there's only text, which is why hand-written SQL and job-queue statements
-show up unattributed rather than misattributed.
+show up unattributed rather than misattributed. The queue's own per-step write — one
+`insert … on conflict` into `x_job_steps` per `step.run` — arrives *expected*: `steps.ts` declares
+it one-per-step by design, so a job of five steps is not a verdict against the framework.
 
 ## Where it installs: dev only
 

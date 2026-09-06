@@ -20,7 +20,8 @@ import {
 } from './backfill-pass-fixture';
 import { resetJobDriver } from './driver';
 import { resetJobs } from './job';
-import { createMemoryStepStore, createStepRunner, StepSuspension } from './steps';
+import { createStepRunner, StepSuspension } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 
 beforeEach(() => {
   resetJobs();
