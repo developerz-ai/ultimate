@@ -55,7 +55,7 @@ detectSkew(clientBuildId, message.to); // 'current' | 'stale' | 'unknown'
 ```
 X_PWA_NO_OFFLINE_FALLBACK: no offline fallback route
   cause: app.config.ts has no `offline` block, so an offline navigation would show the browser's error page
-  fix:   create app/offline.tsx and set offline.fallback
+  fix:   x g route offline --surface site   # then set pwa.offline.fallback to '/offline' in app.config.ts
 ```
 
 `requireOfflineFallback(config)` runs inside `generateServiceWorker`, so the build fails

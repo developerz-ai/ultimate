@@ -36,6 +36,16 @@ const streamRoute = defineRoute({
   meta: () => ({ title: 'Dashboard', description: 'authed' }),
 });
 
+/**
+ * The smallest installable app: `loadPwaArtifacts` reads this file structurally, so it needs the
+ * `enabled` switch, a name, both colour pairs and the fallback — and nothing else.
+ */
+const pwaConfig = (): string =>
+  "export const config = { pwa: { enabled: true, name: 'Fixture'," +
+  " offline: { fallback: '/offline' }," +
+  " colors: { light: { themeColor: '#fff', backgroundColor: '#fff' }," +
+  " dark: { themeColor: '#000', backgroundColor: '#000' } } } };\n";
+
 beforeEach(async () => {
   clearRoutes();
   await rm(ROOT, { recursive: true, force: true });
@@ -53,6 +63,65 @@ afterEach(async () => {
 });
 
 describe('x build --target static', () => {
+  // The service worker was emitted BEFORE the render loop, so no document it precaches existed
+  // yet: `pwaRoutes` had no content hash and no byte count to pass, every route entry read
+  // `{"url":"/","revision":"<buildId>","bytes":0}`, and two deploys of a byte-identical site
+  // re-fetched every precached page — the exact thing `packages/pwa/src/precache.ts`' header says
+  // must never happen. The worker is written last now, off the pages this pass produced.
+  test('a precached route carries its document`s hash as the revision, never the build id', async () => {
+    await Bun.write(join(ROOT, 'app.config.ts'), pwaConfig());
+    registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
+    registerRoute({ file: 'apps/web/site/offline/page.tsx', config: staticRoute });
+
+    const out = join(ROOT, 'static');
+    const report = await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+    const worker = await Bun.file(join(out, 'sw.js')).text();
+    const home = report.pages.find((page) => page.path === '/');
+
+    // The page really was rendered, or the two assertions below are vacuous.
+    expect(home?.hash).toMatch(/^[0-9a-f]{8}$/);
+    expect(worker).toContain(`{"url":"/","revision":"${home?.hash ?? 'no page'}"}`);
+    expect(worker).not.toContain(`{"url":"/","revision":"${report.buildId}"}`);
+    // And the registration script the documents name is in the artifact beside it.
+    expect(await Bun.file(join(out, 'x-sw-register.js')).exists()).toBe(true);
+    const document = await Bun.file(join(out, 'index.html')).text();
+    expect(document).toContain('/x-sw-register.js');
+  });
+
+  // The offline document is the one entry `buildPrecacheManifest` adds itself, as
+  // `reason: 'fallback'`, before any route — and `add()` keeps the first entry per url, so its
+  // revision decides. It was the build id whatever the build knew, which re-downloaded the one
+  // page an offline navigation depends on on every deploy. `@ultimat3/pwa` now takes
+  // `offlineFallbackRevision`/`offlineFallbackBytes` and this pass is what feeds them.
+  test('the offline document carries its own hash and bytes, like every other precached page', async () => {
+    await Bun.write(join(ROOT, 'app.config.ts'), pwaConfig());
+    registerRoute({ file: 'apps/web/site/offline/page.tsx', config: staticRoute });
+
+    const out = join(ROOT, 'static');
+    const report = await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+    const worker = await Bun.file(join(out, 'sw.js')).text();
+    const offline = report.pages.find((page) => page.path === '/offline');
+
+    expect(offline?.hash).toMatch(/^[0-9a-f]{8}$/);
+    expect(worker).toContain(`{"url":"/offline","revision":"${offline?.hash ?? 'no page'}"}`);
+    expect(worker).not.toContain(`{"url":"/offline","revision":"${report.buildId}"}`);
+  });
+
+  // And a fallback this pass did NOT render — a path no route serves, which `x doctor` reports as
+  // `X_PWA_NO_OFFLINE_FALLBACK` — keeps the build id and 0 bytes, because inventing a hash for
+  // bytes that do not exist is a revision that never changes when the page finally does.
+  test('a fallback no route rendered keeps the build id', async () => {
+    await Bun.write(join(ROOT, 'app.config.ts'), pwaConfig());
+    registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
+
+    const out = join(ROOT, 'static');
+    const report = await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+    const worker = await Bun.file(join(out, 'sw.js')).text();
+
+    expect(report.pages.map((page) => page.path)).not.toContain('/offline');
+    expect(worker).toContain(`{"url":"/offline","revision":"${report.buildId}"}`);
+  });
+
   test('only render: static is written; every other mode is reported as skipped', async () => {
     registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
     registerRoute({

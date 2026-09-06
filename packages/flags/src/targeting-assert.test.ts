@@ -147,6 +147,46 @@ describe('unit · assertTargeting refuses a targeting that is not an object', ()
   });
 });
 
+// `subjects` is the one rank the object test did not reach: `assertTargeting` guards its own
+// argument, and then handed `subjects` straight to `Object.entries`, which throws a bare
+// `TypeError` on `null` out of the function whose whole job is a coded refusal. Every sibling —
+// `bucketBy: null`, `rollout: null`, `actors: null` — already answered `X_FLAG_TARGETING_INVALID`.
+describe('unit · assertTargeting refuses a subjects that is not an object', () => {
+  test('null is a coded refusal, not a bare TypeError out of Object.entries', () => {
+    const thrown = caught(() =>
+      assertTargeting('billing.new', snapshot({ default: false, subjects: null })),
+    );
+    expect(thrown).toBeUltimateError('X_FLAG_TARGETING_INVALID');
+    expect(thrown).not.toBeInstanceOf(TypeError);
+  });
+
+  test('a bare string is refused rather than walked as a map of indexes to characters', () => {
+    // `Object.entries('ab')` is `[['0','a'],['1','b']]`, so a string reached the id loop and was
+    // reported as a kind called `0` — a cause that describes nothing an author wrote.
+    const thrown = caught(() =>
+      assertTargeting('billing.new', snapshot({ default: false, subjects: 'bank' })),
+    );
+    expect(thrown).toBeUltimateError('X_FLAG_TARGETING_INVALID');
+    const cause = (thrown as { cause?: string }).cause ?? '';
+    expect(cause).toContain('subjects');
+    expect(cause).not.toContain('subjects.0');
+  });
+
+  test('an array is not a subjects map either', () => {
+    expect(
+      caught(() => assertTargeting('billing.new', snapshot({ default: false, subjects: [] }))),
+    ).toBeUltimateError('X_FLAG_TARGETING_INVALID');
+  });
+
+  test('a real subjects map still passes', () => {
+    expect(
+      caught(() =>
+        assertTargeting('billing.new', { default: false, subjects: { bank: ['bank:bbva'] } }),
+      ),
+    ).toBeUndefined();
+  });
+});
+
 // F2. `default` is the one required field, and it was the one field with no shape check.
 describe('unit · assertTargeting refuses a default that is not a boolean', () => {
   test('a missing default is refused where it is declared, not answered as undefined', () => {

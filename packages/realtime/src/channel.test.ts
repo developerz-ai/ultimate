@@ -95,6 +95,33 @@ describe('channels', () => {
     expect(other.ws.frames).toHaveLength(0);
   });
 
+  // Two `sync` nodes publish to one topic, and the patch id came off a per-PROCESS counter — so
+  // node A's third message and node B's third message reached one subscriber carrying the same id.
+  // A channel topic has no cursor and no re-snapshot, so nothing downstream can repair a collision:
+  // a client keying by id (a de-dupe set, a message list) drops or overwrites the second one.
+  test('two nodes publishing to one topic never mint the same patch id', async () => {
+    const transport = new InProcessTransport();
+    const sockets = new SocketRegistry();
+    const nodeA = new ChannelHub({ transport, sockets });
+    const nodeB = new ChannelHub({ transport, sockets, nodeId: 'sync-7' });
+    nodeA.guard('org.*.cursors', () => true);
+    const { socket, ws } = connect(sockets, actor('alice'));
+    const name = topic('org', 'o1', 'cursors');
+    await nodeA.subscribe(socket, name);
+
+    await nodeA.publish(name, { x: 1, y: 1 });
+    await nodeB.publish(name, { x: 2, y: 2 });
+
+    expect(ws.frames).toHaveLength(2);
+    const ids = ws.frames.map((frame) =>
+      frame.type === 'patch' ? frame.patches[0]?.id : expect.unreachable('not a patch frame'),
+    );
+    expect(new Set(ids).size).toBe(2);
+    // A declared id is stamped as declared, so an operator reading one frame knows which node
+    // minted it; an undeclared one is a per-hub random mark rather than nothing.
+    expect(String(ids[1])).toContain('sync-7');
+  });
+
   test('an actor change re-checks every live subscription', async () => {
     const { hub, sockets } = harness();
     hub.guard(

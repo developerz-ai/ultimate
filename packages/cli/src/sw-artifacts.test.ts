@@ -4,12 +4,18 @@
 // offline — is `e2e/service-worker.e2e.test.ts`, in a real Chrome.
 
 import { describe, expect, test } from 'bun:test';
+import { contentHash } from '@ultimat3/render/server';
 import { routeDescriptor } from '../e2e/route-descriptor-fixture';
 import { islandBundle } from './island-bundle';
 import type { PwaArtifacts } from './pwa-artifacts';
 import { styleBundleOf } from './style-bundle';
-import type { ServiceWorkerArtifacts } from './sw-artifacts';
-import { SERVICE_WORKER_PATH, SW_REGISTER_PATH, serviceWorkerArtifacts } from './sw-artifacts';
+import type { RenderedDocument, ServiceWorkerArtifacts } from './sw-artifacts';
+import {
+  SERVICE_WORKER_PATH,
+  SW_REGISTER_PATH,
+  serviceWorkerArtifacts,
+  serviceWorkerHead,
+} from './sw-artifacts';
 
 const BUILD_ID = 'build-7';
 
@@ -139,5 +145,97 @@ describe('the precache manifest', () => {
     for (const chunk of styles.chunks) {
       expect(built.source).toContain(chunk.url);
     }
+  });
+});
+
+// `precache.ts`' own header: "the revision is the content hash, never the build id, or every
+// deploy would re-fetch everything". Every route entry carried `revision: <buildId>` and
+// `bytes: 0` — `pwaRoutes` projected four of `PwaRoute`'s fields and neither of these two — so two
+// deploys of a byte-identical site invalidated every precached document, and the precache budget
+// could not count one byte of HTML.
+describe('a route revision is its document, not the deploy', () => {
+  const HTML = '<!doctype html><title>home</title>';
+
+  const documents = (): ReadonlyMap<string, RenderedDocument> =>
+    new Map([['/', { revision: contentHash(HTML), bytes: Buffer.byteLength(HTML, 'utf8') }]]);
+
+  const built = (buildId: string): ServiceWorkerArtifacts => {
+    const artifacts = serviceWorkerArtifacts({
+      pwa: pwa(),
+      buildId,
+      routes: ROUTES,
+      islands: islandBundle([]),
+      styles: styleBundleOf([]),
+      documents: documents(),
+    });
+    if (artifacts === undefined) expect.unreachable('an app with a fallback got no worker');
+    return artifacts;
+  };
+
+  const entryFor = (artifacts: ServiceWorkerArtifacts, url: string) =>
+    artifacts.precache.entries.find((entry) => entry.url === url);
+
+  test('two builds of one document agree on the revision, whatever the build id', () => {
+    const a = entryFor(built('build-aaa'), '/');
+    const b = entryFor(built('build-bbb'), '/');
+
+    expect(a?.revision).toBe(contentHash(HTML));
+    expect(a?.revision).toBe(b?.revision ?? 'no entry');
+    // The defect, spelled as the thing that must not happen again.
+    expect(a?.revision).not.toBe('build-aaa');
+  });
+
+  test('the bytes are the document`s, so the precache budget can count HTML', () => {
+    const entry = entryFor(built('build-aaa'), '/');
+    expect(entry?.bytes).toBe(Buffer.byteLength(HTML, 'utf8'));
+    expect(built('build-aaa').precache.totalBytes).toBeGreaterThan(0);
+  });
+
+  // A route no build rendered — an `ssr` page, or a document this pass could not produce — keeps
+  // the build id, which is `buildPrecacheManifest`'s own default. Inventing a hash for bytes that
+  // do not exist would be a revision that never changes when the page does.
+  test('a route with no rendered document keeps the build id', () => {
+    const entry = entryFor(built('build-aaa'), '/offline');
+    expect(entry?.revision).toBe('build-aaa');
+    expect(entry?.bytes).toBe(0);
+  });
+
+  // The offline document is the one entry `buildPrecacheManifest` adds itself, before any route,
+  // and `add()` keeps the first per url — so `offlineFallbackRevision` is what decides it, and
+  // nothing fed one until `@ultimat3/pwa` grew the pair. The single page an offline navigation
+  // depends on was re-downloaded on every deploy.
+  test('the offline document takes its hash and bytes from the same pass', () => {
+    const html = '<!doctype html><title>offline</title>';
+    const artifacts = serviceWorkerArtifacts({
+      pwa: pwa(),
+      buildId: 'build-aaa',
+      routes: ROUTES,
+      islands: islandBundle([]),
+      styles: styleBundleOf([]),
+      documents: new Map([
+        ['/offline', { revision: contentHash(html), bytes: Buffer.byteLength(html, 'utf8') }],
+      ]),
+    });
+    if (artifacts === undefined) expect.unreachable('an app with a fallback got no worker');
+    const entry = artifacts.precache.entries.find((row) => row.url === '/offline');
+
+    expect(entry?.revision).toBe(contentHash(html));
+    expect(entry?.bytes).toBe(Buffer.byteLength(html, 'utf8'));
+    // The entry the fallback SHADOWS is the route of the same url, so there is exactly one and it
+    // is not the build id.
+    expect(artifacts.precache.entries.filter((row) => row.url === '/offline')).toHaveLength(1);
+    expect(entry?.revision).not.toBe('build-aaa');
+  });
+
+  test('the head is the same string with or without a document list', () => {
+    // `serviceWorkerHead` is what a caller needs BEFORE the render loop, and it must be the tag
+    // this function emits or the documents name a script the export does not carry.
+    expect(serviceWorkerHead(pwa())).toBe(built('build-aaa').head);
+    // And an app with no fallback gets no worker and therefore no tag — one predicate, read twice.
+    expect(
+      serviceWorkerHead(
+        pwa({ offline: { fallback: null, image: null, font: null, neverCache: [] } }),
+      ),
+    ).toBeUndefined();
   });
 });

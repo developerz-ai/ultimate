@@ -182,7 +182,7 @@ All of them are `route` / `action` / `job` primitives underneath ([The eight pri
 | Check | Where | Fails on | `As of 2026-08` |
 |---|---|---|---|
 | Source icon present | `x doctor` | the 1024×1024 source PNG is missing, so install icons and OG images cannot be generated (`X_PWA_ICON_MISSING`) | **shipped** |
-| Offline fallback route present | `x doctor` | the fallback route file is missing, so an offline navigation lands on the browser error page (`X_PWA_NO_OFFLINE_FALLBACK`) | **shipped** |
+| Offline fallback route present | `x doctor` | no `site/` or `app/` route serves the configured `pwa.offline.fallback`, so an offline navigation lands on the browser error page (`X_PWA_NO_OFFLINE_FALLBACK`). Judged against the route table (`describeRoutes()`), never against a filename — it named `apps/web/app/offline.tsx`, which is not a route file at all, so the check was red for every app the framework ever produced and no invocation could clear it | **shipped** |
 | SW scope | `@ultimat3/pwa` | the service-worker scope cannot serve the routes it precaches (`X_SW_SCOPE_INVALID`) | **shipped** |
 | SW checksum | — | nothing computes one; `X_SW_HAND_EDITED` is reserved | **not built** |
 | Strategy coherence | — | an `offline` value contradicting the route's `render` is accepted; `X_SW_UNCACHEABLE` is reserved | **not built** |

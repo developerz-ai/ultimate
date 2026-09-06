@@ -797,7 +797,24 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   *replay* bound (what a delta resume costs to fold) and adds the byte budgets as the memory one —
   `packages/cache/src/lru.ts:1-2` states why: 4,096 queries x 1,024 patches is 4.19M retained rows
   and no number of bytes at all. `forget(qid)` is called by `LiveQueryRegistry.unsubscribe` when the
-  last subscriber of a query id goes; it had no caller, so the ring outlived the entry.
+  last subscriber of a query id goes; it had no caller, so the ring outlived the entry. It is
+  also called by `#dropIfUnheld` on the subscribe path, `As of 2026-09-06`: an entry is created
+  BEFORE the snapshot read that fills it, so a cold subscribe the database refused left an entry
+  with no subscriber and no removal path — `unsubscribe` can only reach one through a subscription
+  that was never attached. `maxEntries` cold failures were therefore enough to answer
+  `X_SUBSCRIPTION_LIMIT` to every later subscriber for the life of the process, after the database
+  had recovered, because `qid` derives from client-chosen input and distinct inputs mint distinct
+  orphans. Dropped only when the entry is still the one in the table, holds no subscriber and has
+  no read in flight — a read published on it belongs to a concurrent subscriber that has not
+  attached yet, and dropping it there would hand that subscriber a window no change reaches.
+- **A channel patch id carries the NODE that minted it** (`As of 2026-09-06`). `ChannelHub`'s
+  `#sequence` counts within one process, and the patch id was that counter alone — so two `sync`
+  replicas publishing to one topic minted the same id for the same subscriber, and a channel has
+  no cursor and no re-snapshot, so nothing downstream can repair a collision. `nodeId` defaults to
+  a per-hub `uuid()` and is declarable (the pod name) when an operator should be able to say which
+  node published a frame. The frame's `lsn` is deliberately left as the per-process counter:
+  nothing reads a channel frame's lsn as an order across nodes, and `client-frames.ts` advances a
+  cursor only for a registered live query, never for a topic.
 - **An error never renders a value that carries a credential.** `parsePgUrl` names `DATABASE_URL`
   rather than echoing the URL it refused — an error reaches a log, `--json`, an agent transcript
   and a ticket, and the password is in the string. Same rule as `packages/mail/src/driver-smtp.ts`.

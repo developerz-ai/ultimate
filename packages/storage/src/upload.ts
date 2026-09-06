@@ -2,11 +2,20 @@
 // allowlist, checksum — and the content-type sniff that enforces it.
 // WHY sniff: `Content-Type` is attacker-controlled. A `.png` that is really an HTML document
 // is a stored-XSS delivery vehicle the moment any surface serves it back with the declared
-// type, so the magic bytes decide and a contradiction is rejected outright.
+// type, so the magic bytes decide and a contradiction is rejected outright — including the
+// contradiction of NO answer at all, where the declared type is one a signature could have
+// confirmed. A type no rule can ever confirm (`text/csv`, `application/json`) is still accepted
+// on the client's word: there is nothing to compare it against.
 
 import { finiteCount } from '@ultimat3/core';
 import { sha256Base64 } from './driver';
-import { checksumMismatch, contentTypeMismatch, contentTypeNotAllowed, tooLarge } from './errors';
+import {
+  checksumMismatch,
+  contentTypeMismatch,
+  contentTypeNotAllowed,
+  contentTypeUnrecognised,
+  tooLarge,
+} from './errors';
 import { assertSafeKey } from './path';
 
 export const DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -183,6 +192,17 @@ export function contentTypeMatches(declared: string, sniffed: string): boolean {
 }
 
 /**
+ * Whether the magic bytes could ever CONFIRM this declared type — the question a `undefined`
+ * sniff has to be read against. Through `contentTypeMatches` rather than an equality on
+ * `rule.type`, so the zip containers ride along: no rule names a `.docx`, but every OOXML
+ * document is a zip and `application/zip` is a rule, so an unrecognisable body under that type is
+ * as provably wrong as one under `image/png`.
+ */
+function hasSignature(declared: string): boolean {
+  return MAGIC_RULES.some((rule) => contentTypeMatches(declared, rule.type));
+}
+
+/**
  * Throws the first violated constraint, in this order: key, size, type, checksum. The key comes
  * before the size because a key nothing may store makes the other three moot, and which
  * constraint a rejected upload reports is what the client retries on — `upload.test.ts` pins it.
@@ -200,7 +220,13 @@ export function validateUpload(
     throw contentTypeNotAllowed(key, declared, policy.allowedContentTypes);
   }
   const sniffed = sniffContentType(candidate.bytes);
-  if (sniffed !== undefined && !contentTypeMatches(declared, sniffed)) {
+  if (sniffed === undefined) {
+    // `undefined` is "no rule recognised it", never "it is fine" — `sniffContentType`'s own doc
+    // says so and this branch read it the other way, so any body the sniffer bailed on (one
+    // control byte, one non-UTF-8 sequence) skipped the guard entirely. Measured: an HTML
+    // document with a trailing `0x01` was accepted as `image/png`.
+    if (hasSignature(declared)) throw contentTypeUnrecognised(key, declared);
+  } else if (!contentTypeMatches(declared, sniffed)) {
     throw contentTypeMismatch(key, declared, sniffed);
   }
 

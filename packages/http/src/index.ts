@@ -31,7 +31,7 @@ export {
 export type { InboundCorrelation } from './correlation';
 export { readCorrelation } from './correlation';
 export type { CorsConfig } from './cors';
-export { allowedOrigin, corsHeaders, DEFAULT_CORS, preflight } from './cors';
+export { allowedOrigin, corsHeaders, DEFAULT_CORS, originListed, preflight } from './cors';
 export type { CsrfCheckInput, CsrfConfig, CsrfMode, CsrfVerdict } from './csrf';
 export { checkCsrf, DEFAULT_CSRF, selfOrigin } from './csrf';
 export type { Deadline } from './deadline';

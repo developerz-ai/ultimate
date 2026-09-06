@@ -179,6 +179,21 @@ export const contentTypeMismatch = (key: string, declared: string, sniffed: stri
     meta: { key, declared, sniffed },
   });
 
+/**
+ * The bytes match NO rule at all, under a type a signature could have confirmed. Its own
+ * constructor rather than `contentTypeMismatch` with a placeholder, because that error's `fix:`
+ * offers the sniffed type as the one to re-declare and here there is no such type — the whole
+ * finding is that nothing recognised these bytes. Same shipped code: what a client retries on is
+ * unchanged.
+ */
+export const contentTypeUnrecognised = (key: string, declared: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_TYPE_REJECTED',
+    cause: `"${key}" declares ${declared}, and its first bytes match no known signature — every ${declared} carries one`,
+    fix: `upload a genuine ${declared} file — the bytes sent are some other format, or truncated`,
+    meta: { key, declared },
+  });
+
 export const checksumMismatch = (key: string, declared: string, actual: string): StorageError =>
   new StorageError({
     code: 'X_STORAGE_CHECKSUM_MISMATCH',

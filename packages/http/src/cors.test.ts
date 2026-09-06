@@ -4,7 +4,7 @@
 // origin the allow-list rejects.
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
-import { assertCorsConfig, corsHeaders, DEFAULT_CORS, preflight } from './cors';
+import { assertCorsConfig, corsHeaders, DEFAULT_CORS, originListed, preflight } from './cors';
 import { HttpError } from './errors';
 
 describe('corsHeaders()', () => {
@@ -84,6 +84,23 @@ describe('corsHeaders()', () => {
       'https://anything.test',
     );
     expect(headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
+
+describe('originListed()', () => {
+  // The two questions this file answers are not the same one, and reading the response header as
+  // an allowance is what let a credentialed cross-site POST through `checkCsrf`.
+  test('the wildcard reads as an allow-origin VALUE, never as a listed origin', () => {
+    const wildcard = { ...DEFAULT_CORS, origins: ['*'], credentials: false };
+    expect(corsHeaders(wildcard, 'https://evil.test')['access-control-allow-origin']).toBe('*');
+    expect(originListed(wildcard, 'https://evil.test')).toBe(false);
+  });
+
+  test('an exact listing is what it answers, and a missing origin is never one', () => {
+    const config = { ...DEFAULT_CORS, origins: ['https://a.test'] };
+    expect(originListed(config, 'https://a.test')).toBe(true);
+    expect(originListed(config, 'https://b.test')).toBe(false);
+    expect(originListed(config, null)).toBe(false);
   });
 });
 

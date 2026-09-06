@@ -214,6 +214,14 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   the SESSION write is safe; caching the USER row is not — `authenticate` re-reads it on every
   request, and that is what makes a revoked role take effect on the next one with no token-expiry
   lag. Do not cache it.
+
+  **In `verifySession`'s `observed`, `null` is an ANSWER and `undefined` is silence**
+  (`As of 2026-09-06`). `observed?.ip ?? session.ip` collapsed the two, so an explicit
+  `{ ip: null }` — this request had no client address — could not clear a stale stored one: the
+  address from an earlier request was written forward on every verify, and the device list a user
+  checks for a session they do not recognise showed it as current. An observation that names
+  neither field still costs no write, because a change nobody reported would turn every
+  authenticated request back into a write on the hottest table there is.
 - A user's `scopes` column reaches `Actor.scopes`. Hardcoding `[]` there made a scope something no
   human could hold, so `hasScope(actor, 'tenancy:cross')` was satisfiable only by minting a
   `serviceActor` inside the handler — which discards the operator's identity and makes the sweep

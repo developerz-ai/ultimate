@@ -36,6 +36,30 @@ describe('renderPushPayload', () => {
     expect(rendered.warnings).toEqual([]);
   });
 
+  /**
+   * A flag that produces neither a build error nor a runtime effect is worse than no flag: an
+   * author sets `renotify`, ships, and the only thing it changes is that the device shows nothing.
+   * The warning is what turns the silently-dropped flag into something the composing server sees.
+   */
+  test('renotify without a tag is dropped and reported, never serialized as true', () => {
+    const rendered = renderPushPayload({ ...payload, renotify: true }, 'de-DE', translate);
+    expect(rendered.renotify).toBe(false);
+    expect(rendered.warnings).toEqual([
+      'renotify needs a tag to replace — dropped for push.comment.title',
+    ]);
+    expect(JSON.parse(serializePushMessage(rendered))['renotify']).toBe(false);
+  });
+
+  test('renotify with a tag survives, because that is the pair the spec accepts', () => {
+    const rendered = renderPushPayload(
+      { ...payload, renotify: true, tag: 'comments' },
+      'de-DE',
+      translate,
+    );
+    expect(rendered.renotify).toBe(true);
+    expect(rendered.warnings).toEqual([]);
+  });
+
   test('a missing key is a warning, not a notification nobody can read', () => {
     const rendered = renderPushPayload({ ...payload, bodyKey: 'push.missing' }, 'de-DE', translate);
     expect(rendered.body).toBe('⟦push.missing⟧');
@@ -205,6 +229,15 @@ describe('serializePushMessage, read by the emitted push handler', () => {
           title: string,
           options: Record<string, unknown>,
         ): Promise<void> => {
+          // The Notifications spec: `showNotification` rejects with a `TypeError` when `renotify`
+          // is set and `tag` is empty, and NOTHING is shown. A stub that accepts the pair cannot
+          // see the one bug this describes. Not a verdict thrown by the test — it is the browser
+          // behaviour the emitted handler is the subject of, the same shape `StubCache.addAll`
+          // uses in `service-worker-runtime.test.ts`.
+          const tag = options['tag'];
+          if (options['renotify'] === true && (tag === undefined || tag === '')) {
+            throw new TypeError('Notification: renotify requires a non-empty tag');
+          }
           shown.push({ title, options });
         },
       },
@@ -300,6 +333,31 @@ describe('serializePushMessage, read by the emitted push handler', () => {
     await sw.deliver(serializePushMessage(rendered));
 
     expect(sw.badged).toEqual([1]);
+  });
+
+  /**
+   * `renotify` means "replace the notification carrying this tag and alert again", so the spec
+   * makes it meaningless without one and `showNotification` rejects rather than degrading: the
+   * device shows NOTHING. A payload declaring `renotify` and no `tag` is a mistake an author makes
+   * once, and the worker is the last place that can keep it from costing the whole notification.
+   */
+  test('renotify without a tag still shows the notification, with renotify dropped', async () => {
+    const noTag = renderPushPayload({ ...payload, renotify: true }, 'de-DE', translate);
+    const sw = pushRealm(pushSource({}));
+    await sw.deliver(serializePushMessage(noTag));
+
+    expect(sw.shown).toHaveLength(1);
+    expect(sw.shown[0]?.options['renotify']).toBe(false);
+    expect(sw.shown[0]?.options['tag']).toBeUndefined();
+  });
+
+  test('a payload the worker did not compose is guarded the same way', async () => {
+    const sw = pushRealm(pushSource({}));
+    // Straight off the wire: this package is not the only thing that may compose a push body.
+    await sw.deliver(JSON.stringify({ title: 'x', tag: null, renotify: true, url: '/' }));
+
+    expect(sw.shown).toHaveLength(1);
+    expect(sw.shown[0]?.options['renotify']).toBe(false);
   });
 
   test('a push with no data body still shows something, rooted at /', async () => {

@@ -156,8 +156,16 @@ export async function verifySession(
     throw sessionExpired(expiry.absoluteExpired ? 'absolute' : 'idle', session.id);
   }
 
-  const ip = observed?.ip ?? session.ip;
-  const userAgent = observed?.userAgent ?? session.userAgent;
+  // `??` collapsed two different statements. `null` is an OBSERVATION — this request had no
+  // client address, or no user agent — and `undefined` is silence, so an explicit null could
+  // never clear a stale stored value: the address from an earlier request was written forward on
+  // every verify, and the device list a user checks for a session they do not recognise showed it
+  // as current. Absent still keeps what the row holds; only silence does.
+  const ip = observed === undefined || observed.ip === undefined ? session.ip : observed.ip;
+  const userAgent =
+    observed === undefined || observed.userAgent === undefined
+      ? session.userAgent
+      : observed.userAgent;
   // The window slides only when it has actually moved. A second request inside the slide issues
   // no write at all — the read path stays a read — while a changed address or user agent is
   // written immediately, because that is the row a device list and an incident review read.

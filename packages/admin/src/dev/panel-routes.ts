@@ -36,7 +36,12 @@ export const routesPanel: DevPanel<RoutesPanelData> = {
     for (const route of routes) counts.set(route.render, (counts.get(route.render) ?? 0) + 1);
     const byRenderMode = Object.fromEntries(counts);
     return {
-      routes: [...routes].sort((a, b) => a.path.localeCompare(b.path)),
+      // Code units, never `localeCompare`: with no locale argument it answers from the runtime's
+      // ICU default locale and collation version, so the same route table reads in a different
+      // order on a developer's machine than in the container the same build runs in. The
+      // comparator is inlined rather than imported — `@ultimat3/render`'s `byCodeUnit` is
+      // package-internal, and a comparator is not public API worth widening a barrel for.
+      routes: [...routes].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
       byRenderMode,
       overBudget: routes
         .filter((route) => kb(route.budget.js) > BUDGET_LIMIT_KB)

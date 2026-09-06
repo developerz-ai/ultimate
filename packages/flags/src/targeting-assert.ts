@@ -31,6 +31,7 @@ const LIST_EXAMPLE: Readonly<Record<IdListField, string>> = {
  * | `default: true` with a `rollout` | the two answer the same actors and disagree; there is no reading of "on for everyone, and also on for 10%" |
  * | `bucketBy` with no `rollout` | it names what a rollout divides, and there is no rollout to divide |
  * | a blank `bucketBy` | names no kind at all |
+ * | `subjects` that is not a map | reachable from a store snapshot; `null` reached `Object.entries` as a bare `TypeError` |
  * | `subjects.actor` / `subjects.org` | `actors` and `orgs` are the one spelling; two would disagree |
  * | a `subjects` entry that is not a list of non-empty ids | reachable from a store snapshot, and it matches nothing while reading as an allow list |
  *
@@ -133,8 +134,25 @@ function assertIdList(key: string, field: IdListField, list: unknown): void {
   }
 }
 
+/**
+ * `subjects` is a MAP at all, established before it is walked — the check `assertObject` makes one
+ * level up, on the one rank it did not reach. The declared parameter type is a promise the caller
+ * makes and `applyFlagSnapshot` lands a store payload nobody made it for: `subjects: null` reached
+ * `Object.entries` as a bare `TypeError` out of the function whose whole job is a coded refusal,
+ * while `bucketBy: null`, `rollout: null` and `actors: null` all answered
+ * `X_FLAG_TARGETING_INVALID`. A bare string is the quieter half — `Object.entries('ab')` walks it
+ * by index, so it was reported as a kind called `0`, which describes nothing an author wrote.
+ */
 function assertSubjects(key: string, subjects: Readonly<Record<string, readonly string[]>>): void {
   const fix = `give each subjects entry a kind and a list of ids — { bank: ['bank_integration:bbva'] } — in defineFlag({ key: '${key}' })`;
+  const given: unknown = subjects;
+  if (typeof given !== 'object' || given === null || Array.isArray(given)) {
+    throw flagTargetingInvalid(
+      key,
+      `subjects is ${renderGiven(given)}, which is not a map of subject kind to ids`,
+      fix,
+    );
+  }
   for (const [kind, ids] of Object.entries<unknown>(subjects)) {
     if (kind.trim() === '') throw flagTargetingInvalid(key, 'a subjects kind is blank', fix);
     if (isBuiltInSubjectKind(kind)) {

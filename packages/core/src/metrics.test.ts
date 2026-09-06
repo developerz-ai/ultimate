@@ -395,6 +395,32 @@ describe('cardinality ceiling', () => {
     expect(pointsOf('test_cardinality_latency_seconds')).toHaveLength(2);
   });
 
+  /**
+   * A refused value must cost nothing. `counter.add` screens BEFORE it resolves the series;
+   * `gauge.add`, `gauge.record` and `histogram.record` resolved it first, so a `NaN` from an app
+   * minted a permanent series — one of a bounded number — and only then threw. Two instruments
+   * apart in the same file, and the ceiling is exactly what an unbounded label is supposed to
+   * spend, so a caller looping over ids with a broken value burned the budget while every write
+   * was refused.
+   */
+  test('a refused value mints no series, on every instrument', () => {
+    const depth = gauge('test_refused_depth', { maxSeries: 4 });
+    depth.record(1, { queue: 'a' });
+    expect(() => depth.add(Number.NaN, { queue: 'b' })).toThrow('X_METRIC_VALUE_INVALID');
+    expect(() => depth.record(Number.NaN, { queue: 'c' })).toThrow('X_METRIC_VALUE_INVALID');
+    expect(pointsOf('test_refused_depth')).toHaveLength(1);
+
+    const spent = counter('test_refused_total', { maxSeries: 4 });
+    spent.add(1, { route: '/a' });
+    expect(() => spent.add(Number.NaN, { route: '/b' })).toThrow('X_METRIC_VALUE_INVALID');
+    expect(pointsOf('test_refused_total')).toHaveLength(1);
+
+    const latency = histogram('test_refused_seconds', { maxSeries: 4 });
+    latency.record(0.1, { route: '/a' });
+    expect(() => latency.record(Number.NaN, { route: '/b' })).toThrow('X_METRIC_VALUE_INVALID');
+    expect(pointsOf('test_refused_seconds')).toHaveLength(1);
+  });
+
   test('the default is generous enough that a bounded label set never trips it', () => {
     expect(DEFAULT_MAX_SERIES).toBeGreaterThanOrEqual(1000);
     const bounded = counter('test_cardinality_bounded_total');

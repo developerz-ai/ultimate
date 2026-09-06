@@ -5,11 +5,13 @@
 // statements it puts in it, and `invariant-ddl.ts` decides which indexes a table declares.
 
 import { assert } from '@ultimat3/core';
+import { indexOrderInvalid, indexPredicateUnsafe } from './ddl-errors';
 import type { EntityDescriptionLike, IndexDescriptionLike } from './entity-shape';
 import type { Plan } from './foreign-key-plan';
 import { declaredMethod, indexMethodOf, indexMethodSql } from './index-method';
 import type { IndexDescription } from './introspect';
 import { identifier } from './sql';
+import { statementsOf } from './statement-split';
 
 /**
  * A `unique` column clause already creates an index, and Postgres names it exactly what the
@@ -40,6 +42,44 @@ export function impliedByColumnClause(
 }
 
 /**
+ * The direction, re-derived from the closed set and never spliced — `indexMethodSql`'s rule, for
+ * the identical operand hazard. The TYPE is not the guard: `IndexDescriptionLike.order` crosses
+ * the tier seam from `@ultimat3/entity` structurally and `snapshot-parse.ts` screens only the
+ * RECORDED side, so `order: 'desc; drop table users; --'` type-checked all the way into
+ * `create index "posts_x_idx" on "posts" ("slug" desc; drop table users; --);` — a file
+ * `ROLE=migrate` runs. `''` for `null`, so an index that declared no direction emits the statement
+ * this generator always emitted, byte for byte.
+ */
+function indexOrderSql(index: IndexDescriptionLike): string {
+  switch (index.order) {
+    case null:
+      return '';
+    case 'asc':
+      return ' asc';
+    case 'desc':
+      return ' desc';
+    default: {
+      const unhandled: never = index.order;
+      throw indexOrderInvalid(index.name, unhandled);
+    }
+  }
+}
+
+/**
+ * The partial predicate, screened for a second command before it is spliced into `where (…)`.
+ * `declaredChecks` (`check-ddl.ts`) applies exactly this to a CHECK's expression and
+ * `invariant-ddl.ts` says one rule covers every expression — the index half had none, and it is
+ * fed by `indexes: [{ where }]` and by `invariant(c.unique([…]))` through `uniqueIndexOf`.
+ * `statementsOf` is this package's one lexer, so a `;` inside a string literal stays data.
+ */
+function indexPredicateSql(index: IndexDescriptionLike): string {
+  if (index.where === null) return '';
+  const commands = statementsOf(index.where).length;
+  if (commands > 1) throw indexPredicateUnsafe(index.name, commands);
+  return ` where (${index.where})`;
+}
+
+/**
  * Every part of the declaration reaches the statement: the whole column list in its declared
  * order, the direction when one was asked for, and the predicate that makes it partial. A part
  * dropped here is a constraint the database does not hold or an index the planner cannot use.
@@ -67,11 +107,11 @@ export function createIndex(table: string, index: IndexDescriptionLike): string 
     `indexes: [{ on: ['<column>'], using: '${method}' }]   # drop order, or drop using`,
   );
   const kind = index.unique ? 'create unique index' : 'create index';
-  const direction = index.order === null ? '' : ` ${index.order}`;
+  const direction = indexOrderSql(index);
   const columns = index.columns
     .map((column) => `${identifier(column).text}${direction}`)
     .join(', ');
-  const predicate = index.where === null ? '' : ` where (${index.where})`;
+  const predicate = indexPredicateSql(index);
   // Re-derived from the closed set, never spliced: `indexMethodSql` answers `''` for a btree, so
   // an index that declared no method emits the statement this generator always emitted, byte for
   // byte, and one that declared a method Postgres does not have is refused instead of built.

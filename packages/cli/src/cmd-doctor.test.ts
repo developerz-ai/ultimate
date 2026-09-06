@@ -6,9 +6,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { ENV_EXAMPLE_PATH } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
 import type { DoctorProbe } from './cmd-doctor';
-import { doctorCommand, doctorPort, OFFLINE_FALLBACK, probeFor, runDoctor } from './cmd-doctor';
+import { doctorCommand, doctorPort, ENV_DEVELOPMENT, probeFor, runDoctor } from './cmd-doctor';
 import type { CommandContext } from './command';
 import { PORT_RANGE, parseIntFlag } from './flag-number';
 import { ICON_SOURCE } from './icon-assets';
@@ -32,6 +33,11 @@ const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   database: async () => null,
   drift: async () => [],
   snapshots: async () => [],
+  // The app the scaffold writes: a declared fallback with a `site/` page answering it.
+  offlineFallback: async () => ({
+    fallback: '/offline',
+    routes: [{ path: '/offline', surface: 'site' }],
+  }),
   ...over,
 });
 
@@ -43,12 +49,47 @@ describe('unit · x doctor', () => {
     expect(await codes(probe())).toEqual([]);
   });
 
-  test('a missing offline fallback is reported with the generator that creates it', async () => {
-    const findings = await runDoctor(probe({ exists: (path) => path !== OFFLINE_FALLBACK }));
+  // The rule and its reasons are `doctor-offline.test.ts`; what belongs here is that `runDoctor`
+  // ASKS. It used to decide for itself, off `probe.exists('apps/web/app/offline.tsx')` — a path
+  // that is not a route file, is not what `x new` writes, and is not what the fix line creates.
+  test('the offline fallback is asked of the route table, not of a filename', async () => {
+    const findings = await runDoctor(
+      probe({
+        // Every file present, which is what made the old check pass: the finding now depends on
+        // the app's own declaration and route table alone.
+        exists: () => true,
+        offlineFallback: async () => ({ fallback: '/offline', routes: [] }),
+      }),
+    );
     const fallback = findings.find((finding) => finding.code === 'X_PWA_NO_OFFLINE_FALLBACK');
-    expect(fallback?.cause).toContain(OFFLINE_FALLBACK);
-    expect(fallback?.fix).toBe('x g route offline --surface app');
-    expect(fallback?.at).toBe(OFFLINE_FALLBACK);
+    expect(fallback?.cause).toContain('/offline');
+    expect(fallback?.fix).toBe('x g route offline --surface site');
+  });
+
+  test('an app whose route table serves the fallback reports nothing', async () => {
+    expect(
+      await codes(
+        probe({
+          offlineFallback: async () => ({
+            fallback: '/offline',
+            routes: [{ path: '/offline', surface: 'site' }],
+          }),
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  // `x new --force` was this fix for as long as the check has existed, and it can never run where
+  // the reader is standing: reproduced, `x new --force --json` inside an app answers
+  // `X_CLI_BAD_FLAG` — `x new` needs a <name> positional — and with a name it scaffolds a SECOND
+  // app beside the broken one. The repair is a file, so the fix names the file, exactly as
+  // `X_PWA_ICON_MISSING`'s does.
+  test('a missing .env.development names the file write, never `x new`', async () => {
+    const findings = await runDoctor(probe({ exists: (path) => path !== ENV_DEVELOPMENT }));
+    const env = findings.find((finding) => finding.code === 'X_ENV_MISSING');
+    expect(env?.fix).toBe(`cp ${ENV_EXAMPLE_PATH} ${ENV_DEVELOPMENT}`);
+    expect(env?.fix).not.toContain('x new');
+    expect(env?.at).toBe(ENV_DEVELOPMENT);
   });
 
   test('a missing source icon is reported separately from the fallback', async () => {

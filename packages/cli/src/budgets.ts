@@ -227,9 +227,17 @@ export interface MeasuredJs {
 export async function measureDocumentJs(html: string, out: string): Promise<MeasuredJs> {
   let jsBytes = 0;
   const entries: MeasuredEntry[] = [];
+  // Deduped ONCE, across both readers below: a browser fetches and executes a module URL once,
+  // however many times the document names it. Two instances of one island are two wrappers and one
+  // chunk — and so are a `<script src>` repeated by a page and its layout, or a src that is also an
+  // island entry. Only the island half was deduped, so a document naming one script twice was
+  // charged twice and could fail a budget it clears. An INLINE script is not in this set: two
+  // identical inline bodies really do both run.
+  const fetched = new Set<string>();
   const weigh = async (url: string): Promise<void> => {
     // Only a path inside the artifact can be weighed; a cross-origin script is not this build's.
-    if (!url.startsWith('/')) return;
+    if (!url.startsWith('/') || fetched.has(url)) return;
+    fetched.add(url);
     const file = Bun.file(join(out, url.slice(1)));
     const bytes = (await file.exists()) ? file.size : 0;
     entries.push({ url, bytes });
@@ -246,13 +254,9 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
     }
     await weigh(src);
   }
-  // Deduped: two instances of one island are two wrappers and one chunk, and a browser that
-  // imports the same module twice fetches and executes it once.
-  const booted = new Set<string>();
   for (const match of html.matchAll(ENTRY_ATTR)) {
     const url = match.groups?.['url'];
-    if (url === undefined || booted.has(url)) continue;
-    booted.add(url);
+    if (url === undefined) continue;
     await weigh(url);
   }
   return { jsBytes, entries };

@@ -148,3 +148,68 @@ describe('unit · matchers', () => {
     await expect(uuid).toAcceptInput({ id: 'ok' });
   });
 });
+
+// The three matchers that quote the value they were given used `JSON.stringify` to do it, and
+// built the string EAGERLY — before the verdict was known. So a schema that correctly rejected a
+// `1n` never got to say so: `JSON.stringify` raises on a BigInt, and the matcher replaced the
+// test's real answer with a TypeError from inside the assertion library. Same for anything cyclic,
+// and same on the PASSING path, where the message is never read at all.
+describe('unit · matchers render the value they were handed, and never raise doing it', () => {
+  const rejecting = {
+    '~standard': { validate: () => ({ issues: [{ message: 'no' }] }) },
+  };
+  const accepting = { '~standard': { validate: () => ({}) } };
+
+  const cyclic = (): Record<string, unknown> => {
+    const self: Record<string, unknown> = {};
+    self['self'] = self;
+    return self;
+  };
+
+  test('toRejectInput passes on a bigint the schema rejects', async () => {
+    await expect(rejecting).toRejectInput({ n: 1n });
+    await expect(rejecting).toRejectInput(1n);
+  });
+
+  test('toRejectInput passes on a cyclic input the schema rejects', async () => {
+    await expect(rejecting).toRejectInput(cyclic());
+  });
+
+  test('toAcceptInput passes on a bigint the schema accepts', async () => {
+    await expect(accepting).toAcceptInput({ n: 1n });
+    await expect(accepting).toAcceptInput(cyclic());
+  });
+
+  test('toDenyPolicy passes on a context holding a bigint', async () => {
+    await expect(policy(false)).toDenyPolicy({ actor: null, seats: 1n });
+    await expect(policy(false)).toDenyPolicy(cyclic());
+  });
+
+  // And the failing side still NAMES the value — a message that degraded to "an object" for every
+  // input would make the two halves of `expected the schema to reject X` unreadable.
+  test('the failure message still quotes an ordinary input', async () => {
+    let caught: unknown;
+    try {
+      await expect(accepting).toRejectInput({ id: 'ok' });
+    } catch (error) {
+      caught = error;
+    }
+    if (caught === undefined) expect.unreachable('an accepting schema passed toRejectInput');
+    expect(String((caught as { message?: unknown }).message)).toContain('{"id":"ok"}');
+  });
+
+  // A value JSON cannot serialize still fails as a FAILURE, with a message, not as a TypeError
+  // from inside the matcher.
+  test('a bigint on the failing side is a failed assertion, never a TypeError', async () => {
+    let caught: unknown;
+    try {
+      await expect(accepting).toRejectInput({ n: 1n });
+    } catch (error) {
+      caught = error;
+    }
+    if (caught === undefined) expect.unreachable('an accepting schema passed toRejectInput');
+    expect(String((caught as { message?: unknown }).message)).toContain(
+      'expected the schema to reject',
+    );
+  });
+});

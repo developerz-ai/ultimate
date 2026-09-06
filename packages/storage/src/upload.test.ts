@@ -188,6 +188,75 @@ describe('validateUpload', () => {
  * with the sniffer PROMOTING `<svg` to the allowed type rather than refusing it. An app that
  * genuinely serves user SVG says so, once, in `allowedContentTypes`.
  */
+/**
+ * `sniffContentType` answers `undefined` for "no rule recognised it", NEVER for "it is fine" — its
+ * own doc says so, and `validateUpload` read it as the second: any body the sniffer bailed on
+ * (a control byte, a non-UTF-8 sequence) skipped the guard entirely and was stored under whatever
+ * the client declared. Measured: an HTML document with one trailing `0x01` byte was accepted as
+ * `image/png` by the function whose whole reason for existing is that Content-Type is
+ * attacker-controlled.
+ */
+describe('an unrecognised body under a type that has a signature', () => {
+  const HTML_WITH_CONTROL_BYTE = new Uint8Array([
+    ...bytesOf('<html><script>fetch("/steal")</script></html>'),
+    0x01,
+  ]);
+
+  test('the sniffer itself still answers undefined — that is its contract', () => {
+    expect(sniffContentType(HTML_WITH_CONTROL_BYTE)).toBeUndefined();
+  });
+
+  test('is refused, not accepted on the declared type', () => {
+    const code = codeOf(() =>
+      validateUpload(
+        {
+          key: 'org/org-1/avatars/evil.png',
+          declaredContentType: 'image/png',
+          bytes: HTML_WITH_CONTROL_BYTE,
+        },
+        IMAGES,
+      ),
+    );
+    expect(code).toBe('X_STORAGE_TYPE_REJECTED');
+  });
+
+  test('a zip container type is covered too — every OOXML document is a zip', () => {
+    const code = codeOf(() =>
+      validateUpload(
+        {
+          key: 'org/org-1/docs/report.docx',
+          declaredContentType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          bytes: HTML_WITH_CONTROL_BYTE,
+        },
+        uploadPolicy({
+          allowedContentTypes: [
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          ],
+        }),
+      ),
+    );
+    expect(code).toBe('X_STORAGE_TYPE_REJECTED');
+  });
+
+  // The other half, and the reason the rule is "a type that HAS a signature" rather than
+  // "anything the sniffer did not recognise": a CSV holding one Latin-1 byte is a real file and
+  // no magic rule can ever confirm it.
+  test('a declared type no signature can confirm is still accepted', () => {
+    const latin1Csv = new Uint8Array([...bytesOf('id,name\n1,caf'), 0xe9, 0x0a]);
+    expect(sniffContentType(latin1Csv)).toBeUndefined();
+    const result = validateUpload(
+      {
+        key: 'org/org-1/exports/rows.csv',
+        declaredContentType: 'text/csv',
+        bytes: latin1Csv,
+      },
+      uploadPolicy({ allowedContentTypes: ['text/csv'] }),
+    );
+    expect(result.contentType).toBe('text/csv');
+  });
+});
+
 describe('the default upload policy', () => {
   test('does not allow image/svg+xml', () => {
     expect(uploadPolicy().allowedContentTypes).not.toContain('image/svg+xml');

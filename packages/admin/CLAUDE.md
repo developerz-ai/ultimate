@@ -77,6 +77,12 @@ Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev
   into plain objects, where `__proto__` reads a prototype (so `?? 0` never fires) and WRITES through
   the setter, dropping the row: the policy matrix reported a permission unreachable while an actor
   held it. `Map` + `Object.fromEntries`, which DEFINES each key.
+- **A `/_x` panel orders by CODE UNIT, never `localeCompare`.** `dev/panel-routes.ts` sorted its
+  rows with it, and with no locale argument `localeCompare` answers from the runtime's ICU default
+  locale and collation version — so the same route table reads in a different order on a
+  developer's machine than in the container the same build runs in, and a screenshot of one does
+  not match the other. `(a < b ? -1 : a > b ? 1 : 0)`, inlined: `@ultimat3/render`'s `byCodeUnit`
+  is package-internal, and a comparator is not worth widening a barrel for.
 - **The locale picker reads `registeredLocales()`, not a bundled list.** It was
   `['en','es','de','fr','pt','ja']`, one line under a comment forbidding exactly that for IANA
   zones: an app registering `it` could not pick it, and an app with only `en` was offered five

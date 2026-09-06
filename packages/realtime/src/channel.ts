@@ -4,7 +4,7 @@
 // append-only stream, so tier 1 needs no frame of its own. That is why climbing the ladder is a
 // config change: the client's frame handler is the same code at every rung.
 
-import { type Actor, finiteOption, logger, renderThrowable } from '@ultimat3/core';
+import { type Actor, finiteOption, logger, renderThrowable, uuid } from '@ultimat3/core';
 import { formatLsn } from './changefeed';
 import {
   isPolicyDenial,
@@ -57,6 +57,12 @@ export interface ChannelHubOptions {
    * admits unbounded distinct names inside one tenant, and a per-socket cap bounds nothing.
    */
   readonly maxTopicsPerNode?: number;
+  /**
+   * This node's mark on the patch ids it mints. Defaults to a per-hub random id, which is enough
+   * to keep two nodes apart; declare it (the pod name, the `sync` instance id) when an operator
+   * reading one frame should be able to say which node published it.
+   */
+  readonly nodeId?: string;
 }
 
 /** Distinct topics one node bridges before `X_SUBSCRIPTION_LIMIT`. */
@@ -95,6 +101,12 @@ export class ChannelHub {
   readonly #maxTopicsPerNode: number;
   #guardFailures = 0;
   #sequence = 0n;
+  /**
+   * `#sequence` counts within one PROCESS, so it cannot identify a message across nodes: two
+   * `sync` replicas publishing to one topic minted the same id for the same subscriber, and a
+   * channel has no cursor and no re-snapshot, so nothing downstream could repair the collision.
+   */
+  readonly #nodeId: string;
   /** Set by `close()`. Read by `#open`, which is the only thing that can reach a late subscription. */
   #closed = false;
 
@@ -111,6 +123,7 @@ export class ChannelHub {
       'maxTopicsPerNode',
       options.maxTopicsPerNode ?? DEFAULT_MAX_TOPICS_PER_NODE,
     );
+    this.#nodeId = options.nodeId ?? uuid();
   }
 
   /** Sockets this node will deliver `name` to. The metric the fanout reads. */
@@ -230,7 +243,10 @@ export class ChannelHub {
   /** Publishes to every node. Local delivery happens via the transport bridge, never directly. */
   async publish(name: Topic, message: JsonObject): Promise<void> {
     this.#sequence += 1n;
-    const frame = channelFrame(name, formatLsn(this.#sequence), message);
+    const lsn = formatLsn(this.#sequence);
+    // The lsn stays this node's own counter — nothing reads a channel frame's lsn as an order
+    // across nodes — but the patch ID is what a client keys by, so it carries the node too.
+    const frame = channelFrame(name, lsn, message, `${this.#nodeId}:${lsn}`);
     await this.#transport.publish(`${CHANNEL_SUBJECT_PREFIX}.${name}`, encode(frame));
   }
 
@@ -360,12 +376,22 @@ function unsubscribeWhenOpen(bridge: Bridge): void {
   );
 }
 
-export function channelFrame(name: Topic, lsn: string, message: JsonObject): Frame {
+/**
+ * `id` identifies the MESSAGE and defaults to the lsn, which is what every caller outside this
+ * file already passes as one. `ChannelHub.publish` gives it the publishing node's mark instead:
+ * an lsn is a per-process counter, and two nodes on one topic mint the same one.
+ */
+export function channelFrame(
+  name: Topic,
+  lsn: string,
+  message: JsonObject,
+  id: string = lsn,
+): Frame {
   return {
     type: 'patch',
     v: PROTOCOL_VERSION,
     sid: name,
     lsn,
-    patches: [{ op: 'insert', id: lsn, row: message, lsn }],
+    patches: [{ op: 'insert', id, row: message, lsn }],
   };
 }
