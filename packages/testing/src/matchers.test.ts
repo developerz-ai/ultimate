@@ -213,3 +213,109 @@ describe('unit · matchers render the value they were handed, and never raise do
     );
   });
 });
+
+// A matcher's message is read on exactly ONE path — the wrong verdict — so a message no test
+// provokes is a sentence nobody has ever seen. `.not` on a `pass: false` is satisfied without
+// reading it, which is how `expect({ paths: {} }).not.toMatchOpenApi(…)` above passes with the
+// type guard deleted: every assertion here provokes the failing side and reads the sentence.
+describe('unit · matchers say what went wrong, on the side that fails', () => {
+  /** The failing side of an async matcher, whether bun throws it or rejects with it. */
+  const messageOf = async (run: () => Promise<unknown> | unknown): Promise<string> => {
+    try {
+      await run();
+    } catch (error) {
+      return String((error as { message?: unknown }).message);
+    }
+    return expect.unreachable('the matcher passed where the assertion was meant to fail');
+  };
+
+  const error = { code: 'X_DB_DRIFT', cause: 'schema differs', fix: 'x db gen "add col"' };
+
+  test('toBeUltimateError names the value it was handed instead', async () => {
+    expect(await messageOf(() => expect('X_DB_DRIFT').toBeUltimateError())).toContain(
+      'expected an UltimateError (an X_ code with a cause and a fix), received',
+    );
+  });
+
+  test('toBeUltimateError names both codes when they differ', async () => {
+    expect(await messageOf(() => expect(error).toBeUltimateError('X_BUDGET_EXCEEDED'))).toContain(
+      'expected error code X_BUDGET_EXCEEDED, received X_DB_DRIFT',
+    );
+  });
+
+  // The `.not` side of the code-less form is the only path that reads this one: `pass` is true,
+  // so bun asks for the message precisely because the caller said the value should NOT be one.
+  test('toBeUltimateError under .not says the value was one after all', async () => {
+    expect(await messageOf(() => expect(error).not.toBeUltimateError())).toContain(
+      'expected not to be an UltimateError',
+    );
+  });
+
+  test('toEmitSteps prints the sequence it wanted beside the one it ran', async () => {
+    expect(await messageOf(() => expect(job).toEmitSteps(['provision']))).toContain(
+      'expected steps provision, ran provision -> welcome-email',
+    );
+  });
+
+  test('toMatchOpenApi names the shape it wanted from a receiver that is not one', async () => {
+    expect(
+      await messageOf(() => expect({ paths: {} }).toMatchOpenApi({ operations: [] })),
+    ).toContain(
+      'expected an OpenAPI document — an object with operations: [{ operationId, required? }]',
+    );
+  });
+
+  test('toMatchOpenApi lists what broke, and what to do about it', async () => {
+    const committed = {
+      operations: [{ operationId: 'publishPost' }, { operationId: 'listPosts', required: [] }],
+    };
+    expect(
+      await messageOf(() =>
+        expect({ operations: [{ operationId: 'listPosts', required: ['cursor'] }] }).toMatchOpenApi(
+          committed,
+        ),
+      ),
+    ).toContain(
+      'contract broke: removed operation publishPost; listPosts newly requires cursor — bump the package version or restore the old shape',
+    );
+  });
+
+  test('toBeWithinBudget names the type it got where a number belongs', async () => {
+    expect(await messageOf(() => expect('40kb').toBeWithinBudget(40_960))).toContain(
+      'expected a number to compare against the budget, got string',
+    );
+  });
+
+  test('toBeWithinBudget prints the measurement beside the limit', async () => {
+    expect(await messageOf(() => expect(61_000).toBeWithinBudget(40_960))).toContain(
+      'expected 61000 to be within the budget of 40960',
+    );
+  });
+
+  test('toAcceptInput quotes the input the schema rejected', async () => {
+    const rejecting = { '~standard': { validate: () => ({ issues: [{ message: 'no' }] }) } };
+    expect(await messageOf(() => expect(rejecting).toAcceptInput({ id: 'ok' }))).toContain(
+      'expected the schema to accept {"id":"ok"}',
+    );
+  });
+});
+
+// `recordSteps` hands the job a `sleep` that returns immediately: a job that waits an hour between
+// steps is still a step SEQUENCE, and the assertion is on the sequence rather than on the delay.
+// Without it the matcher would either hang for the real duration or need the job rewritten to be
+// testable.
+test('unit · recordSteps runs a sleeping job at once, and does not count the sleep as a step', async () => {
+  const sleeper = {
+    kind: 'job',
+    run: async ({
+      step,
+    }: {
+      step: { run<T>(name: string, body: () => T): Promise<T>; sleep(d: string): Promise<void> };
+    }) => {
+      await step.run('charge', () => 1);
+      await step.sleep('1h');
+      await step.run('receipt', () => 2);
+    },
+  };
+  await expect(sleeper).toEmitSteps(['charge', 'receipt']);
+});
