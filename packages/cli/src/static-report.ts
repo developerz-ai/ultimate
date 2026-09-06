@@ -60,6 +60,17 @@ export type UnmeasuredRoute = {
   /** The DECLARED path, as `X_BUDGET_UNMEASURED`'s `at:` spells it, so the two rows join. */
   readonly path: string;
   readonly reason: string;
+  /**
+   * The throwable's own `code`, `cause` and `fix` when the render failed with an `UltimateError`
+   * — absent for a bare `TypeError`. Carried so the `budgets` step can report a failure that IS
+   * an instruction under its own code rather than under `X_BUDGET_UNMEASURED`: an island handed
+   * props over `ISLAND_PROPS_MAX_BYTES` throws `X_ISLAND_PROPS_INVALID` naming the prop and its
+   * bytes, and "run x build, its unmeasured list says why" sent the reader to a second command to
+   * read the sentence this build had already composed.
+   */
+  readonly code?: string;
+  readonly cause?: string;
+  readonly fix?: string;
 };
 
 /** One HTML file in the artifact, and the declared route that produced it. */
@@ -171,8 +182,17 @@ const isSkipped = (value: unknown): value is SkippedRoute =>
   typeof value['why'] === 'string' &&
   inDomain(SKIP_REASONS, value['reason']);
 
+const optionalString = (value: unknown): boolean =>
+  value === undefined || typeof value === 'string';
+
+/** The three coded fields are optional TOGETHER on the way in; a present one must be a string. */
 const isUnmeasured = (value: unknown): value is UnmeasuredRoute =>
-  isRecord(value) && typeof value['path'] === 'string' && typeof value['reason'] === 'string';
+  isRecord(value) &&
+  typeof value['path'] === 'string' &&
+  typeof value['reason'] === 'string' &&
+  optionalString(value['code']) &&
+  optionalString(value['cause']) &&
+  optionalString(value['fix']);
 
 const isEmitted = (value: unknown): value is EmittedPage =>
   isRecord(value) &&

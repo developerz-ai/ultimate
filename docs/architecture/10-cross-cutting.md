@@ -86,7 +86,7 @@ Generated from it: the CSS custom properties for both themes, the TS union of va
 | Contrast | `contrastRatio` / `meetsContrast` measure every pairing against `AA_TEXT` (4.5) and `AA_LARGE` (3), and `packages/ui/src/tokens/contrast.test.ts` fails on a pair that misses. That is the framework's own palette and a brand override run through the same function; it is a **test**, so it reaches the gate through the `unit` step, not through a check of its own |
 | Specificity | generated CSS emits `@media (prefers-color-scheme: dark)` **first**, then `:root[data-theme="dark"]` / `:root[data-theme="light"]` overrides — so an explicit choice always wins in both directions |
 | Pre-paint script | a byte-capped inline `<script>` in `<head>`, counted against the route budget by `measureDocumentJs`. Nothing fails a route that omits it |
-| Inline `<style>` | `style-csp.ts` computes the `style-src` sha256 of every inline `<style>` the web role serves, so a CSP does not need `'unsafe-inline'` |
+| Inline `<style>` | `style-csp.ts` computes the `style-src` sha256 of every inline `<style>` the web role still serves, so a CSP does not need `'unsafe-inline'`. `As of 2026-09-06` an app's own surface CSS is not among them: it is a content-hashed file under `/styles/`, admitted by `'self'` |
 | SSR path | the theme cookie is read during `locale-negotiate` (stage 5), so server-rendered HTML already carries `data-theme`; the inline script is the fallback for `static`/`isr` pages served from cache |
 
 ```html

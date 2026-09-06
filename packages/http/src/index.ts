@@ -115,6 +115,8 @@ export type { PeerIdentity } from './peer-identity';
 export { peerIdentity } from './peer-identity';
 export type { HandleInit, Pipeline, PipelineDeps } from './pipeline';
 export { createPipeline, PIPELINE_STAGES } from './pipeline';
+export type { ProblemMeta, ProblemMetaValue } from './problem-meta';
+export { MAX_PROBLEM_META_BYTES, registerProblemMeta, resetProblemMeta } from './problem-meta';
 export type {
   Bucket,
   MemoryRateLimitStore,

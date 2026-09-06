@@ -14,6 +14,7 @@ import type { Deprecation } from './deprecation';
 import { applyHeaders, recordDeprecatedCall, renderDeprecation } from './deprecation';
 import { QueryDeprecationInvalidError } from './errors';
 import { derivePath } from './naming';
+import { pageControlsOf } from './page-controls';
 import { admitsAnonymous, policyCapability } from './policy-gate';
 import type { AnyQuery } from './query';
 import { queryName, runQuery } from './read';
@@ -40,8 +41,22 @@ export function toQueryRoute(target: AnyQuery): Route {
       // second parser: the same read would answer `X_BODY_INVALID` where every other
       // surface answers `X_INPUT_INVALID` with the line that prints its schema. `runQuery`
       // is the one that decides, exactly as it does for a direct server call.
-      const input = coerceQuery(target.input, request.queryRaw());
-      const response = json(await runQuery(target, input, { surface: 'http' }));
+      //
+      // The two page controls come OUT first (`page-controls.ts`): they are the route's, not the
+      // read's, and a schema that refused unknown keys would otherwise refuse every paged call.
+      const { input: values, page } = pageControlsOf(name, request.queryRaw());
+      const input = coerceQuery(target.input, values);
+      // With a page control the answer is the `Page` envelope `query.page()` answers a server
+      // caller with — `{ rows, endCursor, hasNextPage }`, the same names, so a cursor read off the
+      // wire and one read off a direct call are the same string in the same field. Without one the
+      // answer is the bare array it has always been: every client written before the controls
+      // existed keeps reading rows, and `hasNextPage` never rides on a row where a page marker
+      // has no business being.
+      const response = json(
+        page === undefined
+          ? await runQuery(target, input, { surface: 'http' })
+          : await target.page(input, { ...page, surface: 'http' }),
+      );
       // On the failure path too, below: a client polling a deprecated read that is currently
       // 403ing still has to learn the read is going away.
       if (sunsetting !== undefined) applyHeaders(response, sunsetting);

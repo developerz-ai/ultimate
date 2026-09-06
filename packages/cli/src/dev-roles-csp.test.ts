@@ -6,6 +6,10 @@
 // surface's CSS in an inline `<style>`, so the browser parsed zero rules out of it and every
 // deployed app rendered completely unstyled. A header-shaped unit test would not have caught it —
 // the question is whether THIS response's policy admits THIS response's body.
+//
+// The surface CSS is a FILE now, so the same question has a second half: the `<link>` the document
+// carries must be admitted too — by `'self'`, which is why the policy needs no hash for it — and
+// the URL it names must actually be served by the same process.
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
@@ -16,6 +20,8 @@ import { appRoutes } from './dev-render';
 import type { RunningRoles } from './dev-roles';
 import { selectRoles, startRoles } from './dev-roles';
 import { fixtureRuntime, resetDevRolesState } from './dev-roles-fixture';
+import { styleBundle } from './style-bundle';
+import { styleRoutes } from './style-routes';
 
 const ROOT = `${import.meta.dir}/../.roles-csp-fixture`;
 const fakeRuntime = (): ReturnType<typeof fixtureRuntime> => fixtureRuntime(ROOT);
@@ -67,7 +73,7 @@ describe('the CSP the web role sends admits the styles it serves', () => {
       buildId: 'test',
       runtime: fakeRuntime(),
       env: {},
-      routes: appRoutes({ buildId: 'test' }),
+      routes: [...styleRoutes(() => styleBundle()), ...appRoutes({ buildId: 'test' })],
       // A container's binding: `dev: false` is what turns the policy from report-only into the
       // enforced one, which is the only mode in which this failure is visible at all.
       http: { dev: false, hostname: 'localhost' },
@@ -77,9 +83,19 @@ describe('the CSP the web role sends admits the styles it serves', () => {
     const body = (await response?.text()) ?? '';
     const csp = response?.headers.get('content-security-policy') ?? '';
 
-    expect(body).toContain('color:red');
-    expect(csp).not.toContain("style-src 'self';");
+    // Nothing inline left to hash, and `'self'` is what admits the file — so the enforced policy
+    // covers the document with NO style hash of its own.
     expect(uncovered(body, csp)).toEqual([]);
+    expect(csp).toContain("style-src 'self'");
+    const href = styleBundle().hrefFor('site') ?? '';
+    expect(body).toContain(`href="${href}"`);
+
+    // Same origin, same process: the URL the policy admits has to be one this server answers, or
+    // `'self'` is admitting a 404.
+    const sheet = await running.server?.fetch(new Request(`http://dev.test${href}`));
+    expect(sheet?.status).toBe(200);
+    expect(await sheet?.text()).toContain('color:red');
+    expect(sheet?.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
   });
 
   test('a document the caller mounted itself is covered once it declares its style', async () => {

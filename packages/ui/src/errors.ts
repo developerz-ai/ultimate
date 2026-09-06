@@ -107,7 +107,7 @@ export function providerNeedsRuntimeError(): UiError {
     code: UI_ERROR_CODES.runtimeMissing,
     cause:
       '<UiProvider> was rendered with no Solid runtime registered, so its locale, time zone, currency and translator would reach no component',
-    fix: "in an island, paste `import * as solidRuntime from 'solid-js';` at the top of the *.island.tsx and `setSolidRuntime(solidRuntime);` as the first line of its mount(), above the render() that builds <UiProvider>; on the server, delete <UiProvider> — useUi() already reads the request locale and time zone",
+    fix: "in an island, paste `import { createContext, createEffect, createMemo, createSignal, onCleanup, useContext } from 'solid-js';` at the top of the *.island.tsx and `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup });` as the first line of its mount(), above the render() that builds <UiProvider> — six named imports, never `import * as`, which keeps all of solid-js in the chunk; on the server, delete <UiProvider> — useUi() already reads the request locale and time zone",
   });
 }
 

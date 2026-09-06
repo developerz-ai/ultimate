@@ -363,11 +363,13 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
   // tier 4 — route-declaration and prerender rules, enforced at build and at `registerRoute`.
   // `X_PRERENDER_FAILED` and `X_ROUTE_LOAD_FAILED` are the ones to look at first if this group
   // shrinks: a lazily loaded route can fail while a request is waiting on it.
+  // `X_ISLAND_PROPS_INVALID` left this group 2026-09-05: it is raised INSIDE a request — every
+  // ssr/stream render of the page — and an unclassified 500 blanks its cause outside dev, which
+  // withholds the one sentence (the prop, its bytes) the author needs. It has a row now.
   render: [
     'X_BUDGET_EXCEEDED',
     'X_ISLAND_INVALID',
     'X_ISLAND_NOT_HYDRATED',
-    'X_ISLAND_PROPS_INVALID',
     'X_PRERENDER_FAILED',
     'X_ROUTE_DUPLICATE',
     'X_ROUTE_FILE_INVALID',

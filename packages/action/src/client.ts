@@ -10,7 +10,7 @@
  * and the way that is guaranteed is that `keyFor` is never called here.
  */
 import type { ClientFlight, ClientRetry, UltimateError, WireAnswer } from '@ultimat3/core';
-import { FRAMEWORK_CODE, problemOf, traceHeaders } from '@ultimat3/core';
+import { FRAMEWORK_CODE, isJsonObject, problemOf, traceHeaders } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action } from './action';
 import { ContractDriftError, RemoteActionError, RpcFailedError } from './errors';
@@ -216,6 +216,7 @@ function toUltimateError(text: string, status: number, name: string): UltimateEr
     // Parsed, never taken: `body` is whatever answered the request. A list this build cannot read
     // is dropped rather than repaired, and `cause` below still carries every rejection in it.
     issues: issuesFromWire(body['issues']),
+    meta: metaFromWire(body['meta']),
     cause: stringOr(body['cause'] ?? body['detail'], `${name} failed with ${status}`),
     fix: stringOr(body['fix'], `x actions describe ${name} --json`),
     // RFC-9457's `type` IS a documentation URI, so a server that sends no `docs` extension has
@@ -224,6 +225,31 @@ function toUltimateError(text: string, status: number, name: string): UltimateEr
     // that is an absolute HTTP(S) URL — neither is trusted for being there.
     docs: [nonEmpty(body['docs']), nonEmpty(body['type'])],
   });
+}
+
+/**
+ * The document's `meta` member, or nothing. Parsed JSON is JSON-safe by construction, so the only
+ * work is shape: an object, copied own key by own key onto a fresh record. `issues` is skipped
+ * because it has its own reader and its own bound one line up, and `__proto__` because
+ * `JSON.parse` mints it as a real own key — copied by assignment it would replace the prototype
+ * of the error's `meta`, which the reporter and the overlay walk. EMPTY is `undefined`: an
+ * `{}` under `meta` would say the server declared keys and sent none.
+ */
+function metaFromWire(value: unknown): Readonly<Record<string, unknown>> | undefined {
+  if (!isJsonObject(value)) return undefined;
+  const out: Record<string, unknown> = {};
+  let carried = 0;
+  for (const [key, member] of Object.entries(value)) {
+    if (key === 'issues' || key === '__proto__') continue;
+    Object.defineProperty(out, key, {
+      value: member,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+    carried += 1;
+  }
+  return carried === 0 ? undefined : out;
 }
 
 function nonEmpty(value: unknown): string | undefined {

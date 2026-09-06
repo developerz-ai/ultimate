@@ -18,7 +18,7 @@ loadApp()                      → import(page.tsx) → module.config  → regis
                                                   → pageComponentOf → entry.component
 
 routeDocument(entry, data)     → renderHead(headFromMeta(await config.meta(data)))
-                               + <style>stylesFor(entry.surface)</style>
+                               + <link rel=stylesheet href=/styles/<hash>.css>
                                + <div id="x-root">{ await renderComponent(entry.component) }</div>
 ```
 
@@ -55,12 +55,18 @@ Both halves of the config stay as they are, and each now means one thing:
 - **No client bundle.** `Bun.build` is called nowhere. No chunks, no splitting, no `modulepreload`, no minification outside `--target binary`.
 - **No hydration.** `solid-js@1.9.14` does ship `solid-js/web` — `render`, `hydrate`, `renderToString`, `generateHydrationScript` are all there — so this is **framework work, not an upstream blocker** `As of 2026-08`. What is missing is the compile step: `solid-js/jsx-runtime` exports types and no factory, because Solid compiles JSX to `template()` calls rather than runtime `jsx()` calls. Hydration therefore needs a second, Solid-compiled bundle graph for the client, distinct from the inert `h` the server renders through. `hydrate.ts` and `islands.ts` emit the markup conventions that bundle would read; nothing reads them yet.
 - **No `<Suspense>` holes.** `renderStreamHtml` still splices `<x-hole>` chunks, but nothing marks a subtree as one, so a `stream` route flushes its whole body in the first chunk — correct output, no streaming benefit. Solid's own `<Suspense>` is **not** the missing piece and must not be reached for: it calls `getContextId()`, which throws `cannot be used under non-hydrating context` outside a Solid renderer. Async data needs no boundary here — `renderToHtml` awaits async components and promise children directly.
-- **No per-module CSS graph.** `stylesFor(surface)` filters by the stylesheet's own path, which keeps `site/` and `app/` apart but does not attribute CSS to a single route.
+- **No per-module CSS graph.** `stylesFor(surface)` filters by the stylesheet's own path, which keeps `site/` and `app/` apart but does not attribute CSS to a single route. So a route links its whole surface's sheet — which is the remaining half of the 2026-09-06 fix: the bytes are now cached rather than re-sent, but a dashboard still downloads the terminal's rules once.
 
 ## What reaches the document, in what order
 
 `As of 2026-08`. `stylesFor(surface)` emits **globals first, then modules**, and includes the
 surface's own sheets plus every `surface === null` (a package sheet) and `shared/` one.
+
+`As of 2026-09-06` that string is not in the document: `@ultimat3/cli`'s `style-bundle.ts`
+content-hashes it into `/styles/<hash>.css` (surfaces whose CSS is identical share one file), the document carries a
+`<link rel="stylesheet">` in `<head>` — still render-blocking, so nothing flashes unstyled — and
+the file is served `public, max-age=31536000, immutable`. `writeStyles` puts it in a static
+export, so the artifact stays self-contained.
 
 Two bugs lived in the gap between that sentence and the code, and both were invisible until a page
 was opened in a browser:

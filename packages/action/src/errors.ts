@@ -260,6 +260,12 @@ export interface RemoteFailure {
    * refuses to read, and in both cases `cause` still holds every rejection.
    */
   readonly issues?: readonly ValidationIssue[] | undefined;
+  /**
+   * The document's `meta` member — the keys the server's `registerProblemMeta` declared for the
+   * code, already read as a plain JSON object by `client.ts`. Carried onto the error's own `meta`
+   * so an island reads `error.meta.sessionId` where it used to run a regex over `cause`.
+   */
+  readonly meta?: Readonly<Record<string, unknown>> | undefined;
 }
 
 /** A link, not a string the server happened to put in a field the overlay renders as an href. */
@@ -314,6 +320,10 @@ export class RemoteActionError extends UltimateError {
       // `terminal` on the one field the framework promises a client never has to infer.
       retry: retryForStatus(failure.code, failure.status),
       meta: {
+        // The server's declared keys FIRST, so the four this class owns win a collision: a server
+        // meta naming `status` would otherwise overwrite the one a report reads the HTTP status
+        // from, and `origin: 'remote'` is what marks the code as one this bundle never declared.
+        ...failure.meta,
         origin: 'remote',
         action: failure.action,
         status: failure.status,

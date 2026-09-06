@@ -43,6 +43,7 @@ import { DEFAULT_METRICS_PORT, startMetricsEndpoint } from './metrics-endpoint';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { inlineScriptSources } from './script-csp';
 import { inlineStyleSources } from './style-csp';
+import { DEV_BINDING, type WebBinding } from './web-binding';
 
 /** The roles `x dev` starts when `--role` names none, in boot order. */
 export const DEV_ROLES: readonly Role[] = ['web', 'sync', 'worker', 'scheduler'];
@@ -113,13 +114,9 @@ export interface StartRolesOptions {
   readonly overrides?: RuntimeOverrides;
 }
 
-export interface WebBinding {
-  readonly dev: boolean;
-  readonly hostname: string;
-}
-
-/** Loopback and dev-mode. What `x dev` means, and what a container must override. */
-export const DEV_BINDING: WebBinding = { dev: true, hostname: 'localhost' };
+// Re-exported, not re-declared: `web-binding.ts` is a leaf so `dev-sync` can read the default
+// without importing this module, which imports it.
+export { DEV_BINDING, type WebBinding } from './web-binding';
 
 export interface RunningRoles {
   readonly roles: readonly Role[];
@@ -366,9 +363,13 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     // First, and for every role rather than only the two that open an HTTP socket: `worker` and
     // `sync` are precisely the roles whose HPAs read a series the process itself has to publish,
     // and a `worker` container with no listener is an HPA pinned at `<unknown>` forever.
+    // `?? DEV_BINDING`, not "omit the key when `options.http` is undefined". The old spread left
+    // the metrics endpoint on Bun's `0.0.0.0` for exactly the caller that asked for loopback —
+    // `x dev`, which passes no `http` at all — so the same gap the sync node had was here too.
+    const binding = options.http ?? DEV_BINDING;
     const metrics = startMetricsEndpoint({
       port: options.metricsPort ?? (options.port === 0 ? 0 : DEFAULT_METRICS_PORT),
-      ...(options.http === undefined ? {} : { hostname: options.http.hostname }),
+      hostname: binding.hostname,
     });
     started.push(async () => metrics.stop());
 

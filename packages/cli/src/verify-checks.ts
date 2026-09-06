@@ -34,6 +34,7 @@ import type { Finding } from './output';
 import { findingFrom } from './output';
 import { checkMigrationDrift } from './schema-drift';
 import { scanSiteMeta } from './seo-meta';
+import { readStaticReport } from './static-report';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
 import type { VerifyStep } from './verify-step';
 import { fromExec, fromFindings, hostFindings } from './verify-step';
@@ -211,6 +212,11 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       // to a hard `X_PRERENDER_FAILED` on `examples/dummy`), and it would be a second builder
       // beside `apps/web/prerender.ts`, which is where an app reads `SITE_ORIGIN`.
       const stats = await readBuildStats(ctx.root);
+      // The report beside the stats, for the one thing `checkBudgets` reads off it: a route the
+      // build rendered and could not weigh because its island was handed props over the cap is
+      // reported under `X_ISLAND_PROPS_INVALID` — the build's own sentence, naming the prop and
+      // its bytes — and not as an `X_BUDGET_UNMEASURED` whose fix is to go and read this file.
+      const report = await readStaticReport(ctx.root);
       // The load's own findings, FIRST and never dropped. A module that would not import registers
       // no route, so its budget is missing from the manifest and every route it declared reads as
       // `X_BUDGET_UNMEASURED` — the symptom, pointing the reader at `x build` for a file that will
@@ -224,7 +230,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         // JavaScript does this route's document boot? A live read with no island is a route
         // whose answer is "none", which no suite can fail on — the page renders, at 200.
         ...(await liveRouteFindings(ctx.root)),
-        ...checkBudgets(manifest, stats),
+        ...checkBudgets(manifest, stats, report?.unmeasured),
       ]);
     },
   },

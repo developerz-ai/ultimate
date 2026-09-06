@@ -20,8 +20,30 @@ export type IslandProps = Readonly<Record<string, JsonValue>>;
 /**
  * Props ship inside the HTML of every response, so they are page weight the `budget` never sees
  * as JS. A cap turns "I passed the whole row" into a number and a fix instead of a slow page.
+ *
+ * What the cap protects. `hydrateRuntime` inlines the bag VERBATIM as
+ * `<script type="application/json" data-x-props>` in the document, and `measureDocumentJs` counts
+ * a JSON-typed script as data — zero JS — so `budget.js` never sees a byte of it. This constant is
+ * the only ceiling on that channel. Every byte of it is parsed before first paint, on every
+ * request, on every page that renders the island, and cannot be cached apart from the page.
+ *
+ * Why 16 KiB and not 4. It was 4096 until 2026-09-05, and a page carrying a 34-row catalog
+ * (8,812 B) answered 500 at RUNTIME — a legitimate medium-sized bag, a page down. What 16 KiB
+ * costs, measured against the budgets the route table derives (`DEFAULT_ISLAND_JS_BYTES`:
+ * `site/` 20 KiB, `app/` 34 KiB of JS): the ceiling is a bag comparable in size to the island's
+ * OWN code, and never more than it. On the wire, JSON with repeated keys gzips 4-6x, so a full
+ * bag is ~3-4 KiB compressed — under 100 ms on a 3G-class link (~50 KB/s), ~1 ms of `JSON.parse`
+ * on a phone. Uncompressed (a dev server, a proxy that skips `text/html`) it is ~320 ms on that
+ * link, which is why the ceiling stays a ceiling and not a warning.
+ *
+ * Why a catalog is still the wrong thing to inline, even under the cap. A list that is the same
+ * on every request is a DATASET, not a prop: behind a query route it is one `GET`, cached by the
+ * browser and by the CDN, fetched once per session instead of rendered into every page. The prop
+ * is the id, the initial count, the endpoint — what the island needs to draw its first frame.
+ * `README.md` ("large data rides over a query endpoint") is the pattern, and the `fix:` below
+ * names it.
  */
-export const ISLAND_PROPS_MAX_BYTES = 4096;
+export const ISLAND_PROPS_MAX_BYTES = 16_384;
 
 /** JSX keys that are markup, not data: they stay on the server and never serialize. */
 const SERVER_ONLY_KEYS = new Set(['children']);
@@ -142,15 +164,39 @@ export function checkIslandProps(
     put(bag, key, assertJsonSafe(props[key], `props.${key}`, seen, file));
   }
 
-  const bytes = new TextEncoder().encode(JSON.stringify(bag)).byteLength;
+  const bytes = utf8Bytes(JSON.stringify(bag));
   if (bytes > ISLAND_PROPS_MAX_BYTES) {
+    const heaviest = propBytes(bag).slice(0, HEAVIEST_NAMED);
+    const first = heaviest[0]?.[0] ?? 'rows';
     throw new IslandPropsInvalidError(
-      `the ${moduleId} island in ${file} carries ${bytes} bytes of props (cap ` +
-        `${ISLAND_PROPS_MAX_BYTES}), and every one of them ships inside the HTML on every request`,
-      `pass an id in ${file} and fetch the rest inside the island, or raise the cap deliberately ` +
-        'by splitting the island',
+      `the ${moduleId} island in ${file} carries ${bytes} B of props (cap ${ISLAND_PROPS_MAX_BYTES} B), ` +
+        'and every one of them ships inside the HTML on every request — ' +
+        heaviest.map(([key, size]) => `props.${key} is ${size} B of the ${bytes}`).join(', '),
+      `in ${file}, pass ${heaviest.map(([key]) => `\`${key}: []\``).join(' and ')} beside ` +
+        `\`${first}Endpoint: derivePath('<queryName>')\` (@ultimat3/query) and fetch the rows inside ` +
+        'the island after mount — a list that is the same on every request is a dataset, not a ' +
+        'prop; an id, a count and a URL are',
     );
   }
 
   return bag;
 }
+
+const utf8Bytes = (text: string): number => new TextEncoder().encode(text).byteLength;
+
+/**
+ * Which keys carry the weight, heaviest first — so the finding names the prop to move, not the
+ * bag. A page with `models` at 8,812 B beside `hostId` at 12 B gets one instruction, and the
+ * instruction names `models`. Per-key bytes are the value's serialisation plus its `"key":`.
+ */
+function propBytes(bag: Record<string, JsonValue>): readonly (readonly [string, number])[] {
+  return Object.entries(bag)
+    .map(([key, value]): readonly [string, number] => [
+      key,
+      utf8Bytes(JSON.stringify(key)) + 1 + utf8Bytes(JSON.stringify(value)),
+    ])
+    .sort((a, b) => b[1] - a[1]);
+}
+
+/** At most two: one prop is the usual answer, two names a split, and a third is the whole bag. */
+const HEAVIEST_NAMED = 2;

@@ -21,6 +21,7 @@ import { findChrome } from '../src/cdp-launch';
 import { e2ePage } from '../src/e2e-page';
 import { islandBundle } from '../src/island-bundle';
 import type { PwaArtifacts } from '../src/pwa-artifacts';
+import { styleBundleOf } from '../src/style-bundle';
 import { SERVICE_WORKER_PATH, SW_REGISTER_PATH, serviceWorkerArtifacts } from '../src/sw-artifacts';
 import { routeDescriptor } from './route-descriptor-fixture';
 
@@ -46,6 +47,7 @@ const artifacts = serviceWorkerArtifacts({
     routeDescriptor({ path: '/feed', surface: 'app', mode: 'ssr', offline: 'runtime' }),
   ],
   islands: islandBundle([]),
+  styles: styleBundleOf([]),
 });
 if (artifacts === undefined) expect.unreachable('an installable app with a fallback got no worker');
 

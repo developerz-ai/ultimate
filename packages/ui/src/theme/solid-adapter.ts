@@ -29,7 +29,15 @@ export interface SolidContext<T> {
   readonly Provider: (props: { value: T; children: JSX.Element }) => JSX.Element;
 }
 
-/** The exact slice of solid-js the design system touches. */
+/**
+ * The exact slice of solid-js the design system touches — six functions, and the registration is
+ * meant to be handed exactly those six as NAMED imports: `setSolidRuntime({ createContext,
+ * useContext, createSignal, createMemo, createEffect, onCleanup })`. A `typeof import('solid-js')`
+ * namespace still satisfies this shape and still registers, but a namespace object passed to a
+ * function is one the bundler cannot shake — every export of solid-js stays in the chunk. Measured
+ * with the island bundler's own settings (minified, production, no splitting): the namespace form
+ * is 28,556 B against 13,708 B for the six picks, 14.8 kB per island that nothing ever calls.
+ */
 export interface SolidRuntime {
   createContext<T>(defaultValue: T): SolidContext<T>;
   useContext<T>(context: SolidContext<T>): T;
@@ -64,7 +72,7 @@ export function solid(): SolidRuntime {
       // ONE literal, never a concatenation: `fix-scan.ts` reads a single literal in this position
       // and counts anything else `unreadable`, so a fix split across `+` is a fix the gate stops
       // checking.
-      "paste `import * as solidRuntime from 'solid-js';` at the top of your *.island.tsx and `setSolidRuntime(solidRuntime);` as the first line of its mount(), above render() — a server render needs none",
+      "paste `import { createContext, createEffect, createMemo, createSignal, onCleanup, useContext } from 'solid-js';` at the top of your *.island.tsx and `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup });` as the first line of its mount(), above render() — six named imports, never `import * as`, which keeps all of solid-js in the chunk; a server render needs none",
     );
   }
   return INERT_SOLID_RUNTIME;

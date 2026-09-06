@@ -22,6 +22,7 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_PIPELINE_FINALIZE_FAILED',
   'X_NO_REQUEST',
   'X_ERROR_STATUS_INVALID',
+  'X_PROBLEM_META_INVALID',
   'X_CORS_CONFIG_INVALID',
   'X_CSP_DIRECTIVE_INVALID',
   'X_RATE_LIMIT_NOT_SHARED',
@@ -84,6 +85,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_PIPELINE_FINALIZE_FAILED: 'a finalize stage threw instead of finishing the response',
   X_NO_REQUEST: 'the inbound request is not in scope here',
   X_ERROR_STATUS_INVALID: 'an error code cannot be mapped to that status',
+  X_PROBLEM_META_INVALID: 'a problem document cannot carry that meta declaration',
   X_CORS_CONFIG_INVALID: 'the cors config can never produce a working response',
   X_CSP_DIRECTIVE_INVALID: 'a csp extension would emit something other than the directive it names',
   X_RATE_LIMIT_NOT_SHARED: 'the rate limit is declared fleet-wide and the store is per-process',
@@ -294,6 +296,18 @@ export const errorStatusInvalid = (code: string, reason: string): HttpError =>
     code: 'X_ERROR_STATUS_INVALID',
     cause: `${code} cannot be mapped: ${reason}`,
     fix: `x errors list --json   # then registerErrorStatus({ ${code}: 422 }) with a status the framework does not already own`,
+  });
+
+/**
+ * At boot, beside `errorStatusInvalid` and for the same class of mistake: a declaration the
+ * document could never honour — a framework-owned code, whose `meta` is operator-only; a key that
+ * is not one (`issues` rides at the top level already); or a second, different list for one code.
+ */
+export const problemMetaInvalid = (code: string, reason: string): HttpError =>
+  new HttpError({
+    code: 'X_PROBLEM_META_INVALID',
+    cause: `${code} cannot carry that meta: ${reason}`,
+    fix: `registerProblemMeta({ ${code}: ['<key>'] }) with the keys this app's error puts in meta, beside its registerErrorStatus() call`,
   });
 
 /**

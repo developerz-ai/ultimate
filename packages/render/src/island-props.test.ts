@@ -38,6 +38,50 @@ describe('checkIslandProps', () => {
     const big = 'x'.repeat(ISLAND_PROPS_MAX_BYTES + 1);
     expect(() => check({ id: big }, ['id'])).toThrow(IslandPropsInvalidError);
   });
+
+  test('the cap is 16 KiB, and a bag exactly at it passes', () => {
+    // 4096 refused a 34-row catalog at 8,812 B — a page down, at runtime, over a medium bag. The
+    // number and its reasoning are the constant's own doc comment; this pins that the boundary
+    // is inclusive and that `{"id":"…"}` is measured whole, key and quotes included.
+    expect(ISLAND_PROPS_MAX_BYTES).toBe(16_384);
+    const overhead = '{"id":""}'.length;
+    const exact = 'x'.repeat(ISLAND_PROPS_MAX_BYTES - overhead);
+    expect(check({ id: exact }, ['id'])).toEqual({ id: exact });
+    expect(() => check({ id: `${exact}x` }, ['id'])).toThrow(IslandPropsInvalidError);
+  });
+
+  test('over the cap, the cause names the heaviest props with their bytes and the fix names the endpoint pattern', () => {
+    // The finding has to name the prop to MOVE, not the bag: a page with `models` at 22 KiB
+    // beside `hostId` at 12 B gets one instruction, and it names `models`.
+    const models = Array.from({ length: 200 }, (_, i) => ({
+      id: `model-${i}`,
+      label: `Model number ${i} with a long display name`,
+      context: 200_000,
+      plans: ['pro', 'max', 'team', 'enterprise'],
+    }));
+    let caught: unknown;
+    try {
+      check({ hostId: 'h1', models, tags: ['a', 'b'] }, ['hostId', 'models', 'tags']);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(IslandPropsInvalidError);
+    const { cause, fix } = caught as IslandPropsInvalidError;
+    const total = new TextEncoder().encode(
+      JSON.stringify({ hostId: 'h1', models, tags: ['a', 'b'] }),
+    ).byteLength;
+    const modelsBytes = '"models":'.length + JSON.stringify(models).length;
+    expect(cause).toContain(`./cart.island.tsx island in ${FILE} carries ${total} B of props`);
+    expect(cause).toContain(`(cap ${ISLAND_PROPS_MAX_BYTES} B)`);
+    expect(cause).toContain(`props.models is ${modelsBytes} B of the ${total}`);
+    // Two named, heaviest first — `tags` (13 B) is second and `hostId` (14 B) is... measured, not
+    // guessed: `"hostId":"h1"` is 13 B and `"tags":["a","b"]` is 16 B, so `tags` is the second.
+    expect(cause).toContain('props.tags is 16 B');
+    expect(cause).not.toContain('props.hostId');
+    expect(fix).toContain(`in ${FILE}, pass \`models: []\` and \`tags: []\``);
+    expect(fix).toContain("modelsEndpoint: derivePath('<queryName>')");
+    expect(fix).toContain('fetch the rows inside the island after mount');
+  });
 });
 
 // `JSON.parse` creates a real OWN `__proto__` key, so a request body is enough to reach this —

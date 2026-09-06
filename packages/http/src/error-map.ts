@@ -31,6 +31,7 @@ export const ERROR_STATUS = {
   // and declaring a status the framework already owns. 500 is the honest answer to either.
   X_NO_REQUEST: 500,
   X_ERROR_STATUS_INVALID: 500,
+  X_PROBLEM_META_INVALID: 500,
   // A `hive()` whose `split()` returned no members. The caller cannot fix it by sending
   // different input — the guard belongs in the app, either by returning at least one member
   // or by skipping the hive when the source is empty — so it is the server's bug, not theirs.
@@ -338,6 +339,14 @@ export const ERROR_STATUS = {
   // runtime and makes that answer a reviewed one instead of an accident, which is the whole reason
   // this table is closed.
   X_UI_FORM_PATH_INVALID: 500,
+  // @ultimat3/render — an island handed props it cannot carry: an undeclared key, a value that is
+  // not JSON, or a bag over `ISLAND_PROPS_MAX_BYTES`. The author's fault and never the caller's,
+  // so 500 is the honest class — and it HAS to be a declared 500. Without a row the code was an
+  // unclassified failure, and `toProblem` blanks the cause of one of those outside dev
+  // (`isUnclassifiedFailure`): a 34-row catalog over the cap took a page down with a problem
+  // document that said "the details are in this process's logs" about an error whose whole
+  // value is the sentence naming the prop and its bytes. Measured on ai-maxxing, 2026-09-05.
+  X_ISLAND_PROPS_INVALID: 500,
   // @ultimat3/mail
   // The deployment configured no transport. It reaches a caller only through an inline
   // `send(…, { sync: true })` inside a request; the queued path dead-letters instead. A server-side

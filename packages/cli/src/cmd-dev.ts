@@ -39,10 +39,12 @@ import type { DevServices } from './dev-services';
 import { describeServices, reportedUrls, resolveServices } from './dev-services';
 import { storageRoutes } from './dev-storage';
 import { createTraceRecorder } from './dev-traces';
+import { isIgnoredPath } from './dev-watch';
 import { intFlagOr, PORT_RANGE } from './flag-number';
 import { holdUntilShutdown } from './hold';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands } from './island-bundle';
+import { FRAME_STYLE } from './island-harness';
 import { islandHarnessRoutes } from './island-harness-route';
 import { islandRoutes } from './island-routes';
 import { loadIslandStates } from './island-states-load';
@@ -53,6 +55,8 @@ import { flagString } from './parse';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { metricsPortFor } from './serve';
 import { loopFacts, loopFinding, loopNotice } from './statement-loop';
+import { styleBundle } from './style-bundle';
+import { styleRoutes } from './style-routes';
 import { serviceWorkerArtifacts } from './sw-artifacts';
 import { serviceWorkerRoutes } from './sw-routes';
 
@@ -92,12 +96,16 @@ interface DevState {
   islands: IslandBundle;
 }
 
-/** Debounced: a save that touches five files is one reload, not five. */
+/**
+ * Debounced: a save that touches five files is one reload, not five. What counts as a save at all
+ * is `dev-watch.ts` — a reload is a full `appManifest()` plus a `buildIslands()` over every island,
+ * so a write this cannot rule out is the most expensive no-op the dev loop has.
+ */
 function watchApp(root: string, onChange: (file: string) => void): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let last = '';
   const watcher = watch(root, { recursive: true }, (_event, filename) => {
-    if (filename === null || filename.includes('.x/') || filename.includes('node_modules')) return;
+    if (filename === null || isIgnoredPath(filename)) return;
     last = filename;
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => onChange(last), 30);
@@ -191,7 +199,13 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   const serviceWorker =
     pwa === undefined
       ? undefined
-      : serviceWorkerArtifacts({ pwa, buildId, routes: describeRoutes(), islands: state.islands });
+      : serviceWorkerArtifacts({
+          pwa,
+          buildId,
+          routes: describeRoutes(),
+          islands: state.islands,
+          styles: styleBundle(),
+        });
 
   // The app's own MCP endpoint, discovered from `apps/<app>/mcp.ts` and mounted through the SAME
   // call `runRole` makes — `POST /mcp` answered 404 in every process the framework booted until
@@ -215,6 +229,10 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     // The chunks the documents below name. Mounted before the app's routes for the reason
     // `/icons` and `/media` are: a page route must not be able to shadow an asset URL.
     ...islandRoutes(() => state.islands),
+    // And the stylesheet every one of those documents links. Read through the getter for the
+    // reason the islands are: a rebuilt island registers CSS, which mints a new URL, and a table
+    // captured at boot would answer 404 for the href the document now carries.
+    ...styleRoutes(() => styleBundle()),
     // `x shot --island`'s harness, in the `/_x` dev namespace so no app route can shadow it. It
     // lives here rather than in a second server because everything it needs is in THIS process:
     // the built chunks, the app's stylesheet registry, and the one embedded Postgres a checkout
@@ -258,10 +276,12 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     // The same seam `serve.ts` passes: the app's own error page is a FILE, so the root is what
     // `startWeb` needs to find one.
     root: options.root,
-    // The one document this process serves that the app did not write; `startRoles` covers the
-    // app's own surfaces itself. `x dev` sends the policy report-only, so an uncovered `<style>`
-    // here is a console report rather than a blank page — which is how this reached production.
-    inlineStyles: [await devShellStyle()],
+    // The documents this process serves that the app did not write — the `/_x` shell and the
+    // screenshot harness's frame. The app's OWN surfaces need no entry any more: their CSS is a
+    // content-hashed file `'self'` already admits (`style-bundle.ts`). `x dev` sends the policy
+    // report-only, so an uncovered `<style>` here is a console report rather than a blank page —
+    // which is how this reached production.
+    inlineStyles: [await devShellStyle(), FRAME_STYLE],
     // The fourth surface, and the only one an author sees without leaving the page they broke:
     // the overlay renders this request's own loops under the error it is already showing.
     // `serve.ts` boots through the same `startRoles` and passes nothing, so production has no

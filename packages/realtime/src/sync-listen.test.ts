@@ -85,3 +85,26 @@ describe('listenSyncNode and the shutdown phases', () => {
     expect(shutdownHookCount()).toBe(before);
   });
 });
+
+describe('the interface it binds', () => {
+  afterEach(() => {
+    resetLifecycle();
+    resetListeners();
+  });
+
+  test('binds the hostname it was given, and nothing wider', () => {
+    // The bug: `x dev` binds its web role to `localhost` — the option's own docstring says "so a
+    // laptop on a café network is not serving the app to the café" — while this listener took no
+    // hostname at all and got Bun's `0.0.0.0`. The socket that carries `snapshot` and `patch`
+    // frames for every registered live query was the one socket on every interface.
+    const listener = listenSyncNode(fakeNode([]), { port: 0, hostname: '127.0.0.1' });
+    expect(new URL(listener.url).hostname).toBe('127.0.0.1');
+    listener.stop();
+  });
+
+  test('still defaults to every interface, which is what a container needs', () => {
+    const listener = listenSyncNode(fakeNode([]), { port: 0 });
+    expect(new URL(listener.url).hostname).not.toBe('127.0.0.1');
+    listener.stop();
+  });
+});

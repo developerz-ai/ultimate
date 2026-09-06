@@ -186,7 +186,7 @@ to render on the server.**
 | | Server render | Client render |
 |---|---|---|
 | The renderer | `@ultimat3/render`'s inert JSX factory — a component is a plain function, called once | Solid, with a reactive graph |
-| The runtime | `INERT_SOLID_RUNTIME`, handed out automatically: signals hold, memos recompute on read, effects never run | the real one, registered once: `setSolidRuntime(solidRuntime)`, from `import * as solidRuntime from 'solid-js'` |
+| The runtime | `INERT_SOLID_RUNTIME`, handed out automatically: signals hold, memos recompute on read, effects never run | the real one, registered once: `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup })`, six named imports from `'solid-js'` — never `import * as`, which keeps every export of solid-js in the chunk (14.8 kB minified, measured) |
 | Where `useUi()` reads | the request — `currentLocale()`, `currentTimeZone()`, `useI18n()` | `<UiProvider>`, through Solid's context |
 | `<UiProvider>` | **throws** `X_UI_RUNTIME_MISSING` | the one injection point |
 
@@ -224,7 +224,14 @@ import '../../shared/global'; // `shared/global.scss` is the app's one `@use '@u
 import { createTranslator } from '@ultimat3/i18n';
 import { setSolidRuntime, UiProvider } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
-import * as solidRuntime from 'solid-js';
+import {
+  createContext,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  useContext,
+} from 'solid-js';
 import { render } from 'solid-js/web';
 
 interface Props {
@@ -240,7 +247,10 @@ interface Props {
 export function mount(el: HTMLElement, props: Props): void {
   // NOT `await import('solid-js')`: the chunk already carries Solid statically, so the await buys
   // no bytes and makes `mount` async — and the hydration runtime calls it synchronously.
-  setSolidRuntime(solidRuntime);
+  // NOT `import * as solidRuntime` either: a namespace handed to a function cannot be shaken, and
+  // it costs 14.8 kB of solid-js per island chunk that nothing calls. The six picks are the whole
+  // contract.
+  setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup });
   el.textContent = ''; // Solid's `render` APPENDS; the server's shell would stay above this one.
   render(
     () => (

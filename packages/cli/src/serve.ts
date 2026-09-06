@@ -49,6 +49,8 @@ import { readMigrations } from './migrations';
 import { startOtlpExport } from './otlp-export';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import type { RuntimeOverrides } from './runtime-overrides';
+import { styleBundle } from './style-bundle';
+import { styleRoutes } from './style-routes';
 import { serviceWorkerArtifacts } from './sw-artifacts';
 import { serviceWorkerRoutes } from './sw-routes';
 
@@ -329,7 +331,13 @@ async function bootRoles(boot: {
   const serviceWorker =
     pwa === undefined
       ? undefined
-      : serviceWorkerArtifacts({ pwa, buildId, routes: describeRoutes(), islands });
+      : serviceWorkerArtifacts({
+          pwa,
+          buildId,
+          routes: describeRoutes(),
+          islands,
+          styles: styleBundle(),
+        });
   // The app's own MCP endpoint, through the same call `x dev` makes — see `app-mcp.ts`.
   const mcpMount = await mountAppMcp(options.root);
   const routes: readonly Route[] = [
@@ -344,6 +352,9 @@ async function bootRoles(boot: {
     }),
     ...storageRoutes({ storage: runtime.storage }),
     ...islandRoutes(() => islands),
+    // The surface stylesheets the documents link. Built from the registry the `loadApp` above
+    // filled, so this process serves exactly the CSS it renders against.
+    ...styleRoutes(() => styleBundle()),
     ...appRoutes({
       buildId,
       resolveIsland: (file) => islands.resolverFor(file),

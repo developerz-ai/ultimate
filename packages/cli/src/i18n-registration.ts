@@ -19,11 +19,16 @@ import {
   registeredLocales,
 } from '@ultimat3/i18n';
 import { loadApp } from './app-load';
+import type { DuplicateProbe } from './duplicate-packages';
+import { duplicateCause, duplicateFinding, findDuplicateInstalls } from './duplicate-packages';
 import { auditApp } from './i18n-audit';
 import { I18N_INDEX_PATH } from './i18n-index';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { CATALOG_ROOT, catalogPath } from './templates/locales';
+
+/** The one package this check probes for a duplicate: its registry is the one it reads. */
+const I18N_PKG = '@ultimat3/i18n';
 
 /**
  * What this check needs of a boot. The seam is injected so a fixture can be exactly "the app
@@ -43,6 +48,8 @@ export interface RegistrationInput {
   readonly extraction: Extraction;
   readonly ignoreUnused: readonly string[];
   readonly load?: AppLoader;
+  /** The duplicate-install probe; `findDuplicateInstalls` is the production value. */
+  readonly duplicates?: DuplicateProbe;
 }
 
 export interface RegistrationReport {
@@ -74,17 +81,39 @@ function unresolvedUsedKeys(input: RegistrationInput, locale: Locale): readonly 
   return report.locales[0]?.missing ?? [];
 }
 
+/** What `X_PACKAGE_DUPLICATED`'s fix runs once the install is one copy again. */
+const RECHECK = 'x i18n check --json';
+
 export async function checkRegistration(input: RegistrationInput): Promise<RegistrationReport> {
   // Importing the app's modules IS the registration, in this process exactly as in the server's.
   const app = await (input.load ?? loadApp)(input.root);
 
+  // Asked BEFORE the registry is: two copies of `@ultimat3/i18n` in one app are two registries,
+  // and every gap below is then a symptom of the install, not of where `defineCatalogs()` sits.
+  // Reported even with no gap — the CLI may share the app's index module's copy while a page in
+  // another workspace reads the other, which renders `⟦key⟧` under a green gate.
+  const duplicate = (await (input.duplicates ?? findDuplicateInstalls)(input.root, [I18N_PKG]))[0];
   const gaps = catalogRegistrationGaps(input.catalogs);
   const index = await indexSource(input.root);
-  const findings: Finding[] = gaps.map((gap) => ({
-    ...findingFrom(catalogUnregistered(gap)),
-    ...unregisteredFix(gap.locale, index),
-    at: catalogPath(gap.locale),
-  }));
+  const findings: Finding[] =
+    duplicate === undefined ? [] : [duplicateFinding(input.root, duplicate, RECHECK)];
+  for (const gap of gaps) {
+    const finding = findingFrom(catalogUnregistered(gap));
+    findings.push(
+      duplicate === undefined
+        ? { ...finding, ...unregisteredFix(gap.locale, index), at: catalogPath(gap.locale) }
+        : // The registry's own fix names a source edit — move the `defineCatalogs()` call — that an
+          // agent following it performs on a file that is already right (ai-maxxing, 2026-09-05).
+          // With a duplicate on disk the cause IS the install, so the finding says so and the fix
+          // is the one the duplicate carries.
+          {
+            ...finding,
+            cause: `${duplicateCause(input.root, duplicate)}; ${gap.missing.length} of ${catalogPath(gap.locale)}'s ${gap.shipped} key(s) registered into the copy the CLI does not read`,
+            fix: findings[0]?.fix ?? finding.fix,
+            at: catalogPath(gap.locale),
+          },
+    );
+  }
   let unregistered = gaps.reduce((sum, gap) => sum + gap.missing.length, 0);
   let locales = gaps.length;
 

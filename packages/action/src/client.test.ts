@@ -257,3 +257,78 @@ describe('a rejection’s per-field issues, off the wire', () => {
     expect(JSON.stringify(carried)).not.toContain('hunter2');
   });
 });
+
+/**
+ * The other declared extension, off the wire. A server's `registerProblemMeta` names the `meta`
+ * keys its documents carry (an app's `X_SESSION_CHECKOUT_BUSY` carries the running session), and
+ * the error rebuilt here puts them back on `meta` — where the app's own error had them.
+ */
+describe('a document’s declared meta, off the wire', () => {
+  const busy = (meta: unknown): Readonly<Record<string, unknown>> => ({
+    code: 'X_SESSION_CHECKOUT_BUSY',
+    cause: '/srv/app on box-1 already has a running work session',
+    fix: 'wait for it',
+    meta,
+  });
+
+  test('rides onto the error’s meta beside the four members this client owns', async () => {
+    const failure = await failWith({
+      status: 409,
+      body: busy({ sessionId: 's-1', title: 'inbox', state: 'running' }),
+    });
+    expect(failure).toBeInstanceOf(RemoteActionError);
+    expect((failure as RemoteActionError).meta).toEqual({
+      sessionId: 's-1',
+      title: 'inbox',
+      state: 'running',
+      origin: 'remote',
+      action: 'publishPost',
+      status: 409,
+    });
+  });
+
+  test('the client’s own members win a collision — a server cannot relabel the origin', async () => {
+    const failure = await failWith({
+      status: 409,
+      body: busy({ origin: 'local', status: 200, action: 'other', sessionId: 's-1' }),
+    });
+    const meta = (failure as RemoteActionError).meta;
+    expect(meta?.['origin']).toBe('remote');
+    expect(meta?.['status']).toBe(409);
+    expect(meta?.['action']).toBe('publishPost');
+    expect(meta?.['sessionId']).toBe('s-1');
+  });
+
+  test('a meta that is not an object, or is empty, adds nothing', async () => {
+    for (const sent of ['s-1', 7, null, [], {}]) {
+      const failure = await failWith({ status: 409, body: busy(sent) });
+      expect((failure as RemoteActionError).meta).toEqual({
+        origin: 'remote',
+        action: 'publishPost',
+        status: 409,
+      });
+    }
+  });
+
+  test('`issues` under meta is skipped — the list has one reader, one bound, one home', async () => {
+    const failure = await failWith({
+      status: 409,
+      body: busy({ sessionId: 's-1', issues: [{ path: 'x', message: 'y' }] }),
+    });
+    expect(Object.keys((failure as RemoteActionError).meta ?? {})).not.toContain('issues');
+  });
+
+  test('an own __proto__ in the body never becomes the meta’s prototype', async () => {
+    const fetchStub: FetchLike = async () =>
+      new Response(
+        '{"code":"X_SESSION_CHECKOUT_BUSY","cause":"c","fix":"f","meta":{"__proto__":{"admin":true},"sessionId":"s-1"}}',
+        { status: 409, headers: { 'content-type': 'application/problem+json' } },
+      );
+    const api = rpc<typeof actions>({ baseUrl: 'https://app.test', fetch: fetchStub });
+    const failure = await api.publishPost({ postId: POST_ID }).catch((error: unknown) => error);
+    const meta = (failure as RemoteActionError).meta as Record<string, unknown>;
+    expect(meta['sessionId']).toBe('s-1');
+    expect(meta['admin']).toBeUndefined();
+    expect(Object.getPrototypeOf(meta)).toBe(Object.prototype);
+  });
+});

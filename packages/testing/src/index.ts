@@ -119,6 +119,7 @@ export type { AppHandle, AppOptions, BootedApp } from './harness';
 export { describeApp, testApp } from './harness';
 // Type-only: the micro-DOM is the fixture's to build, and a test only ever names what it handed back.
 export type { FakeElement, FakeNode, FakeText } from './island-dom';
+export type { FakeResizeObserverEntry, ResizeInput, ResizeRect } from './island-observers';
 export type { IslandAddress, IslandShotTarget } from './island-shot-targets';
 export {
   isIslandTheme,

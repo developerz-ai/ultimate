@@ -6,6 +6,7 @@ import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultima
 import { routeDescriptor } from '../e2e/route-descriptor-fixture';
 import { islandBundle } from './island-bundle';
 import type { PwaArtifacts } from './pwa-artifacts';
+import { styleBundleOf } from './style-bundle';
 import type { ServiceWorkerArtifacts } from './sw-artifacts';
 import { SERVICE_WORKER_PATH, SW_REGISTER_PATH, serviceWorkerArtifacts } from './sw-artifacts';
 import { serviceWorkerRoutes } from './sw-routes';
@@ -35,6 +36,7 @@ const build = (patch: Partial<PwaArtifacts> = {}): ServiceWorkerArtifacts => {
     buildId: BUILD_ID,
     routes: ROUTES,
     islands: islandBundle([]),
+    styles: styleBundleOf([]),
   });
   if (built === undefined) expect.unreachable('an app with a fallback got no service worker');
   return built;

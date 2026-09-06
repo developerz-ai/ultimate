@@ -23,6 +23,8 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `fixture-drivers.ts` | the five it declares but a driver must build — `page` `budget` `signIn` `deploy` `subscribe` |
 | `fixture-island.ts` | `mountIsland()` — build an island, import its chunk, run its `mount`. The BUILDER is a parameter |
 | `island-dom.ts` | the micro-DOM `mountIsland` drives: what compiled Solid touches, and nothing else |
+| `island-selector.ts` | the selector grammar `find`/`all` read — compounds and two combinators — and the refusal for the rest |
+| `island-observers.ts` | `ResizeObserver`, recording; `deliverResize` is the test's hand on the browser's layout |
 | `island-states.ts` | the vocabulary: what a photographable island STATE is. Types and constants, importing nothing |
 | `define-island-states.ts` | `defineIslandStates()` — one manifest, validated and frozen, with every default resolved |
 | `island-states-check.ts` | the rules a declaration must satisfy, as pure functions answering a fault |
@@ -301,6 +303,65 @@ removed.
 `island[Symbol.dispose]()` in an `afterAll`. Left installed it hands a fake `document` to every
 later FILE in the run.
 
+### Selectors
+
+`find`, `all`, `text`, `fire`, `resize`, `scroll` and `observing` take one grammar, `As of
+2026-09-05`: a **compound** of a tag, `#id`, `.class`, `[attr]` and `[attr="value"]`
+(`li[data-role="row"].odd`), joined by the **descendant** combinator (a space) and the **child**
+combinator (`>`). Matching is CSS's — right to left, `>` means the direct parent, a space means any
+ancestor, and a descendant walk backtracks — so `[data-role="scroller"] > ul > li button` finds
+the buttons in the rows and not the one in the toolbar.
+
+Anything else — a pseudo-class, a comma, `+`/`~`, an unquoted attribute value — throws
+`X_TEST_ISLAND_SELECTOR_UNSUPPORTED` naming the offset it stopped at. It used to match nothing,
+which failed the assertion after it on the wrong question.
+
+### Layout: the box, the scroll offset, `ResizeObserver`
+
+This DOM lays nothing out, so every box field is **0 until a test writes it**: `clientWidth`,
+`clientHeight`, `offsetWidth`, `offsetHeight`, `scrollWidth`, `scrollHeight`, `scrollTop` and
+`scrollLeft` are plain writable numbers on every element, `getBoundingClientRect()` derives from
+the offset box at the origin, and `scrollTo({ top })` / `scrollTo(left, top)` write the offset and
+run the element's `scroll` listener. A virtualized list — rows sliced by `scrollTop / rowHeight`,
+a window sized by `clientHeight` — is testable end to end:
+
+```ts
+import { buildIslands } from '@ultimat3/cli';
+import { expect, mountIsland } from '@ultimat3/testing';
+
+declare const root: string; // the app root, as above
+using island = await mountIsland({
+  build: buildIslands,
+  root,
+  file: 'apps/web/app/fleet/session-list.island.tsx',
+  props: { rows: 3 },
+  size: { height: 640 },
+});
+
+// The host is the one element that exists BEFORE mount; `size:` is its box then.
+// Everything the island creates starts at 0 and is laid out afterwards, by you:
+expect(island.resize('[data-role="scroller"]', { height: 100, width: 300 })).toBe(true);
+expect(island.all('[data-role="scroller"] li')).toHaveLength(3);
+
+expect(island.scroll('[data-role="scroller"]', { top: 80 })).toBe(true);
+expect(island.text('[data-role="scroller"] li')).toBe('row 3');
+```
+
+`ResizeObserver` is a constructor for the life of the mount, so an island's
+`typeof ResizeObserver === 'function'` guard takes the browser's branch. It **records** — `observe`,
+`unobserve`, `disconnect` — and fires nothing on its own: the browser's initial notification lands
+after `mount` returns, at the next rendering opportunity, and here that opportunity is your
+`island.resize(target, { width, height })`. It writes the size onto the element (`client*` and
+`offset*` together) and delivers one spec-shaped entry — `target`, `contentRect`, `borderBoxSize`,
+`contentBoxSize`, `devicePixelContentBoxSize` — to every observer watching **that** element, and
+answers whether any did, for `fire`'s reason. `island.observing(target)` is the teardown
+assertion: an `onCleanup` that forgot `disconnect()` still answers `true` after the island's
+cleanup ran. The registry is per document, so nothing an earlier mount observed survives into the
+next.
+
+Not modelled: `IntersectionObserver`. Same class of gap for an infinite-scroll sentinel; it is not
+here yet because no island the framework ships reads one.
+
 ## Declaring the states an island can be photographed in
 
 A reviewer can click their way to most of a component. They cannot click their way to *the account
@@ -403,7 +464,8 @@ fails on a page that simply has not painted yet.
 
 `X_TEST_NETWORK_SEALED` `X_TEST_DB_UNAVAILABLE` `X_TEST_NONDETERMINISTIC` `X_TEST_FIXTURE_UNKNOWN`
 `X_TEST_FACTORY_TRAIT_UNKNOWN` `X_TEST_FACTORY_NOT_PERSISTED` `X_TEST_REGISTRY_LEAK`
-`X_TEST_ISLAND_NOT_BUILT` `X_TEST_ISLAND_NO_MOUNT` `X_TEST_ISLAND_STATES_EMPTY`
+`X_TEST_ISLAND_NOT_BUILT` `X_TEST_ISLAND_NO_MOUNT` `X_TEST_ISLAND_SELECTOR_UNSUPPORTED`
+`X_TEST_ISLAND_STATES_EMPTY`
 `X_TEST_ISLAND_STATES_NOT_PURE` `X_TEST_ISLAND_STATES_MISSING_FILE` `X_TEST_ISLAND_STATES_UNKNOWN`
 `X_TEST_ISLAND_STATES_AMBIGUOUS` `X_TEST_ISLAND_STATE_ID_INVALID` `X_TEST_ISLAND_STATE_DUPLICATE`
 `X_TEST_ISLAND_STATE_JSON_INVALID` `X_TEST_ISLAND_STATE_CLOCK_INVALID`

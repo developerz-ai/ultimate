@@ -10,7 +10,12 @@ import type { SolidRuntime } from './solid-adapter';
 
 let runtime: SolidRuntime | null = null;
 
-/** Register once, in the app entry, before the first render. */
+/**
+ * Register once, in the app entry, before the first render. Hand it the six named imports —
+ * `{ createContext, useContext, createSignal, createMemo, createEffect, onCleanup }` — and not
+ * `import * as solidRuntime`: the namespace registers too, and costs 14.8 kB of unshaken solid-js
+ * per island chunk (`solid-adapter.ts` has the measurement).
+ */
 export function setSolidRuntime(next: SolidRuntime): void {
   runtime = next;
 }

@@ -270,12 +270,84 @@ else is `X_ISLAND_INVALID`, and the fix is the `git mv`.
 |---|---|
 | every prop is declared in `props: [...]` | `X_ISLAND_PROPS_INVALID`, naming each undeclared key |
 | every value is JSON — no function, `Date`, class instance, `bigint`, `undefined`, cycle | `X_ISLAND_PROPS_INVALID`, naming the path and the type |
-| serialized props ≤ `ISLAND_PROPS_MAX_BYTES` (4096) | `X_ISLAND_PROPS_INVALID`, naming the measured size |
+| serialized props ≤ `ISLAND_PROPS_MAX_BYTES` (16,384 B) | `X_ISLAND_PROPS_INVALID`, naming the heaviest props with their bytes |
 
 `<ContactModal {...post} />` fails and names `email`, `passwordHash` — every column the spread
 would have shipped. The type refuses it first (`type-pins.tsx` pins that); the render refuses it
 second, which for `static` and `isr` is build time. `children` are the server-rendered shell and
 are never serialized.
+
+`X_ISLAND_PROPS_INVALID` is a **declared 500** in `@ultimat3/http`'s status table `As of 2026-09-05`.
+It is the author's fault and never the caller's, so 500 is the class — but until it had a row it
+was an *unclassified* 500, and `problem+json` blanks the cause of one of those outside dev. A
+34-row catalog over the cap took a page down with a document that said "the details are in this
+process's logs" about an error whose whole value is the sentence naming the prop and its bytes.
+
+### Large data rides over a query endpoint, after mount
+
+The props bag is inlined **verbatim** in the document, as `<script type="application/json">`, on
+every request — and `x verify`'s `budgets` step counts a JSON-typed script as data, not JS, so
+`budget.js` never sees a byte of it. `ISLAND_PROPS_MAX_BYTES` is the only ceiling on that channel.
+It is **16 KiB** `As of 2026-09-05` (it was 4 KiB, and a 34-model catalog at 8,812 B was a 500): a bag
+comparable in size to the island's own code (`DEFAULT_ISLAND_JS_BYTES` derives 20 KiB for `site/`,
+34 KiB for `app/`), ~3-4 KiB gzipped, under 100 ms on a 3G-class link. The constant's own comment
+carries the arithmetic.
+
+A list that is the same on every request is not a prop — it is a **dataset**, and under the cap
+or over it the page is the wrong place for it: it renders into every document, is cached with
+none of them, and is parsed before first paint. The props are what the island needs to draw its
+first frame — an id, a count, and the URL of the read that answers the rest:
+
+```ts
+// page.tsx — the props are the id and the endpoint, never the rows
+import { derivePath } from '@ultimat3/query';
+import { island } from '@ultimat3/render';
+
+const Dispatch = island({
+  src: './dispatch.island.tsx',
+  props: ['hostId', 'models', 'modelsEndpoint'],
+});
+
+export const DispatchFor = (host: { readonly id: string }) =>
+  Dispatch({ hostId: host.id, models: [], modelsEndpoint: `${derivePath('modelList')}?limit=100` });
+```
+
+```tsx
+// dispatch.island.tsx — one GET after mount, cached by the browser like any read
+import { createSignal } from 'solid-js';
+import { render } from 'solid-js/web';
+
+type Model = { readonly id: string; readonly label: string };
+type DispatchProps = {
+  readonly hostId: string;
+  readonly models: readonly Model[];
+  readonly modelsEndpoint?: string;
+};
+const Picker = (props: { readonly models: readonly Model[] }) => <ul>{props.models.length}</ul>;
+
+export function mount(el: HTMLElement, props: DispatchProps): void {
+  const [models, setModels] = createSignal<readonly Model[]>(props.models);
+  if (props.modelsEndpoint !== undefined) {
+    fetch(props.modelsEndpoint, { credentials: 'same-origin' })
+      .then((response) => response.json())
+      .then((rows: readonly Model[]) => setModels(rows));
+  }
+  render(() => <Picker models={models()} />, el);
+}
+```
+
+`models: []` keeps the island's first frame honest (an empty picker, not a missing one) and
+`derivePath` is the same derivation the typed `client()` uses, so the URL cannot drift from the
+route. The `fix:` line of an over-cap `X_ISLAND_PROPS_INVALID` names exactly this edit, with the
+heaviest prop's own name in it.
+
+At **verify** time the overflow is a finding, not a runtime surprise: an `app/` page with an
+island derives a budget, the `budgets` step's build renders every budgeted route to weigh it, and
+a render that throws `X_ISLAND_PROPS_INVALID` is reported under that code — the island, the prop,
+its bytes — rather than as an `X_BUDGET_UNMEASURED` whose fix is to go and read the build's list.
+A prop that only exists per request (the row behind `[id]`) is still measured at the route's
+pattern with empty params, so a static over-cap prop is caught, and a per-request one is caught
+by the request that carries it.
 
 ### It counts against the route's budget
 

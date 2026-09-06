@@ -8,7 +8,204 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+Six more seams surfaced by the same app, one day on. Every entry names its measurement. None is
+breaking.
+
+### Added
+
+- **A query's `page()` is reachable through its GET route.** `GET /_x/query/<name>` answered a
+  bare array and nothing else, so a read over a paged external source had nowhere to put its page
+  marker but on a row — ai-maxxing's `sessionMessages` carried an `olderCursor` column on its
+  oldest message and the island recovered the cursor from the data. The route now reads two
+  controls off the search string before the schema sees it: `?_first=<n>` answers the `Page`
+  envelope `.page()` answers a server caller with — `{ rows, endCursor, hasNextPage }`, the same
+  names, and the wire cursor is the very string a direct call signs — and `&_after=<endCursor>`
+  continues it; with neither the answer is the bare array it always was. The keys carry an
+  underscore because `first` is a legal input member (the package's own tests declare one);
+  declaring `_first` or `_after` as input is `X_QUERY_INPUT_UNENCODABLE` at `query()`. A size
+  outside 1–10,000, a non-integer, an `_after` without `_first` or a control sent twice is **400**
+  `X_INPUT_INVALID` judged at the wire (`packages/query/src/page-controls.ts`) — `paginate`'s own
+  `assert` was a 500 `X_INVARIANT` blaming the server for a number the caller typed.
+  `feed.client(…).page(input, { first, after })` and `queries.feed.page(…)` read the same
+  envelope. `openapi.json` gains the read half of the API it never had: one `GET` path item per
+  registered query with its input as `in: query` parameters, the two controls, and a `200` that is
+  `oneOf` the rows and the envelope (`queryOpenApiPaths`, merged into `@ultimat3/action`'s
+  document by the CLI); both tracked apps' specs are regenerated and their `manifest` step stays
+  green. Proven end to end on `examples/dummy`'s `liveFeed` against the seeded database: two
+  disjoint pages and a terminal one. The MCP read tool still does not page.
+
+- **`@ultimat3/testing`'s island DOM answers combinators, a box, a scroll offset and a
+  `ResizeObserver`.** Measured on an app's virtualized list: `mountIsland`'s `find`/`all` read one
+  regex — `[attr="value"]` or a bare tag — and a selector outside it MATCHED NOTHING
+  (`find('[data-role="list"] button')` was a tag with a space in it), `clientHeight`/`scrollTop`/
+  `scrollHeight` were `undefined` (so `Math.ceil(height / row)` was `NaN` rows with no throw near
+  the cause), and `ResizeObserver` did not exist, so the island took the fallback branch no
+  browser takes. `island-selector.ts` reads compounds of tag, `#id`, `.class`, `[attr]` and
+  `[attr="value"]` joined by a space (descendant) or `>` (child), matched right to left as CSS
+  matches, and refuses everything else as **`X_TEST_ISLAND_SELECTOR_UNSUPPORTED`** with the offset
+  — never an empty answer. Every element carries `clientWidth/Height`, `offsetWidth/Height`,
+  `scrollWidth/Height`, `scrollTop/Left` as writable numbers (0 until written: this DOM lays
+  nothing out), `getBoundingClientRect()` and a `scrollTo` that runs the `scroll` listener.
+  `island-observers.ts` is a recording `ResizeObserver`, one registry per document;
+  `mounted.resize(el, { width, height })` writes the box and delivers a spec-shaped entry to every
+  observer of THAT element, `mounted.scroll(el, { top })` moves the offset,
+  `mounted.observing(el)` is the teardown assertion, and `mountIsland({ size })` lays out the host
+  before `mount` — the one element that exists then. `observe()` fires nothing on purpose: the
+  browser's initial notification lands after `mount` returns, and here it is the test's `resize`.
+  `IntersectionObserver` is the same class of gap and is not modelled.
+
+### Changed
+
+- **`setSolidRuntime(solidRuntime)` from `import * as solidRuntime` shipped all of solid-js in
+  every island chunk.** A namespace object handed to a function keeps every export alive, and the
+  bundler cannot shake what it cannot see unused. Measured with the island bundler's own settings
+  (minified, production, no splitting): the namespace registration is 28,556 B against 13,708 B
+  for the six members the contract names — 14.8 kB per island (5.6 kB gzipped) that nothing
+  calls; `solid-js/web`'s `render` alone is 12,238 B, so it is the namespace and not `render`
+  that drags the core in. On the island `x g resource` emits: 67,159 B → 52,900 B (25,340 →
+  19,883 gzipped). The paste line is now six named imports — `setSolidRuntime({ createContext,
+  useContext, createSignal, createMemo, createEffect, onCleanup })` — in the generator template,
+  both `X_UI_RUNTIME_MISSING` fix lines, the ui README and the wiki. Not breaking: `SolidRuntime`
+  is unchanged and `typeof import('solid-js')` still satisfies it, pinned by test; an existing
+  island keeps compiling and registering, it only keeps paying the bytes until its two lines are
+  replaced. `resource-form-island.test.ts` builds the emitted island and asserts the chunk no
+  longer carries a string only an unshaken solid-js does.
+
+- **`ISLAND_PROPS_MAX_BYTES` is 16,384, up from 4,096.** The props bag is inlined verbatim as a
+  JSON `<script>` in every document and `measureDocumentJs` counts a JSON script as zero JS, so
+  this constant is the only ceiling on that channel. 16 KiB is a bag comparable in size to the
+  island's own code and never more (`DEFAULT_ISLAND_JS_BYTES`: 20 KiB `site/`, 34 KiB `app/`):
+  ~3–4 KiB gzipped, under 100 ms on a 3G-class link, ~1 ms of `JSON.parse`; ~320 ms uncompressed,
+  which is why it remains a hard ceiling and not a warning. The arithmetic is the constant's own
+  doc comment. A medium bag is no longer a 500; a catalog is still the wrong thing to inline, and
+  the `fix:` says so.
+
+### Fixed
+
+- **Every `app/` document shipped 156,738 bytes of uncacheable inline CSS, on every navigation.**
+  `dev-render.ts` wrapped `stylesFor(surface)` in a `<style>` block, and the pipeline sends a page
+  `Cache-Control: private, no-store` — so the same 1,336 rules from 406 module sources were
+  re-sent and re-parsed on every click. Measured against ai-maxxing's running dev server: the same
+  156,753-byte `<style>` element (156,738 bytes of CSS) in `/` and in `/fleet`, 84% of the 186,485-byte
+  dashboard document and 59% of the 264,918-byte fleet one; the terminal's CSS and the session
+  console's CSS are both in the dashboard, which draws neither. Nothing in the framework emitted a
+  `<link rel="stylesheet">` anywhere, and this was never dev-only — `serve.ts` mounts the same
+  `appRoutes`. A surface's CSS is now one content-hashed file, `/styles/<hash>.css` — the hash
+  alone, so two surfaces whose CSS is byte-identical are one file, one download and one precache
+  entry — served `public, max-age=31536000, immutable`, the island machinery's shape one asset over
+  (`style-bundle.ts`, `style-routes.ts`, mounted by `x dev` and the container alike, written into
+  the static export by `writeStyles`, and named in the service worker's precache manifest beside
+  the island chunks). Still per surface, so a `site/` page never receives `app/` CSS; still in
+  `<head>`, where a `<link>` is render-blocking exactly as the inline block was, so nothing flashes
+  unstyled. Those two documents become 29,783 B and 108,216 B — the block out, a 51-byte link in —
+  and the CSS becomes one request the browser keeps for a year instead of a re-parse per click.
+  It REMOVES a CSP problem rather than adding one:
+  `style-csp.ts` hashed 157 kB of surface CSS at boot to admit a block that no longer exists, and
+  a same-origin stylesheet needs only the `'self'` `@ultimat3/http` already sends —
+  `inlineStyleSources` now hashes only what a caller says it still emits inline, which in
+  production is nothing at all and in `x dev` is the `/_x` shell plus the screenshot harness's
+  frame style (never hashed before, and the harness links the file now too). Making `stylesFor`
+  per ROUTE rather than per surface is the follow-up and is deliberately not attempted here.
+- **An island chunk's URL was not deterministic, so the `immutable` cache never hit and the
+  service worker precached a 404.** `Bun.build` is not byte-deterministic under `minify`: measured
+  on 1.4.0 against ai-maxxing's 131,858-byte `session-console` island with no source file touched
+  (`find -newermt` clean), TEN distinct `session-console-*.js` names in ten minutes, flipping BACK
+  AND FORTH between values — roughly one build in ten emitted an output of IDENTICAL length
+  differing only in minified identifier names (`var ca=Object.defineProperty` against
+  `var la=…`), which is a race in the renamer and not an input anything can order. Both
+  consequences were confirmed in that app: the precache manifest named
+  `/islands/session-console-bbe72226.js`, which 404ed, and a 131 kB island was re-downloaded on
+  every visit. `buildOne` now addresses the chunk by its INPUT — a sorted hash of the source-map's
+  `sourcesContent`, plus the entry's app-relative path, the framework version and `Bun.version`,
+  so a toolchain upgrade still mints a new URL — and a per-file cache serves the first byte string
+  a process emitted for those inputs, so one URL answers one file for the life of the process.
+  Twelve consecutive builds hash identically where the old scheme flapped. `sourcemap: 'external'`
+  costs nothing measurable (277ms against 276ms on that island) and its `//# debugId=` line is
+  stripped, so the shipped bytes and the `budget: { js }` number are unchanged; the deterministic
+  alternative, `minify: { identifiers: false }`, was measured at 193,590 B against 131,649 B —
+  +47% raw, +20% gzipped, on every island of every app — and refused. The URL is source-addressed
+  rather than byte-addressed, so two processes building the same sources can serve two byte
+  strings at one URL: they are the same program under different local identifier names, and that
+  is the trade a nondeterministic bundler forces.
+- **`x dev` rebuilt the whole app whenever git, an agent or a coverage run wrote a file.**
+  `watchApp` watched the checkout recursively and excluded two names by `includes()`, so every
+  write under `.git/`, `.personal/`, `dist/`, `coverage/` or `.claude/` ran a full `appManifest()`
+  plus a `buildIslands()` over every island — and each of those re-minted every chunk URL, which
+  is what turned the bundler race above into ten names in ten minutes. Measured in ai-maxxing,
+  whose checkout carries all five and keeps two ENTIRE copies of the app under
+  `.claude/worktrees/`, so one agent's edit rebuilt another's islands. `dev-watch.ts` names the
+  seven directories that are never a source change and matches on a PATH SEGMENT rather than a
+  substring — `includes('node_modules')` also excluded a directory legitimately named
+  `my-node_modules-notes/`, and `includes('.x/')` excluded `apps/web/app/.xyz/`, both silently.
+- **`x dev` no longer serves its live database to the network.** The web role bound
+  `DEV_BINDING.hostname` — `localhost`, and the option's own docstring says why: "so a laptop on a
+  café network is not serving the app to the café". The `sync` node on the very next port passed
+  no hostname to `Bun.serve` at all and took its `0.0.0.0` default, so the one socket carrying
+  `snapshot` and `patch` frames for every registered live query answered on every interface, while
+  the app beside it did not. The metrics endpoint had the same gap from the other direction: it
+  spread `options.http.hostname` only when `http` was defined, which is exactly not the case for
+  `x dev`. `listenSyncNode` takes a `hostname` (still defaulting to every interface, which is what
+  a container needs), `startRoles` resolves the binding ONCE as `options.http ?? DEV_BINDING` and
+  gives it to both, and `WebBinding` moved to its own leaf module so `dev-sync` can read the
+  default without an import cycle through `dev-roles`. Found in ai-maxxing, where `x dev` runs on
+  a VPS reached over a LAN.
+- **`problem+json` dropped an error's `meta`, so an island recovered an id by regex over
+  `cause`.** An app's `X_SESSION_CHECKOUT_BUSY` carried `{ sessionId, title, state }` in `meta`,
+  and `toProblem` rendered code, cause, fix, docs and `issues` — nothing else — so the dispatch
+  island ran a UUID pattern over the prose to find the session it should link to. It could not
+  simply carry `meta`: that bag is the framework's operator-only channel by contract —
+  `bodyInvalid` keeps the body excerpt the parser choked on there, the limiter its internal key,
+  core's `assert` the rejected value — and every one of those relied on it never reaching a
+  caller. `registerProblemMeta({ X_SESSION_CHECKOUT_BUSY: ['sessionId', 'title', 'state'] })`
+  (`packages/http/src/problem-meta.ts`) is the seam: per code, per key, beside
+  `registerErrorStatus` and refusing what it refuses — a framework-owned code — plus `issues`,
+  which has its own top-level home, and `__proto__`. The document carries the declared keys that
+  are set as a top-level `meta` extension member, copied member by member, all-or-nothing (a
+  `Date`, a `bigint`, a class instance, a cycle or a serialisation past `MAX_PROBLEM_META_BYTES`
+  = 4096 drops the whole member — a document missing one declared key is a claim the server never
+  made), absent rather than `{}`, and blanked with `cause` on an unclassified 5xx — which is also
+  why both registrations are needed. `@ultimat3/action`'s typed client puts the member back on
+  `RemoteActionError.meta`, under the four members that class owns, so `error.meta.sessionId`
+  reads where the regex was. A bad declaration is `X_PROBLEM_META_INVALID` at boot.
+
+- **An island handed props over the cap took the page down with a blank 500.**
+  `X_ISLAND_PROPS_INVALID` had no row in `@ultimat3/http`'s status table — pinned "undecided" in
+  `scripts/error-map-backlog.ts` — so it was an *unclassified* 500 and `toProblem` blanked its
+  cause outside dev: a 34-row model catalog (8,812 B against a 4,096 B cap) answered "the details
+  are in this process's logs" about an error whose whole value is the sentence naming the prop.
+  Measured on ai-maxxing's `app/fleet/page.tsx`, 2026-09-05. Three changes. The code has a **row**
+  (500 — the author's fault, never the caller's — and now a declared one, so the cause reaches
+  prod). The cause names the **heaviest props with their bytes** (`props.models is 8,812 B of the
+  8,900`) and the fix names the edit rather than "raise the cap": pass `models: []` beside
+  `modelsEndpoint: derivePath('<query>')` and fetch after mount — a list that is the same on every
+  request is a dataset, not a prop. And it is a **verify-time finding**: the `budgets` step
+  already renders every budgeted route to weigh it (an `app/` page with an island derives one),
+  and a render that threw `X_ISLAND_PROPS_INVALID` was filed as `X_BUDGET_UNMEASURED` — "run
+  `x build` and read its list" for a sentence the build had already composed. `prerenderSite` now
+  writes the throwable's `code`/`cause`/`fix` onto the report's `unmeasured` row, and
+  `checkBudgets` reports that one code under its own name, at the route.
+  `packages/render/README.md` documents the endpoint pattern with two examples that typecheck.
+
+- **`x i18n check` told an app to "move `defineCatalogs()` into `packages/i18n/src/index.ts`"
+  when the call was already there and the cause was two installed copies of `@ultimat3/i18n`.**
+  ai-maxxing's root resolved 19.1.0 while its `packages/i18n` workspace still pinned `^19.0.0` and
+  got its own copy under Bun's isolated layout; each copy is its own module instance with its own
+  module-scope registry, so the app's index registered every catalog into one and the CLI read
+  the other — `X_CATALOG_UNREGISTERED` over every key, with a fix naming an edit that changed
+  nothing. The same split leaves the gate's `policy` step green over an undeclared grant
+  (`isKnownPermission` checks nothing while its own copy holds no declaration) and is the
+  in-`node_modules` form of the zero-entity manifest 19.1.0's `local-cli.ts` hand-over fixed for
+  a global `x`. `packages/cli/src/duplicate-packages.ts` resolves `@ultimat3/i18n`,
+  `@ultimat3/policy` and `@ultimat3/entity` from the app root, from every workspace and from the
+  CLI's own directory, keyed by **realpath** — a workspace symlink to one checkout is one copy,
+  two store entries at ONE version are two — and reports `X_PACKAGE_DUPLICATED` naming both
+  copies, the origins that resolve each, and the `package.json` to pin (`set "@ultimat3/i18n":
+  "19.1.0" in packages/i18n/package.json, then: bun install && x i18n check --json`; two copies
+  of one version: `bun install --force`). `x i18n check` and the `i18n` step run it before reading
+  the registry and rewrite every registration gap's cause and fix to the install's; the `policy`
+  step runs it for policy and entity. Measured after the fact: today's ai-maxxing resolves one
+  real directory per package from all fourteen origins, so the finding is silent there and on
+  `examples/dummy`, and it would have fired on the morning's tree.
 
 ## 19.1.3 - 2026-09-06
 

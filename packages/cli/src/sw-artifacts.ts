@@ -9,6 +9,7 @@ import type { RouteDescriptor } from '@ultimat3/render';
 import type { IslandBundle } from './island-bundle';
 import { msg } from './messages';
 import type { PwaArtifacts } from './pwa-artifacts';
+import type { StyleBundle } from './style-bundle';
 
 /** Root scope, so `/sw.js` and nothing under a directory — `assertScope` refuses the rest. */
 export const SERVICE_WORKER_PATH = '/sw.js';
@@ -43,6 +44,12 @@ export interface ServiceWorkerInput {
   readonly buildId: string;
   readonly routes: readonly RouteDescriptor[];
   readonly islands: IslandBundle;
+  /**
+   * The surface stylesheets every document links. Precached beside the island chunks and for the
+   * same reason: they are content-addressed and served `immutable`, and a document that reaches
+   * the offline fallback with no CSS is a page the visitor cannot read.
+   */
+  readonly styles: StyleBundle;
 }
 
 /**
@@ -71,14 +78,15 @@ const pwaRoutes = (routes: readonly RouteDescriptor[]): readonly PwaRoute[] =>
   });
 
 /**
- * Every island chunk, precached. They are content-addressed and served `immutable`, so the
- * revision IS the URL's hash and a byte-identical chunk across deploys is never re-downloaded.
+ * Every island chunk and every surface stylesheet, precached. They are content-addressed and
+ * served `immutable`, so the revision IS the URL's hash and a byte-identical asset across deploys
+ * is never re-downloaded.
  *
  * Sorted by url, because `buildPrecacheManifest` sorts its own entries but the ASSET list is what
  * decides which of two equal urls wins, and `sw.js` must be byte-identical for identical input.
  */
-const islandAssets = (islands: IslandBundle): readonly PrecacheAsset[] =>
-  [...islands.chunks]
+const staticAssets = (islands: IslandBundle, styles: StyleBundle): readonly PrecacheAsset[] =>
+  [...islands.chunks, ...styles.chunks]
     .map((chunk) => ({ url: chunk.url, revision: chunk.url, bytes: chunk.bytes }))
     .sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
 
@@ -133,7 +141,7 @@ export function serviceWorkerArtifacts(
         neverCache: pwa.offline.neverCache,
       },
       capabilities: { backgroundSync: pwa.backgroundSync, push: pwa.push },
-      assets: islandAssets(input.islands),
+      assets: staticAssets(input.islands, input.styles),
     },
     input.buildId,
   );

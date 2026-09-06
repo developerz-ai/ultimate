@@ -4,7 +4,7 @@
 // only which routes qualify and where the bytes land.
 
 import { join } from 'node:path';
-import { createContext, renderThrowable, runWithContext } from '@ultimat3/core';
+import { createContext, isUltimateError, renderThrowable, runWithContext } from '@ultimat3/core';
 import type { RouteEntry } from '@ultimat3/render';
 import { describeRoutes, routeEntries } from '@ultimat3/render';
 import { renderStatic } from '@ultimat3/render/server';
@@ -21,6 +21,7 @@ import { measurementActor } from './measurement-actor';
 import { loadPwaArtifacts, WEB_MANIFEST_PATH, writePwaIcons } from './pwa-artifacts';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
+import { styleBundle, writeStyles } from './style-bundle';
 import { SERVICE_WORKER_PATH, SW_REGISTER_PATH, serviceWorkerArtifacts } from './sw-artifacts';
 
 // Re-exported, never re-declared: `static-report.ts` owns the shape because the report on disk
@@ -78,6 +79,8 @@ export interface PrerenderReport {
   readonly report: string;
   /** Client entries emitted, one chunk each. Reported so "which JS shipped?" needs no unzip. */
   readonly islands: readonly string[];
+  /** Surface stylesheets emitted, one file each — the CSS half of the same question. */
+  readonly styles: readonly string[];
   /**
    * What the service worker could not express, and what its precache manifest weighs too much of.
    *
@@ -144,6 +147,12 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // behind it, so the artifact carries every byte the browser will ask for.
   const islands = await buildIslands(options.root);
   await writeIslands(islands, options.out);
+  // And the stylesheet every document below LINKS. Derived after the island build on purpose:
+  // `islandStylesPlugin` registers an island's own `.module.scss` during `Bun.build`, so a bundle
+  // minted before it would hash CSS the documents do not carry — and the export would publish
+  // pages whose `<link>` names a file the artifact does not have.
+  const styles = styleBundle();
+  await writeStyles(styles, options.out);
   // Same rule, one asset further: a browser asks for `/favicon.ico` on the first page it loads,
   // and a static export has no route to answer it — so the bytes the served surfaces would have
   // returned go into the artifact instead of leaving a 404 in every visitor's console.
@@ -172,7 +181,13 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const serviceWorker =
     pwa === undefined
       ? undefined
-      : serviceWorkerArtifacts({ pwa, buildId, routes: describeRoutes(), islands });
+      : serviceWorkerArtifacts({
+          pwa,
+          buildId,
+          routes: describeRoutes(),
+          islands,
+          styles,
+        });
   if (serviceWorker !== undefined) {
     await Bun.write(join(options.out, SERVICE_WORKER_PATH.slice(1)), serviceWorker.source);
     await Bun.write(join(options.out, SW_REGISTER_PATH.slice(1)), serviceWorker.register);
@@ -240,7 +255,17 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       } catch (error) {
         // `renderThrowable`, never `String(error)`: this is a caught unknown, and a hostile
         // `toString` here would take the whole build down instead of one route's measurement.
-        unmeasured.push({ path: entry.path, reason: renderThrowable(error) });
+        // A framework error rides along with its code, cause and fix: `checkBudgets` reports
+        // `X_ISLAND_PROPS_INVALID` under its own name, because that sentence — the island, the
+        // prop, its bytes — is the finding, and `X_BUDGET_UNMEASURED` pointing at this list was
+        // a second command between the author and it.
+        unmeasured.push({
+          path: entry.path,
+          reason: renderThrowable(error),
+          ...(isUltimateError(error)
+            ? { code: error.code, cause: error.cause, fix: error.fix }
+            : {}),
+        });
       }
       continue;
     }
@@ -313,6 +338,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     stats,
     report,
     islands: islands.chunks.map((chunk) => chunk.file),
+    styles: styles.chunks.map((chunk) => chunk.url),
     serviceWorkerWarnings: serviceWorker?.warnings ?? [],
   };
 }

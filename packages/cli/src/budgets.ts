@@ -12,6 +12,7 @@ import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Manifest, RouteFact } from '@ultimat3/manifest';
 import { formatBytes, parseByteBudget } from '@ultimat3/render';
 import type { Finding } from './output';
+import type { UnmeasuredRoute } from './static-report';
 
 export const BUILD_STATS_FILE = join('.x', 'build-stats.json');
 
@@ -88,13 +89,51 @@ function unmeasuredFinding(url: string, declared: string, built: boolean): Findi
 }
 
 /**
+ * The ONE code a failed measurement is reported under by its own name rather than as
+ * `X_BUDGET_UNMEASURED`. Its cause is complete — the island, the prop, its bytes, the cap — and
+ * its fix is an edit to the page, so the step's own "run x build and read the list" would put a
+ * second command between the author and a sentence the build had already composed. Every other
+ * render failure keeps the generic finding: a `TypeError` from a `load` that wanted a request is
+ * a reason to read the report, not an instruction.
+ *
+ * ONE code and not "any coded error", deliberately. `X_NO_CONTEXT`, `X_UNAUTHENTICATED` and
+ * `X_DB_UNAVAILABLE` from a measurement render are facts about the BUILD's environment, and
+ * reporting them under their own codes would tell the author to fix a database the gate never
+ * had. The list grows by a decision, per code, here.
+ */
+const REPORTED_BY_OWN_CODE: ReadonlySet<string> = new Set(['X_ISLAND_PROPS_INVALID']);
+
+/**
+ * The build's own finding for a route it could not weigh, when that failure is an instruction.
+ * Read off the static report's `unmeasured` list — the same list `X_BUDGET_UNMEASURED`'s `fix:`
+ * sends its reader to, now read by the step itself for the one code it can act on.
+ */
+function ownCodeFinding(url: string, unmeasured: readonly UnmeasuredRoute[]): Finding | undefined {
+  const entry = unmeasured.find((one) => one.path === url);
+  if (entry?.code === undefined || !REPORTED_BY_OWN_CODE.has(entry.code)) return undefined;
+  return {
+    code: entry.code,
+    cause: entry.cause ?? entry.reason,
+    fix: entry.fix ?? `x build --target static --json   # its "unmeasured" list has ${url}`,
+    docs: ERROR_DOCS_URL,
+    at: url,
+  };
+}
+
+/**
  * `undefined` stats means no build has run; `{ routes: [] }` means one ran and emitted nothing.
  * The parameter is widened rather than defaulted, because collapsing the two here is exactly the
  * distinction the finding above exists to make.
+ *
+ * `unmeasured` is the static report's list of routes the build rendered and could not weigh, with
+ * each failure's code when it had one. Optional because the report is written beside the stats
+ * and can be absent for the same reason; with it, a route whose measurement failed on a code in
+ * `REPORTED_BY_OWN_CODE` is reported under that code, with the build's own cause and fix.
  */
 export function checkBudgets(
   manifest: Manifest,
   stats: BuildStats | undefined,
+  unmeasured: readonly UnmeasuredRoute[] = [],
 ): readonly Finding[] {
   const byPath = new Map((stats?.routes ?? []).map((route) => [route.path, route]));
   const findings: Finding[] = [];
@@ -104,7 +143,10 @@ export function checkBudgets(
     const lcp = route.budget?.lcp;
     if (measured === undefined) {
       if (js !== null || lcp !== undefined) {
-        findings.push(unmeasuredFinding(route.url, declaredBudgets(js, lcp), stats !== undefined));
+        findings.push(
+          ownCodeFinding(route.url, unmeasured) ??
+            unmeasuredFinding(route.url, declaredBudgets(js, lcp), stats !== undefined),
+        );
       }
       continue;
     }

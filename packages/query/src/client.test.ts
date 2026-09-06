@@ -166,3 +166,34 @@ describe('the map-wide read client', () => {
     expect(called).toBe(0);
   });
 });
+
+describe('the page half of the read client', () => {
+  test('.page() appends the two controls after the sorted input, in a fixed order', async () => {
+    const { fetch, seen } = recorder();
+    const method = queryClientMethodFor<typeof publicPost.input, PostRow>('publicPost', {
+      baseUrl: 'http://dev.test',
+      fetch,
+    });
+    await method.page({ slug: 'hello' }, { first: 20, after: 'c1' });
+    expect(seen.url).toBe('http://dev.test/_x/query/public-post?slug=hello&_first=20&_after=c1');
+  });
+
+  test('without a cursor only `_first` is sent, and the plain call sends neither', async () => {
+    const { fetch, seen } = recorder();
+    const method = queryClientMethodFor<typeof publicPost.input, PostRow>('publicPost', {
+      baseUrl: 'http://dev.test',
+      fetch,
+    });
+    await method.page({ slug: 'hello' }, { first: 5 });
+    expect(seen.url).toBe('http://dev.test/_x/query/public-post?slug=hello&_first=5');
+    await method({ slug: 'hello' });
+    expect(seen.url).toBe('http://dev.test/_x/query/public-post?slug=hello');
+  });
+
+  test('the map-wide client hands out the same .page()', async () => {
+    const { fetch, seen } = recorder();
+    const client = queryClient<typeof queries>({ baseUrl: 'http://dev.test', fetch });
+    await client.publicPost.page({ slug: 'x' }, { first: 1 });
+    expect(seen.url).toBe('http://dev.test/_x/query/public-post?slug=x&_first=1');
+  });
+});
