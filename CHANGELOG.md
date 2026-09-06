@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 19.2.0 - 2026-09-06
+
 Six more seams surfaced by the same app, one day on, plus five found by building a **second**
 app — a Romanian point-of-sale register — on 19.1.3 the same day. Every entry names its
 measurement. None is breaking.
@@ -267,6 +271,10 @@ measurement. None is breaking.
   step runs it for policy and entity. Measured after the fact: today's ai-maxxing resolves one
   real directory per package from all fourteen origins, so the finding is silent there and on
   `examples/dummy`, and it would have fired on the morning's tree.
+
+### Commits
+
+- fix: eleven frictions two apps hit, and the two ratchets that caught the repair (#414)
 
 ## 19.1.3 - 2026-09-06
 
