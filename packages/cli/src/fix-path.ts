@@ -5,10 +5,11 @@
 
 // why: Bun exposes no synchronous existence primitive — `Bun.file(p).exists()` is async and answers
 // false for a DIRECTORY, and this rule has to judge both. Delete when Bun ships one.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 // why: Bun exposes no path-join or dirname primitive. The same necessity `error-contract.ts`
 // already records for `join`.
 import { dirname, join } from 'node:path';
+import { readIgnoreFile } from './gitignore';
 
 /**
  * The extensions a fix line may cite a file by — the SAME set `COMMAND_TOKENS`' file pattern is
@@ -77,22 +78,20 @@ function isJudgeable(token: string, root: string): boolean {
 /**
  * The directories the root `.gitignore` lists as ignored, as `dir/` prefixes. Only the plain
  * directory form is read (`.personal/`, `/tmp/`, `dist`): a negation, a glob or a nested pattern
- * is a rule about files the repo may still hold, and this exclusion errs towards judging.
+ * is a rule about files the repo may still hold, and this exclusion errs towards judging — which
+ * is why it keeps its own narrow policy over `parseGitignore`'s answer rather than asking
+ * `isGitIgnored`. What it may NOT keep is a second PARSER: `dev-watch.ts` needs full gitignore
+ * semantics, and two readers of one file are two answers to what an app committed.
  */
 const ignoredDirs = new Map<string, readonly string[]>();
 
 function ignoredDirectories(root: string): readonly string[] {
   const known = ignoredDirs.get(root);
   if (known !== undefined) return known;
-  const file = join(root, '.gitignore');
-  const lines = existsSync(file) ? readFileSync(file, 'utf8').split('\n') : [];
-  const dirs = lines
-    .map((line) => line.trim())
-    .filter((line) => line !== '' && !line.startsWith('#') && !line.startsWith('!'))
-    .filter((line) => !/[*?[\]]/.test(line))
-    .map((line) => line.replace(/^\//, '').replace(/\/$/, ''))
-    .filter((line) => line !== '' && !line.includes('/'))
-    .map((dir) => `${dir}/`);
+  const dirs = readIgnoreFile(root)
+    .filter((pattern) => !pattern.negated)
+    .filter((pattern) => !/[*?[\]]/.test(pattern.glob) && !pattern.glob.includes('/'))
+    .map((pattern) => `${pattern.glob}/`);
   ignoredDirs.set(root, dirs);
   return dirs;
 }

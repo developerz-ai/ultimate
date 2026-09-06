@@ -144,6 +144,25 @@ importing them IS the registration. What those modules registered is then served
 A module that will not import becomes a finding on the result rather than a dead process, so the
 dev loop stays reachable while something is broken.
 
+**What it watches is decided before a descriptor is taken, and the ignore set is your own
+`.gitignore`, `As of 2026-09-06`.** `x dev` walks the app root and opens one non-recursive watcher
+per directory it admits, skipping an ignored one at descent rather than filtering its events
+afterwards — a recursive watch on the root took an inotify descriptor per directory in the tree,
+including `.git/`, `node_modules/` and the `.x/` this same process writes to continuously (measured:
+110 descriptors on the reference app, 39 of them noise; 1901 on a monorepo root, 1490 of them
+`.git/` and `node_modules/`, against a per-user budget of 8192 on many distributions). The rules are
+git's own — an unanchored `coverage/` matches at any depth, a leading `/` or an inner slash pins the
+pattern where it is written, `!` re-includes, a trailing `/` matches a directory and never a file —
+and ignore files in ancestor directories up to the repository root count, so an app inside a
+monorepo inherits it. Editing `.gitignore` re-reads it and re-walks the tree in place; no restart,
+and nothing ever runs `git check-ignore`. Five directory names are ignored whatever your file says,
+because it cannot be relied on to name them: `.git`, `.x`, `node_modules`, `.personal`, `.claude`.
+**`dist` and `coverage` are not among them** — root-anchor them in your `.gitignore` (`x new` now
+scaffolds `/dist/` and `/coverage/`) or an `apps/web/site/coverage/page.tsx` route is a directory
+git will not commit and the dev loop will not reload. A save that touches five files is one reload,
+and a save arriving while a reload is still building is one more reload after it, never a second one
+racing it.
+
 Without `--once` the process stays up until it is signalled. `Ctrl-C` runs the same three-phase
 drain a production `SIGTERM` runs — stop accepting, finish in-flight, close — and only then
 releases the embedded Postgres, the worker and the file watcher, so `.x/pgdata` is never left

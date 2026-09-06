@@ -12,6 +12,7 @@ import { ISLAND_EXTENSION, IslandInvalidError, islandModuleId } from '@ultimat3/
 import { contentHash } from '@ultimat3/render/server';
 import { IslandBuildFailedError } from './errors';
 import { islandStylesPlugin } from './island-styles';
+import { hasPathSegment } from './path-segments';
 import { solidJsxPlugin } from './solid-loader';
 
 /**
@@ -59,7 +60,7 @@ export interface IslandBundle {
 export async function discoverIslands(root: string): Promise<readonly string[]> {
   const files: string[] = [];
   for await (const absolute of new Bun.Glob(ISLAND_GLOB).scan({ cwd: root, absolute: true })) {
-    if (absolute.includes('node_modules')) continue;
+    if (hasPathSegment(absolute, 'node_modules')) continue;
     files.push(relative(root, absolute).split(sep).join('/'));
   }
   return files.sort();

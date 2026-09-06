@@ -77,6 +77,19 @@ describe('unit · the tsconfig.json x new writes', () => {
 
   // The buildinfo `incremental` writes has to be ignored, or the first `git status` after a
   // typecheck shows a file nobody wrote.
+  // `x dev`'s ignore set IS this file (`dev-watch.ts`), so an unanchored build-output rule costs
+  // the app a route: `coverage/` matches `apps/web/site/coverage/` too, and the directory is the
+  // URL. Reproduced against the watcher: the page never reloaded and nothing said why.
+  test('build output is root-anchored, so it cannot swallow a route of the same name', () => {
+    const emittedGitignore = emitted('.gitignore');
+    expect(emittedGitignore).toContain('/dist/');
+    expect(emittedGitignore).toContain('/coverage/');
+    expect(emittedGitignore.split('\n')).not.toContain('dist/');
+    expect(emittedGitignore.split('\n')).not.toContain('coverage/');
+    // And a workspace's own build output is still ignored, by a pattern that names where it is.
+    expect(emittedGitignore).toContain('packages/*/dist/');
+  });
+
   test('.gitignore covers the buildinfo the flag produces', () => {
     expect(emitted('.gitignore')).toContain('*.tsbuildinfo');
   });

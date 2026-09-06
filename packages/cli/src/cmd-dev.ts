@@ -4,7 +4,6 @@
 // alongside it — mounted, never re-implemented — so an agent can introspect the running app.
 // No Docker, no env setup: an unset variable means the embedded default.
 
-import { watch } from 'node:fs';
 import { join } from 'node:path';
 import { devShellStyle } from '@ultimat3/admin/dev';
 import type { Role } from '@ultimat3/core';
@@ -29,6 +28,7 @@ import { devDashboardRoutes, devPanels } from './dev-dashboard';
 import { liveFeedLabel } from './dev-live-feed';
 import { clearLock, preflight, writeLock } from './dev-lock';
 import { createStatementLedger } from './dev-n-plus-one';
+import { coalesceReloads } from './dev-reload';
 import { appRoutes } from './dev-render';
 import { replicaOverrides } from './dev-replica';
 import type { RunningRoles } from './dev-roles';
@@ -39,7 +39,7 @@ import type { DevServices } from './dev-services';
 import { describeServices, reportedUrls, resolveServices } from './dev-services';
 import { storageRoutes } from './dev-storage';
 import { createTraceRecorder } from './dev-traces';
-import { isIgnoredPath } from './dev-watch';
+import { watchTree } from './dev-watch-tree';
 import { intFlagOr, PORT_RANGE } from './flag-number';
 import { holdUntilShutdown } from './hold';
 import type { IslandBundle } from './island-bundle';
@@ -94,26 +94,6 @@ interface DevState {
    * invalidate, which is exactly why editing one takes effect where editing a route does not.
    */
   islands: IslandBundle;
-}
-
-/**
- * Debounced: a save that touches five files is one reload, not five. What counts as a save at all
- * is `dev-watch.ts` — a reload is a full `appManifest()` plus a `buildIslands()` over every island,
- * so a write this cannot rule out is the most expensive no-op the dev loop has.
- */
-function watchApp(root: string, onChange: (file: string) => void): () => void {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let last = '';
-  const watcher = watch(root, { recursive: true }, (_event, filename) => {
-    if (filename === null || isIgnoredPath(filename)) return;
-    last = filename;
-    if (timer !== undefined) clearTimeout(timer);
-    timer = setTimeout(() => onChange(last), 30);
-  });
-  return () => {
-    if (timer !== undefined) clearTimeout(timer);
-    watcher.close();
-  };
 }
 
 export interface StartDevOptions {
@@ -294,22 +274,32 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     ...(replicaOverride === undefined ? {} : { overrides: replicaOverride }),
   });
 
-  const stopWatching = watchApp(options.root, (file) => {
-    const started = performance.now();
-    void Promise.all([appManifest(options.root), buildIslands(options.root)])
-      .then(([{ manifest }, islands]) => {
-        state.manifest = manifest;
-        state.islands = islands;
-        state.reloads += 1;
-        state.reloadFinding = undefined;
-        options.onReload?.(file, Math.round(performance.now() - started));
-      })
-      // Same rule as a module that will not import: a save the manifest cannot be rebuilt from is
-      // a finding on `/_x`, never an unhandled rejection that takes the dev server down.
-      .catch((error: unknown) => {
-        state.reloadFinding = { ...findingFrom(error), at: file };
-      });
-  });
+  // One rebuild at a time, and the last save wins: a tick arriving mid-build coalesces into ONE
+  // trailing rebuild instead of racing the one in flight for `state.manifest` and `state.islands`.
+  const rebuild = coalesceReloads(
+    async (file) => {
+      const started = performance.now();
+      const [{ manifest }, islands] = await Promise.all([
+        appManifest(options.root),
+        buildIslands(options.root),
+      ]);
+      state.manifest = manifest;
+      state.islands = islands;
+      state.reloads += 1;
+      state.reloadFinding = undefined;
+      options.onReload?.(file, Math.round(performance.now() - started));
+    },
+    // Same rule as a module that will not import: a save the manifest cannot be rebuilt from is
+    // a finding on `/_x`, never an unhandled rejection that takes the dev server down.
+    (error: unknown, file: string) => {
+      state.reloadFinding = { ...findingFrom(error), at: file };
+    },
+  );
+  // Watched one directory at a time, so an ignored one costs no descriptor at all — `dev-watch.ts`
+  // decides which, from the app's own `.gitignore`. A recursive watch on the root registered one
+  // inotify descriptor per directory in the tree, `.git/`, `node_modules/` and the `.x/` this
+  // process writes to included, and filtered the events afterwards.
+  const watcher = watchTree({ root: options.root, onChange: rebuild });
 
   server = {
     url: running.url ?? `http://localhost:${options.port}`,
@@ -333,7 +323,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     runtime,
     panels,
     async stop() {
-      stopWatching();
+      watcher.close();
       await running.stop();
       await runtime.stop();
       // Released after the roles: a span opened by an in-flight request still has an exporter to

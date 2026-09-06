@@ -333,13 +333,18 @@ declare module '*.scss' {
 }
 `;
 
+// Build output is ROOT-ANCHORED, and that is not cosmetic: an unanchored `dist/` or `coverage/`
+// matches a directory of that name at ANY depth, so `apps/web/site/dist/page.tsx` — an app's own
+// `/dist` route, the directory IS the URL — was a file git refused to commit and `x dev` refused to
+// reload. `packages/*/dist/` keeps a workspace's build output ignored without reaching a surface.
 const gitignore = (): string => `node_modules/
 .x/
-dist/
+/dist/
+packages/*/dist/
 *.tsbuildinfo
 .env
 .env.*.local
-coverage/
+/coverage/
 playwright-report/
 test-results/
 `;

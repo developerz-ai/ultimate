@@ -1056,7 +1056,11 @@ hand-written layout and `readMigrations` skips it — read as a migration it sor
 | `statement-loop.ts` | one verdict → the finding, the panel fact, the overlay notice and the log line |
 | `dev-policy.ts` | which actors to ask about, and which capability each policy gates |
 | `cmd-dev.ts` | boot order, mounting `/_x`, installing the span exporter, the file watcher |
-| `dev-watch.ts` | which writes under the app root are a source change. Seven directories are never one — `.x`, `node_modules`, `.git`, `.personal`, `.claude`, `dist`, `coverage` — and each is matched as a path SEGMENT: the rule was `filename.includes('.x/') \|\| filename.includes('node_modules')`, so `git status`, an agent's scratch file and a coverage run each ran a full `appManifest()` + `buildIslands()` (measured in ai-maxxing, which keeps two whole copies of the app under `.claude/worktrees/`), while a directory named `my-node_modules-notes/` got no reload at all |
+| `dev-watch.ts` | which paths under the app root `x dev` may not watch: the app's own `.gitignore` (`gitignore.ts`) plus a floor of five directory names an ignore file cannot be relied on to carry — `.git`, `.x`, `node_modules`, `.personal`, `.claude` — every one of them dotted or an install, matched as a path SEGMENT at any depth |
+| `dev-watch-tree.ts` | the watch SET: one `watch(dir, { recursive: false })` per ADMITTED directory, a new directory picked up on `rename`, a removed one giving its descriptor back, and the 30ms trailing debounce |
+| `dev-reload.ts` | one rebuild at a time — a tick arriving mid-build coalesces into ONE trailing rebuild, for the newest file |
+| `gitignore.ts` | what git ignores, as data: parse, the ancestor chain up to the repository, and last-match-wins |
+| `path-segments.ts` | `hasPathSegment` — a directory of that exact name, never a substring of one |
 | `style-bundle.ts` / `style-routes.ts` | a surface's CSS as one content-hashed file under `/styles/`, served `immutable` — `island-bundle.ts` / `island-routes.ts`' shape one asset over. It was an inline `<style>` until 2026-09-06: 156,738 bytes, identical on every page, inside a `private, no-store` document. The URL is the hash alone, no surface in the name: a surface is not a property of the bytes, and an app whose only CSS is its global layer would otherwise write three identical files into its static export and three entries into a precache manifest that has a budget |
 | `mcp-host.ts` | the `DevCapabilities` half of `@ultimat3/mcp`'s `DevHost` — db, tests, logs, verify |
 | `mcp-db-target.ts` | which database the host is pointed at: whether it is a branch, and whether it is production |
@@ -1064,6 +1068,44 @@ hand-written layout and `readMigrations` skips it — read as a migration it sor
 | `error-catalog.ts` | imports every `@ultimat3/*` package so `x errors` answers for codes no command loads |
 | `mcp-test-output.ts` | reading `bun test`'s own summary back into a `TestRun` |
 | `cmd-mcp.ts` | `x mcp serve`: the two transports, and the local developer's caller |
+
+**The watch set is a REGISTRATION decision, not a filter, `As of 2026-09-06`.** `watch(root, {
+recursive: true })` takes one inotify descriptor per directory in the tree — measured on `x dev`
+against `examples/dummy`: **110 descriptors, 39 of them (35%) under `.x/` and `node_modules/`**, and
+on a monorepo root **1901, of which 1490 (78%) were `.git/` and `node_modules/`**, where one
+`git status` delivered 5 `.git/index` events into the JS callback. `isIgnoredPath` answered
+correctly every time and answered too late: the kernel queue entry, the callback and the slot out of
+`max_user_watches` (8192 on many distributions) were already spent. Bun 1.4.0's `fs.watch` has no
+ignore option, so `dev-watch-tree.ts` walks the root itself and registers one non-recursive watcher
+per admitted directory, pruning at descent.
+
+**And the ignore set is the app's own `.gitignore`.** Seven hand-listed directory names were wrong
+in both directions. Nothing read the ignore file, so `touch tsconfig.tsbuildinfo` — the file every
+`bun run typecheck` rewrites, named by `x new`'s own scaffolded `.gitignore` — logged
+`reloaded tsconfig.tsbuildinfo in 113ms`, a full `appManifest()` plus `buildIslands()`; on the
+framework root 54 git-ignored directories were unfiltered. And `dist` and `coverage` were matched at
+ANY depth, so an app's own `/dist` or `/coverage` ROUTE never reloaded — silently, which the file's
+own header calls worse than a spurious rebuild. `gitignore.ts` reads it with git's own anchoring
+(unanchored at any depth, a leading `/` or an inner slash where it is written, `!` re-including,
+a trailing `/` directory-only) and walks ANCESTOR ignore files up to the directory holding `.git` —
+`examples/dummy` carries none of its own and every rule about it lives in the repository root's. The
+file is re-read, and the whole watch set re-walked, on any write naming `.gitignore`; nothing ever
+spawns `git check-ignore`. `x new`'s scaffold writes `/dist/` and `/coverage/` **root-anchored** for
+this reason, plus `packages/*/dist/`. It is `fix-path.ts`'s parser, lifted: two readers of one file
+are two answers to what an app committed.
+
+**A watcher event carries no filename when the WATCHED directory itself moves.** Bun's recursive
+watcher delivers `undefined` — not `null` — on `mv myapp myapp2`, a re-clone or a volume remount,
+and `isIgnoredPath(undefined)` threw a `TypeError` inside an fs callback, outside any `try`, with no
+`uncaughtException` handler: `x dev` died with a stack trace. The listener is total over
+`string | Buffer | null | undefined` and logs `dev.watch.unnamed_event` once.
+
+**The reload has an in-flight guard, and it is the state that needed it.** A 45ms drip — a slow
+`git checkout`, a formatter walking files, `x db gen` — measured **40 reloads for 40 files**, each
+launching `Promise.all([appManifest, buildIslands])` while the previous still ran and assigning
+`state.manifest` / `state.islands` in COMPLETION order, so a slower earlier tick could land on top
+of a newer one. `coalesceReloads` (`dev-reload.ts`) keeps the LAST tick that arrived during a
+rebuild and starts exactly one more.
 
 `api-routes.ts` is the app's own API surface, composed **once** and mounted by both `cmd-dev.ts`
 and `serve.ts`: `listActions().map(toRoute)` from `@ultimat3/action` plus
