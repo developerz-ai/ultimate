@@ -148,6 +148,8 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   const grants = new GrantBook();
   const gaps = new SeqGapDetector();
   let ready = false;
+  /** Resolved by `teardown` when the last socket leaves, for a drain that is waiting its grace. */
+  let lastSocketLeft: (() => void) | null = null;
   let changes: TransportSubscription | null = null;
   let sweeping: ReturnType<typeof setInterval> | null = null;
   let reauthing: ReturnType<typeof setInterval> | null = null;
@@ -188,6 +190,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     for (const name of topics) options.hub.unsubscribe(socket, name);
     sockets.remove(socket.id);
     grants.delete(socket.id);
+    if (sockets.count === 0) lastSocketLeft?.();
     // A closed socket is a leave, said now rather than left to TTL: everyone else would otherwise
     // keep rendering a member who is provably gone for the rest of its window. The write is on the
     // bus and the close callback is synchronous, so it cannot be awaited here.
@@ -210,6 +213,18 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
    * because dropping the socket from the table is three of `teardown`'s five steps and the two it
    * misses are the ones another node can see.
    */
+  /** `graceMs`, or until `teardown` reports the table empty — whichever comes first. */
+  const graceOrEmpty = (graceMs: number): Promise<void> =>
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(done, graceMs);
+      function done(): void {
+        clearTimeout(timer);
+        lastSocketLeft = null;
+        resolve();
+      }
+      lastSocketLeft = done;
+    });
+
   const evict = (socket: SyncSocket, code: number, reason: string): readonly Promise<unknown>[] => {
     socket.close(code, reason);
     return teardown(socket);
@@ -447,8 +462,12 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       if (notified < plan.length) {
         logger.warn('sync.drain_frames_dropped', { sockets: plan.length, notified });
       }
+      // The grace is what a socket is OWED after its reconnect frame — its patches, until its own
+      // delay is up — so it is waited only while there is a socket to owe it to, and ends the
+      // moment the last one leaves. Unconditional, it was 5.0s of a 5.1s Ctrl-C on `x dev` with
+      // no browser open (measured 2026-09-06): a drain of zero sockets, sleeping for nobody.
       const graceMs = drainGraceMs(drainOptions.graceMs);
-      if (graceMs > 0) await new Promise((resolve) => setTimeout(resolve, graceMs));
+      if (graceMs > 0 && sockets.count > 0) await graceOrEmpty(graceMs);
       // Through `evict`, never `sockets.remove` + `grants.delete`: those are three of `teardown`'s
       // five steps, and the two they skip are the ones the rest of the fleet can see. A drained
       // socket that never left its presence set is a member every other node renders for a full
