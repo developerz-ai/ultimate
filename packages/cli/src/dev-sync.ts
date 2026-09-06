@@ -183,7 +183,11 @@ export async function startSync(options: StartRolesOptions): Promise<RunningSync
     // so the one socket that streams live database patches was the one socket on every
     // interface — and `WebBinding`'s own docstring is about not serving a laptop's app to a café.
     const binding = options.http ?? DEV_BINDING;
-    const listener = listenSyncNode(node, { port, hostname: binding.hostname });
+    // No drain grace: there is one node here and it is the one going away. Its clients reconnect
+    // to it when `x dev` is back, and a grace that kept their patches flowing meanwhile was five
+    // seconds of every Ctrl-C (measured 2026-09-06, 5.0s of 5.1s) spent on a reconnect frame
+    // whose target does not exist yet.
+    const listener = listenSyncNode(node, { port, hostname: binding.hostname, drainGraceMs: 0 });
     return {
       url: listener.url,
       registry,

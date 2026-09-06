@@ -177,6 +177,31 @@ describe('a socket the node evicts is released the way a closed one is', () => {
   });
 
   /**
+   * The grace is owed to a socket, not to the clock. Measured 2026-09-06 on `x dev`: Ctrl-C took
+   * 5.1s with no browser open, and 5.0s of it was this drain sleeping its default grace over a
+   * table with nothing in it.
+   */
+  test('a drain with no sockets waits for nobody', async () => {
+    const app = harness();
+    const started = performance.now();
+    await app.node.drain({ graceMs: 5_000 });
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
+  test('the grace ends when the last socket leaves, not when the clock says', async () => {
+    const app = harness();
+    const ws = await app.seat('s1');
+    const started = performance.now();
+    const draining = app.node.drain({ graceMs: 5_000 });
+    await Bun.sleep(5);
+    // Bun's close callback: the client hung up on its own during the grace.
+    app.node.websocket.close(ws);
+    await draining;
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(await held(app, 's1')).toEqual(NOTHING);
+  });
+
+  /**
    * The `reconnect` frame IS this socket's slot in the spread — there is no cursor behind it and
    * nothing re-sends it — so a client that never received one reconnects on its own backoff, into
    * the herd the spread exists to break. Sent fire-and-forget, a drain that reached half its

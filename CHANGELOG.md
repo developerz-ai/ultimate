@@ -86,6 +86,16 @@ Neither is breaking.
   `@ultimat3/db` dependency for that one marker (tier 3 → 1, drawn on the package map). It still
   takes no client from it: `PgExecutor` stays the only way the queue reaches Postgres.
 
+- **The sync node's drain no longer waits its grace for nobody.** `drain()` slept
+  `DEFAULT_DRAIN_GRACE_MS` (5s) after sending its reconnect frames whether or not it held a socket
+  to owe one to. Measured 2026-09-06 on ai-maxxing: Ctrl-C on `x dev` with no browser open took
+  5.1s, and 5.0s of it was this sleep over an empty table — the one line between `draining` and
+  `jobs.worker.draining` in the log. The grace is now waited only while a socket is held, and ends
+  the moment the last one leaves (`teardown` wakes it) rather than when the clock says.
+  `listenSyncNode` takes `drainGraceMs`, and `x dev` passes `0`: one node, whose clients reconnect
+  to it once it is back and to nothing in the meantime, so a grace that kept their patches flowing
+  was time spent on a reconnect frame whose target did not exist yet. Production keeps the default.
+
 ## 19.2.0 - 2026-09-06
 
 Six more seams surfaced by the same app, one day on, plus five found by building a **second**

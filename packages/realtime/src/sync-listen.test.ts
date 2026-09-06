@@ -42,8 +42,8 @@ function fakeNode(log: string[]): SyncNode {
       message: () => undefined,
       close: () => undefined,
     },
-    drain: async () => {
-      log.push('drain');
+    drain: async (options) => {
+      log.push(options?.graceMs === undefined ? 'drain' : `drain(graceMs=${options.graceMs})`);
       return [];
     },
   };
@@ -73,6 +73,17 @@ describe('listenSyncNode and the shutdown phases', () => {
 
     expect(log).toEqual(['stopAccepting', 'inflight', 'drain', 'stop']);
     listener.stop();
+  });
+
+  test('the drain grace it was given reaches drain(), and none means the node`s default', async () => {
+    const log: string[] = [];
+    const listener = listenSyncNode(fakeNode(log), { port: 0, drainGraceMs: 0 });
+    try {
+      await drain('SIGTERM');
+      expect(log).toContain('drain(graceMs=0)');
+    } finally {
+      listener.stop();
+    }
   });
 
   test('both hooks are unregistered by stop(), so a restart cannot drain a dead node', () => {

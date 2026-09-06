@@ -20,6 +20,13 @@ export interface ListenOptions {
    * defeated by the listener beside it.
    */
   readonly hostname?: string;
+  /**
+   * The grace `drain()` gives the sockets it holds on SIGTERM, in ms; the node's default when
+   * omitted. `0` is for a process with nobody to hand its clients to — `x dev`, one node, whose
+   * clients reconnect to it once it is back and to nothing in the meantime: the 5s it kept their
+   * patches flowing was 5s of a Ctrl-C that had nothing else to wait for.
+   */
+  readonly drainGraceMs?: number;
 }
 
 export interface SyncListener {
@@ -61,7 +68,7 @@ export function listenSyncNode(node: SyncNode, options: ListenOptions = {}): Syn
     { phase: 'accept' },
   );
   const unregister = onShutdown('realtime:sync', async () => {
-    await node.drain();
+    await node.drain(options.drainGraceMs === undefined ? {} : { graceMs: options.drainGraceMs });
     await node.stop();
     server.stop();
     stopListening();
