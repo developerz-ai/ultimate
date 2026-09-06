@@ -15,7 +15,8 @@ import type { BackfillDefinition } from './backfill';
 import { backfill } from './backfill';
 import { backfillPass } from './backfill-pass';
 import { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
-import { createMemoryStepStore, createStepRunner } from './steps';
+import { createStepRunner } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 
 const rows = entity('backfill_rate_rows', {
   columns: { id: uuid().primaryKey(), orgId: uuid(), title: text({ max: 40 }) },

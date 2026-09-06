@@ -8,6 +8,7 @@
 
 import type { Clock } from '@ultimat3/core';
 import { finiteOption, logger, renderThrowable } from '@ultimat3/core';
+import { expectedQueryLoop } from '@ultimat3/db';
 import type { DurationInput } from './clock';
 import { finiteDurationMs, nowMs } from './clock';
 import { JobAbortedError, JobTimeoutError, StepDuplicateError } from './errors';
@@ -111,39 +112,6 @@ export class StepSuspension extends Error {
 
 export function isStepSuspension(error: unknown): error is StepSuspension {
   return error instanceof Error && (error as { brand?: unknown }).brand === StepSuspension.brand;
-}
-
-export function createMemoryStepStore(): StepStore {
-  const byRun = new Map<string, Map<string, StepRecord>>();
-  const runOf = (runId: string): Map<string, StepRecord> => {
-    let run = byRun.get(runId);
-    if (run === undefined) {
-      run = new Map();
-      byRun.set(runId, run);
-    }
-    return run;
-  };
-  return {
-    get(runId, name) {
-      return Promise.resolve(byRun.get(runId)?.get(name));
-    },
-    put(record) {
-      runOf(record.runId).set(record.name, record);
-      return Promise.resolve();
-    },
-    list(runId) {
-      const records = [...(byRun.get(runId)?.values() ?? [])];
-      return Promise.resolve(records.sort((a, b) => a.startedAt - b.startedAt));
-    },
-    del(runId, name) {
-      byRun.get(runId)?.delete(name);
-      return Promise.resolve();
-    },
-    clear(runId) {
-      byRun.delete(runId);
-      return Promise.resolve();
-    },
-  };
 }
 
 export interface StepRunnerOptions {
@@ -258,6 +226,21 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
   const cancelled = (): boolean => runSignal.aborted;
 
   /**
+   * The statement itself, declared deliberate to the N+1 detector. One write per step IS the
+   * design this file's header states — each step completes at its own instant and its output has
+   * to be durable before the next one starts, so five steps are five `SQL_STEP_PUT`s that no
+   * batch could replace. Without the declaration `x dev` warned `X_N_PLUS_ONE_WRITE` on every
+   * job of five or more steps, a verdict against the framework's own persistence that an app
+   * could neither fix nor silence. The scope ends with the write: the hydrating `list` and the
+   * job's own statements are judged as before.
+   */
+  const persist = (record: StepRecord): Promise<void> =>
+    expectedQueryLoop(
+      'a durable step is written the instant it completes, one statement per step by design',
+      () => store.put(record),
+    );
+
+  /**
    * EVERY write this runner makes, and the one place the cancellation is enforced. A step result
    * from a cancelled attempt is a write onto the attempt that replaced it: the deadline nacked
    * this job, another worker claimed the same `runId`, and a late `put` would hand it a step it
@@ -265,7 +248,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
    */
   const put = async (record: StepRecord): Promise<void> => {
     if (cancelled()) throw new JobAbortedError({ job: jobName, step: record.name });
-    await store.put(record);
+    await persist(record);
     remember(record);
   };
 
@@ -329,7 +312,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
           attempts,
           error: renderThrowable(error),
         };
-        await store.put(failure);
+        await persist(failure);
         remember(failure);
       }
       throw error;

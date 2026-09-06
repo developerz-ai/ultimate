@@ -14,7 +14,8 @@ import { JobAbortedError } from './errors';
 import { exportRows } from './export';
 import { exportManifestKey, exportPartKey, memoryExportSink } from './export-sink';
 import { resetJobs } from './job';
-import { createMemoryStepStore, createStepRunner, type StepStore } from './steps';
+import { createStepRunner, type StepStore } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 
 const rows = entity('export_pass_rows', {
   columns: { id: uuid().primaryKey(), orgId: uuid(), title: text({ max: 40 }) },

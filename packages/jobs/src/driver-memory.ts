@@ -25,7 +25,7 @@ import { JobDuplicateError } from './errors';
 import type { LeaseStore } from './leases';
 import { createMemoryLeaseStore } from './leases';
 import type { StepStore } from './steps';
-import { createMemoryStepStore } from './steps';
+import { createMemoryStepStore } from './steps-memory';
 
 export interface MemoryDriverOptions {
   readonly clock?: Clock;

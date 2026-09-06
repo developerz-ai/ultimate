@@ -167,6 +167,7 @@ graph TD
   query --> policy
   query --> http
   query --> cache
+  jobs --> db
   jobs --> entity
   jobs --> time
   realtime --> query

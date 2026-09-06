@@ -54,8 +54,10 @@ import type { HeldLease, LeaseStore } from './leases';
 import type { StepStore } from './steps';
 
 /**
- * The one thing this driver needs from the DB layer, declared structurally so this package can
- * depend on no database package at all.
+ * The one thing this driver needs from the DB layer, declared structurally so this package needs
+ * no database CLIENT: `@ultimat3/db` is imported for `expectedQueryLoop` — the marker that tells
+ * the N+1 detector a step write is one-per-step by design (`steps.ts`) — and never for a
+ * connection.
  *
  * **Not satisfied by `Bun.sql`** — verified against Bun 1.4.0: `Bun.sql.query` is `undefined`.
  * `Bun.sql` is a tagged template whose positional form is `unsafe`, so a `{ executor: Bun.sql }`
