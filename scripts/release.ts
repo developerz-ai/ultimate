@@ -6,12 +6,19 @@
 //   bun run scripts/release.ts --bump minor [--dry-run] [--json]
 
 import { join } from 'node:path';
-import { checkPackageShape, SEMVER } from '@ultimat3/cli';
+import { SEMVER } from '@ultimat3/cli';
 import { parseChangelog } from './changelog-check';
 import { CHART_FILE, setChartVersions } from './chart-version';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import {
+  performedWriteLine,
+  performReleaseWrites,
+  plannedWriteLine,
+  RELEASE_WRITES,
+  releaseCheckFindings,
+} from './lib/release-writes';
 import { repoRoot, run } from './lib/run';
 import { listWorkspaces, publishOrder, workspaceManifests } from './lib/workspaces';
 
@@ -252,10 +259,16 @@ if (import.meta.main) {
   // the version about to be published? The lockstep rule on its own compares packages only to each
   // other, so 29 packages all at 1.2.0 pass while the tag says v1.10.1 — and the publish then dies
   // `EPUBLISHCONFLICT` on all 29. The release workflow runs this before `npm publish`.
+  //
+  // "Stamped" is EVERY file that carries the version, not the 31 manifests alone. It was the
+  // manifests alone until 19.3.0, whose tag answered `31 packages are stamped at 19.3.0` and then
+  // failed `verify` 157 seconds later on `framework.manifest.json`, 235 `bun.lock` facts and
+  // `wiki/_Footer.md:8` — three files a bump derives from the manifests and did not write. This
+  // step exists to refuse BEFORE the gate does, so the same three now have to answer here.
   const check = flagString(args, 'check');
   if (check !== undefined) {
     const findings = SEMVER.test(check)
-      ? await checkPackageShape(root, { release: check })
+      ? await releaseCheckFindings(root, check)
       : [badFlagFinding('check', check, 'a semver version (e.g. 1.3.0)')];
     report(
       {
@@ -263,7 +276,7 @@ if (import.meta.main) {
         script: 'release',
         summary:
           findings.length === 0
-            ? `${publishable.length} packages are stamped at ${check}`
+            ? `${publishable.length} packages are stamped at ${check}, and so is every file derived from them`
             : `${findings.length} finding(s): this repo is not at ${check}`,
         findings,
         data: { check, packages: publishable.length },
@@ -374,23 +387,36 @@ if (import.meta.main) {
     await Bun.write(changelogPath, promoted.changelog);
   }
 
+  // AFTER the manifests, never before: all three of these are derived from what the loop above
+  // just wrote, so a run that computed them first would record the version this release is leaving.
+  const performed = dryRun
+    ? { writes: [], findings: [] }
+    : await performReleaseWrites(root, version);
+
   report(
     {
       // Findings, not decoration: `ok: true` unconditionally meant a run that reported real
       // X_RELEASE_VERSION_SKEW still exited 0, so the one signal a release pipeline reads said the
       // repo was in a releasable state while the report below said it was not.
-      ok: skew.length === 0,
+      // A write this run could not perform is a failing release, not a footnote: the tree it leaves
+      // behind is the one the tag would be cut on, and the gate reads all three files.
+      ok: skew.length === 0 && performed.findings.length === 0,
       script: 'release',
       summary: dryRun
         ? `would release ${publishable.length} packages at ${version}`
         : `${publishable.length} packages set to ${version}`,
-      findings: skew,
+      findings: [...skew, ...performed.findings],
       lines: [
         `  version   ${current} -> ${version}`,
         `  packages  ${publishable.map((workspace) => workspace.name).join(', ')}`,
         `  manifests ${manifests.length} rewritten (${published.size} published, the rest repinned)`,
         `  chart     ${CHART_FILE} version + appVersion -> ${version}`,
         `  changelog [Unreleased] promoted to "## ${version} - ${date}", a fresh [Unreleased] above it`,
+        // Three lines either way: a dry run that listed only what it would NOT do is how the three
+        // derived files stayed invisible for nineteen majors.
+        ...(dryRun
+          ? RELEASE_WRITES.map(plannedWriteLine)
+          : performed.writes.map(performedWriteLine)),
         log.ok
           ? `  commits   ${subjects.length} since v${current}, appended under ### Commits`
           : `  commits   none listed — this clone has no v${current} tag to bound the range`,
@@ -405,6 +431,9 @@ if (import.meta.main) {
         previousTagFound: log.ok,
         changelogDate: date,
         dryRun,
+        writes: dryRun
+          ? RELEASE_WRITES.map((spec) => ({ kind: spec.kind, at: spec.at, command: spec.command }))
+          : performed.writes,
       },
     },
     args.json,

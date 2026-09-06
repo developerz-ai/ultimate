@@ -53,23 +53,59 @@ export interface VersionStamp {
   readonly version: string;
 }
 
+/**
+ * The indices of the lines a stamp may live on — everything outside a fenced block. Shared by the
+ * reader and the rewriter below, because "which lines count" is one question: a rewriter with its
+ * own fence loop would move a version inside a shell example the reader deliberately skipped.
+ */
+function* proseLineIndices(lines: readonly string[]): Generator<number> {
+  let fenced = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^\s*(?:```|~~~)/.test(lines[index] ?? '')) {
+      fenced = !fenced;
+      continue;
+    }
+    if (!fenced) yield index;
+  }
+}
+
 /** Every stamp on one page. Pure over the text. */
 export function readStamps(file: MarkdownFile): readonly VersionStamp[] {
   const found: VersionStamp[] = [];
   const lines = file.text.split('\n');
-  let fenced = false;
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? '';
-    if (/^\s*(?:```|~~~)/.test(line)) {
-      fenced = !fenced;
-      continue;
-    }
-    if (fenced) continue;
-    for (const match of line.matchAll(STAMP)) {
+  for (const index of proseLineIndices(lines)) {
+    for (const match of (lines[index] ?? '').matchAll(STAMP)) {
       found.push({ path: file.path, line: index + 1, version: match[1] as string });
     }
   }
   return found;
+}
+
+/**
+ * Every stamp on one page moved to `version` — the edit `X_VERSION_STAMP_STALE` names, performed,
+ * so a release bump writes the footer rather than leaving it for the gate to refuse at the tag.
+ *
+ * The `STAMP` grammar itself, never a second pattern: what the rule FINDS and what a release
+ * WRITES have to be the same sentence, or a bump moves a line the check does not read and leaves
+ * the line it does. Only the version inside the match moves — the `` `As of `` date beside it is
+ * somebody's claim about when the sentence was true, and a release does not know it.
+ */
+export function rewriteStamps(
+  file: MarkdownFile,
+  version: string,
+): { readonly text: string; readonly moved: number } {
+  const lines = file.text.split('\n');
+  let moved = 0;
+  for (const index of proseLineIndices(lines)) {
+    lines[index] = (lines[index] ?? '').replace(STAMP, (whole: string, found: string) => {
+      if (found === version) return whole;
+      moved += 1;
+      // `whole` starts AT the version (the optional `v` is inside the match), so the first
+      // occurrence of `found` in it is the stamp and never the date behind it.
+      return whole.replace(found, version);
+    });
+  }
+  return { text: lines.join('\n'), moved };
 }
 
 export const readStampPages = async (root: string): Promise<readonly MarkdownFile[]> => {

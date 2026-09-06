@@ -53,14 +53,18 @@ The rule is enforced, not documented: `x verify`'s **package-shape** step report
 would surface as a failed install of a version that cannot be unpublished.
 
 ```sh
-bun run scripts/release.ts --bump minor        # or --version 1.1.0
+bun run scripts/release.ts --bump minor        # manifests, chart, changelog, AND the three derived
+                                               # files: framework.manifest.json, bun.lock, the footer
 bun install                                    # regenerate bun.lock, by hand — never Dependabot
-bun run scripts/lockfile-pins.ts --write       # bun install answers "no changes" and leaves
-bun install --frozen-lockfile                  # every workspace pin at the OLD version
+bun install --frozen-lockfile                  # confirms what the bump already corrected
+bun run scripts/release.ts --check 1.1.0       # what the release workflow asks before it publishes
 bun run verify                                 # the gate, including the lockstep check
 git add -A && git commit -m "release: 1.1.0"
 git tag -a v1.1.0 -m 1.1.0 && git push origin v1.1.0   # -a: --follow-tags SKIPS a lightweight tag
 ```
+
+`bun run scripts/lockfile-pins.ts --write` is no longer a step — the bump performs it. It is still
+the repair when something else moves a manifest, and running it after a bump is a no-op.
 
 Then publish a GitHub Release for the tag — that is what triggers the workflow.
 
@@ -309,7 +313,24 @@ A release with nothing under `[Unreleased]` and no commit since the previous tag
    **promotes** `## [Unreleased]` to `## X.Y.Z - <date>`, opening a fresh empty `[Unreleased]` above
    it. Commit subjects since the previous tag are appended **inside** that section under
    `### Commits`. Dry it first: `--bump patch --dry-run --json` computes the promotion, refuses on
-   the same findings, and writes nothing.
+   the same findings, names the three writes below, and writes nothing.
+
+   **It writes the three DERIVED files too**, `As of 2026-09-06`, after the manifests and through
+   the same passes the standalone commands run — never a second copy:
+
+   | Written | Why the manifests alone are not enough |
+   |---|---|
+   | `framework.manifest.json` (`bun run manifest`) | it embeds every package version — 32 lines a bump moves, `X_MANIFEST_DRIFT` if it does not |
+   | `bun.lock` (`bun run lockfile:fix`) | `bun install` refreshes only a workspace whose own manifest changed, and `--frozen-lockfile` accepts every stale range — 235 facts at 19.3.0 |
+   | `wiki/_Footer.md` (the one page that stamps a version) | the footer renders under all 46 wiki pages, so one release moves one line |
+
+   A write it cannot perform is a **refusal** carrying the command that performs that one write, and
+   `--check <version>` now asks the same three questions — so a tree that owes any of them is
+   refused by the release workflow's own "the repo is stamped at the version this tag claims" step,
+   before `verify` reaches it. **v19.3.0 is the tag that shipped without them**: `--check 19.3.0`
+   answered `31 packages are stamped at 19.3.0` on that tree, `verify` refused it 157 seconds later
+   on all three, and the run published nothing. Read the state, never this paragraph:
+   `bun run scripts/release.ts --check <version> --json`.
 2. Commit, tag `vX.Y.Z`, push.
 3. Publish a GitHub Release for that tag (or **Actions → release → Run workflow** with the tag
    selected and the version typed in). **A branch will not do**: the workflow's first step refuses

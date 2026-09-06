@@ -8,7 +8,23 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- `release.ts --bump` writes everything the gate reads at the tag, and `--check` refuses on any of
+  it. Three files carry the version and are DERIVED from the 48 package manifests a bump stamps,
+  and the bump wrote none of them: `framework.manifest.json`, which embeds every package version
+  (32 lines — 31 versions plus the `buildId` that hashes them); `bun.lock`, whose 235 recorded
+  workspace facts `bun install` will not refresh and `--frozen-lockfile` accepts; and
+  `wiki/_Footer.md:8`, the one page in the wiki that stamps a version. Measured on release run
+  34064990178: `bun run scripts/release.ts --check 19.3.0` answered
+  `{"ok":true,…,"31 packages are stamped at 19.3.0"}` on the v19.3.0 tag's own tree, and the gate
+  refused that same tree 157 seconds later — `unit` on `scripts/lockfile-pins.test.ts:205` and
+  `manifest` on `X_MANIFEST_DRIFT` + 204 × `X_LOCKFILE_STALE` + `X_VERSION_STAMP_STALE`. Nothing
+  published. `--bump` now performs all three after the manifests, through the same passes
+  `bun run manifest`, `bun run lockfile:fix` and the gate's own stamp reader run — never a second
+  copy — and refuses with the command that performs the one it could not; `--dry-run` names all
+  three; `--check` reports each with a runnable `fix:`, so the workflow's own step refuses before
+  `verify` spends the two and a half minutes finding out.
 
 ## 19.3.0 - 2026-09-06
 
