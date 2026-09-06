@@ -220,6 +220,23 @@ describe('a delivery that does not land', () => {
     expect(await codeOf(() => one.run())).toBe('X_WEBHOOK_DELIVERY_REJECTED');
   });
 
+  test('a 409 is a concurrent writer and not a refusal — cores table decides, not a copy', async () => {
+    // The private copy read `>= 500 || 408 || 425 || 429` and omitted the 409 that
+    // `packages/core/src/retryable-status.ts` has always carried, so a receiver answering "another
+    // writer won this round" dead-lettered on attempt 1 instead of landing on the next one.
+    const one = harness();
+    one.answer = () => Promise.resolve(new Response('conflict', { status: 409 }));
+
+    let thrown: unknown;
+    try {
+      await one.run();
+    } catch (error) {
+      thrown = error;
+    }
+    expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_WEBHOOK_DELIVERY_FAILED');
+    expect(isUltimateError(thrown) ? thrown.retry : undefined).toBe('retryable');
+  });
+
   test('a redirect is refused rather than followed', async () => {
     const one = harness();
     one.answer = () =>

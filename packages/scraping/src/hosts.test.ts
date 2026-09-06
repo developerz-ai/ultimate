@@ -49,4 +49,27 @@ describe('unit · the decision fails CLOSED', () => {
   test('an empty allow list admits nothing', () => {
     expect(hostDecision('https://example.com/', []).allowed).toBe(false);
   });
+
+  test('javascript: is REFUSED, on every allow list including the wildcard one', () => {
+    // It sat on the same line as about:/data:/blob: because it has no host either — but "no host"
+    // is where the resemblance ends: the other three are inert content, and this one executes in
+    // the page's origin with the session's cookies. An allow list cannot say anything about it,
+    // so the fail-closed answer is the only honest one.
+    expect(hostDecision('javascript:fetch("/admin").then(r=>r.text())', [ANY_HOST])).toEqual({
+      allowed: false,
+      host: '',
+    });
+    expect(hostDecision('JavaScript:alert(1)', ['example.com']).allowed).toBe(false);
+  });
+
+  test('javascript://<an allow-listed host>/%0a<code> is refused too — the authority is a comment', () => {
+    // Deleting `javascript:` from the hostless set is not the fix on its own: `javascript:` is not
+    // a special scheme, so `//api.test` really does parse as an authority, `hostMatches` really
+    // does match it, and the payload after the newline runs in the CURRENT page's origin. The
+    // scheme is refused by name for this shape, not by having no host.
+    expect(hostDecision('javascript://api.test/%0afetch("/admin")', ['api.test'])).toEqual({
+      allowed: false,
+      host: '',
+    });
+  });
 });

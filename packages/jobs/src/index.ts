@@ -233,14 +233,11 @@ export type {
   MemoryOutboxStore,
   OutboxDeps,
   OutboxRecord,
-  OutboxRelay,
   OutboxStore,
-  RelayOptions,
 } from './outbox';
 export {
   createJobsFacade,
   createMemoryOutboxStore,
-  createOutboxRelay,
   enqueueInTx,
   jobsFacade,
   resetJobsFacade,
@@ -251,6 +248,8 @@ export {
 export { DEFAULT_OUTBOX_CLAIM_LEASE_MS } from './outbox-lease';
 export type { PgOutboxOptions } from './outbox-pg';
 export { createPgOutboxStore } from './outbox-pg';
+export type { OutboxRelay, RelayOptions } from './outbox-relay';
+export { createOutboxRelay } from './outbox-relay';
 export type {
   PurgeDefinition,
   PurgeInput,

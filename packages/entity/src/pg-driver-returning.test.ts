@@ -181,4 +181,39 @@ describe('a filtered write over an entity only the app can judge', () => {
       await caught(memory.updateWhere({ note: 'triaged' }, { slug: 'Not A Slug' }, { orgId: ORG })),
     ).toBeUltimateError('X_INVARIANT_VIOLATED');
   });
+
+  /**
+   * The bound is the other half of "one filtered write, one meaning". The Postgres driver counts
+   * first and refuses past `MAX_ASSERTED_ROWS`, so a sweep this wide is a coded refusal naming
+   * `inBatches`; the in-memory driver had no bound at all and answered `50001`. A test written
+   * against memory therefore proved a call production refuses — which is the one thing the
+   * two-driver split exists to prevent.
+   */
+  test('and the memory driver refuses the same sweep the Postgres one does', async () => {
+    const wide: Ticket[] = Array.from({ length: MAX_ASSERTED_ROWS + 1 }, (_, index) => ({
+      id: `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`,
+      orgId: ORG,
+      slug: 'a-ticket',
+      note: null,
+    }));
+    const memory = memoryRepo(tickets, wide);
+
+    const error = await caught(
+      memory.updateWhere({ note: null }, { note: 'triaged' }, { orgId: ORG }),
+    );
+
+    expect(error).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(String(error?.fix)).toContain('inBatches(1000)');
+    // Refused BEFORE the write, exactly as the count comes before the UPDATE: not one of the rows
+    // it declined to judge may have been written.
+    expect(
+      await memory.count({ orgId: ORG, where: [{ column: 'note', op: 'eq', value: 'triaged' }] }),
+    ).toBe(0);
+  });
+
+  test('one row inside the bound still writes, so the guard is a ceiling and not a wall', async () => {
+    const memory = memoryRepo(tickets, [{ id: ID, orgId: ORG, slug: 'a-ticket', note: null }]);
+
+    expect(await memory.updateWhere({ note: null }, { note: 'triaged' }, { orgId: ORG })).toBe(1);
+  });
 });

@@ -121,7 +121,7 @@ what survived eviction and not what happened.
 
 ## Two transports, one session
 
-Drive the browser through login and navigation, then pull the bulk off the site's own JSON endpoints. `http.request()` carries the browser's cookies (scoped per RFC 6265 §5.1.3/§5.1.4), its headers, its proxy, the same `allowHosts`, the same robots gate, the same pacing and the same cancellation.
+Drive the browser through login and navigation, then pull the bulk off the site's own JSON endpoints. `http.request()` carries the browser's cookies (scoped per RFC 6265 §5.1.3/§5.1.4), its headers, its proxy, the same `allowHosts`, the same robots gate, the same pacing and the same cancellation. A redirect is followed one hop at a time under the same gates — each `Location` is screened against `allowHosts` and robots, recorded in `page.network()` under the URL actually requested, and re-scoped for cookies — so a scraped endpoint cannot 302 the worker onto a host the allow list never named; `res.url` is the final URL, a chain past `MAX_REDIRECT_HOPS` (10) is `X_SCRAPE_REDIRECT_LOOP`, and a `javascript:` URL is refused outright rather than read as a hostless scheme.
 
 Two hundred paginated pages clicked through is minutes and two hundred chances to break; the same data off the endpoint behind them is seconds, and a JSON endpoint changes far less often than a DOM.
 

@@ -3,7 +3,7 @@
 // boot, no dependency — an enterprise IdP is then three lines instead of a hand-copied table of
 // four endpoints that nobody re-checks when the vendor moves one.
 
-import { renderThrowable } from '@ultimat3/core';
+import { renderFixLiteral, renderFixShellArg, renderThrowable } from '@ultimat3/core';
 import { isRecord } from './json';
 import type { OAuthProvider } from './oauth';
 import { oauthExchangeFailed } from './oauth-errors';
@@ -54,6 +54,13 @@ export async function discoverOAuthProvider(
   input: DiscoverOAuthProviderInput,
 ): Promise<OAuthProvider> {
   const url = discoveryUrl(input.issuer);
+  // Every `fix:` below puts this URL in a COMMAND position, and `new URL()` keeps `$`, `(`, `)`
+  // and backticks in a path — so an issuer one boot mistake away from hostile composes the shell
+  // line the framework tells its reader to paste. `renderFixShellArg` passes an ordinary issuer
+  // through untouched and substitutes the shape to fill in for anything a shell would read;
+  // `renderFixLiteral` is the wrong tool for a command, because its double quotes leave `$(…)`
+  // live.
+  const target = renderFixShellArg(url, '<issuer>/.well-known/openid-configuration');
   const doFetch: OAuthFetch = input.fetch ?? ((target, init) => globalThis.fetch(target, init));
   // Screened OUTSIDE the try below, deliberately: `AbortSignal.timeout(NaN)` throws, and the
   // catch around this fetch renders every throw as a provider failure — so a typo in the app's
@@ -79,7 +86,7 @@ export async function discoverOAuthProvider(
       // `renderThrowable`: an injected `fetch` may reject with anything, `instanceof` throws on a
       // value that traps `getPrototypeOf`, and a bare `TypeError` here is an uncoded crash.
       detail: renderThrowable(error),
-      fix: `curl -sS -m 5 ${url}`,
+      fix: `curl -sS -m 5 ${target}`,
     });
   }
 
@@ -89,7 +96,7 @@ export async function discoverOAuthProvider(
       stage: 'discovery',
       detail: 'the issuer published no discovery document at the well-known path',
       status: response.status,
-      fix: `curl -sS -m 5 ${url}   # then pass the real issuer URL to discoverOAuthProvider({ issuer })`,
+      fix: `curl -sS -m 5 ${target}   # then pass the real issuer URL to discoverOAuthProvider({ issuer })`,
     });
   }
 
@@ -99,7 +106,7 @@ export async function discoverOAuthProvider(
       provider: input.id,
       stage: 'discovery',
       detail: 'the discovery document is not a JSON object',
-      fix: `confirm ${url} is the OP's own discovery document and not a login page`,
+      fix: `confirm ${target} is the OP's own discovery document and not a login page`,
     });
   }
 
@@ -113,7 +120,7 @@ export async function discoverOAuthProvider(
       detail:
         'the discovery document is missing issuer, authorization_endpoint or token_endpoint, ' +
         'so no handshake can be built from it',
-      fix: `curl -sS -m 5 ${url} | jq '{issuer, authorization_endpoint, token_endpoint}'`,
+      fix: `curl -sS -m 5 ${target} | jq '{issuer, authorization_endpoint, token_endpoint}'`,
     });
   }
 
@@ -126,7 +133,10 @@ export async function discoverOAuthProvider(
       stage: 'discovery',
       detail:
         'the discovery document publishes no jwks_uri, so no id token from it can be verified',
-      fix: `register this provider by hand with an explicit jwksUri: registerOAuthProvider({ id: '${input.id}', ... })`,
+      // `renderFixLiteral` and not the shell renderer: this fix is a JS call, where quoting IS
+      // the escape. A bare interpolation inside the single quotes it used to carry meant an id
+      // holding an apostrophe closed the literal and printed a fix that does not parse.
+      fix: `register this provider by hand with an explicit jwksUri: registerOAuthProvider({ id: ${renderFixLiteral(input.id, "'<id>'")}, ... })`,
     });
   }
 

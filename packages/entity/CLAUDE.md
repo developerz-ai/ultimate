@@ -67,12 +67,20 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   decimals, so a caller with no kinds — `@ultimat3/query`, whose `OrderKey` is a name and a
   direction — deliberately never calls it: Postgres orders a `text` column of digits lexically, and
   a comparator guessing "both sides look like decimals" would trade this agreement for that
-  disagreement. That residual gap is `@ultimat3/query`'s `shape-order.test.ts` `DECLARED_GAP`. **A `uuid` is a VALUE**: Postgres parses it and
-  prints it lower-cased, so `findById(UPPER)` reads the row there and answered `null` here, and
+  disagreement. That residual gap is `@ultimat3/query`'s `shape-order.test.ts` `DECLARED_GAP`.
+  **A `uuid` is a VALUE, and the value the row HOLDS is lower case**: Postgres parses it and prints
+  it lower-cased, so `findById(UPPER)` reads the row there and answered `null` here, and
   `update(UPPER)` was `X_NOT_FOUND` against a row that exists — `keyOf(kind, value)`
   (`batch-read.ts`), which already carried that rule for a batched read, now spells the memory
-  store's key and its equality too. Text is NOT narrowed: lower-casing it would merge two rows
-  Postgres keeps apart. **A `LIKE` pattern uses Postgres' default escape**: `\` escapes `%`, `_`
+  store's key and its equality too. Equality was only half of it: the STORED value stayed the
+  caller's spelling here while the server's row never carries one, so `countBy('authorId')` keyed
+  its `Map` by `AAAA…` in memory and by `aaaa…` in production — a breakdown one driver's caller
+  cannot look up, out of a call that read the right rows. Narrowed in the two places a value
+  crosses: `parseUuid` on the way back (`decodeRow`, `entity.$parse`) and `narrowUuid` at each
+  write method's entry (`columns.ts`), beside `narrowMoney` and for its reason — `entity.$assert`
+  runs before a statement exists, so an invariant reading an id must see the value the row will
+  hold. Text is NOT narrowed: lower-casing it would merge two rows Postgres keeps apart.
+  **A `LIKE` pattern uses Postgres' default escape**: `\` escapes `%`, `_`
   or itself, so `like 'a\%b'` matches the literal `a%b` in both drivers rather than
   `a\<anything>b` in one — and a pattern ending in the escape character is refused here as
   Postgres refuses it (`22025`). A RUN of `%` is still one `.*`: twenty adjacent `.*` groups in an
@@ -343,10 +351,17 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `cursorFor` runs only when a page found a row past its limit, so `orderBy('publishedAt', 'desc')
   .limit(20)` over a nullable column was green on fifteen seeded rows for as long as the suite
   existed and `X_INVARIANT_VIOLATED` on the first read past twenty in production. That file's own
-  doc comment claimed the opposite for two majors. `assertBatchable` has always judged `inBatches()`
-  this way. This package owns only
-  what a cursor is *bound* to — `planScope(plan)`: the entity, its filters and its sort order,
-  hashed. Not the page size (a bigger next page is the same query) and not `select` (a projection
+  doc comment claimed the opposite for two majors. `assertBatchable` has always judged
+  `inBatches()` this way.
+  **A `timestamptz` sort key is refused when its ALIAS would not fit, `As of 2026-09`.** That key
+  selects a second output — `<column>$US`, the microsecond half `sortPrecision` reads back — and
+  `assertColumnName` admits 63 bytes, which is the server's whole budget: a 61-byte column
+  produced a 64-byte alias, Postgres truncated it and said nothing, the read answered `undefined`,
+  and `cursorFor` fell back to the millisecond `Date` `instant.ts` exists to replace. The page
+  then cuts where no row sits. Bounded against `index-name.ts`'s `MAX_IDENTIFIER_BYTES` and
+  measured on the alias `seekAlias` actually builds, never against a hard-coded suffix length.
+  This package owns only what a cursor is *bound* to — `planScope(plan)`: the entity, its filters
+  and its sort order, hashed. Not the page size (a bigger next page is the same query) and not `select` (a projection
   cannot move a row). A cursor that fails either the signature or the scope is `X_CURSOR_INVALID`;
   it must never decode to "start from the top", which is what the old codec's `null` did.
 - **A NULLABLE sort key orders, `As of 2026-08-24` — `asc nulls last` / `desc nulls first`, and
@@ -414,19 +429,20 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   is recursive structural containment, the second is plain element membership, because an array's
   elements are scalars of one declared type — `arrayOf()` refuses `jsonb`, `bytea`, `money` and a
   nested array, which is what makes that true. A `Date` element compares by its instant, never by
-  reference. **`jsonb_exists(col, $1)`, never the `?` operator**: a literal `?` is a parameter
-  placeholder to more than one client on the way to the server. **No jsonpath expression operator**
-  beside them, deliberately: `contains` already matches nested structure, and a path language
-  inside the query language is a second way to ask one question. `&&` on a `jsonb` column is
-  refused where it was written, since Postgres has no such operator and any answer would be one no
-  statement can make. **`has-key` emits the `?` OPERATOR, schema-qualified
-  (`operator(pg_catalog.?)`), and not `jsonb_exists(col, $1)`** — the two are the same test and only
-  the first is INDEXABLE: measured on Postgres 16 with a GIN index and `enable_seqscan = off`,
-  `data ? 'k'` plans as a Bitmap Index Scan and the function form is a Seq Scan the planner will not
-  convert, because an index is matched against an operator expression and a bare function call is
-  not one. The function form shipped first, on a stated fear of `?` being read as a placeholder;
-  Bun's client passes it through verbatim (measured), and the qualified spelling is immune to a
-  client that does not and to a `search_path` that shadows the operator.
+  reference. **No jsonpath expression operator** beside them, deliberately: `contains` already
+  matches nested structure, and a path language inside the query language is a second way to ask
+  one question. `&&` on a `jsonb` column is refused where it was written, since Postgres has no
+  such operator and any answer would be one no statement can make. **`has-key` emits the `?`
+  OPERATOR, schema-qualified (`operator(pg_catalog.?)`), and not `jsonb_exists(col, $1)`** — the two
+  are the same test and only the first is INDEXABLE: measured on Postgres 16 with a GIN index and
+  `enable_seqscan = off`, `data ? 'k'` plans as a Bitmap Index Scan and the function form is a Seq
+  Scan the planner will not convert, because an index is matched against an operator expression and
+  a bare function call is not one. The function form shipped first, on a stated fear of `?` being
+  read as a placeholder; Bun's client passes it through verbatim (measured), and the qualified
+  spelling is immune to a client that does not and to a `search_path` that shadows the operator. The
+  bullet ABOVE this one said the opposite — "`jsonb_exists(col, $1)`, never the `?` operator" — for
+  two majors after the SQL moved, and `containment.ts`'s own doc comment repeated it; both are gone,
+  and `pg-sql.test.ts` now pins the emitted form so neither can come back as prose.
 - **A GIN index is declarable — `indexes: [{ on: ['tags'], using: 'gin' }]`, `As of 2026-08-24`.**
   Without one every containment operator above is a sequential scan, which is the whole reason they
   needed an index at all: measured over 20,000 rows, array `@>` / `<@` / `&&` and jsonb `@>` and
@@ -677,6 +693,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
     the three callers want three answers and the wrong one is invisible in the result. The soft
     delete inside `removal()` passes `false` too — both its callers read a count through
     `execute()`, so its rows were never readable by anyone.
+    **And the bound is BOTH drivers', `As of 2026-09`.** `memoryRepo.updateWhere` applied no
+    ceiling at all, so a sweep of 50,001 rows answered `50001` here and `X_INVARIANT_VIOLATED`
+    there from one call — a test written against memory proving a call production refuses, which
+    is the drift the two-driver split exists to prevent. Same condition (`hasJsOnlyInvariant`),
+    same constant, same error, and checked before the write loop so a refusal never writes the
+    rows it declined to judge.
 - **Every instant the write path stamps comes from `ctx.clock`, through `entityNow()`**
   (`clock.ts`, `As of 2026-08`). `defaultNow()`, `touch()`'s `onUpdateNow()`, the soft-delete stamp
   in BOTH drivers and a seed's `now` each read `systemClock` directly, so a frozen test clock drove

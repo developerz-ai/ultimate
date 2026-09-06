@@ -266,6 +266,30 @@ describe('the refusals', () => {
     expect(caught(() => assertSeekable(composite, [{ column: 'note' }]))).toBeUndefined();
   });
 
+  test('a timestamptz sort key whose alias Postgres would truncate is refused', () => {
+    // `sortPrecision` reads the microsecond half of a `timestamptz` key back under
+    // `<column>$US`, and Postgres SILENTLY truncates an identifier past 63 bytes — so a 61-byte
+    // column produced a 64-byte output name, the read answered `undefined`, and `cursorFor` fell
+    // back to the millisecond `Date` this whole precision path exists to replace. Refused where
+    // the plan is built, at any row count, rather than mis-paginating past the first page.
+    const wide = entity('cursor_test_wide_alias', {
+      columns: {
+        id: uuid().primaryKey(),
+        // 61 bytes: the alias is 64, one past what the server keeps.
+        longAt: timestamp().column(`at_${'x'.repeat(58)}`),
+        // 60 bytes: the alias is exactly 63 and survives.
+        fitsAt: timestamp().column(`at_${'y'.repeat(57)}`),
+      },
+    });
+
+    const error = caught(() => assertSeekable(wide, [{ column: 'longAt' }]));
+    expect(error).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(error instanceof Error ? error.message : '').toContain('.column(');
+    expect(caught(() => assertSeekable(wide, [{ column: 'fitsAt' }]))).toBeUndefined();
+    // A long name on a kind with no alias is nobody's problem: only `timestamptz` grows one.
+    expect(caught(() => assertSeekable(wide, [{ column: 'id' }]))).toBeUndefined();
+  });
+
   test('a NULL position round-trips, and never as the TEXT that spells it', () => {
     const plan: QueryPlan = { ...BASE, orderBy: by(['publishedAt', 'asc'], ['title', 'asc']) };
     const withNull = seekFrom(posts, {

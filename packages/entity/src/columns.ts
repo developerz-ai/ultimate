@@ -37,9 +37,18 @@ export const newId = (): string => uuidV7();
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Lower-cased, because Postgres parses a `uuid` on the way in and prints it lower-cased on the way
+ * out: the row the server stores never carries the caller's spelling, so a row this driver stored
+ * verbatim was a value production does not hold. `keyOf` (`batch-read.ts`) and `sameValueOfKind`
+ * (`memory-match.ts`) already narrow the same way for EQUALITY; this is the value itself, which is
+ * what a caller reads back and what `countBy` keys its `Map` by — an upper-cased insert produced a
+ * breakdown keyed one way in memory and the other in production. `text()` is deliberately NOT
+ * narrowed: lower-casing it would merge two rows Postgres keeps apart.
+ */
 const parseUuid = (value: unknown): string =>
   typeof value === 'string' && UUID.test(value)
-    ? value
+    ? value.toLowerCase()
     : refuseColumn(
         'format',
         `expected a uuid, ${got(value)}`,
@@ -367,11 +376,13 @@ const checkedParts = (columns: MoneyColumnNames): MoneyColumnNames => ({
  * exactly the drift the two-driver split exists to prevent — here it would mean an in-memory row
  * holding a `bigint` that `JSON.stringify` refuses while the Postgres row holds a `number`.
  *
- * Every other kind is returned untouched: writes are asserted, not parsed, and money is the only
- * kind that widens. A value already holding safe-integer minor units is left alone — that is the
- * overwhelmingly common case and it costs one `typeof`-grade check and no allocation (axiom 6);
- * everything else goes through `parseMinor`, so a `bigint` narrows and a float is refused with
- * the same message it would get coming back from the database.
+ * Every other kind is returned untouched HERE: writes are asserted, not parsed, and money is the
+ * only kind whose declared TYPE widens. `uuid` is narrowed too and is narrowed beside this one
+ * (`narrowUuid`), because its width is in the value's spelling rather than in its type. A value
+ * already holding safe-integer minor units is left alone — that is the overwhelmingly common case
+ * and it costs one `typeof`-grade check and no allocation (axiom 6); everything else goes through
+ * `parseMinor`, so a `bigint` narrows and a float is refused with the same message it would get
+ * coming back from the database.
  */
 export const narrowMoney = <Row>(columns: ColumnMap, row: Row): Row => {
   let narrowed: Record<string, unknown> | undefined;
@@ -384,6 +395,41 @@ export const narrowMoney = <Row>(columns: ColumnMap, row: Row): Row => {
     // to CHECK on write, and narrowing a minor unit is not the place to start refusing one.
     narrowed ??= { ...record };
     narrowed[property] = { ...value, minor: parseMinor(value.minor) };
+  }
+  return (narrowed ?? row) as Row;
+};
+
+/**
+ * The second narrowing, and the same shape as the one above: what the caller spelled in is wider
+ * than what the row holds. Postgres parses a `uuid` on the way IN and prints it lower-cased on the
+ * way OUT, so an upper-cased insert is stored — and read back — lower-cased there whatever the
+ * writer typed, while the in-memory driver kept the spelling verbatim.
+ *
+ * That was one value with two spellings across the two drivers, not a cosmetic difference: `keyOf`
+ * (`batch-read.ts`) and `sameValueOfKind` (`memory-match.ts`) already narrow a `uuid` for
+ * EQUALITY, so the row was found either way, but `countBy` keys its `Map` by the value it read off
+ * the row — so `counts.get(id)` answered the count in production and `undefined` in memory, from
+ * one call. `text()` is deliberately never narrowed: lower-casing it would merge two rows Postgres
+ * keeps apart.
+ *
+ * At the write entry rather than in `bindValues`, for `narrowMoney`'s reason: `entity.$assert`
+ * runs before a statement exists, so an invariant reading an id must see the value the row will
+ * hold. `parseUuid` applies the same rule on the read side (`decodeRow`, `entity.$parse`).
+ */
+const narrowUuid = <Row>(columns: ColumnMap, row: Row): Row => {
+  let narrowed: Record<string, unknown> | undefined;
+  const record = row as Readonly<Record<string, unknown>>;
+  for (const [property, column] of Object.entries(columns)) {
+    if (column.$meta.kind !== 'uuid') continue;
+    const value = record[property];
+    // Untouched unless it is a string that actually carries an upper-case character: a malformed
+    // value is the column parser's to refuse, with its own message, and no allocation is paid by
+    // the overwhelmingly common case (axiom 6).
+    if (typeof value !== 'string') continue;
+    const lower = value.toLowerCase();
+    if (lower === value) continue;
+    narrowed ??= { ...record };
+    narrowed[property] = lower;
   }
   return (narrowed ?? row) as Row;
 };
@@ -402,7 +448,7 @@ export const narrowMoney = <Row>(columns: ColumnMap, row: Row): Row => {
  * once `narrowMoney` has returned, and `parseMinor` threw for anything that could not become one.
  */
 export const narrowRow = <Row>(columns: ColumnMap, values: RowWrite<Row>): Row =>
-  narrowMoney(columns, values) as Row;
+  narrowUuid(columns, narrowMoney(columns, values)) as Row;
 
 /**
  * The CHECK that stops a psql session writing a currency the app would refuse — the app's own

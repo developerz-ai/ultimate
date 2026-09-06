@@ -498,6 +498,7 @@
       "version": "19.2.0",
       "dependencies": {
         "@ultimat3/core": "19.2.0",
+        "@ultimat3/schema": "19.2.0",
       },
     },
     "packages/storage": {

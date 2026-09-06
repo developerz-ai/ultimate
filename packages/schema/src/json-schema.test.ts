@@ -263,3 +263,63 @@ describe('a foreign format is looked up in the table, never on Object.prototype'
     expect(nodeToJsonSchema(stringNode('cursor'))['format']).toBe('ultimate-cursor');
   });
 });
+
+/**
+ * The projection of a `record` and the parser of a `record` are two views of one rule, and the
+ * whole point of this file is that they cannot drift: `recordSchema` refuses `__proto__`,
+ * `constructor` and `prototype` by name, while the published node was
+ * `{ type: 'object', additionalProperties }` with nothing saying so — so OpenAPI, the typed client
+ * and an MCP tool schema all advertised keys the boundary answers with a 422.
+ */
+describe('a record publishes the key names its own parser refuses', () => {
+  const REFUSED = ['__proto__', 'constructor', 'prototype'] as const;
+
+  test('propertyNames rides beside additionalProperties, in the default dialect', () => {
+    const schema = toJsonSchema(t.record(t.string), { includeDialect: false });
+
+    expect(schema.type).toBe('object');
+    expect(schema.additionalProperties).toEqual({ type: 'string', minLength: 1 });
+    expect(schema.propertyNames).toEqual({ not: { enum: [...REFUSED] } });
+  });
+
+  test('and in the draft-07 an MCP tool advertises', () => {
+    // `propertyNames` is draft-06 and later, so one emission is honest in both dialects — the two
+    // outputs differ only in `$schema`.
+    expect(toMcpInputSchema(t.record(t.number)).propertyNames).toEqual({
+      not: { enum: [...REFUSED] },
+    });
+  });
+
+  test('every published name is one the parser really refuses', () => {
+    const parser = t.record(t.string);
+    for (const key of REFUSED) {
+      // `JSON.parse`, because a `{ __proto__: … }` object literal assigns through the setter and
+      // would hand the parser a value with no such own key at all.
+      const parsed = parser.safeParse(JSON.parse(`{"${key}":"x"}`));
+      expect(parsed.issues).toBeDefined();
+    }
+    expect(parser.safeParse({ ok: 'x' }).issues).toBeUndefined();
+  });
+});
+
+/**
+ * `dateSchema` accepts a `number` — epoch milliseconds — and the document publishes only
+ * `string`/`date-time`. That gap is deliberate and is pinned here so it stays the SAFE direction:
+ * the parser may be the more permissive of the two, and the document may never promise a spelling
+ * the boundary refuses.
+ */
+describe('the published date is the narrower of the two views', () => {
+  test('a date node publishes one spelling, never an anyOf with a number in it', () => {
+    const schema = nodeToJsonSchema({ kind: 'date', format: 'date-time' });
+
+    expect(schema).toEqual({ type: 'string', format: 'date-time' });
+    expect(schema.anyOf).toBeUndefined();
+  });
+
+  test('and the parser is the permissive side, so nothing published is refused', () => {
+    // An epoch number is accepted, and is exactly what the document does not advertise.
+    expect(t.date.safeParse(1_767_225_600_000).issues).toBeUndefined();
+    // Everything the document DOES advertise parses.
+    expect(t.date.safeParse('2026-01-01T00:00:00.000Z').issues).toBeUndefined();
+  });
+});

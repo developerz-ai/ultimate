@@ -6,6 +6,7 @@
 // run-to-completion migrate step are conventions every container platform shares — a Heroku
 // buildpack, a Render blueprint or a fly.toml would be the primitive that never ships.
 
+import { SECRETS_KEY_FILE } from '@ultimat3/core';
 import type { GeneratedFile, NameSet } from './naming';
 import { helmFiles } from './scaffold-helm';
 
@@ -81,6 +82,12 @@ ENTRYPOINT ["bun", "apps/web/server.ts"]
  * tells the operator to create, in its own `env_file:` — nor `.env.development`, and both landed in
  * an image layer that `cache-to=mode=max` then pushes to a shared cache. Same four lines the
  * framework's own `docker/Dockerfile.dockerignore` carries, and for the same reason.
+ *
+ * The key file is interpolated from `SECRETS_KEY_FILE` rather than written out, because the
+ * constant is what `findMasterKey` reads: a rename would otherwise leave every app this generator
+ * has ever produced ignoring a filename nothing writes, which reads as a rule still in force.
+ * `scripts/image-contract.ts` holds every ignore file IN THIS TREE to the same line; a generated
+ * app's copy is this template's, and `scaffold-container.test.ts` is where it is judged.
  */
 const dockerignore = (): string => `**/.env
 **/.env.*
@@ -88,6 +95,11 @@ const dockerignore = (): string => `**/.env
 # Same shape, different file: an .npmrc carries a registry auth token, so any that exists in a
 # build context is somebody's local credential and has no business in a layer.
 **/.npmrc
+# Same shape, and this one is the key itself: ${SECRETS_KEY_FILE} decrypts the committed
+# secrets.enc.json beside it, and findMasterKey falls back to the file whenever
+# ULTIMATE_SECRETS_KEY is unset — so a baked copy boots the image on it and the platform's key is
+# never exercised.
+**/${SECRETS_KEY_FILE}
 
 node_modules
 **/node_modules

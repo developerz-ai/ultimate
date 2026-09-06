@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "5853d2912dbb66a4b1dea24daa9d40f0046977bdfe4580020d8d5c54464d0ff9",
+  "buildId": "1f27edf67b4d7306187423dd3abe02fa558b0a549746b21dd6404d9091020157",
   "tiers": {
     "0": [
       "core",
@@ -1445,6 +1445,11 @@
       "at": "packages/seo/src/errors.ts"
     },
     {
+      "code": "X_IMAGE_SECRET_UNIGNORED",
+      "owner": "scripts",
+      "at": "scripts/image-contract.ts"
+    },
+    {
       "code": "X_IMAGE_TOO_LARGE",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
@@ -2626,6 +2631,11 @@
     },
     {
       "code": "X_SCRAPE_RECOVER_REFUSED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_REDIRECT_LOOP",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
     },

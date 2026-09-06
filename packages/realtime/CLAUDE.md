@@ -307,6 +307,21 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   is entitled to its patches for the whole grace window, and to get them through a hub that is
   still open.
 - Exactly one `replicator` per DB, enforced by a session-level advisory lock.
+- **A start and an acquisition are MEMOISED, because `running` and `#connection` are both written
+  after an await (`As of 2026-09-06`).** `start()` read `if (running) return true` and then awaited
+  `lock.tryAcquire()`, so two overlapping calls both passed the guard, both were told they held the
+  lock — a holder's `tryAcquire()` answers `true` — and both ran `feed.start()`: one replication
+  slot, two pumps, every change published twice under two `seq` generations of one producer id,
+  which every sync node's `SeqGapDetector` reads as a gap and repairs by re-snapshotting the fleet.
+  `PgAdvisoryLock.tryAcquire` had the identical hole one layer down and a worse ending: two
+  concurrent calls opened two SESSIONS, the second assignment to `#connection` orphaned the first,
+  and `release()` closes one — so the key stayed held until the process died and no standby could
+  ever take the slot. Both are now the shape `packages/core/src/lifecycle.ts`'s `drain()` uses: a
+  synchronous guard-and-register, the promise published before anything is awaited, and the memo
+  cleared however it settles (a `false` is "somebody else holds it right now", which the takeover
+  loop asks again a backoff later). `stop()` and `release()` await the in-flight one rather than
+  reading their own flag — that flag is false for the whole of a start, so an unguarded teardown
+  returns "nothing to do" and leaves behind exactly what it was called to release.
 - **The replication pump has one way out, and it closes what it held.** Both exits — a decode error
   and `nextCopyData()` returning `undefined`, which is the walsender ending the copy — run `#die`:
   record `stats().failure`, stop the confirm timer, close the connection and null it. Each one left

@@ -78,12 +78,16 @@ export const arrayOverlaps = (left: readonly unknown[], right: readonly unknown[
   right.some((item) => left.some((candidate) => sameElement(candidate, item)));
 
 /**
- * `jsonb_exists(value, key)` — the function form of the `?` operator, which is what the SQL side
- * emits so a literal `?` can never be read as a parameter placeholder by anything on the way.
+ * The memory half of `col ? key`. The SQL side emits the OPERATOR, schema-qualified —
+ * `col operator(pg_catalog.?) $1` (`pg-sql.ts`) — and not `jsonb_exists(col, $1)`: the two are the
+ * same test and only the operator form is INDEXABLE, because an index is matched against an
+ * operator expression and a bare function call is not one. The function form shipped first, on a
+ * stated fear of `?` being read as a parameter placeholder; the qualification is what answers that
+ * fear, and it is also immune to a `search_path` that shadows the operator.
  *
  * Three shapes, all of them Postgres': a top-level key of an object, a string ELEMENT of an array,
- * and a string value equal to the key. A number never matches — `jsonb_exists('[1]', '1')` is
- * false there, and a `String(item) === key` here would have made it true.
+ * and a string value equal to the key. A number never matches — `'[1]'::jsonb ? '1'` is false
+ * there, and a `String(item) === key` here would have made it true.
  */
 export const jsonHasKey = (value: unknown, key: unknown): boolean => {
   if (typeof key !== 'string' || isNull(value)) return false;

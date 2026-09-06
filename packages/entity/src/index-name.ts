@@ -52,9 +52,10 @@ const indexDiscriminator = (
  * DECLARED names because those still differ. Bytes and not characters: 63 is what the server
  * counts, and `.length` would stop seeing the truncation the moment a name is not ASCII.
  */
-const MAX_IDENTIFIER_BYTES = 63;
+export const MAX_IDENTIFIER_BYTES = 63;
 
-const byteLength = (value: string): number => new TextEncoder().encode(value).length;
+/** Bytes, never `.length`: the truncation the server performs is counted in bytes. */
+export const identifierBytes = (value: string): number => new TextEncoder().encode(value).length;
 
 export const indexName = (
   entityName: string,
@@ -71,7 +72,7 @@ export const indexName = (
   const name = plain
     ? `${base}_${suffix}`
     : `${base}_${indexDiscriminator(order, where, using)}_${suffix}`;
-  const bytes = byteLength(name);
+  const bytes = identifierBytes(name);
   if (bytes <= MAX_IDENTIFIER_BYTES) return name;
   throw invariantViolated(
     entityName,

@@ -90,4 +90,7 @@ export const microsToIso = (micros: bigint): string => {
  * or a `.column()` name `assertColumnName` refuses unless it matches `[a-z_][a-z0-9_$]*` — so an
  * UPPER-CASE suffix is a name no entity can declare and this alias can never shadow a column.
  */
-export const seekAlias = (physicalColumn: string): string => `${physicalColumn}$US`;
+export const SEEK_ALIAS_SUFFIX = '$US';
+
+export const seekAlias = (physicalColumn: string): string =>
+  `${physicalColumn}${SEEK_ALIAS_SUFFIX}`;

@@ -5,7 +5,9 @@
 // way — the exact seam `packages/entity/CLAUDE.md` names as where the two drivers must agree.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+import { t } from '@ultimat3/schema';
 import { boolean, money, text, timestamp, uuid } from './columns';
+import { json } from './columns-data';
 import { entity } from './entity';
 import { countByStatement, countStatement, selectStatement } from './pg-sql';
 import { deleteStatement, insertStatement, updateStatement } from './pg-write-sql';
@@ -25,6 +27,11 @@ const posts = entity('pgsql_posts', {
 /** No soft-delete column, so `conditions()` never injects the `deleted_at is null` clause. */
 const tags = entity('pgsql_tags', {
   columns: { id: uuid().primaryKey(), label: text() },
+});
+
+/** A `jsonb` column, so `has-key` has somewhere to land. `t.record` accepts any key. */
+const documents = entity('pgsql_documents', {
+  columns: { id: uuid().primaryKey(), data: json(t.record(t.string)) },
 });
 
 const priced = entity('pgsql_priced', {
@@ -150,6 +157,28 @@ describe('conditions()', () => {
   test('no predicates and no soft delete compiles to a bare "true"', () => {
     const stmt = selectStatement(tags, planOf({ entity: tags.$name, where: [] }), SHAPE, 50);
     expect(stmt.text).toContain('where true');
+  });
+
+  /**
+   * `jsonb_exists(col, $1)` is the same test and is NOT indexable — an index is matched against an
+   * OPERATOR expression and a bare function call is not one — so the function form made `has-key`
+   * the one containment operator a declared GIN index could not serve. `containment.ts`'s doc
+   * comment claimed the function form for two majors after the SQL had moved; this is the pin that
+   * stops either half drifting from the other again.
+   */
+  test('has-key emits the schema-qualified `?` OPERATOR, never the function form', () => {
+    const stmt = selectStatement(
+      documents,
+      planOf({
+        entity: documents.$name,
+        where: [{ column: 'data', op: 'has-key', value: 'k' }],
+      }),
+      SHAPE,
+      50,
+    );
+
+    expect(stmt.text).toContain('operator(pg_catalog.?)');
+    expect(stmt.text).not.toContain('jsonb_exists');
   });
 
   test('a soft-deleting entity gets "deleted_at is null" appended unless includeDeleted', () => {

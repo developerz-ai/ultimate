@@ -210,7 +210,26 @@ export const createServer = (options: ServerOptions): ServerHandle => {
       return handle;
     },
     async stop() {
-      if (server === undefined) return;
+      // Handed back FIRST, above every early return: on the SIGTERM path the `close` hook has
+      // already set `server = undefined`, so `if (server === undefined) return` skipped the
+      // release in the `finally` below for exactly the path production takes — two hooks left
+      // registered against a socket that is gone, per server, per lifecycle, which is the leak
+      // core's `shutdownHookCount()` exists to make visible. The shape `worker.ts`'s teardown
+      // holds: the unregisters are the closure's, not the drain's.
+      const releaseHooks = (): void => {
+        unregister?.();
+        unregisterClose?.();
+        unregister = undefined;
+        unregisterClose = undefined;
+      };
+      if (server === undefined) {
+        releaseHooks();
+        // Idempotent, and this path reaches it too: the close hook released the announcement, or
+        // the deadline cut it short and nobody did.
+        stopListening?.();
+        stopListening = undefined;
+        return;
+      }
       try {
         // Delegate to core so a manual stop() and a real SIGTERM take the identical
         // three-phase path. The drain deadline is core's, not ours.
@@ -219,8 +238,7 @@ export const createServer = (options: ServerOptions): ServerHandle => {
         // A throwing drain() must not leave this handle's hooks registered against a server
         // that is going away — core would still call them, against `server` fields already
         // torn down below, on the next drain this process runs.
-        unregister?.();
-        unregisterClose?.();
+        releaseHooks();
       }
       // Idempotent: the close hook already released, unless the drain deadline cut it short.
       stopListening?.();

@@ -125,24 +125,36 @@ let stylePromise: Promise<string> | undefined;
  * served under, and the `style-src` hash it needs is of THIS text — a host that hashed its own
  * copy would send a policy that blocks the document this function actually writes.
  */
-export async function devShellStyle(): Promise<string> {
-  stylePromise ??= import('@ultimat3/ui').then(({ colorTokens }) => {
-    const block = (theme: 'light' | 'dark'): string =>
-      SHELL_ROLES.map((role) => `--x-color-${role}: ${colorTokens[theme][role]};`).join(' ');
-    return `
+export function devShellStyle(): Promise<string> {
+  // One memo, and the clearing catch is attached where the promise is CREATED — the shape
+  // `packages/db/src/pglite.ts`'s `connect()` uses. Re-wrapping on every call
+  // (`stylePromise = stylePromise.catch(…)`, which is what this did) publishes a new promise per
+  // call, each one retaining the last: `/_x` grew that chain by a link per request for the life of
+  // the dev server, and no caller could rely on the memo's identity.
+  if (stylePromise === undefined) {
+    const attempt: Promise<string> = loadShellStyle().catch((error: unknown) => {
+      // A rejected import (a transient resolution failure) must not be memoised, or `/_x` is
+      // unstyled for the life of the process — the `jwks.ts` inflight pattern. Guarded on
+      // identity: a late rejection clears its OWN attempt, never a newer one that has replaced it.
+      if (stylePromise === attempt) stylePromise = undefined;
+      throw error;
+    });
+    stylePromise = attempt;
+  }
+  return stylePromise;
+}
+
+/** The read itself. Dynamic, so the 46-component barrel stays out of the production graph. */
+async function loadShellStyle(): Promise<string> {
+  const { colorTokens } = await import('@ultimat3/ui');
+  const block = (theme: 'light' | 'dark'): string =>
+    SHELL_ROLES.map((role) => `--x-color-${role}: ${colorTokens[theme][role]};`).join(' ');
+  return `
 :root { ${block('light')} }
 @media (prefers-color-scheme: dark) { :root { ${block('dark')} } }
 html[data-theme="light"] { ${block('light')} }
 html[data-theme="dark"] { ${block('dark')} }
 ${SHELL_LAYOUT}`;
-  });
-  // A rejected import (a transient resolution failure) must not be memoised, or `/_x` is
-  // unstyled for the life of the process — the `jwks.ts` inflight pattern.
-  stylePromise = stylePromise.catch((error: unknown) => {
-    stylePromise = undefined;
-    throw error;
-  });
-  return stylePromise;
 }
 
 function shell(

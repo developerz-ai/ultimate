@@ -116,6 +116,8 @@ export function createReplicator(options: ReplicatorOptions): Replicator {
   // the old one.
   let producer = uuid();
   let seq = 0;
+  /** The start in flight, if any — see `start()` on why `running` cannot answer that question. */
+  let starting: Promise<boolean> | undefined;
 
   const onChange = async (raw: ChangeEvent): Promise<void> => {
     const change = normalize(raw);
@@ -141,24 +143,51 @@ export function createReplicator(options: ReplicatorOptions): Replicator {
     });
   };
 
+  const begin = async (): Promise<boolean> => {
+    if (!(await options.lock.tryAcquire())) {
+      logger.warn('replicator standby: advisory lock held elsewhere', { key: options.lock.key });
+      return false;
+    }
+    running = true;
+    producer = uuid();
+    seq = 0;
+    await options.feed.start(
+      options.from === undefined ? { onChange } : { from: options.from, onChange },
+    );
+    logger.info('replicator started', { source: options.feed.source, key: options.lock.key });
+    return true;
+  };
+
   return {
-    async start(): Promise<boolean> {
-      if (running) return true;
-      if (!(await options.lock.tryAcquire())) {
-        logger.warn('replicator standby: advisory lock held elsewhere', { key: options.lock.key });
-        return false;
-      }
-      running = true;
-      producer = uuid();
-      seq = 0;
-      await options.feed.start(
-        options.from === undefined ? { onChange } : { from: options.from, onChange },
-      );
-      logger.info('replicator started', { source: options.feed.source, key: options.lock.key });
-      return true;
+    /**
+     * Deliberately NOT `async`: `running` is set after an `await` on the lock, so a guard that
+     * awaited anything before registering has the same hole it is meant to close. Two overlapping
+     * starts both passed `if (running)`, both were told they held the lock — a holder's
+     * `tryAcquire()` answers `true` — and both ran `feed.start()`: one replication slot with two
+     * pumps, publishing every change twice under two `seq` generations of one producer id, which
+     * every sync node's `SeqGapDetector` reads as a gap and repairs by re-snapshotting the fleet.
+     * Same shape as `packages/core/src/lifecycle.ts`'s `drain()`.
+     */
+    start(): Promise<boolean> {
+      if (running) return Promise.resolve(true);
+      const inFlight = starting;
+      if (inFlight !== undefined) return inFlight;
+      // Cleared however it settles: a `false` is "another node holds the lock", and the takeover
+      // loop asks again a `retryDelayMs` later. A memo that stuck would make this node a permanent
+      // standby of a slot whose holder has already died.
+      const attempt = begin().finally(() => {
+        if (starting === attempt) starting = undefined;
+      });
+      starting = attempt;
+      return attempt;
     },
 
     async stop(): Promise<void> {
+      // A stop racing a start waits it out: `running` is false for the whole of `begin`, so the
+      // early return below would leave the feed it is about to start pumping into a replicator
+      // nothing intends to stop, with the advisory lock still held.
+      const inFlight = starting;
+      if (inFlight !== undefined) await inFlight.catch(() => false);
       if (!running) return;
       running = false;
       await options.feed.stop();

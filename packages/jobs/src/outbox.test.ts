@@ -10,11 +10,11 @@ import type { OutboxStore } from './outbox';
 import {
   createJobsFacade,
   createMemoryOutboxStore,
-  createOutboxRelay,
   enqueueInTx,
   resetJobsFacade,
   setJobsFacade,
 } from './outbox';
+import { createOutboxRelay } from './outbox-relay';
 
 /** Minimal Standard Schema so these tests do not depend on the shipped provider's surface. */
 function passthrough<T>(): StandardSchemaV1<unknown, T> {

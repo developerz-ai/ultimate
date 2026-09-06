@@ -33,12 +33,15 @@ export interface HoldOptions {
  * handler opened them against. It is the resources core never learned about: the embedded
  * Postgres, the worker, the file watcher.
  *
- * It runs INSIDE the drain's own deadline, and that is not a detail. `drain()` ABANDONS a hook
- * that overruns `ShutdownReason.deadlineAt` — the process is meant to exit without it — and
- * `release` here re-enters the very same teardown one call later: `app.stop()` ->
- * `startRoles().stop()` -> `worker.stop()`, memoised in the package that owns it, so awaiting it
- * is awaiting the promise the drain just walked away from. Unbounded, that hangs forever and the
- * deadline buys nothing.
+ * It is BOUNDED, and that is not a detail. `drain()` ABANDONS a hook that overruns
+ * `ShutdownReason.deadlineAt` — the process is meant to exit without it — and `release` here
+ * re-enters the very same teardown one call later: `app.stop()` -> `startRoles().stop()` ->
+ * `worker.stop()`, memoised in the package that owns it, so awaiting it is awaiting the promise
+ * the drain just walked away from. Unbounded, that hangs forever and the deadline buys nothing.
+ *
+ * The bound is what is LEFT of the drain's budget, under a floor of `MIN_RELEASE_MS` — see there
+ * for why the remainder alone answered `0` on every busy pod and abandoned the teardown before it
+ * closed anything.
  */
 export function holdUntilShutdown(
   name: string,
@@ -48,8 +51,8 @@ export function holdUntilShutdown(
   const uninstall = installSignalHandlers({ exit: false });
   let unregister = (): void => {};
   // The hook's own `reason`, not a stopwatch of ours: `deadlineAt` is the instant core computed
-  // when the drain began, on the same real monotonic clock, so this budget IS the drain's budget
-  // rather than a second one that happens to be the same length.
+  // when the drain began, on the same real monotonic clock, so what is left of the drain's budget
+  // is read off the drain's own number and never off a second one of the same length.
   const shuttingDown = new Promise<number>((resolve) => {
     unregister = onShutdown(
       `cli:${name}:hold`,
@@ -71,7 +74,7 @@ export function holdUntilShutdown(
       await drain();
       unregister();
       uninstall();
-      await releaseWithin(name, release, deadlineAt - systemClock.monotonic());
+      await releaseWithin(name, release, releaseBudgetMs(deadlineAt - systemClock.monotonic()));
       options.exit?.(0);
     })();
     return held;
@@ -79,33 +82,63 @@ export function holdUntilShutdown(
 }
 
 /**
- * `release()` raced against what is left of the drain's budget.
+ * The floor under `release`'s budget, and the reason the drain's REMAINDER alone is the wrong one.
+ *
+ * The remainder is what is left of a budget that was spent on something else. A drain that used
+ * all of it — one request over budget is enough, and that is the ordinary shutdown on a busy pod —
+ * hands `release` a NEGATIVE number, `Math.max(0, …)` reads it as `0`, and `setTimeout(resolve, 0)`
+ * wins against any teardown whose first await is real work. Measured at `deadlineMs: 60` with one
+ * `beginWork()` outstanding: the release STARTED and was abandoned 0ms later, so `app.stop()` never
+ * reached the pool close, the NATS close, the cache tiers or the mail driver, and the outbox relay
+ * was abandoned somewhere between `driver.enqueue` and `markPublished` — a duplicate job on the
+ * next boot. The abandonment is not the harmless "exit slightly early" it was written as: it is
+ * every resource the process holds, left to the kernel.
+ *
+ * So `release` gets a budget of its own, floored, never a leftover. 5s, and the arithmetic is
+ * what makes it defensible rather than a feel: `DEFAULT_DEADLINE_MS` is 25s
+ * (`packages/core/src/lifecycle.ts`) and `docker/helm/templates/deployments.yaml` sets
+ * `terminationGracePeriodSeconds: 45`, so a drain that spends everything PLUS a release that
+ * spends everything is 30s — still inside the grace period, so the kubelet never SIGKILLs a
+ * process this floor kept alive. It stays a floor and not a clamp: an app that raised
+ * `deadlineMs` for a slow teardown keeps the bigger number.
+ */
+export const MIN_RELEASE_MS = 5_000;
+
+/**
+ * What `release` really gets. Non-finite is the floor rather than the input, for the reason
+ * `packages/core/src/lifecycle-bounds.test.ts` exists: `Math.max(n, NaN)` is `NaN` and
+ * `setTimeout(fn, NaN)` fires on the next tick, which is this whole defect a second time.
+ */
+export const releaseBudgetMs = (remainingMs: number): number =>
+  Number.isFinite(remainingMs) ? Math.max(MIN_RELEASE_MS, remainingMs) : MIN_RELEASE_MS;
+
+/**
+ * `release()` raced against its own budget.
  *
  * A local race and not core's `settleWithin`, which is internal to `lifecycle-deadline.ts` and not
  * on core's barrel. The semantics are deliberately the same, including the one that matters: a
  * REJECTION still rejects — `dispatch` awaits the hold inside its own `try`, and an embedded
  * database that would not close is a finding on the way out, never a clean exit over it.
- *
- * A budget already spent is `0`, and that abandons immediately by design: past `deadlineAt` the
- * orchestrator is already counting down to SIGKILL, so the honest move is to say so and exit
- * rather than to start a second grace period nobody granted.
  */
 async function releaseWithin(
   name: string,
   release: () => Promise<void>,
   budgetMs: number,
 ): Promise<void> {
-  const budget = Math.max(0, budgetMs);
+  // Screened by `releaseBudgetMs`, which is the one answer to "how long does a teardown get" —
+  // a second `Math.max` here would be a second, quieter one.
   let timer: ReturnType<typeof setTimeout> | undefined;
   const abandoned = new Promise<'abandoned'>((resolve) => {
-    timer = setTimeout(() => resolve('abandoned'), budget);
+    timer = setTimeout(() => resolve('abandoned'), budgetMs);
   });
   try {
     const outcome = await Promise.race([release().then(() => 'released' as const), abandoned]);
     if (outcome === 'released') return;
     logger.warn('X_SHUTDOWN_TIMEOUT', {
       code: 'X_SHUTDOWN_TIMEOUT',
-      cause: `the "${name}" release was still running ${budget}ms after the drain finished and has been ABANDONED — the process exits without it, so anything it held may not be closed`,
+      // Rounded: `deadlineAt - monotonic()` is a float, and `4923.185900000001ms` in a shutdown
+      // log reads as a bug in the number rather than as the budget it is.
+      cause: `the "${name}" release was still running ${Math.round(budgetMs)}ms after the drain finished and has been ABANDONED — the process exits without it, so anything it held may not be closed`,
       fix: 'raise the budget past the slowest teardown — configureLifecycle({ deadlineMs: 600_000 }) for a 10-minute one — and set terminationGracePeriodSeconds to at least as many seconds',
     });
   } finally {

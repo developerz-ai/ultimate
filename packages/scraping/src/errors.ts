@@ -33,6 +33,7 @@ export const SCRAPE_OWNED_ERROR_CODES = [
   'X_SCRAPE_CAPTURE_INVALID',
   'X_SCRAPE_HTTP_FAILED',
   'X_SCRAPE_BODY_TOO_LARGE',
+  'X_SCRAPE_REDIRECT_LOOP',
   'X_SCRAPE_AUTH_FAILED',
   'X_SCRAPE_SESSION_EXPIRED',
   'X_SCRAPE_PROMPT_UNANSWERED',
@@ -83,6 +84,7 @@ export const SCRAPE_ERROR_TITLES: Readonly<Record<ScrapeOwnedErrorCode, string>>
   X_SCRAPE_CAPTURE_INVALID: 'the capture names a framing no picture can be taken with',
   X_SCRAPE_HTTP_FAILED: 'the site answered the HTTP leg with a non-2xx status',
   X_SCRAPE_BODY_TOO_LARGE: 'the HTTP response body passed its byte cap',
+  X_SCRAPE_REDIRECT_LOOP: 'the HTTP leg followed its hop limit of redirects without an answer',
   X_SCRAPE_AUTH_FAILED: 'the credentials were rejected',
   X_SCRAPE_SESSION_EXPIRED: 'the restored session is no longer valid and nothing can renew it',
   X_SCRAPE_PROMPT_UNANSWERED: 'a login step asked for a code and nothing answered',
@@ -150,6 +152,11 @@ export const SCRAPE_ERROR_RETRY = {
   // A response size is a property of the endpoint, not of the moment: attempt 2 buffers the same
   // gigabyte and dies the same way. The fix is a number on the request, so a human decides it.
   X_SCRAPE_BODY_TOO_LARGE: 'terminal',
+  // A chain that does not settle is a property of the endpoint and of the session that reaches it,
+  // not of the moment: attempt 2 restores the same cookies and walks the same ten hops. The
+  // reachable case is a login redirecting to a page that redirects back to the login, and the
+  // repair is a credential or a URL — a human's edit, not a queue's second try.
+  X_SCRAPE_REDIRECT_LOOP: 'terminal',
   X_SCRAPE_YIELD_COLLAPSED: 'terminal',
   // A declaration error, raised by `scrape()` before any attempt exists — there is no run to
   // retry, and the same definition would refuse identically forever.

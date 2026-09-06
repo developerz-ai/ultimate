@@ -16,6 +16,7 @@ import { countsFrom, groupColumnOf } from './count-by';
 import { cursorFor, kindOf, seekFrom, valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
+import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { compareByKind, matchesPredicate } from './memory-match';
 import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
 import type { FindManyArgs, MemoryRepo, RepoOptions, Transactor, Tx } from './repo';
@@ -306,6 +307,15 @@ export const memoryRepo = <Row>(
       // `addressed()` — patching a row the app has already deleted is not an update, it is a
       // resurrection nobody asked for. `write` re-asserts the invariants on each result.
       const found = rowsOf(plan, {});
+      // The same ceiling `postgresRepo` applies from its own count, and for the same reason: this
+      // is the one write whose result size is the caller's FILTER rather than a page, and a rule
+      // only the app can judge is what forces every matched row through `$assert`. Without it a
+      // sweep of twelve million rows was green here and `X_INVARIANT_VIOLATED` there, from one
+      // call — a test proving a call production refuses. Before the loop, so a refusal never
+      // writes the rows it declined to judge.
+      if (hasJsOnlyInvariant(entity.$invariants) && found.length > MAX_ASSERTED_ROWS) {
+        throw assertedRowsTooMany(entity.$name, 'updateWhere', found.length);
+      }
       for (const row of found) write(Object.assign({}, row, patch), options, 'updateWhere');
       return found.length;
     },

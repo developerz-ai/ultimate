@@ -7,10 +7,11 @@
 // to still exist, and a row deleted between two pages would silently restart pagination.
 
 import { CursorInvalidError, decodeCursor, encodeCursor } from '@ultimat3/core';
-import { columnFor } from './column';
+import { columnFor, columnName } from './column';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
-import { instantMicros } from './instant';
+import { identifierBytes, MAX_IDENTIFIER_BYTES } from './index-name';
+import { instantMicros, SEEK_ALIAS_SUFFIX, seekAlias } from './instant';
 import type { QueryPlan } from './tenancy';
 import type { AnyColumn, ColumnKind } from './types';
 
@@ -159,6 +160,38 @@ const reviveSortValue = (kind: ColumnKind, text: string): unknown => {
 };
 
 /**
+ * The one sort key that needs a SECOND output column, and therefore a second identifier: a
+ * `timestamptz` carries microseconds the decoded `Date` cannot hold, so the statement selects
+ * `<column>$US` beside it and `sortPrecision` (`pg-row.ts`) reads the exact instant back under
+ * that name.
+ *
+ * `assertColumnName` admits 63 bytes, which is the server's whole budget — so a column of 61 bytes
+ * produced a 64-byte alias, Postgres TRUNCATED it and said nothing, `sortPrecision` looked up a
+ * name the row does not carry, and `cursorFor` silently fell back to the millisecond `Date` this
+ * precision path exists to replace. The page then cuts at a position no row occupies and every row
+ * inside the boundary millisecond is served on no page at all — the exact defect `instant.ts` was
+ * written to close, reintroduced by a long column name.
+ *
+ * Refused where the PLAN is built rather than where the alias is read, for the reason the whole
+ * function exists: the read path has no error to raise, only a quieter answer. The bound is
+ * `index-name.ts`'s, never a second 63 — and the alias is BUILT rather than measured against a
+ * hard-coded suffix length, so changing the suffix cannot leave this arithmetic behind.
+ */
+const assertAliasFits = <Row>(entity: EntityCore<Row>, path: string): void => {
+  const alias = seekAlias(columnName(partsOf(path).property, columnAt(entity, path).$meta));
+  const bytes = identifierBytes(alias);
+  if (bytes <= MAX_IDENTIFIER_BYTES) return;
+  throw invariantViolated(
+    entity.$name,
+    'cursor',
+    `ordering by ${path} needs the output column "${alias}", which is ${bytes} bytes — ` +
+      `Postgres truncates past ${MAX_IDENTIFIER_BYTES} and says nothing, so the page would ` +
+      `silently lose microsecond precision: rename the column with ` +
+      `.column('<at most ${MAX_IDENTIFIER_BYTES - identifierBytes(SEEK_ALIAS_SUFFIX)} bytes>')`,
+  );
+};
+
+/**
  * A keyset seek only has a total order when every sort column is present on every row —
  * `null > 'x'` is unknown in SQL and would drop rows from the middle of a listing.
  *
@@ -176,7 +209,7 @@ export const assertSeekable = <Row>(
   for (const key of orderBy) {
     // Resolving the kind is the other half: it refuses a column the entity never declared and a
     // money property named without its part — both mint a cursor nothing can decode.
-    kindAt(entity, key.column);
+    if (kindAt(entity, key.column) === 'timestamptz') assertAliasFits(entity, key.column);
     if (columnAt(entity, key.column).$meta.notNull) continue;
     // An ORDINARY nullable key is orderable, `As of 2026-08-24`: NULL has a declared place
     // (`asc nulls last` / `desc nulls first`), the cursor carries that place, and the seek reaches

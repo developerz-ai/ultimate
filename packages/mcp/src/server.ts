@@ -3,7 +3,7 @@
 // and an already-resolved caller, and returns a response or `null` for a notification.
 // Both transports (http, stdio) and every test drive this one function.
 
-import { singleLine, stringField } from '@ultimat3/core';
+import { FRAMEWORK_CODE, singleLine, stringField } from '@ultimat3/core';
 import { formatIssues } from '@ultimat3/schema';
 import { auditResourceRead, auditToolCall, outcomeForCode, outcomeForResult } from './audit';
 import { McpScopeDeniedError } from './errors';
@@ -322,7 +322,11 @@ function asFrameworkError(error: unknown): FrameworkError | undefined {
   // raises here leaves the JSON-RPC request with no response at all — not even the `-32603` the
   // header promises for a genuine bug.
   const code = stringField(error, 'code');
-  if (code === undefined || !code.startsWith('X_')) return undefined;
+  // `FRAMEWORK_CODE`, never `startsWith('X_')`: the substituted `fix:` below interpolates this
+  // value into a COMMAND an agent is told to run, and `X_$(id)` passes a prefix test. A code is
+  // `X_SCREAMING_SNAKE` and nothing else, so a value that is not one is not a framework error —
+  // it takes the `-32603` branch, which leaks nothing of the throw.
+  if (code === undefined || !FRAMEWORK_CODE.test(code)) return undefined;
   return {
     code,
     title: stringField(error, 'title') ?? '',
