@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 19.3.0 - 2026-09-06
+
 Sweep 4, the last, 2026-09-06, is one concern the user reported from a live app: `x dev` was
 watching the git directory, `node_modules` and every path the app's own `.gitignore` names.
 Measured before the fix on the reference app and re-measured after, on a live `x dev`.
@@ -211,6 +215,15 @@ Neither is breaking.
 - **A save arriving while a reload is still building coalesces into one trailing rebuild.** Measured: a 45 ms drip (a slow `git checkout`, a formatter walking files) ran 40 overlapping rebuilds whose results landed in completion order, so an earlier, slower one could overwrite the newest.
 - **Six CLI scans matched `node_modules` as a substring of the absolute path**; an app checked out under `~/dev/node_modules-experiments/myapp` loaded zero modules and reported a green, empty manifest. One segment predicate now.
 - **`x dev`'s watcher debounce is screened with `finiteCount`** — `??` guards nullish and `NaN` is not, so an unparsed `debounceMs` walked past the default into `setTimeout(fn, NaN)`, which coerces to 0: the debounce read as installed while every keystroke ran a full `appManifest()` plus `buildIslands()`.
+
+### Commits
+
+- fix(cli): x dev watches only what the app owns — registration, not filtering (#420)
+- fix: sweep 3 of the deep-dive bug hunt — the gate's own rules, the CLI, and 47 findings (#419)
+- fix: sweep 2 of the deep-dive bug hunt — 23 findings on three axes (#418)
+- fix(realtime): the sync node's drain no longer waits its grace for nobody (#416)
+- fix: sweep 1 of the deep-dive bug hunt — 25 findings across 14 packages (#417)
+- fix(jobs): `skip` catches up once, and the step write is declared one-per-step (#415)
 
 ## 19.2.0 - 2026-09-06
 
