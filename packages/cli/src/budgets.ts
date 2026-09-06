@@ -227,12 +227,19 @@ export interface MeasuredJs {
 export async function measureDocumentJs(html: string, out: string): Promise<MeasuredJs> {
   let jsBytes = 0;
   const entries: MeasuredEntry[] = [];
-  // Deduped ONCE, across both readers below: a browser fetches and executes a module URL once,
-  // however many times the document names it. Two instances of one island are two wrappers and one
-  // chunk — and so are a `<script src>` repeated by a page and its layout, or a src that is also an
-  // island entry. Only the island half was deduped, so a document naming one script twice was
-  // charged twice and could fail a budget it clears. An INLINE script is not in this set: two
-  // identical inline bodies really do both run.
+  // Deduped ONCE, across both readers below, and the unit is the FETCH: a browser downloads a URL
+  // once however many times the document names it, so `budget.js` — a byte budget — counts it
+  // once. Two instances of one island are two wrappers and one chunk; so are a `<script src>`
+  // repeated by a page and its layout, and a src that is also an island entry. Only the island
+  // half was deduped, so a document naming one script twice was charged twice and could fail a
+  // budget it clears.
+  //
+  // EXECUTION is a different count and this is deliberately not it. A repeated classic
+  // `<script src>` runs once per element (a module runs once per document, off the module map), so
+  // the layout-plus-page case above really does execute twice — for zero extra bytes. That is a
+  // CPU cost, and this gate is a bound on what the browser downloads and parses. An INLINE script
+  // is not in this set for the same reason: two identical inline bodies are two copies of the
+  // bytes in the document, so both are charged.
   const fetched = new Set<string>();
   const weigh = async (url: string): Promise<void> => {
     // Only a path inside the artifact can be weighed; a cross-origin script is not this build's.

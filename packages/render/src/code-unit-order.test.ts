@@ -5,14 +5,19 @@ import { describe, expect, test } from 'bun:test';
 import { byCodeUnit } from './code-unit-order';
 
 describe('byCodeUnit', () => {
+  // Every `localeCompare` here NAMES its locale, and the assertions about the comparator do not
+  // call it at all. A bare `localeCompare` reads the runtime's ICU default — the very thing this
+  // comparator exists to avoid — so a test asserting its answer is a test whose verdict moves with
+  // `LANG`, on a CI runner or a laptop. The disagreement is still shown, under a locale that
+  // cannot drift.
   test('orders by code unit, which is where the ICU default disagrees', () => {
-    // Case: `'/A'` (0x41) before `'/a'` (0x61). The ICU default folds case and inverts this.
+    // Case: `'/A'` (0x41) before `'/a'` (0x61). `en-US` folds case and inverts this.
     expect(byCodeUnit('/A', '/a')).toBe(-1);
-    expect('/A'.localeCompare('/a')).toBe(1);
+    expect('/A'.localeCompare('/a', 'en-US')).toBe(1);
 
-    // Punctuation: `'_'` (0x5F) after `'1'` (0x31). The ICU default puts punctuation first.
+    // Punctuation: `'_'` (0x5F) after `'1'` (0x31). `en-US` puts punctuation first.
     expect(byCodeUnit('/_', '/1')).toBe(1);
-    expect('/_'.localeCompare('/1')).toBe(-1);
+    expect('/_'.localeCompare('/1', 'en-US')).toBe(-1);
   });
 
   test('is stable under a locale that reorders letters, which is the deploy-diff property', () => {

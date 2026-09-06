@@ -234,7 +234,13 @@ describe('serializePushMessage, read by the emitted push handler', () => {
           // see the one bug this describes. Not a verdict thrown by the test — it is the browser
           // behaviour the emitted handler is the subject of, the same shape `StubCache.addAll`
           // uses in `service-worker-runtime.test.ts`.
-          const tag = options['tag'];
+          //
+          // The DOMString conversion is the half a stub reading `options['tag']` raw cannot see:
+          // `tag` is a `DOMString` in `NotificationOptions`, so WebIDL converts every value before
+          // the emptiness test — and `[]` converts to `''`. A stub comparing the raw value found a
+          // truthy array and agreed with the truthiness check that shipped the bug.
+          const raw = options['tag'];
+          const tag = raw === undefined ? undefined : String(raw);
           if (options['renotify'] === true && (tag === undefined || tag === '')) {
             throw new TypeError('Notification: renotify requires a non-empty tag');
           }
@@ -358,6 +364,40 @@ describe('serializePushMessage, read by the emitted push handler', () => {
 
     expect(sw.shown).toHaveLength(1);
     expect(sw.shown[0]?.options['renotify']).toBe(false);
+  });
+
+  /**
+   * Every non-string a JSON push body can carry in `tag`. `''` is what a composing server produces
+   * from an unset collapse key; `[]` is truthy in JS and converts to the EMPTY DOMString, which is
+   * the pair `showNotification` rejects — so `!!d.tag` enabled `renotify` for it and the device
+   * showed nothing at all. `{}` converts to `'[object Object]'`, which the browser would accept as
+   * a collapse key nobody chose: not a rejection, but a tag that silently replaces an unrelated
+   * notification. A non-empty STRING is the one shape that is neither.
+   */
+  test('a tag that is not a non-empty string never enables renotify', async () => {
+    for (const tag of ['', [], {}] as const) {
+      const sw = pushRealm(pushSource({}));
+      await sw.deliver(JSON.stringify({ title: 'x', tag, renotify: true, url: '/' }));
+
+      expect(sw.shown).toHaveLength(1);
+      expect(sw.shown[0]?.options['renotify']).toBe(false);
+    }
+  });
+
+  /**
+   * The same pair one layer up, where the composing server can still be told. `payload.tag` is
+   * typed `string`, and `''` is a string: `payload.tag !== undefined` let it through, so
+   * `renderPushPayload` emitted the exact pair its own comment says `showNotification` rejects,
+   * with no warning for the server that wrote it.
+   */
+  test('renderPushPayload reads an empty tag as no tag, and says so', () => {
+    const blank = renderPushPayload({ ...payload, tag: '', renotify: true }, 'de-DE', translate);
+
+    expect(blank.renotify).toBe(false);
+    expect(blank.tag).toBeNull();
+    expect(blank.warnings).toEqual([
+      expect.stringContaining('renotify needs a tag to replace') as unknown as string,
+    ]);
   });
 
   test('a push with no data body still shows something, rooted at /', async () => {

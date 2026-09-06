@@ -1,10 +1,7 @@
-// Single responsibility: the refusals a generated DDL FRAGMENT earns before it is spliced into a
-// statement — an index's direction, an index's partial predicate, and a generated column's
-// expression. Split out of `errors.ts` for the reason `invariant-errors.ts` and
-// `migration-errors.ts` were: that file is at its ceiling. All three carry `X_SQL_UNSAFE`, which
-// `DB_OWNED_ERROR_CODES` there declares and registers — no new code, and none is needed: an
-// operand TypeScript never saw reaching a statement text is one situation, and axiom 1 gives one
-// situation one code.
+// The refusals a generated DDL FRAGMENT earns before it is spliced into a statement: an index's
+// direction, its partial predicate, a generated column's expression. Split from `errors.ts`, which
+// is at its ceiling — `invariant-errors.ts`' reason. All three are `X_SQL_UNSAFE`, declared there:
+// an unchecked operand reaching statement text is one situation, and axiom 1 gives it one code.
 
 import { describeValue } from '@ultimat3/core';
 import { DbError } from './errors';

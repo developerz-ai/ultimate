@@ -191,15 +191,23 @@ describe('unit · measureJsBytes weighs the document, not the graph', () => {
     ).toBe(7);
   });
 
-  // A module the document names twice is one fetch and one execution, and the budget is a bound on
-  // what the browser runs. The island half was already deduped through `booted`; the `<script src>`
-  // half was not, so a document that named one chunk from two places — a page and its layout, a
-  // preload beside the tag that uses it — was charged for it twice and could fail a budget it
-  // clears. Two instances of one island are one module, and so are two tags with one src.
-  test('a script the document names twice is charged once', async () => {
-    const dir = join(out, `case-${Bun.hash('twice').toString(16)}`);
+  // A URL the document names twice is ONE fetch, and `budget.js` is a byte budget — so it is
+  // charged once, classic or module. The island half was already deduped through `booted`; the
+  // `<script src>` half was not, so a document that named one chunk from two places — a page and
+  // its layout, a preload beside the tag that uses it — was charged for it twice and could fail a
+  // budget it clears. Two instances of one island are one module, and so are two tags with one src.
+  //
+  // Both forms are asserted because they differ in EXECUTION and not in bytes: a repeated classic
+  // script runs once per element, a repeated module runs once per document. That difference is a
+  // CPU cost and this gate weighs what the browser downloads, so the two must agree here — and a
+  // test that only covered `type="module"` would leave the case the framework actually emits
+  // (`sw-artifacts.ts`'s classic `<script src="/x-sw-register.js">`) unpinned.
+  test.each([
+    ['classic', '<script src="/twice.js"></script>'],
+    ['module', '<script type="module" src="/twice.js"></script>'],
+  ])('a %s script the document names twice is charged once', async (_kind, once) => {
+    const dir = join(out, `case-${Bun.hash(`twice-${once}`).toString(16)}`);
     await Bun.write(join(dir, 'twice.js'), 'console.log(1)');
-    const once = '<script src="/twice.js"></script>';
     expect(await jsBytesOf(once, dir)).toBe(14);
     expect(await jsBytesOf(`${once}${once}`, dir)).toBe(14);
     // And the entry list names it once, so `heaviestSource` cannot report a duplicate as the

@@ -33,10 +33,23 @@ export interface OfflineFallbackFact {
 }
 
 /**
- * The two surfaces a navigation can land on. An `api/` route answers a JSON document and `shared/`
- * is not a URL at all, which is the same pair `sw-artifacts.ts` keeps for the same reason.
+ * The one surface an OFFLINE navigation can land on. `api/` answers a JSON document and `shared/`
+ * is not a URL at all — the pair `sw-artifacts.ts` excludes for the same reason — and `app/` is
+ * excluded for a third: `SURFACE_SPECS` allows it `stream | ssr` and nothing else, only a `static`
+ * route is prerendered, and the service worker precaches a rendered DOCUMENT
+ * (`serviceWorkerArtifacts` reads `documents.get(fallback)`). So an `app/` fallback has nothing
+ * to precache and the offline navigation it is supposed to answer reaches the network and fails —
+ * this check passing for it is the false green it exists to prevent.
+ *
+ * It accepted `app` until 2026-09, on the argument that both surfaces answer the same URL and it
+ * is the FIX that is opinionated. True about URLs and wrong about offline: the fix's own comment
+ * below already refuses `--surface app`, so the check and the remedy disagreed about one code.
+ *
+ * Residual, and NOT closed by this: a `site/` route declaring `render: 'ssr'` is not prerendered
+ * either. `NavigableRoute` carries no render mode, and `describeRoutes()` has one — the narrower
+ * check belongs with it.
  */
-const NAVIGABLE: ReadonlySet<string> = new Set(['site', 'app']);
+const NAVIGABLE: ReadonlySet<string> = new Set(['site']);
 
 /**
  * A fallback `x g route <name> --surface site` can actually create: ONE path segment, which is
@@ -83,7 +96,7 @@ export function offlineFallbackFinding(fact: OfflineFallbackFact): Finding | und
   if (fact.routes.some((route) => route.path === fallback && NAVIGABLE.has(route.surface))) {
     return undefined;
   }
-  const cause = `pwa.offline.fallback is "${fallback}" and no site/ or app/ route serves it, so an offline navigation falls back to the browser error page`;
+  const cause = `pwa.offline.fallback is "${fallback}" and no site/ route serves it, so an offline navigation falls back to the browser error page`;
   const name = GENERATABLE.exec(fallback)?.[1];
   return name === undefined
     ? finding(cause, `set pwa.offline.fallback in ${APP_CONFIG_FILE} to a path a route serves`)

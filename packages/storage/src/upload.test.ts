@@ -220,6 +220,30 @@ describe('an unrecognised body under a type that has a signature', () => {
     expect(code).toBe('X_STORAGE_TYPE_REJECTED');
   });
 
+  // `upload a genuine image/png file` restated the type the caller had already declared and named
+  // no operation at all: a CLI, an MCP tool and an agent each read that as advice, and the error
+  // contract's whole point is that a `fix:` is a thing you do. The one remedy is re-running this
+  // same validation over different bytes, so the line names the call and the key it is for.
+  test('the fix names the call to re-run and the object it is for', () => {
+    let thrown: unknown;
+    try {
+      validateUpload(
+        {
+          key: 'org/org-1/avatars/evil.png',
+          declaredContentType: 'image/png',
+          bytes: HTML_WITH_CONTROL_BYTE,
+        },
+        IMAGES,
+      );
+    } catch (error) {
+      thrown = error;
+    }
+    const fix = (thrown as { fix: string }).fix;
+    expect(fix).toContain('validateUpload(');
+    expect(fix).toContain('org/org-1/avatars/evil.png');
+    expect(fix).toContain('image/png');
+  });
+
   test('a zip container type is covered too — every OOXML document is a zip', () => {
     const code = codeOf(() =>
       validateUpload(

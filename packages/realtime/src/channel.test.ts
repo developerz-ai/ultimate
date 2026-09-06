@@ -122,6 +122,31 @@ describe('channels', () => {
     expect(String(ids[1])).toContain('sync-7');
   });
 
+  // The collision above, arriving through the field that exists to prevent it. `??` answers only
+  // for `undefined`, so `nodeId: ''` — an unset `POD_NAME` interpolated into a config — was stored
+  // as the mark, and both hubs minted `:0000000000000001` for their first publish.
+  test('a blank nodeId is read as omitted, not as the empty mark', async () => {
+    const transport = new InProcessTransport();
+    const sockets = new SocketRegistry();
+    const nodeA = new ChannelHub({ transport, sockets, nodeId: '' });
+    const nodeB = new ChannelHub({ transport, sockets, nodeId: '   ' });
+    nodeA.guard('org.*.cursors', () => true);
+    const { socket, ws } = connect(sockets, actor('alice'));
+    const name = topic('org', 'o1', 'cursors');
+    await nodeA.subscribe(socket, name);
+
+    await nodeA.publish(name, { x: 1, y: 1 });
+    await nodeB.publish(name, { x: 2, y: 2 });
+
+    const ids = ws.frames.map((frame) =>
+      frame.type === 'patch' ? String(frame.patches[0]?.id) : expect.unreachable('not a patch'),
+    );
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    // And neither id starts at the separator, which is what the empty mark looked like.
+    for (const id of ids) expect(id.startsWith(':')).toBe(false);
+  });
+
   test('an actor change re-checks every live subscription', async () => {
     const { hub, sockets } = harness();
     hub.guard(

@@ -61,6 +61,11 @@ export interface ChannelHubOptions {
    * This node's mark on the patch ids it mints. Defaults to a per-hub random id, which is enough
    * to keep two nodes apart; declare it (the pod name, the `sync` instance id) when an operator
    * reading one frame should be able to say which node published it.
+   *
+   * A blank string is read as OMITTED, never as a mark: `??` only answers for `undefined`, so
+   * `nodeId: ''` — which is what an unset `POD_NAME` interpolates to — stored the empty mark and
+   * two hubs then minted the SAME first patch id, `:0000000000000001`. That is precisely the
+   * collision this field exists to prevent, arriving through the field itself.
    */
   readonly nodeId?: string;
 }
@@ -123,7 +128,9 @@ export class ChannelHub {
       'maxTopicsPerNode',
       options.maxTopicsPerNode ?? DEFAULT_MAX_TOPICS_PER_NODE,
     );
-    this.#nodeId = options.nodeId ?? uuid();
+    // Trimmed before the emptiness test: `nodeId: ' '` marks a frame with a space, which reads in
+    // a log as no mark at all and collides with the next hub that does the same.
+    this.#nodeId = options.nodeId?.trim() || uuid();
   }
 
   /** Sockets this node will deliver `name` to. The metric the fanout reads. */

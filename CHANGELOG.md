@@ -10,13 +10,26 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 Sweep 1 of a three-agent bug hunt over every package, 2026-09-06: three read-only hunters over
 tiers 0–1, 2–3 and 4–5, each finding reproduced before it was fixed, each fix landing with the
-test that failed first. Nothing is breaking; no shipped `X_*` code changed. Deferred, by name:
+test that failed first. No shipped `X_*` code changed, and one export leaves a barrel — named
+below rather than covered by a blanket "nothing is breaking", which is the sentence this file has
+outlived before. Deferred, by name:
 `@ultimat3/jobs`'s memory driver (`enqueue` throws synchronously under `onConflict: 'error'`;
 `introspect.cancel` keeps `claimedBy`/`visibleAt` where `SQL_CANCEL` nulls both) and
 `@ultimat3/seo`'s title/description limits counting UTF-16 units — both to the next sweep.
 
 Two seams measured from the same app on 2026-09-06 — on 19.1.3, and confirmed in 19.2.0 source.
 Neither is breaking.
+
+### Removed
+
+- **BREAKING — `OFFLINE_FALLBACK` is gone from the `@ultimat3/cli` barrel.** It was the literal
+  `apps/web/app/offline.tsx`: a filename `registerRoute` refuses with `X_ROUTE_FILE_INVALID` (the
+  directory is the URL, so a page is `page.tsx`), naming a path no route table has ever accepted —
+  so an importer held a value that could not be true of any app. `x doctor` now resolves the
+  fallback against `describeRoutes()` (`doctor-offline.ts`), which needs no path constant, and
+  there is nothing to alias it to: `@ultimat3/pwa`'s `pwa.offline.fallback` is a URL (`/offline`),
+  not a file. An app that imported it wanted the scaffolded page, which is
+  `apps/web/site/offline/page.tsx` — write that path, or read the URL off `app.config.ts`.
 
 ### Fixed
 

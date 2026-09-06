@@ -22,14 +22,17 @@ describe('unit · the offline fallback is resolved against the route table', () 
     expect(offlineFallbackFinding(fact())).toBeUndefined();
   });
 
-  // The fix and the scaffold both write `site/`, and an app that put the page under `app/` still
-  // has one: both surfaces answer the same URL, so a check that accepted only the recommended one
-  // would report a route that exists. It is the FIX that is opinionated (`--surface site`, the
-  // document must render with no session and no database), not the acceptance.
-  test('either navigable surface serves it', () => {
+  // `app/` answers the same URL and cannot answer it OFFLINE, which is the only question here.
+  // `SURFACE_SPECS` allows `app/` exactly `stream | ssr`, only a `static` route is prerendered,
+  // and the worker precaches a rendered document — so an `app/` fallback has nothing to precache
+  // and the navigation reaches the network it is there to survive without. This accepted it until
+  // 2026-09 on the argument that both surfaces answer the same URL, while the fix two tests down
+  // already refused `--surface app` for that same reason: a check and its remedy disagreeing over
+  // one code.
+  test('an app/ route answers the URL and does not serve an offline navigation', () => {
     expect(
-      offlineFallbackFinding(fact({ routes: [{ path: '/offline', surface: 'app' }] })),
-    ).toBeUndefined();
+      offlineFallbackFinding(fact({ routes: [{ path: '/offline', surface: 'app' }] }))?.code,
+    ).toBe('X_PWA_NO_OFFLINE_FALLBACK');
   });
 
   test('the fallback path is what is matched, not a route that merely exists', () => {
@@ -65,7 +68,9 @@ describe('unit · the offline fallback is resolved against the route table', () 
     expect(finding?.fix).not.toContain('--surface app');
     const generated = /^x g route ([a-z0-9-]+) --surface (app|site)$/.exec(finding?.fix ?? '');
     const name = generated?.[1] ?? expect.unreachable('the fix is not an x g route invocation');
-    const surface = generated?.[2] ?? 'app';
+    // Read off the fix and never defaulted to `site`: the surface the fix names has to be the one
+    // the check then accepts, and a default that happens to be the accepted value asserts nothing.
+    const surface = generated?.[2] ?? expect.unreachable('the fix names no surface');
     expect(
       offlineFallbackFinding(fact({ routes: [{ path: `/${name}`, surface }] })),
     ).toBeUndefined();

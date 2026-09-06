@@ -15,7 +15,7 @@ describe('requireOfflineFallback', () => {
       fix = fixOf(error);
     }
     expect(fix).toBe(
-      "x g route offline --surface site   # then set pwa.offline.fallback to '/offline' in app.config.ts",
+      "set pwa: { offline: { fallback: '/offline' } } in app.config.ts, then create the route it names: x g route offline --surface site",
     );
     // The half a string comparison alone would not explain: `<name>.tsx` is not a route file.
     // `registerRoute` refuses it with `X_ROUTE_FILE_INVALID` — the directory is the URL — so the
@@ -25,6 +25,16 @@ describe('requireOfflineFallback', () => {
     // no network, no session and no database, which `app/` (`ssr | stream`) cannot promise.
     expect(fix).not.toMatch(/\boffline\.tsx\b/);
     expect(fix).toContain('--surface site');
+    // No `#`: a shell comment is what made the previous line half-run. Pasted whole it created the
+    // route and left `pwa.offline.fallback` unset, so the next build raised this same error — and
+    // the reader had no signal that anything was left to do. Both actions, or neither.
+    expect(fix).not.toContain('#');
+    // The nested literal and not the dotted key, because there is no `pwa` block to set a key in:
+    // this branch fires when the config has none. It is the same line `x doctor`'s own
+    // `offlineFallbackFinding` hands out for the same code — two spellings of one instruction is
+    // how one of them rots.
+    expect(fix).toContain("pwa: { offline: { fallback: '/offline' } }");
+    expect(fix).toContain('app.config.ts');
 
     expect(() => requireOfflineFallback({})).toThrow(PwaNoOfflineFallbackError);
     expect(() => requireOfflineFallback({ fallback: '  ' })).toThrow(PwaNoOfflineFallbackError);

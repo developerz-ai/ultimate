@@ -127,8 +127,14 @@ writes `apps/web/app/offline/page.tsx`. Three different paths, so every app the 
 produced reported `X_PWA_NO_OFFLINE_FALLBACK` from its first `x doctor`, running the fix changed
 nothing, and the app that HAD the route was told it did not. It now reads the DECLARED
 `pwa.offline.fallback` through `loadPwaArtifacts` and matches it against `describeRoutes()` —
-either navigable surface, because the scaffold writes `site/` and the fix writes `app/` and both
-answer the same URL. An app whose modules will not import is not judged at all, which is
+**`site/` only**, `As of 2026-09`. It accepted `app/` too, on the argument that both surfaces answer
+the same URL; true, and not the question. `SURFACE_SPECS` allows `app/` exactly `stream | ssr`, only
+a `static` route is prerendered, and `serviceWorkerArtifacts` precaches a rendered DOCUMENT
+(`documents.get(fallback)`) — so an `app/` fallback has nothing to precache and the offline
+navigation reaches the network it exists to survive without. The check and its own `fix:` disagreed
+about one code. Not closed by this: a `site/` route declaring `render: 'ssr'` is not prerendered
+either, and `NavigableRoute` carries no render mode. An app whose modules will not import is not
+judged at all, which is
 `appEntities`' rule (`schema-drift.ts`) one registry over. The fix is `x g route <name>
 --surface site` only where the fallback is one path segment the generator can really produce: a
 nested path slugifies to a DIFFERENT url, so there it is the config edit instead — a `fix:` that
