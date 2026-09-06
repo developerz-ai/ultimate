@@ -70,11 +70,20 @@ class StubCache {
 
 function swHarness() {
   const fetched: string[] = [];
+  /** The `x-ultimate-build` each proxied request carried, in order. `null` means unstamped. */
+  const stamps: (string | null)[] = [];
+  const messages: unknown[] = [];
   let offline = false;
+  let respond: ((request: Request) => Response | undefined) | undefined;
   const fetcher = async (request: Request | string): Promise<Response> => {
     const url = typeof request === 'string' ? request : request.url;
     fetched.push(url);
+    stamps.push(typeof request === 'string' ? null : request.headers.get('x-ultimate-build'));
     if (offline) throw new TypeError('network down');
+    if (respond !== undefined && typeof request !== 'string') {
+      const scripted = respond(request);
+      if (scripted !== undefined) return scripted;
+    }
     return new Response(`bytes for ${new URL(url).pathname}`, { status: 200 });
   };
 
@@ -101,15 +110,23 @@ function swHarness() {
     addEventListener(type: string, listener: SwListener): void {
       listeners.set(type, listener);
     },
-    clients: { claim: async (): Promise<void> => undefined, matchAll: async () => [] },
+    clients: {
+      claim: async (): Promise<void> => undefined,
+      matchAll: async () => [{ postMessage: (data: unknown): void => void messages.push(data) }],
+    },
     skipWaiting: (): void => undefined,
   };
 
   return {
     caches,
     fetched,
+    stamps,
+    messages,
     goOffline: (): void => {
       offline = true;
+    },
+    answerWith: (fn: (request: Request) => Response | undefined): void => {
+      respond = fn;
     },
     load(source: string): void {
       const factory = new Function('self', 'caches', 'fetch', 'Request', source) as (
@@ -237,5 +254,67 @@ describe('a precache URL that already has a query', () => {
     expect([...(cache?.entries.keys() ?? [])]).toContain(
       'https://app.test/_x/data/pricing.json?locale=en',
     );
+  });
+});
+
+// The deadlock this escapes was measured on a running app, not imagined: a dev server restarted
+// onto a new build, the active worker went on stamping the old id, every navigation came back 409,
+// and the replacement worker sat at `waiting: "installed"` because a waiting worker takes over only
+// once every client is released — which the refusal page, not being the app, never arranges. The
+// error's own advice was "reload the page"; reloading re-entered the same worker and earned the
+// same 409. Only a hand-posted `skip-waiting` from devtools broke it.
+describe('the emitted fetch block, against a server on a newer build', () => {
+  const routes: readonly PwaRoute[] = [
+    { path: '/', surface: 'app', mode: 'ssr', offline: 'runtime' },
+  ];
+  const skew = (request: Request): Response | undefined =>
+    request.headers.get('x-ultimate-build') === 'build-1'
+      ? new Response('{"code":"X_BUILD_SKEW"}', {
+          status: 409,
+          headers: { 'x-ultimate-build': 'build-2' },
+        })
+      : undefined;
+
+  test('answers the request for real instead of handing the client the refusal', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(routes, config, 'build-1').source);
+    sw.answerWith(skew);
+
+    const response = await sw.request('/');
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('bytes for /');
+  });
+
+  test('stops stamping the id that was refused, so the next request is not refused either', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(routes, config, 'build-1').source);
+    sw.answerWith(skew);
+
+    await sw.request('/');
+    await sw.request('/');
+    // First stamped and refused; every request after it goes out bare.
+    expect(sw.stamps[0]).toBe('build-1');
+    expect(sw.stamps.slice(1)).toEqual(sw.stamps.slice(1).map(() => null));
+  });
+
+  test('tells every window which build is waiting, so the app can activate it', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(routes, config, 'build-1').source);
+    sw.answerWith(skew);
+
+    await sw.request('/');
+    expect(sw.messages).toEqual([{ type: 'AppUpdateAvailable', to: 'build-2' }]);
+  });
+
+  // A 409 is not automatically skew: a route may answer one of its own, and swallowing it would
+  // turn a conflict the app must handle into a silent retry with the guard disabled.
+  test('leaves a 409 that carries no other build id alone', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(routes, config, 'build-1').source);
+    sw.answerWith(() => new Response('nope', { status: 409 }));
+
+    expect((await sw.request('/')).status).toBe(409);
+    expect(sw.messages).toEqual([]);
+    expect(sw.stamps[0]).toBe('build-1');
   });
 });

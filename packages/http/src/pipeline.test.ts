@@ -312,7 +312,7 @@ describe('lifecycle', () => {
     expect(limited.headers.get('retry-after')).toBeTruthy();
   });
 
-  test('a stale client build id is told to reload instead of getting a 404', async () => {
+  test('a stale client build id is refused as skew instead of getting a 404', async () => {
     const pipeline = pipelineWith({ buildId: 'build-2' });
     const response = await pipeline.handle(
       get('/public', { headers: { 'x-ultimate-build': 'build-1' } }),
@@ -321,6 +321,18 @@ describe('lifecycle', () => {
     expect(response.status).toBe(409);
     const body = (await response.json()) as Record<string, unknown>;
     expect(body['code']).toBe('X_BUILD_SKEW');
-    expect(body['fix']).toContain('reload');
+  });
+
+  // The refusal is the only response a stale service worker gets, so it is the only place it can
+  // learn what to become. Without this header the worker cannot tell this 409 from any other and
+  // goes on stamping the id that earned it — measured as a navigation loop no reload escapes.
+  test('the skew refusal names the build the server is actually running', async () => {
+    const pipeline = pipelineWith({ buildId: 'build-2' });
+    const response = await pipeline.handle(
+      get('/public', { headers: { 'x-ultimate-build': 'build-1' } }),
+      { role: 'web' },
+    );
+    expect(response.status).toBe(409);
+    expect(response.headers.get('x-ultimate-build')).toBe('build-2');
   });
 });

@@ -160,6 +160,11 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       if (answered !== undefined) return answered;
 
       ctx.clientBuildId = request.header(config.buildIdHeader);
+      // Stamped BEFORE the assertion, so the refusal carries it too. A skew answer that
+      // withholds the server's own id tells a client it is stale without telling it what to
+      // become — and the one caller that can act on that, the service worker holding the
+      // stale id, then has no way to tell this 409 from any other.
+      if (config.buildId !== null) ctx.headers.set(config.buildIdHeader, config.buildId);
       request.assertBuild();
 
       const pathname = stripBasePath(ctx.url.pathname, config.basePath);

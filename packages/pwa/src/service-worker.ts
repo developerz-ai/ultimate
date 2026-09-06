@@ -252,7 +252,8 @@ const RUNTIME=${JSON.stringify(cacheNamespace(buildId, 'runtime'))};
 const PAGES=${JSON.stringify(cacheNamespace(buildId, 'pages'))};
 const RETAINED=${JSON.stringify(retainedCaches(retained))};
 const NEVER_CACHE=${JSON.stringify(neverCache)};
-const BUILD_HEADER=${JSON.stringify(BUILD_ID_HEADER)};`.trim();
+const BUILD_HEADER=${JSON.stringify(BUILD_ID_HEADER)};
+let SKEWED=false;`.trim();
 }
 
 function retainedCaches(buildIds: readonly string[]): readonly string[] {
@@ -316,6 +317,30 @@ self.addEventListener('activate',(event)=>{
 });`.trim();
 }
 
+/**
+ * The status `@ultimat3/http` answers a stale build id with. Declared here as a number rather
+ * than imported: tier-4 packages do not import each other, and the wire status is the contract
+ * between them — `X_BUILD_SKEW` maps to 409 in `packages/http/src/error-map.ts`.
+ */
+const SKEW_STATUS = 409;
+
+/**
+ * The fetch block, plus the one escape from a deadlock the skew guard can otherwise create.
+ *
+ * The guard is sound in both halves and lethal together: this worker stamps its own `BUILD_ID`
+ * on every request it proxies, and a server on a newer build answers that with a 409 whose body
+ * is a refusal page rather than the app. The refusal page is not the app, so nothing in it posts
+ * `skip-waiting`; the replacement worker stays `installed` and waiting, because a waiting worker
+ * activates only once every client is released; and a reload re-enters the same worker, which
+ * stamps the same id and earns the same 409. Measured on a dev restart: `waiting: "installed"`,
+ * `active: "activated"`, and every navigation 409 until the registration was cleared by hand —
+ * while the error's own advice was "reload the page".
+ *
+ * `healSkew` breaks it at the only point still under this worker's control: having been told it
+ * is stale, it stops stamping, re-issues the request untagged so the document actually loads, and
+ * tells every window an update is waiting. Skew detection is not lost — it has already fired, and
+ * its whole purpose is to get the client onto the new build, which is what the app now does.
+ */
 function fetchBlock(): string {
   return `
 function ruleFor(url){
@@ -339,10 +364,27 @@ self.addEventListener('fetch',(event)=>{
   if(!fn)return;
   // Every proxied request carries the client's build id so the server can detect skew.
   const tagged=new Request(req,{headers:withBuild(req.headers)});
-  event.respondWith(fn(tagged,cacheName(rule.c),()=>offlineFallback(req)));
+  event.respondWith(fn(tagged,cacheName(rule.c),()=>offlineFallback(req)).then((res)=>healSkew(req,res)));
 });
 function withBuild(headers){
-  const h=new Headers(headers);h.set(BUILD_HEADER,BUILD_ID);return h
+  const h=new Headers(headers);
+  // Once the server has told this worker it is stale, stamping the id again only earns
+  // another refusal. See healSkew below.
+  if(!SKEWED)h.set(BUILD_HEADER,BUILD_ID);
+  return h
+}
+async function healSkew(req,res){
+  if(SKEWED||res.status!==${SKEW_STATUS})return res;
+  const server=res.headers.get(BUILD_HEADER);
+  if(server===null||server===BUILD_ID)return res;
+  // This worker is provably the old build, and it cannot activate its own replacement: a
+  // waiting worker takes over only when every client is released, and the refusal page is
+  // what the client is now holding, so the app that would post skip-waiting never runs.
+  // Answering the request for real is what breaks that loop.
+  SKEWED=true;
+  const cs=await self.clients.matchAll({type:'window'});
+  for(const c of cs)c.postMessage({type:${JSON.stringify(APP_UPDATE_AVAILABLE)},to:server});
+  return fetch(new Request(req,{headers:withBuild(req.headers)}));
 }`.trim();
 }
 

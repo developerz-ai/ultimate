@@ -8,7 +8,26 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A stale service worker no longer walls the app off behind its own skew guard.** Both halves
+  were sound and the pair was lethal. The generated `sw.js` stamps its `BUILD_ID` on every request
+  it proxies; a server on a newer build answers that with `409 X_BUILD_SKEW`, whose body is a
+  refusal page rather than the app. The refusal page is not the app, so nothing in it posts
+  `skip-waiting`; the replacement worker stays `installed` and waiting, because a waiting worker
+  takes over only once every client is released; and a reload re-enters the same worker, which
+  stamps the same id and earns the same 409. Measured on a dev server restarted onto a new build:
+  `waiting: "installed"`, `active: "activated"`, `x-precache-<new>` already downloaded, and every
+  navigation 409 — for as long as the tab lived. Only a hand-posted `skip-waiting` from devtools
+  recovered it, and the error's own advice was "reload the page". Three changes, each needed by
+  the next: `@ultimat3/http` stamps `x-ultimate-build` on the refusal (a response that says "you
+  are stale" while withholding what the server *is* cannot be acted on, and is indistinguishable
+  from any other 409); the worker treats that response as the signal to stop stamping, re-issue
+  the request untagged so the document actually loads, and post `AppUpdateAvailable` to every
+  window naming the waiting build; and `buildSkew`'s `fix` stops advertising a remedy that
+  provably does not remedy. A 409 carrying no *different* build id is left exactly alone — a route
+  may answer a conflict of its own, and swallowing it would turn a conflict the app must handle
+  into a silent retry with the guard switched off.
 
 ## 19.1.2 - 2026-09-06
 
