@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 19.1.3 - 2026-09-06
+
 ### Fixed
 
 - **A stale service worker no longer walls the app off behind its own skew guard.** Both halves
