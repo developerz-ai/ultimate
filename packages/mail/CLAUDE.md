@@ -122,6 +122,24 @@
 - `Bcc` is an envelope field. It reaches `RCPT TO` and Resend's body, never a header — so
   `assertHeaderSafe` deliberately does NOT check it and `envelope-address.ts` does. Two wire
   formats, one gate each; naming a `Bcc` header in a refusal would name one no message has.
+- **The envelope gate NORMALISES one thing, and the order is the security property** (`As of
+  2026-09`). `Jane Doe <jane@x.test>` is the ordinary RFC 5322 display form — the `To:` header
+  carries it verbatim and the resend, memory and log drivers accept it — while `RCPT TO:` takes an
+  addr-spec, so SMTP alone refused it `X_MAIL_ADDRESS_INVALID` for the angle brackets the display
+  form is made of. `envelopeAddress(field, address)` in `envelope-address.ts` is the one repair,
+  called by `smtpDeliver` for BOTH halves (never a second copy in `driver-smtp.ts`): control
+  characters are refused on the RAW value **before** the phrase is stripped, because
+  `ops@x.test\r\nRCPT TO:<attacker@evil.test>` strips down to a clean-looking mailbox — a
+  strip-then-check turns the injection into a delivery to the attacker.
+- **`From`, `To` and `Cc` encode the display PHRASE, never the list** (`As of 2026-09`). `Subject`
+  was RFC 2047 encoded and the address headers were not, so `José Muñoz <jose@x.test>` went on the
+  wire as 8-bit UTF-8 in a session `smtp-protocol.ts` never negotiates SMTPUTF8 for. `mime.ts`'s
+  `encodeAddressPhrase` splits on the trailing `<addr-spec>` — the same regex `addressSpec` uses —
+  encodes the phrase and copies the mailbox through: encoding the whole list would base64 the
+  commas and brackets that make it an address list. The `header()` gate still runs on the RAW
+  value, and an ARRAY is checked element by element before it is joined, so a CRLF in a display
+  name is still `X_MAIL_HEADER_INVALID` rather than hidden inside an encoded word. An ASCII list is
+  byte-identical to before.
 - Recipient addresses stay out of logs and out of error text we write ourselves; the server's own
   reply is passed through verbatim, and that is where the refused address comes from.
 - Every header value is checked for CR/LF (`X_MAIL_HEADER_INVALID`) before folding — interpolated

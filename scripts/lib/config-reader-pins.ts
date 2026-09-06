@@ -55,11 +55,23 @@ export const CONFIG_AMBIGUOUS_PINS: Readonly<Record<string, string>> = {
     "SUSPECT, the widest of the four: 24 files match the bare `tokens` — `@ultimat3/ui`'s own `tokens/` directory and every i18n token walker among them — and none is under `packages/ui/`. `@ultimat3/ui` takes tokens as props and reads no config, which is the sentence `theme.defaultMode` already carries one table up.",
 };
 
-/** What this leaf is excused for today, or `undefined`. Absent means the doubt is a finding. */
+/**
+ * What this leaf is excused for today, or `undefined`. Absent means the doubt is a finding — and so
+ * does a row whose reason is BLANK: "pinned" with no sentence is the waiver this file's own header
+ * refuses, and the trim guard is what makes that sentence enforced rather than stated.
+ */
+export const configReaderPinnedFor = (
+  leaf: string,
+  pins: Readonly<Record<string, string>> = CONFIG_READER_PINS,
+): string | undefined =>
+  Object.hasOwn(pins, leaf) && (pins[leaf] ?? '').trim() !== '' ? pins[leaf] : undefined;
+
+/** The same question of the second table. Called by `checkConfigReaders`, and by nobody before. */
 export const configAmbiguityPinnedFor = (
   leaf: string,
   pins: Readonly<Record<string, string>> = CONFIG_AMBIGUOUS_PINS,
-): string | undefined => (Object.hasOwn(pins, leaf) ? pins[leaf] : undefined);
+): string | undefined =>
+  Object.hasOwn(pins, leaf) && (pins[leaf] ?? '').trim() !== '' ? pins[leaf] : undefined;
 
 /**
  * The edit `X_CONFIG_READER_PIN_STALE` names, performed: drop each named key whose reader has

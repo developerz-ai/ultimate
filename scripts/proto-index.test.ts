@@ -68,7 +68,10 @@ describe('the repairs the rule RECOGNISES rather than pins', () => {
     expect(
       keys('const T: Record<string, number> = Object.create(null);\nconst v = T[key];'),
     ).toEqual([]);
-    expect(keys(`${table}const U = { __proto__: null };\nconst v = T[key];`)).toEqual([]);
+    // The second half of this test asserted the DEFECT as correct until 2026-09-06: `U` is a
+    // different table, and `T` — a plain `{}` — was exempted only because the exemption was
+    // file-wide. A neighbour's repair is not this table's.
+    expect(keys(`${table}const U = { __proto__: null };\nconst v = T[key];`)).toEqual(['T[key]']);
   });
 
   test('a string literal key cannot be "constructor" unless somebody typed it', () => {
@@ -138,5 +141,83 @@ describe('the ratchet', () => {
 
   test('the tree is on the ratchet', async () => {
     expect(await protoIndexGaps(repoRoot())).toEqual([]);
+  });
+});
+
+// Finding 1, 2026-09-06: the null-prototype exemption was FILE-wide — `NULL_PROTO.test(code)`
+// emptied `recordTables` for the whole file — while the header, the finding's own `fix:` and this
+// rule's wiki row all describe a null-prototype TABLE. One unrelated `Object.create(null)`
+// anywhere in a file therefore hid every `Record` literal read in it.
+describe('the null-prototype exemption is per TABLE, never per file', () => {
+  const MIXED = [
+    'const SAFE: Record<string, T> = Object.create(null);',
+    'const DIALECTS = Object.freeze<Record<Dialect, string>>({ draft: "x" });',
+    'export const at = (d: Dialect) => DIALECTS[d];',
+    'export const put = (k: string, v: T) => { SAFE[k] = v; };',
+  ].join('\n');
+
+  test('a table built with Object.create(null) is still exempt', () => {
+    expect([...recordTables(MIXED)]).not.toContain('SAFE');
+  });
+
+  test('and its neighbour, an ordinary object literal, is NOT', () => {
+    expect([...recordTables(MIXED)]).toContain('DIALECTS');
+    expect(keys(MIXED)).toEqual(['DIALECTS[d]']);
+  });
+
+  test('Object.assign(Object.create(null), {…}) is null-prototyped too', () => {
+    const source = [
+      'const ESCAPES: Readonly<Record<string, string>> = Object.assign(Object.create(null), {',
+      '  a: "b",',
+      '});',
+      'export const one = (c: string) => ESCAPES[c];',
+    ].join('\n');
+    expect([...recordTables(source)]).toEqual([]);
+  });
+
+  test('and so is a literal whose first member is __proto__: null', () => {
+    const source = [
+      'const T: Record<string, number> = { __proto__: null, a: 1 };',
+      'export const one = (k: string) => T[k];',
+    ].join('\n');
+    expect([...recordTables(source)]).toEqual([]);
+  });
+
+  test('a NEIGHBOURING declaration comment cannot exempt the table above it', () => {
+    const source = [
+      'const A: Record<string, number> = { a: 1 };',
+      '/** built with Object.create(null), for the reason below */',
+      'const B: Record<string, number> = Object.create(null);',
+      'export const one = (k: string) => A[k];',
+    ].join('\n');
+    expect([...recordTables(source)]).toEqual(['A']);
+  });
+});
+
+// Finding 5, 2026-09-06: `protoIndexPinnedFor` answered `pin.count` without ever reading `reason`,
+// so `{ count: 9, reason: '' }` held nine reads on nothing.
+describe('a pin with a blank reason waives nothing', () => {
+  const file = {
+    path: 'packages/x/src/a.ts',
+    source:
+      'const T: Record<string, number> = { a: 1 };\nexport const one = (k: string) => T[k];\n',
+  };
+
+  test('the count is not honoured, and the finding says the sentence is missing', () => {
+    const gaps = checkProtoIndex({ files: [file], pins: { x: { count: 1, reason: '' } } });
+    expect(gaps.map((gap) => gap.kind)).toContain('unexplained');
+    const finding = protoIndexFindingFor(gaps.find((gap) => gap.kind === 'unexplained') as never);
+    expect(finding.code).toBe('X_PROTO_CHAIN_INDEX_PIN_UNEXPLAINED');
+    expect(finding.fix).toContain('x');
+  });
+
+  test('and a reason that says something holds the count, as it always did', () => {
+    const gaps = checkProtoIndex({
+      files: [file],
+      pins: {
+        x: { count: 1, reason: 'keyed by a closed union the compiler checks at every call' },
+      },
+    });
+    expect(gaps).toEqual([]);
   });
 });

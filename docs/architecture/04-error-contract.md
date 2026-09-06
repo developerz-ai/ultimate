@@ -232,13 +232,17 @@ For deliberately unimplemented paths, the throw is still typed and still actiona
 throw new UltimateError({
   code: 'X_NOT_IMPLEMENTED',
   cause: 'jobs driver "nats" has no claim implementation yet',
-  fix: 'call setJobDriver(createPgDriver()) at boot instead of this driver, then move what is already queued: x jobs drain --to memory --json',
+  fix: 'call setJobDriver(createPgDriver()) at boot instead of this driver; nothing needs moving first, because enqueue here refuses too, so no job was ever written to it',
 });
 ```
 
 Not a config edit. `JobsConfig.driver` was deleted in 5.0.0 for having no reader, so there is no
 key that selects a driver — `setJobDriver` is the seam, and the fix has to name the one that
-actually replaces the stub. This is `packages/jobs/src/driver-nats.ts`'s own line, quoted rather
+actually replaces the stub. It names no drain: every `x jobs drain --to` target either is one of
+these stubs or is refused (`memory` acked a durable queue into a `Map` that died at exit), and
+`enqueue` on a stub refuses, so nothing was ever queued onto it — the "then move what is already
+queued" clause this line carried until 2026-09-06 was a second unrunnable instruction. This is
+`packages/jobs/src/driver-nats.ts`'s own line, quoted rather
 than invented: a worked example in the page that DEFINES the rule may not be the one place it is
 broken.
 

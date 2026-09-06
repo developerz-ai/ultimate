@@ -8,7 +8,7 @@ import { appManifest, writeAppManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { generate } from './generate-files';
-import { GENERATORS, readKind, readName, readSurface } from './generate-kinds';
+import { GENERATORS, readKind, readName, readPermission, readSurface } from './generate-kinds';
 import { containedPath, writeFiles } from './generate-write';
 import { resolveCatalogModule } from './i18n-audit';
 import { syncI18nIndex } from './i18n-index';
@@ -63,7 +63,10 @@ export const generateCommand: CliCommand = {
     const surface = readSurface(flagString(ctx.args, 'surface'), kind, name);
     const locales = resolveLocales(flagList(ctx.args, 'locales'));
     const at = flagString(ctx.args, 'at');
-    const permission = flagString(ctx.args, 'permission');
+    // Read with the two above, and refused here for their reason: the value is spliced into the
+    // emitted source three times, and a value that is not a `<resource>:<verb>` is a page the app
+    // cannot compile — found after the files are on disk, which is the worst place to find it.
+    const permission = readPermission(flagString(ctx.args, 'permission'), kind);
     // Read before a file is planned, like the flags above: which module a generated component
     // imports `useT()` from is a fact about THIS app, and `generate` is a pure function.
     const catalogModule = await resolveCatalogModule(root);

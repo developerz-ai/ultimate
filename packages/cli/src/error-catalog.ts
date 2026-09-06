@@ -3,7 +3,7 @@
 // commands actually need — so without this, `x errors explain X_UNAUTHENTICATED` answered "not a
 // registered error code" for a code the framework throws on every unauthenticated request.
 
-import { listErrorCodes } from '@ultimat3/core';
+import { listErrorCodes, stringField } from '@ultimat3/core';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 
@@ -82,10 +82,9 @@ let cached: Promise<ErrorCatalog> | undefined;
  * the host gap. Anything else escaped the package's own module evaluation and is its defect.
  */
 const isUnresolved = (thrown: unknown): boolean =>
-  typeof thrown === 'object' &&
-  thrown !== null &&
-  'code' in thrown &&
-  thrown.code === 'ERR_MODULE_NOT_FOUND';
+  // `stringField`, never `'code' in thrown && thrown.code`: see `cmd-i18n.ts`'s `isAlreadyExists`
+  // — an `in` guard narrows the type and reads the property off a foreign value all the same.
+  stringField(thrown, 'code') === 'ERR_MODULE_NOT_FOUND';
 
 /** The package's own error, named and located, so the report says what broke and what to run. */
 function initFailure(specifier: string, thrown: unknown): Finding {

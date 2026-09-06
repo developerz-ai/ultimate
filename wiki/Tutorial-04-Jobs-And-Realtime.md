@@ -137,9 +137,9 @@ A dead job is never filtered out of view.
 | `ls` | queue depth, matching rows, and the dead-letter list |
 | `show <id>` | state, attempt, every step's result, remaining retry delays |
 | `retry <id> --from-step <name>` | drops that step so it re-executes; everything before it replays from storage |
-| `drain --to memory\|redis\|nats` | moves `ready`/`delayed`/`suspended` jobs to another driver; enqueues on the target **before** acking the source |
+| `drain --to redis\|nats` | moves `ready`/`delayed`/`suspended` jobs to another **durable** driver; enqueues on the target **before** acking the source. `--to memory` is refused by name (`X_CLI_BAD_FLAG`), `As of 2026-09`: it acked durable rows into a `Map` that died with the command |
 
-The Redis and NATS **job** drivers have **not shipped**, `As of 2026-08` — each throws `X_NOT_IMPLEMENTED` behind an interface that already ships, rather than pretending to work. Postgres is the shipped driver, and it is the one `x dev` boots.
+The Redis and NATS **job** drivers have **not shipped**, `As of 2026-09` — each throws `X_NOT_IMPLEMENTED` behind an interface that already ships, rather than pretending to work. So `drain --to` has no target that completes today: it fails on the first enqueue, having moved nothing. Postgres is the shipped driver, and it is the one `x dev` boots.
 
 ## A live query
 

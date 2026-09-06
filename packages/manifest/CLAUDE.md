@@ -113,6 +113,15 @@ by the CLI, not imported.
   route's `surface`/`offline`/`hydrate`, and a query's `cacheTags` — and every one of them
   reported exactly `[{ kind: 'internal', path: 'buildId' }]` with `hasBreaking: false`. A new
   SECTION needs its own file beside the others; a new FIELD joins the file its section owns.
+- **`ActionFact.mutator` is classified, and LOSING it is breaking** (`As of 2026-09`). It was
+  written by `sources.ts` and read by no `diff-*.ts` rule — two manifests differing only in an
+  action that stopped being a mutator answered `[{ kind: 'internal', path: 'buildId' }]`, the exact
+  failure the rule above exists for. A mutator is a client-contract CAPABILITY (it decides the HTTP
+  method and the idempotency the typed client and OpenAPI publish), so losing it refuses callers
+  written against it and gaining it refuses nobody. Folded with `=== true` rather than compared
+  through `diffScalar`: `sources.ts` writes the field only when true, so absence IS `false` here,
+  and an older manifest can therefore only under-report a mutator as newly GAINED, which is
+  additive. `mcp.description` joins it as `internal` — visible in the file, in no contract.
 - **The axis is what a change refuses, not how it reads.** Something that rejects input that was
   valid yesterday is breaking (an invariant added, a NOT NULL, a gained permission, a gained
   enforcement site, a lowered `retry.attempts`); something that accepts more is additive and

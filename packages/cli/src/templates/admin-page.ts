@@ -9,6 +9,7 @@ import { sortedImports } from './imports';
 import { catalogPath, resolveLocales } from './locales';
 import type { GeneratedFile } from './naming';
 import { camel, kebab, pascal } from './naming';
+import { LINE_WIDTH } from './wrap';
 
 /** Where an admin lives when the caller does not say. `x new` scaffolds this layout. */
 export const DEFAULT_ADMIN_PAGE_DIR = 'apps/admin/src/pages';
@@ -58,8 +59,44 @@ const catalogImport = (module: string | undefined): string =>
 const pageImports = (module: string | undefined): string =>
   sortedImports([
     `import type { AdminCustomPage, AdminPageProps } from '@ultimat3/admin';`,
+    `import { definePermissions } from '@ultimat3/policy';`,
     catalogImport(module),
   ]);
+
+/**
+ * The page DECLARES the permission it requires, in both registries that decide about it.
+ *
+ * `x g admin:page ops` emitted `permissions: ['ops:read']` and nothing anywhere declared
+ * `ops:read`, so `assertPermission` threw X_PERMISSION_UNKNOWN on the first request that reached
+ * the page: a screen the generator built and no actor can open. Nothing catches it either — the
+ * gate's `policy` step reads `roleDefinitions()` and `routeEntries()`, and an admin page is
+ * neither a role nor a route, so `x verify` is green over it.
+ *
+ * Here rather than in a `policy.ts` beside it, because registration is a side effect of IMPORT and
+ * `pages:` already imports this module: a declaration in a file the admin does not import is a
+ * declaration that never runs. `declare module` is the type half — `can()`'s key type reads the
+ * registry, not the `definePermissions` call — and merging an identical member is what lets an app
+ * that already declares this permission keep its own declaration.
+ */
+const declarePermissions = (name: string, permission: string): string => {
+  const line = `export const ${camel(name)}PagePermissions = definePermissions(['${permission}']);`;
+  // Emitted PRE-formatted, because a template cannot run one: past 100 columns biome rewrites this
+  // call across four lines, and `x new zebra`-class names reach it (`emitted-contract.test.ts`
+  // varies both the length and the first letter for exactly this reason).
+  return line.length <= LINE_WIDTH
+    ? line
+    : `export const ${camel(name)}PagePermissions = definePermissions([\n  '${permission}',\n]);`;
+};
+
+const permissionDeclaration = (name: string, permission: string): string => `
+declare module '@ultimat3/policy' {
+  interface PermissionRegistry {
+    '${permission}': true;
+  }
+}
+
+${declarePermissions(name, permission)}
+`;
 
 /** `useT()` is per render, so the component binds it in its own body. */
 const translatorBinding = (module: string | undefined): string =>
@@ -81,9 +118,12 @@ const pageSource = (
 // so the specifier is relative to wherever \`defineAdmin\` lives:
 //   import { ${declaration}Page } from './${name}';
 //   defineAdmin({ …, pages: […, ${declaration}Page] })
+//
+// The permission below is declared here AND has to be decided: an authz map built from a fixed
+// list must name '${permission}' too, or a declared permission is still denied for everyone.
 
 ${pageImports(module)}
-
+${permissionDeclaration(name, permission)}
 export function ${Name}Page(props: AdminPageProps) {${translatorBinding(module)}
   return (
     <section>
@@ -108,6 +148,7 @@ const pageTest = (name: string, permission: string): string => {
   const declaration = camel(name);
   return `// The ${name} admin page is guarded and owns no route of its own — the two facts that separate an
 // admin screen from a page, and the two an edit here is most likely to break.
+import { knownPermissions } from '@ultimat3/policy';
 import { expect, unitTest } from '@ultimat3/testing';
 import { ${declaration}Page } from './${name}';
 
@@ -117,6 +158,13 @@ import { ${declaration}Page } from './${name}';
 unitTest('the ${name} admin page is rooted and guarded', () => {
   expect(${declaration}Page.path.startsWith('/')).toBe(true);
   expect(${declaration}Page.permissions).toContain('${permission}');
+});
+
+// A \`permissions:\` entry no \`definePermissions()\` declares is X_PERMISSION_UNKNOWN on the first
+// request that reaches the page — a screen this generator built and nobody can open. Importing the
+// page above is what registers it, which is why the declaration lives in that file and not beside it.
+unitTest('the ${name} admin page declares its permission', () => {
+  expect(knownPermissions()).toContain('${permission}');
 });
 
 unitTest('the ${name} admin page declares no route of its own', () => {

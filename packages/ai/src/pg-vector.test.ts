@@ -3,7 +3,7 @@ import { createRecordingClient, type RecordingClient, setDbClient } from '@ultim
 import { asyncRefusal } from './bounds-fixture';
 import { normalize } from './embeddings';
 import { PgVectorStore } from './pg-vector';
-import { conditionsSql, vectorLiteral } from './pg-vector-sql';
+import { conditionsSql, deleteSql, vectorLiteral } from './pg-vector-sql';
 
 const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
 
@@ -277,5 +277,30 @@ describe('PgVectorStore refuses a bound before it opens a connection', () => {
     await store.hybrid({ query: 'drift', vector: vec(1, 0, 0, 0), k: 5 });
     expect(client.statements).toHaveLength(1);
     expect(client.statements[0]?.values).toContain(60);
+  });
+});
+
+/**
+ * `deleteSql` is exported from `index.ts`, so `PgVectorStore.delete`'s own `ids.length === 0`
+ * guard is not the only caller: an app building the statement itself got `"id" in ()`, which is a
+ * syntax error Postgres refuses at parse time rather than an empty delete. The module already has
+ * the constant for it — an empty allow-list takes the same branch, for the same reason.
+ */
+describe('deleteSql with no ids', () => {
+  const TABLE = { table: 'x_vectors_docs', dimension: 4, language: 'english' };
+
+  test('matches nothing rather than emitting `in ()`', () => {
+    const statement = deleteSql(TABLE, {}, []);
+
+    expect(statement.text).not.toContain('in ()');
+    expect(statement.text).toContain('1 = 0');
+    expect(statement.values).toEqual([]);
+  });
+
+  test('a non-empty list still deletes by id', () => {
+    const statement = deleteSql(TABLE, {}, ['a', 'b']);
+
+    expect(statement.text).toContain('"id" in (');
+    expect(statement.values).toEqual(['a', 'b']);
   });
 });

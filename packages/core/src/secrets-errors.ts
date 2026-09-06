@@ -4,6 +4,7 @@
 // command that undoes it. No error here ever carries a key, a ciphertext or a decrypted value.
 
 import { registerErrorCodes } from './error-codes';
+import { renderFixShellArg } from './error-render';
 import { UltimateError } from './errors';
 
 /** Codes `@ultimat3/core` owns for the encrypted-secrets file. */
@@ -39,6 +40,21 @@ registerErrorCodes(
 );
 
 /**
+ * Where a path lands in one of these commands. Every one of them is meant to be PASTED, and the
+ * path is data: `x secrets` takes the app root, so `at` and `keyPath` are `join(root, …)`. The
+ * `X_SECRETS_KEY_MISSING` line is the sharpest of them — the value sits inside a `$(cat …)`, so a
+ * second `$(…)` in it substitutes before `cat` is reached at all.
+ */
+const SECRETS_FILE_PLACEHOLDER = '<the secrets file the cause names>';
+
+/**
+ * A variable name, and nothing else. `export ${name}=…` puts the name in a COMMAND position, where
+ * `PATH; curl … | sh` is two commands rather than a variable nobody declared — and there is no
+ * quoting that makes a non-name assignable, so the line degrades to prose instead.
+ */
+const ENV_VAR_NAME = /^[A-Z_][A-Z0-9_]*$/;
+
+/**
  * No key in the environment and none on disk, while an encrypted file exists. Deliberately fatal
  * rather than a warning: booting without the secrets a deploy was configured with produces an app
  * that authenticates against nothing and reports itself healthy.
@@ -48,7 +64,9 @@ export class SecretsKeyMissingError extends UltimateError {
     super({
       code: 'X_SECRETS_KEY_MISSING',
       cause: `${input.envVar} is unset and ${input.keyPath} does not exist, so nothing can open the encrypted secrets`,
-      fix: `export ${input.envVar}="$(cat ${input.keyPath})"   # in a repo that has no key yet: x secrets init`,
+      fix: ENV_VAR_NAME.test(input.envVar)
+        ? `export ${input.envVar}="$(cat ${renderFixShellArg(input.keyPath, '<the key file the cause names>')})"   # in a repo that has no key yet: x secrets init`
+        : "set the variable this error's cause names to the contents of the key file beside it, in whatever way this shell spells an assignment — in a repo that has no key yet: x secrets init",
       meta: { keyPath: input.keyPath },
     });
   }
@@ -76,7 +94,7 @@ export class SecretsKeyMismatchError extends UltimateError {
     super({
       code: 'X_SECRETS_KEY_MISMATCH',
       cause: `${input.at} was sealed with master key ${input.sealedWith} and ${input.keyAt} holds ${input.found}`,
-      fix: `git checkout -- ${input.at}   # or point ULTIMATE_SECRETS_KEY at the key whose id is ${input.sealedWith}`,
+      fix: `git checkout -- ${renderFixShellArg(input.at, SECRETS_FILE_PLACEHOLDER)}   # or point ULTIMATE_SECRETS_KEY at the key whose id is ${input.sealedWith}`,
       meta: { at: input.at, sealedWith: input.sealedWith, found: input.found },
     });
   }
@@ -104,7 +122,7 @@ export class SecretsFileInvalidError extends UltimateError {
     super({
       code: 'X_SECRETS_FILE_INVALID',
       cause: `${input.at} ${input.reason}`,
-      fix: `git checkout -- ${input.at}   # this file is written only by x secrets, never by hand`,
+      fix: `git checkout -- ${renderFixShellArg(input.at, SECRETS_FILE_PLACEHOLDER)}   # this file is written only by x secrets, never by hand`,
       meta: { at: input.at },
     });
   }
@@ -120,7 +138,7 @@ export class SecretsTamperedError extends UltimateError {
     super({
       code: 'X_SECRETS_TAMPERED',
       cause: `the AES-256-GCM authentication tag rejected ${input.at}: the ciphertext or its header changed after it was sealed`,
-      fix: `git checkout -- ${input.at}   # then confirm the restored file opens: x secrets show --json`,
+      fix: `git checkout -- ${renderFixShellArg(input.at, SECRETS_FILE_PLACEHOLDER)}   # then confirm the restored file opens: x secrets show --json`,
       meta: { at: input.at },
     });
   }

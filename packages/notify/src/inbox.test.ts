@@ -93,3 +93,34 @@ describe('unit · in-memory inbox, a page size that is not one', () => {
     expect(await inbox.list({ recipient: 'ana', limit: 0 })).toEqual([]);
   });
 });
+
+/**
+ * `SQL_NOTIFY_INBOX_PAGE` orders `created_at desc, id` — a tail key that is unique, so a bounded
+ * page cannot drop or repeat a row. The memory store sorted on `createdAt` alone, which is a
+ * PARTIAL order: two notifications written in the same millisecond could come back either way
+ * round, and the two drivers behind one interface then answer one question two ways.
+ */
+describe('unit · two notifications in the same millisecond', () => {
+  test('the memory page breaks the tie on id, exactly as the statement does', async () => {
+    const inbox = createMemoryInboxStore();
+    // Inserted newest-key-first, so an implementation that keeps insertion order fails this.
+    await inbox.add({ ...write, key: 'like:zz', createdAt: AT });
+    await inbox.add({ ...write, key: 'like:aa', createdAt: AT });
+
+    const page = await inbox.list({ recipient: 'ana' });
+
+    expect(page.map((row) => row.key)).toEqual(['like:aa', 'like:zz']);
+    const ids = page.map((row) => row.id);
+    expect([...ids].sort()).toEqual(ids);
+  });
+
+  test('a newer row still outranks an older one whatever its id', async () => {
+    const inbox = createMemoryInboxStore();
+    await inbox.add({ ...write, key: 'like:aa', createdAt: AT });
+    await inbox.add({ ...write, key: 'like:zz', createdAt: LATER });
+
+    const page = await inbox.list({ recipient: 'ana' });
+
+    expect(page.map((row) => row.key)).toEqual(['like:zz', 'like:aa']);
+  });
+});

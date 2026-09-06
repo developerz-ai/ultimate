@@ -352,3 +352,56 @@ test('a zero timeout is refused rather than expiring every read on the next tick
   );
   expect(isUltimateError(error) ? error.cause : '').toContain('timeoutMs');
 });
+
+/**
+ * `Jane Doe <jane@x.test>` is the ordinary RFC 5322 display form, accepted by the resend, memory
+ * and log drivers and by the `To:` header this same message carries. The envelope is a different
+ * format — `RCPT TO:` takes an addr-spec — so the driver normalises it exactly as it already
+ * normalises `from`; `assertEnvelopeAddress` then gates the NORMALISED value, which is the string
+ * that reaches the wire. Un-normalised it was refused `X_MAIL_ADDRESS_INVALID` for the angle
+ * brackets the display form is made of, so one driver refused what the others sent.
+ */
+test('a display-form recipient is delivered to its bare address spec', async () => {
+  const server = startLocalSmtp();
+  try {
+    const driver = createSmtpDriver({
+      url: `smtp://127.0.0.1:${server.port}`,
+      from: FROM,
+      allowInsecure: true,
+      timeoutMs: 2_000,
+    });
+
+    await driver.send(
+      messageFixture({ to: ['Jane Doe <jane@x.test>'], cc: ['Grace H. <grace@x.test>'] }),
+    );
+
+    expect(server.commands).toContain('RCPT TO:<jane@x.test>');
+    expect(server.commands).toContain('RCPT TO:<grace@x.test>');
+    // The header keeps the display form; only the envelope is the stripped one.
+    expect(server.messages[0] ?? '').toContain('To: Jane Doe <jane@x.test>');
+  } finally {
+    server.stop();
+  }
+});
+
+test('a recipient that would open a second envelope command is still refused', async () => {
+  const server = startLocalSmtp();
+  try {
+    const driver = createSmtpDriver({
+      url: `smtp://127.0.0.1:${server.port}`,
+      from: FROM,
+      allowInsecure: true,
+      timeoutMs: 2_000,
+    });
+
+    // No trailing `<addr>`, so nothing is stripped and the brackets reach the gate intact.
+    const error = await caught(
+      driver.send(messageFixture({ to: ['ada@example.test> RCPT TO:<evil@x.test'] })),
+    );
+
+    expect(codeOf(error)).toBe('X_MAIL_ADDRESS_INVALID');
+    expect(server.commands).not.toContain('RCPT TO:<evil@x.test>');
+  } finally {
+    server.stop();
+  }
+});

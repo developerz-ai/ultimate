@@ -15,7 +15,7 @@ import {
   SocketRegistry,
 } from '@ultimat3/realtime/server';
 import type { StartRolesOptions } from './dev-roles';
-import { neighbouringPort, PORT_RANGE } from './flag-number';
+import { neighbouringPort, PORT_RANGE, portPairAfter } from './flag-number';
 import { portFree } from './port-probe';
 import { syncAuthenticator } from './sync-authenticator';
 import { DEV_BINDING } from './web-binding';
@@ -53,7 +53,11 @@ class SyncPortInUseError extends UltimateError {
     super({
       code: 'X_PORT_IN_USE',
       cause: `the sync role binds PORT + 1, so \`x dev --port ${input.webPort}\` needs port ${input.port} and something is already listening on it`,
-      fix: `x dev --port ${neighbouringPort(input.webPort)}   # or free port ${input.port}: lsof -nP -iTCP:${input.port} -sTCP:LISTEN`,
+      // `portPairAfter`, never `neighbouringPort`: `x dev` binds a PAIR, so the neighbour of the
+      // web port IS the sync port this refusal is about — the fix said `x dev --port 4000` for a
+      // run that had just died on 4000, and a test named "its fix is a command that ends the
+      // failure" pinned it.
+      fix: `x dev --port ${portPairAfter(input.webPort)}   # or free port ${input.port}: lsof -nP -iTCP:${input.port} -sTCP:LISTEN`,
       meta: { port: input.port, webPort: input.webPort },
     });
   }

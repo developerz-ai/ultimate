@@ -8,6 +8,7 @@ import {
   oauthCredentials,
   providerDetail,
 } from './oauth-exchange';
+import { registerOAuthProvider } from './oauth-registry';
 
 const NOW = new Date('2026-08-09T12:00:00.000Z');
 const clock = frozenClock(NOW);
@@ -401,5 +402,71 @@ describe('a 200 that is not a token response', () => {
 
     expect(isUltimateError(thrown) && thrown.code).toBe('X_OAUTH_EXCHANGE_FAILED');
     expect(isUltimateError(thrown) && thrown.cause).toContain('not a JSON object');
+  });
+});
+
+describe('a token endpoint the issuer supplied', () => {
+  // `tokenUrl` reaches the registry from `discoverOAuthProvider` — the OP's own document — so it
+  // is remote text, and this refusal's `fix:` is a command a reader pastes. The value still rides
+  // in the `cause`, which is read rather than run.
+  const HOSTILE = registerOAuthProvider({
+    id: 'hostile-token-op',
+    authorizeUrl: 'https://op.test/authorize',
+    tokenUrl: 'https://op.test/$(id)/`id`/token',
+    userInfoUrl: null,
+    userEmailsUrl: null,
+    issuers: ['https://op.test'],
+    jwksUri: null,
+    scopes: ['openid'],
+    usesPkce: true,
+    usesNonce: false,
+    clientIdEnv: 'HOSTILE_CLIENT_ID',
+    clientSecretEnv: 'HOSTILE_CLIENT_SECRET',
+  });
+
+  test('never reaches the fix line as a command substitution', async () => {
+    const handshake = beginOAuth({
+      provider: HOSTILE.id,
+      clientId: 'client-id',
+      redirectUri: 'https://app.test/auth/callback',
+    });
+    const error = await rejection(
+      exchangeOAuthCode(
+        handshake,
+        { state: handshake.state, code: 'the-code' },
+        {
+          credentials,
+          clock,
+          fetch: async () => {
+            throw new TypeError('Unable to connect. Is the computer able to access the url?');
+          },
+        },
+      ),
+    );
+    const fix = isUltimateError(error) ? error.fix : '';
+    expect(fix).not.toContain('$(');
+    expect(fix).not.toContain('`');
+    expect(fix).toBe('curl -sS -m 5 -o /dev/null <the token endpoint the cause names>');
+    expect(isUltimateError(error) && error.cause).toContain('$(id)');
+  });
+
+  test('an ordinary token endpoint still travels, so the probe reproduces the failure', async () => {
+    const handshake = handshakeFor('github');
+    const error = await rejection(
+      exchangeOAuthCode(
+        handshake,
+        { state: handshake.state, code: 'the-code' },
+        {
+          credentials,
+          clock,
+          fetch: async () => {
+            throw new TypeError('Unable to connect. Is the computer able to access the url?');
+          },
+        },
+      ),
+    );
+    expect(isUltimateError(error) && error.fix).toBe(
+      'curl -sS -m 5 -o /dev/null https://github.com/login/oauth/access_token',
+    );
   });
 });

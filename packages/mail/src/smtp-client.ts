@@ -3,7 +3,7 @@
 // network. Every refusal becomes `X_MAIL_SEND_FAILED` naming the stage and the server's own reply.
 
 import { base64Utf8 } from './base64';
-import { assertEnvelopeAddress } from './envelope-address';
+import { envelopeAddress } from './envelope-address';
 import { type MailError, type SendStage, sendFailed } from './errors';
 import {
   authPlain,
@@ -175,8 +175,10 @@ export async function smtpDeliver(
   // at all on the inline send path, and the header gate in `mime.ts` never sees it — an envelope
   // field is not a header. Checked here rather than at either caller, because this is the module
   // that builds the line, and it is the last place every present and future caller passes through.
-  assertEnvelopeAddress('sender', envelope.from);
-  for (const recipient of envelope.recipients) assertEnvelopeAddress('recipient', recipient);
+  const from = envelopeAddress('sender', envelope.from);
+  const recipients = envelope.recipients.map((recipient) =>
+    envelopeAddress('recipient', recipient),
+  );
 
   const talk = new Conversation(stream, options.timeoutMs);
   await talk.expect('greeting', (code) => code === 220);
@@ -210,8 +212,8 @@ export async function smtpDeliver(
 
   if (options.user !== undefined) await authenticate(talk, capabilities, options);
 
-  await talk.say('from', `MAIL FROM:<${envelope.from}>`, isPositive);
-  for (const recipient of envelope.recipients) {
+  await talk.say('from', `MAIL FROM:<${from}>`, isPositive);
+  for (const recipient of recipients) {
     // Fail closed on any refusal: delivering to three of four addresses and reporting success is
     // the one outcome the caller cannot detect.
     await talk.say('recipient', `RCPT TO:<${recipient}>`, isPositive);

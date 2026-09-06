@@ -77,6 +77,17 @@ rather than hidden, and a durable store can close it.
 One entry point, deliberately: every module runs on the server, so there is no browser half to split
 off.
 
+**The two inbox stores answer one question one way, and the two places they did not were both in
+`list`/`markRead`** (`As of 2026-09`). `markRead`'s contract is that an id belonging to nobody is
+*simply absent* — the memory store skips it — while the Postgres one bound the caller's ids into
+`any($2::uuid[])`, so one malformed id raised 22P02 out of the store and the nineteen good ids in
+the batch went unmarked. `createPgInboxStore` screens with `isUuid` before binding and answers `0`
+with no round trip when nothing survives; the statement keeps its `::uuid[]` cast and its primary
+key index, which `id::text = any($2)` would have given up. And the memory `list` now sorts
+`(createdAt desc, id)` — the total order `SQL_NOTIFY_INBOX_PAGE` takes — because `createdAt` alone
+is partial and a bounded page over two notifications written in one millisecond can drop one and
+repeat the other.
+
 | Rule | Detail |
 |---|---|
 | Exports | `src/index.ts`, explicit, no `export *` |

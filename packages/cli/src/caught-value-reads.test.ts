@@ -30,6 +30,28 @@ const CAUGHT_BINDING = /\bcatch\s*\((?<name>[A-Za-z_$][\w$]*)\)/g;
 /** `(error as X).code` and `(error as X)['code']` alike — the read is what makes it unsafe. */
 const castReadOf = (name: string): RegExp => new RegExp(`\\(\\s*${name}\\s+as\\s+[^)]*\\)\\s*[.[]`);
 
+/**
+ * The SECOND spelling of the same read, and the one the cast rule cannot see: `'code' in error &&
+ * error.code === 'EEXIST'`. `in` narrows for the compiler and promises the runtime nothing — the
+ * property is still read off a value this process did not build, so a throwing getter takes the
+ * command down one line after the guard written to make it safe. Two sites shipped it
+ * (`cmd-i18n.ts` deciding whether a catalog already existed, `error-catalog.ts` deciding whether a
+ * package failed to resolve), and both were the exact shape `dev-lock.ts` had been repaired for.
+ *
+ * A read with no `in` guard at all is not this rule's: TypeScript refuses it on an `unknown`, so
+ * it cannot ship.
+ */
+const guardedReadOf = (name: string): RegExp =>
+  new RegExp(`\\bin\\s+${name}\\b[\\s\\S]{0,120}?\\b${name}\\s*[.[]`);
+
+/**
+ * The values this rule is about: a `catch` binding, and a parameter annotated `unknown` — which is
+ * the same value one function call along, and how both `in`-guarded reads reached shipped source.
+ */
+const UNKNOWN_PARAMETER = /(?<name>[A-Za-z_$][\w$]*)\s*:\s*unknown\b/g;
+
+const lineOf = (source: string, index: number): number => source.slice(0, index).split('\n').length;
+
 /** Every `<file>: <line>` in this package that casts a caught value and then reads off it. */
 export async function castReadsOfCaughtValues(): Promise<readonly string[]> {
   const hits: string[] = [];
@@ -47,6 +69,15 @@ export async function castReadsOfCaughtValues(): Promise<readonly string[]> {
         if (pattern.test(line)) hits.push(`${path}:${index + 1}`);
       });
     }
+    const foreign = new Set([
+      ...names,
+      ...[...source.matchAll(UNKNOWN_PARAMETER)].map((match) => match.groups?.['name'] ?? ''),
+    ]);
+    for (const name of foreign) {
+      if (name === '') continue;
+      const match = guardedReadOf(name).exec(source);
+      if (match !== null) hits.push(`${path}:${lineOf(source, match.index)}`);
+    }
   }
   return hits;
 }
@@ -62,6 +93,18 @@ describe('unit · a caught value is never cast and then read', () => {
     expect(names).toEqual(['error']);
     expect(castReadOf('error').test(guilty)).toBe(true);
     expect(castReadOf('error').test(innocent)).toBe(false);
+  });
+
+  test('and the shape the cast rule cannot see — an `in` guard, then the read', () => {
+    // Verbatim from `cmd-i18n.ts`, which passed the rule above through every gate it ever ran in.
+    const guilty =
+      "const isAlreadyExists = (error: unknown): boolean =>\n  typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST';";
+    const innocent =
+      "const isAlreadyExists = (error: unknown): boolean =>\n  stringField(error, 'code') === 'EEXIST';";
+    expect(guardedReadOf('error').test(guilty)).toBe(true);
+    expect(guardedReadOf('error').test(innocent)).toBe(false);
+    // An `in` that only ASKS is a type guard and reads nothing: `app-mcp.ts` does exactly this.
+    expect(guardedReadOf('value').test("'server' in value && 'tools' in value")).toBe(false);
   });
 
   test('it reads a real, non-empty file set — a scan over nothing passes everything', () => {

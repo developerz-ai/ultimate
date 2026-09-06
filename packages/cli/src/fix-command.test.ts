@@ -37,7 +37,14 @@ const catalog: CommandCatalog = {
       positionalChoices: ['route', 'island', 'admin:page'],
     },
     { name: 'logs', summary: '', usage: '' },
-    { name: 'test', summary: '', usage: '', positionalChoices: ['unit', 'eval'] },
+    {
+      name: 'test',
+      summary: '',
+      usage: '',
+      positionalChoices: ['unit', 'eval'],
+      // The one command with a tail, exactly as the real spec declares it.
+      passthrough: true,
+    },
   ],
   planned: new Set(['logs']),
   plannedSubcommands: new Set(['db studio']),
@@ -159,6 +166,35 @@ describe('the rule is conditional, not universal', () => {
       { command: 'g', sub: 'admin:page', positional: 'ops', flags: [] },
     ]);
     expect(citedCommandProblem('x g admin:page ops', catalog)).toBeUndefined();
+  });
+
+  /**
+   * The words after a bare `--` belong to ANOTHER tool. `x test unit -- --coverage --bail` is the
+   * only spelling that reaches bun's own flags, and the reader charged both to `x test` — so the
+   * one line documenting the passthrough was a standing `X_DOC_COMMAND_UNKNOWN` on the rule
+   * written to keep documented invocations runnable.
+   */
+  test('a bare -- ends the command`s flags and starts another tool`s', () => {
+    expect(fixCitations('x test unit -- --coverage --bail')).toEqual([
+      {
+        command: 'test',
+        sub: 'unit',
+        positional: undefined,
+        flags: [],
+        tail: ['--coverage', '--bail'],
+      },
+    ]);
+    expect(citedCommandProblem('x test unit -- --coverage --bail', catalog)).toBeUndefined();
+  });
+
+  // The other direction, and why the tail is READ rather than discarded: every command but `x test`
+  // refuses a non-empty `--` outright, so a page handing a reader one is handing them a refusal.
+  test('a tail on a command that hands nothing on is the finding', () => {
+    const problem = citedCommandProblem('x db branch -- --name nonsense', catalog);
+    expect(problem).toContain('X_CLI_BAD_FLAG');
+    expect(problem).toContain('--name nonsense');
+    // A trailing `--` with nothing after it asks for nothing and is refused by nobody.
+    expect(citedCommandProblem('x db branch --', catalog)).toBeUndefined();
   });
 
   test('a colon that ends a sentence does not extend the word', () => {

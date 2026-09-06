@@ -101,20 +101,29 @@ describe('unit · x doctor', () => {
     expect(findings[0]?.fix).not.toContain('x new');
   });
 
-  test('an occupied port suggests the next one', async () => {
+  // The suggestion moves BOTH, which the docblock claimed and the code did not do: `x dev --port
+  // N` occupies N and N + 1, so `3001` — the taken sync port — was handed back as the repair for
+  // the very pair that failed.
+  test('an occupied port suggests a pair clear of both ports x dev binds', async () => {
     const findings = await runDoctor(probe({ portFree: async () => false }));
-    expect(findings[0]?.code).toBe('X_PORT_IN_USE');
-    expect(findings[0]?.fix).toBe('x dev --port 3001');
+    expect(findings.map((finding) => finding.code)).toEqual(['X_PORT_IN_USE', 'X_PORT_IN_USE']);
+    expect(findings[0]?.cause).toContain('port 3000');
+    expect(findings[1]?.cause).toContain('port 3001');
+    for (const finding of findings) {
+      expect(finding.fix).toBe('x dev --port 3002');
+    }
   });
 
   // The bug this guards: `port + 1` at the top of the range emitted `x dev --port 65536`, which
   // `x dev` refuses with X_CLI_BAD_FLAG — a fix line that reproduces a failure instead of ending
   // one. The neighbour below is a port; the one above does not exist.
   test('the suggested port is one x dev accepts, at the top of the range too', async () => {
-    const top = await runDoctor(probe({ port: PORT_RANGE.max, portFree: async () => false }));
-    expect(top[0]?.fix).toBe(`x dev --port ${PORT_RANGE.max - 1}`);
+    // The top of the range answers DOWNWARD: two above 65533 is 65535, whose own sync port does
+    // not exist, so the suggestion would be a second refusal.
+    const top = await runDoctor(probe({ port: PORT_RANGE.max - 2, portFree: async () => false }));
+    expect(top[0]?.fix).toBe(`x dev --port ${PORT_RANGE.max - 4}`);
     // And the suggestion is still parseable by the reader it is handed to.
-    for (const port of [3000, PORT_RANGE.max]) {
+    for (const port of [3000, PORT_RANGE.max - 2]) {
       const findings = await runDoctor(probe({ port, portFree: async () => false }));
       const suggested = Number((findings[0]?.fix ?? '').split(' ').at(-1));
       // `x dev`'s own flag config, so the assertion is that the READER of this line accepts it.
@@ -127,6 +136,27 @@ describe('unit · x doctor', () => {
         }),
       ).toBe(suggested);
     }
+  });
+
+  // `neighbouringPort` answered 65534 for a `--port 65535` probe — a port BELOW the web port,
+  // reported as the sync port `x dev` would bind. `x dev --port 65535` does not bind 65534: it
+  // refuses, because `syncPortFor` has nowhere to put the sync node. The probe now says the same
+  // thing the boot does, with the boot's own code.
+  test('a web port with no room for the sync node is X_PORT_INVALID, not a probe of 65534', async () => {
+    const probed: number[] = [];
+    const findings = await runDoctor(
+      probe({
+        port: PORT_RANGE.max,
+        portFree: async (port) => {
+          probed.push(port);
+          return true;
+        },
+      }),
+    );
+    expect(findings.map((finding) => finding.code)).toEqual(['X_PORT_INVALID']);
+    expect(findings[0]?.fix).toContain('x dev --port');
+    // The port below the web port is not the sync port, so it is never probed as one.
+    expect(probed).not.toContain(PORT_RANGE.max - 1);
   });
 
   // `Bun.serve({ port: 0 })` always succeeds, so `x doctor --port 0` ran a check that could not

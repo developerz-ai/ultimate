@@ -5,7 +5,7 @@
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
-import { checkCleanup, cleanupFiles } from './skip-if-cleanup';
+import { checkCleanup, cleanupFiles, readTestSources } from './skip-if-cleanup';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
 // default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
@@ -105,7 +105,7 @@ function stop(timer: number) {
 describe('the finding', () => {
   test('names the file and the two shapes that leak', () => {
     const findings = checkCleanup({
-      files: [{ file: 'packages/a/src/x.live.test.ts', cleared: false, line: 0 }],
+      files: [{ file: 'packages/a/src/x.live.test.ts', cleared: false, line: 0, unreached: [] }],
       scanned: true,
     });
     expect(findings).toHaveLength(1);
@@ -121,18 +121,11 @@ describe('the finding', () => {
 });
 
 describe('the real tree', () => {
+  // `readTestSources`, not a second copy of the glob list: a test with its own loop diverges from
+  // the runner, which is exactly what happened to `index-of-order` — its test kept scanning the
+  // file the runner had learned to skip, so the rule was green and its own suite red.
   test('every file that skips and resets does so from a file scope hook', async () => {
-    const root = repoRoot();
-    const sources = new Map<string, string>();
-    let files = 0;
-    for (const pattern of ['packages/*/src/**/*.test.ts', 'examples/**/*.test.ts']) {
-      for await (const relative of new Bun.Glob(pattern).scan({ cwd: root })) {
-        const path = relative.split('\\').join('/');
-        files += 1;
-        if (path.endsWith('live-registry-cleanup.test.ts')) continue;
-        sources.set(path, await Bun.file(`${root}/${path}`).text());
-      }
-    }
+    const { sources, files } = await readTestSources(repoRoot());
     const scanned = cleanupFiles(sources);
     // Non-vacuity, both directions: the glob found files AND some of them really do hold both
     // shapes. Without the second assertion a glob that stopped matching would make this green by
@@ -141,5 +134,97 @@ describe('the real tree', () => {
     expect(scanned.length).toBeGreaterThan(0);
 
     expect(checkCleanup({ files: scanned, scanned: files > 0 })).toEqual([]);
+  });
+});
+
+// Finding 2, 2026-09-06. Four holes, each measured against the rule's own scan function:
+// `cleared` was a file-level BOOLEAN, so one unrelated file-scope reset laundered every reset
+// parked in a skipped block; a braced ONE-LINE early return was invisible; `registry.clear()` was
+// not a reset at all; and `afterAll(clearRegistry)` — the hook-REFERENCE form — was reported
+// though the reset runs.
+describe('the reset is tracked per callee, never as one flag for the file', () => {
+  test('a file-scope hook clearing a DIFFERENT registry does not launder the parked one', () => {
+    const laundered = `import { afterAll, describe } from 'bun:test';
+const ready = Boolean(process.env['TEST_DATABASE_URL']);
+describe.skipIf(!ready)('live', () => {
+  afterAll(() => {
+    clearRegistry();
+  });
+});
+afterAll(() => {
+  resetClock();
+});
+`;
+    const scanned = cleanupFiles(one(laundered));
+    expect(scanned[0]?.cleared).toBe(false);
+    expect(scanned[0]?.unreached).toEqual(['clearRegistry']);
+  });
+
+  test('and the finding names the reset that never runs', () => {
+    const findings = checkCleanup({
+      files: [
+        {
+          file: 'packages/a/src/x.live.test.ts',
+          cleared: false,
+          line: 0,
+          unreached: ['clearRegistry'],
+        },
+      ],
+      scanned: true,
+    });
+    expect(findings[0]?.cause).toContain('clearRegistry');
+  });
+});
+
+describe('the shapes the scan could not read', () => {
+  const skip = `import { afterAll, describe } from 'bun:test';
+const ready = Boolean(process.env['TEST_DATABASE_URL']);
+describe.skipIf(!ready)('live', () => {});
+`;
+
+  test('a BRACED one-line early return leaks exactly as the two-line one does', () => {
+    const source = `${skip}afterAll(() => {
+  if (!ready) { return; }
+  clearRegistry();
+});
+`;
+    expect(cleanupFiles(one(source))[0]?.cleared).toBe(false);
+  });
+
+  test('registry.clear() is a reset — the rule demanded clear[A-Z]', () => {
+    const source = `${skip}describe.skipIf(!ready)('more', () => {
+  afterAll(() => {
+    entityRegistry.clear();
+  });
+});
+`;
+    const scanned = cleanupFiles(one(source));
+    expect(scanned).toHaveLength(1);
+    expect(scanned[0]?.cleared).toBe(false);
+  });
+
+  test('and a module-scope registry.clear() from a FILE-scope hook is the passing shape', () => {
+    const source = `${skip}afterAll(() => {
+  entityRegistry.clear();
+});
+`;
+    expect(cleanupFiles(one(source))[0]?.cleared).toBe(true);
+  });
+
+  test('a local Map’s .clear() is a builtin, not a registry', () => {
+    const source = `${skip}describe.skipIf(!ready)('more', () => {
+  const seen = new Map<string, number>();
+  afterAll(() => {
+    seen.clear();
+  });
+});
+`;
+    expect(cleanupFiles(one(source))).toEqual([]);
+  });
+
+  test('afterAll(clearRegistry) — the hook-REFERENCE form — runs, and was reported', () => {
+    const source = `${skip}afterAll(clearRegistry);
+`;
+    expect(cleanupFiles(one(source))[0]?.cleared).toBe(true);
   });
 });

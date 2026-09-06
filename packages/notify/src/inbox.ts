@@ -59,6 +59,12 @@ export interface MemoryInboxStore extends InboxStore {
   clear(): void;
 }
 
+/** Codepoint order, never `localeCompare`: Postgres compares the tail key by bytes, not by locale. */
+const compareIds = (a: string, b: string): number => {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+};
+
 const idOf = (write: { recipient: string; notifier: string; key: string }): string =>
   JSON.stringify([write.recipient, write.notifier, write.key]);
 
@@ -70,10 +76,14 @@ const idOf = (write: { recipient: string; notifier: string; key: string }): stri
 export function createMemoryInboxStore(): MemoryInboxStore {
   const rows = new Map<string, InboxRow>();
 
+  // `(createdAt desc, id)` — the same TOTAL order `SQL_NOTIFY_INBOX_PAGE` takes, and for the same
+  // reason: `createdAt` alone is partial, so two notifications written in one millisecond can swap
+  // places between two reads and a bounded page then drops one and repeats the other. Two drivers
+  // behind one interface must not answer one question two ways.
   const own = (recipient: string): InboxRow[] =>
     [...rows.values()]
       .filter((row) => row.recipient === recipient)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || compareIds(a.id, b.id));
 
   return {
     get size(): number {

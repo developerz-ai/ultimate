@@ -8,6 +8,7 @@ import {
   EnvMissingError,
   logger,
   renderCauseValue,
+  renderFixShellArg,
   renderThrowable,
   systemClock,
 } from '@ultimat3/core';
@@ -199,8 +200,11 @@ async function postForm(
     //
     // `renderThrowable`, never `error.message` behind an `instanceof`: `instanceof` itself throws
     // on a value whose `getPrototypeOf` trap does, losing the one refusal that tells a caller the
-    // code is already spent. What stays in the sentence is `url` and the remedy, both framework
-    // constants, so the failure is still fixable without quoting anything this package does not own.
+    // code is already spent. What stays in the sentence is `url` and the remedy, so the failure is
+    // still fixable without quoting anything this package does not own — but `url` is NOT a
+    // framework constant, which this comment claimed until 2026-09: `registerOAuthProvider` is open
+    // to any app and `discoverOAuthProvider` fills `tokenUrl` from the OP's own document, so the
+    // `fix:` below screens it (a `cause` is read, a `fix:` is pasted).
     logger.error('auth.oauth.token_fetch_failed', {
       provider,
       url,
@@ -213,7 +217,7 @@ async function postForm(
         `nothing left this host for ${url} (egress, DNS or TLS); the reason is in this process ` +
         'log under auth.oauth.token_fetch_failed. Restart the flow once it does, since the code ' +
         'is already spent',
-      fix: `curl -sS -m 5 -o /dev/null ${url}`,
+      fix: `curl -sS -m 5 -o /dev/null ${renderFixShellArg(url, '<the token endpoint the cause names>')}`,
     });
   }
 

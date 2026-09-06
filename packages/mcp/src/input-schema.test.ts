@@ -143,3 +143,26 @@ describe('the published bound and the enforced bound count the same unit', () =>
     verdictsAgree(t.string.min(1).max(3), 'abcd');
   });
 });
+
+/**
+ * The twin of `validate-args.ts`'s `put`, on the schema side. A property NAME is the tool
+ * author's, and `out[key] = narrow(child)` is not an assignment for exactly one of them:
+ * `__proto__` runs `Object.prototype`'s setter, so the published `properties` object loses its
+ * prototype instead of gaining a key — the declared field vanishes from `tools/list`, and
+ * `validate-args.ts` then reads the tool as declaring one field fewer than it does.
+ */
+describe('a property named __proto__ is a key, never a prototype', () => {
+  test('it is published as an own property and the record keeps its prototype', () => {
+    // A computed key: `{ __proto__: x }` in a literal IS the prototype setter, in the test too.
+    const wire = toWireSchema(t.object({ ['__proto__']: t.string, postId: t.uuid }));
+    const properties = wire.properties ?? {};
+
+    expect(Object.getPrototypeOf(properties)).toBe(Object.prototype);
+    expect(Object.hasOwn(properties, '__proto__')).toBe(true);
+    expect(Object.keys(properties).sort()).toEqual(['__proto__', 'postId']);
+    // And it survives the serialisation `tools/list` performs on it.
+    // `Object.hasOwn` and not an index read: reading `.__proto__` off the round-tripped object
+    // would ask the accessor rather than the key, which is the very confusion under test.
+    expect(Object.hasOwn(JSON.parse(JSON.stringify(properties)), '__proto__')).toBe(true);
+  });
+});

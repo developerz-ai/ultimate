@@ -74,7 +74,11 @@ const GUARDS = [
 export interface OrderSite {
   readonly file: string;
   readonly line: number;
-  readonly matcher: 'toBeLessThan' | 'toBeGreaterThan';
+  readonly matcher:
+    | 'toBeLessThan'
+    | 'toBeGreaterThan'
+    | 'toBeLessThanOrEqual'
+    | 'toBeGreaterThanOrEqual';
   /** The operand a phantom `-1` would make pass. */
   readonly risky: string;
   readonly guarded: boolean;
@@ -225,14 +229,21 @@ export function orderingSites(file: string, src: string): readonly OrderSite[] {
     const close = balanced(src, open);
     if (close < 0) continue;
     const tail = src.slice(close + 1, close + 40);
-    const after = /^\s*\.\s*(toBeLessThan|toBeGreaterThan)\s*\(/.exec(tail);
+    // The `OrEqual` pair is the SAME assertion, and a phantom `-1` passes it identically:
+    // `-1 <= anyIndex` and `anyIndex >= -1`. `OrEqual` first in the alternation, because a regex
+    // alternation is first-match and `toBeLessThan` would otherwise consume the prefix and then
+    // fail on the `\(` — so the wider spelling read as no ordering assertion at all.
+    const after =
+      /^\s*\.\s*(toBeLessThanOrEqual|toBeGreaterThanOrEqual|toBeLessThan|toBeGreaterThan)\s*\(/.exec(
+        tail,
+      );
     if (after === null) continue;
     const matcher = after[1] as OrderSite['matcher'];
     const argOpen = close + 1 + tail.indexOf('(', after[0].length - 1);
     const argClose = balanced(src, argOpen);
     // The asymmetry: only ONE side of each comparison can be passed by a phantom -1.
     const risky =
-      matcher === 'toBeLessThan'
+      matcher === 'toBeLessThan' || matcher === 'toBeLessThanOrEqual'
         ? src.slice(open + 1, close)
         : argClose > 0
           ? src.slice(argOpen + 1, argClose)
@@ -322,7 +333,7 @@ export function checkOrdering(input: OrderInput): readonly Finding[] {
     const at = worst === undefined ? pkg : `${worst.file}:${String(worst.line)}`;
     findings.push({
       code: 'X_INDEX_ORDER_UNGUARDED',
-      cause: `${pkg} has ${String(count)} ordering assertion(s) whose indexOf operand is never asserted present, above its pin of ${String(allowed)} — indexOf answers -1 for a needle it never found, and -1 passes ${worst?.matcher === 'toBeGreaterThan' ? 'as the greater-than ARGUMENT' : 'as the less-than RECEIVER'}, so the assertion holds when the thing it orders is not emitted at all`,
+      cause: `${pkg} has ${String(count)} ordering assertion(s) whose indexOf operand is never asserted present, above its pin of ${String(allowed)} — indexOf answers -1 for a needle it never found, and -1 passes ${worst?.matcher.startsWith('toBeGreaterThan') === true ? 'as the greater-than ARGUMENT' : 'as the less-than RECEIVER'}, so the assertion holds when the thing it orders is not emitted at all`,
       fix: `assert presence first at ${at} — \`expect(<haystack>).toContain(<needle>)\`, or \`expect(<the index>).toBeGreaterThanOrEqual(0)\` — then compare. Prove it: delete what the assertion orders and watch the test go red`,
       at,
     });

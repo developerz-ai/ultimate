@@ -220,3 +220,56 @@ describe('MessageStream', () => {
     );
   });
 });
+
+/**
+ * A `message_delta` carrying only `usage` is an ordinary frame — the API sends running output
+ * counts, and a stop reason lands once. `!== null` admitted the ABSENT case as well as the
+ * present one, so the usage-only frame ran `parseStopReason(undefined)`, which answers
+ * `end_turn`: a refusal that had already been reported was rewritten as a clean finish and its
+ * `stopDetails` erased. `openai-wire.ts`'s `onFinish` returns early on `undefined` for exactly
+ * this reason; this path is the copy that did not.
+ */
+describe('a message_delta that reports usage and nothing else', () => {
+  const REFUSAL = {
+    type: 'message_delta',
+    delta: {
+      stop_reason: 'refusal',
+      stop_details: { type: 'refusal', category: 'safety', explanation: 'no' },
+    },
+    usage: { output_tokens: 10 },
+  };
+
+  test('leaves the stop reason and its details exactly as they were', () => {
+    const message = new MessageStream();
+    drive(message, [
+      START,
+      REFUSAL,
+      // A `delta` object that reports no stop reason — the frame carries the running output
+      // count and nothing else. The absent key is the case `!== null` admitted.
+      { type: 'message_delta', delta: { stop_sequence: null }, usage: { output_tokens: 25 } },
+      { type: 'message_stop' },
+    ]);
+
+    const state = message.state();
+    expect(state.stopReason).toBe('refusal');
+    expect(state.stopDetails).toEqual({
+      type: 'refusal',
+      category: 'safety',
+      explanation: 'no',
+    });
+    // The usage half of the same frame still lands: skipping the frame outright would lose it.
+    expect(state.usage.outputTokens).toBe(25);
+  });
+
+  test('an explicit null stop_reason is still no report', () => {
+    const message = new MessageStream();
+    drive(message, [
+      START,
+      REFUSAL,
+      { type: 'message_delta', delta: { stop_reason: null }, usage: { output_tokens: 25 } },
+      { type: 'message_stop' },
+    ]);
+
+    expect(message.state().stopReason).toBe('refusal');
+  });
+});

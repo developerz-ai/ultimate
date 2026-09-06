@@ -3,7 +3,7 @@
 // the bytes the client wrote, not on the throw: a refusal raised after the envelope was already
 // on the wire would satisfy a weaker test and still have relayed the attacker's mail.
 
-import { beforeEach, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import { resetJobDriver } from '@ultimat3/jobs';
@@ -11,7 +11,7 @@ import { t } from '@ultimat3/schema';
 import { blocks } from './blocks';
 import { resetMailDriver, setMailDriver } from './driver';
 import { createSmtpDriver } from './driver-smtp';
-import { assertEnvelopeAddress } from './envelope-address';
+import { assertEnvelopeAddress, envelopeAddress } from './envelope-address';
 import { defineMail, send } from './mail';
 import { type SmtpSessionOptions, type SmtpStream, smtpDeliver } from './smtp-client';
 
@@ -173,3 +173,30 @@ function caughtSync(fn: () => unknown): unknown {
     return error;
   }
 }
+
+/**
+ * `envelopeAddress` is the strip AND the gate, in that order — the order is the security property,
+ * not a detail: a CRLF address ending in `<addr>` strips down to a clean mailbox, so checking
+ * after the strip would turn the injection above into a silent delivery to the attacker.
+ */
+describe('envelopeAddress', () => {
+  test('a display form becomes the bare addr-spec', () => {
+    expect(envelopeAddress('recipient', 'Jane Doe <jane@x.test>')).toBe('jane@x.test');
+  });
+
+  test('a bare addr-spec is returned unchanged', () => {
+    expect(envelopeAddress('recipient', 'ada@example.test')).toBe('ada@example.test');
+  });
+
+  test('a CRLF is refused BEFORE the phrase is stripped', () => {
+    expect(() =>
+      envelopeAddress('recipient', 'ops@x.test\r\nRCPT TO:<attacker@evil.test>'),
+    ).toThrow(/X_MAIL_ADDRESS_INVALID/);
+  });
+
+  test('an unpaired angle bracket survives the strip and is refused', () => {
+    expect(() => envelopeAddress('recipient', 'ada@x.test> RCPT TO:<evil@x.test')).toThrow(
+      /X_MAIL_ADDRESS_INVALID/,
+    );
+  });
+});

@@ -145,6 +145,11 @@ never a value.
   found under the new one, which reads as a cache miss, not a failure: the run logs in again and
   writes the new key. One extra login per stored session, and the old objects are orphaned until
   the bucket's lifecycle rule collects them. Nothing to run.
+- **`profileDir` in the `rm -f` fix goes through `renderFixShellArg`** (`As of 2026-09-06`).
+  `X_SCRAPE_PROFILE_LOCKED` is the one line in this package that tells a reader to paste an `rm`,
+  and the directory is the app's — `localBrowser({ profileDir })`, composed from a tenant id on a
+  multi-tenant run — so a `$(…)` in it runs before `rm` does. A path a shell would read becomes
+  `<the profile directory the cause names>`; the directory itself stays in the `cause`.
 - **Redaction is by VALUE and covers four surfaces, each with a caller.** `safeHtml` (page HTML),
   `safeConsole` (`page.console()`), `safeNetwork` (`page.network()` URLs), `safePageErrors`
   (`page.pageErrors()`), plus `X_SCRAPE_HTTP_FAILED`'s cause, which redacts at its throw site in

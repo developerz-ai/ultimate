@@ -65,3 +65,18 @@ export const PORT_RANGE = { min: 0, max: 65_535 } as const;
  */
 export const neighbouringPort = (port: number): number =>
   port < PORT_RANGE.max ? port + 1 : PORT_RANGE.max - 1;
+
+/**
+ * The same suggestion for a caller that binds a PAIR. `x dev --port N` occupies N and N + 1, so
+ * `neighbouringPort` hands back the neighbour — which, when it is the neighbour that was taken, is
+ * the very socket the refusal is about: `x dev --port 3999` died on 4000 and its `fix:` said
+ * `x dev --port 4000`, and `x doctor` said it too, about the same pair (both pinned by a test
+ * named "its fix is a command that ends the failure"). Two above is the nearest base whose own
+ * pair touches neither.
+ *
+ * Downward at the top of the range, for `neighbouringPort`'s reason and one further: the answer's
+ * OWN neighbour has to be a port, or `syncPortFor` refuses the suggestion with `X_PORT_INVALID`.
+ * Only reachable above 65532, so the subtraction can never go below the range.
+ */
+export const portPairAfter = (port: number): number =>
+  port + 2 < PORT_RANGE.max ? port + 2 : port - 2;

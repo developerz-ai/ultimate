@@ -18,6 +18,7 @@ import {
 import { JOB_STATES } from '@ultimat3/jobs';
 import { TEST_TYPES } from '@ultimat3/testing';
 import { parseScriptArgs } from './lib/args';
+import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { isCode, isTestPath, lineOf } from './lib/source-scan';
@@ -143,12 +144,6 @@ export interface SourceFile {
   readonly text: string;
 }
 
-export interface Finding {
-  readonly at: string;
-  readonly cause: string;
-  readonly fix: string;
-}
-
 const LITERAL = /(['"])([^'"]*)\1/g;
 // `^[\t ]*` and not `^`: a declaration nested in a namespace or a block is indented, and a guard
 // a newline evades is not a guard. `\s*=` for the same reason — Biome wraps a long one.
@@ -221,12 +216,14 @@ const isCopy = (set: LiteralSet, vocabulary: Vocabulary): boolean =>
     : overlap(set, vocabulary).length >= COPY_THRESHOLD;
 
 const copyFinding = (file: SourceFile, set: LiteralSet, vocabulary: Vocabulary): Finding => ({
+  code: 'X_VOCABULARY_REDECLARED',
   at: `${file.at}:${set.line}`,
   cause: `${set.name} in ${file.at} redeclares ${vocabulary.name}, which ${vocabulary.at} declares`,
   fix: `delete ${set.name} from ${file.at} and import ${vocabulary.name} from '${packageOf(vocabulary.at)}' — the set is declared once, in ${vocabulary.at}`,
 });
 
 const vacuous = (cause: string): Finding => ({
+  code: 'X_VOCABULARY_UNSCANNED',
   at: 'scripts/render-modes.ts',
   cause,
   fix: 'fix the scan in scripts/render-modes.ts, or point VOCABULARY_MODULE at the file that declares the vocabulary',
@@ -290,22 +287,29 @@ export async function readSources(root: string): Promise<readonly SourceFile[]> 
 export const vocabularyFindings = async (root: string): Promise<readonly Finding[]> =>
   checkVocabulary(await readSources(root));
 
+/**
+ * What the command prints, as a value — so a test reads the `--json` document this rule publishes
+ * rather than trusting the `report()` call below it.
+ *
+ * `findings:` and not `lines:`: `render()` in `--json` mode emits `result.findings ?? []` and drops
+ * `lines`, so a rule that hand-rolled its own three-line text published `findings: []` on a RED run.
+ */
+export const vocabularyResult = (files: readonly SourceFile[]): ScriptResult => {
+  const findings = checkVocabulary(files);
+  return {
+    ok: findings.length === 0,
+    script: SCRIPT,
+    summary:
+      findings.length === 0
+        ? `${files.length} files, one declaration each of ${VOCABULARIES.map((one) => one.name).join(', ')}`
+        : `${findings.length} second declaration(s) of a closed vocabulary`,
+    findings,
+    data: { scanned: files.length },
+  };
+};
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
-  const files = await readSources(root);
-  const findings = checkVocabulary(files);
-  report(
-    {
-      ok: findings.length === 0,
-      script: SCRIPT,
-      summary:
-        findings.length === 0
-          ? `${files.length} files, one declaration each of ${VOCABULARIES.map((one) => one.name).join(', ')}`
-          : `${findings.length} second declaration(s) of a closed vocabulary`,
-      lines: findings.map((one) => `  ${one.at}\n    cause: ${one.cause}\n    fix:   ${one.fix}`),
-      data: { scanned: files.length, findings },
-    },
-    args.json,
-  );
+  report(vocabularyResult(await readSources(root)), args.json);
 }

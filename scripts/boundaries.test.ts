@@ -441,4 +441,14 @@ describe('unit · @ultimat3/admin has one flattener', () => {
     expect(files.map((entry) => entry.path)).toContain(REGISTRY);
     expect(checkAdminFlattener(files)).toEqual([]);
   });
+
+  // Finding 11, 2026-09-06: the glob was `**/*.ts`, and `@ultimat3/admin` is a component package —
+  // seven of its modules are `.tsx`, including every screen that renders a column. The rule read
+  // none of them, so the file most likely to flatten an entity onto `AdminColumnFacts` was the one
+  // file class it could not see.
+  test('and it reads the .tsx half of the package, which is where the screens are', async () => {
+    const files = await collectAdminFiles(repoRoot());
+    expect(files.map((entry) => entry.path)).toContain('packages/admin/src/list.tsx');
+    expect(files.filter((entry) => entry.path.endsWith('.tsx')).length).toBeGreaterThan(4);
+  });
 });

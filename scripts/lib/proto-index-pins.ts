@@ -97,11 +97,22 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
   },
 };
 
-/** What this package is allowed to have today. Absent means zero, deliberately. */
+/**
+ * What this package is allowed to have today. Absent means zero, deliberately — and so does a row
+ * whose REASON is blank: "pinned" with no sentence is the waiver axiom 3 refuses, and this file's
+ * own header has said so since the first draft while `Object.hasOwn` answered the count regardless.
+ * Same guard `declarationReaderPinnedFor` has carried from ITS first draft.
+ */
 export const protoIndexPinnedFor = (
   pkg: string,
   pins: Readonly<Record<string, ProtoIndexPin>> = PROTO_INDEX_PINS,
-): number => (Object.hasOwn(pins, pkg) ? (pins[pkg]?.count ?? 0) : 0);
+): number => (protoIndexPinIsBlank(pkg, pins) ? 0 : (pins[pkg]?.count ?? 0));
+
+/** A row that exists and says nothing: the count is not honoured, and the gap says which row. */
+export const protoIndexPinIsBlank = (
+  pkg: string,
+  pins: Readonly<Record<string, ProtoIndexPin>> = PROTO_INDEX_PINS,
+): boolean => Object.hasOwn(pins, pkg) && (pins[pkg]?.reason ?? '').trim() === '';
 
 /**
  * The edit `X_PROTO_CHAIN_INDEX_PIN_STALE` names, performed: lower each named package's count to

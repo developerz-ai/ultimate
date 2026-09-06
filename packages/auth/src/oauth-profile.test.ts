@@ -3,6 +3,7 @@ import { isUltimateError } from '@ultimat3/core';
 import type { IdTokenClaims } from './id-token';
 import type { OAuthFetch, OAuthTokens } from './oauth-exchange';
 import { oauthProfile } from './oauth-profile';
+import { registerOAuthProvider } from './oauth-registry';
 
 const claims = (overrides: Partial<IdTokenClaims> = {}): IdTokenClaims => ({
   iss: 'https://accounts.google.com',
@@ -229,5 +230,42 @@ describe('the userinfo call, when it does not come back', () => {
     );
     expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
     expect(isUltimateError(error) && error.cause).toContain('not a JSON object');
+  });
+});
+
+describe('a userinfo endpoint the issuer supplied', () => {
+  // `userInfoUrl` reaches the registry from `discoverOAuthProvider` — the OP's own document — so
+  // it is remote text in a COMMAND position, where `$(…)` and a backtick substitute before `curl`
+  // runs. Screened with `renderFixShellArg`, the same way `oauth-discovery.ts` screens the
+  // discovery URL; the endpoint still travels in the `cause`, which is prose nobody pastes.
+  const HOSTILE = registerOAuthProvider({
+    id: 'hostile-userinfo-op',
+    authorizeUrl: 'https://op.test/authorize',
+    tokenUrl: 'https://op.test/token',
+    userInfoUrl: 'https://op.test/$(id)/`id`/userinfo',
+    userEmailsUrl: null,
+    issuers: ['https://op.test'],
+    jwksUri: null,
+    scopes: ['openid'],
+    usesPkce: true,
+    usesNonce: false,
+    clientIdEnv: 'HOSTILE_CLIENT_ID',
+    clientSecretEnv: 'HOSTILE_CLIENT_SECRET',
+  });
+
+  test('never reaches the fix line as a command substitution', async () => {
+    const error = await rejection(
+      oauthProfile(HOSTILE.id, tokensWith(null), {
+        fetch: async () => {
+          throw new TypeError('Unable to connect. Is the computer able to access the url?');
+        },
+      }),
+    );
+    const fix = isUltimateError(error) ? error.fix : '';
+    expect(fix).not.toContain('$(');
+    expect(fix).not.toContain('`');
+    expect(fix).toBe('curl -sS -m 5 -o /dev/null <the userinfo endpoint the cause names>');
+    // The value is not lost — it rides in the cause, which is read and never pasted.
+    expect(isUltimateError(error) && error.cause).toContain('$(id)');
   });
 });

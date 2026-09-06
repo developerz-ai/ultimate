@@ -613,6 +613,12 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   line the framework tells its reader to paste. The value still travels in the `cause`, which is
   read rather than run. `renderFixLiteral` does not cover this — its double quotes leave `$(…)`
   live in every POSIX shell.
+  **A `code` is gated instead of screened** (`As of 2026-09-06`): `factsOf`'s fallback `fix:` is
+  `x errors explain <code> --json`, and `code` is a string field off a throwable this package did
+  not build — a worker message, a WebSocket frame, an app's own object — so it goes through core's
+  `FRAMEWORK_CODE`, never `startsWith('X_')`. A value that is not a code answers nothing anyway,
+  so the honest command is `x errors list --json`. Same gate, same reason, as `@ultimat3/mcp`'s
+  `server.ts`; the value still travels in `facts.code`.
 - **Borrowed error codes are never titled or registered here.** `X_FORBIDDEN` is policy's,
   `X_UNAUTHENTICATED` is auth's; both sit in `HTTP_BORROWED_ERROR_CODES`, which carries codes
   only. `HTTP_ERROR_TITLES` holds owned codes, and `registerErrorCodes` takes it whole and

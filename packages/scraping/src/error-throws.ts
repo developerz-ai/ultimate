@@ -3,7 +3,12 @@
 // a browser is rendered through core's `renderThrowable`, which is the rule `bun run error-render`
 // enforces.
 
-import { isRetryableStatus, renderThrowable, UltimateError } from '@ultimat3/core';
+import {
+  isRetryableStatus,
+  renderFixShellArg,
+  renderThrowable,
+  UltimateError,
+} from '@ultimat3/core';
 import type { CaptureClip } from './capture-clip';
 import { ScrapeError } from './errors';
 
@@ -99,7 +104,10 @@ export const profileLocked = (profileDir: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_PROFILE_LOCKED',
     cause: `another browser process holds the profile at ${profileDir}`,
-    fix: `rm -f ${profileDir}/SingletonLock once no browser is using it, or give this run its own localBrowser({ profileDir })`,
+    // `profileDir` is the app's — `localBrowser({ profileDir })`, and a multi-tenant run composes
+    // it from a tenant id — and this is the one line in this package that leads with `rm`. A path
+    // a shell would READ becomes the placeholder; the directory itself is in the `cause` above.
+    fix: `rm -f ${renderFixShellArg(profileDir, '<the profile directory the cause names>')}/SingletonLock once no browser is using it, or give this run its own localBrowser({ profileDir })`,
     meta: { profileDir },
   });
 

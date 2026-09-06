@@ -44,7 +44,9 @@ const TYPED_SUFFIXES = '{contract,live,job,e2e,eval}';
  * four sweeps. `type` is a closed union here and cannot be `'constructor'` today, which is
  * exactly the argument every one of those thirteen had before it stopped being true.
  *
- * Same repair, and the same reason, as `packages/i18n/src/catalog.ts`.
+ * Same repair, and the same reason, as `packages/i18n/src/catalog.ts`. The read itself is guarded
+ * too (`summaryOf`), because a construction three screens above a read is not something a static
+ * rule should have to reason about.
  */
 const SUMMARIES: Readonly<Record<TypedTest, string>> = Object.assign(
   Object.create(null) as Record<TypedTest, string>,
@@ -255,6 +257,16 @@ const evalStep: VerifyStep = {
   },
 };
 
+/**
+ * The one computed read of `SUMMARIES`, guarded. The table is already prototype-free
+ * (`Object.create(null)`), which is what makes the READ safe — and `scripts/proto-index.ts`
+ * recognises a guard on the read itself, not a construction three screens above it. So the guard
+ * is here: a rule that has to reason about how a table was built is one tightening away from
+ * reporting this line, and a pin is a rule with a hole in it.
+ */
+const summaryOf = (type: TypedTest): string =>
+  Object.hasOwn(SUMMARIES, type) ? SUMMARIES[type] : `${type} tests`;
+
 const stepFor = (type: TestType): VerifyStep => {
   if (type === 'unit') {
     return {
@@ -266,7 +278,7 @@ const stepFor = (type: TestType): VerifyStep => {
   if (type === 'eval') return evalStep;
   return {
     name: type,
-    summary: SUMMARIES[type],
+    summary: summaryOf(type),
     applies: async (ctx) => (await filesFor(ctx.root, type)).length > 0,
     run: (ctx) => runType(ctx, type),
   };

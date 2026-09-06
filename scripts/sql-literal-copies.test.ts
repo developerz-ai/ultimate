@@ -121,3 +121,44 @@ describe('the real tree', () => {
     expect(checkLiteralCopies({ copies: literalCopies(files), ownerSeen })).toEqual([]);
   });
 });
+
+// Finding 3, 2026-09-06: the pattern was `.replace(All)?(…, "''")` with a `[^)]{0,48}?` window, so
+// three spellings of the SAME transformation evaded it — and this file's own header says the
+// TRANSFORMATION is what is matched, never a name or a spelling.
+describe('the same escape under another spelling', () => {
+  const DOUBLED = JSON.stringify("''");
+
+  test('split/join is replaceAll written out', () => {
+    const found = literalCopies([
+      file('packages/a/src/one.ts', `const q = value.split("'").join(${DOUBLED});`),
+    ]);
+    expect(found.map((one) => one.file)).toEqual(['packages/a/src/one.ts']);
+  });
+
+  test('a CAPTURE GROUP in the pattern closes the [^)] window early', () => {
+    const found = literalCopies([
+      file('packages/a/src/one.ts', `const q = value.replace(/(')/g, ${DOUBLED});`),
+    ]);
+    expect(found.map((one) => one.file)).toEqual(['packages/a/src/one.ts']);
+  });
+
+  test("and so does a nested call — replace(new RegExp(\"'\", 'g'), \"''\")", () => {
+    const found = literalCopies([
+      file('packages/a/src/one.ts', `const q = value.replace(new RegExp("'", 'g'), ${DOUBLED});`),
+    ]);
+    expect(found.map((one) => one.file)).toEqual(['packages/a/src/one.ts']);
+  });
+
+  test('a `.repeat(2)` on the quote is the doubled quote too', () => {
+    const found = literalCopies([
+      file('packages/a/src/one.ts', `const q = value.replaceAll("'", "'".repeat(2));`),
+    ]);
+    expect(found.map((one) => one.file)).toEqual(['packages/a/src/one.ts']);
+  });
+
+  test('but a split/join that doubles something else is not the SQL escape', () => {
+    expect(
+      literalCopies([file('packages/a/src/one.ts', `const q = v.split(',').join(';');`)]),
+    ).toEqual([]);
+  });
+});

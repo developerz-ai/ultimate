@@ -21,6 +21,7 @@
     "flight-copies": "bun run scripts/flight-copies.ts",
     "finite-bounds": "bun run scripts/finite-bounds.ts",
     "dev": "bun run --filter @ultimat3/cli dev",
+    "fix-shell-arg": "bun run scripts/fix-shell-arg.ts",
     "error-render": "bun run scripts/error-render.ts",
     "format": "biome format --write .",
     "framework-tables": "bun run scripts/framework-tables.ts",

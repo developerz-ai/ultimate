@@ -349,3 +349,116 @@ describe('unit · the ratchet', () => {
     expect(finding.fix).toContain('packages/core/src/config.ts');
   });
 });
+
+// Finding 5, 2026-09-06: a pin whose reason is BLANK waived the key. `Object.hasOwn(pins, leaf)`
+// asks whether a row exists and never whether it says anything, so `'realtime.tier': ''` silenced
+// the rule — the waiver axiom 3 refuses, and the thing this table's own header says it is not.
+// `declarationReaderPinnedFor` had the `.trim()` guard from the first draft; these three did not.
+describe('a pin with a blank reason waives nothing', () => {
+  const files = [{ path: 'packages/x/src/a.ts', text: 'export const a = 1;\n' }];
+
+  test('the reader pin still reports the key, and says the sentence is missing', () => {
+    const gaps = checkConfigReaders({
+      leaves: ['jobs.driver'],
+      files,
+      pins: { 'jobs.driver': '   ' },
+    });
+    expect(gaps.map((gap) => gap.kind)).toContain('unexplained');
+    const finding = configReaderFindingFor(gaps.find((gap) => gap.kind === 'unexplained') as never);
+    expect(finding.code).toBe('X_CONFIG_READER_PIN_UNEXPLAINED');
+    expect(finding.fix).toContain('jobs.driver');
+  });
+
+  test('and a reason that says something holds the key, as it always did', () => {
+    const gaps = checkConfigReaders({
+      leaves: ['jobs.driver'],
+      files,
+      pins: { 'jobs.driver': 'read by the worker boot path, packages/jobs/src/boot.ts' },
+    });
+    expect(gaps).toEqual([]);
+  });
+
+  test('the AMBIGUITY table is the same rule, and nothing read it at all', () => {
+    // `configAmbiguityPinnedFor` was exported, documented and called by nobody — the check used a
+    // bare `Object.hasOwn` on the same table, so a blank row there waived too.
+    const noisy = Array.from({ length: AMBIGUOUS_LIMIT + 1 }, (_, index) => ({
+      path: `packages/z${String(index)}/src/a.ts`,
+      text: 'const x = { tier: 1 };\nconst y = x.tier;\n',
+    }));
+    const blank = checkConfigReaders({
+      leaves: ['realtime.tier'],
+      files: noisy,
+      pins: {},
+      ambiguousPins: { 'realtime.tier': '' },
+    });
+    expect(blank.map((gap) => gap.kind)).toContain('unexplained');
+    const explained = checkConfigReaders({
+      leaves: ['realtime.tier'],
+      files: noisy,
+      pins: {},
+      ambiguousPins: {
+        'realtime.tier': 'SUSPECT: 19 files match the bare `tier`, none under realtime/',
+      },
+    });
+    expect(explained.map((gap) => gap.kind)).not.toContain('unexplained');
+  });
+});
+
+// Finding 12, 2026-09-06. The leaf walk read `export interface` and a member at EXACTLY two spaces
+// carrying `readonly` — so a section declared as a `type` alias, or one nested a level deeper,
+// contributed ZERO leaves and every key under it read as alive. That is this rule's own defect
+// class one level up, and it is what a `config.ts` split already did to `PwaConfig` once.
+describe('the shapes the leaf walk could not read', () => {
+  test('a section declared as a `type` alias is a section', () => {
+    const source = [
+      'export interface AppConfig {',
+      '  readonly jobs: JobsConfig;',
+      '}',
+      'export type JobsConfig = {',
+      '  readonly driver: string;',
+      '};',
+    ].join('\n');
+    expect(configLeaves(source)).toEqual(['jobs.driver']);
+  });
+
+  test('and a member at any other indent, with or without `readonly`', () => {
+    const source = [
+      'export interface AppConfig {',
+      '    readonly jobs: JobsConfig;',
+      '}',
+      'export interface JobsConfig {',
+      '  driver: string;',
+      '}',
+    ].join('\n');
+    expect(configLeaves(source)).toEqual(['jobs.driver']);
+  });
+});
+
+describe('the derived leaf set, checked against the RUNTIME config', () => {
+  // Not the same regex twice: `defineConfig` BUILDS an `AppConfig` and this walks the object it
+  // returns. A hand count would go stale and a second regex would share the first one's blind spot
+  // — which is exactly how `PwaConfig` moving into `config-pwa.ts` lost five keys in silence.
+  const walk = (value: Record<string, unknown>, prefix = ''): readonly string[] =>
+    Object.entries(value).flatMap(([key, one]) =>
+      one !== null && typeof one === 'object' && !Array.isArray(one) && Object.keys(one).length > 0
+        ? walk(one as Record<string, unknown>, `${prefix}${key}.`)
+        : [`${prefix}${key}`],
+    );
+
+  test('every key a built config carries is a leaf the walk derived', async () => {
+    const { defineConfig } = await import('@ultimat3/core');
+    const built = walk(defineConfig({ name: 'probe' }) as unknown as Record<string, unknown>);
+    const derived = configLeaves(await configDeclaration(repoRoot()));
+    // `pwa.colors` is the ONE exception and it is the walk being RIGHT: its default is `undefined`,
+    // so the object cannot be descended into, while the declaration knows its four leaves.
+    for (const leaf of built.filter((one) => one !== 'pwa.colors')) {
+      expect(derived).toContain(leaf);
+    }
+    expect(built).toContain('pwa.colors');
+    expect(derived).toContain('pwa.colors.light.themeColor');
+    // Both directions: a derived leaf whose SECTION no built config carries is a leaf that came
+    // from a declaration `defineConfig` never assembles.
+    const sections = new Set(built.map((one) => one.split('.')[0]));
+    for (const leaf of derived) expect([...sections]).toContain(leaf.split('.')[0] as string);
+  });
+});

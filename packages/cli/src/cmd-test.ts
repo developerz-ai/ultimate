@@ -104,8 +104,12 @@ export const testCommand: CliCommand = {
     name: 'test',
     summary:
       'run one test type — or the whole suite — across N workers, one isolated database per worker',
-    usage: `x test [${TEST_TYPES.join('|')}] [--filter text] [--sample N] [--affected [--base ref] [--dirty]] [--workers N] [--worker I] [--json]`,
+    usage: `x test [${TEST_TYPES.join('|')}] [--filter text] [--sample N] [--affected [--base ref] [--dirty]] [--workers N] [--worker I] [--json] [-- <bun test flags>]`,
     positionalChoices: TEST_TYPES,
+    // The one command that hands a tail to another tool — `bun test` — and the reason
+    // `CommandSpec.passthrough` exists: `x test unit -- --coverage --bail` parsed both flags and
+    // dropped both, so a run that measured no coverage reported exactly what a coverage run does.
+    passthrough: true,
     flags: [
       {
         name: 'workers',
@@ -173,15 +177,13 @@ export const testCommand: CliCommand = {
     }
     const files = sample === undefined ? selected : sampleFiles(selected, sample);
     const requested = readIndex(ctx.args, 'workers', 1) ?? defaultWorkers();
-    // A serial type is serial HERE TOO, `As of 2026-08-27`. `verify-tests.ts` routes `live` and
-    // `e2e` through `runSerial` and this command never read the same list, so `x verify` ran one
-    // process over the very files `x test live --workers 8` ran eight over — two answers to one
-    // question, which is axiom 1, and the dangerous one is the command a human types while
-    // debugging. What makes them serial is not a preference: a logical replication slot is named
-    // at the Postgres CLUSTER level, so a per-worker database does not isolate it and two workers
-    // race `pg_create_logical_replication_slot`; `e2e` shares one built `dist/` and one browser
-    // profile. Neither is visible without a real `TEST_DATABASE_URL`, which is why the split
-    // measured green for as long as it did.
+    // The width a `--worker` index is judged against, and nothing else: which files really run one
+    // at a time is `test-passes.ts`, off the FILES rather than off the positional. This line read
+    // the positional alone until 2026-09 and the comment here claimed it made a serial type serial
+    // — true for `x test live`, false for the bare `x test --workers 8` that selects every type,
+    // which ran the same `live` and `e2e` files eight at a time. It stays because a `--worker` run
+    // is one process per CI JOB: sharding a serial type across N of them is the cluster-wide race
+    // in a second disguise, and refusing the index is where that is caught.
     const ceiling = type !== undefined && SERIAL_TYPES.includes(type) ? 1 : files.length;
     const workers = Math.max(1, Math.min(requested, ceiling));
     const only = readIndex(ctx.args, 'worker', 0);
@@ -208,6 +210,9 @@ export const testCommand: CliCommand = {
       // corpus, so its shard 2 is a different shard 2 — reproducing nothing, which is the one
       // thing `reproduceFor` exists to prevent.
       ...(scope === undefined ? {} : { affected: scope.selection }),
+      // The fifth input to the split, and the one a rerun most obviously needs: `--coverage`
+      // changes what a run measures, and the reproduce line carries it back out.
+      ...(ctx.args.passthrough.length === 0 ? {} : { passthrough: ctx.args.passthrough }),
     });
     return scope === undefined ? result : withScope(result, scope);
   },

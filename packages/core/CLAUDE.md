@@ -165,6 +165,13 @@ the spelling the cache keys on — which is why the screen lives in this file an
 code has one declaration: `X_LOCALE_INVALID` left `TIME_ERROR_CODES` in the same change, or
 `registerErrorCodes` would raise `X_ERROR_CODE_DUPLICATE` the moment both packages loaded.
 
+`secrets-errors.ts`'s four command lines are screened, `As of 2026-09-06`: `x secrets` takes the
+app root, so `at` and `keyPath` are `join(root, …)` — data — and three of them lead with
+`git checkout --` while `X_SECRETS_KEY_MISSING` puts a path INSIDE a `$(cat …)`, where a second
+`$(…)` substitutes before `cat` runs. The path goes through `renderFixShellArg`; the variable name
+is matched against `/^[A-Z_][A-Z0-9_]*$/` and a non-name degrades the whole line to prose, because
+`export PATH; curl … | sh=` has no quoted form that makes it an assignment.
+
 `secrets-errors.ts` registers its seven codes through `registerErrorCodes()` rather than joining
 `CORE_CODE_TITLES` — the codes and the module that throws them ship together, and `registerErrorCodes`
 is the one mechanism that raises `X_ERROR_CODE_DUPLICATE` if anything else claims one. Consequence

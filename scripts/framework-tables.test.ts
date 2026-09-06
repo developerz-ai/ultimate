@@ -156,3 +156,35 @@ describe('the real tree', () => {
     }
   });
 });
+
+// Finding 10, 2026-09-06: `CREATE_TABLE` demanded a BARE lowercase identifier, so the two spellings
+// Postgres accepts for the same relation were invisible — a quoted name and a schema-qualified one.
+// `packages/auth/src/tables.ts` declared five tables nothing applied for 21 released versions;
+// quoting them would have made the rule that found it silent again.
+describe('the spellings of one relation name', () => {
+  const file = (source: string) => [{ path: 'packages/x/src/tables.ts', source }];
+
+  test('a QUOTED name is the same table', () => {
+    expect(
+      declaredTables(file('const ddl = `create table if not exists "x_users" (id uuid);`;'))[0]
+        ?.table,
+    ).toBe('x_users');
+  });
+
+  test('a SCHEMA-qualified name is too, and the schema is not part of it', () => {
+    expect(
+      declaredTables(file('const ddl = `create table public.x_users (id uuid);`;'))[0]?.table,
+    ).toBe('x_users');
+  });
+
+  test('and both at once', () => {
+    expect(
+      declaredTables(file('const ddl = `create table "public"."x_users" (id uuid);`;'))[0]?.table,
+    ).toBe('x_users');
+  });
+
+  test('an INTERPOLATED name is the app’s by construction and stays unread', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
+    expect(declaredTables(file('const ddl = `create table ${target} (id uuid);`;'))).toEqual([]);
+  });
+});

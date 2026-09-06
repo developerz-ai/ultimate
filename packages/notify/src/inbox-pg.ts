@@ -1,7 +1,7 @@
 // The shared in-app inbox: one Postgres table, applied by the boot the way `x_jobs` is.
 // Statements are spelled out so an agent can run the exact one it saw in a log.
 
-import { finiteCount, uuid } from '@ultimat3/core';
+import { finiteCount, isUuid, uuid } from '@ultimat3/core';
 import type { PgExecutor } from '@ultimat3/jobs';
 import type { InboxRow, InboxStore, InboxWrite } from './inbox';
 import { DEFAULT_INBOX_PAGE } from './inbox';
@@ -190,9 +190,18 @@ export function createPgInboxStore(options: PgInboxStoreOptions): PgInboxStore {
       return rows[0]?.unread ?? 0;
     },
     async markRead(input) {
+      // The ids are NAMED by the caller and bound into `any($2::uuid[])`, so one that is not a
+      // uuid is Postgres 22P02 out of a method whose contract says an id belonging to nobody is
+      // simply absent — the memory store skips it. Raising would lose the whole batch: nineteen
+      // good ids marked by nobody because a twentieth was a typo. Screened, never cast: a
+      // `id::text = any($2)` would answer the same and give up the primary key index.
+      const ids = [...input.ids].filter(isUuid);
+      // No round trip for a batch that can match nothing — `any('{}')` costs a statement to
+      // answer what this line already knows.
+      if (ids.length === 0) return 0;
       const rows = await executor.query<{ id: string }>(SQL_NOTIFY_INBOX_MARK_READ, [
         input.recipient,
-        [...input.ids],
+        ids,
         input.at,
       ]);
       return rows.length;

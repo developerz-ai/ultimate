@@ -53,15 +53,24 @@ export function buildMimeMessage(message: MailMessage, options: MimeOptions): st
   // whichever header is added next. The check runs on the RAW value: encoding first would let a
   // non-ASCII subject hide a line break inside an encoded word instead of refusing it, so the
   // same input would be accepted or rejected depending on whether it happened to be ASCII.
-  const header = (name: string, value: string, encode = false): void => {
-    if (value.includes('\r') || value.includes('\n')) throw headerInvalid(name, message.mailId);
-    headerLines.push(foldHeaderLine(name, encode ? encodeHeaderValue(value) : value));
+  const header = (
+    name: string,
+    value: string | readonly string[],
+    mode: HeaderMode = 'verbatim',
+  ): void => {
+    // An ARRAY is checked element by element and joined here, never joined by the caller: the
+    // check has to see the raw address, and `', '` introduces no line break of its own.
+    const parts = typeof value === 'string' ? [value] : value;
+    for (const part of parts) {
+      if (part.includes('\r') || part.includes('\n')) throw headerInvalid(name, message.mailId);
+    }
+    headerLines.push(foldHeaderLine(name, parts.map((part) => encodeAs(mode, part)).join(', ')));
   };
 
-  header('From', options.from);
-  header('To', message.to.join(', '));
-  if (message.cc !== undefined && message.cc.length > 0) header('Cc', message.cc.join(', '));
-  header('Subject', message.subject, true);
+  header('From', options.from, 'address');
+  header('To', message.to, 'address');
+  if (message.cc !== undefined && message.cc.length > 0) header('Cc', message.cc, 'address');
+  header('Subject', message.subject, 'value');
   header('Date', rfc5322Date(options.date));
   header('Message-ID', options.messageId);
   header('MIME-Version', '1.0');
@@ -93,9 +102,41 @@ function bodyPart(contentType: string, text: string): string {
   );
 }
 
+/**
+ * How a header VALUE reaches the wire. `verbatim` is a value that is 7-bit by construction (a
+ * date, a boundary, a message id); `value` is RFC 2047 over the whole string; `address` encodes
+ * only the display phrase, because the commas, angle brackets and addr-specs around it are what
+ * make the line an address list and a base64 blob is none of those.
+ */
+type HeaderMode = 'verbatim' | 'value' | 'address';
+
+function encodeAs(mode: HeaderMode, value: string): string {
+  if (mode === 'verbatim') return value;
+  if (mode === 'value') return encodeHeaderValue(value);
+  return encodeAddressPhrase(value);
+}
+
+/**
+ * `José Muñoz <jose@x.test>` -> `=?UTF-8?B?…?= <jose@x.test>`. Non-ASCII in an unencoded header is
+ * an 8-bit octet on a wire this package never negotiates SMTPUTF8 for, so it is the display name
+ * that gets encoded — the addr-spec is copied through untouched, because a mailbox is the
+ * server's to parse and an encoded word is not one. An address with no phrase, or an ASCII
+ * phrase, comes back byte-identical.
+ */
+export function encodeAddressPhrase(address: string): string {
+  const match = ADDRESS_SPEC.exec(address);
+  if (match === null) return address;
+  const phrase = address.slice(0, match.index).trim();
+  if (phrase === '' || isPureAscii(phrase)) return address;
+  return `${encodeHeaderValue(phrase)} <${match[1] ?? ''}>`;
+}
+
+/** The trailing `<addr-spec>` of an address, which is the boundary between phrase and mailbox. */
+const ADDRESS_SPEC = /<([^<>]+)>\s*$/;
+
 /** `Postly <no-reply@postly.test>` -> `no-reply@postly.test`. A bare address is returned as-is. */
 export function addressSpec(address: string): string {
-  const match = /<([^<>]+)>\s*$/.exec(address);
+  const match = ADDRESS_SPEC.exec(address);
   return match?.[1] ?? address;
 }
 

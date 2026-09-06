@@ -281,8 +281,14 @@ export class MessageStream {
 
   private onMessageDelta(payload: Record<string, unknown>): readonly StreamChunk[] {
     const delta = asRecord(payload['delta']);
-    if (delta !== undefined && delta['stop_reason'] !== null) {
-      this.stopReason = parseStopReason(delta['stop_reason']);
+    // ABSENT is not a report, and neither is `null`. `!== null` alone admitted the absent key, so
+    // a `message_delta` carrying only running usage ran `parseStopReason(undefined)` — which
+    // answers `end_turn` — and rewrote a refusal already reported as a clean finish, erasing its
+    // `stopDetails` with it. `openai-wire.ts`'s `onFinish` returns early on `undefined` for the
+    // same reason; this was the copy that did not.
+    const reported = delta?.['stop_reason'];
+    if (delta !== undefined && reported !== null && reported !== undefined) {
+      this.stopReason = parseStopReason(reported);
       // A refusal mid-stream keeps whatever was already streamed, so the reason alone reads as
       // a complete answer that simply stopped. The detail is what says it is not one.
       this.stopDetails = parseStopDetails(delta['stop_details']);
