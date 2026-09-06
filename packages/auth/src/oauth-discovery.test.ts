@@ -187,6 +187,50 @@ describe('an issuer the process cannot reach', () => {
   });
 });
 
+describe('an issuer with shell punctuation never reaches a command position', () => {
+  /**
+   * `new URL()` keeps `$`, `(`, `)` and backticks in a path, so `discoveryUrl(issuer)` carries
+   * them straight into `curl -sS -m 5 ${url}` — three fix lines in this file, each one a command
+   * a reader is being told to paste. An issuer is app configuration rather than a request, so
+   * this is one boot mistake away rather than one request away; it is still a shell command the
+   * framework composed out of a value it does not control.
+   */
+  const HOSTILE_ISSUER = 'https://sso.bigco.test/$(id)';
+
+  const fixFor = async (over: Partial<Parameters<typeof discoverOAuthProvider>[0]>) => {
+    const thrown = await discoverOAuthProvider({
+      id: 'bigco',
+      issuer: HOSTILE_ISSUER,
+      ...over,
+    }).catch((error: unknown) => error);
+    return thrown instanceof AuthError ? thrown.fix : `not-an-AuthError: ${String(thrown)}`;
+  };
+
+  test('a rejected fetch, a 404 and a document missing an endpoint all degrade the same way', async () => {
+    const fixes = [
+      await fixFor({
+        fetch: () => Promise.reject(new Error('getaddrinfo ENOTFOUND')),
+      }),
+      await fixFor({ fetch: serving({}, 404).fetch }),
+      await fixFor({ fetch: serving({ issuer: 'https://sso.bigco.test' }).fetch }),
+    ];
+    for (const fix of fixes) {
+      expect(fix).not.toContain('$(');
+      expect(fix).not.toContain(HOSTILE_ISSUER);
+      // Still a runnable line naming what to substitute, not a fix deleted.
+      expect(fix).toContain('.well-known/openid-configuration');
+    }
+  });
+
+  test('an ordinary issuer is still pasted verbatim, so the fix stays runnable', async () => {
+    const fix = await fixFor({
+      issuer: 'https://sso.bigco.test',
+      fetch: serving({}, 404).fetch,
+    });
+    expect(fix).toContain(discoveryUrl('https://sso.bigco.test'));
+  });
+});
+
 describe('what the caller may override, and what it may not', () => {
   test('scopes and both env var names are the caller’s, and default when absent', async () => {
     const custom = await discoverOAuthProvider({

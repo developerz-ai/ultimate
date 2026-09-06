@@ -34,6 +34,17 @@ export class PgAdvisoryLock implements AdvisoryLock {
   readonly key: string;
   readonly #options: PgAdvisoryLockOptions;
   #connection: PgConnection | null = null;
+  /**
+   * The acquisition in flight, if any. `#connection` cannot answer "am I already taking this" —
+   * it is written at the END of an acquisition, with a dial, a handshake and a query awaited in
+   * between, so two concurrent callers both read `null` and both opened a session. Both then took
+   * a grant on the same key (a second `pg_try_advisory_lock` on a DIFFERENT session succeeds only
+   * if the first has not landed yet, and on the same key from two sessions one of them answers
+   * `f` — either way the loser's session was left open), and the second assignment to
+   * `#connection` orphaned the first: `release()` closes one, and the other holds the lock until
+   * the process dies. A standby then never takes over a slot whose owner has already stopped.
+   */
+  #acquiring: Promise<boolean> | null = null;
 
   constructor(options: PgAdvisoryLockOptions) {
     if (!KEY_PATTERN.test(options.key)) {
@@ -49,9 +60,27 @@ export class PgAdvisoryLock implements AdvisoryLock {
     this.#options = options;
   }
 
-  async tryAcquire(): Promise<boolean> {
+  /**
+   * Deliberately NOT `async`: the guard and the registration have to be one synchronous step, or
+   * the memo has the same check-then-act hole as the field it replaces. Same shape as
+   * `packages/core/src/lifecycle.ts`'s `drain()` and `packages/jobs/src/worker.ts`'s `round()`.
+   */
+  tryAcquire(): Promise<boolean> {
     // Already ours — see the class comment on why a second `pg_try_advisory_lock` must not run.
-    if (this.#connection !== null) return true;
+    if (this.#connection !== null) return Promise.resolve(true);
+    const inFlight = this.#acquiring;
+    if (inFlight !== null) return inFlight;
+    // Cleared however it settles: a `false` is "somebody else holds it right now", which the
+    // replicator's takeover loop asks again a backoff later, and a rejection is the database
+    // refusing THIS attempt. A memo either of those stuck to would answer for the process's life.
+    const attempt = this.#acquire().finally(() => {
+      if (this.#acquiring === attempt) this.#acquiring = null;
+    });
+    this.#acquiring = attempt;
+    return attempt;
+  }
+
+  async #acquire(): Promise<boolean> {
     const target = parsePgUrl(this.#options.url);
     const stream = await (this.#options.stream ?? bunPgStream)(target);
     // Plain SQL, not `replication: 'database'` — this session runs one statement, never a feed.
@@ -85,6 +114,13 @@ export class PgAdvisoryLock implements AdvisoryLock {
   }
 
   async release(): Promise<void> {
+    // A release that arrives mid-acquisition waits it out. `#connection` is still `null` there, so
+    // the early return below would answer "nothing to release" and the session would open behind
+    // it, holding the key with no object left intending to close it — the same orphan the memo
+    // exists to prevent, reached from the other side. The attempt's own failure is not this
+    // caller's to report: `tryAcquire`'s caller already has it.
+    const acquiring = this.#acquiring;
+    if (acquiring !== null) await acquiring.catch(() => false);
     const connection = this.#connection;
     if (connection === null) return;
     this.#connection = null;

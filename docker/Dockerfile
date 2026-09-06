@@ -72,8 +72,12 @@ WORKDIR /src
 # with `--linker=hoisted` would also have compiled, and would have shipped a module resolution no
 # developer and no CI job runs.
 COPY --from=deps /src ./
-# Source lands ON TOP of the install: `.dockerignore` drops every `node_modules`, so this merges
-# into the tree above rather than replacing it.
+# Source lands ON TOP of the install: `docker/Dockerfile.dockerignore` drops every `node_modules`,
+# so this merges into the tree above rather than replacing it. That file, and not a root
+# `.dockerignore`, which this repo has never had and which this comment named until 2026-09-06.
+# BuildKit prefers `<dockerfile>.dockerignore`; a builder that does not honour that form reads NO
+# ignore file for this build at all, and then `COPY . .` ships the host's `node_modules` (shadowing
+# the `--production` install above), its `.env`, its `.npmrc` and its `.secrets.key`.
 COPY . .
 # --compile bundles the runtime, so the final stage needs no Bun and no node_modules.
 #

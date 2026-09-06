@@ -51,6 +51,13 @@ import. The CLI wires it.
   `exposureOf` to the projected tool — outcome 1's only declaration surface for a projected
   primitive. Dropping it there silently disables outcome 1 for every projected tool: nothing
   fails, every caller simply sees every tool.
+- **A thrown value is a framework error only when its `code` matches core's `FRAMEWORK_CODE`,
+  never `code.startsWith('X_')`** (`As of 2026-09`). `asFrameworkError` substitutes
+  `x errors explain ${code}` when a coded throw carries no `fix:`, so the code lands in a COMMAND
+  an agent is told to run — and a prefix test admits `X_$(id)`. A value that is not a code spelled
+  the one way takes the `-32603` branch, which leaks nothing of the throw. One pattern, core's,
+  because `@ultimat3/core`'s `client-wire.ts` already had to answer the same question for a
+  problem document off the wire.
 - Resolve order is visibility → scope → args → policy. Validating first leaks a schema;
   running the policy first decides a refusal from attacker-supplied input.
 - **A key's membership of a declared schema is `Object.hasOwn(properties, key)`, never

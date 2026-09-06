@@ -228,6 +228,31 @@ describe('a framework error reaches the model in the shape the terminal prints',
   // The substituted fix is the one line in this rendering nobody wrote for the reader, so it is
   // the one most likely to be a shrug. `see docs` is the phrase the repo's own fix rule bans —
   // it survived only because BANNED_PHRASES spells it `see the docs`, one article longer.
+  /**
+   * The substituted fix interpolates `code` into a COMMAND, and `startsWith('X_')` was the whole
+   * of the guard in front of it — so a thrown object naming itself `X_$(id)` produced
+   * `fix: x errors explain X_$(id)`, a command substitution in the line an agent is told to run.
+   * Core's `FRAMEWORK_CODE` is the one spelling of a code, and a value that is not one is not a
+   * framework error at all: `-32603`, with nothing of the throw leaked.
+   */
+  test('a code that is not a code spelled the one way is never rendered into a command', async () => {
+    for (const code of ['X_$(id)', 'X_`id`', 'X_a;rm -rf ~', 'X_ ', 'X_lower']) {
+      const rogue: AnyMcpTool = {
+        name: 'orders.rogue',
+        description: 'throws an object whose code is not a code',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        handle: () => Promise.reject({ code, cause: 'a package that is not core threw' }),
+      };
+      const server = createMcpServer({ tools: [rogue] });
+      const response = await server.handle(
+        call('tools/call', { name: 'orders.rogue', arguments: {} }),
+        caller(undefined, []),
+      );
+      expect(response?.error?.code).toBe(INTERNAL_ERROR);
+      expect(JSON.stringify(response)).not.toContain(code);
+    }
+  });
+
   test('a coded object with no fix is given a runnable one, never a shrug', async () => {
     const text = await textOf('orders.reopen');
 

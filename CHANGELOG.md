@@ -8,6 +8,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Sweep 2 of the same hunt, 2026-09-06, on three axes the tier hunters could not reach: a
+concurrency audit (what happens when this is interrupted, raced or restarted), a security audit
+(the `fix:` line as a shell command, tenancy, redirects, images) and a parity pass over the files
+sweep 1 listed as unread. 23 findings fixed, one dropped because the code already did it. Two new
+codes, both named below; no shipped code changed. Deferred, by name: a gate that refuses a value
+interpolated into a command position of a `fix:` (findings in three packages shipped past a green
+gate because every value was typed `string`, which `error-render` does not read), and the cache
+single-flight's stale-fill ordering under a load that outruns its 30 s deadline.
+
 Sweep 1 of a three-agent bug hunt over every package, 2026-09-06: three read-only hunters over
 tiers 0–1, 2–3 and 4–5, each finding reproduced before it was fixed, each fix landing with the
 test that failed first. No shipped `X_*` code changed, and one export leaves a barrel — named
@@ -22,7 +31,7 @@ Neither is breaking.
 
 ### Removed
 
-- **BREAKING — `OFFLINE_FALLBACK` is gone from the `@ultimat3/cli` barrel.** It was the literal
+- **`OFFLINE_FALLBACK` is gone from the `@ultimat3/cli` barrel** — it was documented nowhere, so this is not a break of a documented API and a minor carries it. It was the literal
   `apps/web/app/offline.tsx`: a filename `registerRoute` refuses with `X_ROUTE_FILE_INVALID` (the
   directory is the URL, so a page is `page.tsx`), naming a path no route table has ever accepted —
   so an importer held a value that could not be true of any app. `x doctor` now resolves the
@@ -86,6 +95,27 @@ Neither is breaking.
   `@ultimat3/db` dependency for that one marker (tier 3 → 1, drawn on the package map). It still
   takes no client from it: `PgExecutor` stays the only way the queue reaches Postgres.
 
+- **The secrets master key can no longer ship inside a production image.** Every `.dockerignore` in the tree and the one `x new` writes excluded `.env*` and `.npmrc` but not `.secrets.key`, so the runtime stage's `COPY . .` baked the AES master key into a layer beside the committed `secrets.enc.json` it decrypts — and `findMasterKey` reads the key file whenever `ULTIMATE_SECRETS_KEY` is unset, so the container booted on the baked key and the platform's key was never exercised, while `wiki/CLI-Reference.md` promised an image that "ships no key file at all". All five files carry `**/.secrets.key` now, the template reads the name from core's `SECRETS_KEY_FILE`, and `scripts/image-contract.ts` refuses any `*.dockerignore` without it (`X_IMAGE_SECRET_UNIGNORED`, a step of the `boundaries` check).
+- **A teardown after a spent drain gets a real budget.** The release phase (`app.stop()`: the outbox relay, the worker, the sync node, the server, then the pool, NATS, the cache tiers, the mail driver) was given the drain's leftover, which is negative the moment one in-flight request outlives the deadline — so `releaseWithin` abandoned it at 0 ms and logged "was still running 0ms", reading as a slow teardown when there had been no budget at all. The pool was never closed and the relay could be killed between `enqueue` and `markPublished`. `MIN_RELEASE_MS` (5 s) is a floor, never a clamp; 25 s + 5 s still sits inside the chart's 45 s termination grace.
+- **`x mcp serve` no longer wedges on one transient boot failure.** `startServices` and `ensureReadOnlyRole` were memoised with `??=`, so a rejected promise was the answer for the life of the stdio session; `retryMemo` clears on rejection, the rule `packages/db/src/pglite.ts` already followed.
+- **`docker/Dockerfile`'s comment names the ignore file that exists.** It said a root `.dockerignore` drops `node_modules`; there has never been one — BuildKit reads `docker/Dockerfile.dockerignore`, and a builder that does not honour `<Dockerfile>.dockerignore` reads no ignore file at all.
+- **`jobs`: the outbox relay takes part in the process drain.** It registered no lifecycle hook — every other loop registers two — so it claimed and published through the whole shutdown and past `state === 'stopped'`, stamping leases on rows nothing on the pod would run and, abandoned between `enqueue` and `markPublished`, republishing a row on the next boot. An `accept` hook stops polling, a `close` hook waits out the pass in flight under the drain deadline, the poll timer is `unref`ed, and `createOutboxRelay` moved to `outbox-relay.ts` (barrel exports unchanged).
+- **`jobs`: a webhook receiver's `409 Conflict` is retryable again.** `webhook.ts` kept a private retryable-status table that omitted the 409 core's one table has always carried, so a concurrent-writer response dead-lettered the delivery on attempt 1 with the whole retry budget unspent.
+- **`jobs`: the memory driver rejects a duplicate `onConflict: 'error'` enqueue instead of throwing synchronously, and a cancelled job clears `claimedBy`/`visibleAt` as `SQL_CANCEL` does** — two answers where the pg driver had one, deferred from the previous sweep.
+- **`http`: `stop()` hands its two shutdown hooks back on the SIGTERM path too.** The close hook clears `server`, and the early return was skipping the release, leaking two registrations per server per lifecycle.
+- **`core`, `http`, `auth`, `mcp`: a value reaching a command position in a `fix:` is rendered by the new `renderFixShellArg`, or refused by `FRAMEWORK_CODE`.** An unrouted `GET /$(curl …|sh)`, an issuer URL with shell punctuation in `curl -sS -m 5 <url>`, and a thrown `code: 'X_$(id)'` each composed a command substitution into the line the framework tells its reader to run; `renderFixLiteral` double-quotes, which makes none of those inert, so the safe set is closed and anything else becomes a named placeholder while the value still travels in the `cause`.
+- **`scraping`: the HTTP leg follows a redirect one hop at a time, under the same gates as the first request.** `httpOverFetch` called `fetch` with the platform default `redirect: 'follow'`, so a scraped endpoint answering `302 Location: http://169.254.169.254/…` had its target fetched from inside the worker's network with no `allowHosts`, no robots check and `res.url` still reporting the allow-listed URL — the exact SSRF the package's own header says the allow list exists to close, and the CDP leg already screened per hop. Each `Location` is now screened, paced, cookie-scoped and recorded under the URL actually requested; the fetch-spec method downgrade (303, and 301/302 after a POST, become a bodiless GET) is applied so a redirected order body is never re-sent; a chain past `MAX_REDIRECT_HOPS` (10) is `X_SCRAPE_REDIRECT_LOOP`, terminal.
+- **`scraping`: a `javascript:` URL is refused, never treated as a hostless scheme.** It sat on the `about:`/`data:`/`blob:` branch of `hostDecision`; `javascript://api.test/%0a…` parses with hostname `api.test`, so an allow list naming that host would have matched it.
+- **`realtime`: two concurrent `replicator.start()` calls start one feed, and two concurrent `tryAcquire()` calls open one session.** Both checked a flag, awaited, then set it — so the second caller passed the guard, `feed.start()` ran twice on one slot (two seq generations, a change gap on every sync node), and the second advisory-lock session orphaned the first, which held the lock until the process died. The in-flight acquisition is memoised in one synchronous step, and `stop()`/`release()` wait it out.
+- **`admin`: the `/_x` stylesheet memo is one promise, not a chain.** The rejection-clearing wrapper re-ran on every request, publishing a new promise each time and retaining the previous one; it is created once, in the shape `packages/db/src/pglite.ts` uses, with an identity guard so a late rejection clears its own attempt.
+- **`db`: `unknownSchema`'s `fix:` screens the migration id and name through `shellInertIdentifier`** before they reach `git checkout -- "*<id>.snapshot.json"` and `x db gen "<name>"`, degrading to prose when hostile; an empty id keeps its glob, because `""` substitutes nothing.
+- **`entity`: a `uuid` written in upper case is stored lower-cased in both drivers**, so `countBy` no longer keys its map one way in memory and the other in production — `parseUuid` and a new `narrowUuid` on the write path, the rule `keyOf('uuid', …)` already applied to equality.
+- **`schema`: a `record`'s published JSON Schema carries `propertyNames: { not: { enum: […] } }`**, so OpenAPI, the typed client and an MCP tool stop advertising the `__proto__` / `constructor` / `prototype` keys the parser answers with a 422. `PROTOTYPE_KEYS` is one declaration, read by both views.
+- **`schema`: the published `date` node is documented and pinned as the deliberately narrower of the two views** — the parser's epoch-millisecond convenience is not advertised as a supported spelling.
+- **`entity`: ordering by a `timestamptz` column whose microsecond alias would exceed 63 bytes is refused at plan time** instead of silently losing cursor precision to a truncated identifier.
+- **`entity`: the in-memory driver's `updateWhere` applies the same `MAX_ASSERTED_ROWS` ceiling the Postgres driver does**, so a sweep a test green-lit is no longer one production refuses.
+- **`seo`: a title and a description are measured in characters via `@ultimat3/schema`'s `charCount`**, so an astral emoji counts as one character rather than two; `@ultimat3/seo` gains a declared `@ultimat3/schema` dependency (tier 1 → 0).
+
 - **The sync node's drain no longer waits its grace for nobody.** `drain()` slept
   `DEFAULT_DRAIN_GRACE_MS` (5s) after sending its reconnect frames whether or not it held a socket
   to owe one to. Measured 2026-09-06 on ai-maxxing: Ctrl-C on `x dev` with no browser open took
@@ -95,6 +125,39 @@ Neither is breaking.
   `listenSyncNode` takes `drainGraceMs`, and `x dev` passes `0`: one node, whose clients reconnect
   to it once it is back and to nothing in the meantime, so a grace that kept their patches flowing
   was time spent on a reconnect frame whose target did not exist yet. Production keeps the default.
+- **`scraping`: a cross-origin redirect hop no longer carries the caller's credentials.** The jar was
+  re-scoped per hop and the HEADERS were not, so an `authorization` set for the first host was
+  replayed verbatim to wherever a `302` pointed — the leak `cookie-scope.ts` exists to prevent,
+  arriving through the other door. `authorization`, `proxy-authorization` and a hand-written
+  `cookie` are dropped at the first cross-origin hop and stay dropped for the rest of the chain
+  (`A -> B -> A` does not hand the bearer back), which is what the platform's own `redirect: 'follow'`
+  did before this leg took the chain over. Every other header still rides, and a same-origin hop is
+  untouched — an API that redirects within itself still authenticates.
+- **`scraping`: a `301`/`302` rewrites a `POST` and nothing else.** `carriesBody` kept the method for
+  `GET`/`HEAD` and rewrote everything else, so a `PUT` or a `DELETE` answered with a permanent
+  redirect was re-asked as a bodyless `GET`: one read, a 200, and the caller's write silently not
+  happening. The fetch standard permits the rewrite for `POST` alone; `303` still rewrites every
+  method but `GET`/`HEAD`, `307`/`308` still carry both, and the method is now read
+  case-insensitively, because `fetch` normalises `post` to `POST` on the way out.
+- **`scraping`: a redirect chain past `MAX_REDIRECT_HOPS` releases the hop body before it refuses.**
+  The throw jumped over `discardHopBody`, so the refusal path — the one a hostile chain drives ten
+  times per request — was the one path that held its socket until the collector arrived.
+- **`realtime`: a replicator whose feed fails to start hands the advisory lock back.** `running` was
+  set before `await feed.start()`, so a rejected start left this node holding the lock and claiming
+  to run while pumping nothing: the takeover loop's next `start()` was answered `true` by the
+  `if (running)` guard without re-entering `begin`, and every standby stayed a standby of a slot
+  whose holder was not replicating. `running` is set after the feed is pumping, and the failure path
+  releases.
+- **`entity`: `narrowRow` lower-cases only a uuid Postgres would have accepted.** The narrowing
+  exists to make the in-memory row the one production holds, and production holds nothing for a
+  malformed uuid — it refuses the insert — so lower-casing one produced a third spelling neither
+  driver has. A value that is not a uuid is now left exactly as the caller spelled it.
+- **`scripts/image-contract.ts` reads a `.dockerignore` in ORDER.** Docker obeys the last rule that
+  matches a path, so `**/.secrets.key` followed by `!**/.secrets.key` is a build context with the
+  master key in it — and a check spelled "does the line exist" passed that file. A re-include now
+  counts however it is spelled (`!**` and `!*.key` re-admit the key too), and an unrelated negation
+  — the `!**/.env.example` every ignore file in this tree carries — still leaves the exclusion in
+  force.
 
 ## 19.2.0 - 2026-09-06
 

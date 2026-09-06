@@ -10,6 +10,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ChangeEvent, ChangeFeed } from './changefeed';
 import { formatLsn, InMemoryChangeFeed } from './changefeed';
 import { InProcessTransport } from './fanout';
+import type { AdvisoryLock } from './replicator';
 import { createReplicator, InMemoryAdvisoryLock } from './replicator';
 import { defaultBackoff } from './thundering-herd';
 
@@ -109,6 +110,151 @@ describe('the advisory lock decides which node replicates', () => {
     expect(await replicator.start()).toBe(true);
     expect(replicator.running).toBe(true);
     await replicator.stop();
+  });
+});
+
+/**
+ * Two `start()` calls that overlap. The guard `if (running) return true` is a check, and the very
+ * next line awaits `lock.tryAcquire()` — so both callers passed it, both were told they held the
+ * lock (a real `PgAdvisoryLock` answers `true` to a holder), and BOTH called `feed.start()`. One
+ * replication slot with two pumps means every change published twice, under two `seq` generations
+ * from one producer id: `SeqGapDetector` on every sync node then reads a gap where there is none,
+ * marks every window stale and re-snapshots the fleet, on every change, forever. Reachable from
+ * `/readyz` polling a supervisor's start beside the takeover loop's own retry.
+ */
+describe('start is memoised while it is in flight', () => {
+  /** The shape a real `PgAdvisoryLock` has: an await between being asked and answering. */
+  const awaitingLock = (): AdvisoryLock & {
+    readonly calls: () => number;
+    readonly releases: () => number;
+  } => {
+    let calls = 0;
+    let releases = 0;
+    return {
+      key: 'x:replicator:awaiting',
+      tryAcquire: async () => {
+        calls += 1;
+        await Promise.resolve();
+        return true;
+      },
+      release: async () => {
+        releases += 1;
+      },
+      calls: () => calls,
+      releases: () => releases,
+    };
+  };
+
+  const countingFeed = (): ChangeFeed & {
+    readonly starts: () => number;
+    readonly stops: () => number;
+  } => {
+    let starts = 0;
+    let stops = 0;
+    return {
+      source: 'counting',
+      start: async () => {
+        starts += 1;
+      },
+      stop: async () => {
+        stops += 1;
+      },
+      lastLsn: () => null,
+      starts: () => starts,
+      stops: () => stops,
+    };
+  };
+
+  test('two concurrent starts run ONE feed and take ONE acquisition', async () => {
+    const feed = countingFeed();
+    const lock = awaitingLock();
+    const replicator = createReplicator({ feed, lock, transport: new InProcessTransport() });
+
+    expect(await Promise.all([replicator.start(), replicator.start()])).toEqual([true, true]);
+    expect(feed.starts()).toBe(1);
+    expect(lock.calls()).toBe(1);
+    expect(replicator.running).toBe(true);
+  });
+
+  test('a stop racing a start waits it out, and stops the feed that start began', async () => {
+    // `running` is false for the whole of the acquisition, so an unguarded `stop()` answers "not
+    // running, nothing to do" and returns — leaving a feed pumping into a replicator nothing
+    // intends to stop, with the advisory lock still held by a process that already shut down.
+    const feed = countingFeed();
+    const lock = awaitingLock();
+    const replicator = createReplicator({ feed, lock, transport: new InProcessTransport() });
+
+    const starting = replicator.start();
+    const stopping = replicator.stop();
+    expect(await starting).toBe(true);
+    await stopping;
+
+    expect(feed.starts()).toBe(1);
+    expect(feed.stops()).toBe(1);
+    expect(lock.releases()).toBe(1);
+    expect(replicator.running).toBe(false);
+  });
+
+  test('a feed that fails to start hands the lock BACK, and this node is not running', async () => {
+    // `running = true` sat before `await feed.start()`, so a feed that rejected left this node
+    // holding the advisory lock, claiming to run and pumping nothing: the takeover loop's next
+    // `start()` was answered `true` by the `if (running)` guard without ever calling `begin`, and
+    // every standby stayed a standby of a slot whose holder was not replicating.
+    const lock = awaitingLock();
+    const failing: ChangeFeed = {
+      source: 'failing',
+      start: () => Promise.reject(new Error('replication slot is in use')),
+      stop: async () => undefined,
+      lastLsn: () => null,
+    };
+    const replicator = createReplicator({
+      feed: failing,
+      lock,
+      transport: new InProcessTransport(),
+    });
+
+    await expect(replicator.start()).rejects.toThrow(/replication slot is in use/);
+    expect(replicator.running).toBe(false);
+    expect(lock.releases()).toBe(1);
+
+    // And the retry is a real one: `begin` runs again rather than being answered by a memo over a
+    // feed that never pumped.
+    const feed = countingFeed();
+    const retried = createReplicator({ feed, lock, transport: new InProcessTransport() });
+    expect(await retried.start()).toBe(true);
+    expect(feed.starts()).toBe(1);
+    expect(lock.calls()).toBe(2);
+    await retried.stop();
+  });
+
+  test('a stop after a failed start is a no-op — the lock is not released twice', async () => {
+    const lock = awaitingLock();
+    const replicator = createReplicator({
+      feed: {
+        source: 'failing',
+        start: () => Promise.reject(new Error('slot busy')),
+        stop: async () => undefined,
+        lastLsn: () => null,
+      },
+      lock,
+      transport: new InProcessTransport(),
+    });
+
+    await expect(replicator.start()).rejects.toThrow(/slot busy/);
+    await replicator.stop();
+    expect(lock.releases()).toBe(1);
+  });
+
+  test('a start that never acquired can be tried again — the memo does not stick', async () => {
+    const key = freshKey();
+    const holder = rig(key);
+    const standby = rig(key);
+    await holder.replicator.start();
+
+    expect(await standby.replicator.start()).toBe(false);
+    await holder.replicator.stop();
+    expect(await standby.replicator.start()).toBe(true);
+    await standby.replicator.stop();
   });
 });
 

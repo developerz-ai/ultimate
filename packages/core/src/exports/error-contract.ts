@@ -25,6 +25,7 @@ export {
   MAX_RENDERED_LENGTH,
   renderCauseValue,
   renderFixLiteral,
+  renderFixShellArg,
   renderThrowable,
   singleLine,
   stringField,

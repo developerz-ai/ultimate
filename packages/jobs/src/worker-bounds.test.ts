@@ -7,7 +7,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, createContext, UltimateError } from '@ultimat3/core';
 import { createMemoryDriver } from './driver-memory';
 import { resetJobs } from './job';
-import { createMemoryOutboxStore, createOutboxRelay } from './outbox';
+import { createMemoryOutboxStore } from './outbox';
+import { createOutboxRelay } from './outbox-relay';
 import { createWorker } from './worker';
 
 const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });

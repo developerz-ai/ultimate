@@ -12,7 +12,20 @@ export const ANY_HOST: HostRule = '*';
  * Schemes with no host to match. `about:blank` is where every browser starts, `data:` and `blob:`
  * never leave the process — refusing them would refuse the first page load of every run.
  */
-const HOSTLESS_SCHEMES = new Set(['about:', 'data:', 'blob:', 'javascript:']);
+const HOSTLESS_SCHEMES = new Set(['about:', 'data:', 'blob:']);
+
+/**
+ * Hostless AND refused, which is why it is not on the line above — it sat there until 2026-09.
+ * `javascript:` has no host for the same reason `data:` has none, and that is the whole
+ * resemblance: the other three are inert content this process renders, while this one is code
+ * EXECUTED in the current document's origin, with the session's cookies and the session's
+ * `localStorage` already in scope. `allowHosts` cannot say anything about a URL with no host to
+ * name, so "no host, therefore allowed" was the allow list opting itself out of the one navigation
+ * that needs no host to exfiltrate through — `javascript:fetch('/admin').then(post_elsewhere)` is
+ * a same-origin read on an allow-listed site. Fail closed; there is no legitimate scrape verb that
+ * needs it (`page.eval` is the declared seam).
+ */
+const REFUSED_SCHEMES = new Set(['javascript:']);
 
 export interface HostDecision {
   readonly allowed: boolean;
@@ -44,6 +57,7 @@ export function hostMatches(host: string, rule: HostRule): boolean {
  */
 export function hostDecision(url: string, allowHosts: readonly HostRule[]): HostDecision {
   const scheme = url.slice(0, Math.max(0, url.indexOf(':') + 1)).toLowerCase();
+  if (REFUSED_SCHEMES.has(scheme)) return { allowed: false, host: '' };
   if (HOSTLESS_SCHEMES.has(scheme)) return { allowed: true, host: '' };
   let host: string;
   try {

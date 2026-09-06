@@ -146,7 +146,11 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
       // `state !== 'done'`, mirroring `SQL_CANCEL`: a job that already finished has nothing to
       // stop, and cancelling it would rewrite a terminal row an operator is reading as success.
       if (existing === undefined || existing.state === 'done') return Promise.resolve(undefined);
-      update(jobId, {
+      // `settle`, not `update`: a cancellation RELEASES the claim, and `SQL_CANCEL` writes
+      // `visible_at = null, claimed_by = null` with the state. Left stamped, a cancelled row named
+      // the worker still holding it and carried that attempt's lease deadline — the pair
+      // `x jobs show` prints, and the pair the claim scan reads to decide a row was abandoned.
+      settle(jobId, {
         state: 'cancelled',
         ...(reason === undefined ? {} : { lastError: reason }),
       });
@@ -161,7 +165,11 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
     leases,
     introspect,
 
-    enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
+    // `async` for the reason `claim`, `list` and `deadLetters` are: `onConflict: 'error'` REJECTS
+    // here exactly as the pg driver's does, and a synchronous throw out of a method typed
+    // `Promise<…>` is a second answer to one question — caught by different code, and an
+    // unhandled exception rather than a settled promise wherever the caller holds the promise.
+    async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
       const existing = liveByKey(request.name, request.idempotencyKey, request.tenantId);
       if (existing !== undefined) {
         if (request.onConflict === 'error') {
@@ -171,7 +179,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
             existingId: existing.id,
           });
         }
-        return Promise.resolve({ id: existing.id, runId: existing.runId, deduped: true });
+        return { id: existing.id, runId: existing.runId, deduped: true };
       }
 
       const at = nowMs(clock);
@@ -194,7 +202,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
         ...(request.enqueuedBy === undefined ? {} : { enqueuedBy: request.enqueuedBy }),
       };
       jobs.set(record.id, record);
-      return Promise.resolve({ id: record.id, runId: record.runId, deduped: false });
+      return { id: record.id, runId: record.runId, deduped: false };
     },
 
     // `async`, so an empty queue list REJECTS here exactly as it does on the pg driver: a

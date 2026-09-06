@@ -6,7 +6,7 @@
 // green, because the one thing that would have caught it — `/out/app --version` — ran on the BUILD
 // stage, which is not what ships. `docker build` runs on no PR, so nothing stops either recurring.
 //
-// TWO RULES, both derived entirely from the file, neither needing a table that can go stale:
+// THREE RULES, all derived entirely from files, none needing a table that can go stale:
 //   libc     the stage the runtime COPYs its artifact from must link the same libc family the
 //            runtime provides. `alpine` means musl and `slim`/`debian`/`distroless/cc` mean glibc
 //            for as long as those distributions exist; an image neither pattern recognises yields
@@ -14,6 +14,15 @@
 //   guard    the final stage's ENTRYPOINT binary must be RUN inside that same stage. "There is a
 //            guard" and "the guard runs on what ships" are different claims and only the second was
 //            violated — the broken Dockerfile had a guard, one stage too early.
+//   secret   every `*.dockerignore` in the tree must exclude the secrets master key. All four
+//            excluded `.env` and `.npmrc` and none excluded `.secrets.key`, so `COPY . .` baked the
+//            AES key into a layer beside the committed `secrets.enc.json` it decrypts — and
+//            `findMasterKey` reads the file whenever `ULTIMATE_SECRETS_KEY` is unset, so the
+//            container boots on the baked key and the env path is never exercised.
+//            `wiki/CLI-Reference.md` stated the invariant ("ships no key file at all") and nothing
+//            enforced it. A generated app's ignore file is written by
+//            `packages/cli/src/templates/scaffold-container.ts`, which no root here can read, so
+//            that copy is held to the same line by `scaffold-container.test.ts`.
 //
 // What is deliberately NOT here: the Dockerfile's own claim that the runtime's Debian GENERATION
 // must equal the build base's. It is true (glibc is backward but not forward compatible), and
@@ -23,6 +32,7 @@
 //
 //   bun run scripts/image-contract.ts [--json]
 
+import { SECRETS_KEY_FILE } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -209,6 +219,92 @@ const FINDINGS: Readonly<Record<ImageGapKind, (gap: ImageGap) => Finding>> = {
 
 export const imageGapFindingFor = (gap: ImageGap): Finding => FINDINGS[gap.kind](gap);
 
+// ── the third rule: what may enter a build context ───────────────────────────
+
+/**
+ * The one pattern that keeps the master key out of every image, read off the constant
+ * `findMasterKey` reads (`packages/core/src/secrets-store.ts`) rather than spelled here — a rename
+ * of the key file then reports every ignore file in the tree instead of silently unprotecting them.
+ *
+ * RECURSIVE, and that is the same measurement the `.env` block in each of these files records: an
+ * ignore pattern is anchored at the context root and crosses no directory on its own, so a bare
+ * `.secrets.key` misses `apps/web/.secrets.key`.
+ */
+export const SECRET_IGNORE_PATTERN = `**/${SECRETS_KEY_FILE}`;
+
+/** One `*.dockerignore`, by repo-relative path. */
+export interface IgnoreFile {
+  readonly file: string;
+  readonly text: string;
+}
+
+/** An ignore file that would let `COPY . .` bake the master key into a layer. */
+export interface IgnoreGap {
+  readonly file: string;
+}
+
+/**
+ * Where the key can sit in a build context: at the root, and under any directory a `COPY . .`
+ * carries. Two paths rather than one, because a re-include is spelled against a path — `!*.key`
+ * puts the root one back and leaves the nested one ignored, and either is the whole key.
+ */
+const KEY_PATHS = [SECRETS_KEY_FILE, `apps/web/${SECRETS_KEY_FILE}`] as const;
+
+/**
+ * Whether a rule has anything to say about where the key sits. A leading `/` or `./` is dropped
+ * first: Docker anchors every pattern at the context root either way, so `!/.secrets.key` is the
+ * same re-include as `!.secrets.key` and only one of the two spellings matches a relative path.
+ */
+const matchesKey = (pattern: string): boolean => {
+  const anchored = pattern.replace(/^\.?\//, '');
+  const glob = new Bun.Glob(anchored);
+  return KEY_PATHS.some((path) => glob.match(path));
+};
+
+/**
+ * Pure, and ORDERED — Docker reads its ignore rules top to bottom and the LAST one that matches a
+ * path decides, so the recursive pattern below followed by the same pattern behind a `!` is a
+ * context with the key in it. A check spelled "does the line exist" passed that file, which is the
+ * shape of every bug this script is about: a rule that is present and a rule that is in force are
+ * different questions.
+ *
+ * The exclusion is still the exact line — that is what the `fix:` below tells an author to write,
+ * and a hand-rolled equivalent nobody can grep for is the drift this file exists against — while
+ * a re-include counts however it is spelled, because `!**` undoes the rule just as completely.
+ */
+export const ignoresMasterKey = (text: string): boolean => {
+  let ignored = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#')) continue;
+    if (line === SECRET_IGNORE_PATTERN) ignored = true;
+    else if (line.startsWith('!') && matchesKey(line.slice(1).trim())) ignored = false;
+  }
+  return ignored;
+};
+
+export const checkIgnores = (files: readonly IgnoreFile[]): readonly IgnoreGap[] =>
+  files.filter((one) => !ignoresMasterKey(one.text)).map((one) => ({ file: one.file }));
+
+/**
+ * Every `*.dockerignore` in the tree, contents included. Globbed rather than listed: the four that
+ * exist today were each added beside a new Dockerfile, and a table here would leave the fifth
+ * unchecked with nothing red — the defect class this whole file exists to close.
+ */
+export async function ignoreFilesOf(root: string): Promise<readonly IgnoreFile[]> {
+  const paths = [...new Bun.Glob('**/*.dockerignore').scanSync({ cwd: root, dot: true })].sort();
+  return Promise.all(
+    paths.map(async (file) => ({ file, text: await Bun.file(`${root}/${file}`).text() })),
+  );
+}
+
+export const ignoreGapFindingFor = (gap: IgnoreGap): Finding => ({
+  code: 'X_IMAGE_SECRET_UNIGNORED',
+  cause: `${gap.file} excludes .env and .npmrc but not ${SECRETS_KEY_FILE}, so a build stage's \`COPY . .\` bakes the AES master key into a layer beside the committed secrets.enc.json it decrypts — and \`findMasterKey\` reads the file whenever ULTIMATE_SECRETS_KEY is unset, so the container boots on the baked key and the platform's own key is never exercised`,
+  fix: `add \`${SECRET_IGNORE_PATTERN}\` beside the .npmrc line in ${gap.file}, then bun run scripts/image-contract.ts --json`,
+  at: gap.file,
+});
+
 /**
  * The Dockerfile, or `undefined`. ONE read, shared by the gate check and the command below — they
  * used to read the path separately and disagree about it being gone: `imageGaps` answered `[]` and
@@ -231,26 +327,35 @@ export async function imageGaps(root: string): Promise<readonly ImageGap[]> {
 }
 
 /** What this repo contributes to `x verify`'s `boundaries` step. */
-export const imageContractFindings = async (root: string): Promise<readonly Finding[]> =>
-  (await imageGaps(root)).map(imageGapFindingFor);
+export const imageContractFindings = async (root: string): Promise<readonly Finding[]> => [
+  ...(await imageGaps(root)).map(imageGapFindingFor),
+  ...checkIgnores(await ignoreFilesOf(root)).map(ignoreGapFindingFor),
+];
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
-  const text = await readDockerfile(repoRoot());
+  const root = repoRoot();
+  const text = await readDockerfile(root);
   const gaps = text === undefined ? [] : checkImage(text);
   const stages = text === undefined ? [] : parseDockerfile(text);
+  const ignores = await ignoreFilesOf(root);
+  const ignoreGaps = checkIgnores(ignores);
+  const findings = [...gaps.map(imageGapFindingFor), ...ignoreGaps.map(ignoreGapFindingFor)];
   const green =
     text === undefined
       ? `no ${DOCKERFILE} in this tree, so it builds no image and there is nothing to check`
-      : `${stages.length} stages in ${DOCKERFILE}: one libc family, and the shipped entrypoint proven in the stage that ships it`;
+      : `${stages.length} stages in ${DOCKERFILE}: one libc family, and the shipped entrypoint proven in the stage that ships it; ${ignores.length} ignore file(s) keep ${SECRETS_KEY_FILE} out of every build context`;
   report(
     {
-      ok: gaps.length === 0,
+      ok: findings.length === 0,
       script: 'image-contract',
-      summary:
-        gaps.length === 0 ? green : `${gaps.length} image-contract violation(s) in ${DOCKERFILE}`,
-      findings: gaps.map(imageGapFindingFor),
-      data: { dockerfile: text === undefined ? null : DOCKERFILE, stages: stages.length },
+      summary: findings.length === 0 ? green : `${findings.length} image-contract violation(s)`,
+      findings,
+      data: {
+        dockerfile: text === undefined ? null : DOCKERFILE,
+        stages: stages.length,
+        ignoreFiles: ignores.map((one) => one.file),
+      },
     },
     args.json,
   );

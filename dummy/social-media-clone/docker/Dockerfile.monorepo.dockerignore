@@ -38,3 +38,8 @@ node_modules
 # and be pushed to a cache the whole repository can read. The other three ignore files beside this
 # one have carried the line since 2026-08-19.
 **/.npmrc
+# Same shape, and this one is the key itself: `.secrets.key` decrypts the committed
+# `secrets.enc.json` beside it, and `findMasterKey` falls back to the file whenever
+# ULTIMATE_SECRETS_KEY is unset — so a baked copy boots the image on it and the platform's key is
+# never exercised.
+**/.secrets.key

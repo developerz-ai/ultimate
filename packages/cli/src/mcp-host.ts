@@ -45,6 +45,7 @@ import { databaseTarget } from './mcp-db-target';
 import { explainErrorCode } from './mcp-errors';
 import { parseBunTest } from './mcp-test-output';
 import { readMigrations } from './migrations';
+import { retryMemo } from './retry-memo';
 
 export interface DevHostInput {
   readonly root: string;
@@ -91,7 +92,11 @@ export interface LazyServices {
  */
 export function lazyServices(input: DevHostInput): LazyServices {
   const services = resolveServices(input.root, input.env);
-  let started: Promise<RunningServices> | undefined;
+  // `retryMemo`, not `??=`: a boot that REJECTED is not an answer to keep. A Postgres that refused
+  // one connection wedged every later tool call in the session with that first error, and the only
+  // way out was restarting the host — `startServices` unwinds everything it started before it
+  // rejects, so there is nothing left over for a second attempt to collide with.
+  const boot = retryMemo(() => startServices(services, input.env));
   let closed = false;
   return {
     services,
@@ -104,14 +109,14 @@ export function lazyServices(input: DevHostInput): LazyServices {
           fix: 'x mcp serve --transport stdio   # keep the host open for the whole session',
         });
       }
-      started ??= startServices(services, input.env);
-      return started;
+      return boot.get();
     },
     async close(): Promise<void> {
       if (closed) return;
       closed = true;
-      // A boot that rejected has nothing to stop, and close() must not throw on the way out.
-      await (await started?.catch(() => undefined))?.stop();
+      // `started()` and never `get()`: closing must not BOOT a database in order to stop one. A
+      // boot that rejected has nothing to stop, and close() must not throw on the way out.
+      await (await boot.started()?.catch(() => undefined))?.stop();
     },
   };
 }
@@ -175,8 +180,13 @@ export async function readOnlyRows(
 function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities {
   const { root, runner } = input;
   // Layer 1 is seven idempotent DDL statements, and `db.query` is a tool an agent calls in a
-  // loop — resolve the role once per process and reuse the answer, `null` included.
-  let readOnlyRole: Promise<string | null> | undefined;
+  // loop — resolve the role once per process and reuse the answer, `null` included. A FAILED
+  // resolution is not an answer: `??=` kept the rejection, so a statement timeout on the DDL
+  // meant every later `db.query` in the session refused with it instead of trying again.
+  //
+  // It asks `lazy.running()` for the client rather than closing over one: this runs before any
+  // boot has happened, and the boot is memoised, so it is the same connection `runQuery` uses.
+  const readOnlyRole = retryMemo(async () => ensureReadOnlyRole((await lazy.running()).db));
 
   return {
     database: databaseTarget(lazy.services, input.env),
@@ -185,8 +195,7 @@ function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities 
       const { db } = await lazy.running();
       // A managed Postgres may refuse CREATE ROLE; `ensureReadOnlyRole` answers null and the
       // layer is reported absent in `guards` rather than quietly assumed present.
-      readOnlyRole ??= ensureReadOnlyRole(db);
-      return readOnlyRows(db, sql, limits, await readOnlyRole);
+      return readOnlyRows(db, sql, limits, await readOnlyRole.get());
     },
 
     async runMigrations(branch: string, dryRun: boolean) {

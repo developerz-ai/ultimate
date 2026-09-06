@@ -10,7 +10,8 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { createMemoryDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import type { OutboxStore } from './outbox';
-import { createMemoryOutboxStore, createOutboxRelay, enqueueInTx } from './outbox';
+import { createMemoryOutboxStore, enqueueInTx } from './outbox';
+import { createOutboxRelay } from './outbox-relay';
 import { createWorker } from './worker';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {

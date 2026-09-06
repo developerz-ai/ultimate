@@ -1,9 +1,11 @@
 // Single responsibility: SchemaNode -> JSON Schema. Load-bearing: OpenAPI request/response
 // bodies and MCP tool `inputSchema` are both this function's output, so an agent's view of an
-// action and an HTTP client's view can never drift.
+// action and an HTTP client's view can never drift. Where the projection and the PARSER differ,
+// the published document states the narrower of the two — see `date` and `record` below.
 
 import { CURRENCY_CODE_PATTERN, MAX_MONEY_SCALE } from './money-value';
 import { requiredKeys, type SchemaNode, type SchemaRefinement } from './node';
+import { PROTOTYPE_KEYS } from './prototype-keys';
 import { introspect } from './provider';
 
 export type JsonSchemaType =
@@ -37,6 +39,10 @@ export interface JsonSchema {
   readonly properties?: Readonly<Record<string, JsonSchema>>;
   readonly required?: readonly string[];
   readonly additionalProperties?: boolean | JsonSchema;
+  /** What a record's KEYS must satisfy. Draft-06 and later, so it is honest in both dialects. */
+  readonly propertyNames?: JsonSchema;
+  /** Negation. Emitted only inside `propertyNames`, to publish a closed set of refused keys. */
+  readonly not?: JsonSchema;
   readonly items?: JsonSchema;
   readonly anyOf?: readonly JsonSchema[];
   readonly discriminator?: JsonSchemaDiscriminator;
@@ -177,6 +183,15 @@ function convert(node: SchemaNode): JsonSchema {
       return annotate(numberNode(node));
     case 'boolean':
       return annotate({ type: 'boolean' });
+    // Narrower than the parser, deliberately. `dateSchema` also accepts a `number` — epoch
+    // milliseconds — as a coercion convenience for a value that never crossed a wire as JSON, and
+    // publishing `anyOf: [{ type: 'string', format: 'date-time' }, { type: 'number' }]` would tell
+    // every generated client, every agent reading a tool schema and every OpenAPI consumer that an
+    // epoch number is a supported spelling of an instant. It is not one: it carries no zone, it is
+    // ambiguous about seconds versus milliseconds, and `t.date`'s own refusal says ISO-8601. So
+    // the contract publishes the one spelling a caller should send, and the parser stays the more
+    // permissive of the two — the safe direction, where the boundary accepts a value the document
+    // did not promise rather than promising one it refuses.
     case 'date':
       return annotate({ type: 'string', format: 'date-time' });
     case 'enum':
@@ -201,6 +216,13 @@ function convert(node: SchemaNode): JsonSchema {
       return annotate({
         type: 'object',
         additionalProperties: node.valueNode === undefined ? true : convert(node.valueNode),
+        // The key rule, published rather than left implicit: `recordSchema` refuses
+        // `__proto__` / `constructor` / `prototype` by name, and without this the document
+        // advertised them — an OpenAPI body, a generated client and an MCP tool all sending a key
+        // the boundary answers with a 422. `propertyNames` is draft-06 and later, so the one
+        // emission is valid in both dialects this file publishes; the names come from
+        // `prototype-keys.ts`, which the parser reads too, so the two views cannot drift.
+        propertyNames: { not: { enum: PROTOTYPE_KEYS } },
       });
     case 'money':
       return annotate({

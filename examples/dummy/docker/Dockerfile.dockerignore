@@ -12,6 +12,11 @@ node_modules
 !**/.env.example
 # An .npmrc carries a registry auth token; none is tracked here and none should be baked in.
 **/.npmrc
+# Same shape, and this one is the key itself: `.secrets.key` decrypts the committed
+# `secrets.enc.json` beside it, and `findMasterKey` falls back to the file whenever
+# ULTIMATE_SECRETS_KEY is unset — so a baked copy boots the image on it and the platform's key is
+# never exercised.
+**/.secrets.key
 coverage
 **/test-results
 **/playwright-report

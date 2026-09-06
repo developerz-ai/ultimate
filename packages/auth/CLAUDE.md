@@ -261,6 +261,15 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   These three renders stay and are not a second path: `renderCauseValue` also QUOTES, which is what
   makes a forged `iss` legible as a value rather than as prose — the constructor is a floor under
   every field, not a replacement for saying which value is foreign.
+
+  **A `fix:` a SHELL reads takes `renderFixShellArg` instead, `As of 2026-09`.**
+  `oauth-discovery.ts` composed `curl -sS -m 5 ${url}` from `discoveryUrl(input.issuer)` at four
+  sites, and `new URL()` keeps `$`, `(`, `)` and backticks in a path — so an issuer one boot
+  mistake away from hostile wrote the command substitution into the line a reader pastes.
+  `renderFixLiteral` cannot stand in for it: it answers DOUBLE quotes, in which `$(…)` is still
+  live. The two are used side by side in that file — the shell renderer for the four `curl`/prose
+  lines, `renderFixLiteral` for the one that is a `registerOAuthProvider({ id: … })` call, where
+  quoting IS the escape and a bare `'${id}'` broke on an apostrophe.
 - `readCookie` never throws on a malformed value. The `Cookie:` header is attacker-controlled and
   `decodeURIComponent('%')` is a bare `URIError`, which would escape every coded path in this
   package — the raw value goes to the signature or hash check, which is the readable refusal.

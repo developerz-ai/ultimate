@@ -23,6 +23,7 @@ import { discriminatedUnionSchema } from './discriminated-union';
 import { isZonelessDateTime } from './iso-date';
 import { type MoneyValue, moneySchema } from './money-value';
 import type { SchemaNode } from './node';
+import { isPrototypeKey, PROTOTYPE_KEYS } from './prototype-keys';
 import type { InferInput, InferOutput, StandardIssue } from './standard';
 import { isIanaZoneName } from './time-zone-name';
 
@@ -275,15 +276,6 @@ export function unionSchema<S extends readonly [AnySchema, ...AnySchema[]]>(
   });
 }
 
-/**
- * Keys that reach an object's prototype rather than its own properties. A record's keys are the
- * caller's, so `{"__proto__":{…}}` on a `{}` literal set the OUTPUT's prototype: `Object.keys`
- * answered `[]` while `settings[k] ?? fallback` handed a handler the attacker's value for a key
- * that was never sent. Refused by name AND built on a null prototype — the null prototype alone
- * would keep `__proto__` as a silent own key nobody declared.
- */
-const PROTOTYPE_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
-
 export function recordSchema<S extends AnySchema>(
   values: S,
 ): Schema<Readonly<Record<string, InferInput<S>>>, Record<string, InferOutput<S>>> {
@@ -311,11 +303,11 @@ export function recordSchema<S extends AnySchema>(
         // new spelling to learn. It is `Object.entries` order — integer-like keys sort ahead of
         // string ones — so it names an entry that exists rather than a byte offset in the body.
         const at = [...path, index];
-        if (PROTOTYPE_KEYS.has(key)) {
+        if (isPrototypeKey(key)) {
           issues.push({
             // The refused NAMES are a closed set declared right here, so the message may state
             // them: that is the one part of this line the caller did not choose.
-            message: expected(`a record key that is not ${[...PROTOTYPE_KEYS].join(' | ')}`, key),
+            message: expected(`a record key that is not ${PROTOTYPE_KEYS.join(' | ')}`, key),
             path: at,
           });
           continue;

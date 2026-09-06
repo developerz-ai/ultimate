@@ -149,6 +149,16 @@ describe('every panel is a rendering of its --json', () => {
 });
 
 describe('devShellStyle', () => {
+  test('one memo, not one promise per call — every call answers the SAME promise', () => {
+    // The clearing wrapper was re-applied on EVERY call: `stylePromise = stylePromise.catch(…)`
+    // published a new promise each time, each one holding the previous, so `/_x` grew the chain
+    // by one link per request for the life of the dev server. The memo is the point — `@ultimat3/ui`
+    // is a 46-component barrel — and a memo that answers a different promise every call is a memo
+    // whose identity nothing can rely on. `packages/db/src/pglite.ts`'s `connect()` is the shape:
+    // the catch is attached where the promise is CREATED, inside the `??=`.
+    expect(devShellStyle()).toBe(devShellStyle());
+  });
+
   test('is the exact body the served document inlines, so a host can hash it', async () => {
     // The host that mounts /_x configures the CSP those responses are sent under. If it hashed
     // anything other than this text the shell would be refused and every panel would render as

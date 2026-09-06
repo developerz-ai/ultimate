@@ -321,6 +321,21 @@ export const bodyTooLarge = (url: string, readBytes: number, maxBytes: number): 
   });
 
 /**
+ * The chain never settled. Its own code rather than `X_SCRAPE_HTTP_FAILED`, because the two send
+ * their reader to different places: that one means the site answered and said no, this one means
+ * the site kept pointing somewhere else and the leg stopped asking. `hops` is quoted so the cause
+ * is falsifiable against the ring — `page.network()` holds one entry per hop, each with the URL
+ * that was really requested rather than the one the caller wrote.
+ */
+export const redirectLoop = (url: string, lastUrl: string, hops: number): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_REDIRECT_LOOP',
+    cause: `${url} redirected ${String(hops)} times without answering; the last hop pointed at ${lastUrl}`,
+    fix: 'request the URL the chain settles on — page.network() lists every hop this leg took — or repair the session: a chain that never ends is a login redirecting to a page that redirects back to the login',
+    meta: { url, lastUrl, hops },
+  });
+
+/**
  * TERMINAL, and the retry table cannot be talked out of it. A site that locks an account after
  * three wrong attempts turns a retrying framework into the thing that destroys the user's
  * account, so this failure ends the run — no backoff, no recovery hook, no second attempt.

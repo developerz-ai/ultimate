@@ -116,6 +116,91 @@ describe('tryAcquire', () => {
   });
 });
 
+/**
+ * The lock is the session, so "how many sessions did we open" is the whole invariant. Two
+ * concurrent `tryAcquire()` calls both read `#connection === null` — there is an `await` between
+ * that read and the assignment — so both opened a session, both took a grant on the key, and the
+ * SECOND assignment orphaned the first: `release()` closes one connection, and the other holds
+ * `pg_try_advisory_lock` until the process dies. The slot is then unusable by any standby, with
+ * nothing in the log and `/readyz` green on a node that already stopped.
+ */
+describe('tryAcquire is memoised while it is in flight', () => {
+  const twoStreams = () => {
+    const first = new FakeStream();
+    scriptHandshake(first);
+    scriptLockReply(first, 't');
+    const second = new FakeStream();
+    scriptHandshake(second);
+    scriptLockReply(second, 't');
+    const streams = [first, second];
+    let opened = 0;
+    const lock = new PgAdvisoryLock({
+      url: FAKE_URL,
+      key: KEY,
+      stream: () => {
+        const stream = streams[opened];
+        opened += 1;
+        if (stream === undefined) expect.unreachable('opened more connections than scripted');
+        return Promise.resolve(stream);
+      },
+    });
+    return { lock, first, second, opened: () => opened };
+  };
+
+  test('two concurrent calls open ONE session and take ONE grant', async () => {
+    const rig = twoStreams();
+    expect(await Promise.all([rig.lock.tryAcquire(), rig.lock.tryAcquire()])).toEqual([true, true]);
+    expect(rig.opened()).toBe(1);
+    expect(rig.second.writes).toHaveLength(0);
+    expect(rig.second.closed).toBe(false);
+  });
+
+  test('the session the winner opened is the one release() closes', async () => {
+    const rig = twoStreams();
+    scriptLockReply(rig.first, 't'); // the pg_advisory_unlock reply
+    await Promise.all([rig.lock.tryAcquire(), rig.lock.tryAcquire()]);
+    await rig.lock.release();
+    expect(rig.first.closed).toBe(true);
+    // Nothing orphaned: the second stream was never opened, so there is no session left holding
+    // the key behind the one that was closed.
+    expect(rig.second.closed).toBe(false);
+  });
+
+  test('a release racing the acquisition waits for it, never leaves the session behind', async () => {
+    const rig = twoStreams();
+    scriptLockReply(rig.first, 't'); // the pg_advisory_unlock reply
+    const acquiring = rig.lock.tryAcquire();
+    const releasing = rig.lock.release();
+    expect(await acquiring).toBe(true);
+    await releasing;
+    expect(rig.first.closed).toBe(true);
+  });
+
+  test('a failed acquisition does not stick — the next call tries again', async () => {
+    const failing = new FakeStream();
+    scriptHandshake(failing);
+    failing.push(errorResponse({ C: '55000', M: 'could not obtain lock' }), readyForQuery());
+    const second = new FakeStream();
+    scriptHandshake(second);
+    scriptLockReply(second, 't');
+    const streams = [failing, second];
+    let opened = 0;
+    const lock = new PgAdvisoryLock({
+      url: FAKE_URL,
+      key: KEY,
+      stream: () => {
+        const stream = streams[opened];
+        opened += 1;
+        if (stream === undefined) expect.unreachable('opened more connections than scripted');
+        return Promise.resolve(stream);
+      },
+    });
+    await lock.tryAcquire().catch(() => undefined);
+    expect(await lock.tryAcquire()).toBe(true);
+    expect(opened).toBe(2);
+  });
+});
+
 describe('release', () => {
   test('writes pg_advisory_unlock and closes; a second release() writes nothing more', async () => {
     const stream = new FakeStream();

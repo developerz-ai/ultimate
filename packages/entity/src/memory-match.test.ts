@@ -141,6 +141,32 @@ describe('a uuid is a value, and its case is not part of it', () => {
     expect(found.rows.map((row) => row.label)).toEqual(['row-2']);
   });
 
+  // Postgres parses a `uuid` on the way IN and prints it lower-cased on the way out, so the row
+  // it stores never carries the caller's spelling. `keyOf` already made the memory driver's KEY
+  // agree; the stored VALUE is what a caller reads back, and `$parse` is the one place it is
+  // decided.
+  test('the stored row carries the lower-case spelling Postgres would have stored', async () => {
+    const repo = memoryRepo(ledger);
+    await repo.insert({ id: UPPER, seq: '1', rate: '1.0000', label: 'upper' } as Ledger);
+
+    const page = await repo.findMany({});
+
+    expect(page.rows.map((row) => row.id)).toEqual([idAt(1)]);
+  });
+
+  // `countBy` keys a `Map` by the value it read off the row, and the Postgres driver keys it by
+  // what the server printed — so an upper-cased insert produced a map one driver's caller could
+  // not look up: `counts.get(id)` answered `undefined` in memory and the count in production.
+  test('countBy keys the group by the lower-case value, as the server does', async () => {
+    const repo = memoryRepo(ledger);
+    await repo.insert({ id: UPPER, seq: '1', rate: '1.0000', label: 'upper' } as Ledger);
+
+    const counts = await repo.countBy('id');
+
+    expect([...counts.keys()]).toEqual([idAt(1)]);
+    expect(counts.get(idAt(1))).toBe(1);
+  });
+
   // A text key is compared by its bytes in Postgres, so lower-casing one would merge two rows the
   // database keeps apart — the reason `keyOf` narrows the `uuid` kind and nothing else.
   test('a text column keeps its case', async () => {

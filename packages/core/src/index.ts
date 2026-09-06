@@ -185,6 +185,7 @@ export {
   registeredErrorRetry,
   renderCauseValue,
   renderFixLiteral,
+  renderFixShellArg,
   renderThrowable,
   resetErrorCodes,
   resetErrorRetry,

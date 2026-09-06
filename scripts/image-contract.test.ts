@@ -10,14 +10,19 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { SECRETS_KEY_FILE } from '@ultimat3/core';
 import {
   argv0,
+  checkIgnores,
   checkImage,
   DOCKERFILE,
+  ignoreFilesOf,
+  ignoreGapFindingFor,
   imageGapFindingFor,
   imageGaps,
   libcOf,
   parseDockerfile,
+  SECRET_IGNORE_PATTERN,
 } from './image-contract';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
@@ -235,6 +240,101 @@ describe('unit · this repo', () => {
       // Vacuity guard: a parser that found no stages makes the assertion below meaningless.
       expect(stages.length).toBeGreaterThan(1);
       expect(await imageGaps(root)).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
+});
+
+describe('unit · the master key never enters a build context', () => {
+  const withKey = [
+    '**/.env',
+    '**/.env.*',
+    '!**/.env.example',
+    '**/.npmrc',
+    '# the key that decrypts the committed envelope',
+    '**/.secrets.key',
+    '',
+    'node_modules',
+  ].join('\n');
+
+  test('an ignore file that names the key is clean', () => {
+    expect(checkIgnores([{ file: 'docker/Dockerfile.dockerignore', text: withKey }])).toEqual([]);
+  });
+
+  test('the .env and .npmrc block alone is NOT enough, which is what shipped', () => {
+    // Every ignore file in the tree carried both and none carried the key, so `COPY . .` baked
+    // `.secrets.key` beside the committed `secrets.enc.json` it decrypts.
+    const text = withKey.replace('**/.secrets.key\n', '');
+    const gaps = checkIgnores([{ file: 'docker/Dockerfile.dockerignore', text }]);
+
+    expect(gaps).toEqual([{ file: 'docker/Dockerfile.dockerignore' }]);
+    const finding = ignoreGapFindingFor(gaps[0] ?? { file: '' });
+    expect(finding.code).toBe('X_IMAGE_SECRET_UNIGNORED');
+    expect(finding.cause).toContain('.secrets.key');
+    expect(finding.cause).toContain('ULTIMATE_SECRETS_KEY');
+    expect(finding.fix).toContain('**/.secrets.key');
+    expect(finding.at).toBe('docker/Dockerfile.dockerignore');
+  });
+
+  test('a NEGATED pattern re-admits the key and is not an ignore of it', () => {
+    // `!**/.secrets.key` is the exact opposite instruction and reads as the line at a glance.
+    const text = withKey.replace('**/.secrets.key', '!**/.secrets.key');
+    expect(checkIgnores([{ file: 'a.dockerignore', text }])).toEqual([{ file: 'a.dockerignore' }]);
+  });
+
+  test('a re-include AFTER the exclusion is what docker obeys, so it is a gap', () => {
+    // Ordered, because docker is: the last rule matching a path decides. The exclusion is present
+    // and not in force — the one shape a `.some(line === pattern)` check cannot tell apart.
+    const text = `${withKey}\n!**/.secrets.key`;
+    expect(checkIgnores([{ file: 'a.dockerignore', text }])).toEqual([{ file: 'a.dockerignore' }]);
+  });
+
+  test('a re-include BEFORE the exclusion is undone by it, and stays clean', () => {
+    const text = `!**/.secrets.key\n${withKey}`;
+    expect(checkIgnores([{ file: 'a.dockerignore', text }])).toEqual([]);
+  });
+
+  test('a re-include counts however it is spelled — `!**` re-admits the key too', () => {
+    // The negation does not have to name the key to undo the rule, so the match is against where
+    // the key SITS rather than against the pattern's text.
+    for (const negation of ['!**', '!*.key', '!/.secrets.key', '!apps/**']) {
+      const text = `${withKey}\n${negation}`;
+      expect(checkIgnores([{ file: negation, text }])).toEqual([{ file: negation }]);
+    }
+  });
+
+  test('an unrelated negation leaves the exclusion in force — the `.env.example` line every file has', () => {
+    // The noise side of the rule: every ignore file in this tree carries `!**/.env.example`, and a
+    // check that read any `!` as a re-include would report all four.
+    expect(
+      checkIgnores([{ file: 'a.dockerignore', text: `${withKey}\n!**/.env.example` }]),
+    ).toEqual([]);
+  });
+
+  test('a commented-out re-include is a comment, not a rule', () => {
+    expect(checkIgnores([{ file: 'a.dockerignore', text: `${withKey}\n# !**` }])).toEqual([]);
+  });
+
+  test('a root-anchored pattern is not the one form, because it misses a nested key', () => {
+    // A workspace member's own `.secrets.key` is at `apps/web/.secrets.key`, which `.secrets.key`
+    // does not match: an ignore pattern crosses no directory on its own — the same measurement
+    // that made every `.env` line in this repo recursive.
+    const text = withKey.replace('**/.secrets.key', '.secrets.key');
+    expect(checkIgnores([{ file: 'a.dockerignore', text }])).toEqual([{ file: 'a.dockerignore' }]);
+  });
+
+  test('the pattern is read off core, so a rename of the key file reports every ignore file', () => {
+    expect(SECRET_IGNORE_PATTERN).toBe(`**/${SECRETS_KEY_FILE}`);
+  });
+
+  test(
+    'every .dockerignore in this repo names it, and there is at least one to name it',
+    async () => {
+      const files = await ignoreFilesOf(repoRoot());
+      // Vacuity guard: a glob that matched nothing would make the assertion below meaningless,
+      // and this rule's whole subject is files that are easy to add and easy to forget.
+      expect(files.length).toBeGreaterThanOrEqual(4);
+      expect(checkIgnores(files)).toEqual([]);
     },
     REPO_SCAN_TIMEOUT_MS,
   );

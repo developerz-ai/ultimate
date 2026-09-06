@@ -167,20 +167,36 @@ export function missingTable(table: string): DriftDifference {
  */
 export function unknownSchema(migrations: readonly Migration[]): DriftDifference {
   const newest = [...migrations].sort((a, b) => (a.id < b.id ? -1 : 1)).at(-1);
+  const id = newest?.id ?? '';
+  const name = newest?.name ?? 'initial';
+  // Both go inside SHELL DOUBLE QUOTES and both are FILENAME text — `parseMigrationSql` takes the
+  // id off the file and derives the name from it — so whoever can add a file to the migrations
+  // directory picks what a reader pastes, and `$(…)` and a backtick substitute before `git` or `x`
+  // is reached. The same screen `unexpectedColumn` and `changedColumn` already ran, on the one
+  // finding in this file that skipped it. Degraded to prose rather than escaped: a glob is not an
+  // identifier and a migration description is not one either, so neither has a quoted form that
+  // makes a hostile name safe. An EMPTY id is inert by construction and keeps its glob — that is
+  // "no migrations at all", not a name this function refused to spell.
+  const spellable =
+    (id === '' || shellInertIdentifier(id) !== null) && shellInertIdentifier(name) !== null;
   return {
     kind: 'unknown-schema',
     table: '',
     column: null,
     cause:
-      `migration "${newest?.id ?? ''}" records no schema snapshot, so what this database owes ` +
+      `migration "${id}" records no schema snapshot, so what this database owes ` +
       'cannot be established',
     // The same two remedies `X_MIGRATION_SNAPSHOT_MISSING` names, in the same order, because it is
     // the same condition. It used to lead with `x db gen`, which raises that error and whose own
     // fix pointed back here — a cycle a scaffolded app hit on its first `x db migrate`. The
     // pathspec is a glob because this package is tier 1: only `@ultimat3/cli` knows the directory.
-    fix:
-      `git checkout -- "*${newest?.id ?? ''}.snapshot.json"   # or, if it was never written: ` +
-      `delete migration "${newest?.id ?? ''}" and rerun x db gen "${newest?.name ?? 'initial'}"`,
+    fix: spellable
+      ? `git checkout -- "*${id}.snapshot.json"   # or, if it was never written: ` +
+        `delete migration "${id}" and rerun x db gen "${name}"`
+      : 'restore the .snapshot.json committed beside the newest migration, or delete that ' +
+        'migration and rerun x db gen with its description — the migration named in this ' +
+        "difference's cause carries a backtick, a dollar sign, a quote, a backslash or " +
+        'whitespace in its file name, so no command here can spell it',
   };
 }
 

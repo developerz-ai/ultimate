@@ -15,7 +15,9 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse } from '@ultimat3/schema';
 import type { ScrapeClock } from './clock';
 import { cookieHeaderFor } from './cookie-scope';
-import { bodyTooLarge, hostBlocked, httpFailed, scrapeTimeout } from './error-throws';
+import { bodyTooLarge, hostBlocked, httpFailed, redirectLoop, scrapeTimeout } from './error-throws';
+import type { RedirectHop } from './http-redirect';
+import { MAX_REDIRECT_HOPS, redirectHop } from './http-redirect';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict } from './intercept';
 import type { NetworkRing } from './rings';
@@ -164,12 +166,92 @@ export function responseOver(
 }
 
 /**
+ * A hop's body is thrown away — nothing reads a redirect's — and an unread stream holds its socket
+ * open until the collector gets to it. `cancel()` on a body that already errored rejects, and that
+ * rejection is not this request's failure: the hop is over and the next one is what the caller is
+ * waiting for.
+ */
+const discardHopBody = async (response: Response): Promise<void> => {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Discarded bytes cannot fail a request.
+  }
+};
+
+/**
+ * The credentials a CALLER set, which are scoped to the origin they were set for — the platform's
+ * own `follow` deleted these on a cross-origin hop (step 13 of the fetch standard's HTTP-redirect
+ * fetch) and this file took the chain over, so this file owns the strip. `cookie` is here for the
+ * hand-written header only: the jar's own value is computed per hop by `cookieHeaderFor`, which
+ * has always been scoped to the host being dialled.
+ */
+const CROSS_ORIGIN_STRIPPED = new Set(['authorization', 'proxy-authorization', 'cookie']);
+
+const withoutCredentials = (headers: Readonly<Record<string, string>>): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(headers).filter(([name]) => !CROSS_ORIGIN_STRIPPED.has(name.toLowerCase())),
+  );
+
+/** Unparseable is not same-origin: a URL this package cannot read is one it cannot vouch for. */
+const sameOrigin = (left: string, right: string): boolean => {
+  try {
+    return new URL(left).origin === new URL(right).origin;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The final answer, read under the cap. Counted as it arrives rather than `.text()`, which
+ * materialises first and checks never: a 30s stream at 50MB/s is a 1.5GB allocation the worker
+ * does not get back, and it takes every other job on that worker with it. The same read
+ * `robots-fetch.ts` performs.
+ */
+const readResponse = async (
+  url: string,
+  response: Response,
+  maxBytes: number,
+  secrets: ScrapeSecrets | undefined,
+): Promise<ScrapeResponse> => {
+  const capped = await readWithinLimit(response.body, maxBytes);
+  if ('over' in capped) throw bodyTooLarge(url, capped.over, maxBytes);
+  const body = new TextDecoder().decode(capped.bytes);
+  return responseOver(
+    url,
+    response.status,
+    headerRecord(response.headers),
+    () => Promise.resolve(body),
+    secrets,
+  );
+};
+
+/**
  * The real transport. Every guarantee the page makes is re-applied here, in the same order and
  * through the same functions — `interceptVerdict` is the one host rule, `RobotsGate` is the one
  * robots rule, and neither is re-implemented for the second leg.
+ *
+ * REDIRECTS ARE FOLLOWED BY THIS FILE, hop by hop, and not by `fetch`. Until 2026-09 the call
+ * carried the platform default `redirect: 'follow'`, so an allow-listed endpoint answering
+ * `302 -> http://169.254.169.254/…` read the metadata service THROUGH the allow list: the three
+ * gates above had all been asked about the URL the caller wrote, `res.url` and the network ring
+ * both reported that URL, and nothing ever asked robots about where the body came from. The CDP
+ * leg never had the hole — interception fires per hop there — and this file's header claims parity
+ * with it.
  */
 export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
   const call: ScrapeFetch = init.fetch ?? fetch;
+  /**
+   * The three gates, in one place, so the initial URL and hop seven are screened by the same code
+   * in the same order. A second copy for redirects is how the two drift.
+   */
+  const screen = async (target: string): Promise<void> => {
+    if (interceptVerdict(target, 'fetch', init.rules) !== 'allow') {
+      throw hostBlocked(target, init.rules.allowHosts);
+    }
+    await init.robots?.assertAllowed(target);
+    await init.pace?.(init.signal);
+  };
   return {
     async request(url: string, request: HttpRequestInit = {}): Promise<ScrapeResponse> {
       // Screened FIRST — before the activity touch, before the robots read this method performs
@@ -196,52 +278,84 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
         1,
       );
       init.onActivity?.();
-      if (interceptVerdict(url, 'fetch', init.rules) !== 'allow') {
-        throw hostBlocked(url, init.rules.allowHosts);
-      }
-      await init.robots?.assertAllowed(url);
-      await init.pace?.(init.signal);
+      await screen(url);
       const session = await init.session();
-      const cookies = cookieHeaderFor(session.cookies, url);
       // `AbortSignal.timeout` and NOT `clock.sleep`: this is a deadline handed to the platform's
       // own fetch, not a wait this package performs — and under a test clock a slept deadline
       // would fire on the microtask after it was armed, cancelling every request instantly.
       // The offline transport (`http-recorded.ts`) is what a test runs, and it has no deadline.
+      //
+      // ONE deadline for the whole chain, not one per hop: the caller declared a budget for
+      // getting an answer, and ten hops each allowed the full budget is ten times the wait.
       const deadlineSignal = AbortSignal.timeout(timeoutMs);
       const signals = init.signal === undefined ? [deadlineSignal] : [deadlineSignal, init.signal];
       try {
-        const response = await call(url, {
-          method: request.method ?? 'GET',
-          headers: {
-            ...session.headers,
-            ...(session.userAgent === '' ? {} : { 'user-agent': session.userAgent }),
-            ...(cookies === undefined ? {} : { cookie: cookies }),
-            ...request.headers,
-          },
-          ...(request.body === undefined ? {} : { body: request.body }),
-          signal: AbortSignal.any(signals),
-          ...(init.proxy === undefined ? {} : { proxy: init.proxy }),
-        });
-        init.network.push({
-          method: request.method ?? 'GET',
+        let hop: RedirectHop = {
           url,
-          status: response.status,
-          resourceType: 'fetch',
-          at: init.clock.now().getTime(),
-        });
-        // Counted as it arrives rather than `.text()`, which materialises first and checks never:
-        // a 30s stream at 50MB/s is a 1.5GB allocation the worker does not get back, and it takes
-        // every other job on that worker with it. The same read `robots-fetch.ts` performs.
-        const capped = await readWithinLimit(response.body, maxBytes);
-        if ('over' in capped) throw bodyTooLarge(url, capped.over, maxBytes);
-        const body = new TextDecoder().decode(capped.bytes);
-        return responseOver(
-          url,
-          response.status,
-          headerRecord(response.headers),
-          () => Promise.resolve(body),
-          init.secrets,
-        );
+          method: request.method ?? 'GET',
+          body: request.body,
+        };
+        // Latched off at the first cross-origin hop and never back on: the fetch standard DELETES
+        // the header from the request rather than re-deciding per hop, so `A -> B -> A` does not
+        // hand A's bearer back on the way home.
+        let credentialsInScope = true;
+        for (let followed = 0; ; followed += 1) {
+          // Per hop, because the jar is every domain the browser touched: a cookie computed for
+          // the first host and re-sent to the second is the leak `cookie-scope.ts` exists to
+          // prevent, arriving through the one door that never asked it twice.
+          const cookies = cookieHeaderFor(session.cookies, hop.url);
+          // Both header sources re-scoped the way the jar above already is, in the SAME precedence
+          // they had before: an `authorization` minted for the first host was the one credential
+          // that still rode along to wherever a `302` pointed.
+          const carried = credentialsInScope
+            ? session.headers
+            : withoutCredentials(session.headers);
+          const declared = credentialsInScope
+            ? request.headers
+            : withoutCredentials(request.headers ?? {});
+          const response = await call(hop.url, {
+            method: hop.method,
+            headers: {
+              ...carried,
+              ...(session.userAgent === '' ? {} : { 'user-agent': session.userAgent }),
+              ...(cookies === undefined ? {} : { cookie: cookies }),
+              ...declared,
+            },
+            ...(hop.body === undefined ? {} : { body: hop.body }),
+            signal: AbortSignal.any(signals),
+            // The whole point: the platform's own `follow` is what made the four lines above
+            // decorative, because it dials the target itself and hands back one Response.
+            redirect: 'manual',
+            ...(init.proxy === undefined ? {} : { proxy: init.proxy }),
+          });
+          // The URL that was REQUESTED, hop by hop. A chain reported under the caller's URL sends
+          // its reader hunting for a request the site never answered.
+          init.network.push({
+            method: hop.method,
+            url: hop.url,
+            status: response.status,
+            resourceType: 'fetch',
+            at: init.clock.now().getTime(),
+          });
+          const next = redirectHop(
+            response.status,
+            response.headers.get('location'),
+            hop.url,
+            hop.method,
+            hop.body,
+          );
+          if (next === undefined)
+            return await readResponse(hop.url, response, maxBytes, init.secrets);
+          // Discarded BEFORE the refusal, not after it: a throw over an unread stream holds that
+          // hop's socket until the collector reaches it, and the refusal path is exactly the one a
+          // hostile chain drives ten times per request.
+          await discardHopBody(response);
+          if (followed >= MAX_REDIRECT_HOPS) throw redirectLoop(url, next.url, followed + 1);
+          init.onActivity?.();
+          await screen(next.url);
+          if (!sameOrigin(hop.url, next.url)) credentialsInScope = false;
+          hop = next;
+        }
       } catch (thrown) {
         // A deadline that fired is this package's own timeout, with its own code and fix — never
         // the platform's bare `TimeoutError` reaching a job's retry classifier unclassified.

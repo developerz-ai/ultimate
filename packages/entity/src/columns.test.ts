@@ -173,6 +173,27 @@ describe('money', () => {
     ).toThrow(/past ±2\^53/);
   });
 
+  test('narrowRow lower-cases a uuid Postgres would accept, and leaves a malformed one alone', () => {
+    // The narrowing exists to make the in-memory row the one Postgres holds, and Postgres holds
+    // NOTHING for a malformed uuid — it refuses the insert. So a value that is not a uuid is left
+    // exactly as the caller spelled it: the memory driver stores what `$assert` was shown, and a
+    // lower-cased malformation is a third spelling neither driver has.
+    interface Row {
+      readonly id: string;
+      readonly ref: string;
+    }
+    const columns = { id: uuid(), ref: text() };
+    const narrowed = narrowRow<Row>(columns, {
+      id: '018F1B3C-1C2A-7C3D-8E4F-5A6B7C8D9E0F',
+      ref: 'KEEP-ME',
+    });
+    // `text()` is never narrowed: lower-casing it would merge two rows Postgres keeps apart.
+    expect(narrowed).toEqual({ id: '018f1b3c-1c2a-7c3d-8e4f-5a6b7c8d9e0f', ref: 'KEEP-ME' });
+
+    const malformed: RowWrite<Row> = { id: 'NOT-A-UUID', ref: 'x' };
+    expect(Object.is(narrowRow<Row>(columns, malformed), malformed)).toBe(true);
+  });
+
   test('is minor units plus an ISO-4217 code — never one column, never a float', () => {
     expect(() => price.$parse({ minor: 1n, currency: 'eur' })).toThrow(/iso-4217/);
     expect(() => price.$parse({ minor: 1n, currency: 'EURO' })).toThrow(/iso-4217/);

@@ -4,6 +4,7 @@
 // duplicate meta, an over-length title, and a canonical that lies.
 
 import { finiteCount } from '@ultimat3/core';
+import { charCount } from '@ultimat3/schema';
 import {
   canonicalMismatch,
   duplicateMeta,
@@ -91,10 +92,16 @@ export function validateMeta(
         );
       }
       const rendered = applyTitleTemplate(meta.title, meta.titleTemplate);
-      if (rendered.length > titleMax) {
+      // `charCount`, never `.length`: the framework counts a length in CODE POINTS — the unit
+      // JSON Schema's `maxLength` means, the unit every "N characters" message here says, and the
+      // unit Postgres' `char_length` counts. `'👍'.length` is 2, so a title one emoji short of the
+      // ceiling was refused as over it and the cause quoted a number nobody can reproduce by
+      // counting. One statement of the unit, in `@ultimat3/schema`, read here.
+      const renderedLength = charCount(rendered);
+      if (renderedLength > titleMax) {
         issues.push(
           issueOf(
-            metaTooLong(route.file, 'title', rendered.length, titleMax),
+            metaTooLong(route.file, 'title', renderedLength, titleMax),
             route.path,
             route.file,
           ),
@@ -108,10 +115,11 @@ export function validateMeta(
         issueOf(metaMissing(route.file, route.path, 'description'), route.path, route.file),
       );
     } else {
-      if (meta.description.length > descriptionMax) {
+      const descriptionLength = charCount(meta.description);
+      if (descriptionLength > descriptionMax) {
         issues.push(
           issueOf(
-            metaTooLong(route.file, 'description', meta.description.length, descriptionMax),
+            metaTooLong(route.file, 'description', descriptionLength, descriptionMax),
             route.path,
             route.file,
           ),

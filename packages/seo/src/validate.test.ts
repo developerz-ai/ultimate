@@ -140,6 +140,51 @@ describe('validateMeta', () => {
     expect(issue?.fix).toBe('shorten meta.description in site/long/page.tsx to <= 160 characters');
   });
 
+  /**
+   * The unit a length is counted in is `@ultimat3/schema`'s `charCount` — code points, which is
+   * what JSON Schema's `minLength`/`maxLength` mean, what every "N characters" message in this
+   * framework says, and what Postgres' `char_length` counts. `.length` is UTF-16 code units, so an
+   * astral emoji counted as TWO: a 60-character title with one 👍 in it was refused as 61, and the
+   * message quoted a number nobody can reproduce by counting.
+   */
+  describe('a title is measured in characters, never in UTF-16 code units', () => {
+    const titled = (title: string): ReturnType<typeof validateMeta> =>
+      validateMeta([
+        route({
+          path: '/emoji',
+          file: 'site/emoji/page.tsx',
+          meta: { title, description: 'Long enough to be a real description for this route.' },
+        }),
+      ]);
+
+    test('an astral character at the ceiling is one character, not two', () => {
+      // 59 ASCII + one astral emoji = 60 characters, exactly the default bound.
+      expect(
+        titled(`${'A'.repeat(59)}👍`).issues.filter(
+          (entry) => entry.code === SEO_ERROR_CODES.metaTooLong,
+        ),
+      ).toEqual([]);
+    });
+
+    test('and one character past it is still refused, with the count a human would get', () => {
+      const issue = titled(`${'A'.repeat(60)}👍`).issues.find(
+        (entry) => entry.code === SEO_ERROR_CODES.metaTooLong,
+      );
+      expect(issue?.cause).toContain('61-character title');
+    });
+
+    test('a description is counted the same way', () => {
+      const report = validateMeta([
+        route({
+          path: '/emoji',
+          file: 'site/emoji/page.tsx',
+          meta: { title: 'Emoji', description: `${'D'.repeat(159)}👍` },
+        }),
+      ]);
+      expect(report.issues.filter((e) => e.code === SEO_ERROR_CODES.metaTooLong)).toEqual([]);
+    });
+  });
+
   test('descriptionMaxLength overrides the default bound in both directions', () => {
     const meta = { title: 'Long', description: 'D'.repeat(161) };
     const routes = [route({ path: '/long', file: 'site/long/page.tsx', meta })];

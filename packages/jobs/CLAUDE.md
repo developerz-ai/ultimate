@@ -267,6 +267,16 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   standstill, so start -> stop -> start stacked a second registration retaining a stopped worker's
   driver, and the next process-wide drain ran all of them. `start()` refuses while draining for the
   same reason: a claim loop back on a driver the drain is about to close.
+- **The outbox relay drains in the same two phases, `As of 2026-09`.** It registered NO hook: on
+  SIGTERM it went on claiming and publishing through every phase of the drain, and the only thing
+  that ever stopped it was `RunningRoles.stop()` in `x dev`'s release path — a caller a signal can
+  skip. Two consequences, both silent: a lease stamped on rows nothing on this pod will run (stranded
+  for the visibility window), and a row past `driver.enqueue` but short of `markPublished` published
+  a second time on the next boot, which the idempotency key collapses only while the first job is
+  still live. `accept` clears the interval and returns; `close` awaits the pass in flight under
+  `settleAllBy(…, reason.deadlineAt)`; both unregisters come back in the teardown's `finally`. The
+  poll timer is `unref`ed for `renewal-timer.ts`'s reason — a 200ms interval refed holds the event
+  loop open past every phase and makes SIGKILL the exit.
 - **A claimed job is counted with core's `beginWork()`, so the DRAIN does the waiting**
   (`As of 2026-08-23`). The wait for in-flight jobs belongs to the phase between `accept` and
   `inflight`, which exists for exactly this and is where `@ultimat3/http` already puts a request —
@@ -907,7 +917,8 @@ picture from the other side.
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements. Skips a non-job in silence — a module namespace is full of helpers — EXCEPT an `@ultimat3/action` projection (`kind: 'action-job'`), which is `X_ACTION_JOB_UNBRIDGED` |
 | `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |
-| `outbox.ts` | staging in a `Tx`, the relay, the ambient `JobsFacade` slot |
+| `outbox.ts` | staging in a `Tx`, the store seam, the ambient `JobsFacade` slot |
+| `outbox-relay.ts` | the relay: the poll timer, one pass, and its TWO shutdown hooks. Split off at `outbox.ts`'s 500-line ceiling |
 | `outbox-pg.ts` | `createPgOutboxStore` — `stage()` on the caller's OWN connection, claim on the pool |
 | `outbox-lease.ts` | the claim lease's one definition and its one normalisation, for both stores |
 | `leases.ts` | `LeaseStore` — fleet-wide slots, the memory one, `jobLeaseKey` |

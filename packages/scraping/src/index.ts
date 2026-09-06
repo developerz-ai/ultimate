@@ -68,6 +68,7 @@ export {
   profileLocked,
   promptUnanswered,
   recoverRefused,
+  redirectLoop,
   remoteRequired,
   robotsDisallowed,
   scrapeNotImplemented,
@@ -112,6 +113,8 @@ export type { HttpRequestInit, HttpTransportInit, ScrapeHttp, ScrapeResponse } f
 export { DEFAULT_HTTP_MAX_BYTES, httpOverFetch, responseOver } from './http';
 export type { HttpRecordingLookup, RecordedHttpInit } from './http-recorded';
 export { httpRecordingFilename, httpRecordingsOf, recordedHttp } from './http-recorded';
+export type { RedirectHop } from './http-redirect';
+export { MAX_REDIRECT_HOPS, redirectHop } from './http-redirect';
 export type { InterceptRules, InterceptVerdict } from './intercept';
 export { interceptVerdict, refusalEntry } from './intercept';
 export type { OfflineSessionInit } from './offline-session';
