@@ -13,6 +13,7 @@ import { existsSync } from 'node:fs';
 import { UltimateError } from '@ultimat3/core';
 import type { CdpLauncherLike, ScrapeDriver } from '@ultimat3/scraping';
 import { localBrowser, remoteBrowser } from '@ultimat3/scraping';
+import { CHROME_CANDIDATES } from './cdp-launch';
 
 /**
  * The one library this works against. Playwright is not an alternative and is not a flag:
@@ -52,6 +53,33 @@ export class ShotBrowserMissingError extends UltimateError {
       // contract. `browser-launcher.test.ts` pins it against the constant instead.
       fix: 'bun add -d puppeteer-core',
       meta: { root: input.root, package: BROWSER_PACKAGE },
+    });
+  }
+}
+
+/**
+ * The OTHER half of "no browser": the library is installed and there is no Chrome for it to start.
+ *
+ * The same code as the class above because it is the same question to a reader — `x shot` has no
+ * browser — and a code is a stable public name, not a taxonomy. The cause and the fix are what
+ * differ, and they are the half that is acted on: `bun add -d puppeteer-core` cannot install
+ * Chrome, and `export CHROME_PATH=…` cannot install a client that speaks CDP.
+ *
+ * Raised BEFORE the dev server, which is the whole point of it: the launch that used to report this
+ * happens inside `driver.open()`, one embedded Postgres past the point where the answer was already
+ * decidable from the environment and the filesystem.
+ */
+export class ShotChromeMissingError extends UltimateError {
+  constructor() {
+    super({
+      code: 'X_SHOT_BROWSER_MISSING',
+      cause: `x shot launches a browser here and none was named or found — no ${BROWSER_PATH_VARS.join(' or ')} is set, and none of ${CHROME_CANDIDATES.join(', ')} is on disk`,
+      // One literal, for `fix-scan.ts`'s reason — the same rule the class above states. It names an
+      // export rather than an install because a path is the one repair that works whatever the
+      // browser is and wherever the distribution put it; `--cdp-url` is the answer for a box that
+      // will never have one, and it is a flag `x shot` already ships.
+      fix: 'export CHROME_PATH=/usr/bin/google-chrome   # any Chrome or Chromium binary; a box that will never have one attaches instead: x shot / --cdp-url wss://cdp.example.com/session/abc',
+      meta: { tried: [...CHROME_CANDIDATES], vars: [...BROWSER_PATH_VARS] },
     });
   }
 }
@@ -99,21 +127,42 @@ export interface AppBrowserOptions {
   readonly load?: (path: string) => Promise<unknown>;
 }
 
-/** The path a run will launch, or `undefined` for "let the library find its own". */
+/** True when a named executable is really there — a bad `--browser` is refused before a boot. */
+export const browserBinaryExists = (path: string): boolean => existsSync(path);
+
+/**
+ * The path a run will launch, or `undefined` when this machine has no browser to launch.
+ *
+ * NOT "let the library find its own": `puppeteer-core` ships no browser and has no default, so a
+ * launch with no `executablePath` throws ``An `executablePath` or `channel` must be specified``
+ * from inside somebody else's library, one dev-server boot after the point where the answer was
+ * knowable. So the last step is a PROBE — the same four paths `cdp-launch.ts` already tries for the
+ * e2e driver, imported rather than restated, because two lists of Chrome locations that must agree
+ * is the drift axiom 2 refuses.
+ *
+ * A value NAMED in the flag or the environment is answered without touching the filesystem, even
+ * when nothing is there: an operator who typed a path has a belief about which binary runs, and
+ * silently substituting a probed one would photograph a page in a browser they did not choose.
+ * `shotBrowserChoice` reports that path as absent instead.
+ *
+ * `exists` is the injectable seam, so the probe is asserted the same way on a machine with Chrome
+ * and on one without.
+ */
 export const executablePathFrom = (
   flag: string | undefined,
   env: Readonly<Record<string, string | undefined>>,
+  exists: (path: string) => boolean = browserBinaryExists,
 ): string | undefined => {
   if (flag !== undefined && flag.length > 0) return flag;
   for (const name of BROWSER_PATH_VARS) {
     const value = env[name];
     if (value !== undefined && value.length > 0) return value;
   }
+  for (const candidate of CHROME_CANDIDATES) {
+    if (exists(candidate)) return candidate;
+  }
   return undefined;
 };
-
-/** True when a named executable is really there — a bad `--browser` is refused before a boot. */
-export const browserBinaryExists = (path: string): boolean => existsSync(path);
 
 /** The endpoint a run will attach to, or `undefined` for "launch one here". */
 export const cdpUrlFrom = (

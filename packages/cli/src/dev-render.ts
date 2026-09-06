@@ -3,9 +3,16 @@
 // document, it never decides what a mode means or what headers it earns.
 //
 // The document is head + the route's own component, rendered by `@ultimat3/render`'s server JSX
-// writer, with the surface's compiled CSS inlined. Inlined rather than linked because a `site/`
-// page is a 0kb-JS artifact a CDN serves as one file: a stylesheet link would add a round trip to
-// the render path the mode exists to make cheap, and a static export would need a second file.
+// writer, with the surface's compiled CSS LINKED — one content-hashed file per surface
+// (`style-bundle.ts`), served `immutable`.
+//
+// It was inlined until 2026-09-06, on the argument that a `site/` page is a 0kb-JS artifact a CDN
+// serves as one file and a link would add a round trip. The round trip is real and it is paid
+// once: measured against ai-maxxing, every `app/` document carried the SAME 156,738-byte `<style>`
+// block — 92% of the dashboard document — inside a response the pipeline sends
+// `Cache-Control: private, no-store`, so the trip that argument saved was re-paid in full on every
+// navigation, with a re-parse on top. The static export writes the file (`writeStyles`), so the
+// "second file" cost is one `Bun.write`.
 
 import type { Ctx } from '@ultimat3/core';
 import type { RouteMeta as HttpRouteMeta, Route, RouteParams } from '@ultimat3/http';
@@ -32,8 +39,8 @@ import {
   renderSsr,
   staticHeaders,
   streamResult,
-  stylesFor,
 } from '@ultimat3/render/server';
+import { styleBundle } from './style-bundle';
 
 /**
  * Specifier → built chunk URL, bound to the route file the specifier is written relative to.
@@ -92,10 +99,24 @@ const headFor = async (
     ),
   ) + (options.pwaHead ?? '');
 
-/** `<style>` for the surface's own stylesheets, or nothing at all when the surface imports none. */
+/**
+ * `<link rel="stylesheet">` for the surface's own stylesheets, or nothing at all when the surface
+ * imports none.
+ *
+ * In `<head>`, which is what keeps this a swap and not a regression: a `<link rel="stylesheet">`
+ * there is render-blocking in every browser, exactly as the inline block was, so there is no
+ * window in which the document paints unstyled. Moving it to the body, or deferring it, is what
+ * would introduce a flash — never do that here.
+ *
+ * Read through `styleBundle()` rather than passed in through `DocumentOptions`: the registry it
+ * derives from is process-global (importing the app IS what fills it), so a caller that forgot to
+ * thread a resolver would serve a document with no CSS at all — and `appRoutes` is on this
+ * package's public surface, called as `appRoutes({ buildId })` by both tracked apps' contract
+ * tests. One reader, and it is the same one `styleRoutes` serves from.
+ */
 const styleTag = (entry: RouteEntry): string => {
-  const css = stylesFor(entry.surface);
-  return css.length === 0 ? '' : `<style>${css}</style>`;
+  const href = styleBundle().hrefFor(entry.surface);
+  return href === undefined ? '' : `<link rel="stylesheet" href="${href}">`;
 };
 
 /**

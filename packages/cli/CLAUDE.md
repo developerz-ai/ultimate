@@ -156,6 +156,7 @@ them is answered by this table rather than by a second convention:
 | `x tasks` | `cmd-tasks.ts`, `tasks-facts.ts` | `registeredTasks()` + `@ultimat3/time`'s cron resolution |
 | `x policy` | `cmd-policy.ts`, `policy-facts.ts` | `@ultimat3/policy`'s `policyMatrix()` over the app's own `Policy` objects |
 | `x i18n` | `cmd-i18n.ts`, `i18n-audit.ts`, `i18n-registration.ts` | `@ultimat3/i18n`'s `extractFromFiles` + `auditCatalogs`, then the live catalog registry |
+| `x i18n check` and the `policy` step, before either registry | `duplicate-packages.ts` | `Bun.resolveSync` of `@ultimat3/i18n` / `@ultimat3/policy` / `@ultimat3/entity` from the app root, every workspace and the CLI's own directory, keyed by REALPATH. Two real directories is `X_PACKAGE_DUPLICATED`: a registry is per module instance, so the app registers into one copy and the CLI reads the other — `x i18n check` said "move `defineCatalogs()`" about a call that was already where it belongs (ai-maxxing, 2026-09-05), and the policy step was green over an undeclared grant. A workspace symlink to one checkout is one copy; two store entries at ONE version are two |
 
 Each pairs a `cmd-*.ts` of CLI wiring with a facts module that takes plain inputs and returns plain
 data, so the projection is testable without a `ParsedArgs` — the `cmd-jobs.ts` / `jobs-report.ts`
@@ -981,7 +982,7 @@ hand-written layout and `readMigrations` skips it — read as a migration it sor
 | `sync-authenticator.ts` | the app's HTTP authenticator, seen as the sync node's |
 | `otlp-export.ts` | the exporters `OTEL_EXPORTER_OTLP_ENDPOINT` switches on, and their drain hooks |
 | `dev-render.ts` | one HTTP route per registered `route`, through render's own mode function |
-| `style-csp.ts` | the `style-src` sha256 of every inline `<style>` the web role serves |
+| `style-csp.ts` | the `style-src` sha256 of every inline `<style>` the web role **still** serves — the app's own surface CSS is a file under `/styles/` (`style-bundle.ts`) admitted by `'self'`, so a production boot extends the directive with nothing |
 | `script-csp.ts` | the `script-src` sha256 of every inline `<script>` it serves — the hydration runtime, from `@ultimat3/render`'s own `HYDRATE_RUNTIME_BODIES` |
 | `dev-assets.ts` | the image pipeline's only HTTP surface: `/icons/*` and `/media/*` |
 | `favicon.ts` | `/favicon.ico`: the app's own file, and the bytes the framework answers with when there is none |
@@ -995,6 +996,8 @@ hand-written layout and `readMigrations` skips it — read as a migration it sor
 | `statement-loop.ts` | one verdict → the finding, the panel fact, the overlay notice and the log line |
 | `dev-policy.ts` | which actors to ask about, and which capability each policy gates |
 | `cmd-dev.ts` | boot order, mounting `/_x`, installing the span exporter, the file watcher |
+| `dev-watch.ts` | which writes under the app root are a source change. Seven directories are never one — `.x`, `node_modules`, `.git`, `.personal`, `.claude`, `dist`, `coverage` — and each is matched as a path SEGMENT: the rule was `filename.includes('.x/') \|\| filename.includes('node_modules')`, so `git status`, an agent's scratch file and a coverage run each ran a full `appManifest()` + `buildIslands()` (measured in ai-maxxing, which keeps two whole copies of the app under `.claude/worktrees/`), while a directory named `my-node_modules-notes/` got no reload at all |
+| `style-bundle.ts` / `style-routes.ts` | a surface's CSS as one content-hashed file under `/styles/`, served `immutable` — `island-bundle.ts` / `island-routes.ts`' shape one asset over. It was an inline `<style>` until 2026-09-06: 156,738 bytes, identical on every page, inside a `private, no-store` document. The URL is the hash alone, no surface in the name: a surface is not a property of the bytes, and an app whose only CSS is its global layer would otherwise write three identical files into its static export and three entries into a precache manifest that has a budget |
 | `mcp-host.ts` | the `DevCapabilities` half of `@ultimat3/mcp`'s `DevHost` — db, tests, logs, verify |
 | `mcp-db-target.ts` | which database the host is pointed at: whether it is a branch, and whether it is production |
 | `mcp-errors.ts` | `errors.explain`: one runnable command per code, typed over `CliErrorCode` |
@@ -1134,8 +1137,20 @@ island's `src` is a string, so no import edge reaches it and the page's graph st
 against bytes. Two islands that both import the same helper each carry a copy; that is the honest
 number for what booting either one costs.
 
-**The chunk URL is content-addressed with render's own `contentHash`** — the function that already
-stamps an ETag and a precache revision. One identity for a byte string, not a third.
+**The chunk URL is SOURCE-addressed, not byte-addressed, `As of 2026-09-06`.** `graphHash` hashes
+the build's inputs — the source map's `sourcesContent`, sorted, plus the entry's app-relative path,
+the framework version and `Bun.version` — with render's own `contentHash`, the function that already
+stamps an ETag and a precache revision. Hashing the OUTPUT is what it did, and `Bun.build` is not
+byte-deterministic under `minify`: measured on 1.4.0, one entry point, no source file touched, a
+131,589-byte island alternated between two outputs of identical length differing only in minified
+identifier names, roughly one build in ten. The URL then flapped — ten names in ten minutes in
+ai-maxxing — so the service worker precached a chunk that 404ed and the `immutable` cache never hit.
+The cost of the alternative was measured and refused: `minify: { identifiers: false }` IS
+deterministic and is +47% raw, +20% gzipped, on every island of every app. `sourcemap: 'external'`
+pays for the input list (277ms against 276ms) and its `//# debugId=` line is stripped, so the
+shipped bytes are unchanged. Two processes can therefore serve two byte strings at one URL — the
+same program under different local names — and a per-file cache keeps ONE process serving one.
+Delete `graphHash` the day `Bun.build` is deterministic.
 
 **`x dev`, the container and the static export all mount the same table.** `serve.ts` builds the
 islands at boot for the same reason it mounts `apiRoutes()`: a seam that works in dev and not in the

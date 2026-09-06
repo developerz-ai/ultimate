@@ -13,9 +13,9 @@ import {
   islandModuleId,
   SURFACES,
 } from '@ultimat3/render';
-import { stylesFor } from '@ultimat3/render/server';
 import type { IslandShotTarget, IslandState } from '@ultimat3/testing';
 import { harnessScript } from './island-harness-script';
+import { styleBundle } from './style-bundle';
 
 /** Where the harness lives in `x dev`'s own namespace, so no app route can shadow it. */
 export const ISLAND_HARNESS_PATH = '/_x/island';
@@ -43,8 +43,13 @@ export function surfaceOf(island: string): Surface | null {
  * off because a picture taken mid-transition is a picture of a moment no user experiences; the
  * caret is invisible because a focused input blinks and two otherwise identical runs then differ.
  * Colours are semantic tokens, never literals — the app's own global layer defines them.
+ *
+ * Exported so `x dev` can hash it into `style-src`: it is emitted INLINE, so a policy that does
+ * not name it blocks the frame under an enforced CSP. It was never hashed at all until
+ * 2026-09-06 — invisible because `x dev` sends the policy report-only, which is exactly how the
+ * hydration runtime shipped blocked once already.
  */
-const FRAME_STYLE = `
+export const FRAME_STYLE = `
 *,*::before,*::after{animation:none !important;transition:none !important;
 scroll-behavior:auto !important;caret-color:transparent !important}
 html{background:rgb(var(--color-bg) / 1)}
@@ -74,13 +79,15 @@ export function harnessPage(input: HarnessPageInput): string {
     entry: input.entry,
     props: input.state.props,
   };
-  const css = stylesFor(surfaceOf(input.target.island));
+  // The same content-hashed file every real document links, so the picture is taken against the
+  // bytes a visitor gets — and the harness stops carrying 157 kB of inline CSS of its own.
+  const href = styleBundle().hrefFor(surfaceOf(input.target.island));
   return [
     '<!doctype html>',
     `<html lang="en" data-theme="${input.target.theme}">`,
     '<head><meta charset="utf-8">',
     `<title>${input.target.name} · ${input.target.state} · ${input.target.theme}</title>`,
-    css.length === 0 ? '' : `<style>${css}</style>`,
+    href === undefined ? '' : `<link rel="stylesheet" href="${href}">`,
     `<style>${FRAME_STYLE}</style>`,
     // Before the body and before every module script, which is the only ordering in which the
     // seal can catch a component's first request.

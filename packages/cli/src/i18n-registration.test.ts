@@ -13,6 +13,7 @@ import {
   resetLocaleConfig,
 } from '@ultimat3/i18n';
 import { VERIFY_STEPS } from './cmd-verify';
+import { CLI_ORIGIN, type DuplicateInstall } from './duplicate-packages';
 import {
   checkRegistration,
   isLoudMiss,
@@ -44,6 +45,23 @@ const unusedRunner = () => expect.unreachable('applies must not spawn a process'
 /** An app that loads and registers nothing — the shape castlefight.online shipped. */
 const loadsNothing = async () => ({ findings: [], defaultLocale: 'en' });
 
+/** No second copy anywhere — what every install but one has answered. */
+const oneCopy = async () => [];
+
+/** ai-maxxing, 2026-09-05: the root and the CLI on 19.1.0, `packages/i18n` still on 19.0.0. */
+const twoCopies: DuplicateInstall = {
+  pkg: '@ultimat3/i18n',
+  copies: [
+    { dir: '/app/node_modules/@ultimat3/i18n', version: '19.1.0', from: ['.', CLI_ORIGIN] },
+    {
+      dir: '/app/packages/i18n/node_modules/@ultimat3/i18n',
+      version: '19.0.0',
+      from: ['packages/i18n'],
+    },
+  ],
+};
+const duplicated = async () => [twoCopies];
+
 afterEach(() => {
   resetCatalogs();
   resetLocaleConfig();
@@ -57,6 +75,7 @@ describe('unit · checkRegistration', () => {
       extraction,
       ignoreUnused: [],
       load: loadsNothing,
+      duplicates: oneCopy,
     });
 
     expect(report.ok).toBe(false);
@@ -71,6 +90,60 @@ describe('unit · checkRegistration', () => {
     expect(report.unregistered).toBe(4);
     expect(report.locales).toBe(2);
     expect(report.unregisteredLocales).toEqual(['en', 'es']);
+  });
+
+  test('the same gap over TWO installed copies is the install, not the defineCatalogs() call', async () => {
+    const report = await checkRegistration({
+      root: '/app',
+      catalogs: shipped,
+      extraction,
+      ignoreUnused: [],
+      load: loadsNothing,
+      duplicates: duplicated,
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.findings.map((finding) => finding.code)).toEqual([
+      'X_PACKAGE_DUPLICATED',
+      'X_CATALOG_UNREGISTERED',
+      'X_CATALOG_UNREGISTERED',
+    ]);
+    const [install, gap] = report.findings;
+    expect(install?.at).toBe('package.json');
+    expect(install?.cause).toContain(
+      'node_modules/@ultimat3/i18n@19.1.0 (resolved from ., the x CLI) and packages/i18n/node_modules/@ultimat3/i18n@19.0.0 (resolved from packages/i18n)',
+    );
+    // The registry's own fix — move `defineCatalogs()` — names an edit to a file that is already
+    // right. The gap says what the install did to it, and carries the install's fix instead.
+    expect(gap?.cause).toContain('2 copies of @ultimat3/i18n are installed');
+    expect(gap?.cause).toContain("2 of packages/i18n/catalogs/en.json's 2 key(s)");
+    expect(gap?.fix).toBe(
+      'set "@ultimat3/i18n": "19.1.0" in packages/i18n/package.json, then: bun install && x i18n check --json',
+    );
+    expect(gap?.fix).not.toContain('defineCatalogs');
+    expect(gap?.at).toBe('packages/i18n/catalogs/en.json');
+    // The counts are the gap's own: a duplicate is one more finding, not one more locale.
+    expect(report.unregistered).toBe(4);
+    expect(report.locales).toBe(2);
+  });
+
+  test('two copies with every catalog registered is still a finding: another workspace reads the other', async () => {
+    const report = await checkRegistration({
+      root: '/app',
+      catalogs: shipped,
+      extraction,
+      ignoreUnused: [],
+      load: async () => {
+        for (const [locale, catalog] of Object.entries(shipped)) registerCatalog(locale, catalog);
+        return { findings: [], defaultLocale: 'en' };
+      },
+      duplicates: duplicated,
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.findings.map((finding) => finding.code)).toEqual(['X_PACKAGE_DUPLICATED']);
+    expect(report.unregistered).toBe(0);
+    expect(report.registered).toEqual(['en', 'es']);
   });
 
   test('the same app, correctly wired, is not a finding', async () => {

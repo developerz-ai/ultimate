@@ -30,7 +30,7 @@ Every projection is a method on the query itself. A query has no `.def`.
 | `liveFeed.page({ orgId }, { first: 20, after })` | one bounded page plus the signed cursor that continues it. There is no `offset` |
 | `liveFeed.live({ orgId })` | the `LiveQuery` `@ultimat3/realtime` subscribes to, carrying the same policy object |
 | `liveFeed.tool()` | the MCP read tool, named `liveFeed`. `tool().policy === liveFeed.policy`, and it reads fresh |
-| `liveFeed.client({ baseUrl })` | `GET /_x/query/live-feed?orgId=…`, typed both ways |
+| `liveFeed.client({ baseUrl })` | `GET /_x/query/live-feed?orgId=…`, typed both ways. `.page(input, { first, after })` on the same method reads one page over the wire |
 | `liveFeed.describe()` | the manifest row |
 
 The route on the other end of that client is `toQueryRoute(liveFeed)`, and — `As of 2026-08` —
@@ -132,6 +132,8 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `mcp-tool.ts` | the MCP read descriptor |
 | `client.ts` | the typed read client (browser-safe) |
 | `http.ts` | the route projection — `GET /_x/query/<kebab>`, the URL the client derives |
+| `page-controls.ts` | `_first` / `_after` — the two search-string keys that page the route, split out and judged at the wire; `MAX_PAGE_SIZE` |
+| `openapi.ts` | the read half of `openapi.json` — one `GET` path item per registered query |
 | `naming.ts` | export name → wire path. The MCP tool name is the export name verbatim |
 | `live.ts` | the `LiveQuery` descriptor `@ultimat3/realtime` subscribes to |
 | `matcher.ts` | change event → minimal patch (`add` / `update` / `remove` / `refill`) |
@@ -266,6 +268,35 @@ HMAC-signed, and bound to one query + arguments — a cursor from another query 
 
 `query.page(input, { first, after })` is the only way to ask for one — `paginate` backs it and is
 not exported, because a page is the read's own answer rather than an imported helper.
+
+### The same page over HTTP — `?_first=` and `?_after=`
+
+The route reads two controls off the search string BEFORE the schema sees it, and with either
+present answers the `Page` envelope `.page()` answers a server caller with — `{ rows, endCursor,
+hasNextPage }`, the same names, so a cursor read off the wire and one read off a direct call are
+one string in one field. Without a control the answer is the bare array it has always been, so a
+client written before the controls existed keeps reading rows. `As of 2026-09`; until then the
+route had no envelope, and a query over a paged external source carried its page marker on a row
+(an `olderCursor` column on the oldest message), which is a cursor on the wrong side of the shape.
+
+```
+GET /_x/query/live-feed?orgId=…&_first=20             → { rows, endCursor, hasNextPage }
+GET /_x/query/live-feed?orgId=…&_first=20&_after=<c>  → the next page
+GET /_x/query/live-feed?orgId=…                       → [ …rows ]   (unchanged)
+```
+
+| Rule | Why it is that way |
+|---|---|
+| the keys are `_first` and `_after`, not `first` and `after` | the search string is ALSO the input, and an input member named `first` was legal on every release before this one — a listing's page-size field is the natural name for it. Reserving the bare names would have refused every such declaration at `query()`, in a minor. The underscore is the framework's own mark, as `/_x/` is |
+| a declaration naming either is refused at `query()` | `X_QUERY_INPUT_UNENCODABLE`, in the declaring file: the route strips the key before the schema runs, so the field could never be filled |
+| `_first` outside 1–10,000, not a whole number, or `_after` without `_first` | **400** `X_INPUT_INVALID` with the read's own fix line — judged at the wire (`page-controls.ts`), because `paginate` asserts the same bound as `X_INVARIANT`, which is a 500 blaming the server for a number the caller typed |
+| a cursor that is not this read's | **400** `X_CURSOR_INVALID` — `decodeCursor` is the one judge of a cursor; the route checks only that `_after` is one non-empty string |
+| a control sent twice | refused, never resolved to the last one as a declared scalar is: two page sizes is two pages asked for in one request |
+| the typed client | `feed.client({ baseUrl }).page(input, { first, after })` and `queries.feed.page(…)` append the two controls after the sorted input, so a paged URL is the plain URL plus a suffix |
+| `openapi.json` | every read is a `GET` path item with its input as `in: query` parameters, the two controls after them, and a `200` that is `oneOf` the bare rows and the envelope — `queryOpenApiPaths`, merged into `@ultimat3/action`'s document by the CLI |
+
+The MCP read tool does not page: `read()` answers the source's rows, bounded by the read's own
+`limit`, and an agent that wants more asks a narrower question.
 
 The codec lives in `@ultimat3/core`, not here: `encodeCursor`, `decodeCursor`,
 `configureCursorSigning` (set the signing secret once at boot; rotating it invalidates every

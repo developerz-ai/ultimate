@@ -36,13 +36,64 @@ export const cdpAttachFailed = (cdpUrl: string, thrown: unknown): ScrapeError =>
     meta: { cdpUrl },
   });
 
+/**
+ * What separates "there is no browser" from "the browser stopped answering". Both arrive at the
+ * same `catch` around `launch()` (`driver-cdp.ts`), and only one of them is worth a second attempt.
+ *
+ * Matched on the LAUNCHER'S OWN WORDS rather than on a flag this function could be passed, because
+ * the launch site hands it one `unknown` and nothing else. Every entry below is a message a browser
+ * library or the kernel emits for a browser that is not there, and none of them is producible by a
+ * page that merely went away mid-run — which is what keeps the split honest at `cdp-target.ts`'s
+ * call site, where the browser demonstrably existed.
+ *
+ * Lowercase, and compared against a lowercased render, so a library re-capitalising its own message
+ * does not silently turn a permanent misconfiguration back into five retries.
+ */
+const BROWSER_ABSENT_SIGNS: readonly string[] = [
+  // puppeteer-core ships no browser and has no default: this is its whole message when nothing was
+  // configured — ``An `executablePath` or `channel` must be specified for `puppeteer-core```.
+  'must be specified',
+  // `spawn /usr/bin/google-chrome ENOENT` — an executablePath naming a file that is not there,
+  // which is what a CHROME_PATH left over from another machine is.
+  'enoent',
+  // The binary is there and this uid may not execute it. Attempt 2 runs as the same user.
+  'eacces',
+  // The two spellings puppeteer has shipped for "I looked for a browser and found none".
+  'could not find chrome',
+  'could not find browser',
+  'was not found at the configured executablepath',
+];
+
+const browserIsAbsent = (thrown: unknown): boolean => {
+  const text = renderThrowable(thrown).toLowerCase();
+  return BROWSER_ABSENT_SIGNS.some((sign) => text.includes(sign));
+};
+
+/**
+ * A launch or a page call that failed. TWO codes, because the two failures have opposite answers.
+ *
+ * `X_SCRAPE_BROWSER_UNREACHABLE` is transport and stays retryable: a browser that was there is
+ * gone, and attempt 2 may find it back.
+ *
+ * `X_SCRAPE_BROWSER_MISSING` is a misconfiguration and is terminal. Its fix used to read "raise
+ * watchdog: { idleMs } on the scrape() definition … otherwise re-run once the browser host is
+ * back", which on the `x shot` path names a definition that does not exist and an act that never
+ * helps — while the retry table spent five browser launches proving it.
+ */
 export const browserUnreachable = (driver: string, thrown: unknown): ScrapeError =>
-  new ScrapeError({
-    code: 'X_SCRAPE_BROWSER_UNREACHABLE',
-    cause: `the ${driver} browser stopped answering: ${renderThrowable(thrown)}`,
-    fix: 'raise watchdog: { idleMs } on the scrape() definition if the site is genuinely slow, otherwise re-run once the browser host is back',
-    meta: { driver },
-  });
+  browserIsAbsent(thrown)
+    ? new ScrapeError({
+        code: 'X_SCRAPE_BROWSER_MISSING',
+        cause: `the ${driver} driver has no browser to launch: ${renderThrowable(thrown)}`,
+        fix: 'install a Chrome or Chromium and name it — localBrowser({ launcher, executablePath: env.CHROME_PATH }) — or attach to one somebody else is running with remoteBrowser({ cdpUrl: env.SCRAPE_CDP_URL })',
+        meta: { driver },
+      })
+    : new ScrapeError({
+        code: 'X_SCRAPE_BROWSER_UNREACHABLE',
+        cause: `the ${driver} browser stopped answering: ${renderThrowable(thrown)}`,
+        fix: 'raise watchdog: { idleMs } on the scrape() definition if the site is genuinely slow, otherwise re-run once the browser host is back',
+        meta: { driver },
+      });
 
 export const profileLocked = (profileDir: string): ScrapeError =>
   new ScrapeError({

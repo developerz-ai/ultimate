@@ -11,6 +11,7 @@ export const SCRAPE_OWNED_ERROR_CODES = [
   'X_SCRAPE_DRIVER_UNKNOWN',
   'X_SCRAPE_CDP_ATTACH_FAILED',
   'X_SCRAPE_BROWSER_UNREACHABLE',
+  'X_SCRAPE_BROWSER_MISSING',
   'X_SCRAPE_PROFILE_LOCKED',
   'X_SCRAPE_HOST_BLOCKED',
   'X_SCRAPE_SELECTOR_MISSING',
@@ -59,6 +60,7 @@ export const SCRAPE_ERROR_TITLES: Readonly<Record<ScrapeOwnedErrorCode, string>>
   X_SCRAPE_DRIVER_UNKNOWN: 'no browser driver is installed for this run',
   X_SCRAPE_CDP_ATTACH_FAILED: 'the CDP endpoint refused the attach',
   X_SCRAPE_BROWSER_UNREACHABLE: 'the browser went away mid-run',
+  X_SCRAPE_BROWSER_MISSING: 'there is no browser on this machine for the driver to launch',
   X_SCRAPE_PROFILE_LOCKED: 'another process holds this browser profile',
   X_SCRAPE_HOST_BLOCKED: 'the page asked for a host allowHosts does not list',
   X_SCRAPE_SELECTOR_MISSING: 'the selector never appeared inside its window',
@@ -106,6 +108,10 @@ registerErrorCodes(
  */
 export const SCRAPE_ERROR_RETRY = {
   X_SCRAPE_CDP_ATTACH_FAILED: 'retryable',
+  // Retryable, and it now means ONLY what its title says: a browser that was there and stopped
+  // answering. It used to be raised for a launch that failed because there was no browser to
+  // launch at all, which the same run repeated five times — `X_SCRAPE_BROWSER_MISSING` below is
+  // that half, split out and terminal.
   X_SCRAPE_BROWSER_UNREACHABLE: 'retryable',
   X_SCRAPE_TIMEOUT: 'retryable',
   X_SCRAPE_WEDGED: 'retryable',
@@ -124,6 +130,14 @@ export const SCRAPE_ERROR_RETRY = {
   // Everything below is terminal, and each one is listed rather than left to the default so that
   // deleting a line is a visible decision.
   X_SCRAPE_DRIVER_UNKNOWN: 'terminal',
+  // TERMINAL where its sibling `X_SCRAPE_BROWSER_UNREACHABLE` is retryable, and the difference IS
+  // the reason the two codes are separate. "The browser host went away" is transport — attempt 2
+  // may find it back. "There is no browser binary on this box, or none was configured" is a
+  // MISCONFIGURATION: attempt 2 spawns the same absent path, five times, on a five-attempt policy,
+  // and on an authenticated target that is five arrivals at a login for no chance of a different
+  // answer. Measured on `x shot`, where there is no `scrape()` definition to raise a watchdog on
+  // and re-running never helps. The repair is an install or an `executablePath`, so a human decides.
+  X_SCRAPE_BROWSER_MISSING: 'terminal',
   X_SCRAPE_PROFILE_LOCKED: 'terminal',
   X_SCRAPE_HOST_BLOCKED: 'terminal',
   X_SCRAPE_SELECTOR_MISSING: 'terminal',

@@ -1245,6 +1245,783 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/_x/query/feed-activity": {
+      "get": {
+        "operationId": "feedActivity",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "in": "query",
+            "name": "_first",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the endCursor a previous page answered; needs _first",
+            "in": "query",
+            "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {},
+                      "type": "array"
+                    },
+                    {
+                      "properties": {
+                        "endCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasNextPage": {
+                          "type": "boolean"
+                        },
+                        "rows": {
+                          "items": {},
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "endCursor",
+                        "hasNextPage"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "How many posts this org has published",
+        "tags": [
+          "query"
+        ],
+        "x-ultimate": {
+          "cacheTags": [
+            "post"
+          ],
+          "capability": "feed:read",
+          "live": false,
+          "tool": "feedActivity"
+        }
+      }
+    },
+    "/_x/query/live-feed": {
+      "get": {
+        "operationId": "liveFeed",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "in": "query",
+            "name": "_first",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the endCursor a previous page answered; needs _first",
+            "in": "query",
+            "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {},
+                      "type": "array"
+                    },
+                    {
+                      "properties": {
+                        "endCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasNextPage": {
+                          "type": "boolean"
+                        },
+                        "rows": {
+                          "items": {},
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "endCursor",
+                        "hasNextPage"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "liveFeed",
+        "tags": [
+          "query"
+        ],
+        "x-ultimate": {
+          "cacheTags": [],
+          "capability": "feed:read",
+          "live": true,
+          "tool": null
+        }
+      }
+    },
+    "/_x/query/post-by-id": {
+      "get": {
+        "operationId": "postById",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "postId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "in": "query",
+            "name": "_first",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the endCursor a previous page answered; needs _first",
+            "in": "query",
+            "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {},
+                      "type": "array"
+                    },
+                    {
+                      "properties": {
+                        "endCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasNextPage": {
+                          "type": "boolean"
+                        },
+                        "rows": {
+                          "items": {},
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "endCursor",
+                        "hasNextPage"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "Read one post with its comments",
+        "tags": [
+          "query"
+        ],
+        "x-ultimate": {
+          "cacheTags": [
+            "comment",
+            "post"
+          ],
+          "capability": "post:read",
+          "live": false,
+          "tool": "postById"
+        }
+      }
+    },
+    "/_x/query/post-by-slug": {
+      "get": {
+        "operationId": "postBySlug",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "in": "query",
+            "name": "_first",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the endCursor a previous page answered; needs _first",
+            "in": "query",
+            "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {},
+                      "type": "array"
+                    },
+                    {
+                      "properties": {
+                        "endCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasNextPage": {
+                          "type": "boolean"
+                        },
+                        "rows": {
+                          "items": {},
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "endCursor",
+                        "hasNextPage"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "Read one published post by slug",
+        "tags": [
+          "query"
+        ],
+        "x-ultimate": {
+          "cacheTags": [
+            "post"
+          ],
+          "capability": "feed:read",
+          "live": false,
+          "tool": "postBySlug"
+        }
+      }
+    },
+    "/_x/query/public-post": {
+      "get": {
+        "operationId": "publicPost",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "in": "query",
+            "name": "_first",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the endCursor a previous page answered; needs _first",
+            "in": "query",
+            "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {},
+                      "type": "array"
+                    },
+                    {
+                      "properties": {
+                        "endCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasNextPage": {
+                          "type": "boolean"
+                        },
+                        "rows": {
+                          "items": {},
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "endCursor",
+                        "hasNextPage"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "Read one published post from the public blog",
+        "tags": [
+          "query"
+        ],
+        "x-ultimate": {
+          "cacheTags": [
+            "blog"
+          ],
+          "capability": "post:read-public",
+          "live": false,
+          "tool": "publicPost"
+        }
+      }
+    },
+    "/_x/query/public-post-slugs": {
+      "get": {
+        "operationId": "publicPostSlugs",
+        "parameters": [
+          {
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "in": "query",
+            "name": "_first",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the endCursor a previous page answered; needs _first",
+            "in": "query",
+            "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {},
+                      "type": "array"
+                    },
+                    {
+                      "properties": {
+                        "endCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasNextPage": {
+                          "type": "boolean"
+                        },
+                        "rows": {
+                          "items": {},
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "endCursor",
+                        "hasNextPage"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "publicPostSlugs",
+        "tags": [
+          "query"
+        ],
+        "x-ultimate": {
+          "cacheTags": [
+            "blog"
+          ],
+          "capability": "post:read-public",
+          "live": false,
+          "tool": null
+        }
+      }
+    },
+    "/_x/query/public-posts": {
+      "get": {
+        "operationId": "publicPosts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "in": "query",
+            "name": "_first",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the endCursor a previous page answered; needs _first",
+            "in": "query",
+            "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {},
+                      "type": "array"
+                    },
+                    {
+                      "properties": {
+                        "endCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "hasNextPage": {
+                          "type": "boolean"
+                        },
+                        "rows": {
+                          "items": {},
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "endCursor",
+                        "hasNextPage"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "List the published posts on the public blog",
+        "tags": [
+          "query"
+        ],
+        "x-ultimate": {
+          "cacheTags": [
+            "blog"
+          ],
+          "capability": "post:read-public",
+          "live": false,
+          "tool": "publicPosts"
+        }
+      }
+    },
     "/api/avatar-uploads/grant": {
       "post": {
         "operationId": "grantAvatarUpload",

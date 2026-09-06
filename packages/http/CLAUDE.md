@@ -250,9 +250,24 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   both needed. The caller-facing `issues` are a fixed vocabulary — `could not parse the body as
   JSON`, and the LIST of accepted content-types rather than the one that was sent — and everything
   the caller supplied rides in `bodyInvalid`'s third argument, `meta`, which `toProblem` never
-  renders. The parser's own message goes through core's `renderThrowable`, never `String(error)`:
+  renders for a framework code (`registerProblemMeta` refuses to declare one). The parser's own message goes through core's `renderThrowable`, never `String(error)`:
   `bun run error-render` cannot see this class of defect, because a `catch` binding is not a
   parameter, so it is a review rule here and a blind spot there.
+- **`meta` reaches the document only by declaration — per code, per key, app codes only**
+  (`As of 2026-09-05`). `meta` is the operator-only bag: `bodyInvalid` keeps the body excerpt
+  there, the limiter its internal key, core's `assert` the rejected value, `env-example.ts` file
+  paths, and each of those relies on `toProblem` never rendering it. So "carry `meta`" was never
+  an option, and an app whose `X_SESSION_CHECKOUT_BUSY` put `{ sessionId, title, state }` there
+  had its island recover the id by running a UUID regex over `cause`. `registerProblemMeta({
+  X_SESSION_CHECKOUT_BUSY: ['sessionId', 'title', 'state'] })` (`problem-meta.ts`) is the seam,
+  in `registerErrorStatus`'s shape and refusing what it refuses — a framework-owned code —
+  plus `issues` (one home, one bound) and `__proto__`. `wireMeta` copies the declared keys that
+  are set, member by member through `Object.defineProperty`, all-or-nothing for `issuesOf`'s
+  reason and bounded at `MAX_PROBLEM_META_BYTES`; `toProblem` drops it under exactly the
+  `opaque` condition that blanks `cause`, which is also the belt on "both registrations are
+  needed": a code with keys and no status is unclassified. The typed client
+  (`@ultimat3/action`'s `metaFromWire`) puts the member back on `RemoteActionError.meta`, under
+  the four members that class owns.
 - **A browser that fails `auth: 'required'` is redirected; an agent gets the problem document.**
   One condition, two audiences, decided once in `auth-redirect.ts` and applied in the `error-map`
   stage before the overlay. `config.signInPath` is `null` until an app names its page, because a

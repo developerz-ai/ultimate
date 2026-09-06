@@ -140,7 +140,12 @@ export interface ErrorCodeFact {
 export interface Manifest {
   /** Shape version. A reader checks this before anything else. */
   readonly manifestVersion: number;
-  /** App name and semver from `app.config.ts`. Drives the breaking-change gate. */
+  /**
+   * App name and semver from the app's `package.json` (`app-manifest.ts`'s `appIdentity`), never
+   * from `app.config.ts` — `AppConfig` has no `version` field and `defineConfig`
+   * excess-property-checks its literal, so an instruction to edit one there fails typecheck.
+   * Drives the breaking-change gate.
+   */
   readonly app: { readonly name: string; readonly version: string };
   /**
    * Content hash of everything below. Deterministic — NOT a timestamp and not a git sha, so

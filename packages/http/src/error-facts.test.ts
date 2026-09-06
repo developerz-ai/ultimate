@@ -1,10 +1,12 @@
 // The three renderings of one throwable, pinned together: the normalised facts, the RFC-9457
 // document and the terminal lines. Status decisions are `error-map.test.ts`'s — a split this
 // file exists because the two answer different questions about the same error.
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL, UltimateError } from '@ultimat3/core';
 import { factsOf, renderErrorLines, toProblem } from './error-facts';
+import { registerErrorStatus, resetErrorStatus } from './error-map';
 import { bodyInvalid, forbidden, routeNotFound } from './errors';
+import { MAX_PROBLEM_META_BYTES, registerProblemMeta, resetProblemMeta } from './problem-meta';
 import { rateLimited } from './rate-limit-errors';
 
 describe('factsOf', () => {
@@ -277,5 +279,122 @@ describe('toProblem carries the issue list', () => {
     );
     expect(problem.issues).toEqual([issues[0]]);
     expect(JSON.stringify(problem)).not.toContain('hunter2SuperSecret');
+  });
+});
+
+/**
+ * The declared half of `meta`, carried. An app's `X_SESSION_CHECKOUT_BUSY` put the running
+ * session in `meta: { sessionId, title, state }` and its island recovered the id by running a
+ * UUID regex over `cause`, because the document carried `code`, `cause` and `fix` and dropped
+ * `meta` whole — and had to, since `meta` is where `bodyInvalid` keeps the body excerpt and the
+ * limiter keeps its key. `registerProblemMeta` is the seam: keys, per code, opted in.
+ */
+describe('toProblem carries the declared meta keys', () => {
+  afterEach(() => {
+    resetProblemMeta();
+    resetErrorStatus();
+  });
+
+  const busy = (meta: unknown): unknown =>
+    Object.assign(
+      new UltimateError({
+        code: 'X_SESSION_CHECKOUT_BUSY',
+        cause: '/srv/app on box-1 already has a running work session: s-1 "inbox"',
+        fix: 'wait for s-1',
+      }),
+      { meta },
+    );
+
+  test('an app that declared the status and the keys gets exactly those keys', () => {
+    registerErrorStatus({ X_SESSION_CHECKOUT_BUSY: 409 });
+    registerProblemMeta({ X_SESSION_CHECKOUT_BUSY: ['sessionId', 'title', 'state'] });
+    const problem = toProblem(
+      busy({ sessionId: 's-1', title: 'inbox', state: 'running', directory: '/srv/app' }),
+    );
+    expect(problem.status).toBe(409);
+    expect(problem.meta).toEqual({ sessionId: 's-1', title: 'inbox', state: 'running' });
+    expect(JSON.parse(JSON.stringify(problem)).meta).toEqual(problem.meta);
+  });
+
+  test('an undeclared code carries no member at all — meta is operator-only by default', () => {
+    registerErrorStatus({ X_SESSION_CHECKOUT_BUSY: 409 });
+    const problem = toProblem(busy({ sessionId: 's-1' }));
+    expect('meta' in problem).toBe(false);
+    // The framework's own errors put things in `meta` that a caller may not be handed.
+    const limited = toProblem(rateLimited('anon', 3));
+    expect('meta' in limited).toBe(false);
+    expect('meta' in toProblem(bodyInvalid('/x', ['bad json'], { excerpt: '{"pass' }))).toBe(false);
+  });
+
+  test('the keys are declared but none is set → absent, never {}', () => {
+    registerErrorStatus({ X_SESSION_CHECKOUT_BUSY: 409 });
+    registerProblemMeta({ X_SESSION_CHECKOUT_BUSY: ['sessionId'] });
+    expect('meta' in toProblem(busy({ title: 'inbox' }))).toBe(false);
+    expect('meta' in toProblem(busy(undefined))).toBe(false);
+  });
+
+  test('a declaration with no status is an unclassified 5xx, and opaque drops meta with cause', () => {
+    // `registerProblemMeta`'s doc says both registrations are needed; this is the belt on it.
+    registerProblemMeta({ X_SESSION_CHECKOUT_BUSY: ['sessionId'] });
+    const problem = toProblem(busy({ sessionId: 's-1' }));
+    expect(problem.status).toBe(500);
+    expect(problem.cause).not.toContain('s-1');
+    expect('meta' in problem).toBe(false);
+  });
+
+  test('dev mode is not opaque, so the meta comes back with the cause', () => {
+    registerProblemMeta({ X_SESSION_CHECKOUT_BUSY: ['sessionId'] });
+    const problem = toProblem(busy({ sessionId: 's-1' }), { dev: true });
+    expect(problem.cause).toContain('s-1');
+    expect(problem.meta).toEqual({ sessionId: 's-1' });
+  });
+
+  test('`issues` keeps its one home: a declared list is refused, so it is never duplicated', () => {
+    expect(() => registerProblemMeta({ X_SESSION_CHECKOUT_BUSY: ['issues'] })).toThrow(
+      'X_PROBLEM_META_INVALID',
+    );
+    registerErrorStatus({ X_SESSION_CHECKOUT_BUSY: 409 });
+    registerProblemMeta({ X_SESSION_CHECKOUT_BUSY: ['sessionId'] });
+    const problem = toProblem(
+      busy({
+        sessionId: 's-1',
+        issues: [{ path: 'directory', expected: 'free', received: '', message: 'busy' }],
+      }),
+    );
+    expect(problem.meta).toEqual({ sessionId: 's-1' });
+    expect(problem.issues).toHaveLength(1);
+  });
+
+  test('one value JSON cannot carry drops the whole member; a cycle and an oversize do too', () => {
+    registerErrorStatus({ X_SESSION_CHECKOUT_BUSY: 409 });
+    registerProblemMeta({ X_SESSION_CHECKOUT_BUSY: ['sessionId', 'since', 'owner'] });
+    expect('meta' in toProblem(busy({ sessionId: 's-1', since: new Date(0) }))).toBe(false);
+    const loop: Record<string, unknown> = {};
+    loop['loop'] = loop;
+    expect('meta' in toProblem(busy({ sessionId: 's-1', owner: loop }))).toBe(false);
+    expect(
+      'meta' in toProblem(busy({ sessionId: 's-1', owner: 'x'.repeat(MAX_PROBLEM_META_BYTES) })),
+    ).toBe(false);
+  });
+
+  test('an own __proto__ off the wire never becomes a prototype, at any depth', () => {
+    registerErrorStatus({ X_SESSION_CHECKOUT_BUSY: 409 });
+    registerProblemMeta({ X_SESSION_CHECKOUT_BUSY: ['owner'] });
+    const owner = JSON.parse('{"__proto__":{"admin":true},"name":"sebi"}');
+    const problem = toProblem(busy({ owner }));
+    expect(problem.meta).toEqual({ owner: { name: 'sebi' } });
+    expect((problem.meta as { owner: { admin?: boolean } }).owner.admin).toBeUndefined();
+  });
+
+  test('a meta this package did not build yields no member rather than a throw', () => {
+    registerErrorStatus({ X_SESSION_CHECKOUT_BUSY: 409 });
+    registerProblemMeta({ X_SESSION_CHECKOUT_BUSY: ['sessionId'] });
+    const hostile = new Proxy(busy({ sessionId: 's-1' }) as object, {
+      get: (target, key) => {
+        if (key === 'meta') throw new TypeError('the meta is not for you');
+        return Reflect.get(target, key);
+      },
+    });
+    expect('meta' in toProblem(hostile)).toBe(false);
   });
 });

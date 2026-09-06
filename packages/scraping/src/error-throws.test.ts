@@ -62,6 +62,60 @@ describe('unit · a thrown value from somebody else`s library is RENDERED, never
   });
 });
 
+/**
+ * The split that costs money. One `catch` around `launch()` saw both "the browser host went away"
+ * and "there is no browser on this box", and answered the first for both: a retryable code whose
+ * fix said to raise `watchdog: { idleMs }` on a `scrape()` definition — which on the `x shot` path
+ * does not exist — and "re-run once the browser host is back", which never becomes true.
+ */
+describe('unit · a missing browser is a MISCONFIGURATION, not an unreachable host', () => {
+  test('puppeteer-core with no executablePath is terminal and names one', () => {
+    const error = browserUnreachable(
+      'puppeteer',
+      new Error('An `executablePath` or `channel` must be specified for `puppeteer-core`'),
+    );
+    expect(error.code).toBe('X_SCRAPE_BROWSER_MISSING');
+    expect(error.retry).toBe('terminal');
+    expect(error.cause).toStartWith('the puppeteer driver has no browser to launch: ');
+    expect(error.fix).toContain('executablePath: env.CHROME_PATH');
+    // The old line, which is what made this defect expensive: it sent a reader to a definition
+    // that may not exist, and told them to wait for a host that was never down.
+    expect(error.fix).not.toContain('watchdog');
+  });
+
+  test('a configured path that is not there is the same answer, whatever spelling it arrives in', () => {
+    for (const message of [
+      'Failed to launch the browser process! spawn /usr/bin/google-chrome ENOENT',
+      'spawn /opt/chrome EACCES',
+      'Could not find Chrome (ver. 131.0.0). This can occur if either…',
+      'Browser was not found at the configured executablePath (/nope/chrome)',
+    ]) {
+      const error = browserUnreachable('puppeteer', new Error(message));
+      expect([error.code, error.retry], message).toEqual(['X_SCRAPE_BROWSER_MISSING', 'terminal']);
+    }
+  });
+
+  /**
+   * And the other side, which must NOT move: a browser that was there and went away keeps its
+   * retryable code, because attempt 2 has a real chance of a different answer. A rule that
+   * classified every launch failure as permanent would dead-letter a container restart.
+   */
+  test('a browser that was there and went away is still retryable', () => {
+    for (const message of [
+      'socket hang up',
+      'Target closed',
+      'connect ECONNREFUSED 127.0.0.1:9222',
+    ]) {
+      const error = browserUnreachable('puppeteer', new Error(message));
+      expect([error.code, error.retry], message).toEqual([
+        'X_SCRAPE_BROWSER_UNREACHABLE',
+        'retryable',
+      ]);
+      expect(error.cause, message).toStartWith('the puppeteer browser stopped answering: ');
+    }
+  });
+});
+
 describe('unit · the fix line is an executable command, per code', () => {
   test('X_SCRAPE_PROFILE_LOCKED names the lock file to remove, not the directory alone', () => {
     const error = profileLocked('/var/scrape/profiles/org-1');

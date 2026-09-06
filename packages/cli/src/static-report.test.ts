@@ -136,6 +136,26 @@ describe('the report on disk', () => {
     expect(parseStaticReport({ ...REPORT, skipped: [{ route: '/x' }] })).toBeUndefined();
   });
 
+  test('an unmeasured row carries the render`s own code, cause and fix, and a malformed one is no report', () => {
+    // The three ride along when the measurement threw an `UltimateError` — `checkBudgets` reports
+    // `X_ISLAND_PROPS_INVALID` under its own name off exactly these — and are absent for a bare
+    // `TypeError`. Present and not a string is the same answer a malformed skip row gets.
+    const coded = {
+      path: '/fleet',
+      reason: 'X_ISLAND_PROPS_INVALID: …',
+      code: 'X_ISLAND_PROPS_INVALID',
+      cause: 'the dispatch island in apps/web/app/fleet/page.tsx carries 20000 B of props',
+      fix: 'in apps/web/app/fleet/page.tsx, pass `models: []`',
+    };
+    const bare = { path: '/broken', reason: 'TypeError: needs a request' };
+    expect(parseStaticReport({ ...REPORT, unmeasured: [coded, bare] })?.unmeasured).toEqual([
+      coded,
+      bare,
+    ]);
+    expect(parseStaticReport({ ...REPORT, unmeasured: [{ ...coded, code: 500 }] })).toBeUndefined();
+    expect(parseStaticReport({ ...REPORT, unmeasured: [{ ...bare, fix: null }] })).toBeUndefined();
+  });
+
   test('a report naming a surface or a mode that does not exist reads as no report', async () => {
     // The half a `typeof === 'string'` check cannot see. `SkippedRoute.surface` is declared
     // `Surface`, so a parse that admits any string hands every later reader a value its own type

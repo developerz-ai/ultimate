@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "591a39ac7e31f18041d7d71647d5ef497149cfe9e13750e7b4039a7f73e9a4e2",
+  "buildId": "bd9b62cd484f4b997c1f3c4e630a12efb8a1451d0a7be29b40823d1561e6831d",
   "tiers": {
     "0": [
       "core",
@@ -2005,6 +2005,11 @@
       "at": "packages/http/src/errors.ts"
     },
     {
+      "code": "X_PACKAGE_DUPLICATED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_PACKAGE_SHAPE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2083,6 +2088,11 @@
       "code": "X_PRERENDER_FAILED",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_PROBLEM_META_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
     },
     {
       "code": "X_PROTO_CHAIN_INDEX",
@@ -2536,6 +2546,11 @@
     },
     {
       "code": "X_SCRAPE_BODY_TOO_LARGE",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_BROWSER_MISSING",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
     },
@@ -3116,6 +3131,11 @@
     },
     {
       "code": "X_TEST_ISLAND_NOT_BUILT",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_SELECTOR_UNSUPPORTED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },

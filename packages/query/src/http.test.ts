@@ -281,3 +281,104 @@ describe('the typed client against the route', () => {
     expect(call({ orgId: ORG })).rejects.toThrow('X_UNAUTHENTICATED');
   });
 });
+
+/**
+ * `?_first=` and `?_after=` — the page controls the route reads OFF the search string before the
+ * schema sees it, answering `query.page()`'s own envelope. Without one the answer is the bare
+ * array it has always been: every client written before the controls existed keeps reading rows.
+ * Before this the page marker had nowhere to ride but on a row (`olderCursor`, ai-maxxing's
+ * `sessionMessages`), which is a cursor on the wrong side of the envelope.
+ */
+describe('a paged read over the route', () => {
+  interface PageBody {
+    readonly rows: readonly Post[];
+    readonly endCursor: string | null;
+    readonly hasNextPage: boolean;
+  }
+
+  test('with no page control the answer is the bare array it always was', async () => {
+    const response = await read(serve(feed({ count: 0 }), reader('u1')));
+    expect(Array.isArray(await response.json())).toBe(true);
+  });
+
+  test('`_first` answers the Page envelope, and `_after` continues it to a terminal page', async () => {
+    const server = serve(feed({ count: 0 }), reader('u1'));
+    const one = await read(server, `?orgId=${ORG}&_first=1`);
+    expect(one.status).toBe(200);
+    const first = (await one.json()) as PageBody;
+    expect(first.rows).toEqual([{ id: 'a', orgId: ORG, rank: 1 }]);
+    expect(first.hasNextPage).toBe(true);
+    expect(typeof first.endCursor).toBe('string');
+
+    const two = await read(server, `?orgId=${ORG}&_first=1&_after=${first.endCursor}`);
+    const second = (await two.json()) as PageBody;
+    expect(second.rows).toEqual([{ id: 'c', orgId: ORG, rank: 3 }]);
+    expect(second.hasNextPage).toBe(false);
+  });
+
+  test('the wire cursor is the very string a direct `.page()` call signs', async () => {
+    const target = feed({ count: 0 });
+    const direct = await target.page({ orgId: ORG }, { first: 1, actor: reader('u1') });
+    const response = await read(serve(target, reader('u1')), `?orgId=${ORG}&_first=1`);
+    expect(((await response.json()) as PageBody).endCursor).toBe(direct.endCursor);
+  });
+
+  test('a page control never reaches the schema — an input named `first` still coerces', async () => {
+    // `Input` declares `first` (the read's own limit) beside the route's `_first`: two names, two
+    // jobs, and the reserved one is what keeps them apart.
+    // (`seek()` sets the window, so the read's `limit(first)` is not what bounds the page —
+    // `paginate` has always worked that way; what is pinned is that `first=1` COERCED, as a 200.)
+    const response = await read(
+      serve(feed({ count: 0 }), reader('u1')),
+      `?orgId=${ORG}&first=1&_first=1`,
+    );
+    expect(response.status).toBe(200);
+    const page = (await response.json()) as PageBody;
+    expect(page.rows).toHaveLength(1);
+    expect(page.hasNextPage).toBe(true);
+  });
+
+  test('a cursor that is not this read’s is X_CURSOR_INVALID, a 400', async () => {
+    const response = await read(
+      serve(feed({ count: 0 }), reader('u1')),
+      `?orgId=${ORG}&_first=1&_after=not-a-cursor`,
+    );
+    const body = (await response.json()) as { code?: string };
+    expect(response.status).toBe(400);
+    expect(body.code).toBe('X_CURSOR_INVALID');
+  });
+
+  test('a page size outside the bound is the read’s own X_INPUT_INVALID, never a 500', async () => {
+    const server = serve(feed({ count: 0 }), reader('u1'));
+    for (const size of ['0', '10001', '1.5', '1e3', 'many', '']) {
+      const response = await read(server, `?orgId=${ORG}&_first=${size}`);
+      const body = (await response.json()) as { code?: string; cause?: string };
+      expect(response.status).toBe(400);
+      expect(body.code).toBe('X_INPUT_INVALID');
+      expect(body.cause).toContain('_first');
+    }
+  });
+
+  test('`_after` alone, or a control sent twice, is refused at the wire', async () => {
+    const server = serve(feed({ count: 0 }), reader('u1'));
+    for (const search of [`?orgId=${ORG}&_after=abc`, `?orgId=${ORG}&_first=1&_first=2`]) {
+      const response = await read(server, search);
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as { code?: string }).code).toBe('X_INPUT_INVALID');
+    }
+  });
+
+  test('the typed client’s .page() reads the envelope end to end', async () => {
+    const target = feed({ count: 0 }) as Query<typeof Input, Post>;
+    const server = serve(target, reader('u1'));
+    const fetchLike: FetchLike = (input, init) => server.fetch(new Request(input, init));
+    const client = target.client({ baseUrl: 'http://dev.test', fetch: fetchLike });
+
+    const first = await client.page({ orgId: ORG }, { first: 1 });
+    expect(first.rows).toEqual([{ id: 'a', orgId: ORG, rank: 1 }]);
+    expect(first.hasNextPage).toBe(true);
+    const second = await client.page({ orgId: ORG }, { first: 1, after: first.endCursor ?? '' });
+    expect(second.rows).toEqual([{ id: 'c', orgId: ORG, rank: 3 }]);
+    expect(second.hasNextPage).toBe(false);
+  });
+});

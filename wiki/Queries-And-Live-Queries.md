@@ -41,7 +41,7 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 | `.page(input, { first, after? })` | one bounded page | `{ rows, endCursor, hasNextPage }`. The cursor is signed and scoped to `queryHash(name, input)` — the query's name and its parsed input, never `first` or `after`, which are controls rather than scope. There is no `offset` and there never will be |
 | `.live(input, options?)` | the subscription descriptor | a `LiveQuery` carrying the **same** policy object, re-evaluated per subscriber |
 | `.tool()` | the MCP read tool | `liveFeed.tool().policy === liveFeed.policy`. Reads fresh: an agent diffing two calls must be reading rows, not a TTL |
-| `.client({ baseUrl })` | the typed browser method | `GET /_x/query/live-feed?orgId=…`, keys sorted so one input is one URL |
+| `.client({ baseUrl })` | the typed browser method | `GET /_x/query/live-feed?orgId=…`, keys sorted so one input is one URL. `.client(…).page(input, { first, after })` reads one page over the same route |
 | `.describe()` | the manifest row | name, capability, tags, ttl, `live` |
 | `.input` `.policy` `.cache` `.mcp` `.isLive` | the declaration, lifted | readable. `sql` is not among them |
 
@@ -97,6 +97,8 @@ Mounted for every registered query by `x dev` and by a container, from one compo
 | Authz | evaluated once, inside the read, from the parsed input. `auth: 'public'` only for `allow()` — anything else is `required`, and an anonymous caller is 401 before the policy is reached |
 | Caching | `no-store`. The URL names no actor while the rows are scoped to one, so a shared cache is something a CDN in front of the app configures knowingly. The read's own `cache:` tags ride along for a purge |
 | Failures | `application/problem+json` carrying the code, cause and fix. A non-framework throw is the server's 500, never dressed as a read failure |
+| A page | `?_first=20` answers `.page()`'s own envelope — `{ rows, endCursor, hasNextPage }` — and `&_after=<endCursor>` continues it. Without a control the answer is the bare array. The keys carry an underscore because `first` is a legal input member (a listing's own page size); declaring `_first` or `_after` as input is `X_QUERY_INPUT_UNENCODABLE`. A size outside 1–10,000 or an `_after` without `_first` is **400** `X_INPUT_INVALID`; a cursor that is not this read's is **400** `X_CURSOR_INVALID`. `As of 2026-09` |
+| In `openapi.json` | every read, as a `GET` path item: the input as `in: query` parameters, then `_first` and `_after`, and a `200` that is `oneOf` the rows and the envelope |
 
 ### Two spellings of that client, one URL
 

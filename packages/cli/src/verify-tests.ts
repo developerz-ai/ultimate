@@ -36,13 +36,26 @@ type TypedTest = Exclude<TestType, 'unit'>;
 
 const TYPED_SUFFIXES = '{contract,live,job,e2e,eval}';
 
-const SUMMARIES: Readonly<Record<TypedTest, string>> = {
-  contract: 'action/query schemas, policy denials, emitted OpenAPI and MCP shapes',
-  live: 'live-query snapshots, incremental patches, reconnect deltas',
-  job: 'step replay, idempotency dedupe, retry/backoff, outbox atomicity',
-  e2e: 'the built output, incl. offline and SW update',
-  eval: 'LLM output scored against thresholds',
-};
+/**
+ * `Object.create(null)`, not a `{}` literal, because `stepFor` reads it with a COMPUTED key
+ * (`SUMMARIES[type]`). On a normal object literal every `Object.prototype` member reads back as
+ * present, so a table read that way answers a function instead of `undefined` for a key nobody
+ * declared — the defect `scripts/proto-index.ts` exists to keep out, thirteen instances across
+ * four sweeps. `type` is a closed union here and cannot be `'constructor'` today, which is
+ * exactly the argument every one of those thirteen had before it stopped being true.
+ *
+ * Same repair, and the same reason, as `packages/i18n/src/catalog.ts`.
+ */
+const SUMMARIES: Readonly<Record<TypedTest, string>> = Object.assign(
+  Object.create(null) as Record<TypedTest, string>,
+  {
+    contract: 'action/query schemas, policy denials, emitted OpenAPI and MCP shapes',
+    live: 'live-query snapshots, incremental patches, reconnect deltas',
+    job: 'step replay, idempotency dedupe, retry/backoff, outbox atomicity',
+    e2e: 'the built output, incl. offline and SW update',
+    eval: 'LLM output scored against thresholds',
+  },
+);
 
 /**
  * Every rule that decides a file's type, MOST SPECIFIC FIRST: the first entry a path matches owns

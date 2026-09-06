@@ -135,3 +135,19 @@ describe('every input the declaration allows round-trips through the wire', () =
     expect(coerceQuery(input, await wireFor({ tags: ['only'] }))['tags']).toEqual(['only']);
   });
 });
+
+describe('the route’s page controls cannot be declared as input', () => {
+  test('`_first` and `_after` are refused at query(), naming the control', () => {
+    for (const key of ['_first', '_after']) {
+      const denied = refusal(t.object({ orgId: t.uuid, [key]: t.string.optional() }));
+      expect(denied.code).toBe('X_QUERY_INPUT_UNENCODABLE');
+      expect(denied.cause).toContain(`${key} is reserved`);
+    }
+  });
+
+  test('the bare names are still ordinary input — reserving them would break a declared limit', () => {
+    expect(refusal(t.object({ first: t.number.optional(), after: t.string.optional() })).code).toBe(
+      'resolved',
+    );
+  });
+});

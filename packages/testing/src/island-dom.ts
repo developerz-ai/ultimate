@@ -2,9 +2,13 @@
 // `bun test` ships no DOM and no DOM library may be added, so an island — the only client-side
 // code Ultimate ships — was untestable without one. `generate: 'dom'` builds every element from
 // `_$template("<button …>")`, so a stub without a parsed `<template>` cannot run one line of it.
+//
+// Two neighbours at the 500-line ceiling: `island-selector.ts` is the selector grammar `find`
+// and `all` read, and `island-observers.ts` is the `ResizeObserver` an island measures with.
 
-/** `[data-role="preview"]` — the one selector shape a mounted island is queried by. */
-const ATTRIBUTE_SELECTOR = /^\[([\w-]+)="([^"]*)"\]$/;
+import type { FakeResizeObserver } from './island-observers';
+import { createResizeObservers, rectOf } from './island-observers';
+import { matchesSelector, parseSelector } from './island-selector';
 
 /**
  * A node belongs to ONE parent, and the DOM enforces that by moving it: every attach detaches the
@@ -256,19 +260,57 @@ export class FakeElement extends FakeNode {
     return copy;
   }
   /**
-   * A tag name or `[attr="value"]`, anywhere in the subtree — the two shapes an island test asks
-   * for. Anything richer would be a CSS engine, which is a DOM library by another name.
+   * The box, as a test set it. Every field is 0 until something writes it: this DOM lays nothing
+   * out, and a number invented here would be a fact the harness made up. An island reads them the
+   * way a virtualized list does — `clientHeight` for the window, `scrollTop` in a scroll handler,
+   * `scrollHeight` to know the whole — and a stub without them answered `undefined`, which
+   * `Math.floor` turns into `NaN` rows with no throw to point at it. Plain writable fields, so a
+   * test sets `list.clientHeight = 400` directly, or through `mounted.resize`, which also notifies
+   * the island's `ResizeObserver`.
+   */
+  clientWidth = 0;
+  clientHeight = 0;
+  offsetWidth = 0;
+  offsetHeight = 0;
+  scrollWidth = 0;
+  scrollHeight = 0;
+  scrollTop = 0;
+  scrollLeft = 0;
+  /** Derived from the offset box: no layout, so an element is always at the origin. */
+  getBoundingClientRect(): ReturnType<typeof rectOf> {
+    return rectOf(this.offsetWidth, this.offsetHeight);
+  }
+  /**
+   * Both spellings the DOM takes — `scrollTo({ top })` and `scrollTo(left, top)` — writing the
+   * offsets and running the island's `scroll` listener, which is how a virtualized list learns its
+   * window moved. `scroll` is not in Solid's delegated set, so `onScroll` compiles to
+   * `addEventListener('scroll', …)` and only that listener is looked for.
+   */
+  scrollTo(options: { top?: number; left?: number } | number, top?: number): void {
+    if (typeof options === 'number') {
+      this.scrollLeft = options;
+      if (top !== undefined) this.scrollTop = top;
+    } else {
+      if (options.left !== undefined) this.scrollLeft = options.left;
+      if (options.top !== undefined) this.scrollTop = options.top;
+    }
+    this.listeners.get('scroll')?.({ currentTarget: this, target: this });
+  }
+  /**
+   * A compound of tag, `#id`, `.class`, `[attr]` and `[attr="value"]`, joined by the descendant
+   * and child combinators — `island-selector.ts` — anywhere in the subtree. Anything richer throws
+   * `X_TEST_ISLAND_SELECTOR_UNSUPPORTED` rather than matching nothing.
    *
    * DESCENDANTS only, never `this`: the DOM's own `querySelector` does not match the element it is
    * called on, and a host `<div>` answering `find('div')` reports the container the test built
    * instead of the markup the island rendered into it.
    */
   querySelectorAll(selector: string): readonly FakeElement[] {
-    const attribute = ATTRIBUTE_SELECTOR.exec(selector);
+    const parsed = parseSelector(selector);
     const found: FakeElement[] = [];
     const walk = (node: FakeNode): void => {
       for (const child of node.children) {
-        if (child instanceof FakeElement && matches(child, selector, attribute)) found.push(child);
+        if (child instanceof FakeElement && matchesSelector(child, parsed)) found.push(child);
         walk(child);
       }
     };
@@ -279,15 +321,6 @@ export class FakeElement extends FakeNode {
     return this.querySelectorAll(selector)[0] ?? null;
   }
 }
-
-const matches = (
-  node: FakeElement,
-  selector: string,
-  attribute: RegExpExecArray | null,
-): boolean =>
-  attribute === null
-    ? node.tagName === selector
-    : node.getAttribute(attribute[1] as string) === attribute[2];
 
 export class FakeTemplate extends FakeElement {
   content: FakeNode = new FakeNode();
@@ -331,6 +364,8 @@ export function parseHtml(html: string): FakeNode {
 export interface IslandDocument {
   readonly documentElement: FakeElement;
   readonly globals: Readonly<Record<string, unknown>>;
+  /** Every `ResizeObserver` this document's island constructed and has not disconnected. */
+  readonly resizeObservers: Set<FakeResizeObserver<FakeElement>>;
 }
 
 /**
@@ -340,6 +375,9 @@ export interface IslandDocument {
  */
 export function createIslandDocument(): IslandDocument {
   const documentElement = new FakeElement('html');
+  // Per document, for the reason the document itself is: an observer the last mount's island
+  // never disconnected must not hear the next mount's `resize`.
+  const { registry: resizeObservers, ResizeObserver } = createResizeObservers<FakeElement>();
   const document = {
     documentElement,
     createElement: (tag: string): FakeElement =>
@@ -359,6 +397,7 @@ export function createIslandDocument(): IslandDocument {
   };
   return {
     documentElement,
+    resizeObservers,
     globals: {
       // Solid's event delegation reads `window` before it reads anything else.
       window: globalThis,
@@ -367,6 +406,9 @@ export function createIslandDocument(): IslandDocument {
       Node: FakeNode,
       Text: FakeText,
       document,
+      // A constructor, so an island's `typeof ResizeObserver === 'function'` guard takes the
+      // branch a browser takes. `window.ResizeObserver` resolves through `globalThis` above.
+      ResizeObserver,
     },
   };
 }

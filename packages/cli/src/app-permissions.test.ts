@@ -15,6 +15,7 @@ import {
 } from '@ultimat3/policy';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { grantedReferences, permissionFindings, policyFindings, siteFile } from './app-permissions';
+import { CLI_ORIGIN, type DuplicateInstall } from './duplicate-packages';
 import type { Finding } from './output';
 
 const ROOT = '/tmp/x-app-permissions';
@@ -122,6 +123,37 @@ describe('unit · the step reports one finding per place, and carries the load',
       'X_PERMISSION_UNKNOWN',
       'X_CLI_UNEXPECTED',
     ]);
+  });
+
+  test('a second copy of @ultimat3/policy is a finding even with nothing undeclared', async () => {
+    // The step's predicate checks NOTHING while no permission is declared — so an app whose
+    // `definePermissions` ran in the OTHER copy was green over an undeclared grant.
+    const twoPolicies: DuplicateInstall = {
+      pkg: '@ultimat3/policy',
+      copies: [
+        { dir: '/app/node_modules/@ultimat3/policy', version: '19.1.0', from: ['.', CLI_ORIGIN] },
+        {
+          dir: '/app/apps/web/node_modules/@ultimat3/policy',
+          version: '19.0.0',
+          from: ['apps/web'],
+        },
+      ],
+    };
+    const probe = async (_root: string, packages: readonly string[]) => {
+      expect(packages).toEqual(['@ultimat3/policy', '@ultimat3/entity']);
+      return [twoPolicies];
+    };
+    const loadFailure: Finding = {
+      code: 'X_CLI_UNEXPECTED',
+      cause: 'boom',
+      fix: 'x doctor --json',
+    };
+    const findings = await policyFindings(ROOT, async () => ({ findings: [loadFailure] }), probe);
+    expect(codesOf(findings)).toEqual(['X_PACKAGE_DUPLICATED', 'X_CLI_UNEXPECTED']);
+    expect(findings[0]?.cause).toContain('permission registry');
+    expect(findings[0]?.fix).toBe(
+      'set "@ultimat3/policy": "19.1.0" in apps/web/package.json, then: bun install && x verify --only policy --json',
+    );
   });
 
   test('a role declared inside the app root is located; one outside it is not guessed at', () => {

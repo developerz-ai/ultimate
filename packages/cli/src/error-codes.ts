@@ -148,6 +148,11 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_SECRETS_EDITOR_MISSING',
   'X_SECRETS_EDIT_FAILED',
   'X_WORKSPACE_DEP_UNDECLARED',
+  // Two module instances of a registry-holding package inside ONE app's `node_modules`. Its own
+  // code and not the registry's (`X_CATALOG_UNREGISTERED`, `X_PERMISSION_UNKNOWN`): those carry a
+  // source-level fix, and an agent following it here edits a file that is already right — the
+  // repair is an install, and only `duplicate-packages.ts` can see that.
+  'X_PACKAGE_DUPLICATED',
   'X_SHOT_BROWSER_MISSING',
   // `x shot --island` — one code per way a component's named state fails to become a picture.
   // The last of the four is the one that gates: it is checked against the expansion computed
@@ -290,6 +295,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_SECRETS_EDITOR_MISSING: 'no $EDITOR to open the decrypted secrets in',
   X_SECRETS_EDIT_FAILED: 'the editor exited non-zero, so nothing was resealed',
   X_WORKSPACE_DEP_UNDECLARED: 'a workspace imports another workspace it does not declare',
+  X_PACKAGE_DUPLICATED: 'two copies of one registry-holding framework package are installed',
   X_SHOT_BROWSER_MISSING: 'x shot found no browser library in the app',
   X_SHOT_ISLAND_STATES_EMPTY: 'an island states file declares no manifest',
   X_SHOT_ISLAND_UNPHOTOGRAPHABLE: 'the island never reached a state worth photographing',

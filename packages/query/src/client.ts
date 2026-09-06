@@ -21,6 +21,9 @@ import { problemOf, traceHeaders } from '@ultimat3/core';
 import type { InferInput, StandardSchemaV1 } from '@ultimat3/schema';
 import { QueryRequestFailedError } from './errors';
 import { derivePath } from './naming';
+import type { PageControls } from './page-controls';
+import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
+import type { Page } from './pagination';
 import type { Query } from './query';
 import { isJsonObject } from './stable';
 
@@ -50,11 +53,23 @@ export interface QueryCallOptions {
   readonly retry?: ClientRetry;
 }
 
-/** `feed({ orgId })` with the input schema and the row type both inferred. */
-export type QueryClientMethod<TInput extends StandardSchemaV1, TRow extends object> = (
-  input: InferInput<TInput>,
-  options?: QueryCallOptions,
-) => Promise<readonly TRow[]>;
+/**
+ * `feed({ orgId })` with the input schema and the row type both inferred — and `feed.page(...)`,
+ * the same read as one bounded page.
+ *
+ * `page` rides ON the method rather than beside it because the method is what a `queryClient` map
+ * hands out per name: `queries.feed.page({ orgId }, { first: 20 })` needs no second map and no
+ * second derivation of the URL. Its args are `PaginateArgs` with the server-side options gone —
+ * the browser has no `ctx` and no `actor` to hand over; the route decides both.
+ */
+export interface QueryClientMethod<TInput extends StandardSchemaV1, TRow extends object> {
+  (input: InferInput<TInput>, options?: QueryCallOptions): Promise<readonly TRow[]>;
+  page(
+    input: InferInput<TInput>,
+    args: PageControls,
+    options?: QueryCallOptions,
+  ): Promise<Page<TRow>>;
+}
 
 /**
  * Loose constraint on purpose: a map of concrete `Query<TInput, TRow>` values must be
@@ -114,8 +129,14 @@ export function queryClientMethodFor<TInput extends StandardSchemaV1, TRow exten
   const doFetch: FetchLike = options.fetch ?? ((input, init) => fetch(input, init));
   const base = options.baseUrl.replace(/\/+$/, '');
   // Erased at the wire seam; the row type is this query's by construction.
-  return (input, callOptions = {}) =>
+  const rows = (input: InferInput<TInput>, callOptions: QueryCallOptions = {}) =>
     read(doFetch, base, options, name, input, callOptions) as Promise<readonly TRow[]>;
+  const page = (
+    input: InferInput<TInput>,
+    args: PageControls,
+    callOptions: QueryCallOptions = {},
+  ) => read(doFetch, base, options, name, input, callOptions, args) as Promise<Page<TRow>>;
+  return Object.assign(rows, { page });
 }
 
 async function read(
@@ -125,8 +146,9 @@ async function read(
   name: string,
   input: unknown,
   callOptions: QueryCallOptions,
+  page?: PageControls,
 ): Promise<unknown> {
-  const search = searchOf(input);
+  const search = searchOf(input, page);
   const url = `${base}${derivePath(name)}${search === '' ? '' : `?${search}`}`;
   const dispatch = (signal: AbortSignal | undefined): Promise<WireAnswer> =>
     fetchOnce(doFetch, url, options, name, signal ?? callOptions.signal);
@@ -177,16 +199,25 @@ async function fetchOnce(
 /**
  * Input as a query string. Keys are sorted so the same input always produces the
  * same URL — a GET is a cache key, and an unstable one caches nothing.
+ *
+ * The page controls come LAST, after the sorted input and in a fixed order, so a paged URL is the
+ * plain URL with a suffix — the same dedup key for the same page, and a log line a reader can
+ * split at `_first=` to recover the read underneath.
  */
-function searchOf(input: unknown): string {
-  if (!isJsonObject(input)) return '';
+function searchOf(input: unknown, page?: PageControls): string {
   const params = new URLSearchParams();
-  for (const key of Object.keys(input).sort()) {
-    const value = input[key];
-    if (value === undefined || value === null) continue;
-    for (const item of Array.isArray(value) ? (value as readonly unknown[]) : [value]) {
-      params.append(key, typeof item === 'object' ? JSON.stringify(item) : String(item));
+  if (isJsonObject(input)) {
+    for (const key of Object.keys(input).sort()) {
+      const value = input[key];
+      if (value === undefined || value === null) continue;
+      for (const item of Array.isArray(value) ? (value as readonly unknown[]) : [value]) {
+        params.append(key, typeof item === 'object' ? JSON.stringify(item) : String(item));
+      }
     }
+  }
+  if (page !== undefined) {
+    params.append(PAGE_FIRST_KEY, String(page.first));
+    if (page.after !== undefined) params.append(PAGE_AFTER_KEY, page.after);
   }
   return params.toString();
 }

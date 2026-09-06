@@ -1,12 +1,13 @@
 // The island chunk table: every `*.island.tsx` in the app compiled as its OWN bundle entry point,
-// content-hashed, plus the resolver that turns a page's `src` specifier into the URL its
+// addressed by a hash of its SOURCE GRAPH (`graphHash` — `Bun.build`'s minified output is not
+// byte-deterministic), plus the resolver that turns a page's `src` specifier into the URL its
 // `data-x-entry` carries. One entry point per island is axiom 6 made mechanical — the page's graph
 // never reaches an island, so a `site/` document stays at 0kb whatever the island imports.
 
 // Bun ships no path API. `posix` does the specifier arithmetic (an app-relative route file is
 // POSIX by construction), `join`/`basename` the filesystem side.
 import { basename, join, posix, relative, sep } from 'node:path';
-import { renderThrowable } from '@ultimat3/core';
+import { frameworkVersion, renderThrowable } from '@ultimat3/core';
 import { ISLAND_EXTENSION, IslandInvalidError, islandModuleId } from '@ultimat3/render';
 import { contentHash } from '@ultimat3/render/server';
 import { IslandBuildFailedError } from './errors';
@@ -32,7 +33,10 @@ export interface IslandChunk {
   readonly file: string;
   /** `islandModuleId` of the filename — the id the document, the budget and a finding all name. */
   readonly moduleId: string;
-  /** Immutable, content-addressed URL. What `data-x-entry` carries and what a route serves. */
+  /**
+   * Immutable, source-addressed URL. What `data-x-entry` carries and what a route serves — stable
+   * for as long as the sources, the framework version and the Bun version are. See `graphHash`.
+   */
   readonly url: string;
   /** The built JavaScript. Held in memory so `x dev` and the container serve without a disk hop. */
   readonly code: string;
@@ -101,28 +105,136 @@ async function buildOne(root: string, file: string): Promise<IslandChunk> {
       // `x dev` serves the same chunk the container does, and bytes that depend on the ambient
       // NODE_ENV are a content hash and a byte budget measured on a build nobody ships.
       define: { 'process.env.NODE_ENV': '"production"' },
+      // The fourth, and it is asked for its INPUT list rather than its output: `sourcesContent` is
+      // the whole module graph this chunk was built from, which is the only stable identity a
+      // chunk has. See `graphHash`. Measured on 1.4.0 against a 131 kB island: 277ms with it and
+      // 276ms without, so the map costs nothing worth naming.
+      sourcemap: 'external',
     });
   } catch (error) {
     throw new IslandBuildFailedError({ file, logs: describeBuildError(error) });
   }
   const output = built.outputs.find((artifact) => artifact.kind === 'entry-point');
-  if (!built.success || output === undefined) {
+  const map = built.outputs.find((artifact) => artifact.kind === 'sourcemap');
+  if (!built.success || output === undefined || map === undefined) {
     throw new IslandBuildFailedError({
       file,
       logs: built.logs.map((log) => String(log)).join('; '),
     });
   }
-  const code = await output.text();
+  const code = stripDebugId(await output.text());
+  const hash = graphHash(file, await map.text());
   const moduleId = islandModuleId(basename(file));
   return {
     file,
     moduleId,
-    // Hashed with the framework's own `contentHash`, the function that already stamps an ETag and
-    // a precache revision — one identity for a byte string, not a third.
-    url: `${ISLAND_BASE_PATH}/${moduleId}-${contentHash(code)}.js`,
-    code,
+    url: `${ISLAND_BASE_PATH}/${moduleId}-${hash}.js`,
+    // The FIRST bytes this process emitted for these inputs, so a URL served `immutable` answers
+    // one byte string for as long as the process lives. Without it `x dev` re-mints the chunk on
+    // every watcher tick and a browser holding the previous one under `max-age=31536000` has two
+    // different files at one address.
+    code: stableCode(file, hash, code),
     bytes: new TextEncoder().encode(code).byteLength,
   };
+}
+
+/**
+ * `sourcemap: 'external'` appends `//# debugId=<hex>` to the chunk. It is a pointer to a map this
+ * framework does not serve, so it is removed rather than shipped — and removing it makes the
+ * emitted bytes identical to what the same build produced before the map was asked for, which is
+ * what keeps `bytes` a budget number and not a build-flag artefact. `slice`, never a `replace` with
+ * an empty replacement — `bun run sql-literal-copies` refuses that shape anywhere but `db/sql.ts`.
+ */
+const DEBUG_ID_COMMENT = '\n//# debugId=';
+
+function stripDebugId(code: string): string {
+  const at = code.lastIndexOf(DEBUG_ID_COMMENT);
+  return at === -1 ? code : code.slice(0, at);
+}
+
+/**
+ * The chunk's identity, computed from what went IN rather than from what came out.
+ *
+ * `Bun.build` is not byte-deterministic under `minify`. Measured on 1.4.0, one entry point, no
+ * source file touched: a 131,589-byte island alternated between two outputs of IDENTICAL length
+ * differing only in minified identifier names (`var ca=Object.defineProperty` against
+ * `var la=…`) — roughly one build in ten, which is a race in the renamer and not anything a caller
+ * can order. Hashing that output made the URL flap: ten distinct `session-console-*.js` names in
+ * ten minutes, so a service worker's precache manifest named a chunk that already 404ed and a
+ * browser's `immutable` cache never hit on a 131 kB download. Twelve consecutive builds hash
+ * identically here.
+ *
+ * `sourcesContent`, hashed per file and SORTED, so the identity is independent of the order the
+ * bundler happened to visit the graph in. The PATHS are deliberately not in it: they are absolute
+ * on the build machine and would make a chunk built in a container disagree with the same chunk
+ * built on a laptop for no difference a browser could observe. `file` is, so two islands with
+ * byte-identical sources under different names stay two chunks; the framework version and the Bun
+ * version are, because both decide the emitted bytes while no source file moves — an upgrade must
+ * mint a new URL rather than leave a stale chunk pinned in a browser for a year.
+ *
+ * What this gives up, stated plainly: the URL is source-addressed, not byte-addressed, so two
+ * processes building the same sources can serve two byte-strings at one URL. They are the same
+ * program under different local identifier names. That is the trade a nondeterministic bundler
+ * forces, and the alternative — `minify: { identifiers: false }`, which IS deterministic — was
+ * measured at 193,590 bytes against 131,649, +47% raw and +20% gzipped, on every island of every
+ * app. Delete this the day `Bun.build` is deterministic.
+ */
+function graphHash(file: string, map: string): string {
+  const parsed: unknown = JSON.parse(map);
+  const contents = sourcesContentOf(parsed);
+  if (contents === undefined) {
+    throw new IslandBuildFailedError({
+      file,
+      logs: 'the bundler emitted a source map with no sourcesContent, so the chunk has no stable identity',
+    });
+  }
+  const graph = contents.map((source) => contentHash(source)).sort();
+  return contentHash([file, frameworkVersion(), Bun.version, ...graph].join('\u0000'));
+}
+
+/**
+ * `sourcesContent`, read the way `aggregatedErrors` below reads `errors`: narrowed first,
+ * dereferenced inside a `try`, `undefined` for anything that is not a full list of strings. A
+ * partial list is refused rather than padded — a graph with holes in it hashes two different
+ * islands the same.
+ */
+function sourcesContentOf(value: unknown): readonly string[] | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  try {
+    const held: unknown = (value as Record<string, unknown>)['sourcesContent'];
+    if (!Array.isArray(held) || held.length === 0) return undefined;
+    return held.every((one: unknown) => typeof one === 'string')
+      ? (held as readonly string[])
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The code this process already emitted for these inputs, or the code it just built.
+ *
+ * Keyed by PATH and validated by the input hash, `transformIslandTsx`'s cache's shape and for its
+ * reason: one entry per island bounds the map by the island count, which is the only quantity that
+ * should bound it, and an entry whose hash no longer matches is replaced rather than served.
+ */
+const emitted = new Map<string, { readonly graph: string; readonly code: string }>();
+
+/** Test seam: the table is process-global because the dev server it serves is too. */
+export function clearIslandChunkCache(): void {
+  emitted.clear();
+}
+
+/**
+ * `graph`, never `hash`: `bun run secret-compare` reads the NAME of a comparison's operands, and a
+ * value called `hash` is a digest an attacker may be probing. This one is a build input's
+ * identity — the same reason `pr-threads.ts` calls a review state `wanted`.
+ */
+function stableCode(file: string, graph: string, code: string): string {
+  const hit = emitted.get(file);
+  if (hit !== undefined && hit.graph === graph) return hit.code;
+  emitted.set(file, { graph, code });
+  return code;
 }
 
 /**

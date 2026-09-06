@@ -5,6 +5,7 @@
 // the chunk builds, `mount` renders, the field tracks, and the submit posts what was typed.
 
 import { describe, expect, test } from 'bun:test';
+import { dirname, join } from 'node:path';
 import { mountIsland } from '@ultimat3/testing';
 import { buildIslands, islandBundle } from '../island-bundle';
 import { fixtureAppRoot } from './island-fixture';
@@ -19,6 +20,16 @@ const ENTRY = `${DIR}/invoice-form.island.tsx`;
 const ENDPOINT = '/api/invoice/create-invoice';
 const LABELS = { title: 'Title', submit: 'Save', saved: 'Saved', retry: 'Try again' };
 const PROPS = { endpoint: ENDPOINT, locale: 'en', labels: LABELS };
+/** The one line that registers the runtime — six named imports, and the order the contract lists them. */
+const REGISTRATION =
+  'setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup })';
+/**
+ * A string only an UN-SHAKEN solid-js carries: `observable()`'s refusal, which no island calls.
+ * `setSolidRuntime(solidRuntime)` from `import * as solidRuntime` kept it — and the 14.8 kB around
+ * it — in every chunk; the six-pick registration lets the bundler drop it. A string literal, so it
+ * survives minification; the negative control below proves `dist/solid.js` really contains it.
+ */
+const NAMESPACE_ONLY = 'Expected the observer to be an object.';
 
 const emitted = (): readonly { path: string; contents: string }[] =>
   formIslandFiles(names('invoice'), DIR, 'apps/web/app/invoices').map((file) => ({
@@ -85,8 +96,24 @@ describe('unit · x g resource emits its form as a client entry', () => {
     const source = emitted()[0]?.contents ?? '';
     // Order is the whole assertion: `<UiProvider>` reads the registration at render time, so a
     // `setSolidRuntime` below the `render()` call is a line that exists and never runs in time.
-    expect(source.indexOf('setSolidRuntime(solidRuntime)')).toBeGreaterThan(-1);
-    expect(source.indexOf('setSolidRuntime(solidRuntime)')).toBeLessThan(source.indexOf('render('));
+    expect(source.indexOf(REGISTRATION)).toBeGreaterThan(-1);
+    expect(source.indexOf(REGISTRATION)).toBeLessThan(source.indexOf('render('));
+    // Named imports, never the namespace: `setSolidRuntime(solidRuntime)` from
+    // `import * as solidRuntime` keeps every export of solid-js alive in the chunk (14.8 kB
+    // minified, measured), and the bundle case below is what proves the shaking actually happens.
+    expect(source).not.toMatch(/^import \* as /m);
+  });
+});
+
+describe('unit · the form x g resource emits ships a shaken solid-js', () => {
+  test('the chunk carries the six the contract names and not the exports nothing calls', async () => {
+    using root = await fixtureAppRoot('resource-form-shaken', withStylesheet(emitted()));
+    const chunk = (await buildIslands(root.path, { only: ENTRY })).chunks[0];
+    expect(chunk?.code).not.toContain(NAMESPACE_ONLY);
+    // The negative control: the marker IS in Solid's production core, so the line above asserts
+    // something a namespace registration would fail rather than a string in neither file.
+    const solid = Bun.resolveSync('solid-js/package.json', import.meta.dir);
+    expect(await Bun.file(join(dirname(solid), 'dist/solid.js')).text()).toContain(NAMESPACE_ONLY);
   });
 });
 
@@ -152,7 +179,7 @@ describe('unit · the form x g resource emits actually mounts', () => {
   test('deleting setSolidRuntime from the entry throws X_UI_RUNTIME_MISSING', async () => {
     const mutated = withStylesheet(emitted()).map((file) =>
       file.path === ENTRY
-        ? { ...file, contents: file.contents.replace('setSolidRuntime(solidRuntime);', '') }
+        ? { ...file, contents: file.contents.replace(`${REGISTRATION};`, '') }
         : file,
     );
     using root = await fixtureAppRoot('resource-form-no-runtime', mutated);

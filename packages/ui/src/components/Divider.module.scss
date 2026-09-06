@@ -23,7 +23,7 @@
   color: t.role('fg-muted');
   font-size: t.text(xs);
   text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
+  letter-spacing: t.tracking(wide);
 
   &::before,
   &::after {

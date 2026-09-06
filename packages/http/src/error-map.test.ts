@@ -8,7 +8,13 @@ import {
 import { CURRENCY_CODE_PATTERN, isCurrencyCode } from '@ultimat3/schema';
 import { defineHttpConfig } from './config';
 import { factsOf, toProblem } from './error-facts';
-import { ERROR_STATUS, registerErrorStatus, resetErrorStatus, statusFor } from './error-map';
+import {
+  declaredStatusFor,
+  ERROR_STATUS,
+  registerErrorStatus,
+  resetErrorStatus,
+  statusFor,
+} from './error-map';
 import { HTTP_ERROR_CODES } from './errors';
 import { createPipeline } from './pipeline';
 import { text } from './response';
@@ -133,6 +139,14 @@ describe('the rows that were decided rather than defaulted', () => {
     // would record it as UNDECIDED, which is the opposite of what is known about it.
     expect(statusFor('X_UI_FORM_PATH_INVALID')).toBe(500);
     expect(Object.hasOwn(ERROR_STATUS, 'X_UI_FORM_PATH_INVALID')).toBe(true);
+  });
+
+  test('an island handed props it cannot carry is a DECLARED 500, so its cause survives to prod', () => {
+    // Raised inside a request on every ssr render of the page. As an unclassified failure the
+    // problem document blanked the cause outside dev, and the cause is the whole instruction —
+    // which prop, how many bytes. `declaredStatusFor` is what `isUnclassifiedFailure` reads.
+    expect(statusFor('X_ISLAND_PROPS_INVALID')).toBe(500);
+    expect(declaredStatusFor('X_ISLAND_PROPS_INVALID')).toBe(500);
   });
 });
 

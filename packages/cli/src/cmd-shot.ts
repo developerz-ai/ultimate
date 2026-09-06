@@ -322,7 +322,9 @@ export const shotCommand: CliCommand = {
     const timeoutMs = intFlag(ctx.args, 'timeout', 1, DEFAULT_PAGE_TIMEOUT_MS);
     // Which browser this run gets — start one here, or attach to one somebody else is running.
     // Decided by `shot-browser.ts` over plain inputs, and decided HERE, before a dev server or a
-    // provider session exists to pay for a typo.
+    // provider session exists to pay for a typo. It also PROBES for an installed Chrome and refuses
+    // when there is none: `puppeteer-core` bundles no browser, so a missing one used to surface as
+    // a library throw one embedded Postgres later.
     const { cdpUrl, executablePath } = shotBrowserChoice({
       cdpFlag: flagString(ctx.args, 'cdp-url'),
       browserFlag: flagString(ctx.args, 'browser'),

@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { routeDescriptor } from '../e2e/route-descriptor-fixture';
 import { islandBundle } from './island-bundle';
 import type { PwaArtifacts } from './pwa-artifacts';
+import { styleBundleOf } from './style-bundle';
 import type { ServiceWorkerArtifacts } from './sw-artifacts';
 import { SERVICE_WORKER_PATH, SW_REGISTER_PATH, serviceWorkerArtifacts } from './sw-artifacts';
 
@@ -35,6 +36,7 @@ const build = (patch: Partial<PwaArtifacts> = {}): ServiceWorkerArtifacts => {
     buildId: BUILD_ID,
     routes: ROUTES,
     islands: islandBundle([]),
+    styles: styleBundleOf([]),
   });
   if (built === undefined) expect.unreachable('an app with a fallback got no service worker');
   return built;
@@ -50,6 +52,7 @@ describe('serviceWorkerArtifacts', () => {
         buildId: BUILD_ID,
         routes: ROUTES,
         islands: islandBundle([]),
+        styles: styleBundleOf([]),
       }),
     ).toBeUndefined();
   });
@@ -111,5 +114,30 @@ describe('serviceWorkerArtifacts', () => {
     }).source;
 
     expect(source).toContain('/auth');
+  });
+});
+
+// The surface stylesheet is an `immutable`, content-addressed file exactly as an island chunk is,
+// so it belongs in the precache manifest for the same reason: a document reached offline with no
+// CSS is a page the visitor cannot read. It rode nowhere until 2026-09-06, because the CSS was
+// inside the document.
+describe('the precache manifest', () => {
+  test('names every surface stylesheet beside every island chunk', () => {
+    const styles = styleBundleOf([
+      { surface: 'site', css: '.hero{color:red}' },
+      { surface: 'app', css: '.feed{color:blue}' },
+    ]);
+    const built = serviceWorkerArtifacts({
+      pwa: pwa(),
+      buildId: BUILD_ID,
+      routes: ROUTES,
+      islands: islandBundle([]),
+      styles,
+    });
+    if (built === undefined) expect.unreachable('an app with a fallback got no service worker');
+
+    for (const chunk of styles.chunks) {
+      expect(built.source).toContain(chunk.url);
+    }
   });
 });

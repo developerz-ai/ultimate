@@ -7,6 +7,19 @@ import type { SyncNode } from './sync-node';
 
 export interface ListenOptions {
   readonly port?: number;
+  /**
+   * The interface to bind. Defaults to `0.0.0.0` — Bun's default, and the right one for a
+   * container, where a process bound to loopback is unreachable from the port mapping.
+   *
+   * A CALLER THAT BINDS ITS WEB ROLE TO LOOPBACK MUST PASS IT HERE TOO. `x dev` did not, and the
+   * result was a laptop serving its live database to the LAN: the web role took
+   * `DEV_BINDING.hostname` (`localhost`, and its own docstring says why — "so a laptop on a café
+   * network is not serving the app to the café"), while the sync node on the very next port took
+   * this default and answered on every interface. The socket carries `snapshot` and `patch`
+   * frames for every live query the app has registered, so the intent the web role states was
+   * defeated by the listener beside it.
+   */
+  readonly hostname?: string;
 }
 
 export interface SyncListener {
@@ -22,6 +35,9 @@ export interface SyncListener {
 export function listenSyncNode(node: SyncNode, options: ListenOptions = {}): SyncListener {
   const server = Bun.serve({
     port: finiteOption('listenSyncNode', 'port', options.port ?? 3001),
+    // Spread, not `hostname: options.hostname` — Bun reads an explicit `undefined` as a request
+    // and not as an absence, and the default it applies to a missing key is the one we want.
+    ...(options.hostname === undefined ? {} : { hostname: options.hostname }),
     fetch: node.fetch,
     websocket: node.websocket,
   });

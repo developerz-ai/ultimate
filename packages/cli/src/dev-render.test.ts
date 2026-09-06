@@ -15,6 +15,7 @@ import {
 } from '@ultimat3/render';
 import { clearStylesheets, loadStylesheet } from '@ultimat3/render/server';
 import { appRoutes } from './dev-render';
+import { styleBundle } from './style-bundle';
 
 const BUILD_ID = 'build-under-test';
 
@@ -209,14 +210,26 @@ describe('unit · x dev renders the app routes', () => {
     expect(await (await get('/')).text()).toContain('<div id="x-root"></div>');
   });
 
-  test('the surface CSS is inlined, and a site page never carries app CSS', async () => {
+  // The document LINKS its surface stylesheet and carries none of it. Both halves matter: the
+  // bytes leaving the document is the fix (156,738 of them, in a `no-store` response, on every
+  // navigation), and the per-surface split is axiom 6 — a `site/` page must not be handed `app/`
+  // CSS, whether inline or by href.
+  test('the surface CSS is linked, not inlined, and a site page never links app CSS', async () => {
     loadStylesheet('/srv/demo/apps/web/site/page.module.scss', '.hero{color:red}');
     loadStylesheet('/srv/demo/apps/web/app/feed/page.module.scss', '.feed{color:blue}');
     register({ file: 'apps/web/site/page.tsx', render: 'static' });
     const body = await (await get('/')).text();
-    expect(body).toContain('<style>');
-    expect(body).toContain('color:red');
-    expect(body).not.toContain('color:blue');
+    expect(body).not.toContain('<style>');
+    expect(body).not.toContain('color:red');
+    const site = styleBundle().hrefFor('site');
+    expect(body).toContain(`<link rel="stylesheet" href="${site}">`);
+    expect(body).not.toContain(String(styleBundle().hrefFor('app')));
+    // In `<head>`, which is the whole of "no flash of unstyled content": a `<link>` there is
+    // render-blocking in every browser, exactly as the inline block was. Anywhere else it is not,
+    // and the page paints naked first. Sliced rather than compared with `indexOf`, which answers
+    // `-1` and passes a `toBeLessThan` when the thing it orders was never emitted.
+    expect(body).toContain('</head>');
+    expect(body.split('</head>')[0] ?? '').toContain('<link rel="stylesheet"');
   });
 
   // `<html lang>` was the literal `'en'` on every document this file emits, while the pipeline's

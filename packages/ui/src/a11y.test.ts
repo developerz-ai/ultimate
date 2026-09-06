@@ -319,8 +319,8 @@ describe('announce', () => {
   interface FakeNode {
     id: string;
     textContent: string;
+    className: string;
     readonly attrs: Record<string, string>;
-    readonly style: { cssText: string };
     setAttribute(name: string, value: string): void;
   }
 
@@ -332,11 +332,13 @@ describe('announce', () => {
   function installAnnounceDom(): AnnounceDom {
     const appended: FakeNode[] = [];
     const node = (): FakeNode => {
+      // No `style` on purpose: the region is hidden by a class, and an inline style is the CSP
+      // violation this shape exists to refuse — reintroducing one throws here rather than passing.
       const created: FakeNode = {
         id: '',
         textContent: '',
+        className: '',
         attrs: {},
-        style: { cssText: '' },
         setAttribute(name, value): void {
           created.attrs[name] = value;
         },
@@ -386,9 +388,8 @@ describe('announce', () => {
         'aria-live': 'polite',
         'aria-atomic': 'true',
       });
-      // Off-screen but not `display:none`, which would stop it being announced at all.
-      expect(region.style.cssText).toContain('clip-path:inset(50%)');
-      expect(region.style.cssText).not.toContain('display:none');
+      // Hidden by the class `tokens/reset.scss` styles — asserted against that stylesheet below.
+      expect(region.className).toBe('ultimate-live-region');
       expect(region.textContent).toBe('saved');
 
       announce('saved again');
@@ -435,5 +436,43 @@ describe('announce', () => {
     } finally {
       dom.restore();
     }
+  });
+});
+
+/**
+ * The live region is hidden by a CLASS in `tokens/reset.scss`, never by an inline style. The CSP
+ * the framework itself sends (`packages/cli/src/dev-roles.ts`) hashes the inline styles a document
+ * carries at render time, so a style a script applies afterwards is not in that set: it logged
+ * `Applying inline style violates the following Content Security Policy directive 'style-src'` on
+ * every page load of a real app in a clean headless Chrome, and an app promoting that report-only
+ * policy to enforcing would have lost the declaration and painted the message on screen.
+ *
+ * A stylesheet cannot be asserted through a render — there is no CSS engine in this process — so
+ * the source is what is read, the same way `tokens/reset.test.ts` reads it.
+ */
+describe('the live region is styled from a stylesheet, not by script', () => {
+  const read = async (path: string): Promise<string> =>
+    await Bun.file(new URL(path, import.meta.url).pathname).text();
+
+  // A STATEMENT, not the sentence above the constant that names what was removed: a comment
+  // saying "never `region.style.cssText`" is the record of this fix and can never violate a CSP.
+  test('announce() touches no inline style', async () => {
+    expect(await read('./a11y.ts')).not.toMatch(/^\s*region\.style\b/m);
+  });
+
+  test('reset.scss hides the class through the shared visually-hidden mixin', async () => {
+    // The mixin, not a second copy of the recipe: the one in `_mixins.scss` carries the
+    // `inset-inline-start` that stops an off-screen box widening the document.
+    expect(await read('./tokens/reset.scss')).toMatch(
+      /\.ultimate-live-region \{\s*@include t\.visually-hidden;\s*\}/,
+    );
+  });
+
+  test('and that mixin hides without display:none, which would silence the region', async () => {
+    const body = /@mixin visually-hidden \{([\s\S]*?)\n\}/.exec(
+      await read('./tokens/_mixins.scss'),
+    );
+    expect(body?.[1]).toContain('clip-path: inset(50%)');
+    expect(body?.[1]).not.toContain('display: none');
   });
 });

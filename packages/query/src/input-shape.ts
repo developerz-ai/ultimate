@@ -17,6 +17,7 @@
 
 import { type SchemaNode, tryIntrospect } from '@ultimat3/schema';
 import { QueryInputUnencodableError } from './errors';
+import { PAGE_CONTROL_KEYS } from './page-controls';
 
 /** Node kinds whose value is a structure, not characters. `money` is `{ minor, currency }`. */
 const STRUCTURAL = new Set(['object', 'record', 'money']);
@@ -27,6 +28,12 @@ const STRUCTURAL = new Set(['object', 'record', 'money']);
  */
 function unencodable(node: SchemaNode): string | undefined {
   for (const [key, child] of Object.entries(node.properties ?? {})) {
+    // The route reads `_first` and `_after` OFF the search string before the schema sees it, so a
+    // declaration naming either is a field no request can ever fill — refused where it is written,
+    // exactly like a nested object, and for the same reason: the wire cannot carry it.
+    if (PAGE_CONTROL_KEYS.includes(key)) {
+      return `${key} is reserved — the route reads it as a page control (see query.page())`;
+    }
     // Required AND nullable: `searchOf` sends nothing for a `null`, and absence is what the far
     // side then sees — so the value the caller explicitly chose fails validation on arrival.
     // Optional or defaulted, absence is already the schema's own answer and nothing is lost.

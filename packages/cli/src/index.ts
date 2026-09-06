@@ -361,6 +361,8 @@ export {
   skipReasonFor,
   writeStaticReport,
 } from './static-report';
+export type { StyleBundle, StyleChunk } from './style-bundle';
+export { STYLE_BASE_PATH, styleBundle } from './style-bundle';
 export type { TestCounts } from './test-counts';
 export { countsOf } from './test-counts';
 export type { TestFile } from './test-select';

@@ -98,6 +98,17 @@ export { isExposed, toQueryTool, toQueryTools } from './mcp-tool';
  */
 export { derivePath, toKebabCase } from './naming';
 /**
+ * The read half of `openapi.json`. `@ultimat3/cli` merges these paths into `@ultimat3/action`'s
+ * `buildOpenApi` document — the two packages are one tier and cannot compose each other.
+ */
+export { queryOpenApiPaths, toQueryOpenApiOperation } from './openapi';
+/**
+ * The two search-string keys that page `GET /_x/query/<name>` — `_first` and `_after` — and the
+ * shape the typed client's `.page()` takes. `MAX_PAGE_SIZE` is the bound both ends check.
+ */
+export type { PageControls } from './page-controls';
+export { MAX_PAGE_SIZE, PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
+/**
  * The shapes `query.page(input, { first, after })` takes and answers with. `paginate` itself is
  * deliberately unexported: a page is the read's own answer, and a second, importable way to ask
  * for one is a second way to do the thing `.page()` already does. The codec is

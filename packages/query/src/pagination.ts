@@ -12,6 +12,7 @@
 import { assert, decodeCursor, encodeCursor } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { reviveSortKey, serializeSortValue } from './cursor-value';
+import { MAX_PAGE_SIZE } from './page-controls';
 import type { Query, SourceOptions } from './query';
 import { queryHash, queryName, sourceFor } from './query';
 import type { QueryShape, SeekKey } from './shape';
@@ -29,15 +30,6 @@ export interface PaginateArgs extends SourceOptions {
   readonly first: number;
   readonly after?: string;
 }
-
-/**
- * The largest page a read will serve. A TWIN of `@ultimat3/entity`'s `MAX_PAGE_SIZE` — this
- * package holds no dependency on that one, the same compromise `naming.ts` and `deprecation.ts`
- * are ported under — and it exists for the same reason: `first` reaches here straight from an
- * action's input or a route parameter, so `args.first + 1` bound whatever a client sent and one
- * request could ask for five million rows.
- */
-const MAX_PAGE_SIZE = 10_000;
 
 /**
  * One page. Push-down when the source implements `seek()`; otherwise the rows are
@@ -66,6 +58,8 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
   const base = await sourceFor(target, input, args);
   const shape = base.shape();
 
+  // `MAX_PAGE_SIZE` lives in `page-controls.ts`: the route checks the same bound at the wire, as
+  // a 400, before this `assert` — which is a 500 — can see the number.
   // Fetch one extra row: its presence *is* `hasNextPage`, with no count query.
   const window = args.first + 1;
   const source: SqlSource<object> = base.seek === undefined ? base : base.seek(after, window);

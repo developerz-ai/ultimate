@@ -6,6 +6,7 @@ import { ERROR_DOCS_URL, renderCauseValue, singleLine, stringField } from '@ulti
 import type { ValidationIssue } from '@ultimat3/schema';
 import { declaredStatusFor, statusFor } from './error-map';
 import { HTTP_ERROR_TITLES } from './errors';
+import { type ProblemMeta, problemMetaKeysFor, wireMeta } from './problem-meta';
 
 /** Everything a renderer (problem+json, overlay, terminal) needs from a throwable. */
 export interface ErrorFacts {
@@ -180,6 +181,22 @@ function issuesOf(error: unknown): readonly ValidationIssue[] | undefined {
 }
 
 /**
+ * The declared `meta` keys of a throwable, carried, or `undefined`. The declaration is read by
+ * the CODE — never by the class, which the framework cannot see across a bundle — and the walk
+ * itself is `wireMeta`'s. Total, for `retryAfterOf`'s reason: `meta` is a property read on a
+ * value this package did not build, in the frame that decides what the caller sees.
+ */
+function metaOf(error: unknown, code: string): ProblemMeta | undefined {
+  const keys = problemMetaKeysFor(code);
+  if (keys === undefined || typeof error !== 'object' || error === null) return undefined;
+  try {
+    return wireMeta((error as Record<string, unknown>)['meta'], keys);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * RFC-9457 `type`, per code. A URN, and deliberately not a URL: `type` is the document's PRIMARY
  * identifier for the problem KIND — a client switches on it — while `docs` is where a human goes
  * to read about it, and those stopped being the same string when `docs` became one wiki page for
@@ -214,6 +231,14 @@ export interface ProblemDocument {
    * `[]` says "validated clean", which is a different and false claim.
    */
   readonly issues?: readonly ValidationIssue[] | undefined;
+  /**
+   * The keys of the error's `meta` that `registerProblemMeta` declared for its code, JSON-safe
+   * and bounded — and nothing else off `meta`, which is the operator-only bag the rest of this
+   * package keeps OUT of the document (`HttpError`'s doc comment says why). ABSENT when the code
+   * declares none, when none of the declared keys is set, and when one of them cannot be carried
+   * — all-or-nothing, like `issues`, and for its reason.
+   */
+  readonly meta?: ProblemMeta | undefined;
 }
 
 /** The title a caller gets for a failure the framework cannot name. */
@@ -257,6 +282,9 @@ export const toProblem = (
   // withhold — it names the fields and the expectations of something the caller was never meant to
   // see the inside of. `X_INPUT_INVALID` is a declared 4xx, so it is never opaque.
   const issues = opaque ? undefined : issuesOf(error);
+  // The same condition, for the same reason: a code nobody classified cannot have declared any
+  // key either, so this is the belt on `registerProblemMeta`'s "both registrations are needed".
+  const carried = opaque ? undefined : metaOf(error, facts.code);
   return {
     type: problemTypeFor(facts.code),
     title: opaque ? INTERNAL_TITLE : facts.title,
@@ -269,6 +297,7 @@ export const toProblem = (
     docs: facts.docs,
     requestId: meta.requestId,
     ...(issues === undefined ? {} : { issues }),
+    ...(carried === undefined ? {} : { meta: carried }),
   };
 };
 

@@ -1,5 +1,6 @@
 // Modern reset. Assumes `theme.scss` has already run — every value here is a
-// token, so the reset itself flips with the theme.
+// token, so the reset itself flips with the theme. Plus the one GLOBAL class the package owns:
+// the element wearing it is created by `announce()` at runtime, so no component module can hold it.
 
 @use 'index' as t;
 
@@ -41,7 +42,7 @@ h6 {
   color: t.role('fg-strong');
   font-weight: t.weight(semibold);
   line-height: t.leading(tight);
-  letter-spacing: var(--tracking-tight);
+  letter-spacing: t.tracking(tight);
   text-wrap: balance;
 }
 
@@ -132,6 +133,15 @@ table {
 // rather than JS: a lock a script installs is a lock that leaks when the close path throws.
 html:has(dialog:modal) {
   overflow: hidden;
+}
+
+// The live region `announce()` (`../a11y.ts`) appends to <body>, hidden from here rather than
+// through `element.style`: a style a script applies at runtime is not among the inline styles the
+// CSP the framework itself sends has hashed, so it logged a `style-src` violation on every page
+// load and would lose its styling outright under an enforcing policy — putting a screen-reader
+// message on screen. Off-screen, never `display: none`, which would stop it being announced at all.
+.ultimate-live-region {
+  @include t.visually-hidden;
 }
 
 // Global motion guard. Placed last so it wins over every component rule.

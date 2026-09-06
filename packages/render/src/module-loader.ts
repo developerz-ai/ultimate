@@ -80,12 +80,30 @@ export interface Stylesheet {
 
 const stylesheets = new Map<string, Stylesheet>();
 
+/**
+ * Bumped whenever the registry's CONTENT changes — a sheet arriving, a sheet's rules changing, the
+ * whole map being cleared. It exists so a caller can cache something derived from `stylesFor` (the
+ * CLI content-addresses the surface stylesheet and serves it as a file) without re-deriving it per
+ * request, and without a cache that goes stale the moment `x dev` rebuilds an island: island CSS
+ * registers through this same `loadStylesheet`, on every `Bun.build`.
+ *
+ * A re-registration with IDENTICAL css does not bump it. `buildIslands` re-runs its plugins on
+ * every watcher tick, so counting registrations rather than changes would mint a new stylesheet
+ * URL on every save of an unrelated file — the immutable-cache miss this counter exists to avoid.
+ */
+let revision = 0;
+
+export function stylesheetsRevision(): number {
+  return revision;
+}
+
 export function registeredStylesheets(): readonly Stylesheet[] {
   return [...stylesheets.values()];
 }
 
 /** Test seam: the registry is process-global because the module cache it mirrors is too. */
 export function clearStylesheets(): void {
+  if (stylesheets.size > 0) revision += 1;
   stylesheets.clear();
 }
 
@@ -133,6 +151,7 @@ export function transformTsx(source: string): string {
 export function loadStylesheet(path: string, source: string): string {
   const compiled = compileStylesheet(path, source);
   if (compiled.css.length > 0) {
+    if (stylesheets.get(path)?.css !== compiled.css) revision += 1;
     stylesheets.set(path, {
       file: path,
       surface: surfaceOf(path),

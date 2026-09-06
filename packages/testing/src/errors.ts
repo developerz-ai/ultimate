@@ -30,6 +30,8 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_LIVE_NODE_UPGRADE_REFUSED',
   'X_TEST_ISLAND_NOT_BUILT',
   'X_TEST_ISLAND_NO_MOUNT',
+  // Declared here and thrown from `island-selector.ts`, for the reason the states codes below are.
+  'X_TEST_ISLAND_SELECTOR_UNSUPPORTED',
   // Declared here and thrown from `island-state-errors.ts`: one file has one job and this
   // catalogue is at its ceiling, so the classes moved and the registration did not.
   'X_TEST_ISLAND_STATES_EMPTY',
@@ -65,6 +67,7 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_LIVE_NODE_UPGRADE_REFUSED: 'the in-process sync node refused the connection',
   X_TEST_ISLAND_NOT_BUILT: 'the island build produced no chunk for the file the test named',
   X_TEST_ISLAND_NO_MOUNT: 'an island chunk exports no mount function',
+  X_TEST_ISLAND_SELECTOR_UNSUPPORTED: "a selector is outside the island DOM's grammar",
   X_TEST_ISLAND_STATES_EMPTY: 'an island state manifest declares no states',
   X_TEST_ISLAND_STATES_NOT_PURE:
     'an island states file imports the component, a renderer or a sibling module',

@@ -25,6 +25,7 @@ export {
   loadStylesheet,
   registeredStylesheets,
   stylesFor,
+  stylesheetsRevision,
   transformTsx,
 } from './module-loader';
 // ---- the render pipeline: one entry point per mode ----------------------------------------------

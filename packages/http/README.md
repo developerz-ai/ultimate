@@ -342,6 +342,30 @@ identifier a client switches on, per code, with no host to resolve or rot. `docs
 in a table row and a table row has no anchor. Assert against `problemTypeFor` and
 `ERROR_DOCS_URL`, never against a copy of either string.
 
+An error's `meta` is **operator-only by default** and the document never carries it: that bag is
+where `bodyInvalid` keeps the excerpt the parser choked on, where the limiter keeps the internal
+key it promoted an anonymous caller to, and where core's `assert` keeps the rejected value. An app
+that wants a key on the wire declares it, per code, beside the status — and both declarations
+are needed, because a code with no status is an unclassified 5xx whose `meta` is blanked with
+its `cause`:
+
+```ts
+import { registerErrorStatus, registerProblemMeta } from '@ultimat3/http';
+
+registerErrorStatus({ X_SESSION_CHECKOUT_BUSY: 409 });
+registerProblemMeta({ X_SESSION_CHECKOUT_BUSY: ['sessionId', 'title', 'state'] });
+```
+
+The document then carries `meta: { sessionId, title, state }` — the declared keys that are set,
+copied member by member (`__proto__` skipped at every depth), and nothing else off the error. It
+is all-or-nothing, as `issues` is: one value JSON cannot carry (a `Date`, a `bigint`, a class
+instance, a cycle) or a serialisation past `MAX_PROBLEM_META_BYTES` (4096) drops the whole member,
+because a document missing one declared key is a claim the server never made. Absent when no
+declared key is set — never `{}`. A framework-owned code is refused (`X_PROBLEM_META_INVALID`),
+as is `issues`, which has its own top-level home. `@ultimat3/action`'s typed client puts the
+member back on the rebuilt error's `meta`, so an island reads `error.meta.sessionId` where it
+used to run a regex over `cause`.
+
 ## Boundaries
 
 Tier 2. Imports `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n` and `@ultimat3/time` —

@@ -18,6 +18,7 @@ import type { StartRolesOptions } from './dev-roles';
 import { neighbouringPort, PORT_RANGE } from './flag-number';
 import { portFree } from './port-probe';
 import { syncAuthenticator } from './sync-authenticator';
+import { DEV_BINDING } from './web-binding';
 
 /**
  * Beside its one thrower rather than in `errors.ts`, which is at 461 of the 500-line ceiling —
@@ -177,7 +178,12 @@ export async function startSync(options: StartRolesOptions): Promise<RunningSync
   await node.start();
   const port = syncPortFor(options.port);
   try {
-    const listener = listenSyncNode(node, { port });
+    // The SAME interface the web role binds, resolved from the same option and the same default.
+    // Without this the sync node took Bun's `0.0.0.0` while `x dev`'s web role took `localhost`,
+    // so the one socket that streams live database patches was the one socket on every
+    // interface — and `WebBinding`'s own docstring is about not serving a laptop's app to a café.
+    const binding = options.http ?? DEV_BINDING;
+    const listener = listenSyncNode(node, { port, hostname: binding.hostname });
     return {
       url: listener.url,
       registry,

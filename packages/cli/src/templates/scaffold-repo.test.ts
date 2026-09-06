@@ -82,6 +82,35 @@ describe('unit · the tsconfig.json x new writes', () => {
   });
 });
 
+describe('unit · the bunfig.toml x new writes', () => {
+  /**
+   * `bun test --coverage` in a scaffolded app reported a two-line minified `.mjs` in the system
+   * temp directory: the BUILT island chunk `@ultimat3/testing`'s `mountIsland` imports. Bun does
+   * not remap a pre-built module through its sourcemap — measured on 1.4.0, and
+   * `island-bundle.ts` does emit one — so the row names a file no author has and the island's own
+   * `.island.tsx` never appears. Only the noise is fixed here; a `mountIslandSource` lane is a
+   * separate change.
+   *
+   * Asserted on the PARSED config: a reformat of the template must not be able to make this pass
+   * while the key is gone, and a comment mentioning the pattern must not be able to either.
+   */
+  test('coverage ignores the built island chunk a mount imports', () => {
+    const config = Bun.TOML.parse(emitted('bunfig.toml')) as {
+      readonly test?: Readonly<Record<string, unknown>>;
+    };
+    expect(config.test?.['coveragePathIgnorePatterns']).toEqual(['**/*.mjs']);
+  });
+
+  // The key is worthless if the file it sits in is not the one Bun reads, and the preload it
+  // shares the section with is what makes every scaffolded test deterministic.
+  test('it is the [test] section Bun reads, with the preload still in it', () => {
+    const config = Bun.TOML.parse(emitted('bunfig.toml')) as {
+      readonly test?: Readonly<Record<string, unknown>>;
+    };
+    expect(config.test?.['preload']).toEqual(['@ultimat3/testing/preload']);
+  });
+});
+
 describe('unit · the first commands a scaffold tells its author to run exist on PATH', () => {
   // `bun install` links the `x` binary into `./node_modules/.bin` and nowhere else, so a bare
   // `x dev` pasted into a shell is `command not found` — proved with `env -i PATH=… command -v x`.

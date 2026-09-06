@@ -52,6 +52,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --json   # the finding names the fix line and the path it cites',
   X_WORKSPACE_DEP_UNDECLARED:
     'x verify --json   # the package-shape finding carries the dependency line to add',
+  X_PACKAGE_DUPLICATED:
+    'x i18n check --json   # the finding names both copies and the package.json to pin',
   X_SHOT_BROWSER_MISSING: 'bun add -d puppeteer-core',
   // The four island-capture codes. Each one's real repair is an edit to the app's own states file
   // or component, which no command can perform — so each names the command that REPRODUCES it with

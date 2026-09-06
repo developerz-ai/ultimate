@@ -8,6 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { islandMountMissing, islandNotBuilt } from './errors';
 import { createIslandDocument, FakeElement, handlerFor, parseHtml } from './island-dom';
+import type { ResizeInput } from './island-observers';
+import { deliverResize } from './island-observers';
 
 /** The two fields a mounted island needs from a chunk. Anything else a bundler grows — a CSS
  *  artifact, a source map, a dev/production flag — is invisible here on purpose. */
@@ -47,6 +49,12 @@ export interface MountIslandOptions {
   readonly shell?: string;
   /** Anything the micro-DOM does not supply — `fetch` above all. Merged over the DOM globals. */
   readonly globals?: Readonly<Record<string, unknown>>;
+  /**
+   * The host element's box BEFORE `mount` runs — the one element that exists then, laid out by
+   * the server-rendered page around it. Everything the island creates starts at 0 and is sized
+   * after mount through `resize`, which is the order a browser's `ResizeObserver` delivers in.
+   */
+  readonly size?: ResizeInput;
 }
 
 export interface MountedIsland extends Disposable {
@@ -70,6 +78,20 @@ export interface MountedIsland extends Disposable {
     type: string,
     event?: Readonly<Record<string, unknown>>,
   ): boolean;
+  /**
+   * The browser's layout, in the test's hand: write the box onto the element and deliver an entry
+   * to every `ResizeObserver` the island has watching THAT element. Answers whether one ran, for
+   * `fire`'s reason — an element nothing observes and an island that never observed are otherwise
+   * the same silence, and the second is the bug.
+   */
+  resize(target: string | FakeElement | null | undefined, size: ResizeInput): boolean;
+  /** Move the element's scroll offset and run its `scroll` listener. Answers whether one ran. */
+  scroll(
+    target: string | FakeElement | null | undefined,
+    to: { top?: number; left?: number },
+  ): boolean;
+  /** Whether any live `ResizeObserver` is watching the element — `false` once it disconnected. */
+  observing(target: string | FakeElement | null | undefined): boolean;
 }
 
 /**
@@ -201,13 +223,16 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
     );
   }
 
-  const { documentElement, globals } = createIslandDocument();
+  const { documentElement, globals, resizeObservers } = createIslandDocument();
   const restore = installGlobals({ ...globals, ...options.globals });
   try {
     const path = modulePathFor(chunk.code);
     await Bun.write(path, chunk.code);
     const entry = entryOf(await import(path), chunk.file);
     const el = new FakeElement('div');
+    // Before the shell and before `mount`: nothing observes the host yet, so this is a write and
+    // never a notification.
+    if (options.size !== undefined) deliverResize(resizeObservers, el, options.size);
     if (options.shell !== undefined) {
       for (const child of [...parseHtml(options.shell).children]) el.appendChild(child);
     }
@@ -216,6 +241,8 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
     // — so it failed with `document is not defined` inside whichever later test happened to be
     // running, with no thread back here.
     await entry.mount(el, options.props);
+    const resolve = (target: string | FakeElement | null | undefined): FakeElement | null =>
+      typeof target === 'string' ? el.querySelector(target) : (target ?? null);
     return {
       code: chunk.code,
       el,
@@ -224,11 +251,25 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
       all: (selector) => el.querySelectorAll(selector),
       text: (selector) => el.querySelector(selector)?.textContent ?? '',
       fire: (target, type, event) => {
-        const node = typeof target === 'string' ? el.querySelector(target) : target;
-        const handler = node == null ? undefined : handlerFor(node, type);
+        const node = resolve(target);
+        const handler = node === null ? undefined : handlerFor(node, type);
         if (handler === undefined) return false;
         handler({ currentTarget: node, target: node, ...event });
         return true;
+      },
+      resize: (target, size) => {
+        const node = resolve(target);
+        return node === null ? false : deliverResize(resizeObservers, node, size);
+      },
+      scroll: (target, to) => {
+        const node = resolve(target);
+        if (node === null || handlerFor(node, 'scroll') === undefined) return false;
+        node.scrollTo(to);
+        return true;
+      },
+      observing: (target) => {
+        const node = resolve(target);
+        return node !== null && [...resizeObservers].some((each) => each.targets.has(node));
       },
       [Symbol.dispose]: restore,
     };

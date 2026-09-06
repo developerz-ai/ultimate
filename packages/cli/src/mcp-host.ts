@@ -3,6 +3,9 @@
 // the gate. The description half is the framework's own `frameworkIntrospection`, so nothing here
 // is a second catalog of routes, entities, actions, queries or jobs.
 
+// why: Bun exposes no path API. Every use here builds a path this host then hands to `Bun.file`
+// or prints inside a `fix:` an operator runs — the dev log, a per-role log, the committed
+// manifest — and string concatenation would answer a different path on a Windows checkout.
 import { join } from 'node:path';
 import { agentActor, isUltimateError, renderThrowable, UltimateError } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
