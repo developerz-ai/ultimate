@@ -240,7 +240,11 @@ export const buildSkew = (clientBuildId: string, serverBuildId: string): HttpErr
   new HttpError({
     code: 'X_BUILD_SKEW',
     cause: `client sent build ${clientBuildId}, server is running ${serverBuildId}`,
-    fix: 'reload the page — the service worker will fetch the new build manifest',
+    // Not "reload": a reload re-enters the same service worker, which stamps the same stale
+    // id and earns this same refusal. The worker heals itself on this response (it needs the
+    // `x-ultimate-build` header the `context` stage stamps beside this throw); a client with
+    // no worker only ever sees this once, on the request that carried a stale id by hand.
+    fix: 'the service worker recovers on this response; a stale tab that cannot, clears its registration',
   });
 
 export const serverNotStarted = (member: string): HttpError =>

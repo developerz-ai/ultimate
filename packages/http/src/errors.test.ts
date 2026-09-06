@@ -134,9 +134,10 @@ describe('buildSkew', () => {
     expect(error.code).toBe('X_BUILD_SKEW');
     expect(error.cause).toContain('abc123');
     expect(error.cause).toContain('def456');
-    expect(error.fix).toBe(
-      'reload the page — the service worker will fetch the new build manifest',
-    );
+    // Never "reload": a reload re-enters the same service worker, which stamps the same stale
+    // id and earns the same refusal. The worker recovers on the response itself.
+    expect(error.fix).not.toContain('reload');
+    expect(error.fix).toContain('service worker');
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
