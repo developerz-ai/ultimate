@@ -270,6 +270,24 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   live. The two are used side by side in that file — the shell renderer for the four `curl`/prose
   lines, `renderFixLiteral` for the one that is a `registerOAuthProvider({ id: … })` call, where
   quoting IS the escape and a bare `'${id}'` broke on an apostrophe.
+
+  **Every OAuth endpoint in a command position is screened, not just the discovery URL** (`As of
+  2026-09-06`). `jwks.ts` (three lines, one `probe` const), `oauth-profile.ts`'s userinfo probe and
+  `oauth-exchange.ts`'s token probe each composed `curl … ${url}` from `providerFor(id)`, and that
+  registry is filled by `discoverOAuthProvider` — the ISSUER's own document — as well as by the
+  app. `oauth-exchange.ts`'s own comment claimed `url` was "a framework constant"; it has not been
+  one since `registerOAuthProvider` opened, and the comment says so now. The value still rides in
+  the `cause` on the two legs whose detail names the host; `X_OAUTH_EXCHANGE_FAILED` carries no
+  `meta` passthrough.
+
+  **A screened value is half the contract; the LINE has to run** (`As of 2026-09-06`). A
+  placeholder is honest text and is not a command — `curl -sS -m 5 <the provider jwks_uri>` is read
+  by a shell as a redirection from a file called `the`, so the one instruction the reader was
+  handed fails, which is axiom 4 inverted. `jwks.ts`'s three lines share one `readTheKeySet(tail)`:
+  `isFixShellSafe` (core, the predicate `renderFixShellArg` is itself built on) decides, and the
+  whole fix degrades to PROSE naming the discovery document when the URI does not travel.
+  `oauth-discovery.ts` still owes the same repair and is what keeps `auth` on
+  `FIX_SHELL_ARG_PINS`.
 - `readCookie` never throws on a malformed value. The `Cookie:` header is attacker-controlled and
   `decodeURIComponent('%')` is a bare `URIError`, which would escape every coded path in this
   package — the raw value goes to the signature or hash check, which is the readable refusal.

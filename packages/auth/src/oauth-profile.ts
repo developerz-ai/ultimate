@@ -3,7 +3,7 @@
 // when there is not. `emailVerified` is carried honestly rather than assumed — it is what
 // decides whether this login may attach itself to an existing account by address.
 
-import { logger, renderThrowable } from '@ultimat3/core';
+import { logger, renderFixShellArg, renderThrowable } from '@ultimat3/core';
 import { idTokenEmailVerified, isVerifiedFlag } from './id-token';
 import { isRecord } from './json';
 import type { OAuthProviderId } from './oauth';
@@ -86,7 +86,12 @@ async function getJson(
       detail:
         `${reason} — nothing left this host for ${url} (egress, DNS or TLS); restart the ` +
         'flow once it does',
-      fix: `curl -sS -m 5 -o /dev/null ${url}`,
+      // The endpoint reaches the registry from `discoverOAuthProvider` — the OP's own document —
+      // so it is REMOTE text, and this line is a command a reader pastes: `$(…)` and a backtick
+      // substitute before `curl` is reached. `renderFixShellArg` passes an ordinary endpoint
+      // through and substitutes the shape for anything a shell would read; the URL itself is in
+      // the `detail` above, which is prose nobody pastes.
+      fix: `curl -sS -m 5 -o /dev/null ${renderFixShellArg(url, '<the userinfo endpoint the cause names>')}`,
     });
   }
   if (!response.ok) {

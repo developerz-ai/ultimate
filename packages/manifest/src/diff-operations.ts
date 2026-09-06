@@ -2,7 +2,7 @@
 
 import { canonicalJson, isMcpExposed } from '@ultimat3/core';
 import type { ManifestChange } from './diff-change';
-import { index } from './diff-change';
+import { diffScalar, index } from './diff-change';
 import { diffRateLimit } from './diff-rate-limit';
 import type { ActionFact, QueryFact } from './schema';
 
@@ -47,6 +47,35 @@ export function diffActions(
         kind: nextExposed ? 'additive' : 'breaking',
         path: `${path}.mcp.expose`,
         detail: `mcp exposure ${String(exposed)} -> ${String(nextExposed)}`,
+      });
+    }
+    // `?.`, because `before` is a file parsed off DISK: a hand-trimmed or older manifest can carry
+    // no `mcp` block at all, and a description is not worth a throw out of the differ.
+    changes.push(
+      ...diffScalar(
+        'internal',
+        `${path}.mcp.description`,
+        action.mcp?.description,
+        next.mcp?.description,
+        () => 'description changed',
+      ),
+    );
+    // Written only when TRUE (`sources.ts`), so absence IS `false` here — a fold, the way
+    // `isMcpExposed` folds `expose`, and deliberately not `diffScalar`'s "absence is no evidence":
+    // the value this field is absent FOR is the value it means. A manifest written before the
+    // field existed can therefore only under-report a mutator as newly gained, which is additive
+    // and not a wall of false breakings.
+    //
+    // The direction is the decision: a mutator is a client-contract CAPABILITY, not a label — it
+    // decides the HTTP method and the idempotency the typed client and the OpenAPI document
+    // publish — so an action that stops being one refuses callers written against it.
+    const mutator = action.mutator === true;
+    const nextMutator = next.mutator === true;
+    if (mutator !== nextMutator) {
+      changes.push({
+        kind: nextMutator ? 'additive' : 'breaking',
+        path: `${path}.mutator`,
+        detail: `mutator ${String(mutator)} -> ${String(nextMutator)}`,
       });
     }
     changes.push(...diffPermissions(path, action, next));

@@ -38,6 +38,7 @@
 //   bun run scripts/index-of-order.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
 import { parseScriptArgs } from './lib/args';
+import { balancedClose } from './lib/balanced-paren';
 import { INDEX_OF_ORDER_PINS, type OrderPin } from './lib/index-of-order-pins';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -74,45 +75,14 @@ const GUARDS = [
 export interface OrderSite {
   readonly file: string;
   readonly line: number;
-  readonly matcher: 'toBeLessThan' | 'toBeGreaterThan';
+  readonly matcher:
+    | 'toBeLessThan'
+    | 'toBeGreaterThan'
+    | 'toBeLessThanOrEqual'
+    | 'toBeGreaterThanOrEqual';
   /** The operand a phantom `-1` would make pass. */
   readonly risky: string;
   readonly guarded: boolean;
-}
-
-/**
- * The index of the `)` closing the `(` at `open`, skipping string bodies.
- *
- * A regex cannot do this: `expect(up.indexOf('x')).toBeLessThan(…)` has a nested `)`, and a
- * non-greedy group stops at the inner one — the first draft of this rule matched nothing at all
- * and read as a clean tree.
- */
-function balanced(src: string, open: number): number {
-  let depth = 0;
-  for (let i = open; i < src.length; i += 1) {
-    const c = src[i];
-    if (c === '(') depth += 1;
-    else if (c === ')') {
-      depth -= 1;
-      if (depth === 0) return i;
-    } else if (c === '/' && src[i + 1] === '/') {
-      // A COMMENT is not code, and this tree's comments are full of backticks — `indexOf`,
-      // `BEGIN`. Read as a template literal, one swallowed the rest of the scan and the enclosing
-      // test came back empty, so a correctly guarded site read as unguarded. `sql-scan.ts` records
-      // the same lesson for SQL: source order, never a sequence of replacements.
-      const end = src.indexOf('\n', i);
-      if (end < 0) return -1;
-      i = end;
-    } else if (c === '/' && src[i + 1] === '*') {
-      const end = src.indexOf('*/', i + 2);
-      if (end < 0) return -1;
-      i = end + 1;
-    } else if (c === "'" || c === '"' || c === '`') {
-      i += 1;
-      while (i < src.length && src[i] !== c) i += src[i] === '\\' ? 2 : 1;
-    }
-  }
-  return -1;
 }
 
 /** The body of the `test(`/`it(` containing `at`, or the whole file when it sits outside one. */
@@ -168,7 +138,7 @@ function guardsExpression(body: string, expression: string): boolean {
   const wanted = normalised(expression);
   for (const m of body.matchAll(/\bexpect\s*\(/g)) {
     const open = m.index + m[0].length - 1;
-    const close = balanced(body, open);
+    const close = balancedClose(body, open);
     if (close < 0) continue;
     if (normalised(body.slice(open + 1, close)) !== wanted) continue;
     const tail = body.slice(close + 1, close + 60);
@@ -210,7 +180,7 @@ function containsNeedle(body: string, needle: string): boolean {
   if (wanted === undefined || wanted === '') return false;
   for (const m of body.matchAll(/\.toContain\s*\(/g)) {
     const open = m.index + m[0].length - 1;
-    const close = balanced(body, open);
+    const close = balancedClose(body, open);
     if (close < 0) continue;
     const asserted = literalOf(body.slice(open + 1, close));
     if (asserted?.includes(wanted)) return true;
@@ -222,17 +192,24 @@ export function orderingSites(file: string, src: string): readonly OrderSite[] {
   const found: OrderSite[] = [];
   for (const m of src.matchAll(/\bexpect\s*\(/g)) {
     const open = m.index + m[0].length - 1;
-    const close = balanced(src, open);
+    const close = balancedClose(src, open);
     if (close < 0) continue;
     const tail = src.slice(close + 1, close + 40);
-    const after = /^\s*\.\s*(toBeLessThan|toBeGreaterThan)\s*\(/.exec(tail);
+    // The `OrEqual` pair is the SAME assertion, and a phantom `-1` passes it identically:
+    // `-1 <= anyIndex` and `anyIndex >= -1`. `OrEqual` first in the alternation, because a regex
+    // alternation is first-match and `toBeLessThan` would otherwise consume the prefix and then
+    // fail on the `\(` — so the wider spelling read as no ordering assertion at all.
+    const after =
+      /^\s*\.\s*(toBeLessThanOrEqual|toBeGreaterThanOrEqual|toBeLessThan|toBeGreaterThan)\s*\(/.exec(
+        tail,
+      );
     if (after === null) continue;
     const matcher = after[1] as OrderSite['matcher'];
     const argOpen = close + 1 + tail.indexOf('(', after[0].length - 1);
-    const argClose = balanced(src, argOpen);
+    const argClose = balancedClose(src, argOpen);
     // The asymmetry: only ONE side of each comparison can be passed by a phantom -1.
     const risky =
-      matcher === 'toBeLessThan'
+      matcher === 'toBeLessThan' || matcher === 'toBeLessThanOrEqual'
         ? src.slice(open + 1, close)
         : argClose > 0
           ? src.slice(argOpen + 1, argClose)
@@ -322,7 +299,7 @@ export function checkOrdering(input: OrderInput): readonly Finding[] {
     const at = worst === undefined ? pkg : `${worst.file}:${String(worst.line)}`;
     findings.push({
       code: 'X_INDEX_ORDER_UNGUARDED',
-      cause: `${pkg} has ${String(count)} ordering assertion(s) whose indexOf operand is never asserted present, above its pin of ${String(allowed)} — indexOf answers -1 for a needle it never found, and -1 passes ${worst?.matcher === 'toBeGreaterThan' ? 'as the greater-than ARGUMENT' : 'as the less-than RECEIVER'}, so the assertion holds when the thing it orders is not emitted at all`,
+      cause: `${pkg} has ${String(count)} ordering assertion(s) whose indexOf operand is never asserted present, above its pin of ${String(allowed)} — indexOf answers -1 for a needle it never found, and -1 passes ${worst?.matcher.startsWith('toBeGreaterThan') === true ? 'as the greater-than ARGUMENT' : 'as the less-than RECEIVER'}, so the assertion holds when the thing it orders is not emitted at all`,
       fix: `assert presence first at ${at} — \`expect(<haystack>).toContain(<needle>)\`, or \`expect(<the index>).toBeGreaterThanOrEqual(0)\` — then compare. Prove it: delete what the assertion orders and watch the test go red`,
       at,
     });

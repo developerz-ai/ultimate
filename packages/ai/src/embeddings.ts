@@ -40,7 +40,22 @@ export async function embedBatched(
   finiteCount('embedBatched', 'size', size, 1);
   const out: Float32Array[] = [];
   for (let i = 0; i < texts.length; i += size) {
-    out.push(...(await embedder.embed(texts.slice(i, i + size))));
+    const batch = texts.slice(i, i + size);
+    const vectors = await embedder.embed(batch);
+    // "One vector per input text, in the order the texts arrived" is this interface's invariant,
+    // and it is the last place it can be checked: `indexDocument` writes `vectors[index]` per
+    // chunk, so a short answer stored `undefined` as a row and surfaced a layer later as a
+    // `TypeError` inside the vector store, naming nothing the app author wrote.
+    // `RemoteEmbedder.decode` already refuses its own provider on the same rule — an app's own
+    // `Embedder` was the unchecked half.
+    if (vectors.length !== batch.length) {
+      throw new AiEmbedderInvalidError({
+        embedder: embedder.name,
+        expected: batch.length,
+        received: vectors.length,
+      });
+    }
+    out.push(...vectors);
   }
   return out;
 }

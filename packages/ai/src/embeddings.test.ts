@@ -11,6 +11,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
+import type { Embedder } from './embeddings';
 import { cosine, embedBatched, HashEmbedder, normalize, tokenize } from './embeddings';
 
 describe('HashEmbedder dimension', () => {
@@ -61,5 +62,42 @@ describe('the maths the two bounds protect', () => {
     const a = normalize(Float32Array.from([1, 0]));
     expect(cosine(a, a)).toBeCloseTo(1);
     expect(tokenize('X_DB_DRIFT v2!')).toEqual(['x', 'db', 'drift', 'v2']);
+  });
+});
+
+/**
+ * Arity is the `Embedder` interface's own invariant — "one vector per input text, in the order the
+ * texts arrived" — and nothing downstream can restore it: `indexDocument` writes `vectors[index]`
+ * per chunk, so a short answer stored `undefined` as a row and failed a layer later inside
+ * `pg-vector.ts` with a `TypeError` naming nothing an app author wrote. `RemoteEmbedder.decode`
+ * already refuses its own provider for this; an app's `Embedder` was the unchecked half.
+ */
+describe('an embedder that answers fewer vectors than it was given texts', () => {
+  const short = (answers: number): Embedder => ({
+    name: 'short',
+    dimension: 4,
+    embed: (texts) =>
+      Promise.resolve(texts.slice(0, answers).map(() => new Float32Array([1, 0, 0, 0]))),
+  });
+
+  test('is a coded refusal naming the embedder, not an undefined vector', async () => {
+    const error = await asyncRefusal(() => embedBatched(short(1), ['a', 'b', 'c']));
+
+    expect(error.code).toBe('X_AI_EMBEDDER_INVALID');
+    expect(error.cause).toContain('short');
+    expect(error.fix).toContain('one vector per input text');
+  });
+
+  test('the refusal is per BATCH, so the count it reports is one an author can act on', async () => {
+    const error = await asyncRefusal(() => embedBatched(short(1), ['a', 'b', 'c'], 2));
+
+    expect(error.meta?.['expected']).toBe(2);
+    expect(error.meta?.['received']).toBe(1);
+  });
+
+  test('an embedder answering one per text is untouched', async () => {
+    expect(await embedBatched(new HashEmbedder({ dimension: 8 }), ['a', 'b', 'c'], 2)).toHaveLength(
+      3,
+    );
   });
 });

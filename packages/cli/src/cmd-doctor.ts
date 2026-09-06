@@ -15,12 +15,14 @@ import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/stor
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { checkMigrationSnapshots } from './db-snapshot';
+import { syncPortFor } from './dev-sync';
 import type { OfflineFallbackFact } from './doctor-offline';
 import { offlineFallbackFinding, offlineFallbackProbe } from './doctor-offline';
-import { intFlagOr, neighbouringPort, PORT_RANGE } from './flag-number';
+import { intFlagOr, PORT_RANGE, portPairAfter } from './flag-number';
 import { ICON_SOURCE } from './icon-assets';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
+import { findingFrom } from './output';
 import type { ParsedArgs } from './parse';
 import { portFree } from './port-probe';
 import { checkMigrationDrift } from './schema-drift';
@@ -94,12 +96,30 @@ const DEFAULT_DOCTOR_PORT = 3000;
  * derives `PORT = .port - 1` from it, so it is part of the contract `x dev` runs by.
  *
  * The suggested port moves BOTH: `x dev --port N` occupies N and N+1, so a free N beside a taken
- * N+1 is still not a runnable command.
+ * N+1 is still not a runnable command. It did not move both until 2026-09 — the line was
+ * `neighbouringPort(probe.port)`, which for the sync finding IS the port the finding is about, and
+ * a docblock claiming otherwise is how it survived. `portPairAfter` is the one reader of that rule
+ * and `dev-sync.ts`'s own refusal shares it.
+ *
+ * The sync port is `syncPortFor`, never `neighbouringPort` again: that helper answers 65534 for a
+ * web port of 65535 — BELOW the web port, and a port `x dev` never binds — where the boot refuses
+ * the run outright with `X_PORT_INVALID`. A probe that reports on a socket the command would never
+ * open is answering a question nobody asked, so the boot's own rule decides, and its refusal is
+ * reported instead of a probe. Alone, and ahead of the web port: there is no runnable `x dev` at
+ * this port whatever the other one answers, and a second finding about it is noise over the cause.
  */
 async function portFindings(probe: DoctorProbe): Promise<readonly Finding[]> {
+  let syncPort: number;
+  try {
+    syncPort = syncPortFor(probe.port);
+  } catch (error) {
+    // The boot's own error, carried whole — `findingFrom` reads its code, cause and fix off the
+    // value rather than rendering it, which is what `scripts/catch-render.ts` requires.
+    return [findingFrom(error)];
+  }
   const wanted = [
     { port: probe.port, role: 'web' },
-    { port: neighbouringPort(probe.port), role: 'sync' },
+    { port: syncPort, role: 'sync' },
   ] as const;
   const findings: Finding[] = [];
   for (const entry of wanted) {
@@ -108,10 +128,7 @@ async function portFindings(probe: DoctorProbe): Promise<readonly Finding[]> {
       finding(
         'X_PORT_IN_USE',
         `port ${entry.port} is already listening, and \`x dev --port ${probe.port}\` binds it for the ${entry.role} role`,
-        // Unchanged, and deliberately: the neighbour below the top of the range is the one port
-        // `x dev` is guaranteed to accept (`X_CLI_BAD_FLAG` otherwise), which is what
-        // `cmd-doctor.test.ts` pins by parsing this line with `x dev`'s own flag reader.
-        `x dev --port ${neighbouringPort(probe.port)}`,
+        `x dev --port ${portPairAfter(probe.port)}`,
       ),
     );
   }

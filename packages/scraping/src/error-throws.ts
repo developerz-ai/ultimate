@@ -3,7 +3,13 @@
 // a browser is rendered through core's `renderThrowable`, which is the rule `bun run error-render`
 // enforces.
 
-import { isRetryableStatus, renderThrowable, UltimateError } from '@ultimat3/core';
+import {
+  isFixShellSafe,
+  isRetryableStatus,
+  renderFixShellArg,
+  renderThrowable,
+  UltimateError,
+} from '@ultimat3/core';
 import type { CaptureClip } from './capture-clip';
 import { ScrapeError } from './errors';
 
@@ -99,7 +105,18 @@ export const profileLocked = (profileDir: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_PROFILE_LOCKED',
     cause: `another browser process holds the profile at ${profileDir}`,
-    fix: `rm -f ${profileDir}/SingletonLock once no browser is using it, or give this run its own localBrowser({ profileDir })`,
+    // `profileDir` is the app's — `localBrowser({ profileDir })`, and a multi-tenant run composes
+    // it from a tenant id — and this is the one line in this package that leads with `rm`.
+    //
+    // A COMMAND or PROSE, never a mixture of the two, and both halves were wrong. The trailing
+    // sentence was bare text after an `rm` operand, so pasting the line deleted `once`, `no`,
+    // `browser` and four more names out of the current directory; and for a path a shell would
+    // read, the placeholder that replaced it — `<the profile directory …>` — is redirection
+    // syntax rather than a path, so the "command" could not run at all. So the safe branch puts
+    // the explanation behind a `#` and the unsafe one drops the command entirely.
+    fix: isFixShellSafe(profileDir)
+      ? `rm -f ${renderFixShellArg(profileDir, '')}/SingletonLock   # only once no browser is using it, or give this run its own localBrowser({ profileDir })`
+      : 'delete the SingletonLock file inside the profile directory the cause names, once no browser is using it — or give this run its own localBrowser({ profileDir })',
     meta: { profileDir },
   });
 

@@ -9,7 +9,7 @@ reaches down to this package for it. **Never** import `entity`, `jobs`, `http` o
 |---|---|
 | Deps | none. `@electric-sql/pglite` is an **optional peer**, imported by variable specifier inside `loadPgliteDriver()` so no consumer's `tsc` or bundler resolves it. **No ORM** — `entity`'s hand-written `postgresDriver()` is the production backing |
 | SQL | `sql` binds `$n`; anything non-scalar and non-fragment throws `X_SQL_UNSAFE` |
-| A name reaching a `fix:` | `shellInertIdentifier()` (`sql.ts`), the tree's ONE screen for it, `As of 2026-08-26`. `identifier()` alone does not close it: it refuses `"`, `\` and whitespace and **accepts** a backtick and a `$` — `SAFE_IDENTIFIER` allows `$` on its fast path — which are the two characters a shell substitutes inside DOUBLE quotes. A refused name is left OUT of the command, never escaped into it |
+| A name reaching a `fix:` | `shellInertIdentifier()` (`sql.ts`), the tree's ONE screen for it, `As of 2026-08-26`. `identifier()` alone does not close it: it refuses `"`, `\` and whitespace and **accepts** a backtick and a `$` — `SAFE_IDENTIFIER` allows `$` on its fast path — which are the two characters a shell substitutes inside DOUBLE quotes. A refused name is left OUT of the command, never escaped into it. The one file that cannot call it is `migration-errors.ts` — `sql.ts` imports from it — so that one screens through `@ultimat3/core`'s `renderFixShellArg`, same question, same degradation |
 | Escape hatches | `raw()`, `identifier()`, `literal()` — each call is an audit point. `literal()` is the tree's ONE SQL-string-literal escape (`scripts/sql-literal-copies.ts`, pinned at zero) and it emits `E'…'` when the value carries a backslash |
 | SQLSTATE | one reader, `sqlState()` (`sqlstate.ts`). Never read `error.code` for a SQLSTATE |
 | Reading a caught value | `renderThrowable()` from core; never `error instanceof Error ? error.message : String(error)` — both halves RUN app code (a `Proxy` trap, `Symbol.toPrimitive`) and `checkDb` backs `/readyz`, where a render that throws is an exception in place of the report the kubelet asked for |
@@ -1411,6 +1411,16 @@ survives the round trip whole.
   to prose like its neighbours; an **empty** id keeps its glob, because `""` substitutes nothing
   and that case is "no migrations at all" rather than a name the screen refused
   (`drift-findings.test.ts`).
+  **`migrationSnapshotMissing` is the same condition one file over, screened the same day.** Its
+  `fix:` leads with `git checkout -- <file>` and then `rm <file-glob> && x db gen "<name>"` — the
+  one `rm` this package tells a reader to paste — off the same filename text. It screens through
+  `@ultimat3/core`'s `renderFixShellArg` rather than `shellInertIdentifier`, because
+  `migration-errors.ts` may not import `sql.ts` (that module imports `identifierUnsafe` from it,
+  and the cycle would run around the module whose evaluation registers every code); the two
+  screens answer the same question and the degradation is identical — the WHOLE line becomes
+  prose, since a `rm` whose argument was substituted away still reads as a command and now removes
+  something else. `x db gen` writes slugified ids (`generate.ts`'s `slugify`), so no id the
+  generator produces is degraded (`snapshot-missing.test.ts`).
 
 - **`dbDrift()` lives in `drift-errors.ts` and not in `errors.ts`, for exactly the reason
   `dependent-view.ts` states.** Its `fix:` needs `shellInertIdentifier` and `sql.ts` imports

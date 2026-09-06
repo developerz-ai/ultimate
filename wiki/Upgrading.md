@@ -1920,9 +1920,11 @@ Full detail: [PWA and offline](PWA-And-Offline).
 
 **There is no `jobs.driver` field.** 5.0.0 deleted it, because it selected nothing: boot always built `createPgDriver`, so `jobs: { driver: 'redis' }` gave you Postgres in silence. Which driver runs is `setJobDriver(driver)` at boot, and only that.
 
-`x jobs drain --to` takes **`memory` \| `redis` \| `nats`**, and `memory` is the only target that lands a job: `redis` and `nats` are interface-complete stubs that throw `X_NOT_IMPLEMENTED`. So **there is no driver migration to perform** `As of 2026-08` — `x jobs drain --to redis` constructs the target and fails on its first enqueue. Postgres is the source, never a `--to` value.
+`x jobs drain --to` takes **`redis` \| `nats`**, and neither lands a job: both are interface-complete stubs that throw `X_NOT_IMPLEMENTED` on the first enqueue, having moved nothing. So **there is no driver migration to perform** `As of 2026-09`. Postgres is the source, never a `--to` value.
 
-`x jobs drain --to memory` works today, and it is the same command, so the procedure below is written against the interface that already ships and applies unchanged the moment a driver does:
+**`memory` is refused by name** (`X_CLI_BAD_FLAG`), `As of 2026-09`. It was a target until then, and it was the one that appeared to work: a `Map` inside the command's own process, so the drain acked every durable row off the source, reported `ok: true`, and lost the copy when the command exited. A target that dies with the command is not a migration.
+
+Nothing rehearses the procedure below today. It is written against the interface that already ships and applies unchanged the moment a driver does:
 
 | Order | Step |
 |---|---|

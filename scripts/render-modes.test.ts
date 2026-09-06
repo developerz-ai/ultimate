@@ -13,6 +13,7 @@ import {
 } from '@ultimat3/core';
 import { JOB_STATES } from '@ultimat3/jobs';
 import { TEST_TYPES } from '@ultimat3/testing';
+import { render } from './lib/log';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { SourceFile } from './render-modes';
 import {
@@ -23,6 +24,7 @@ import {
   VOCABULARIES,
   VOCABULARY_MODULE,
   vocabularyFindings,
+  vocabularyResult,
 } from './render-modes';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
@@ -301,5 +303,34 @@ describe('this repository', () => {
     const text = await Bun.file(`${ROOT}/${at}`).text();
     expect(text).toContain("export const ROLES = ['owner', 'member', 'viewer'] as const;");
     expect(scanLiteralSets(text).map((one) => one.name)).not.toContain('ROLES');
+  });
+});
+
+// Finding 9 + 8, 2026-09-06: this rule declared a LOCAL `Finding` with no `code`, so every refusal
+// it emitted was an uncoded one — the thing CLAUDE.md's non-negotiables refuse — and its `report()`
+// call passed `lines:` without `findings:`, so `--json` published `findings: []` on a red run.
+describe('every refusal carries a code, and --json carries the refusals', () => {
+  test('a copy is X_VOCABULARY_REDECLARED', () => {
+    const findings = checkVocabulary([
+      ...OWNERS,
+      file('packages/pwa/src/strategies.ts', "export type PwaRenderMode = 'static' | 'isr';\n"),
+    ]);
+    expect(findings[0]?.code).toBe('X_VOCABULARY_REDECLARED');
+  });
+
+  test('a vacuous scan is X_VOCABULARY_UNSCANNED, never a clean tree', () => {
+    const findings = checkVocabulary([]);
+    expect(findings.map((one) => one.code)).toEqual(['X_VOCABULARY_UNSCANNED']);
+  });
+
+  test('and `bun run render-modes --json` publishes them rather than an empty array', () => {
+    const files = [
+      ...OWNERS,
+      file('packages/pwa/src/strategies.ts', "export type PwaRenderMode = 'static' | 'isr';\n"),
+    ];
+    const document = JSON.parse(render(vocabularyResult(files), true)) as {
+      readonly findings: readonly { readonly code: string }[];
+    };
+    expect(document.findings.map((one) => one.code)).toEqual(['X_VOCABULARY_REDECLARED']);
   });
 });

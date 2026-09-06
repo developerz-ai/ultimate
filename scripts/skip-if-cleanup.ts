@@ -57,19 +57,102 @@ const SCRIPT = 'skip-if-cleanup';
  * pattern that matches nothing reads exactly like a clean tree, which is how this rule's sibling
  * reported a clean answer having scanned no file at all.
  */
-const TEST_GLOBS = ['packages/*/src/**/*.test.ts', 'examples/**/*.test.ts', 'dummy/**/*.test.ts'];
+export const TEST_GLOBS = [
+  'packages/*/src/**/*.test.{ts,tsx}',
+  'scripts/**/*.test.{ts,tsx}',
+  'examples/**/*.test.{ts,tsx}',
+  'dummy/**/*.test.{ts,tsx}',
+];
+
+/**
+ * This rule's own tests, and the entity guard, SPELL the shapes they refuse as fixtures inside
+ * template literals. A scanner cannot tell those from real ones, and reporting them would make the
+ * rule unsatisfiable — `index-of-order.ts` and `sql-literal-copies.ts` draw the same line.
+ */
+const FIXTURE_FILES = ['live-registry-cleanup.test.ts', 'scripts/skip-if-cleanup.test.ts'];
+
+const isFixture = (path: string): boolean =>
+  FIXTURE_FILES.some((one) => path === one || path.endsWith(one));
+
+/**
+ * The one read of the tree, exported because this rule's own suite asserts the real tree too — a
+ * test with its own copy of the glob list diverges from the runner, which is exactly what happened
+ * to `index-of-order`: the test kept scanning a file the runner had learned to skip.
+ */
+export async function readTestSources(root: string): Promise<{
+  readonly sources: ReadonlyMap<string, string>;
+  readonly files: number;
+}> {
+  const sources = new Map<string, string>();
+  let files = 0;
+  for (const pattern of TEST_GLOBS) {
+    for await (const relative of new Bun.Glob(pattern).scan({ cwd: root })) {
+      const path = relative.split('\\').join('/');
+      files += 1;
+      if (isFixture(path)) continue;
+      sources.set(path, await Bun.file(`${root}/${path}`).text());
+    }
+  }
+  return { sources, files };
+}
 
 const SKIP_IF = /\.skipIf\s*\(/;
 
 /**
- * A process-global registry reset. `Timeout`/`Interval`/`Immediate` are excluded by name: they are
- * runtime builtins that clear a handle, not a registry, and matching them made this rule report a
- * `realtime` live test whose only `clear…(` was a `clearTimeout`.
+ * A process-global registry reset, in both spellings, CAPTURING the callee — the reset is tracked
+ * by NAME, so a file-scope `afterAll(() => resetClock())` cannot launder a `clearRegistry()` parked
+ * inside `describe.skipIf(!live)`. It could until 2026-09-06, when `cleared` was one boolean for
+ * the whole file.
+ *
+ * `clearRegistry()` is the free-function form. `entityRegistry.clear()` is the METHOD form, which
+ * this rule demanded `clear[A-Z]` for and so could not see at all; its receiver has to be a
+ * MODULE-SCOPE binding, because `seen.clear()` on a `Map` declared inside a `describe` is a builtin
+ * clearing a local, exactly as `clearTimeout` is a builtin clearing a handle.
+ *
+ * `Timeout`/`Interval`/`Immediate` are excluded by name for that same reason: matching them made
+ * this rule report a `realtime` live test whose only `clear…(` was a `clearTimeout`.
  */
-const RESET = /\b(?:clear|reset)(?!Timeout|Interval|Immediate)[A-Z][A-Za-z]*\s*\(/;
+const RESET_FUNCTION = /\b((?:clear|reset)(?!Timeout|Interval|Immediate)[A-Z][A-Za-z]*)\s*\(/g;
+const RESET_METHOD = /\b([A-Za-z_$][\w$]*)\s*\.\s*(clear|reset)\s*\(/g;
+
+/**
+ * Names declared INDENTED — inside a `describe`, a `test`, a function body. The receiver of a
+ * `.clear()` is read as module-scope unless it is one of these, and never the other way round: a
+ * module-scope binding may be imported, destructured, re-exported or assigned, and a list of the
+ * ways it can arrive is a list that will be missing one. What has to be excluded is only the
+ * `seen.clear()` on a `Map` built inside the block — a builtin clearing a LOCAL, exactly as
+ * `clearTimeout` clears a handle.
+ */
+const localBindings = (src: string): ReadonlySet<string> =>
+  new Set(
+    [...src.matchAll(/^\s+(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm)].map(
+      (match) => match[1] as string,
+    ),
+  );
+
+/** Every reset this line performs, by the name a repair would move. */
+const resetsOn = (text: string, local: ReadonlySet<string>): readonly string[] => [
+  ...[...text.matchAll(RESET_FUNCTION)].map((match) => match[1] as string),
+  ...[...text.matchAll(RESET_METHOD)]
+    .filter((match) => !local.has(match[1] as string))
+    // The VERB is captured and used: naming every method reset `<receiver>.clear` collapsed
+    // `entityRegistry.reset()` and `entityRegistry.clear()` into one tracked name, so a file-scope
+    // `afterAll` calling one credited the other parked inside `describe.skipIf` — the exact launder
+    // the per-callee rewrite closed, re-opened one line down. It also made the `cause` name a call
+    // the file does not contain, which is a fix an agent cannot apply.
+    .map((match) => `${match[1] as string}.${match[2] as string}`),
+];
 
 /** A hook opened at column 0 — the only place a reset survives a skipped suite. */
 const FILE_SCOPE_HOOK = /^(?:afterAll|beforeAll|afterEach|beforeEach)\s*\(/;
+
+/**
+ * `afterAll(clearRegistry);` — the hook handed the function itself rather than a closure calling
+ * it. The reset RUNS, and this rule reported the file anyway: `RESET` demanded a `(` after the
+ * name and there is none. A false finding is how a rule gets switched off.
+ */
+const HOOK_REFERENCE =
+  /^(?:afterAll|beforeAll|afterEach|beforeEach)\s*\(\s*((?:clear|reset)(?!Timeout|Interval|Immediate)[A-Z][A-Za-z]*)\s*\)/;
 
 /** A new top-level statement, which ends whatever file-scope hook was open. */
 const TOP_LEVEL = /^\S/;
@@ -77,44 +160,70 @@ const TOP_LEVEL = /^\S/;
 /**
  * An early return inside a file-scope hook: the hook runs, and then does nothing.
  *
- * Both spellings — `if (!ready) return;` and the braced form over two lines. The first draft read
- * only the one-liner, so a braced guard leaked exactly as the nested form does while reading as
- * clean.
+ * Three spellings — `if (!ready) return;`, the braced form over two lines, and the BRACED
+ * ONE-LINER `if (!ready) { return; }`, which the first two drafts both read straight past while it
+ * leaked exactly as the nested form does.
+ *
+ * The `return` is REQUIRED here and was optional until it was measured: `(?:return\b|$)` made every
+ * braced `if` in a file-scope hook a bail, so `if (!seeded) {` opening an ordinary block poisoned
+ * the rest of the hook and the `clearRegistry()` under it was never credited. `BRACED_RETURN` is
+ * what reads the wrapped spelling on the following line, so nothing is lost by demanding it.
  */
-const EARLY_RETURN = /^\s{2,}if\s*\(.*\)\s*(?:return\b|\{\s*$)/;
+const EARLY_RETURN = /^\s{2,}if\s*\(.*\)\s*(?:\{\s*)?return\b/;
 const BRACED_RETURN = /^\s{4,}return\b/;
 
 export interface CleanupFile {
   readonly file: string;
-  /** Whether a reset is reached from a file-scope hook with no early return above it. */
+  /** Whether EVERY reset this file performs is reached from a file-scope hook. */
   readonly cleared: boolean;
   readonly line: number;
+  /** The resets, by callee name, that no file-scope hook reaches. Empty when `cleared`. */
+  readonly unreached: readonly string[];
 }
 
-/** Every file that both skips and resets, with whether its reset survives the skip. */
+/**
+ * Every file that both skips and resets, with whether each of its resets survives the skip.
+ *
+ * PER CALLEE, and this was one boolean for the whole file until 2026-09-06 — so a file-scope
+ * `afterAll(() => { resetClock(); })` marked the file cleared and laundered a `clearRegistry()`
+ * parked inside `describe.skipIf(!live)`, which is the exact leak the rule exists for wearing the
+ * rule's own green tick.
+ */
 export function cleanupFiles(sources: ReadonlyMap<string, string>): readonly CleanupFile[] {
   const out: CleanupFile[] = [];
   for (const [file, src] of sources) {
-    if (!SKIP_IF.test(src) || !RESET.test(src)) continue;
+    if (!SKIP_IF.test(src)) continue;
+    const local = localBindings(src);
+    const performed = new Set<string>();
+    const reached = new Set<string>();
     let inHook = false;
     let bailed = false;
-    let cleared = false;
     let line = 0;
-    const lines = src.split('\n');
-    for (const [index, text] of lines.entries()) {
+    for (const [index, text] of src.split('\n').entries()) {
       if (FILE_SCOPE_HOOK.test(text)) {
         inHook = true;
         bailed = false;
+        const reference = HOOK_REFERENCE.exec(text)?.[1];
+        if (reference !== undefined) {
+          performed.add(reference);
+          reached.add(reference);
+          line = index + 1;
+          continue;
+        }
       } else if (TOP_LEVEL.test(text)) {
         inHook = false;
       }
       if (inHook && (EARLY_RETURN.test(text) || BRACED_RETURN.test(text))) bailed = true;
-      if (inHook && !bailed && RESET.test(text)) {
-        cleared = true;
+      const resets = resetsOn(text, local);
+      for (const name of resets) performed.add(name);
+      if (inHook && !bailed && resets.length > 0) {
+        for (const name of resets) reached.add(name);
         line = index + 1;
       }
     }
-    out.push({ file, cleared, line });
+    if (performed.size === 0) continue;
+    const unreached = [...performed].filter((name) => !reached.has(name)).sort();
+    out.push({ file, cleared: unreached.length === 0, line, unreached });
   }
   return out;
 }
@@ -140,7 +249,7 @@ export function checkCleanup(input: CleanupInput): readonly Finding[] {
     .filter((one) => !one.cleared)
     .map((one) => ({
       code: 'X_SKIP_CLEANUP_UNREACHED',
-      cause: `${one.file} skips a suite and resets a process-global registry, and no file-scope hook reaches that reset — Bun evaluates a skipped file's module body, so whatever it registers at import leaks into every later file in the process`,
+      cause: `${one.file} skips a suite and resets a process-global registry, and no file-scope hook reaches ${one.unreached.length === 0 ? 'that reset' : one.unreached.join(', ')} — Bun evaluates a skipped file's module body, so whatever it registers at import leaks into every later file in the process`,
       fix: `move the reset into a hook at column 0 in ${one.file}, e.g. \`afterAll(() => {\\n  clearRegistry();\\n});\`, and guard nothing on the skip condition — a file-scope hook that returns early on the same condition leaks identically. Verify with the suite SKIPPED: run it with the live env var unset alongside another file that registers`,
       at: one.file,
     }));
@@ -148,20 +257,7 @@ export function checkCleanup(input: CleanupInput): readonly Finding[] {
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const sources = new Map<string, string>();
-  let files = 0;
-  for (const pattern of TEST_GLOBS) {
-    for await (const relative of new Bun.Glob(pattern).scan({ cwd: root })) {
-      const path = relative.split('\\').join('/');
-      files += 1;
-      // The guard that enforces this rule inside `@ultimat3/entity` spells the shapes it refuses,
-      // including a skipped block with a reset in it. A rule naming a defect is not the defect —
-      // `dead-docs-host` draws the same line for the host it removed.
-      if (path.endsWith('live-registry-cleanup.test.ts')) continue;
-      sources.set(path, await Bun.file(`${root}/${path}`).text());
-    }
-  }
+  const { sources, files } = await readTestSources(repoRoot());
   const scanned = cleanupFiles(sources);
   const findings = checkCleanup({ files: scanned, scanned: files > 0 });
   report(

@@ -2,6 +2,11 @@
 // captured `write`, since stdout is the wire and must never be touched by the test itself.
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and no recursive remove.
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.file takes one already joined.
+import { join } from 'node:path';
 import { agentActor } from '@ultimat3/core';
 import type { McpCaller } from './registry';
 import { textResult } from './registry';
@@ -220,4 +225,48 @@ describe('a line cap that is not a cap', () => {
       ).rejects.toThrow(/X_INVARIANT/);
     });
   }
+});
+
+/**
+ * The default `write` owns fd 1, and fd 1 is a PIPE for every real peer — a local agent launched
+ * this process. `Bun.stdout.write` is asynchronous against a pipe, so a `write` that drops the
+ * promise makes `await write(...)` await nothing and the CLI's exit discards whatever is still
+ * queued. In-process it cannot be seen: the bug is a property of the real fd, which is why this
+ * spawns a child the way `scripts/stdout-truncation.test.ts` does for `--json`.
+ */
+describe('the default write, against a real pipe', () => {
+  /** Past any kernel pipe buffer, so a dropped queue cannot be delivered by luck. */
+  const PAYLOAD = 4_000_000;
+
+  const CHILD = `import { serveStdio } from '${import.meta.dir}/transport-stdio';
+    const size = Number(Bun.argv[2]);
+    const server = { handle: async () => ({ jsonrpc: '2.0', id: 1, text: 'x'.repeat(size) }) };
+    const encoder = new TextEncoder();
+    const input = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"jsonrpc":"2.0","id":1,"method":"initialize"}\\n'));
+        controller.close();
+      },
+    });
+    await serveStdio({ server, caller: { actor: { kind: 'agent', id: 'dev' }, scopes: new Set() }, input });
+    // What \`x mcp serve\` does once the peer disconnects: the transport resolved, so the process ends.
+    process.exit(0);`;
+
+  test('every byte of a frame larger than the pipe buffer reaches the peer', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-mcp-stdio-'));
+    try {
+      const file = join(dir, 'serve.ts');
+      await Bun.write(file, CHILD);
+      const proc = Bun.spawn(['bun', file, String(PAYLOAD)], { stdout: 'pipe', stderr: 'pipe' });
+      // Drained WHILE the child runs, which is what a real peer does: an awaiting writer would
+      // otherwise block against a pipe nobody is reading.
+      const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+      expect(out.endsWith('\n')).toBe(true);
+      const frame: unknown = JSON.parse(out);
+      const text = (frame as { text?: string }).text;
+      expect(text?.length).toBe(PAYLOAD);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

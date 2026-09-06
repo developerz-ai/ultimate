@@ -2,7 +2,7 @@
 // into one that cannot fail. These are the exact values that got through.
 
 import { describe, expect, test } from 'bun:test';
-import { intFlagOr, PORT_RANGE, readIntFlag } from './flag-number';
+import { intFlagOr, PORT_RANGE, portPairAfter, readIntFlag } from './flag-number';
 import type { CommandSpec, ParsedArgs } from './parse';
 import { parseArgs } from './parse';
 import { thrownBy } from './thrown-by';
@@ -68,5 +68,40 @@ describe('unit · an integer flag is validated, never coerced', () => {
     expect(
       thrownBy(() => readIntFlag(argsFor(['doctor', '--port', 'abc']), PORT)).fix,
     ).not.toContain('<');
+  });
+});
+
+/**
+ * `x dev --port N` binds N **and** N + 1, so a suggestion built from `neighbouringPort` names the
+ * very socket the caller was just told is taken: `x dev --port 3999` died on 4000 and answered
+ * `x dev --port 4000`, and `x doctor` reported the same thing about the same pair. A fix line that
+ * hands back one of the two ports that just failed is the failure repeated, not ended.
+ */
+describe('unit · a port suggestion whose PAIR is clear of the pair that failed', () => {
+  test('it moves two, so neither the port nor its neighbour is suggested again', () => {
+    expect(portPairAfter(3000)).toBe(3002);
+    expect(portPairAfter(3999)).toBe(4001);
+  });
+
+  test('every answer is a port, and so is its neighbour — at the top of the range too', () => {
+    for (const port of [
+      0,
+      1,
+      3000,
+      PORT_RANGE.max - 3,
+      PORT_RANGE.max - 2,
+      PORT_RANGE.max - 1,
+      PORT_RANGE.max,
+    ]) {
+      const suggested = portPairAfter(port);
+      expect(suggested).toBeGreaterThanOrEqual(PORT_RANGE.min);
+      // The suggestion's OWN neighbour has to exist: `x dev` refuses `PORT` at the top of the
+      // range (`syncPortFor`), so a suggestion of 65535 is a second refusal.
+      expect(suggested + 1).toBeLessThanOrEqual(PORT_RANGE.max);
+      expect(suggested).not.toBe(port);
+      expect(suggested).not.toBe(port + 1);
+      expect(suggested + 1).not.toBe(port);
+      expect(suggested + 1).not.toBe(port + 1);
+    }
   });
 });

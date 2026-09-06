@@ -9,11 +9,13 @@ import {
   aliasTable,
   checkFrozenRecords,
   expandAliases,
+  frozenRecordResult,
   isOpenKey,
   readSources,
   recordKeyType,
   scanFreezeSites,
 } from './frozen-records';
+import { render } from './lib/log';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 const ROOT = repoRoot();
@@ -308,5 +310,32 @@ describe('this repository', () => {
     expect(recordKeyType(expandAliases('ResolvedCapabilities', aliases))).toBe('Capability');
     // An interface is not a type alias, so nothing laundered through one is reclassified.
     expect(expandAliases('Clock', aliases)).toBe('Clock');
+  });
+});
+
+// Finding 9 + 8, 2026-09-06: this rule declared a LOCAL `Finding` with no `code`, so every refusal
+// it emitted was uncoded, and its `report()` call passed `lines:` without `findings:` — so
+// `--json` published `findings: []` on a red run and no automation could read the sites.
+describe('every refusal carries a code, and --json carries the refusals', () => {
+  const INFERRED =
+    'export const MODE_STRATEGY: Readonly<Record<RenderMode, StrategyName>> = Object.freeze({\n  static: 1,\n});\n';
+
+  test('an inferred closed-key freeze is X_FROZEN_RECORD_INFERRED', () => {
+    const { findings } = checkFrozenRecords([good, file('packages/pwa/src/a.ts', INFERRED)]);
+    expect(findings.map((one) => one.code)).toEqual(['X_FROZEN_RECORD_INFERRED']);
+  });
+
+  test('a vacuous scan is X_FROZEN_RECORD_UNSCANNED, never a clean tree', () => {
+    expect(checkFrozenRecords([]).findings.map((one) => one.code)).toEqual([
+      'X_FROZEN_RECORD_UNSCANNED',
+    ]);
+  });
+
+  test('and `bun run frozen-records --json` publishes them rather than an empty array', () => {
+    const built = checkFrozenRecords([good, file('packages/pwa/src/a.ts', INFERRED)]);
+    const document = JSON.parse(render(frozenRecordResult(built), true)) as {
+      readonly findings: readonly { readonly code: string }[];
+    };
+    expect(document.findings.map((one) => one.code)).toEqual(['X_FROZEN_RECORD_INFERRED']);
   });
 });

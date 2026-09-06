@@ -78,8 +78,16 @@ export interface RunningQueue {
  * Before this, `defaultClient()` was the only composer of a replicated pair in the framework and
  * it runs only from `baseClient()` — the client an app installed NONE for. This line installs one,
  * so `DATABASE_REPLICA_URL` was read by no booted process at all.
+ *
+ * `env` is REQUIRED, and that is the repair: it defaulted to `process.env` and `startQueue` passed
+ * nothing, so the standby was decided from the process while the middleware that opens the
+ * `withReplicaReads` scope was decided from the boot's own `options.env` (`cmd-dev.ts`,
+ * `serve.ts`). Two sources for one question answer differently the moment a boot is handed an
+ * environment it did not inherit — a routed client with no scope, or a scope with no standby, and
+ * neither reports anything. A default here is what let the caller forget; the type is what stops
+ * the next one. Exported for the test that proves which environment decides.
  */
-function startDb(services: DevServices, env: ReplicaEnv = process.env): StartedDb {
+export function startDb(services: DevServices, env: ReplicaEnv): StartedDb {
   const binding = services.db;
   const client =
     binding.mode === 'embedded'
@@ -218,8 +226,14 @@ async function releaseQueue(
 export async function startQueue(
   services: DevServices,
   overrides?: RuntimeOverrides,
+  /**
+   * The boot's own environment — `x dev`'s, the container role's, the CLI command's `ctx.env`.
+   * `process.env` is the default for a caller that has no other answer, and it is the ONLY place
+   * this file reads it: see `startDb` for what two readers of one question cost.
+   */
+  env: ReplicaEnv = process.env,
 ): Promise<RunningQueue> {
-  const { client: db, replica } = startDb(services);
+  const { client: db, replica } = startDb(services, env);
   try {
     // Pay the Postgres boot here, so the first request is not the slow one and a broken database
     // fails at boot rather than on some later query.

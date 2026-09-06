@@ -613,6 +613,20 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   line the framework tells its reader to paste. The value still travels in the `cause`, which is
   read rather than run. `renderFixLiteral` does not cover this — its double quotes leave `$(…)`
   live in every POSIX shell.
+  **A `code` is gated instead of screened** (`As of 2026-09-06`): `factsOf`'s fallback `fix:` is
+  `x errors explain <code> --json`, and `code` is a string field off a throwable this package did
+  not build — a worker message, a WebSocket frame, an app's own object — so it goes through core's
+  `FRAMEWORK_CODE`, never `startsWith('X_')`. A value that is not a code answers nothing anyway,
+  so the honest command is `x errors list --json`. Same gate, same reason, as `@ultimat3/mcp`'s
+  `server.ts`; the value still travels in `facts.code`.
+  **And a SUPPLIED `fix:` is taken only from a BRANDED framework error** (`As of 2026-09-06`). The
+  gate above screens the code this package renders INTO a command; this one screens a whole command
+  a throwable handed over. `factsOf` normalises a worker message, a WebSocket frame and any app
+  object, so a foreign `fix` is remote text landing in the line an operator is told to paste, and a
+  framework code beside it makes the line read as the framework's own — `isUltimateError`, and
+  nothing else, is what says the value went through `renderFixShellArg` and this tree's gate. An
+  error that crossed a wire and lost its brand falls to the generated line, which is honest. The
+  `cause` still travels: a cause is read, never run.
 - **Borrowed error codes are never titled or registered here.** `X_FORBIDDEN` is policy's,
   `X_UNAUTHENTICATED` is auth's; both sit in `HTTP_BORROWED_ERROR_CODES`, which carries codes
   only. `HTTP_ERROR_TITLES` holds owned codes, and `registerErrorCodes` takes it whole and

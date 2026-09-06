@@ -80,7 +80,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   {
     name: 'boundaries',
     summary: "surface, layer and package-tier imports, and the app's own guards",
-    // An app's `guards/` rides here rather than becoming an eighteenth step, for the reason the
+    // An app's `guards/` rides here rather than becoming a step of its own, for the reason the
     // seam already states: a host adds findings to a step, it can never add, remove, reorder or
     // skip one — so "green" keeps meaning exactly what it meant. This is the step whose host slot
     // already carries "rules this repo makes about itself that the framework cannot know" (the
@@ -106,7 +106,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     name: 'package-shape',
     summary: 'every package ships the same contract files',
     applies: (ctx) => hasWorkspacePackages(ctx.root),
-    // The dependency rule rides here rather than becoming a twentieth step because it is this
+    // The dependency rule rides here rather than becoming a step of its own because it is this
     // step's own question — what does a workspace owe the repo it lives in? — asked of the
     // manifest's `dependencies` instead of its `files`. It is deliberately NOT inside
     // `checkPackageShape`: `scripts/release.ts --check` calls that one to ask whether the tree is
@@ -155,7 +155,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // Source, not database: the gate runs in CI with nothing listening, and the database half is
     // the post-migrate verification `runMigrations` performs where a connection is already open.
     //
-    // The destructive rail rides here rather than becoming an eighteenth step because it asks this
+    // The destructive rail rides here rather than becoming a step of its own because it asks this
     // step's own question — do the committed migrations still describe what the app is doing to its
     // schema? — off the same directory, in the same pass, with no database either.
     applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
@@ -166,7 +166,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         // The third rail, and the one the other two cannot see: a hand-written statement is
         // recorded by no snapshot and hashed by no source, so both halves above are green over SQL
         // a squash silently drops. Same directory, same reader, no database — this step's own
-        // question, which is why it is not an eighteenth step.
+        // question, which is why it is not a step of its own.
         ...(await checkUngeneratableMigrations(ctx.root)),
       ]),
   },
@@ -191,7 +191,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     name: 'budgets',
     summary:
       'per-route JS bytes and LCP, the global style layer every document carries, and the routes that boot nothing to receive their live rows',
-    // The global-style assertion rides here rather than becoming an eighteenth step, because this
+    // The global-style assertion rides here rather than becoming a step of its own, because this
     // step already asks the one question it asks: what does the document this build emits actually
     // contain? It is also the same app load — `appManifest` fills render's stylesheet registry on
     // its way through — so a separate step would pay for a second one to answer half a question.
@@ -295,7 +295,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // once, and says so by finding nothing — but `AGENTS.md` is required of every repo the gate
     // runs in, so the step always has a question to answer and must never report as skipped.
     //
-    // `.env.example` joins this step rather than becoming an eighteenth: the question is the same
+    // `.env.example` joins this step rather than becoming one of its own: the question is the same
     // one — "does a committed, generated file still describe the code?" — and the step list is the
     // definition of shippable, so it grows only when a genuinely new question needs asking.
     //

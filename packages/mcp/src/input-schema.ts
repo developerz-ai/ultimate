@@ -49,7 +49,18 @@ function narrowProperties(
   properties: Readonly<Record<string, RichJsonSchema>>,
 ): Readonly<Record<string, JsonSchema>> {
   const out: Record<string, JsonSchema> = {};
-  for (const [key, child] of Object.entries(properties)) out[key] = narrow(child);
+  for (const [key, child] of Object.entries(properties)) {
+    // `out[key] = …` is not an assignment for exactly one name — `__proto__` runs
+    // `Object.prototype`'s setter and RE-PROTOTYPES this record instead of adding a key, so a
+    // field an author declared disappears from `tools/list` and from what `validate-args.ts`
+    // reads back. The twin of `validate-args.ts`'s `put`, on the schema side.
+    Object.defineProperty(out, key, {
+      value: narrow(child),
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
   return out;
 }
 

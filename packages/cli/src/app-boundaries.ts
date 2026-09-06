@@ -56,8 +56,16 @@ const isDbSpecifier = (specifier: string): boolean =>
   specifier.endsWith('/db') ||
   /^@[^/]+\/db$/.test(specifier) ||
   specifier === 'drizzle-orm';
+/**
+ * `node:http` and `node:https` are HTTP too, and the anchor could not reach them: `http` had to
+ * follow a `/` or start the string, and a `node:` specifier has a colon there. So the one spelling
+ * that needs no dependency at all — a service reaching straight for the runtime's own client — was
+ * the one spelling this rule could not see. Matched on the boundary character rather than by
+ * listing every prefix, and still anchored at both ends: `node:http2-fake` and
+ * `@ultimat3/https-client` are names, not HTTP.
+ */
 const isHttpSpecifier = (specifier: string): boolean =>
-  specifier === '@ultimat3/http' || /(^|\/)http($|\/)/.test(specifier);
+  specifier === '@ultimat3/http' || /(^|[/:])https?($|\/)/.test(specifier);
 
 /** The transpiler rejects a shebang, and an app's `bin/` entry points legitimately have one. */
 export const stripShebang = (source: string): string =>

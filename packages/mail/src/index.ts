@@ -38,6 +38,7 @@ export type { SmtpDriverOptions } from './driver-smtp';
 export { createSmtpDriver } from './driver-smtp';
 export { assertEnvelopeAddress } from './envelope-address';
 export type {
+  AddressRefusal,
   EnvelopeAddressField,
   MailErrorCode,
   MailErrorInit,

@@ -24,7 +24,10 @@ export async function withJobDriver(
   const ambient = jobDriver();
   if (ambient !== undefined) return fn(ambient);
   const services = resolveServices(root, ctx.env);
-  const queue = await startQueue(services);
+  // The command's own environment on both halves: `resolveServices` reads DATABASE_URL off it, so
+  // a queue that resolved its standby from `process.env` would talk to a pair the same call had
+  // just decided against.
+  const queue = await startQueue(services, undefined, ctx.env);
   try {
     return await fn(queue.jobs);
   } finally {

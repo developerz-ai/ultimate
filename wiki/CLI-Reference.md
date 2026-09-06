@@ -76,6 +76,7 @@ x new <name> [--dir path] [--no-example] [--no-git] [--dry-run] [--force] [--jso
 | `--example` / `--no-example` | boolean | `true` | include the example feature slice (default: on; `--no-example` for an empty `app/`) |
 | `--git` / `--no-git` | boolean | `true` | `git init`, then one commit named `x new`. On by default because three surfaces assume a repository — `x affected`, `x ci` and `x pr`. A git that is absent or fails never fails `x new`: the tree is the verdict, and `data.git` carries `{ initialized, committed, problem }` |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
+| `--permission` | string | `<name>:read` | `admin:page` only: the permission the page's own work needs, on top of the frame's `admin:read`. A `<resource>:<verb>`, or `X_CLI_BAD_FLAG` before a file is written — the value reaches the emitted source three times and `Permission` is `${string}:${string}` |
 | `--force` | boolean | `false` | write into a directory that already exists |
 
 ```bash
@@ -228,6 +229,17 @@ Alias: `x generate`.
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 
 `resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **28 files** (30 with `--admin`; `--live` adds nothing, a resource already ships a live query), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>` then `x db gen "create <name>"`. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`.
+
+**`x g admin:page` DECLARES the permission it requires**, `As of 2026-09`. It emitted
+`permissions: ['ops:read']` and nothing anywhere declared `ops:read`, so `assertPermission` threw
+`X_PERMISSION_UNKNOWN` on the first request that reached the page — a screen the generator built
+and no actor could open, under a green gate: the `policy` step reads `roleDefinitions()` and
+`routeEntries()`, and an admin page is neither a role nor a route. The page file now carries the
+`definePermissions([...])` call and the `PermissionRegistry` augmentation beside its
+`AdminCustomPage`, and its emitted test fails if either is dropped. Registration is a side effect
+of import and `pages:` already imports that module, which is why the declaration is in the page and
+not in a `policy.ts` beside it. **Still not enough on its own**: an admin whose `policyAuthz()` is
+built from a fixed list has to name the permission too, and the generated header says so.
 
 **A narrower generator plants the slice modules its own source imports**, `As of 2026-08` — they used to be `x g resource`'s alone, so `x g job` into a hand-written slice emitted `import * as repo from '../repo'` against a file nobody had written. Which modules differ per generator, on purpose: a job has no request behind it and evaluates no policy, so `x g job` plants no `policy.ts`.
 
@@ -438,7 +450,9 @@ nothing. Removing a line is allowed; it just has to be a diff somebody reviews.
 `bun test --parallel=N`, each worker with its own database; `live` and `e2e` are serial by
 declaration and say so in the output. **`x test live` and `x test e2e` obey the same declaration,
 `As of 2026-08-27`** — they did not, so `x test live --workers 8` ran eight processes over the very
-files `x verify` ran one over. `--workers` is accepted there and clamps to 1. The default oversubscribes the cores —
+files `x verify` ran one over. `--workers` is accepted there and clamps to 1. That clamp read the
+POSITIONAL, so the bare `x test --workers 8` still widened over the same files until 2026-09; the
+selection is now partitioned by each file's own type. The default oversubscribes the cores —
 `clamp(round(cpus * 1.5), 2, 8)` — because leaving a core spare measured *slower than not sharding
 at all* on a 4-core runner, where the split's own cost is not covered by three workers.
 
@@ -760,6 +774,13 @@ x doctor [--port 3000] [--json]
 
 Checks Bun version, env completeness, source drift, **the newest migration's `.snapshot.json`**, port availability and PWA prerequisites — each failing check carries its own fix command. The snapshot half is `As of 2026-08` and separate from drift on purpose: they are two questions with two remedies, and `x db gen`'s own `X_MIGRATION_SNAPSHOT_MISSING` was a condition this diagnostic could not see at all, so `x doctor --json` — the `fix:` of the `X_CLI_UNEXPECTED` an author reaches it through — ran clean over a broken app.
 
+**It probes BOTH ports `x dev` binds** — `PORT` for the web role and `PORT + 1` for the sync node —
+and the suggestion moves both: `x doctor --port 3000` with 3001 taken answers `x dev --port 3002`,
+never `3001`, which is the port it has just reported as taken (`As of 2026-09`; the same repair
+`X_PORT_IN_USE`'s own `fix:` took in `x dev`). A `--port` at the top of the range has no room for
+the sync node at all, so it reports the boot's own `X_PORT_INVALID` rather than probing a port
+below it that `x dev` would never bind.
+
 The output is a `CommandResult` like every other command's: `findings`, not a `checks` array.
 
 ```bash
@@ -807,7 +828,7 @@ x jobs [ls|show <id>|retry <id>|cancel <id>|drain --to <driver>] [--queue q] [--
 | `show <id>` | state, attempt, every step's result, the remaining retry delays, and the `x_backfills` row for this run when the job is a backfill (`backfill: null` for every other job) |
 | `retry <id>` | re-queue; `--from-step <name>` drops that step so it re-executes while everything before it replays from storage |
 | `cancel <id>` | stop a job that has not finished — the way to end a runaway `backfill()` sweep. `--reason <text>` is recorded on the job. Re-reads the row after cancelling, so **exit 0 means it is genuinely stopped**: a job that already finished, an id no queue holds, and a driver with no `introspect.cancel` (the redis and nats stubs) all raise `X_JOB_NOT_CANCELLABLE` rather than reporting success |
-| `drain --to memory\|redis\|nats` | move every `ready`/`delayed`/`suspended` job onto another driver; `--dry-run` reports the plan and moves nothing |
+| `drain --to redis\|nats` | move every `ready`/`delayed`/`suspended` job onto another **durable** driver; `--dry-run` reports the plan and moves nothing. `--to memory` is refused by name (`X_CLI_BAD_FLAG`), `As of 2026-09`: it built a `Map` inside the command's own process, enqueued every job into it and acked the durable rows — the queue emptied, the copy died at exit, and the command reported `ok: true` |
 
 `retry` and `cancel` each take **one id positional** — there is no bulk form and no time filter. `--queue`, `--state`, `--limit` and `--name` narrow `ls` only.
 
@@ -815,7 +836,7 @@ x jobs [ls|show <id>|retry <id>|cancel <id>|drain --to <driver>] [--queue q] [--
 x jobs cancel 019ff1c5-0000-7000-8000-000000000001 --reason "wrong tenant" --json
 ```
 
-Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `drain` enqueues on the target **before** acking the source: a crash mid-drain duplicates a job, where the idempotency key dedupes it, instead of losing it.
+Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `drain` enqueues on the target **before** acking the source: a crash mid-drain duplicates a job, where the idempotency key dedupes it, instead of losing it. That ordering is only a guarantee while the target OUTLIVES the command, which is why the target set holds durable drivers only.
 
 `ls` reports only the sweeps still **running**, because it is a live view of the queue; the whole
 ledger, finished passes included, is `x db backfill --list`. A driver that ships no backfill ledger
@@ -886,6 +907,7 @@ Errors: `X_CATALOG_MISSING_KEYS` (per locale, as a finding), `X_CATALOG_INVALID`
 ```bash
 x test [unit|contract|live|job|e2e|eval] [--filter text] [--sample N]
        [--affected [--base <ref>] [--dirty]] [--workers N] [--worker I] [--json]
+       [-- <bun test flags>]
 ```
 
 | Flag | Type | Default | Meaning |
@@ -898,10 +920,13 @@ x test [unit|contract|live|job|e2e|eval] [--filter text] [--sample N]
 | `--affected` | boolean | off | narrow the selection to the workspaces the diff touches and everything that depends on them. `--base`/`--dirty` without it are refused, not ignored |
 | `--base` | string | `main` | the ref to diff against, merge-base (`<base>...HEAD`). Needs `--affected` |
 | `--dirty` | boolean | off | union the working tree in — uncommitted and untracked. Needs `--affected` |
+| `-- <args>` | tail | — | handed to `bun test` verbatim, before the file list — `x test unit -- --coverage --bail`. The reproduce line carries it back. **`x test` is the only command that reads a `--` tail**: every other one refuses it (`X_CLI_BAD_FLAG`) rather than dropping it, which is what all of them did until 2026-09 |
 
 The type rule is `x verify`'s, not a second one — so `x test contract` runs exactly what the gate's `contract` step runs. A selection that matches no files is `X_TEST_NO_FILES`; an unknown type is `X_CLI_BAD_FLAG` naming the six and suggesting the nearest.
 
 `--affected` narrows the FEEDBACK, never the gate. The GATE stays un-narrowable — `x verify` with no flag is the gate, and `x verify --only <step>` announces `NOT A GATE RUN` in both renderers precisely so a narrowed run can never be read as one — because a gate that can be scoped is a gate that can be scoped wrong. Nothing affected is **green with zero spawns**, not a failure: editing a `.md` should not fail a build. A failure's `fix:` carries `--affected --base <ref>` back with it, because `--affected` decides which files exist to run at all and a rerun without it selects the whole corpus.
+
+**A selection that mixes serial files with the rest is more than one run, `As of 2026-09`.** `--parallel=N` is the width of the WHOLE `bun test`, so the bare `x test --workers 8` — which selects every type — ran `live` and `e2e` eight at a time beside the unit corpus, over the very files `x verify` runs one at a time. The files are partitioned by type: one pass at the requested width for everything that may share a pool, then one pass at `--parallel=1` per serial type, each reproducible on its own (`x test live --workers 1`). `--json` carries a `passes` array when there was more than one.
 
 ## x affected
 

@@ -454,11 +454,17 @@ describe('the codes 12.0.0 added are each classified on purpose', () => {
   // the opaque internal sentence — so a pin would have answered "the server failed while handling
   // this request" for a fault whose own `fix:` names the exact call to write instead.
   test('a declared 500 still hands the author the instruction it was thrown with', () => {
-    const document = toProblem({
-      code: 'X_AGGREGATE_MIXED_CURRENCY',
-      cause: "invoices.sum('total') covers 2 currencies (EUR, JPY) — they have no common unit",
-      fix: "invoices.andWhere('total.currency', 'eq', 'EUR').sum('total')",
-    });
+    // An `UltimateError` and not an object literal: `factsOf` takes a supplied `fix` only from a
+    // BRANDED framework error, because it also normalises worker messages and app objects, and
+    // `@ultimat3/entity` really does throw one of these. Constructed rather than imported —
+    // entity is tier 2 like this package, so the import would be sideways.
+    const document = toProblem(
+      new UltimateError({
+        code: 'X_AGGREGATE_MIXED_CURRENCY',
+        cause: "invoices.sum('total') covers 2 currencies (EUR, JPY) — they have no common unit",
+        fix: "invoices.andWhere('total.currency', 'eq', 'EUR').sum('total')",
+      }),
+    );
     expect(document.status).toBe(500);
     expect(document.cause).toContain('2 currencies');
     expect(document.fix).toContain('andWhere');

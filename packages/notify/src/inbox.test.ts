@@ -93,3 +93,62 @@ describe('unit · in-memory inbox, a page size that is not one', () => {
     expect(await inbox.list({ recipient: 'ana', limit: 0 })).toEqual([]);
   });
 });
+
+/**
+ * `SQL_NOTIFY_INBOX_PAGE` orders `created_at desc, notifier, key` — a tail that is unique within a
+ * recipient, so a bounded page cannot drop or repeat a row. The memory store sorted on `createdAt`
+ * alone, which is a PARTIAL order: two notifications written in the same millisecond could come
+ * back either way round, and the two drivers behind one interface then answer one question two ways.
+ *
+ * `id` was the tail until 2026-09-06 and was never a shared one: this store derives it from
+ * `JSON.stringify([recipient, notifier, key])` and compares by code point, while `createPgInboxStore`
+ * mints a UUIDv7 that Postgres orders by its 16 bytes.
+ */
+describe('unit · two notifications in the same millisecond', () => {
+  test('the memory page breaks the tie on (notifier, key), exactly as the statement does', async () => {
+    const inbox = createMemoryInboxStore();
+    // Inserted newest-key-first, so an implementation that keeps insertion order fails this.
+    await inbox.add({ ...write, key: 'like:zz', createdAt: AT });
+    await inbox.add({ ...write, key: 'like:aa', createdAt: AT });
+
+    const page = await inbox.list({ recipient: 'ana' });
+
+    expect(page.map((row) => row.key)).toEqual(['like:aa', 'like:zz']);
+  });
+
+  // The notifier outranks the key, which is what `order by … notifier, key` says and what an
+  // implementation sorting on the key alone gets wrong.
+  test('the notifier is the first tie-break and the key the second', async () => {
+    const inbox = createMemoryInboxStore();
+    await inbox.add({ ...write, notifier: 'zeta', key: 'aa', createdAt: AT });
+    await inbox.add({ ...write, notifier: 'alpha', key: 'zz', createdAt: AT });
+
+    const page = await inbox.list({ recipient: 'ana' });
+
+    expect(page.map((row) => `${row.notifier}/${row.key}`)).toEqual(['alpha/zz', 'zeta/aa']);
+  });
+
+  // CODE POINT, never `localeCompare` — which is what `collate "C"` pins on the Postgres side.
+  // `é` sorts after `z` by code point and BEFORE it under an ICU or `en_US.UTF-8` collation, so a
+  // store comparing by locale would answer the other way round and the two drivers would split.
+  test('the comparison is by code point, so a Unicode key cannot split the two stores', async () => {
+    const inbox = createMemoryInboxStore();
+    for (const key of ['zz', 'école', 'Zürich', 'aa']) {
+      await inbox.add({ ...write, key, createdAt: AT });
+    }
+
+    const page = await inbox.list({ recipient: 'ana' });
+
+    expect(page.map((row) => row.key)).toEqual(['Zürich', 'aa', 'zz', 'école']);
+  });
+
+  test('a newer row still outranks an older one whatever its id', async () => {
+    const inbox = createMemoryInboxStore();
+    await inbox.add({ ...write, key: 'like:aa', createdAt: AT });
+    await inbox.add({ ...write, key: 'like:zz', createdAt: LATER });
+
+    const page = await inbox.list({ recipient: 'ana' });
+
+    expect(page.map((row) => row.key)).toEqual(['like:zz', 'like:aa']);
+  });
+});

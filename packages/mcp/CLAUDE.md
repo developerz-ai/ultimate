@@ -289,6 +289,18 @@ import. The CLI wires it.
   answered `400 parse error` for a malformed payload and `401` for a well-formed one under the
   SAME rejected token, which is precisely the oracle the pre-parse 401 exists to remove. The parse
   error still exists — it is what an authenticated agent gets.
+- **`transport-stdio.ts`'s default `write` is AWAITED, and it has to be** (`As of 2026-09`). It was
+  `Bun.stdout.write(chunk)` returning `void`, so every `await write(...)` in `serveStdio` awaited
+  nothing: fd 1 is a pipe for every real peer (a local agent LAUNCHED this process), the runtime
+  queues past the buffer, and the CLI's exit threw the queue away — measured, a 4,000,236-byte
+  frame arrived as 1,388,672 bytes. The same failure `scripts/stdout-truncation.test.ts` pins for
+  `--json`, and it needs a CHILD PROCESS to see: in-process it does not exist. Awaiting it is also
+  the loop's only back-pressure.
+- **A schema property lands through `Object.defineProperty` too** — `input-schema.ts`'s
+  `narrowProperties`, the twin of `validate-args.ts`'s `put` on the schema side. `out[key] = …` for
+  a property named `__proto__` runs `Object.prototype`'s setter and re-prototypes the published
+  `properties` record instead of adding a key, so a field the tool author declared vanishes from
+  `tools/list` and from what the arg validator reads back.
 - `transport-stdio.ts` never writes stdout except the wire. Diagnostics → stderr. It also **caps one
   message** at `DEFAULT_STDIO_LINE_LIMIT` (1 MiB, the same figure `transport-http.ts` enforces with
   `readWithinLimit`) — the peer launched this process and is trusted, a bug in it is not, and a

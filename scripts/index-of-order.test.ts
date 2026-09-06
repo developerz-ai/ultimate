@@ -174,3 +174,43 @@ describe('the real tree', () => {
     expect(checkOrdering({ sites, pins: INDEX_OF_ORDER_PINS, scanned: files > 0 })).toEqual([]);
   });
 });
+
+// Finding 6, 2026-09-06: the matcher alternation was `toBeLessThan|toBeGreaterThan`, so the
+// `OrEqual` pair — the same assertion, one keystroke wider — read as no ordering assertion at all.
+// A phantom `-1` passes them identically: `-1 <= anyIndex` and `anyIndex >= -1`.
+describe('the OrEqual pair is the same assertion', () => {
+  test('toBeLessThanOrEqual: the RECEIVER is at risk, same as toBeLessThan', () => {
+    const sites = orderingSites(
+      FILE,
+      wrap(`    expect(up.indexOf('drop x')).toBeLessThanOrEqual(n);`),
+    );
+    expect(sites).toHaveLength(1);
+    expect(sites[0]?.matcher).toBe('toBeLessThanOrEqual');
+    expect(sites[0]?.guarded).toBe(false);
+  });
+
+  test('toBeGreaterThanOrEqual: the ARGUMENT is at risk, and the receiver never is', () => {
+    const risky = orderingSites(
+      FILE,
+      wrap(`    expect(n).toBeGreaterThanOrEqual(up.indexOf('add x'));`),
+    );
+    expect(risky).toHaveLength(1);
+    expect(risky[0]?.matcher).toBe('toBeGreaterThanOrEqual');
+    expect(risky[0]?.guarded).toBe(false);
+    // The safe side stays silent — noise is how a rule gets switched off, which is why the
+    // asymmetry is the whole rule. `expect(idx).toBeGreaterThanOrEqual(0)` is itself a GUARD.
+    expect(
+      orderingSites(FILE, wrap(`    expect(up.indexOf('add x')).toBeGreaterThanOrEqual(n);`)),
+    ).toEqual([]);
+  });
+
+  test('and a presence guard on the same expression settles it', () => {
+    const sites = orderingSites(
+      FILE,
+      wrap(
+        `    expect(up).toContain('drop x');\n    expect(up.indexOf('drop x')).toBeLessThanOrEqual(n);`,
+      ),
+    );
+    expect(sites[0]?.guarded).toBe(true);
+  });
+});

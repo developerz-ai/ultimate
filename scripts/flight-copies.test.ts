@@ -9,8 +9,10 @@ import {
   BACKOFF_MODULE,
   checkFlightCopies,
   flightCopyFindings,
+  flightCopyResult,
   readSources,
 } from './flight-copies';
+import { render } from './lib/log';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 // Every test below scans the whole tree, so the budget is the file's default rather than a third
@@ -90,5 +92,110 @@ describe('this repository', () => {
     expect(files.length).toBeGreaterThan(100);
     expect(files.some((one) => one.at.endsWith('.test.ts'))).toBe(false);
     expect(files.some((one) => one.at === BACKOFF_MODULE)).toBe(true);
+  });
+});
+
+// Finding 7, 2026-09-06: the shape test demanded the `**` operator and `Math.min`, so the two
+// other spellings of exactly the same curve read green — which is the failure this file's own
+// header names, a rule keyed on one spelling reading past the copy that uses another.
+describe('the same curve under another spelling', () => {
+  test('Math.pow is the exponent operator with a name in front', () => {
+    const source =
+      'export const wait = (a: number, b: number, m: number) => Math.min(b * Math.pow(2, a), m);\n';
+    expect(codes(file('packages/x/src/wait.ts', source))).toEqual(['X_FLIGHT_SECOND_CURVE']);
+  });
+
+  test('a TERNARY clamp is Math.min written out', () => {
+    const source =
+      'export const wait = (a: number, b: number, m: number) => {\n  const raw = b * 2 ** a;\n  return raw > m ? m : raw;\n};\n';
+    expect(codes(file('packages/x/src/wait.ts', source))).toEqual(['X_FLIGHT_SECOND_CURVE']);
+  });
+
+  test('and the ternary clamp catches Math.pow too', () => {
+    const source =
+      'export const wait = (a: number, b: number, m: number) => {\n  const raw = b * Math.pow(2, a);\n  return raw < m ? raw : m;\n};\n';
+    expect(codes(file('packages/x/src/wait.ts', source))).toEqual(['X_FLIGHT_SECOND_CURVE']);
+  });
+
+  test('but a ternary with no exponent near it is an ordinary choice', () => {
+    const source = 'export const pick = (a: number, b: number) => (a > b ? b : a);\n';
+    expect(codes(file('packages/x/src/pick.ts', source))).toEqual([]);
+  });
+});
+
+describe('a die a test cannot control', () => {
+  // A curve rolling `crypto.getRandomValues` evaded the rule outright: it is every bit as
+  // unpinnable as `Math.random()`, and the die half read only the latter.
+  const CURVE = 'const raw = Math.min(base * 2 ** attempt, cap);\n';
+
+  test('crypto.getRandomValues beside a curve is unpinnable in exactly the same way', () => {
+    const source = `${CURVE}export const j = (): number => crypto.getRandomValues(new Uint32Array(1))[0] ?? 0;\n`;
+    expect(codes(file('packages/x/src/jitter.ts', source))).toEqual([
+      'X_FLIGHT_RANDOM_UNINJECTED',
+      'X_FLIGHT_SECOND_CURVE',
+    ]);
+  });
+
+  test('the globalThis.crypto spelling too — that ambient is the same ambient', () => {
+    const source = `${CURVE}export const j = (): number => globalThis.crypto.getRandomValues(new Uint8Array(1))[0] ?? 0;\n`;
+    expect(codes(file('packages/x/src/jitter.ts', source))).toEqual([
+      'X_FLIGHT_RANDOM_UNINJECTED',
+      'X_FLIGHT_SECOND_CURVE',
+    ]);
+  });
+
+  // The receiver IS what is matched, exactly as `Math` is for `Math.random()`: an INJECTED CSPRNG
+  // is the seam this rule asks an author to add, so reporting one prints a fix line telling them to
+  // inject what they already injected. Noise is how a rule gets switched off.
+  test('an injected receiver is the repair, and is never reported', () => {
+    for (const roll of [
+      'rng.getRandomValues(new Uint32Array(1))',
+      'options.crypto.getRandomValues(new Uint32Array(1))',
+      'this.entropy.getRandomValues(new Uint32Array(1))',
+    ]) {
+      const source = `${CURVE}export const j = (r: Rng): number => ${roll}[0] ?? 0;\n`;
+      expect(codes(file('packages/x/src/jitter.ts', source))).toEqual(['X_FLIGHT_SECOND_CURVE']);
+    }
+  });
+
+  // The five real sites — `auth/tokens.ts:17`, `core/ids.ts:29`, `core/secrets.ts:84,175`,
+  // `realtime/pg-auth.ts:146` — are a token, an id, an encryption key and an IV. For those this
+  // rule's own `fix:` is not noise but WRONG advice: a `random: () => number` seam on a key
+  // generator is a caller-supplied predictable CSPRNG, which is the vulnerability.
+  test('but a CSPRNG with no curve near it is key material, and is never reported', () => {
+    const source =
+      'export const token = (): string => {\n  const bytes = new Uint8Array(32);\n  crypto.getRandomValues(bytes);\n  return encodeHex(bytes);\n};\n';
+    expect(codes(file('packages/auth/src/tokens.ts', source))).toEqual([]);
+  });
+});
+
+describe('the clamp is a CAP, and the branches have to be the operands', () => {
+  // Both measured against the real tree: a rule spelled "a comparison, a `?` and a `:`" reports
+  // the sRGB gamma curve, and one accepting `Math.max` reports a decimal rescale.
+  test('the sRGB gamma ternary beside a ** is not a clamp', () => {
+    const source =
+      'export const linear = (v: number): number => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);\n';
+    expect(codes(file('packages/ui/src/tokens/contrast.ts', source))).toEqual([]);
+  });
+
+  test('Math.max is a FLOOR, not a cap', () => {
+    const source =
+      'export const scale = (a: number, b: number) => Math.max(a, b) * 10n ** BigInt(a);\n';
+    expect(codes(file('packages/entity/src/aggregate.ts', source))).toEqual([]);
+  });
+});
+
+// Finding 8, 2026-09-06: `report()` was given `lines:` and no `findings:`, and `render()` in
+// --json mode reads `findings` alone — so a red run published `findings: []`.
+describe('--json carries the refusals', () => {
+  test('a finding reaches the document rather than an empty array', () => {
+    const files = file(
+      'packages/x/src/j.ts',
+      'export const j = (n: number) => Math.round(n * Math.random());\n',
+    );
+    const document = JSON.parse(render(flightCopyResult(files), true)) as {
+      readonly findings: readonly { readonly code: string }[];
+    };
+    expect(document.findings.map((one) => one.code)).toEqual(['X_FLIGHT_RANDOM_UNINJECTED']);
   });
 });

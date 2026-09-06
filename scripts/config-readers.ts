@@ -38,6 +38,8 @@ import {
   CONFIG_AMBIGUOUS_PINS,
   CONFIG_PINS_FILE,
   CONFIG_READER_PINS,
+  configAmbiguityPinnedFor,
+  configReaderPinnedFor,
 } from './lib/config-reader-pins';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -73,9 +75,23 @@ export const configDeclaration = async (root: string): Promise<string> =>
 /** Shipped source of every package. The declaring file is excluded by the caller, not by a glob. */
 const SOURCE_GLOB = 'packages/*/src/**/*.{ts,tsx}';
 
-const INTERFACE = /export interface (\w+)\s*\{([\s\S]*?)\n\}/g;
-/** A member at one indent level: `readonly queues: readonly string[];`. */
-const MEMBER = /^ {2}readonly\s+([A-Za-z_$][\w$]*)\??\s*:\s*([^;]+);/gm;
+/**
+ * A section's DECLARATION, in both spellings TypeScript offers: `export interface X { … }` and
+ * `export type X = { … };`. The alias form was unread until 2026-09-06, so a section written that
+ * way contributed zero leaves and every key under it read as alive — this rule's own defect class
+ * one level up, and the same shape as `PwaConfig` losing five keys to a file split.
+ */
+const INTERFACE = /export (?:interface (\w+)\s*|type (\w+)\s*=\s*)\{([\s\S]*?)\n\}/g;
+
+/**
+ * A member: `readonly queues: readonly string[];`, at ANY indent and with `readonly` OPTIONAL.
+ *
+ * It demanded exactly two spaces AND the modifier, which is a rule about this repo's current
+ * formatting wearing a rule about a declaration — a section nested one level deeper, or one member
+ * written without `readonly`, dropped out of the derived set in silence. A guard a reformat evades
+ * is not a guard.
+ */
+const MEMBER = /^\s+(?:readonly\s+)?([A-Za-z_$][\w$]*)\??\s*:\s*([^;]+);/gm;
 /** A member whose type is a single named interface — the one shape the walk descends into. */
 const NAMED_TYPE = /^([A-Z]\w*)(?:\s*\|\s*undefined)?$/;
 
@@ -86,7 +102,7 @@ const NAMED_TYPE = /^([A-Z]\w*)(?:\s*\|\s*undefined)?$/;
 export function configLeaves(source: string, root = ROOT_INTERFACE): readonly string[] {
   const bodies = new Map<string, string>();
   for (const match of source.matchAll(INTERFACE))
-    bodies.set(match[1] as string, match[2] as string);
+    bodies.set((match[1] ?? match[2]) as string, match[3] as string);
   const leaves: string[] = [];
   const walk = (name: string, prefix: string, seen: readonly string[]): void => {
     const body = bodies.get(name);
@@ -190,7 +206,7 @@ export interface ConfigSource {
   readonly text: string;
 }
 
-export type ConfigReaderGapKind = 'unread' | 'ambiguous' | 'stale' | 'unscanned';
+export type ConfigReaderGapKind = 'unread' | 'ambiguous' | 'stale' | 'unscanned' | 'unexplained';
 
 /**
  * The two ways a pin stops holding. One kind and one code, because the repair is the same edit
@@ -262,13 +278,32 @@ export function checkConfigReaders(input: ConfigReaderInput): readonly ConfigRea
     const doubt = ambiguityOf(leaf, input.files);
     if (doubt !== undefined) ambiguous.set(leaf, doubt);
   }
+  // `configReaderPinnedFor` / `configAmbiguityPinnedFor`, never a bare `Object.hasOwn`: a row whose
+  // reason is BLANK waives nothing. `Object.hasOwn` asks whether a row exists and never whether it
+  // says anything, so `'jobs.driver': ''` silenced this rule outright — the waiver axiom 3 refuses,
+  // and the shape `declarationReaderPinnedFor` has guarded against since its first draft.
+  // `configAmbiguityPinnedFor` was exported, documented and CALLED BY NOBODY until 2026-09-06.
   for (const leaf of input.leaves) {
-    if (read.has(leaf) || Object.hasOwn(input.pins, leaf)) continue;
+    if (read.has(leaf) || configReaderPinnedFor(leaf, input.pins) !== undefined) continue;
     gaps.push({ kind: 'unread', leaf });
   }
   for (const [leaf, doubt] of ambiguous) {
-    if (Object.hasOwn(ambiguousPins, leaf) || Object.hasOwn(input.pins, leaf)) continue;
+    if (
+      configAmbiguityPinnedFor(leaf, ambiguousPins) !== undefined ||
+      configReaderPinnedFor(leaf, input.pins) !== undefined
+    ) {
+      continue;
+    }
     gaps.push({ kind: 'ambiguous', leaf, readers: doubt.readers, colliding: doubt.colliding });
+  }
+  for (const [table, pins] of [
+    [CONFIG_PINS_FILE, input.pins],
+    [`${CONFIG_PINS_FILE} (CONFIG_AMBIGUOUS_PINS)`, ambiguousPins],
+  ] as const) {
+    for (const [leaf, reason] of Object.entries(pins)) {
+      if (reason.trim() !== '') continue;
+      gaps.push({ kind: 'unexplained', leaf, reason: table });
+    }
   }
   // The ambiguity table ratchets in both directions too: a leaf that gained a qualified reader, or
   // one `AppConfig` no longer declares, leaves a row that would excuse the next collision for free.
@@ -329,6 +364,13 @@ const staleFinding = (gap: ConfigReaderGap): Finding => ({
   at: CONFIG_PINS_FILE,
 });
 
+const unexplainedFinding = (gap: ConfigReaderGap): Finding => ({
+  code: 'X_CONFIG_READER_PIN_UNEXPLAINED',
+  cause: `${gap.leaf} is pinned in ${gap.reason ?? CONFIG_PINS_FILE} with a blank reason, so nothing records who reads it — and the pin holds nothing, which is what a row with no sentence has always been worth`,
+  fix: `write who reads ${gap.leaf} — a file under packages/, or a surface outside this repo — in ${CONFIG_PINS_FILE}; or delete ${gap.leaf} from ${CONFIG_FILE} and from defaults()`,
+  at: CONFIG_PINS_FILE,
+});
+
 const unscannedFinding = (gap: ConfigReaderGap): Finding => ({
   code: 'X_CONFIG_READERS_UNSCANNED',
   cause: `nothing was read for ${gap.leaf}, so every key reports a reader and the ratchet enforces nothing — a glob or an interface name that matches nothing reads exactly like a wired config`,
@@ -341,6 +383,7 @@ const FINDINGS: Readonly<Record<ConfigReaderGapKind, (gap: ConfigReaderGap) => F
   ambiguous: ambiguousFinding,
   stale: staleFinding,
   unscanned: unscannedFinding,
+  unexplained: unexplainedFinding,
 };
 
 export const configReaderFindingFor = (gap: ConfigReaderGap): Finding => FINDINGS[gap.kind](gap);

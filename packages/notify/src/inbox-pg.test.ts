@@ -105,8 +105,17 @@ describe('unit · postgres inbox', () => {
     expect(await counted.unreadCount('ana')).toBe(7);
   });
 
-  test('the page orders by (created_at desc, id), so a bounded page has a total order', () => {
-    expect(SQL_NOTIFY_INBOX_PAGE).toContain('order by created_at desc, id');
+  // `(notifier, key)` and not `id`: the memory store's id is `JSON.stringify([recipient, notifier,
+  // key])` and this one's is a UUIDv7 Postgres orders by its 16 bytes, so ordering on `id` gave the
+  // two stores two total orders that agree on nothing. `collate "C"` because the memory store
+  // compares by code point and a database under an ICU or `en_US.UTF-8` collation does not.
+  test('the page orders by (created_at desc, notifier, key) under the C collation', () => {
+    expect(SQL_NOTIFY_INBOX_PAGE).toContain(
+      'order by created_at desc, notifier collate "C", key collate "C"',
+    );
+    expect(SQL_NOTIFY_INBOX_PAGE).not.toContain('order by created_at desc, id');
+    // The tail is unique within a recipient only because the table says so.
+    expect(SQL_NOTIFY_INBOX_TABLE).toContain('unique (recipient, notifier, key)');
   });
 
   test('the unread index is PARTIAL, because `read_at is null` is the query every page load runs', () => {
@@ -116,7 +125,13 @@ describe('unit · postgres inbox', () => {
   test('every write is scoped by recipient, so a stranger id reaches no row', async () => {
     const calls: Call[] = [];
     const store = createPgInboxStore({ executor: recording([], calls) });
-    await store.markRead({ recipient: 'ana', ids: ['x'], at: AT });
+    // A well-formed id belonging to somebody else — `markRead` screens malformed ones out before
+    // the statement runs, and this test is about the recipient scope, not that screen.
+    await store.markRead({
+      recipient: 'ana',
+      ids: ['0199ae2f-1a4f-7b0a-9b7f-4f3b2c1d0e9a'],
+      at: AT,
+    });
     await store.markSeen({ recipient: 'ana', at: AT });
     expect(SQL_NOTIFY_INBOX_MARK_READ).toContain('where recipient = $1 and id = any($2::uuid[])');
     expect(SQL_NOTIFY_INBOX_MARK_SEEN).toContain('where recipient = $1 and seen_at is null');
@@ -193,6 +208,37 @@ describe('unit · inbox retention', () => {
     const calls: Call[] = [];
     const store = createPgInboxStore({ executor: recording([], calls) });
     expect(await store.purgeBefore({})).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+/**
+ * `markRead`'s contract (`InboxStore.markRead`) is that an id belonging to nobody is *simply
+ * absent* — the memory store skips it. Bound into `any($2::uuid[])`, a caller-supplied id that is
+ * not a uuid is Postgres 22P02 instead: the whole batch raises out of the store, so one malformed
+ * id in a list of twenty loses the nineteen good ones as well as the answer.
+ */
+describe('unit · a mark-read batch holding an id that is not a uuid', () => {
+  const ID = '0199ae2f-1a4f-7b0a-9b7f-4f3b2c1d0e9a';
+
+  test('binds only the well-formed ids and still marks the good ones', async () => {
+    const calls: Call[] = [];
+    const store = createPgInboxStore({ executor: recording([{ id: ID }], calls) });
+
+    const marked = await store.markRead({ recipient: 'ana', ids: ['../../etc', ID], at: AT });
+
+    expect(marked).toBe(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.params[1]).toEqual([ID]);
+  });
+
+  test('a batch with no well-formed id answers 0 and never reaches the database', async () => {
+    const calls: Call[] = [];
+    const store = createPgInboxStore({ executor: recording([{ id: ID }], calls) });
+
+    const marked = await store.markRead({ recipient: 'ana', ids: ['x', ''], at: AT });
+
+    expect(marked).toBe(0);
     expect(calls).toHaveLength(0);
   });
 });

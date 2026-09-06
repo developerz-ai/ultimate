@@ -3,7 +3,13 @@
 // command, and that is the bug these three readers exist to keep out.
 
 import { describe, expect, test } from 'bun:test';
-import { assertSurfaceSupported, GENERATORS, readKind, readSurface } from './generate-kinds';
+import {
+  assertSurfaceSupported,
+  GENERATORS,
+  readKind,
+  readPermission,
+  readSurface,
+} from './generate-kinds';
 import { thrownBy } from './thrown-by';
 
 describe('readKind', () => {
@@ -35,6 +41,27 @@ describe('readKind', () => {
     ] as const) {
       expect([raw, thrownBy(() => readKind(raw)).fix]).toEqual([raw, fix]);
     }
+  });
+
+  /**
+   * `--permission` is spliced into the emitted page three times — the `permissions:` array, a
+   * `definePermissions()` call and a `PermissionRegistry` augmentation — and
+   * `@ultimat3/policy`'s `Permission` is `${string}:${string}`. A value without a colon was
+   * accepted and written, so the failure arrived as a TS2345 in a file the caller had not written.
+   */
+  test('a --permission that is not a <resource>:<verb> is refused before anything is written', () => {
+    for (const raw of ['ops', 'ops:', ':read', 'ops read', "ops:'read", 'ops:re:ad']) {
+      const thrown = thrownBy(() => readPermission(raw, 'admin:page'));
+      expect([raw, thrown.code]).toEqual([raw, 'X_CLI_BAD_FLAG']);
+      expect(thrown.fix).toBe('x g admin:page ops --permission ops:read');
+    }
+  });
+
+  test('the shapes an app really declares are accepted, and absence is not a value', () => {
+    for (const raw of ['ops:read', 'ledger:reconcile', 'admin:*', 'billing.eu:read']) {
+      expect(readPermission(raw, 'admin:page')).toBe(raw);
+    }
+    expect(readPermission(undefined, 'admin:page')).toBeUndefined();
   });
 
   test('a word near nothing gets the page, never an invented lead', () => {

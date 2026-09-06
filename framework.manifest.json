@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "1f27edf67b4d7306187423dd3abe02fa558b0a549746b21dd6404d9091020157",
+  "buildId": "dac2c1b8d3df7ffd7068dacc8729180d52c8cd5adf26b26fe5e9cc6dff9cd8d1",
   "tiers": {
     "0": [
       "core",
@@ -710,6 +710,11 @@
       "at": "scripts/config-readers.ts"
     },
     {
+      "code": "X_CONFIG_READER_PIN_UNEXPLAINED",
+      "owner": "scripts",
+      "at": "scripts/config-readers.ts"
+    },
+    {
       "code": "X_CONFIG_READERS_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/config-readers.ts"
@@ -1250,6 +1255,26 @@
       "at": "scripts/finite-bounds.ts"
     },
     {
+      "code": "X_FIX_SHELL_ARG_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/fix-shell-arg.ts"
+    },
+    {
+      "code": "X_FIX_SHELL_ARG_PIN_UNEXPLAINED",
+      "owner": "scripts",
+      "at": "scripts/fix-shell-arg.ts"
+    },
+    {
+      "code": "X_FIX_SHELL_ARG_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/fix-shell-arg.ts"
+    },
+    {
+      "code": "X_FIX_SHELL_ARG_UNSCREENED",
+      "owner": "scripts",
+      "at": "scripts/fix-shell-arg.ts"
+    },
+    {
       "code": "X_FIX_TARGET_UNKNOWN",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -1328,6 +1353,16 @@
       "code": "X_FRAMEWORK_TABLE_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/framework-tables.ts"
+    },
+    {
+      "code": "X_FROZEN_RECORD_INFERRED",
+      "owner": "scripts",
+      "at": "scripts/frozen-records.ts"
+    },
+    {
+      "code": "X_FROZEN_RECORD_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/frozen-records.ts"
     },
     {
       "code": "X_GATE_CODE_BACKLOG_STALE",
@@ -2110,6 +2145,11 @@
       "at": "scripts/proto-index.ts"
     },
     {
+      "code": "X_PROTO_CHAIN_INDEX_PIN_UNEXPLAINED",
+      "owner": "scripts",
+      "at": "scripts/proto-index.ts"
+    },
+    {
       "code": "X_PROTO_CHAIN_INDEX_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/proto-index.ts"
@@ -2701,6 +2741,11 @@
     },
     {
       "code": "X_SECRET_COMPARE_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/secret-compare.ts"
+    },
+    {
+      "code": "X_SECRET_COMPARE_PIN_UNEXPLAINED",
       "owner": "scripts",
       "at": "scripts/secret-compare.ts"
     },
@@ -3433,6 +3478,16 @@
       "code": "X_VERSION_STAMP_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/version-stamps.ts"
+    },
+    {
+      "code": "X_VOCABULARY_REDECLARED",
+      "owner": "scripts",
+      "at": "scripts/render-modes.ts"
+    },
+    {
+      "code": "X_VOCABULARY_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/render-modes.ts"
     },
     {
       "code": "X_WEBHOOK_DELIVERY_FAILED",

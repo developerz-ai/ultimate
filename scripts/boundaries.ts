@@ -407,8 +407,14 @@ export function adminFlattenerFindingFor(violation: AdminFlattenerViolation): Fi
   };
 }
 
+/**
+ * `.tsx` as well as `.ts`, `As of 2026-09-06`. `@ultimat3/admin` is a COMPONENT package — seven of
+ * its modules are `.tsx`, `list.tsx` and `detail.tsx` among them — so a `.ts`-only glob read every
+ * file except the screens that render a column, which is the file class most likely to flatten an
+ * entity onto `AdminColumnFacts` in the first place.
+ */
 export async function collectAdminFiles(root: string): Promise<readonly SourceFile[]> {
-  return readFiles(root, 'packages/admin/src/**/*.ts');
+  return readFiles(root, 'packages/admin/src/**/*.{ts,tsx}');
 }
 
 if (import.meta.main) {

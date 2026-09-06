@@ -3,7 +3,7 @@
 // forces. Kept apart from the drivers because "which failure can succeed unchanged" is one
 // judgement, and two copies of it would drift into two answers for the same 429.
 
-import { renderThrowable } from '@ultimat3/core';
+import { renderFixShellArg, renderThrowable } from '@ultimat3/core';
 import { CacheDriverUnavailableError, CachePurgeFailedError } from './errors';
 
 /** Just the call. `typeof fetch` also carries `preconnect`, which no test double should have to. */
@@ -192,7 +192,10 @@ export async function purgePost(input: PurgePostInput): Promise<Response> {
       driver: input.driver,
       detail: `${reason} — nothing left this host for ${input.url} (egress, DNS or TLS)`,
       retryable: true,
-      fix: `curl -sS -m 5 -o /dev/null ${input.url}`,
+      // The endpoint comes from `.env.production` (`purge-env.ts`), so it is operator data in a
+      // COMMAND position: `$(…)` and a backtick substitute before `curl` is reached. The URL is
+      // already in the `detail` above, which is read rather than pasted.
+      fix: `curl -sS -m 5 -o /dev/null ${renderFixShellArg(input.url, '<the purge endpoint the cause names>')}`,
     });
   }
 }

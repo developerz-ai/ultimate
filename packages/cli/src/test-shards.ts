@@ -40,6 +40,7 @@ import { execOutput } from './exec';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue, StepResult } from './output';
 import { quoteArg } from './shell-quote';
+import { testPasses } from './test-passes';
 import type { TestFile } from './test-select';
 import type { TestType } from './verify-tests';
 
@@ -65,15 +66,26 @@ export function testArgs(input: {
   readonly workers: number;
   /** 0-based, matching `--worker`. Absent runs the whole selection across `workers` processes. */
   readonly shard?: number;
+  /**
+   * Everything after a bare `--`, handed to `bun test` verbatim and BEFORE the file list, which is
+   * where bun reads its flags. `ParsedArgs.passthrough` had no reader anywhere until 2026-09, so
+   * `x test unit -- --coverage --bail` parsed both flags, carried them through the command and
+   * dropped them on the floor — a run that reported exactly what a coverage run reports, with no
+   * coverage measured. `CommandSpec.passthrough` is what keeps the other commands from doing the
+   * same in silence: they refuse the `--` instead.
+   */
+  readonly passthrough?: readonly string[];
 }): readonly string[] {
   const files = [...input.files].sort();
+  const extra = input.passthrough ?? [];
   return input.shard === undefined
-    ? ['bun', 'test', `--parallel=${String(input.workers)}`, ...files]
+    ? ['bun', 'test', `--parallel=${String(input.workers)}`, ...extra, ...files]
     : [
         'bun',
         'test',
         '--isolate',
         `--shard=${String(input.shard + 1)}/${String(input.workers)}`,
+        ...extra,
         ...files,
       ];
 }
@@ -102,6 +114,8 @@ export interface ReproduceOptions {
   readonly affected?: AffectedSelection;
   /** 0-based, when reproducing ONE shard. Absent reproduces the whole selection. */
   readonly shard?: number;
+  /** What the caller put after `--`. It reaches `bun test`, so a rerun without it runs differently. */
+  readonly passthrough?: readonly string[];
 }
 
 /**
@@ -124,6 +138,11 @@ export function reproduceFor(options: ReproduceOptions): string {
     '--workers',
     String(options.workers),
     ...(options.shard === undefined ? [] : ['--worker', String(options.shard)]),
+    // Last, and after a `--` of its own, because that is where the caller typed it and where the
+    // parser will find it again. Quoted for `shell-quote.ts`'s reason: a reproduce line is pasted.
+    ...(options.passthrough === undefined || options.passthrough.length === 0
+      ? []
+      : ['--', ...options.passthrough.map(quoteArg)]),
   ].join(' ');
 }
 
@@ -144,16 +163,28 @@ export interface RunShardsOptions {
   readonly sample?: { readonly kept: number; readonly total: number };
   /** Passed straight to `reproduceFor`: see `ReproduceOptions.affected`. */
   readonly affected?: AffectedSelection;
+  /** Everything after the caller's `--`, forwarded to every pass and printed in the reproduce. */
+  readonly passthrough?: readonly string[];
 }
 
-/** The reproduction's inputs, resolved once: `workers` is the run's real width, not the ask. */
-const planOf = (options: RunShardsOptions, workers: number): ReproduceOptions => ({
-  workers,
+/**
+ * The reproduction's inputs for ONE pass: `workers` is that pass's real width, not the ask, and
+ * `type` is the pass's own when the split gave it one — `x test live --workers 1` reruns exactly
+ * the files that failed, where the whole invocation's flags would rerun the corpus around them.
+ */
+const planOf = (
+  options: RunShardsOptions,
+  pass: { readonly workers: number; readonly type?: TestType },
+): ReproduceOptions => ({
+  workers: pass.workers,
   ...(options.filter === undefined ? {} : { filter: options.filter }),
-  ...(options.type === undefined ? {} : { type: options.type }),
+  ...(pass.type === undefined ? {} : { type: pass.type }),
   ...(options.sample === undefined ? {} : { sample: options.sample.kept }),
   ...(options.affected === undefined ? {} : { affected: options.affected }),
   ...(options.only === undefined ? {} : { shard: options.only }),
+  ...(options.passthrough === undefined || options.passthrough.length === 0
+    ? {}
+    : { passthrough: options.passthrough }),
 });
 
 /**
@@ -173,68 +204,111 @@ export const failureOf = (code: number, files: number, plan: ReproduceOptions): 
 });
 
 /**
- * ONE `bun test`, not one per worker. Bun owns the pool and hands each free worker the next file,
- * so nothing here decides which file runs where — see this file's header for what that measured.
+ * ONE `bun test` PER PASS, and one pass unless the selection mixes serial files with the rest —
+ * `test-passes.ts` decides that, and this spends it. Bun owns the pool inside a pass and hands
+ * each free worker the next file, so nothing here decides which file runs where; see this file's
+ * header for what that measured.
+ *
+ * Sequential, never `Promise.all`: the whole point of a serial pass is that nothing runs beside
+ * it. And every pass runs even after one fails — the caller asked for a suite, and a report that
+ * stops at the first red step hides the rest of the answer.
  *
  * `ULTIMATE_TEST_WORKER` is still set for a `--worker` rerun and only then: that run is one
  * process, so naming its database is this file's to do. A `--parallel` run has N of them and Bun
  * numbers each with `BUN_TEST_WORKER_ID`, which `@ultimat3/testing`'s `workerId` already reads.
  */
 export async function runShards(options: RunShardsOptions): Promise<CommandResult> {
-  const files = options.files.map((file) => file.path);
-  const workers = Math.max(1, Math.min(Math.trunc(options.workers), files.length || 1));
   const only = options.only;
+  const passes = testPasses({
+    files: options.files,
+    workers: options.workers,
+    ...(options.type === undefined ? {} : { type: options.type }),
+    ...(only === undefined ? {} : { shard: only }),
+  });
   const started = performance.now();
-  const result = await options.runner(
-    testArgs({ files, workers, ...(only === undefined ? {} : { shard: only }) }),
-    {
-      cwd: options.root,
-      ...(only === undefined ? {} : { env: { ULTIMATE_TEST_WORKER: String(only) } }),
-    },
-  );
-  const durationMs = Math.round(performance.now() - started);
-  const plan = planOf({ ...options, workers }, workers);
-  const type = options.type;
-  const typeParam = type === undefined ? {} : { type };
-  const sample = options.sample;
-  const label = only === undefined ? `${workers} worker(s)` : `shard ${only} of ${workers}`;
-  const steps: readonly StepResult[] = [
-    {
-      name: `${label} · ${files.length} files`,
+  const steps: StepResult[] = [];
+  const spent: JsonValue[] = [];
+  let ok = true;
+  let exitCode = 0;
+  for (const pass of passes) {
+    const files = pass.files.map((file) => file.path);
+    const result = await options.runner(
+      testArgs({
+        files,
+        workers: pass.workers,
+        ...(only === undefined ? {} : { shard: only }),
+        ...(options.passthrough === undefined ? {} : { passthrough: options.passthrough }),
+      }),
+      {
+        cwd: options.root,
+        ...(only === undefined ? {} : { env: { ULTIMATE_TEST_WORKER: String(only) } }),
+      },
+    );
+    const plan = planOf(options, pass);
+    const label =
+      only === undefined ? `${pass.workers} worker(s)` : `shard ${only} of ${pass.workers}`;
+    steps.push({
+      name: `${pass.type === undefined ? label : `${pass.type} · ${label}`} · ${files.length} files`,
       ok: result.ok,
       durationMs: result.durationMs,
       // `output.ts` documents this field as absent for a NON-test step, so omitting it here made
       // `renderJson` describe the test step as one — recoverable only by parsing `name`.
-      workers,
+      workers: pass.workers,
       findings: result.ok ? [] : [failureOf(result.code, files.length, plan)],
       output: execOutput(result),
-    },
-  ];
+    });
+    spent.push({
+      ...(pass.type === undefined ? {} : { type: pass.type }),
+      files: files.length,
+      workers: pass.workers,
+      ok: result.ok,
+      exitCode: result.code,
+      reproduce: reproduceFor(plan),
+    });
+    ok = ok && result.ok;
+    if (exitCode === 0) exitCode = result.code;
+  }
+  const durationMs = Math.round(performance.now() - started);
+  const fileCount = options.files.length;
+  // The width the RUN reached, which is the widest pass: a mixed selection whose serial half ran
+  // one at a time did not become a one-worker run, and reporting it as one would misname the
+  // reproduce a reader is handed.
+  const workers = Math.max(1, ...passes.map((pass) => pass.workers));
+  const plan = planOf(options, {
+    workers,
+    ...(options.type === undefined ? {} : { type: options.type }),
+  });
+  const type = options.type;
+  const typeParam = type === undefined ? {} : { type };
+  const sample = options.sample;
   const data: JsonValue = {
     ...typeParam,
     workers,
-    files: files.length,
+    files: fileCount,
     durationMs,
     ...(options.filter === undefined ? {} : { filter: options.filter }),
     ...(sample === undefined ? {} : { sample: { kept: sample.kept, total: sample.total } }),
     ...(only === undefined ? {} : { shard: only }),
-    ok: result.ok,
-    exitCode: result.code,
+    // Only when the split made more than one, so a single-pass run's JSON is byte-identical to
+    // what it has always been — and a mixed one can never be read as if it were a single run.
+    ...(spent.length > 1 ? { passes: spent } : {}),
+    ok,
+    exitCode,
     reproduce: reproduceFor(plan),
   };
   return {
-    ok: result.ok,
+    ok,
     command: 'test',
-    summary: result.ok
+    summary: ok
       ? msg(type === undefined ? 'cli.test.pass' : 'cli.test.type.pass', {
           ...typeParam,
-          files: files.length,
+          files: fileCount,
           workers,
           ms: durationMs,
         })
       : msg(type === undefined ? 'cli.test.fail' : 'cli.test.type.fail', {
           ...typeParam,
-          failed: 1,
+          failed: steps.filter((step) => !step.ok).length,
           workers,
         }),
     steps,
@@ -242,6 +316,6 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       ? {}
       : { lines: [msg('cli.test.sampled', { ...sample, type: type ?? 'all' })] }),
     data,
-    exitCode: result.ok ? 0 : 1,
+    exitCode: ok ? 0 : 1,
   };
 }

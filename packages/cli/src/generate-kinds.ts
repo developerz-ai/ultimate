@@ -110,7 +110,40 @@ export function readName(raw: string | undefined, kind: Generator): string {
   throw new MissingPositionalError({
     command: `g ${kind}`,
     positional: 'name',
-    example: `x g ${kind} ${EXAMPLE_NAME[kind]}`,
+    example: exampleFor(kind),
+  });
+}
+
+/**
+ * The one read of `EXAMPLE_NAME`, and it is guarded: `kind` is a validated union today, which is
+ * the argument every instance `scripts/proto-index.ts` reports had before it stopped being true —
+ * a `Record` object literal answers an `Object.prototype` member for a key nobody declared, and
+ * this string is pasted into a shell. Two callers, one read.
+ */
+const exampleFor = (kind: Generator): string =>
+  `x g ${kind} ${Object.hasOwn(EXAMPLE_NAME, kind) ? EXAMPLE_NAME[kind] : '<name>'}`;
+
+/**
+ * `resource:verb`, or nothing is written. `--permission` reaches the generated page in three
+ * places — the `permissions:` array, a `definePermissions()` call and a `PermissionRegistry`
+ * augmentation — and `@ultimat3/policy`'s `Permission` type is `${string}:${string}`, so
+ * `x g admin:page ops --permission ops` used to emit a page that does not compile. A quote or a
+ * space is refused for the same reason one step earlier: the value is spliced into a string
+ * literal in emitted source, and neither is a permission any app declares.
+ *
+ * It cannot ask whether the app DECLARES the permission — `x g` writes files against a root, it
+ * never loads the app, and an app that will not import is exactly when a generator is reached for.
+ * The generated page declaring it is what closes that half (`templates/admin-page.ts`).
+ */
+const PERMISSION_SHAPE = /^[a-z0-9][a-z0-9_.-]*:[a-z0-9*][a-z0-9_.*-]*$/i;
+
+export function readPermission(raw: string | undefined, kind: Generator): string | undefined {
+  if (raw === undefined || PERMISSION_SHAPE.test(raw)) return raw;
+  throw new BadFlagError({
+    flag: 'permission',
+    command: 'g',
+    reason: `expects a permission of the form <resource>:<verb>, got "${raw}"`,
+    fix: `${exampleFor(kind)} --permission ops:read`,
   });
 }
 

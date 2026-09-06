@@ -8,6 +8,7 @@
 // would, and `node:path` because Bun exposes no path API to build what either of them takes.
 import { type FileHandle, mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { stringField } from '@ultimat3/core';
 import type { Catalog } from '@ultimat3/i18n';
 import { auditCatalogs, catalogKeys } from '@ultimat3/i18n';
 import { loadApp } from './app-load';
@@ -40,9 +41,15 @@ export const I18N_SUBCOMMANDS = ['check', 'add', 'sync'] as const;
 /** `ExtractReport` is plain JSON by construction — same idiom as `cmd-registries.ts`'s `asJson`. */
 const asJson = (value: object): Record<string, JsonValue> => value as Record<string, JsonValue>;
 
-/** `open`'s failure when the file is already there — the one errno this command translates. */
-const isAlreadyExists = (error: unknown): boolean =>
-  typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST';
+/**
+ * `open`'s failure when the file is already there — the one errno this command translates.
+ *
+ * `stringField`, never `'code' in error && error.code`: `in` narrows for the COMPILER and promises
+ * the runtime nothing, so the read still happens on a value this process did not build and a
+ * throwing getter takes the command down one line after the guard written to make it safe. The
+ * same repair `dev-lock.ts` took for the cast spelling of the identical read.
+ */
+const isAlreadyExists = (error: unknown): boolean => stringField(error, 'code') === 'EEXIST';
 
 /**
  * The exclusive half of the create: `wx` fails rather than truncates, so an existing catalog is

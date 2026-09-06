@@ -14,6 +14,8 @@ const SPECS: readonly CommandSpec[] = [
     summary: 'database',
     usage: 'x db <sub>',
     subcommands: ['gen', 'migrate', 'branch'],
+    // The fixture that hands its tail to another tool, so both halves of the rule have a subject.
+    passthrough: true,
     flags: [{ name: 'name', type: 'string', summary: 'migration or branch name' }],
   },
   { name: 'g', aliases: ['generate'], summary: 'scaffold', usage: 'x g <kind> <name>' },
@@ -99,10 +101,44 @@ describe('unit · parseArgs', () => {
     expect(parseArgs(['generate', 'action', 'publishPost'], SPECS).command).toBe('g');
   });
 
-  test('everything after -- is passthrough, not a flag', () => {
+  // `passthrough` is "handed to the underlying tool verbatim" and had NO reader anywhere, so
+  // `x test unit -- --coverage --bail` parsed both flags and dropped both. A command that declares
+  // it forwards it; one that does not now refuses the `--`, because dropping an argument in
+  // silence is the failure mode that hid this for as long as it did.
+  test('everything after -- is passthrough for a command that declares it', () => {
     const args = parseArgs(['db', 'branch', '--', '--name', 'nonsense'], SPECS);
     expect(args.passthrough).toEqual(['--name', 'nonsense']);
     expect(flagString(args, 'name')).toBeUndefined();
+  });
+
+  test('a command that reads no passthrough refuses the -- instead of dropping it', () => {
+    const error = thrownBy(() => parseArgs(['verify', '--', '--coverage'], SPECS));
+    expect(error.code).toBe('X_CLI_BAD_FLAG');
+    expect(error.cause).toContain('verify');
+    // A `--` with nothing after it asked for nothing and is refused by nobody.
+    expect(parseArgs(['verify', '--'], SPECS).passthrough).toEqual([]);
+  });
+
+  // `help` and `version` short-circuit ahead of the command, deliberately: both answer the whole
+  // question a caller who mistyped a tail is asking, so there is nothing for them to drop.
+  test('every shipped command that declares no passthrough refuses one', () => {
+    const judged = SPECS_SHIPPED.filter(
+      (spec) => spec.passthrough !== true && spec.name !== 'help' && spec.name !== 'version',
+    );
+    expect(judged.length).toBeGreaterThan(20);
+    for (const spec of judged) {
+      // The CAUSE, not merely the code: `MissingSubcommandError` is `X_CLI_BAD_FLAG` too, so a
+      // bare `.toThrow()` — and a code assertion — passed for `db`, `mcp` and `pr` on the
+      // subcommand they are missing rather than on the `--` this test is about.
+      const failure = thrownBy(() => parseArgs([spec.name, '--', '--coverage'], SPECS_SHIPPED));
+      expect(failure.code).toBe('X_CLI_BAD_FLAG');
+      expect(String(failure.cause)).toContain('would be dropped in silence');
+      expect(String(failure.cause)).toContain('--coverage');
+    }
+    // And at least one command really does forward, or the rule above is a ban with no exception.
+    expect(
+      SPECS_SHIPPED.filter((spec) => spec.passthrough === true).map((spec) => spec.name),
+    ).toEqual(['test']);
   });
 
   test('an unknown command throws X_CLI_UNKNOWN_COMMAND with a suggestion', () => {

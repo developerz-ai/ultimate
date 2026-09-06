@@ -212,6 +212,20 @@ const ADDRESS_FIXES: Readonly<Record<EnvelopeAddressField, string>> = {
 };
 
 /**
+ * Why an envelope address was refused. Two reasons, one code: the value is recipient data either
+ * way, so a caller reading `meta.reason` is the only way to tell them apart — and a `cause` naming
+ * both would be wrong half the time, which is the misdirection axiom 4 refuses.
+ */
+export type AddressRefusal = 'injection' | 'non-ascii';
+
+const ADDRESS_CAUSES: Readonly<Record<AddressRefusal, string>> = {
+  injection:
+    'holds a control character or an angle bracket, which would end the command line and inject SMTP commands',
+  'non-ascii':
+    'holds a non-ASCII byte in its mailbox, and this package negotiates no SMTPUTF8, so it cannot be written to the command line at all',
+};
+
+/**
  * `MAIL FROM:<…>` and `RCPT TO:<…>` are built by interpolation, so a CR or LF in an address ends
  * the command line and lets the rest of it run as SMTP commands of its own — arbitrary relay over
  * the app's authenticated connection. Refused rather than stripped, like a header: a stripped
@@ -219,14 +233,15 @@ const ADDRESS_FIXES: Readonly<Record<EnvelopeAddressField, string>> = {
  * The value never appears here — an address is recipient data, which this package keeps out of
  * every string it writes itself.
  */
-export const addressInvalid = (field: EnvelopeAddressField): MailError =>
+export const addressInvalid = (
+  field: EnvelopeAddressField,
+  reason: AddressRefusal = 'injection',
+): MailError =>
   new MailError({
     code: 'X_MAIL_ADDRESS_INVALID',
-    cause:
-      `the SMTP envelope ${field} address holds a control character or an angle bracket, ` +
-      'which would end the command line and inject SMTP commands',
+    cause: `the SMTP envelope ${field} address ${ADDRESS_CAUSES[reason]}`,
     fix: ADDRESS_FIXES[field],
-    meta: { field },
+    meta: { field, reason },
   });
 
 /**

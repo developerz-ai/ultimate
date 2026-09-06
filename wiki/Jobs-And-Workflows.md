@@ -186,7 +186,7 @@ Two implementations ship. Two more have **not shipped**, `As of 2026-08` — int
 | Driver | Status `As of 2026-08` | When | Trade-off |
 |---|---|---|---|
 | `postgres` (default) | **shipped** | always, up to ~thousands of jobs/sec. `x dev` runs it too, against the embedded PGlite | outbox is free (same DB, same tx); `SELECT ... FOR UPDATE SKIP LOCKED` claiming; zero extra infra |
-| `memory` | **shipped**; there is no config value for any driver | tests and fixtures — reached through `createMemoryDriver()`, and as `x jobs drain --to memory` | in-process; nothing survives a restart |
+| `memory` | **shipped**; there is no config value for any driver | tests and fixtures, through `createMemoryDriver()` — never a drain target, `As of 2026-09`: `x jobs drain --to memory` is refused by name (`X_CLI_BAD_FLAG`) | in-process; nothing survives a restart |
 | `redis` | **not shipped — throws `X_NOT_IMPLEMENTED`** | high-throughput, short jobs | would need the outbox relay; loses "queue state in one backup" |
 | `nats` | **not shipped — throws `X_NOT_IMPLEMENTED`** | very high fanout, multi-region, JetStream retention | strongest delivery semantics, most operational surface |
 
@@ -194,7 +194,11 @@ Two implementations ship. Two more have **not shipped**, `As of 2026-08` — int
 
 **The seam that does work is `setJobDriver(driver)`** — swap the driver, zero job-code change, which is what the interface buys. The `redis` and `nats` stubs are real and throw `X_NOT_IMPLEMENTED` on every method; you reach them by constructing one and passing it to `setJobDriver`, never through config. Tracked as [issue #223](https://github.com/developerz-ai/ultimate/issues/223): the field is a declaration nothing reads, the same shape 4.0.0 deleted for `realtime.heartbeatMs` and `PrecacheAsset.critical`, and removing it is breaking — so it waits for the next major.
 
-`x jobs drain --to <driver>` moves in-flight rows between drivers, and `--to memory` is the only target that completes today: `--to redis` and `--to nats` construct the target and fail on the first enqueue with `X_NOT_IMPLEMENTED`. There is no cross-driver migration procedure, `As of 2026-08` — and none is needed while `postgres` is the only driver that runs.
+**`x jobs drain --to` has no target that completes, `As of 2026-09`.** It takes `redis` or `nats`, and both are the stubs above: the drain constructs the target and fails on its first enqueue with `X_NOT_IMPLEMENTED`, having moved nothing and acked nothing.
+
+**`memory` is refused by name** (`X_CLI_BAD_FLAG`). It was a target until 2026-09 and it was the one that appeared to work — `createMemoryDriver()` is a `Map` inside the command's own process, so the drain enqueued each job into it, acked the durable row off the source, printed `ok: true`, and lost every copy when the command exited. Postgres is the source, never a `--to` value.
+
+So there is no cross-driver migration procedure — and none is needed while `postgres` is the only driver that runs.
 
 ## Dead letter
 
@@ -235,7 +239,7 @@ Every command supports `--json`. See [CLI reference](CLI-Reference).
 | `X_IDEMPOTENCY_CONFLICT` | same key, different payload, or still in flight | fresh key for a different payload; otherwise retry after the first settles |
 | `X_DRAINING` | claim attempted on a worker that received SIGTERM | none — the job stays queued and another worker claims it |
 | `X_FORBIDDEN` | the job's actor fails the originating action's policy | grant the permission, or enqueue as a system actor |
-| `X_NOT_IMPLEMENTED` | the `redis` or `nats` driver was reached — neither is shipped | call `setJobDriver(createPgDriver({ executor }))`, or `setJobDriver(createMemoryDriver())` in a test. There is no config line to edit: `jobs.driver` was deleted in 5.0.0 because it never had a reader. To move rows already queued: `x jobs drain --to memory --json` |
+| `X_NOT_IMPLEMENTED` | the `redis` or `nats` driver was reached — neither is shipped | call `setJobDriver(createPgDriver({ executor }))`, or `setJobDriver(createMemoryDriver())` in a test. There is no config line to edit: `jobs.driver` was deleted in 5.0.0 because it never had a reader. Nothing needs draining first — `enqueue` refuses on these two as well, so no job was ever written to one |
 
 Full index: [Error codes](Error-Codes). Verbatim error shapes live in each package's `src/errors.ts`.
 

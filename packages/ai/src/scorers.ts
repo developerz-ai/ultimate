@@ -70,7 +70,12 @@ export function jsonSchemaValid(required: readonly string[]): Scorer {
       }
       if (typeof parsed !== 'object' || parsed === null) return 0;
       const record = parsed as Record<string, unknown>;
-      const present = required.filter((key) => record[key] !== undefined).length;
+      // `Object.hasOwn`, never `record[key] !== undefined`: the keys are the CALLER's and the
+      // object is a `JSON.parse` result carrying `Object.prototype`, so the index read answered
+      // "present" for `constructor`, `toString`, `valueOf` and `hasOwnProperty` — a full 1 out of
+      // the scorer whose job is saying the answer holds none of them. It also read a declared
+      // `null` as absent, which is the same mistake pointing the other way.
+      const present = required.filter((key) => Object.hasOwn(record, key)).length;
       return required.length === 0 ? 1 : present / required.length;
     },
   };

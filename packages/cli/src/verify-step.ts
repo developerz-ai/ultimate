@@ -29,19 +29,19 @@ export const VERIFY_STEP_NAMES = [
   'drift',
   'contract-diff',
   'budgets',
-  // Eighteenth, and a deliberate widening of a closed list rather than a `HostCheck`: an SEO gate
+  // A deliberate widening of a closed list rather than a `HostCheck`: an SEO gate
   // is a MECHANISM every app with a `site/` surface wants (axiom 8), not a rule one host repo
   // enforces — and `verifyCommand.run` passes no host checks at all, so the app path could not
   // have carried it. It runs beside `budgets` because both read the app the same load produced.
   'seo',
-  // Nineteenth, by the same test the SEO step above passed and for the same reason it is not a
-  // rider: `boundaries` asks whether an import was LEGAL and this asks whether a declaration
+  // Here by the same test the SEO step above passed, and not a rider for the same reason:
+  // `boundaries` asks whether an import was LEGAL and this asks whether a declaration
   // REACHED the running app, which is a different question with a different fix (axiom 4). It
   // costs no second app load — `budgets` already imported every module, and this reads the
   // registries that load filled. Until it existed, an app could ship every user-facing string as
   // `⟦key⟧` with `x verify` green, because nothing in the gate ever asked (issue #249).
   'i18n',
-  // Twentieth, by the same test `seo` and `i18n` each passed: a rider must ask the SAME question
+  // Here by the same test `seo` and `i18n` each passed: a rider must ask the SAME question
   // off the same data, and "was this import legal?" is not "does the permission this app grants
   // and requires exist?". Reported under `budgets` it would hand the reader a byte budget for an
   // authz defect (axiom 4). Until it existed, `x new` shipped an app that answered HTTP 500 with

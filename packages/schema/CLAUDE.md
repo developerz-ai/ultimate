@@ -140,6 +140,17 @@ Gotchas:
   different instant per host `TZ`, and `coerceQuery` puts it one query parameter from the wire.
   A date-only string carries no clock time and is UTC by spec, so it still parses.
 - Adding a `SchemaKind` means updating `json-schema.ts` and `coerce.ts` in the same commit.
+- **`ToJsonSchemaOptions.dialect` is a closed vocabulary read with `Object.hasOwn`** (`As of
+  2026-09-06`). `DIALECTS[dialect]` on an object literal answered the `Object` FUNCTION for
+  `dialect: 'constructor'` — measured: `$schema` held it, `JSON.stringify` dropped the key in
+  silence, and every consumer that does not serialise (the MCP tool schema, the OpenAPI writer
+  that spreads this document) carried a function. It is a field on a PUBLIC entry point, so the
+  key is caller data. `bun run proto-index` could not see the read until its null-prototype
+  exemption became per TABLE: `convert`'s unrelated `Object.create(null)` exempted the whole file.
+  The refusal is `X_SCHEMA_UNSUPPORTED` — the same question that code already answers, and a code
+  is stable forever once shipped — and it fires whether or not `includeDialect` would have emitted
+  the value, because a rule a caller learns half of is a rule they learn wrong. The rejected value
+  is `describeValue`d in the `cause` and whole in `meta`, never echoed.
 - **Prefer a new `SchemaNode` FIELD to a new `SchemaKind`.** Every consumer that switches on `kind`
   has a `default:` that degrades quietly — `json-schema.ts` emits `{}`, `coerce.ts` passes the raw
   value through, `@ultimat3/action`'s `sample-input.ts` answers `null` — and they live in packages

@@ -374,20 +374,31 @@ export class EmbedderDimMismatchError extends UltimateError {
 }
 
 /**
- * `embedOne` asked an `Embedder` for one vector and got none back — a batch-size invariant the
- * embedder itself broke, not a caller mistake. Distinct from `X_VECTOR_DIM_MISMATCH`: this fires
- * before there is a vector at all, so there is nothing yet to measure the width of.
+ * An `Embedder` answered fewer vectors than it was given texts — a batch invariant the embedder
+ * itself broke, not a caller mistake. Distinct from `X_VECTOR_DIM_MISMATCH`: this fires before
+ * there is a vector at all, so there is nothing yet to measure the width of.
+ *
+ * The counts are optional because `embedOne` has nothing to report beyond "none for one", and its
+ * cause has always read that way; `embedBatched` knows both numbers and states them.
  */
 export class AiEmbedderInvalidError extends UltimateError {
-  constructor(input: { embedder: string }) {
+  constructor(input: { embedder: string; expected?: number; received?: number }) {
+    const counted =
+      input.expected === undefined || input.received === undefined
+        ? 'no vector for a batch of one text'
+        : `${input.received} vectors for a batch of ${input.expected} texts`;
     super({
       code: 'X_AI_EMBEDDER_INVALID',
-      cause: `embedder "${input.embedder}" returned no vector for a batch of one text`,
+      cause: `embedder "${input.embedder}" returned ${counted}`,
       // The `${…}` the fix used to carry is unreadable to the `errors` gate, which blanks every
       // interpolation — so the literal half alone has to name the call. Which embedder broke the
       // invariant is a fact of the failure, and the cause and `meta` are where facts live.
       fix: 'return one vector per input text from embed(), in the order the texts arrived',
-      meta: { embedder: input.embedder },
+      meta: {
+        embedder: input.embedder,
+        ...(input.expected === undefined ? {} : { expected: input.expected }),
+        ...(input.received === undefined ? {} : { received: input.received }),
+      },
     });
   }
 }

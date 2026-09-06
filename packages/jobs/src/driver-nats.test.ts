@@ -10,7 +10,7 @@ import { createNatsDriver } from './driver-nats';
 import { JobsNotImplementedError } from './errors';
 
 const FIX =
-  'call setJobDriver(createPgDriver()) at boot instead of this driver, then move what is already queued: x jobs drain --to memory --json';
+  'call setJobDriver(createPgDriver()) at boot instead of this driver; nothing needs moving first, because enqueue here refuses too, so no job was ever written to it';
 
 // Every stub method throws SYNCHRONOUSLY (`unavailable` is `throw`, not a rejected promise), so
 // the call under test has to happen inside the try — passed as a promise, `driver.enqueue(...)`
@@ -189,5 +189,33 @@ describe('mutation check — a method that starts resolving instead of throwing 
     const patched = withStepsPutPatchedToSucceed();
     await expect(patched.steps.put(stepRecord)).resolves.toBeUndefined();
     expectUnavailable(() => createNatsDriver().steps.put(stepRecord), 'steps.put');
+  });
+});
+
+// The fix is held to its CONTENT, read off the THROWN error — asserting it equals the constant
+// above only pins this file against itself. It ended in `x jobs drain --to memory --json` until
+// 2026-09, an invocation `x jobs` now refuses by name (`X_CLI_BAD_FLAG`): that target was a Map
+// inside the command's own process, so the drain acked every durable row and lost the copy at
+// exit. Nothing enforces a flag VALUE, so the gate stayed green over a fix nobody could run.
+describe('the fix is an instruction that can be carried out', () => {
+  const thrownFix = (): string => {
+    try {
+      void createNatsDriver().ack('job-1');
+    } catch (error) {
+      if (error instanceof UltimateError) return error.fix;
+    }
+    return expect.unreachable('createNatsDriver().ack must refuse');
+  };
+
+  test('it sends nobody to `x jobs drain` — every target of it is a stub or is refused', () => {
+    const fix = thrownFix();
+    expect(fix).not.toContain('drain');
+    expect(fix).not.toContain('memory');
+  });
+
+  test('it names the seam that replaces this driver, and says nothing is stranded here', () => {
+    const fix = thrownFix();
+    expect(fix).toContain('setJobDriver(createPgDriver())');
+    expect(fix).toContain('enqueue here refuses too');
   });
 });

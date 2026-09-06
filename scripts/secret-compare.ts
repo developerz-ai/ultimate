@@ -1,6 +1,17 @@
 #!/usr/bin/env bun
-// Enforce, as a ratchet, that a value whose NAME says it is a secret is never compared with `===`,
-// `!==` or `.includes()`. `timingSafeEqual` from `@ultimat3/core` is the one form.
+// Enforce, as a ratchet, that a value whose NAME says it is a secret is never compared with an
+// operator that stops at the first differing byte: `===`, `!==`, `.includes()`, `.indexOf()`,
+// `.startsWith()`, `.endsWith()`, a `switch` over it, or `Bun.deepEquals()`. `timingSafeEqual` from
+// `@ultimat3/core` is the one form.
+//
+// THE OPERATOR SET WAS THE HOLE UNTIL 2026-09-06, and it read as the whole rule. Five spellings
+// were green: the two PREFIX tests, which leak more than `===` does because a partial match answers
+// true and hands back a length oracle as well as a timing one; `known.indexOf(secret) !== -1`,
+// which was not merely unread but DROPPED — the `-1` operand is inert, so the equality scan deleted
+// the site on the strength of the half carrying no secret; `switch (secret) { case expected: }`,
+// an equality chain whose operator is never written; and `Bun.deepEquals(a, b)`, which is `===`
+// with a name in front. `@ultimat3/auth` measured ZERO before and after, which is the point of the
+// rule and is why the widening cost four pinned sites and no repair.
 //
 // WHY IT MUST BE STATIC. `packages/auth/CLAUDE.md` has always said "never `===` on a secret" and
 // nothing read that sentence. All twelve `timingSafeEqual` call sites in `@ultimat3/auth` were
@@ -31,10 +42,12 @@ import { flagList, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { isInert, namesASecret, operandAfter, operandBefore } from './lib/secret-compare-operands';
 import {
   applySecretCompareUnpin,
   SECRET_COMPARE_PINS,
   SECRET_PINS_FILE,
+  secretComparePinIsBlank,
   secretComparePinnedFor,
 } from './lib/secret-compare-pins';
 import { isTestPath, lineOf } from './lib/source-scan';
@@ -42,167 +55,19 @@ import { packageOf } from './test-fix-citations';
 
 const SCRIPT = 'secret-compare';
 
-/**
- * The camelCase SUFFIXES that make a comparison a credential check: `tokenHash`, `keyHash`,
- * `csrfToken`, `apiKey` and `mfaSecret` are each one of these wearing a prefix.
- */
-export const SECRET_SUFFIXES: readonly string[] = [
-  'Hash',
-  'Secret',
-  'Token',
-  'Key',
-  'Nonce',
-  'Digest',
-  'Mac',
-  'Signature',
-  'Verifier',
-  'Candidate',
-  'Password',
-  'Otp',
-];
+// The vocabulary and the two operand walks live in `lib/secret-compare-operands.ts` — this file
+// reached its 500-line ceiling when it learned the other four comparisons. Re-exported BY NAME so
+// the rule stays the one import a caller or a test needs.
+export {
+  isInert,
+  namesASecret,
+  operandAfter,
+  operandBefore,
+  SECRET_SUFFIXES,
+  SECRET_WORDS,
+} from './lib/secret-compare-operands';
 
-/**
- * The bare words, whole and case-insensitive. `state` is here because `oauth.ts:131` compares the
- * OAuth handshake `state` under that exact name; `candidate` and `digest` because `mfa.ts` calls a
- * recovery code and its hash that.
- */
-export const SECRET_WORDS: readonly string[] = [
-  'hash',
-  'secret',
-  'token',
-  'nonce',
-  'verifier',
-  'signature',
-  'candidate',
-  'digest',
-  'mac',
-  'state',
-  'password',
-  'otp',
-];
-
-/**
- * `tokenHash` yes, `sortKey` yes, `API_KEY` yes, `key` NO.
- *
- * The SUFFIX behind a boundary and the whole WORD, and deliberately not "contains `key`": measured,
- * a bare `key` matches 362 sites across 27 packages — a `Map` key, a sort key, a cache key, a
- * catalog key — and not one of `@ultimat3/auth`'s twelve `timingSafeEqual` call sites needs it.
- * `keyHash` and `apiKey` carry the capital, `API_KEY` carries the underscore. A vocabulary that
- * reds a whole tree is a vocabulary somebody deletes, and this rule only has to be narrow enough to
- * survive.
- */
-const SECRET_SUFFIX = new RegExp(
-  // camelCase, and the boundary is required: `[A-Za-z0-9]` before the capitalised suffix is what
-  // separates `apiKey` from a bare `Key`, and the capital is what separates it from `monkey`.
-  `[A-Za-z0-9](?:${SECRET_SUFFIXES.join('|')})$` +
-    // SCREAMING_SNAKE is the SAME word — `SESSION_SECRET`, `API_KEY`, `DEV_SIGNING_SECRET` — and it
-    // is the spelling a module-scope constant actually uses, which is where a signing secret lives.
-    // The underscore is that form's boundary, so `KEY` alone is still nothing.
-    `|_(?:${SECRET_SUFFIXES.map((suffix) => suffix.toUpperCase()).join('|')})$`,
-);
-
-/** The whole WORD, in any case — `secret`, `Secret`, `SECRET`, `OTP`. */
-const SECRET_WORD = new RegExp(`^(?:${SECRET_WORDS.join('|')})s?$`, 'i');
-
-const isSecretName = (name: string): boolean => SECRET_SUFFIX.test(name) || SECRET_WORD.test(name);
-
-/** Every identifier in an operand's text — `sha256Hex(parsed.secret)` gives three. */
-const IDENTIFIER = /[A-Za-z_$][\w$]*/g;
-
-export const namesASecret = (operand: string): string | undefined =>
-  [...operand.matchAll(IDENTIFIER)].map((one) => one[0]).find(isSecretName);
-
-/**
- * An operand that carries no secret bytes, so the comparison against it leaks nothing: `undefined`,
- * `null`, a boolean, a number, a string LITERAL, or a `.length`.
- *
- * This is what separates a PRESENCE check from a credential check, and it is most of the difference
- * between a rule and a wall. Measured: without it 241 sites report across 25 packages and 32 of
- * them are in `@ultimat3/auth`, whose twelve real comparisons all already go through
- * `timingSafeEqual` — `if (token === null)`, `secret.length === 0`, `user.mfaSecret !== null`.
- * `x === undefined` cannot be walked byte by byte because there is no byte to walk: the operator
- * short-circuits on the type tag before any content is read.
- *
- * A string literal is read off `maskLiterals`' output, where the contents are blanked and the
- * QUOTES survive — which is exactly the property that makes `state === '     '` recognisable as a
- * comparison against a constant without this rule ever seeing what the constant said.
- */
-const INERT = /^(?:undefined|null|true|false|-?\d|['"`])|\.length$/;
-
-export const isInert = (operand: string): boolean => {
-  const text = operand.trim();
-  // EMPTY is inert, and it is the commonest case by far: the walk stops at the first character it
-  // does not recognise, and a masked string literal opens with a quote — so `secret === ''` and
-  // `typeof state !== 'string'` both hand back nothing on one side. Reading "unreadable" as
-  // "suspicious" reported 100 comparisons against a constant, `record.state === 'running'` among
-  // them. A literal is in the source; there is nothing to learn a byte at a time.
-  return text === '' || INERT.test(text);
-};
-
-const CLOSERS: Readonly<Record<string, string>> = { ')': '(', ']': '[', '}': '{' };
-const OPENERS: Readonly<Record<string, string>> = { '(': ')', '[': ']', '{': '}' };
-
-/** Backwards over one primary expression: identifiers, `.`, `?.`, and balanced `(…)` / `[…]`. */
-export function operandBefore(code: string, at: number): string {
-  let index = at - 1;
-  while (index >= 0 && /\s/.test(code[index] as string)) index -= 1;
-  const end = index + 1;
-  while (index >= 0) {
-    const char = code[index] as string;
-    if (Object.hasOwn(CLOSERS, char)) {
-      const open = CLOSERS[char] as string;
-      let depth = 0;
-      for (; index >= 0; index -= 1) {
-        const inner = code[index] as string;
-        if (inner === char) depth += 1;
-        else if (inner === open) {
-          depth -= 1;
-          if (depth === 0) break;
-        }
-      }
-      index -= 1;
-      continue;
-    }
-    if (/[\w$.?!]/.test(char)) {
-      index -= 1;
-      continue;
-    }
-    break;
-  }
-  return code.slice(index + 1, end);
-}
-
-/** Forwards over one primary expression, the mirror of the walk above. */
-export function operandAfter(code: string, from: number): string {
-  let index = from;
-  while (index < code.length && /\s/.test(code[index] as string)) index += 1;
-  const start = index;
-  while (index < code.length) {
-    const char = code[index] as string;
-    if (Object.hasOwn(OPENERS, char)) {
-      const close = OPENERS[char] as string;
-      let depth = 0;
-      for (; index < code.length; index += 1) {
-        const inner = code[index] as string;
-        if (inner === char) depth += 1;
-        else if (inner === close) {
-          depth -= 1;
-          if (depth === 0) break;
-        }
-      }
-      index += 1;
-      continue;
-    }
-    if (/[\w$.?!]/.test(char)) {
-      index += 1;
-      continue;
-    }
-    break;
-  }
-  return code.slice(start, index);
-}
-
-export type SecretCompareKind = 'equality' | 'includes';
+export type SecretCompareKind = 'equality' | 'includes' | 'prefix' | 'switch' | 'deep-equal';
 
 export interface SecretCompareSite {
   readonly path: string;
@@ -215,7 +80,84 @@ export interface SecretCompareSite {
 }
 
 const EQUALITY = /!==|===/g;
-const INCLUDES = /\.includes\s*\(/g;
+
+/**
+ * The MEMBERSHIP forms, all four of which stop at the first differing byte.
+ *
+ * `.includes(` was the only one this rule read until 2026-09-06, and the other three are not
+ * variations on it — two of them leak MORE. `startsWith`/`endsWith` answer true on a PARTIAL match,
+ * so they hand back a length-independent oracle on top of the timing one; and `.indexOf(secret)`
+ * was worse than unread, it was DROPPED: the comparison a caller writes is
+ * `known.indexOf(secret) !== -1`, whose `-1` operand is inert, so the equality scan below deleted
+ * the site on the strength of the half that carries no secret.
+ */
+const MEMBERSHIP: readonly (readonly [RegExp, SecretCompareKind])[] = [
+  [/\.includes\s*\(/g, 'includes'],
+  [/\.indexOf\s*\(/g, 'includes'],
+  [/\.startsWith\s*\(/g, 'prefix'],
+  [/\.endsWith\s*\(/g, 'prefix'],
+];
+
+/**
+ * `switch (secret) { case expected: }` — an equality chain the `===` scan cannot see, because the
+ * operator is never written. A `case` against a string LITERAL is inert for exactly the reason
+ * `state === 'running'` is: the constant is already in the source.
+ */
+const SWITCH = /\bswitch\s*\(/g;
+const CASE = /\bcase\s+([^:\n]+):/g;
+
+/**
+ * `Bun.deepEquals(a, b)` and a bare imported `deepEquals(a, b)`. It walks both values and returns
+ * at the first difference, which is `===` with a name in front — and the receiver is not what is
+ * matched, for the reason this rule refuses to key on names anywhere else.
+ */
+const DEEP_EQUAL = /(?<![\w$.])(?:Bun\s*\.\s*)?deepEquals\s*\(/g;
+
+/** The `)` matching the `(` at `open`, or `-1`. */
+const closingParen = (code: string, open: number): number => {
+  let depth = 0;
+  for (let index = open; index < code.length; index += 1) {
+    if (code[index] === '(') depth += 1;
+    else if (code[index] === ')') {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+};
+
+/** One call's arguments, split on TOP-LEVEL commas. */
+const argumentsOf = (inner: string): readonly string[] => {
+  const args: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < inner.length; index += 1) {
+    const char = inner[index];
+    if (char === '(' || char === '[' || char === '{') depth += 1;
+    else if (char === ')' || char === ']' || char === '}') depth -= 1;
+    else if (char === ',' && depth === 0) {
+      args.push(inner.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  args.push(inner.slice(start).trim());
+  return args;
+};
+
+/** The `}` matching the first `{` at or after `from`, or `-1`. */
+const closingBrace = (code: string, from: number): number => {
+  const open = code.indexOf('{', from);
+  if (open === -1) return -1;
+  let depth = 0;
+  for (let index = open; index < code.length; index += 1) {
+    if (code[index] === '{') depth += 1;
+    else if (code[index] === '}') {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+};
 
 /**
  * Every name-a-secret comparison in one file, in source order.
@@ -242,27 +184,71 @@ export function scanSecretCompares(path: string, source: string): readonly Secre
       source: `${left} ${match[0]} ${right}`.trim(),
     });
   }
-  for (const match of code.matchAll(INCLUDES)) {
-    const at = match.index;
-    const receiver = operandBefore(code, at);
-    const argument = operandAfter(code, at + match[0].length);
-    // The RECEIVER alone is never enough: `KNOWN_ROLES.includes(role)` is a membership test on a
-    // public list. The ARGUMENT is the value whose secrecy is at stake.
-    if (isInert(argument) || isInert(receiver)) continue;
-    const name = namesASecret(argument);
+  for (const [pattern, kind] of MEMBERSHIP) {
+    for (const match of code.matchAll(pattern)) {
+      const at = match.index;
+      const receiver = operandBefore(code, at);
+      const argument = operandAfter(code, at + match[0].length);
+      // The RECEIVER alone is never enough for `includes`/`indexOf`: `KNOWN_ROLES.includes(role)`
+      // is a membership test on a public list, and the ARGUMENT is the value whose secrecy is at
+      // stake. A PREFIX test is symmetric — `sessionToken.startsWith(given)` puts the secret on the
+      // receiver — so both sides are read there and only there.
+      if (isInert(argument) || isInert(receiver)) continue;
+      const name =
+        kind === 'prefix'
+          ? (namesASecret(argument) ?? namesASecret(receiver))
+          : namesASecret(argument);
+      if (name === undefined) continue;
+      sites.push({
+        path,
+        line: lineOf(code, at),
+        kind,
+        name,
+        source: `${receiver}${match[0].trim()}${argument})`,
+      });
+    }
+  }
+  for (const match of code.matchAll(SWITCH)) {
+    const open = match.index + match[0].length - 1;
+    const close = closingParen(code, open);
+    if (close === -1) continue;
+    const discriminant = code.slice(open + 1, close).trim();
+    if (isInert(discriminant)) continue;
+    const name = namesASecret(discriminant);
+    if (name === undefined) continue;
+    const end = closingBrace(code, close);
+    if (end === -1) continue;
+    for (const one of code.slice(close, end).matchAll(CASE)) {
+      const label = (one[1] as string).trim();
+      if (isInert(label)) continue;
+      sites.push({
+        path,
+        line: lineOf(code, close + one.index),
+        kind: 'switch',
+        name,
+        source: `switch (${discriminant}) { case ${label}: }`,
+      });
+    }
+  }
+  for (const match of code.matchAll(DEEP_EQUAL)) {
+    const open = match.index + match[0].length - 1;
+    const close = closingParen(code, open);
+    if (close === -1) continue;
+    const args = argumentsOf(code.slice(open + 1, close)).filter((one) => !isInert(one));
+    const name = args.map((one) => namesASecret(one)).find((one) => one !== undefined);
     if (name === undefined) continue;
     sites.push({
       path,
-      line: lineOf(code, at),
-      kind: 'includes',
+      line: lineOf(code, match.index),
+      kind: 'deep-equal',
       name,
-      source: `${receiver}.includes(${argument})`,
+      source: `${match[0].trim()}${args.join(', ')})`,
     });
   }
   return sites.sort((a, b) => a.line - b.line);
 }
 
-export type SecretCompareGapKind = 'over' | 'stale' | 'unscanned';
+export type SecretCompareGapKind = 'over' | 'stale' | 'unscanned' | 'unexplained';
 
 export interface SecretCompareGap {
   readonly kind: SecretCompareGapKind;
@@ -296,6 +282,11 @@ export function checkSecretCompares(input: SecretCompareInput): readonly SecretC
   for (const pkg of new Set([...found.keys(), ...Object.keys(input.pins)])) {
     const hits = found.get(pkg) ?? [];
     const pinned = secretComparePinnedFor(pkg, input.pins);
+    // A blank reason waives nothing, so the row is reported in its own right AND its count is not
+    // honoured — reporting only the missing sentence would leave the comparisons silent behind it.
+    if (secretComparePinIsBlank(pkg, input.pins)) {
+      gaps.push({ kind: 'unexplained', pkg, found: hits.length, pinned });
+    }
     if (hits.length > pinned) {
       gaps.push({
         kind: 'over',
@@ -328,6 +319,13 @@ const staleFinding = (gap: SecretCompareGap): Finding => ({
   at: SECRET_PINS_FILE,
 });
 
+const unexplainedFinding = (gap: SecretCompareGap): Finding => ({
+  code: 'X_SECRET_COMPARE_PIN_UNEXPLAINED',
+  cause: `${gap.pkg} is pinned with a blank reason, so nothing records what its ${String(gap.found)} secret-named comparison(s) really compare — a count with no sentence is the waiver this table exists to refuse, and the pin holds nothing`,
+  fix: `write what each remaining value in ${gap.pkg} actually is — a search token, a job state, a route path — in ${SECRET_PINS_FILE}; or replace the comparisons with timingSafeEqual(a, b) from @ultimat3/core and run bun run scripts/secret-compare.ts --unpin ${gap.pkg}`,
+  at: SECRET_PINS_FILE,
+});
+
 const unscannedFinding = (): Finding => ({
   code: 'X_SECRET_COMPARE_UNSCANNED',
   cause:
@@ -340,6 +338,7 @@ const FINDINGS: Readonly<Record<SecretCompareGapKind, (gap: SecretCompareGap) =>
   over: overFinding,
   stale: staleFinding,
   unscanned: unscannedFinding,
+  unexplained: unexplainedFinding,
 };
 
 export const secretCompareFindingFor = (gap: SecretCompareGap): Finding => FINDINGS[gap.kind](gap);
@@ -389,7 +388,7 @@ if (import.meta.main) {
         script: SCRIPT,
         summary:
           gaps.length === 0
-            ? 'no package compares a secret-named value with === , !== or .includes() above its pin'
+            ? 'no package compares a secret-named value with ===, !==, .includes(), .indexOf(), a prefix test, a switch or deepEquals above its pin'
             : `${String(gaps.length)} package(s) off the secret-comparison ratchet`,
         findings: gaps.map(secretCompareFindingFor),
         data: { counts: await secretCompareCounts(root) },

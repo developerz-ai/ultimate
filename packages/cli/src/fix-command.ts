@@ -46,6 +46,18 @@ const CITATION = new RegExp(
 const FLAG = /(?:^|\s)--(?:no-)?([a-z][a-z\d-]*)/g;
 
 /**
+ * A bare `--`: the boundary past which the words belong to ANOTHER tool, not to `x`. Only `x test`
+ * declares one (`CommandSpec.passthrough`), and every other command refuses a non-empty tail — so
+ * this is read for two reasons at once: the tail's flags are not the command's, and a tail cited
+ * on a command that hands nothing on is a documented `X_CLI_BAD_FLAG`.
+ *
+ * Without it, `x test unit -- --coverage --bail` — the only spelling that reaches bun's own flags
+ * — read as `x test --coverage`, and the one line documenting the passthrough was a standing
+ * false finding on the rule written to keep documented invocations runnable.
+ */
+const BARE_TAIL = /(?:^|\s)--(?=\s|$)/;
+
+/**
  * Where a citation's argument list ends. `;`, `|` and `&` start a second shell word, `#` starts a
  * comment, and a backtick or a quote closes the span the citation was written in — past any of
  * them a `--flag` belongs to something else.
@@ -60,6 +72,11 @@ export interface FixCitation {
   readonly positional: string | undefined;
   /** Long flags written after it, in order, `--` and any `no-` stripped. */
   readonly flags: readonly string[];
+  /**
+   * The words after a bare `--`, when the citation has one. Absent otherwise, so a citation with
+   * no tail is the same object it has always been.
+   */
+  readonly tail?: readonly string[];
 }
 
 /**
@@ -82,11 +99,24 @@ export function fixCitations(fix: string): readonly FixCitation[] {
     const tail = fix.slice(start, next);
     const stop = ARGUMENT_END.exec(tail)?.index;
     const args = stop === undefined ? tail : tail.slice(0, stop);
+    // The tail is split off BEFORE the flags are read: `--coverage` after a bare `--` is bun's
+    // flag, and charging it to `x test` is the same error as charging a second citation's flags
+    // to the first one, which the slice above already exists to prevent.
+    const cut = BARE_TAIL.exec(args);
+    const head = cut === null ? args : args.slice(0, cut.index);
+    const handed =
+      cut === null
+        ? undefined
+        : args
+            .slice(cut.index + cut[0].length)
+            .split(/\s+/)
+            .filter((word) => word !== '');
     return {
       command: match[1] as string,
       sub: match[2],
       positional: match[3],
-      flags: [...args.matchAll(FLAG)].map((flag) => flag[1] as string),
+      flags: [...head.matchAll(FLAG)].map((flag) => flag[1] as string),
+      ...(handed === undefined ? {} : { tail: handed }),
     };
   });
 }
@@ -222,6 +252,15 @@ export function citationFault(
     }
   }
   if (planned) return undefined;
+  // Judged before the flags, because a tail is why they are not the command's. A command that
+  // declares no `passthrough` refuses a non-empty `--` outright (`parse.ts`), so a page handing a
+  // reader one is handing them `X_CLI_BAD_FLAG` — the same class as an undeclared flag.
+  if (citation.tail !== undefined && citation.tail.length > 0 && spec.passthrough !== true) {
+    return {
+      subject: `x ${spec.name} --`,
+      reason: `and ${spec.name} hands nothing to another tool — the parser refuses the -- with X_CLI_BAD_FLAG rather than dropping ${citation.tail.join(' ')}`,
+    };
+  }
   const declared = declaredFlags(spec);
   const unknown = citation.flags.find((flag) => !declared.has(flag));
   if (unknown === undefined) return undefined;

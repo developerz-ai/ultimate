@@ -29,6 +29,24 @@ describe('unit · dedupe rejects a merge: json file a generator could not have m
     expect(failure.fix).toContain('packages/i18n/catalogs/en.json');
   });
 
+  /**
+   * A catalog on disk is authored NESTED (`{ nav: { home: … } }`), and `prettyJson` sorted the top
+   * level only — so `x g route zebra` followed by `x g route alpha` produced a file whose `app`
+   * object held keys in arrival order. Two runs in the other order write different bytes for the
+   * same catalog, which is exactly the reordering diff the sort exists to prevent.
+   */
+  test('the sort reaches nested keys, not only the top level', () => {
+    const nested: GeneratedFile = {
+      path: 'packages/i18n/catalogs/en.json',
+      contents: JSON.stringify({ app: { zebra: 'Z', alpha: 'A' }, admin: { title: 'T' } }),
+      merge: 'json',
+    };
+    const [file] = dedupe([nested, nested]);
+    expect(file?.contents).toBe(
+      `${JSON.stringify({ admin: { title: 'T' }, app: { alpha: 'A', zebra: 'Z' } }, null, 2)}\n`,
+    );
+  });
+
   test('a malformed second contributor throws instead of vanishing from the merge', () => {
     const good: GeneratedFile = {
       path: 'packages/i18n/catalogs/en.json',

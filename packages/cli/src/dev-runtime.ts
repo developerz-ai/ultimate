@@ -299,7 +299,10 @@ export async function startServices(
   // `@ultimat3/realtime`'s decision, and it is the same call a `ROLE=sync` container makes, so this
   // process cannot resolve the bus differently from the container it stands in for.
   const bus: TransportSelection = selectTransport(env);
-  const queue = await startQueue(services, overrides);
+  // `env`, not the ambient one: this function is HANDED the boot's environment and every other
+  // reader here already uses it, so a queue that asked `process.env` would decide the standby from
+  // a different answer than the middleware that routes to it.
+  const queue = await startQueue(services, overrides, env);
   const { db, jobs, outbox, events } = queue;
   // The same executor the jobs driver, the outbox, the event bus and the idempotency store run
   // on — one pool, one `Bun.sql` that does NOT satisfy `PgExecutor` (`Bun.sql.query` is

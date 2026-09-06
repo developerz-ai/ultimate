@@ -156,3 +156,59 @@ describe('the real tree', () => {
     }
   });
 });
+
+// Finding 10, 2026-09-06: `CREATE_TABLE` demanded a BARE lowercase identifier, so the two spellings
+// Postgres accepts for the same relation were invisible — a quoted name and a schema-qualified one.
+// `packages/auth/src/tables.ts` declared five tables nothing applied for 21 released versions;
+// quoting them would have made the rule that found it silent again.
+describe('the spellings of one relation name', () => {
+  const file = (source: string) => [{ path: 'packages/x/src/tables.ts', source }];
+
+  test('a QUOTED name is the same table', () => {
+    expect(
+      declaredTables(file('const ddl = `create table if not exists "x_users" (id uuid);`;'))[0]
+        ?.table,
+    ).toBe('x_users');
+  });
+
+  test('a SCHEMA-qualified name is too, and the schema is not part of it', () => {
+    expect(
+      declaredTables(file('const ddl = `create table public.x_users (id uuid);`;'))[0]?.table,
+    ).toBe('x_users');
+  });
+
+  test('and both at once', () => {
+    expect(
+      declaredTables(file('const ddl = `create table "public"."x_users" (id uuid);`;'))[0]?.table,
+    ).toBe('x_users');
+  });
+
+  test('an INTERPOLATED name is the app’s by construction and stays unread', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
+    expect(declaredTables(file('const ddl = `create table ${target} (id uuid);`;'))).toEqual([]);
+  });
+
+  // Postgres folds an UNQUOTED identifier to lower case and preserves a QUOTED one
+  // (`sql-syntax-lexical`), so `"X_Users"` and `x_users` are two relations. Lower-casing both made
+  // a table no `FRAMEWORK_SCHEMA` row creates read as applied — the rule's own defect, in the file
+  // whose whole job is finding tables nothing applies.
+  test('a QUOTED name keeps its case, and an unquoted one is folded', () => {
+    expect(declaredTables(file('const ddl = `create table "X_Users" (id uuid);`;'))[0]?.table).toBe(
+      'X_Users',
+    );
+    expect(declaredTables(file('const ddl = `create table X_Users (id uuid);`;'))[0]?.table).toBe(
+      'x_users',
+    );
+  });
+
+  test('so a mixed-case quoted name does not match the applied lower-case relation', () => {
+    const mixed = declaredTables(file('const ddl = `create table "X_Users" (id uuid);`;'));
+    expect(checkFrameworkTables({ declared: mixed, applied: ['x_users'] })).toHaveLength(1);
+    const folded = declaredTables(file('const ddl = `create table X_Users (id uuid);`;'));
+    expect(checkFrameworkTables({ declared: folded, applied: ['x_users'] })).toEqual([]);
+  });
+
+  test('an unbalanced quote matches nothing rather than matching as if it were bare', () => {
+    expect(declaredTables(file('const ddl = `create table "x_users (id uuid);`;'))).toEqual([]);
+  });
+});

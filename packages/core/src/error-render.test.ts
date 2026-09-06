@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   describeValue,
+  isFixShellSafe,
   isThrownError,
   MAX_RENDERED_LENGTH,
   renderCauseValue,
@@ -325,6 +326,35 @@ describe('renderFixShellArg', () => {
 
   test('an oversized value degrades rather than pasting a wall of text into a command', () => {
     expect(renderFixShellArg(`/${'a'.repeat(MAX_RENDERED_LENGTH)}`, '<name>')).toBe('<name>');
+  });
+
+  // The PREDICATE and the renderer are one rule: `renderFixShellArg` is built on this, so a call
+  // site asking "will this travel?" before it builds a command around the value cannot disagree
+  // with the renderer about the answer. It exists because a placeholder is honest text and is not a
+  // runnable command — `curl -sS -m 5 <the provider jwks_uri>` is a shell redirection.
+  test('isFixShellSafe answers exactly what renderFixShellArg carries verbatim', () => {
+    for (const value of [
+      'https://op.test/.well-known/jwks.json',
+      '/srv/app/secrets.enc.json',
+      'x_users',
+      '1.2.3',
+    ]) {
+      expect(isFixShellSafe(value)).toBe(true);
+      expect(renderFixShellArg(value, '<name>')).toBe(value);
+    }
+    for (const value of [
+      'https://op.test/$(id)/jwks',
+      'a b',
+      '--force',
+      '~/secrets',
+      '',
+      undefined,
+      7,
+      `/${'a'.repeat(MAX_RENDERED_LENGTH)}`,
+    ]) {
+      expect(isFixShellSafe(value)).toBe(false);
+      expect(renderFixShellArg(value, '<name>')).toBe('<name>');
+    }
   });
 });
 

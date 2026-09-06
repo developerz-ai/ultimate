@@ -21,6 +21,7 @@ export {
 } from '../error-codes';
 export {
   describeValue,
+  isFixShellSafe,
   isThrownError,
   MAX_RENDERED_LENGTH,
   renderCauseValue,

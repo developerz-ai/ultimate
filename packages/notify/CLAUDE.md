@@ -77,6 +77,28 @@ rather than hidden, and a durable store can close it.
 One entry point, deliberately: every module runs on the server, so there is no browser half to split
 off.
 
+**The two inbox stores answer one question one way, and the two places they did not were both in
+`list`/`markRead`** (`As of 2026-09`). `markRead`'s contract is that an id belonging to nobody is
+*simply absent* — the memory store skips it — while the Postgres one bound the caller's ids into
+`any($2::uuid[])`, so one malformed id raised 22P02 out of the store and the nineteen good ids in
+the batch went unmarked. `createPgInboxStore` screens with `isUuid` before binding and answers `0`
+with no round trip when nothing survives; the statement keeps its `::uuid[]` cast and its primary
+key index, which `id::text = any($2)` would have given up. And the memory `list` now sorts
+`(createdAt desc, notifier, key)` — the total order `SQL_NOTIFY_INBOX_PAGE` takes — because
+`createdAt` alone is partial and a bounded page over two notifications written in one millisecond
+can drop one and repeat the other.
+
+**The tail is `(notifier, key)` and never `id`, `As of 2026-09-06`.** Both stores had a tail and
+they were two different total orders: `createPgInboxStore` mints a UUIDv7 that Postgres compares by
+its 16 BYTES, while `createMemoryInboxStore` derives its id from
+`JSON.stringify([recipient, notifier, key])` and compares by code point — so equal-`createdAt` rows
+came back one way in dev and the other in production, which is the drop-and-repeat the tail exists
+to prevent, on whichever driver nobody tested against. `(notifier, key)` is unique within a
+recipient by the table's own `unique (recipient, notifier, key)`, which is also what makes `add`
+idempotent. The statement spells `collate "C"` on both columns: the memory store compares by code
+point and a database initialised under ICU or `en_US.UTF-8` orders text by locale rules, so without
+it the two would split on exactly the Unicode keys nobody writes a test for.
+
 | Rule | Detail |
 |---|---|
 | Exports | `src/index.ts`, explicit, no `export *` |

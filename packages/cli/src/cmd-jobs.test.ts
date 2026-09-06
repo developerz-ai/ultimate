@@ -12,7 +12,14 @@ import { join } from 'node:path';
 import type { JobDriver } from '@ultimat3/jobs';
 import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { REQUIRED_BUN } from './app-root';
-import { buildDrainTarget, JOBS_SUBCOMMANDS, jobsCommand } from './cmd-jobs';
+import {
+  buildDrainTarget,
+  DRAIN_TARGETS,
+  drainJobs,
+  drainResult,
+  JOBS_SUBCOMMANDS,
+  jobsCommand,
+} from './cmd-jobs';
 import type { CommandContext } from './command';
 import { BadFlagError, MissingPositionalError } from './errors';
 import { msg } from './messages';
@@ -272,11 +279,16 @@ describe('unit · x jobs cancel', () => {
 });
 
 describe('unit · x jobs drain rendering', () => {
+  /** The command path can no longer reach an in-process target, so the outcome is produced with
+   *  two real drivers and handed to the same renderer `runDrain` uses. */
+  const rendered = async (source: JobDriver, dryRun = false): Promise<CommandResult> =>
+    drainResult(await drainJobs(source, createMemoryDriver(), dryRun));
+
   test('a complete drain is ok and reports the moved count', async () => {
     const driver = createMemoryDriver();
     await enqueue(driver, 'send-email');
 
-    const result = await runJobs(driver, { subcommand: 'drain', flags: { to: 'memory' } });
+    const result = await rendered(driver);
 
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(
@@ -289,7 +301,7 @@ describe('unit · x jobs drain rendering', () => {
     const driver = createMemoryDriver();
     await enqueue(driver, 'later-job', Date.now() + 60_000);
 
-    const result = await runJobs(driver, { subcommand: 'drain', flags: { to: 'memory' } });
+    const result = await rendered(driver);
 
     // A partial move that exited 0 would read as "the queue is clear". It is not.
     expect(result.ok).toBe(false);
@@ -305,10 +317,7 @@ describe('unit · x jobs drain rendering', () => {
     const driver = createMemoryDriver();
     const id = await enqueue(driver, 'send-email');
 
-    const result = await runJobs(driver, {
-      subcommand: 'drain',
-      flags: { to: 'memory', 'dry-run': true },
-    });
+    const result = await rendered(driver, true);
 
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(
@@ -338,8 +347,58 @@ describe('unit · x jobs drain target', () => {
     expect(() => buildDrainTarget(undefined, {})).toThrow(BadFlagError);
   });
 
-  test('--to memory needs no environment variable', () => {
-    expect(buildDrainTarget('memory', {}).name).toBe('memory');
+  // The bug: `--to memory` enqueued onto `createMemoryDriver()` — a Map inside THIS process — and
+  // then acked every durable row off the source. Reproduced: source ready 1 -> 0, target ready 1
+  // in a driver nothing can reach, `ok: true`, and the copy gone at exit. A drain that loses the
+  // work it moved is the one outcome this command exists to prevent.
+  test('--to memory is refused by name, and the source keeps every job', async () => {
+    const driver = createMemoryDriver();
+    const id = await enqueue(driver, 'send-email');
+
+    const thrown: unknown = await runJobs(driver, {
+      subcommand: 'drain',
+      flags: { to: 'memory' },
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect((thrown as { code?: string }).code).toBe('X_CLI_BAD_FLAG');
+    expect((thrown as { cause?: string }).cause).toContain('this process');
+    // The fix names a target that survives the process, and the queue is exactly as it was.
+    expect((thrown as { fix?: string }).fix).toContain('x jobs drain --to redis');
+    expect((await driver.introspect?.job(id))?.state).toBe('ready');
+  });
+
+  // ORDERING, and it is the reason `buildDrainTarget` is called above `withJobDriver` rather than
+  // inside `runDrain`: with no ambient driver the callback boots the SOURCE queue and pings it, so
+  // the refusal a flag alone can answer arrived only after a database round trip — on a box whose
+  // database is down, `x jobs drain --to memory` reported the boot failure and the operator
+  // repaired Postgres to be told the word they typed is refused by name.
+  test('an invalid --to is refused with no ambient driver, before any queue is booted', async () => {
+    resetJobDriver();
+    const thrown: unknown = await jobsCommand
+      .run(
+        contextFor(appRoot(), {
+          subcommand: 'drain',
+          flags: { to: 'memory' },
+          // A database nothing answers on: `startQueue` cannot resolve against it, so a refusal
+          // read AFTER the boot is that connection's error and not this flag's.
+          env: { DATABASE_URL: 'postgres://x:y@127.0.0.1:1/none' },
+        }),
+      )
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect((thrown as { code?: string }).code).toBe('X_CLI_BAD_FLAG');
+    expect((thrown as { cause?: string }).cause).toContain('this process');
+  });
+
+  test('memory is not one of the values the flag accepts', () => {
+    expect(DRAIN_TARGETS).toEqual(['redis', 'nats']);
+    expect(() => buildDrainTarget('memory', {})).toThrow(BadFlagError);
   });
 
   test('redis and nats each need their own URL in the environment', () => {

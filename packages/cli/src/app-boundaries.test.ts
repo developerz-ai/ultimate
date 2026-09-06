@@ -62,6 +62,31 @@ describe('unit · app boundaries', () => {
     expect(findings[0]?.fix).toStartWith('x g action orders');
   });
 
+  // `node:http` and `node:https` are the same import one runtime along — a service that reaches
+  // for either knows about requests, and a job cannot reuse it. The rule matched `http` only after
+  // a `/` or at the start, and `node:http` has a colon there, so the one spelling that needs no
+  // dependency at all was the one it could not see.
+  test('the node builtins are HTTP too, colon and all', () => {
+    for (const specifier of ['node:http', 'node:https']) {
+      const findings = checkImportRules([
+        file('apps/web/app/orders/service.ts', `import { get } from '${specifier}';`),
+      ]);
+      expect([specifier, findings[0]?.code]).toEqual([specifier, 'X_BOUNDARY_SERVICE_TO_HTTP']);
+    }
+  });
+
+  // And the other direction, which is what keeps the rule usable: a name that merely CONTAINS the
+  // three letters is not an HTTP import.
+  test('a specifier that only reads like http is left alone', () => {
+    for (const specifier of ['node:http2-fake', '@ultimat3/https-client', './httpish']) {
+      expect(
+        checkImportRules([
+          file('apps/web/app/orders/service.ts', `import { get } from '${specifier}';`),
+        ]),
+      ).toEqual([]);
+    }
+  });
+
   // The fix line that generated the wrong thing. `subjectOf` read the directory above the file, so
   // a surface-ROOT route made the SURFACE the resource: `x g query site` — a line that runs, writes
   // seven files and adds a `sites` table, for a landing page whose only fault is one import.

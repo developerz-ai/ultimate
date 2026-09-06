@@ -260,3 +260,85 @@ describe('against this repo', () => {
     expect(await secretCompareGaps(repoRoot())).toEqual([]);
   });
 });
+
+// Finding 4, 2026-09-06: the operator set was `===` / `!==` / `.includes(` and nothing else, so
+// five other short-circuiting comparisons of a secret-named value read green — including the two
+// prefix tests, which leak MORE than `===` does: `startsWith` returns true on a partial match, so
+// it hands back a length-independent oracle as well as a timing one.
+describe('the other short-circuiting comparisons', () => {
+  const kinds = (source: string): readonly string[] =>
+    scanSecretCompares('packages/x/src/a.ts', source).map((site) => site.kind);
+
+  test('startsWith is a prefix comparison, and the ARGUMENT is what is at stake', () => {
+    expect(kinds('const ok = header.startsWith(sessionToken);')).toEqual(['prefix']);
+  });
+
+  test('endsWith the same', () => {
+    expect(kinds('const ok = header.endsWith(csrfToken);')).toEqual(['prefix']);
+  });
+
+  test('but a prefix test against a LITERAL is inert, exactly as `token === null` is', () => {
+    expect(kinds("const ok = authToken.startsWith('Bearer ');")).toEqual([]);
+  });
+
+  test('indexOf !== -1 is .includes() with the inert operand in front', () => {
+    expect(kinds('const ok = known.indexOf(apiKeySecret) !== -1;')).toEqual(['includes']);
+  });
+
+  test('a switch on a secret compares each case with ===', () => {
+    const source = 'switch (mfaSecret) {\n  case expectedSecret:\n    return true;\n}\n';
+    expect(kinds(source)).toEqual(['switch']);
+  });
+
+  test('and a switch on a secret against a LITERAL case is inert', () => {
+    const source = "switch (jobState) {\n  case 'running':\n    return true;\n}\n";
+    expect(kinds(source)).toEqual([]);
+  });
+
+  test('Bun.deepEquals walks both values byte by byte and stops at the first difference', () => {
+    expect(kinds('const ok = Bun.deepEquals(tokenHash, record.tokenHash);')).toEqual([
+      'deep-equal',
+    ]);
+  });
+
+  test('and the bare deepEquals import too — the receiver is not what is matched', () => {
+    expect(kinds('const ok = deepEquals(a, b.signature);')).toEqual(['deep-equal']);
+  });
+
+  test('a deepEquals over two values neither of which names a secret is not this rule’s', () => {
+    expect(kinds('const ok = Bun.deepEquals(left, right);')).toEqual([]);
+  });
+});
+
+// Finding 5, 2026-09-06: `secretComparePinnedFor` answered `pin.count` without ever reading
+// `reason`, so `{ count: 12, reason: '' }` held twelve sites on nothing — the waiver this table's
+// own header says a count-plus-sentence exists to refuse.
+describe('a pin with a blank reason waives nothing', () => {
+  const file = {
+    path: 'packages/x/src/a.ts',
+    source: 'export const ok = (a: string, b: string) => a.tokenHash === b.tokenHash;\n',
+  };
+
+  test('the count is not honoured, and the finding says the sentence is missing', () => {
+    const gaps = checkSecretCompares({ files: [file], pins: { x: { count: 1, reason: '  ' } } });
+    expect(gaps.map((gap) => gap.kind)).toContain('unexplained');
+    const finding = secretCompareFindingFor(
+      gaps.find((gap) => gap.kind === 'unexplained') as never,
+    );
+    expect(finding.code).toBe('X_SECRET_COMPARE_PIN_UNEXPLAINED');
+    expect(finding.fix).toContain('x');
+  });
+
+  test('and a reason that says something holds the count, as it always did', () => {
+    const gaps = checkSecretCompares({
+      files: [file],
+      pins: {
+        x: {
+          count: 1,
+          reason: 'a content hash this process computed, compared to detect a change',
+        },
+      },
+    });
+    expect(gaps).toEqual([]);
+  });
+});

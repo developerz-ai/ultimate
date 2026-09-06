@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { nodeToJsonSchema, toJsonSchema, toMcpInputSchema } from './json-schema';
+import { isSchemaError } from './errors';
+import {
+  nodeToJsonSchema,
+  type ToJsonSchemaOptions,
+  toJsonSchema,
+  toMcpInputSchema,
+} from './json-schema';
 import { CURRENCY_CODE_PATTERN } from './money-value';
 import type { SchemaNode } from './node';
 import { configureSchemaProvider, resetSchemaProvider } from './provider';
@@ -321,5 +327,63 @@ describe('the published date is the narrower of the two views', () => {
     expect(t.date.safeParse(1_767_225_600_000).issues).toBeUndefined();
     // Everything the document DOES advertise parses.
     expect(t.date.safeParse('2026-01-01T00:00:00.000Z').issues).toBeUndefined();
+  });
+});
+
+describe('the dialect is a closed vocabulary, read with Object.hasOwn', () => {
+  // `dialect` is a field on a PUBLIC entry point's options, so it is caller data — and
+  // `DIALECTS[dialect]` on an object literal answers an `Object.prototype` member for the three
+  // names every object carries. Hidden from `bun run proto-index` until the rule became per-TABLE
+  // rather than per-file: this module's unrelated `Object.create(null)` exempted the whole file.
+  const askFor = (dialect: string): unknown => {
+    try {
+      return toJsonSchema(t.string, { dialect } as ToJsonSchemaOptions);
+    } catch (error) {
+      return error;
+    }
+  };
+
+  test("a prototype member is refused, never answered as the document's $schema", () => {
+    const answer = askFor('constructor');
+    expect(isSchemaError(answer) && answer.code).toBe('X_SCHEMA_UNSUPPORTED');
+    expect(isSchemaError(answer) && answer.fix).toContain("dialect: '2020-12'");
+    // The two spellings a caller can act on are named, and the rejected one is not echoed.
+    expect(isSchemaError(answer) && answer.cause).toContain('draft-07');
+    expect(isSchemaError(answer) && answer.meta).toEqual({ dialect: 'constructor' });
+  });
+
+  test('every prototype key is refused, not just the one that reads as a function', () => {
+    for (const key of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect(isSchemaError(askFor(key)), key).toBe(true);
+    }
+  });
+
+  test('the refusal does not depend on includeDialect, which only decides emission', () => {
+    // Through `unknown` deliberately: the TYPE forbids this value and the test's whole subject is
+    // a caller who has no type — JS, a JSON config, an untyped MCP client — reaching the same door.
+    const options = {
+      dialect: 'constructor',
+      includeDialect: false,
+    } as unknown as ToJsonSchemaOptions;
+    const answer = ((): unknown => {
+      try {
+        return toJsonSchema(t.string, options);
+      } catch (error) {
+        return error;
+      }
+    })();
+    expect(isSchemaError(answer) && answer.code).toBe('X_SCHEMA_UNSUPPORTED');
+  });
+
+  test('the two real dialects still publish their own $schema', () => {
+    expect(toJsonSchema(t.string, { dialect: '2020-12' })['$schema']).toBe(
+      'https://json-schema.org/draft/2020-12/schema',
+    );
+    expect(toJsonSchema(t.string, { dialect: 'draft-07' })['$schema']).toBe(
+      'http://json-schema.org/draft-07/schema#',
+    );
+    // The default is unchanged, and `toMcpInputSchema` still emits no `$schema` at all.
+    expect(toJsonSchema(t.string)['$schema']).toBe('https://json-schema.org/draft/2020-12/schema');
+    expect(toMcpInputSchema(t.string)['$schema']).toBeUndefined();
   });
 });

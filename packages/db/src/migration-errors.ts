@@ -5,6 +5,7 @@
 // was: every code below is still declared, titled and registered there, and `DbError` is still the
 // one class. One direction only — nothing here is imported back.
 
+import { renderFixShellArg } from '@ultimat3/core';
 import { DESTRUCTIVE_CAUSE, DESTRUCTIVE_MARKER, type DestructiveStatement } from './destructive';
 import { DbError } from './errors';
 
@@ -89,12 +90,31 @@ const snapshotSiblings = (file: string): string => file.replace(/\.snapshot\.jso
 const migrationNameOf = (id: string): string => id.replace(/^\d+_/, '') || id;
 
 /**
+ * Can a command spell this value at all? `renderFixShellArg` (`@ultimat3/core`) answers the
+ * placeholder for anything a shell would READ, so a value that comes back unchanged is one that
+ * travels verbatim. `shellInertIdentifier` is `sql.ts`'s answer to the same question and is
+ * deliberately not used here: that module imports `identifierUnsafe` from this one, and an import
+ * cycle around the module whose evaluation REGISTERS every code is not a cycle worth having.
+ */
+const shellSpellable = (value: string): boolean =>
+  value !== '' && renderFixShellArg(value, '') === value;
+
+/**
  * The sidecar every generated migration writes is what the *next* generation diffs against, so a
  * newest migration without one leaves nothing to diff. Refused rather than defaulted to the empty
  * schema, which would generate `create table` for every table the database already holds.
  */
-export const migrationSnapshotMissing = (id: string, file: string): DbError =>
-  new DbError({
+export const migrationSnapshotMissing = (id: string, file: string): DbError => {
+  // Both values are FILENAME text — `parseMigrationSql` reads the id off the file — so whoever can
+  // add a file to the migrations directory picks what a reader pastes, and `rm` is the one command
+  // in this package that cannot be taken back. The name lands inside SHELL DOUBLE QUOTES, where
+  // `$(…)` and a backtick substitute before `x` is reached at all, and a migration description has
+  // no quoted form that would make a hostile one safe to pass. So the whole line degrades to prose
+  // rather than half of it being escaped — the same screen and the same degradation `unknownSchema`
+  // (`drift-findings.ts`) runs on the same condition. A `rm` whose argument was substituted away
+  // still reads as a command, and now removes something else.
+  const spellable = shellSpellable(file) && shellSpellable(migrationNameOf(id));
+  return new DbError({
     code: 'X_MIGRATION_SNAPSHOT_MISSING',
     cause: `migration "${id}" records no schema snapshot (${file}), so there is nothing to diff against`,
     // Two remedies, both commands, in the order they are safe to try. "restore from version
@@ -102,11 +122,16 @@ export const migrationSnapshotMissing = (id: string, file: string): DbError =>
     // nothing to restore — and the drift this refusal answers named `x db gen` as *its* fix, so
     // the two errors pointed at each other and an app's first migration had no way out.
     // `x db gen` is named only *after* the files it would trip over are gone.
-    fix:
-      `git checkout -- ${file}   # or, if it was never written: ` +
-      `rm ${snapshotSiblings(file)} && x db gen "${migrationNameOf(id)}"`,
+    fix: spellable
+      ? `git checkout -- ${file}   # or, if it was never written: ` +
+        `rm ${snapshotSiblings(file)} && x db gen "${migrationNameOf(id)}"`
+      : 'restore the .snapshot.json committed beside this migration, or delete every file that ' +
+        'migration owns and rerun x db gen with its description — the file named in this ' +
+        "error's cause carries a backtick, a dollar sign, a quote, a backslash or whitespace, " +
+        'so no command here can spell it',
     meta: { id, file },
   });
+};
 
 /**
  * One error per file, never one per statement: the marker declares the whole migration, so a

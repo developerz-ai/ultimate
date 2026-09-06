@@ -19,8 +19,9 @@
 // `Object.hasOwn(TABLE, key)` and a `Map` are the two repairs, both with in-repo precedent.
 //
 // WHAT IS NOT REPORTED, recognised rather than pinned: a STRING LITERAL key (`TABLE['web']` cannot
-// be `'constructor'` unless somebody typed it), a NULL-PROTOTYPE table (`packages/i18n/src/catalog.ts`
-// is fully null-prototyped and says why), a read already guarded by `Object.hasOwn` or `in` on the
+// be `'constructor'` unless somebody typed it), a NULL-PROTOTYPE table — the TABLE, per declaration,
+// never the file (`packages/i18n/src/catalog.ts` is fully null-prototyped and says why), a read
+// already guarded by `Object.hasOwn` or `in` on the
 // same or the preceding line, and a WRITE — `out[key] = value` builds a table rather than reading
 // one, and the prototype answer never reaches a caller.
 //
@@ -36,6 +37,7 @@ import {
   applyProtoIndexUnpin,
   PROTO_INDEX_PINS,
   PROTO_PINS_FILE,
+  protoIndexPinIsBlank,
   protoIndexPinnedFor,
 } from './lib/proto-index-pins';
 import { repoRoot } from './lib/run';
@@ -56,14 +58,78 @@ const FROZEN =
  * purpose and its header says why — so the rule RECOGNISES the repair rather than pinning the file,
  * which is the difference between a rule that teaches the fix and one that records a debt.
  */
-const NULL_PROTO = /Object\.create\s*\(\s*null\s*\)|__proto__\s*:\s*null/;
+const NULL_PROTO = /Object\s*\.\s*create\s*\(\s*null\s*\)/;
 
-/** Every `Record<…>` object literal this file declares, or nothing when it is null-prototyped. */
+/** `{ __proto__: null, … }` — the literal spelling of the same repair, first member only. */
+const PROTO_MEMBER = /^\{\s*(?:\/\/[^\n]*\n\s*)*__proto__\s*:\s*null/;
+
+/**
+ * How far past a declaration its own initialiser is looked for. Long enough to reach the `=` and
+ * the value across a Biome wrap, short enough that the NEXT declaration's is out of reach.
+ */
+const INITIALISER_WINDOW = 400;
+
+/**
+ * Whether the table declared at `from` builds ITSELF without a prototype.
+ *
+ * PER TABLE, and this was file-wide until 2026-09-06 — `NULL_PROTO.test(code)` emptied the whole
+ * set, so ONE unrelated `Object.create(null)` anywhere in a file hid every `Record` literal read in
+ * it, while the header, the `fix:` line and the wiki row all said a null-prototype TABLE. Measured
+ * when it was narrowed: three of the four newly-visible reads were legitimately null-prototyped by
+ * their own initialiser and stayed exempt (`packages/http/src/request.ts:32`,
+ * `packages/schema/src/errors.ts:33`, `packages/cli/src/verify-tests.ts:269`), and the fourth was
+ * real — `packages/schema/src/json-schema.ts:283` reads `DIALECTS[dialect]` on a caller-supplied
+ * dialect at a public entry point.
+ *
+ * The BRACE ordering is what keeps a neighbour's doc comment out: the window runs FORWARD from the
+ * declaration, and an `Object.create(null)` sitting after this table's own object literal belongs
+ * to the next declaration, never to this one.
+ */
+const buildsWithoutPrototype = (code: string, from: number): boolean => {
+  const window = code.slice(from, from + INITIALISER_WINDOW);
+  // The INITIALISER, never the window: `Record<K, { a: number }>` puts an object TYPE in front of
+  // the `=`, so the first `{` in the window belonged to the annotation and `PROTO_MEMBER` was
+  // reading a type literal. No `=` in reach means no initialiser was seen at all, which must read
+  // as "has a prototype" — the conservative direction, because the other one hides a real read.
+  const assign = assignmentAt(window);
+  if (assign === -1) return false;
+  const initialiser = window.slice(assign + 1);
+  const brace = initialiser.indexOf('{');
+  const created = NULL_PROTO.exec(initialiser)?.index ?? -1;
+  if (created !== -1 && (brace === -1 || created < brace)) return true;
+  return brace !== -1 && PROTO_MEMBER.test(initialiser.slice(brace));
+};
+
+/**
+ * The index of the declaration's own `=`, or `-1`. Depth-zero across `<>`, `()`, `[]` and `{}`, so
+ * the `=` of a `Record<string, (x: number) => string>` default or a nested generic is not it; `==`,
+ * `>=`, `<=`, `!=` and `=>` are excluded by the characters either side.
+ */
+const assignmentAt = (window: string): number => {
+  let depth = 0;
+  for (let index = 0; index < window.length; index += 1) {
+    const char = window[index];
+    if (char === '<' || char === '(' || char === '[' || char === '{') depth += 1;
+    else if (char === '>' || char === ')' || char === ']' || char === '}') {
+      depth = Math.max(0, depth - 1);
+    } else if (char === '=' && depth === 0) {
+      const before = window[index - 1];
+      const after = window[index + 1];
+      if (!'=!<>'.includes(before ?? '') && after !== '=' && after !== '>') return index;
+    }
+  }
+  return -1;
+};
+
+/** Every `Record<…>` object literal this file declares that has a prototype to walk into. */
 export function recordTables(code: string): ReadonlySet<string> {
   const names = new Set<string>();
-  if (NULL_PROTO.test(code)) return names;
-  for (const match of code.matchAll(ANNOTATED)) names.add(match[1] as string);
-  for (const match of code.matchAll(FROZEN)) names.add(match[1] as string);
+  for (const pattern of [ANNOTATED, FROZEN]) {
+    for (const match of code.matchAll(pattern)) {
+      if (buildsWithoutPrototype(code, match.index)) continue;
+      names.add(match[1] as string);
+    }
+  }
   return names;
 }
 
@@ -132,7 +198,7 @@ export function scanProtoIndex(path: string, source: string): readonly ProtoInde
   return sites.sort((a, b) => a.line - b.line);
 }
 
-export type ProtoIndexGapKind = 'over' | 'stale' | 'unscanned';
+export type ProtoIndexGapKind = 'over' | 'stale' | 'unscanned' | 'unexplained';
 
 export interface ProtoIndexGap {
   readonly kind: ProtoIndexGapKind;
@@ -166,6 +232,11 @@ export function checkProtoIndex(input: ProtoIndexInput): readonly ProtoIndexGap[
   for (const pkg of new Set([...found.keys(), ...Object.keys(input.pins)])) {
     const hits = found.get(pkg) ?? [];
     const pinned = protoIndexPinnedFor(pkg, input.pins);
+    // A blank reason waives nothing, so the row is reported in its own right AND its count is not
+    // honoured — reporting only the missing sentence would leave the sites silent behind it.
+    if (protoIndexPinIsBlank(pkg, input.pins)) {
+      gaps.push({ kind: 'unexplained', pkg, found: hits.length, pinned });
+    }
     if (hits.length > pinned) {
       gaps.push({
         kind: 'over',
@@ -198,6 +269,13 @@ const staleFinding = (gap: ProtoIndexGap): Finding => ({
   at: PROTO_PINS_FILE,
 });
 
+const unexplainedFinding = (gap: ProtoIndexGap): Finding => ({
+  code: 'X_PROTO_CHAIN_INDEX_PIN_UNEXPLAINED',
+  cause: `${gap.pkg} is pinned with a blank reason, so nothing records which of its ${String(gap.found)} prototype-reachable read(s) are keyed by a closed union and which are keyed by data — the pin holds nothing and the sites are reported`,
+  fix: `write what ${gap.pkg}'s tables are keyed by and why that key cannot be "constructor", in ${PROTO_PINS_FILE} — or guard the reads with Object.hasOwn and run bun run scripts/proto-index.ts --unpin ${gap.pkg}`,
+  at: PROTO_PINS_FILE,
+});
+
 const unscannedFinding = (): Finding => ({
   code: 'X_PROTO_CHAIN_INDEX_UNSCANNED',
   cause:
@@ -210,6 +288,7 @@ const FINDINGS: Readonly<Record<ProtoIndexGapKind, (gap: ProtoIndexGap) => Findi
   over: overFinding,
   stale: staleFinding,
   unscanned: unscannedFinding,
+  unexplained: unexplainedFinding,
 };
 
 export const protoIndexFindingFor = (gap: ProtoIndexGap): Finding => FINDINGS[gap.kind](gap);

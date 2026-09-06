@@ -15,7 +15,7 @@ import type { SendResult } from './driver';
 import { envelopeRecipients, type MailDriver, type MailMessage, resultFor } from './driver';
 import { sendFailed } from './errors';
 import { mailMessageIdToken } from './idempotency';
-import { addressDomain, addressSpec, buildMimeMessage } from './mime';
+import { addressDomain, buildMimeMessage } from './mime';
 import {
   type SmtpConnector,
   type SmtpSessionOptions,
@@ -200,7 +200,9 @@ export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
     try {
       await smtpDeliver(
         stream,
-        { from: addressSpec(options.from), recipients: envelopeRecipients(message), data },
+        // Display forms in either half are normalised by `smtpDeliver` itself, which is the module
+        // that writes the command line — never here, where a second copy of the rule would drift.
+        { from: options.from, recipients: envelopeRecipients(message), data },
         session,
       );
       return resultFor('smtp', message, messageId);

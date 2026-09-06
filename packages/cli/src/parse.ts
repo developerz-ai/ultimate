@@ -88,6 +88,15 @@ export interface CommandSpec {
    * that declared it and forgot the call ran outside an app with no refusal.
    */
   readonly requiresApp?: boolean;
+  /**
+   * The command hands everything after a bare `--` to another tool, so `ParsedArgs.passthrough`
+   * has a READER. Declared, because it did not until 2026-09 and nothing read it anywhere:
+   * `x test unit -- --coverage --bail` parsed both flags, carried them the whole way and dropped
+   * them, and every other command did the same in the same silence. A command that declares this
+   * forwards them; one that does not refuses the `--` (`X_CLI_BAD_FLAG`), which is the only way an
+   * argument that changes nothing becomes visible to the caller who typed it.
+   */
+  readonly passthrough?: true;
 }
 
 export interface ParsedArgs {
@@ -170,6 +179,14 @@ export function parseArgs(argv: readonly string[], specs: readonly CommandSpec[]
   }
 
   const spec = resolveCommand(first, specs);
+  if (passthrough.length > 0 && spec.passthrough !== true) {
+    throw new BadFlagError({
+      flag: '',
+      command: spec.name,
+      reason: `hands nothing to another tool, so ${passthrough.join(' ')} would be dropped in silence`,
+      fix: `x ${spec.name} --help`,
+    });
+  }
   const flags = defaults(spec);
   const positionals: string[] = [];
   // What argv actually SET, as against what `defaults()` seeded: a default is nobody's request,

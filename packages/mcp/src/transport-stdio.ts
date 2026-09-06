@@ -128,6 +128,13 @@ async function handleLine(
   await write(`${JSON.stringify(response)}\n`);
 }
 
-function defaultWrite(chunk: string): void {
-  Bun.stdout.write(chunk);
+/**
+ * `Bun.stdout.write` is ASYNCHRONOUS when fd 1 is a pipe — which it always is here, because the
+ * peer LAUNCHED this process — and it answers the count it accepted, never the count it wrote.
+ * Dropping that promise made every `await write(...)` above await nothing: the CLI's exit ran with
+ * the tail still queued and the peer lost it. Measured: a 4,000,236-byte frame arrived as 1,388,672
+ * bytes. Awaiting it is also the back-pressure this loop otherwise has none of.
+ */
+async function defaultWrite(chunk: string): Promise<void> {
+  await Bun.stdout.write(chunk);
 }

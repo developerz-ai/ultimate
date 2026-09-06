@@ -24,8 +24,16 @@
 // `${v.replaceAll("'", "''")}` inside a template with no name at all. A rule spelled `literal`
 // would have read straight past the third, exactly as a rule spelled `RenderMode` read past
 // `PwaRenderMode` and a rule looking for a roll called `random` read past a parameter called `r`.
-// What is matched is the TRANSFORMATION: a `replace`/`replaceAll` whose replacement is the
-// two-single-quote string. That is the SQL escape and essentially nothing else.
+// What is matched is the TRANSFORMATION: a call whose last argument is the two-single-quote string.
+// That is the SQL escape and essentially nothing else.
+//
+// AND THE SPELLING WAS THE HOLE, 2026-09-06. The pattern was `.replace(All)?([^)]{0,48}?"''")`,
+// which is a rule about a spelling wearing a rule about a shape: `v.split("'").join("''")` is
+// `replaceAll` written the long way and matched nothing; a CAPTURE GROUP or a nested call in the
+// pattern argument (`.replace(/(')/g, "''")`, `.replace(new RegExp("'", 'g'), "''")`) closed the
+// `[^)]` window before the replacement was ever read; and `"'".repeat(2)` is the same two
+// characters arrived at by arithmetic. The call is now walked with balanced parentheses and its
+// LAST argument tested, so the window has no length limit to slip past.
 //
 // WHAT THIS CANNOT SEE. A producer that abandons escaping ALTOGETHER — `` `'${value}'` `` — doubles
 // no quote, matches no rule here, and passes. This rule answers "is there a second copy of the
@@ -40,6 +48,10 @@
 
 import { collectSourceFiles, type SourceFile } from './boundaries';
 import { parseScriptArgs } from './lib/args';
+// The paren walker is `scripts/lib/`'s and not this file's, for this file's OWN reason: the copy
+// that lived here counted every `(` including the ones inside a string literal, so
+// `.replace(new RegExp("(", 'g'), "''")` miscounted the depth and the site was dropped unread.
+import { balancedClose, topLevelArguments } from './lib/balanced-paren';
 // Reused, never re-spelled: this file exists BECAUSE a rule written down three times was wrong
 // twice. Blanking whole-line comments keeps the line count, so a reported position stays true.
 import { stripComments } from './lib/i18n-scan';
@@ -57,14 +69,39 @@ export const OWNER = 'packages/db/src/sql.ts';
 const TEMPLATE_ROOT = 'packages/cli/src/templates/';
 
 /**
- * A `replace`/`replaceAll` whose REPLACEMENT is `''` — the SQL single-quote escape.
- *
- * The replacement is the discriminator, not the pattern: the pattern argument is spelled `"'"` in
- * most of this tree and `/'/g` where someone reached for a regex, while the replacement is the
- * doubled quote in every form. Both quoting styles are accepted because Biome writes `"''"` (a
- * string containing a quote takes double quotes) but a hand edit may not have.
+ * A `replace`/`replaceAll`/`join` — the three calls that can perform the doubling. `split` is read
+ * as the receiver of a `join`, never on its own.
  */
-const DOUBLED_QUOTE = /\.replace(?:All)?\([^)]{0,48}?(?:"''"|'\\'\\''|`''`)/g;
+const ESCAPING_CALL = /\.\s*(replace|replaceAll|join)\s*\(/g;
+
+/**
+ * The doubled quote, as an ARGUMENT — every spelling of the same two characters.
+ *
+ * Both quoting styles, because Biome writes `"''"` (a string containing a quote takes double
+ * quotes) and a hand edit may not have; and `"'".repeat(2)`, which is the same value arrived at by
+ * arithmetic and which a pattern reading the literal text alone cannot see.
+ */
+const DOUBLED_ARGUMENT = /^(?:"''"|'\\'\\''|`''`|(?:"'"|'\\''|`'`)\s*\.\s*repeat\s*\(\s*2\s*\))$/;
+
+/** A single quote as an argument — `"'"`, `/'/g`, `/(')/g`. The pattern half of the escape. */
+const SINGLE_QUOTE_ARGUMENT = /^(?:"'"|'\\''|`'`|\/\(?'\)?\/[gimsuy]*)$/;
+
+/**
+ * Whether the receiver of a `.join(` is a `.split("'")` — which makes the pair the escape.
+ *
+ * `.join("''")` alone is joining a list with two quotes and says nothing about SQL; it is the split
+ * on the single quote in front of it that turns the pair into `replaceAll("'", "''")` written the
+ * long way. Read backwards over the immediately preceding call, so `a.split("'").join("''")` reads
+ * and `list.join("''")` does not.
+ */
+const splitsOnQuote = (code: string, before: number): boolean => {
+  const tail = code.slice(Math.max(0, before - 80), before).trimEnd();
+  if (!tail.endsWith(')')) return false;
+  const open = tail.lastIndexOf('.split(');
+  if (open === -1) return false;
+  const argument = tail.slice(open + '.split('.length, tail.length - 1).trim();
+  return SINGLE_QUOTE_ARGUMENT.test(argument);
+};
 
 export interface LiteralCopy {
   readonly file: string;
@@ -85,12 +122,18 @@ export function literalCopies(files: readonly SourceFile[]): readonly LiteralCop
     // line rather than deleting it — so the position must be read from the masked source. Reading
     // it from the original reported line 2 for a call on line 27.
     const masked = stripComments(file.source);
-    for (const match of masked.matchAll(DOUBLED_QUOTE)) {
+    for (const match of masked.matchAll(ESCAPING_CALL)) {
+      const open = match.index + match[0].length - 1;
+      const close = balancedClose(masked, open);
+      if (close === -1) continue;
+      const args = topLevelArguments(masked.slice(open + 1, close));
+      if (!DOUBLED_ARGUMENT.test(args.at(-1) ?? '')) continue;
+      if (match[1] === 'join' && !splitsOnQuote(masked, match.index)) continue;
       found.push({
         file: file.path,
         line: lineOf(masked, match.index),
         // The matched call, not the line: a line can be 100 columns of unrelated template.
-        excerpt: match[0],
+        excerpt: masked.slice(match.index, close + 1).replace(/\s+/g, ' '),
       });
     }
   }

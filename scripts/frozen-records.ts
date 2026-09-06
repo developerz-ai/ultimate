@@ -6,6 +6,7 @@
 
 import { maskLiterals, stripComments } from '@ultimat3/cli';
 import { parseScriptArgs } from './lib/args';
+import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { isCode, isTestPath, lineOf } from './lib/source-scan';
@@ -49,12 +50,6 @@ export interface FreezeSite {
 export interface SourceFile {
   readonly at: string;
   readonly text: string;
-}
-
-export interface Finding {
-  readonly at: string;
-  readonly cause: string;
-  readonly fix: string;
 }
 
 /**
@@ -221,12 +216,14 @@ export function scanFreezeSites(
 }
 
 const finding = (site: FreezeSite): Finding => ({
+  code: 'X_FROZEN_RECORD_INFERRED',
   at: `${site.at}:${site.line}`,
   cause: `${site.name} in ${site.at} annotates a Record keyed on ${site.keyType ?? ''} but lets Object.freeze infer it, so an extra key compiles silently`,
   fix: `write it as Object.freeze<...>({ ... }) with the type argument spelled out, and drop the annotation — run \`bun run scripts/frozen-records.ts --json\` to re-read the sites`,
 });
 
 const vacuous = (cause: string): Finding => ({
+  code: 'X_FROZEN_RECORD_UNSCANNED',
   at: 'scripts/frozen-records.ts',
   cause,
   fix: 'fix the scan in scripts/frozen-records.ts — a rule that reads nothing reports the same "ok" as a clean tree',
@@ -287,20 +284,25 @@ export async function readSources(root: string): Promise<readonly SourceFile[]> 
 export const frozenRecordReport = async (root: string): Promise<FrozenReport> =>
   checkFrozenRecords(await readSources(root));
 
+/**
+ * What the command prints, as a value — so a test reads the `--json` document this rule publishes
+ * rather than trusting the `report()` call below it.
+ *
+ * `findings:` and not `lines:`: `render()` in `--json` mode emits `result.findings ?? []` and drops
+ * `lines`, so a rule that hand-rolled its own three-line text published `findings: []` on a RED run.
+ */
+export const frozenRecordResult = (report_: FrozenReport): ScriptResult => ({
+  ok: report_.findings.length === 0,
+  script: SCRIPT,
+  summary:
+    report_.findings.length === 0
+      ? `${report_.counts.explicit} closed-key freeze(s) spell their type argument, ${report_.counts['annotated-open']} open-key left alone`
+      : `${report_.findings.length} Object.freeze site(s) that admit an extra key in silence`,
+  findings: report_.findings,
+  data: { counts: report_.counts },
+});
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
-  const { findings, counts } = await frozenRecordReport(repoRoot());
-  report(
-    {
-      ok: findings.length === 0,
-      script: SCRIPT,
-      summary:
-        findings.length === 0
-          ? `${counts.explicit} closed-key freeze(s) spell their type argument, ${counts['annotated-open']} open-key left alone`
-          : `${findings.length} Object.freeze site(s) that admit an extra key in silence`,
-      lines: findings.map((one) => `  ${one.at}\n    cause: ${one.cause}\n    fix:   ${one.fix}`),
-      data: { counts, findings },
-    },
-    args.json,
-  );
+  report(frozenRecordResult(await frozenRecordReport(repoRoot())), args.json);
 }

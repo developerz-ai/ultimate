@@ -55,9 +55,9 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
       '`prompt.ts:73` compares a cached prompt `hash` to decide whether to re-render the template. A cache-invalidation check on content this process produced.',
   },
   cli: {
-    count: 11,
+    count: 12,
     reason:
-      'build and CLI plumbing: a `candidate` EXECUTABLE PATH, OUTPUT PATH, COMMAND NAME or CI JOB NAME; a parsed CLI `token` and its aliases; a `review.state` from the GitHub API; and a content `hash` compared to decide whether a bundle or a migration changed. None is a credential check.',
+      'build and CLI plumbing: a `candidate` EXECUTABLE PATH, OUTPUT PATH, COMMAND NAME or CI JOB NAME; a parsed CLI `token` and its aliases; a `review.state` from the GitHub API; and a content `hash` compared to decide whether a bundle or a migration changed. None is a credential check. The twelfth arrived 2026-09-06 with `startsWith`: `fix-path.ts:102` asks whether a path-shaped CITATION on a `fix:` line sits under a gitignored directory — `token` there is a file path off a doc line.',
   },
   core: {
     count: 4,
@@ -80,9 +80,9 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
       '`driver-memory.ts`, `job.ts`, `events.ts` and `backfill-pending.ts` compare a job lifecycle `state` (`queued`/`running`/`failed`), an `idempotencyKey` used to deduplicate an enqueue, a `correlationKey` on an event, and a `candidate` JOB NAME. A job state is not an OAuth state.',
   },
   manifest: {
-    count: 12,
+    count: 13,
     reason:
-      '`docs-search.ts` is a SEARCH INDEX: every one of its eleven sites compares or `.includes()` a query `token`, which is one word a human typed into `x docs search`. `emit.ts:151` compares a `contentHash` against the build id to decide whether the manifest is current.',
+      '`docs-search.ts` is a SEARCH INDEX: every one of its twelve sites compares, `.includes()` or `.indexOf()` a query `token`, which is one word a human typed into `x docs search`. `emit.ts:151` compares a `contentHash` against the build id to decide whether the manifest is current. The twelfth site is `docs-search.ts:148` — `symbolsLower.indexOf(token)`, visible from 2026-09-06 because `.indexOf(x) !== -1` is `.includes(x)` with an inert `-1` in front, and the equality scan used to delete the site on the strength of that half.',
   },
   query: {
     count: 1,
@@ -90,9 +90,9 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
       "`live.ts:177` compares a subscription `queryHash` against the cursor's to detect that the query changed under a live subscription. Both sides are hashes of a query this process compiled.",
   },
   realtime: {
-    count: 6,
+    count: 7,
     reason:
-      '`offline-queue.ts`, `rebase.ts`, `presence.ts` and `sync-protocol.ts` compare a `candidate` QUEUED MUTATION, PRESENCE MEMBER or protocol VALUE, by the client-side key a write is deduplicated on. `fanout.ts:50` walks a topic pattern one segment at a time, where `token` is a topic segment.',
+      '`offline-queue.ts`, `rebase.ts`, `presence.ts` and `sync-protocol.ts` compare a `candidate` QUEUED MUTATION, PRESENCE MEMBER or protocol VALUE, by the client-side key a write is deduplicated on. `fanout.ts:50` walks a topic pattern one segment at a time, where `token` is a topic segment. The seventh is `pg-auth.ts:63` — `serverNonce.startsWith(this.#clientNonce)`, the RFC 5802 check that the SCRAM server echoed our own nonce back. A nonce is public by construction (it travels in clear in `client-first`) and the branch decides whether the exchange is well-formed, not whether a credential is right; the credential comparison in that file is the client proof, which is computed and never compared here.',
   },
   schema: {
     count: 1,
@@ -110,17 +110,28 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
       "`driver-local.ts:73,182` compare the configured signing secret against `DEV_SIGNING_SECRET`, the SHIPPED DEV CONSTANT, so `x doctor` and `localDriver()` can refuse to sign with it outside development. Declared as a literal at `driver-local.ts:50` and re-exported from `index.ts`, exactly as `@ultimat3/core`'s `cursor.ts:71` pin above — the same question, and no byte an attacker does not already hold.",
   },
   time: {
-    count: 1,
+    count: 2,
     reason:
-      "`schedule.ts:90` compares a `candidate` DATE's weekday against the slot's while walking forward to the next occurrence.",
+      "`schedule.ts:90` compares a `candidate` DATE's weekday against the slot's while walking forward to the next occurrence. `cron-parse.ts:230` looks a cron field `token` up in the closed list of month and weekday NAMES — `jan`, `mon` — which is the cron expression a developer wrote, in the source.",
   },
 };
 
-/** What this package is allowed to have today. Absent means zero, deliberately. */
+/**
+ * What this package is allowed to have today. Absent means zero, deliberately — and so does a row
+ * whose REASON is blank. This file's header says the count alone is not the pin ("'pinned' with no
+ * sentence is the waiver axiom 3 refuses") and nothing read `reason` at all until 2026-09-06, so a
+ * `{ count: 12, reason: '' }` held twelve comparisons on nothing.
+ */
 export const secretComparePinnedFor = (
   pkg: string,
   pins: Readonly<Record<string, SecretComparePin>> = SECRET_COMPARE_PINS,
-): number => (Object.hasOwn(pins, pkg) ? (pins[pkg]?.count ?? 0) : 0);
+): number => (secretComparePinIsBlank(pkg, pins) ? 0 : (pins[pkg]?.count ?? 0));
+
+/** A row that exists and says nothing: the count is not honoured, and the gap says which row. */
+export const secretComparePinIsBlank = (
+  pkg: string,
+  pins: Readonly<Record<string, SecretComparePin>> = SECRET_COMPARE_PINS,
+): boolean => Object.hasOwn(pins, pkg) && (pins[pkg]?.reason ?? '').trim() === '';
 
 /**
  * The edit `X_SECRET_COMPARE_PIN_STALE` names, performed: lower each named package's count to what

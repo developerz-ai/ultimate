@@ -168,6 +168,9 @@ export async function indexDocument(input: {
   await input.store.upsert(
     chunks.map((c, index) => ({
       id: c.id,
+      // The cast is sound because `embedBatched` refuses an embedder that answered fewer vectors
+      // than it was given texts (`X_AI_EMBEDDER_INVALID`) — without that check this wrote
+      // `undefined` and failed a layer later inside the store, naming nothing an author wrote.
       vector: vectors[index] as Float32Array,
       text: c.text,
       metadata: c.metadata,

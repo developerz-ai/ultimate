@@ -64,11 +64,25 @@ describe('unit · the sync node cannot bind, and says which port', () => {
     expect(refusal?.cause).not.toContain('Error:');
   });
 
+  // The bug this now guards, and the one the assertion above USED to be: the suggestion was
+  // `neighbouringPort(webPort)` — web port + 1 — which is the sync port, which is the port the
+  // refusal has just said is taken. Running the fix reproduced the failure it was handed out for,
+  // under a test named for ending it. `x dev` binds a PAIR, so a suggestion has to clear both.
   test('its fix is a command that ends the failure, never a diagnostic that missed it', async () => {
     const refusal = await syncBindRefusal(3999, 4000, async () => false);
-    expect(refusal?.fix).toContain('x dev --port 4000');
+    expect(refusal?.fix).toContain('x dev --port 4001');
+    expect(refusal?.fix).not.toContain('x dev --port 4000');
     expect(refusal?.fix).not.toContain('x doctor');
     expect(fixProblem(refusal?.fix ?? '')).toBeUndefined();
+  });
+
+  test('the suggested pair clears the taken port at the top of the range too', async () => {
+    const webPort = PORT_RANGE.max - 2;
+    const refusal = await syncBindRefusal(webPort, PORT_RANGE.max - 1, async () => false);
+    // `port + 2` there would be 65535, which `syncPortFor` refuses: a fix that answers with a
+    // second refusal is the same defect one port along.
+    expect(refusal?.fix).toContain(`x dev --port ${webPort - 2}`);
+    expect(syncPortFor(webPort - 2)).toBe(webPort - 1);
   });
 
   // The other direction, and the one that keeps this from being a catch-all: a listener that

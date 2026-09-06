@@ -3,6 +3,8 @@
 // action and an HTTP client's view can never drift. Where the projection and the PARSER differ,
 // the published document states the narrower of the two — see `date` and `record` below.
 
+import { describeValue } from './describe-value';
+import { SchemaUnsupportedError } from './errors';
 import { CURRENCY_CODE_PATTERN, MAX_MONEY_SCALE } from './money-value';
 import { requiredKeys, type SchemaNode, type SchemaRefinement } from './node';
 import { PROTOTYPE_KEYS } from './prototype-keys';
@@ -275,12 +277,39 @@ function convert(node: SchemaNode): JsonSchema {
   }
 }
 
+/**
+ * The dialect a caller asked for, or a refusal. `Object.hasOwn`, never the read alone: `dialect` is
+ * a field on this file's public entry point, so it is CALLER data, and `DIALECTS['constructor']`
+ * answers the `Object` function — measured, `$schema` held that function, `JSON.stringify` dropped
+ * the key in silence, and every consumer that does not serialise (the MCP tool schema, the OpenAPI
+ * writer that spreads this document) carried it. `bun run proto-index` could not see the read: the
+ * unrelated `Object.create(null)` in `convert` above exempted this whole FILE until that rule
+ * became per-table.
+ *
+ * `X_SCHEMA_UNSUPPORTED` rather than a new code: this is the same question `toJsonSchema` already
+ * answers with it — a document this package cannot publish — and a code is stable forever once
+ * shipped, so a fourth one for one option would be a fourth thing to document.
+ */
+function dialectUri(dialect: string): string {
+  if (Object.hasOwn(DIALECTS, dialect)) return DIALECTS[dialect as JsonSchemaDialect];
+  throw new SchemaUnsupportedError({
+    // `describeValue`, never the value: this cause is folded into a log line and an HTTP problem
+    // document, and the two spellings that WORK are what a caller needs, not their own back.
+    cause: `a json schema dialect must be '2020-12' or 'draft-07'; got ${describeValue(dialect)}`,
+    fix: "toJsonSchema(schema, { dialect: '2020-12' })   # or 'draft-07' for an MCP tool schema",
+    meta: { dialect },
+  });
+}
+
 /** Convert any schema the active provider can introspect. */
 export function toJsonSchema(schema: unknown, options?: ToJsonSchemaOptions): JsonSchema {
   const converted = convert(introspect(schema));
-  const dialect = options?.dialect ?? '2020-12';
+  // Resolved BEFORE `includeDialect` is read: a dialect nothing publishes is a caller mistake
+  // whether or not this document happens to emit `$schema`, and a refusal that fires for one flag
+  // and not the other is a rule a caller learns the wrong half of.
+  const uri = dialectUri(options?.dialect ?? '2020-12');
   return {
-    ...(options?.includeDialect === false ? {} : { $schema: DIALECTS[dialect] }),
+    ...(options?.includeDialect === false ? {} : { $schema: uri }),
     ...(options?.title === undefined ? {} : { title: options.title }),
     ...converted,
   };

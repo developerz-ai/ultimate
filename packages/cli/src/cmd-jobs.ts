@@ -5,10 +5,11 @@
 // `jobs-table.ts`, and getting hold of the queue at all is `jobs-driver.ts` — shared with `x db`.
 
 import type { JobDriver } from '@ultimat3/jobs';
-import { cancelJob, createMemoryDriver, createNatsDriver, createRedisDriver } from '@ultimat3/jobs';
+import { cancelJob, createNatsDriver, createRedisDriver } from '@ultimat3/jobs';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, JobUnknownError, MissingPositionalError } from './errors';
+import type { DrainOutcome } from './jobs-drain';
 import { drainJobs } from './jobs-drain';
 import { withJobDriver } from './jobs-driver';
 import {
@@ -28,7 +29,32 @@ import { flagBool, flagString } from './parse';
 
 export const JOBS_SUBCOMMANDS = ['ls', 'show', 'retry', 'cancel', 'drain'] as const;
 
-const DRAIN_TARGETS = ['memory', 'redis', 'nats'] as const;
+/**
+ * The drivers a drain may move work ONTO — every one of them durable, and that is the whole rule.
+ * Closed, and read three ways: the flag summary, the refusal, and the `memory` case below.
+ */
+export const DRAIN_TARGETS = ['redis', 'nats'] as const;
+
+/**
+ * `memory` was on that list until 2026-09 and could not be: `createMemoryDriver()` is a `Map` in
+ * THIS process, so `x jobs drain --to memory` enqueued each job into it and then `ack`ed the
+ * durable row off the source. Reproduced against two real drivers — source ready 1 -> 0, target
+ * ready 1, `ok: true` — and the target dies with the command. `wiki/CLI-Reference.md` said the
+ * crash window "duplicates a job … instead of losing it"; this target lost every one of them.
+ *
+ * Refused by NAME rather than folded into the unknown-value message, for `cmd-deploy.ts`'s
+ * `readMethod` reason: `--to memory` is a spelling that used to work, so a reader who types it is
+ * owed the fact that it moved work into a process that is about to exit, not a list of words.
+ */
+function refuseMemoryTarget(): never {
+  throw new BadFlagError({
+    flag: 'to',
+    command: 'jobs',
+    reason:
+      'memory is a Map inside this process — the drain would ack every durable row and lose the copy when the command exits',
+    fix: 'x jobs drain --to redis --json   # or --to nats; --dry-run reports the plan and moves nothing',
+  });
+}
 
 function requireIdPositional(ctx: CommandContext, sub: string): string {
   const id = ctx.args.positionals[0];
@@ -57,10 +83,13 @@ function requireEnvUrl(env: CommandContext['env'], name: string, target: string)
 
 /**
  * `redis`/`nats` are honest `X_NOT_IMPLEMENTED` stubs in `@ultimat3/jobs` — building one here is
- * fine even though every `enqueue` on it will fail; `drainJobs` reports that per record.
+ * fine even though every `enqueue` on it will fail; `drainJobs` reports that per record. What is
+ * NOT fine is a target that accepts every enqueue and then vanishes, which is why `memory` is
+ * refused first and by name rather than falling into the closed-set message below.
  * Exported so a test can drive the `--to`/env-var validation without a driver or a boot.
  */
 export function buildDrainTarget(to: string | undefined, env: CommandContext['env']): JobDriver {
+  if (to === 'memory') refuseMemoryTarget();
   if (to === undefined || !(DRAIN_TARGETS as readonly string[]).includes(to)) {
     throw new BadFlagError({
       flag: 'to',
@@ -68,7 +97,6 @@ export function buildDrainTarget(to: string | undefined, env: CommandContext['en
       reason: `expects one of: ${DRAIN_TARGETS.join(', ')}`,
     });
   }
-  if (to === 'memory') return createMemoryDriver();
   if (to === 'redis') return createRedisDriver({ url: requireEnvUrl(env, 'REDIS_URL', 'redis') });
   return createNatsDriver({ servers: [requireEnvUrl(env, 'NATS_URL', 'nats')] });
 }
@@ -174,11 +202,13 @@ async function runCancel(driver: JobDriver, ctx: CommandContext): Promise<Comman
  * A skipped candidate is not an error — a job whose `runAt` has not arrived is unclaimable by
  * design — so it carries no `X_*` finding. It still fails the command: `x jobs drain` is run to
  * empty a driver, and a partial move that exited 0 would read as "the queue is clear".
+ *
+ * Exported, and separate from the flag reading above it, because every target the flag now accepts
+ * needs a server: a test can produce a real outcome from two drivers and render THAT, where
+ * driving the whole command would need a redis or a nats to move anything at all.
  */
-async function runDrain(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
-  const target = buildDrainTarget(flagString(ctx.args, 'to'), ctx.env);
-  const dryRun = flagBool(ctx.args, 'dry-run');
-  const outcome = await drainJobs(driver, target, dryRun);
+export function drainResult(outcome: DrainOutcome): CommandResult {
+  const dryRun = outcome.dryRun;
   const findings = outcome.failures.map((failure) => failure.finding);
   const lines: string[] = [];
   if (outcome.skipped.length > 0) {
@@ -210,6 +240,15 @@ async function runDrain(driver: JobDriver, ctx: CommandContext): Promise<Command
       failures: outcome.failures.map(drainFailureToJson),
     },
   };
+}
+
+/** The move, then the render. The target is built ABOVE `withJobDriver` — see `run` below. */
+async function runDrain(
+  driver: JobDriver,
+  target: JobDriver,
+  ctx: CommandContext,
+): Promise<CommandResult> {
+  return drainResult(await drainJobs(driver, target, flagBool(ctx.args, 'dry-run')));
 }
 
 export const jobsCommand: CliCommand = {
@@ -245,7 +284,7 @@ export const jobsCommand: CliCommand = {
       {
         name: 'to',
         type: 'string',
-        summary: 'drain: target driver — memory, redis, nats',
+        summary: `drain: target driver — ${DRAIN_TARGETS.join(', ')}`,
         subcommands: ['drain'],
       },
       {
@@ -259,11 +298,18 @@ export const jobsCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('jobs', ctx.cwd).dir;
     const sub = ctx.args.subcommand ?? 'ls';
+    // BEFORE `withJobDriver`, which boots the SOURCE queue and pings it. `--to` is a flag, so
+    // whether it names a durable driver is answerable with no server at all — and reading it
+    // inside meant `x jobs drain --to memory` on a box whose database is down reported the boot
+    // failure instead of `X_CLI_BAD_FLAG`, i.e. the operator repaired Postgres to be told the
+    // word they typed was refused by name. It also opens a connection to a target the command
+    // then refuses, which is a socket nothing closes.
+    const target = sub === 'drain' ? buildDrainTarget(flagString(ctx.args, 'to'), ctx.env) : null;
     return withJobDriver(root, ctx, (driver) => {
       if (sub === 'show') return runShow(driver, ctx);
       if (sub === 'retry') return runRetry(driver, ctx);
       if (sub === 'cancel') return runCancel(driver, ctx);
-      if (sub === 'drain') return runDrain(driver, ctx);
+      if (target !== null) return runDrain(driver, target, ctx);
       return runLs(driver, ctx);
     });
   },

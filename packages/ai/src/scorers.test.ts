@@ -37,6 +37,24 @@ describe('unit · built-in scorers', () => {
     expect(scorer.score({ output: 'not json' })).toBe(0);
   });
 
+  /**
+   * The keys are the CALLER's and the object is a `JSON.parse` result, so `record[key]` reads the
+   * prototype for `constructor`, `toString`, `valueOf` and `hasOwnProperty` — an answer holding
+   * none of them scored a full 1 on a scorer whose whole job is saying it did not. A `JSON.parse`
+   * result has `Object.prototype`; only a `__proto__` key is special-cased away by the parser.
+   */
+  test('a required key that only Object.prototype supplies scores 0, not 1', () => {
+    const scorer = jsonSchemaValid(['constructor', 'toString']);
+    expect(scorer.score({ output: '{"id":"1"}' })).toBe(0);
+    expect(scorer.score({ output: '{"constructor":"c"}' })).toBe(0.5);
+  });
+
+  test('a key present but explicitly null still counts', () => {
+    // `record[key] !== undefined` also read a declared `null` as ABSENT, which is the opposite
+    // error: `{"name": null}` answers the schema's question with a value.
+    expect(jsonSchemaValid(['name']).score({ output: '{"name":null}' })).toBe(1);
+  });
+
   test('numeric tolerance degrades linearly to the tolerance edge', () => {
     const scorer = numericTolerance(10);
     expect(scorer.score({ output: '100', expected: '100' })).toBe(1);

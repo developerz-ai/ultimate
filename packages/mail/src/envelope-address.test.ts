@@ -3,7 +3,7 @@
 // the bytes the client wrote, not on the throw: a refusal raised after the envelope was already
 // on the wire would satisfy a weaker test and still have relayed the attacker's mail.
 
-import { beforeEach, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import { resetJobDriver } from '@ultimat3/jobs';
@@ -11,7 +11,7 @@ import { t } from '@ultimat3/schema';
 import { blocks } from './blocks';
 import { resetMailDriver, setMailDriver } from './driver';
 import { createSmtpDriver } from './driver-smtp';
-import { assertEnvelopeAddress } from './envelope-address';
+import { assertEnvelopeAddress, envelopeAddress } from './envelope-address';
 import { defineMail, send } from './mail';
 import { type SmtpSessionOptions, type SmtpStream, smtpDeliver } from './smtp-client';
 
@@ -151,16 +151,37 @@ test('refuses every character that could restructure the command line', () => {
 });
 
 test('leaves a legitimate address alone, including a quoted local part', () => {
-  for (const address of ['ada@example.test', 'josé@exämple.test', '"ada lovelace"@example.test']) {
+  for (const address of ['ada@example.test', '"ada lovelace"@example.test']) {
     expect(() => assertEnvelopeAddress('recipient', address)).not.toThrow();
   }
+});
+
+// SMTPUTF8 (RFC 6531) is what makes a UTF-8 mailbox legal on the wire and `smtp-client.ts`
+// negotiates none — so the alternative to refusing here is writing raw 8-bit octets into
+// `MAIL FROM:<…>` and reporting the server's rejection as a transport failure, after the envelope
+// is half written. The DISPLAY PHRASE is a different half and still travels: `mime.ts` encodes it.
+test('refuses a non-ASCII mailbox by its own reason, and keeps the phrase encodable', () => {
+  const error = caughtSync(() => envelopeAddress('recipient', 'josé@exämple.test'));
+  expect(codeOf(error)).toBe('X_MAIL_ADDRESS_INVALID');
+  expect(isUltimateError(error) ? error.meta : undefined).toEqual({
+    field: 'recipient',
+    reason: 'non-ascii',
+  });
+  expect(isUltimateError(error) ? error.cause : '').toContain('SMTPUTF8');
+  // The address itself is recipient data and stays out of every string this package writes.
+  expect(isUltimateError(error) ? `${error.cause} ${error.fix}` : '').not.toContain('exämple');
+  // A non-ASCII display NAME over an ASCII mailbox is fine — that half has an encoding.
+  expect(envelopeAddress('recipient', 'José Muñoz <jose@example.test>')).toBe('jose@example.test');
 });
 
 test('the refusal names the half of the envelope it came from, never the address', () => {
   const error = caughtSync(() => assertEnvelopeAddress('sender', 'a@b.test\r\nQUIT'));
 
   expect(codeOf(error)).toBe('X_MAIL_ADDRESS_INVALID');
-  expect(isUltimateError(error) ? error.meta : undefined).toEqual({ field: 'sender' });
+  expect(isUltimateError(error) ? error.meta : undefined).toEqual({
+    field: 'sender',
+    reason: 'injection',
+  });
   // Recipient data stays out of every string this package writes itself.
   expect(isUltimateError(error) ? `${error.cause} ${error.fix}` : '').not.toContain('a@b.test');
 });
@@ -173,3 +194,30 @@ function caughtSync(fn: () => unknown): unknown {
     return error;
   }
 }
+
+/**
+ * `envelopeAddress` is the strip AND the gate, in that order — the order is the security property,
+ * not a detail: a CRLF address ending in `<addr>` strips down to a clean mailbox, so checking
+ * after the strip would turn the injection above into a silent delivery to the attacker.
+ */
+describe('envelopeAddress', () => {
+  test('a display form becomes the bare addr-spec', () => {
+    expect(envelopeAddress('recipient', 'Jane Doe <jane@x.test>')).toBe('jane@x.test');
+  });
+
+  test('a bare addr-spec is returned unchanged', () => {
+    expect(envelopeAddress('recipient', 'ada@example.test')).toBe('ada@example.test');
+  });
+
+  test('a CRLF is refused BEFORE the phrase is stripped', () => {
+    expect(() =>
+      envelopeAddress('recipient', 'ops@x.test\r\nRCPT TO:<attacker@evil.test>'),
+    ).toThrow(/X_MAIL_ADDRESS_INVALID/);
+  });
+
+  test('an unpaired angle bracket survives the strip and is refused', () => {
+    expect(() => envelopeAddress('recipient', 'ada@x.test> RCPT TO:<evil@x.test')).toThrow(
+      /X_MAIL_ADDRESS_INVALID/,
+    );
+  });
+});

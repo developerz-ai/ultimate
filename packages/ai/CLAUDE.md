@@ -249,6 +249,14 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   closes, so nothing partial reaches a caller.
 - Thinking chunks are never appended to `text`. A consumer concatenating every chunk must not
   end up shipping the reasoning to the user.
+- **`embedBatched` enforces the `Embedder` arity, per batch** (`As of 2026-09`). "One vector per
+  input text, in the order the texts arrived" is the interface's own invariant and nothing
+  downstream can restore it: `indexDocument` writes `vectors[index]` per chunk, so an app embedder
+  that answered short stored `undefined` and surfaced a layer later as a `TypeError` inside the
+  vector store, naming nothing an author wrote. `X_AI_EMBEDDER_INVALID` — the shipped code whose
+  registered title already read "an Embedder returned fewer vectors than texts it was given" — now
+  carries the two counts in its cause and `meta`. `RemoteEmbedder.decode` refuses its own provider
+  on the same rule; an app's own `Embedder` was the unchecked half.
 - One `RemoteEmbedder` for every vendor: `baseUrl` selects the provider, the wire shape is the
   same. Vectors are L2-normalised on arrival so `cosine` stays a dot product, and a width other
   than the declared one is `X_VECTOR_DIM_MISMATCH` before anything reaches a store.
