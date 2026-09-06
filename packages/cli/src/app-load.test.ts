@@ -42,6 +42,23 @@ describe('unit · loadApp', () => {
     expect((await loadApp(dir)).defaultLocale).toBe(before.fallback);
   });
 
+  // Reproduced: an app under `~/dev/node_modules-experiments/myapp` loaded ZERO modules, because
+  // `absolute.includes('node_modules')` is true for every file in it. A silent empty registry — a
+  // zero-entity manifest, no routes, no actions, and a green gate over all of it.
+  test('a root path CONTAINING node_modules still loads the app', async () => {
+    const dir = tempRoot('x-app-load-node_modules-experiments-');
+    await Bun.write(
+      join(dir, 'packages/i18n/src/index.ts'),
+      "import { defineCatalogs } from '@ultimat3/i18n';\nexport const catalogs = defineCatalogs({});\n",
+    );
+
+    const app = await loadApp(dir);
+
+    // It is a FINDING (the specifier cannot resolve from /tmp) rather than silence, which is the
+    // whole point: the file was seen. Skipped, it produced neither a finding nor a registration.
+    expect(app.findings.map((finding) => finding.at)).toEqual(['packages/i18n/src/index.ts']);
+  });
+
   test('a module that will not import is a finding at its app-root-relative path', async () => {
     const dir = tempRoot('x-app-load-broken-');
     await Bun.write(

@@ -18,6 +18,7 @@ import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { BoundaryRule, ImportGraph } from '@ultimat3/render';
 import { checkSurfaceBoundary, importGraph, SURFACES } from '@ultimat3/render';
 import type { Finding } from './output';
+import { hasPathSegment } from './path-segments';
 import { quoteArg } from './shell-quote';
 
 export const BOUNDARY_CODES = [
@@ -244,7 +245,7 @@ export async function readAppSources(root: string): Promise<readonly SourceFile[
   for (const pattern of APP_GLOBS) {
     const glob = new Bun.Glob(pattern);
     for await (const path of glob.scan({ cwd: root, absolute: false })) {
-      if (path.includes('node_modules') || path.includes('.test.')) continue;
+      if (hasPathSegment(path, 'node_modules') || path.includes('.test.')) continue;
       const posix = path.split('\\').join('/');
       files.push({ path: posix, source: await Bun.file(joinPath(root, posix)).text() });
     }

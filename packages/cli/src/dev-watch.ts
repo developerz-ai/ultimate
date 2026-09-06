@@ -1,53 +1,75 @@
-// Which writes under the app root are a source change, and which are noise. Split out of
-// `cmd-dev.ts` because it is a rule with cases rather than four lines of glue, and because the
-// answer needs a test of its own: a watcher that reloads on the wrong write is invisible — the
-// dev server stays correct and merely does the most expensive thing it can do, repeatedly.
+// Which paths under the app root `x dev` must not watch, and the rule is REGISTRATION rather than
+// filtering: `watch(root, { recursive: true })` takes one inotify descriptor per directory before
+// any filter runs, so an answer given after the event has already cost the kernel queue, a JS
+// callback and a slot out of `max_user_watches`. Measured on a monorepo root: 1901 descriptors,
+// 1490 of them under `.git/` and `node_modules/`, and one `git status` delivering 5 events.
 //
-// What it was: `filename.includes('.x/') || filename.includes('node_modules')`. Measured against
-// ai-maxxing, whose checkout carries `.git/`, `.personal/`, `.claude/worktrees/` (two FULL copies
-// of the app) and `coverage/`, every write under any of them ran a whole `appManifest()` plus a
-// `buildIslands()` over ten islands. `git status`, an agent's scratch file and a coverage run each
-// cost a full rebuild, and each rebuild re-minted every island chunk.
-//
-// `includes` was also the wrong operator, not just the wrong list: a directory legitimately named
-// `my-node_modules-notes/` was excluded from the dev loop for a substring, and `notes/.xyz/` for
-// another. The match is on a PATH SEGMENT, so only the directory itself is ever ignored.
+// The ignore set is the app's own `.gitignore`, read with git's own anchoring (`gitignore.ts`),
+// plus a floor of directory names an ignore file need not name. It was seven hand-listed names,
+// and both halves of that were wrong: nothing read `.gitignore`, so `tsconfig.tsbuildinfo` —
+// rewritten by every `bun run typecheck` — ran a full `appManifest()` plus `buildIslands()`; and
+// `dist` and `coverage` were matched at ANY depth, so an app's own `/dist` or `/coverage` route
+// never reloaded at all, silently.
+
+// why: Bun exposes no path-join primitive. The same necessity `fix-path.ts` already records.
+import { join } from 'node:path';
+import type { IgnoreScope } from './gitignore';
+import { ignoreScopes, isGitIgnored } from './gitignore';
+import { pathSegments } from './path-segments';
 
 /**
- * Directories whose writes are never an app source change.
+ * Directory names no `.gitignore` can be relied on to carry, matched as a path SEGMENT at any
+ * depth. Every entry earns its line, and every one is either dotted or `node_modules` — which is
+ * what makes the any-depth match safe: a `site/` subtree is a URL tree, and neither a dot-directory
+ * nor an install is ever a route.
  *
- * Every entry earns its line and none is a guess:
- * - `.x` — the framework's own state directory: PGlite's data, the dev lock, the static export,
- *   `build-stats.json`. `x build` writes here, which made a build trigger reloads of the process
- *   that was running it.
- * - `node_modules` — an install, not an edit. `x dev` does not reload for a dependency change
- *   because it cannot: the modules are already in this process's cache.
- * - `.git` — the reason this list exists. `git status`, `git fetch` and every commit rewrite index
- *   and ref files continuously, and none of them is a source edit; a checkout of a branch IS one,
- *   but it also writes the source files themselves, which this list does not touch.
- * - `.personal` — an app's uncommitted local state (ai-maxxing's fleet file, its inventory, its
- *   credentials). Written by scripts while the dev server runs.
+ * - `.git` — git never names its own directory in an ignore file, and `git status`, `git fetch` and
+ *   every commit rewrite index and ref files continuously. The reason this list exists.
+ * - `.x` — the framework's own state: PGlite's data directory (which THIS process writes
+ *   continuously), the dev lock, the static export, `build-stats.json`.
+ * - `node_modules` — an install, not an edit. `x dev` cannot reload for a dependency change: the
+ *   modules are already in this process's cache.
+ * - `.personal` — an app's uncommitted local state, written by scripts while the dev server runs.
  * - `.claude` — agent scratch, session logs and worktrees. ai-maxxing keeps two entire copies of
  *   the app under `.claude/worktrees/`, so a second agent's edit rebuilt the first agent's islands.
- * - `dist`, `coverage` — build and test output. Both are written by commands an author runs
- *   BESIDE `x dev`, which is exactly when a spurious rebuild costs the most.
+ *
+ * `dist` and `coverage` were here and are deliberately not: both are ordinary build output that
+ * every ignore file already names, and hand-listing them cost an app its own routes.
  */
-export const IGNORED_DIRECTORIES: readonly string[] = [
+export const ALWAYS_IGNORED_DIRECTORIES: readonly string[] = [
+  '.git',
   '.x',
   'node_modules',
-  '.git',
   '.personal',
   '.claude',
-  'dist',
-  'coverage',
 ];
 
+/** The ignore set as one question, so the walk and the event filter cannot disagree. */
+export interface DevIgnore {
+  /** `path` is app-root-relative; `isDirectory` decides every trailing-slash rule git holds. */
+  ignores(path: string, isDirectory: boolean): boolean;
+  /** The `.gitignore` files this set was built from, outermost first — what `--json` can report. */
+  readonly scopes: readonly IgnoreScope[];
+}
+
 /**
- * A path segment, never a substring. `filename` arrives from `node:fs`'s watcher root-relative and
- * with the platform's separator, so both are normalised before the split — a rule that reads
- * `foo/node_modules/bar` and not `foo\\node_modules\\bar` is a rule that does not exist on Windows.
+ * Read once, at boot and again on every write that names `.gitignore`. A snapshot rather than a
+ * live reader: the watcher rebuilds the whole set and re-walks, so a directory the author just
+ * ignored drops its descriptor instead of keeping one nothing will ever read an event from.
+ *
+ * Two limits, both deliberate. An ANCESTOR ignore file is read at boot and is not watched — it sits
+ * outside the app root, so `x dev` has no descriptor there and a restart is the way to pick up an
+ * edit to it. A NESTED one (`apps/web/.gitignore`) is not read at all: `ignoreScopes` walks upward
+ * only, and watching for one would mean a scope per directory in the tree.
  */
-export function isIgnoredPath(filename: string): boolean {
-  const segments = filename.replaceAll('\\', '/').split('/');
-  return segments.some((segment) => IGNORED_DIRECTORIES.includes(segment));
+export function devIgnore(root: string): DevIgnore {
+  const scopes = ignoreScopes(root);
+  return {
+    scopes,
+    ignores(path: string, isDirectory: boolean): boolean {
+      const segments = pathSegments(path);
+      if (segments.some((segment) => ALWAYS_IGNORED_DIRECTORIES.includes(segment))) return true;
+      return isGitIgnored(scopes, join(root, ...segments), isDirectory);
+    },
+  };
 }

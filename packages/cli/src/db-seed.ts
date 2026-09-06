@@ -15,6 +15,7 @@ import { isSeed, SEED_TIERS, seedTiersFor } from '@ultimat3/entity';
 import { BadFlagError } from './errors';
 import type { Finding, JsonValue } from './output';
 import { findingFrom } from './output';
+import { hasPathSegment } from './path-segments';
 import { renderTable } from './table';
 
 /**
@@ -101,7 +102,7 @@ export async function discoverSeeds(root: string): Promise<SeedDiscovery> {
   const seen = new Set<string>();
   for (const pattern of SEED_GLOBS) {
     for await (const absolute of new Bun.Glob(pattern).scan({ cwd: root, absolute: true })) {
-      if (absolute.includes('node_modules') || absolute.includes('.test.')) continue;
+      if (hasPathSegment(absolute, 'node_modules') || absolute.includes('.test.')) continue;
       if (seen.has(absolute)) continue;
       seen.add(absolute);
       const file = relative(root, absolute).split(sep).join('/');

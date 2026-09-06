@@ -16,6 +16,7 @@ import {
 } from '@ultimat3/testing';
 import { ISLAND_GLOB } from './island-bundle';
 import { IslandStatesFileEmptyError } from './island-shot-errors';
+import { hasPathSegment } from './path-segments';
 
 /**
  * `.island.states.ts`, built from the two constants that own its halves and restated as neither:
@@ -37,7 +38,7 @@ export async function discoverIslandStates(root: string): Promise<readonly strin
   const files: string[] = [];
   const scan = new Bun.Glob(ISLAND_STATES_GLOB).scan({ cwd: root, absolute: true });
   for await (const absolute of scan) {
-    if (absolute.includes('node_modules')) continue;
+    if (hasPathSegment(absolute, 'node_modules')) continue;
     files.push(relative(root, absolute).split(sep).join('/'));
   }
   return files.sort();

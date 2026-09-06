@@ -21,6 +21,7 @@ import '@ultimat3/render/server';
 import { collectDeclaredCodes } from './error-contract';
 import type { Finding } from './output';
 import { findingFrom } from './output';
+import { hasPathSegment } from './path-segments';
 
 /** Every place an app keeps code the framework has to see. */
 const APP_GLOBS = [
@@ -95,7 +96,10 @@ export async function loadApp(root: string): Promise<LoadedApp> {
 
   for (const pattern of APP_GLOBS) {
     for await (const absolute of new Bun.Glob(pattern).scan({ cwd: root, absolute: true })) {
-      if (absolute.includes('node_modules') || absolute.includes('.test.')) continue;
+      // A SEGMENT, never a substring: an app checked out under
+      // `~/dev/node_modules-experiments/myapp` answered `includes('node_modules')` for every
+      // file it holds, so this loop imported none of them and the app registered nothing.
+      if (hasPathSegment(absolute, 'node_modules') || absolute.includes('.test.')) continue;
       const file = relative(root, absolute).split(sep).join('/');
       if (ENTRY_POINT.test(file) || CLIENT_ENTRY_POINT.test(file) || STATES_FILE.test(file)) {
         continue;

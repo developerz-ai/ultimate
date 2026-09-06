@@ -2,6 +2,8 @@
 // and an app. One list for every step that walks source, because two steps scanning different sets
 // means a finding one of them can never see.
 
+import { hasPathSegment } from './path-segments';
+
 export const SOURCE_GLOBS = [
   'packages/*/src/**/*.{ts,tsx}',
   // Three packages carry an `e2e` directory beside `src`. It is shipped source by every rule that
@@ -21,7 +23,7 @@ export const SOURCE_GLOBS = [
  * root. `dist/` is build output: the sources that produced it are already in the set.
  */
 export const isVendored = (path: string): boolean =>
-  path.includes('node_modules') || path.includes('/dist/') || path.startsWith('dist/');
+  hasPathSegment(path, 'node_modules') || hasPathSegment(path, 'dist');
 
 /** Emitted declarations, not authored source — a rule about authored code cannot apply to them. */
 export const isGenerated = (path: string): boolean => path.endsWith('.d.ts');
