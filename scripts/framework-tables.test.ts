@@ -187,4 +187,28 @@ describe('the spellings of one relation name', () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
     expect(declaredTables(file('const ddl = `create table ${target} (id uuid);`;'))).toEqual([]);
   });
+
+  // Postgres folds an UNQUOTED identifier to lower case and preserves a QUOTED one
+  // (`sql-syntax-lexical`), so `"X_Users"` and `x_users` are two relations. Lower-casing both made
+  // a table no `FRAMEWORK_SCHEMA` row creates read as applied — the rule's own defect, in the file
+  // whose whole job is finding tables nothing applies.
+  test('a QUOTED name keeps its case, and an unquoted one is folded', () => {
+    expect(declaredTables(file('const ddl = `create table "X_Users" (id uuid);`;'))[0]?.table).toBe(
+      'X_Users',
+    );
+    expect(declaredTables(file('const ddl = `create table X_Users (id uuid);`;'))[0]?.table).toBe(
+      'x_users',
+    );
+  });
+
+  test('so a mixed-case quoted name does not match the applied lower-case relation', () => {
+    const mixed = declaredTables(file('const ddl = `create table "X_Users" (id uuid);`;'));
+    expect(checkFrameworkTables({ declared: mixed, applied: ['x_users'] })).toHaveLength(1);
+    const folded = declaredTables(file('const ddl = `create table X_Users (id uuid);`;'));
+    expect(checkFrameworkTables({ declared: folded, applied: ['x_users'] })).toEqual([]);
+  });
+
+  test('an unbalanced quote matches nothing rather than matching as if it were bare', () => {
+    expect(declaredTables(file('const ddl = `create table "x_users (id uuid);`;'))).toEqual([]);
+  });
 });

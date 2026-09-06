@@ -1,6 +1,8 @@
 // What "a shell command position" IS, for `scripts/fix-shell-arg.ts`. The rule owns what it does
 // with a finding; this file owns the reading of one line of a `fix:` template. Text only, no policy.
 
+import { balancedClose } from './balanced-paren';
+
 /**
  * The command words a `fix:` line in this tree actually opens with. A closed list, deliberately:
  * "a word followed by a space" is every sentence in English, and a rule that reds every prose fix
@@ -120,5 +122,19 @@ export const SCREENING_CALLS: readonly string[] = [
 
 const SCREENED = new RegExp(`^\\s*(?:${SCREENING_CALLS.join('|')})\\s*\\(`);
 
-/** Whether the substitution's own body is a call to one of the screening renderers. */
-export const isScreened = (body: string): boolean => SCREENED.test(body);
+/**
+ * Whether the substitution's own body is a call to one of the screening renderers, AND NOTHING
+ * ELSE.
+ *
+ * The whole body, never the prefix: `${renderFixShellArg(path, '<the path>') + suffix}` opens with
+ * an approved call and puts `suffix` straight into the command position behind it, so a prefix test
+ * skipped a reachable splice. An END anchor alone does not close it either — `renderFixShellArg(a,
+ * b) + f(c)` ends in `)` too — which is why the call's own `(` is walked to its match and the
+ * remainder has to be empty.
+ */
+export const isScreened = (body: string): boolean => {
+  const head = SCREENED.exec(body);
+  if (head === null) return false;
+  const close = balancedClose(body, (head[0] as string).length - 1);
+  return close !== -1 && body.slice(close + 1).trim() === '';
+};

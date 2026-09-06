@@ -48,6 +48,10 @@
 
 import { collectSourceFiles, type SourceFile } from './boundaries';
 import { parseScriptArgs } from './lib/args';
+// The paren walker is `scripts/lib/`'s and not this file's, for this file's OWN reason: the copy
+// that lived here counted every `(` including the ones inside a string literal, so
+// `.replace(new RegExp("(", 'g'), "''")` miscounted the depth and the site was dropped unread.
+import { balancedClose, topLevelArguments } from './lib/balanced-paren';
 // Reused, never re-spelled: this file exists BECAUSE a rule written down three times was wrong
 // twice. Blanking whole-line comments keeps the line count, so a reported position stays true.
 import { stripComments } from './lib/i18n-scan';
@@ -81,38 +85,6 @@ const DOUBLED_ARGUMENT = /^(?:"''"|'\\'\\''|`''`|(?:"'"|'\\''|`'`)\s*\.\s*repeat
 
 /** A single quote as an argument — `"'"`, `/'/g`, `/(')/g`. The pattern half of the escape. */
 const SINGLE_QUOTE_ARGUMENT = /^(?:"'"|'\\''|`'`|\/\(?'\)?\/[gimsuy]*)$/;
-
-/** The `)` matching the `(` at `open`, honouring nesting. `-1` when the source is unbalanced. */
-const balancedClose = (code: string, open: number): number => {
-  let depth = 0;
-  for (let index = open; index < code.length; index += 1) {
-    const char = code[index];
-    if (char === '(') depth += 1;
-    else if (char === ')') {
-      depth -= 1;
-      if (depth === 0) return index;
-    }
-  }
-  return -1;
-};
-
-/** One call's arguments, split on TOP-LEVEL commas — `new RegExp("'", 'g')` stays one argument. */
-const argumentsOf = (inner: string): readonly string[] => {
-  const args: string[] = [];
-  let depth = 0;
-  let start = 0;
-  for (let index = 0; index < inner.length; index += 1) {
-    const char = inner[index];
-    if (char === '(' || char === '[' || char === '{') depth += 1;
-    else if (char === ')' || char === ']' || char === '}') depth -= 1;
-    else if (char === ',' && depth === 0) {
-      args.push(inner.slice(start, index).trim());
-      start = index + 1;
-    }
-  }
-  args.push(inner.slice(start).trim());
-  return args;
-};
 
 /**
  * Whether the receiver of a `.join(` is a `.split("'")` — which makes the pair the escape.
@@ -154,7 +126,7 @@ export function literalCopies(files: readonly SourceFile[]): readonly LiteralCop
       const open = match.index + match[0].length - 1;
       const close = balancedClose(masked, open);
       if (close === -1) continue;
-      const args = argumentsOf(masked.slice(open + 1, close));
+      const args = topLevelArguments(masked.slice(open + 1, close));
       if (!DOUBLED_ARGUMENT.test(args.at(-1) ?? '')) continue;
       if (match[1] === 'join' && !splitsOnQuote(masked, match.index)) continue;
       found.push({

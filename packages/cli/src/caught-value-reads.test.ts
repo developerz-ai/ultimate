@@ -40,9 +40,13 @@ const castReadOf = (name: string): RegExp => new RegExp(`\\(\\s*${name}\\s+as\\s
  *
  * A read with no `in` guard at all is not this rule's: TypeScript refuses it on an `unknown`, so
  * it cannot ship.
+ *
+ * `g`, because the scan is TOTAL — a file with two guarded reads of one binding must report both.
+ * Freshly constructed on every call, so no caller inherits another's `lastIndex` and a bare
+ * `.test(…)` still answers from position 0.
  */
 const guardedReadOf = (name: string): RegExp =>
-  new RegExp(`\\bin\\s+${name}\\b[\\s\\S]{0,120}?\\b${name}\\s*[.[]`);
+  new RegExp(`\\bin\\s+${name}\\b[\\s\\S]{0,120}?\\b${name}\\s*[.[]`, 'g');
 
 /**
  * The values this rule is about: a `catch` binding, and a parameter annotated `unknown` — which is
@@ -75,8 +79,13 @@ export async function castReadsOfCaughtValues(): Promise<readonly string[]> {
     ]);
     for (const name of foreign) {
       if (name === '') continue;
-      const match = guardedReadOf(name).exec(source);
-      if (match !== null) hits.push(`${path}:${lineOf(source, match.index)}`);
+      // `matchAll`, never `exec`: one `exec` answers the FIRST guarded read and stops, so a file
+      // with two of them contributed one entry — the second appeared as a NEW failure the moment
+      // the first was repaired, and the count this check prints was never the true one. The cast
+      // rule above already scans every line; these two now answer the same question the same way.
+      for (const match of source.matchAll(guardedReadOf(name))) {
+        hits.push(`${path}:${lineOf(source, match.index)}`);
+      }
     }
   }
   return hits;
@@ -105,6 +114,17 @@ describe('unit · a caught value is never cast and then read', () => {
     expect(guardedReadOf('error').test(innocent)).toBe(false);
     // An `in` that only ASKS is a type guard and reads nothing: `app-mcp.ts` does exactly this.
     expect(guardedReadOf('value').test("'server' in value && 'tools' in value")).toBe(false);
+  });
+
+  // TOTAL, and it was not: one `exec` answered the first site and stopped, so a file holding two
+  // guarded reads of one binding contributed ONE entry — the second surfaced as a new failure only
+  // after the first was repaired, and the number this check prints was never the true count.
+  test('and it reports every site in a file, not the first', () => {
+    const twice = [
+      "if ('code' in error && error.code === 'EEXIST') return true;",
+      "if ('errno' in error && error.errno === -17) return false;",
+    ].join('\n');
+    expect([...twice.matchAll(guardedReadOf('error'))]).toHaveLength(2);
   });
 
   test('it reads a real, non-empty file set — a scan over nothing passes everything', () => {

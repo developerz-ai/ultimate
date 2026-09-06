@@ -174,6 +174,7 @@ export {
   hasErrorCode,
   InternalError,
   isErrorRetry,
+  isFixShellSafe,
   isThrownError,
   isUltimateError,
   listErrorCodes,

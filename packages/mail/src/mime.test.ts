@@ -10,6 +10,7 @@ import {
   buildMimeMessage,
   encodeHeaderValue,
   foldHeaderLine,
+  hasNonAsciiAddrSpec,
   type MimeOptions,
   quotedPrintable,
   rfc5322Date,
@@ -428,5 +429,40 @@ describe('a non-ASCII display name in an address header', () => {
       code = isUltimateError(error) ? error.code : 'not an UltimateError';
     }
     expect(code).toBe('X_MAIL_HEADER_INVALID');
+  });
+});
+describe('a non-ASCII mailbox', () => {
+  // RFC 2047 encoded words are legal in a display PHRASE and nowhere else, so there is no encoding
+  // `encodeAddressPhrase` could apply to the addr-spec — and SMTPUTF8 (RFC 6531), which is what
+  // would make a raw UTF-8 mailbox legal, is negotiated by nothing in this package. So the message
+  // gate refuses it, at the same place the CR/LF check runs, rather than putting 8-bit octets in a
+  // `To:` header and the envelope beside it.
+  test('is refused by the header gate, in every address list', () => {
+    const hostile = 'josé@exämple.test';
+    expect(() => buildMimeMessage(baseMessage({ to: [hostile] }), baseOptions())).toThrow(
+      'X_MAIL_HEADER_INVALID',
+    );
+    expect(() => buildMimeMessage(baseMessage({ cc: [hostile] }), baseOptions())).toThrow(
+      'X_MAIL_HEADER_INVALID',
+    );
+    expect(() => buildMimeMessage(baseMessage(), baseOptions({ from: hostile }))).toThrow(
+      'X_MAIL_HEADER_INVALID',
+    );
+  });
+
+  test('while a non-ASCII display name over an ASCII mailbox still encodes', () => {
+    const built = buildMimeMessage(
+      baseMessage({ to: ['José Muñoz <jose@example.test>'] }),
+      baseOptions(),
+    );
+    expect(built).toContain('=?UTF-8?B?');
+    expect(built).toContain('<jose@example.test>');
+  });
+
+  test('hasNonAsciiAddrSpec reads the mailbox and never the phrase', () => {
+    expect(hasNonAsciiAddrSpec('José Muñoz <jose@example.test>')).toBe(false);
+    expect(hasNonAsciiAddrSpec('josé@exämple.test')).toBe(true);
+    expect(hasNonAsciiAddrSpec('Ada <josé@exämple.test>')).toBe(true);
+    expect(hasNonAsciiAddrSpec('ada@example.test')).toBe(false);
   });
 });

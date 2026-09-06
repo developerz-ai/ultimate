@@ -54,12 +54,23 @@ where recipient = $2 and notifier = $3 and key = $4
   and not exists (select 1 from inserted)
 `;
 
-/** Newest first, `(created_at desc, id)` — the tail key is unique, so the order is total and a
- * bounded page cannot drop or repeat a row when two notifications land in the same millisecond. */
+/**
+ * Newest first, `(created_at desc, notifier, key)` — unique within a recipient by the table's own
+ * `unique (recipient, notifier, key)`, so the order is total and a bounded page cannot drop or
+ * repeat a row when two notifications land in the same millisecond.
+ *
+ * `collate "C"` and not the column's collation: `createMemoryInboxStore` compares the same two
+ * columns by CODE POINT, and a database initialised under an ICU or a `en_US.UTF-8` collation
+ * orders text by locale rules — case-insensitively, ignoring punctuation at the first level — so
+ * the two stores would disagree on exactly the Unicode keys nobody writes a test for. `id` was the
+ * tail until 2026-09-06 and could not be: a UUIDv7 ordered by its 16 bytes here and a
+ * `JSON.stringify([recipient, notifier, key])` ordered by code point there is two total orders that
+ * agree on nothing.
+ */
 export const SQL_NOTIFY_INBOX_PAGE = `
 select ${COLUMNS} from x_notify_inbox
 where recipient = $1 and ($2::boolean is not true or read_at is null)
-order by created_at desc, id
+order by created_at desc, notifier collate "C", key collate "C"
 limit $3
 `;
 

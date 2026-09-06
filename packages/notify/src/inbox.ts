@@ -60,10 +60,25 @@ export interface MemoryInboxStore extends InboxStore {
 }
 
 /** Codepoint order, never `localeCompare`: Postgres compares the tail key by bytes, not by locale. */
-const compareIds = (a: string, b: string): number => {
+const compareText = (a: string, b: string): number => {
   if (a === b) return 0;
   return a < b ? -1 : 1;
 };
+
+/**
+ * The tail key both stores order on: `(notifier, key)`, which is unique within a recipient because
+ * `add` is idempotent on `(recipient, notifier, key)` and the Postgres table declares that UNIQUE.
+ *
+ * `id` cannot be it, and that is the whole reason this exists. `createPgInboxStore` mints a UUIDv7
+ * and Postgres orders `uuid` by its 16 BYTES; `createMemoryInboxStore` derives its id from
+ * `JSON.stringify([recipient, notifier, key])` and orders it by code point. Two total orders that
+ * agree on nothing — so two notifications written in one millisecond came back in one order in dev
+ * and the other in production, and a bounded page dropped one and repeated the other on exactly the
+ * driver nobody was testing against. Two drivers behind one interface must not answer one question
+ * two ways.
+ */
+const compareTail = (a: InboxRow, b: InboxRow): number =>
+  compareText(a.notifier, b.notifier) || compareText(a.key, b.key);
 
 const idOf = (write: { recipient: string; notifier: string; key: string }): string =>
   JSON.stringify([write.recipient, write.notifier, write.key]);
@@ -76,14 +91,14 @@ const idOf = (write: { recipient: string; notifier: string; key: string }): stri
 export function createMemoryInboxStore(): MemoryInboxStore {
   const rows = new Map<string, InboxRow>();
 
-  // `(createdAt desc, id)` — the same TOTAL order `SQL_NOTIFY_INBOX_PAGE` takes, and for the same
-  // reason: `createdAt` alone is partial, so two notifications written in one millisecond can swap
-  // places between two reads and a bounded page then drops one and repeats the other. Two drivers
-  // behind one interface must not answer one question two ways.
+  // `(createdAt desc, notifier, key)` — the same TOTAL order `SQL_NOTIFY_INBOX_PAGE` takes, and
+  // for the same reason: `createdAt` alone is partial, so two notifications written in one
+  // millisecond can swap places between two reads and a bounded page then drops one and repeats
+  // the other.
   const own = (recipient: string): InboxRow[] =>
     [...rows.values()]
       .filter((row) => row.recipient === recipient)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || compareIds(a.id, b.id));
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || compareTail(a, b));
 
   return {
     get size(): number {

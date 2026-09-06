@@ -5,7 +5,7 @@
 // the control-character check, never before it.
 
 import { addressInvalid, type EnvelopeAddressField } from './errors';
-import { addressSpec } from './mime';
+import { addressSpec, hasNonAsciiAddrSpec } from './mime';
 
 /**
  * Every character that can restructure the command line: C0 controls (CR and LF above all), DEL,
@@ -14,8 +14,13 @@ import { addressSpec } from './mime';
  *
  * A space is deliberately NOT refused: RFC 5321 allows one inside a quoted local-part, and with
  * the brackets already refused it can only produce an address the server itself rejects, never a
- * second command. Non-ASCII is not refused either — whether a server takes a UTF-8 mailbox is
- * SMTPUTF8's question and the server's answer, not a decision this check may make on its behalf.
+ * second command.
+ *
+ * Non-ASCII IS refused, and by this package rather than by the server: SMTPUTF8 (RFC 6531) is what
+ * makes a UTF-8 mailbox legal and `smtp-client.ts` negotiates none, so the alternative is writing
+ * raw 8-bit octets into `MAIL FROM:<…>` and hoping. That reports as a transport failure at the
+ * command, after the envelope is half-written — where a refusal here names the address and runs
+ * before a byte is sent. `mime.ts` holds the predicate, at the module that owns the addr-spec.
  */
 function isUnsafe(address: string): boolean {
   for (let index = 0; index < address.length; index += 1) {
@@ -36,7 +41,11 @@ function hasControlCharacter(address: string): boolean {
 
 /** Throws `X_MAIL_ADDRESS_INVALID` before a single byte of the envelope is written. */
 export function assertEnvelopeAddress(field: EnvelopeAddressField, address: string): void {
-  if (isUnsafe(address)) throw addressInvalid(field);
+  if (isUnsafe(address)) throw addressInvalid(field, 'injection');
+  // Two reasons, two `meta.reason`s, checked in this order: an injection is the dangerous one and
+  // an address carrying both should say so. The addr-spec, never the phrase — `mime.ts` has an
+  // RFC 2047 encoding for a display name and none for a mailbox.
+  if (hasNonAsciiAddrSpec(address)) throw addressInvalid(field, 'non-ascii');
 }
 
 /**
@@ -51,7 +60,7 @@ export function assertEnvelopeAddress(field: EnvelopeAddressField, address: stri
  * delivery to the attacker instead of a refusal.
  */
 export function envelopeAddress(field: EnvelopeAddressField, address: string): string {
-  if (hasControlCharacter(address)) throw addressInvalid(field);
+  if (hasControlCharacter(address)) throw addressInvalid(field, 'injection');
   const spec = addressSpec(address);
   assertEnvelopeAddress(field, spec);
   return spec;

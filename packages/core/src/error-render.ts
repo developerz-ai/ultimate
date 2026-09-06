@@ -208,8 +208,23 @@ const SHELL_ARG_SAFE = /^[A-Za-z0-9/][A-Za-z0-9._:/@=+,%~-]*$/;
  * command anyone runs — and the bound is the same one.
  */
 export function renderFixShellArg(value: unknown, placeholder: string): string {
-  if (typeof value !== 'string' || value.length > MAX_RENDERED_LENGTH) return placeholder;
-  return SHELL_ARG_SAFE.test(value) ? value : placeholder;
+  return isFixShellSafe(value) ? value : placeholder;
+}
+
+/**
+ * Whether `renderFixShellArg` will carry this value VERBATIM — the question a `fix:` has to ask
+ * before it builds a command around one.
+ *
+ * A placeholder is honest text and it is not a runnable command: `curl -sS -m 5 <the provider
+ * jwks_uri>` is READ BY A SHELL as a redirection from a file called `the`, so the one instruction
+ * the reader was given fails, which is axiom 4 inverted. A call site that cannot degrade — a path
+ * mid-command, an `rm` operand — asks this first and emits PROSE instead of a command when the
+ * answer is no. The predicate is the one `renderFixShellArg` itself is built on, never a second
+ * copy of the rule: the two can then not disagree about what travels.
+ */
+export function isFixShellSafe(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > MAX_RENDERED_LENGTH) return false;
+  return SHELL_ARG_SAFE.test(value);
 }
 
 /** `JSON.stringify` with its throw removed: did the value survive being serialised at all? */

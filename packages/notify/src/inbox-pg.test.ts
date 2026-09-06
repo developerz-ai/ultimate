@@ -105,8 +105,17 @@ describe('unit · postgres inbox', () => {
     expect(await counted.unreadCount('ana')).toBe(7);
   });
 
-  test('the page orders by (created_at desc, id), so a bounded page has a total order', () => {
-    expect(SQL_NOTIFY_INBOX_PAGE).toContain('order by created_at desc, id');
+  // `(notifier, key)` and not `id`: the memory store's id is `JSON.stringify([recipient, notifier,
+  // key])` and this one's is a UUIDv7 Postgres orders by its 16 bytes, so ordering on `id` gave the
+  // two stores two total orders that agree on nothing. `collate "C"` because the memory store
+  // compares by code point and a database under an ICU or `en_US.UTF-8` collation does not.
+  test('the page orders by (created_at desc, notifier, key) under the C collation', () => {
+    expect(SQL_NOTIFY_INBOX_PAGE).toContain(
+      'order by created_at desc, notifier collate "C", key collate "C"',
+    );
+    expect(SQL_NOTIFY_INBOX_PAGE).not.toContain('order by created_at desc, id');
+    // The tail is unique within a recipient only because the table says so.
+    expect(SQL_NOTIFY_INBOX_TABLE).toContain('unique (recipient, notifier, key)');
   });
 
   test('the unread index is PARTIAL, because `read_at is null` is the query every page load runs', () => {

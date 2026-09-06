@@ -63,6 +63,11 @@ export function buildMimeMessage(message: MailMessage, options: MimeOptions): st
     const parts = typeof value === 'string' ? [value] : value;
     for (const part of parts) {
       if (part.includes('\r') || part.includes('\n')) throw headerInvalid(name, message.mailId);
+      // The MAILBOX, not the phrase: `encodeAs` has an RFC 2047 encoding for the display name and
+      // none for the addr-spec, and this package negotiates no SMTPUTF8 — so a UTF-8 mailbox would
+      // go out as raw 8-bit octets in a header AND in the envelope beside it.
+      if (mode === 'address' && hasNonAsciiAddrSpec(part))
+        throw headerInvalid(name, message.mailId);
     }
     headerLines.push(foldHeaderLine(name, parts.map((part) => encodeAs(mode, part)).join(', ')));
   };
@@ -122,6 +127,10 @@ function encodeAs(mode: HeaderMode, value: string): string {
  * that gets encoded — the addr-spec is copied through untouched, because a mailbox is the
  * server's to parse and an encoded word is not one. An address with no phrase, or an ASCII
  * phrase, comes back byte-identical.
+ *
+ * The MAILBOX is a different question and `hasNonAsciiAddrSpec` is where it is asked: RFC 2047
+ * encoded words are legal in a phrase and nowhere else, so there is no encoding this function
+ * could apply to it. `buildMimeMessage` refuses one before it reaches this line.
  */
 export function encodeAddressPhrase(address: string): string {
   const match = ADDRESS_SPEC.exec(address);
@@ -129,6 +138,21 @@ export function encodeAddressPhrase(address: string): string {
   const phrase = address.slice(0, match.index).trim();
   if (phrase === '' || isPureAscii(phrase)) return address;
   return `${encodeHeaderValue(phrase)} <${match[1] ?? ''}>`;
+}
+
+/**
+ * Whether the MAILBOX half of an address carries a byte this package cannot put on the wire.
+ *
+ * SMTPUTF8 (RFC 6531) is what makes a non-ASCII addr-spec legal, and `smtp-client.ts` negotiates
+ * no such thing — so a UTF-8 mailbox reaches `MAIL FROM:<…>` and `RCPT TO:<…>` as raw 8-bit
+ * octets, which a conforming server MAY reject. Refused rather than sent, and refused at both
+ * gates: the message gate (`buildMimeMessage`) and the envelope gate (`envelopeAddress`), because
+ * the two write different wire formats and a check on one says nothing about the other. The
+ * PHRASE is untouched — `encodeAddressPhrase` has an encoding for that half and this is the half
+ * it has none for.
+ */
+export function hasNonAsciiAddrSpec(address: string): boolean {
+  return !isPureAscii(addressSpec(address));
 }
 
 /** The trailing `<addr-spec>` of an address, which is the boundary between phrase and mailbox. */

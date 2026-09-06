@@ -127,7 +127,13 @@ describe('unit · parseArgs', () => {
     );
     expect(judged.length).toBeGreaterThan(20);
     for (const spec of judged) {
-      expect(() => parseArgs([spec.name, '--', '--coverage'], SPECS_SHIPPED)).toThrow();
+      // The CAUSE, not merely the code: `MissingSubcommandError` is `X_CLI_BAD_FLAG` too, so a
+      // bare `.toThrow()` — and a code assertion — passed for `db`, `mcp` and `pr` on the
+      // subcommand they are missing rather than on the `--` this test is about.
+      const failure = thrownBy(() => parseArgs([spec.name, '--', '--coverage'], SPECS_SHIPPED));
+      expect(failure.code).toBe('X_CLI_BAD_FLAG');
+      expect(String(failure.cause)).toContain('would be dropped in silence');
+      expect(String(failure.cause)).toContain('--coverage');
     }
     // And at least one command really does forward, or the rule above is a ban with no exception.
     expect(

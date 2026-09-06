@@ -73,4 +73,25 @@ describe('the three git checkout lines', () => {
       expect(fix).toContain('git checkout -- /srv/app/secrets.enc.json');
     }
   });
+
+  // The key id was raw text in the trailing `#` comment, and a `#` comment ends at the LINE. So a
+  // newline in it closes the comment and everything after is a second command an operator pastes —
+  // and the id is read out of the envelope of a file on disk, i.e. text this process did not write.
+  test('the key id is in the cause and in meta, and in no command', () => {
+    const error = new SecretsKeyMismatchError({
+      at: '/srv/app/secrets.enc.json',
+      keyAt: 'ULTIMATE_SECRETS_KEY',
+      sealedWith: 'kid-a\nrm -rf /',
+      found: 'kid-b',
+    });
+    // `singleLine` folds the break in the CAUSE; the point is that the fix never carries it.
+    expect(error.fix).not.toContain('rm -rf');
+    expect(error.fix).not.toContain('kid-a');
+    expect(error.fix.split('\n')).toHaveLength(1);
+    expect(error.fix).toBe(
+      'git checkout -- /srv/app/secrets.enc.json   # or point ULTIMATE_SECRETS_KEY at the key whose id the cause names',
+    );
+    expect(error.cause).toContain('kid-a');
+    expect((error.meta as { sealedWith?: string }).sealedWith).toBe('kid-a\nrm -rf /');
+  });
 });

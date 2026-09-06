@@ -42,8 +42,13 @@ const RANDOM_CALL = /\bMath\s*\.\s*random\s*\(/g;
  * IV. For those the fix line this rule prints is not merely noise, it is WRONG: a
  * `random: () => number` seam on a key generator is a caller-supplied predictable CSPRNG, which is
  * the vulnerability. So the die is a defect where a CURVE is, and nowhere else.
+ *
+ * The RECEIVER is matched, exactly as `RANDOM_CALL` matches `Math`: only the AMBIENT `crypto` is
+ * uncontrollable. `rng.getRandomValues(bytes)` and `options.crypto.getRandomValues(bytes)` are the
+ * injectable seam this rule asks for — reporting them would print a fix line telling an author to
+ * inject the seam they already injected, which is the false finding that gets a rule switched off.
  */
-const CSPRNG_CALL = /\bgetRandomValues\s*\(/g;
+const CSPRNG_CALL = /(?<![.\w$])(?:globalThis\s*\.\s*)?crypto\s*\.\s*getRandomValues\s*\(/g;
 
 /**
  * A second curve, recognised by SHAPE rather than by name — the copy that would do the damage will

@@ -47,9 +47,9 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
       '`eval-errors.ts:39` splices `input.eval` into `x ai eval <name>`. The eval name is the key its own `defineEval()` registered under, in this process.',
   },
   auth: {
-    count: 5,
+    count: 3,
     reason:
-      "`oauth-discovery.ts:89,99,123` and `jwks.ts:172,181` splice a `curl` TARGET — the discovery URL and the JWKS URI. SUSPECT, and the most exposed row in this table: both are read out of a provider's own discovery document, so the value is remote text this process did not write. `new URL()` has already parsed them, which bounds them to a URL grammar and is why they are pinned rather than red; a URL may still carry a `;` in its path. `renderFixShellArg` is the repair and `@ultimat3/auth` should be the first row deleted.",
+      "`oauth-discovery.ts` splices a `curl` TARGET — the discovery URL — at three sites. SUSPECT, and still the most exposed row in this table: it is read out of a provider's own discovery document, so the value is remote text this process did not write. `new URL()` has already parsed it, which bounds it to a URL grammar and is why it is pinned rather than red; a URL may still carry a `;` in its path. `jwks.ts` left this row on 2026-09-06 — its three lines share one `readTheKeySet(tail)`, which emits the `curl` only when `isFixShellSafe` says the URI travels verbatim and PROSE otherwise, because a placeholder in an argument position is not a runnable command either. That is the repair the rest of this row still owes.",
   },
   cli: {
     count: 74,

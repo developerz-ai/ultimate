@@ -87,10 +87,38 @@ const INITIALISER_WINDOW = 400;
  */
 const buildsWithoutPrototype = (code: string, from: number): boolean => {
   const window = code.slice(from, from + INITIALISER_WINDOW);
-  const brace = window.indexOf('{');
-  const created = NULL_PROTO.exec(window)?.index ?? -1;
+  // The INITIALISER, never the window: `Record<K, { a: number }>` puts an object TYPE in front of
+  // the `=`, so the first `{` in the window belonged to the annotation and `PROTO_MEMBER` was
+  // reading a type literal. No `=` in reach means no initialiser was seen at all, which must read
+  // as "has a prototype" — the conservative direction, because the other one hides a real read.
+  const assign = assignmentAt(window);
+  if (assign === -1) return false;
+  const initialiser = window.slice(assign + 1);
+  const brace = initialiser.indexOf('{');
+  const created = NULL_PROTO.exec(initialiser)?.index ?? -1;
   if (created !== -1 && (brace === -1 || created < brace)) return true;
-  return brace !== -1 && PROTO_MEMBER.test(window.slice(brace));
+  return brace !== -1 && PROTO_MEMBER.test(initialiser.slice(brace));
+};
+
+/**
+ * The index of the declaration's own `=`, or `-1`. Depth-zero across `<>`, `()`, `[]` and `{}`, so
+ * the `=` of a `Record<string, (x: number) => string>` default or a nested generic is not it; `==`,
+ * `>=`, `<=`, `!=` and `=>` are excluded by the characters either side.
+ */
+const assignmentAt = (window: string): number => {
+  let depth = 0;
+  for (let index = 0; index < window.length; index += 1) {
+    const char = window[index];
+    if (char === '<' || char === '(' || char === '[' || char === '{') depth += 1;
+    else if (char === '>' || char === ')' || char === ']' || char === '}') {
+      depth = Math.max(0, depth - 1);
+    } else if (char === '=' && depth === 0) {
+      const before = window[index - 1];
+      const after = window[index + 1];
+      if (!'=!<>'.includes(before ?? '') && after !== '=' && after !== '>') return index;
+    }
+  }
+  return -1;
 };
 
 /** Every `Record<…>` object literal this file declares that has a prototype to walk into. */

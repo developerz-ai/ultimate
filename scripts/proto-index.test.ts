@@ -192,6 +192,32 @@ describe('the null-prototype exemption is per TABLE, never per file', () => {
     ].join('\n');
     expect([...recordTables(source)]).toEqual(['A']);
   });
+
+  // The INITIALISER, never the first `{` in the window: an inline object TYPE sits in front of the
+  // `=`, so `PROTO_MEMBER` was reading a type literal and `NULL_PROTO` was comparing against its
+  // brace. Both directions of that are wrong — one exempts a table with a prototype, the other
+  // reports one without.
+  test('an inline object TYPE before the = is not the initialiser', () => {
+    const withProto = [
+      'const T: Record<string, { __proto__: null; a: number }> = { a: { a: 1 } };',
+      'export const one = (k: string) => T[k];',
+    ].join('\n');
+    expect([...recordTables(withProto)]).toEqual(['T']);
+
+    const withoutProto = [
+      'const S: Record<string, { a: number }> = Object.create(null);',
+      'export const one = (k: string) => S[k];',
+    ].join('\n');
+    expect([...recordTables(withoutProto)]).toEqual([]);
+  });
+
+  test('and an arrow type in the annotation does not read as the assignment', () => {
+    const source = [
+      'const F: Record<string, (x: number) => string> = Object.create(null);',
+      'export const one = (k: string) => F[k];',
+    ].join('\n');
+    expect([...recordTables(source)]).toEqual([]);
+  });
 });
 
 // Finding 5, 2026-09-06: `protoIndexPinnedFor` answered `pin.count` without ever reading `reason`,

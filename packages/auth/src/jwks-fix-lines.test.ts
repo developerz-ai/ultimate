@@ -2,6 +2,10 @@
 // of the ISSUER's own discovery document, so it is remote text in a COMMAND position — `$(id)` and
 // a backtick substitute before `curl` is reached at all. Split from `jwks.test.ts`, which answers
 // what a signature check DOES, at the 500-line ceiling.
+//
+// A screened value is only half the contract: `curl -sS -m 5 <the provider jwks_uri>` carries no
+// substitution AND is not a command — `<` opens a redirection — so the hostile cases assert PROSE
+// and the absence of `curl`, never a placeholder inside one.
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
@@ -32,7 +36,12 @@ describe('a jwks_uri the issuer supplied', () => {
     for (const fix of rendered) {
       expect(fix).not.toContain('$(');
       expect(fix).not.toContain('`');
-      expect(fix).toBe('curl -sS -m 5 <the provider jwks_uri>');
+      // Prose, and no command at all: a placeholder in an argument position is not runnable.
+      expect(fix).not.toContain('curl');
+      expect(fix).not.toContain('<the provider jwks_uri>');
+      expect(fix).toBe(
+        "fetch the jwks_uri from test-op's discovery document by hand — this one carries shell syntax, so no pasteable command can name it",
+      );
     }
   });
 
@@ -51,7 +60,10 @@ describe('a jwks_uri the issuer supplied', () => {
     const fix = thrown instanceof AuthError ? thrown.fix : '';
     expect(thrown instanceof AuthError ? thrown.code : '').toBe('X_OAUTH_TOKEN_INVALID');
     expect(fix).not.toContain('$(');
-    expect(fix).toStartWith('curl -sS -m 5 <the provider jwks_uri>');
+    expect(fix).not.toContain('curl');
+    expect(fix).toStartWith("fetch the jwks_uri from test-op's discovery document by hand");
+    // The trailing instruction still travels — degrading the COMMAND must not lose the sentence.
+    expect(fix).toEndWith('# then confirm the token was signed by this issuer');
   });
 
   test('an ordinary jwks_uri still travels, so the command still reproduces the failure', async () => {

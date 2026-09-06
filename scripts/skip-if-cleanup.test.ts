@@ -174,6 +174,72 @@ afterAll(() => {
     });
     expect(findings[0]?.cause).toContain('clearRegistry');
   });
+
+  // The VERB was not captured, so every method reset was tracked as `<receiver>.clear` — and
+  // `entityRegistry.reset()` therefore wore `entityRegistry.clear()`'s green tick. Two distinct
+  // resets on one receiver collapsing into one tracked name is the launder the per-callee rewrite
+  // closed, re-opened one line down.
+  test('two verbs on ONE receiver are two resets, not one', () => {
+    const laundered = `import { afterAll, describe } from 'bun:test';
+const ready = Boolean(process.env['TEST_DATABASE_URL']);
+describe.skipIf(!ready)('live', () => {
+  entityRegistry.reset();
+});
+afterAll(() => {
+  entityRegistry.clear();
+});
+`;
+    const scanned = cleanupFiles(one(laundered));
+    expect(scanned[0]?.cleared).toBe(false);
+    // The name the finding prints is the call the file actually contains, so the fix is applicable.
+    expect(scanned[0]?.unreached).toEqual(['entityRegistry.reset']);
+  });
+
+  test('and the same verb from a file-scope hook is still the passing shape', () => {
+    const cleared = `import { afterAll, describe } from 'bun:test';
+const ready = Boolean(process.env['TEST_DATABASE_URL']);
+describe.skipIf(!ready)('live', () => {
+  entityRegistry.reset();
+});
+afterAll(() => {
+  entityRegistry.reset();
+});
+`;
+    expect(cleanupFiles(one(cleared))[0]?.cleared).toBe(true);
+  });
+});
+
+// An `if` opening an ordinary BLOCK is not a bail: `(?:return\b|$)` let `if (!seeded) {` match, and
+// `bailed` is cleared by nothing until the next file-scope hook — so every reset under it went
+// uncredited. `BRACED_RETURN` still reads the wrapped `return` on the following line.
+describe('an early return is a RETURN, not any braced if', () => {
+  test('an ordinary if-block inside a file-scope hook does not poison the rest of it', () => {
+    const source = `import { afterAll, describe } from 'bun:test';
+const ready = Boolean(process.env['TEST_DATABASE_URL']);
+describe.skipIf(!ready)('live', () => {});
+afterAll(() => {
+  if (!seeded) {
+    seed();
+  }
+  clearRegistry();
+});
+`;
+    expect(cleanupFiles(one(source))[0]?.cleared).toBe(true);
+  });
+
+  test('while a real braced early return still bails', () => {
+    const source = `import { afterAll, describe } from 'bun:test';
+const ready = Boolean(process.env['TEST_DATABASE_URL']);
+describe.skipIf(!ready)('live', () => {});
+afterAll(() => {
+  if (!ready) {
+    return;
+  }
+  clearRegistry();
+});
+`;
+    expect(cleanupFiles(one(source))[0]?.cleared).toBe(false);
+  });
 });
 
 describe('the shapes the scan could not read', () => {

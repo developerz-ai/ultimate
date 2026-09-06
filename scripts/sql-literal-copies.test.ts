@@ -149,6 +149,24 @@ describe('the same escape under another spelling', () => {
     expect(found.map((one) => one.file)).toEqual(['packages/a/src/one.ts']);
   });
 
+  // The paren walker was string-BLIND: it counted every `(` and `)`, the ones inside a literal
+  // included, so an unbalanced bracket in the PATTERN sent `close` to `-1` and line 156 dropped the
+  // site unread — a doubling escape that evades the rule by carrying a bracket. One walker now,
+  // `scripts/lib/balanced-paren.ts`, shared with `index-of-order.ts`, which already skipped strings.
+  test('an unbalanced parenthesis inside the pattern no longer hides the site', () => {
+    const found = literalCopies([
+      file('packages/a/src/one.ts', `const q = value.replace(new RegExp("(", 'g'), ${DOUBLED});`),
+    ]);
+    expect(found.map((one) => one.file)).toEqual(['packages/a/src/one.ts']);
+  });
+
+  test('and the excerpt it quotes back ends at the real closing paren', () => {
+    const found = literalCopies([
+      file('packages/a/src/one.ts', `const q = value.replace(new RegExp("(", 'g'), ${DOUBLED});`),
+    ]);
+    expect(found[0]?.excerpt).toBe(`.replace(new RegExp("(", 'g'), ${DOUBLED})`);
+  });
+
   test('a `.repeat(2)` on the quote is the doubled quote too', () => {
     const found = literalCopies([
       file('packages/a/src/one.ts', `const q = value.replaceAll("'", "'".repeat(2));`),

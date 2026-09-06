@@ -94,7 +94,10 @@ export class SecretsKeyMismatchError extends UltimateError {
     super({
       code: 'X_SECRETS_KEY_MISMATCH',
       cause: `${input.at} was sealed with master key ${input.sealedWith} and ${input.keyAt} holds ${input.found}`,
-      fix: `git checkout -- ${renderFixShellArg(input.at, SECRETS_FILE_PLACEHOLDER)}   # or point ULTIMATE_SECRETS_KEY at the key whose id is ${input.sealedWith}`,
+      // The key id stays in `cause` and in `meta`, and never in the COMMAND: it is read out of the
+      // envelope of a file on disk, so it is text this process did not write, and a `\n` in it ends
+      // the trailing `#` comment and appends whatever follows as a second command to run.
+      fix: `git checkout -- ${renderFixShellArg(input.at, SECRETS_FILE_PLACEHOLDER)}   # or point ULTIMATE_SECRETS_KEY at the key whose id the cause names`,
       meta: { at: input.at, sealedWith: input.sealedWith, found: input.found },
     });
   }

@@ -242,9 +242,12 @@ export function drainResult(outcome: DrainOutcome): CommandResult {
   };
 }
 
-/** The flags, then the move, then the render — the target is decided before a lease is taken. */
-async function runDrain(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
-  const target = buildDrainTarget(flagString(ctx.args, 'to'), ctx.env);
+/** The move, then the render. The target is built ABOVE `withJobDriver` — see `run` below. */
+async function runDrain(
+  driver: JobDriver,
+  target: JobDriver,
+  ctx: CommandContext,
+): Promise<CommandResult> {
   return drainResult(await drainJobs(driver, target, flagBool(ctx.args, 'dry-run')));
 }
 
@@ -295,11 +298,18 @@ export const jobsCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('jobs', ctx.cwd).dir;
     const sub = ctx.args.subcommand ?? 'ls';
+    // BEFORE `withJobDriver`, which boots the SOURCE queue and pings it. `--to` is a flag, so
+    // whether it names a durable driver is answerable with no server at all — and reading it
+    // inside meant `x jobs drain --to memory` on a box whose database is down reported the boot
+    // failure instead of `X_CLI_BAD_FLAG`, i.e. the operator repaired Postgres to be told the
+    // word they typed was refused by name. It also opens a connection to a target the command
+    // then refuses, which is a socket nothing closes.
+    const target = sub === 'drain' ? buildDrainTarget(flagString(ctx.args, 'to'), ctx.env) : null;
     return withJobDriver(root, ctx, (driver) => {
       if (sub === 'show') return runShow(driver, ctx);
       if (sub === 'retry') return runRetry(driver, ctx);
       if (sub === 'cancel') return runCancel(driver, ctx);
-      if (sub === 'drain') return runDrain(driver, ctx);
+      if (target !== null) return runDrain(driver, target, ctx);
       return runLs(driver, ctx);
     });
   },

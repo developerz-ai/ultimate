@@ -136,12 +136,26 @@ describe('a die a test cannot control', () => {
     ]);
   });
 
-  test('the globalThis.crypto spelling too — the receiver is not what is matched', () => {
+  test('the globalThis.crypto spelling too — that ambient is the same ambient', () => {
     const source = `${CURVE}export const j = (): number => globalThis.crypto.getRandomValues(new Uint8Array(1))[0] ?? 0;\n`;
     expect(codes(file('packages/x/src/jitter.ts', source))).toEqual([
       'X_FLIGHT_RANDOM_UNINJECTED',
       'X_FLIGHT_SECOND_CURVE',
     ]);
+  });
+
+  // The receiver IS what is matched, exactly as `Math` is for `Math.random()`: an INJECTED CSPRNG
+  // is the seam this rule asks an author to add, so reporting one prints a fix line telling them to
+  // inject what they already injected. Noise is how a rule gets switched off.
+  test('an injected receiver is the repair, and is never reported', () => {
+    for (const roll of [
+      'rng.getRandomValues(new Uint32Array(1))',
+      'options.crypto.getRandomValues(new Uint32Array(1))',
+      'this.entropy.getRandomValues(new Uint32Array(1))',
+    ]) {
+      const source = `${CURVE}export const j = (r: Rng): number => ${roll}[0] ?? 0;\n`;
+      expect(codes(file('packages/x/src/jitter.ts', source))).toEqual(['X_FLIGHT_SECOND_CURVE']);
+    }
   });
 
   // The five real sites — `auth/tokens.ts:17`, `core/ids.ts:29`, `core/secrets.ts:84,175`,

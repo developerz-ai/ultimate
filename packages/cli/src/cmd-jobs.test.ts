@@ -370,6 +370,32 @@ describe('unit · x jobs drain target', () => {
     expect((await driver.introspect?.job(id))?.state).toBe('ready');
   });
 
+  // ORDERING, and it is the reason `buildDrainTarget` is called above `withJobDriver` rather than
+  // inside `runDrain`: with no ambient driver the callback boots the SOURCE queue and pings it, so
+  // the refusal a flag alone can answer arrived only after a database round trip — on a box whose
+  // database is down, `x jobs drain --to memory` reported the boot failure and the operator
+  // repaired Postgres to be told the word they typed is refused by name.
+  test('an invalid --to is refused with no ambient driver, before any queue is booted', async () => {
+    resetJobDriver();
+    const thrown: unknown = await jobsCommand
+      .run(
+        contextFor(appRoot(), {
+          subcommand: 'drain',
+          flags: { to: 'memory' },
+          // A database nothing answers on: `startQueue` cannot resolve against it, so a refusal
+          // read AFTER the boot is that connection's error and not this flag's.
+          env: { DATABASE_URL: 'postgres://x:y@127.0.0.1:1/none' },
+        }),
+      )
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect((thrown as { code?: string }).code).toBe('X_CLI_BAD_FLAG');
+    expect((thrown as { cause?: string }).cause).toContain('this process');
+  });
+
   test('memory is not one of the values the flag accepts', () => {
     expect(DRAIN_TARGETS).toEqual(['redis', 'nats']);
     expect(() => buildDrainTarget('memory', {})).toThrow(BadFlagError);

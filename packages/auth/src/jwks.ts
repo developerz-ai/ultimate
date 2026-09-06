@@ -10,6 +10,7 @@ import type { Clock, Scheduler } from '@ultimat3/core';
 import {
   createFence,
   createSingleFlight,
+  isFixShellSafe,
   renderFixShellArg,
   renderThrowable,
   systemClock,
@@ -144,13 +145,23 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
   // against the new `kid` would start missing again. Read, never `guard`: a superseded refresh is
   // still the honest answer for the callers holding it, and only the shared cache is fenced.
   const fence = createFence('the published jwks key set');
-  // Both refusals below put this URI in a COMMAND position, and it came out of the ISSUER's own
-  // discovery document — `jwks_uri` is remote text, and `new URL()` keeps `$`, `(`, `)` and a
-  // backtick in a path. `renderFixShellArg` passes an ordinary key-set URL through untouched and
-  // substitutes the shape to fill in for anything a shell would read; `renderFixLiteral` is the
-  // wrong tool here, because its double quotes leave `$(…)` live. Same screen, same reason, as
-  // `oauth-discovery.ts`'s `target`.
+  // All three refusals below put this URI in a COMMAND position, and it came out of the ISSUER's
+  // own discovery document — `jwks_uri` is remote text, and `new URL()` keeps `$`, `(`, `)` and a
+  // backtick in a path. `renderFixLiteral` is the wrong tool here, because its double quotes leave
+  // `$(…)` live. Same screen, same reason, as `oauth-discovery.ts`'s `target`.
+  //
+  // The whole line degrades rather than the value alone: a PLACEHOLDER is honest text and is not a
+  // runnable command — `curl -sS -m 5 <the provider jwks_uri>` is read by a shell as a redirection
+  // from a file called `the`, so the one instruction the reader was handed fails, which is axiom 4
+  // inverted. `isFixShellSafe` is the predicate `renderFixShellArg` is itself built on, so the two
+  // cannot disagree about which URIs travel.
+  const spellable = isFixShellSafe(options.jwksUri);
   const probe = renderFixShellArg(options.jwksUri, '<the provider jwks_uri>');
+  /** `curl` when the URI survives being read verbatim, prose naming what to fetch when it does not. */
+  const readTheKeySet = (tail: string): string =>
+    spellable
+      ? `curl -sS -m 5 ${probe}${tail}`
+      : `fetch the jwks_uri from ${options.provider}'s discovery document by hand — this one carries shell syntax, so no pasteable command can name it${tail}`;
 
   const fetchKeys = async (): Promise<Map<string, CryptoKey>> => {
     const issued = fence.bump();
@@ -169,7 +180,7 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
         // `renderThrowable`: this catch is the last frame that can still answer with a code, and
         // the `kid` that got here came out of an attacker-supplied JWT header.
         detail: renderThrowable(error),
-        fix: `curl -sS -m 5 ${probe}`,
+        fix: readTheKeySet(''),
       });
     }
     if (!response.ok) {
@@ -178,7 +189,7 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
         stage: 'jwks',
         detail: 'the key set could not be read, so no signature can be checked',
         status: response.status,
-        fix: `curl -sS -m 5 ${probe}`,
+        fix: readTheKeySet(''),
       });
     }
     const body: unknown = await response.json().catch(() => undefined);
@@ -251,7 +262,7 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
         throw oauthTokenInvalid(
           options.provider,
           `no ${alg} key in the published set matches this token's kid`,
-          `curl -sS -m 5 ${probe}   # then confirm the token was signed by this issuer`,
+          readTheKeySet('   # then confirm the token was signed by this issuer'),
         );
       }
       return key;

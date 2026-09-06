@@ -52,8 +52,13 @@ const isFixture = (path: string): boolean => /-fixture\.tsx?$/.test(path);
 /**
  * `create table if not exists x_users (` -> `x_users`, in every spelling Postgres accepts for the
  * same relation: bare, QUOTED (`"x_users"`) and SCHEMA-QUALIFIED (`public.x_users`, `"public"."x_users"`).
- * Case-insensitive because the DDL in this tree is written lower-case and Postgres does not care;
- * the NAME is lower-cased before comparison for the same reason.
+ * Case-insensitive because the DDL in this tree is written lower-case and Postgres does not care.
+ *
+ * A QUOTED name keeps its case and an unquoted one is folded, which is Postgres's own rule
+ * (`sql-syntax-lexical`) and not a convenience: `create table "X_Users"` and an applied `x_users`
+ * are two different relations, so lower-casing both made a table nothing creates read as applied.
+ * The quote is captured and back-referenced, so `"x_users` with no closing quote matches nothing
+ * rather than matching as if it were bare.
  *
  * The quoted and qualified forms matched NOTHING until 2026-09-06, and the rule's own header said
  * so as if it were a decision. It was a hole: `packages/auth/src/tables.ts` declared five tables
@@ -65,7 +70,7 @@ const isFixture = (path: string): boolean => /-fixture\.tsx?$/.test(path);
  * still unread: the `${` is not an identifier character, so it matches nothing here.
  */
 const CREATE_TABLE =
-  /create\s+table\s+(?:if\s+not\s+exists\s+)?(?:"?[a-z_][a-z_0-9]*"?\s*\.\s*)?"?([a-z_][a-z_0-9]*)"?\s*\(/gi;
+  /create\s+table\s+(?:if\s+not\s+exists\s+)?(?:"?[a-z_][a-z_0-9]*"?\s*\.\s*)?("?)([a-z_][a-z_0-9]*)\1\s*\(/gi;
 
 export interface DeclaredTable {
   readonly table: string;
@@ -81,7 +86,8 @@ export function declaredTables(files: readonly SourceFile[]): readonly DeclaredT
       continue;
     }
     for (const match of file.source.matchAll(CREATE_TABLE)) {
-      const table = (match[1] as string).toLowerCase();
+      const name = match[2] as string;
+      const table = match[1] === '"' ? name : name.toLowerCase();
       found.push({ table, file: file.path, line: lineOf(file.source, match.index) });
     }
   }

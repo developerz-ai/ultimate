@@ -33,13 +33,20 @@ function parseJsonObject(text: string): Record<string, unknown> | undefined {
  * `x g route zebra` then `x g route alpha` wrote different bytes from the same two runs in the
  * other order, which is the reordering diff the sort exists to prevent. Arrays keep their order:
  * a list's order is its content.
+ *
+ * CODE UNIT, never `localeCompare`: it is `Intl`-backed, so the bytes a catalog is written with
+ * moved with the machine's locale and its ICU version — `x g route` on a `tr-TR` box and the same
+ * command in CI produced two orderings of one file, which is exactly the reordering diff this sort
+ * exists to prevent, one layer down. `@ultimat3/render` states the same rule as `byCodeUnit`; the
+ * comparison is inlined rather than imported because that one is package-internal and this is the
+ * whole of it.
  */
 function sortDeep(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortDeep);
   if (typeof value !== 'object' || value === null) return value;
   return Object.fromEntries(
     Object.entries(value)
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([key, entry]) => [key, sortDeep(entry)]),
   );
 }

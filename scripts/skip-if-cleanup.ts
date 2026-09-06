@@ -113,7 +113,7 @@ const SKIP_IF = /\.skipIf\s*\(/;
  * this rule report a `realtime` live test whose only `clear…(` was a `clearTimeout`.
  */
 const RESET_FUNCTION = /\b((?:clear|reset)(?!Timeout|Interval|Immediate)[A-Z][A-Za-z]*)\s*\(/g;
-const RESET_METHOD = /\b([A-Za-z_$][\w$]*)\s*\.\s*(?:clear|reset)\s*\(/g;
+const RESET_METHOD = /\b([A-Za-z_$][\w$]*)\s*\.\s*(clear|reset)\s*\(/g;
 
 /**
  * Names declared INDENTED — inside a `describe`, a `test`, a function body. The receiver of a
@@ -135,7 +135,12 @@ const resetsOn = (text: string, local: ReadonlySet<string>): readonly string[] =
   ...[...text.matchAll(RESET_FUNCTION)].map((match) => match[1] as string),
   ...[...text.matchAll(RESET_METHOD)]
     .filter((match) => !local.has(match[1] as string))
-    .map((match) => `${match[1] as string}.clear`),
+    // The VERB is captured and used: naming every method reset `<receiver>.clear` collapsed
+    // `entityRegistry.reset()` and `entityRegistry.clear()` into one tracked name, so a file-scope
+    // `afterAll` calling one credited the other parked inside `describe.skipIf` — the exact launder
+    // the per-callee rewrite closed, re-opened one line down. It also made the `cause` name a call
+    // the file does not contain, which is a fix an agent cannot apply.
+    .map((match) => `${match[1] as string}.${match[2] as string}`),
 ];
 
 /** A hook opened at column 0 — the only place a reset survives a skipped suite. */
@@ -158,8 +163,13 @@ const TOP_LEVEL = /^\S/;
  * Three spellings — `if (!ready) return;`, the braced form over two lines, and the BRACED
  * ONE-LINER `if (!ready) { return; }`, which the first two drafts both read straight past while it
  * leaked exactly as the nested form does.
+ *
+ * The `return` is REQUIRED here and was optional until it was measured: `(?:return\b|$)` made every
+ * braced `if` in a file-scope hook a bail, so `if (!seeded) {` opening an ordinary block poisoned
+ * the rest of the hook and the `clearRegistry()` under it was never credited. `BRACED_RETURN` is
+ * what reads the wrapped spelling on the following line, so nothing is lost by demanding it.
  */
-const EARLY_RETURN = /^\s{2,}if\s*\(.*\)\s*(?:\{\s*)?(?:return\b|$)/;
+const EARLY_RETURN = /^\s{2,}if\s*\(.*\)\s*(?:\{\s*)?return\b/;
 const BRACED_RETURN = /^\s{4,}return\b/;
 
 export interface CleanupFile {

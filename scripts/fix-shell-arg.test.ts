@@ -67,6 +67,17 @@ describe('what is never reported', () => {
     expect(at('bun run ${quoteArg(script)}')).toEqual([]);
   });
 
+  // The screen has to be the WHOLE body, not its prefix: `renderFixShellArg(p, '<p>') + tail` opens
+  // with an approved call and puts `tail` straight into the command position behind it. An end
+  // anchor alone does not close it either — a tail ending in `)` satisfies one.
+  test('…but only when the approved call IS the whole substitution', () => {
+    expect(at('curl ${renderFixShellArg(url, "<the url>") + suffix}')).toHaveLength(1);
+    expect(at('curl ${renderFixShellArg(url, "<the url>") + f(suffix)}')).toHaveLength(1);
+    expect(at('curl ${renderFixShellArg(url, "<the url>")}')).toEqual([]);
+    // Whitespace and a nested call inside the approved one are still the whole body.
+    expect(at('curl ${ renderFixShellArg(join(a, b), "<the path>") }')).toEqual([]);
+  });
+
   test('prose — a substitution with no command word in front of it', () => {
     expect(at('add ${key} to app.config.ts')).toEqual([]);
     expect(at('the entity ${name} declares no tenant')).toEqual([]);
