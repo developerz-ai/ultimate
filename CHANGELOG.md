@@ -19,10 +19,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `var pl=sr()` and threw `ReferenceError: process is not defined` at evaluation, the wrapper
   rendered `data-x-failed="process is not defined"`, and the island never mounted — no line of the
   app's own code had run. Both reads are now `typeof process === 'undefined'`-guarded, the same
-  form `version.ts` already uses for `ULTIMATE_FRAMEWORK_VERSION`, and never
-  `globalThis.process?.env`: an optional chain guards a *declared* binding that is nullish, so it
-  throws the very `ReferenceError` it looks like it is preventing while `@types/bun` tells the type
-  checker the guard is redundant. A browser takes the default level, `info`, which is the right
+  form `version.ts` already uses for `ULTIMATE_FRAMEWORK_VERSION`, and never an optional chain: one
+  guards a value that is *nullish*, not a binding that is *undeclared*, so a bare `process?.env`
+  throws the very `ReferenceError` it looks like it is preventing. `globalThis.process?.env` is a
+  property access on an object that exists and so answers `undefined` rather than throwing — but it
+  differs from the throwing form by a prefix, which is not a distinction to leave a reader to spot
+  when one side of it is a browser crash. A browser takes the default level, `info`, which is the right
   answer — there is no environment there to have said otherwise. `defaultWriter` is the second half
   of the same defect one call deeper: a fixed init that still reached `process.stdout` would only
   move the throw from load to the first line written, and `channel.ts` writes one. It falls back to
@@ -32,9 +34,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   reporter: `console.error`, never core's `logger` — that writes `process.stderr`" — and that
   workaround is now a preference rather than a necessity.
 
-  The test is the reproduction: `logger.test.ts` builds the barrel for `target: 'browser'` through
-  a re-exporting wrapper (never `index.ts` as the entry, which Bun 1.4.0 shakes down to its export
-  clause, #276) and evaluates the chunk in a **subprocess with `globalThis.process` deleted**.
+  The test is the reproduction: `logger-browser.test.ts` — its own file, because it builds and
+  spawns where the rest of the logger's suite only calls — builds the barrel for
+  `target: 'browser'` through a re-exporting wrapper (never `index.ts` as the entry, which Bun
+  1.4.0 shakes down to its export clause, #276) and evaluates the chunk in a **subprocess with
+  `globalThis.process` deleted**.
   That deletion is the whole point — `scripts/browser-barrel.test.ts` evaluates its chunks under
   plain `bun run`, where the binding exists and this entire class of defect is invisible. A
   negative control asserts a module-scope `process.env` read still throws in the same harness, so

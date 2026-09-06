@@ -267,11 +267,14 @@ function timestamp(clock: Clock): string {
  * and the island never mounted. `info` is what a browser gets, and it is the right answer: there
  * is no environment there to have said otherwise.
  *
- * `typeof`, never `globalThis.process?.env`. An optional chain guards a DECLARED binding that is
- * nullish; `process` is not declared in a browser, so the chain throws the very `ReferenceError`
- * it looks like it is preventing — while `@types/bun` tells the type checker the guard is
- * redundant. The same guard, for the same reason, as `version.ts`'s read of
- * `ULTIMATE_FRAMEWORK_VERSION`.
+ * `typeof`, and never an optional chain. Optional chaining guards a value that is NULLISH, not a
+ * binding that is UNDECLARED, so a bare `process?.env` throws the very `ReferenceError` it looks
+ * like it is preventing. `globalThis.process?.env` does not throw — that is a property access on
+ * an object that exists, and it answers `undefined` — but it is still the wrong form here: it
+ * differs from the throwing one by a prefix, so which of the two a reader is looking at is not
+ * visible at a glance, and one of them is a browser crash. `typeof` is the single form that is
+ * safe on a bare identifier, and it is what `version.ts` already uses for
+ * `ULTIMATE_FRAMEWORK_VERSION` — one way to do each thing.
  */
 function envLevel(): LogLevel {
   const raw = typeof process === 'undefined' ? undefined : process.env['LOG_LEVEL'];
