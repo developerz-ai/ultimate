@@ -15,6 +15,10 @@ test that failed first. Nothing is breaking; no shipped `X_*` code changed. Defe
 `introspect.cancel` keeps `claimedBy`/`visibleAt` where `SQL_CANCEL` nulls both) and
 `@ultimat3/seo`'s title/description limits counting UTF-16 units — both to the next sweep.
 
+Two seams measured from the same app on 2026-09-06 — on 19.1.3, and confirmed in 19.2.0 source.
+Neither is breaking.
+
+### Fixed
 
 - **`db`: an index's `order` is re-derived from `asc`/`desc`/absent and its partial `where` is screened through `statementsOf`**, so `order: 'desc; drop table users; --'` and `where: '1=1); drop table users; --'` are `X_SQL_UNSAFE` at `x db gen` instead of a second command inside a `create index` that `ROLE=migrate` runs. Both fields cross the seam structurally from `@ultimat3/entity` and nothing in `db` screened them, while `indexMethodSql` two lines down re-derives its literal from a closed set for exactly this reason.
 - **`db`: a generated column's expression is screened by the same lexer before it is spliced into `generated always as (…) stored`**, the rule `declaredChecks` already applied to a CHECK's predicate.
@@ -41,12 +45,6 @@ test that failed first. Nothing is breaking; no shipped `X_*` code changed. Defe
 - **`pwa` docs: `ServiceWorkerConfig.shellUrl`/`shellRevision`/`shellBytes` and `PwaRoute.dataUrl` have no producer in the framework's build path**; the shell trio's comment claimed it was "precached for every `spa` route" after `spa` was deleted from `RENDER_MODES`. Kept rather than removed — a public field is a major — and named as candidates for the next major's declared-and-never-wired sweep.
 - **`pwa`: `X_PWA_NO_OFFLINE_FALLBACK`'s `fix:` is an instruction that works.** It said `create app/offline.tsx and set offline.fallback` — a filename `registerRoute` refuses with `X_ROUTE_FILE_INVALID` (the directory is the URL) and a config key `app.config.ts` does not have. It is now `x g route offline --surface site`, then `pwa.offline.fallback`. `site/` deliberately: the document answering a lost network must render with no network, no session and no database.
 - **`pwa`: the offline document can carry a content hash.** `ServiceWorkerConfig` gained `offlineFallbackRevision` and `offlineFallbackBytes`, forwarded to `buildPrecacheManifest`; it had no field for either, so the one page an offline navigation depends on was the single precache entry stamped with the build id and counted as 0 bytes against the install-size warning. `x build --target static` passes both.
-
-Two seams measured from the same app on 2026-09-06 — on 19.1.3, and confirmed in 19.2.0 source.
-Neither is breaking.
-
-### Fixed
-
 
 - **`catchUp: 'skip'` did not skip: it fired once per `maxCatchUp` window per tick until the walk
   reached now.** Measured on a minute cron (`* * * * *`, UTC, the defaults) whose dev server was
