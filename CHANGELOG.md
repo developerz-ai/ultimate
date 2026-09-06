@@ -8,7 +8,63 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`@ultimat3/core`'s `logger` no longer takes a browser bundle down at module init.**
+  `export const logger = createLogger()` runs when the module is evaluated, `createLogger()` calls
+  `envLevel()`, and `envLevel()` read a bare `process.env['LOG_LEVEL']` — a binding a browser does
+  not have. Core's barrel is what every other package imports, and `@ultimat3/realtime`'s
+  `channel.ts` calls `logger.warn`, so the shaker keeps `logger` in the chunk of any island that
+  reaches a live subscription. Measured on ai-maxxing's session console island: the chunk contains
+  `var pl=sr()` and threw `ReferenceError: process is not defined` at evaluation, the wrapper
+  rendered `data-x-failed="process is not defined"`, and the island never mounted — no line of the
+  app's own code had run. Both reads are now `typeof process === 'undefined'`-guarded, the same
+  form `version.ts` already uses for `ULTIMATE_FRAMEWORK_VERSION`, and never an optional chain: one
+  guards a value that is *nullish*, not a binding that is *undeclared*, so a bare `process?.env`
+  throws the very `ReferenceError` it looks like it is preventing. `globalThis.process?.env` is a
+  property access on an object that exists and so answers `undefined` rather than throwing — but it
+  differs from the throwing form by a prefix, which is not a distinction to leave a reader to spot
+  when one side of it is a browser crash. A browser takes the default level, `info`, which is the right
+  answer — there is no environment there to have said otherwise. `defaultWriter` is the second half
+  of the same defect one call deeper: a fixed init that still reached `process.stdout` would only
+  move the throw from load to the first line written, and `channel.ts` writes one. It falls back to
+  `console.error`/`console.log` on the same `toStderr` split, so a level does not change lane
+  between runtimes; where there is a `process` it writes to the fd exactly as before.
+  `packages/realtime/src/client.ts:51` had already worked around this locally — "the default
+  reporter: `console.error`, never core's `logger` — that writes `process.stderr`" — and that
+  workaround is now a preference rather than a necessity.
+
+  The test is the reproduction: `logger-browser.test.ts` — its own file, because it builds and
+  spawns where the rest of the logger's suite only calls — builds the barrel for
+  `target: 'browser'` through a re-exporting wrapper (never `index.ts` as the entry, which Bun
+  1.4.0 shakes down to its export clause, #276) and evaluates the chunk in a **subprocess with
+  `globalThis.process` deleted**.
+  That deletion is the whole point — `scripts/browser-barrel.test.ts` evaluates its chunks under
+  plain `bun run`, where the binding exists and this entire class of defect is invisible. A
+  negative control asserts a module-scope `process.env` read still throws in the same harness, so
+  the assertions cannot pass vacuously on a runtime that quietly kept the global.
+
+- **`visually-hidden` no longer widens the document it annotates.** `@mixin visually-hidden` in
+  `packages/ui/src/tokens/_mixins.scss` set `position: absolute` and no inset, which is the
+  canonical recipe (a11y-project's, Bootstrap's `.visually-hidden`) and is the one line it gets
+  wrong. Absolute with no inset leaves the box at its STATIC position and only takes it out of
+  flow; after a long run of inline text that position is already past the viewport edge, and the
+  box escapes the truncating ancestor's `overflow: hidden` because that ancestor is not positioned
+  and so is not its containing block. Measured in ai-maxxing, where `Link`'s `.hint` ("opens in a
+  new tab") follows truncated titles: seven boxes with right edges from 753px to 1119px, making
+  the document **1119px wide inside a 390px viewport** and 1480px inside a 1440px one — a whole
+  page scrolling sideways for text no sighted user ever sees. Eight component stylesheets compose
+  this mixin (`Link`, `Combobox`, `Table`, `Avatar`, `Checkbox`, `Radio`, `Switch`, `Dropzone`),
+  so the defect was in every one of them. Now `inset-inline-start: 0` — logical, because this
+  file's own header refuses a physical direction and `left: -9999px` parks the box a screen away
+  on the wrong side in an RTL document. The INLINE start only: the block position stays static so
+  that a hidden but focusable input — `Checkbox`, `Radio`, `Switch` and `Dropzone` each hide a real
+  one through this mixin — still scrolls into view beside its own control, and a static block
+  position cannot widen anything. Verified in a browser at 390×844 and 1440×900:
+  `document.documentElement.scrollWidth === clientWidth`. `mixins.test.ts` reads the mixin's
+  declarations the way `reset.test.ts` reads the reset's — there is no CSS engine in this process,
+  so the source is the seam — and asserts the inset is present, that it is logical rather than
+  physical, and that the mixin still hides what it is named for.
 
 ## 19.1.1 - 2026-09-05
 

@@ -121,8 +121,26 @@ export function setLogStream(stream: 'stdout' | 'stderr'): void {
   logStream = stream;
 }
 
+/**
+ * The second half of the same defect, one call deeper than `envLevel`. A module init made safe
+ * that still reached `process.stdout` here would only move the `ReferenceError` from load to the
+ * first line written — and the framework's own client code writes one: `@ultimat3/realtime`'s
+ * `channel.ts` calls `logger.warn('channel.guard_failed', …)` in the browser. That package already
+ * says so out loud at `client.ts:51` — "the default reporter: `console.error`, never core's
+ * `logger` — that writes `process.stderr`" — a workaround for a hazard that belongs here, in the
+ * one file that owns the sink.
+ *
+ * `console` is the browser's stream pair, kept on the same `toStderr` split so a level does not
+ * change lane between runtimes. It is a fallback and never a preference: a container's stdout IS
+ * its log stream, and where there is a `process` this writes to the fd as it always did.
+ */
 function defaultWriter(line: string, level: LogLevel): void {
   const toStderr = logStream === 'stderr' || LEVEL_WEIGHT[level] >= LEVEL_WEIGHT.error;
+  if (typeof process === 'undefined') {
+    if (toStderr) console.error(line);
+    else console.log(line);
+    return;
+  }
   const stream = toStderr ? process.stderr : process.stdout;
   stream.write(`${line}\n`);
 }
@@ -238,8 +256,28 @@ function timestamp(clock: Clock): string {
   return INVALID_DATE;
 }
 
+/**
+ * `LOG_LEVEL`, and the default where there is no environment to read it from.
+ *
+ * A BROWSER has no `process` binding at all, and this read runs at MODULE INIT — `logger` at the
+ * foot of this file is `createLogger()` evaluated when the module is. Measured on ai-maxxing's
+ * session console island: `@ultimat3/realtime`'s `channel.ts` calls `logger.warn`, so the shaker
+ * keeps `logger`, and the island's chunk died on `ReferenceError: process is not defined` before a
+ * line of the app's own code ran — the wrapper rendered `data-x-failed="process is not defined"`
+ * and the island never mounted. `info` is what a browser gets, and it is the right answer: there
+ * is no environment there to have said otherwise.
+ *
+ * `typeof`, and never an optional chain. Optional chaining guards a value that is NULLISH, not a
+ * binding that is UNDECLARED, so a bare `process?.env` throws the very `ReferenceError` it looks
+ * like it is preventing. `globalThis.process?.env` does not throw — that is a property access on
+ * an object that exists, and it answers `undefined` — but it is still the wrong form here: it
+ * differs from the throwing one by a prefix, so which of the two a reader is looking at is not
+ * visible at a glance, and one of them is a browser crash. `typeof` is the single form that is
+ * safe on a bare identifier, and it is what `version.ts` already uses for
+ * `ULTIMATE_FRAMEWORK_VERSION` — one way to do each thing.
+ */
 function envLevel(): LogLevel {
-  const raw = process.env['LOG_LEVEL'];
+  const raw = typeof process === 'undefined' ? undefined : process.env['LOG_LEVEL'];
   return raw !== undefined && (LOG_LEVELS as readonly string[]).includes(raw)
     ? (raw as LogLevel)
     : 'info';
