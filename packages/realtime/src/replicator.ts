@@ -148,12 +148,27 @@ export function createReplicator(options: ReplicatorOptions): Replicator {
       logger.warn('replicator standby: advisory lock held elsewhere', { key: options.lock.key });
       return false;
     }
-    running = true;
     producer = uuid();
     seq = 0;
-    await options.feed.start(
-      options.from === undefined ? { onChange } : { from: options.from, onChange },
-    );
+    try {
+      await options.feed.start(
+        options.from === undefined ? { onChange } : { from: options.from, onChange },
+      );
+    } catch (thrown) {
+      // A start that failed holds NOTHING. `running` stays false so the takeover loop's next
+      // `start()` runs `begin` again instead of being answered `true` by a memo over a feed that
+      // never pumped, and the lock goes back so a standby can take the slot rather than waiting on
+      // a holder that is not replicating.
+      //
+      // The release is best-effort by design: the feed's failure is the one the caller must see,
+      // and a session-scoped advisory lock a dead connection cannot release is released by
+      // Postgres when that session ends.
+      await options.lock.release().catch(() => undefined);
+      throw thrown;
+    }
+    // AFTER the feed is pumping, never before: `running` is what `start()` answers `true` from and
+    // what `stop()` reads to decide there is anything to tear down.
+    running = true;
     logger.info('replicator started', { source: options.feed.source, key: options.lock.key });
     return true;
   };

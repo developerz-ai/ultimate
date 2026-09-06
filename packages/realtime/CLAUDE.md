@@ -322,6 +322,14 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   loop asks again a backoff later). `stop()` and `release()` await the in-flight one rather than
   reading their own flag — that flag is false for the whole of a start, so an unguarded teardown
   returns "nothing to do" and leaves behind exactly what it was called to release.
+  **A start that FAILS hands the lock back, and `running` is set after the feed is pumping**
+  (`As of 2026-09-06`). It was set before `await feed.start()`, so a feed that rejected — a slot
+  already `active`, a preflight refusal — left this node holding the advisory lock and claiming to
+  run with nothing pumping: the takeover loop's next `start()` was answered `true` by the
+  `if (running)` guard without re-entering `begin`, and every standby stayed a standby of a slot
+  whose holder was not replicating. The release is best-effort, because the feed's failure is the
+  one the operator acts on and a session-scoped lock a dead connection cannot release is released
+  by Postgres when that session ends.
 - **The replication pump has one way out, and it closes what it held.** Both exits — a decode error
   and `nextCopyData()` returning `undefined`, which is the walsender ending the copy — run `#die`:
   record `stats().failure`, stop the confirm timer, close the connection and null it. Each one left

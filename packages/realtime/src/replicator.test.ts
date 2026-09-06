@@ -195,6 +195,56 @@ describe('start is memoised while it is in flight', () => {
     expect(replicator.running).toBe(false);
   });
 
+  test('a feed that fails to start hands the lock BACK, and this node is not running', async () => {
+    // `running = true` sat before `await feed.start()`, so a feed that rejected left this node
+    // holding the advisory lock, claiming to run and pumping nothing: the takeover loop's next
+    // `start()` was answered `true` by the `if (running)` guard without ever calling `begin`, and
+    // every standby stayed a standby of a slot whose holder was not replicating.
+    const lock = awaitingLock();
+    const failing: ChangeFeed = {
+      source: 'failing',
+      start: () => Promise.reject(new Error('replication slot is in use')),
+      stop: async () => undefined,
+      lastLsn: () => null,
+    };
+    const replicator = createReplicator({
+      feed: failing,
+      lock,
+      transport: new InProcessTransport(),
+    });
+
+    await expect(replicator.start()).rejects.toThrow(/replication slot is in use/);
+    expect(replicator.running).toBe(false);
+    expect(lock.releases()).toBe(1);
+
+    // And the retry is a real one: `begin` runs again rather than being answered by a memo over a
+    // feed that never pumped.
+    const feed = countingFeed();
+    const retried = createReplicator({ feed, lock, transport: new InProcessTransport() });
+    expect(await retried.start()).toBe(true);
+    expect(feed.starts()).toBe(1);
+    expect(lock.calls()).toBe(2);
+    await retried.stop();
+  });
+
+  test('a stop after a failed start is a no-op — the lock is not released twice', async () => {
+    const lock = awaitingLock();
+    const replicator = createReplicator({
+      feed: {
+        source: 'failing',
+        start: () => Promise.reject(new Error('slot busy')),
+        stop: async () => undefined,
+        lastLsn: () => null,
+      },
+      lock,
+      transport: new InProcessTransport(),
+    });
+
+    await expect(replicator.start()).rejects.toThrow(/slot busy/);
+    await replicator.stop();
+    expect(lock.releases()).toBe(1);
+  });
+
   test('a start that never acquired can be tried again — the memo does not stick', async () => {
     const key = freshKey();
     const holder = rig(key);

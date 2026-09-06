@@ -244,12 +244,44 @@ export interface IgnoreGap {
 }
 
 /**
- * Pure. A line equal to the pattern, and a NEGATION never counts — the same pattern behind a
- * leading `!` is the opposite instruction and reads as the rule at a glance, which is the only way
- * this line is likely to be got wrong once it exists.
+ * Where the key can sit in a build context: at the root, and under any directory a `COPY . .`
+ * carries. Two paths rather than one, because a re-include is spelled against a path — `!*.key`
+ * puts the root one back and leaves the nested one ignored, and either is the whole key.
  */
-export const ignoresMasterKey = (text: string): boolean =>
-  text.split('\n').some((line) => line.trim() === SECRET_IGNORE_PATTERN);
+const KEY_PATHS = [SECRETS_KEY_FILE, `apps/web/${SECRETS_KEY_FILE}`] as const;
+
+/**
+ * Whether a rule has anything to say about where the key sits. A leading `/` or `./` is dropped
+ * first: Docker anchors every pattern at the context root either way, so `!/.secrets.key` is the
+ * same re-include as `!.secrets.key` and only one of the two spellings matches a relative path.
+ */
+const matchesKey = (pattern: string): boolean => {
+  const anchored = pattern.replace(/^\.?\//, '');
+  const glob = new Bun.Glob(anchored);
+  return KEY_PATHS.some((path) => glob.match(path));
+};
+
+/**
+ * Pure, and ORDERED — Docker reads its ignore rules top to bottom and the LAST one that matches a
+ * path decides, so the recursive pattern below followed by the same pattern behind a `!` is a
+ * context with the key in it. A check spelled "does the line exist" passed that file, which is the
+ * shape of every bug this script is about: a rule that is present and a rule that is in force are
+ * different questions.
+ *
+ * The exclusion is still the exact line — that is what the `fix:` below tells an author to write,
+ * and a hand-rolled equivalent nobody can grep for is the drift this file exists against — while
+ * a re-include counts however it is spelled, because `!**` undoes the rule just as completely.
+ */
+export const ignoresMasterKey = (text: string): boolean => {
+  let ignored = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#')) continue;
+    if (line === SECRET_IGNORE_PATTERN) ignored = true;
+    else if (line.startsWith('!') && matchesKey(line.slice(1).trim())) ignored = false;
+  }
+  return ignored;
+};
 
 export const checkIgnores = (files: readonly IgnoreFile[]): readonly IgnoreGap[] =>
   files.filter((one) => !ignoresMasterKey(one.text)).map((one) => ({ file: one.file }));

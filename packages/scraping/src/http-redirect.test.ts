@@ -44,6 +44,41 @@ describe('unit · which answers are a hop, and where the hop goes', () => {
     expect(redirectHop(303, '/done', 'https://api.test/a', 'HEAD', undefined)?.method).toBe('HEAD');
   });
 
+  test('301/302 rewrite a POST and nothing else — a PUT is not turned into a read', () => {
+    // The rewrite is POST-only in the fetch standard, and "everything but GET/HEAD loses its body"
+    // was the other direction of wrong: a PUT re-asked as a bodyless GET is the caller's write
+    // silently not happening, answered 200 by a URL that stored nothing.
+    for (const status of [301, 302]) {
+      for (const method of ['PUT', 'DELETE', 'PATCH']) {
+        expect(redirectHop(status, '/done', 'https://api.test/a', method, '{"q":1}')).toEqual({
+          url: 'https://api.test/done',
+          method,
+          body: '{"q":1}',
+        });
+      }
+      expect(redirectHop(status, '/done', 'https://api.test/a', 'POST', '{"q":1}')).toEqual({
+        url: 'https://api.test/done',
+        method: 'GET',
+        body: undefined,
+      });
+    }
+  });
+
+  test('a 303 rewrites every method but GET and HEAD, PUT included', () => {
+    expect(redirectHop(303, '/done', 'https://api.test/a', 'PUT', '{"q":1}')).toEqual({
+      url: 'https://api.test/done',
+      method: 'GET',
+      body: undefined,
+    });
+  });
+
+  test('the method is read case-insensitively, because fetch normalises it on the way out', () => {
+    // `fetch` sends `post` as `POST`, so a decision keyed on the caller's spelling would rewrite
+    // one and re-POST the other.
+    expect(redirectHop(302, '/done', 'https://api.test/a', 'post', '{"q":1}')?.method).toBe('GET');
+    expect(redirectHop(303, '/done', 'https://api.test/a', 'head', undefined)?.method).toBe('head');
+  });
+
   test('the hop ceiling is a number the refusal can quote', () => {
     expect(MAX_REDIRECT_HOPS).toBeGreaterThan(0);
     expect(Number.isInteger(MAX_REDIRECT_HOPS)).toBe(true);

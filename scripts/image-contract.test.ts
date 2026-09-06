@@ -282,6 +282,39 @@ describe('unit · the master key never enters a build context', () => {
     expect(checkIgnores([{ file: 'a.dockerignore', text }])).toEqual([{ file: 'a.dockerignore' }]);
   });
 
+  test('a re-include AFTER the exclusion is what docker obeys, so it is a gap', () => {
+    // Ordered, because docker is: the last rule matching a path decides. The exclusion is present
+    // and not in force — the one shape a `.some(line === pattern)` check cannot tell apart.
+    const text = `${withKey}\n!**/.secrets.key`;
+    expect(checkIgnores([{ file: 'a.dockerignore', text }])).toEqual([{ file: 'a.dockerignore' }]);
+  });
+
+  test('a re-include BEFORE the exclusion is undone by it, and stays clean', () => {
+    const text = `!**/.secrets.key\n${withKey}`;
+    expect(checkIgnores([{ file: 'a.dockerignore', text }])).toEqual([]);
+  });
+
+  test('a re-include counts however it is spelled — `!**` re-admits the key too', () => {
+    // The negation does not have to name the key to undo the rule, so the match is against where
+    // the key SITS rather than against the pattern's text.
+    for (const negation of ['!**', '!*.key', '!/.secrets.key', '!apps/**']) {
+      const text = `${withKey}\n${negation}`;
+      expect(checkIgnores([{ file: negation, text }])).toEqual([{ file: negation }]);
+    }
+  });
+
+  test('an unrelated negation leaves the exclusion in force — the `.env.example` line every file has', () => {
+    // The noise side of the rule: every ignore file in this tree carries `!**/.env.example`, and a
+    // check that read any `!` as a re-include would report all four.
+    expect(
+      checkIgnores([{ file: 'a.dockerignore', text: `${withKey}\n!**/.env.example` }]),
+    ).toEqual([]);
+  });
+
+  test('a commented-out re-include is a comment, not a rule', () => {
+    expect(checkIgnores([{ file: 'a.dockerignore', text: `${withKey}\n# !**` }])).toEqual([]);
+  });
+
   test('a root-anchored pattern is not the one form, because it misses a nested key', () => {
     // A workspace member's own `.secrets.key` is at `apps/web/.secrets.key`, which `.secrets.key`
     // does not match: an ignore pattern crosses no directory on its own — the same measurement

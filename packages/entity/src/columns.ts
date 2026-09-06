@@ -428,6 +428,11 @@ const narrowUuid = <Row>(columns: ColumnMap, row: Row): Row => {
     if (typeof value !== 'string') continue;
     const lower = value.toLowerCase();
     if (lower === value) continue;
+    // And only a value Postgres would have accepted, which is the whole justification for touching
+    // it: the memory driver stores what `$assert` was shown, so a malformed id lower-cased here is
+    // a spelling NEITHER driver holds — Postgres refuses that insert outright. Asked last, so the
+    // regex is paid only by the rare value that carries an upper-case character at all.
+    if (!UUID.test(value)) continue;
     narrowed ??= { ...record };
     narrowed[property] = lower;
   }

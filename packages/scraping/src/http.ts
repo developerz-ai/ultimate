@@ -180,6 +180,29 @@ const discardHopBody = async (response: Response): Promise<void> => {
 };
 
 /**
+ * The credentials a CALLER set, which are scoped to the origin they were set for — the platform's
+ * own `follow` deleted these on a cross-origin hop (step 13 of the fetch standard's HTTP-redirect
+ * fetch) and this file took the chain over, so this file owns the strip. `cookie` is here for the
+ * hand-written header only: the jar's own value is computed per hop by `cookieHeaderFor`, which
+ * has always been scoped to the host being dialled.
+ */
+const CROSS_ORIGIN_STRIPPED = new Set(['authorization', 'proxy-authorization', 'cookie']);
+
+const withoutCredentials = (headers: Readonly<Record<string, string>>): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(headers).filter(([name]) => !CROSS_ORIGIN_STRIPPED.has(name.toLowerCase())),
+  );
+
+/** Unparseable is not same-origin: a URL this package cannot read is one it cannot vouch for. */
+const sameOrigin = (left: string, right: string): boolean => {
+  try {
+    return new URL(left).origin === new URL(right).origin;
+  } catch {
+    return false;
+  }
+};
+
+/**
  * The final answer, read under the cap. Counted as it arrives rather than `.text()`, which
  * materialises first and checks never: a 30s stream at 50MB/s is a 1.5GB allocation the worker
  * does not get back, and it takes every other job on that worker with it. The same read
@@ -272,18 +295,31 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
           method: request.method ?? 'GET',
           body: request.body,
         };
+        // Latched off at the first cross-origin hop and never back on: the fetch standard DELETES
+        // the header from the request rather than re-deciding per hop, so `A -> B -> A` does not
+        // hand A's bearer back on the way home.
+        let credentialsInScope = true;
         for (let followed = 0; ; followed += 1) {
           // Per hop, because the jar is every domain the browser touched: a cookie computed for
           // the first host and re-sent to the second is the leak `cookie-scope.ts` exists to
           // prevent, arriving through the one door that never asked it twice.
           const cookies = cookieHeaderFor(session.cookies, hop.url);
+          // Both header sources re-scoped the way the jar above already is, in the SAME precedence
+          // they had before: an `authorization` minted for the first host was the one credential
+          // that still rode along to wherever a `302` pointed.
+          const carried = credentialsInScope
+            ? session.headers
+            : withoutCredentials(session.headers);
+          const declared = credentialsInScope
+            ? request.headers
+            : withoutCredentials(request.headers ?? {});
           const response = await call(hop.url, {
             method: hop.method,
             headers: {
-              ...session.headers,
+              ...carried,
               ...(session.userAgent === '' ? {} : { 'user-agent': session.userAgent }),
               ...(cookies === undefined ? {} : { cookie: cookies }),
-              ...request.headers,
+              ...declared,
             },
             ...(hop.body === undefined ? {} : { body: hop.body }),
             signal: AbortSignal.any(signals),
@@ -310,10 +346,14 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
           );
           if (next === undefined)
             return await readResponse(hop.url, response, maxBytes, init.secrets);
-          if (followed >= MAX_REDIRECT_HOPS) throw redirectLoop(url, next.url, followed + 1);
+          // Discarded BEFORE the refusal, not after it: a throw over an unread stream holds that
+          // hop's socket until the collector reaches it, and the refusal path is exactly the one a
+          // hostile chain drives ten times per request.
           await discardHopBody(response);
+          if (followed >= MAX_REDIRECT_HOPS) throw redirectLoop(url, next.url, followed + 1);
           init.onActivity?.();
           await screen(next.url);
+          if (!sameOrigin(hop.url, next.url)) credentialsInScope = false;
           hop = next;
         }
       } catch (thrown) {

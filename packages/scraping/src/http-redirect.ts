@@ -31,11 +31,21 @@ export interface RedirectHop {
  * practice performs it. `307`/`308` exist precisely to say "re-send exactly what you sent", so
  * they keep both. Getting this wrong is not cosmetic: re-POSTing an order body at the URL a `303`
  * points to is a second order.
+ *
+ * The rewrite is per METHOD as well as per status, which "anything that is not a GET or a HEAD
+ * loses its body" got wrong in the other direction: the fetch standard rewrites `301`/`302` for
+ * POST alone, so a `PUT` or a `DELETE` re-asked as a bodyless GET is the caller's write silently
+ * not happening — one read, a 200, and nothing changed at the target.
  */
 const carriesBody = (status: number, method: string): boolean => {
   if (status === 307 || status === 308) return true;
-  if (method === 'GET' || method === 'HEAD') return true;
-  return false;
+  // Case-folded because `fetch` normalises a standard method on the way out — `post` leaves as
+  // `POST` — so a decision keyed on the caller's spelling would rewrite one and keep the other.
+  const verb = method.toUpperCase();
+  // `303` is the status that rewrites every method BUT those two, and it spares `HEAD` on purpose:
+  // a HEAD promoted to a GET fetches the body the caller said it did not want.
+  if (status === 303) return verb === 'GET' || verb === 'HEAD';
+  return verb !== 'POST';
 };
 
 /**

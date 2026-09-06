@@ -204,10 +204,86 @@ describe('unit · every redirect hop is screened, and the FINAL url is what is r
     ]);
   });
 
-  test('a 3xx with no Location is the answer itself, not a hop', async () => {
-    const { http, calls } = chain([{ status: 304 }]);
+  test('a REDIRECT status with no Location is the answer itself, not a hop', async () => {
+    // `302` and not `304`: a status that is not a hop at all exits at the `REDIRECT_STATUSES` gate
+    // and never reaches the missing-`Location` branch this test is named for, so the assertion
+    // held with redirect handling deleted entirely.
+    const { http, calls } = chain([{ status: 302 }]);
     const response = await http.request('https://api.test/orders');
-    expect(response.status).toBe(304);
+    expect(response.status).toBe(302);
     expect(calls).toHaveLength(1);
+  });
+
+  test('a cross-host hop does NOT carry the caller`s authorization header', async () => {
+    // The cookie jar was re-scoped per hop and the headers were not, so a bearer minted for
+    // `api.test` was replayed to whatever a `302` pointed at — the same leak as the test above,
+    // arriving through the header door. The platform's own `follow` deleted it for us until this
+    // file took the chain over.
+    const { http, calls } = chain(
+      [{ status: 302, location: 'https://other.test/a' }, { status: 200 }],
+      {
+        allowHosts: ['api.test', 'other.test'],
+        session: { ...EMPTY_SESSION, headers: { 'x-trace': 'keep-me' } },
+      },
+    );
+    await http.request('https://api.test/orders', {
+      headers: { authorization: 'Bearer SECRET', cookie: 'sid=SECRET' },
+    });
+    expect(calls[0]?.headers['authorization']).toBe('Bearer SECRET');
+    expect(calls[1]?.headers['authorization']).toBeUndefined();
+    expect(calls[1]?.headers['cookie']).toBeUndefined();
+    // Only the credentials go: a hop that dropped every header would lose the tracing the caller
+    // set, and the strip is a scope rule rather than a reset.
+    expect(calls[1]?.headers['x-trace']).toBe('keep-me');
+  });
+
+  test('a SAME-host hop keeps it — an API that redirects within itself still authenticates', async () => {
+    const { http, calls } = chain([
+      { status: 302, location: 'https://api.test/v2/orders' },
+      { status: 200 },
+    ]);
+    await http.request('https://api.test/orders', {
+      headers: { authorization: 'Bearer SECRET' },
+    });
+    expect(calls[1]?.headers['authorization']).toBe('Bearer SECRET');
+  });
+
+  test('a chain that comes back home does not hand the credential back', async () => {
+    // Latched, the way the fetch standard DELETES the header rather than re-deciding per hop:
+    // `A -> B -> A` is how an attacker-controlled B would otherwise learn A's bearer on the replay.
+    const { http, calls } = chain(
+      [
+        { status: 302, location: 'https://other.test/a' },
+        { status: 302, location: 'https://api.test/back' },
+        { status: 200 },
+      ],
+      { allowHosts: ['api.test', 'other.test'] },
+    );
+    await http.request('https://api.test/orders', {
+      headers: { authorization: 'Bearer SECRET' },
+    });
+    expect(calls.map((call) => call.headers['authorization'])).toEqual([
+      'Bearer SECRET',
+      undefined,
+      undefined,
+    ]);
+  });
+
+  test('the session`s own headers are scoped too, not just the ones the call declared', async () => {
+    const { http, calls } = chain(
+      [{ status: 302, location: 'https://other.test/a' }, { status: 200 }],
+      {
+        allowHosts: ['api.test', 'other.test'],
+        session: {
+          ...EMPTY_SESSION,
+          headers: { Authorization: 'Bearer RESTORED', 'proxy-authorization': 'Basic AAAA' },
+        },
+      },
+    );
+    await http.request('https://api.test/orders');
+    // Matched case-insensitively: a header name is case-insensitive on the wire, and a session
+    // restored from a recording carries whatever spelling the site used.
+    expect(calls[1]?.headers['Authorization']).toBeUndefined();
+    expect(calls[1]?.headers['proxy-authorization']).toBeUndefined();
   });
 });

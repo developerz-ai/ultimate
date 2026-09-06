@@ -120,7 +120,7 @@ describe('the relay takes part in the drain instead of running through it', () =
     expect(shutdownHookCount()).toBe(0);
   });
 
-  test('drainOnShutdown: false registers none, for a caller that drives its own teardown', () => {
+  test('drainOnShutdown: false registers none, for a caller that drives its own teardown', async () => {
     const relay = createOutboxRelay({
       store: createMemoryOutboxStore(),
       driver: createMemoryDriver(),
@@ -128,6 +128,10 @@ describe('the relay takes part in the drain instead of running through it', () =
     });
     relay.start();
     expect(shutdownHookCount()).toBe(0);
+    // Driven here, because this relay registered nothing to drive it: `unref()` keeps the timer off
+    // the process exit and does not stop it, so a relay left running polls its store through every
+    // test that follows this one.
+    await relay.stop();
   });
 
   test('start() during a drain is refused, so no second pair of hooks is stacked', async () => {

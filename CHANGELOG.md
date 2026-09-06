@@ -125,6 +125,39 @@ Neither is breaking.
   `listenSyncNode` takes `drainGraceMs`, and `x dev` passes `0`: one node, whose clients reconnect
   to it once it is back and to nothing in the meantime, so a grace that kept their patches flowing
   was time spent on a reconnect frame whose target did not exist yet. Production keeps the default.
+- **`scraping`: a cross-origin redirect hop no longer carries the caller's credentials.** The jar was
+  re-scoped per hop and the HEADERS were not, so an `authorization` set for the first host was
+  replayed verbatim to wherever a `302` pointed — the leak `cookie-scope.ts` exists to prevent,
+  arriving through the other door. `authorization`, `proxy-authorization` and a hand-written
+  `cookie` are dropped at the first cross-origin hop and stay dropped for the rest of the chain
+  (`A -> B -> A` does not hand the bearer back), which is what the platform's own `redirect: 'follow'`
+  did before this leg took the chain over. Every other header still rides, and a same-origin hop is
+  untouched — an API that redirects within itself still authenticates.
+- **`scraping`: a `301`/`302` rewrites a `POST` and nothing else.** `carriesBody` kept the method for
+  `GET`/`HEAD` and rewrote everything else, so a `PUT` or a `DELETE` answered with a permanent
+  redirect was re-asked as a bodyless `GET`: one read, a 200, and the caller's write silently not
+  happening. The fetch standard permits the rewrite for `POST` alone; `303` still rewrites every
+  method but `GET`/`HEAD`, `307`/`308` still carry both, and the method is now read
+  case-insensitively, because `fetch` normalises `post` to `POST` on the way out.
+- **`scraping`: a redirect chain past `MAX_REDIRECT_HOPS` releases the hop body before it refuses.**
+  The throw jumped over `discardHopBody`, so the refusal path — the one a hostile chain drives ten
+  times per request — was the one path that held its socket until the collector arrived.
+- **`realtime`: a replicator whose feed fails to start hands the advisory lock back.** `running` was
+  set before `await feed.start()`, so a rejected start left this node holding the lock and claiming
+  to run while pumping nothing: the takeover loop's next `start()` was answered `true` by the
+  `if (running)` guard without re-entering `begin`, and every standby stayed a standby of a slot
+  whose holder was not replicating. `running` is set after the feed is pumping, and the failure path
+  releases.
+- **`entity`: `narrowRow` lower-cases only a uuid Postgres would have accepted.** The narrowing
+  exists to make the in-memory row the one production holds, and production holds nothing for a
+  malformed uuid — it refuses the insert — so lower-casing one produced a third spelling neither
+  driver has. A value that is not a uuid is now left exactly as the caller spelled it.
+- **`scripts/image-contract.ts` reads a `.dockerignore` in ORDER.** Docker obeys the last rule that
+  matches a path, so `**/.secrets.key` followed by `!**/.secrets.key` is a build context with the
+  master key in it — and a check spelled "does the line exist" passed that file. A re-include now
+  counts however it is spelled (`!**` and `!*.key` re-admit the key too), and an unrelated negation
+  — the `!**/.env.example` every ignore file in this tree carries — still leaves the exclusion in
+  force.
 
 ## 19.2.0 - 2026-09-06
 
