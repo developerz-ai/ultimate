@@ -22,7 +22,13 @@ import { loadPwaArtifacts, WEB_MANIFEST_PATH, writePwaIcons } from './pwa-artifa
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
 import { styleBundle, writeStyles } from './style-bundle';
-import { SERVICE_WORKER_PATH, SW_REGISTER_PATH, serviceWorkerArtifacts } from './sw-artifacts';
+import type { RenderedDocument } from './sw-artifacts';
+import {
+  SERVICE_WORKER_PATH,
+  SW_REGISTER_PATH,
+  serviceWorkerArtifacts,
+  serviceWorkerHead,
+} from './sw-artifacts';
 
 // Re-exported, never re-declared: `static-report.ts` owns the shape because the report on disk
 // carries it, and this file already imports that module.
@@ -141,6 +147,11 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const skipped: SkippedRoute[] = [];
   const routes: RouteStats[] = [];
   const unmeasured: UnmeasuredRoute[] = [];
+  // What the loop below rendered, by the path it rendered — the service worker's precache
+  // revisions. A `Map` and not a record, so a route path spelling a prototype member cannot answer
+  // with one; insertion order is never read, because `pwaRoutes` walks the route table and
+  // `buildPrecacheManifest` sorts its own entries by code unit.
+  const documents = new Map<string, RenderedDocument>();
 
   // Before the first document: a page's `data-x-entry` is a built chunk's URL, so the chunks have
   // to exist to be named. Written into `out` too — a static export is served with no process
@@ -174,24 +185,15 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // wiring exists to close. `undefined` when the app is not installable, and then no document
   // names it either.
   const pwa = await loadPwaArtifacts(options.root);
-  // The worker and its registration script, written as FILES. A static host runs no route table,
-  // so a `<script src="/x-sw-register.js">` in every document is a 404 unless the bytes are in the
-  // artifact — the same promise `favicon.ico` and the icons above keep, for the asset that decides
-  // whether the export works offline at all.
-  const serviceWorker =
-    pwa === undefined
-      ? undefined
-      : serviceWorkerArtifacts({
-          pwa,
-          buildId,
-          routes: describeRoutes(),
-          islands,
-          styles,
-        });
-  if (serviceWorker !== undefined) {
-    await Bun.write(join(options.out, SERVICE_WORKER_PATH.slice(1)), serviceWorker.source);
-    await Bun.write(join(options.out, SW_REGISTER_PATH.slice(1)), serviceWorker.register);
-  }
+  // The registration TAG now, the worker itself after the render loop — the two halves are wanted
+  // at different moments and used to be taken at the same one. Every document below has to name
+  // `/x-sw-register.js`, and the worker's precache manifest is built from the content hash of
+  // those same documents, which do not exist yet: emitted here, every route's revision was the
+  // BUILD ID and every route's byte count was 0, so a deploy of a byte-identical site re-fetched
+  // everything and the precache budget could not count one byte of HTML (`precache.ts`' own
+  // header). `serviceWorkerHead` is the one predicate behind both, so a page can never name a
+  // script the export does not carry.
+  const swHead = pwa === undefined ? undefined : serviceWorkerHead(pwa);
   if (pwa !== undefined) {
     await Bun.write(join(options.out, WEB_MANIFEST_PATH.slice(1)), pwa.body);
     // And the icons that manifest NAMES. A static host runs no `assetRoutes()`, so every
@@ -224,7 +226,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     runWithContext(as, () =>
       routeDocument(entry, data, {
         resolveIsland: (file: string) => islands.resolverFor(file),
-        ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
+        ...(pwa === undefined ? {} : { pwaHead: pwa.head + (swHead ?? '') }),
       }),
     );
   const document = (entry: RouteEntry, data: { url: string; params: Record<string, string> }) =>
@@ -299,6 +301,11 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
         hash: artifact.hash,
         bytes,
       });
+      // `artifact.hash` is `contentHash(html)` — the same identity that becomes this page's ETag,
+      // so the precache revision and the HTTP validator can never disagree about one document.
+      // Keyed by the FILLED path, which for a non-dynamic route is the declared one; a dynamic
+      // route is not precached as a single URL anyway (`buildPrecacheManifest` skips it).
+      documents.set(artifact.path, { revision: artifact.hash, bytes });
       // Measured from the document that was just written, so the `budgets` step compares a
       // declared budget against bytes that exist on disk rather than against a graph's estimate.
       const measured = await measureDocumentJs(artifact.html, options.out);
@@ -311,6 +318,25 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       };
     }
     if (heaviest !== undefined) routes.push(heaviest);
+  }
+  // The worker, LAST: every document it precaches has now been rendered, hashed and weighed. A
+  // static host runs no route table, so both files go into the artifact — a
+  // `<script src="/x-sw-register.js">` in every document is a 404 otherwise, which is the same
+  // promise `favicon.ico` and the icons above keep.
+  const serviceWorker =
+    pwa === undefined
+      ? undefined
+      : serviceWorkerArtifacts({
+          pwa,
+          buildId,
+          routes: describeRoutes(),
+          islands,
+          styles,
+          documents,
+        });
+  if (serviceWorker !== undefined) {
+    await Bun.write(join(options.out, SERVICE_WORKER_PATH.slice(1)), serviceWorker.source);
+    await Bun.write(join(options.out, SW_REGISTER_PATH.slice(1)), serviceWorker.register);
   }
   const stats = await writeBuildStats(options.root, { routes });
   // Written LAST and by the same call that writes the stats, so an app whose `prerender.ts` does

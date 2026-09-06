@@ -73,6 +73,7 @@ export {
   checksumMismatch,
   contentTypeMismatch,
   contentTypeNotAllowed,
+  contentTypeUnrecognised,
   deleteFailed,
   diskUnknown,
   isStorageError,

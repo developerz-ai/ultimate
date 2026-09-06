@@ -132,6 +132,12 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   trace was discarded, the root span carried a dashed UUIDv7 no collector accepts as a trace id,
   and the log lines beside it quoted a third value. The `request-id` and `trace` stages now only
   PUBLISH what was decided — they do not decide. The regex is core's `parseTraceparent`, one copy.
+  **Only ONE of the two is gated on `trustProxy`, and the asymmetry is deliberate** — `x-request-id`
+  is ECHOED back as this response's identity, so a caller choosing it poisons log correlation for
+  everyone; `traceparent` is W3C context continuation, which any caller is expected to send.
+  `traceHeaders()` (tier 0) puts it on every typed-client call, so gating it would break tracing
+  between two Ultimate services under the default `trustProxy` (false), for a value that carries
+  correlation and no authority. Never "fix" the inconsistency by gating it.
 - **Every proxy-supplied header goes through `forwardedElement(header, hops)` and nothing else.**
   `trustProxy` documented reading `x-forwarded-for` and had no reader at all, so behind any ingress
   every anonymous request keyed to the proxy — one `auth` bucket (capacity 10) for the whole
@@ -140,6 +146,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   declared trusts nothing rather than falling back leftward. `trustProxy` defaults to **false** and
   requires `trustedProxyHops` (`X_TRUST_PROXY_UNSET` at `defineHttpConfig`) — it also gates the
   `x-request-id` echo, and a direct caller choosing its own request id poisons log correlation.
+  The inbound `traceparent` is deliberately NOT on this list; `correlation.ts` above says why.
   `x-forwarded-proto` rides the same rule, which is what finally emits HSTS behind a
   TLS-terminating ingress, and so does Envoy's `x-forwarded-client-cert` (`peer-identity.ts`).
   **A peer certificate read from an untrusted hop is worse than none, because it authenticates** —
@@ -183,7 +190,12 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   because only an AMBIENT credential can be forged into (anonymous and bearer callers are exempt);
   before body so a rejected write never allocates its payload. `sec-fetch-site: same-origin`, an
   `Origin` equal to this app, or an `Origin` already in `cors.origins`; anything else is
-  `X_CSRF_BLOCKED` (403, never 401 — the caller IS signed in, which is the problem). The self
+  `X_CSRF_BLOCKED` (403, never 401 — the caller IS signed in, which is the problem). "Already in
+  `cors.origins`" means an EXACT listing — `originListed`, never `allowedOrigin`, `As of
+  2026-09-06`. That one answers the RESPONSE header, and for `origins: ['*'], credentials: false`
+  (the only wildcard `assertCorsConfig` admits) its answer is `'*'`, which is not `null` and so
+  read as "this origin is one we allow": every origin on the internet was same-origin, and the
+  cross-site form post this stage exists to refuse was answered `{"ok":true}`. The self
   origin is built from `ctx.https`, not `url.protocol`, or every legitimate post behind a
   TLS-terminating ingress would be refused. **`mode: 'token'` is deliberately NOT shipped** — a
   double-submit token needs a cookie issuer and a form-field helper at tier 4/5, and a half-built

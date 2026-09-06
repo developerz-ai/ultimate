@@ -131,6 +131,9 @@ Detail on each:
    Proven: *sw handles flush-outbox* `false`, *client emits* `true`. On Safari/Firefox the queued
    offline mutations are never drained — silent data loss of exactly the case the fallback exists
    for. Fix: handle it in the emitted listener and list the marker in `capabilities.ts:64`.
+   **Landed 2026-09-06**, in the sweep that re-found it: this plan was marked done while every
+   other item here had shipped and this one had not — the marker was never added, so nothing
+   pinned the message handler. `CAPABILITY_SW_MARKERS.backgroundSync` carries it now.
 
 7. `value` is not an HTML attribute on either element and `attributePair`
    (`packages/render/src/html.ts:84`) serializes it verbatim; there is no client runtime yet

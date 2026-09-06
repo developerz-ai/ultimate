@@ -62,7 +62,12 @@ const WHOLE_NUMBER = /^\d+$/;
  * is. Only its shape as a search value is checked: one string, non-empty.
  */
 export function pageControlsOf(name: string, values: SearchValues): SplitSearch {
-  const input: Record<string, string | readonly string[] | undefined> = {};
+  // `Object.create(null)`, never `{}`, and the same rule `@ultimat3/http`'s `collectFields`
+  // follows: a repeated `?__proto__=a&__proto__=b` arrives as an ARRAY, which is exactly what
+  // `Object.prototype.__proto__`'s setter accepts — one assignment and this object's prototype IS
+  // that array, so `'length' in input` answers true about a field nobody sent. A null prototype
+  // has no such accessor, so the key is ordinary data on the way to the schema.
+  const input: Record<string, string | readonly string[] | undefined> = Object.create(null);
   for (const [key, value] of Object.entries(values)) {
     if (!PAGE_CONTROL_KEYS.includes(key)) input[key] = value;
   }

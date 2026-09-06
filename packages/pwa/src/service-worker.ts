@@ -35,9 +35,23 @@ export interface ServiceWorkerConfig {
   readonly offline: Partial<OfflineConfig>;
   readonly capabilities?: CapabilityFlags;
   readonly assets?: readonly PrecacheAsset[];
+  /**
+   * Forwarded verbatim to `buildPrecacheManifest`, which documents the whole trio: no caller in
+   * the framework's build path sets it, so `reason: 'shell'` is reachable only from a hand-built
+   * call to this function.
+   */
   readonly shellUrl?: string;
   readonly shellRevision?: string;
   readonly shellBytes?: number;
+  /**
+   * Content hash and byte size of the built offline document, forwarded to
+   * `buildPrecacheManifest`. Absent, the entry is stamped with the build id and counted as 0
+   * bytes — so the one page an offline navigation depends on is re-downloaded on every deploy,
+   * which is what `Precache revision` forbids for every other entry. Unlike the shell trio above,
+   * this pair is meant to be fed: the CLI's prerender pass already holds both values.
+   */
+  readonly offlineFallbackRevision?: string;
+  readonly offlineFallbackBytes?: number;
   readonly vapid?: VapidConfig;
   readonly backgroundSync?: BackgroundSyncOptions;
   /** Build ids whose caches must survive this activation (see `retentionPlan`). */
@@ -191,6 +205,14 @@ export function generateServiceWorker(
     ...(config.shellUrl === undefined ? {} : { shellUrl: config.shellUrl }),
     ...(config.shellRevision === undefined ? {} : { shellRevision: config.shellRevision }),
     ...(config.shellBytes === undefined ? {} : { shellBytes: config.shellBytes }),
+    // Spread, never assigned: `exactOptionalPropertyTypes` makes an explicit `undefined` a
+    // different answer from an absent key, and `?? input.buildId` is what reads it.
+    ...(config.offlineFallbackRevision === undefined
+      ? {}
+      : { offlineFallbackRevision: config.offlineFallbackRevision }),
+    ...(config.offlineFallbackBytes === undefined
+      ? {}
+      : { offlineFallbackBytes: config.offlineFallbackBytes }),
     ...(config.precacheWarnBytes === undefined ? {} : { warnBytes: config.precacheWarnBytes }),
   });
 
@@ -207,7 +229,7 @@ export function generateServiceWorker(
     INSTALL_BLOCK,
     activateBlock(),
     fetchBlock(),
-    messageBlock(),
+    messageBlock(isEnabled(capabilities, 'backgroundSync')),
   ];
 
   if (isEnabled(capabilities, 'push') && config.vapid !== undefined) {
@@ -388,11 +410,25 @@ async function healSkew(req,res){
 }`.trim();
 }
 
-function messageBlock(): string {
+/**
+ * The window → worker channel. `flush-outbox` is here and not in `backgroundSyncSource` because
+ * the page is what sends it: `registerOutboxSync` falls back to an `online` listener posting this
+ * message wherever `registration.sync` is absent — Safari and Firefox — and with no branch for it
+ * the offline mutation queue was never drained on exactly the browsers the fallback exists for.
+ * Silent, too: no rejection, no request, no log.
+ *
+ * Gated on the capability, because `flushOutbox` is only emitted with `backgroundSyncSource`. An
+ * unconditional branch would answer the message with a `ReferenceError` inside `waitUntil`, which
+ * the page that sent it cannot catch, in every app that leaves `backgroundSync` off.
+ */
+function messageBlock(backgroundSync: boolean): string {
+  const flush = backgroundSync
+    ? "\n  if(d.type==='flush-outbox')event.waitUntil(flushOutbox());"
+    : '';
   return `
 self.addEventListener('message',(event)=>{
   const d=event.data||{};
   if(d.type==='skip-waiting')self.skipWaiting();
-  if(d.type==='build-id')event.source&&event.source.postMessage({type:'build-id',buildId:BUILD_ID});
+  if(d.type==='build-id')event.source&&event.source.postMessage({type:'build-id',buildId:BUILD_ID});${flush}
 });`.trim();
 }

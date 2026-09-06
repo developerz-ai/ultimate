@@ -19,6 +19,8 @@ type SwListener = (event: SwEvent) => void;
 
 interface SwEvent {
   readonly request?: Request;
+  /** What a `postMessage` from a window delivers — the payload, not a wrapper. */
+  readonly data?: unknown;
   waitUntil(work: Promise<unknown>): void;
   respondWith(work: Promise<Response>): void;
 }
@@ -76,7 +78,10 @@ function swHarness() {
   let offline = false;
   let respond: ((request: Request) => Response | undefined) | undefined;
   const fetcher = async (request: Request | string): Promise<Response> => {
-    const url = typeof request === 'string' ? request : request.url;
+    // A worker resolves a bare string against its own scope, so the stub must too — otherwise the
+    // one emitted call that passes a path rather than a `Request` (`flushOutbox`) fails here on
+    // `new URL`, which reads as a broken worker rather than a broken harness.
+    const url = typeof request === 'string' ? new URL(request, SW_ORIGIN).href : request.url;
     fetched.push(url);
     stamps.push(typeof request === 'string' ? null : request.headers.get('x-ultimate-build'));
     if (offline) throw new TypeError('network down');
@@ -158,6 +163,18 @@ function swHarness() {
       });
       if (answer === undefined) expect.unreachable(`no handler answered ${path}`);
       return await answer;
+    },
+    /** A `postMessage` from a window, awaited through the handler's own `waitUntil`. */
+    async message(data: unknown): Promise<void> {
+      let work: Promise<unknown> = Promise.resolve();
+      listeners.get('message')?.({
+        data,
+        waitUntil: (p) => {
+          work = p;
+        },
+        respondWith: () => undefined,
+      });
+      await work;
     },
   };
 }
@@ -316,5 +333,53 @@ describe('the emitted fetch block, against a server on a newer build', () => {
     expect((await sw.request('/')).status).toBe(409);
     expect(sw.messages).toEqual([]);
     expect(sw.stamps[0]).toBe('build-1');
+  });
+});
+
+/**
+ * The Background Sync API is absent in Safari and in Firefox, so `registerOutboxSync` falls back
+ * to an `online` listener that posts `{ type: 'flush-outbox' }` to the controller — and the
+ * message handler answered only `skip-waiting` and `build-id`, so on exactly the browsers the
+ * fallback exists for, an offline mutation queue was never drained. Silent: no rejection, no log,
+ * no request. Executed rather than asserted on the text, because a handler that names the type and
+ * calls nothing would satisfy a `toContain`.
+ */
+describe('the offline outbox drain, executed', () => {
+  const syncConfig: ServiceWorkerConfig = {
+    offline: { fallback: '/offline' },
+    capabilities: { backgroundSync: true },
+  };
+
+  test('the no-Background-Sync fallback message drains the outbox', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker([], syncConfig, 'build-1').source);
+
+    await sw.message({ type: 'flush-outbox' });
+
+    expect(sw.fetched).toEqual(['https://app.test/_x/outbox/flush']);
+  });
+
+  test('and no other message type does, so a skip-waiting is not a flush', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker([], syncConfig, 'build-1').source);
+
+    await sw.message({ type: 'skip-waiting' });
+    await sw.message({ type: 'build-id' });
+
+    expect(sw.fetched).toEqual([]);
+  });
+
+  /**
+   * `flushOutbox` is only emitted with the capability, so an unconditional handler would answer a
+   * `flush-outbox` with a `ReferenceError` inside `waitUntil` — uncatchable by the page that sent
+   * it — in every app that leaves `backgroundSync` off.
+   */
+  test('a worker without the capability ignores the message instead of throwing', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker([], config, 'build-1').source);
+
+    await sw.message({ type: 'flush-outbox' });
+
+    expect(sw.fetched).toEqual([]);
   });
 });

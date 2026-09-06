@@ -58,6 +58,10 @@ export const CAPABILITY_MANIFEST_KEYS = Object.freeze<Record<Capability, readonl
  * worker when its capability is on, and none of them is when they are all off. `PwaSyncError` is
  * the background-sync handler's own error class, so it ships with the handler and never without it.
  *
+ * `flush-outbox` is the same kind of pair the other way round: the branch lives in the shared
+ * message handler, not in the capability's own block, so only its presence in this table keeps it
+ * gated with the `flushOutbox` it calls.
+ *
  * An EMPTY list is a claim too, and the true one for the three manifest-only capabilities: a share
  * target, a file handler and a protocol handler are all delivered by the OS to a URL the app
  * already serves, so the member is the whole feature and the worker has no branch to add.
@@ -65,7 +69,7 @@ export const CAPABILITY_MANIFEST_KEYS = Object.freeze<Record<Capability, readonl
  */
 export const CAPABILITY_SW_MARKERS = Object.freeze<Record<Capability, readonly string[]>>({
   push: ["addEventListener('push'", "addEventListener('notificationclick'"],
-  backgroundSync: ["addEventListener('sync'", 'class PwaSyncError'],
+  backgroundSync: ["addEventListener('sync'", 'class PwaSyncError', "d.type==='flush-outbox'"],
   badging: ['navigator.setAppBadge'],
   shareTarget: [],
   fileHandlers: [],

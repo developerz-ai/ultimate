@@ -34,6 +34,12 @@ export interface InboundCorrelation {
 export const readCorrelation = (headers: Headers, config: HttpConfig): InboundCorrelation => {
   const inboundId = config.trustProxy ? headers.get('x-request-id') : null;
   const requestId = inboundId !== null && REQUEST_ID.test(inboundId) ? inboundId : uuid();
+  // Deliberately NOT gated on `trustProxy`, unlike the id above, and the asymmetry is the rule:
+  // `x-request-id` is ECHOED back as this response's identity, so an untrusted caller choosing it
+  // poisons log correlation for everyone — while `traceparent` is W3C context continuation, which
+  // any caller is expected to send. `traceHeaders()` puts it on every typed-client call, so
+  // gating it would break tracing across two Ultimate services with the default `trustProxy`
+  // (false) for a value that is 32 hex characters of correlation and no authority at all.
   const parent = parseTraceparent(headers.get('traceparent'));
   return {
     requestId,

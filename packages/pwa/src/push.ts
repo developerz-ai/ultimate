@@ -66,6 +66,7 @@ export interface PushPayload {
   readonly tag?: string;
   readonly icon?: string;
   readonly badge?: string;
+  /** Alert again when the `tag` above is replaced. Ignored, with a warning, without one. */
   readonly renotify?: boolean;
   readonly requireInteraction?: boolean;
   readonly actions?: readonly { readonly action: string; readonly titleKey: string }[];
@@ -82,7 +83,11 @@ export interface RenderedNotification {
   readonly requireInteraction: boolean;
   readonly actions: readonly { readonly action: string; readonly title: string }[];
   readonly locale: string;
-  /** Missing-key markers (`⟦key⟧`) surfaced instead of being shipped to a user. */
+  /**
+   * What the composing server must see and the device must not: a missing-key marker (`⟦key⟧`),
+   * and a `renotify` dropped for want of a `tag`. Never serialized — `serializePushMessage` picks
+   * the wire fields by name.
+   */
   readonly warnings: readonly string[];
 }
 
@@ -102,14 +107,30 @@ export function renderPushPayload(
     return value;
   };
 
+  // `renotify` means "replace the notification carrying this tag and alert again", so the spec
+  // gives it no meaning without one: `showNotification` REJECTS with a `TypeError` and the device
+  // shows nothing at all. Dropped here rather than passed on, and reported rather than dropped in
+  // silence — a flag whose only effect is that the notification disappears is the shape this
+  // repository keeps re-shipping (`jobs.driver`, `PwaConfig.installPrompt`).
+  //
+  // The test is EMPTINESS, not presence: `tag` defaults to the empty DOMString in
+  // `NotificationOptions`, so `tag: ''` is the very pair the spec rejects and `!== undefined`
+  // waved it through — the guard reintroducing the `TypeError` it exists to prevent. `''` is also
+  // what a composing server produces from an unset collapse key, which is the common case.
+  const tag = payload.tag === undefined || payload.tag === '' ? undefined : payload.tag;
+  const renotify = (payload.renotify ?? false) && tag !== undefined;
+  if (payload.renotify === true && tag === undefined) {
+    warnings.push(`renotify needs a tag to replace — dropped for ${payload.titleKey}`);
+  }
+
   return {
     title: render(payload.titleKey),
     body: render(payload.bodyKey),
     url: payload.url,
-    tag: payload.tag ?? null,
+    tag: tag ?? null,
     icon: payload.icon ?? null,
     badge: payload.badge ?? null,
-    renotify: payload.renotify ?? false,
+    renotify,
     requireInteraction: payload.requireInteraction ?? false,
     actions: (payload.actions ?? []).map((action) => ({
       action: action.action,
@@ -152,8 +173,15 @@ export function pushSource(options: PushSourceOptions = {}): string {
   return `
 self.addEventListener('push',(event)=>{
   const d=event.data?event.data.json():{};
+  // renotify needs the tag: showNotification rejects with a TypeError when the flag is set and
+  // the tag is empty, and the device shows nothing. renderPushPayload refuses the pair too, but a
+  // push body is composed by whatever holds the VAPID key, so this is the last guard there is.
+  // A NON-EMPTY STRING, never truthiness: WebIDL converts every tag to a DOMString, and [] and {}
+  // are truthy in JS while converting to '' and '[object Object]'. !!d.tag therefore enabled
+  // renotify for a JSON [] whose converted tag is empty — the rejection this line exists to avoid.
+  const tg=typeof d.tag==='string'&&d.tag!==''?d.tag:undefined;
   const opts={body:d.body||'',icon:d.icon||${icon},badge:d.badge||${badge},
-    tag:d.tag||undefined,renotify:!!d.renotify,requireInteraction:!!d.requireInteraction,
+    tag:tg,renotify:!!d.renotify&&tg!==undefined,requireInteraction:!!d.requireInteraction,
     lang:d.lang||undefined,actions:d.actions||[],data:{url:d.url||'/'}};
   event.waitUntil(self.registration.showNotification(d.title||'',opts)${
     badging ? '.then(()=>navigator.setAppBadge&&navigator.setAppBadge())' : ''

@@ -205,10 +205,13 @@ describe('the deploy-critical fixes name commands that exist', () => {
       auditLedger([foreign], [addPosts], '1.5.0');
       expect.unreachable();
     } catch (error) {
-      const fix = (error as { fix: string }).fix;
+      const { cause, fix } = error as { cause: string; fix: string };
       expect(fix).not.toContain('x db status');
       expect(fix).not.toContain('roll the ledger');
-      expect(fix).toContain('1.6.0');
+      // The version is the CAUSE's, not the command's: a version is not a thing anyone runs, and
+      // keeping it out of the line is what lets the command be one shape for every ledger row.
+      expect(cause).toContain('1.6.0');
+      expect(fix).toContain('deploy the app version this error names');
       expect(fix).toContain('delete from x_migrations');
     }
   });

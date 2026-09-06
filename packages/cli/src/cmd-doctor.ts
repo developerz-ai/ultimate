@@ -4,12 +4,19 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ERROR_DOCS_URL, tryResolveEnvironment, usesDevCursorSecret } from '@ultimat3/core';
+import {
+  ENV_EXAMPLE_PATH,
+  ERROR_DOCS_URL,
+  tryResolveEnvironment,
+  usesDevCursorSecret,
+} from '@ultimat3/core';
 import { checkDb, createPostgresClient } from '@ultimat3/db';
 import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/storage';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { checkMigrationSnapshots } from './db-snapshot';
+import type { OfflineFallbackFact } from './doctor-offline';
+import { offlineFallbackFinding, offlineFallbackProbe } from './doctor-offline';
 import { intFlagOr, neighbouringPort, PORT_RANGE } from './flag-number';
 import { ICON_SOURCE } from './icon-assets';
 import { msg } from './messages';
@@ -59,6 +66,12 @@ export interface DoctorProbe {
    * separate remedies — one is "generate a migration", the other is "this migration is incomplete".
    */
   snapshots(): Promise<readonly Finding[]>;
+  /**
+   * What the app declared as its offline fallback, and which routes it really serves. A FACT and
+   * not a finding, because deciding is `offlineFallbackFinding`'s and this seam's whole job is
+   * reaching the disk — the same split `drift()` makes one question over.
+   */
+  offlineFallback(): Promise<OfflineFallbackFact>;
 }
 
 const finding = (code: string, cause: string, fix: string, at?: string): Finding =>
@@ -66,7 +79,8 @@ const finding = (code: string, cause: string, fix: string, at?: string): Finding
     ? { code, cause, fix, docs: ERROR_DOCS_URL }
     : { code, cause, fix, docs: ERROR_DOCS_URL, at };
 
-export const OFFLINE_FALLBACK = 'apps/web/app/offline.tsx';
+/** The file `x doctor` reports missing, and the one the reader creates. */
+export const ENV_DEVELOPMENT = '.env.development';
 
 /** The port `x dev` binds by default, so the probe answers about the port the developer will use. */
 const DEFAULT_DOCTOR_PORT = 3000;
@@ -125,13 +139,20 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
     );
     return findings;
   }
-  if (!probe.exists('.env.development')) {
+  if (!probe.exists(ENV_DEVELOPMENT)) {
     findings.push(
       finding(
         'X_ENV_MISSING',
-        '.env.development is missing, so committed defaults cannot be read',
-        'x new --force to restore the committed defaults, or create .env.development',
-        '.env.development',
+        `${ENV_DEVELOPMENT} is missing, so committed defaults cannot be read`,
+        // The file write, named — `X_PWA_ICON_MISSING`'s shape below, and for its reason. This
+        // said `x new --force`, which cannot run where the reader is standing: `x new` takes a
+        // <name> positional (reproduced: `x new --force --json` inside an app answers
+        // `X_CLI_BAD_FLAG`), and with one it scaffolds a SECOND app beside the broken one.
+        // `.env.example` is the committed projection of `envSchema`, so the copy lands every
+        // declared key with its default and blank secrets; `x env example` writes it where an app
+        // has none, and `X_ENV_EXAMPLE_DRIFT` is what reports that.
+        `cp ${ENV_EXAMPLE_PATH} ${ENV_DEVELOPMENT}`,
+        ENV_DEVELOPMENT,
       ),
     );
   }
@@ -183,16 +204,12 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
       ),
     );
   }
-  if (!probe.exists(OFFLINE_FALLBACK)) {
-    findings.push(
-      finding(
-        'X_PWA_NO_OFFLINE_FALLBACK',
-        `${OFFLINE_FALLBACK} is missing, so an offline navigation falls back to the browser error page`,
-        'x g route offline --surface app',
-        OFFLINE_FALLBACK,
-      ),
-    );
-  }
+  // The DECLARED fallback against the ROUTE TABLE, never a filename: this probed
+  // `apps/web/app/offline.tsx`, which is not a route file at all (`assertRouteFilename` refuses
+  // it), so no app could clear the finding and its own `fix:` did not either. `doctor-offline.ts`
+  // holds the rule and the reasons.
+  const offline = offlineFallbackFinding(await probe.offlineFallback());
+  if (offline !== undefined) findings.push(offline);
   const database = await probe.database();
   if (database !== null) findings.push(database);
   findings.push(...(await probe.drift()));
@@ -264,6 +281,10 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
     database: () => probeDatabase(process.env['DATABASE_URL']),
     drift: async () => (root === undefined ? [] : checkMigrationDrift(root)),
     snapshots: async () => (root === undefined ? [] : checkMigrationSnapshots(root)),
+    // `routes: undefined` outside an app is "not judged", which is what the caller already is:
+    // `runDoctor` returns on `X_NOT_IN_APP` before this can be asked.
+    offlineFallback: async () =>
+      root === undefined ? { fallback: null, routes: undefined } : offlineFallbackProbe(root),
   };
 }
 

@@ -32,10 +32,20 @@ export interface PwaRoute {
   readonly dynamic?: boolean;
   /** Explicit per-route override; wins over the derived strategy. */
   readonly strategy?: StrategyName;
-  /** Content hash of the built HTML — the precache revision. */
+  /**
+   * Content hash of the built HTML — the precache revision. Fed by the CLI's prerender pass; the
+   * `buildId` is the fallback, and it re-downloads every precached page on every deploy.
+   */
   readonly revision?: string;
+  /** Byte size of the built HTML, from the same prerender pass. Counted against `warnBytes`. */
   readonly bytes?: number;
-  /** Companion data endpoint precached alongside the HTML. */
+  /**
+   * Companion data endpoint precached alongside the HTML. **Nothing in the framework's build path
+   * sets it** — a hand-built `generateServiceWorker` call is the only route to a
+   * `reason: 'route-data'` entry, so the branch in `precache.ts` is unreachable in production.
+   * Kept because deleting a public field is a major; a candidate for the next one's
+   * declared-and-never-wired sweep, with `ServiceWorkerConfig`'s shell trio.
+   */
   readonly dataUrl?: string;
 }
 

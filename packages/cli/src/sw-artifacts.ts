@@ -50,15 +50,41 @@ export interface ServiceWorkerInput {
    * the offline fallback with no CSS is a page the visitor cannot read.
    */
   readonly styles: StyleBundle;
+  /**
+   * What the build RENDERED, keyed by the route path it was rendered for. Optional because only a
+   * static export has documents to hash: `x dev` and the container emit the worker at boot, where
+   * no page has been built yet, and `buildPrecacheManifest` falls back to the build id for a route
+   * this map does not name.
+   */
+  readonly documents?: ReadonlyMap<string, RenderedDocument>;
+}
+
+/**
+ * One rendered document, as the precache manifest needs it.
+ *
+ * `revision` is `contentHash(html)` — `@ultimat3/render`'s own, the function that already stamps
+ * an ETag — and never the build id. `precache.ts`' header states the rule and nothing kept it:
+ * `pwaRoutes` projected four of `PwaRoute`'s eight fields, so every route entry read
+ * `{"url":"/","revision":"build-aaa","bytes":0}` and two deploys of a byte-identical site
+ * re-fetched every precached document. The zero was the second half — `DEFAULT_PRECACHE_WARN_BYTES`
+ * is a 5 MB budget over a total that could not count one byte of HTML.
+ */
+export interface RenderedDocument {
+  readonly revision: string;
+  readonly bytes: number;
 }
 
 /**
  * The route table, as the service worker sees it. `api/` is dropped: an API response is a JSON
  * document whose freshness is the app's business, and precaching one serves a stale answer to a
- * client that had a network. Only the four fields `PwaRoute` reads cross — a descriptor carries
- * budgets and policy flags that a browser has no use for.
+ * client that had a network. Only the fields a browser can act on cross — a descriptor carries
+ * budgets and policy flags it has no use for — plus, for a route this build rendered, the content
+ * hash and the byte count of the document it produced.
  */
-const pwaRoutes = (routes: readonly RouteDescriptor[]): readonly PwaRoute[] =>
+const pwaRoutes = (
+  routes: readonly RouteDescriptor[],
+  documents: ReadonlyMap<string, RenderedDocument>,
+): readonly PwaRoute[] =>
   // `flatMap` rather than `filter().map()`: the filter's predicate does not narrow `surface` for
   // the map that follows it, and `PwaRoute` declares the two navigable surfaces only. A cast would
   // hide the day a fifth surface arrives.
@@ -66,6 +92,8 @@ const pwaRoutes = (routes: readonly RouteDescriptor[]): readonly PwaRoute[] =>
     // `shared/` is dropped with `api/`, and for a stronger reason: it is not a URL at all — the
     // surface exists so two routes can import one module, and a browser can never navigate to it.
     if (route.surface !== 'site' && route.surface !== 'app') return [];
+    // A `Map`, so a route path that happens to spell a prototype member cannot answer with one.
+    const document = documents.get(route.path);
     return [
       {
         path: route.path,
@@ -73,6 +101,10 @@ const pwaRoutes = (routes: readonly RouteDescriptor[]): readonly PwaRoute[] =>
         mode: route.mode,
         offline: route.offline,
         dynamic: route.dynamic,
+        // Absent rather than invented for a route no build rendered — an `ssr` page, or one this
+        // pass could not produce. `buildPrecacheManifest` then falls back to the build id, which
+        // is the honest answer when there are no bytes to hash.
+        ...(document === undefined ? {} : { revision: document.revision, bytes: document.bytes }),
       },
     ];
   });
@@ -128,14 +160,34 @@ export function serviceWorkerArtifacts(
   input: ServiceWorkerInput,
 ): ServiceWorkerArtifacts | undefined {
   const pwa = input.pwa;
-  if (pwa.offline.fallback === null) return undefined;
+  const head = serviceWorkerHead(pwa);
+  const fallback = pwa.offline.fallback;
+  // One predicate DECIDES — `serviceWorkerHead`, so a document can never name a script this
+  // function then declines to emit — and the `null` check is what NARROWS `fallback` below:
+  // TypeScript cannot learn a `string` from the other's answer, and a cast would hide the day the
+  // two stop agreeing.
+  if (head === undefined || fallback === null) return undefined;
+  const documents = input.documents ?? new Map<string, RenderedDocument>();
+  // The offline document is the one entry `buildPrecacheManifest` adds ITSELF, as
+  // `reason: 'fallback'`, ahead of every route — and `add()` keeps the first entry per url, so its
+  // revision is the one that decides. Without this pair it was the build id whatever the build
+  // knew, which re-downloaded the single page an offline navigation depends on on every deploy.
+  // Absent when this pass did not render the fallback (no route serves it — `x doctor` reports
+  // that as `X_PWA_NO_OFFLINE_FALLBACK`), and then `@ultimat3/pwa` falls back to the build id.
+  const fallbackDocument = documents.get(fallback);
   const output = generateServiceWorker(
-    pwaRoutes(input.routes),
+    pwaRoutes(input.routes, documents),
     {
       scope: SW_SCOPE,
       swPath: SERVICE_WORKER_PATH,
+      ...(fallbackDocument === undefined
+        ? {}
+        : {
+            offlineFallbackRevision: fallbackDocument.revision,
+            offlineFallbackBytes: fallbackDocument.bytes,
+          }),
       offline: {
-        fallback: pwa.offline.fallback,
+        fallback,
         ...(pwa.offline.image === null ? {} : { image: pwa.offline.image }),
         ...(pwa.offline.font === null ? {} : { font: pwa.offline.font }),
         neverCache: pwa.offline.neverCache,
@@ -148,7 +200,7 @@ export function serviceWorkerArtifacts(
   return {
     source: output.source,
     register: registerSource(),
-    head: `<script src="${SW_REGISTER_PATH}" defer></script>`,
+    head,
     precache: output.precache,
     // `output.warnings` IS `output.precache.warnings` — the generator returns the manifest's list
     // verbatim — so it is read once, not twice. The push line is this module's own, and it is the
@@ -159,6 +211,18 @@ export function serviceWorkerArtifacts(
     warnings: [...output.warnings, ...pushWarning(pwa)],
   };
 }
+
+/**
+ * The one `<script src>` a document needs, or `undefined` for an app that gets no worker.
+ *
+ * Separate from `serviceWorkerArtifacts` because the two are wanted at different moments: a static
+ * export has to put this tag in every document it renders, and the WORKER cannot be emitted until
+ * those documents exist — its precache manifest is built from their content hashes. One predicate
+ * for both (`offline.fallback === null` is `generateServiceWorker`'s refusal, spent early), so a
+ * document can never name a script the export does not carry.
+ */
+export const serviceWorkerHead = (pwa: PwaArtifacts): string | undefined =>
+  pwa.offline.fallback === null ? undefined : `<script src="${SW_REGISTER_PATH}" defer></script>`;
 
 /**
  * `pwa.push: true` with nothing to sign a subscription with. There is no `pwa.vapid` config key

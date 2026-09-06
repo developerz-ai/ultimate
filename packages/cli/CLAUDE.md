@@ -119,6 +119,36 @@ untouched. `x doctor` also probes `DATABASE_URL` with a real `select 1` through
 credentials, which is the case an operator most needs told about — and reports `X_DB_UNAVAILABLE`
 with that package's own two-branch fix. An EMBEDDED binding is not probed: that lock is `x dev`'s.
 
+`doctor-offline.ts` is `x doctor`'s offline-fallback check, and it is the shape of a diagnostic
+that could not be closed. The probe was the literal `apps/web/app/offline.tsx` — a filename
+`assertRouteFilename` REFUSES (`X_ROUTE_FILE_INVALID`: the directory is the URL, so a page is
+`page.tsx`) — while `x new` scaffolds `apps/web/site/offline/page.tsx` and the finding's own `fix:`
+writes `apps/web/app/offline/page.tsx`. Three different paths, so every app the framework has ever
+produced reported `X_PWA_NO_OFFLINE_FALLBACK` from its first `x doctor`, running the fix changed
+nothing, and the app that HAD the route was told it did not. It now reads the DECLARED
+`pwa.offline.fallback` through `loadPwaArtifacts` and matches it against `describeRoutes()` —
+**`site/` only**, `As of 2026-09`. It accepted `app/` too, on the argument that both surfaces answer
+the same URL; true, and not the question. `SURFACE_SPECS` allows `app/` exactly `stream | ssr`, only
+a `static` route is prerendered, and `serviceWorkerArtifacts` precaches a rendered DOCUMENT
+(`documents.get(fallback)`) — so an `app/` fallback has nothing to precache and the offline
+navigation reaches the network it exists to survive without. The check and its own `fix:` disagreed
+about one code. Not closed by this: a `site/` route declaring `render: 'ssr'` is not prerendered
+either, and `NavigableRoute` carries no render mode. An app whose modules will not import is not
+judged at all, which is
+`appEntities`' rule (`schema-drift.ts`) one registry over. The fix is `x g route <name>
+--surface site` only where the fallback is one path segment the generator can really produce: a
+nested path slugifies to a DIFFERENT url, so there it is the config edit instead — a `fix:` that
+runs and leaves the finding where it was is the defect this file exists to end. **`site`, not
+`app`**: the document that answers a lost network has to render with no network, no session and no
+database, which `app/` (`ssr | stream`) cannot promise, and it is the line `@ultimat3/pwa`'s own
+`X_PWA_NO_OFFLINE_FALLBACK` hands out for the same code — two fixes for one code are two answers.
+
+`X_ENV_MISSING`'s fix is the file write, for the same reason. It was `x new --force`, which cannot
+run where the reader is standing: `x new` takes a `<name>` positional (`X_CLI_BAD_FLAG` without
+one) and with one it scaffolds a SECOND app beside the broken one. `cp .env.example
+.env.development` — the committed projection of `envSchema`, which is what `x env example` writes
+and `X_ENV_EXAMPLE_DRIFT` keeps honest.
+
 `i18n-index.ts` is the one writer of an app's `packages/i18n/src/index.ts`, shared by `x g` and
 `x i18n add|sync`. A catalog on disk and a SELECTABLE locale were two different sets: `x i18n add
 fr` wrote the file, exited 0, and left `x verify --only i18n` red with `X_CATALOG_UNREGISTERED`
@@ -406,7 +436,26 @@ cannot be missing from the precache manifest.
 |---|---|
 | `cmd-dev.ts` | mounts `/sw.js` and `/x-sw-register.js`; built ONCE at boot and deliberately not rebuilt on the watcher tick — a worker that changes under a page it already controls is the update path, and re-emitting one per keystroke exercises it on every save |
 | `serve.ts` | the same two routes in the container, from the same call |
-| `prerender.ts` | writes both as FILES into the export — a static host runs no route table, so a `<script src="/x-sw-register.js">` in every document is a 404 unless the bytes are in the artifact |
+| `prerender.ts` | writes both as FILES into the export — a static host runs no route table, so a `<script src="/x-sw-register.js">` in every document is a 404 unless the bytes are in the artifact. In TWO halves, `As of 2026-09-06`: `serviceWorkerHead(pwa)` before the render loop, because every document has to name the script, and `serviceWorkerArtifacts` AFTER it, because a precache revision is the content hash of a document that does not exist yet |
+
+**A precache revision is the DOCUMENT's content hash, and until 2026-09-06 it was the build id.**
+`pwaRoutes` projected four of `PwaRoute`'s eight fields, so every route entry read
+`{"url":"/","revision":"<buildId>","bytes":0}`: two deploys of a byte-identical site re-fetched
+every precached page, which is the one thing `packages/pwa/src/precache.ts`' own header says must
+never happen, and `DEFAULT_PRECACHE_WARN_BYTES` was a 5 MB budget over a total that could not count
+one byte of HTML. The cause was ORDER — `prerender.ts` emitted the worker before the render loop —
+so the emission moved after it and `ServiceWorkerInput.documents` carries `renderStatic`'s own
+`hash` and byte count per rendered path. `x dev` and `serve.ts` pass none and keep the build id:
+neither has rendered a page at boot, and inventing a hash for bytes that do not exist is a revision
+that never changes when the page does. **The offline document is fed through its own pair**, because
+`buildPrecacheManifest` adds it ITSELF as `reason: 'fallback'` ahead of every route and `add()`
+keeps the first entry per url — so the route entry of the same url is shadowed and only
+`offlineFallbackRevision` / `offlineFallbackBytes` (`ServiceWorkerConfig`, `@ultimat3/pwa`) can
+decide it. That pair was declared and fed by nobody for one commit; `serviceWorkerArtifacts` reads
+the fallback path out of the same `documents` map, so the one page an offline navigation depends on
+is content-addressed like every other. A fallback this pass did not render — no route serves it,
+which `x doctor` reports as `X_PWA_NO_OFFLINE_FALLBACK` — is absent from the map and keeps the
+build id.
 
 **Registration is an EXTERNAL script, never inline**, and that is a CSP fact rather than a
 preference: `startWeb` computes a `script-src` sha256 per inline script, so an unhashed one is

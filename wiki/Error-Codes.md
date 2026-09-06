@@ -486,7 +486,7 @@ No secret and no signature reaches a `cause`, a `fix` or a `meta`, and a URL is 
 
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
-| `X_PWA_NO_OFFLINE_FALLBACK` | `pwa.offline.fallback` is not set | the required field was removed | set `pwa: { offline: { fallback: '/offline' } }` |
+| `X_PWA_NO_OFFLINE_FALLBACK` | `pwa.offline.fallback` is not set, or no route serves it | the required field was removed, or the path it names has no page | `x g route offline --surface site`, then set `pwa: { offline: { fallback: '/offline' } }` |
 | `X_PWA_ICON_MISSING` | no source icon to generate from | the configured icon path does not exist | add an SVG or >=1024px PNG and point `pwa.icon` at it |
 | `X_PWA_MANIFEST_INVALID` | the generated web manifest failed validation | a bad `start_url` or `scope` | fix the `pwa` block; `cause` names the field |
 | `X_SW_SCOPE_INVALID` | the service-worker scope cannot serve the routes it precaches | a scope narrower than the app | serve `sw.js` from the app root |

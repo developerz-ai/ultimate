@@ -48,6 +48,46 @@ describe('buildPrecacheManifest', () => {
   });
 
   /**
+   * The offline document is precached like everything else, so it obeys the same rule the file
+   * header states: the revision is a CONTENT HASH, never the build id, or every deploy re-fetches
+   * it. It had no way to be one — `ServiceWorkerConfig` carried no field to pass a hash through —
+   * so the one document an offline navigation depends on was the single entry re-downloaded on
+   * every deploy, and its bytes were hardcoded to 0, under-counting `warnBytes` by exactly the
+   * size of the page that has to survive a lost network.
+   */
+  test('the offline document takes a content hash and its own byte count when given one', () => {
+    const hashed = buildPrecacheManifest({
+      buildId: 'b1',
+      routes: [],
+      offlineFallbackUrl: '/offline',
+      offlineFallbackRevision: 'deadbeef',
+      offlineFallbackBytes: 3_072,
+    });
+    const entry = hashed.entries.find((e) => e.url === '/offline');
+    expect(entry).toEqual({
+      url: '/offline',
+      revision: 'deadbeef',
+      bytes: 3_072,
+      reason: 'fallback',
+    });
+    expect(hashed.totalBytes).toBe(3_072);
+  });
+
+  test('and falls back to the build id and 0 bytes when not, which is the old behaviour', () => {
+    const plain = buildPrecacheManifest({
+      buildId: 'b1',
+      routes: [],
+      offlineFallbackUrl: '/offline',
+    });
+    expect(plain.entries.find((e) => e.url === '/offline')).toEqual({
+      url: '/offline',
+      revision: 'b1',
+      bytes: 0,
+      reason: 'fallback',
+    });
+  });
+
+  /**
    * Entry order is CODE UNITS, never `localeCompare`: this manifest is emitted into `sw.js`, whose
    * header promises byte-identical output for identical input, and `localeCompare` with no locale
    * argument answers from the runtime's ICU default and collation version — so an asset named

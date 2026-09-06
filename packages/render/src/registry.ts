@@ -7,6 +7,7 @@
 
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
 import { finiteCount } from '@ultimat3/core';
+import { byCodeUnit } from './code-unit-order';
 import {
   RouteDuplicateError,
   RouteFileInvalidError,
@@ -322,7 +323,9 @@ export function routeCount(): number {
 }
 
 export function routeEntries(): readonly RouteEntry[] {
-  return [...routes.values()].sort((a, b) => a.path.localeCompare(b.path));
+  // Code units, never `localeCompare` — `describeRoutes()` below promises an order "identical for
+  // identical input", and `localeCompare` with no locale argument reads the runtime's ICU default.
+  return [...routes.values()].sort((a, b) => byCodeUnit(a.path, b.path));
 }
 
 export function routeFor(path: string): RouteEntry | undefined {

@@ -17,6 +17,9 @@ const SAFE_SCHEMES: readonly string[] = ['http:', 'https:', 'mailto:', 'tel:', '
 
 const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 
+/** The prefix the `src` exemption is written against — see `safeUrl`'s last branch. */
+const DATA_IMAGE = 'data:image/';
+
 /**
  * The value to emit, or `null` when the attribute must not be emitted at all. An anchor with no
  * `href` is inert and still renders its text, which is strictly better than a live one nobody
@@ -45,6 +48,16 @@ export function safeUrl(value: string, attribute: string): string | null {
   // The one data URL kept, and only where the bytes are RENDERED rather than navigated to: the
   // framework's own blur placeholder is a `data:image/webp`. In an `href` a data URL is a document
   // that runs on nothing but is still a phishing surface, so it is refused there.
-  if (attribute === 'src' && stripped.slice(0, 11).toLowerCase() === 'data:image/') return value;
+  //
+  // `image/svg+xml` is carved back OUT of that exemption, because an SVG is not an image the way
+  // the other four are — it is a script document. `@ultimat3/render` routes EVERY `src` through
+  // here, not only an `<img>`'s, so `<iframe src="data:image/svg+xml,<svg><script>…">` executed
+  // the identical string this function refuses one attribute over in `href`.
+  // `@ultimat3/storage` deletes the same type from its default upload allowlist for the same
+  // reason. Read off `stripped`, never the raw value: a browser deletes the control characters
+  // before it parses the media type too.
+  if (attribute === 'src' && stripped.slice(0, DATA_IMAGE.length).toLowerCase() === DATA_IMAGE) {
+    return stripped.slice(DATA_IMAGE.length).toLowerCase().startsWith('svg') ? null : value;
+  }
   return null;
 }

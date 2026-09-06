@@ -153,7 +153,7 @@ export function generateWebManifest(config: WebManifestInput): WebManifestResult
 
   const manifest: WebManifest = {
     name: config.name,
-    short_name: config.shortName ?? config.name.slice(0, 12),
+    short_name: config.shortName ?? shortNameFrom(config.name),
     start_url: config.startUrl ?? scope,
     scope,
     display: config.display ?? 'standalone',
@@ -178,6 +178,19 @@ export function generateWebManifest(config: WebManifestInput): WebManifestResult
 }
 
 type MutableManifest = { -readonly [K in keyof WebManifest]?: WebManifest[K] };
+
+/** Home-screen labels are truncated by the OS well before this; the cap only bounds the string. */
+const SHORT_NAME_MAX_CODE_POINTS = 12;
+
+/**
+ * CODE POINTS, never `slice` — `String.prototype.slice` counts UTF-16 code units, so a name whose
+ * 12th unit is the high half of a surrogate pair (any emoji, any astral script) is cut mid
+ * character, and the lone surrogate that survives is what every UTF-8 encoder replaces with U+FFFD.
+ * The install prompt then offers a label ending in `` on the one surface a `short_name` exists for.
+ */
+function shortNameFrom(name: string): string {
+  return Array.from(name).slice(0, SHORT_NAME_MAX_CODE_POINTS).join('');
+}
 
 function assertValid(config: WebManifestInput): void {
   if (config.name.trim() === '') {
