@@ -12,6 +12,9 @@
 // decision — two symlinks to one directory are one module instance, and two store entries at one
 // version are still two — and `dirname`/`join` walk a resolved entry up to the package that owns it.
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
+// why: Bun exposes no path API — `dirname` walks a resolved entry up to the package that owns it,
+// `join` reaches its manifest, and `relative` is what turns an absolute hit into the repo-relative
+// path a finding names.
 import { dirname, join, relative } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Finding } from './output';

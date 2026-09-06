@@ -105,20 +105,42 @@ describe('unit · the app supplies the launcher', () => {
 });
 
 describe('unit · which binary a run launches', () => {
+  /** Injected, so the probe's four paths are asserted the same on a box with Chrome and without. */
+  const nothingInstalled = (): boolean => false;
+
   test('the flag wins, then PUPPETEER_EXECUTABLE_PATH, then CHROME_PATH', () => {
     const env = { PUPPETEER_EXECUTABLE_PATH: '/env/chrome', CHROME_PATH: '/fallback/chrome' };
-    expect(executablePathFrom('/flag/chrome', env)).toBe('/flag/chrome');
-    expect(executablePathFrom(undefined, env)).toBe('/env/chrome');
-    expect(executablePathFrom(undefined, { CHROME_PATH: '/fallback/chrome' })).toBe(
-      '/fallback/chrome',
+    expect(executablePathFrom('/flag/chrome', env, nothingInstalled)).toBe('/flag/chrome');
+    expect(executablePathFrom(undefined, env, nothingInstalled)).toBe('/env/chrome');
+    expect(
+      executablePathFrom(undefined, { CHROME_PATH: '/fallback/chrome' }, nothingInstalled),
+    ).toBe('/fallback/chrome');
+  });
+
+  /**
+   * The last resort, and the reason this function exists at all: `puppeteer-core` bundles no
+   * browser, so "nothing named" was never "the library finds its own" — it was a throw from inside
+   * the library. `cdp-launch.ts` has probed these four paths for the e2e driver since it shipped;
+   * `x shot` now reads the same list instead of a second one.
+   */
+  test('nothing named falls back to the probe the e2e driver already uses', () => {
+    expect(executablePathFrom(undefined, {}, (path) => path === '/usr/bin/google-chrome')).toBe(
+      '/usr/bin/google-chrome',
     );
+    // First hit wins, in the list's own order — the operator's `CHROME_PATH` is above all four.
+    expect(executablePathFrom(undefined, {}, (path) => path.startsWith('/usr/bin/chromium'))).toBe(
+      '/usr/bin/chromium',
+    );
+    expect(executablePathFrom(undefined, { CHROME_PATH: '/named' }, () => true)).toBe('/named');
   });
 
   // Undefined, never `''`: `localBrowser` omits the key entirely for undefined and would otherwise
-  // hand puppeteer an empty path to launch.
-  test('nothing named anywhere is undefined, so the library finds its own', () => {
-    expect(executablePathFrom(undefined, {})).toBeUndefined();
-    expect(executablePathFrom('', { PUPPETEER_EXECUTABLE_PATH: '' })).toBeUndefined();
+  // hand puppeteer an empty path to launch. `shotBrowserChoice` turns this into the refusal.
+  test('nothing named and nothing installed is undefined', () => {
+    expect(executablePathFrom(undefined, {}, nothingInstalled)).toBeUndefined();
+    expect(
+      executablePathFrom('', { PUPPETEER_EXECUTABLE_PATH: '' }, nothingInstalled),
+    ).toBeUndefined();
   });
 
   test('a named binary is checked against the filesystem', () => {

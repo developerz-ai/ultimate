@@ -49,15 +49,44 @@ export class ManifestDriftError extends UltimateError {
   }
 }
 
-/** A breaking contract change landed without a version bump. */
+/**
+ * Whether this app has ever published a major. NOT `verify.ts`'s `majorOf`, which DECIDES the gate
+ * and is fail-closed on an unparseable version; this one only picks which sentence the reader gets,
+ * and a version it cannot recognise (`"0"`, `"next"`) falls to the `else` branch — the stricter of
+ * the two instructions, so a guess is never the permissive one.
+ */
+const neverShippedAMajor = (version: string): boolean => version.trim().startsWith('0.');
+
+/**
+ * A breaking contract change landed without a version bump.
+ *
+ * Two causes and two fixes, because the FIRST time this fires it fires in a shape the single
+ * message described wrongly, twice over.
+ *
+ * `from === to` is the guaranteed first-fire shape, not an edge case: the drift gate forces the
+ * committed manifest to match the code in any green state, so both sides carry the same
+ * `package.json` version and `from 0.1.0 to 0.1.0` reads as a comparison that moved when nothing
+ * did. And `x new` scaffolds at `0.1.0`, where the instruction to bump the major is a demand for
+ * `1.0.0` from an app with no published clients — `0.2.0` does not satisfy the gate, because
+ * `majorOf` compares leading integers only.
+ *
+ * The file was wrong too: `AppConfig` has no `version` field and `defineConfig` excess-property-
+ * checks its literal, so "bump the major version in app.config.ts" fails typecheck when followed
+ * literally. The version is read from `package.json` (`app-manifest.ts`).
+ */
 export class ManifestBreakingError extends UltimateError {
   constructor(input: { changes: readonly string[]; from: string; to: string }) {
     super({
       code: 'X_MANIFEST_BREAKING',
       cause:
-        `${input.changes.length} breaking change(s) from ${input.from} to ${input.to} ` +
-        `with no major version bump: ${summarize(input.changes)}`,
-      fix: 'bump the major version in app.config.ts, or restore the removed contract',
+        input.from === input.to
+          ? `${input.changes.length} breaking change(s) against the committed x.manifest.json, ` +
+            `with package.json unchanged at ${input.from}: ${summarize(input.changes)}`
+          : `${input.changes.length} breaking change(s) from ${input.from} to ${input.to} ` +
+            `with no major version bump: ${summarize(input.changes)}`,
+      fix: neverShippedAMajor(input.from)
+        ? 'a 0.x app has published no compatibility promise, and only 1.0.0 satisfies this gate — 0.2.0 does not: re-commit the baseline with x manifest, or bun pm pkg set version=1.0.0 in package.json'
+        : 'bump the major version in package.json — the leading integer, so 1.4.2 becomes 2.0.0 — or restore the removed contract',
     });
   }
 }

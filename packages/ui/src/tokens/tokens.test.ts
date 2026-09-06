@@ -123,6 +123,78 @@ describe('SCSS <-> TS token parity', () => {
   });
 });
 
+/**
+ * The other half of "one source of truth": a scale that is EMITTED but has no function to read it
+ * back is a custom property every author has to spell by hand, which is the one thing
+ * `@use '../tokens' as t` exists to stop.
+ *
+ * `--tracking-*` was emitted with no `tracking()` from the first commit through 19.1.3, so
+ * `t.tracking(wide)` in an app stylesheet failed the build with `Undefined function` — and this
+ * package's own `reset.scss` wrote `letter-spacing: var(--tracking-tight)` directly beneath three
+ * `t.*()` calls, breaking its own convention because there was nothing else to write. The parity
+ * block above cannot see this: it asks whether a TS mirror agrees with a map, which is a different
+ * question, and `$letter-spacing` is not in it either.
+ *
+ * The prefixes are read out of each `emit` mixin, never hand-listed — a hand-written table would
+ * have skipped `$letter-spacing` exactly as the parity test did — and then PINNED, so a new scale
+ * arriving without its accessor fails here rather than in an app's build.
+ */
+describe('every emitted scale has an accessor', () => {
+  /** The custom-property prefixes a partial's `emit` mixin writes, in source order. */
+  function emittedPrefixes(source: string): readonly string[] {
+    const emit = /@mixin emit \{([\s\S]*?)\n\}/.exec(source)?.[1];
+    if (emit === undefined) return expect.unreachable('the partial has no @mixin emit');
+    return [...emit.matchAll(/--([a-z-]+)-#\{\$[a-z]+\}/g)].map((match) => match[1] as string);
+  }
+
+  /**
+   * `@function <name>($x) { @return var(--<name>-#{$x}); }`. The backreference is the point: a
+   * function that interpolates some OTHER parameter is not an accessor for this scale, and the
+   * parameter is `$step` in `_space.scss` and `$name` everywhere else.
+   */
+  const declaresAccessor = (source: string, name: string): boolean =>
+    new RegExp(
+      `@function ${name}\\((\\$[a-z]+)\\) \\{\\s*@return var\\(--${name}-#\\{\\1\\}\\);`,
+    ).test(source);
+
+  /**
+   * `_colors.scss` and `_shadow.scss` are absent because neither emits in this shape — colours go
+   * through four themed blocks and a `channels` mixin, shadows through `levels($map)` — and both
+   * already have their accessor (`role()`, `shadow()`).
+   *
+   * `--font-sans` / `--font-mono` are the one exemption: they are the two slots `defineTheme()`
+   * REPLACES, not rungs on a scale, so a stack is picked whole and there is nothing for a
+   * `font('sans')` to compose.
+   */
+  const EMITTED: readonly (readonly [string, readonly string[]])[] = [
+    ['_typography.scss', ['font', 'text', 'weight', 'leading', 'tracking']],
+    ['_space.scss', ['space']],
+    ['_radius.scss', ['radius']],
+    ['_motion.scss', ['duration', 'easing']],
+    ['_z.scss', ['z']],
+  ];
+  const NO_ACCESSOR = new Set(['font']);
+
+  test('each partial emits exactly the scales it is pinned at', async () => {
+    for (const [file, prefixes] of EMITTED) {
+      expect(emittedPrefixes(await scss(file))).toEqual([...prefixes]);
+    }
+  });
+
+  test('and every one of them is reachable through a function', async () => {
+    const missing: string[] = [];
+    for (const [file, prefixes] of EMITTED) {
+      const source = await scss(file);
+      for (const prefix of prefixes) {
+        if (!NO_ACCESSOR.has(prefix) && !declaresAccessor(source, prefix)) {
+          missing.push(`${file}: ${prefix}()`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+});
+
 describe('token helpers', () => {
   test('color() composites alpha off the same channel token', () => {
     expect(color('bg')).toBe('rgb(var(--color-bg) / 1)');

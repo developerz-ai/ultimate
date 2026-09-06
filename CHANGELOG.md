@@ -8,10 +8,24 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Six more seams surfaced by the same app, one day on. Every entry names its measurement. None is
-breaking.
+Six more seams surfaced by the same app, one day on, plus five found by building a **second**
+app — a Romanian point-of-sale register — on 19.1.3 the same day. Every entry names its
+measurement. None is breaking.
 
 ### Added
+
+- **`t.tracking()` — the tenth token accessor.** `$letter-spacing` has been emitted as
+  `--tracking-tight | normal | wide` since the scale existed, and was the ONE emitted scale with
+  no function to read it, beside nine that had one. An app writing `tokens.tracking('wide')` got
+  `X_PRERENDER_FAILED: Undefined function` and had to fall back to `var(--tracking-wide)` — and so
+  did the framework, in its own `reset.scss:44` and `Divider.module.scss:26`, where a raw
+  `var(--tracking-tight)` sat directly beneath three `t.*()` calls. Both now read the function.
+  `tokens.test.ts` gated seven scales and skipped `$letter-spacing` entirely, which is how a whole
+  scale shipped with no accessor; the test now asserts every emitted scale is reachable through
+  one, with font family the single pinned exemption and its reason recorded (a comma-separated
+  stack is replaced whole by `defineTheme()`, not picked off a rung). `wiki/Theming.md` gains a
+  **Read it with** column naming each accessor, and stops claiming a universal TS mirror that two
+  scales never had.
 
 - **A query's `page()` is reachable through its GET route.** `GET /_x/query/<name>` answered a
   bare array and nothing else, so a read over a paged external source had nowhere to put its page
@@ -81,6 +95,53 @@ breaking.
   the `fix:` says so.
 
 ### Fixed
+
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
 
 - **Every `app/` document shipped 156,738 bytes of uncacheable inline CSS, on every navigation.**
   `dev-render.ts` wrapped `stylesFor(surface)` in a `<style>` block, and the pipeline sends a page
@@ -211,6 +272,53 @@ breaking.
 
 ### Fixed
 
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
+
 - **A stale service worker no longer walls the app off behind its own skew guard.** Both halves
   were sound and the pair was lethal. The generated `sw.js` stamps its `BUILD_ID` on every request
   it proxies; a server on a newer build answers that with `409 X_BUILD_SKEW`, whose body is a
@@ -233,6 +341,53 @@ breaking.
 ## 19.1.2 - 2026-09-06
 
 ### Fixed
+
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
 
 - **`@ultimat3/core`'s `logger` no longer takes a browser bundle down at module init.**
   `export const logger = createLogger()` runs when the module is evaluated, `createLogger()` calls
@@ -298,6 +453,53 @@ breaking.
 
 ### Fixed
 
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
+
 - **`X_ERROR_FIX_PATH_MISSING` judged a path the repository never commits.** The first app whose
   fixes name its private files (`.personal/fleet.yml`, `.personal/providers.yml` — the right
   thing to tell a reader to edit) was green on every developer's disk and red on every CI runner,
@@ -321,6 +523,53 @@ agents and one data agent each hit the framework at a seam nothing had measured.
 below names its measurement. None is breaking.
 
 ### Fixed
+
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
 
 - **A globally installed `x` inside an app wrote a manifest with zero entities, green.** A
   `bun link` of a checkout — or `bun add -g` — is a second copy of every `@ultimat3/*` package, and
@@ -573,6 +822,53 @@ below names its measurement. None is breaking.
 
 ### Fixed
 
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
+
 - **`E2eFixtures.offline()` did not take the SERVICE WORKER offline, so an offline assertion made
   on a PWA tested nothing.** Measured against the framework's own emitted `sw.js`: with the page
   session offline, a `networkFirst` route the cache had never seen still answered from the network,
@@ -668,6 +964,53 @@ below names its measurement. None is breaking.
   `X_CDP_CALL_FAILED`, `X_CDP_TIMEOUT`.
 
 ### Fixed
+
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
 
 - **Every `sideEffects` array in the tree was inert, and a shipped island was missing five declared
   effects.** `bun run side-effects` is a ratchet that moved 30 packages onto an honest `sideEffects`
@@ -959,6 +1302,53 @@ below names its measurement. None is breaking.
 
 ### Fixed
 
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
+
 - **The `@ultimat3/ui` barrel-parity test flapped red on a second module, on a loaded machine.**
   `barrel-bytes.test.ts` allows Bun 1.4.0's non-deterministic drop of
   `packages/core/src/schema-error-codes.ts` and asserted the difference was **exactly** that one
@@ -1000,6 +1390,53 @@ below names its measurement. None is breaking.
 
 ### Fixed
 
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
+
 - **A browser chunk that reaches `@ultimat3/core` no longer drags all of `@ultimat3/schema`.**
   Measured, `bun build --target=browser --minify`:
 
@@ -1021,6 +1458,53 @@ below names its measurement. None is breaking.
   the launcher's default.
 
 ### Fixed
+
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
 
 - **`x shot --island` produced two pictures per state and delivered one.** `<state>-light.png` and
   `<state>-dark.png` came back **byte-identical**, same md5, on `examples/dummy` (#338). The
@@ -1158,6 +1642,53 @@ validators either: all three **propagate** `NaN`, and this repo was relying on a
   construction, so no cursor is minted that a second call is guaranteed to throw on.
 
 ### Fixed
+
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
 
 - **`X_LOCALE_INVALID` was answering 500.** It sat in the never-reaches-a-request backlog on the
   strength of the http `locale` stage never throwing — true of that stage, irrelevant to `?locale=`,
@@ -1308,6 +1839,53 @@ validators either: all three **propagate** `NaN`, and this repo was relying on a
 
 ### Fixed
 
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
+
 - **`x db gen` never dropped an index an entity stopped declaring.** `diffTable`'s index loop
   walked DECLARED indexes only and matched by name, so a recorded index no entity declares stayed
   on the database forever while the next sidecar quietly stopped recording it. `checkPlan` has that
@@ -1384,6 +1962,53 @@ validators either: all three **propagate** `NaN`, and this repo was relying on a
 The four items 14.0.0 left open, closed — and one deliberately left open, with the reason.
 
 ### Fixed
+
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
 
 - **A retype aborted whenever a predicate named the column.** `alter column … type` failed
   `42883` when a partial index's `where` or a CHECK named it: both were compiled against the old
@@ -1462,6 +2087,53 @@ The gaps 13.0.0 left, closed — and the three packages that release never opene
   scope, so `packages/testing`'s own test file leaked a driver into every later file in a run.
 
 ### Fixed
+
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
 
 - **BREAKING — a frame verb acted on the parent document.** `frameTarget` spread the parent target
   and `clear` was missed when the overrides were added. On CDP, `frame.fill()` cleared the
@@ -1588,6 +2260,53 @@ no ninth primitive, no new `PrimitiveKind`, and `PRIMITIVE_FACTORIES` grew by th
 
 ### Fixed
 
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
+
 - **`defineService` was a job-and-CLI feature, and nothing said so.** An app that registered
   `defineService('posts', …)` got that service in a job, a task and a CLI command and **nowhere
   else**: `@ultimat3/http` built its own service bag and never called core's `installedServices()`.
@@ -1672,6 +2391,53 @@ every primitive declaration, where `scripts/config-readers.ts` only ever saw `Ap
   (`packages/entity/src/column.ts`, `entity.ts`). Found while testing an unrelated index-name guard.
 
 ### Fixed
+
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
 
 - **Keyset pagination silently dropped rows.** The seek treated a whole millisecond as one equality
   class while `ORDER BY` evaluated `timestamptz` at microsecond precision — two different equality
@@ -1815,6 +2581,53 @@ every primitive declaration, where `scripts/config-readers.ts` only ever saw `Ap
 
 ### Fixed
 
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
+
 - **`llm()`'s semantic cache answered in the wrong language.** Reported against the reference app:
   the summary comes back in Spanish for an English reader. The model was never wrong — it is told
   `Write the summary in the locale {{locale}}` and it obeys. The cache was: `lookup` is a cosine
@@ -1844,6 +2657,53 @@ every primitive declaration, where `scripts/config-readers.ts` only ever saw `Ap
   works. It now asks for the method the run is going to call, and names the one that was missing.
 
 ### Fixed
+
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
 
 - **An island chunk carried the `NODE_ENV` of the process that built it, not the one it ships
   under.** `Bun.build` picks the `development` / `production` export condition from the build
@@ -1934,6 +2794,53 @@ every primitive declaration, where `scripts/config-readers.ts` only ever saw `Ap
 
 ### Fixed
 
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
+
 - **The island purity guard answered "pure" for an impure file.** It refused `solid-js` and a
   `.tsx` specifier, but `import { X } from './settings.island'` resolves to the `.tsx` under Bun and
   passed. The reference app was safe only because it used `import type`, which is erased — deleting
@@ -2017,6 +2924,53 @@ every primitive declaration, where `scripts/config-readers.ts` only ever saw `Ap
   ever**, and nothing waits after the final attempt.
 
 ### Fixed
+
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
 
 - **`UltimateError.retry` now reads `retryable` on a wire failure whose status says so.**
   `RemoteActionError`, `RpcFailedError` and `QueryRequestFailedError` previously always rendered
@@ -2193,6 +3147,53 @@ every primitive declaration, where `scripts/config-readers.ts` only ever saw `Ap
   do; `x jobs show` under `x dev` reported a settled job as still leased.
 
 ### Fixed
+
+- **`x shot` could not find an installed Chrome, though the framework already knew how.**
+  `cdp-launch.ts` has exported `CHROME_CANDIDATES` and `findChrome()` since the e2e driver needed
+  them; `x shot`'s own resolver never touched the filesystem, reading only `--browser`,
+  `PUPPETEER_EXECUTABLE_PATH` and `CHROME_PATH`. Measured: with Chrome at `/usr/bin/google-chrome`,
+  `x shot /` failed until `--browser` was passed by hand. The resolver now falls back to the probe
+  that already existed, and the refusal happens **before** the dev server boots — `cmd-shot.ts`
+  started a full embedded Postgres and then reported the wrong instruction. The old `fix:` line
+  said `bun add -d puppeteer-core`, which is true about the library and silent about the browser:
+  following it literally walked into ``An `executablePath` or `channel` must be specified``.
+
+- **A missing browser binary was retried five times as though the host were down.**
+  `X_SCRAPE_BROWSER_UNREACHABLE` wrapped every launch throw and was registered retryable, with a
+  fix line about `watchdog: { idleMs }` on a `scrape()` definition that does not exist on the
+  `x shot` path. A permanent misconfiguration is now told apart from a genuinely unreachable host;
+  only the second stays retryable.
+
+- **`X_MANIFEST_BREAKING` named a config field that does not exist.** Its fix said "bump the major
+  version in `app.config.ts`" — `AppConfig` has no `version` member and `defineConfig`
+  excess-property-checks its literal, so following the instruction literally fails typecheck. The
+  version is read from `package.json`. The same wrong file was repeated in `packages/manifest`'s
+  README and schema. The message also rendered `from 0.1.0 to 0.1.0`, which is the *guaranteed*
+  first-fire shape rather than an anomaly — the drift gate forces both sides equal in any green
+  state — and demanded `1.0.0` from an app `x new` had just scaffolded at `0.1.0` with no
+  published clients. All three are reworded; the comparison itself is unchanged.
+
+- **The screen-reader live region tripped an app's own CSP on every page load.**
+  `@ultimat3/ui`'s `announce()` assigned `region.style.cssText`, and a style applied by script is
+  not among the inline hashes the framework's own CSP computes at render time. Reproduced in a
+  clean headless Chrome with no extensions: `Applying inline style violates the following Content
+  Security Policy directive 'style-src …'`, report-only, on every load. The region now carries a
+  class hidden by the `visually-hidden` mixin `packages/ui` already ships — no second copy of the
+  recipe, no widened CSP — and gains the `inset-inline-start: 0` and `padding: 0` the old string
+  lacked, which is the document-widening bug `_mixins.scss`'s own header documents.
+
+- **A scaffolded app's coverage report carried a phantom file.** `bun test --coverage` listed the
+  built island chunk as a 2-line minified temp `.mjs` and never the island's source. Measured on
+  Bun 1.4.0: coverage does not remap a pre-built module through its sourcemap, so this is not
+  fixable with sourcemap settings — `island-bundle.ts` already emits one. `x new`'s bunfig now
+  ignores `**/*.mjs`, which removes the phantom. Making island *source* visible needs a separate
+  seam and is not in this release.
+
+- **A `Record` literal read with a computed key, in the CLI's own verify step table.**
+  `SUMMARIES[type]` in `verify-tests.ts` answered an `Object.prototype` member for any key nobody
+  declared. `type` is a closed union and cannot be `'constructor'` today, which is the argument
+  every one of the thirteen instances `scripts/proto-index.ts` was written for had, before it
+  stopped being true. Null-prototyped, the same repair as `packages/i18n/src/catalog.ts`.
 
 - **`maxConnections` is re-asked after `authenticate` resolves**, beside the readiness recheck that
   already was. Read once, the cap decided against a socket count that was already history: a restart

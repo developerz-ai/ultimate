@@ -9,7 +9,14 @@ import {
   retryFor,
 } from '@ultimat3/core';
 import { nextRetryForError } from '@ultimat3/jobs';
-import { authFailed, httpFailed, pageCrashed, watchdogStopped, wedged } from './error-throws';
+import {
+  authFailed,
+  browserUnreachable,
+  httpFailed,
+  pageCrashed,
+  watchdogStopped,
+  wedged,
+} from './error-throws';
 import {
   isRetryableScrapeError,
   SCRAPE_ERROR_RETRY,
@@ -94,6 +101,35 @@ describe('unit · the classification is load-bearing, not documentation', () => 
     );
     expect(decision.retry).toBe(false);
     expect(decision.stoppedBy).toBe('terminal');
+  });
+
+  /**
+   * The defect this split closes, asserted against the QUEUE'S decision rather than our table: a
+   * box with no Chrome on it launched a browser five times to fail identically, because every
+   * launch throw wore one retryable code. `browserUnreachable` reads the launcher's own words and
+   * answers `X_SCRAPE_BROWSER_MISSING`, terminal, for the half that is a configuration.
+   */
+  test('no browser to launch dead-letters at attempt 1 — five launches prove nothing', () => {
+    const decision = nextRetryForError(
+      policy,
+      1,
+      browserUnreachable(
+        'puppeteer',
+        new Error('An `executablePath` or `channel` must be specified for `puppeteer-core`'),
+      ),
+    );
+    expect(decision.retry).toBe(false);
+    expect(decision.stoppedBy).toBe('terminal');
+  });
+
+  test('a browser host that went away keeps its attempts — the other half must not move', () => {
+    const decision = nextRetryForError(
+      policy,
+      1,
+      browserUnreachable('puppeteer', new Error('socket hang up')),
+    );
+    expect(decision.retry).toBe(true);
+    expect(decision.stoppedBy).toBeUndefined();
   });
 
   test('a per-instance override is honoured because the CODE is registered', () => {

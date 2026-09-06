@@ -59,23 +59,25 @@ Anything still carrying the old numbers is stale — including any copy of the p
 
 ## Other token scales
 
-Every scale is a SCSS map in `packages/ui/src/tokens/` with a typed mirror in `tokens.ts`. [`theme.scss`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/src/tokens/theme.scss) is the **only** stylesheet that emits global custom properties.
+Every scale is a SCSS map in `packages/ui/src/tokens/`, emitted as a custom property by [`theme.scss`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/src/tokens/theme.scss) — the **only** stylesheet that emits any — and read back through the function in the third column below. `t.tracking(wide)`, never a hand-written `var(--tracking-wide)` — the property name is spelled in one file, and a scale with no function is one every author has to spell for themselves.
 
-| Scale | Custom property | Values |
-|---|---|---|
-| colour | `--color-accent` | the 24 roles above, as RGB channels |
-| space | `--space-4` | `0 1 2 3 4 5 6 8 10 12 16` → `0` … `4rem` |
-| radius | `--radius-md` | `none sm md lg xl pill full` |
-| z-index | `--z-dialog` | `base raised sticky dropdown drawer dialog popover tooltip toast skip-nav` |
-| duration | `--duration-fast` | `instant 0ms`, `fast 120ms`, `base 220ms`, `slow 400ms`, `slower 640ms` |
-| easing | `--easing-out` | `out in in-out spring` |
-| shadow | `--shadow-md` | `xs sm md lg xl` — **themed**, like colour: separate light and dark maps |
-| font family | `--font-sans`, `--font-mono` | the two slots `defineTheme()` overrides |
-| font size | `--text-md` | `xs` … `3xl`, every one a `clamp()` |
-| font weight | `--weight-semibold` | `normal medium semibold bold` |
-| line height | `--leading-normal` | `tight snug normal loose` |
-| letter spacing | `--tracking-tight` | `tight normal wide` — SCSS only, no TS mirror |
-| breakpoint | **none** | `sm 480px` … `2xl 1536px`, consumed only via `@include t.respond-to(<name>)`; never emitted as a custom property, because a media query cannot read one |
+Most scales carry a typed mirror in `tokens.ts` as well, for consumers that cannot read CSS. Two do not, and the table says which; `tokens.test.ts` fails the build on drift in the ones that do.
+
+| Scale | Custom property | Read it with | Values |
+|---|---|---|---|
+| colour | `--color-accent` | `t.role('accent', $alpha)` | the 24 roles above, as RGB channels |
+| space | `--space-4` | `t.space(4)` | `0 1 2 3 4 5 6 8 10 12 16` → `0` … `4rem` |
+| radius | `--radius-md` | `t.radius(md)` | `none sm md lg xl pill full` |
+| z-index | `--z-dialog` | `t.z(dialog)` | `base raised sticky dropdown drawer dialog popover tooltip toast skip-nav` |
+| duration | `--duration-fast` | `t.duration(fast)` | `instant 0ms`, `fast 120ms`, `base 220ms`, `slow 400ms`, `slower 640ms` |
+| easing | `--easing-out` | `t.easing(out)` | `out in in-out spring` |
+| shadow | `--shadow-md` | `t.shadow(md)` | `xs sm md lg xl` — **themed**, like colour: separate light and dark maps |
+| font family | `--font-sans`, `--font-mono` | `var(--font-sans)` | the two slots `defineTheme()` overrides. The one scale with no function and no TS mirror: a stack is replaced whole, not picked off a rung, and a comma list is not one value per key |
+| font size | `--text-md` | `t.text(md)` | `xs` … `3xl`, every one a `clamp()` |
+| font weight | `--weight-semibold` | `t.weight(semibold)` | `normal medium semibold bold` |
+| line height | `--leading-normal` | `t.leading(normal)` | `tight snug normal loose` |
+| letter spacing | `--tracking-tight` | `t.tracking(tight)` | `tight normal wide` — SCSS only, no TS mirror |
+| breakpoint | **none** | `@include t.respond-to(md)` | `sm 480px` … `2xl 1536px`; never emitted as a custom property, because a media query cannot read one |
 
 Note the naming: font size is `--text-*`, weight is `--weight-*`, line height is `--leading-*`, tracking is `--tracking-*` — not `--font-size-*`.
 

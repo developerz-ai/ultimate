@@ -197,6 +197,25 @@ export function createRovingTabindex(
 
 export type Politeness = 'polite' | 'assertive';
 
+/**
+ * One region per politeness level — this plus `-polite` / `-assertive` is the id — and this on its
+ * own is the CLASS both of them wear, because they are hidden identically.
+ *
+ * A class, and not the `region.style.cssText` this wrote until 19.1.3: a style a script applies at
+ * runtime is not among the inline `<style>` bodies the framework's own CSP hashed at render time
+ * (`packages/cli/src/style-csp.ts`, sent by `dev-roles.ts`), so a clean browser logged `Applying
+ * inline style violates the following Content Security Policy directive 'style-src'` on every page
+ * load — and an app that promotes that report-only policy to enforcing would have the declaration
+ * dropped and the announcement painted on screen as visible page content. The rules live in
+ * `tokens/reset.scss`, through the same `visually-hidden` mixin every other off-screen label in
+ * this package uses.
+ *
+ * That the app loads this package's global stylesheet is not a new assumption — every rule this
+ * package emits reads a custom property from it, and `x verify` refuses a document defining none
+ * (`X_STYLES_GLOBAL_MISSING`). Being ANNOUNCED does not depend on it either way: `aria-live` is
+ * read off the accessibility tree, so a region with no stylesheet is still read out, and only the
+ * hiding is lost.
+ */
 const LIVE_REGION_ID = 'ultimate-live-region';
 
 /**
@@ -211,11 +230,10 @@ export function announce(message: string, politeness: Politeness = 'polite'): vo
   if (region === null) {
     region = document.createElement('div');
     region.id = id;
+    region.className = LIVE_REGION_ID;
     region.setAttribute('role', politeness === 'assertive' ? 'alert' : 'status');
     region.setAttribute('aria-live', politeness);
     region.setAttribute('aria-atomic', 'true');
-    region.style.cssText =
-      'position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%)';
     document.body.appendChild(region);
   }
   region.textContent = '';

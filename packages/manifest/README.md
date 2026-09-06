@@ -74,14 +74,27 @@ permissions), `diff-rate-limit.ts`, `diff-entities.ts`, `diff-work.ts` (jobs, ta
 `diff-change.ts`. `diff.ts` is the orchestrator and nothing else.
 
 `verifyContract()` is the gate: a breaking change fails unless the app's **major** version
-moved. An unparseable version counts as "not bumped" — fail-closed.
+moved. The version is the app's `package.json` `version`, never `app.config.ts` — `AppConfig`
+has no `version` field. An unparseable version counts as "not bumped" — fail-closed.
 
 ```
 X_MANIFEST_BREAKING: contract broke without a version bump
   cause: 1 breaking change(s) from 1.4.2 to 1.5.0 with no major version bump:
          actions.publishPost: action removed
-  fix:   bump the major version in app.config.ts, or restore the removed contract
+  fix:   bump the major version in package.json - the leading integer, so 1.4.2 becomes
+         2.0.0 - or restore the removed contract
 ```
+
+`from === to` is the shape this fires in first, and it gets its own cause: the drift gate forces
+both sides equal in any green state, so a comparison that "moved" from 0.1.0 to 0.1.0 describes
+nothing. It reads `N breaking change(s) against the committed x.manifest.json, with package.json
+unchanged at 0.1.0` instead.
+
+An app still at **0.x** gets its own fix line too. `majorOf` compares leading integers only, so
+`0.1.0 -> 0.2.0` does not satisfy the gate and only `1.0.0` does — which is a strange demand of an
+app `x new` scaffolded at `0.1.0` with no published clients. That branch names the two honest
+actions: re-commit the baseline with `x manifest`, or `bun pm pkg set version=1.0.0` if the app
+really does have clients to keep a promise to.
 
 ## AGENTS.md: validated, never generated
 
