@@ -3,11 +3,14 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { createRecordingClient, setDbClient } from '@ultimat3/db';
 import { integer, text, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
+import { N_PLUS_ONE_THRESHOLD } from './n-plus-one';
+import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
-import { type RowBulkChange, type RowChange, setRowObserver } from './row-observer';
+import { observedRepo, type RowBulkChange, type RowChange, setRowObserver } from './row-observer';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';
 const ONE = '00000000-0000-4000-8000-000000000001';
@@ -51,8 +54,12 @@ const asMember = <T>(work: () => Promise<T>): Promise<T> =>
 
 afterEach(() => {
   setRowObserver(null);
+  setDbClient(undefined);
   clearRegistry();
 });
+
+const idAt = (index: number): string =>
+  `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
 
 describe('every write verb reports what it committed', () => {
   test('insert reports the stored row, with no before', async () => {
@@ -195,5 +202,95 @@ describe('the observer never changes what a write does', () => {
     expect(setRowObserver(first)).toBeNull();
     expect(setRowObserver(second)).toBe(first);
     expect(setRowObserver(null)).toBe(second);
+  });
+});
+
+// Measured on ai-maxxing, 2026-09-06: an `upsertAll` of five pull requests logged
+// `X_N_PLUS_ONE_QUERY: pull_requests.findById ran 5 times in one request` — the observer's own
+// `before` reads, one per row, tripping the detector the framework ships. The threshold is the
+// detector's; a batch one past it is the smallest case the old shape could not pass.
+describe('the before-read of a batch is one statement, never one per row', () => {
+  const batch = Array.from({ length: N_PLUS_ONE_THRESHOLD + 1 }, (_, index) => ({
+    id: idAt(100 + index),
+    label: `tag ${index}`,
+  }));
+
+  test('an upsertAll reads its before-rows in ONE statement, and every row is still reported', async () => {
+    const seen: RowChange[] = [];
+    setRowObserver({ onChange: (change) => seen.push(change) });
+    const recorded = createRecordingClient();
+    setDbClient(recorded);
+    // Two of the six are already stored, so the read has to answer per row, not just "some".
+    const stored = batch.slice(0, 2).map((row) => ({ id: row.id, label: 'old' }));
+    recorded.on('from "observed_tags"', { rows: stored });
+    recorded.on('insert into "observed_tags"', { rows: batch });
+    const repo = observedRepo(tags, postgresRepo(tags));
+
+    const written = await repo.upsertAll(batch, { onConflict: ['id'], onMatch: 'update' });
+
+    const reads = recorded.texts.filter((text) => text.startsWith('select'));
+    expect(reads).toHaveLength(1);
+    expect(reads.length).toBeLessThan(N_PLUS_ONE_THRESHOLD);
+    // The set, as one `in` list — the statement `X_N_PLUS_ONE_QUERY`'s own fix line asks for.
+    expect(reads[0]).toContain('"id" in (');
+    // The ids, then the page bound (`limit + 1`, the row that says whether there is a next page).
+    expect(recorded.statements[0]?.values.slice(0, batch.length)).toEqual(
+      batch.map((row) => row.id),
+    );
+    expect(written).toHaveLength(batch.length);
+    expect(seen.map((change) => change.op)).toEqual([
+      'update',
+      'update',
+      'insert',
+      'insert',
+      'insert',
+      'insert',
+    ]);
+    expect(seen[0]?.before).toMatchObject({ id: batch[0]?.id, label: 'old' });
+    expect(seen[5]?.after).toMatchObject({ id: batch[5]?.id });
+  });
+
+  test('the memory driver answers the same six changes, so the two drivers agree', async () => {
+    const seen: RowChange[] = [];
+    setRowObserver({ onChange: (change) => seen.push(change) });
+    const db = database({ tags }, { driver: memoryDriver() });
+    await db.tags.insertAll(batch.slice(0, 2).map((row) => ({ ...row, label: 'old' })));
+    seen.length = 0;
+
+    await db.tags.upsertAll(batch, { onConflict: ['id'], onMatch: 'update' });
+
+    expect(seen.map((change) => change.op)).toEqual([
+      'update',
+      'update',
+      'insert',
+      'insert',
+      'insert',
+      'insert',
+    ]);
+    expect(seen.map((change) => (change.after as { id: string }).id)).toEqual(
+      batch.map((row) => row.id),
+    );
+  });
+
+  test('a read that refuses leaves the write alone: every row reports as an insert', async () => {
+    const seen: RowChange[] = [];
+    setRowObserver({ onChange: (change) => seen.push(change) });
+    const recorded = createRecordingClient();
+    recorded.on('insert into "observed_tags"', { rows: batch });
+    // Every read refuses; the write goes through. The rejection is the subject's input, never a
+    // verdict — which is why it is a bare `Error` and not one of this package's own.
+    setDbClient({
+      ...recorded,
+      query: <T>(fragment: { readonly text: string }): Promise<readonly T[]> =>
+        fragment.text.startsWith('select')
+          ? Promise.reject(new Error('the read is refused'))
+          : recorded.query<T>(fragment as never),
+    });
+    const repo = observedRepo(tags, postgresRepo(tags));
+
+    const written = await repo.upsertAll(batch, { onConflict: ['id'], onMatch: 'update' });
+
+    expect(written).toHaveLength(batch.length);
+    expect(new Set(seen.map((change) => change.op))).toEqual(new Set(['insert']));
   });
 });

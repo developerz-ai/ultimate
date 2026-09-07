@@ -48,12 +48,23 @@ export interface GenerateOptions {
    * package, and only then does a generated file import `t` from `@ultimat3/i18n` instead.
    */
   readonly catalogModule?: string;
+  /**
+   * `action` and `mutator`: the slice's `errors.ts` as it stands on disk, absent when there is
+   * none. Supplied by `run` for `catalogModule`'s reason — whether the slice declares
+   * `<Feature>NotFoundError` is a fact about THIS app, and a template that assumed it wrote an
+   * import of a class the app never declared. Read at `sliceDir(surface, feature)/errors.ts`.
+   */
+  readonly sliceErrors?: string;
 }
 
 const DEFAULT_SURFACE_DIR: Record<Surface, string> = {
   site: 'apps/web/site',
   app: 'apps/web/app',
 };
+
+/** Where a feature slice lives, relative to the app root — the one derivation `run` reads from. */
+export const sliceDir = (surface: Surface, feature: string): string =>
+  `${DEFAULT_SURFACE_DIR[surface]}/${feature}`;
 
 /**
  * Pure: returns the files a generator would write. `x g` writes them, the generator test asserts
@@ -76,9 +87,20 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
         }),
       );
     case 'action':
-      return dedupe(actionFiles(options.name, target));
+      return dedupe(
+        actionFiles(options.name, {
+          ...target,
+          ...(options.sliceErrors === undefined ? {} : { sliceErrors: options.sliceErrors }),
+        }),
+      );
     case 'mutator':
-      return dedupe(actionFiles(options.name, { ...target, mutator: true }));
+      return dedupe(
+        actionFiles(options.name, {
+          ...target,
+          mutator: true,
+          ...(options.sliceErrors === undefined ? {} : { sliceErrors: options.sliceErrors }),
+        }),
+      );
     case 'backfill':
       return dedupe(backfillFiles(options.name, target));
     case 'entity':

@@ -115,15 +115,47 @@ const TOKEN_FIX =
   "@ultimat3/ui/tokens exports functions and mixins — space(4), radius(md), role('surface-raised'), " +
   'text(sm) — and no $variables';
 
+/**
+ * A leading byte-order mark or `@charset` rule: the encoding claim Sass writes at the head of any
+ * output holding a non-ASCII character. Anchored to the START — a `@charset` anywhere else is
+ * already invalid CSS and not this function's to repair.
+ */
+const CHARSET_HEAD = /^\uFEFF?(?:@charset\s+"[^"]*"\s*;\s*)?/u;
+
+/**
+ * Drop the encoding claim from the head of one compiled sheet. Sass emits it for the FILE it
+ * believes it is writing, and it is right about a file: a stylesheet that begins with U+FEFF is
+ * decoded as UTF-8 by every browser. It is wrong about a fragment. The registry concatenates
+ * modules verbatim, so every module after the first that holds a `content: '·'` began with a BOM
+ * glued to its first selector — `\uFEFF.dashboard_256ee8e0{display:grid}` — which the browser reads
+ * as an unparseable selector and drops with its whole rule. Measured on ai-maxxing's home
+ * stylesheet, 2026-09-06: seven modules, seven first rules gone, the dashboard's grid container
+ * painting `display: block` with only the UA rule in Chrome's matched styles. The bundle is served
+ * `text/css; charset=utf-8` by the route, so no sheet needs to claim its encoding at all.
+ *
+ * Applied at BOTH seams: on the compile, where `charset: false` already asks Sass not to write it,
+ * and again where the sheets are joined, so a future Sass that ignores the option — or a sheet
+ * that reached the registry by another road — still cannot put a BOM mid-file.
+ */
+export function stripCharset(css: string): string {
+  return css.replace(CHARSET_HEAD, '');
+}
+
 export function compileStylesheet(file: string, source: string): CompiledStylesheet {
   let css: string;
   try {
-    css = sass.compileString(source, {
-      url: pathToFileURL(file),
-      loadPaths: [dirname(file)],
-      importers: [packageImporter(dirname(file))],
-      style: 'compressed',
-    }).css;
+    css = stripCharset(
+      sass.compileString(source, {
+        url: pathToFileURL(file),
+        loadPaths: [dirname(file)],
+        importers: [packageImporter(dirname(file))],
+        style: 'compressed',
+        // No `@charset`, no BOM — see `stripCharset`. Dart Sass writes one for any compressed
+        // output holding a non-ASCII character, and re-emits an escaped `\\00b7` as the literal
+        // character, so escaping in the app cannot avoid it.
+        charset: false,
+      }).css,
+    );
   } catch (error) {
     // `renderThrowable`, never `.message`/`String()`: an importer, a plugin or a future Sass
     // release can throw a value whose own read raises, and this frame is what turns a failed

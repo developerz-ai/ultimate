@@ -11,6 +11,17 @@ import type { GeneratedFile } from './templates';
 export const FIXTURE_APP = 'ledger-demo';
 
 /**
+ * An `errors.ts` an author wrote: it declares what the slice throws, and not the generated name.
+ * The generator's INPUT only — the sandbox's own `errors.ts` is the one the resource wrote — so it
+ * carries no `X_*` code: a literal here would be one shipped source hands a reader, and the
+ * registry rule would ask where it was registered.
+ */
+export const HANDWRITTEN_ERRORS = `import { UltimateError } from '@ultimat3/core';
+
+export class LedgerClosedError extends UltimateError {}
+`;
+
+/**
  * One realistic invocation of every generator, on top of `x new --example`. Names differ from
  * their feature on purpose: `x g query invoice --feature invoice` would collide with the entity
  * import, and a fixture that trips over its own naming stops testing the templates.
@@ -25,6 +36,12 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
   { kind: 'policy', name: 'credit-note', feature: 'credit-note' },
   { kind: 'action', name: 'send-invoice', feature: 'invoice' },
   { kind: 'mutator', name: 'rename-invoice', feature: 'invoice' },
+  // The other shape both templates have: a slice whose `errors.ts` is the author's and declares
+  // no `InvoiceNotFoundError`. The resource's own `errors.ts` still lands in the sandbox (it does
+  // declare one), which is the point — this compiles the file `x g action` writes when it must
+  // not import that class, beside the one it writes when it may.
+  { kind: 'action', name: 'ping-invoice', feature: 'invoice', sliceErrors: HANDWRITTEN_ERRORS },
+  { kind: 'mutator', name: 'touch-invoice', feature: 'invoice', sliceErrors: HANDWRITTEN_ERRORS },
   { kind: 'query', name: 'invoice-search', feature: 'invoice' },
   { kind: 'query', name: 'invoice-feed', feature: 'invoice', live: true },
   { kind: 'job', name: 'sweep-invoices', feature: 'invoice' },

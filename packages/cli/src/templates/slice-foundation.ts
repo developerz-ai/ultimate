@@ -3,6 +3,7 @@
 // `policyFiles`; the five generators that write *into* a slice imported the same files and wrote
 // none of them, so each emitted TS2307 in any slice a resource had not been run in first.
 
+import { stripComments } from '../ts-scan';
 import type { FeatureTarget } from './entity';
 import { entityFiles } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
@@ -83,4 +84,39 @@ export function sliceFoundation(
       ? [{ path: `${dir}/errors.ts`, contents: errorsSource(feature) }]
       : []),
   ]);
+}
+
+/** The exported names an `export { a, b as c }` list declares — `c`, never `b`. */
+const listedExports = (code: string): readonly string[] =>
+  [...code.matchAll(/\bexport\s*\{([^}]*)\}/g)].flatMap((match) =>
+    (match[1] ?? '')
+      .split(',')
+      .map(
+        (entry) =>
+          entry
+            .trim()
+            .split(/\s+as\s+/)
+            .at(-1)
+            ?.trim() ?? '',
+      )
+      .filter((entry) => entry !== ''),
+  );
+
+/**
+ * Whether `source` — a slice module as it stands on the app's disk — exports the VALUE `name`.
+ * Read at generation time because assuming it was measured: `x g action` into ai-maxxing's
+ * `fleet` slice wrote `import { FleetNotFoundError } from '../errors'` into a slice whose
+ * `errors.ts` declared `HostNotFoundError` and `SessionNotFoundError` and no `FleetNotFoundError`.
+ * The file failed at import — and because `x db gen` and `x manifest` load every module, one
+ * generated-and-not-yet-edited action made both refuse to run.
+ *
+ * Comments are masked first: `// TODO: add FleetNotFoundError` is not an export. A `type` or an
+ * `interface` of that name is not one either — the generated code constructs it.
+ */
+export function sliceExports(source: string, name: string): boolean {
+  const code = stripComments(source);
+  const declared = new RegExp(
+    `\\bexport\\s+(?:abstract\\s+)?(?:class|const|let|var|function|enum)\\s+${name}\\b`,
+  );
+  return declared.test(code) || listedExports(code).includes(name);
 }

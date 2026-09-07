@@ -142,6 +142,24 @@ describe('stylesFor', () => {
     expect(stylesFor('site')).toBe('');
   });
 
+  // The bundle is one file made of many compiles, and an encoding claim is legal at byte 0 of a
+  // file and nowhere else. Two modules with a non-ASCII `content:` are the smallest case: the
+  // second one's BOM sat glued to its first selector, and the browser dropped that whole rule.
+  test('two modules with a non-ASCII character join with no BOM between them', () => {
+    loadStylesheet(APP, ".dashboard{display:grid}.sep{content:'·'}");
+    loadStylesheet(
+      '/srv/demo/apps/web/app/fleet/page.module.scss',
+      ".fleet{display:grid}.dot{content:'·'}",
+    );
+    const css = stylesFor('app');
+    expect(css).not.toContain('\uFEFF');
+    expect(css).not.toContain('@charset');
+    expect(occurrences(css, 'display:grid')).toBe(2);
+    // Each module's first rule opens on its selector, exactly as the first module's does.
+    expect(css).toMatch(/^\.dashboard_[0-9a-f]{8}\{display:grid\}/);
+    expect(css).toMatch(/\}\.fleet_[0-9a-f]{8}\{display:grid\}/);
+  });
+
   test("a shared/ stylesheet reaches both surfaces — it is the app's own global layer", () => {
     loadStylesheet(GLOBAL, GLOBAL_CSS);
     expect(stylesFor('site')).toContain('--color-fg:');

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { compileStylesheet, isCssModule, isGlobalStylesheet, scopeClasses } from './css-modules';
+import {
+  compileStylesheet,
+  isCssModule,
+  isGlobalStylesheet,
+  scopeClasses,
+  stripCharset,
+} from './css-modules';
 
 // A real directory, because a bare `@use` is resolved by Bun against the file that wrote it.
 const TOKENS = `${import.meta.dir}/page.module.scss`;
@@ -80,5 +86,42 @@ describe('compileStylesheet', () => {
     // not. `sass:math` exercises the same importer and its null branch.
     const out = compileStylesheet(TOKENS, "@use 'sass:math';\n.hero{width:math.div(1,2)*100%}");
     expect(out.css).toContain('50%');
+  });
+});
+
+describe('a compiled sheet carries no encoding claim — it is a fragment, not a file', () => {
+  // Dart Sass writes U+FEFF at the head of any compressed output holding a non-ASCII character,
+  // and the registry joins modules verbatim: the second module's BOM landed glued to its first
+  // selector, and the browser dropped that rule. Seven of seven on ai-maxxing's home stylesheet.
+  test("a module with `content: '·'` compiles to CSS whose first byte is the selector's dot", () => {
+    const out = compileStylesheet(TOKENS, ".sep{content:'·'}");
+    expect(out.css.charCodeAt(0)).toBe('.'.charCodeAt(0));
+    expect(out.css).not.toContain('\uFEFF');
+    expect(out.css).not.toContain('@charset');
+  });
+
+  test('an escaped `\\00b7` is re-emitted literal by Sass, so escaping in the app is no way out', () => {
+    const out = compileStylesheet(TOKENS, '.sep{content:"\\00b7"}');
+    expect(out.css).toContain('·');
+    expect(out.css.charCodeAt(0)).toBe('.'.charCodeAt(0));
+  });
+
+  test('a plain stylesheet is held to the same rule — it is joined by the same seam', () => {
+    const out = compileStylesheet('/srv/demo/apps/web/shared/global.scss', ".sep{content:'·'}");
+    expect(out.css).toStartWith('.sep{');
+  });
+});
+
+describe('stripCharset', () => {
+  test('drops a leading BOM, a leading @charset, and both together', () => {
+    expect(stripCharset('\uFEFF.a{color:red}')).toBe('.a{color:red}');
+    expect(stripCharset('@charset "UTF-8";.a{color:red}')).toBe('.a{color:red}');
+    expect(stripCharset('\uFEFF@charset "UTF-8";\n.a{color:red}')).toBe('.a{color:red}');
+  });
+
+  test('leaves a sheet with no claim byte-identical, and a mid-file one alone', () => {
+    expect(stripCharset('.a{color:red}')).toBe('.a{color:red}');
+    // Not this function's to repair: a `@charset` past byte 0 is invalid CSS wherever it sits.
+    expect(stripCharset('.a{}@charset "UTF-8";')).toBe('.a{}@charset "UTF-8";');
   });
 });
