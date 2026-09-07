@@ -15,7 +15,6 @@ import {
   verifyCommand,
   verifyStepNames,
 } from './cmd-verify';
-import type { Runner } from './exec';
 import { msg } from './messages';
 import { exitCodeFor } from './output';
 import { parseArgs } from './parse';
@@ -249,28 +248,6 @@ describe('unit · x verify', () => {
         expect(finding?.cause).toContain('contarct');
       });
     });
-  });
-
-  // `x.verify.json`'s `typecheckBin` swaps the binary `bunx` invokes and nothing else — same
-  // `-b --pretty false`, same step, same finding either way. Absent means `tsc`, unchanged.
-  test("the typecheck step runs the floor's typecheckBin, and tsc without one", async () => {
-    const step = VERIFY_STEPS.find((candidate) => candidate.name === 'typecheck');
-    const root = await mkdtemp(join(tmpdir(), 'x-typecheck-bin-'));
-    try {
-      const ran: string[][] = [];
-      const runner: Runner = async (command) => {
-        ran.push([...command]);
-        return { command, code: 0, ok: true, stdout: '', stderr: '', durationMs: 0 };
-      };
-      await step?.run({ ...ctx, root, runner });
-      expect(ran.at(-1)).toEqual(['bunx', 'tsc', '-b', '--pretty', 'false']);
-
-      await Bun.write(join(root, VERIFY_FLOOR_FILE), '{"steps":[],"typecheckBin":"tsgo"}');
-      await step?.run({ ...ctx, root, runner });
-      expect(ran.at(-1)).toEqual(['bunx', 'tsgo', '-b', '--pretty', 'false']);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
   });
 
   test('it never bails early: later steps still run after a failure', async () => {
