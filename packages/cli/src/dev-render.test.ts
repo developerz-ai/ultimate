@@ -185,6 +185,28 @@ describe('unit · x dev renders the app routes', () => {
     });
   });
 
+  // The reload half of the test above: `app-load.ts` replaces the entry for a saved route module
+  // under a server whose route table was built at boot. The handler read the new entry from the
+  // first save; the pipeline's `meta` was a snapshot, so a policy ADDED by that save gated nothing
+  // until a restart — the new page, served under the old guard.
+  test('a policy added by a reload is enforced on the next request, on the same server', async () => {
+    const file = 'apps/web/app/settings/page.tsx';
+    register({ file, render: 'ssr' });
+    const server = serve();
+    const fetch = (): Promise<Response> => server.fetch(new Request('http://dev.test/settings'));
+    expect((await fetch()).status).toBe(200);
+    // What `app-load.ts` does on a save: the same file, registered again, now with a policy.
+    register({ file, render: 'ssr', policy: { permission: 'settings.read' } });
+    const gated = await fetch();
+    expect(gated.status).toBe(401);
+    expect(await gated.json()).toMatchObject({
+      type: expect.stringContaining('X_UNAUTHENTICATED'),
+    });
+    // And the other direction: a policy REMOVED by a save opens the page, on the same server.
+    register({ file, render: 'ssr' });
+    expect((await fetch()).status).toBe(200);
+  });
+
   test('a streamed page arrives as a stream, chunked and unbuffered', async () => {
     register({ file: 'apps/web/app/feed/page.tsx', render: 'stream' });
     const response = await get('/feed');

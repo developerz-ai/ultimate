@@ -16,7 +16,6 @@ import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { describeRoutes } from '@ultimat3/render';
 import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
-import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import { mountAppMcp } from './app-mcp';
 import { requireAppRoot } from './app-root';
@@ -142,9 +141,13 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   // uninstalled, and nothing more (axiom 6).
   const statements = createStatementLedger();
   setStatementObserver(statements.observer);
-  const app = await loadApp(options.root);
+  // ONE load at boot, the same call the rebuild below makes: the manifest and the findings are
+  // two projections of one scan. Until 2026-09-07 this was `loadApp` for the findings and then
+  // `appManifest` — which loads again — for the manifest, so a save landing between the two put
+  // `/_x`'s findings and its manifest on different registration states.
+  const app = await appManifest(options.root);
   const state: DevState = {
-    manifest: (await appManifest(options.root)).manifest,
+    manifest: app.manifest,
     reloads: 0,
     reloadFinding: undefined,
     appFindings: app.findings,

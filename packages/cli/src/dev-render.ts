@@ -293,19 +293,26 @@ const metaOf = (entry: RouteEntry): HttpRouteMeta => ({
 /**
  * One HTTP route per registered `route` primitive, in the table's own order.
  *
- * The URL, the method and the pipeline's `meta` are the table's at the time this is called; the
- * ENTRY is read back from the table on every request. `x dev` re-registers a route module when its
- * source changes (`app-load.ts`), and a handler closing over the entry it was built from kept
- * serving the first component after every save — the table had moved and this closure had not.
- * The entry captured here is the fallback for a table that was cleared under a running server,
- * which only a test does.
+ * The URL and the method are the table's at the time this is called; the ENTRY — the component the
+ * handler renders AND the `meta` the pipeline enforces — is read back from the table on every
+ * request. `x dev` re-registers a route module when its source changes (`app-load.ts`), and a
+ * handler closing over the entry it was built from kept serving the first component after every
+ * save — the table had moved and this closure had not. `meta` was the same defect one stage
+ * earlier: a snapshot taken here, so a `policy` added in a save was not enforced until a restart
+ * while the page behind it was already the new one — the pipeline's `auth` and `authz` stages read
+ * `route.meta` per request, and this getter is what makes that read the table's. The path cannot
+ * move under a reload (the table derives it from the file, and the file is the reload's key), so
+ * the entry captured here is only the fallback for a table cleared under a running server, which
+ * only a test does — and then guard and page fall back together.
  */
 export function appRoutes(options: DevRenderOptions): readonly Route[] {
   const isr = options.isr ?? createIsrController({ buildId: options.buildId });
   return routeEntries().map((registered) => ({
     method: 'GET' as const,
     path: registered.path,
-    meta: metaOf(registered),
+    get meta(): HttpRouteMeta {
+      return metaOf(routeFor(registered.path) ?? registered);
+    },
     // `ctx.params` is the router's own match — the CLI never re-parses a path it did not match.
     handler: async (request, ctx): Promise<Response> => {
       const entry = routeFor(registered.path) ?? registered;

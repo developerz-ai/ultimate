@@ -117,6 +117,13 @@ export async function loadApp(root: string): Promise<LoadedApp> {
       if (ENTRY_POINT.test(file) || CLIENT_ENTRY_POINT.test(file) || STATES_FILE.test(file)) {
         continue;
       }
+      // The source is read BEFORE the import, and only on the file's first pass — a rescan of a
+      // registered module reads nothing here. A route entry is bound to the bytes the module was
+      // evaluated from, and a read AFTER the import cannot know which bytes those were: a save
+      // landing between the two bound V1's component to V2's hash, so the next scan saw nothing to
+      // do and served V1 until the save after. Read first, the worst case is one re-import the
+      // next tick, of a file that did change.
+      const snapshot = registered.has(absolute) ? undefined : await Bun.file(absolute).text();
       let module: Record<string, unknown>;
       try {
         module = (await import(absolute)) as Record<string, unknown>;
@@ -125,7 +132,7 @@ export async function loadApp(root: string): Promise<LoadedApp> {
         continue;
       }
       files.push(file);
-      const finding = await register(absolute, file, module);
+      const finding = await register(absolute, file, module, snapshot);
       if (finding !== undefined) findings.push(finding);
     }
   }
@@ -144,21 +151,26 @@ export async function loadApp(root: string): Promise<LoadedApp> {
 /**
  * Registers a module once; every later call replays whatever the first one reported — except for
  * a route module, which a later call re-registers from disk when its source has changed.
+ * `snapshot` is the source read before the module's first import, and absent on every later call.
  */
 async function register(
   absolute: string,
   file: string,
   module: Record<string, unknown>,
+  snapshot: string | undefined,
 ): Promise<Finding | undefined> {
   const previous = failures.get(absolute);
   if (previous !== undefined) return previous;
-  if (registered.has(absolute)) return reloadRoute(absolute, file);
+  if (snapshot === undefined) return reloadRoute(absolute, file);
   registered.add(absolute);
   try {
     const config = module['config'];
-    if (isRouteConfig(config)) await registerRouteModule(absolute, file, module, config);
+    const route = isRouteConfig(config) ? config : undefined;
+    if (route !== undefined) registerRouteModule(file, module, route, snapshot);
     registerActions(module);
     registerQueries(module);
+    // Only a route module is ever re-imported, so only a route module's hash is worth keeping.
+    if (route !== undefined) routeSources.set(absolute, Bun.hash.wyhash(snapshot));
     return undefined;
   } catch (error) {
     const finding: Finding = { ...findingFrom(error), at: file };
@@ -167,16 +179,19 @@ async function register(
   }
 }
 
-/** The route half of a registration, and the whole of a re-registration. */
-async function registerRouteModule(
-  absolute: string,
+/**
+ * The route half of a registration, and the whole of a re-registration. `source` is the text the
+ * module was imported from — read by the caller BEFORE the import, never here after it — and the
+ * hash the entry is bound to is that text's. Until 2026-09-07 this read the file again, and a save
+ * between the import and that read registered the old component under the new hash: the next
+ * scan compared equal, and the page on disk was not served until the save after it.
+ */
+function registerRouteModule(
   file: string,
   module: Record<string, unknown>,
   config: RouteConfig,
-): Promise<void> {
-  // The build counts boundaries from the compiled JSX; before a build there is only the
-  // source, and `render: 'stream'` is rejected without one — so count them in the text.
-  const source = await Bun.file(absolute).text();
+  source: string,
+): void {
   // The page component comes from the same module as its config, resolved by render's own
   // rule — the CLI does not decide which export is a page any more than it decides what a
   // route is. A module with no component registers without one, and renders a bare shell.
@@ -184,10 +199,11 @@ async function registerRouteModule(
   registerRoute({
     file,
     config,
+    // The build counts boundaries from the compiled JSX; before a build there is only the
+    // source, and `render: 'stream'` is rejected without one — so count them in the text.
     suspenseBoundaries: countSuspense(source),
     ...(component === undefined ? {} : { component }),
   });
-  routeSources.set(absolute, Bun.hash.wyhash(source));
 }
 
 /**
@@ -208,8 +224,8 @@ async function reloadRoute(absolute: string, file: string): Promise<Finding | un
     // A file that stopped being a route is not un-registered — the table has no verb for it, and a
     // deleted file needs a restart either way. Its hash is recorded so the same save is not
     // re-imported on every later tick.
-    if (isRouteConfig(config)) await registerRouteModule(absolute, file, module, config);
-    else routeSources.set(absolute, hash);
+    if (isRouteConfig(config)) registerRouteModule(file, module, config, source);
+    routeSources.set(absolute, hash);
     return undefined;
   } catch (error) {
     return { ...findingFrom(error), at: file };

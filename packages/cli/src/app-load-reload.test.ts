@@ -106,4 +106,21 @@ describe('unit · loadApp re-imports a route module whose source changed', () =>
     // handler nobody routes to. The restart rule for everything but a route module is unchanged.
     expect(describeActions().filter((described) => described.name === 'greet')).toHaveLength(1);
   });
+
+  // The save that lands DURING the import, made deterministic: the module rewrites its own file
+  // while it evaluates, which is what a save between the import and a later read of the file
+  // looks like. The entry is bound to the bytes the module was evaluated from — read before the
+  // import — so the next scan sees the rewrite and serves it. Bound to a read after the import,
+  // the hash was the rewrite's and the component was not, the scan compared equal, and the page
+  // on disk was not served until the save after it.
+  test('a save that lands during the import is served on the next scan, not the one after', async () => {
+    const rewrite = `await Bun.write(import.meta.path, ${JSON.stringify(page('fresh'))});\n`;
+    await Bun.write(PAGE, page('stale') + rewrite);
+    expect((await loadApp(ROOT)).findings).toEqual([]);
+    // This scan evaluated the module that says `stale`, and that is the page it registered.
+    expect(await rendered()).toContain('stale');
+    expect(await Bun.file(PAGE).text()).toBe(page('fresh'));
+    expect((await loadApp(ROOT)).findings).toEqual([]);
+    expect(await rendered()).toContain('fresh');
+  });
 });
