@@ -13,7 +13,9 @@
 // the replicator — `@ultimat3/realtime`'s `selectChangeFeed` still decides, and this is never in
 // that decision.
 
+import { expectedQueryLoop } from '@ultimat3/db';
 import type { EntityCore } from './entity';
+import { MAX_PAGE_SIZE } from './plan';
 import type { Repo, RepoOptions, UpsertArgs } from './repo';
 import type { IdOf, RowPatch } from './types';
 
@@ -111,10 +113,58 @@ const beforeOf = async <Row>(
 ): Promise<Row | null> => {
   if (!readsById(entity as EntityCore<unknown>)) return null;
   try {
-    return await repo.findById(id);
+    // Expected, with the reason on the statement: this is ONE read for ONE point write, and a
+    // request that updates fifty rows one at a time is already fifty `update` statements — the
+    // caller's loop, reported on the caller's writes. Without the scope the same loop was reported
+    // twice, the second verdict naming a `findById` no app code issued.
+    return await expectedQueryLoop(
+      'the row observer reads the row a point write is about to change — one read per write',
+      () => repo.findById(id),
+    );
   } catch {
     return null;
   }
+};
+
+/**
+ * The `before` rows of a batch, read as ONE statement per `MAX_PAGE_SIZE` ids rather than one per
+ * row. Measured on ai-maxxing, 2026-09-06: an `upsertAll` of five pull requests logged
+ * `X_N_PLUS_ONE_QUERY: pull_requests.findById ran 5 times in one request` — the framework's own
+ * feed tripping the framework's own detector, exactly as the job step-write did before #415. A
+ * `findById` per row is not even coalesced into one statement, because each one is awaited
+ * before the next is issued and the coalescer's window is a microtask.
+ *
+ * `findMany` with `in` reads through the same plan a `findById` does — same tenant scope, same
+ * soft-delete filter — so a row this cannot see is a row `findById` could not see either. The
+ * page bound is the one every read has: past it the batch is several statements, never a refusal.
+ *
+ * The `catch` is `beforeOf`'s, for its reason: a diagnostic must not turn a working write into a
+ * failing one. On failure every row of the batch reports as an insert with no `before`, which is
+ * what `null` already means.
+ */
+const beforeAllOf = async <Row>(
+  entity: EntityCore<Row>,
+  repo: Repo<Row>,
+  ids: readonly string[],
+): Promise<ReadonlyMap<string, Row>> => {
+  const before = new Map<string, Row>();
+  if (ids.length === 0 || !readsById(entity as EntityCore<unknown>)) return before;
+  try {
+    for (let at = 0; at < ids.length; at += MAX_PAGE_SIZE) {
+      const chunk = ids.slice(at, at + MAX_PAGE_SIZE);
+      const page = await repo.findMany({
+        where: [{ column: 'id', op: 'in', value: chunk }],
+        limit: chunk.length,
+      });
+      for (const row of page.rows) {
+        const id = idOf(row);
+        if (id !== undefined) before.set(id, row);
+      }
+    }
+  } catch {
+    before.clear();
+  }
+  return before;
 };
 
 /**
@@ -153,18 +203,16 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
     },
 
     /**
-     * `before` is read per row and only for rows that carry an id, because a collision is what
-     * separates an insert from an update here and nothing else in the result says which happened.
-     * Under `onMatch: 'nothing'` a row already stored is absent from the result — so it wrote
-     * nothing, and reporting a change for it would be reporting a write that did not occur.
+     * `before` is read for the rows that carry an id — as one statement, `beforeAllOf` — because a
+     * collision is what separates an insert from an update here and nothing else in the result
+     * says which happened. Under `onMatch: 'nothing'` a row already stored is absent from the
+     * result — so it wrote nothing, and reporting a change for it would be reporting a write that
+     * did not occur.
      */
     upsertAll: async (rows: readonly Row[], args: UpsertArgs<Row>): Promise<readonly Row[]> => {
       if (installed === null) return await repo.upsertAll(rows, args);
-      const before = new Map<string, unknown>();
-      for (const row of rows) {
-        const id = idOf(row);
-        if (id !== undefined) before.set(id, await beforeOf(entity, repo, id as IdOf<Row>));
-      }
+      const ids = [...new Set(rows.flatMap((row) => idOf(row) ?? []))];
+      const before = await beforeAllOf(entity, repo, ids);
       const stored = await repo.upsertAll(rows, args);
       for (const row of stored) {
         const id = idOf(row);

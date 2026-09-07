@@ -16,7 +16,13 @@ installRenderLoader();
 
 // ---- scss → css, and the scoped class map every `import styles from` receives -------------------
 export type { CompiledStylesheet } from './css-modules';
-export { compileStylesheet, isCssModule, isGlobalStylesheet, scopeClasses } from './css-modules';
+export {
+  compileStylesheet,
+  isCssModule,
+  isGlobalStylesheet,
+  scopeClasses,
+  stripCharset,
+} from './css-modules';
 // ---- the two Bun loaders: `.tsx` → the server JSX factory, `.scss` → css + a class map ----------
 export type { Stylesheet } from './module-loader';
 export {

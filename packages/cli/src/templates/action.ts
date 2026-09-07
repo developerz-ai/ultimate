@@ -5,12 +5,25 @@
 import type { FeatureTarget } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
-import { sliceFoundation } from './slice-foundation';
+import { sliceExports, sliceFoundation } from './slice-foundation';
 import { wrapImport } from './wrap';
+
+/**
+ * The handler's lookup-by-id, or the comment that says what a slice needs before it can have one.
+ * `x g resource` writes a slice whose `errors.ts` declares `<Feature>NotFoundError`, and so does
+ * the foundation this generator lays under an empty directory; a slice an author wrote by hand
+ * (ai-maxxing's `fleet`, with `HostNotFoundError` and `SessionNotFoundError`) declares the errors
+ * it has and not this one. Importing it anyway is a file that fails at import.
+ */
+const missingLookup = (feature: NameSet): string =>
+  `    // No lookup by id: ../errors declares no ${feature.pascal}NotFoundError, and a row that is not
+    // there needs one to be thrown for it. Declare it there — the shape \`x g resource\` writes —
+    // then read the row through ../repo and throw it when the read answers nothing.`;
 
 const actionSource = (
   name: NameSet,
   feature: NameSet,
+  lookup: boolean,
 ): string => `// ${name.camel}: one mutation, server-authoritative. Input is validated before the handler runs
 // and the policy is the same object the MCP tool and the HTTP route evaluate.
 // \`t\` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
@@ -18,23 +31,25 @@ const actionSource = (
 import { action, t } from '@ultimat3/action';
 // One directory up: actions live in \`actions/\`, the feature's errors, policy and repo are the
 // slice's own files and are shared by every action in it.
-
-import { ${feature.pascal}NotFoundError } from '../errors';
-${wrapImport([`can${feature.pascal}Write`, `${feature.camel}Tag`], '../policy')}
-import * as repo from '../repo';
-
+${lookup ? `\nimport { ${feature.pascal}NotFoundError } from '../errors';\n` : ''}${wrapImport([`can${feature.pascal}Write`, `${feature.camel}Tag`], '../policy')}
+${lookup ? "import * as repo from '../repo';\n" : ''}
 export const ${name.camel} = action({
   // orgId is part of the input because the policy decides on it — authz reads the declaration,
   // never the database.
   input: t.object({ id: t.uuid, orgId: t.uuid }),
-  output: t.object({ id: t.uuid, title: t.string }),
+  output: t.object({ id: t.uuid${lookup ? ', title: t.string' : ''} }),
   policy: can${feature.pascal}Write,
   cache: { invalidates: [${feature.camel}Tag] },
   mcp: { expose: true, description: '${name.raw} — edit this description' },
   async handle({ input }) {
-    const row = await repo.byId(input.id);
+${
+  lookup
+    ? `    const row = await repo.byId(input.id);
     if (row === undefined) throw new ${feature.pascal}NotFoundError({ id: input.id });
-    return { id: row.id, title: row.title };
+    return { id: row.id, title: row.title };`
+    : `${missingLookup(feature)}
+    return { id: input.id };`
+}
   },
 });
 `;
@@ -42,14 +57,13 @@ export const ${name.camel} = action({
 const mutatorSource = (
   name: NameSet,
   feature: NameSet,
+  lookup: boolean,
 ): string => `// ${name.camel}: an action with an optimistic local twin. The local half runs against the client
 // store immediately; the server half is authoritative and reconciles on conflict.
 
 import { mutator, t } from '@ultimat3/action';
-import { ${feature.pascal}NotFoundError } from '../errors';
-import { can${feature.pascal}Write } from '../policy';
-import * as repo from '../repo';
-
+${lookup ? `import { ${feature.pascal}NotFoundError } from '../errors';\n` : ''}import { can${feature.pascal}Write } from '../policy';
+${lookup ? "import * as repo from '../repo';\n" : ''}
 interface Local${feature.pascal} {
   readonly id: string;
   readonly title: string;
@@ -71,9 +85,14 @@ export const ${name.camel} = mutator({
     });
   },
   async server(_ctx, input) {
-    const row = await repo.byId(input.id);
+${
+  lookup
+    ? `    const row = await repo.byId(input.id);
     if (row === undefined) throw new ${feature.pascal}NotFoundError({ id: input.id });
-    return { id: row.id, title: input.title };
+    return { id: row.id, title: input.title };`
+    : `${missingLookup(feature)}
+    return { id: input.id, title: input.title };`
+}
   },
   conflict: 'server-wins',
 });
@@ -181,6 +200,13 @@ contractTest('${name.camel} projects one tool and one operation', () => {
 
 export interface ActionOptions extends FeatureTarget {
   readonly mutator?: boolean;
+  /**
+   * The slice's `errors.ts` as it stands on disk, or absent when the slice has none yet. Absent,
+   * the foundation writes one declaring `<Feature>NotFoundError` and the action may throw it;
+   * present, the file is the author's and is never rewritten, so the action throws it only when
+   * `sliceExports` finds it there.
+   */
+  readonly sliceErrors?: string;
 }
 
 export function actionFiles(rawName: string, target: ActionOptions): readonly GeneratedFile[] {
@@ -188,6 +214,9 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
   const feature = names(target.feature);
   const dir = `${target.surfaceDir}/${target.feature}/actions`;
   const isMutator = target.mutator === true;
+  const lookup =
+    target.sliceErrors === undefined ||
+    sliceExports(target.sliceErrors, `${feature.pascal}NotFoundError`);
   return [
     // The three slice modules this action's source imports — `../errors`, `../policy`, `../repo`
     // (which comes with `../entity`, its row type). Composed rather than assumed: `x g action`
@@ -195,7 +224,9 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
     ...sliceFoundation(target, ['entity', 'policy', 'errors']),
     {
       path: `${dir}/${name.kebab}.ts`,
-      contents: isMutator ? mutatorSource(name, feature) : actionSource(name, feature),
+      contents: isMutator
+        ? mutatorSource(name, feature, lookup)
+        : actionSource(name, feature, lookup),
     },
     // TWO test files, because the gate types a test by its FILENAME and this declaration owes two
     // suites: the input parse is a `unit` assertion and the three projections are `contract` ones.

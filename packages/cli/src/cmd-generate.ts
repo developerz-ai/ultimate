@@ -7,7 +7,8 @@ import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { appManifest, writeAppManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import { generate } from './generate-files';
+import { generate, sliceDir } from './generate-files';
+import type { Generator } from './generate-kinds';
 import { GENERATORS, readKind, readName, readPermission, readSurface } from './generate-kinds';
 import { containedPath, writeFiles } from './generate-write';
 import { resolveCatalogModule } from './i18n-audit';
@@ -70,10 +71,13 @@ export const generateCommand: CliCommand = {
     // Read before a file is planned, like the flags above: which module a generated component
     // imports `useT()` from is a fact about THIS app, and `generate` is a pure function.
     const catalogModule = await resolveCatalogModule(root);
+    // Read for the same reason: which errors the slice declares is written on THIS app's disk.
+    const sliceErrors = await readSliceErrors(root, kind, sliceDir(surface, featureFlag ?? name));
     const files = generate({
       kind,
       name,
       ...(featureFlag === undefined ? {} : { feature: featureFlag }),
+      ...(sliceErrors === undefined ? {} : { sliceErrors }),
       ...(at === undefined ? {} : { at }),
       ...(permission === undefined ? {} : { permission }),
       surface,
@@ -138,3 +142,18 @@ export const generateCommand: CliCommand = {
     };
   },
 };
+
+/**
+ * The slice's `errors.ts`, for the two generators whose template throws from it. Only those two:
+ * a route or an island names no slice, and the "feature" the fallback derives for them is a path
+ * that exists nowhere — reading it would be answering a question nobody asked.
+ */
+async function readSliceErrors(
+  root: string,
+  kind: Generator,
+  slice: string,
+): Promise<string | undefined> {
+  if (kind !== 'action' && kind !== 'mutator') return undefined;
+  const file = containedPath(root, `${slice}/errors.ts`);
+  return existsSync(file) ? await Bun.file(file).text() : undefined;
+}

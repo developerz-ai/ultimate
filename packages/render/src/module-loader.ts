@@ -5,7 +5,7 @@
  */
 
 import { renderThrowable } from '@ultimat3/core';
-import { compileStylesheet, isGlobalStylesheet } from './css-modules';
+import { compileStylesheet, isGlobalStylesheet, stripCharset } from './css-modules';
 import { PrerenderFailedError } from './errors';
 import type { Surface } from './surfaces';
 import { surfaceOf } from './surfaces';
@@ -125,8 +125,10 @@ export function stylesFor(surface: Surface | null): string {
   const carried = [...stylesheets.values()].filter(
     (sheet) => sheet.surface === null || sheet.surface === 'shared' || sheet.surface === surface,
   );
+  // `stripCharset` on every sheet, not only the first: a `@charset` or a BOM is legal at byte 0 of
+  // a FILE and nowhere else, and this join is what turns seven files into one.
   return [...carried.filter((sheet) => sheet.global), ...carried.filter((sheet) => !sheet.global)]
-    .map((sheet) => sheet.css)
+    .map((sheet) => stripCharset(sheet.css))
     .join('');
 }
 

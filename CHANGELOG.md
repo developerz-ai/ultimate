@@ -8,7 +8,45 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+Round 3 from ai-maxxing, 2026-09-06: three defects a live app measured against 19.2.0 and 19.3.1
+source, each fixed at the seam with a test. Nothing here changes a documented API.
+
+### Fixed
+
+- The surface stylesheet no longer carries Sass's byte-order mark mid-file. Dart Sass writes a
+  leading U+FEFF at the head of any compressed output holding a non-ASCII character — a
+  `content: '·'` separator is enough, and an escaped `\00b7` is re-emitted as the literal
+  character, so escaping in the app was no way out. `stylesFor` joined the compiled modules
+  verbatim, so every module after the first that held one began with a BOM glued to its first
+  selector — `\uFEFF.dashboard_256ee8e0{display:grid}` — which the browser reads as an unparseable
+  selector and drops with the whole rule. Measured on ai-maxxing's home stylesheet: seven modules,
+  seven first rules gone, the dashboard's grid container painting `display: block` with only the UA
+  rule in Chrome's matched styles. `compileStylesheet` now passes `charset: false` — the bundle is
+  served `text/css; charset=utf-8` by its route, so no sheet needs to claim its encoding — and
+  `stripCharset` drops a leading BOM or `@charset` at BOTH seams: on every compile, and again where
+  the sheets are joined, so a future Sass that ignores the option cannot put one mid-file either.
+- The row observer reads a batch's `before` rows as one statement, never one per row. An
+  `upsertAll` of five pull requests logged `X_N_PLUS_ONE_QUERY: pull_requests.findById ran 5 times
+  in one request — one read per row` — the framework's own change feed tripping the framework's
+  own detector, exactly as the job step-write did before #415. The reads were not even coalesced
+  into one statement: each `findById` was awaited before the next was issued, and the coalescer's
+  window is a microtask. `beforeAllOf` now reads the set with one `findMany` whose `where` is
+  `id in (…)`, through the same plan a `findById` takes (same tenant scope, same soft-delete
+  filter), chunked at `MAX_PAGE_SIZE`, and a read that refuses still leaves the write alone. The
+  one read a point `update`/`delete` makes is now inside `expectedQueryLoop` with its reason on the
+  statement: a request that updates fifty rows one at a time is the caller's loop, reported on the
+  caller's fifty writes and not a second time on a `findById` no app code issued.
+- `x g action` and `x g mutator` throw `<Feature>NotFoundError` only where the slice's `errors.ts`
+  declares it. The template imported and threw it unconditionally; ai-maxxing's `fleet` slice
+  declares `HostNotFoundError` and `SessionNotFoundError` and no `FleetNotFoundError`, so the
+  generated action failed at import — and because `x db gen` and `x manifest` load every module,
+  one generated-and-not-yet-edited file made both refuse to run. `run` now reads the slice's
+  `errors.ts` off the app's disk and hands it to the pure generator as `sliceErrors`
+  (`catalogModule`'s pattern); `sliceExports` reads it with comments masked, and a slice that
+  lacks the class gets an action with no `../errors` and no `../repo` import and no lookup by id —
+  its handler carries the comment naming the class to declare. A slice with no `errors.ts` yet is
+  unchanged: the foundation writes one that declares the class. Both shapes are in the scaffold
+  typecheck battery now, and the generated file is loaded for real by the new test.
 
 ## 19.3.1 - 2026-09-06
 
