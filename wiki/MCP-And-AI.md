@@ -102,7 +102,7 @@ Role, scope and policy refuse in three distinguishable ways. The difference is t
 
 | Situation | Response | Wire |
 |---|---|---|
-| The actor's role can never invoke the tool | absent from `tools/list`; a direct call answers ToolNotFound | JSON-RPC `-32601`, message `tool not found: <name>`, no `data` at all |
+| The actor's role can never invoke the tool | absent from `tools/list`; a direct call answers ToolNotFound | JSON-RPC `-32601`, message `tool not found: <name> — call tools/list to read the catalog this caller may use`, no `data` at all. The hint is the same sentence on both branches — absent and hidden — so it instructs without saying which |
 | The role could invoke it, but the connection's scope does not include it | explicit refusal naming the missing scope | JSON-RPC `-32600`, `data: { code: 'X_MCP_SCOPE_DENIED', scope, fix }` |
 | The tool was invoked and the policy denied this input | `X_FORBIDDEN` with the denial reason | a normal `result` with `isError: true` — identical to the HTTP answer for the same call |
 
@@ -278,7 +278,8 @@ $ x verify --json
 | `X_MCP_SCOPE_CONFLICT` | two `scopes:` entries claim the same tool | keep the tool under the single scope a token must hold for it, and remove the other entry |
 | `X_MCP_QUERY_REJECTED` | `db.query` was not given one read-only statement | send exactly one **read-only** `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — a data-modifying CTE is not a read |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` pointed at a database that is not a branch | `x db branch create <name>   # then retry db.migrate` — point the host at the database the create reported (`DATABASE_URL=…/<source>_branch_<slug>`). The target is read from the database's own name, so a shared one can never pass |
-| `X_MCP_PROTOCOL` | malformed envelope or unsupported method — a client bug, not an authz outcome | send a JSON-RPC 2.0 body |
+| `X_MCP_PROTOCOL` | malformed envelope, a JSON-RPC **batch** (an array — this server answers one request per message and never walks one), or an unsupported method — a client bug, not an authz outcome | send a JSON-RPC 2.0 body, one request per `POST /mcp` (one per line over stdio); the `-32600` carries `data: { code, fix }` naming which |
+| `X_MCP_BODY_TOO_LARGE` | one message over `bodyLimitBytes` (HTTP, `413`) or `lineLimitBytes` (stdio) — on a JSON-RPC `-32600` with `data: { code, cause, fix, limit }` | send less in one message, or raise the cap where the route is built: `mcpHttpRoute({ bodyLimitBytes })` / `defineAppMcp({ bodyLimitBytes })` / `serveStdio({ lineLimitBytes })` |
 | `X_MCP_RATE_LIMITED` | this caller spent its per-minute allowance for the request's class ([above](#rate-limits-on-the-http-transport)) | wait out the `Retry-After`, or raise it where the route is built: `mcpHttpRoute({ rateLimits })` / `defineAppMcp({ rateLimits })`. Never `X_RATE_LIMITED`'s buckets — they do not govern this route |
 | `X_FORBIDDEN` | the action's policy refused this actor — identical to the HTTP denial | call `policies.list` for the permission this tool enforces, then grant it to the actor's role in `apps/web/shared/policies.ts` |
 | `X_LLM_OUTPUT_INVALID` | model output failed the `output` schema twice | tighten the prompt or widen the schema; bump the prompt version |

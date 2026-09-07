@@ -7,6 +7,8 @@
 //   app.config.ts               the root marker a real `x dev` cannot start without; `ai.mcp` by default
 //   apps/web/mcp.ts             the app's own MCP endpoint, mounted by the web role
 //   apps/web/runtime.ts         the app's middleware, reaching a development process
+//   .git/HEAD                   the fixture is its own repository — see the entry below
+//   apps/web/app/hello/*        an SSR page with a component, edited on disk while `x dev` runs
 //   apps/web/app/notes/*        a memory-backed entity and a live query, fed by the in-process bridge
 //   apps/web/app/posts/*        an action, a policy and a query, mounted as HTTP routes
 //   apps/web/site/pricing/*     a static page with its own stylesheet, under the CSP `x dev` sends
@@ -23,6 +25,12 @@ import { resetAppLoad } from './app-load';
 
 export const DEV_FIXTURE_FILES: Readonly<Record<string, string>> = {
   'package.json': JSON.stringify({ name: 'dev-fixture', version: '1.4.0' }),
+
+  // Its own repository, so the ignore walk stops HERE. The framework's root `.gitignore` lists
+  // `packages/cli/.dev-fixture/`, and `devIgnore` honours every ancestor up to a `.git` — without
+  // this marker the watcher admitted the fixture root and nothing under it, so no save in this
+  // tree ever reached `rebuild`, and the reload path was booted by every run and exercised by none.
+  '.git/HEAD': 'ref: refs/heads/main\n',
 
   // The root marker a real `x dev` cannot start without, and where `ai.mcp` is declared — by
   // default `{ expose: true, path: '/mcp' }`, which is what the MCP mount reads.
@@ -98,6 +106,23 @@ export const echoPost = action({
     return { word: input.word };
   },
 });
+`,
+
+  // A page with a body, on the surface an author edits all day. What the reload test rewrites: the
+  // module must be imported again for the new body to be served, which `import()` alone never does.
+  'apps/web/app/hello/page.tsx': `import { defineRoute } from '@ultimat3/render';
+
+export const config = defineRoute({
+  render: 'ssr',
+  hydrate: 'visible',
+  offline: 'runtime',
+  budget: { js: '60kb' },
+  meta: () => ({ title: 'Hello', description: 'A page that is edited while x dev runs' }),
+});
+
+export function Page() {
+  return <p>generation one</p>;
+}
 `,
 
   // A stylesheet the page imports, because that import is what registers it — and the document's

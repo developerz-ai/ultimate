@@ -15,6 +15,15 @@ const MIN_RENDER_STATUS = 200;
 const MAX_RENDER_STATUS = 599;
 
 /**
+ * The one range, as a predicate, for the request-path reader that must stay TOTAL: an `IsrEntry`
+ * a custom store round-tripped through JSON is read on every hit, and a throw there turns one bad
+ * stored number into a 500 for the page's whole TTL. `finiteStatus` below is the throwing form
+ * and reads the same two bounds, so the two cannot disagree about what a rendered status is.
+ */
+export const isRenderStatus = (status: number): boolean =>
+  Number.isSafeInteger(status) && status >= MIN_RENDER_STATUS && status <= MAX_RENDER_STATUS;
+
+/**
  * `NaN` is the value that gets here: `??` guards NULLISH, so a status read from a config, a JSON
  * body or `Number(process.env.X)` walks past its default intact — and the boundary then reports it
  * as `The status provided (-9223372036854775808)`, which names nothing a caller can act on.
@@ -22,7 +31,7 @@ const MAX_RENDER_STATUS = 599;
 export function finiteStatus(subject: string, status: number): number {
   finiteCount(subject, 'status', status, 0);
   assert(
-    status >= MIN_RENDER_STATUS && status <= MAX_RENDER_STATUS,
+    isRenderStatus(status),
     `${subject} status is ${String(status)}, which new Response() refuses with a RangeError instead of returning a document`,
     `pass a status between ${String(MIN_RENDER_STATUS)} and ${String(MAX_RENDER_STATUS)} to ${subject}, or omit it and take 200`,
   );

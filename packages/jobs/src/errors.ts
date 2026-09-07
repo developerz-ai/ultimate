@@ -39,13 +39,15 @@ export const JOB_OWNED_ERROR_CODES = [
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED` and `X_ABORTED` are `@ultimat3/core`'s. `JobsNotImplementedError` and
- * `JobAbortedError` below throw them; jobs keeps no title for either, because the copy this file
- * used to hold was a second title that nothing would have failed on once core's changed.
+ * `X_NOT_IMPLEMENTED`, `X_ABORTED` and `X_DRAINING` are `@ultimat3/core`'s. `JobsNotImplementedError`,
+ * `JobAbortedError` and `JobDrainedError` below throw them; jobs keeps no title for any of the
+ * three, because the copy this file used to hold was a second title that nothing would have failed
+ * on once core's changed. Listed here all the same, so `JobErrorCode` can name every code a job
+ * can see — `X_DRAINING` was thrown for a day before it was, and the type said it could not be.
  */
-export const JOB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED', 'X_ABORTED'] as const;
+export const JOB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED', 'X_ABORTED', 'X_DRAINING'] as const;
 
-/** Every code jobs can throw: the ones it owns plus the one it borrows. */
+/** Every code jobs can throw: the ones it owns plus the ones it borrows. */
 export const JOB_ERROR_CODES = [...JOB_OWNED_ERROR_CODES, ...JOB_BORROWED_ERROR_CODES] as const;
 
 export type JobOwnedErrorCode = (typeof JOB_OWNED_ERROR_CODES)[number];
@@ -267,6 +269,27 @@ export class JobAbortedError extends UltimateError {
           ? `job "${input.job}" was cancelled — this attempt no longer owns the run`
           : `job "${input.job}" was cancelled before step "${input.step}" could be recorded`,
       fix: 'add throwIfAborted(ctx) before expensive work, or pass fetch(url, { signal: ctx.signal }) — the queue re-runs the job, so stop at the deadline instead of running past it',
+    });
+  }
+}
+
+/**
+ * The worker holding this attempt received SIGTERM. Handed to the run as `ctx.signal`'s reason
+ * the moment the drain's `accept` phase runs — before core's in-flight wait, not at the deadline
+ * that ends it — so a body reading the one cancellation seam learns the process is going away
+ * while there is still budget to unwind in.
+ *
+ * Core's `X_DRAINING` rather than a code of jobs' own, for `JobAbortedError`'s reason: the
+ * framework already means exactly one thing by "the process is draining", it is already
+ * classified `retryable`, and `executeJob` reads the CODE off the run signal's reason to tell a
+ * drained attempt from a timed-out or lease-lost one — the drained one is handed back uncounted.
+ */
+export class JobDrainedError extends UltimateError {
+  constructor(input: { workerId: string; signal: string }) {
+    super({
+      code: 'X_DRAINING',
+      cause: `worker "${input.workerId}" is draining (${input.signal}) — this attempt is cut short and the job handed back to the queue with the attempt uncounted`,
+      fix: 'nothing on the job: another worker claims it. To unwind inside the drain budget instead of being killed at it, pass ctx.signal to every outbound call — fetch(url, { signal: ctx.signal }) — and call throwIfAborted(ctx) between steps',
     });
   }
 }

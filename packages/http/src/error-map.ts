@@ -347,6 +347,10 @@ export const ERROR_STATUS = {
   // document that said "the details are in this process's logs" about an error whose whole
   // value is the sentence naming the prop and its bytes. Measured on ai-maxxing, 2026-09-05.
   X_ISLAND_PROPS_INVALID: 500,
+  // A loader answered `withStatus` with a 3xx, or a status outside 200–599. Raised INSIDE the
+  // request that ran the loader, so it needs a row for the same reason the line above does: an
+  // unclassified 500 blanks the sentence naming the status and the `redirect()` to use instead.
+  X_ROUTE_STATUS_INVALID: 500,
   // @ultimat3/mail
   // The deployment configured no transport. It reaches a caller only through an inline
   // `send(…, { sync: true })` inside a request; the queued path dead-letters instead. A server-side
@@ -361,6 +365,9 @@ export const ERROR_STATUS = {
   // MCP host is mounted inside this pipeline — a code that renders 429 on one and 500 on the other
   // is exactly the split this table exists to prevent.
   X_MCP_RATE_LIMITED: 429,
+  // The second MCP code answered on a request before dispatch, and 413 for the same reason the row
+  // above is 429: `transport-http.ts` already answers it with that status by hand.
+  X_MCP_BODY_TOO_LARGE: 413,
   // @ultimat3/core
   // The caller asked for a format the pipeline cannot produce (`?f=avif`): the request names an
   // unsupported representation, which is 415 — not a 500, which would blame the server for it.

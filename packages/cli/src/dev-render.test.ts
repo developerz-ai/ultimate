@@ -12,6 +12,7 @@ import {
   RENDER_MODES,
   registerRoute,
   SURFACE_SPECS,
+  withStatus,
 } from '@ultimat3/render';
 import { clearStylesheets, loadStylesheet } from '@ultimat3/render/server';
 import { appRoutes } from './dev-render';
@@ -66,6 +67,32 @@ afterEach(() => {
 });
 
 describe('unit · x dev renders the app routes', () => {
+  test('a loader that answers withStatus(404) is a 404 with the route’s own page, in every mode', async () => {
+    // Measured in ai-maxxing 2026-09-07: `/fleet/nope` rendered the app's "Not found" page inside
+    // its own shell and answered 200, because the only route to a 404 was a throw — which renders
+    // the framework's error page instead. The status rides on the data; this file mints it.
+    for (const render of ['ssr', 'static', 'stream', 'isr'] as const) {
+      clearRoutes();
+      const surface = render === 'static' || render === 'isr' ? 'site' : 'app';
+      registerRoute<{ url: string; params: Record<string, string> }>({
+        file: `apps/web/${surface}/${render}/page.tsx`,
+        suspenseBoundaries: render === 'stream' ? 1 : 0,
+        config: defineRoute<{ url: string; params: Record<string, string> }>({
+          render,
+          offline: 'network-only',
+          hydrate: 'never',
+          budget: { js: '0kb' },
+          ...(render === 'isr' ? { revalidate: { ttl: '5m' } } : {}),
+          load: async (ctx) => withStatus(404, { url: ctx.url, params: ctx.params }),
+          meta: (data) => ({ title: `missing ${render}`, description: `rendered ${data.url}` }),
+        }),
+      });
+      const response = await get(`/${render}`);
+      expect(response.status).toBe(404);
+      expect(await response.text()).toContain(`<title>missing ${render}</title>`);
+    }
+  });
+
   test('a static page answers with its own head and content-hashed headers', async () => {
     register({ file: 'apps/web/site/page.tsx', render: 'static' });
     const response = await get('/');
@@ -156,6 +183,28 @@ describe('unit · x dev renders the app routes', () => {
     expect(await response.json()).toMatchObject({
       type: expect.stringContaining('X_UNAUTHENTICATED'),
     });
+  });
+
+  // The reload half of the test above: `app-load.ts` replaces the entry for a saved route module
+  // under a server whose route table was built at boot. The handler read the new entry from the
+  // first save; the pipeline's `meta` was a snapshot, so a policy ADDED by that save gated nothing
+  // until a restart — the new page, served under the old guard.
+  test('a policy added by a reload is enforced on the next request, on the same server', async () => {
+    const file = 'apps/web/app/settings/page.tsx';
+    register({ file, render: 'ssr' });
+    const server = serve();
+    const fetch = (): Promise<Response> => server.fetch(new Request('http://dev.test/settings'));
+    expect((await fetch()).status).toBe(200);
+    // What `app-load.ts` does on a save: the same file, registered again, now with a policy.
+    register({ file, render: 'ssr', policy: { permission: 'settings.read' } });
+    const gated = await fetch();
+    expect(gated.status).toBe(401);
+    expect(await gated.json()).toMatchObject({
+      type: expect.stringContaining('X_UNAUTHENTICATED'),
+    });
+    // And the other direction: a policy REMOVED by a save opens the page, on the same server.
+    register({ file, render: 'ssr' });
+    expect((await fetch()).status).toBe(200);
   });
 
   test('a streamed page arrives as a stream, chunked and unbuffered', async () => {

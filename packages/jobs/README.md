@@ -550,6 +550,24 @@ Nothing can kill a body that ignores the signal, so the durable state is fenced:
 cancel every step write is refused with `X_ABORTED`, and a run that finishes anyway is logged
 as `jobs.timeout.abandoned` — the one way to find a handler that never reads `ctx.signal`.
 
+**SIGTERM fires the same signal** (`As of 2026-09-07`). The moment the drain begins — its `accept`
+phase, before the in-flight wait starts spending the budget — the worker aborts `ctx.signal` on
+every job it holds with `X_DRAINING`, naming the worker and the signal. A body that unwinds is
+**interrupted**, not failed: the job goes straight back to the ready bucket with the attempt
+uncounted, so `attempts: 1` survives a deploy and the worker replacing this one claims it at
+once. Whatever the body stopped with — the reason back from `fetch`, `throwIfAborted`'s
+`X_ABORTED`, an app's own error for a child the shutdown killed — the verdict is read off the
+signal, not the error. A body that ignores the signal is waited on to the deadline and abandoned
+there, as before. A manual `stop()` aborts nothing: it waits for the work it holds.
+
+| The attempt ended by | `JobOutcome` | attempt counted | `jobs_total` |
+|---|---|---|---|
+| the body returning | `completed` | — | `ok` |
+| `step.sleep` / `step.waitForEvent` | `suspended` | no | not counted |
+| the body throwing, attempts left | `retried` | yes | `failed` |
+| the body throwing, none left or `terminal` | `dead-lettered` | yes | `dead` |
+| the worker's drain (`X_DRAINING` on `ctx.signal`) | `interrupted` | **no** | not counted |
+
 Three ceilings, declared on the job and nowhere else (`As of 2026-08` — `stepTimeout` and
 `eventPoll` had been implemented in the step runner since 1.0 with no declaration able to reach
 them, so no `job()` could ask for either):
@@ -603,8 +621,9 @@ things have to be true in a process:
 | the facade is installed | `setJobsFacade(createJobsFacade({ store, driver }, currentTx))` |
 | the relay is running | `createOutboxRelay({ store, driver }).start()` |
 
-`start()` registers the same two shutdown hooks `createWorker` does — `accept` stops polling,
-`close` waits out the pass in flight under the drain's deadline — and `stop()` hands both back.
+`start()` registers the same two shutdown hooks `createWorker` does — `accept` stops polling
+(the worker's also aborts every held job's `ctx.signal`), `close` waits out the pass in flight
+under the drain's deadline — and `stop()` hands both back.
 `drainOnShutdown: false` opts out, for a caller that drives its own teardown.
 
 with `store = createPgOutboxStore({ executor, txExecutor })`. `txExecutor` is what makes it

@@ -187,6 +187,54 @@ describe('mcpHttpRoute.handle: successful calls', () => {
     const payload = await unknownMethod.json();
     expect(payload.error.code).toBe(-32601);
   });
+
+  test('a JSON-RPC batch is refused by name, with the fix, on the same 400', async () => {
+    // A batch is legal JSON-RPC and this server does not walk one: one call, one answer, one
+    // rate-limit class. It was refused as a bare `-32600` envelope error — indistinguishable from
+    // `{ not: 'jsonrpc' }` — so a client sending a batch learned nothing about WHY.
+    const res = await route.handle(
+      request(
+        [
+          { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+          { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+        ],
+        { authorization: 'Bearer t' },
+      ),
+    );
+    expect(res.status).toBe(400);
+    const payload = await res.json();
+    expect(payload.id).toBeNull();
+    expect(payload.error.code).toBe(-32600);
+    expect(payload.error.message).toContain('batch');
+    expect(payload.error.message).toContain('one request per');
+    expect(payload.error.data.code).toBe('X_MCP_PROTOCOL');
+    expect(payload.error.data.fix).toContain('one request per POST /mcp');
+  });
+
+  test('a batch refusal on a route mounted elsewhere names THAT path, never a spelled /mcp', async () => {
+    // `mcpHttpRoute({ path })` is a knob and `defineAppMcp` forwards it. The fix used to read
+    // `POST /mcp` whatever the mount, which sent an `/app-mcp` client to the wrong endpoint.
+    const mounted = mcpHttpRoute({
+      server,
+      path: '/app-mcp',
+      resolveToken: () => ({ actor: agentActor({ id: 'a' }), scopes: new Set(['dev:read']) }),
+    });
+    const res = await mounted.handle(
+      request([{ jsonrpc: '2.0', id: 1, method: 'tools/list' }], { authorization: 'Bearer t' }),
+    );
+    expect(res.status).toBe(400);
+    const payload = await res.json();
+    expect(payload.error.data.fix).toContain('one request per POST /app-mcp');
+    expect(payload.error.data.fix).not.toContain('/mcp ');
+  });
+
+  test('a malformed envelope names the shape to send', async () => {
+    const res = await route.handle(request({ not: 'jsonrpc' }, { authorization: 'Bearer t' }));
+    const payload = await res.json();
+    expect(payload.error.code).toBe(-32600);
+    expect(payload.error.data.code).toBe('X_MCP_PROTOCOL');
+    expect(payload.error.data.fix).toContain("jsonrpc: '2.0'");
+  });
 });
 
 describe('an unauthenticated caller learns nothing about its own request', () => {
@@ -280,7 +328,47 @@ describe('mcpHttpRoute.handle: the body is capped while it is read', () => {
     );
     expect(res.status).toBe(413);
     const payload = await res.json();
-    expect(payload.error.message).toContain('1024');
+    // The envelope a JSON-RPC client already parses — `id: null`, `-32600` — so nothing a
+    // consumer pinned moves; what was missing is the instruction. Measured through ai-maxxing's
+    // `POST /mcp` on 2026-09-07: a box agent sending a large `promptSession` got a number and
+    // no next step, while the 401, 403 and 429 beside it all carried `{ code, cause, fix }`.
+    expect(payload.id).toBeNull();
+    expect(payload.error.code).toBe(-32600);
+    expect(payload.error.message).toContain('limit is 1024');
+    expect(payload.error.data.code).toBe('X_MCP_BODY_TOO_LARGE');
+    expect(payload.error.data.limit).toBe(1024);
+    expect(payload.error.data.cause).toContain('limit is 1024');
+    // The fix names BOTH moves — send less, or raise the cap — and names the knob where an app
+    // actually builds this route, not only the bare descriptor.
+    expect(payload.error.data.fix).toContain('mcpHttpRoute({ bodyLimitBytes');
+    expect(payload.error.data.fix).toContain('defineAppMcp({ bodyLimitBytes');
+    // Runnable as written: a NUMBER that admits what arrived, never a `<n>`. What arrived is
+    // however many bytes the reader had counted when the cap tripped, so the value is read back
+    // off the fix rather than pinned — what is pinned is that it is above the cap.
+    const raised = /bodyLimitBytes: (\d+) \}/.exec(String(payload.error.data.fix));
+    expect(Number(raised?.[1])).toBeGreaterThan(1024);
+    expect(payload.error.data.fix).not.toContain('<n>');
+    // A client that reads only `message` gets the same instruction.
+    expect(payload.error.message).toContain(payload.error.data.fix);
+  });
+
+  test('a route built with no cap holds the declared default, and a body over it is the same 413', async () => {
+    // The direct route with the knob unset — `defineAppMcp`'s forwarding of a SET knob is pinned
+    // in `app-tools.test.ts`. What this pins is the default an app never chose: one byte over
+    // 1 MiB is refused, and the refusal names the number so the fix line can be followed.
+    const route = mcpHttpRoute(authorized);
+    const res = await route.handle(
+      new Request('http://local/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+        body: 'x'.repeat(DEFAULT_MCP_BODY_LIMIT_BYTES + 1),
+      }),
+    );
+    expect(res.status).toBe(413);
+    const payload = await res.json();
+    expect(payload.error.data.code).toBe('X_MCP_BODY_TOO_LARGE');
+    expect(payload.error.data.limit).toBe(DEFAULT_MCP_BODY_LIMIT_BYTES);
+    expect(payload.error.message).toContain(`limit is ${String(DEFAULT_MCP_BODY_LIMIT_BYTES)}`);
   });
 
   test('a body under the cap still answers normally', async () => {

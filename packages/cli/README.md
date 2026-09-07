@@ -123,7 +123,7 @@ is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUAR
 | `app-openapi.ts` | `openapi.json`, projected by `@ultimat3/action` |
 | `app-boundaries.ts` | app import boundaries, over `@ultimat3/render`'s surface check |
 | `app-agents-md.ts` | `AGENTS.md` exists and stays short, over `@ultimat3/manifest`'s check |
-| `serve.ts` | **what a container starts** — `runRole(options)`, the same boot `x dev` runs minus the watcher, `/_x` and `dev: true`. `x new`'s `apps/web/server.ts` is three lines that call it |
+| `serve.ts` | **what a container starts** — `runRole(options)`, the same boot `x dev` runs minus the watcher, `/_x` and `dev: true`. `x new`'s `apps/web/server.ts` is three lines that call it. `ROLE`, `PORT` and `HOST` are read from `env`; `role`, `port` and `hostname` on `ServeOptions` override each |
 | `prerender.ts` | `x build --target static`: which `site/` routes qualify, and where the bytes land |
 | `metrics-endpoint.ts` | the `METRICS_PATH` scrape listener every role opens, on `METRICS_PORT` |
 | `otlp-export.ts` | the exporters `OTEL_EXPORTER_OTLP_ENDPOINT` switches on, and their drain hooks |

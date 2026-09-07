@@ -79,6 +79,13 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
   /** Mount path. Defaults to `/mcp`. */
   readonly path?: string;
   /**
+   * Bytes the route holds for one request. Defaults to `DEFAULT_MCP_BODY_LIMIT_BYTES` (1 MiB).
+   * Forwarded since 2026-09-07: `mcpHttpRoute` took it and this — the one path an app builds the
+   * route through — never passed it on, so `X_MCP_BODY_TOO_LARGE`'s fix line named a knob the app
+   * could not reach.
+   */
+  readonly bodyLimitBytes?: number | undefined;
+  /**
    * Requests per minute per caller, by class. Defaults to `MCP_RATE_LIMITS` and is ENFORCED by the
    * route, so this is the app's one knob over what an agent may spend here.
    */
@@ -168,6 +175,7 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
           server,
           resolveToken,
           ...(input.path !== undefined ? { path: input.path } : {}),
+          ...(input.bodyLimitBytes !== undefined ? { bodyLimitBytes: input.bodyLimitBytes } : {}),
           ...(input.rateLimits !== undefined ? { rateLimits: input.rateLimits } : {}),
           ...(input.rateLimitStore !== undefined ? { rateLimitStore: input.rateLimitStore } : {}),
         });

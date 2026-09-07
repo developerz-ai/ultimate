@@ -166,3 +166,31 @@ describe('a property named __proto__ is a key, never a prototype', () => {
     expect(Object.hasOwn(JSON.parse(JSON.stringify(properties)), '__proto__')).toBe(true);
   });
 });
+
+/**
+ * Asked by ai-maxxing on 2026-09-07: does a per-argument `.describe()` reach `tools/list`? It does
+ * — `@ultimat3/schema`'s `convert` carries `node.description` and `narrow` above keeps
+ * `description` — so a catalog whose arguments carry no descriptions is a catalog whose actions
+ * never called `.describe()`. Pinned here so the answer stays measured rather than remembered.
+ */
+describe('descriptions travel', () => {
+  test("a per-argument .describe() is that property's description on the wire", () => {
+    const wire = toWireSchema(
+      t
+        .object({
+          sessionId: t.string.describe('the session to prompt, from sessionList'),
+          text: t.string.describe('the prompt; a leading slash names a command'),
+          plain: t.string,
+        })
+        .describe('one prompt for one session'),
+    );
+    expect(wire.description).toBe('one prompt for one session');
+    expect(wire.properties?.['sessionId']?.description).toBe(
+      'the session to prompt, from sessionList',
+    );
+    expect(wire.properties?.['text']?.description).toBe(
+      'the prompt; a leading slash names a command',
+    );
+    expect(wire.properties?.['plain']?.description).toBeUndefined();
+  });
+});

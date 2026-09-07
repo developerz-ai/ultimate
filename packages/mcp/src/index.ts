@@ -35,6 +35,7 @@ export {
   MCP_ERROR_TITLES,
   McpAppUnmountedError,
   McpArgsInvalidError,
+  McpBodyTooLargeError,
   McpNotBranchDbError,
   McpProtocolError,
   McpQueryRejectedError,
@@ -102,7 +103,7 @@ export {
 } from './resources';
 export type { McpScopes } from './scopes';
 export { withScopes } from './scopes';
-export type { CreateMcpServerInput } from './server';
+export type { CreateMcpServerInput, McpWire } from './server';
 export { createMcpServer, McpServer } from './server';
 export type {
   McpHttpTransportInput,

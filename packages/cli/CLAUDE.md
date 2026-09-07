@@ -1124,6 +1124,16 @@ The roles live in `@ultimat3/core` (`ROLES`, `isRole`), never in a second list h
 driver, a dev-only authorizer or a dev-only queue is the bug this design exists to prevent — the
 only thing dev changes is which driver is behind an interface.
 
+### `HOST` is the interface, read the way `PORT` is
+
+`serve.ts`'s `hostnameFromEnv` — `HOST`, trimmed, empty is `0.0.0.0` — and `ServeOptions.hostname`
+overrides it as `port` overrides `PORT`; `containerBinding(env, hostname)` is the one `WebBinding`
+`serveApp` hands `startRoles`, so `web`, `sync` and the metrics endpoint bind the same interface.
+Before 2026-09-07 `CONTAINER_BINDING` was the only production binding and an app whose auth mode
+admits one implicit actor without a login — which must refuse a public interface — could not run in
+a container at all. A loopback bind in a container is unreachable through `-p`; the wiki row says
+where it IS reachable. Not `HOSTNAME`: Docker sets that to the container id.
+
 ### `RuntimeOverrides` is the only way to hand the framework a driver
 
 `ServeOptions` was `{ root, env, role?, port?, metricsPort? }`, so the ONLY way an app could
@@ -1256,9 +1266,23 @@ Delete `graphHash` the day `Bun.build` is deterministic.
 
 **`x dev`, the container and the static export all mount the same table.** `serve.ts` builds the
 islands at boot for the same reason it mounts `apiRoutes()`: a seam that works in dev and not in the
-image is the same failure one release later. `x dev` rebuilds them on the watcher tick, and that is
-the one reload that actually takes effect — an island is the single module this process never
-imports, so there is no Bun module cache to invalidate.
+image is the same failure one release later. `x dev` rebuilds them on the watcher tick — an island
+is the single module this process never imports, so there is no Bun module cache to invalidate —
+and the SAME tick re-imports the route module beside them when its source changed
+(`app-load.ts`'s `reloadRoute`: `<path>?x-reload=<hash>` is the one cache key Bun honours,
+`registerRoute` replaces the entry for the same file, and `dev-render.ts` reads the entry back from
+the table on every request rather than closing over the one it was built from). Until 2026-09-07
+the island was the only reload that took effect, so a save served a new island under an old page —
+the old props, the placeholder the new island renders when they are missing. A route module and
+nothing else: an action, a query or an entity is held by every module that imported it, and no
+re-import can rebind those. `@ultimat3/render`'s loader admits the query
+(`/\.tsx(?:\?[^/]*)?$/`) and strips it before reading the file — anchored on `.tsx$`, the
+re-import fell through to Bun's own JSX loader and every reloaded page died on `__xh`.
+
+**The dev fixture is its own repository** (`.git/HEAD` in `DEV_FIXTURE_FILES`). The framework's root
+`.gitignore` lists `packages/cli/.dev-fixture/`, `devIgnore` honours every ancestor up to a `.git`,
+and so the watcher admitted the fixture root and nothing under it: every run booted the reload path
+and none exercised it. The marker is what lets `cmd-dev.test.ts` save a page and await the tick.
 
 **`app-load.ts` skips `*.island.tsx` deliberately.** It registers no primitive, and importing it
 would put the one module guaranteed to be outside the server's graph inside this process's, where a

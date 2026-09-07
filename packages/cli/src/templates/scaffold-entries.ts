@@ -9,8 +9,10 @@ import type { GeneratedFile } from './naming';
 const server =
   (): string => `// The production entry. \`docker/Dockerfile\` starts this, and \`x build --target binary\` compiles it.
 // ROLE selects what this process is — web, sync, worker, scheduler, replicator, or migrate, which
-// applies the migrations and exits. PORT is bound on every interface, because a container bound to
-// localhost is unreachable through its own port mapping.
+// applies the migrations and exits. PORT is bound on HOST, and HOST defaults to every interface,
+// because a container bound to loopback is unreachable through its own port mapping. HOST=127.0.0.1
+// is for a process that must never answer a public interface: reachable only where the container
+// shares the host's network namespace (\`--network host\`), or through a sidecar and \`ssh -L\`.
 
 import { join } from 'node:path';
 import { runRole } from '@ultimat3/cli';

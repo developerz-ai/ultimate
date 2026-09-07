@@ -9,8 +9,10 @@ import {
   MCP_ERROR_CODES,
   MCP_ERROR_TITLES,
   McpArgsInvalidError,
+  McpBodyTooLargeError,
   McpProtocolError,
   McpToolUnknownError,
+  TOOL_UNKNOWN_FIX,
 } from './errors';
 
 describe('the code table', () => {
@@ -47,6 +49,38 @@ describe('McpToolUnknownError', () => {
   test('an empty catalog reads "none", never an empty parenthesis', () => {
     const error = new McpToolUnknownError({ name: 'orders.void', visible: [] });
     expect(error.cause).toContain('(visible: none)');
+  });
+});
+
+describe('McpBodyTooLargeError', () => {
+  test('over HTTP: the cause carries both numbers and the fix names the two knobs', () => {
+    const error = new McpBodyTooLargeError({ transport: 'http', limit: 1024, over: 4096 });
+    expect(error.code).toBe('X_MCP_BODY_TOO_LARGE');
+    expect(error.cause).toBe('request body is at least 4096 bytes, limit is 1024');
+    // A number, runnable as written: twice what arrived, because the cap itself would run and
+    // change nothing, and `<n>` is not a TypeScript value.
+    expect(error.fix).toContain('mcpHttpRoute({ bodyLimitBytes: 8192 })');
+    expect(error.fix).toContain('defineAppMcp({ bodyLimitBytes: 8192 })');
+    expect(error.fix).not.toContain('<n>');
+    expect(error.limit).toBe(1024);
+    expect(error.meta).toEqual({ transport: 'http', limit: 1024, over: 4096 });
+  });
+
+  test('over stdio: the fix names the line, the cap and the knob that raises it', () => {
+    const error = new McpBodyTooLargeError({ transport: 'stdio', limit: 256 });
+    expect(error.cause).toBe('one message exceeded 256 characters and was dropped');
+    expect(error.fix).toContain('one JSON-RPC message per line');
+    // Over stdio nothing measured what arrived — the tail was dropped — so twice the cap.
+    expect(error.fix).toContain('serveStdio({ lineLimitBytes: 512 })');
+    expect(error.fix).not.toContain('<n>');
+    expect(error.meta).toEqual({ transport: 'stdio', limit: 256 });
+  });
+});
+
+describe('the not-found hint', () => {
+  test('is the one sentence McpToolUnknownError already gives, so the two cannot drift', () => {
+    const error = new McpToolUnknownError({ name: 'x', visible: [] });
+    expect(error.fix).toBe(TOOL_UNKNOWN_FIX);
   });
 });
 

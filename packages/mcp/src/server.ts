@@ -6,7 +6,7 @@
 import { FRAMEWORK_CODE, singleLine, stringField } from '@ultimat3/core';
 import { formatIssues } from '@ultimat3/schema';
 import { auditResourceRead, auditToolCall, outcomeForCode, outcomeForResult } from './audit';
-import { McpScopeDeniedError } from './errors';
+import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './errors';
 import type { AnyMcpTool, McpCaller, McpToolResult, McpVerbClass, ToolListEntry } from './registry';
 import { ToolRegistry } from './registry';
 import type { McpPrompt, McpResource } from './resources';
@@ -25,6 +25,23 @@ import {
   paramsOf,
   resultResponse,
 } from './wire';
+
+/**
+ * Which wire one message arrived on, so a refusal can name the unit THAT transport counts in.
+ * `handle` is transport-independent and stays so — this is a hint for the wording of one fix, never
+ * a branch in dispatch. HTTP carries its mounted path because `mcpHttpRoute({ path })` is a knob:
+ * a batch refusal that told every client to retry `POST /mcp` was wrong for an app mounted at
+ * `/app-mcp`, which is how this came to be threaded rather than spelled.
+ */
+export type McpWire =
+  | { readonly transport: 'http'; readonly path: string }
+  | { readonly transport: 'stdio' };
+
+/** The unit a transport counts one request in — or the neutral word when no wire said. */
+const messageUnitOf = (wire: McpWire | undefined): string => {
+  if (wire === undefined) return 'message';
+  return wire.transport === 'http' ? `POST ${wire.path}` : 'line';
+};
 
 export interface CreateMcpServerInput {
   readonly tools?: readonly AnyMcpTool[];
@@ -72,9 +89,34 @@ export class McpServer {
     this.serverInfo = serverInfo;
   }
 
-  async handle(body: unknown, caller: McpCaller): Promise<JsonRpcResponse | null> {
+  async handle(
+    body: unknown,
+    caller: McpCaller,
+    wire?: McpWire | undefined,
+  ): Promise<JsonRpcResponse | null> {
+    // A batch is legal JSON-RPC 2.0 and this server does not walk one: one call, one answer, one
+    // rate-limit class. Refused BY NAME rather than falling through to the envelope check below —
+    // an array is not an envelope, so it did, and a client sending a batch got the same bare
+    // `-32600` as `{ not: 'jsonrpc' }` with no word that batching was the problem. Measured
+    // through ai-maxxing's `POST /mcp` on 2026-09-07. The `message` is the same on every wire;
+    // only the fix names the unit — `POST <path>` as mounted, or a line — and only when the
+    // transport said which it is.
+    if (Array.isArray(body)) {
+      return protocolRefusal(
+        'a JSON-RPC batch (an array of requests) is not supported: send one request per message',
+        new McpProtocolError({
+          cause: 'the body is a JSON-RPC batch, and this server answers one request per message',
+          fix: `send one request per ${messageUnitOf(wire)} — a batch is never walked, so its calls did not run`,
+        }),
+      );
+    }
     if (!isJsonRpcRequest(body)) {
-      return errorResponse(null, INVALID_REQUEST, 'not a JSON-RPC 2.0 request envelope');
+      return protocolRefusal(
+        'not a JSON-RPC 2.0 request envelope',
+        new McpProtocolError({
+          cause: 'the body is not a JSON-RPC 2.0 request envelope',
+        }),
+      );
     }
     // Notifications get no answer at all; the transport replies 202 with an empty body.
     if (isNotification(body)) return null;
@@ -145,10 +187,13 @@ export class McpServer {
     const resolved = this.tools.resolve(name, params['arguments'] ?? {}, caller);
     switch (resolved.kind) {
       // OUTCOME 1. Absent AND role-hidden collapse to the same answer, with no `data` at
-      // all: any extra field would be the difference a prober is looking for.
+      // all: any extra field would be the difference a prober is looking for. The message
+      // carries the one instruction that holds on both branches — read `tools/list` — and
+      // nothing about whether the name exists: the same sentence for a stale name and for a
+      // tool this role may never see, so the hint is not a second oracle.
       case 'not-found':
         auditToolCall({ tool: name, outcome: 'hidden', caller, code: 'X_MCP_TOOL_UNKNOWN' });
-        return errorResponse(id, METHOD_NOT_FOUND, `tool not found: ${name}`);
+        return errorResponse(id, METHOD_NOT_FOUND, `tool not found: ${name} — ${TOOL_UNKNOWN_FIX}`);
       // OUTCOME 2. The caller can already see this tool, so naming the missing scope leaks
       // nothing — and the fix travels with it, built by the error that owns the wording.
       case 'scope-denied': {
@@ -300,6 +345,20 @@ export class McpServer {
       return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`);
     }
   }
+}
+
+/**
+ * The envelope refusals — no id to answer on, so `null` — rendered the way the scope refusal
+ * already is: a `message` a client library surfaces verbatim, and `data: { code, fix, docs }`
+ * built by the error class that owns the wording. Every other refusal on this surface carried its
+ * instruction; these two answered a bare `-32600` and left the caller to guess.
+ */
+function protocolRefusal(message: string, error: McpProtocolError): JsonRpcResponse {
+  return errorResponse(null, INVALID_REQUEST, message, {
+    code: error.code,
+    fix: error.fix,
+    docs: error.docs,
+  });
 }
 
 interface FrameworkError {

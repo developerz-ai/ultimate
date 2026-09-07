@@ -99,6 +99,8 @@ run: async ({ input, ctx, step }) => {
 
 `ctx.signal` is the same seam an [action](Actions) reads, composed with the caller's own — there is nothing jobs-specific to learn, and a job whose caller went away is cancelled for that reason too.
 
+**SIGTERM fires it too** (`As of 2026-09-07`). The moment the process starts draining, the worker aborts `ctx.signal` on every job it holds with `X_DRAINING` — naming the worker and the signal — and then gives the body the drain's budget to unwind in. A body that stops is **interrupted**, not failed: the job goes straight back to the ready bucket with the attempt uncounted, so `attempts: 1` survives a rollout and the worker replacing this one claims it at once. The verdict is read off the signal, not off whatever the body threw, so an app's own error for a child the shutdown killed is an interruption too. A body that ignores the signal is waited on to the deadline and abandoned there, as before; a manual `worker.stop()` aborts nothing and waits for its work — until a SIGTERM lands on it, at which point the teardown already waiting adopts the shutdown's deadline and every held job hears the abort.
+
 | Past the cancel | What happens |
 |---|---|
 | `step.run` / `step.sleep` / `step.waitForEvent` | refuse to write, raise `X_ABORTED`. A late `completed` would hand the next attempt a step it never ran; a late `failed` would erase one it did |
@@ -211,7 +213,7 @@ So there is no cross-driver migration procedure — and none is needed while `po
 | Stop one | `x jobs cancel <id> --reason "<why>" --json` — exit 0 means it is genuinely stopped; a finished job or a driver that cannot cancel raises `X_JOB_NOT_CANCELLABLE` |
 | Bulk | **not shipped.** `retry` and `cancel` each take one id positional; there is no `--failed-since` and no queue-wide replay. List first (`x jobs ls --state dead --queue integrations --json`), then loop over the ids |
 
-Draining a worker mid-job is safe: it finishes the current step, persists it, and releases the lease so another worker resumes at the next step — never mid-step (`X_DRAINING` on new claims).
+Draining a worker mid-job does **not** finish the current step (`As of 2026-09-07`). On SIGTERM the worker aborts each held job's `ctx.signal` with `X_DRAINING`; a body that reads it — `fetch(url, { signal: ctx.signal })`, `throwIfAborted(ctx)` between steps — is **interrupted**: the attempt is uncounted, the lease is released, and the job goes straight back to the ready bucket for the worker replacing this one. That worker resumes from the last step that **completed** — persisted steps replay from storage, the step cut short runs again from its start, and past the abort `step.run` refuses to write (`X_ABORTED`), so a half-finished step is never recorded as done. A body that ignores the signal runs until the drain deadline and is abandoned there: its lease lapses, the queue redelivers it, and the attempt is counted. Only a manual `worker.stop()` waits for the work it holds. Plan a deploy for the interruption, not for the step: keep steps short and idempotent, and pass `ctx.signal` to every outbound call.
 
 ## Observability
 
@@ -237,7 +239,7 @@ Every command supports `--json`. See [CLI reference](CLI-Reference).
 | `X_STEP_DUPLICATE` | two `step.run` calls share a name in one `run` | rename one step; step names are the persistence key |
 | `X_JOB_STEP_FAILED` | a step exhausted its retries | `x jobs show <id> --json`, then `x jobs retry <id>` |
 | `X_IDEMPOTENCY_CONFLICT` | same key, different payload, or still in flight | fresh key for a different payload; otherwise retry after the first settles |
-| `X_DRAINING` | claim attempted on a worker that received SIGTERM | none — the job stays queued and another worker claims it |
+| `X_DRAINING` | the worker holding the job received SIGTERM — it is the reason on `ctx.signal`, and a body that unwinds on it is `interrupted` with the attempt uncounted | none — the job goes straight back to the queue and another worker claims it. Pass `ctx.signal` to outbound calls and `throwIfAborted(ctx)` between steps, so the body unwinds inside the drain budget instead of being killed at it |
 | `X_FORBIDDEN` | the job's actor fails the originating action's policy | grant the permission, or enqueue as a system actor |
 | `X_NOT_IMPLEMENTED` | the `redis` or `nats` driver was reached — neither is shipped | call `setJobDriver(createPgDriver({ executor }))`, or `setJobDriver(createMemoryDriver())` in a test. There is no config line to edit: `jobs.driver` was deleted in 5.0.0 because it never had a reader. Nothing needs draining first — `enqueue` refuses on these two as well, so no job was ever written to one |
 

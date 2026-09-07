@@ -249,6 +249,44 @@ See [I18n](I18n), [Timezones and dates](Timezones-And-Dates), [Money](Money).
 
 One `<Image>` shape, one capability contract, stated once — in [`docs/idea/07-rendering-seo.md` → Image pipeline](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/07-rendering-seo.md#image-pipeline): variants, `srcset`, inlined dimensions, the blur placeholder, the `@ultimat3/core` runtime, and the `ImageTransformDriver` seam AVIF/WebP variants come from. Restating it here would let the two copies drift.
 
+## A route that answers a status
+
+`As of 2026-09-07`. A loader hands its data through `withStatus(status, data)` and the page
+renders as it always did — the route's own component, inside the app's own shell — with that
+status on the response.
+
+```ts
+import { defineRoute, withStatus } from '@ultimat3/render';
+
+export const config = defineRoute({
+  render: 'ssr',
+  offline: 'runtime',
+  load: async ({ params }) => {
+    const host = await hostList({ id: params.host });
+    return host === undefined
+      ? withStatus(404, { kind: 'missing' as const, hostId: params.host })
+      : { kind: 'page' as const, host };
+  },
+  meta: ({ data, t }) => ({ title: data.kind === 'missing' ? t('notFound') : data.host.label }),
+});
+```
+
+| | |
+|---|---|
+| what it does | records the status against **that object**; hands the same object back, so `load`'s return type, `meta`'s `data` and the page's `props.data` are untouched |
+| which statuses | any 2xx, 4xx or 5xx. A 3xx is `X_ROUTE_STATUS_INVALID` — a redirect is a `Location` and no body, which is `@ultimat3/http`'s `redirect()`. Out of 200–599, or not whole, is refused where it is written, never as a `RangeError` at `new Response` |
+| SEO | a 4xx or 5xx is `<meta name="robots" content="noindex">` **by construction** — the descriptor's `meta` applies it after the route's own `meta` ran, so a page that does not exist is never indexed however `meta` was written. `follow` and the rest stay the author's; a 200 hands `meta`'s object back untouched |
+| every mode | `ssr`, `stream`, `static`-served and `isr` all answer it; an `isr` entry stores the status beside the HTML and serves it on every hit, stale copies included |
+| the static export | a file has no status. `x build --target static` writes the document whatever the loader said, and the build's measurer — which renders an `app/` route with `params: {}` to weigh it — never fails on a loader answering 404: the status is a fact about the data, not a throw |
+| an untouched app | reads 200 everywhere it did, byte for byte — nothing asks unless a loader answered |
+
+**Not a throw, deliberately.** Throwing is the other 404 and it is still there: a route the table
+does not have, or a loader that throws `X_NOT_FOUND`, gets the framework's error page —
+outside the app's shell, no sidebar, no session list. Measured in ai-maxxing on 2026-09-07,
+`/fleet/nope` rendered the right page inside the shell and answered 200, because the only way to
+the status was the way that lost the shell. The two answers stay distinct: **the table lacks the
+route** → throw → error page; **the route exists and says "not found"** → `withStatus` → its own page.
+
 ## Error pages
 
 A browser that hits a failure in a production process gets the framework's error page — the
@@ -258,6 +296,7 @@ browser got `problem+json` with the internal `cause` and the author-facing `fix:
 
 | | |
 |---|---|
+| a page that exists and answers 404 | not this page at all — `withStatus(404, data)` in the loader renders the route's own component with the status ([above](#a-route-that-answers-a-status)); the error page is for a **throw** |
 | override, one per status | `apps/web/site/errors/<status>.html` — served byte for byte, read per request, exact status match only |
 | static export | `404.html` is written by `x build --target static`, the app's file if present |
 | copy | the `errors.*` keys of the i18n catalog — an app translates or overrides by declaring them |

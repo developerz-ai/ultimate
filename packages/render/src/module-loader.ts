@@ -171,6 +171,9 @@ let installed = false;
  * placement that covers `x dev`, `x build`, the production `server.ts` and `bun test` without each
  * of them remembering to. A plugin only affects modules loaded AFTER it, and every route module is.
  */
+/** `/a/page.tsx?x-reload=3` → `/a/page.tsx`: the file on disk, which is what the hook reads. */
+const withoutQuery = (path: string): string => path.replace(/\?[^/]*$/, '');
+
 export function installRenderLoader(): void {
   if (installed) return;
   installed = true;
@@ -178,8 +181,13 @@ export function installRenderLoader(): void {
   Bun.plugin({
     name: 'ultimate-render',
     setup(build): void {
-      build.onLoad({ filter: /\.tsx$/ }, async ({ path }) => ({
-        contents: transformTsx(await Bun.file(path).text()),
+      // The query is admitted and then stripped. `x dev` re-imports an edited route module as
+      // `<path>?x-reload=<hash>` — the only cache key Bun honours — and Bun hands this hook the
+      // specifier QUERY INCLUDED. Anchored on `.tsx$` the filter let that import fall through to
+      // Bun's own loader, which compiles JSX to `React.createElement`: every reloaded page then
+      // died on its first render with `__xh is not defined`.
+      build.onLoad({ filter: /\.tsx(?:\?[^/]*)?$/ }, async ({ path }) => ({
+        contents: transformTsx(await Bun.file(withoutQuery(path)).text()),
         loader: 'js',
       }));
 

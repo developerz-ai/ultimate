@@ -117,6 +117,10 @@ export function requiredStrategies(
 // The rejection handler rethrows: swallowing it would resolve `el.__x`, and the interaction
 // runtime below would then flush its replay queue into an island that never mounted — the bug
 // `el.__x`-as-a-promise was introduced to fix, reintroduced one layer further out.
+//
+// `el.__x` resolves to whatever `mount()` returned. An island's `mount` may return `() => void`,
+// its disposer (Solid's `render` answers one); the runtime keeps it there and
+// `@ultimat3/testing`'s `mountIsland` calls it on dispose. Nothing here ever calls it.
 const RUNTIME_PRELUDE = `
 function boot(el){var e=el.getAttribute('data-x-entry');
 if(!e)return Promise.resolve();if(el.__x)return el.__x;

@@ -163,6 +163,17 @@ git will not commit and the dev loop will not reload. A save that touches five f
 and a save arriving while a reload is still building is one more reload after it, never a second one
 racing it.
 
+**What a reload changes, `As of 2026-09-07`.** A route module — `page.tsx`, `route.ts` — is
+imported again when its source changed and its entry replaced, so the next request serves the page
+on disk; its islands are re-bundled on the same tick, so the two are one generation. A save that
+will not import is a finding on `/_x` and the last page that did import stays up. Everything else
+is registered once per process — an action, a query, an entity, a component a page imports — and an
+edit there needs a restart: its exports are already held by every module that imported it, and Bun
+has no way to rebind them. The route's guard (`policy`) is read by the HTTP pipeline at boot, so
+adding one is a restart too. Before this date the route module took the restart rule as well, and a
+save served a NEW island under an OLD page: the old props, and the placeholder the new island renders
+when they are missing.
+
 Without `--once` the process stays up until it is signalled. `Ctrl-C` runs the same three-phase
 drain a production `SIGTERM` runs — stop accepting, finish in-flight, close — and only then
 releases the embedded Postgres, the worker and the file watcher, so `.x/pgdata` is never left
@@ -636,17 +647,19 @@ held when the budget runs out is `X_MIGRATE_CONCURRENT` and a non-zero exit, bec
 `pg_advisory_lock` has no timeout and a wedged predecessor sat inside one statement with nothing in
 the logs — that is what 1.2.0 does → [Known gaps](Known-Gaps).
 
-## Serving in production — `ROLE` and `PORT`
+## Serving in production — `ROLE`, `PORT` and `HOST`
 
 There is no `x serve` command. A container runs the scaffolded `apps/web/server.ts`, which calls
 `runRole({ root, env: Bun.env })` — the production boot path, with no dev watcher, no `/_x`, and
-`dev: false`. It binds `0.0.0.0`, because a process bound to `localhost` inside a container is
-unreachable from the port mapping, the load balancer and every health probe at once.
+`dev: false`. It binds `0.0.0.0` unless `HOST` says otherwise, because a process bound to
+loopback inside a container is unreachable from the port mapping, the load balancer and every
+health probe at once.
 
 | Env | Default | Meaning |
 |---|---|---|
 | `ROLE` | `web` | one of `web`, `sync`, `worker`, `scheduler`, `migrate`, `replicator`. **There is no `all`** |
 | `PORT` | `3000` | empty or whitespace falls back to the default; anything else must be an integer in 0–65535 (`0` is legal — an ephemeral port) |
+| `HOST` | `0.0.0.0` | the interface the `web` and `sync` roles bind, and the metrics endpoint with them — one decision. Empty or whitespace falls back to the default. `HOST=127.0.0.1` inside a container is **unreachable through `docker run -p`** — the proxy connects to the container's bridge address, never its loopback — and reachable only where the container shares the host's network namespace (`--network host`) or through a sidecar and `ssh -L` inside it. That is the exposure an app which admits one implicit actor without a login wants, and until 2026-09-07 such an app could not run in a container at all. `runRole({ …, hostname: '127.0.0.1' })` overrides the variable, the way `port` overrides `PORT`, for an app that must never trust the deployment to set it |
 
 | Failure | Code | Fix as printed |
 |---|---|---|

@@ -17,6 +17,7 @@ import {
 } from '@ultimat3/cache';
 import { finiteCount, logger, renderThrowable } from '@ultimat3/core';
 import { parseTtlMs } from './duration';
+import { finiteStatus, isRenderStatus } from './finite-status';
 import type { RouteDescriptor } from './registry';
 import { describeRoutes } from './registry';
 import { contentHash, staticHeaders } from './render-static';
@@ -37,6 +38,12 @@ export interface IsrEntry {
   readonly ttlMs: number | null;
   /** Set by a tag invalidation; independent of the TTL clock. */
   readonly stale: boolean;
+  /**
+   * What the page answers, 200–599. Optional because an entry can come back from an app's own
+   * store, written before this field existed or JSON-round-tripped without it; absent reads as
+   * 200, the only status an entry ever had until `withStatus`.
+   */
+  readonly status?: number;
 }
 
 export interface IsrStore {
@@ -150,7 +157,22 @@ function routePathOf(key: string): string {
   return query === -1 ? key : key.slice(0, query);
 }
 
-export type IsrRenderFn = (path: string) => string | Promise<string>;
+/**
+ * A render that also answers a status — what a loader's `withStatus(404, …)` becomes once the
+ * document is built. A bare string is the 200 every render before this one was: the union is
+ * additive, and a render function that never learned the object shape keeps compiling.
+ */
+export interface IsrRendered {
+  readonly html: string;
+  readonly status: number;
+}
+
+export type IsrRenderFn = (path: string) => string | IsrRendered | Promise<string | IsrRendered>;
+
+/** One shape for the generator, so nothing below branches on what the render handed back. */
+function renderedOf(rendered: string | IsrRendered): IsrRendered {
+  return typeof rendered === 'string' ? { html: rendered, status: 200 } : rendered;
+}
 
 export interface IsrServeResult {
   readonly state: IsrState;
@@ -266,7 +288,7 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
         key: path,
         tags: (descriptor?.revalidateTags ?? []).map(parseWireTag),
       });
-      const html = await render(path);
+      const { html, status } = renderedOf(await render(path));
       const entry: IsrEntry = {
         path,
         html,
@@ -274,6 +296,9 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
         generatedAt: now(),
         ttlMs: parseTtlMs(descriptor?.revalidateTtl),
         stale: false,
+        // Screened at generation, the one place a status enters the store: a `NaN` written here
+        // would be served for the whole TTL as a `RangeError` on every hit.
+        status: finiteStatus('IsrRenderFn', status),
       };
       // Refused, never published stale-flagged: the next request re-renders from rows that now
       // include the write, where a stored-but-stale entry would serve this pre-write body once
@@ -432,6 +457,20 @@ function cacheControl(ttlMs: number | null): string {
   return `public, max-age=0, s-maxage=${sMaxAge}, stale-while-revalidate=86400`;
 }
 
+/**
+ * `entryTtlMs`'s reason, one field over: a store may hand back an entry with no `status`, or one
+ * that JSON turned into something else, on the request path. Absent is 200 — the only value any
+ * entry carried before the field existed — and anything the range refuses is 200 with a warning,
+ * because a stored number must not 500 the page for its whole TTL.
+ */
+function entryStatus(entry: IsrEntry): number {
+  const status = entry.status;
+  if (status === undefined) return 200;
+  if (isRenderStatus(status)) return status;
+  logger.warn('isr.entry_status_invalid', { path: entry.path, status: String(status) });
+  return 200;
+}
+
 function toResult(entry: IsrEntry, buildId: string, servedStale = false): RenderResult {
   const headers: Record<string, string> = {
     ...staticHeaders(entry.hash, buildId),
@@ -443,5 +482,5 @@ function toResult(entry: IsrEntry, buildId: string, servedStale = false): Render
     vary: 'accept-language',
   };
   if (servedStale) headers['x-ultimate-isr'] = 'stale';
-  return { status: 200, headers, body: entry.html };
+  return { status: entryStatus(entry), headers, body: entry.html };
 }

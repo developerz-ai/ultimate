@@ -55,6 +55,17 @@ already carries a better code and a better fix than any wrapper could. Membershi
 brand, not a `code` property: an `ENOENT` is an `Error` with a string `code` too, and it gets
 wrapped like any other loader failure.
 
+A loader that wants the page to answer a **status** — a row the URL names and the table lacks —
+returns its data through `withStatus(404, data)`. The same object comes back, so nothing about
+`load`'s type, `meta`'s `data` or the page's props changes; every render mode reads the status off
+it (`routeStatusOf`), and a 4xx or 5xx is `robots: noindex` by construction, applied by the
+descriptor's `meta` after the route's own ran. Not a throw: a throw is the framework's error page,
+outside the app's shell, and `As of 2026-09-07` that was the only way to a 404 — ai-maxxing's
+`/fleet/nope` rendered the right page and answered 200. A 3xx is `X_ROUTE_STATUS_INVALID`; a
+redirect is `@ultimat3/http`'s `redirect()`. The static export writes the document whatever the
+loader said — a file has no status — and the build's measurer, which renders with `params: {}`,
+never fails on a loader answering 404.
+
 ## `offline` and `meta` are required by the type
 
 Not by a lint rule, not by a doc — by `RouteDefinition`. Axiom 3 lives in the type system:
@@ -429,6 +440,7 @@ side effect. Anything that loads an app's source — `x dev`, `x build`, `server
 | Export | Owns |
 |---|---|
 | `defineRoute` | the `route` primitive |
+| `withStatus`, `routeStatusOf` | the status a loader answers, carried on its data; 200 when nothing asked |
 | `island`, `createIslandCollector` | one interactive component on a static page |
 | `MODE_SPECS`, `assertModeShape`, `assertModeInvariants` | the mode invariant table |
 | `registerRoute`, `describeRoutes`, `routeFor`, `routePathFromFile` | the route table |

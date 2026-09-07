@@ -23,11 +23,11 @@ import type { Actor, Clock } from '@ultimat3/core';
 import { finiteCount, readWithinLimit, systemClock } from '@ultimat3/core';
 import type { RateLimitStore } from '@ultimat3/http';
 import { memoryRateLimitStore, toBucket } from '@ultimat3/http';
-import { McpRateLimitedError } from './errors';
+import { McpBodyTooLargeError, McpRateLimitedError } from './errors';
 import type { McpCaller, McpRole, McpVerbClass } from './registry';
 import type { McpServer } from './server';
 import type { JsonRpcResponse } from './wire';
-import { errorResponse, INVALID_REQUEST, PARSE_ERROR } from './wire';
+import { errorResponse, INVALID_REQUEST, PARSE_ERROR, refusalMessage } from './wire';
 
 /**
  * The same 1 MiB `@ultimat3/http`'s `bodyLimitBytes` defaults to. This descriptor is driven from a
@@ -117,9 +117,11 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
     windowMs: MCP_RATE_LIMIT_WINDOW_MS,
   });
 
+  const path = input.path ?? '/mcp';
+
   return {
     method: 'POST',
-    path: input.path ?? '/mcp',
+    path,
     limits,
     rateLimitClass: (body) => server.classify(body),
 
@@ -141,12 +143,23 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
       // cannot drift.
       const read = await readWithinLimit(request.body, bodyLimitBytes);
       if ('over' in read) {
+        // Still the JSON-RPC envelope on `id: null` — a client library parses that and a consumer
+        // has pinned it — and the stdio transport answers the same condition the same way. What
+        // travels now is the refusal: the code, both numbers, and the two moves that end it,
+        // built by the error that owns the wording so the two transports cannot drift.
+        const refusal = new McpBodyTooLargeError({
+          transport: 'http',
+          limit: bodyLimitBytes,
+          over: read.over,
+        });
         return json(
-          errorResponse(
-            null,
-            INVALID_REQUEST,
-            `request body is at least ${read.over} bytes, limit is ${bodyLimitBytes}`,
-          ),
+          errorResponse(null, INVALID_REQUEST, refusalMessage(refusal), {
+            code: refusal.code,
+            cause: refusal.cause,
+            fix: refusal.fix,
+            docs: refusal.docs,
+            limit: bodyLimitBytes,
+          }),
           413,
         );
       }
@@ -185,7 +198,9 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
         ...(resolved.role !== undefined ? { role: resolved.role } : {}),
       };
 
-      const response = await server.handle(body, caller);
+      // The wire named, so a refusal that tells the client where to resend names THIS mount and
+      // not a spelled `/mcp`.
+      const response = await server.handle(body, caller, { transport: 'http', path });
       // A notification has no response. 202 with an empty body is the MCP-correct answer.
       if (response === null) return new Response(null, { status: 202 });
       // JSON-RPC errors are 200s: the transport succeeded, the call did not. Only a

@@ -89,10 +89,13 @@ site/dist/
 # CLI test fixtures (written and removed per run; a crashed run leaves them)
 packages/cli/.app-fixture/
 packages/cli/.dev-fixture/
+packages/cli/.app-reload-fixture/
 packages/cli/.mcp-fixture/
 packages/cli/.island-fixture/
 packages/cli/.overrides-fixture/
 packages/cli/.prerender-fixture/
+packages/cli/.mcp-host-fixture/
+packages/cli/.roles-script-csp-fixture/
 
 # Scratch credential files. A mis-set path once wrote an npm session token into the repo root.
 .npmrc-login

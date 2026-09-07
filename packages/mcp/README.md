@@ -198,8 +198,16 @@ It cannot be done from outside: `rateLimitClass(body)` takes an already-parsed b
 the only thing that parses one. The bucket is `@ultimat3/http`'s, keyed per actor per class; over
 the limit is `429` + `Retry-After` + `X_MCP_RATE_LIMITED`.
 
+The body is capped WHILE it is read, and over the cap is `413` on a JSON-RPC `-32600` (`id: null`)
+carrying `data: { code: 'X_MCP_BODY_TOO_LARGE', cause, fix, limit }` — the stdio transport answers
+an over-long line with the same code. A JSON-RPC batch (an array) is refused `-32600` by name with
+`data: { code: 'X_MCP_PROTOCOL', fix }`: one request per `POST`, never walked. Every refusal on
+this surface carries its instruction, `As of 2026-09-07` — the 413 and the batch were the two that
+did not.
+
 | Knob | Where | Default |
 |---|---|---|
+| the body cap | `mcpHttpRoute({ bodyLimitBytes })` · `defineAppMcp({ bodyLimitBytes })` | `DEFAULT_MCP_BODY_LIMIT_BYTES`, 1 MiB |
 | the numbers | `mcpHttpRoute({ rateLimits })` · `defineAppMcp({ rateLimits })` | `MCP_RATE_LIMITS` |
 | where they are counted | `mcpHttpRoute({ rateLimitStore })` · `defineAppMcp({ rateLimitStore })` | a per-**process** memory store — N replicas behind one URL each enforce the full allowance, so a fleet passes `postgresRateLimitStore({ executor })` |
 

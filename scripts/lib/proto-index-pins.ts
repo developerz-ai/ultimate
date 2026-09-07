@@ -56,11 +56,6 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
     reason:
       '`n-plus-one.ts`, `errors.ts` and `array-element.ts` index fix tables by a bulk-write op and an array element kind, both narrowed from the entity registry.',
   },
-  jobs: {
-    count: 1,
-    reason:
-      'one closed table keyed by a job lifecycle state the worker itself set one statement earlier.',
-  },
   mail: {
     count: 4,
     reason: 'MIME header and encoding tables keyed by a union this package declares.',

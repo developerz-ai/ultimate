@@ -18,7 +18,48 @@ documented API.
 Round 5, 2026-09-07: two gate seams the same app walked into — a budget the library takes and the
 gate never passed, and a rule the gate refuses that the scaffold never wrote down.
 
+Round 6, 2026-09-07: seven seams the same app measured across three production sweeps — a page
+that could not answer a status, three MCP refusals with no instruction, a dev server serving a
+new island under an old page, one production binding, a SIGTERM no job ever heard, and a test
+fixture that restored the globals and left the island ticking. Two documented APIs widen
+additively (`ServeOptions.hostname`, an island's `mount` may return its disposer); nothing else
+changes.
+
 ### Added
+
+- `withStatus(status, data)` in `@ultimat3/render` — the one way a route's `load` answers a
+  response status while still rendering its own page. Measured in ai-maxxing on 2026-09-07:
+  `/fleet/nope`, a host the fleet does not have, rendered the app's own "Not found" page inside
+  its shell and answered **200**, because the only route to a 404 was throwing, which renders the
+  framework's error page outside the shell. The status rides on the data by identity — the same
+  object comes back, so `load`'s type, `routeDataFor` and every consumer that never asks are
+  untouched — and every mode answers it: `ssr`, `stream`, `static`-served, and `isr`, whose entry
+  now stores the status beside the HTML (`IsrRenderFn` may return `{ html, status }`; a bare
+  string is still 200). A 4xx/5xx is `robots: noindex` by construction, applied by the
+  descriptor's `meta` after the route's own ran. A 3xx is `X_ROUTE_STATUS_INVALID` (new) — a
+  redirect is a `Location` and no body. `@ultimat3/http` never rewrites a handler's own status,
+  now pinned, and `x dev`'s renderer reads the status once per request and hands it to every
+  mode. The static build's measurer renders a 404-answering loader without failing.
+- `X_MCP_BODY_TOO_LARGE`, and `McpBodyTooLargeError` behind it, for one MCP message larger than
+  the transport holds. The HTTP 413 was a bare JSON-RPC `-32600` reading `request body is at
+  least N bytes, limit is M` — two numbers and no next step, while the 401, 403 and 429 beside it
+  every one carried `{ code, cause, fix }`; a box agent sending a large `promptSession` had
+  nothing to act on. The envelope stays (`id: null`, `-32600`, 413 — a client parses it and a
+  consumer has pinned it) and now carries `data: { code, cause, fix, limit }`, with the fix naming
+  both moves: send less, or raise `mcpHttpRoute({ bodyLimitBytes })`. The stdio line cap answers
+  the same code, because it is the same condition.
+- `defineAppMcp({ bodyLimitBytes })`. `mcpHttpRoute` took it and the one path an app builds the
+  route through never forwarded it, so the fix line above named a knob the app could not reach.
+- `HOST`, and `ServeOptions.hostname`. `runRole` had one binding, `0.0.0.0`, so an app that admits
+  one implicit actor without a login — which must refuse a public interface — could not run in a
+  container. `HOST` is read the way `PORT` is (empty is `0.0.0.0`); `hostname` overrides it the
+  way `port` overrides `PORT`; `web`, `sync` and the metrics endpoint bind the same interface. A
+  loopback bind inside a container is unreachable through `-p`; reachable with `--network host`
+  or a sidecar/`ssh -L` in the same namespace. New optional field on a documented API.
+- An island's `mount` may return `() => void`, its disposer — Solid's `render` answers exactly
+  that, so the whole of an island's side is `return render(…)`; `x g island` writes it so. The
+  hydrate runtime already kept `mount`'s resolution as `el.__x`; `@ultimat3/testing`'s
+  `mountIsland` now calls it on dispose (below).
 
 - A repository can set its own `AGENTS.md` budget, as `"agentsMdMaxBytes"` in `x.verify.json`.
   `@ultimat3/manifest`'s `checkAgentsMd`/`assertAgentsMd` have taken a `maxBytes` since they were
@@ -44,6 +85,41 @@ gate never passed, and a rule the gate refuses that the scaffold never wrote dow
 
 ### Fixed
 
+- A JSON-RPC batch is refused by name. An array is not an envelope, so it fell through to the
+  same bare `-32600` as `{ not: 'jsonrpc' }`, and a client sending a batch learned nothing about
+  why. `server.handle` now refuses it before the envelope check — transport-independent — with
+  `data: { code: 'X_MCP_PROTOCOL', fix }` naming one request per `POST` (one per line over
+  stdio); the plain non-envelope refusal carries the same shape.
+- `tool not found: <name>` names the next step: `— call tools/list to read the catalog this
+  caller may use`. The same sentence on the absent and the role-hidden branch, still with no
+  `data`, so the hint instructs without saying which — the enumeration property
+  `security.test.ts` pins is unchanged. It is the one constant `McpToolUnknownError.fix` already
+  gave, so the wire and the thrown error cannot drift. Verified beside it, with a test: a
+  per-argument `.describe()` on a `t.object` input reaches `tools/list` as that property's
+  `description`. It always did; the assertion is now measured rather than assumed.
+- **`x dev` serves an edited `page.tsx` on the next request.** A save re-bundled the island and
+  kept the FIRST page component — `loadApp` registered a module once per process and `import()`
+  answered from Bun's cache — so a page rendered a new island under old props, measured in
+  ai-maxxing as a `{detail}` placeholder. A route module whose source changed is now re-imported
+  as `<path>?x-reload=<hash>` and its entry replaced; `appRoutes` reads the entry back from the
+  table per request. Actions, queries and entities keep the restart rule, now stated.
+  `@ultimat3/render`'s loader admits the query-suffixed `.tsx` — anchored on `.tsx$` it handed the
+  re-import to Bun's own JSX loader. The dev fixture is its own repository (`.git/HEAD`), because
+  the root `.gitignore` had hidden it from the watcher and the reload path was booted by every
+  run and exercised by none.
+- `@ultimat3/jobs`: SIGTERM reaches the job. The worker's `accept` hook now aborts every held
+  run's `ctx.signal` with `X_DRAINING` (naming the worker and the signal) before core's in-flight
+  wait starts spending the budget; a body that unwinds is settled as **`interrupted`** — back in
+  the ready bucket with the attempt uncounted, never dead-lettered — and a manual `stop()` still
+  aborts nothing. Until now the drain told nobody, so a body reading the documented cancellation
+  seam ran to the deadline and was abandoned there. Additively: `JobOutcome` gains
+  `'interrupted'`, `WorkerStats` gains `interrupted`, `JobDrainedError` is exported;
+  `Worker`/`WorkerOptions`/`WorkerStats` live in `worker-types.ts`, re-exported.
+- `@ultimat3/testing`: `mountIsland`'s dispose stops the island. When `mount` returns a function
+  it is the island's disposer, called before the globals are restored. Restoring globals was the
+  whole teardown, so an island polling on an interval kept ticking after the DOM was gone:
+  `document is not defined` in unrelated tests, and one file's fetch stub receiving another
+  file's POSTs. The `X_TEST_ISLAND_NO_MOUNT` fix line says so.
 - The client closes a drained socket with a code a browser accepts. The `reconnect` frame's
   handler called `WebSocket.close(1001, reason)`, and a browser refuses 1001 from script before it
   does anything else: `Uncaught InvalidAccessError: The close code must be either 1000, or between

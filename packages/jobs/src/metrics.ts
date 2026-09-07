@@ -14,6 +14,24 @@
 
 import type { Gauge } from '@ultimat3/core';
 import { gauge } from '@ultimat3/core';
+import type { JobOutcome } from './execute';
+
+/**
+ * `JobOutcome` -> the `jobs_total` label, and `null` for the outcomes that are not one. `suspended`
+ * is deliberately unmapped: parking a run is control flow, so counting it would make every
+ * `step.sleep` read as a finished job and make the failure ratio meaningless. `interrupted` for
+ * the same reason: a deploy cutting a job short is the process's doing, and a failure ratio that
+ * spikes on every rollout is a page nobody answers. Read by the worker's one `recordJob` site.
+ */
+export const JOB_OUTCOME_LABELS = Object.freeze<
+  Record<JobOutcome, 'ok' | 'failed' | 'dead' | null>
+>({
+  completed: 'ok',
+  suspended: null,
+  retried: 'failed',
+  'dead-lettered': 'dead',
+  interrupted: null,
+});
 
 /** Seconds and not milliseconds: every Prometheus duration is seconds, and the alert is `> 300`. */
 export const queueOldestReady: Gauge = gauge('queue_oldest_ready_seconds', {

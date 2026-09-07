@@ -41,6 +41,7 @@ export type {
   IsrController,
   IsrControllerOptions,
   IsrEntry,
+  IsrRendered,
   IsrRenderFn,
   IsrServeResult,
   IsrState,

@@ -20,6 +20,7 @@ import { defineAppMcp } from './app-tools';
 import type { ProjectablePrimitive } from './from-action';
 import type { AnyMcpTool, McpCaller, McpToolResult } from './registry';
 import { jsonResult } from './registry';
+import type { JsonSchema } from './wire';
 
 const owner = agentActor({ id: 'a1', orgId: 'o1', roles: ['owner'] });
 const guest = agentActor({ id: 'a2', orgId: 'o1', roles: ['guest'] });
@@ -99,6 +100,40 @@ describe('tools as a named record', () => {
     // Policy is the only gate; a scope would be a second one and the two would drift.
     expect(tool.scope).toBeUndefined();
     expect(tool.destructive).toBe(false);
+  });
+
+  test("a per-argument .describe() reaches tools/list as that property's description", async () => {
+    const described = {
+      ...seatReport,
+      input: t.object({ orgId: t.string.describe('the org whose seats to count') }),
+    };
+    const mcp = defineAppMcp({ tools: { seatReport: described } });
+    const listed = await mcp.server.handle(
+      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      caller(owner),
+    );
+    const result = listed?.result as { tools: { name: string; inputSchema: JsonSchema }[] };
+    expect(result.tools[0]?.inputSchema.properties?.['orgId']?.description).toBe(
+      'the org whose seats to count',
+    );
+  });
+
+  test('bodyLimitBytes is forwarded to the route, so the 413 fix line can be followed', async () => {
+    const mcp = defineAppMcp({
+      tools: { seatReport },
+      resolveToken: () => ({ actor: owner, scopes: new Set<string>() }),
+      bodyLimitBytes: 64,
+    });
+    const response = await mcp.route?.handle(
+      new Request('http://local/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', pad: 'x'.repeat(256) }),
+      }),
+    );
+    expect(response?.status).toBe(413);
+    const payload = (await response?.json()) as { error: { data: { code: string } } };
+    expect(payload.error.data.code).toBe('X_MCP_BODY_TOO_LARGE');
   });
 
   test('an unmarked tool is metered as a write — forgetting the flag costs speed, not safety', () => {

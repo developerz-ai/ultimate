@@ -153,6 +153,51 @@ describe('the scaffolded production entry is a runnable artifact', () => {
     BOOT_TIMEOUT_MS,
   );
 
+  // Reachable on loopback and reported there. Inside a container that is unreachable through `-p`
+  // (docker-proxy connects to the container's bridge address, never its loopback) and reachable only
+  // where the container shares the host's network namespace — `--network host`, or a sidecar and
+  // `ssh -L` inside it — which is exactly what an app that admits one implicit actor wants.
+  test(
+    'HOST=127.0.0.1 binds loopback, so an app that refuses a public interface can still boot',
+    async () => {
+      await writeFixture();
+      const port = freePort();
+      // Named, as above: the scrape port is not this test's subject, and a fixed 9090 is whatever
+      // the box already has bound there.
+      const metricsPort = freePort();
+      const child = Bun.spawn(['bun', join(ROOT, 'apps/web/server.ts')], {
+        cwd: ROOT,
+        env: {
+          ...process.env,
+          PORT: String(port),
+          ROLE: 'web',
+          HOST: '127.0.0.1',
+          METRICS_PORT: String(metricsPort),
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const out = pump(child.stdout);
+      const err = pump(child.stderr);
+      try {
+        const started = await waitFor(() => out() + err(), 'ultimate started');
+        // The address in the log IS the assertion: `0.0.0.0` here is a public bind reported as
+        // if it were the one the operator asked for.
+        expect(started).toContain(`"url":"http://127.0.0.1:${port}"`);
+        expect(started).not.toContain('0.0.0.0');
+        allowHost(`127.0.0.1:${port}`);
+        expect((await fetch(`http://127.0.0.1:${port}/readyz`)).status).toBe(200);
+        child.kill('SIGTERM');
+        expect(await child.exited).toBe(0);
+      } finally {
+        child.kill('SIGKILL');
+        await child.exited;
+        await rm(ROOT, { recursive: true, force: true });
+      }
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
   test(
     'ROLE=migrate applies the ledger and exits, which is what a release phase runs',
     async () => {

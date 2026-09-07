@@ -111,6 +111,16 @@ export function resultResponse(id: JsonRpcId, result: unknown): JsonRpcResponse 
   return { jsonrpc: '2.0', id, result };
 }
 
+/**
+ * The `message` a coded refusal travels under: the cause AND the fix, in one sentence. `data`
+ * carries both as fields; `message` is the ONE thing a client that reads nothing else prints, so a
+ * consumer of `message` alone still gets the recovery step. Both transports build theirs here —
+ * the HTTP 413 and the stdio over-long frame carry transport-specific wording, and this keeps the
+ * SHAPE shared without forcing the text to be identical.
+ */
+export const refusalMessage = (refusal: { readonly cause: string; readonly fix: string }): string =>
+  `${refusal.cause} — ${refusal.fix}`;
+
 export function errorResponse(
   id: JsonRpcId,
   code: number,

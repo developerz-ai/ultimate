@@ -61,6 +61,48 @@ const call = (method: string, params?: unknown) =>
     ? { jsonrpc: '2.0' as const, id: 1, method }
     : { jsonrpc: '2.0' as const, id: 1, method, params };
 
+describe('the envelope refusals carry the fix', () => {
+  test('a batch (an array) is refused by name, with one request per message as the fix', async () => {
+    const response = await server.handle(
+      [call('tools/list'), call('tools/list')],
+      caller('member', []),
+    );
+    expect(response?.id).toBeNull();
+    expect(response?.error?.code).toBe(INVALID_REQUEST);
+    expect(response?.error?.message).toContain('batch');
+    const data = response?.error?.data as { code: string; fix: string };
+    expect(data.code).toBe('X_MCP_PROTOCOL');
+    // No wire named, no unit spelled: the server does not know it is mounted at `/mcp`, or at
+    // all — `mcpHttpRoute({ path })` is a knob, and a spelled `/mcp` was wrong for `/app-mcp`.
+    expect(data.fix).toContain('one request per message');
+    expect(data.fix).not.toContain('/mcp');
+  });
+
+  test('the batch fix names the unit the wire counts in, when the transport says which', async () => {
+    const batch = [call('tools/list'), call('tools/list')];
+    const http = await server.handle(batch, caller('member', []), {
+      transport: 'http',
+      path: '/app-mcp',
+    });
+    const httpFix = (http?.error?.data as { fix: string } | undefined)?.fix;
+    expect(httpFix).toContain('one request per POST /app-mcp');
+    const stdio = await server.handle(batch, caller('member', []), { transport: 'stdio' });
+    const stdioFix = (stdio?.error?.data as { fix: string } | undefined)?.fix;
+    expect(stdioFix).toContain('one request per line');
+    // The `message` is the same sentence on every wire; only the fix carries the unit.
+    expect(http?.error?.message).toBe(stdio?.error?.message);
+  });
+
+  test('a non-envelope names the shape a JSON-RPC 2.0 request has', async () => {
+    const response = await server.handle({ not: 'jsonrpc' }, caller('member', []));
+    expect(response?.error?.code).toBe(INVALID_REQUEST);
+    expect(response?.error?.message).toBe('not a JSON-RPC 2.0 request envelope');
+    const data = response?.error?.data as { code: string; fix: string };
+    expect(data.code).toBe('X_MCP_PROTOCOL');
+    expect(data.fix).toContain("jsonrpc: '2.0'");
+  });
+});
+
 describe('hidden is not forbidden', () => {
   test('tools/list omits a tool hidden from the caller role', async () => {
     const listed = await server.handle(call('tools/list'), caller('member', ['db:read']));
@@ -86,9 +128,27 @@ describe('hidden is not forbidden', () => {
       caller('member', ['db:read', 'dev:read', 'db:migrate']),
     );
     expect(response?.error?.code).toBe(METHOD_NOT_FOUND);
-    expect(response?.error?.message).toBe('tool not found: admin.only');
+    // The message carries the ONE instruction that is safe on both branches — read `tools/list`
+    // — because a hidden tool and an absent one answer it identically, and neither says which.
+    // Measured through ai-maxxing's `POST /mcp` on 2026-09-07: `tool not found: <name>` and
+    // nothing else, so a box agent holding a stale name had no next step.
+    expect(response?.error?.message).toBe(
+      'tool not found: admin.only — call tools/list to read the catalog this caller may use',
+    );
+    expect(response?.error?.data).toBeUndefined();
     // No enumeration behind the curtain: the answer must not hint that the tool exists.
     expect(JSON.stringify(response)).not.toContain('scope');
+  });
+
+  test('an absent tool answers the same instruction, so the hint reveals nothing', async () => {
+    const absent = await server.handle(
+      call('tools/call', { name: 'no.such.tool', arguments: {} }),
+      caller('member', []),
+    );
+    expect(absent?.error?.message).toBe(
+      'tool not found: no.such.tool — call tools/list to read the catalog this caller may use',
+    );
+    expect(absent?.error?.data).toBeUndefined();
   });
 
   test('a visible tool with a missing scope answers Forbidden, not ToolNotFound', async () => {

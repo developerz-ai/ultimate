@@ -68,7 +68,7 @@ SIGTERM
 |---|---|
 | `web` | let in-flight requests and streaming responses finish; a stream past the deadline gets a typed truncation, not a socket reset |
 | `sync` | send every client a `reconnect` frame **with a per-client backoff delay** (see below), then close cleanly |
-| `worker` | finish the current step, persist it, and release the job's lease so another worker resumes at the next step — never mid-step |
+| `worker` | abort every held job's `ctx.signal` with `X_DRAINING` at step 2, so a body that reads it unwinds inside the budget; a job that stops is handed back uncounted and the worker replacing this one resumes it at its last recorded step. A body that ignores the signal is waited on to the deadline and its lease lapses |
 | `scheduler` | delete the lease row immediately so the standby promotes on its next round rather than waiting out the 30s TTL |
 | `replicator` | flush the change feed to NATS up to the last confirmed LSN, then release the slot |
 

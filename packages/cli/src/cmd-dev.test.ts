@@ -25,6 +25,8 @@ import { CliNotImplementedError } from './errors';
 const ROOT = join(import.meta.dir, '..', '.dev-fixture');
 
 let server: DevServer;
+/** Rebound by the test that saves a file, so it can await the tick the watcher turned into. */
+let onReload: (file: string) => void = () => undefined;
 
 /**
  * Booting embedded Postgres, the queue and the HTTP role is seconds of real work, and bun's
@@ -56,6 +58,7 @@ beforeAll(async () => {
     port: 0,
     env,
     roles: ['web', 'sync', 'worker', 'scheduler'],
+    onReload: (file) => onReload(file),
   });
 }, BOOT_TIMEOUT_MS);
 
@@ -207,7 +210,7 @@ describe('unit · x dev boots the app', () => {
       'echoPost',
       'publishPost',
     ]);
-    expect(emitted.routes.map((route) => route.url)).toEqual(['/pricing']);
+    expect(emitted.routes.map((route) => route.url)).toEqual(['/hello', '/pricing']);
     // The fixture never ran `x manifest`, so every key reads as added rather than as changed.
     expect(payload.data.manifest.committed).toBeNull();
     expect(payload.data.drifted).toBe(true);
@@ -450,6 +453,21 @@ describe('unit · x dev boots the app', () => {
   test('--role is a declared flag with the dev roles in its summary', () => {
     const role = devCommand.spec.flags?.find((flag) => flag.name === 'role');
     expect(role?.summary).toContain('web,sync,worker,scheduler');
+  });
+
+  // Last: it moves the reload counter `/_x/services` reports. The defect — `rebuild` re-ran
+  // `loadApp`, `import()` answered from its cache, `register` saw a registered file, so the table
+  // kept the FIRST component while `buildIslands` re-bundled the island: a new island, an old page.
+  test('an edited page.tsx is served fresh on the next request', async () => {
+    const file = 'apps/web/app/hello/page.tsx';
+    expect(await (await fetchDev('/hello')).text()).toContain('generation one');
+    const reloaded = new Promise<string>((resolve) => {
+      onReload = resolve;
+    });
+    const edited = FILES[file]?.replace('generation one', 'generation two') ?? '';
+    await Bun.write(join(ROOT, file), edited);
+    expect(await reloaded).toBe(file);
+    expect(await (await fetchDev('/hello')).text()).toContain('generation two');
   });
 });
 

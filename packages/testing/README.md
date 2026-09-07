@@ -303,6 +303,17 @@ removed.
 `island[Symbol.dispose]()` in an `afterAll`. Left installed it hands a fake `document` to every
 later FILE in the run.
 
+**Dispose also stops the island** (`As of 2026-09-07`): when `mount` returns a function, that is
+the island's disposer and dispose calls it — before the globals go back, so a disposer that
+removes a listener from `document` or clears an interval whose callback reads it finds the same
+`document` `mount` ran under. Solid's `render` already returns exactly that, so an island's whole
+side of the contract is `return render(() => <Counter {...props} />, el)` — and a disposed root
+runs every `onCleanup` inside it. Until this landed, restoring the globals was the whole of the
+teardown: an island whose `mount` polled on an interval kept ticking after the DOM was gone,
+which surfaced as `document is not defined` thrown into whichever later test happened to be
+running, and as one file's fetch stub receiving POSTs from another file's island. A `mount` that
+returns nothing disposes as it always did.
+
 ### Selectors
 
 `find`, `all`, `text`, `fire`, `resize`, `scroll` and `observing` take one grammar, `As of

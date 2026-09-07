@@ -167,6 +167,24 @@ describe('a message with no newline in it', () => {
     const parsed = JSON.parse(chunks[0] ?? '');
     expect(parsed.error.code).toBe(-32600);
     expect(String(parsed.error.data.fix).length).toBeGreaterThan(0);
+    // One code for one condition on both transports: the HTTP 413 answers it too.
+    expect(parsed.error.data.code).toBe('X_MCP_BODY_TOO_LARGE');
+    expect(parsed.error.data.limit).toBe(limit);
+    // Runnable as written: a number, twice the cap, never a `<n>`.
+    expect(parsed.error.data.fix).toContain(`serveStdio({ lineLimitBytes: ${String(limit * 2)} })`);
+    // A peer that reads only `message` still gets the next move — the same shape the HTTP 413
+    // carries, in this transport's own words: a line, not a body.
+    expect(parsed.error.message).toContain(parsed.error.data.cause);
+    expect(parsed.error.message).toContain(parsed.error.data.fix);
+  });
+
+  test('a batch on this wire is told one request per LINE, not per POST', async () => {
+    const chunks = await feed([`${JSON.stringify([{ jsonrpc: '2.0', id: 1, method: 'ping' }])}\n`]);
+    expect(chunks).toHaveLength(1);
+    const parsed = JSON.parse(chunks[0] ?? '');
+    expect(parsed.error.data.code).toBe('X_MCP_PROTOCOL');
+    expect(parsed.error.data.fix).toContain('one request per line');
+    expect(parsed.error.data.fix).not.toContain('POST');
   });
 
   test('the session survives it: the next complete message is still answered', async () => {

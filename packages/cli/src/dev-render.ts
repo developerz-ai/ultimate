@@ -27,6 +27,8 @@ import {
   renderHead,
   routeDataFor,
   routeEntries,
+  routeFor,
+  routeStatusOf,
   seoRenderers,
 } from '@ultimat3/render';
 import type { IsrController } from '@ultimat3/render/server';
@@ -212,12 +214,15 @@ async function resultFor(
   // ONCE per request, before the mode is chosen. Every branch below reads this same object, so a
   // route's `load` runs exactly once however its mode splits head from body.
   const data = await routeDataFor(entry.config, request);
+  // The status the loader answered through `withStatus`, 200 when it said nothing. Read once,
+  // here, and handed to every mode: this file mints the `Response`, render owns the seam.
+  const status = routeStatusOf(data);
   switch (entry.config.render) {
     case 'static': {
       // Not `renderStatic`: that enumerates every prerendered path for the build. A request
       // names exactly one, and it earns the same content-hashed headers.
       const body = await documentFrom(entry, request, data, options);
-      return { status: 200, headers: staticHeaders(contentHash(body), options.buildId), body };
+      return { status, headers: staticHeaders(contentHash(body), options.buildId), body };
     }
     case 'isr': {
       // `isrKey(url, locale)`, never `url.pathname`: the query is part of what was rendered — this
@@ -227,9 +232,12 @@ async function resultFor(
       // The locale is the second dimension and it is `ctx.locale`, the answer the `locale` stage
       // already negotiated for THIS request — never `currentLocale()`, which would read the same
       // value through an ambient store the key does not need.
-      const served = await isr.serve(isrKey(url, ctx.locale), () =>
-        documentFrom(entry, request, data, options),
-      );
+      // `{ html, status }`, never the bare string: the entry stores the status beside the HTML
+      // and serves it on every hit, so a 404 under `isr` is a 404 for its whole TTL.
+      const served = await isr.serve(isrKey(url, ctx.locale), async () => ({
+        html: await documentFrom(entry, request, data, options),
+        status,
+      }));
       return served.result;
     }
     case 'stream': {
@@ -253,13 +261,14 @@ async function resultFor(
           holes: [],
         },
         { buildId: options.buildId },
+        status,
       );
     }
     default:
       return renderSsr(
         { entry, params: request.params, url, ctx },
         () => documentFrom(entry, request, data, options),
-        { buildId: options.buildId },
+        { buildId: options.buildId, status },
       );
   }
 }
@@ -281,15 +290,32 @@ const metaOf = (entry: RouteEntry): HttpRouteMeta => ({
   ...(entry.config.policy === undefined ? {} : { policy: entry.config.policy.permission }),
 });
 
-/** One HTTP route per registered `route` primitive, in the table's own order. */
+/**
+ * One HTTP route per registered `route` primitive, in the table's own order.
+ *
+ * The URL and the method are the table's at the time this is called; the ENTRY — the component the
+ * handler renders AND the `meta` the pipeline enforces — is read back from the table on every
+ * request. `x dev` re-registers a route module when its source changes (`app-load.ts`), and a
+ * handler closing over the entry it was built from kept serving the first component after every
+ * save — the table had moved and this closure had not. `meta` was the same defect one stage
+ * earlier: a snapshot taken here, so a `policy` added in a save was not enforced until a restart
+ * while the page behind it was already the new one — the pipeline's `auth` and `authz` stages read
+ * `route.meta` per request, and this getter is what makes that read the table's. The path cannot
+ * move under a reload (the table derives it from the file, and the file is the reload's key), so
+ * the entry captured here is only the fallback for a table cleared under a running server, which
+ * only a test does — and then guard and page fall back together.
+ */
 export function appRoutes(options: DevRenderOptions): readonly Route[] {
   const isr = options.isr ?? createIsrController({ buildId: options.buildId });
-  return routeEntries().map((entry) => ({
+  return routeEntries().map((registered) => ({
     method: 'GET' as const,
-    path: entry.path,
-    meta: metaOf(entry),
+    path: registered.path,
+    get meta(): HttpRouteMeta {
+      return metaOf(routeFor(registered.path) ?? registered);
+    },
     // `ctx.params` is the router's own match — the CLI never re-parses a path it did not match.
     handler: async (request, ctx): Promise<Response> => {
+      const entry = routeFor(registered.path) ?? registered;
       const data: DevRouteData = { url: request.url.href, params: ctx.params };
       return responseOf(await resultFor(entry, data, options, isr, asCtx(ctx)));
     },
