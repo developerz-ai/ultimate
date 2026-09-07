@@ -29,12 +29,27 @@ export interface VerifyFloor {
    * sees, which is the whole safeguard: the number is small, visible, and argued for in one place.
    */
   readonly agentsMdMaxBytes?: number;
+  /**
+   * The binary the `typecheck` step invokes in place of `tsc` — `bunx <typecheckBin> -b --pretty
+   * false`, unchanged otherwise. Absent means `tsc`, which is the only binary every app already
+   * has: `typescript` is a framework dependency, not one this file can assume an app added.
+   *
+   * Here for the same reason `agentsMdMaxBytes` is: this is the file that configures the GATE,
+   * and it is read by the very step the key names. A drop-in `tsc -b` compatible checker (Microsoft's
+   * `tsgo`, `@typescript/native-preview`) is a devDependency + a one-line commit here, never a
+   * hardcoded default — an app that has not installed the binary this names gets `command not
+   * found` from its own shell, not a framework opinion about which compiler is correct.
+   */
+  readonly typecheckBin?: string;
   /** Why part of the file is not a floor. The `manifest` step reports these; nothing swallows them. */
   readonly problems: readonly string[];
 }
 
 /** The floor's budget key. Named once: the problem quotes it and the fix repairs it. */
 export const BUDGET_FIELD = 'agentsMdMaxBytes';
+
+/** The floor's typecheck-binary key. Named once: the problem quotes it and the fix repairs it. */
+export const TYPECHECK_BIN_FIELD = 'typecheckBin';
 
 /**
  * `agentsMdMaxBytes`, or a reason it is not one. A budget that is not a positive whole number is
@@ -55,6 +70,27 @@ function readBudget(payload: Record<string, unknown> | undefined): {
       ],
     };
   return { budget: raw, problems: [] };
+}
+
+/**
+ * `typecheckBin`, or a reason it is not one. A non-string value must not silently fall back to
+ * `tsc`: a floor that names `"typecheckBin": 7` and gets `tsc` anyway is a repository that
+ * believes the `typecheck` step is running a checker it is not, which is the same false green
+ * `readBudget` above already refuses for the byte count. An empty string is refused for the same
+ * reason `-b`'s own project argument may not be empty — `bunx '' -b …` is not a step that failed
+ * to typecheck, it is a step that never ran a compiler at all.
+ */
+function readTypecheckBin(payload: Record<string, unknown> | undefined): {
+  bin?: string;
+  problems: readonly string[];
+} {
+  const raw = payload?.[TYPECHECK_BIN_FIELD];
+  if (raw === undefined) return { problems: [] };
+  if (typeof raw !== 'string' || raw.trim().length === 0)
+    return {
+      problems: [`"${TYPECHECK_BIN_FIELD}" is ${JSON.stringify(raw)}, which is not a binary name`],
+    };
+  return { bin: raw, problems: [] };
 }
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
@@ -86,12 +122,18 @@ export function parseVerifyFloor(
   }
   const record = asRecord(payload);
   const budget = readBudget(record);
+  const typecheckBin = readTypecheckBin(record);
   const steps = record?.['steps'];
   if (!Array.isArray(steps)) {
     return {
       steps: [],
       ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
-      problems: ['it has no "steps" array of step names', ...budget.problems],
+      ...(typecheckBin.bin === undefined ? {} : { typecheckBin: typecheckBin.bin }),
+      problems: [
+        'it has no "steps" array of step names',
+        ...budget.problems,
+        ...typecheckBin.problems,
+      ],
     };
   }
   const named = steps.filter((step): step is string => typeof step === 'string');
@@ -99,8 +141,10 @@ export function parseVerifyFloor(
   return {
     steps: named.filter((step) => declared.includes(step)),
     ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
+    ...(typecheckBin.bin === undefined ? {} : { typecheckBin: typecheckBin.bin }),
     problems: [
       ...(named.length === steps.length ? [] : ['"steps" holds an entry that is not a string']),
+      ...typecheckBin.problems,
       ...(unknown.length === 0
         ? []
         : [`"steps" names ${unknown.join(', ')}, which x verify does not run`]),
@@ -185,7 +229,10 @@ export const floorProblemFindings = (floor: VerifyFloor | undefined): readonly F
  * does not fix it is the failure `packages/cli/CLAUDE.md` names, and the budget is the first
  * problem this file can report that is not about `steps` at all.
  */
-const fixFor = (problem: string): string =>
-  problem.includes(`"${BUDGET_FIELD}"`)
-    ? `x verify --json   # then set "${BUDGET_FIELD}" in ${VERIFY_FLOOR_FILE} to a positive whole number of bytes, or drop the key for the ${AGENTS_MD_MAX_BYTES}B default`
-    : `x verify --json   # then write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps it ran`;
+const fixFor = (problem: string): string => {
+  if (problem.includes(`"${BUDGET_FIELD}"`))
+    return `x verify --json   # then set "${BUDGET_FIELD}" in ${VERIFY_FLOOR_FILE} to a positive whole number of bytes, or drop the key for the ${AGENTS_MD_MAX_BYTES}B default`;
+  if (problem.includes(`"${TYPECHECK_BIN_FIELD}"`))
+    return `x verify --json   # then set "${TYPECHECK_BIN_FIELD}" in ${VERIFY_FLOOR_FILE} to a non-empty binary name, or drop the key to run tsc`;
+  return `x verify --json   # then write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps it ran`;
+};

@@ -50,14 +50,21 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   {
     name: 'typecheck',
     summary: 'tsc -b across every project the root references',
+    // `typecheckBin` (`x.verify.json`, beside `agentsMdMaxBytes`) swaps the binary and nothing
+    // else: same `-b --pretty false` invocation, same output format to parse, same `X_TYPECHECK_
+    // FAILED` finding either way. Absent means `tsc` — the only checker every app already has,
+    // since `typescript` is a framework dependency and a drop-in replacement is the app's own
+    // devDependency to add, never a default this step could assume.
     async run(ctx) {
-      const result = await ctx.runner(['bunx', 'tsc', '-b', '--pretty', 'false'], {
+      const floor = await readVerifyFloor(ctx.root);
+      const bin = floor?.typecheckBin ?? 'tsc';
+      const result = await ctx.runner(['bunx', bin, '-b', '--pretty', 'false'], {
         cwd: ctx.root,
       });
       return fromExec(result, {
         code: 'X_TYPECHECK_FAILED',
         cause: 'the project does not typecheck',
-        fix: 'bunx tsc -b --pretty false',
+        fix: `bunx ${bin} -b --pretty false`,
       });
     },
   },
