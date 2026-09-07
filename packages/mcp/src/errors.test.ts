@@ -57,8 +57,11 @@ describe('McpBodyTooLargeError', () => {
     const error = new McpBodyTooLargeError({ transport: 'http', limit: 1024, over: 4096 });
     expect(error.code).toBe('X_MCP_BODY_TOO_LARGE');
     expect(error.cause).toBe('request body is at least 4096 bytes, limit is 1024');
-    expect(error.fix).toContain('mcpHttpRoute({ bodyLimitBytes: <n> })');
-    expect(error.fix).toContain('defineAppMcp({ bodyLimitBytes: <n> })');
+    // A number, runnable as written: twice what arrived, because the cap itself would run and
+    // change nothing, and `<n>` is not a TypeScript value.
+    expect(error.fix).toContain('mcpHttpRoute({ bodyLimitBytes: 8192 })');
+    expect(error.fix).toContain('defineAppMcp({ bodyLimitBytes: 8192 })');
+    expect(error.fix).not.toContain('<n>');
     expect(error.limit).toBe(1024);
     expect(error.meta).toEqual({ transport: 'http', limit: 1024, over: 4096 });
   });
@@ -67,7 +70,9 @@ describe('McpBodyTooLargeError', () => {
     const error = new McpBodyTooLargeError({ transport: 'stdio', limit: 256 });
     expect(error.cause).toBe('one message exceeded 256 characters and was dropped');
     expect(error.fix).toContain('one JSON-RPC message per line');
-    expect(error.fix).toContain('serveStdio({ lineLimitBytes: <n> })');
+    // Over stdio nothing measured what arrived — the tail was dropped — so twice the cap.
+    expect(error.fix).toContain('serveStdio({ lineLimitBytes: 512 })');
+    expect(error.fix).not.toContain('<n>');
     expect(error.meta).toEqual({ transport: 'stdio', limit: 256 });
   });
 });

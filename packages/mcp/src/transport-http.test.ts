@@ -208,7 +208,24 @@ describe('mcpHttpRoute.handle: successful calls', () => {
     expect(payload.error.message).toContain('batch');
     expect(payload.error.message).toContain('one request per');
     expect(payload.error.data.code).toBe('X_MCP_PROTOCOL');
-    expect(payload.error.data.fix).toContain('one request per POST');
+    expect(payload.error.data.fix).toContain('one request per POST /mcp');
+  });
+
+  test('a batch refusal on a route mounted elsewhere names THAT path, never a spelled /mcp', async () => {
+    // `mcpHttpRoute({ path })` is a knob and `defineAppMcp` forwards it. The fix used to read
+    // `POST /mcp` whatever the mount, which sent an `/app-mcp` client to the wrong endpoint.
+    const mounted = mcpHttpRoute({
+      server,
+      path: '/app-mcp',
+      resolveToken: () => ({ actor: agentActor({ id: 'a' }), scopes: new Set(['dev:read']) }),
+    });
+    const res = await mounted.handle(
+      request([{ jsonrpc: '2.0', id: 1, method: 'tools/list' }], { authorization: 'Bearer t' }),
+    );
+    expect(res.status).toBe(400);
+    const payload = await res.json();
+    expect(payload.error.data.fix).toContain('one request per POST /app-mcp');
+    expect(payload.error.data.fix).not.toContain('/mcp ');
   });
 
   test('a malformed envelope names the shape to send', async () => {
@@ -325,15 +342,33 @@ describe('mcpHttpRoute.handle: the body is capped while it is read', () => {
     // actually builds this route, not only the bare descriptor.
     expect(payload.error.data.fix).toContain('mcpHttpRoute({ bodyLimitBytes');
     expect(payload.error.data.fix).toContain('defineAppMcp({ bodyLimitBytes');
+    // Runnable as written: a NUMBER that admits what arrived, never a `<n>`. What arrived is
+    // however many bytes the reader had counted when the cap tripped, so the value is read back
+    // off the fix rather than pinned — what is pinned is that it is above the cap.
+    const raised = /bodyLimitBytes: (\d+) \}/.exec(String(payload.error.data.fix));
+    expect(Number(raised?.[1])).toBeGreaterThan(1024);
+    expect(payload.error.data.fix).not.toContain('<n>');
     // A client that reads only `message` gets the same instruction.
     expect(payload.error.message).toContain(payload.error.data.fix);
   });
 
-  test('the cap is a knob on defineAppMcp too, because that is where an app builds the route', () => {
-    // `McpHttpTransportInput.bodyLimitBytes` existed and `defineAppMcp` never forwarded it, so
-    // the one app path to this route had no way to follow the fix line above.
-    const route = mcpHttpRoute({ ...authorized, bodyLimitBytes: 0 });
-    expect(route.limits).toBe(MCP_RATE_LIMITS);
+  test('a route built with no cap holds the declared default, and a body over it is the same 413', async () => {
+    // The direct route with the knob unset — `defineAppMcp`'s forwarding of a SET knob is pinned
+    // in `app-tools.test.ts`. What this pins is the default an app never chose: one byte over
+    // 1 MiB is refused, and the refusal names the number so the fix line can be followed.
+    const route = mcpHttpRoute(authorized);
+    const res = await route.handle(
+      new Request('http://local/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+        body: 'x'.repeat(DEFAULT_MCP_BODY_LIMIT_BYTES + 1),
+      }),
+    );
+    expect(res.status).toBe(413);
+    const payload = await res.json();
+    expect(payload.error.data.code).toBe('X_MCP_BODY_TOO_LARGE');
+    expect(payload.error.data.limit).toBe(DEFAULT_MCP_BODY_LIMIT_BYTES);
+    expect(payload.error.message).toContain(`limit is ${String(DEFAULT_MCP_BODY_LIMIT_BYTES)}`);
   });
 
   test('a body under the cap still answers normally', async () => {

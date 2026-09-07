@@ -356,14 +356,19 @@ export class McpBodyTooLargeError extends UltimateError {
 
   constructor(input: { transport: 'http' | 'stdio'; limit: number; over?: number | undefined }) {
     const http = input.transport === 'http';
+    // A NUMBER in the fix, never a `<n>`: the contract is a one-line edit that runs as written. The
+    // cap itself would run and change nothing; twice the larger of the cap and what arrived is a
+    // value that admits this message, whichever of the two was the shorter measure. Both are
+    // finite non-negative integers by the transports' own screens, so the product is too.
+    const raised = 2 * Math.max(input.limit, input.over ?? 0);
     super({
       code: 'X_MCP_BODY_TOO_LARGE',
       cause: http
         ? `request body is at least ${input.over ?? input.limit} bytes, limit is ${input.limit}`
         : `one message exceeded ${input.limit} characters and was dropped`,
       fix: http
-        ? 'send less in one request — page a large read, split a long prompt across calls — or raise the cap where the route is built: mcpHttpRoute({ bodyLimitBytes: <n> }) or defineAppMcp({ bodyLimitBytes: <n> })'
-        : 'send one JSON-RPC message per line, each under the cap — split a large tool result into paged calls — or raise it where the transport is started: serveStdio({ lineLimitBytes: <n> })',
+        ? `send less in one request — page a large read, split a long prompt across calls — or raise the cap where the route is built: mcpHttpRoute({ bodyLimitBytes: ${raised} }) or defineAppMcp({ bodyLimitBytes: ${raised} })`
+        : `send one JSON-RPC message per line, each under the cap — split a large tool result into paged calls — or raise it where the transport is started: serveStdio({ lineLimitBytes: ${raised} })`,
       // The numbers as FIELDS, not only prose: a `--json` reader and the wire's `data` both want
       // the limit without re-parsing a sentence.
       meta: {

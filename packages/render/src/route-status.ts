@@ -22,6 +22,16 @@ export const DEFAULT_ROUTE_STATUS = 200;
 
 const STATUSES = new WeakMap<object, number>();
 
+/**
+ * What `withStatus` can mark, read back off `unknown`: exactly TypeScript's `object` — a non-null
+ * object OR a function. Both are `WeakMap` keys and both satisfy `withStatus`'s constraint, so a
+ * loader answering `withStatus(404, () => …)` — data that is a function, which `load`'s type
+ * allows — must read back as 404 and not as the default. The two sides of the seam share this
+ * one predicate so they cannot disagree about what carries a status.
+ */
+const canCarryStatus = (data: unknown): data is object =>
+  (typeof data === 'object' && data !== null) || typeof data === 'function';
+
 const isRedirect = (status: number): boolean => status >= 300 && status < 400;
 
 /**
@@ -53,7 +63,7 @@ export function withStatus<TData extends object>(status: number, data: TData): T
  * loader returned, an object or not.
  */
 export function routeStatusOf(data: unknown): number {
-  if (typeof data !== 'object' || data === null) return DEFAULT_ROUTE_STATUS;
+  if (!canCarryStatus(data)) return DEFAULT_ROUTE_STATUS;
   const status = STATUSES.get(data);
   return status === undefined ? DEFAULT_ROUTE_STATUS : status;
 }

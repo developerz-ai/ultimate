@@ -72,7 +72,25 @@ describe('the envelope refusals carry the fix', () => {
     expect(response?.error?.message).toContain('batch');
     const data = response?.error?.data as { code: string; fix: string };
     expect(data.code).toBe('X_MCP_PROTOCOL');
-    expect(data.fix).toContain('one request per');
+    // No wire named, no unit spelled: the server does not know it is mounted at `/mcp`, or at
+    // all — `mcpHttpRoute({ path })` is a knob, and a spelled `/mcp` was wrong for `/app-mcp`.
+    expect(data.fix).toContain('one request per message');
+    expect(data.fix).not.toContain('/mcp');
+  });
+
+  test('the batch fix names the unit the wire counts in, when the transport says which', async () => {
+    const batch = [call('tools/list'), call('tools/list')];
+    const http = await server.handle(batch, caller('member', []), {
+      transport: 'http',
+      path: '/app-mcp',
+    });
+    const httpFix = (http?.error?.data as { fix: string } | undefined)?.fix;
+    expect(httpFix).toContain('one request per POST /app-mcp');
+    const stdio = await server.handle(batch, caller('member', []), { transport: 'stdio' });
+    const stdioFix = (stdio?.error?.data as { fix: string } | undefined)?.fix;
+    expect(stdioFix).toContain('one request per line');
+    // The `message` is the same sentence on every wire; only the fix carries the unit.
+    expect(http?.error?.message).toBe(stdio?.error?.message);
   });
 
   test('a non-envelope names the shape a JSON-RPC 2.0 request has', async () => {

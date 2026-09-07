@@ -39,6 +39,16 @@ describe('withStatus', () => {
     expect(DEFAULT_ROUTE_STATUS).toBe(200);
   });
 
+  test('a function is data too — what withStatus accepts, routeStatusOf reads back', () => {
+    // `withStatus<TData extends object>` admits a function, and a `WeakMap` keys on one. The
+    // reader refused it (`typeof data !== 'object'`), so `withStatus(404, () => …)` rendered 200
+    // and its meta was never `noindex`: one side of the seam accepted what the other dropped.
+    const data = (): undefined => undefined;
+    expect(withStatus(404, data)).toBe(data);
+    expect(routeStatusOf(data)).toBe(404);
+    expect(routeStatusOf((): undefined => undefined)).toBe(DEFAULT_ROUTE_STATUS);
+  });
+
   test('the last mark wins — a loader that re-decides answers its final word', () => {
     const data = { kind: 'page' };
     withStatus(404, data);
@@ -103,6 +113,17 @@ describe('a loader answering a status', () => {
     // Only `index` is decided here; the rest of the author's directives ride through.
     expect(meta.robots?.follow).toBe(true);
     expect(meta.title).toBe('Not found');
+  });
+
+  test('function-valued data is noindex on a 404 too — the meta wrapper reads the same seam', async () => {
+    const config = defineRoute({
+      ...base,
+      load: () => withStatus(404, (): string => 'missing'),
+      meta: () => ({ title: 'Not found', robots: { index: true } }),
+    });
+    const data = await routeDataFor(config, CTX);
+    expect(routeStatusOf(data)).toBe(404);
+    expect((await config.meta(metaContextFor(CTX, data))).robots?.index).toBe(false);
   });
 
   test('a 410 is noindex too — every 4xx and 5xx is a page a crawler must forget', async () => {
