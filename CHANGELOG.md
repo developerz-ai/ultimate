@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 19.3.2 - 2026-09-07
+
 Round 3 from ai-maxxing, 2026-09-06: three defects a live app measured against 19.2.0 and 19.3.1
 source, each fixed at the seam with a test. Nothing here changes a documented API.
 
@@ -178,6 +182,13 @@ changes.
   its handler carries the comment naming the class to declare. A slice with no `errors.ts` yet is
   unchanged: the foundation writes one that declares the class. Both shapes are in the scaffold
   typecheck battery now, and the generated file is loaded for real by the new test.
+
+### Commits
+
+- fix: seven seams ai-maxxing measured — a route answers a status, MCP refusals instruct, x dev reloads a page, a role binds loopback, a job hears SIGTERM, an island unmounts (#424)
+- fix(cli): a repo sets its own AGENTS.md budget, and the scaffold names the ceiling it enforces (#423)
+- fix(realtime): a reconnect closes with a code a browser accepts, and the node reads hello.buildId (#422)
+- fix: three seams ai-maxxing measured — a BOM mid-stylesheet, the observer's own N+1, an import `x g action` assumed (#421)
 
 ## 19.3.1 - 2026-09-06
 
