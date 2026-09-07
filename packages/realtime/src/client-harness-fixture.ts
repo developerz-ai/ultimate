@@ -41,9 +41,31 @@ export class FakeSocket implements ClientSocket {
     this.sent.push(data);
   }
 
+  /**
+   * A browser's `WebSocket.close()` refuses any code that is not 1000 or in 3000–4999 with an
+   * `InvalidAccessError`, before it does anything else — so a client that closes with 1001 throws
+   * an uncaught exception in every tab and never reaches its own `onClose`. This double refuses
+   * the same set, so a suite cannot pass on a code no browser would accept.
+   */
   close(code?: number, reason?: string): void {
+    if (code !== undefined && code !== 1000 && (code < 3000 || code > 4999)) {
+      throw new HarnessMisuse(
+        `The close code must be either 1000, or between 3000 and 4999. ${code} is neither. ` +
+          'A client may not send this code; to simulate the network ending the socket, call ' +
+          `socket.disconnect(${code}) instead.`,
+      );
+    }
     this.closes.push({ code, reason });
     this.#closed?.(code ?? 1000);
+  }
+
+  /**
+   * The network ended it — the peer went away, the TCP stream died — which a browser reports as
+   * `onclose` with 1006 and which no script can ever send. Not a `close()` call, so it records
+   * nothing in `closes`: that list is what the CLIENT asked for, and this is what happened to it.
+   */
+  disconnect(code = 1006): void {
+    this.#closed?.(code);
   }
 
   onOpen(handler: () => void): void {

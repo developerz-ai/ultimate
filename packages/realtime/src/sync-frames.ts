@@ -76,6 +76,9 @@ export function createFrameRouter(options: FrameRouterOptions): FrameRouter {
   async function apply(socket: SyncSocket, frame: Frame): Promise<void> {
     switch (frame.type) {
       case 'hello': {
+        // Before `skewed` is asked: the frame is the client's word on its build, and the upgrade
+        // may have recorded none (a dial without `?build=` defaults to this node's own id).
+        socket.sawHello(frame.buildId);
         socket.send({
           type: 'hello',
           v: PROTOCOL_VERSION,

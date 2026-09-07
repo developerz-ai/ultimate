@@ -14,6 +14,12 @@ import type { AcceptBudget, Rng } from './thundering-herd';
  */
 export interface WsData {
   readonly socketId: string;
+  /**
+   * `?build=` off the dial, or this node's own id when the dial carried none. A starting value,
+   * not the verdict: the `hello` frame's `buildId` overwrites it (`SyncSocket.sawHello`), so a
+   * client that names its build only in the frame — the documented place — is not deemed current
+   * forever for having sent no query.
+   */
   readonly clientBuildId: string;
 }
 
@@ -118,6 +124,7 @@ export async function handleUpgrade(
   if (!deps.ready() || deps.socketCount() >= deps.maxConnections) return shed(deps);
   const data: WsData = {
     socketId: deps.newSocketId(),
+    // The node's own id is "not skewed until the hello says so", never "current forever".
     clientBuildId: url.searchParams.get('build') ?? deps.buildId,
   };
   // Before the upgrade, never after: `server.upgrade` runs `websocket.open` synchronously and does

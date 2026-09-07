@@ -6,6 +6,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { topic } from './channel';
+import { RECONNECT_CODE } from './client-frames';
 import { feed, harness } from './client-harness-fixture';
 import type { JsonObject, Row } from './json';
 import { PROTOCOL_VERSION } from './sync-protocol';
@@ -17,7 +18,7 @@ describe('LiveClient reconnect', () => {
     sockets[0]?.open();
     expect(client.connected).toBe(true);
 
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
     expect(client.connected).toBe(false);
     expect(sockets).toHaveLength(1); // nothing dials synchronously — the delay is the whole point
     expect(timers.pending).toBe(500);
@@ -34,7 +35,7 @@ describe('LiveClient reconnect', () => {
     sockets[0]?.open();
     expect(client.reconnectAt()).toBeNull();
 
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
     expect(client.reconnectAt()).toBe(clock.now().getTime() + 500);
 
     timers.fire();
@@ -49,16 +50,16 @@ describe('LiveClient reconnect', () => {
     client.connect();
     sockets[0]?.open();
 
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
     timers.fire();
-    sockets[1]?.close(1006); // dialled, never opened
+    sockets[1]?.disconnect(); // dialled, never opened
     timers.fire();
-    sockets[2]?.close(1006);
+    sockets[2]?.disconnect();
     expect(timers.delays).toEqual([500, 1000, 2000]);
 
     timers.fire();
     sockets[3]?.open(); // this one lands
-    sockets[3]?.close(1006);
+    sockets[3]?.disconnect();
     expect(timers.delays.at(-1)).toBe(500); // attempt counter reset on open
   });
 
@@ -68,7 +69,7 @@ describe('LiveClient reconnect', () => {
     sockets[0]?.open();
     client.useLive<Row>(feed, { orgId: 'o1' });
 
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
     timers.fire();
     sockets[1]?.open();
 
@@ -91,7 +92,7 @@ describe('LiveClient reconnect', () => {
       seen.push(message);
     });
 
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
     timers.fire();
     sockets[1]?.open();
 
@@ -120,7 +121,7 @@ describe('LiveClient reconnect', () => {
     const unsubscribe = client.subscribe(topic('org', 'o1', 'cursors'), () => {});
     unsubscribe();
 
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
     timers.fire();
     sockets[1]?.open();
 
@@ -142,7 +143,23 @@ describe('LiveClient reconnect', () => {
     // The close the frame triggers must not overwrite the node's spread slot with a local backoff.
     expect(timers.delays).toEqual([7_777]);
     expect(timers.pending).toBe(7_777);
-    expect(sockets[0]?.closes).toEqual([{ code: 1001, reason: 'drain' }]);
+    expect(sockets[0]?.closes).toEqual([{ code: RECONNECT_CODE, reason: 'drain' }]);
+  });
+
+  // The frame closed with 1001, and a browser refuses that from script: `WebSocket.close()`
+  // throws `InvalidAccessError: The close code must be either 1000, or between 3000 and 4999` —
+  // measured in Chrome, an uncaught exception in every tab on every node drain. The reconnect
+  // still happened, because the node closed the socket itself a moment later; the exception was
+  // the only trace, and it was in every tab.
+  test('the reconnect frame closes with a code a browser accepts from script', () => {
+    const { client, sockets } = harness();
+    client.connect();
+    sockets[0]?.open();
+
+    sockets[0]?.deliver({ type: 'reconnect', v: PROTOCOL_VERSION, afterMs: 100, reason: 'drain' });
+
+    const code = sockets[0]?.closes[0]?.code ?? 0;
+    expect(code === 1000 || (code >= 3000 && code <= 4999)).toBe(true);
   });
 
   test('a close never stacks a second timer on top of an armed one', () => {
@@ -150,8 +167,8 @@ describe('LiveClient reconnect', () => {
     client.connect();
     sockets[0]?.open();
 
-    sockets[0]?.close(1006);
-    sockets[0]?.close(1006); // a socket that reports its close twice
+    sockets[0]?.disconnect();
+    sockets[0]?.disconnect(); // a socket that reports its close twice
     expect(timers.delays).toEqual([500]);
 
     timers.fire();
@@ -162,7 +179,7 @@ describe('LiveClient reconnect', () => {
     const { client, timers, sockets, errors, failNextDials } = harness();
     client.connect();
     sockets[0]?.open();
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
 
     failNextDials(1);
     // Nothing awaits a timer: a throw out of one is `window.onerror` in a tab and an uncaught
@@ -194,7 +211,7 @@ describe('LiveClient reconnect', () => {
     const { client, timers, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
     expect(timers.pending).toBe(500);
 
     client.connect();

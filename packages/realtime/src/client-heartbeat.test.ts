@@ -55,7 +55,7 @@ describe('the client heartbeat', () => {
       cursor: { qid: 'feed', lsn: '1', ids: ['sentinel-row'], at: 1_000 },
     });
 
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
     timers.fire(); // the reconnect
     sockets[1]?.open();
     const onOpen = [...(sockets[1]?.sent ?? [])];
@@ -110,7 +110,7 @@ describe('the client heartbeat', () => {
     client.connect();
     sockets[0]?.open();
 
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
 
     expect(timers.pending).toBe(500);
     expect(timers.delays).toEqual([DEFAULT_HEARTBEAT_MS, 500]);
