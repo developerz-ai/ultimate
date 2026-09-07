@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 19.3.3 - 2026-09-07
+
 ### Added
 
 - `"typecheckBin"` in `x.verify.json`, read by the gate's `typecheck` step in place of a
@@ -23,6 +27,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   did on both the clean tree and a probe file exercising every strict flag, and finished in
   1.0s against tsc's 6.4s on the realistic case (one file touched since the last incremental
   build) and 2.8s against 24.8s cold.
+
+### Commits
+
+- feat(cli): the gate's typecheck step takes its checker from x.verify.json (#425)
 
 ## 19.3.2 - 2026-09-07
 
