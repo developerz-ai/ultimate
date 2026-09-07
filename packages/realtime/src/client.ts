@@ -45,7 +45,11 @@ export type {
 /** The four states a live subscription renders. Declared with the window that holds them. */
 export type { LiveState } from './live-rows';
 
-/** Private-use close code (4000–4999), so a heartbeat timeout is distinguishable in a log. */
+/**
+ * Private-use close code (4000–4999), so a heartbeat timeout is distinguishable in a log. A browser
+ * accepts only 1000 and 3000–4999 from script; `RECONNECT_CODE` (`client-frames.ts`) is the
+ * sibling, for the close a `reconnect` frame makes.
+ */
 const HEARTBEAT_TIMEOUT_CODE = 4000;
 
 /** The default reporter: `console.error`, never core's `logger` — that writes `process.stderr`. */
@@ -395,10 +399,11 @@ export class LiveClient<T extends TableMap = TableMap> {
    * heartbeat: subscribing IS being in the room, so a client that stopped repeating it is swept
    * out of every room it is still receiving from.
    *
-   * It is NOT how a deploy is noticed. `socket.skewed` compares the build id the upgrade recorded
-   * against this node's, both fixed for the socket's whole life, so every `hello` on one socket
-   * gets the same answer forever; `update-available` reaches a client on the socket it opens
-   * against the *new* node, which is a reconnect and never a beat.
+   * It is NOT how a deploy is noticed. `socket.skewed` compares the build id this client says —
+   * the `hello`'s own `buildId`, the same on every beat, or `?build=` on the dial — against the
+   * node's, and neither moves while the socket is open, so every `hello` on one socket gets the
+   * same answer forever; `update-available` reaches a client on the socket it opens against the
+   * *new* node, which is a reconnect and never a beat.
    */
   #beat(): void {
     this.#send(this.#hello());

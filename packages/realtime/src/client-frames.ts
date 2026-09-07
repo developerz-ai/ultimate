@@ -15,6 +15,18 @@ import type { Frame, PresenceMember } from './sync-protocol';
 export type { LiveState, Registration } from './live-rows';
 
 /**
+ * The code a `reconnect` frame closes with. Private-use (4000–4999) and the same number the node
+ * uses for a drain it closes itself (`CLOSE.drain` in `socket.ts`, not imported: that file is the
+ * node's registry and this one is browser code), so a log reads one code for one event whichever
+ * side closed first. It was 1001, and a browser refuses that from script: `WebSocket.close()`
+ * throws `InvalidAccessError: The close code must be either 1000, or between 3000 and 4999` —
+ * measured in Chrome, an uncaught exception in every tab on every node drain. The reconnect still
+ * happened, because the node closed the socket a moment later; the exception was the only trace.
+ * `HEARTBEAT_TIMEOUT_CODE` in `client.ts` is the sibling, for the other close the client makes.
+ */
+export const RECONNECT_CODE = 4002;
+
+/**
  * Everything an inbound frame is allowed to reach. Narrow on purpose — a router that took the
  * client itself could touch the reconnect timer, the socket and the outbound path, none of which
  * a received frame has any business writing.
@@ -151,7 +163,7 @@ export function applyFrame<T extends TableMap>(frame: Frame, target: ClientFrame
       // Order is load-bearing: arming first is what makes the close this triggers keep the delay
       // the node assigned to *this* socket instead of falling back to a local backoff.
       target.scheduleReconnect(frame.afterMs);
-      target.closeSocket(1001, frame.reason);
+      target.closeSocket(RECONNECT_CODE, frame.reason);
       return;
     }
     case 'update-available': {

@@ -19,7 +19,7 @@ describe('LiveClient close events', () => {
     sockets[0]?.open();
     const handle = client.useLive<Row>(feed, { orgId: 'o1' });
 
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
     expect(client.connected).toBe(false);
     expect(handle.state()).toBe('offline');
     expect(timers.pending).toBe(500);
@@ -45,7 +45,7 @@ describe('LiveClient close events', () => {
     });
     expect(handle.state()).toBe('live');
 
-    stale?.close(1006); // the replaced socket's close lands late
+    stale?.disconnect(); // the replaced socket's close lands late
     expect(client.connected).toBe(true); // the live connection is not the corpse's to end
     expect(handle.state()).toBe('live'); // untouched: only the live socket's close moves it
     expect(timers.pending).toBeNull(); // a backoff here dials a third socket behind a healthy one
@@ -167,7 +167,7 @@ describe('LiveClient.close', () => {
     const { client, timers, sockets } = harness();
     client.connect();
     sockets[0]?.open();
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
     expect(timers.pending).toBe(500);
 
     client.close();
@@ -211,7 +211,7 @@ describe('LiveClient.close', () => {
     sockets[1]?.open();
     expect(client.connected).toBe(true);
 
-    sockets[1]?.close(1006);
+    sockets[1]?.disconnect();
     expect(timers.pending).toBe(500);
   });
 });
@@ -224,7 +224,7 @@ describe('LiveClient dead-socket writes', () => {
     const handle = client.useLive<Row>(feed, { orgId: 'o1' });
     const afterSubscribe = sockets[0]?.sent.length ?? 0;
 
-    sockets[0]?.close(1006);
+    sockets[0]?.disconnect();
     handle.unsubscribe(); // would have "sent" a drop frame nobody will ever read
     expect(sockets[0]?.sent).toHaveLength(afterSubscribe);
   });
@@ -335,7 +335,7 @@ describe('LiveClient detached work', () => {
     await client.mutate({ name: 'likePost' }, { postId: 'p1' });
     expect(mutates()).toBe(1);
 
-    socket.close(1006);
+    socket.disconnect();
     client.connect();
     socket.open();
     await settled();
