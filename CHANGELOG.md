@@ -8,7 +8,21 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `"typecheckBin"` in `x.verify.json`, read by the gate's `typecheck` step in place of a
+  hardcoded `tsc`: `bunx <typecheckBin> -b --pretty false`, unchanged otherwise. Measured in
+  ai-maxxing on 2026-09-07, chasing a faster `x verify`: the step hardcoded `['bunx', 'tsc', '-b',
+  '--pretty', 'false']`, so a repo that wanted a drop-in `-b`-compatible checker — Microsoft's
+  `tsgo` (`@typescript/native-preview`) chief among them — had no move but a hand-rolled script
+  outside the gate, which is exactly the second checklist the gate exists to prevent. Same seam
+  `agentsMdMaxBytes` already uses: a key on the file that configures the gate, read by the step it
+  names, absent means the framework default. ai-maxxing's own measurement, same tree, same
+  `tsconfig.json` (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
+  `verbatimModuleSyntax`, no project references): `tsgo` reported the identical diagnostics tsc
+  did on both the clean tree and a probe file exercising every strict flag, and finished in
+  1.0s against tsc's 6.4s on the realistic case (one file touched since the last incremental
+  build) and 2.8s against 24.8s cold.
 
 ## 19.3.2 - 2026-09-07
 

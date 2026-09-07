@@ -22,6 +22,7 @@ import {
   floorRequires,
   parseVerifyFloor,
   readVerifyFloor,
+  TYPECHECK_BIN_FIELD,
   VERIFY_FLOOR_FILE,
   vanishedSuiteFinding,
 } from './verify-floor';
@@ -265,6 +266,47 @@ describe('the AGENTS.md budget a repository declares for itself', () => {
   });
 });
 
+// --------------------------------------------------------------------------------------------
+// The `typecheck` step's binary. Same shape as the budget above: a key on this file, read by the
+// step it names, absent means the framework default (`tsc`).
+// --------------------------------------------------------------------------------------------
+
+describe('the typecheck binary a repository swaps in for tsc', () => {
+  test('a non-empty string is carried, beside the steps', () => {
+    const floor = parse('{"steps":["unit"],"typecheckBin":"tsgo"}');
+    expect(floor.typecheckBin).toBe('tsgo');
+    expect(floor.steps).toEqual(['unit']);
+    expect(floor.problems).toEqual([]);
+  });
+
+  test('a floor that declares none leaves the key off, which is what "run tsc" means', () => {
+    const floor = parse('{"steps":["unit"]}');
+    expect('typecheckBin' in floor).toBe(false);
+    expect(floor.problems).toEqual([]);
+  });
+
+  test('a non-string or empty value is a problem, never a silent fall back to tsc', () => {
+    // The failure this closes: a floor saying `"typecheckBin": 7` or `""`, quietly ignored, is a
+    // repository that believes the gate is running a checker it is not.
+    for (const bad of ['7', 'null', 'true', '["tsgo"]', '""', '"   "']) {
+      const floor = parse(`{"steps":["unit"],"typecheckBin":${bad}}`);
+      expect(floor.typecheckBin).toBeUndefined();
+      expect(floor.problems.join(' ')).toContain('not a binary name');
+    }
+  });
+
+  test('a bad value is reported even when "steps" is the thing that is missing', () => {
+    const floor = parse('{"typecheckBin":""}');
+    expect(floor.problems).toHaveLength(2);
+    expect(floor.problems.join(' ')).toContain('no "steps" array');
+    expect(floor.problems.join(' ')).toContain('not a binary name');
+  });
+
+  test('a valid value survives a floor whose steps are missing, so one edit fixes one thing', () => {
+    expect(parse('{"typecheckBin":"tsgo"}').typecheckBin).toBe('tsgo');
+  });
+});
+
 describe('a floor problem carries the edit that repairs THAT problem', () => {
   test('a bad budget names the budget key, not a steps-shaped example without it', () => {
     // The steps fix prints `{"steps":[…]}` with no budget in it, so an author who ran it
@@ -293,5 +335,14 @@ describe('a floor problem carries the edit that repairs THAT problem', () => {
   test('every fix is one runnable command, whichever problem it answers', () => {
     for (const finding of floorProblemFindings(parse('{"agentsMdMaxBytes":"16kb"}')))
       expect(finding.fix.startsWith('x verify')).toBe(true);
+  });
+
+  test('a bad typecheckBin names the key, not a steps-shaped example without it', () => {
+    const [finding] = floorProblemFindings(parse('{"steps":["unit"],"typecheckBin":""}'));
+    expect(finding?.code).toBe('X_CONFIG_INVALID');
+    expect(finding?.cause).toContain(TYPECHECK_BIN_FIELD);
+    expect(finding?.fix).toContain(TYPECHECK_BIN_FIELD);
+    // And it names the fallback, so "drop the key" is an answer with a binary behind it.
+    expect(finding?.fix).toContain('tsc');
   });
 });
