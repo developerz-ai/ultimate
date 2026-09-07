@@ -12,6 +12,7 @@ import {
   createContext,
   drain,
   inflightCount,
+  isUltimateError,
   onShutdown,
   resetLifecycle,
 } from '@ultimat3/core';
@@ -38,6 +39,8 @@ interface Rig {
   closes(): number;
   /** Resolves once the body is inside its sleep — the state every assertion here is about. */
   running(): Promise<void>;
+  /** What `ctx.signal.reason` became — heard, never honoured — or `undefined` while it holds. */
+  reason(): unknown;
 }
 
 /**
@@ -46,6 +49,7 @@ interface Rig {
  */
 async function rig(options: { jobMs: number }): Promise<Rig> {
   let closes = 0;
+  let reason: unknown;
   let started = (): void => undefined;
   const isRunning = new Promise<void>((resolve) => {
     started = resolve;
@@ -64,7 +68,14 @@ async function rig(options: { jobMs: number }): Promise<Rig> {
     input: passthrough<{ n: number }>(),
     idempotencyKey: ({ n }) => `slow:${n}`,
     retry: { attempts: 1, jitter: false },
-    run: async () => {
+    run: async ({ ctx }) => {
+      ctx.signal.addEventListener(
+        'abort',
+        () => {
+          reason = ctx.signal.reason;
+        },
+        { once: true },
+      );
       started();
       await Bun.sleep(options.jobMs);
     },
@@ -79,7 +90,7 @@ async function rig(options: { jobMs: number }): Promise<Rig> {
   const worker = createWorker({ driver, context, pollIntervalMs: 1 });
   worker.start();
   await isRunning;
-  return { worker, closes: () => closes, running: () => isRunning };
+  return { worker, closes: () => closes, running: () => isRunning, reason: () => reason };
 }
 
 beforeEach(() => {
@@ -153,5 +164,36 @@ describe('the worker drains in two phases, and its wait is bounded', () => {
       Bun.sleep(250).then(() => 'wedged'),
     ]);
     expect(answered).toBe('stopped');
+  });
+
+  test('a SIGTERM landing on a manual stop() binds the teardown to the shutdown deadline', async () => {
+    configureLifecycle({ deadlineMs: 150 });
+    const app = await rig({ jobMs: 600 });
+
+    // `x dev`'s role rollback, an operator's `worker.stop()` — a manual stop waits as long as its
+    // work takes, by design. Then the kubelet sends SIGTERM into the middle of it. The `close`
+    // hook JOINS the teardown already in flight, and until 2026-09-07 that teardown kept the
+    // `undefined` deadline it was started with: core abandoned the hook at 150ms and moved on,
+    // while the worker sat on the 600ms body with its driver open and `stopping` never settling.
+    const stopped = app.worker.stop('deploy');
+    await Bun.sleep(10);
+    await drain('SIGTERM');
+
+    // The abort is the accept hook's and fires either way; what the join was missing is the bound.
+    const reason = app.reason();
+    if (!isUltimateError(reason)) {
+      expect.unreachable(`ctx.signal.reason was ${String(reason)}, not an UltimateError`);
+    }
+    expect(reason.code).toBe('X_DRAINING');
+
+    // Well inside the 600ms the body still has to run: the teardown adopted the 150ms deadline,
+    // abandoned the body there, closed the driver and answered the manual caller.
+    const answered = await Promise.race([
+      stopped.then(() => 'stopped'),
+      Bun.sleep(200).then(() => 'wedged'),
+    ]);
+    expect(answered).toBe('stopped');
+    expect((await app.worker.stats()).state).toBe('stopped');
+    expect(app.closes()).toBe(1);
   });
 });

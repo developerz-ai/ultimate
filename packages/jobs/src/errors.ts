@@ -39,13 +39,15 @@ export const JOB_OWNED_ERROR_CODES = [
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED` and `X_ABORTED` are `@ultimat3/core`'s. `JobsNotImplementedError` and
- * `JobAbortedError` below throw them; jobs keeps no title for either, because the copy this file
- * used to hold was a second title that nothing would have failed on once core's changed.
+ * `X_NOT_IMPLEMENTED`, `X_ABORTED` and `X_DRAINING` are `@ultimat3/core`'s. `JobsNotImplementedError`,
+ * `JobAbortedError` and `JobDrainedError` below throw them; jobs keeps no title for any of the
+ * three, because the copy this file used to hold was a second title that nothing would have failed
+ * on once core's changed. Listed here all the same, so `JobErrorCode` can name every code a job
+ * can see — `X_DRAINING` was thrown for a day before it was, and the type said it could not be.
  */
-export const JOB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED', 'X_ABORTED'] as const;
+export const JOB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED', 'X_ABORTED', 'X_DRAINING'] as const;
 
-/** Every code jobs can throw: the ones it owns plus the one it borrows. */
+/** Every code jobs can throw: the ones it owns plus the ones it borrows. */
 export const JOB_ERROR_CODES = [...JOB_OWNED_ERROR_CODES, ...JOB_BORROWED_ERROR_CODES] as const;
 
 export type JobOwnedErrorCode = (typeof JOB_OWNED_ERROR_CODES)[number];
