@@ -4,6 +4,7 @@
 // ignore file, the production topology and the deploy page are `scaffold-container.ts`; the
 // `.claude/` harness that reads AGENTS.md is `scaffold-claude.ts`.
 
+import { LINE_CEILING } from '../workspace-checks';
 import type { GeneratedFile, NameSet } from './naming';
 import { claudeFiles } from './scaffold-claude';
 import { containerFiles } from './scaffold-container';
@@ -27,13 +28,13 @@ not exist — five of these had an empty column and were each measured green on 
 | Time | store UTC, format with an explicit IANA time zone | \`guards/unzoned-date.ts\` |
 | Strings | every user-facing string goes through \`t()\` | \`guards/untranslated-string.ts\` |
 | Colour | semantic tokens only, never a raw hex | \`guards/raw-colour.ts\` |
-| Size | one file, one job — 500 lines of reviewable logic, and split past it | \`X_FILE_TOO_LONG\` |
+| Size | one file, one job — ${LINE_CEILING} lines of reviewable logic, and split past it | \`X_FILE_TOO_LONG\` |
 
 \`guards/\` is yours: each file is one rule, discovered by \`x verify\` and run inside its
 \`boundaries\` step. Delete one to drop the rule, and \`x g guard <name>\` writes the next.
 
-Size is a hard line and not a style note: past 500 lines a file has stopped being the unit of
-review, and \`x verify\` refuses it. The one exemption is a file that is nothing but re-exports —
+Size is a hard line and not a style note: past ${LINE_CEILING} lines a file has stopped being the
+unit of review, and \`x verify\` refuses it. The one exemption is a file that is nothing but re-exports —
 it has one job by construction, and its length tracks the API's size rather than its complexity;
 one statement of logic in such a file re-arms the ceiling on the same save.
 

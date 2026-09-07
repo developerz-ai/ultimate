@@ -200,11 +200,17 @@ describe('unit · the generated AGENTS.md names every rule the gate actually ref
   });
 
   test('the ceiling in the prose is the ceiling in the code, not a number that drifted', () => {
-    const rows = agentsMd()
-      .split('\n')
-      .filter((line) => line.includes('X_FILE_TOO_LONG'));
+    const text = agentsMd();
+    const rows = text.split('\n').filter((line) => line.includes('X_FILE_TOO_LONG'));
     expect(rows).toHaveLength(1);
     expect(rows[0]).toContain(String(LINE_CEILING));
+    // The ROW is not the only place the number appears: the paragraph under the table explains
+    // the rule and names it again. Both are interpolated from `LINE_CEILING`, and this is what
+    // says so — a table generated from the constant beside prose that hard-codes 500 drifts the
+    // moment the ceiling moves, and the prose is the half a reader believes.
+    expect(text).toContain(`past ${LINE_CEILING} lines`);
+    // Two sites, both generated: any third occurrence is a number someone typed.
+    expect(text.split(String(LINE_CEILING))).toHaveLength(3);
   });
 
   test('the one exemption is named, so a re-export manifest is not filed as a bug', () => {

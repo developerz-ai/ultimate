@@ -8,6 +8,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
+import { AGENTS_MD_MAX_BYTES } from '@ultimat3/manifest';
 import type { Finding } from './output';
 import { VERIFY_STEP_NAMES } from './verify-step';
 
@@ -32,6 +33,9 @@ export interface VerifyFloor {
   readonly problems: readonly string[];
 }
 
+/** The floor's budget key. Named once: the problem quotes it and the fix repairs it. */
+export const BUDGET_FIELD = 'agentsMdMaxBytes';
+
 /**
  * `agentsMdMaxBytes`, or a reason it is not one. A budget that is not a positive whole number is
  * the caller's bug and must not silently fall back to the default: a floor file that says
@@ -42,12 +46,12 @@ function readBudget(payload: Record<string, unknown> | undefined): {
   budget?: number;
   problems: readonly string[];
 } {
-  const raw = payload?.['agentsMdMaxBytes'];
+  const raw = payload?.[BUDGET_FIELD];
   if (raw === undefined) return { problems: [] };
   if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw <= 0)
     return {
       problems: [
-        `"agentsMdMaxBytes" is ${JSON.stringify(raw)}, which is not a positive whole number of bytes`,
+        `"${BUDGET_FIELD}" is ${JSON.stringify(raw)}, which is not a positive whole number of bytes`,
       ],
     };
   return { budget: raw, problems: [] };
@@ -169,7 +173,19 @@ export const floorProblemFindings = (floor: VerifyFloor | undefined): readonly F
   (floor?.problems ?? []).map((problem) => ({
     code: 'X_CONFIG_INVALID',
     cause: `${VERIFY_FLOOR_FILE} is not a suite floor: ${problem}`,
-    fix: `x verify --json   # then write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps it ran`,
+    fix: fixFor(problem),
     docs: ERROR_DOCS_URL,
     at: VERIFY_FLOOR_FILE,
   }));
+
+/**
+ * The edit that repairs THIS problem, not the file in general. The steps-shaped fix is useless
+ * against a bad budget — it prints a `{"steps":[…]}` example with no `agentsMdMaxBytes` in it, so
+ * an author who followed it verbatim would still have the value that failed. A finding whose fix
+ * does not fix it is the failure `packages/cli/CLAUDE.md` names, and the budget is the first
+ * problem this file can report that is not about `steps` at all.
+ */
+const fixFor = (problem: string): string =>
+  problem.includes(`"${BUDGET_FIELD}"`)
+    ? `x verify --json   # then set "${BUDGET_FIELD}" in ${VERIFY_FLOOR_FILE} to a positive whole number of bytes, or drop the key for the ${AGENTS_MD_MAX_BYTES}B default`
+    : `x verify --json   # then write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps it ran`;

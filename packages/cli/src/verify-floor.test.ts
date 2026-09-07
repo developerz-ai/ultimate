@@ -11,11 +11,13 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { AGENTS_MD_MAX_BYTES } from '@ultimat3/manifest';
 import { fixProblem } from './error-contract';
 import { explainErrorCode } from './mcp-errors';
 import { parseArgs } from './parse';
 import { commandFor, SPECS } from './registry';
 import {
+  BUDGET_FIELD,
   floorProblemFindings,
   floorRequires,
   parseVerifyFloor,
@@ -260,5 +262,36 @@ describe('the AGENTS.md budget a repository declares for itself', () => {
 
   test('a valid budget survives a floor whose steps are missing, so one edit fixes one thing', () => {
     expect(parse('{"agentsMdMaxBytes":14000}').agentsMdMaxBytes).toBe(14_000);
+  });
+});
+
+describe('a floor problem carries the edit that repairs THAT problem', () => {
+  test('a bad budget names the budget key, not a steps-shaped example without it', () => {
+    // The steps fix prints `{"steps":[…]}` with no budget in it, so an author who ran it
+    // verbatim would still hold the value that failed — a finding whose fix does not fix it.
+    const [finding] = floorProblemFindings(parse('{"steps":["unit"],"agentsMdMaxBytes":"16kb"}'));
+    expect(finding?.code).toBe('X_CONFIG_INVALID');
+    expect(finding?.cause).toContain(BUDGET_FIELD);
+    expect(finding?.fix).toContain(BUDGET_FIELD);
+    expect(finding?.fix).toContain('positive whole number of bytes');
+    // And it names the default, so "drop the key" is an answer with a number behind it.
+    expect(finding?.fix).toContain(String(AGENTS_MD_MAX_BYTES));
+  });
+
+  test('a steps problem still gets the steps fix, unchanged', () => {
+    const [finding] = floorProblemFindings(parse('{"steps":["nosuchstep"]}'));
+    expect(finding?.fix).toContain('"steps"');
+    expect(finding?.fix).not.toContain(BUDGET_FIELD);
+  });
+
+  test('both problems at once each get their own fix', () => {
+    const findings = floorProblemFindings(parse('{"steps":["nosuchstep"],"agentsMdMaxBytes":0}'));
+    expect(findings).toHaveLength(2);
+    expect(findings.filter((f) => f.fix.includes(BUDGET_FIELD))).toHaveLength(1);
+  });
+
+  test('every fix is one runnable command, whichever problem it answers', () => {
+    for (const finding of floorProblemFindings(parse('{"agentsMdMaxBytes":"16kb"}')))
+      expect(finding.fix.startsWith('x verify')).toBe(true);
   });
 });
