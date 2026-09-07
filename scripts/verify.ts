@@ -4,7 +4,11 @@
 // the same steps because there is only one list. This file adds the two rules a package monorepo
 // enforces that the CLI cannot know on its own: the tier table, and its generated manifest.
 //
-//   bun run scripts/verify.ts [--json] [--verbose]
+//   bun run scripts/verify.ts [--json] [--verbose] [--workers N]
+//
+// `--workers` is the CLI's own flag, passed through: the test steps shard over `cpus` by default,
+// and on a shared machine that width was measured to take the whole gate down (OOM-killed twice
+// on 2026-09-07 beside two other suites). It narrows the WIDTH of the run, never the gate.
 
 import { join } from 'node:path';
 import type { HostCheck, VerifyStepName } from '@ultimat3/cli';
@@ -283,10 +287,24 @@ export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {
   roadmap: checkRoadmap,
 };
 
+/** `--workers N`, whole and positive, or nothing — the CLI clamps it to the file count. */
+function readWorkers(flags: ReadonlyMap<string, string | boolean>): number | undefined {
+  const raw = flags.get('workers');
+  if (typeof raw !== 'string') return undefined;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
-  const result = await runVerify(VERIFY_STEPS, { root, runner: exec, hostChecks: HOST_CHECKS });
+  const workers = readWorkers(args.flags);
+  const result = await runVerify(VERIFY_STEPS, {
+    root,
+    runner: exec,
+    hostChecks: HOST_CHECKS,
+    ...(workers === undefined ? {} : { workers }),
+  });
   // Through `writeOut`, not `process.stdout.write`: see the note there. A failing gate's JSON
   // carries each failed step's own output, which is exactly when the payload clears 64KB and
   // exactly when a developer needs it — so the truncation only ever bit the runs that mattered.
