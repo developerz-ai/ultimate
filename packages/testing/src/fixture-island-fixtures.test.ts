@@ -151,7 +151,9 @@ export const ESCAPABLE_ISLAND = `export function mount(el) {
  * An island that keeps running after `mount` returns — a dashboard that polls, a console that
  * ticks. Solid's `render` answers a disposer, and `return render(…)` is the one line that lets a
  * fixture stop it: a disposed root runs every `onCleanup`. This one is hand-written for the same
- * reason the others are, and holds its interval the way a Solid root would hold its cleanup.
+ * reason the others are, and holds its interval the way a Solid root would hold its cleanup. The
+ * `setInterval` it calls is whatever the mount's `globals` say — `fakeIntervals()` below — so a
+ * test drives each tick by hand and asserts the disposer cleared the timer, never waits for one.
  */
 export const TICKING_ISLAND = `export function mount(el, props) {
   el.textContent = '';
@@ -164,9 +166,41 @@ export const TICKING_ISLAND = `export function mount(el, props) {
 }
 `;
 
-/** Polls `done` on a real timer: the interval above is real, so its observer has to be too. */
-export const until = async (done: () => boolean): Promise<void> => {
-  for (let waited = 0; !done() && waited < 500; waited += 2) await Bun.sleep(2);
+/**
+ * `setInterval` / `clearInterval` the test drives by hand, handed to the island through the
+ * fixture's `globals` — the seam it already has for `fetch`, and `installGlobals` assigns onto
+ * `globalThis`, so a chunk's bare `setInterval(…)` resolves to these for the life of the mount.
+ * Deterministic on purpose: the dispose test used to poll a real 1ms interval with `Bun.sleep`
+ * and then sleep 25ms more to see it stay quiet, which is a test that fails under load and
+ * passes without proving the timer transition it is named for. Here a tick is a call, and
+ * "the disposer cleared the interval" is `armed() === 0` — the exact `clearInterval(id)` the
+ * island returned, or nothing.
+ */
+export const fakeIntervals = (): {
+  readonly globals: Readonly<Record<string, unknown>>;
+  /** Run every armed callback once — one tick of a clock the island never sees. */
+  tick(): void;
+  /** How many intervals are live: `1` after mount, `0` once the disposer ran. */
+  armed(): number;
+} => {
+  const live = new Map<number, () => void>();
+  let next = 1;
+  const setInterval = (callback: () => void): number => {
+    const id = next;
+    next += 1;
+    live.set(id, callback);
+    return id;
+  };
+  const clearInterval = (id: number): void => {
+    live.delete(id);
+  };
+  return {
+    globals: { setInterval, clearInterval },
+    tick: () => {
+      for (const callback of [...live.values()]) callback();
+    },
+    armed: () => live.size,
+  };
 };
 
 export const mount = (code: string, props: unknown, extra: Record<string, unknown> = {}) =>

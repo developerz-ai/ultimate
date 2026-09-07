@@ -14,7 +14,7 @@ import {
   uuid,
 } from '@ultimat3/core';
 import { nowMs } from './clock';
-import { settleAllBy } from './drain-wait';
+import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { ClaimedJob } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import { ConcurrencyUnenforceableError, JobDrainedError } from './errors';
@@ -69,6 +69,15 @@ export function createWorker(options: WorkerOptions): Worker {
    * a restarted worker would otherwise hand every job it claimed a signal born cancelled.
    */
   let drainSignal = new AbortController();
+  /**
+   * The deadline the teardown waits under. `undefined` for a manual `stop()`, bound the moment a
+   * shutdown lands — and bound LATE when that shutdown lands on a teardown already in flight: the
+   * `close` hook joins the memoised `stopping` rather than starting a second, and until 2026-09-07
+   * the teardown it joined kept the `undefined` it was started with. Core abandoned the hook at
+   * the deadline; the worker sat on a body ignoring `ctx.signal` with its driver open. Fresh per
+   * teardown, for the controller's reason: a restarted worker's manual stop is unbounded again.
+   */
+  let budget = createDrainBudget();
   let state: WorkerStats['state'] = 'idle';
   let loop: ReturnType<typeof setTimeout> | undefined;
   /**
@@ -339,15 +348,20 @@ export function createWorker(options: WorkerOptions): Worker {
    * which is what happened until 2026-09-07: a job that would have stopped in a second was waited
    * on for the full deadline and abandoned there, exactly like one that ignores the signal.
    *
-   * Only a SHUTDOWN aborts. A manual `stop()` passes nothing: a caller that asked has no budget
-   * to spend and wants its work finished, the same line `settleAllBy` draws for the wait.
+   * Only a SHUTDOWN aborts, and only a shutdown binds the budget. A manual `stop()` passes
+   * nothing: a caller that asked has no budget to spend and wants its work finished, the same
+   * line `settleAllBy` draws for the wait. The bind comes BEFORE the abort's once-guard and on
+   * every call, because the second shutdown to reach a worker is the one that finds the abort
+   * already fired and the teardown already waiting — with no deadline, if the first was manual.
    */
   const stopAccepting = (shutdown?: ShutdownReason): void => {
     if (state === 'stopped') return;
     state = 'draining';
     if (loop !== undefined) clearTimeout(loop);
     loop = undefined;
-    if (shutdown === undefined || drainSignal.signal.aborted) return;
+    if (shutdown === undefined) return;
+    budget.bind(shutdown.deadlineAt);
+    if (drainSignal.signal.aborted) return;
     logger.info('jobs.worker.drain-signalled', {
       workerId,
       signal: shutdown.signal,
@@ -356,9 +370,7 @@ export function createWorker(options: WorkerOptions): Worker {
     drainSignal.abort(new JobDrainedError({ workerId, signal: shutdown.signal }));
   };
 
-  const teardown = async (reason: string, shutdown?: ShutdownReason): Promise<void> => {
-    stopAccepting(shutdown);
-    const deadlineAt = shutdown?.deadlineAt;
+  const teardown = async (reason: string): Promise<void> => {
     logger.info('jobs.worker.draining', { workerId, reason, inFlight: inFlight.size });
     try {
       // Stop claiming, finish what we hold, then close. Anything else re-runs work on deploy.
@@ -366,13 +378,14 @@ export function createWorker(options: WorkerOptions): Worker {
       // `claim()`, and the jobs it starts join `inFlight` after any snapshot taken here — so a
       // drain that waited on `inFlight` alone closed the driver under a job that had just begun.
       //
-      // Both waits share ONE deadline on the SIGTERM path (`undefined` on a manual stop, which
-      // waits as long as its jobs take). Nothing can kill a body that ignores `ctx.signal`, so an
-      // unbounded wait here is a teardown that never ends: driver never closed, state never past
-      // 'draining', and the memoized `stopping` every later `stop()` joins never settling.
-      // Abandoning costs a lapsed lease and a redelivered job — at-least-once, as promised.
-      const rounded = await settleAllBy([...rounds], deadlineAt);
-      const drained = (await settleAllBy([...inFlight], deadlineAt)) && rounded;
+      // Both waits share ONE budget: unbound on a manual stop, which waits as long as its jobs
+      // take, and bound by the SIGTERM — whether it arrived before this teardown or lands in the
+      // middle of it. Nothing can kill a body that ignores `ctx.signal`, so an unbounded wait
+      // here is a teardown that never ends: driver never closed, state never past 'draining', and
+      // the memoized `stopping` every later `stop()` joins never settling. Abandoning costs a
+      // lapsed lease and a redelivered job — at-least-once, as promised.
+      const rounded = await settleAllBy([...rounds], budget);
+      const drained = (await settleAllBy([...inFlight], budget)) && rounded;
       if (!drained) {
         logger.warn('jobs.worker.drain-abandoned', {
           workerId,
@@ -393,8 +406,10 @@ export function createWorker(options: WorkerOptions): Worker {
       for (const release of releaseShutdownHooks) release();
       releaseShutdownHooks = [];
       // A run this drain abandoned still follows the old controller through its own composition;
-      // the next start's jobs must not. Fresh here, in the one place a teardown always reaches.
+      // the next start's jobs must not. Fresh here, in the one place a teardown always reaches —
+      // and the budget with it, or the next manual stop would inherit a deadline already spent.
       drainSignal = new AbortController();
+      budget = createDrainBudget();
     }
   };
 
@@ -403,12 +418,15 @@ export function createWorker(options: WorkerOptions): Worker {
     // waits are bounded and the state is set in a `finally`), so a caller landing after an
     // abandoned drain gets an answer rather than joining a promise that never settles.
     if (state === 'stopped') return;
-    // One teardown, joined rather than repeated: a SIGTERM landing on a manual stop must wait out
-    // the same in-flight work, not close the driver a second time underneath it. Cleared as it
-    // settles, so a worker that started again tears down again instead of joining a promise that
-    // settled a lifetime ago. A close that threw still stopped this worker — the failure is the
-    // caller's to see on the promise it awaited, not a teardown to run twice.
-    stopping ??= teardown(reason, shutdown).finally(() => {
+    // Before the join, every time: a SIGTERM landing on a manual stop still aborts every held
+    // run's `ctx.signal` and binds the teardown already waiting to the shutdown's deadline.
+    stopAccepting(shutdown);
+    // One teardown, joined rather than repeated: that SIGTERM must wait out the same in-flight
+    // work, not close the driver a second time underneath it. Cleared as it settles, so a worker
+    // that started again tears down again instead of joining a promise that settled a lifetime
+    // ago. A close that threw still stopped this worker — the failure is the caller's to see on
+    // the promise it awaited, not a teardown to run twice.
+    stopping ??= teardown(reason).finally(() => {
       stopping = undefined;
     });
     await stopping;

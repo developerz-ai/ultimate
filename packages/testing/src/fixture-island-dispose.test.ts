@@ -8,7 +8,7 @@
 // real island — is `examples/dummy/apps/web/app/settings/settings.island.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import { LIVE_ISLAND, mount, TICKING_ISLAND, until } from './fixture-island-fixtures.test';
+import { fakeIntervals, LIVE_ISLAND, mount, TICKING_ISLAND } from './fixture-island-fixtures.test';
 import { testName } from './test-types';
 
 describe(testName('unit', 'the island fixture disposes what it mounted'), () => {
@@ -20,18 +20,28 @@ describe(testName('unit', 'the island fixture disposes what it mounted'), () => 
    * another file's island.
    */
   test('dispose runs the disposer mount returned — an interval stops with the DOM', async () => {
+    const timers = fakeIntervals();
     const counter = { n: 0 };
     {
-      using mounted = await mount(TICKING_ISLAND, {}, { globals: { ticks: counter } });
-      await until(() => counter.n >= 2);
-      expect(mounted.documentElement.dataset['ticks']).toBe(String(counter.n));
+      using mounted = await mount(
+        TICKING_ISLAND,
+        {},
+        { globals: { ticks: counter, ...timers.globals } },
+      );
+      expect(timers.armed()).toBe(1);
+      timers.tick();
+      timers.tick();
+      expect(counter.n).toBe(2);
+      expect(mounted.documentElement.dataset['ticks']).toBe('2');
     }
-    const atDispose = counter.n;
-    await Bun.sleep(25);
 
-    // Before the fix the count went on climbing here, and every tick threw into whichever test
-    // happened to be running by then.
-    expect(counter.n).toBe(atDispose);
+    // The disposer is `() => clearInterval(id)`: run, it leaves nothing armed. Before the fix it
+    // was never called, the interval stayed live, and every later tick threw `document is not
+    // defined` into whichever test happened to be running by then — which is what the tick after
+    // the dispose proves cannot happen now: nothing is left to run, and the count stands.
+    expect(timers.armed()).toBe(0);
+    timers.tick();
+    expect(counter.n).toBe(2);
   });
 
   test('the disposer runs BEFORE the globals go back — it sees the document mount saw', async () => {
