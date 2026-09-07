@@ -165,7 +165,7 @@ describe('the admin MCP catalog is computed per caller', () => {
     });
 
     expect(response?.error?.code).toBe(METHOD_NOT_FOUND);
-    expect(response?.error?.message).toBe('tool not found: admin.admin_mcp_post.delete');
+    expect(response?.error?.message).toStartWith('tool not found: admin.admin_mcp_post.delete');
     expect(response?.result).toBeUndefined();
 
     // No enumeration oracle: the answer carries no denial code, no permission, no policy
@@ -183,7 +183,7 @@ describe('the admin MCP catalog is computed per caller', () => {
     const response = await callTool(caller('reader'), 'admin.action.post.publish');
 
     expect(response?.error?.code).toBe(METHOD_NOT_FOUND);
-    expect(response?.error?.message).toBe('tool not found: admin.action.post.publish');
+    expect(response?.error?.message).toStartWith('tool not found: admin.action.post.publish');
     expect(JSON.stringify(response)).not.toContain('admin_mcp_post:publish');
   });
 

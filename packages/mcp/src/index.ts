@@ -35,6 +35,7 @@ export {
   MCP_ERROR_TITLES,
   McpAppUnmountedError,
   McpArgsInvalidError,
+  McpBodyTooLargeError,
   McpNotBranchDbError,
   McpProtocolError,
   McpQueryRejectedError,

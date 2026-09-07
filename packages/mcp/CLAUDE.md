@@ -39,6 +39,11 @@ import. The CLI wires it.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a `defineAppMcp` file
   imports one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on
   every access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
+- **Every refusal carries its instruction** (`As of 2026-09-07`). The 413 and the batch refusal
+  were bare `-32600`s; both now carry `data: { code, fix }` built by the error class that owns the
+  wording (`McpBodyTooLargeError`, shared with the stdio line cap; `McpProtocolError`). The
+  `-32601` for a tool carries no `data` — see the next rule — so its instruction rides in the
+  MESSAGE, and it is `TOOL_UNKNOWN_FIX`, the same sentence on the absent and the hidden branch.
 - Three outcomes, never blurred: role-hidden → `-32601` ToolNotFound with no `data`;
   scope → `-32600` `X_MCP_SCOPE_DENIED` naming the scope; policy → an `isError` result
   carrying `X_FORBIDDEN`. Swapping any two is an enumeration oracle.

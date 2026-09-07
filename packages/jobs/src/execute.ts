@@ -28,7 +28,13 @@ import type { EventLookup, StepRecord } from './steps';
 import { createStepRunner, isStepSuspension } from './steps';
 import { jobRunActor } from './tenant';
 
-export type JobOutcome = 'completed' | 'suspended' | 'retried' | 'dead-lettered';
+/**
+ * How one attempt ended. `interrupted` is the worker's drain cutting the attempt short: the job is
+ * back in the ready bucket with the attempt UNCOUNTED, because the process ended it and not the
+ * job — filed as `retried`, a deploy would burn an attempt per job it held, and with
+ * `attempts: 1` dead-letter it.
+ */
+export type JobOutcome = 'completed' | 'suspended' | 'retried' | 'dead-lettered' | 'interrupted';
 
 /** Stands in for a caller with nothing to cancel, so the composition below has one shape. */
 const NEVER_ABORTED = new AbortController().signal;
@@ -188,6 +194,33 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     }
 
     const message = renderThrowable(error);
+    if (drainedBy(signal)) {
+      // The worker's drain told this body to stop, and it did. Whatever it stopped WITH is the
+      // framework's doing — the reason itself back from `fetch`, `throwIfAborted`'s `X_ABORTED`,
+      // a fenced step write, or an app's own coded error for a child the shutdown killed — so
+      // the attempt is handed back rather than failed: `countsAsAttempt: false`, no park, no
+      // dead letter, claimable at once by the worker replacing this one. Read off the SIGNAL and
+      // not the error, because the body's error is not always the signal's reason, and an
+      // attempt burned per deploy is the "always twice" draining exists to prevent. The `error`
+      // is still recorded on the row: `x jobs show` should say why the last attempt ended.
+      await driver.nack(claimed.id, { delayMs: 0, error: message, countsAsAttempt: false });
+      logger.info('jobs.attempt.interrupted', {
+        job: handle.name,
+        jobId: claimed.id,
+        attempt: claimed.attempt,
+        error: message,
+      });
+      return settle({
+        outcome: 'interrupted',
+        jobId: claimed.id,
+        job: handle.name,
+        attempt: claimed.attempt,
+        durationMs: nowMs(options.clock) - startedAt,
+        error: message,
+        steps: [],
+        replayed: [],
+      });
+    }
     // The ERROR decides too, not only the attempt count. A `terminal` code — a rotated password,
     // a schema mismatch, a permission denial — fails identically on every remaining attempt, so
     // spending them is a queue slot, a provider bill and, at a site that locks an account after
@@ -315,6 +348,15 @@ function raceTimeout(
       },
     );
   });
+}
+
+/**
+ * The run was cancelled by the worker's drain: the code `JobDrainedError` carries, read off the
+ * signal. The FIRST reason wins on a controller, so a timeout that fired before the drain still
+ * reports as a timeout — the drain only claims an attempt it ended.
+ */
+function drainedBy(signal: AbortSignal): boolean {
+  return signal.aborted && isUltimateError(signal.reason) && signal.reason.code === 'X_DRAINING';
 }
 
 /** The body stopped because we cancelled it: our own reason back, or a fenced step write. */

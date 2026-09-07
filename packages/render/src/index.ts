@@ -33,6 +33,7 @@ export {
   RouteMetaMissingError,
   RouteModeInvalidError,
   RouteOfflineMissingError,
+  RouteStatusInvalidError,
   SurfaceBoundaryError,
 } from './errors';
 export type {
@@ -129,6 +130,7 @@ export { DEFAULT_ISLAND_HYDRATE, defineRoute, isRouteConfig, tagKeys } from './r
 export type { RouteComponent } from './route-component';
 export { pageComponentOf } from './route-component';
 export { metaContextFor, routeDataFor } from './route-data';
+export { DEFAULT_ROUTE_STATUS, isErrorStatus, routeStatusOf, withStatus } from './route-status';
 export type {
   BoundaryRule,
   BoundaryViolation,

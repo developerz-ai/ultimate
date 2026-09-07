@@ -422,6 +422,12 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `APP_ERROR_STATUS` is process-global runtime state filled by the app's own imports, while both
   named surfaces are build artefacts derived from source, so in a CLI process it answers `{}`.
   Wiring one means deriving it from source, not re-exporting the map.
+- **A handler's own `Response.status` is never rewritten.** `error-map.ts` answers the status of a
+  THROW; a status a handler chose — `html(page, { status: 404 })`, which is what a page route's
+  `withStatus(404, data)` in `@ultimat3/render` becomes — passes through every stage as written,
+  body included, in dev and in production. `pipeline-handler-status.test.ts` pins it, because the
+  render seam is only true while this is: ai-maxxing's `/fleet/nope` answered 200 for as long as
+  the only way to a 404 was the error page, outside the app's shell.
 - **The context carries the inbound headers, never the `Request`.** `ctx.requestHeaders` is set
   once at construction; `useRequestHeader` / `useRequestCookie` are what app code reads, and
   `UltimateRequest.cookie()` is what `hooks.authenticate` reads. A `Request` on the context is a

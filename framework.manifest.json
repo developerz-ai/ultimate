@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "7045864d3c15dc42f42c6db394e9ee245a4101d6918654779fba889e24921823",
+  "buildId": "806d08b77115419d88bbdb97bf3934c3f26932b3bb202ebcbbc6bd5b44bbeda0",
   "tiers": {
     "0": [
       "core",
@@ -1770,6 +1770,11 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_BODY_TOO_LARGE",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_NOT_BRANCH_DB",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -2496,6 +2501,11 @@
     },
     {
       "code": "X_ROUTE_OFFLINE_MISSING",
+      "owner": "render",
+      "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_ROUTE_STATUS_INVALID",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
     },

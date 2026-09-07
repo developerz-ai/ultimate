@@ -271,6 +271,27 @@ export class JobAbortedError extends UltimateError {
   }
 }
 
+/**
+ * The worker holding this attempt received SIGTERM. Handed to the run as `ctx.signal`'s reason
+ * the moment the drain's `accept` phase runs — before core's in-flight wait, not at the deadline
+ * that ends it — so a body reading the one cancellation seam learns the process is going away
+ * while there is still budget to unwind in.
+ *
+ * Core's `X_DRAINING` rather than a code of jobs' own, for `JobAbortedError`'s reason: the
+ * framework already means exactly one thing by "the process is draining", it is already
+ * classified `retryable`, and `executeJob` reads the CODE off the run signal's reason to tell a
+ * drained attempt from a timed-out or lease-lost one — the drained one is handed back uncounted.
+ */
+export class JobDrainedError extends UltimateError {
+  constructor(input: { workerId: string; signal: string }) {
+    super({
+      code: 'X_DRAINING',
+      cause: `worker "${input.workerId}" is draining (${input.signal}) — this attempt is cut short and the job handed back to the queue with the attempt uncounted`,
+      fix: 'nothing on the job: another worker claims it. To unwind inside the drain budget instead of being killed at it, pass ctx.signal to every outbound call — fetch(url, { signal: ctx.signal }) — and call throwIfAborted(ctx) between steps',
+    });
+  }
+}
+
 /** Retries exhausted. The job is in the dead-letter queue, not lost. */
 export class JobMaxAttemptsError extends UltimateError {
   constructor(input: { job: string; jobId: string; attempts: number; lastError: string }) {

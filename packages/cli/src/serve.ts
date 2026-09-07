@@ -1,8 +1,8 @@
 // What a container starts. `apps/web/server.ts` is three lines that call `runRole`, so the boot a
 // production process performs is framework code with tests rather than app code the author has to
 // get right — and it is the SAME code `x dev` runs, minus the watcher, minus `/_x`, minus
-// `dev: true`. The only production-shaped decisions live here: which role, which port, and the
-// fact that a container must bind every interface.
+// `dev: true`. The only production-shaped decisions live here: which role, which port, and which
+// interface — every one by default, because a container is reached through a port mapping.
 
 import type { Role } from '@ultimat3/core';
 import {
@@ -56,8 +56,34 @@ import { serviceWorkerRoutes } from './sw-routes';
 
 export const DEFAULT_PORT = 3000;
 
-/** Every interface. A container bound to loopback is unreachable through its own port mapping. */
+/**
+ * Every interface, which is what a role binds when nothing says otherwise: a container bound to
+ * loopback is unreachable through its own port mapping. `HOST` and `ServeOptions.hostname` are the
+ * two ways of saying otherwise — see `hostnameFromEnv`.
+ */
 export const CONTAINER_BINDING: WebBinding = { dev: false, hostname: '0.0.0.0' };
+
+/**
+ * The interface the `web` and `sync` roles bind, and the metrics endpoint with them (`WebBinding`
+ * is one decision). Read the way `PORT` is: empty or whitespace is the default.
+ *
+ * Exists because a container had exactly one binding, `0.0.0.0`, and an app whose auth mode is
+ * "nobody logs in, one implicit actor" must refuse a public interface — so it could not run in a
+ * container at all. `HOST=127.0.0.1` is unreachable through `docker run -p` (the proxy connects to
+ * the container's bridge address, never its loopback); it is reachable where the container shares
+ * the host's network namespace (`--network host`), or through a sidecar and `ssh -L` inside it —
+ * which is the exposure such an app wants. Not `HOSTNAME`: Docker sets that to the container id.
+ */
+export function hostnameFromEnv(env: Env): string {
+  const raw = env['HOST']?.trim();
+  return raw === undefined || raw.length === 0 ? CONTAINER_BINDING.hostname : raw;
+}
+
+/** What `serveApp` hands `startRoles`: the caller's hostname, else `HOST`, else every interface. */
+export const containerBinding = (env: Env, hostname?: string): WebBinding => ({
+  dev: false,
+  hostname: hostname ?? hostnameFromEnv(env),
+});
 
 /**
  * `ROLE` is the one knob one image exposes. Validated rather than defaulted: a typo that fell back
@@ -144,6 +170,11 @@ export interface ServeOptions {
   readonly port?: number;
   /** Overrides `METRICS_PORT`, on the same terms. */
   readonly metricsPort?: number;
+  /**
+   * Overrides `HOST`: the interface the HTTP roles bind. An app that must never answer on a public
+   * interface passes `'127.0.0.1'` here rather than trusting the deployment to set the variable.
+   */
+  readonly hostname?: string;
   /**
    * The drivers this deployment supplies instead of the ones the environment would select.
    *
@@ -391,7 +422,7 @@ async function bootRoles(boot: {
     // The app's own `apps/web/site/errors/<status>.html`, resolved inside `startWeb` so this
     // process and `x dev` cannot answer a browser differently.
     root: options.root,
-    http: CONTAINER_BINDING,
+    http: containerBinding(options.env, options.hostname),
     // The read-replica scope rides in FRONT of whatever the host supplied, or the host's own value
     // passes through untouched. `DATABASE_REPLICA_URL` was read by no booted process before this:
     // `defaultClient()` is the one composer of a replicated pair and it runs only when an app

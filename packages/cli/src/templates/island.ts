@@ -71,9 +71,11 @@ function ${Name}(props: ${Name}Props): JSX.Element {
  * container already has children, so without it the server's markup stays on screen above a
  * second, live copy of the same thing.
  */
-export function mount(el: HTMLElement, props: ${Name}Props): void {
+export function mount(el: HTMLElement, props: ${Name}Props): () => void {
   el.textContent = '';
-  render(() => <${Name} {...props} />, el);
+  // Solid's \`render\` answers its disposer; returning it is what lets \`mountIsland\` in
+  // \`@ultimat3/testing\` stop this island — its timers included — when a test is done with it.
+  return render(() => <${Name} {...props} />, el);
 }
 `;
 };

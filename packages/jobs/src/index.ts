@@ -159,6 +159,7 @@ export {
   JOB_ERROR_CODES,
   JOB_ERROR_TITLES,
   JobAbortedError,
+  JobDrainedError,
   JobDuplicateError,
   JobMaxAttemptsError,
   JobNameTakenError,

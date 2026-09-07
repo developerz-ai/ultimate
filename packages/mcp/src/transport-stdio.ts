@@ -9,6 +9,7 @@
 // stderr and this file never calls `console.log`.
 
 import { finiteCount } from '@ultimat3/core';
+import { McpBodyTooLargeError } from './errors';
 import type { McpCaller } from './registry';
 import type { McpServer } from './server';
 import { errorResponse, INVALID_REQUEST, PARSE_ERROR } from './wire';
@@ -92,17 +93,19 @@ export async function serveStdio(config: StdioTransportInput): Promise<void> {
   }
 }
 
-/** Answered once per over-long message, and the `fix` is what the peer has to change. */
+/**
+ * Answered once per over-long message, and the `fix` is what the peer has to change. The same
+ * `X_MCP_BODY_TOO_LARGE` the HTTP transport's 413 carries: one condition, one code, on both wires.
+ */
 function overLimit(limit: number): ReturnType<typeof errorResponse> {
-  return errorResponse(
-    null,
-    INVALID_REQUEST,
-    `a single message exceeded ${limit} characters and was dropped`,
-    {
-      limit,
-      fix: `send one JSON-RPC message per line, each under ${limit} characters — split a large tool result into paged calls`,
-    },
-  );
+  const refusal = new McpBodyTooLargeError({ transport: 'stdio', limit });
+  return errorResponse(null, INVALID_REQUEST, refusal.cause, {
+    code: refusal.code,
+    cause: refusal.cause,
+    fix: refusal.fix,
+    docs: refusal.docs,
+    limit,
+  });
 }
 
 async function handleLine(

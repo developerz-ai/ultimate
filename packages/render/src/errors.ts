@@ -14,6 +14,7 @@ export const RENDER_ERROR_CODES = [
   'X_ROUTE_FILE_INVALID',
   'X_ROUTE_LOAD_INVALID',
   'X_ROUTE_LOAD_FAILED',
+  'X_ROUTE_STATUS_INVALID',
   'X_SURFACE_BOUNDARY',
   'X_BUDGET_EXCEEDED',
   'X_PRERENDER_FAILED',
@@ -37,6 +38,7 @@ export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
   X_ROUTE_FILE_INVALID: 'a route file is not named for its surface',
   X_ROUTE_LOAD_INVALID: 'a route declared a load that is not a function',
   X_ROUTE_LOAD_FAILED: "a route's load threw while resolving its data",
+  X_ROUTE_STATUS_INVALID: 'a route answered a status a rendered page cannot carry',
   X_SURFACE_BOUNDARY: 'a surface imported across the hard boundary',
   X_BUDGET_EXCEEDED: 'a route blew its JS or LCP budget',
   X_PRERENDER_FAILED: 'a prerendered path threw during build',
@@ -249,6 +251,23 @@ export class RouteLoadFailedError extends UltimateError {
   constructor(cause: string, fix: string) {
     super({
       code: RouteLoadFailedError.code,
+      cause,
+      fix,
+    });
+  }
+}
+
+/**
+ * A loader answered a status through `withStatus` that no rendered document can carry: a 3xx. A
+ * redirect is a `Location` and no body, and this seam only ever produces a body — so the answer
+ * is refused where it was written, with the redirect the author meant named as the fix. The
+ * out-of-range half (`NaN`, `199`, `600`) is `finiteStatus`'s, the same screen every mode uses.
+ */
+export class RouteStatusInvalidError extends UltimateError {
+  static readonly code = 'X_ROUTE_STATUS_INVALID' as const;
+  constructor(cause: string, fix: string) {
+    super({
+      code: RouteStatusInvalidError.code,
       cause,
       fix,
     });

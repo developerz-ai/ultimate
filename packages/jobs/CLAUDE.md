@@ -293,6 +293,31 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   promises; `jobs.worker.drain-abandoned` names it, with the `configureLifecycle({ deadlineMs })`
   raise as its fix. **A worker always REACHES `'stopped'`**, which is what makes `stop()`'s
   `state === 'stopped'` early return an answer rather than a wedge.
+- **SIGTERM reaches the job: the `accept` hook aborts every held run's `ctx.signal`**
+  (`As of 2026-09-07`). The worker holds ONE `AbortController` (`drainSignal`), composed into every
+  run by `worker-run.ts` as the third source beside the caller's signal and the heartbeat's;
+  `stopAccepting(reason)` aborts it with a `JobDrainedError` — core's `X_DRAINING`, naming the
+  worker and the signal — and a manual `stop()` passes no reason and aborts nothing, for the same
+  line `settleAllBy` draws: a caller that asked wants its work finished. It has to be the `accept`
+  hook and not the teardown, because core runs `accept`, then waits out in-flight work (every
+  claimed job is `beginWork()`ed) under the same budget, then `close`: told in `close`, a body
+  would hear it after the in-flight wait had already spent the whole budget on it. Which is what
+  happened until this landed — the drain told nobody, so a body reading `ctx.signal` (the one
+  documented way to stop early) ran to the deadline and was abandoned there, indistinguishable
+  from one that ignores the signal; ai-maxxing measured it as every Ctrl-C paying the full 25s
+  and wrote a process-wide signal of its own to get around it. The controller is replaced with a
+  fresh one in the teardown's `finally`: aborted once stays aborted, and a restarted worker would
+  otherwise hand every job it claimed a signal born cancelled.
+  `executeJob` reads the CODE off the run signal's reason (`drainedBy`) and settles a drained
+  attempt as **`interrupted`** — `nack` with `countsAsAttempt: false`, no park, no dead letter,
+  `delayMs: 0`, the error still recorded on the row — read off the SIGNAL and not the thrown
+  error, because what a body stops WITH is not always the reason (a killed ssh child surfaces as
+  the app's own coded error) and an attempt burned per deploy is the "always twice" draining
+  exists to prevent, one layer down. Not a `retried`: `attempts: 1` would dead-letter a job the
+  process, not the job, cut short, and `jobs_total{outcome="failed"}` would spike on every
+  rollout. The first reason on a controller wins, so a timeout that fired before the drain still
+  reports as a timeout. `WorkerStats.interrupted` counts them; `jobs.worker.drain-signalled` and
+  `jobs.attempt.interrupted` are the two lines. `worker-drain-signal.test.ts` holds all of it.
 - **One teardown, joined.** `stop()` shares the in-flight teardown promise, so a SIGTERM landing
   on a manual stop waits out the same in-flight jobs instead of closing the driver underneath
   it. The promise is cleared as it settles, so a worker that started again tears down again
@@ -937,7 +962,8 @@ picture from the other side.
 | `execute.ts` | `executeJob` — one claimed job run and settled, and the run's deadline/cancel |
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
 | `renewal-timer.ts` | the interval a renewal runs on, and the `stopped()` latch every branch after an await re-reads |
-| `worker.ts` | `worker` role, claim loop, drain |
+| `worker.ts` | `worker` role, claim loop, drain — and the one `AbortController` SIGTERM reaches every held run through |
+| `worker-types.ts` | the worker's public contract: `WorkerOptions`, `WorkerStats`, `Worker` |
 | `drain-wait.ts` | the drain's wait, shared by both roles: everything a teardown holds, settled — or abandoned at the budget the `close` hook was handed |
 | `worker-run.ts` | one claimed job, wired: its heartbeat, its slot renewal, its run signal and its span, started together and handed back in one `finally` |
 | `run-signal.ts` | the signal ONE run is cancelled by — composition that can be handed back, and that the worker can abort itself |

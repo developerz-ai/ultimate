@@ -14,8 +14,10 @@ import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
 import {
   CONTAINER_BINDING,
   configureReporting,
+  containerBinding,
   DEFAULT_PORT,
   ERROR_DSN_KEY,
+  hostnameFromEnv,
   metricsPortFor,
   metricsPortFromEnv,
   portFromEnv,
@@ -90,6 +92,22 @@ test('metricsPortFor is the one answer both the container and x dev read', () =>
 
 test('a container binds every interface, and dev does not', () => {
   expect(CONTAINER_BINDING).toEqual({ dev: false, hostname: '0.0.0.0' });
+});
+
+// `runRole` had exactly one binding, and it was `0.0.0.0`. An app whose auth mode is "nobody logs
+// in, one implicit actor" must refuse a public interface — so it could not run in a container at
+// all. `HOST` is read the way `PORT` is, and the option overrides it the way `port` does.
+test('HOST selects the interface a role binds; unset or blank is every interface', () => {
+  expect(hostnameFromEnv({})).toBe('0.0.0.0');
+  expect(hostnameFromEnv({ HOST: '' })).toBe('0.0.0.0');
+  expect(hostnameFromEnv({ HOST: '   ' })).toBe('0.0.0.0');
+  expect(hostnameFromEnv({ HOST: ' 127.0.0.1 ' })).toBe('127.0.0.1');
+});
+
+test('the binding a role starts with is dev: false on the resolved host, and the option wins', () => {
+  expect(containerBinding({})).toEqual(CONTAINER_BINDING);
+  expect(containerBinding({ HOST: '127.0.0.1' })).toEqual({ dev: false, hostname: '127.0.0.1' });
+  expect(containerBinding({ HOST: '0.0.0.0' }, '::1')).toEqual({ dev: false, hostname: '::1' });
 });
 
 // The app's `apps/<app>/runtime.ts`, resolved ONCE per public entry: a caller's own `runtime` wins,

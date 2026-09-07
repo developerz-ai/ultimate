@@ -89,9 +89,16 @@ interface DevState {
   /** A save that will not build. Replaced on every attempt, so a fixed file clears it. */
   reloadFinding: Finding | undefined;
   /**
+   * Modules that would not import and primitives that would not register, as of the LAST scan —
+   * the boot's, then each rebuild's. A page saved with a syntax error is a finding here until the
+   * save that fixes it, and the boot's list alone would never show it.
+   */
+  appFindings: readonly Finding[];
+  /**
    * The client entries, rebuilt on the same tick as the manifest. An island is the one module this
-   * process never imports, so a fresh `Bun.build` is the whole of its reload — no module cache to
-   * invalidate, which is exactly why editing one takes effect where editing a route does not.
+   * process never imports, so a fresh `Bun.build` is the whole of its reload. The route module
+   * beside it is re-imported by that same scan (`app-load.ts`) — the two are one generation, or
+   * a save serves a new island under an old page, which is what it did until 2026-09-07.
    */
   islands: IslandBundle;
 }
@@ -140,6 +147,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     manifest: (await appManifest(options.root)).manifest,
     reloads: 0,
     reloadFinding: undefined,
+    appFindings: app.findings,
     islands: await buildIslands(options.root),
   };
   // The manifest's build id is a content hash of every fact below it, so a dev document's
@@ -279,11 +287,12 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   const rebuild = coalesceReloads(
     async (file) => {
       const started = performance.now();
-      const [{ manifest }, islands] = await Promise.all([
+      const [{ manifest, findings }, islands] = await Promise.all([
         appManifest(options.root),
         buildIslands(options.root),
       ]);
       state.manifest = manifest;
+      state.appFindings = findings;
       state.islands = islands;
       state.reloads += 1;
       state.reloadFinding = undefined;
@@ -316,8 +325,8 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     get findings(): readonly Finding[] {
       const loops = statements.repeats().map(loopFacts).map(loopFinding);
       return state.reloadFinding === undefined
-        ? [...app.findings, ...loops]
-        : [...app.findings, state.reloadFinding, ...loops];
+        ? [...state.appFindings, ...loops]
+        : [...state.appFindings, state.reloadFinding, ...loops];
     },
     running,
     runtime,

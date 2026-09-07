@@ -27,6 +27,12 @@ export interface RunClaimedOptions {
   readonly heartbeatIntervalMs: number;
   readonly clock?: Clock;
   readonly events?: EventLookup;
+  /**
+   * The worker's drain, composed into every run it starts: aborted with a `JobDrainedError` when
+   * the process is going away, so the body hears it on `ctx.signal` — the one seam it already
+   * reads — before core's in-flight wait starts spending the budget on it.
+   */
+  readonly drain?: AbortSignal;
 }
 
 /** A name this deploy does not know, parked rather than failed — almost always a deploy skew. */
@@ -95,8 +101,10 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
     // controller this worker owns rather than `AbortSignal.any`, for two reasons: it is handed BACK
     // when the run settles (an app whose `context()` carries a process-lifetime signal was
     // accumulating one composite per job), and the worker can abort it itself — which is the only
-    // way a fleet slot taken by somebody else reaches the body running under it.
-    runSignal = createRunSignal([base.signal, heartbeat.signal]);
+    // way a fleet slot taken by somebody else reaches the body running under it. The worker's
+    // drain is the third source: SIGTERM reaches the body through the same signal, carrying the
+    // `X_DRAINING` reason `executeJob` reads to hand the attempt back uncounted.
+    runSignal = createRunSignal([base.signal, heartbeat.signal, options.drain]);
     const signal = runSignal;
     const ctx: Ctx = { ...base, signal: signal.signal };
 

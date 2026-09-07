@@ -22,6 +22,7 @@ import { RouteLoadInvalidError, RouteMetaMissingError, RouteOfflineMissingError 
 import type { IslandSpec } from './island';
 import { drainDeclaredIslands } from './island';
 import { assertModeShape } from './modes';
+import { isErrorStatus, routeStatusOf } from './route-status';
 
 /**
  * What a page that declares an island hydrates as when it says nothing. The most conservative of
@@ -274,7 +275,12 @@ export function defineRoute<TData = RouteData>(
     // Wrapped rather than stored: the declaration may be sync, the descriptor never is.
     // A meta that throws synchronously becomes a rejection here, so `await config.meta(d)`
     // is the one way to fail as well as the one way to succeed.
-    meta: async (metaCtx: RouteMetaContext<TData>) => declaredMeta(metaCtx),
+    // And the one place a 4xx/5xx becomes `noindex`: every consumer that renders a `<head>` —
+    // `x dev`, the prerenderer, the SEO scan — calls THIS function, so a page whose loader said
+    // 404 is never indexed however its `meta` was written. A 200 hands the author's object back
+    // untouched, so an app that never sets a status is byte-identical.
+    meta: async (metaCtx: RouteMetaContext<TData>) =>
+      noindexOnError(await declaredMeta(metaCtx), routeStatusOf(metaCtx.data)),
     // Always an object. `budget.js` is the only reach a consumer needs, so an undeclared
     // budget is `{}` instead of a second undefined-check at every call site.
     budget: def.budget ?? {},
@@ -288,6 +294,12 @@ export function defineRoute<TData = RouteData>(
 
   assertModeShape(config);
   return Object.freeze(config);
+}
+
+/** Only `index` is decided here; `follow` and the rest stay the author's. */
+function noindexOnError(meta: RouteMeta, status: number): RouteMeta {
+  if (!isErrorStatus(status)) return meta;
+  return { ...meta, robots: { ...meta.robots, index: false } };
 }
 
 export function isRouteConfig(value: unknown): value is RouteConfig {

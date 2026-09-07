@@ -6,165 +6,23 @@
 // real island — is `examples/dummy/apps/web/app/settings/settings.island.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import { UltimateError } from '@ultimat3/core';
-import type { IslandBuilder } from './fixture-island';
+import type { UltimateError } from '@ultimat3/core';
 import { mountIsland } from './fixture-island';
+import {
+  ASYNC_ISLAND,
+  builderOf,
+  CSS_TEXT_ISLAND,
+  codeOf,
+  DEAD_ISLAND,
+  ESCAPABLE_ISLAND,
+  FILE,
+  LIVE_ISLAND,
+  mount,
+  POSTING_ISLAND,
+  ROOT,
+  STYLED_ISLAND,
+} from './fixture-island-fixtures.test';
 import { testName } from './test-types';
-
-const FILE = 'apps/web/site/counter.island.tsx';
-const ROOT = '/tmp/island-fixture-root';
-
-/** A builder is a function of the app root — the seam `buildIslands` fills in a real app. */
-const builderOf = (chunks: readonly { file: string; code: string }[]): IslandBuilder => {
-  return (root: string) => Promise.resolve({ chunks: root === ROOT ? chunks : [] });
-};
-
-/**
- * The markup half of a compiled island: a parsed `<template>`, cloned per mount. Written by hand
- * rather than generated, so this file states what the micro-DOM must support instead of inheriting
- * it from whatever the bundler happened to emit today.
- */
-const PRELUDE = `const _tmpl$ = (() => {
-  const t = document.createElement('template');
-  t.innerHTML = '<div class="zero"><button type="button" data-role="bump">go</button><p data-role="count"> </p></div>';
-  return t.content.firstChild;
-})();
-`;
-
-/** Reactive: every click repaints the text node, the class property and the document attribute. */
-const LIVE_ISLAND = `${PRELUDE}
-export function mount(el, props) {
-  el.textContent = '';
-  const root = document.importNode(_tmpl$, true);
-  const button = root.firstChild;
-  const text = button.nextSibling.firstChild;
-  let n = 0;
-  const paint = () => {
-    text.data = props.label + ' ' + n;
-    root.className = n > 0 ? 'pos' : 'zero';
-    if (n === 0) delete document.documentElement.dataset.clicked;
-    else document.documentElement.dataset.clicked = String(n);
-  };
-  button.$$click = () => { n += 1; paint(); };
-  paint();
-  el.appendChild(root);
-}
-`;
-
-/**
- * The same island with the repaint dropped from the handler: it renders once, correctly, and never
- * updates again — no throw, no log. That is the failure an eager JSX factory produces, and a
- * fixture that cannot tell it from LIVE_ISLAND proves nothing about any island.
- */
-const DEAD_ISLAND = LIVE_ISLAND.replace('() => { n += 1; paint(); }', '() => { n += 1; }');
-
-const POSTING_ISLAND = `export function mount(el, props) {
-  el.textContent = '';
-  const p = document.createElement('p');
-  p.setAttribute('data-role', 'status');
-  p.textContent = 'idle';
-  el.appendChild(p);
-  p.$$click = () => {
-    fetch(props.endpoint, { method: 'POST', body: '{}' }).then((r) => {
-      p.textContent = r.ok ? 'saved' : 'retry';
-    });
-  };
-}
-`;
-
-/**
- * `solid-js/web`'s own `setStyleProperty`, verbatim (`web.js:302`). It is what
- * `babel-preset-solid` emits for every DYNAMIC entry of a `style={{ … }}` prop — checked against
- * the real transform, which turns `<Form style={{ '--form-gap': … }}>` into exactly this call and
- * bakes a static entry into the template's `style` attribute instead.
- */
-const SET_STYLE_PROPERTY = `const setStyleProperty = (node, name, value) => {
-  value != null ? node.style.setProperty(name, value) : node.style.removeProperty(name);
-};
-`;
-
-/**
- * What a design-system component compiles to: one custom property painted per repaint, one
- * `classList.toggle` — the call the compiler emits INLINE for `classList={{ … }}`, with no runtime
- * helper in front of it — and one static declaration carried by the template.
- */
-const STYLED_ISLAND = `${SET_STYLE_PROPERTY}
-const _tmpl$ = (() => {
-  const t = document.createElement('template');
-  t.innerHTML = '<form class="form" style="display:grid"><button type="button" data-role="gap">go</button></form>';
-  return t.content.firstChild;
-})();
-
-export function mount(el, props) {
-  el.textContent = '';
-  const root = document.importNode(_tmpl$, true);
-  const button = root.firstChild;
-  let step = props.gap;
-  const paint = () => {
-    setStyleProperty(root, '--form-gap', step === null ? null : 'var(--space-' + step + ')');
-    root.classList.toggle('tight', step === 2);
-  };
-  button.$$click = () => { step = step === 5 ? 2 : null; paint(); };
-  paint();
-  el.appendChild(root);
-}
-`;
-
-/** The other half of Solid's `style` runtime: a STRING style prop is `nodeStyle.cssText = value`,
- *  and clearing one is `setAttribute(node, 'style')` — which is `removeAttribute` (`web.js:237`). */
-const CSS_TEXT_ISLAND = `export function mount(el, props) {
-  el.textContent = '';
-  const box = document.createElement('div');
-  box.setAttribute('data-role', 'box');
-  box.style.cssText = props.css;
-  box.$$click = () => { box.removeAttribute('style'); };
-  el.appendChild(box);
-}
-`;
-
-/**
- * An ASYNC mount, the shape `like.island.tsx` already ships: `await OfflineQueue.open(store)` before
- * the first render, so a click can never be handed a client whose queue has not rehydrated. The
- * await here is a MACROTASK on purpose — the incidental microtask turns of `await mountIsland(…)`
- * would otherwise let a one-tick mount finish by accident, and a test that passes by accident is
- * the reason this hole survived.
- */
-const ASYNC_ISLAND = `export async function mount(el, props) {
-  el.textContent = '';
-  const queue = await openQueue();
-  const p = document.createElement('p');
-  p.setAttribute('data-role', 'state');
-  p.textContent = queue.depth + ' ' + props.label;
-  p.$$click = () => { p.textContent = 'clicked'; };
-  el.appendChild(p);
-}
-`;
-
-/** `@ultimat3/ui`'s Menu, Popover and focus trap all close on Escape from a listener registered on
- *  `document` (`packages/ui/src/a11y.ts:118`), never on their own node. */
-const ESCAPABLE_ISLAND = `export function mount(el) {
-  el.textContent = '';
-  const p = document.createElement('p');
-  p.setAttribute('data-role', 'state');
-  p.textContent = 'open';
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') p.textContent = 'closed';
-  });
-  el.appendChild(p);
-}
-`;
-
-const mount = (code: string, props: unknown, extra: Record<string, unknown> = {}) =>
-  mountIsland({
-    build: builderOf([{ file: FILE, code }]),
-    root: ROOT,
-    file: FILE,
-    props,
-    ...extra,
-  });
-
-const codeOf = (error: unknown): string =>
-  error instanceof UltimateError ? error.code : `not an UltimateError: ${String(error)}`;
 
 describe(testName('unit', 'the island fixture mounts a compiled island'), () => {
   test('a reactive island repaints text, a class property and the document attribute', async () => {
@@ -336,13 +194,6 @@ describe(testName('unit', 'the island fixture mounts a compiled island'), () => 
   });
 });
 
-/**
- * The micro-DOM's write surfaces, driven the way compiled Solid drives them. `style` was `{}` and
- * `classList` was `{ add() {} }` until 2026-08-21: `<Form>`, `<Stack>`, `<Grid>` and `<Container>`
- * all set a CSS custom property, so every one of them died inside `mount` with
- * `e.style.setProperty is not a function` — and `x g resource` emitted a plain `<form>` rather than
- * the design system's, because of what a TEST DOUBLE could not run.
- */
 describe(testName('unit', 'the island fixture records what an island writes to an element'), () => {
   test('a custom property is recorded, repainted, and removed by name alone', async () => {
     using mounted = await mount(STYLED_ISLAND, { gap: 5 });
@@ -458,24 +309,5 @@ describe(testName('unit', 'the island fixture refuses by name'), () => {
     );
 
     expect(Reflect.get(globalThis, 'document')).toBe(before);
-  });
-});
-
-describe(testName('unit', 'the chunk is imported from a file, never a data: URL'), () => {
-  // A source rule, because the failure it guards is invisible to `bun test`: `bun test --coverage`
-  // panics with `range end index N out of range for slice of length 4096` on `import()` of any
-  // `data:` module over ~4 kB, and every island chunk is 12-55 kB. Only the per-package CI job runs
-  // coverage, so the whole suite went green locally while `package (cli)` and `package (testing)`
-  // dumped core. The `data:` form reads better and is the one to reach for again; this is what says
-  // no. Measured on Bun 1.4.0 — delete this the day that panic is fixed upstream.
-  const source = (): Promise<string> => Bun.file(`${import.meta.dir}/fixture-island.ts`).text();
-
-  test('the module specifier the fixture builds is a path', async () => {
-    expect(await source()).not.toContain('data:text/javascript');
-  });
-
-  test('and the pattern that would see it is really in the file to be seen', async () => {
-    // Negative control: a rule matching a string no version of the file ever held cannot fail.
-    expect(await source()).toContain('modulePathFor');
   });
 });

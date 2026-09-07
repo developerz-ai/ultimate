@@ -187,6 +187,37 @@ describe('mcpHttpRoute.handle: successful calls', () => {
     const payload = await unknownMethod.json();
     expect(payload.error.code).toBe(-32601);
   });
+
+  test('a JSON-RPC batch is refused by name, with the fix, on the same 400', async () => {
+    // A batch is legal JSON-RPC and this server does not walk one: one call, one answer, one
+    // rate-limit class. It was refused as a bare `-32600` envelope error — indistinguishable from
+    // `{ not: 'jsonrpc' }` — so a client sending a batch learned nothing about WHY.
+    const res = await route.handle(
+      request(
+        [
+          { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+          { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+        ],
+        { authorization: 'Bearer t' },
+      ),
+    );
+    expect(res.status).toBe(400);
+    const payload = await res.json();
+    expect(payload.id).toBeNull();
+    expect(payload.error.code).toBe(-32600);
+    expect(payload.error.message).toContain('batch');
+    expect(payload.error.message).toContain('one request per');
+    expect(payload.error.data.code).toBe('X_MCP_PROTOCOL');
+    expect(payload.error.data.fix).toContain('one request per POST');
+  });
+
+  test('a malformed envelope names the shape to send', async () => {
+    const res = await route.handle(request({ not: 'jsonrpc' }, { authorization: 'Bearer t' }));
+    const payload = await res.json();
+    expect(payload.error.code).toBe(-32600);
+    expect(payload.error.data.code).toBe('X_MCP_PROTOCOL');
+    expect(payload.error.data.fix).toContain("jsonrpc: '2.0'");
+  });
 });
 
 describe('an unauthenticated caller learns nothing about its own request', () => {
@@ -280,7 +311,29 @@ describe('mcpHttpRoute.handle: the body is capped while it is read', () => {
     );
     expect(res.status).toBe(413);
     const payload = await res.json();
-    expect(payload.error.message).toContain('1024');
+    // The envelope a JSON-RPC client already parses — `id: null`, `-32600` — so nothing a
+    // consumer pinned moves; what was missing is the instruction. Measured through ai-maxxing's
+    // `POST /mcp` on 2026-09-07: a box agent sending a large `promptSession` got a number and
+    // no next step, while the 401, 403 and 429 beside it all carried `{ code, cause, fix }`.
+    expect(payload.id).toBeNull();
+    expect(payload.error.code).toBe(-32600);
+    expect(payload.error.message).toContain('limit is 1024');
+    expect(payload.error.data.code).toBe('X_MCP_BODY_TOO_LARGE');
+    expect(payload.error.data.limit).toBe(1024);
+    expect(payload.error.data.cause).toContain('limit is 1024');
+    // The fix names BOTH moves — send less, or raise the cap — and names the knob where an app
+    // actually builds this route, not only the bare descriptor.
+    expect(payload.error.data.fix).toContain('mcpHttpRoute({ bodyLimitBytes');
+    expect(payload.error.data.fix).toContain('defineAppMcp({ bodyLimitBytes');
+    // A client that reads only `message` gets the same instruction.
+    expect(payload.error.message).toContain(payload.error.data.fix);
+  });
+
+  test('the cap is a knob on defineAppMcp too, because that is where an app builds the route', () => {
+    // `McpHttpTransportInput.bodyLimitBytes` existed and `defineAppMcp` never forwarded it, so
+    // the one app path to this route had no way to follow the fix line above.
+    const route = mcpHttpRoute({ ...authorized, bodyLimitBytes: 0 });
+    expect(route.limits).toBe(MCP_RATE_LIMITS);
   });
 
   test('a body under the cap still answers normally', async () => {

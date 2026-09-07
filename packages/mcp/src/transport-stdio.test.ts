@@ -167,6 +167,10 @@ describe('a message with no newline in it', () => {
     const parsed = JSON.parse(chunks[0] ?? '');
     expect(parsed.error.code).toBe(-32600);
     expect(String(parsed.error.data.fix).length).toBeGreaterThan(0);
+    // One code for one condition on both transports: the HTTP 413 answers it too.
+    expect(parsed.error.data.code).toBe('X_MCP_BODY_TOO_LARGE');
+    expect(parsed.error.data.limit).toBe(limit);
+    expect(parsed.error.data.fix).toContain('lineLimitBytes');
   });
 
   test('the session survives it: the next complete message is still answered', async () => {

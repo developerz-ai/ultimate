@@ -57,6 +57,10 @@ export interface MountIslandOptions {
   readonly size?: ResizeInput;
 }
 
+/**
+ * `Disposable`: dispose calls the disposer the island's `mount` returned (Solid's `render` answers
+ * one — `return render(…)`), then hands the process its globals back. Both, in that order.
+ */
 export interface MountedIsland extends Disposable {
   /** The chunk's source, for asserting on what did or did not reach the browser. */
   readonly code: string;
@@ -101,10 +105,18 @@ export interface MountedIsland extends Disposable {
  * opens a queue or a socket first is therefore an ordinary island (`like.island.tsx` is `async`),
  * and a fixture typed `=> void` could only ever call it and walk away. Widening, not narrowing: an
  * island module is matched structurally off an `unknown` import, so nothing implements this type.
+ *
+ * What `mount` answers, once awaited, is the island's DISPOSER when it is a function — the one
+ * way an island hands back what it started, and Solid's `render` already returns exactly that, so
+ * `return render(…)` is the whole of an island's side. The fixture calls it on dispose.
  */
 interface IslandEntry {
   readonly mount: (el: unknown, props: unknown) => unknown;
 }
+
+/** The island's disposer, when `mount` answered one — anything else is an island with nothing to stop. */
+const disposerOf = (returned: unknown): (() => void) | undefined =>
+  typeof returned === 'function' ? (returned as () => void) : undefined;
 
 /** `unknown` + a check, not a cast: a chunk whose `mount` was renamed is a real authoring mistake
  *  and `entry.mount is not a function` names neither the file nor the export it wanted. */
@@ -198,6 +210,13 @@ function installGlobals(values: Readonly<Record<string, unknown>>): () => void {
  * The island fixture. Everything it installs is process-global, so the result is `Disposable` and
  * the idiom is `using mounted = await mountIsland(…)` — a mount left installed hands a fake
  * `document` to every later FILE in the run.
+ *
+ * Dispose is two things in one order: the island's own disposer first, then the globals back.
+ * Restoring the globals was the whole of it until 2026-09-07, so an island whose `mount` started
+ * an interval kept ticking after the DOM was gone — measured as `document is not defined` thrown
+ * into whichever later test was running, and as one file's fetch stub receiving POSTs from another
+ * file's island. The disposer runs while the fake `document` is still installed, because what it
+ * clears (a listener on `document`, an interval whose callback reads it) was made against that one.
  */
 export async function mountIsland(options: MountIslandOptions): Promise<MountedIsland> {
   // `only`, because this fixture has always KNOWN which island it wants and asked for all of them
@@ -240,7 +259,21 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
     // island's `mount` resumed AFTER the `restore()` below had taken the fake `document` back out
     // — so it failed with `document is not defined` inside whichever later test happened to be
     // running, with no thread back here.
-    await entry.mount(el, options.props);
+    const unmount = disposerOf(await entry.mount(el, options.props));
+    let disposed = false;
+    const dispose = (): void => {
+      // Once: `using` and an `afterAll` that also disposes by hand are both real, and Solid's own
+      // disposer is idempotent while an island's `clearInterval` wrapper need not be.
+      if (disposed) return;
+      disposed = true;
+      try {
+        unmount?.();
+      } finally {
+        // Whatever the disposer did — including throw, which is the test's to see — the process
+        // gets its globals back, or the fake `document` reaches every later file in the run.
+        restore();
+      }
+    };
     const resolve = (target: string | FakeElement | null | undefined): FakeElement | null =>
       typeof target === 'string' ? el.querySelector(target) : (target ?? null);
     return {
@@ -271,7 +304,7 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
         const node = resolve(target);
         return node !== null && [...resizeObservers].some((each) => each.targets.has(node));
       },
-      [Symbol.dispose]: restore,
+      [Symbol.dispose]: dispose,
     };
   } catch (error) {
     // A mount that throws restores the process before it rethrows: the alternative leaves every

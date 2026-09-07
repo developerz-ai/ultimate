@@ -23,7 +23,7 @@ import type { Actor, Clock } from '@ultimat3/core';
 import { finiteCount, readWithinLimit, systemClock } from '@ultimat3/core';
 import type { RateLimitStore } from '@ultimat3/http';
 import { memoryRateLimitStore, toBucket } from '@ultimat3/http';
-import { McpRateLimitedError } from './errors';
+import { McpBodyTooLargeError, McpRateLimitedError } from './errors';
 import type { McpCaller, McpRole, McpVerbClass } from './registry';
 import type { McpServer } from './server';
 import type { JsonRpcResponse } from './wire';
@@ -141,12 +141,23 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
       // cannot drift.
       const read = await readWithinLimit(request.body, bodyLimitBytes);
       if ('over' in read) {
+        // Still the JSON-RPC envelope on `id: null` — a client library parses that and a consumer
+        // has pinned it — and the stdio transport answers the same condition the same way. What
+        // travels now is the refusal: the code, both numbers, and the two moves that end it,
+        // built by the error that owns the wording so the two transports cannot drift.
+        const refusal = new McpBodyTooLargeError({
+          transport: 'http',
+          limit: bodyLimitBytes,
+          over: read.over,
+        });
         return json(
-          errorResponse(
-            null,
-            INVALID_REQUEST,
-            `request body is at least ${read.over} bytes, limit is ${bodyLimitBytes}`,
-          ),
+          errorResponse(null, INVALID_REQUEST, `${refusal.cause} — ${refusal.fix}`, {
+            code: refusal.code,
+            cause: refusal.cause,
+            fix: refusal.fix,
+            docs: refusal.docs,
+            limit: bodyLimitBytes,
+          }),
           413,
         );
       }

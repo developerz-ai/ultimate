@@ -18,6 +18,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_SCOPE_CONFLICT',
   'X_MCP_RATE_LIMITED',
   'X_MCP_APP_UNMOUNTED',
+  'X_MCP_BODY_TOO_LARGE',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -37,6 +38,7 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_SCOPE_CONFLICT: 'two scopes claim one MCP tool',
   X_MCP_RATE_LIMITED: "the caller has spent its allowance for this request's class",
   X_MCP_APP_UNMOUNTED: "the app's MCP endpoint is exposed in config and nothing can be mounted",
+  X_MCP_BODY_TOO_LARGE: 'one MCP message is larger than the transport holds',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -54,6 +56,15 @@ registerErrorCodes(
 // would be the same constant in eight places waiting to drift again.
 
 /**
+ * The one instruction that is SAFE on both of outcome 1's branches. `server.ts` appends it to the
+ * wire message for a hidden tool and for an absent one alike, and `McpToolUnknownError` is its
+ * in-process twin — one constant, so the sentence an agent reads over `-32601` and the one it
+ * reads from a thrown error cannot drift. It names `tools/list` and nothing about the name it was
+ * given: whether that name exists is exactly what the answer must not say.
+ */
+export const TOOL_UNKNOWN_FIX = 'call tools/list to read the catalog this caller may use';
+
+/**
  * OUTCOME 1 of three: a tool name reached the dispatcher that no VISIBLE tool answers to —
  * the tool is absent, or it exists and this caller's role may never invoke it. One error for
  * both, on purpose. Thrown by in-process callers; over the wire the same condition is
@@ -67,7 +78,7 @@ export class McpToolUnknownError extends UltimateError {
       cause: `no MCP tool named "${input.name}" is visible to this caller (visible: ${
         input.visible.length > 0 ? input.visible.join(', ') : 'none'
       })`,
-      fix: 'call tools/list to read the catalog this caller may use',
+      fix: TOOL_UNKNOWN_FIX,
     });
   }
 }
@@ -321,6 +332,47 @@ export class McpNotBranchDbError extends UltimateError {
       cause: input.cause,
       fix: input.fix,
     });
+  }
+}
+
+/**
+ * One message larger than the transport holds. Its own code, for the reason `X_MCP_RATE_LIMITED`
+ * below is not `X_RATE_LIMITED`: `@ultimat3/http`'s `X_BODY_INVALID` names `bodyLimitBytes` on the
+ * HTTP pipeline, and this route never passes through it — the knob is `mcpHttpRoute`'s (or
+ * `defineAppMcp`'s, which forwards it), and over stdio it is `serveStdio({ lineLimitBytes })`, a
+ * ceiling in characters rather than bytes. One class for both transports, because the condition is
+ * one: the peer sent more in one message than this end agreed to hold, and the two answers must
+ * name the same code so an agent learns it once.
+ *
+ * Measured through ai-maxxing's `POST /mcp` on 2026-09-07: the 413 was a bare `-32600` reading
+ * `request body is at least N bytes, limit is M` — two numbers and no next step, while the 401,
+ * 403 and 429 beside it all carried `{ code, cause, fix }`. A box agent sending a large
+ * `promptSession` had nothing to act on. The fix names both moves, send less or raise the cap,
+ * because which one is right is the author's call: a prompt can be split, a paged result cannot
+ * always be, and a cap set by default was never a decision anyone made about this app.
+ */
+export class McpBodyTooLargeError extends UltimateError {
+  readonly limit: number;
+
+  constructor(input: { transport: 'http' | 'stdio'; limit: number; over?: number | undefined }) {
+    const http = input.transport === 'http';
+    super({
+      code: 'X_MCP_BODY_TOO_LARGE',
+      cause: http
+        ? `request body is at least ${input.over ?? input.limit} bytes, limit is ${input.limit}`
+        : `one message exceeded ${input.limit} characters and was dropped`,
+      fix: http
+        ? 'send less in one request — page a large read, split a long prompt across calls — or raise the cap where the route is built: mcpHttpRoute({ bodyLimitBytes: <n> }) or defineAppMcp({ bodyLimitBytes: <n> })'
+        : 'send one JSON-RPC message per line, each under the cap — split a large tool result into paged calls — or raise it where the transport is started: serveStdio({ lineLimitBytes: <n> })',
+      // The numbers as FIELDS, not only prose: a `--json` reader and the wire's `data` both want
+      // the limit without re-parsing a sentence.
+      meta: {
+        transport: input.transport,
+        limit: input.limit,
+        ...(input.over === undefined ? {} : { over: input.over }),
+      },
+    });
+    this.limit = input.limit;
   }
 }
 

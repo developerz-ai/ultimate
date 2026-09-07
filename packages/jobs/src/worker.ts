@@ -3,7 +3,7 @@
 // bug here — the visibility timeout re-delivers it — but a worker that exits mid-job on EVERY
 // deploy turns "at least once" into "always twice", so draining is on by default.
 
-import type { Clock, Ctx } from '@ultimat3/core';
+import type { ShutdownReason } from '@ultimat3/core';
 import {
   beginWork,
   logger,
@@ -15,18 +15,17 @@ import {
 } from '@ultimat3/core';
 import { nowMs } from './clock';
 import { settleAllBy } from './drain-wait';
-import type { ClaimedJob, JobDriver, QueueStats } from './driver';
+import type { ClaimedJob } from './driver';
 import { DEFAULT_QUEUE } from './driver';
-import { ConcurrencyUnenforceableError } from './errors';
-import type { JobExecution, JobOutcome } from './execute';
+import { ConcurrencyUnenforceableError, JobDrainedError } from './errors';
+import type { JobExecution } from './execute';
 import { getJob, registeredJobs } from './job';
-import type { Limiter } from './limits';
 import { createLimiter } from './limits';
-import { recordQueueDeadJobs, recordQueueOldestReady } from './metrics';
-import type { EventLookup } from './steps';
+import { JOB_OUTCOME_LABELS, recordQueueDeadJobs, recordQueueOldestReady } from './metrics';
 import { createFleetSlots } from './worker-fleet-slots';
 import { resolveWorkerTimings } from './worker-options';
 import { runClaimedJob } from './worker-run';
+import type { Worker, WorkerOptions, WorkerStats } from './worker-types';
 
 /**
  * How often the claim loop republishes `queue_depth`. Its own interval, not `pollIntervalMs`:
@@ -36,56 +35,7 @@ import { runClaimedJob } from './worker-run';
  */
 const QUEUE_DEPTH_INTERVAL_MS = 15_000;
 
-/**
- * `JobOutcome` -> the `jobs_total` label, and `null` for the outcome that is not one. `suspended`
- * is deliberately unmapped: parking a run is control flow, so counting it would make every
- * `step.sleep` read as a finished job and make the failure ratio meaningless.
- */
-const JOB_OUTCOME_LABELS = Object.freeze<Record<JobOutcome, 'ok' | 'failed' | 'dead' | null>>({
-  completed: 'ok',
-  suspended: null,
-  retried: 'failed',
-  'dead-lettered': 'dead',
-});
-
-export interface WorkerOptions {
-  readonly driver: JobDriver;
-  /** Queues this process serves. Default `['default']`. */
-  readonly queues?: readonly string[];
-  /** Slots per queue. A number applies to every queue. */
-  readonly concurrency?: number | Readonly<Record<string, number>>;
-  readonly limiter?: Limiter;
-  readonly clock?: Clock;
-  readonly events?: EventLookup;
-  /** Supplies the ambient Ctx for a job run; the app wires ALS + tenant here. */
-  readonly context: () => Ctx;
-  readonly visibilityTimeoutMs?: number;
-  readonly pollIntervalMs?: number;
-  readonly heartbeatIntervalMs?: number;
-  readonly workerId?: string;
-  /** Default true. Registers a SIGTERM drain via `onShutdown`. */
-  readonly drainOnShutdown?: boolean;
-}
-
-export interface WorkerStats {
-  readonly workerId: string;
-  readonly queues: readonly string[];
-  readonly state: 'idle' | 'running' | 'draining' | 'stopped';
-  readonly inFlight: number;
-  readonly processed: number;
-  readonly failed: number;
-  readonly suspended: number;
-  readonly deadLettered: number;
-  readonly queueDepth: readonly QueueStats[];
-}
-
-export interface Worker {
-  start(): void;
-  /** One claim+run round. Returns jobs processed. Tests drive this instead of the timer. */
-  tick(): Promise<readonly JobExecution[]>;
-  stop(reason?: string): Promise<void>;
-  stats(): Promise<WorkerStats>;
-}
+export type { Worker, WorkerOptions, WorkerStats } from './worker-types';
 
 export function createWorker(options: WorkerOptions): Worker {
   const workerId = options.workerId ?? `worker-${uuid()}`;
@@ -111,6 +61,14 @@ export function createWorker(options: WorkerOptions): Worker {
    * `inFlight` waited on a set the round it was racing had not finished filling.
    */
   const rounds = new Set<Promise<unknown>>();
+  /**
+   * The drain, as every run this worker starts hears it: composed into each run's `ctx.signal`
+   * (`worker-run.ts`), aborted by the `accept` hook with a `JobDrainedError`. ONE controller and
+   * not one per run, because the fact it carries — "this process is going away" — is one fact.
+   * Replaced with a fresh one when a teardown ends: a controller aborted once stays aborted, and
+   * a restarted worker would otherwise hand every job it claimed a signal born cancelled.
+   */
+  let drainSignal = new AbortController();
   let state: WorkerStats['state'] = 'idle';
   let loop: ReturnType<typeof setTimeout> | undefined;
   /**
@@ -125,6 +83,7 @@ export function createWorker(options: WorkerOptions): Worker {
   let failed = 0;
   let suspended = 0;
   let deadLettered = 0;
+  let interrupted = 0;
   let depthPublishedAt = Number.NEGATIVE_INFINITY;
 
   /**
@@ -167,6 +126,7 @@ export function createWorker(options: WorkerOptions): Worker {
       workerId,
       visibilityTimeoutMs,
       heartbeatIntervalMs,
+      drain: drainSignal.signal,
       ...(options.clock === undefined ? {} : { clock: options.clock }),
       ...(options.events === undefined ? {} : { events: options.events }),
     });
@@ -275,6 +235,7 @@ export function createWorker(options: WorkerOptions): Worker {
             if (execution.outcome === 'completed') processed += 1;
             else if (execution.outcome === 'suspended') suspended += 1;
             else if (execution.outcome === 'retried') failed += 1;
+            else if (execution.outcome === 'interrupted') interrupted += 1;
             else deadLettered += 1;
             // The other half of this package's metrics contract: `queue_depth` says how much work
             // is waiting, `jobs_total` says whether any of it is succeeding. Depth alone cannot
@@ -368,19 +329,36 @@ export function createWorker(options: WorkerOptions): Worker {
   };
 
   /**
-   * The whole of the `accept` phase: stop taking work, and nothing else. Synchronous on purpose —
-   * a phase whose job is to be over before the load balancer's next health check must not contain
-   * a wait, and the hook behind this one is somebody else's "stop listening".
+   * The whole of the `accept` phase: stop taking work, tell the work already held, and nothing
+   * else. Synchronous on purpose — a phase whose job is to be over before the load balancer's next
+   * health check must not contain a wait, and the hook behind this one is somebody else's "stop
+   * listening". An abort is synchronous and costs nothing, which is why it belongs HERE and not in
+   * the teardown: core runs `accept`, then waits out in-flight work (every claimed job is
+   * `beginWork()`ed) under the same budget, then `close`. Told in `close`, a body that reads
+   * `ctx.signal` would hear it after the in-flight wait had already spent the whole budget on it —
+   * which is what happened until 2026-09-07: a job that would have stopped in a second was waited
+   * on for the full deadline and abandoned there, exactly like one that ignores the signal.
+   *
+   * Only a SHUTDOWN aborts. A manual `stop()` passes nothing: a caller that asked has no budget
+   * to spend and wants its work finished, the same line `settleAllBy` draws for the wait.
    */
-  const stopAccepting = (): void => {
+  const stopAccepting = (shutdown?: ShutdownReason): void => {
     if (state === 'stopped') return;
     state = 'draining';
     if (loop !== undefined) clearTimeout(loop);
     loop = undefined;
+    if (shutdown === undefined || drainSignal.signal.aborted) return;
+    logger.info('jobs.worker.drain-signalled', {
+      workerId,
+      signal: shutdown.signal,
+      inFlight: inFlight.size,
+    });
+    drainSignal.abort(new JobDrainedError({ workerId, signal: shutdown.signal }));
   };
 
-  const teardown = async (reason: string, deadlineAt?: number): Promise<void> => {
-    stopAccepting();
+  const teardown = async (reason: string, shutdown?: ShutdownReason): Promise<void> => {
+    stopAccepting(shutdown);
+    const deadlineAt = shutdown?.deadlineAt;
     logger.info('jobs.worker.draining', { workerId, reason, inFlight: inFlight.size });
     try {
       // Stop claiming, finish what we hold, then close. Anything else re-runs work on deploy.
@@ -414,10 +392,13 @@ export function createWorker(options: WorkerOptions): Worker {
       state = 'stopped';
       for (const release of releaseShutdownHooks) release();
       releaseShutdownHooks = [];
+      // A run this drain abandoned still follows the old controller through its own composition;
+      // the next start's jobs must not. Fresh here, in the one place a teardown always reaches.
+      drainSignal = new AbortController();
     }
   };
 
-  const stop = async (reason = 'stop', deadlineAt?: number): Promise<void> => {
+  const stop = async (reason = 'stop', shutdown?: ShutdownReason): Promise<void> => {
     // Answered immediately once this worker is done: the teardown always REACHES 'stopped' (its
     // waits are bounded and the state is set in a `finally`), so a caller landing after an
     // abandoned drain gets an answer rather than joining a promise that never settles.
@@ -427,7 +408,7 @@ export function createWorker(options: WorkerOptions): Worker {
     // settles, so a worker that started again tears down again instead of joining a promise that
     // settled a lifetime ago. A close that threw still stopped this worker — the failure is the
     // caller's to see on the promise it awaited, not a teardown to run twice.
-    stopping ??= teardown(reason, deadlineAt).finally(() => {
+    stopping ??= teardown(reason, shutdown).finally(() => {
       stopping = undefined;
     });
     await stopping;
@@ -453,19 +434,22 @@ export function createWorker(options: WorkerOptions): Worker {
       }
       state = 'running';
       logger.info('jobs.worker.started', { workerId, queues });
-      // TWO hooks, for the two phases that answer two questions. `accept` stops claiming and
-      // returns, so every hook behind it — the HTTP server's "stop listening", the sync node's
-      // "stop upgrading" — runs while the budget is still whole; one hook doing both spent all of
-      // it in the phase whose whole purpose is to be quick. `close` waits out what this worker
-      // holds and closes the driver, bounded by the deadline the hook is handed.
+      // TWO hooks, for the two phases that answer two questions. `accept` stops claiming, aborts
+      // every held run's `ctx.signal` and returns, so every hook behind it — the HTTP server's
+      // "stop listening", the sync node's "stop upgrading" — runs while the budget is still whole;
+      // one hook doing both spent all of it in the phase whose whole purpose is to be quick.
+      // `close` waits out what this worker holds and closes the driver, bounded by the deadline
+      // the hook is handed.
       //
       // Both unregisters are kept, never discarded: `stop()` hands them back, so
       // start -> stop -> start holds one pair rather than one per start, each retaining the
       // driver of a worker that is already gone.
       if (options.drainOnShutdown !== false) {
         releaseShutdownHooks = [
-          onShutdown(`jobs.worker.${workerId}.accept`, stopAccepting, { phase: 'accept' }),
-          onShutdown(`jobs.worker.${workerId}`, (reason) => stop('SIGTERM', reason.deadlineAt), {
+          onShutdown(`jobs.worker.${workerId}.accept`, (reason) => stopAccepting(reason), {
+            phase: 'accept',
+          }),
+          onShutdown(`jobs.worker.${workerId}`, (reason) => stop(reason.signal, reason), {
             phase: 'close',
           }),
         ];
@@ -484,6 +468,7 @@ export function createWorker(options: WorkerOptions): Worker {
         failed,
         suspended,
         deadLettered,
+        interrupted,
         queueDepth: [...(await options.driver.stats())],
       };
     },

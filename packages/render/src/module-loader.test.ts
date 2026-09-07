@@ -68,6 +68,29 @@ describe('the JSX prelude resolves from the loader, not from the compiled file',
     }
   });
 
+  /**
+   * `x dev` re-imports an edited route module as `<path>?x-reload=<hash>` — the one cache key Bun
+   * honours — and Bun hands the plugin that path QUERY INCLUDED. An anchored `/\.tsx$/` did not
+   * match it, so the reload fell through to Bun's own loader, which compiles JSX to
+   * `React.createElement`: a `ReferenceError` on the first render of every reloaded page.
+   */
+  test("a query-suffixed .tsx import compiles through this loader, not through Bun's", async () => {
+    installRenderLoader();
+    const root = mkdtempSync(join(tmpdir(), 'ultimate-reload-'));
+    try {
+      const path = join(root, 'page.tsx');
+      await Bun.write(path, 'export const A = () => <p>one</p>;\nexport const factory = __xh;\n');
+      const first = (await import(path)) as { A: () => unknown };
+      await Bun.write(path, 'export const A = () => <p>two</p>;\nexport const factory = __xh;\n');
+      const second = (await import(`${path}?x-reload=2`)) as { A: () => unknown; factory: unknown };
+      expect(first.A()).toEqual(h('p', null, 'one'));
+      expect(second.factory).toBe(h);
+      expect(second.A()).toEqual(h('p', null, 'two'));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('the emitted specifier names the same module the package name does', async () => {
     expect(transformTsx('export const A = () => <p />;')).toContain(JSX_FACTORY_SPECIFIER);
     const viaSpecifier = (await import(JSX_FACTORY_SPECIFIER)) as { h: unknown };
