@@ -285,6 +285,18 @@ describe('a hello names the build the client is on', () => {
     expect(ws.frames.map((frame) => frame.type)).toEqual(['hello', 'hello', 'hello']);
   });
 
+  test('the latest hello is the word: a match and then a skew is told on the skew', async () => {
+    const { ws, socket, route } = nodeOf('build-2', 'build-2');
+
+    await route(hello('build-2'));
+    await route(hello('build-1'));
+
+    // A real client says the same build on every beat; this pins that each hello is READ, not
+    // only the first — the record is whatever the client last claimed.
+    expect(socket.clientBuildId).toBe('build-1');
+    expect(ws.frames.map((frame) => frame.type)).toEqual(['hello', 'hello', 'update-available']);
+  });
+
   test('?build= still works on its own, and the hello re-reports it on every beat', async () => {
     const { ws, route } = nodeOf('build-1', 'build-2');
 

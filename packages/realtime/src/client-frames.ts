@@ -3,6 +3,7 @@
 // every piece of the client a frame may touch, so the blast radius of a new frame kind is a
 // reviewable list rather than "whatever the router could reach through `this`".
 
+import { CLOSE } from './close-codes';
 import { advance } from './cursor';
 import type { JsonObject, JsonValue } from './json';
 import type { Registration, RowWindows } from './live-rows';
@@ -15,16 +16,15 @@ import type { Frame, PresenceMember } from './sync-protocol';
 export type { LiveState, Registration } from './live-rows';
 
 /**
- * The code a `reconnect` frame closes with. Private-use (4000–4999) and the same number the node
- * uses for a drain it closes itself (`CLOSE.drain` in `socket.ts`, not imported: that file is the
- * node's registry and this one is browser code), so a log reads one code for one event whichever
- * side closed first. It was 1001, and a browser refuses that from script: `WebSocket.close()`
- * throws `InvalidAccessError: The close code must be either 1000, or between 3000 and 4999` —
- * measured in Chrome, an uncaught exception in every tab on every node drain. The reconnect still
- * happened, because the node closed the socket a moment later; the exception was the only trace.
+ * The code a `reconnect` frame closes with: `CLOSE.drain`, the same number the node uses for a
+ * drain it closes itself, so a log reads one code for one event whichever side closed first. It
+ * was 1001, and a browser refuses that from script: `WebSocket.close()` throws
+ * `InvalidAccessError: The close code must be either 1000, or between 3000 and 4999` — measured
+ * in Chrome, an uncaught exception in every tab on every node drain. The reconnect still happened,
+ * because the node closed the socket a moment later; the exception was the only trace.
  * `HEARTBEAT_TIMEOUT_CODE` in `client.ts` is the sibling, for the other close the client makes.
  */
-export const RECONNECT_CODE = 4002;
+export const RECONNECT_CODE = CLOSE.drain;
 
 /**
  * Everything an inbound frame is allowed to reach. Narrow on purpose — a router that took the

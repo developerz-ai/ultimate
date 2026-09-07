@@ -50,7 +50,9 @@ export class FakeSocket implements ClientSocket {
   close(code?: number, reason?: string): void {
     if (code !== undefined && code !== 1000 && (code < 3000 || code > 4999)) {
       throw new HarnessMisuse(
-        `The close code must be either 1000, or between 3000 and 4999. ${code} is neither.`,
+        `The close code must be either 1000, or between 3000 and 4999. ${code} is neither. ` +
+          'A client may not send this code; to simulate the network ending the socket, call ' +
+          `socket.disconnect(${code}) instead.`,
       );
     }
     this.closes.push({ code, reason });

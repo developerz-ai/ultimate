@@ -16,18 +16,12 @@ import {
   systemClock,
   uuid,
 } from '@ultimat3/core';
+import { CLOSE } from './close-codes';
 import { encode, type Frame } from './sync-protocol';
 import { AcceptBudget } from './thundering-herd';
 
-export const CLOSE = {
-  normal: 1000,
-  goingAway: 1001,
-  policy: 1008,
-  overloaded: 1013,
-  versionSkew: 4000,
-  idle: 4001,
-  drain: 4002,
-} as const;
+/** Defined in `close-codes.ts`, below both halves; re-exported for the node-side files. */
+export { CLOSE } from './close-codes';
 
 /**
  * The slice of Bun's `ServerWebSocket` this package uses. Structural, so tests need no server.

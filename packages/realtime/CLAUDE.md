@@ -765,9 +765,10 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `DEFAULT_HEARTBEAT_MS`, 15s; `0` disables) sends a `hello` — byte-identical to the opening one,
   since the frame has no resume list to leave out — plus one subscribe frame per topic, which is the
   node's presence heartbeat. It is **not** how a deploy is noticed: `socket.skewed` compares the
-  build the client claims (the `hello`'s `buildId`, which `sawHello` records on every one, or
-  `?build=` on the dial) against this node's, and neither moves while the socket is open, so every
-  `hello` on one socket answers the same forever and `update-available` reaches a client on the
+  build the client claims (the `hello`'s `buildId`, which `sawHello` records on every one — the
+  latest is the record — or `?build=` on the dial) against this node's; a client says the same
+  build on every beat and the node's never moves while the socket is open, so every `hello` on one
+  socket answers the same forever and `update-available` reaches a client on the
   socket it opens against the *new* node. The hello IS read — until 2026-09-07 only the dial was,
   and a dial without `?build=` was recorded as this node's own id, so a client naming its build only
   in the frame was current forever. Two silent windows and the client closes with `4000` and

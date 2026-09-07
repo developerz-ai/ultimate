@@ -200,7 +200,7 @@ Skew handling during a rolling deploy:
 | Asset outside retention | `410 Gone` + `X-Ultimate-Build-Current`; the SW serves the fallback and flips `AppUpdateAvailable` |
 | Action / query with a compatible contract | execute normally |
 | Action / query whose input schema changed incompatibly | `X_BUILD_SKEW` with a `fix:` line |
-| WS handshake | accepted, then an `update-available` frame → signal flips; **the socket is not killed**. The skew is the client's build (`?build=` on the dial, or the `hello` frame's `buildId` — the hello is read on every beat and is the later word) against the node's, so a client learns of a deploy on the socket it opens against the new node — never on one already open |
+| WS handshake | accepted, then an `update-available` frame → signal flips; **the socket is not killed**. The skew is the client's build (`?build=` on the dial, or the `hello` frame's `buildId` — read on every beat, and the latest is the record) against the node's, so a client learns of a deploy on the socket it opens against the new node — never on one already open |
 | Job row enqueued by build A, claimed by a build-B worker | runs; the step memo is build-independent, and a removed step name fails loudly rather than silently skipping |
 
 | Rule | Reason |

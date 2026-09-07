@@ -35,7 +35,9 @@ documented API.
   never received `update-available`. Measured on ai-maxxing: a page sending `buildId: "dev"` in
   every hello to a node on `46db23f57d6ef969`, and nothing came. `SyncSocket.sawHello(buildId)`
   records the frame's id before `skewed` is asked, so either channel works — `?build=` still does,
-  and the hello's word, being the later one, wins. The `LiveClient` never held a URL (`connect` is
+  every hello is read, and the latest is the record. `CLOSE` moved to `close-codes.ts`, a leaf
+  below both halves, so the client's `RECONNECT_CODE` IS `CLOSE.drain` rather than a second `4002`;
+  `socket.ts` re-exports it and every existing import stands. The `LiveClient` never held a URL (`connect` is
   the app's closure), so nothing on the client side changes: an app that appended `?build=` by hand
   may keep it or drop it.
 
