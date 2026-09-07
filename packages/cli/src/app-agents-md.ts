@@ -15,11 +15,22 @@ export interface AgentsMdOutcome {
   readonly warnings: readonly string[];
 }
 
-/** `assertAgentsMd` throws `X_AGENTS_MD_*`; a gate step reports, so the error becomes a finding. */
-export async function checkAgentsMd(root: string): Promise<AgentsMdOutcome> {
+/**
+ * `assertAgentsMd` throws `X_AGENTS_MD_*`; a gate step reports, so the error becomes a finding.
+ *
+ * `maxBytes` is this repository's own budget, out of `x.verify.json`, and `undefined` means the
+ * 12kB default. `@ultimat3/manifest` has taken the option since it was written and this function
+ * never passed one, so the default was the only budget any app could have: a repository whose
+ * conventions genuinely need more room had to delete a rule to make space, which is the opposite
+ * of what a context-file budget is for.
+ */
+export async function checkAgentsMd(root: string, maxBytes?: number): Promise<AgentsMdOutcome> {
   const path = join(root, AGENTS_MD_FILENAME);
   try {
-    const { warnings } = await assertAgentsMd({ path });
+    const { warnings } = await assertAgentsMd({
+      path,
+      ...(maxBytes === undefined ? {} : { maxBytes }),
+    });
     return { findings: [], warnings };
   } catch (error) {
     return { findings: [{ ...findingFrom(error), at: AGENTS_MD_FILENAME }], warnings: [] };

@@ -15,6 +15,33 @@ Round 4, 2026-09-07: two more from the same app, both in `@ultimat3/realtime` an
 a real browser (headless Chrome over CDP) against the dev sync node. Nothing here changes a
 documented API.
 
+Round 5, 2026-09-07: two gate seams the same app walked into — a budget the library takes and the
+gate never passed, and a rule the gate refuses that the scaffold never wrote down.
+
+### Added
+
+- A repository can set its own `AGENTS.md` budget, as `"agentsMdMaxBytes"` in `x.verify.json`.
+  `@ultimat3/manifest`'s `checkAgentsMd`/`assertAgentsMd` have taken a `maxBytes` since they were
+  written and the CLI never passed one, so the 12kB default was the only budget any app could
+  have — and an app whose conventions genuinely need more room had no move left but to delete a
+  rule to make space, which is the opposite of what a context-file budget is for. Measured on
+  ai-maxxing: an `AGENTS.md` at 11,996B, four bytes under the ceiling, where adding one
+  non-negotiable meant removing another. It lives in `x.verify.json` rather than `x.config.ts`
+  because that is the file that configures the GATE, and it is read by the very step that
+  enforces the budget — so raising it is a small, visible number a reviewer sees in a diff. A
+  value that is not a positive whole number is reported as a floor problem rather than falling
+  back to the default: a floor saying `"16kb"` and quietly ignored is a repository that believes
+  it raised a budget it did not, and finds out when the gate goes red on a commit that changed
+  nothing.
+- The generated `AGENTS.md` names the line ceiling. `checkFileSizes` has refused a file over
+  `LINE_CEILING` with `X_FILE_TOO_LONG` for as long as the step has existed, and the rules table
+  `x new` writes listed nine rules and not that one — so the first an author heard of a 500-line
+  ceiling was the gate going red on a file already finished. The row names the code that refuses
+  it, like every other row, and the prose names the single exemption (a pure re-export manifest)
+  so a legitimately long index is not filed as a bug. A test pins the number in the prose to
+  `LINE_CEILING` itself, because a ceiling documented as a different number is worse than one that
+  is not documented at all.
+
 ### Fixed
 
 - The client closes a drained socket with a code a browser accepts. The `reconnect` frame's

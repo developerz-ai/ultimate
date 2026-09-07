@@ -8,6 +8,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
+import { AGENTS_MD_MAX_BYTES } from '@ultimat3/manifest';
 import type { Finding } from './output';
 import { VERIFY_STEP_NAMES } from './verify-step';
 
@@ -17,8 +18,43 @@ export const VERIFY_FLOOR_FILE = 'x.verify.json';
 export interface VerifyFloor {
   /** Declared step names this run may not report as skipped. */
   readonly steps: readonly string[];
+  /**
+   * This repository's `AGENTS.md` budget, in bytes, when it declares one. `@ultimat3/manifest`
+   * has always taken a `maxBytes` and the gate never passed one, so the 12kB default was the only
+   * budget an app could have — and an app whose conventions genuinely need more had no move left
+   * but to delete a rule to make room, which is the opposite of what the budget is for.
+   *
+   * It is here rather than in `x.config.ts` because this is the file that configures the GATE,
+   * and it is read by the very step that enforces the budget. Raising it is a commit a reviewer
+   * sees, which is the whole safeguard: the number is small, visible, and argued for in one place.
+   */
+  readonly agentsMdMaxBytes?: number;
   /** Why part of the file is not a floor. The `manifest` step reports these; nothing swallows them. */
   readonly problems: readonly string[];
+}
+
+/** The floor's budget key. Named once: the problem quotes it and the fix repairs it. */
+export const BUDGET_FIELD = 'agentsMdMaxBytes';
+
+/**
+ * `agentsMdMaxBytes`, or a reason it is not one. A budget that is not a positive whole number is
+ * the caller's bug and must not silently fall back to the default: a floor file that says
+ * `"agentsMdMaxBytes": "16kb"` and is quietly ignored is a repository that believes it raised a
+ * budget it did not, and finds out when the gate goes red on a commit that changed nothing.
+ */
+function readBudget(payload: Record<string, unknown> | undefined): {
+  budget?: number;
+  problems: readonly string[];
+} {
+  const raw = payload?.[BUDGET_FIELD];
+  if (raw === undefined) return { problems: [] };
+  if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw <= 0)
+    return {
+      problems: [
+        `"${BUDGET_FIELD}" is ${JSON.stringify(raw)}, which is not a positive whole number of bytes`,
+      ],
+    };
+  return { budget: raw, problems: [] };
 }
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
@@ -48,19 +84,27 @@ export function parseVerifyFloor(
     // was meant to make the path safe (`metrics-endpoint.ts` states the same rule over `stringField`).
     return { steps: [], problems: [`it does not parse as JSON (${renderThrowable(error)})`] };
   }
-  const steps = asRecord(payload)?.['steps'];
+  const record = asRecord(payload);
+  const budget = readBudget(record);
+  const steps = record?.['steps'];
   if (!Array.isArray(steps)) {
-    return { steps: [], problems: ['it has no "steps" array of step names'] };
+    return {
+      steps: [],
+      ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
+      problems: ['it has no "steps" array of step names', ...budget.problems],
+    };
   }
   const named = steps.filter((step): step is string => typeof step === 'string');
   const unknown = named.filter((step) => !declared.includes(step));
   return {
     steps: named.filter((step) => declared.includes(step)),
+    ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
     problems: [
       ...(named.length === steps.length ? [] : ['"steps" holds an entry that is not a string']),
       ...(unknown.length === 0
         ? []
         : [`"steps" names ${unknown.join(', ')}, which x verify does not run`]),
+      ...budget.problems,
     ],
   };
 }
@@ -129,7 +173,19 @@ export const floorProblemFindings = (floor: VerifyFloor | undefined): readonly F
   (floor?.problems ?? []).map((problem) => ({
     code: 'X_CONFIG_INVALID',
     cause: `${VERIFY_FLOOR_FILE} is not a suite floor: ${problem}`,
-    fix: `x verify --json   # then write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps it ran`,
+    fix: fixFor(problem),
     docs: ERROR_DOCS_URL,
     at: VERIFY_FLOOR_FILE,
   }));
+
+/**
+ * The edit that repairs THIS problem, not the file in general. The steps-shaped fix is useless
+ * against a bad budget — it prints a `{"steps":[…]}` example with no `agentsMdMaxBytes` in it, so
+ * an author who followed it verbatim would still have the value that failed. A finding whose fix
+ * does not fix it is the failure `packages/cli/CLAUDE.md` names, and the budget is the first
+ * problem this file can report that is not about `steps` at all.
+ */
+const fixFor = (problem: string): string =>
+  problem.includes(`"${BUDGET_FIELD}"`)
+    ? `x verify --json   # then set "${BUDGET_FIELD}" in ${VERIFY_FLOOR_FILE} to a positive whole number of bytes, or drop the key for the ${AGENTS_MD_MAX_BYTES}B default`
+    : `x verify --json   # then write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps it ran`;

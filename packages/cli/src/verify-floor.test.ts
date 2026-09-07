@@ -11,11 +11,13 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { AGENTS_MD_MAX_BYTES } from '@ultimat3/manifest';
 import { fixProblem } from './error-contract';
 import { explainErrorCode } from './mcp-errors';
 import { parseArgs } from './parse';
 import { commandFor, SPECS } from './registry';
 import {
+  BUDGET_FIELD,
   floorProblemFindings,
   floorRequires,
   parseVerifyFloor,
@@ -217,5 +219,79 @@ describe('unit · the suite floor', () => {
       expect(explained?.fix).toContain(`drop its name from ${VERIFY_FLOOR_FILE}`);
       expect(explained?.docs).toBe(finding.docs);
     });
+  });
+});
+
+// --------------------------------------------------------------------------------------------
+// The `AGENTS.md` budget. `@ultimat3/manifest` has taken a `maxBytes` since it was written and
+// the gate never passed one, so 12kB was the only budget any repository could have — and one
+// whose conventions genuinely need more room had to delete a rule to make space.
+// --------------------------------------------------------------------------------------------
+
+describe('the AGENTS.md budget a repository declares for itself', () => {
+  test('a positive whole number of bytes is carried, beside the steps', () => {
+    const floor = parse('{"steps":["unit"],"agentsMdMaxBytes":14000}');
+    expect(floor.agentsMdMaxBytes).toBe(14_000);
+    expect(floor.steps).toEqual(['unit']);
+    expect(floor.problems).toEqual([]);
+  });
+
+  test('a floor that declares none leaves the key off, which is what "use the default" means', () => {
+    const floor = parse('{"steps":["unit"]}');
+    expect('agentsMdMaxBytes' in floor).toBe(false);
+    expect(floor.problems).toEqual([]);
+  });
+
+  test('a budget that is not a number is a problem, never a silent fall back to the default', () => {
+    // The failure this closes: a floor saying `"16kb"`, quietly ignored, is a repository that
+    // believes it raised a budget it did not — and finds out when the gate goes red on a commit
+    // that changed nothing in the file it is red about.
+    for (const bad of ['"16kb"', 'null', 'true', '[14000]', '12.5', '0', '-1']) {
+      const floor = parse(`{"steps":["unit"],"agentsMdMaxBytes":${bad}}`);
+      expect(floor.agentsMdMaxBytes).toBeUndefined();
+      expect(floor.problems.join(' ')).toContain('not a positive whole number of bytes');
+    }
+  });
+
+  test('a bad budget is reported even when "steps" is the thing that is missing', () => {
+    const floor = parse('{"agentsMdMaxBytes":"16kb"}');
+    expect(floor.problems).toHaveLength(2);
+    expect(floor.problems.join(' ')).toContain('no "steps" array');
+    expect(floor.problems.join(' ')).toContain('not a positive whole number');
+  });
+
+  test('a valid budget survives a floor whose steps are missing, so one edit fixes one thing', () => {
+    expect(parse('{"agentsMdMaxBytes":14000}').agentsMdMaxBytes).toBe(14_000);
+  });
+});
+
+describe('a floor problem carries the edit that repairs THAT problem', () => {
+  test('a bad budget names the budget key, not a steps-shaped example without it', () => {
+    // The steps fix prints `{"steps":[…]}` with no budget in it, so an author who ran it
+    // verbatim would still hold the value that failed — a finding whose fix does not fix it.
+    const [finding] = floorProblemFindings(parse('{"steps":["unit"],"agentsMdMaxBytes":"16kb"}'));
+    expect(finding?.code).toBe('X_CONFIG_INVALID');
+    expect(finding?.cause).toContain(BUDGET_FIELD);
+    expect(finding?.fix).toContain(BUDGET_FIELD);
+    expect(finding?.fix).toContain('positive whole number of bytes');
+    // And it names the default, so "drop the key" is an answer with a number behind it.
+    expect(finding?.fix).toContain(String(AGENTS_MD_MAX_BYTES));
+  });
+
+  test('a steps problem still gets the steps fix, unchanged', () => {
+    const [finding] = floorProblemFindings(parse('{"steps":["nosuchstep"]}'));
+    expect(finding?.fix).toContain('"steps"');
+    expect(finding?.fix).not.toContain(BUDGET_FIELD);
+  });
+
+  test('both problems at once each get their own fix', () => {
+    const findings = floorProblemFindings(parse('{"steps":["nosuchstep"],"agentsMdMaxBytes":0}'));
+    expect(findings).toHaveLength(2);
+    expect(findings.filter((f) => f.fix.includes(BUDGET_FIELD))).toHaveLength(1);
+  });
+
+  test('every fix is one runnable command, whichever problem it answers', () => {
+    for (const finding of floorProblemFindings(parse('{"agentsMdMaxBytes":"16kb"}')))
+      expect(finding.fix.startsWith('x verify')).toBe(true);
   });
 });

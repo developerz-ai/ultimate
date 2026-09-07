@@ -304,12 +304,15 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // vanish, so a typo in the floor covers nothing — which is the false green the floor exists to
     // close, and it is only visible if something reads the file for its own sake.
     async run(ctx) {
-      const agents = await checkAgentsMd(ctx.root);
+      // The floor is read FIRST: it is where a repository declares its own `AGENTS.md` budget,
+      // and reading it after the check would enforce the default on a repo that raised it.
+      const floor = await readVerifyFloor(ctx.root);
+      const agents = await checkAgentsMd(ctx.root, floor?.agentsMdMaxBytes);
       const findings = [
         ...manifestMissingFindings(ctx.root),
         ...(await driftFindings(ctx.root)),
         ...(await envExampleFindings(ctx.root)),
-        ...floorProblemFindings(await readVerifyFloor(ctx.root)),
+        ...floorProblemFindings(floor),
         ...agents.findings,
         ...(await hostFindings(ctx, 'manifest')),
       ];
