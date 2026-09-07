@@ -11,7 +11,33 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 Round 3 from ai-maxxing, 2026-09-06: three defects a live app measured against 19.2.0 and 19.3.1
 source, each fixed at the seam with a test. Nothing here changes a documented API.
 
+Round 4, 2026-09-07: two more from the same app, both in `@ultimat3/realtime` and both measured in
+a real browser (headless Chrome over CDP) against the dev sync node. Nothing here changes a
+documented API.
+
 ### Fixed
+
+- The client closes a drained socket with a code a browser accepts. The `reconnect` frame's
+  handler called `WebSocket.close(1001, reason)`, and a browser refuses 1001 from script before it
+  does anything else: `Uncaught InvalidAccessError: The close code must be either 1000, or between
+  3000 and 4999. 1001 is neither.` — an uncaught exception in every tab on every node drain. The
+  reconnect still happened, because the node closes the socket itself a moment later; the exception
+  was the only trace, and it was in every tab. It closes with `RECONNECT_CODE` (4002) now — the
+  private-use range, and the same number the node's own `CLOSE.drain` uses, so a log reads one code
+  for one event whichever side closed first; `HEARTBEAT_TIMEOUT_CODE` (4000) is its sibling. The
+  test harness's fake socket now refuses every code a browser refuses, so no client suite can pass
+  on one; the tests that simulated a lost connection through `close(1006)` — the code a browser
+  only ever REPORTS — say `disconnect()` instead.
+- The sync node reads the build id the `hello` frame carries. `hello.buildId` is the documented
+  place a client names its build (`HelloFrame`, `sync-protocol.ts`), and the node never read it:
+  `clientBuildId` came from the dial's `?build=` alone and defaulted to the node's OWN id when the
+  query was absent, so a client naming its build only in the frame was deemed current forever and
+  never received `update-available`. Measured on ai-maxxing: a page sending `buildId: "dev"` in
+  every hello to a node on `46db23f57d6ef969`, and nothing came. `SyncSocket.sawHello(buildId)`
+  records the frame's id before `skewed` is asked, so either channel works — `?build=` still does,
+  and the hello's word, being the later one, wins. The `LiveClient` never held a URL (`connect` is
+  the app's closure), so nothing on the client side changes: an app that appended `?build=` by hand
+  may keep it or drop it.
 
 - The surface stylesheet no longer carries Sass's byte-order mark mid-file. Dart Sass writes a
   leading U+FEFF at the head of any compressed output holding a non-ASCII character — a

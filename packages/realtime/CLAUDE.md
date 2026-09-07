@@ -765,9 +765,12 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `DEFAULT_HEARTBEAT_MS`, 15s; `0` disables) sends a `hello` — byte-identical to the opening one,
   since the frame has no resume list to leave out — plus one subscribe frame per topic, which is the
   node's presence heartbeat. It is **not** how a deploy is noticed: `socket.skewed` compares the
-  build id recorded at the upgrade against this node's, both fixed for the socket's life, so every
+  build the client claims (the `hello`'s `buildId`, which `sawHello` records on every one, or
+  `?build=` on the dial) against this node's, and neither moves while the socket is open, so every
   `hello` on one socket answers the same forever and `update-available` reaches a client on the
-  socket it opens against the *new* node. Two silent windows and the client closes with `4000` and
+  socket it opens against the *new* node. The hello IS read — until 2026-09-07 only the dial was,
+  and a dial without `?build=` was recorded as this node's own id, so a client naming its build only
+  in the frame was current forever. Two silent windows and the client closes with `4000` and
   arms the reconnect. It is one
   self-re-arming tick on the injected `Scheduler`, not an interval: a client is either beating on a
   live socket or backing off toward a new one, never both. The 15s is the client's OWN number:

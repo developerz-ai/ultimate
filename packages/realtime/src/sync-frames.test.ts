@@ -236,25 +236,23 @@ describe('what a successful mutation answers with', () => {
 });
 
 /**
- * The heartbeat's `hello` was documented as how a client that stays up across a deploy hears about
- * it. It cannot be: skew is `clientBuildId` (readonly, recorded at the upgrade) against this node's
- * own build, and neither can change while the socket is open — so the answer is a property of the
- * socket, fixed for its whole life, and a beat can only ever hear what the first `hello` heard. A
- * client learns about a deploy on the socket it opens against the *new* node.
+ * Skew is the client's word against this node's build, and the client has two ways to say it: the
+ * upgrade URL's `?build=` (what `sync-upgrade.ts` records) and the `hello` frame's `buildId` (the
+ * documented one, `HelloFrame`). Until 2026-09-07 only the URL was read: a socket upgraded without
+ * `?build=` defaulted to the node's OWN id, so a client that said `hello` with any build at all was
+ * deemed current forever — measured on ai-maxxing, a page sending `buildId: "dev"` in every hello
+ * to a node on `46db23f57d6ef969`, and no `update-available` ever came. Either channel works now.
  */
-describe('what a hello answers is fixed when the socket is accepted', () => {
-  const helloFrame: Frame = {
-    type: 'hello',
-    v: PROTOCOL_VERSION,
-    buildId: 'whatever-the-client-says',
-    sessionId: null,
-    actorId: null,
-  };
+describe('a hello names the build the client is on', () => {
+  function hello(buildId: string): Frame {
+    return { type: 'hello', v: PROTOCOL_VERSION, buildId, sessionId: null, actorId: null };
+  }
 
+  /** `clientBuildId` is what the upgrade recorded; without `?build=` that is the node's own id. */
   function nodeOf(
     clientBuildId: string,
     serverBuildId: string,
-  ): { ws: FakeWs; beat: () => Promise<void> } {
+  ): { ws: FakeWs; socket: SyncSocket; route: (frame: Frame) => Promise<void> } {
     const transport = new InProcessTransport();
     const sockets = new SocketRegistry();
     const ws = new FakeWs();
@@ -265,24 +263,33 @@ describe('what a hello answers is fixed when the socket is accepted', () => {
       registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
       buildId: serverBuildId,
     });
-    return { ws, beat: () => route(socket, helloFrame) };
+    return { ws, socket, route: (frame) => route(socket, frame) };
   }
 
-  test('an up-to-date socket is never told about an update, however long it beats', async () => {
-    const { ws, beat } = nodeOf('build-1', 'build-1');
+  test('a socket upgraded without ?build= that says hello from another build is told', async () => {
+    const { ws, socket, route } = nodeOf('build-2', 'build-2');
 
-    for (let i = 0; i < 3; i += 1) await beat();
+    await route(hello('build-1'));
 
-    // Three beats, three plain hellos. Nothing here can turn into an `update-available` later:
-    // the frame's own `buildId` is not read, and both ids the answer derives from are readonly.
+    expect(socket.clientBuildId).toBe('build-1');
+    expect(ws.frames.map((frame) => frame.type)).toEqual(['hello', 'update-available']);
+  });
+
+  test('a socket upgraded without ?build= that says hello from this build is not', async () => {
+    const { ws, route } = nodeOf('build-2', 'build-2');
+
+    for (let i = 0; i < 3; i += 1) await route(hello('build-2'));
+
+    // Three beats, three plain hellos: the client's build and the node's are both fixed for the
+    // socket's life, so a beat can only ever hear what the first hello heard.
     expect(ws.frames.map((frame) => frame.type)).toEqual(['hello', 'hello', 'hello']);
   });
 
-  test('a skewed socket is told on every hello, because the first one already knew', async () => {
-    const { ws, beat } = nodeOf('build-1', 'build-2');
+  test('?build= still works on its own, and the hello re-reports it on every beat', async () => {
+    const { ws, route } = nodeOf('build-1', 'build-2');
 
-    await beat();
-    await beat();
+    await route(hello('build-1'));
+    await route(hello('build-1'));
 
     expect(ws.frames.map((frame) => frame.type)).toEqual([
       'hello',

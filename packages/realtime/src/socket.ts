@@ -49,7 +49,11 @@ export interface WsLike {
 
 export interface SyncSocketOptions {
   readonly ws: WsLike;
-  /** Build id the *client* reported in `hello`. Version skew is a first-class connection state. */
+  /**
+   * Build id the *client* reported on the dial (`?build=`), or this node's own when it sent none;
+   * `sawHello` overwrites it with what the `hello` frame says. Version skew is a first-class
+   * connection state.
+   */
   readonly clientBuildId: string;
   readonly serverBuildId: string;
   readonly actor?: Actor | null;
@@ -113,7 +117,6 @@ export function actorIdOf(actor: Actor | null): string | null {
  */
 export class SyncSocket {
   readonly id: string;
-  readonly clientBuildId: string;
   readonly serverBuildId: string;
   readonly openedAt: number;
   /** Channel topics (tier 1). Live-query subscriptions are keyed separately, by sid. */
@@ -149,13 +152,14 @@ export class SyncSocket {
   readonly #clock: Clock;
   readonly #maxBufferedBytes: number;
   readonly #maxDroppedFrames: number;
+  #clientBuildId: string;
   #closed = false;
 
   constructor(options: SyncSocketOptions) {
     this.#ws = options.ws;
     this.#clock = options.clock ?? systemClock;
     this.id = options.id ?? uuid();
-    this.clientBuildId = options.clientBuildId;
+    this.#clientBuildId = options.clientBuildId;
     this.serverBuildId = options.serverBuildId;
     this.actor = options.actor ?? null;
     this.#maxBufferedBytes = options.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES;
@@ -185,9 +189,26 @@ export class SyncSocket {
     return this.#closed;
   }
 
+  /** The build the client last claimed: the dial's `?build=`, then whatever its `hello` said. */
+  get clientBuildId(): string {
+    return this.#clientBuildId;
+  }
+
+  /**
+   * The `hello` frame is the documented place a client names its build, and until 2026-09-07 the
+   * node never read it: `clientBuildId` came from the dial's `?build=` alone and defaulted to this
+   * node's OWN id when the query was absent — so a client that said `hello` from any build at all
+   * was deemed current forever, and `update-available` never came. Measured on ai-maxxing: a page
+   * sending `buildId: "dev"` in every hello to a node on `46db23f57d6ef969`. The last word wins,
+   * and the hello is the later one; `?build=` still works for a dial that carries it.
+   */
+  sawHello(buildId: string): void {
+    this.#clientBuildId = buildId;
+  }
+
   /** A skewed client gets an `update-available` frame; it is never silently served a new shape. */
   get skewed(): boolean {
-    return this.clientBuildId !== this.serverBuildId;
+    return this.#clientBuildId !== this.serverBuildId;
   }
 
   /** `false` means the frame was dropped by backpressure — the caller must mark state stale. */

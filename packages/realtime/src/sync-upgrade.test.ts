@@ -141,3 +141,31 @@ describe('the connection cap is re-asked after authenticate, not only before it'
     expect(shed[0]?.headers.get('retry-after-ms')).not.toBeNull();
   });
 });
+
+/**
+ * The URL half of the build id. The `hello` frame is the other half (`sync-frames.test.ts`), and
+ * the two must agree on what "absent" means: a dial without `?build=` records the node's own id,
+ * which is "current until the hello says otherwise" — never "current forever".
+ */
+describe('the upgrade records ?build= when the dial carries one', () => {
+  function upgrade(url: string): Promise<WsData | null> {
+    let data: WsData | null = null;
+    const server: UpgradeTarget = {
+      upgrade(_request: Request, upgradeOptions: { data: WsData }): boolean {
+        data = upgradeOptions.data;
+        return true;
+      },
+    };
+    return handleUpgrade(rig({ accepts: true }).deps, new Request(url), server).then(() => data);
+  }
+
+  test('a dial with ?build= is recorded as that build', async () => {
+    const data = await upgrade('http://node/_x/sync?build=build-2');
+    expect(data?.clientBuildId).toBe('build-2');
+  });
+
+  test('a dial without it is recorded as this node, for the hello to correct', async () => {
+    const data = await upgrade('http://node/_x/sync');
+    expect(data?.clientBuildId).toBe('build-1');
+  });
+});

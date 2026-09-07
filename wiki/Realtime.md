@@ -412,7 +412,7 @@ Full drain sequence per role: [Deployment](Deployment).
 
 ## Build skew
 
-A client on build `A` connecting to a `sync` node on build `B` is **accepted**, then sent an `update-available` frame carrying the node's `buildId`; the socket is not killed. Skew is decided **at the upgrade**, from `?build=` against the node's own build id, and it is a property of that socket for its lifetime — a client learns about a deploy on the socket it opens against the new node, never on one it is already holding. Every `hello` on that socket re-reports the same answer, the heartbeat's included. The client's `AppUpdateAvailable` signal flips and the app renders its own update affordance. See [PWA and offline](PWA-And-Offline).
+A client on build `A` connecting to a `sync` node on build `B` is **accepted**, then sent an `update-available` frame carrying the node's `buildId`; the socket is not killed. Skew is the build the client claims against the node's own: `?build=` on the dial, and the `hello` frame's `buildId`, which the node records on every hello and which is the later word — a dial without `?build=` starts as "not skewed" and the first hello settles it. Neither side's build moves while a socket is open, so the answer is a property of that socket for its lifetime — a client learns about a deploy on the socket it opens against the new node, never on one it is already holding. Every `hello` on that socket re-reports the same answer, the heartbeat's included. The client's `AppUpdateAvailable` signal flips and the app renders its own update affordance. See [PWA and offline](PWA-And-Offline).
 
 ## Errors
 
