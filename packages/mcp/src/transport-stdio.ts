@@ -12,7 +12,7 @@ import { finiteCount } from '@ultimat3/core';
 import { McpBodyTooLargeError } from './errors';
 import type { McpCaller } from './registry';
 import type { McpServer } from './server';
-import { errorResponse, INVALID_REQUEST, PARSE_ERROR } from './wire';
+import { errorResponse, INVALID_REQUEST, PARSE_ERROR, refusalMessage } from './wire';
 
 /**
  * Characters held for ONE message that has not ended yet. `transport-http.ts` caps the same wire at
@@ -99,7 +99,10 @@ export async function serveStdio(config: StdioTransportInput): Promise<void> {
  */
 function overLimit(limit: number): ReturnType<typeof errorResponse> {
   const refusal = new McpBodyTooLargeError({ transport: 'stdio', limit });
-  return errorResponse(null, INVALID_REQUEST, refusal.cause, {
+  // `message` carries the fix as the HTTP 413's does: a peer reading nothing but `message` still
+  // learns the next move. The two transports' words differ — a line is not a body — and the SHAPE
+  // is the one `refusalMessage` owns.
+  return errorResponse(null, INVALID_REQUEST, refusalMessage(refusal), {
     code: refusal.code,
     cause: refusal.cause,
     fix: refusal.fix,
@@ -125,7 +128,7 @@ async function handleLine(
     return;
   }
 
-  const response = await server.handle(body, caller);
+  const response = await server.handle(body, caller, { transport: 'stdio' });
   // `null` means notification: emit nothing at all, or the peer sees a phantom reply.
   if (response === null) return;
   await write(`${JSON.stringify(response)}\n`);

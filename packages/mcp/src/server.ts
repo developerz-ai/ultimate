@@ -26,6 +26,23 @@ import {
   resultResponse,
 } from './wire';
 
+/**
+ * Which wire one message arrived on, so a refusal can name the unit THAT transport counts in.
+ * `handle` is transport-independent and stays so — this is a hint for the wording of one fix, never
+ * a branch in dispatch. HTTP carries its mounted path because `mcpHttpRoute({ path })` is a knob:
+ * a batch refusal that told every client to retry `POST /mcp` was wrong for an app mounted at
+ * `/app-mcp`, which is how this came to be threaded rather than spelled.
+ */
+export type McpWire =
+  | { readonly transport: 'http'; readonly path: string }
+  | { readonly transport: 'stdio' };
+
+/** The unit a transport counts one request in — or the neutral word when no wire said. */
+const messageUnitOf = (wire: McpWire | undefined): string => {
+  if (wire === undefined) return 'message';
+  return wire.transport === 'http' ? `POST ${wire.path}` : 'line';
+};
+
 export interface CreateMcpServerInput {
   readonly tools?: readonly AnyMcpTool[];
   readonly resources?: readonly McpResource[];
@@ -72,18 +89,24 @@ export class McpServer {
     this.serverInfo = serverInfo;
   }
 
-  async handle(body: unknown, caller: McpCaller): Promise<JsonRpcResponse | null> {
+  async handle(
+    body: unknown,
+    caller: McpCaller,
+    wire?: McpWire | undefined,
+  ): Promise<JsonRpcResponse | null> {
     // A batch is legal JSON-RPC 2.0 and this server does not walk one: one call, one answer, one
     // rate-limit class. Refused BY NAME rather than falling through to the envelope check below —
     // an array is not an envelope, so it did, and a client sending a batch got the same bare
     // `-32600` as `{ not: 'jsonrpc' }` with no word that batching was the problem. Measured
-    // through ai-maxxing's `POST /mcp` on 2026-09-07.
+    // through ai-maxxing's `POST /mcp` on 2026-09-07. The `message` is the same on every wire;
+    // only the fix names the unit — `POST <path>` as mounted, or a line — and only when the
+    // transport said which it is.
     if (Array.isArray(body)) {
       return protocolRefusal(
         'a JSON-RPC batch (an array of requests) is not supported: send one request per message',
         new McpProtocolError({
           cause: 'the body is a JSON-RPC batch, and this server answers one request per message',
-          fix: 'send one request per POST /mcp over HTTP, one request per line over stdio — a batch is never walked, so its calls did not run',
+          fix: `send one request per ${messageUnitOf(wire)} — a batch is never walked, so its calls did not run`,
         }),
       );
     }
