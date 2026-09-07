@@ -48,6 +48,25 @@ describe('the AGENTS.md gate', () => {
     });
   });
 
+  test("a repository's own budget is honoured, above the default and below it", async () => {
+    // The seam this closes: `@ultimat3/manifest` has taken `maxBytes` since it was written, and
+    // this function never passed one — so 12kB was the only budget any app could have, and one
+    // whose conventions genuinely need more room had to delete a rule to make space. The budget
+    // comes from `x.verify.json`, which is a commit a reviewer sees.
+    await withRoot(async (root) => {
+      const oversized = 'x'.repeat(AGENTS_MD_MAX_BYTES + 1);
+      await Bun.write(join(root, AGENTS_MD_FILENAME), oversized);
+      expect(await checkAgentsMd(root, AGENTS_MD_MAX_BYTES + 2)).toEqual({
+        findings: [],
+        warnings: [],
+      });
+      // And it tightens as readily as it loosens: a repo may hold itself to less than the default.
+      const tightened = await checkAgentsMd(root, 100);
+      expect(tightened.findings[0]?.code).toBe('X_AGENTS_MD_TOO_LARGE');
+      expect(tightened.findings[0]?.cause).toContain('100B budget');
+    });
+  });
+
   test('a short hand-written file passes with nothing to say', async () => {
     await withRoot(async (root) => {
       await Bun.write(join(root, AGENTS_MD_FILENAME), '# AGENTS.md\n\nBun only. Run x verify.\n');

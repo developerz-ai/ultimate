@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ValidationIssue } from '@ultimat3/schema';
 import { parse, t, ValidationFailedError } from '@ultimat3/schema';
 import { SPECS } from '../registry';
+import { LINE_CEILING } from '../workspace-checks';
 import { names } from './naming';
 import { claudeFiles } from './scaffold-claude';
 import { docsFiles } from './scaffold-docs';
@@ -171,5 +172,42 @@ describe('unit · the .claude bundle stays deletable and self-contained', () => 
       .map((file) => file.path);
     for (const banned of ['new-model', 'new-route', 'new-service', 'generate'])
       expect(commands.some((path) => path.includes(banned))).toBe(false);
+  });
+});
+
+// --------------------------------------------------------------------------------------------
+// The rules table an app is born with. A rule the gate refuses and the table omits is worse than
+// an unenforced rule: the author finds out it exists when the gate goes red on work already done.
+// --------------------------------------------------------------------------------------------
+
+describe('unit · the generated AGENTS.md names every rule the gate actually refuses', () => {
+  // `contents` is `string | Uint8Array` because the same shape carries binary files; AGENTS.md is
+  // prose, and a test that asserted over the union would be asserting about the wrong thing.
+  const agentsMd = (): string => {
+    const file = docsFiles(app).find((generated) => generated.path === 'AGENTS.md');
+    if (file === undefined) throw new TypeError('x new writes no AGENTS.md');
+    if (typeof file.contents !== 'string')
+      throw new TypeError('AGENTS.md is generated as bytes, not prose');
+    return file.contents;
+  };
+
+  test('the line ceiling has a row, with the code that refuses it', () => {
+    // It is enforced by `checkFileSizes` and was in no row for the whole life of the template, so
+    // the first an author heard of a 500-line ceiling was `X_FILE_TOO_LONG` on a finished file.
+    const text = agentsMd();
+    expect(text).toContain('X_FILE_TOO_LONG');
+    expect(text).toContain(String(LINE_CEILING));
+  });
+
+  test('the ceiling in the prose is the ceiling in the code, not a number that drifted', () => {
+    const rows = agentsMd()
+      .split('\n')
+      .filter((line) => line.includes('X_FILE_TOO_LONG'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain(String(LINE_CEILING));
+  });
+
+  test('the one exemption is named, so a re-export manifest is not filed as a bug', () => {
+    expect(agentsMd()).toContain('re-exports');
   });
 });

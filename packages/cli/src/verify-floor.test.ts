@@ -219,3 +219,46 @@ describe('unit · the suite floor', () => {
     });
   });
 });
+
+// --------------------------------------------------------------------------------------------
+// The `AGENTS.md` budget. `@ultimat3/manifest` has taken a `maxBytes` since it was written and
+// the gate never passed one, so 12kB was the only budget any repository could have — and one
+// whose conventions genuinely need more room had to delete a rule to make space.
+// --------------------------------------------------------------------------------------------
+
+describe('the AGENTS.md budget a repository declares for itself', () => {
+  test('a positive whole number of bytes is carried, beside the steps', () => {
+    const floor = parse('{"steps":["unit"],"agentsMdMaxBytes":14000}');
+    expect(floor.agentsMdMaxBytes).toBe(14_000);
+    expect(floor.steps).toEqual(['unit']);
+    expect(floor.problems).toEqual([]);
+  });
+
+  test('a floor that declares none leaves the key off, which is what "use the default" means', () => {
+    const floor = parse('{"steps":["unit"]}');
+    expect('agentsMdMaxBytes' in floor).toBe(false);
+    expect(floor.problems).toEqual([]);
+  });
+
+  test('a budget that is not a number is a problem, never a silent fall back to the default', () => {
+    // The failure this closes: a floor saying `"16kb"`, quietly ignored, is a repository that
+    // believes it raised a budget it did not — and finds out when the gate goes red on a commit
+    // that changed nothing in the file it is red about.
+    for (const bad of ['"16kb"', 'null', 'true', '[14000]', '12.5', '0', '-1']) {
+      const floor = parse(`{"steps":["unit"],"agentsMdMaxBytes":${bad}}`);
+      expect(floor.agentsMdMaxBytes).toBeUndefined();
+      expect(floor.problems.join(' ')).toContain('not a positive whole number of bytes');
+    }
+  });
+
+  test('a bad budget is reported even when "steps" is the thing that is missing', () => {
+    const floor = parse('{"agentsMdMaxBytes":"16kb"}');
+    expect(floor.problems).toHaveLength(2);
+    expect(floor.problems.join(' ')).toContain('no "steps" array');
+    expect(floor.problems.join(' ')).toContain('not a positive whole number');
+  });
+
+  test('a valid budget survives a floor whose steps are missing, so one edit fixes one thing', () => {
+    expect(parse('{"agentsMdMaxBytes":14000}').agentsMdMaxBytes).toBe(14_000);
+  });
+});
