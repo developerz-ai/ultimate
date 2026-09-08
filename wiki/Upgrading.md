@@ -6,6 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 19.x → 20.0.0 | **2**, both `@ultimat3/ui` component behaviour and neither a type change — a `DataTable` that keeps its rows while reloading, and a `Button` whose `loading` no longer sets the native `disabled`. Nothing fails to compile; what changes is what a screen does | the `20.0.0` section, in order |
 | 18.x → 19.0.0 | **2**, both from the same hole — the service worker had no build behind it, so the config key that steers it and the route it falls back to both had to move | the `19.0.0` section, in order |
 | 17.x → 18.0.0 | **5** — a runtime floor that was a minor behind what the CLI emits, two PWA config surfaces that had to grow before an app could be installable, a `--json` shape, and one scraping interface | the `18.0.0` section, in order |
 | 16.x → 17.0.0 | **3**, all one sweep — a numeric option that used to accept `NaN` refuses it, at boot or at the call boundary rather than mid-request | the `17.0.0` section, in order |
@@ -30,7 +31,7 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' <(awk '/^## /{u = ($0 == "## [Unreleased]")} !u' CHANGELOG.md)
-# 45 As of 2026-08-27 — every RELEASED section, which is the sum of every row above whose section
+# 47 As of 2026-09-08 — every RELEASED section, which is the sum of every row above whose section
 # the changelog still carries. `[Unreleased]` is cut by the awk deliberately: a bare whole-file
 # grep agrees with this number only while that section is empty, so it moved on every PR that
 # landed a breaking change and moved BACK when the release promoted the section — a count that can
@@ -64,6 +65,32 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 19.x → 20.0.0, entry by entry
+
+**Both entries are `@ultimat3/ui` component behaviour, and neither changes a type** — so nothing
+fails to compile and nothing throws. They change what a screen DOES, which is why they are a major:
+a silent rendering change is worse than a build error, and you would have found these by looking.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `DataTable` while reloading | you relied on skeletons appearing on every load. A FIRST load (`rows: []`) still renders skeletons; a RELOAD now keeps the existing rows, dimmed, under `aria-busy`. Replacing rendered content with placeholders on every refresh is a second layout change for no news, and it is what makes a fast list feel slow — the reader has already read those rows, and taking them away to say "loading" tells them nothing they can act on. No edit if you pass fresh `rows` on each load, which is the ordinary case. If you genuinely want the placeholder back on a refresh, pass `rows: []` while the fetch is in flight |
+| 2 | `Button` with `loading` | you style `button[disabled]`, or you assert on the `disabled` attribute in a test. `loading` no longer sets the native attribute — it sets `aria-disabled` + `aria-busy` and refuses the click in `onClick` with `preventDefault()`. The click is still refused; the mechanism moved. A `disabled` control loses focus the moment it becomes disabled — mid-flow, with no announcement — is exempt from the WCAG contrast minimum precisely because nobody is meant to read it, which is wrong for a control you are asking someone to WAIT on, and it does not actually prevent a double submit, because that race is server-side and always was. The edit is one selector: style `button[aria-disabled='true']` beside `button[disabled]`, and assert on `aria-disabled` |
+
+**`defineTheme()` can now refuse your brand** — `X_UI_CONTRAST_INSUFFICIENT`. Listed here rather
+than as a third entry because it throws at declaration with the measured ratio, the required one and
+the role to move, so it cannot ship silently and needs no search. An override whose RESOLVED
+channels put a pairing below WCAG 2.2 AA (4.5:1 text, 3:1 focus ring, 1.4:1 border) fails at boot.
+Only pairings your brand can have CHANGED are measured — blaming an app for the framework's own
+colours is how a rule gets switched off. The usual defect is half a pairing: a new `accent` against
+the shipped white `accent-fg`. `@ultimat3/ui` exports `contrastRatio` and `roleContrast` so you can
+measure a candidate before shipping it. AA and never APCA: APCA is not a standard, and AA is the
+operative legal benchmark.
+
+**Nothing else in this release costs an edit.** The five new app guards ship in `x new` only; an
+existing app gains them by copying the ones it wants out of a fresh scaffold into its own `guards/`,
+one file per rule, and deleting one drops that rule. `x shot --all-islands` is additive, and
+`x g island` / `x g resource` now write a `.island.states.ts` beside what they generate.
 
 ## 18.x → 19.0.0, entry by entry
 
