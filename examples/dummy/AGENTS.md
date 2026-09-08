@@ -41,6 +41,11 @@ Green means shippable. Nothing else is a gate.
 - New action → set `mcp: { expose: true }` unless it must never be agent-callable, and say why
   in a comment if not.
 
+- A rule this app makes about itself goes in `guards/` — one file, one rule, its own `.test.ts`,
+  and no registration: `x verify`'s `boundaries` step discovers the directory. `x g guard <name>`
+  writes both files. A convention stated in this file and nowhere else is a convention nothing
+  enforces, which is the whole reason the directory exists.
+
 ## Where things intentionally look duplicated
 
 - `publishPost` and `likePost` do similar-looking work. `publishPost` is an `action`

@@ -36,8 +36,6 @@ const CODE = '${CODE}';
  * rule wants: a parent whose children are elements has no text of its own.
  */
 const ELEMENT = /<([A-Za-z][\\w.:-]*)(?:\\s[^<>]*)?>([^<>]*?)<\\/\\1>/g;
-/** A \`{…}\` child is an expression — \`{t('key')}\`, \`{props.row.title}\` — never typed prose. */
-const EXPRESSION = /\\{[^{}]*\\}/g;
 /** Two word characters in a row. One is \`&\`, \`×\`, an initial — never a sentence. */
 const PROSE = /[\\p{L}\\p{N}]{2,}/u;
 
@@ -55,13 +53,43 @@ const blank = (text: string): string =>
 
 const lineOf = (text: string, index: number): number => text.slice(0, index).split('\\n').length;
 
+/**
+ * Every \`{…}\` child removed — \`{t('key')}\`, \`{props.row.title}\` — leaving only what was TYPED
+ * between the tags.
+ *
+ * A depth scan and never a regex, because a JSX expression NESTS and a regex does not:
+ * \`/\\{[^{}]*\\}/g\` strips the INNER group of
+ * \`{t('app.feed.heading', { org: actor.org.name })}\` first, leaves the unbalanced remnant
+ * \`{t('app.feed.heading',  )}\`, and then reads that remnant as prose — so every \`t()\` call with an
+ * interpolation object or a template-literal key was reported as an untranslated string, which is
+ * the exact opposite of the rule. Measured at 12 findings, all false, before this scan replaced it.
+ *
+ * A closing brace with nothing open is kept: it is a stray character, and prose it is not.
+ */
+const withoutExpressions = (children: string): string => {
+  let out = '';
+  let depth = 0;
+  for (const character of children) {
+    if (character === '{') {
+      depth += 1;
+      continue;
+    }
+    if (character === '}' && depth > 0) {
+      depth -= 1;
+      continue;
+    }
+    if (depth === 0) out += character;
+  }
+  return out;
+};
+
 /** Pure — the caller does the I/O — so the rule is testable without a filesystem. */
 export function untranslatedStrings(files: readonly SourceFile[]): readonly Finding[] {
   const findings: Finding[] = [];
   for (const file of files) {
     const text = blank(file.source);
     for (const match of text.matchAll(ELEMENT)) {
-      const typed = (match[2] ?? '').replaceAll(EXPRESSION, ' ').trim();
+      const typed = withoutExpressions(match[2] ?? '').trim();
       if (!PROSE.test(typed)) continue;
       findings.push({
         code: CODE,
@@ -83,9 +111,12 @@ export const guard: Guard = {
     // a hardcoded string there used to be green. \`api/\` renders nothing and \`shared/\` is a leaf of
     // helpers; \`packages/*/dist\` is a build output, not source.
     //
-    // TWO globs, never one with a leading \`{a,b}\` group: \`Bun.Glob.scan()\` matches nothing at all
-    // for a pattern that starts with a brace group — measured — so folding these into one line
-    // silently turns the guard off, which is worse than the hole it closes.
+    // TWO globs, and the rule is that a brace ALTERNATIVE may not contain a \`/\`. Measured on Bun
+    // 1.4.0 against \`examples/dummy\`: \`{apps/*/{site,app},packages/*/src}/**/*.tsx\` and
+    // \`{apps/web,packages/ui}/**/*.tsx\` each match ZERO files, where \`apps/*/{site,app}/**/*.tsx\`
+    // matches 17 — so folding these into one line silently turns the guard off, which is worse than
+    // the hole it closes. A LEADING group is fine and four guards here rely on it:
+    // \`{apps,packages}/**/*.scss\` matches all 15.
     for (const pattern of ['apps/*/{site,app}/**/*.tsx', 'packages/*/src/**/*.tsx']) {
       for await (const entry of new Bun.Glob(pattern).scan({ cwd: root, absolute: false })) {
         const path = entry.split('\\\\').join('/');
@@ -117,6 +148,23 @@ unitTest('a typed JSX string is refused, and the finding quotes it', () => {
 unitTest('a t() child satisfies it, and so does any other expression', () => {
   expect(untranslatedStrings(file("<h1>{t('site.home.title')}</h1>"))).toEqual([]);
   expect(untranslatedStrings(file('<li class={styles.item}>{row.title}</li>'))).toEqual([]);
+});
+
+// The legitimate lookalike, and the one this rule got wrong: a JSX expression NESTS. A mask that
+// does not strips the inner \`{ org: … }\` first and reads the unbalanced remnant as prose, so the
+// guard reported the very calls it exists to require.
+unitTest('a t() call carrying an interpolation object is not typed prose', () => {
+  const interpolated = "<h1>{t('app.feed.heading', { org: actor.org.name })}</h1>";
+  expect(untranslatedStrings(file(interpolated))).toEqual([]);
+  expect(untranslatedStrings(file(\`<span>{t(\\\`plans.\\\${plan}.name\\\`)}</span>\`))).toEqual([]);
+});
+
+// The other direction: masking a nested child may not swallow the prose beside it.
+unitTest('prose beside an interpolating t() call is still refused', () => {
+  const mixed = "<h1>{t('app.feed.heading', { org: actor.org.name })} Welcome back</h1>";
+  const findings = untranslatedStrings(file(mixed));
+  expect(findings).toHaveLength(1);
+  expect(findings[0]?.cause).toContain('Welcome back');
 });
 
 // The reason the rule reads a CLOSING tag: a generic type argument is a > followed by source that

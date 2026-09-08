@@ -15,6 +15,7 @@ import {
   type ImageLoadingHints,
   type ImageVariant,
   loadingHints,
+  ratioFor,
   srcsetFor,
 } from './image-source';
 
@@ -45,6 +46,9 @@ export function Image(props: ImageProps): JSX.Element {
   return (
     <img
       class={cx(styles['image'], props.class)}
+      // A custom property, because that is the one thing an inline `style` may carry here. Absent
+      // when the dimensions are unknown, and the stylesheet's fallback is then `auto`.
+      style={box() === undefined ? undefined : { '--image-ratio': ratioFor(box()) }}
       src={src()}
       alt={props.alt}
       srcset={srcsetFor(props.variants)}

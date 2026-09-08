@@ -218,22 +218,61 @@ export type Politeness = 'polite' | 'assertive';
  */
 const LIVE_REGION_ID = 'ultimate-live-region';
 
+/** Both levels, in the order `AppShell` emits them. One region per politeness, never per message. */
+export const LIVE_REGION_LEVELS: readonly Politeness[] = ['polite', 'assertive'];
+
+/** The attributes ONE live region carries. */
+export interface LiveRegionAttrs {
+  readonly id: string;
+  readonly class: string;
+  readonly role: 'status' | 'alert';
+  readonly 'aria-live': Politeness;
+  readonly 'aria-atomic': 'true';
+}
+
 /**
- * Announce a message to assistive tech. Uses one persistent region per
- * politeness level, because creating a region and writing to it in the same
- * frame is not announced by most screen readers.
+ * One derivation, read by both halves — `AppShell`, which renders these regions into the SERVER
+ * response, and `announce()`, which writes into them. That ordering is the reason this exists at
+ * all: a live region created and filled in the same frame is not announced by most screen readers,
+ * so the region that carries the first message has to predate the message. `announce()`'s own
+ * fallback (below) can only ever be right from its second call onwards; a shell that already
+ * emitted the region makes the first one right too.
+ *
+ * `aria-atomic="true"` is correct HERE and wrong on `ToastRegion`'s `<ol>`: this element holds one
+ * message at a time and is re-read whole, where the toast list holds several and must announce
+ * only the arrival.
+ */
+export function liveRegionAttrs(politeness: Politeness): LiveRegionAttrs {
+  return {
+    id: `${LIVE_REGION_ID}-${politeness}`,
+    class: LIVE_REGION_ID,
+    role: politeness === 'assertive' ? 'alert' : 'status',
+    'aria-live': politeness,
+    'aria-atomic': 'true',
+  };
+}
+
+/**
+ * Announce a message to assistive tech — for a state change with no surface of its own: "12
+ * results", "sorted by name, descending", "page 3 of 9". NOT for a notification, which is a
+ * `Toast` in the `ToastRegion` that owns its own live semantics; two announcement paths for one
+ * message is how a screen reader ends up reading it twice.
+ *
+ * Writes into the region `AppShell` already rendered. The create-if-absent branch is the fallback
+ * for a tree with no shell, and it carries this module's known limit: the region it builds is
+ * appended and written in the same frame, so the FIRST message through it may be silent.
  */
 export function announce(message: string, politeness: Politeness = 'polite'): void {
   if (typeof document === 'undefined') return;
-  const id = `${LIVE_REGION_ID}-${politeness}`;
-  let region = document.getElementById(id);
+  const attrs = liveRegionAttrs(politeness);
+  let region = document.getElementById(attrs.id);
   if (region === null) {
     region = document.createElement('div');
-    region.id = id;
-    region.className = LIVE_REGION_ID;
-    region.setAttribute('role', politeness === 'assertive' ? 'alert' : 'status');
-    region.setAttribute('aria-live', politeness);
-    region.setAttribute('aria-atomic', 'true');
+    region.id = attrs.id;
+    region.className = attrs.class;
+    region.setAttribute('role', attrs.role);
+    region.setAttribute('aria-live', attrs['aria-live']);
+    region.setAttribute('aria-atomic', attrs['aria-atomic']);
     document.body.appendChild(region);
   }
   region.textContent = '';

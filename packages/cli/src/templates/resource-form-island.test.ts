@@ -57,9 +57,13 @@ const fetchStub = (
 });
 
 describe('unit · x g resource emits its form as a client entry', () => {
-  test('the two files are the island and its own mounting test', () => {
+  // The states file ships WITH the entry, never after it: `x verify`'s `boundaries` step refuses an
+  // island that declares none (`guards/island-without-states.ts`), so a generator that wrote only
+  // the component would scaffold a slice that fails the app's own gate on the next command.
+  test('the three files are the island, the states it can be photographed in, and its test', () => {
     expect(emitted().map((file) => file.path)).toEqual([
       `${DIR}/invoice-form.island.tsx`,
+      `${DIR}/invoice-form.island.states.ts`,
       `${DIR}/invoice-form.island.test.ts`,
     ]);
   });

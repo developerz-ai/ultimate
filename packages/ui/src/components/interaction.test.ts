@@ -21,6 +21,7 @@ import {
   withAttr,
 } from '../jsx-probe';
 import { MENU_ITEM_SELECTOR } from '../roving';
+import { Button } from './Button';
 import { Checkbox } from './Checkbox';
 import { Dropzone } from './Dropzone';
 import { Form } from './Form';
@@ -277,6 +278,73 @@ describe('component keyboard and form wiring', () => {
     // did. The effect that does is DOM-only and never runs on this path — the ref is the half a
     // server render can be held to.
     expect(typeof summary.props['ref']).toBe('function');
+  });
+
+  // --- finding: the busy control disabled itself out from under the keyboard --------------------
+
+  test('a loading Button keeps the native attribute OFF, and stays focusable', () => {
+    const button = one(
+      byTag(renderNodes(Button, { children: 'Save', loading: true }), 'button'),
+      'b',
+    );
+    // `disabled` moves focus to <body>, exempts the control from the contrast minimum, announces
+    // no reason, and still does not prevent the double write — that race is on the server.
+    expect(button.props['disabled']).toBeUndefined();
+    expect(button.props['aria-disabled']).toBe('true');
+    expect(button.props['aria-busy']).toBe('true');
+  });
+
+  test('an explicitly disabled Button still carries the native attribute', () => {
+    const button = one(
+      byTag(renderNodes(Button, { children: 'Save', disabled: true }), 'button'),
+      'b',
+    );
+    expect(button.props['disabled']).toBe(true);
+    expect(button.props['aria-busy']).toBe('false');
+  });
+
+  test('a loading Button refuses the click, so aria-disabled is not the only thing stopping it', () => {
+    const clicks: number[] = [];
+    const prevented: number[] = [];
+    const event = { preventDefault: (): void => void prevented.push(1) };
+
+    const busy = one(
+      byTag(
+        renderNodes(Button, { children: 'Save', loading: true, onClick: () => clicks.push(1) }),
+        'button',
+      ),
+      'b',
+    );
+    fire(busy, 'onClick', event);
+    // `aria-disabled` is advisory and changes nothing about what the browser does with the click.
+    expect(clicks).toEqual([]);
+    // `preventDefault` is what stops a type="submit" reaching its form.
+    expect(prevented).toEqual([1]);
+  });
+
+  test('an idle Button calls the caller’s handler, in both of Solid’s two forms', () => {
+    const seen: unknown[] = [];
+    const plain = one(
+      byTag(renderNodes(Button, { children: 'Save', onClick: () => seen.push('plain') }), 'button'),
+      'b',
+    );
+    fire(plain, 'onClick', {});
+
+    // `onClick={[save, id]}` is Solid's bound form, and a component that only called the function
+    // form would drop every one of them in silence.
+    const bound = one(
+      byTag(
+        renderNodes(Button, {
+          children: 'Save',
+          onClick: [(data: string) => seen.push(data), 'post-1'],
+        }),
+        'button',
+      ),
+      'b',
+    );
+    fire(bound, 'onClick', {});
+
+    expect(seen).toEqual(['plain', 'post-1']);
   });
 
   // --- finding: a duplicate accessible name ------------------------------------------------------

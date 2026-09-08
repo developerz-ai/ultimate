@@ -175,6 +175,98 @@ describe('createFormBinding', () => {
     expect(form.state().status).toBe('succeeded');
   });
 
+  test('pending is the one value that reaches both the submit control and the form', async () => {
+    let release = (): void => {};
+    const form = createFormBinding<{ title: string }, Saved>({
+      fields: ['title'],
+      messageFor: raw,
+      submit: () =>
+        new Promise<Saved>((resolve) => {
+          release = () => resolve({ id: 'post-1' });
+        }),
+    });
+
+    expect(form.pending()).toBe(false);
+    const flight = form.submit({ title: 'a' });
+    expect(form.pending()).toBe(true);
+    release();
+    await flight;
+    expect(form.pending()).toBe(false);
+  });
+
+  test('the first invalid field is the first DECLARED one, never the first the server named', async () => {
+    const form = createFormBinding<{ title: string; slug: string }, Saved>({
+      fields: ['title', 'slug'],
+      messageFor: raw,
+      // Reported slug-first. Focusing in issue order would land the reader halfway down a form
+      // they have not read yet.
+      submit: () =>
+        Promise.reject({ code: 'X_INPUT_INVALID', cause: 'slug: taken; title: too short' }),
+    });
+
+    expect(form.firstInvalidField()).toBeUndefined();
+    await form.submit({ title: '', slug: '' });
+    expect(form.firstInvalidField()).toBe('title');
+  });
+
+  test('a rejection naming no declared field leaves nothing to focus', async () => {
+    const form = createFormBinding<{ title: string }, Saved>({
+      fields: ['title'],
+      messageFor: raw,
+      submit: () => Promise.reject({ code: 'X_FORBIDDEN', cause: 'denied' }),
+    });
+    await form.submit({ title: 'a' });
+    // The summary keeps the focus in this case, because there is no control to send anyone to.
+    expect(form.firstInvalidField()).toBeUndefined();
+    expect(form.state().formErrors).toEqual(['denied']);
+  });
+
+  test('touched and dirty are published without disturbing the submit status', () => {
+    const form = createFormBinding<{ title: string }, Saved>({
+      fields: ['title'],
+      messageFor: raw,
+      initial: { title: 'Hello' },
+      submit: () => Promise.resolve({ id: 'post-1' }),
+    });
+
+    form.touch('title');
+    expect([...form.state().touched]).toEqual(['title']);
+    expect([...form.state().dirty]).toEqual([]);
+    expect(form.state().status).toBe('idle');
+
+    form.edit('title', 'Hello!');
+    expect([...form.state().dirty]).toEqual(['title']);
+    // Back to the value it opened with: nothing to save, so nothing to warn about on the way out.
+    form.edit('title', 'Hello');
+    expect([...form.state().dirty]).toEqual([]);
+  });
+
+  test('an empty control on a create form is not a change', () => {
+    const form = createFormBinding<{ title: string }, Saved>({
+      fields: ['title'],
+      messageFor: raw,
+      submit: () => Promise.resolve({ id: 'post-1' }),
+    });
+    form.edit('title', 'a');
+    form.edit('title', '');
+    expect([...form.state().dirty]).toEqual([]);
+  });
+
+  test('a successful submit clears dirty — the server took what the form held', async () => {
+    const form = createFormBinding<{ title: string }, Saved>({
+      fields: ['title'],
+      messageFor: raw,
+      submit: () => Promise.resolve({ id: 'post-1' }),
+    });
+    form.touch('title');
+    form.edit('title', 'Hello');
+    const state = await form.submit({ title: 'Hello' });
+
+    expect([...state.dirty]).toEqual([]);
+    // `touched` survives: the user did visit the field, and a hint that vanishes on save flickers.
+    expect([...state.touched]).toEqual(['title']);
+  });
+
   test('reset returns the form to idle', async () => {
     const form = createFormBinding<{ title: string }, Saved>({
       fields: ['title'],
@@ -182,9 +274,13 @@ describe('createFormBinding', () => {
       submit: () => Promise.reject({ code: 'X_INPUT_INVALID', cause: 'title: too short' }),
     });
     await form.submit({ title: '' });
+    form.touch('title');
+    form.edit('title', 'x');
     form.reset();
     expect(form.state().status).toBe('idle');
     expect(form.errorFor('title')).toBeUndefined();
+    expect([...form.state().touched]).toEqual([]);
+    expect([...form.state().dirty]).toEqual([]);
   });
 
   test('every message stays reachable when one field draws two issues', async () => {

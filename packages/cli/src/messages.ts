@@ -216,8 +216,9 @@ const CATALOG = {
   'cli.shot.island.missing': '  missing  {file} — no picture was taken for this declared state',
   'cli.shot.island.picture': '  pictures {path}',
   'cli.shot.island.verdict': '  verdict  {path}',
+  'cli.shot.island.index': '  index    {path}',
   'cli.shot.island.blind.crop':
-    'the picture is the crop target and nothing around it — a component that overflows its own box, or whose fault is the space beside it, is outside the frame',
+    "the picture is the crop target and a thin margin around it — anything further out, including the space a component's own fault sits in, is outside the frame; content that overflows the box is recorded per state as overflow, never shown",
   'cli.shot.island.blind.locale':
     'toLocaleString() on a Date resolves its zone inside the engine — only an explicit timeZone is pinned by this harness',
   'cli.ci.failed':

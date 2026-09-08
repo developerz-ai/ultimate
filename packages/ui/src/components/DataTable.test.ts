@@ -75,8 +75,10 @@ describe('DataTable', () => {
       expect(one(byTag(nodes, 'caption'), '<caption>').props['children']).toBe('Invoices');
     });
 
-    test('loading announces busy and holds the row height instead of collapsing', () => {
-      const nodes = table({ loading: true, skeletonRows: 3 });
+    test('a FIRST page in flight is placeholders, and announces busy', () => {
+      // `rows: []` is what makes this the first page: there is no previous page to keep, so the
+      // placeholder is the only thing that can hold the box.
+      const nodes = table({ rows: [], loading: true, skeletonRows: 3 });
 
       expect(one(byTag(nodes, 'tbody'), '<tbody>').props['aria-busy']).toBe('true');
       expect(
@@ -95,6 +97,23 @@ describe('DataTable', () => {
     test('loading beats empty — a first page in flight is not "no results"', () => {
       const nodes = table({ rows: [], loading: true });
       expect(byTag(nodes, 'table')).toHaveLength(1);
+    });
+
+    test('a RELOAD keeps the rows on screen, dimmed, instead of tearing them down', () => {
+      const nodes = table({ loading: true, skeletonRows: 3 });
+      // Re-sorting or re-searching used to blank every row it was about to render again — the
+      // shared `asyncBranch` calls this `refreshing`, and the rows are the previous page.
+      expect(
+        byTag(nodes, 'tr').filter((node) => node.props['data-row'] !== undefined),
+      ).toHaveLength(2);
+      expect(byTag(nodes, 'td').map((node) => node.props['children'])).toEqual([
+        'alpha',
+        '3',
+        'beta',
+        '5',
+      ]);
+      // Still busy: the reader is told the table is working, without losing what it says.
+      expect(one(byTag(nodes, 'tbody'), '<tbody>').props['aria-busy']).toBe('true');
     });
 
     test('no rows and not loading is the empty state, with no table at all', () => {
@@ -261,12 +280,12 @@ describe('DataTable, a placeholder count that is not a count', () => {
 
   for (const skeletonRows of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
     test(`skeletonRows: ${String(skeletonRows)} is refused, never a busy empty table`, () => {
-      expect(() => table({ loading: true, skeletonRows })).toThrow(/X_INVARIANT/);
+      expect(() => table({ rows: [], loading: true, skeletonRows })).toThrow(/X_INVARIANT/);
     });
   }
 
   test('skeletonRows: 0 is a loading table with no placeholders, which is a choice', () => {
-    const nodes = table({ loading: true, skeletonRows: 0 });
+    const nodes = table({ rows: [], loading: true, skeletonRows: 0 });
     expect(one(byTag(nodes, 'tbody'), '<tbody>').props['aria-busy']).toBe('true');
     expect(byTag(nodes, 'td')).toHaveLength(0);
   });

@@ -6,7 +6,13 @@
 
 import { solid } from '../theme/solid-adapter';
 import { createFormBinding, type FormBinding, type FormBindingOptions } from './form-binding';
-import { errorOf, type FormState, IDLE_FORM_STATE, messagesOf } from './form-state';
+import {
+  errorOf,
+  type FormState,
+  firstInvalidField,
+  IDLE_FORM_STATE,
+  messagesOf,
+} from './form-state';
 
 /**
  * Call it in a component body. On the server there is no registered runtime and the inert one
@@ -34,5 +40,9 @@ export function useForm<TValues, TResult>(
     state,
     errorFor: (path) => errorOf(state(), path),
     messagesFor: (path) => messagesOf(state(), path),
+    pending: () => state().status === 'submitting',
+    // Same reason: `firstInvalidField` off the binding closes over a snapshot, so a `<Form>` bound
+    // to it would keep focusing whichever field failed the FIRST submit, for the rest of the page.
+    firstInvalidField: () => firstInvalidField(state(), options.fields),
   };
 }

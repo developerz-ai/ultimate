@@ -15,6 +15,7 @@ import { fakeBrowser } from '@ultimat3/scraping';
 import type { IslandStatesManifest } from '@ultimat3/testing';
 import { defineIslandStates, islandShotTargets } from '@ultimat3/testing';
 import { readStateFlag, refuseRouteWithIsland } from './cmd-shot-island';
+import { clipFor, ISLAND_CROP_MARGIN_PX } from './island-capture';
 import { ISLAND_HARNESS_PATH } from './island-harness';
 import { readinessProbe } from './island-harness-script';
 import type { IslandBrowser } from './island-shot';
@@ -48,6 +49,8 @@ const READY: IslandReadiness = {
   filled: true,
   box: { x: 8, y: 8, width: 420, height: 260 },
   scroll: { x: 0, y: 0 },
+  overflow: { x: false, y: false },
+  page: { width: 1280, height: 2000 },
 };
 
 const PROBE = readinessProbe('[data-x-island]');
@@ -155,8 +158,9 @@ describe('unit · every declared state becomes a file', () => {
     await run(cleanDriver(scrolled), 'cropped');
 
     const bytes = await Bun.file(join(dir, 'cropped', 'settings/empty-options-light.png')).bytes();
-    // 8 + 12 and 8 + 400 — the box's own origin plus the page's scroll, never the raw rect.
-    expect(new TextDecoder().decode(bytes)).toContain('clip 20,408,420,260');
+    // (8 + 12) and (8 + 400) are the box's own origin plus the page's scroll, never the raw rect —
+    // then one `ISLAND_CROP_MARGIN_PX` off each side and the same onto each dimension twice.
+    expect(new TextDecoder().decode(bytes)).toContain('clip 12,400,436,276');
   });
 
   test('--state narrows the expansion, so only that state is owed a picture', async () => {
@@ -351,5 +355,59 @@ describe('unit · a byte floor that is not a number is not a floor', () => {
   test('a minBytes of 0 is still accepted, because it is the seam a fake driver needs', async () => {
     const artifacts = await run(cleanDriver(), 'floor-zero');
     expect(artifacts.verdict.ok).toBe(true);
+  });
+});
+
+/**
+ * The crop was the readiness box EXACTLY, and a pixel-tight rectangle shaves off everything a
+ * component paints outside its border box — a `box-shadow`, an outline, a focus ring, a hairline
+ * border on a subpixel. The reviewer then reads a component with no elevation as flat, which is a
+ * change the component never made.
+ *
+ * Every case fails on a margin of 0, which is the code this replaced.
+ */
+describe('unit · the crop carries a margin, and the margin is clamped to the page', () => {
+  const clipAt = (
+    box: IslandReadiness['box'],
+    page: IslandReadiness['page'] = { width: 1280, height: 2000 },
+  ) => clipFor({ ...READY, box, scroll: { x: 0, y: 0 }, page }, ISLAND_CROP_MARGIN_PX);
+
+  test('the frame is the component grown by one margin on every side', () => {
+    expect(clipAt({ x: 100, y: 100, width: 200, height: 120 })).toEqual({
+      x: 100 - ISLAND_CROP_MARGIN_PX,
+      y: 100 - ISLAND_CROP_MARGIN_PX,
+      width: 200 + 2 * ISLAND_CROP_MARGIN_PX,
+      height: 120 + 2 * ISLAND_CROP_MARGIN_PX,
+    });
+  });
+
+  // A clip starting at -8 asks CDP for coordinates no page content is at, and what comes back is a
+  // blank band a reviewer reads as the component's own whitespace.
+  test('a component at the page origin never asks for a negative coordinate', () => {
+    expect(clipAt({ x: 0, y: 0, width: 200, height: 120 })).toEqual({
+      x: 0,
+      y: 0,
+      width: 208,
+      height: 128,
+    });
+  });
+
+  test('a component at the far edge never runs past the document', () => {
+    expect(clipAt({ x: 1080, y: 1880, width: 200, height: 120 })).toEqual({
+      x: 1072,
+      y: 1872,
+      width: 208,
+      height: 128,
+    });
+  });
+
+  /**
+   * The invariant that survives a page whose own extent is smaller than the box it reports — a
+   * transform, a fixed element, a document read mid-layout. A clamp that could shrink the frame
+   * would crop the component this run is OF, which is worse than no margin at all.
+   */
+  test('the margin may only make the frame bigger, never smaller than the component', () => {
+    const clip = clipAt({ x: 0, y: 0, width: 400, height: 400 }, { width: 10, height: 10 });
+    expect([clip.width, clip.height]).toEqual([400, 400]);
   });
 });

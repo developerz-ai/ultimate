@@ -62,9 +62,11 @@ export const settingsStates = defineIslandStates({
   // state photograph differently on two machines.
   timeZone: 'Europe/Bucharest',
   now: '2026-03-04T09:00:00.000Z',
-  // The FRAME, and it is declared rather than cropped: the shipped browser port takes no clip
-  // rectangle, so the picture is exactly this box. A reviewer is a vision model and its pixels are
-  // the scarce resource — 1280x800 of a form this size is mostly background.
+  // The LAYOUT box, which is what the page is rendered at — never the frame. The picture is the
+  // crop target plus a small margin (`ISLAND_CROP_MARGIN_PX`), and has been since 2026-08-26; this
+  // comment said the port took no clip rectangle, which stopped being true when it gained one. The
+  // number still matters, because a form laid out at 1280 wide is a different component from one
+  // laid out at 720.
   viewport: { width: 720, height: 560 },
   states: [
     {

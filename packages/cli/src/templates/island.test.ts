@@ -24,6 +24,10 @@ describe('unit · x g island', () => {
     expect(filesFor('currency-picker')).toEqual([
       'apps/web/site/pricing/currency-picker.island.tsx',
       'apps/web/site/pricing/currency-picker.module.scss',
+      // The states file ships WITH the entry: `x verify`'s `boundaries` step refuses an island that
+      // declares none (`guards/island-without-states.ts`), so a generator that wrote only the
+      // component would scaffold a file that fails the app's own gate on the next command.
+      'apps/web/site/pricing/currency-picker.island.states.ts',
       'apps/web/site/pricing/currency-picker.island.test.ts',
     ]);
   });
@@ -48,8 +52,25 @@ describe('unit · x g island', () => {
     expect(source).toContain("island({ src: './counter.island.tsx'");
   });
 
+  // Its own case, because the guard above is a text scan and this file is IMPORTED by `x shot`:
+  // one non-type import of the component and `assertIslandStatesPure` refuses the whole manifest.
+  test('the states file names the island it belongs to, and imports it as a type', () => {
+    const states = String(
+      islandFiles('counter', { dir: DIR }).find((file) => file.path.endsWith('.island.states.ts'))
+        ?.contents ?? '',
+    );
+    expect(states).toContain(`island: '${ENTRY}'`);
+    expect(states).toContain("import type { CounterProps } from './counter.island'");
+    expect(states).not.toContain("from 'solid-js'");
+  });
+
   test('the emitted test names the island app-root-relative, as discoverIslands reports it', () => {
-    const spec = String(islandFiles('counter', { dir: DIR })[2]?.contents ?? '');
+    // By SUFFIX, never by index: a fourth emitted file moved the test one slot along and the
+    // assertion then read the states file, which passed nothing and named nothing.
+    const spec = String(
+      islandFiles('counter', { dir: DIR }).find((file) => file.path.endsWith('.island.test.ts'))
+        ?.contents ?? '',
+    );
     expect(spec).toContain(`const ISLAND = '${ENTRY}'`);
     // One `..` per directory segment. A miscounted root is a test that reports the island was
     // never built, naming a file the author can see on disk.

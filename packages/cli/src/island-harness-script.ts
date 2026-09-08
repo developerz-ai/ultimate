@@ -151,4 +151,13 @@ export const readinessProbe = (selector: string): string =>
   // below the fold scrolls, and a clip taken from the raw rect then crops the wrong band with
   // nothing to report it. The offset is returned rather than added here so `box` keeps meaning
   // exactly what the verdict already publishes.
-  'scroll:{x:Math.round(window.scrollX||0),y:Math.round(window.scrollY||0)}};})()';
+  'scroll:{x:Math.round(window.scrollX||0),y:Math.round(window.scrollY||0)},' +
+  // Content wider or taller than the box it sits in. The same round trip the readiness answer
+  // already costs, because a second probe would be a second moment — and a fact measured after the
+  // shutter is a fact about a different page. RECORDED, never gating: `stateShotOk` reads neither.
+  'overflow:{x:box?box.scrollWidth>box.clientWidth:false,y:box?box.scrollHeight>box.clientHeight:false},' +
+  // The document's own extent, which is what a crop margin is clamped against. Read here rather
+  // than assumed from the viewport: the page is what a capture clip's coordinates are in, and a
+  // margin running off it asks for a rectangle no content is at.
+  'page:{width:Math.round(document.documentElement.scrollWidth),' +
+  'height:Math.round(document.documentElement.scrollHeight)}};})()';

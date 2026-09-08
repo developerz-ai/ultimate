@@ -9,9 +9,13 @@ import type { Politeness } from '../a11y';
 import { cx } from '../cx';
 import { UI_KEYS } from '../i18n-keys';
 import { useUi } from '../theme/context';
+import type { ToastHold } from '../toast/toast-state';
 import { IconButton } from './IconButton';
 import styles from './Toast.module.scss';
 import type { Tone } from './variants';
+
+/** Where the stack sits. Logical corners, so it follows the writing direction. */
+export type ToastPlacement = 'block-end-inline-end' | 'block-start-inline-end' | 'block-end-center';
 
 export interface ToastRegionProps {
   children: JSX.Element;
@@ -24,13 +28,28 @@ export interface ToastRegionProps {
    * list cannot work, because the live semantics belong to the list, not to the message.
    */
   politeness?: Politeness | undefined;
-  placement?: 'block-end-inline-end' | 'block-start-inline-end' | 'block-end-center' | undefined;
+  placement?: ToastPlacement | undefined;
+  /**
+   * Stop the dwell while the reader is engaged with the stack, and start it again when they leave.
+   * WCAG 2.2 2.2.1 wants a timing the user can extend, and a message that expires under the
+   * pointer reaching for its undo is the failure that rule is about.
+   *
+   * Two reasons, reported separately: a pointer leaving a toast a keyboard user is still inside
+   * must not restart the countdown, which one boolean cannot express.
+   */
+  onHold?: ((reason: ToastHold) => void) | undefined;
+  onRelease?: ((reason: ToastHold) => void) | undefined;
   class?: string | undefined;
 }
 
 export function ToastRegion(props: ToastRegionProps): JSX.Element {
   // `aria-atomic="false"` on the list: only the toast that was just added is read, never the whole
   // list again on every arrival.
+  //
+  // The four handlers sit on the <ol> and all four BUBBLE. `mouseenter`/`mouseleave` do not, and
+  // this list is `pointer-events: none` so it is not a hit target of its own — only the toasts
+  // inside it are. `mouseover`/`mouseout` reach here from them; `mouseenter` would fire on a box
+  // the pointer can never be over.
   return (
     <section
       class={cx(
@@ -40,7 +59,20 @@ export function ToastRegion(props: ToastRegionProps): JSX.Element {
       )}
       aria-label={props.label}
     >
-      <ol class={styles['list']} aria-live={props.politeness ?? 'polite'} aria-atomic="false">
+      {/* biome-ignore lint/a11y/useKeyWithMouseEvents: the rule wants `onFocus` beside
+          `onMouseOver`, and `onFocus` is the WRONG half of the pair here — `focus` does not
+          bubble, so a handler on this list would never hear a toast's dismiss button being
+          reached, which is the exact case the pause exists for. `onFocusIn`/`onFocusOut` are the
+          bubbling forms and are both present, so the keyboard path this rule protects is covered. */}
+      <ol
+        class={styles['list']}
+        aria-live={props.politeness ?? 'polite'}
+        aria-atomic="false"
+        onMouseOver={() => props.onHold?.('pointer')}
+        onMouseOut={() => props.onRelease?.('pointer')}
+        onFocusIn={() => props.onHold?.('focus')}
+        onFocusOut={() => props.onRelease?.('focus')}
+      >
         {props.children}
       </ol>
     </section>

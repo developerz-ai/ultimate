@@ -45,6 +45,7 @@
 - [I18n](I18n)
 - [Theming](Theming)
 - [UI components](UI-Components)
+- [Interface rules](Interface-Rules)
 - [Timezones and dates](Timezones-And-Dates)
 - [Money](Money)
 - [Resource management](Resource-Management)

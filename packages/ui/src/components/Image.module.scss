@@ -7,6 +7,11 @@
   max-inline-size: 100%;
   block-size: auto;
 
+  // The second half of the reservation, and the half that survives styling: the width/height
+  // attributes reserve the box only until a stylesheet sets a size of its own. `auto` when the
+  // dimensions are unknown, which is what a replaced element does without this rule at all.
+  aspect-ratio: var(--image-ratio, auto);
+
   // Painted only when the image fails to load: the browser renders the alt text
   // inside this box, and it inherits the img's own colour and font-size.
   color: t.role('fg-muted');

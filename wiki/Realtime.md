@@ -37,9 +37,11 @@ cannot quietly undo, since a namespace import or an `export *` defeats tree-shak
 |---|---|---|---|---|---|
 | 1 | **Channels** | `ctx.channel('org:1').publish(evt)` | truth + fanout | subscription | ~0 — pubsub over WS |
 | 2 | **Live queries** | `query({ live: true, sql })` | truth + change detection | a reactive result set | one replication slot + a matcher |
-| 3 | **Local-first** | the same `mutator` + `persist: true` on the query | truth + rebase | a durable local store, offline writes | IndexedDB store + rebase log |
+| 3 | **Local-first** | the same `mutator`, plus a `LocalStore` on the live **client** ([below](#tier-2--tier-3-is-a-localstore-on-the-client-not-a-flag-on-the-query)) | truth + rebase | a durable local store, offline writes | a client store + rebase log |
 
 Tier 1 for presence, typing indicators, toasts, cursors. Tier 2 for "the list updates when someone else edits". Tier 3 for offline-capable apps.
+
+**Row 3 is not a config flag, and never has been.** `persist: true` on the query is the design; `query()` has never accepted it, and pasting it is a `TS2353` excess property at the `typecheck` step. What turns tier 3 on is `store` on `LiveClientOptions` — and the durable store still throws. Read the row's own section before writing anything against it.
 
 **Tier 1 is at-most-once, by construction.** A channel topic has no cursor and no re-snapshot, so a frame dropped under backpressure is not resent — it is counted and logged, never repaired ([below](#why-delivery-needs-its-own-counter)). That is the line between the tiers: state that must arrive belongs on a live query, ephemera belongs on a channel.
 
@@ -92,26 +94,35 @@ The parsed-vs-raw asymmetry between `.local()` and `.server()` is deliberate, no
 
 `.named()` rewraps rather than dropping the twin — a renamed mutator keeps both halves, its `conflict`, and every inherited action member.
 
-## Tier 2 → tier 3 is `persist: true` — the design, not a shipped field
+## Tier 2 → tier 3 is a `LocalStore` on the client, not a flag on the query
 
-**`persist` is not a field `query()` accepts**, `As of 2026-08-23`. The block below is what tier 3 is designed to cost, and pasting it today is a `TS2353` excess property at the `typecheck` step.
+**`persist` is not a field `query()` accepts, and there is no other flag that means it**, `As of 2026-09`. Nothing named `persist` is a config key anywhere in `@ultimat3/realtime`; the only `persist` in the package is a private method inside the offline queue. Pasting `persist: true` is a `TS2353` excess property at the `typecheck` step.
 
 ```ts
 // tier 2 — this typechecks and runs
 export const liveFeed = query({ /* ... */ live: true });
-
-// tier 3 — the intended shape: same query, durable client store + offline writes
-export const liveFeed = query({ /* ... */ live: true, persist: true });
 ```
 
-| Changed by `persist: true` | Unchanged |
-|---|---|
-| client result store: memory → IndexedDB | the mutators |
-| mutator queue: ephemeral → durable | the authz (`policy` on the query) |
-| reconnect: resubscribe → replay local log, then rebase | the server code |
-| adds client-side store migrations | the `sql`, the tags, the MCP tool |
+**Tier 3 is turned on where the client is built, not where the query is declared.** `LiveClientOptions` takes three optional members, all three marked "tier 3 only" in `packages/realtime/src/client-contract.ts`: `store`, `queue` and `log`. The optimistic half is gated on the first of them — `packages/realtime/src/client-mutations.ts` applies the mutator's `local` twin only under `if (store && local && !collapsed)`. With no `store`, mutations are server-only and nothing is queued offline. The query is untouched either way.
 
-Teams adopt tier 2 in week one and can afford tier 3 in year two without a migration project. That is the whole promise of the ladder.
+| Turned on by a `LocalStore` on the client | Unchanged |
+|---|---|
+| the mutator's `local` twin applies, and is journalled for rollback | the mutators themselves |
+| the mutator queue survives, given an `OfflineQueue` beside it | the authz (`policy` on the query) |
+| reconnect replays the local log and rebases, given a `RebaseLog` | the server code |
+| client-side store migrations become yours to write | the `sql`, the tags, the MCP tool |
+
+**The durable store is the part that does not ship.** `createOpfsLocalStore()` — SQLite over the Origin Private File System, in a worker — throws `X_NOT_IMPLEMENTED`, and its `fix:` names the one store that exists:
+
+```ts
+import { MemoryLocalStore } from '@ultimat3/realtime';
+```
+
+Same `LocalStore` contract — journalled writes, ordered rollback, one row value per `(entity, id)` — held **for the tab's lifetime, not across a reload**. So the optimistic apply and the rollback are real today and durability is not: a reload loses the queue. That is why row 3 of the ladder is marked as not shipped rather than as shipped-with-caveats, and it is the shape of tier 3 to write against, not `persist: true`.
+
+Note the storage engine, because two lines of this page said IndexedDB until 2026-09 and the code has never used it: the intended durable store is **OPFS SQLite**.
+
+Teams adopt tier 2 in week one and can afford tier 3 in year two without a migration project. That is the whole promise of the ladder — and the price of the promise is that the climb is currently an unfinished seam, not a one-word edit. [Known gaps](Known-Gaps).
 
 ## Live query in the browser, end to end
 

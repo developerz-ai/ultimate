@@ -3,11 +3,18 @@
 // level it emits. There is deliberately no SCSS `@use ... with ()` seam — two ways to change the
 // accent colour is the ambiguity axiom 1 exists to delete.
 
-import { invalidBrandTokenError, runtimeMissingError, unknownTokenError } from '../errors';
-import { parseChannels } from '../tokens/contrast';
+import {
+  insufficientContrastError,
+  invalidBrandTokenError,
+  runtimeMissingError,
+  unknownTokenError,
+} from '../errors';
+import { contrastRatio, parseChannels } from '../tokens/contrast';
+import { CONTRAST_PAIRS } from '../tokens/contrast-pairs';
 import {
   COLOR_ROLES,
   type ColorRole,
+  colorTokens,
   type RadiusName,
   radiusTokens,
   type Theme,
@@ -48,6 +55,12 @@ export function defineTheme(input: BrandInput): Brand {
   const blocks: string[] = [];
   const light = colorDeclarations(input.colors?.light, 'colors.light');
   const dark = colorDeclarations(input.colors?.dark, 'colors.dark');
+  // Measured AFTER the channels parse and BEFORE a single declaration is rendered: a palette that
+  // fails AA is not a stylesheet with a warning attached, it is a refusal. The pairings are the
+  // ones the framework's own palette is held to (`CONTRAST_PAIRS`), so an app cannot ship a brand
+  // the design system would have failed its own tests over.
+  assertContrast('light', input.colors?.light);
+  assertContrast('dark', input.colors?.dark);
   const root: string[] = [
     ...light,
     ...radiusDeclarations(input.radius),
@@ -159,6 +172,30 @@ function fontDeclarations(overrides: Partial<Record<FontSlot, string>> | undefin
     out.push(`--font-${slot}: ${value};`);
   }
   return out;
+}
+
+/**
+ * The palette as it will actually render: the shipped channels, with this brand's overrides on
+ * top. Measured on the RESOLVED set and not on the overrides alone, because the pairing that
+ * breaks is nearly always one the author only touched half of — a new `accent` against the
+ * shipped `accent-fg` is the single most common way a brand goes unreadable.
+ */
+function assertContrast(
+  theme: Theme,
+  overrides: Partial<Record<ColorRole, string>> | undefined,
+): void {
+  if (overrides === undefined) return;
+  const resolved = (role: ColorRole): string => overrides[role] ?? colorTokens[theme][role];
+  for (const pair of CONTRAST_PAIRS) {
+    // Only pairings this brand can have changed. The rest are the shipped palette, which
+    // `contrast.test.ts` already holds — re-reporting them would blame the app for our colours.
+    if (overrides[pair.fg] === undefined && overrides[pair.bg] === undefined) continue;
+    const fg = resolved(pair.fg);
+    const bg = resolved(pair.bg);
+    const ratio = contrastRatio(fg, bg);
+    if (ratio >= pair.minimum) continue;
+    throw insufficientContrastError(theme, pair.what, pair.fg, pair.bg, ratio, pair.minimum);
+  }
 }
 
 function assertChannels(scope: string, role: string, value: string): void {

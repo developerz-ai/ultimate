@@ -9,6 +9,7 @@ export const UI_ERROR_CODES = {
   runtimeMissing: 'X_UI_RUNTIME_MISSING',
   invalidValue: 'X_UI_INVALID_VALUE',
   formPathInvalid: 'X_UI_FORM_PATH_INVALID',
+  contrastInsufficient: 'X_UI_CONTRAST_INSUFFICIENT',
 } as const;
 
 export type UiErrorCode = (typeof UI_ERROR_CODES)[keyof typeof UI_ERROR_CODES];
@@ -22,6 +23,7 @@ registerErrorCodes({
   X_UI_RUNTIME_MISSING: { title: 'a host capability @ultimat3/ui needs is absent' },
   X_UI_INVALID_VALUE: { title: 'a formatting component received an unrenderable value' },
   X_UI_FORM_PATH_INVALID: { title: 'a form control name is not a usable field path' },
+  X_UI_CONTRAST_INSUFFICIENT: { title: 'a brand palette pairing does not meet WCAG 2.2 AA' },
 });
 
 export class UiError extends UltimateError {
@@ -164,6 +166,30 @@ export function invalidFieldPathError(subject: string, name: string): UiError {
     code: UI_ERROR_CODES.formPathInvalid,
     cause: `${subject} "${name}" is not a field path, so no schema issue can address it`,
     fix: `rename it to ${FIELD_PATH_GRAMMAR}`,
+  });
+}
+
+/**
+ * A `defineTheme()` palette that renders text nobody can read. Refused rather than warned about:
+ * a warning in a build log is the "enforced, not documented" failure this repo names as axiom 3,
+ * and an inaccessible theme is a legal exposure (EN 301 549, ADA Title II, the EAA) that the app
+ * author will not discover until an audit. WCAG 2.2 AA, never APCA — APCA is not a standard.
+ *
+ * The cause names the measured ratio and the required one, so the fix is arithmetic rather than
+ * guesswork; the fix names the role to move, because a pairing is repaired from one side.
+ */
+export function insufficientContrastError(
+  theme: string,
+  what: string,
+  fg: string,
+  bg: string,
+  ratio: number,
+  minimum: number,
+): UiError {
+  return new UiError({
+    code: UI_ERROR_CODES.contrastInsufficient,
+    cause: `defineTheme() ${theme} palette renders ${what}: "${fg}" on "${bg}" measures ${ratio.toFixed(2)}:1, and WCAG 2.2 AA requires ${String(minimum)}:1`,
+    fix: `darken or lighten the "${fg}" channels in defineTheme({ colors: { ${theme}: { '${fg}': '<R G B>' } } }) until contrastRatio() answers ${String(minimum)} or more against "${bg}" — @ultimat3/ui exports contrastRatio and roleContrast to measure a candidate before you ship it`,
   });
 }
 

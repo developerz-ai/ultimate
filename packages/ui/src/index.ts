@@ -6,7 +6,13 @@
 // would be TS2307 there. The reference pulls the contract along with the entry.
 /// <reference path="./scss.d.ts" />
 
-export type { FocusTrap, Politeness, RovingOptions, RovingOrientation } from './a11y';
+export type {
+  FocusTrap,
+  LiveRegionAttrs,
+  Politeness,
+  RovingOptions,
+  RovingOrientation,
+} from './a11y';
 export {
   announce,
   ariaBool,
@@ -14,6 +20,8 @@ export {
   createRovingTabindex,
   FOCUSABLE_SELECTOR,
   focusableWithin,
+  LIVE_REGION_LEVELS,
+  liveRegionAttrs,
   nextRovingIndex,
   resetIdCounter,
   useId,
@@ -25,12 +33,28 @@ export type { AlertProps } from './components/Alert';
 export { Alert } from './components/Alert';
 export type { AppShellProps } from './components/AppShell';
 export { AppShell } from './components/AppShell';
+export type { AsyncRegionProps } from './components/AsyncRegion';
+// --- async regions: the one four-way decision, and the component that renders it --------------
+export { AsyncRegion } from './components/AsyncRegion';
 export type { AvatarProps } from './components/Avatar';
 export { Avatar, initialsOf } from './components/Avatar';
 export type { AccordionSection } from './components/accordion-view';
 export { accordionOpenIds } from './components/accordion-view';
 export type { ShellIds, ShellLandmark, ShellSlots } from './components/app-shell-view';
 export { shellIds, shellLandmarks } from './components/app-shell-view';
+export type {
+  AsyncBranch,
+  AsyncFlags,
+  AsyncState,
+  ReserveBox,
+} from './components/async-branch';
+export {
+  asyncBranch,
+  asyncStateOf,
+  isBusyBranch,
+  isEmptyData,
+  reserveBlockSize,
+} from './components/async-branch';
 export type { BadgeProps } from './components/Badge';
 export { Badge } from './components/Badge';
 export type { BreadcrumbItem, BreadcrumbProps } from './components/Breadcrumb';
@@ -110,7 +134,7 @@ export { Input } from './components/Input';
 export type { IconElement, IconGlyph, IconTag } from './components/icon-glyph';
 export { ICON_TAGS, iconElements, isIconTag } from './components/icon-glyph';
 export type { ImageBox, ImageLoadingHints, ImageVariant } from './components/image-source';
-export { boxFor, loadingHints, srcsetFor } from './components/image-source';
+export { boxFor, loadingHints, ratioFor, srcsetFor } from './components/image-source';
 export type { LoadMoreInput, LoadMoreState } from './components/infinite-scroll-view';
 export { loadMoreState } from './components/infinite-scroll-view';
 export type { LinkProps } from './components/Link';
@@ -162,8 +186,10 @@ export type { TextareaProps } from './components/Textarea';
 export { Textarea } from './components/Textarea';
 export type { ThemeChoice, ThemeToggleProps } from './components/ThemeToggle';
 export { ThemeToggle } from './components/ThemeToggle';
-export type { ToastProps, ToastRegionProps } from './components/Toast';
+export type { ToastPlacement, ToastProps, ToastRegionProps } from './components/Toast';
 export { Toast, ToastRegion } from './components/Toast';
+export type { ToasterProps } from './components/Toaster';
+export { Toaster } from './components/Toaster';
 export type { ToolbarProps } from './components/Toolbar';
 export { Toolbar } from './components/Toolbar';
 export type { TooltipProps } from './components/Tooltip';
@@ -179,6 +205,7 @@ export { DEBOUNCE_DEFAULT_MS, debounce } from './debounce';
 export type { UiErrorCode } from './errors';
 export {
   conflictingFieldNameError,
+  insufficientContrastError,
   invalidBrandTokenError,
   invalidFieldPathError,
   invalidGlyphError,
@@ -193,7 +220,7 @@ export {
 } from './errors';
 // --- forms: the binding between an action's input schema and Field's error slot ---------------
 export type { FieldPathSegment, IssuePathSegment } from './form/field-path';
-export { formatFieldPath, MAX_FIELD_INDEX, parseFieldPath } from './form/field-path';
+export { fieldSelector, formatFieldPath, MAX_FIELD_INDEX, parseFieldPath } from './form/field-path';
 export type { FormBinding, FormBindingOptions } from './form/form-binding';
 export { createFormBinding } from './form/form-binding';
 export type {
@@ -207,10 +234,19 @@ export type { FormErrors, FormState, FormStatus } from './form/form-state';
 export {
   distributeIssues,
   errorOf,
+  firstInvalidField,
   IDLE_FORM_STATE,
   messagesOf,
   NO_FORM_ERRORS,
 } from './form/form-state';
+export type { FormTouch } from './form/form-touch';
+export {
+  isFormDirty,
+  markDirty,
+  markTouched,
+  NO_FORM_TOUCH,
+  sameFieldValue,
+} from './form/form-touch';
 export { valuesOfForm } from './form/form-values';
 export { useForm } from './form/use-form';
 export type { UiKey } from './i18n-keys';
@@ -266,6 +302,25 @@ export {
   toggleTheme,
   watchOsTheme,
 } from './theme/theme';
+export type {
+  ToastAction,
+  ToastDwell,
+  ToastHold,
+  ToastInput,
+  ToastItem,
+  ToastQueue,
+} from './toast/toast-state';
+// --- toasts: the queue behind ToastRegion ------------------------------------
+export {
+  collapsedToasts,
+  EMPTY_TOAST_QUEUE,
+  TOAST_DWELL_MS,
+  TOAST_MAX_VISIBLE,
+  visibleToasts,
+} from './toast/toast-state';
+export type { ToastEnv, ToastStore } from './toast/toast-store';
+export { browserToastEnv, createToastStore, INERT_TOAST_ENV } from './toast/toast-store';
+export { useToasts } from './toast/use-toasts';
 export type { Channels } from './tokens/contrast';
 export {
   AA_LARGE,
@@ -277,6 +332,8 @@ export {
   relativeLuminance,
   roleContrast,
 } from './tokens/contrast';
+export type { ContrastPair } from './tokens/contrast-pairs';
+export { CONTRAST_PAIRS, VISIBLE_EDGE } from './tokens/contrast-pairs';
 export type { ColorRole, RadiusName, Theme } from './tokens/tokens';
 // --- tokens ------------------------------------------------------------------
 export {

@@ -12,11 +12,18 @@
 // boots and sends is still an island whose offline badge can never appear — the same defect,
 // relocated. `queues the click while the socket is down` is the case that fails without the
 // `OfflineQueue` in `mount`, and it is why this file clicks BEFORE opening the socket.
+//
+// The THIRD half is the one nothing in this repository had ever executed: the optimistic twin.
+// `recordMutation` applies it under `if (store && local && !collapsed)`, no app passed a
+// `LocalStore`, so the count on screen never moved until a reload. Two cases pin the pair that
+// turns it on, and each fails for a different deletion — take the `store` out of `mount` and the
+// count stays put on the click; take the `log` out and the count never comes BACK when the server
+// refuses the write, because `rollbackFailed` returns early without both.
 
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
 import type { Frame } from '@ultimat3/realtime';
-import { decode } from '@ultimat3/realtime';
+import { decode, encode, PROTOCOL_VERSION, toWireError } from '@ultimat3/realtime';
 import {
   afterAll,
   beforeAll,
@@ -36,12 +43,15 @@ const ORG_ID = '00000000-0000-4000-8000-0000000000aa';
 const PROPS = {
   postId: POST_ID,
   orgId: ORG_ID,
+  /** The server's count, as the page reads it. The twin can only ever take this to 3. */
+  likeCount: 2,
   syncUrl: SYNC_URL,
   buildId: 'build-1',
   actorId: '00000000-0000-4000-8000-0000000000bb',
   labels: {
     like: 'Like',
     count: '2 likes',
+    countWithMine: '3 likes',
     queued: 'Queued — this will be sent when you are back online.',
   },
 } as const;
@@ -91,7 +101,7 @@ const socket = (): FakeSocket => opened[0] as FakeSocket;
  * — so between an import added to this island and a page that boots slower than the server render
  * it replaces, there is this line and the 512-byte shaker flap `island-bytes.test.ts` records.
  */
-const BUDGET_BYTES = 50 * 1024 - 774;
+const BUDGET_BYTES = 56 * 1024 - 774;
 
 const mutateFrames = (): readonly Extract<Frame, { type: 'mutate' }>[] =>
   socket()
@@ -105,6 +115,25 @@ const mutateFrames = (): readonly Extract<Frame, { type: 'mutate' }>[] =>
  * async: `useMutation` awaits the enqueue before it bumps the signal the badge reads.
  */
 const settle = (): Promise<void> => Bun.sleep(0);
+
+/** What the node answers a mutation it will not apply — today's `x dev` answers exactly this. */
+const refuse = (key: string): void => {
+  socket().onmessage?.({
+    data: encode({
+      type: 'ack',
+      v: PROTOCOL_VERSION,
+      ref: key,
+      lsn: null,
+      error: toWireError({
+        code: 'X_NOT_IMPLEMENTED',
+        cause: 'this sync node was started without a mutation handler',
+        fix: 'pass onMutate to createSyncNode({ onMutate })',
+      }),
+    }),
+  });
+};
+
+const countText = (): string => mounted.text('[data-role="count"]');
 
 let mounted: MountedIsland;
 
@@ -139,10 +168,13 @@ describe('the like island', () => {
     expect(mounted.find('[data-role="shell"]')).toBeNull();
     expect(mounted.text('button')).toBe(PROPS.labels.like);
     expect(mounted.text('[data-role="queued"]')).toBe('');
+    // Nothing has been clicked, so the local row still holds the count the server rendered.
+    expect(countText()).toBe(PROPS.labels.count);
     // Solid compiles to real DOM calls; a chunk falling back to the classic React factory names a
     // global that is not in it, and `Bun.build` answers `success: true` over that all the same.
     expect(mounted.code).not.toMatch(/\bReact\b/);
-    // Measured 2026-08-25: 46,658 of 50,426, and 59,846 with `@ultimat3/ui`'s `Button` in it.
+    // Measured 2026-09-08: 52,824 of 56,570 — 48,972 of it the island as it stood before tier 3
+    // was turned on, and 3,852 the store, the log and the signal that reads the optimistic row.
     // `TextEncoder`, not `Buffer`: the same measure `hydrateRuntimeBytes` takes, and no `node:`.
     expect(new TextEncoder().encode(mounted.code).byteLength).toBeLessThan(BUDGET_BYTES);
   });
@@ -157,6 +189,11 @@ describe('the like island', () => {
 
     expect(mutateFrames()).toHaveLength(0);
     expect(mounted.text('[data-role="queued"]')).toBe(PROPS.labels.queued);
+    // The whole point of tier 3, executed for the first time in this repository: no socket, no
+    // server, no round trip, and the member's own like is already on screen. Without the
+    // `MemoryLocalStore` in `mount` this reads `2 likes` — `recordMutation` skips `store.apply`
+    // and there is no optimistic row anywhere.
+    expect(countText()).toBe(PROPS.labels.countWithMine);
   });
 
   test('drains the queued mutation by name once the socket opens', async () => {
@@ -170,6 +207,9 @@ describe('the like island', () => {
     expect(mutate?.input).toEqual({ postId: POST_ID, orgId: ORG_ID });
     // Online again, so the badge is not the right thing to say about a mutation in flight.
     expect(mounted.text('[data-role="queued"]')).toBe('');
+    // Sending changes nothing on screen: the twin already said it, and an accepted write must not
+    // flicker.
+    expect(countText()).toBe(PROPS.labels.countWithMine);
   });
 
   test('a click on a live socket is sent once, and not counted as queued', async () => {
@@ -178,5 +218,37 @@ describe('the like island', () => {
 
     expect(mutateFrames()).toHaveLength(2);
     expect(mounted.text('[data-role="queued"]')).toBe('');
+    // Convergent, through the real client this time and not a fake `LocalTx`: the second twin
+    // reads `likedByMe` and writes nothing, so one member is one like however often they press.
+    expect(countText()).toBe(PROPS.labels.countWithMine);
+  });
+
+  /**
+   * The rollback path, and it is the path a running Postly takes TODAY: `x dev` builds its sync
+   * node with no `onMutate` (`packages/cli/src/dev-sync.ts` passes none), so every `mutate` frame
+   * comes back as an `ack` carrying `X_NOT_IMPLEMENTED`. An optimistic write with nothing to take
+   * it back would leave a like on screen that no server ever accepted.
+   *
+   * Both keys, oldest first, because that is what the reconcile rule makes observable: refusing
+   * the first rolls back everything from its sequence onward and REPLAYS the second, so the count
+   * is still `3 likes` in between. Only when the second is refused too is there no optimistic
+   * write left, and the row is the one the server rendered.
+   */
+  test('a refused write is taken back off the screen', async () => {
+    const [first, second] = mutateFrames();
+    expect(first?.key).toBeString();
+    expect(second?.key).toBeString();
+
+    refuse(first?.key ?? '');
+    await settle();
+    // Not yet: the second like is still pending, and rollback replays what it undid around it.
+    expect(countText()).toBe(PROPS.labels.countWithMine);
+
+    refuse(second?.key ?? '');
+    await settle();
+    // The pre-mutation count, restored from the journal `MemoryLocalStore` kept under each key.
+    // Without the `RebaseLog` in `mount` this stays `3 likes` for ever: `rollbackFailed` returns
+    // early when either half of the pair is missing.
+    expect(countText()).toBe(PROPS.labels.count);
   });
 });

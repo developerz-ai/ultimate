@@ -8,7 +8,96 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`AsyncRegion` + `asyncBranch`** (`@ultimat3/ui`): one way to render a region that waits on data.
+  `AsyncState` is `pending | refreshing | ready | failed` and `AsyncRegionProps.empty` is a
+  REQUIRED prop, so forgetting the empty state is `TS2741` rather than a review comment. `empty` is
+  structurally unreachable from `pending` — the pending branch carries no data, so nothing can be
+  found empty in it. Rendering "No results" for one frame before the first page arrives is the most
+  common agent-authored defect in a list screen, and it is now unconstructible. `refreshing` keeps
+  the previous data rendered and dimmed under `aria-busy`, which is what stops a search feeling
+  slow. `DataTable` was the ONLY place in the framework where `(loading, error, empty, data)` was
+  one decision; it now calls the same rule, so there is one implementation and not two.
+- **A toast store** (`@ultimat3/ui`): `createToastStore`, `useToasts` and `Toaster`, all three new.
+  `Toast` and `ToastRegion` already shipped — correctly, and the live-region reasoning in that file
+  is the hard part — but with **zero consumers repo-wide** and no queue behind them, so an app had
+  the two components and no way to drive them. Dwell is a token (4s / 8s /
+  sticky), the visible stack is capped at 3, identical messages dedupe, and the timer pauses on
+  hover, on focus-within **and** on `document.hidden` — a backgrounded tab burned the whole dwell
+  and the reader never saw the message.
+- **`announce()` is wired** (`@ultimat3/ui`): `AppShell` renders both live regions, empty, into the
+  SERVER response. A live region must exist in the DOM before its content is appended or most
+  screen readers announce nothing, so the first message of a session was silent — calls 2..n were
+  always fine, which is why nobody found it. `announce()` had zero callers.
+- **Form submit state, dirty/touched tracking, and focus-first-invalid** (`@ultimat3/ui`):
+  `FormBinding` gains `pending()`, `firstInvalidField()`, `touch()`, `edit()` and an `initial`
+  baseline. `form-binding.ts` published `status: 'submitting'` and NOTHING consumed it. A failed
+  submit now focuses the first invalid CONTROL in declaration order, not just the error summary,
+  which left the reader stranded at the top of the form.
+- **`defineTheme()` refuses a palette that fails WCAG 2.2 AA** — `X_UI_CONTRAST_INSUFFICIENT`.
+  Only pairings the brand can have CHANGED are measured; blaming an app for the framework's own
+  colours is how a rule gets switched off. AA and never APCA: APCA is not a standard, and AA is the
+  operative legal benchmark. The gate caught a pre-existing unreadable test fixture on its first run.
+- **`aspect-ratio` on `Image`** (`@ultimat3/ui`): the `width`/`height` attributes reserve the box
+  only until a stylesheet sets a size of its own; `aspect-ratio` survives that.
+- **`x shot --all-islands`**: photographs every island in the app in every state it declares, in
+  both themes, and writes `.x/shot/island/index.md` — one file an agent opens to see what it is
+  looking at, carrying each state's `note` (why it cannot be reached by clicking) and its verdict.
+  `islandShotPlan` had expanded the whole set since it was written, was exported, was tested, and
+  had **zero callers**. One island failing no longer aborts the run: everything is captured and
+  written, then the exit code carries the verdict.
+- **The island crop carries a margin** (`ISLAND_CROP_MARGIN_PX`), clamped so it can only ever grow
+  the frame. A pixel-tight crop shaved the box-shadow and hairline borders off every picture.
+- **Console warnings and an overflow scan** are recorded per island state and surfaced in `--json`.
+  Neither gates: gating on a warning is how a useful signal gets switched off.
+- **Five new app guards in `x new`** — `semantic-interactive`, `focus-visible`, `image-dimensions`,
+  `animated-layout-property`, `island-without-states`. Each is statically decidable and catches a
+  defect agents produce at high frequency; each carries a legitimate-lookalike test that must NOT
+  be reported, because noise is how a rule gets switched off.
+- **`x g island` and `x g resource` emit a `.island.states.ts`**, so a generated island is
+  photographable the moment it exists.
+- **[`wiki/Interface-Rules.md`](https://github.com/developerz-ai/ultimate/wiki/Interface-Rules)** —
+  the interface rules an agent follows, each marked with what refuses it or with the word
+  **judgement**. A rule with nothing enforcing it is named as unenforced rather than implied.
+
+### Changed
+
+- **BREAKING — `DataTable` keeps stale rows while reloading** instead of replacing them with
+  skeletons. A first load (`rows: []`) still renders skeletons; a reload dims the existing rows
+  under `aria-busy`. Replacing rendered content with placeholders on every refresh is a second
+  layout change for no news, and it is what makes a fast app feel slow. An app that relied on the
+  skeleton appearing on every load sees rows instead.
+- **BREAKING — `Button.loading` no longer sets the native `disabled` attribute.** It sets
+  `aria-disabled` + `aria-busy` and refuses the click in `onClick` with `preventDefault()`. A
+  `disabled` control loses focus mid-flow, is exempt from the contrast minimum, explains nothing,
+  and does not actually prevent the double submit — that race is server-side. An app styling
+  `button[disabled]` must also style `button[aria-disabled='true']`.
+
+### Fixed
+
+- **`persist: true` is documented everywhere and exists nowhere.** `query()` has never accepted the
+  key; the only `persist` in `@ultimat3/realtime` is a private `#persist()` inside the offline
+  queue. `wiki/Realtime.md`'s tier ladder, `docs/idea/03-realtime.md`,
+  `docs/architecture/07-realtime-internals.md` and `docs/architecture/15-adding-a-feature.md` all
+  handed out the flag as an instruction — the last of those on the page an agent is told to follow.
+  Tier 3 is reached by passing a `LocalStore` to the live client. `sync-protocol.ts`'s header
+  claimed the flag was "enforced here", which is the declared-and-never-wired shape this repo keeps
+  re-shipping. Neither `config-readers.ts` nor `declaration-readers.ts` can see a key that exists
+  only in prose.
+- **Optimistic UI had never executed.** `client-mutations.ts` gates the optimistic apply on
+  `if (store && local && !collapsed)`, `LocalStore` is optional, and no app in the repo passed one —
+  so `wiki/Realtime.md`'s claim that at tier 2 "my own click feels instant" was false as every
+  shipped example configured it. `examples/dummy`'s like button now passes a `MemoryLocalStore` and
+  a `RebaseLog`, and both the apply and the rollback are proved by mutation.
+- **`wiki/Theming.md` attributed two rules to a linter that cannot see them.** Biome lints
+  TypeScript — `bunx biome check` on a `.scss` answers "these paths were provided but ignored". The
+  raw-hex rule is `tokens.test.ts` on the `unit` step, and its exemption is two files, not a
+  directory.
+- **`wiki/Testing.md` said "Twenty steps" over a nineteen-row table** — `policy` was missing.
+  `gate-steps.ts` checks the stated count and the list sentence, never the table rows.
+- **`wiki/Realtime.md` said IndexedDB, twice.** `createOpfsLocalStore` is SQLite over OPFS; the code
+  has never used IndexedDB.
 
 ## 19.4.0 - 2026-09-08
 

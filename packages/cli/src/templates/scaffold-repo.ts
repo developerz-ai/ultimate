@@ -26,6 +26,17 @@ import { uiPackageFiles } from './scaffold-ui-package';
  */
 const BIOME_VERSION = '2.5.8';
 
+/**
+ * The checker a scaffolded app typechecks with, and it must not lag the one the FRAMEWORK is built
+ * and gated on: `@ultimat3/*` ships `.d.ts` emitted by this compiler, so an app pinned a major
+ * behind reads the types its own dependencies were written against through an older checker.
+ * It drifted for exactly the reason `BIOME_VERSION` did not — Biome's was spelled once as a
+ * constant and TypeScript's was a literal buried in a dependency block, so the framework moved to
+ * 7.x and every `x new` kept scaffolding `^6.0.3`. `scaffold-repo.test.ts` now pins this against
+ * the repo's own root `package.json`, so the next bump cannot leave the scaffold behind in silence.
+ */
+const TYPESCRIPT_VERSION = '^7.0.2';
+
 // `version` is not decoration: the manifest's app version IS the contract's compatibility gate,
 // and the manifest never fabricates one — so an app scaffolded without it failed `x manifest`,
 // the `manifest` verify step and every production boot with X_APP_PACKAGE_INVALID.
@@ -54,7 +65,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "@electric-sql/pglite": "^0.5.4",
     "@types/bun": "^1.4.0",
     "@ultimat3/testing": "^${version}",
-    "typescript": "^6.0.3"
+    "typescript": "${TYPESCRIPT_VERSION}"
   },
   "dependencies": {
     "@ultimat3/action": "^${version}",

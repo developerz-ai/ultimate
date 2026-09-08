@@ -63,8 +63,19 @@
   border-radius: t.radius(pill);
   background: t.role('bg-soft');
   overflow: hidden;
+  // Bounds the layout pass the `.bar` transition below costs to this subtree. See the note there.
+  contain: layout;
 }
 
+// The upload bar. `inline-size` is a LAYOUT-triggering property and a transition on one is not
+// compositor-only, which is a real cost and a deliberate trade — the compositor-safe form is
+// `transform: scaleX()`, and `transform-origin` has no logical keyword, so the bar would grow from
+// the physical left edge and fill away from the reading edge under `dir="rtl"`. A progress bar that
+// runs backwards in Arabic is a worse defect than a layout pass. `contain: layout` on the track is
+// what bounds the cost instead: the invalidation stops at the track, so nothing outside it is
+// re-laid-out per frame. `layout` alone and NOT `layout size` — `size` makes a box ignore its
+// contents in both axes, and FileInput's track takes its inline size from its containing block.
+//
 // Inline-start, not `left`: the bar has to fill from the reading edge under `dir="rtl"` too.
 .bar {
   display: block;

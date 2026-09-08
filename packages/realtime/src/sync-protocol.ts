@@ -1,6 +1,10 @@
 // The wire. One protocol for all three tiers: a channel subscribe, a live-query subscribe, and an
-// offline mutation drain are frames in the same union. Moving a route from tier 2 to tier 3 is a
-// config flag (`persist: true`), never a new protocol — that promise is enforced here.
+// offline mutation drain are frames in the same union — so moving a route from tier 2 to tier 3
+// needs no new protocol, and THAT is the half this file enforces.
+// It is not a `persist: true` config flag: this header said so until 2026-09 and `query()` has
+// never accepted the key (`local-store.ts` records the same). Tier 3 is reached by passing a
+// `LocalStore` to the live client, which is a client-side wiring decision this file cannot see —
+// claiming to enforce it here is the declared-and-never-wired shape the repo keeps re-shipping.
 
 import { renderThrowable, stringField } from '@ultimat3/core';
 import { CURSOR_ID_LIMIT, type LiveCursor } from './cursor';

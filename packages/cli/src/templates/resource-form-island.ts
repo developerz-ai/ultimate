@@ -266,6 +266,69 @@ describe('the ${feature.kebab} form island', () => {
 `;
 
 /**
+ * The states file beside the entry, and it ships WITH the island rather than after it: `x verify`'s
+ * `boundaries` step refuses an island that declares none (`guards/island-without-states.ts`), so a
+ * generator that wrote only the component would scaffold a file that fails the app's own gate on
+ * the next command.
+ */
+const formIslandStates = (
+  feature: NameSet,
+  dir: string,
+): string => `// The states the ${feature.kebab} form can be photographed in. \`x shot --island ${feature.kebab}-form --json\`
+// takes one picture per state per theme into \`.x/shot/island/${feature.kebab}-form/\`, and the states
+// worth declaring are the ones a running app will not produce on request.
+//
+// PURE DATA. No JSX, no \`solid-js\`, and the one import below is \`import type\`, which
+// \`verbatimModuleSyntax\` erases entirely — the command that takes the pictures has to know the
+// complete expected list before a browser exists. \`X_TEST_ISLAND_STATES_NOT_PURE\` is the refusal.
+//
+// The labels are literals here and that is not a \`t()\` violation: an island's props cross the seam
+// as JSON inside the document, so the SERVER translates and the browser is handed text. These are
+// the text the server would have handed it.
+
+import { defineIslandStates } from '@ultimat3/testing';
+import type { ${feature.pascal}FormProps } from './${feature.kebab}-form.island';
+
+/** What a working render hands the form — the baseline the state below departs from. */
+const BASE = {
+  endpoint: '/api/create-${feature.kebab}',
+  locale: 'en',
+  labels: {
+    title: 'Title',
+    submit: 'Save',
+    saved: 'Saved',
+    retry: 'That did not save. Try again.',
+  },
+} satisfies ${feature.pascal}FormProps;
+
+export const ${feature.camel}FormStates = defineIslandStates({
+  island: '${dir}/${feature.kebab}-form.island.tsx',
+  states: [
+    {
+      id: 'idle',
+      title: 'the first paint, before anything has been typed',
+      props: BASE satisfies ${feature.pascal}FormProps,
+    },
+    {
+      id: 'long-labels',
+      title: 'the same form in a locale whose words are three times as long',
+      note: 'you cannot reach this by clicking: it needs a translation, and the locale this was written in is the one that fits',
+      props: {
+        ...BASE,
+        locale: 'de',
+        labels: {
+          title: 'Bezeichnung des Beitrags',
+          submit: 'Änderungen speichern',
+          saved: 'Änderungen gespeichert',
+          retry: 'Das konnte nicht gespeichert werden. Bitte erneut versuchen.',
+        },
+      } satisfies ${feature.pascal}FormProps,
+    },
+  ],
+});
+`;
+
+/**
  * The slice's form, as the one client shape: `<dir>/<feature>-form.island.tsx` plus its test.
  *
  * `pageDir` is the directory of the page that declares it — the caller's, because only the caller
@@ -280,6 +343,10 @@ export function formIslandFiles(
     {
       path: `${dir}/${feature.kebab}-form.island.tsx`,
       contents: formIslandSource(feature, formIslandSpecifier(feature, dir, pageDir)),
+    },
+    {
+      path: `${dir}/${feature.kebab}-form.island.states.ts`,
+      contents: formIslandStates(feature, dir),
     },
     {
       path: `${dir}/${feature.kebab}-form.island.test.ts`,

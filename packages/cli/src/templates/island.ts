@@ -5,7 +5,7 @@
 // compiles. All three are pinned by the emitted test, which builds the chunk and mounts it.
 
 import type { GeneratedFile } from './naming';
-import { kebab, pascal } from './naming';
+import { camel, kebab, pascal } from './naming';
 
 export interface IslandOptions {
   /** Directory the entry lands in, app-root-relative and POSIX — normally a route's own folder. */
@@ -170,12 +170,55 @@ describe('the ${name} island', () => {
 });
 `;
 
+/**
+ * The states file beside the entry, and it ships WITH the island rather than after it: `x verify`'s
+ * `boundaries` step refuses an island that declares none (`guards/island-without-states.ts`), so a
+ * generator that wrote only the component would scaffold a file that fails the app's own gate on
+ * the next command. The second state is the point of the whole mechanism — a label a translation
+ * is three times as long in is a state nobody can reach by clicking in the locale they develop in.
+ */
+const islandStates = (name: string, dir: string): string => {
+  const Name = pascal(name);
+  return `// The states \`${name}\` can be photographed in. \`x shot --island ${name} --json\` takes one
+// picture per state per theme into \`.x/shot/island/${name}/\`, and the states worth declaring are
+// the ones a running app will not produce on request.
+//
+// PURE DATA. No JSX, no \`solid-js\`, and the one import below is \`import type\`, which
+// \`verbatimModuleSyntax\` erases entirely — the command that takes the pictures has to know the
+// complete expected list before a browser exists. \`X_TEST_ISLAND_STATES_NOT_PURE\` is the refusal.
+//
+// The labels are literals here and that is not a \`t()\` violation: an island's props cross the seam
+// as JSON inside the document, so the SERVER translates and the browser is handed text.
+
+import { defineIslandStates } from '@ultimat3/testing';
+import type { ${Name}Props } from './${name}.island';
+
+export const ${camel(name)}States = defineIslandStates({
+  island: '${dir}/${name}.island.tsx',
+  states: [
+    {
+      id: 'idle',
+      title: 'the first paint, before anything has been clicked',
+      props: { label: 'Open' } satisfies ${Name}Props,
+    },
+    {
+      id: 'long-label',
+      title: 'the label a translation is three times as long in',
+      note: 'you cannot reach this by clicking: it needs a locale whose word for this is long, and the one this was written in is not it',
+      props: { label: 'Abrechnungseinstellungen anzeigen' } satisfies ${Name}Props,
+    },
+  ],
+});
+`;
+};
+
 export function islandFiles(rawName: string, options: IslandOptions): readonly GeneratedFile[] {
   const name = kebab(rawName);
   const dir = options.dir.replace(/\/+$/, '');
   return [
     { path: `${dir}/${name}.island.tsx`, contents: islandSource(name) },
     { path: `${dir}/${name}.module.scss`, contents: islandStyle() },
+    { path: `${dir}/${name}.island.states.ts`, contents: islandStates(name, dir) },
     { path: `${dir}/${name}.island.test.ts`, contents: islandTest(name, dir) },
   ];
 }

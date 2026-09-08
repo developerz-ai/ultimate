@@ -59,13 +59,58 @@ describe('defineTheme', () => {
   });
 
   test('output is ordered by the canonical scales, not by the input object', () => {
-    const a = defineTheme({ colors: { light: { accent: '1 1 1', bg: '2 2 2' } } }).css;
-    const b = defineTheme({ colors: { light: { bg: '2 2 2', accent: '1 1 1' } } }).css;
+    // A READABLE pair: `defineTheme` measures every pairing this brand can have changed against
+    // WCAG 2.2 AA, so a fixture of two arbitrary near-black channels is now a refusal rather than
+    // an ordering fixture. `bg` is one channel off the shipped value, which keeps every ratio.
+    const a = defineTheme({ colors: { light: { accent: '1 1 1', bg: '253 246 241' } } }).css;
+    const b = defineTheme({ colors: { light: { bg: '253 246 241', accent: '1 1 1' } } }).css;
     expect(a).toBe(b);
     // The two declarations adjacent and in `COLOR_ROLES` order, not a pairwise `indexOf`: a role
     // that stopped being emitted answers -1, which is less than every real index, so the pairwise
     // form read as ordered for a stylesheet that had dropped `--color-bg` altogether.
-    expect(a).toContain('--color-bg: 2 2 2;\n  --color-accent: 1 1 1;');
+    expect(a).toContain('--color-bg: 253 246 241;\n  --color-accent: 1 1 1;');
+  });
+
+  describe('a palette that fails WCAG 2.2 AA is refused, not warned about', () => {
+    test('body text the new background swallows', () => {
+      // Mid grey under the shipped `fg`: the commonest way a brand goes unreadable is changing one
+      // side of a pairing and never measuring the other.
+      expect(() => defineTheme({ colors: { light: { bg: '110 110 110' } } })).toThrow(
+        expect.objectContaining({ code: UI_ERROR_CODES.contrastInsufficient }),
+      );
+    });
+
+    test('an accent so pale that both the link text and the white label on it vanish', () => {
+      // Half a pairing changed: `accent-fg` is white and untouched, and the surfaces are too.
+      expect(() => defineTheme({ colors: { light: { accent: '235 235 235' } } })).toThrow(
+        expect.objectContaining({ code: UI_ERROR_CODES.contrastInsufficient }),
+      );
+    });
+
+    test('the refusal names the measured ratio, the required one, and the role to move', () => {
+      try {
+        defineTheme({ colors: { light: { bg: '110 110 110' } } });
+        expect.unreachable('an unreadable palette rendered a stylesheet');
+      } catch (error) {
+        const failure = error as { cause?: string; fix?: string };
+        expect(failure.cause).toContain('WCAG 2.2 AA requires 4.5:1');
+        expect(failure.cause).toContain('light palette');
+        // Arithmetic, not guesswork: the author needs the number they are short by.
+        expect(failure.cause).toMatch(/measures \d+\.\d\d:1/);
+        expect(failure.fix).toContain('defineTheme');
+      }
+    });
+
+    test('a readable override still renders', () => {
+      // The check is a real bar in both directions, or it is a rule that only ever says no.
+      const css = defineTheme({ colors: { light: { accent: '21 92 152' } } }).css;
+      expect(css).toContain('--color-accent: 21 92 152;');
+    });
+
+    test('a brand that changes no colour is measured for nothing it did not touch', () => {
+      // Blaming an app for the framework's own palette is how a rule gets switched off.
+      expect(() => defineTheme({ radius: { md: '0.125rem' } })).not.toThrow();
+    });
   });
 
   test('the brand is frozen — a rendered stylesheet cannot be mutated after validation', () => {

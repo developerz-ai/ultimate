@@ -339,6 +339,14 @@ export const ERROR_STATUS = {
   // runtime and makes that answer a reviewed one instead of an accident, which is the whole reason
   // this table is closed.
   X_UI_FORM_PATH_INVALID: 500,
+  // @ultimat3/ui — `defineTheme()` refused a brand palette whose RESOLVED channels put a pairing
+  // below WCAG 2.2 AA. Declaration-time in the ordinary case, and it takes a row rather than a
+  // backlog entry for the one case that is not: an app that renders a per-tenant brand stylesheet
+  // during a request throws this ON that request. The author's fault and never the caller's, so
+  // 500 is the honest class, and a DECLARED 500 rather than an unclassified one — `toProblem`
+  // blanks the cause of an unclassified failure outside dev, which would hide the one thing that
+  // makes this error actionable: the role and the measured ratio.
+  X_UI_CONTRAST_INSUFFICIENT: 500,
   // @ultimat3/render — an island handed props it cannot carry: an undeclared key, a value that is
   // not JSON, or a bag over `ISLAND_PROPS_MAX_BYTES`. The author's fault and never the caller's,
   // so 500 is the honest class — and it HAS to be a declared 500. Without a row the code was an

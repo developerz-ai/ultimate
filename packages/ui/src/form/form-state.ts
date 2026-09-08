@@ -3,6 +3,7 @@
 // control the app forgot to declare, which is worse than having no binding at all.
 
 import type { FormIssue } from './form-issue';
+import { type FormTouch, NO_FORM_TOUCH } from './form-touch';
 
 export type FormStatus = 'idle' | 'submitting' | 'succeeded' | 'failed';
 
@@ -12,7 +13,7 @@ export interface FormErrors {
   readonly formErrors: readonly string[];
 }
 
-export interface FormState<TResult> extends FormErrors {
+export interface FormState<TResult> extends FormErrors, FormTouch {
   readonly status: FormStatus;
   /** The server's answer. Only ever set from a resolved `submit`. */
   readonly result: TResult | undefined;
@@ -35,6 +36,8 @@ export const IDLE_FORM_STATE: FormState<never> = Object.freeze({
   formErrors: [],
   result: undefined,
   issues: [],
+  touched: NO_FORM_TOUCH.touched,
+  dirty: NO_FORM_TOUCH.dirty,
 });
 
 /**
@@ -76,6 +79,21 @@ export function distributeIssues(
     formErrors.push(message);
   }
   return { fieldErrors, formErrors };
+}
+
+/**
+ * The first DECLARED field carrying an error, in declaration order — which is also the order the
+ * controls are rendered in, so it is the one the reader reaches first going down the page. What a
+ * failed submit moves focus to.
+ *
+ * Declaration order, never the ISSUE order: a server is free to report the last field first, and
+ * focus would then land halfway down a form the user has not read.
+ */
+export function firstInvalidField(state: FormErrors, fields: Iterable<string>): string | undefined {
+  for (const name of fields) {
+    if (state.fieldErrors.has(name)) return name;
+  }
+  return undefined;
 }
 
 /** Every message bound to one field, in the order the issues arrived. */
