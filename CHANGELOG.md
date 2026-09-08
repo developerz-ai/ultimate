@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 20.0.0 - 2026-09-08
+
 ### Added
 
 - **`AsyncRegion` + `asyncBranch`** (`@ultimat3/ui`): one way to render a region that waits on data.
@@ -98,6 +102,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `gate-steps.ts` checks the stated count and the list sentence, never the table rows.
 - **`wiki/Realtime.md` said IndexedDB, twice.** `createOpfsLocalStore` is SQLite over OPFS; the code
   has never used IndexedDB.
+
+### Commits
+
+- feat(ui,cli,testing): UX primitives, five interface guards, and a whole-app island gallery (#428)
 
 ## 19.4.0 - 2026-09-08
 
