@@ -17,7 +17,7 @@ import {
 } from '@ultimat3/core';
 import type { Server } from 'bun';
 import { defineHttpConfig, type HttpConfig } from './config';
-import { serverNotStarted, websocketPathTaken } from './errors';
+import { HttpError, serverNotStarted } from './errors';
 import type { ServerHooks } from './hooks';
 import type { Middleware } from './middleware';
 import { createPipeline, type Pipeline } from './pipeline';
@@ -25,6 +25,22 @@ import { createRateLimiter, type RateLimitStore } from './rate-limit';
 import { withRouteBuckets } from './rate-limit-buckets';
 import { json } from './response';
 import { createRouter, describeRoutes, type Route, type RouteDescription } from './router';
+
+/**
+ * Beside its one caller rather than in `errors.ts`, which is at the 500-line ceiling — the
+ * arrangement `dev-sync.ts` and `metrics-endpoint.ts` in `@ultimat3/cli` already take.
+ *
+ * A websocket mount and something already answering its path. Same code as two routes claiming
+ * one, because it is the same fact: one path, two declarations, and the framework picks — Bun's
+ * native route table is matched BEFORE `fetch`, so the route wins and the upgrade never reaches
+ * the mount. Refused at `createServer`, not discovered as a socket that will not open.
+ */
+const websocketPathTaken = (path: string, answered: string): HttpError =>
+  new HttpError({
+    code: 'X_ROUTE_CONFLICT',
+    cause: `the websocket mount claims ${path}, and ${answered} already answers it — Bun matches its native route table before \`fetch\`, so the upgrade would never reach the mount`,
+    fix: `x routes list --json   # then move the mount's path, or the declaration at ${path}`,
+  });
 
 /** Core owns the state machine; this alias exists so callers need one import. */
 export type LifecycleState = HealthState;
