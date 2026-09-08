@@ -51,6 +51,88 @@ roleContrast('dark', 'accent', 'bg') >= AA_TEXT;   // true
 contrastRatio('31 110 178', '253 246 240');        // 4.99 — check a brand before shipping it
 ```
 
+`As of 2026-09` **a brand override is measured too, and a failing one is refused.**
+`defineTheme()` resolves your channels over the shipped palette and checks every pairing in
+`CONTRAST_PAIRS` — the same table the framework's own palette is held to — throwing
+`X_UI_CONTRAST_INSUFFICIENT` with the measured ratio, the required one and the role to move.
+Only pairings your brand can have *changed* are measured: a new `accent` against the shipped
+white `accent-fg` is the commonest way a palette goes unreadable, and it is half a pair.
+WCAG 2.2 AA, never APCA — APCA is not a standard, and AA is the operative legal benchmark.
+
+```ts
+import { defineTheme } from '@ultimat3/ui';
+
+defineTheme({ colors: { light: { accent: '235 235 235' } } });
+// X_UI_CONTRAST_INSUFFICIENT: defineTheme() light palette renders the label on a primary Button:
+// "accent-fg" on "accent" measures 1.09:1, and WCAG 2.2 AA requires 4.5:1
+```
+
+## One async region
+
+Four states, one decision. `asyncBranch` is the only place `(pending, failed, empty, ready)` is
+decided — `<AsyncRegion>` renders it, `<DataTable>` calls it, and an app's own list can call it too.
+
+```tsx
+import { AsyncRegion, asyncStateOf, EmptyState } from '@ultimat3/ui';
+import type { JSX } from 'solid-js';
+
+declare const posts: { loading: boolean; error: unknown; latest: readonly string[] | undefined };
+declare const t: (key: string) => string;
+declare const PostList: (props: { rows: readonly string[] }) => JSX.Element;
+declare const refetch: () => void;
+
+const region = (
+  <AsyncRegion
+    state={asyncStateOf({ loading: posts.loading, error: posts.error, data: posts.latest })}
+    reserve={{ lines: 5, height: '3rem' }}
+    empty={() => <EmptyState title={t('posts.none')} />}
+    ready={(rows) => <PostList rows={rows} />}
+    onRetry={() => refetch()}
+  />
+);
+```
+
+`empty` and `ready` are **required**, so forgetting the empty state is a type error rather than a
+review comment. Three properties are structural, not documented:
+
+- **`empty` is unreachable while pending.** A `pending` state carries no data, so nothing can be
+  found empty in it — "No results" before the first page arrives is unconstructible.
+- **A refetch keeps the previous data.** `refreshing` carries it: the current page stays rendered
+  and dimmed under `aria-busy`, and the empty branch is reachable only from a *completed* result
+  that returned zero. `<DataTable loading>` with rows behaves the same way.
+- **The placeholder shares the loaded box.** `reserve` feeds the `<Skeleton>` *and* the
+  `min-block-size` of every branch, so a skeleton that resizes on load — a slower layout shift —
+  cannot be written.
+
+## Toasts
+
+`Toast` and `ToastRegion` render; `createToastStore()` is the queue behind them, and `<Toaster>` is
+the one way to draw it.
+
+```tsx
+import { createToastStore, Toaster } from '@ultimat3/ui';
+
+declare const t: (key: string) => string;
+declare const restore: () => void;
+
+const toasts = createToastStore();
+toasts.show({ message: t('post.saved'), tone: 'success' });
+toasts.show({ message: t('post.deleted'), action: { label: t('undo'), onAction: restore } });
+
+const region = <Toaster store={toasts} label={t('notifications')} />;
+```
+
+Auto-dismiss on a **token** (`short` 4s, `long` 8s, `sticky` never), a three-deep visible cap with
+the rest queued — a queued toast has not started its dwell, because nobody has read it — identical
+messages deduped rather than stacked, and the countdown held for three independent reasons: pointer
+over the stack, focus inside it, **and `document.hidden`**. The last is the one everybody forgets
+and the only one that loses the message outright: a backgrounded tab spends the whole dwell and the
+corner is empty when the user comes back.
+
+A toast never takes focus, never carries the only copy of anything, and carries at most one
+undo-shaped action. The region renders server-side and empty, which is what makes it announce at
+all — a live region created with its content already inside it is not read.
+
 ## Page layout
 
 Four composites cover the frame of an app screen. Below them are `Container`,
@@ -432,6 +514,25 @@ expected number`) — `packages/action/src/errors.ts` puts nothing in `meta`, an
 field only when the head is a declared path, so a message holding `'; '` or `': '` degrades to a
 form-level error rather than to a wrong control.
 
+### The submit state, and why `disabled` is refused
+
+`form.pending()` is the one value that reaches both halves: `<Button loading>` and `<Form busy>`.
+Neither sets the native `disabled` attribute, and that is deliberate — a control that disables
+itself mid-flow drops focus to `<body>`, is exempt from the contrast minimum, announces no reason,
+and does not actually prevent the double write, which is a race on the server. `aria-disabled` says
+unavailable and keeps the control focusable; the click is refused in the component, and `<Form busy>`
+refuses the submit again because Enter in a text field touches no button at all.
+
+A failed submit focuses the **first invalid control** (`form.firstInvalidField()`, in declaration
+order — a server may report the last field first), and the announced summary keeps the focus only
+when the rejection names no control at all. `form.touch(path)` and `form.edit(path, value)` record
+touched and dirty against the binding's `initial`; an empty control and an absent baseline are the
+same thing, so deleting what you just typed leaves the form clean.
+
+Blur-time validation is deliberately **absent**: this binding is server-authoritative, the local
+parse's value is already discarded, and a client-side "is this field valid" would be a second source
+of truth for the one thing the server decides.
+
 ## Errors
 
 | Code | When |
@@ -440,6 +541,7 @@ form-level error rather than to a wrong control.
 | `X_THEME_INVALID` | a theme other than `light` / `dark` |
 | `X_UI_RUNTIME_MISSING` | a DOM render with no registered Solid runtime, `<UiProvider>` on the server, or `browserThemeEnv()` off-DOM. A server render with no runtime is **not** one of them — it gets `INERT_SOLID_RUNTIME` |
 | `X_UI_FORM_PATH_INVALID` | a form field or control name the path grammar cannot read (`items.0.price`, `items[]`, `__proto__`), or two control names describing different shapes for one path (`user` beside `user.name`) |
+| `X_UI_CONTRAST_INSUFFICIENT` | a `defineTheme()` palette whose resolved channels put a pairing in `CONTRAST_PAIRS` below WCAG 2.2 AA — 4.5:1 for text, 3:1 for the focus ring. Only pairings the brand changed are measured; the cause names the measured ratio and the required one |
 | `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other, a heading level off 1–6, a `defineTheme()` value that is not a token value, an `<Icon>` glyph with a tag/attribute/colour outside `ICON_TAGS`, two `Accordion` items sharing an id, `InfiniteScroll` with `hasMore` and no `nextHref`, a negative `debounce` window, or (`As of 2026-08`) upstream icon data `bun run icons` refuses (not an object, no renderable nodes, an attribute value that is not glyph geometry) |
 
 ## Commands

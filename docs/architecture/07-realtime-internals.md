@@ -317,7 +317,7 @@ Drain sequencing across roles: [`13-topology-runtime.md`](./13-topology-runtime.
 
 ## What tier 3 adds
 
-`persist: true` on the query. No new mutators, no new authz, no new server code — the client half changes.
+A `LocalStore` passed to the live client. No new mutators, no new authz, no new server code — the client half changes. The designed spelling is `persist: true` on the query and **`query()` does not accept it**, `As of 2026-09` — `local-store.ts:230` records the same thing.
 
 | Added | Detail |
 |---|---|

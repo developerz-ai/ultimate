@@ -131,8 +131,17 @@ calls. A change outside that set is a collision — report it, do not make it.
 | Semantic tokens only | never a raw hex, in a component or a stylesheet |
 | Dates name a zone | explicit IANA time zone at every call site, no ambient default |
 | A page calls primitives | queries and actions, never a repo and never the database |
+| A click needs a control | \`<button>\`, \`<a href>\`, \`<input>\` — never a \`<div onClick>\`, and never \`role="button"\` where the tag exists. A role is a promise: it obliges you to answer Space, Enter, focus and disabled |
+| The focus ring is replaced | \`outline: none\` on its own leaves a keyboard user with nothing. \`@include tokens.focus-ring\`, or a \`:focus-visible\` box-shadow beside it |
+| Every image has a box | width + height, or an aspect-ratio. An unsized image moves everything under it when its bytes land, and the priority one is never \`loading="lazy"\` |
+| Animate transform and opacity | nothing else composites: a \`top\`, a \`width\` or a \`box-shadow\` costs a layout pass every frame, and \`transition: all\` animates properties nobody chose. \`tokens.duration()\` / \`tokens.easing()\` are the values |
+| An island declares its states | a sibling \`<name>.island.states.ts\`, so \`x shot --island <name> --json\` can photograph the failures nobody can click to |
 
-Inspect before you change: \`x routes --json\`, and \`x i18n check\` for catalog gaps.
+Every one of the last five is a build error, not a preference — \`guards/\` holds them and \`x verify\`'s
+\`boundaries\` step runs them. Read the guard rather than guessing at the rule.
+
+Inspect before you change: \`x routes --json\`, \`x i18n check\` for catalog gaps, and
+\`x shot <route> --json\` when you need to see what you built.
 
 Checks: \`bun test <path>/page.test.ts\`, \`bunx biome check --write <paths>\`, and \`bun run typecheck\`
 once when you are otherwise done. Never \`x verify\` — that belongs to whoever coordinates you.

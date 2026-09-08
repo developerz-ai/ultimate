@@ -31,3 +31,10 @@
   color: t.role('fg-muted');
   font-size: 0.75em;
 }
+
+// A refetch over rows already on screen: dimmed, never torn down. Same rule and same tokens as
+// `AsyncRegion`'s `.stale`, because it is the same state — the shared `asyncBranch` decides both.
+.stale {
+  opacity: 0.6;
+  transition: opacity t.duration(fast) t.easing(out);
+}

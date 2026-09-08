@@ -85,7 +85,7 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
 | `repo.ts` | SQL for this feature | business rules, HTTP |
 | `service.ts` | business logic composed from repos | HTTP, rendering, raw SQL |
 | `actions.ts` | `action` declarations | logic — delegate to `service.ts` |
-| `mutator.ts` | `mutator` declarations (local twin + server) | I/O inside `local` |
+| `mutator.ts` | `mutator` declarations — `server`, `policy`, `conflict` | I/O inside `local`; DECLARING `local`, which lives one file over |
 | `live.ts` | `query` declarations | writes |
 | `jobs.ts` | `job` declarations | inline slow work |
 | `backfills/` | `backfill()` sweeps — a job factory, so each one registers in `defineApi({ jobs })` | a `step` of its own; the pass mints one per page |
@@ -147,6 +147,22 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   names the query — the declaration drags `@ultimat3/action` and the Postgres client into the
   chunk. `hydrate` is `idle`, never `interaction`: the interaction runtime replays the waking event
   onto `ev.target`, and `mount` clears the wrapper first, so that node is no longer in the document.
+- **An island that WRITES carries a `LocalStore` and a `RebaseLog` as well as its `OfflineQueue`,
+  or its optimistic half does not run.** `recordMutation` applies the twin under
+  `if (store && local && !collapsed)` (`packages/realtime/src/client-mutations.ts`) and
+  `rollbackFailed` (`client-frames.ts`) returns early without BOTH the store and the log — so a
+  store with no log is an optimistic write that can never come off the screen when the server
+  refuses it. `MemoryLocalStore` + `RebaseLog` in `app/posts/[id]/like.island.tsx` are the two
+  objects, seeded with the one row the control is about: `LocalTable.update` is a no-op for a row
+  the table does not hold, so an unseeded store is the same as no store. `like.island.test.ts`
+  proves both halves through the real chunk — the count moves with no socket at all, and comes back
+  when both pending mutations are refused.
+- **Every island in this app carries `<name>.island.states.ts`, enforced by
+  `guards/island-without-states.ts`**, and three of the four cannot be photographed today: the shot
+  harness refuses `WebSocket` outright (`packages/cli/src/island-harness-script.ts:70`) so `feed`
+  and `like` reject in `mount`, and `contact-sales` takes the SERVER's markup over, which the
+  harness renders none of. Each states file says which of the two it is. `settings` is the one
+  `x shot --island` can really take.
 - An island that has states worth reviewing carries a sibling `<name>.island.states.ts`, and
   `x shot --island <name> --json` photographs every one of them into `.x/shot/island/<name>/`.
   `apps/web/app/settings/settings.island.states.ts` is the worked example: `empty-options` is what
@@ -176,6 +192,31 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   nobody registered fails with `X_TEST_FIXTURE_UNKNOWN` — register it there, once. Never register
   a framework name here: two apps would then disagree about what a `page` is.
 
+## `guards/` — this app's own conventions, as build errors
+
+`guards/*.ts` is discovered by `x verify` (never registered) and every guard runs inside the
+`boundaries` step: the directory IS the registration, so delete a file to drop its rule and write
+`x g guard <name>` to add one. **All nine `x new` ships run here, `As of 2026-09-08`** —
+`animated-layout-property`, `bare-error`, `focus-visible`, `image-dimensions`,
+`island-without-states`, `raw-colour`, `semantic-interactive`, `untranslated-string`,
+`unzoned-date` — each with its own `.test.ts` beside it, which the `unit` step runs and the gate
+does not import. Their codes are APP codes derived from the guard's name, so none of them is in
+`wiki/Error-Codes.md` or in any manifest. Every file here is byte-identical to
+`scaffoldGuardFiles()`'s output (`packages/cli/src/templates/scaffold-guards.ts`) — a guard edited
+in place is a rule this app and `x new` disagree about, so the repair for one of them goes in the
+template and comes back through a re-emit.
+
+**Two of the nine were absent until 2026-09-08, and both were absent because they were broken in
+the framework's own template — never to make the gate green.** Every finding either one produced
+here was a false positive, which is the failure this repo names outright: noise is how a rule gets
+switched off. Both are fixed in `packages/cli/src/templates/` and both now report **zero** against
+this app.
+
+| Guard | Was measured here | The defect, and its repair |
+|---|---|---|
+| `raw-colour` | **87 findings, 87 of them `rgb(`** | `CHANNEL_FUNCTION` matched `rgb(` unconditionally, and `rgb(var(--color-surface))` is what `@ultimat3/ui`'s own `tokens.role()` COMPILES to (`packages/ui/src/tokens/_colors.scss:98`, `tokens.ts` returns `rgb(var(--color-bg) / 1)`) — so the finding's own cause, "a value no theme can restate", was false of every one. The rule now reads the BALANCED argument list: a channel function whose slots are all `var(--…)` references or `#{…}` interpolations, with at most a trailing numeric alpha after `/` or `,`, is the token form. `rgb(1 2 3)` and `rgb(var(--x) 2 3)` are still refused, and the cause now names the whole call instead of the bare `rgb(` |
+| `untranslated-string` | **12 findings, 12 of them `t()` calls** | its `EXPRESSION` mask was `/\{[^{}]*\}/g`, which does not nest: `{t('app.feed.heading', { org: actor.org.name })}` had its INNER brace group masked first, leaving `{t('app.feed.heading',  )}` unmatched, and the leftover read as typed prose — so every `t()` call carrying an interpolation object or a template-literal key was reported, the exact opposite of the rule. It is a brace-DEPTH scan now (`withoutExpressions`), so a nested child is removed whole and prose typed beside one is still refused |
+
 ## Boundaries (build errors, not lint warnings)
 
 | Rule | Error |
@@ -190,7 +231,16 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
 
 ## Gotchas
 
-- `local()` in a mutator must be replayable: no `Date.now()`, no `Math.random()`, no I/O.
+- `local()` in a mutator must be replayable: no `Date.now()`, no `Math.random()`, no I/O — and
+  **convergent**, which is the stronger rule the weaker one hides: it is replayed on every rebase,
+  so applying it N times has to equal applying it once. `likeCount + 1` is the counter-example that
+  shipped; `post.likedByMe ? {} : { likedByMe: true, likeCount: post.likeCount + 1 }` is the repair.
+- **A local twin lives in the BROWSER-reachable module of its feature, and the declaration imports
+  it.** `app/posts/like-mutation.ts` holds `likePostLocally` and the `LocalTables` augmentation;
+  `app/posts/mutator.ts` writes `local: likePostLocally`. An island cannot import `mutator.ts` —
+  the declaration drags `@ultimat3/action`, the policy and the Postgres client into the chunk — and
+  `local` is by definition the half that runs in the tab, so the file a browser can load is its one
+  home. Two copies is two declarations of one intent.
 - A live query must be bounded (`orderBy` + `limit`) or `x verify` rejects it.
 - The digest schedules per (org, zone), never per org alone — timezone is a member column, so one
   org spanning two zones is two deliveries at two instants. The unit is a group and not a member

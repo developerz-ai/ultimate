@@ -4,7 +4,7 @@
 // exactly one of those.
 
 import type { JSX } from 'solid-js';
-import { useId } from '../a11y';
+import { LIVE_REGION_LEVELS, liveRegionAttrs, useId } from '../a11y';
 import { cx } from '../cx';
 import { UI_KEYS } from '../i18n-keys';
 import { useUi } from '../theme/context';
@@ -56,6 +56,23 @@ export function AppShell(props: AppShellProps): JSX.Element {
         {props.children}
       </main>
       {props.footer === undefined ? null : <footer class={styles['footer']}>{props.footer}</footer>}
+      {/* The two live regions, in the SERVER response and empty. `announce()` had none until
+          2026-09 and built its own on first call — a region appended and written in the same frame,
+          which most screen readers do not announce, so the first message of a session was silent.
+          They are last in DOM order because they are never visible and never focusable: the class
+          is `visually-hidden`, not `display: none`, which would stop them being read at all. */}
+      {LIVE_REGION_LEVELS.map((politeness) => {
+        const attrs = liveRegionAttrs(politeness);
+        return (
+          <div
+            id={attrs.id}
+            class={attrs.class}
+            role={attrs.role}
+            aria-live={attrs['aria-live']}
+            aria-atomic={attrs['aria-atomic']}
+          />
+        );
+      })}
     </div>
   );
 }

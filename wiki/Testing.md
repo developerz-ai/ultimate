@@ -118,6 +118,105 @@ test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) =>
 
 The `job` example is the one that matters: it asserts the durability guarantee, not that mail was sent. See [Jobs and workflows](Jobs-And-Workflows) and [Policies and authz](Policies-And-Authz).
 
+## Seeing what you built
+
+An assertion says a component behaved. It does not say what it looked like while it did. `x shot`
+is the other half: a real browser, a PNG, and a `verdict.json` that says whether the picture is of
+what you think it is.
+
+```bash
+x shot /dashboard --json              # one route
+x shot --island post-form --json      # one island, every state it declares, both themes
+x shot --island post-form --state refused --json
+x shot --all-islands --json           # every island in the app, plus an index
+```
+
+**`x shot` is deliberately not a step of `x verify`.** It needs a real browser, and a gate that
+goes red because a machine has no Chrome fails for reasons unrelated to the change. The app
+supplies the browser: `bun add -d puppeteer-core`, or `--cdp-url` to attach to one already running.
+
+`As of 2026-09`.
+
+### States are declared, not clicked
+
+A state a running app will not produce on request — a save the server refused, a read that came
+back empty, a label three times as long in the next locale — is unreachable to a reviewer and to a
+model. Declare it instead, in a `<name>.island.states.ts` beside the island:
+
+```ts
+import { defineIslandStates } from '@ultimat3/testing';
+
+export const postFormStates = defineIslandStates({
+  island: 'apps/web/app/post/post-form.island.tsx',
+  states: [
+    { id: 'idle', title: 'the first paint', props: {} },
+    {
+      id: 'refused',
+      title: 'the server refused the save',
+      note: 'unreachable by clicking — the action only fails for an actor without the capability',
+      props: { error: 'You cannot publish in this org.' },
+    },
+    {
+      id: 'slow',
+      title: 'the save is in flight',
+      note: 'a request that never settles; a real one resolves faster than a screenshot',
+      props: {},
+      routes: [{ match: 'POST /api/post', respond: { kind: 'pending' } }],
+    },
+  ],
+});
+```
+
+| Field | Is |
+|---|---|
+| `island` | app-root-relative path of the `.island.tsx` these belong to |
+| `states[].id` | a slug. It becomes the filename stem, so it is guessable or it is nothing |
+| `states[].title` | one line: what this state **is** |
+| `states[].note` | why it deserves a picture — usually "you cannot reach this by clicking, because …" |
+| `states[].props` | JSON, riding the same `data-x-props` seam hydration already uses |
+| `states[].routes` | stubs for whatever the component fetches: `{ kind: 'json', status?, body }`, `{ kind: 'pending' }` or `{ kind: 'offline' }`, matched as a `"<METHOD> <pathname>"` prefix |
+| `states[].viewport` · `themes` | per state. Both themes unless the state is only meaningful in one |
+| `viewport` · `target` · `timeZone` · `now` | manifest-wide. `1280x800`, the island's host element, `UTC`, and the suite's frozen instant |
+
+Rules the file is held to:
+
+| Rule | Refused by |
+|---|---|
+| pure data — no sibling import, no framework import, no Solid | `X_TEST_ISLAND_STATES_NOT_PURE`, read off the text at load: a module importing Solid evaluates fine under Bun, so no amount of loading it would notice |
+| the manifest declares at least one state | `X_TEST_ISLAND_STATES_EMPTY` |
+| a state id is a slug, unique within the manifest | `X_TEST_ISLAND_STATE_ID_INVALID` · `X_TEST_ISLAND_STATE_DUPLICATE` |
+| `props` are JSON | `X_TEST_ISLAND_STATE_JSON_INVALID` |
+| a route stub matches `"<METHOD> <pathname>"` | `X_TEST_ISLAND_STATE_STUB_INVALID` |
+| `timeZone` is an IANA name and `now` carries an explicit offset | `X_TEST_ISLAND_STATE_CLOCK_INVALID` — one code for both |
+| every island has one | `guards/island-without-states.ts`, in `x verify`'s `boundaries` step |
+
+`x g island <name>` and `x g resource <name>` write the states file with the island — two states,
+one of them a translation three times as long. You are editing a generated file, never creating one.
+
+### The index is the artifact
+
+A run writes `.x/shot/island/index.md` — one Markdown file an agent opens instead of guessing at
+forty PNGs. Written for a single-island run too: the file that says what a picture **is** cannot be
+a property of how many islands you asked for.
+
+| Per | The index states |
+|---|---|
+| run | islands, states and pictures counted; the three commands that reproduce it; what the capture cannot see |
+| island | its name, its source path, and `ok` or `FAILED` |
+| state | the id, the title, the `note`, one picture path per theme, and a verdict |
+| a failure | its reasons, listed rather than collapsed — `no picture (dark)`, `never mounted (light)`, `2 requests no stub answers`, `1 uncaught exception`, `3 console errors` |
+| a note | recorded and **not** gating — console warnings, and content overflowing the crop target |
+
+Pictures land at `.x/shot/island/<name>/<state>-<theme>.png`. Flat and mechanical, because the
+reader guesses the path.
+
+The blind spots are in the artifact rather than in this page: the picture is the crop target and a
+thin margin, so a component's own fault sitting further out is outside the frame, and a
+`toLocaleString()` on a `Date` resolves its zone inside the engine where only an explicit
+`timeZone` is pinned. The index prints both under "What this capture cannot see".
+
+What the rendered result is then held to: [Interface rules](Interface-Rules).
+
 ## The fixture bag
 
 `test` passes a bag as the first argument and builds only what the body destructures — a test that never names `runJobs` never starts a queue. The framework owns the whole bag; an app registers only what the framework cannot know.
@@ -285,8 +384,8 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 | Step | Fails on |
 |---|---|
 | `typecheck` | any error; `any` is banned by lint, not tolerated by a cast |
-| `lint` | formatting, `any`, default exports, bare `Error`, raw hex colours, hardcoded user-facing strings, `Intl` date formatting with no `timeZone` |
-| `boundaries` | `site/` → `app/`, routes → DB, services → HTTP, tier violations in framework packages |
+| `lint` | biome only: formatting, `any`, default exports, unused imports. **Not** raw colours, bare `Error`, untranslated strings or unzoned dates — biome ignores `.scss` entirely and those four are guards, one row down |
+| `boundaries` | `site/` → `app/`, routes → DB, services → HTTP, tier violations in framework packages, **and every file in the app's own `guards/`** — the nine `x new` writes, or the ones you kept → [Interface rules](Interface-Rules) |
 | `filesize` | a source file over 500 lines |
 | `package-shape` | a workspace package missing `README.md`, `CLAUDE.md`, `tsconfig.json`, or `src/index.ts` |
 | `errors` | an `X_*` code with no runnable fix or no docs page |
@@ -301,6 +400,7 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 | `budgets` | per-route JS bytes and LCP; a live hook on a route with no island is `X_LIVE_ROUTE_NO_ISLAND` |
 | `seo` | an indexable `site/` route with no title, or no description a search result can render |
 | `i18n` | a key missing from a locale's catalog, or a catalog no module ever registered |
+| `policy` | a permission this app grants or requires that it does not declare. Skipped — never passed — in a repo with no `app.config.ts` |
 | `manifest` | `x.manifest.json` / `openapi.json` differ from what the code produces, or `AGENTS.md` is missing or over its byte cap |
 | `roadmap` | framework repo only — a milestone missing its status marker, or a shipped milestone missing an artifact its own row names |
 
@@ -338,5 +438,6 @@ Full list: [Error codes](Error-Codes).
 - Every framework package ships at least 2 tests that would catch a real regression. No `expect(true).toBe(true)`.
 - Tests live next to their source as `<file>.test.ts`.
 - A denial test per policy branch, not one happy-path test per action.
+- Every island declares its states, and the states worth declaring are the ones you cannot click to. What the pictures are then judged against: [Interface rules](Interface-Rules).
 - Assert on error **codes**, never on error message text.
 - CI runs `x verify` and nothing else.

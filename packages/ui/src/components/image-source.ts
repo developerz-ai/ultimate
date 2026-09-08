@@ -104,6 +104,21 @@ export function boxFor(
 }
 
 /**
+ * The `aspect-ratio` for a known box, as CSS writes it. `undefined` when the dimensions are
+ * unknown — there is no ratio to state, and `aspect-ratio: auto` is what a replaced element does
+ * anyway.
+ *
+ * Not a duplicate of the `width`/`height` attributes, which is what it looks like: those reserve
+ * the box only while the element's own layout is UNSTYLED, and a stylesheet that sets
+ * `inline-size: 100%` (this one sets `max-inline-size`, and an app's grid routinely sets the rest)
+ * drops the reserved height on the floor. `aspect-ratio` survives that, which is the class of
+ * layout shift left over after the attributes have done their part.
+ */
+export function ratioFor(box: ImageBox | undefined): string | undefined {
+  return box === undefined ? undefined : `${String(box.width)} / ${String(box.height)}`;
+}
+
+/**
  * A `src` with real content once whitespace is trimmed. Shared by the primary `src` prop and
  * every variant `src`: an empty or blank one emits a broken `<img>` or a srcset entry the
  * browser silently drops, so both paths reject it the same way instead of one staying permissive.

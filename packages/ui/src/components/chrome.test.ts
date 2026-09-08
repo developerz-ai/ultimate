@@ -4,8 +4,19 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
+import { FakeElement } from '../fake-dom';
 import { UI_KEYS } from '../i18n-keys';
-import { attachRef, byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import {
+  attachRef,
+  byTag,
+  fire,
+  one,
+  type ProbeNode,
+  probe,
+  renderNodes,
+  unprobe,
+  withAttr,
+} from '../jsx-probe';
 import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import type { SolidContext } from '../theme/solid-adapter';
 import { Alert } from './Alert';
@@ -102,6 +113,30 @@ describe('the page chrome', () => {
       });
       expect(one(byTag(nodes, 'nav'), '<nav>').props['aria-label']).toBe('Sections');
       expect(one(byTag(nodes, 'a'), 'skip link').props['children']).toBe('Skip to content');
+    });
+
+    test('emits both live regions, empty, so announce()’s first message is not the silent one', () => {
+      const nodes = renderNodes(AppShell, { children: 'body' });
+      const regions = withAttr(nodes, 'aria-live');
+
+      // `announce()` used to build its own region and write to it in the same frame, which most
+      // screen readers do not announce — so the FIRST message of a session was lost, every session.
+      expect(regions.map((node) => node.props['aria-live'])).toEqual(['polite', 'assertive']);
+      expect(regions.map((node) => node.props['role'])).toEqual(['status', 'alert']);
+      expect(regions.map((node) => node.props['id'])).toEqual([
+        'ultimate-live-region-polite',
+        'ultimate-live-region-assertive',
+      ]);
+      // Empty on arrival: a region whose content was already inside it is not announced either.
+      expect(regions.map((node) => node.props['children'])).toEqual([undefined, undefined]);
+      // Read whole on every write. `ToastRegion`'s list is `false` for the opposite reason: it
+      // holds several messages and must announce only the one that arrived.
+      expect(regions.map((node) => node.props['aria-atomic'])).toEqual(['true', 'true']);
+    });
+
+    test('the live regions are never focusable — a hidden tab stop is a keyboard trap', () => {
+      const regions = withAttr(renderNodes(AppShell, { children: 'body' }), 'aria-live');
+      expect(regions.map((node) => node.props['tabindex'])).toEqual([undefined, undefined]);
     });
 
     test('the sidebar track is a CSS length, defaulted rather than hardcoded per screen', () => {
@@ -205,6 +240,89 @@ describe('the page chrome', () => {
       } finally {
         rt.restore();
       }
+    });
+
+    test('a failed submit focuses the CONTROL that failed, not the summary describing it', () => {
+      const rt = formRuntime();
+      try {
+        const nodes = renderNodes(Form, {
+          children: null,
+          error: 'Check the fields above',
+          invalidField: 'title',
+        });
+        let summaryFocus = 0;
+        attachRef(one(withAttr(nodes, 'tabindex', '-1'), 'error summary'), {
+          focus: () => (summaryFocus += 1),
+        });
+
+        const control = new FakeElement('input', { name: 'title' });
+        attachRef(nodes[0] as ProbeNode, new FakeElement('form').append(control));
+
+        rt.flush();
+        // Focusing the summary and stopping there strands the reader one Tab from nothing: the
+        // summary says what is wrong, the control is where it gets fixed.
+        expect(control.focusCount).toBe(1);
+        expect(summaryFocus).toBe(0);
+      } finally {
+        rt.restore();
+      }
+    });
+
+    test('a form-level rejection names no control, so the summary keeps the focus', () => {
+      const rt = formRuntime();
+      try {
+        const nodes = renderNodes(Form, { children: null, error: 'policy "post:create" denied' });
+        let summaryFocus = 0;
+        attachRef(one(withAttr(nodes, 'tabindex', '-1'), 'error summary'), {
+          focus: () => (summaryFocus += 1),
+        });
+        attachRef(nodes[0] as ProbeNode, new FakeElement('form'));
+        rt.flush();
+        expect(summaryFocus).toBe(1);
+      } finally {
+        rt.restore();
+      }
+    });
+
+    test('a name the path grammar refuses never reaches a selector', () => {
+      const rt = formRuntime();
+      try {
+        const nodes = renderNodes(Form, {
+          children: null,
+          error: 'Check the fields above',
+          invalidField: '"] , [name="password',
+        });
+        let summaryFocus = 0;
+        attachRef(one(withAttr(nodes, 'tabindex', '-1'), 'error summary'), {
+          focus: () => (summaryFocus += 1),
+        });
+        const password = new FakeElement('input', { name: 'password' });
+        attachRef(nodes[0] as ProbeNode, new FakeElement('form').append(password));
+
+        rt.flush();
+        expect(password.focusCount).toBe(0);
+        expect(summaryFocus).toBe(1);
+      } finally {
+        rt.restore();
+      }
+    });
+
+    test('a busy form refuses its own submit — Enter in a text field touches no button', () => {
+      const submits: number[] = [];
+      const event = { preventDefault: (): void => void submits.push(-1) };
+      const busy = renderNodes(Form, {
+        children: null,
+        busy: true,
+        onSubmit: () => submits.push(1),
+      });
+      expect(busy[0]?.props['aria-busy']).toBe('true');
+      fire(busy[0] as ProbeNode, 'onSubmit', event);
+      expect(submits).toEqual([-1]);
+
+      const idle = renderNodes(Form, { children: null, onSubmit: () => submits.push(1) });
+      expect(idle[0]?.props['aria-busy']).toBeUndefined();
+      fire(idle[0] as ProbeNode, 'onSubmit', event);
+      expect(submits).toEqual([-1, 1]);
     });
 
     test('a form with no error moves focus nowhere', () => {

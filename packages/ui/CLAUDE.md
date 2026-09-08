@@ -40,6 +40,51 @@ Tier 4 (moved 5 → 4 on 2026-08-19, when the `admin → ui` exception was delet
 - **The rule being pure is not enough — the WIRING has to be tested too.** `createRovingTabindex` was correct and `Menu` handed it `[role="menuitem"]`, so a disabled item made every item after it unreachable and every assertion in the package still passed. `src/jsx-probe.ts` reads the props an element actually carries (a `tabindex`, an `aria-live`, an `onKeyDown`, a `ref`) and `src/fake-dom.ts` gives it a DOM where a disabled control REFUSES focus, exactly as the real one does. Both are test-only and neither is in `index.ts`. `jsx-probe`'s `probe`/`unprobe` are the one exception, reachable at the subpath `@ultimat3/ui/jsx-probe` and still absent from the barrel: `globalThis.React` is ONE property, so its install/restore counter has to be ONE counter — `@ultimat3/admin` (tier 5) kept a second pair, and interleaved installs restored the two harnesses in the wrong order, leaving the global holding a harness the run had already torn down. `components/interaction.test.ts` is where a keyboard or form-participation claim gets proven; asserting the pure helper alone is how these shipped.
 - **A roving group excludes disabled items from both answers** — the set arrows walk and the one item holding the tab stop (`src/roving.ts`). `focus()` on a disabled control is a no-op, so a disabled item left in the list pins the reducer on its index forever. And a control that answers arrows itself (`handlesOwnArrowKeys`) keeps them: a `Toolbar` exists to hold a search field.
 - **A single-winner state attribute is decided by POSITION, never by a missing prop.** `Breadcrumb` gives `aria-current="page"` to the last item and to nothing else; an href-less ancestor renders as plain text with no `aria-current` at all. Reading "no href" as "is the current page" put two of them in one `<nav>`. `Tabs.tsx` is the same rule for `tabindex`, and `Breadcrumb.test.ts` proves it through `jsx-probe` rather than through the pure helper.
+- **One async region, four branches, and `empty` is unreachable while `pending`.** `asyncBranch`
+  (`src/components/async-branch.ts`) is the ONLY place the `(pending, failed, empty, data)` decision
+  is made — `AsyncRegion` renders it and `DataTable` calls it, so a table and a card list cannot
+  disagree about what "loading with stale rows" looks like. The property is structural: an
+  `AsyncState` in `pending` carries no data, so nothing can be found empty in it, and "No results"
+  for one frame before the first page arrives is unconstructible rather than discouraged.
+  `<AsyncRegion>`'s `empty` and `ready` are REQUIRED props, so forgetting the empty state is a type
+  error. `refreshing` CARRIES the previous data — a refetch dims what is on screen (`aria-busy`) and
+  never tears it down, which is what makes a search box feel fast; the empty branch is reachable
+  only from a completed result that returned zero. `reserve` feeds the placeholder AND the
+  `min-block-size` of every branch, so the skeleton and the loaded content cannot be written into
+  different boxes.
+- **A toast dwell stops for THREE independent reasons, and one of them is `document.hidden`.**
+  Hover and focus-within are the two everybody implements; a backgrounded tab spends the whole dwell
+  and the corner is empty when the user comes back. `ToastHold` is a set, never a boolean: a pointer
+  leaving a toast a keyboard user is still inside must not restart the countdown, which one flag
+  cannot express. Duration is a TOKEN (`TOAST_DWELL_MS`), never a per-call number of milliseconds.
+  The queue's rules are pure (`src/toast/toast-state.ts`) and the clock is injected (`ToastEnv`), so
+  a server render gets `INERT_TOAST_ENV` — nothing scheduled — and `ToastRegion` still emits its
+  empty live region, which is what the document has to carry BEFORE the first message.
+- **`announce()` writes into a region `AppShell` already rendered.** A live region created and
+  filled in the same frame is not announced by most screen readers, so `announce()`'s own
+  create-if-absent branch could only ever be right from its second call. `liveRegionAttrs` is the
+  one derivation both halves read. It is for a state change with no surface of its own ("12
+  results", "sorted by name"); a notification is a `Toast`, and two announcement paths for one
+  message is how a screen reader reads it twice.
+- **`loading` never sets the native `disabled` attribute** (`Button`), and that WILL read as a
+  mistake. A control that disables itself mid-flow drops focus to `<body>`, is exempt from the
+  contrast minimum, announces no reason, and still does not prevent the double submit — that race is
+  on the server. `aria-disabled` + a refused click keeps it focusable and readable; `Button.module.scss`
+  restores full opacity under `[aria-busy='true']` because `t.disabled` dims to 0.55. `<Form busy>`
+  refuses the submit again, because Enter in a text field touches no button at all.
+- **A failed submit focuses the first invalid CONTROL, and the summary only when there is none.**
+  GOV.UK's summary-with-links shape is not available here: `Field` mints its control ids internally,
+  and inverting that ownership is the drift `Field` exists to prevent. `firstInvalidField` answers in
+  DECLARATION order, never issue order — a server may report the last field first. `fieldSelector`
+  is the allowlist between a caller's string and a selector; a name the grammar refuses reaches no
+  `querySelector`.
+- **`defineTheme()` refuses a palette that fails WCAG 2.2 AA** (`X_UI_CONTRAST_INSUFFICIENT`),
+  measured against `CONTRAST_PAIRS` — the same table `contrast.test.ts` holds the shipped palette to,
+  in SOURCE rather than in a test, so an app cannot ship a brand the design system would have failed
+  its own suite over. Only pairings the brand can have CHANGED are measured, on the resolved palette
+  (shipped channels + overrides): a new `accent` against the shipped `accent-fg` is the commonest way
+  a brand goes unreadable. AA, never APCA — APCA is not a standard, and AA is the operative legal
+  benchmark.
 - **Live semantics belong to the container that outlives the message.** `ToastRegion`'s `<ol>` carries `aria-live`; a `Toast` is a plain `<li>`. A region created with its content already inside it is not announced, and a `role="status"` on the `<li>` also strips its `listitem` semantics.
 - **`aria-checked` never mirrors a native `checked`.** ARIA outranks host state in the accessibility tree, and on the no-JS path this package supports there is nothing to rewrite the attribute after the user ticks the box. `Checkbox` writes only `'mixed'` (an IDL property with no attribute form, so ARIA is the only server-side lever); `Switch` writes none at all, over a `biome-ignore` that says why.
 - **A form binds to an action; it never decides for one.** `useForm` (`src/form/`) is a binding over an existing `action`, not a ninth primitive and not a component — `submit` is REQUIRED and is the only producer of a `succeeded` state, and the client-side parse's **value** is discarded so that only its issues are read. A binding that submitted the locally-parsed value would let a browser choose what the server was asked to store; `FormSchema` has no output type for that reason.
@@ -68,6 +113,12 @@ Tier 4 (moved 5 → 4 on 2026-08-19, when the `admin → ui` exception was delet
 | `src/tokens/contrast.ts` | WCAG ratios over the channel tokens; `contrast.test.ts` gates AA in both themes |
 | `src/catalog/` | parses `components/*.tsx` into `CATALOG.md`; `bun run catalog` writes it, `catalog.test.ts` fails on drift |
 | `src/roving.ts` | the pure rules of a keyboard group: navigable set, tab stop, who keeps their own arrows |
+| `src/components/async-branch.ts` | the one `(pending, failed, empty, ready)` decision, plus the `reserve` box both the placeholder and the loaded content land in |
+| `src/toast/toast-state.ts` | the toast queue's pure rules: dedupe, the visible cap, and what a tick may spend |
+| `src/toast/toast-store.ts` | the same queue with a clock and the three pause holds; `ToastEnv` is the injected host |
+| `src/toast/use-toasts.ts` | the Solid shell: the store's queue in a signal, subscribed from an effect so a server render never does |
+| `src/form/form-touch.ts` | touched and dirty — progress through a form, never a second copy of its values |
+| `src/tokens/contrast-pairs.ts` | every pairing a component renders, with its AA floor; read by `defineTheme()` and by `contrast.test.ts` |
 | `src/form/field-path.ts` | the one path grammar, both directions — pure, and deliberately free of `../errors` so mapping an issue costs no chunk the error registry |
 | `src/form/form-issue.ts` | the two readers of an issue: a local parse result, and whatever the server rejected with |
 | `src/form/form-state.ts` | where an issue LANDS — the declared field, or the form |

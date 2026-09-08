@@ -259,6 +259,7 @@ change, and CI does not install one.
 |---|---|---|
 | `x shot <route>` | `x dev` on a scratch port, plus the app's own `puppeteer-core` through `@ultimat3/scraping` — launching Chrome here, or **attaching** to one over `--cdp-url` / `SCRAPE_CDP_URL`, which is what every stealth provider sells and what `remoteBrowser()` has called its primary path since it shipped | the static build — `--target static` prerenders `site/` only, so an `app/` route would photograph the landing page |
 | `x shot --island <name>` | the same server and the same browser, plus the app's own `*.island.states.ts` | a second command — photographing a route and photographing a component are one job with two subjects, and `--island` with a route positional is refused by name |
+| `x shot --all-islands` | every `*.island.states.ts` in the app, one boot, one browser per declared VIEWPORT across all of them | a second capture loop — one island and every island are `runIslandSweep` with one argument, because two loops are two answers to what a run produced |
 | `x pr review\|resolve\|reply` | `gh api graphql`, through the injected `Runner` | `gh pr view --comments`, which shows *issue* comments and not the line-anchored threads that carry the findings |
 | `x ci` | `gh run view --log-failed`, one call | a per-job log fetch — the run and all its jobs come back together |
 
@@ -277,10 +278,12 @@ ones a running app will not produce on request. `--island` takes them, one addre
 | `island-harness.ts` | the document that mounts ONE island over `data-x-entry` / `data-x-props` |
 | `island-harness-script.ts` | what runs before the chunk does: the sealed network, the pinned clock, the readiness watch |
 | `island-harness-route.ts` | `GET /_x/island`, mounted by `x dev` |
-| `island-shot.ts` | the capture loop, the assertions before each shutter, the missing-shot gate |
+| `island-shot.ts` | the RUN: which islands, in which order, which artifacts — and the missing-shot gate |
+| `island-capture.ts` | ONE picture: the assertions before the shutter, the crop rectangle, the one session |
+| `island-shot-index.ts` | `index.md` as a PURE function of (manifests, targets, verdicts) — no I/O in the rule |
 | `shot-browser.ts` | which browser a run gets — launch one here, or attach over `--cdp-url` / `SCRAPE_CDP_URL` — as three rules over plain inputs |
 | `island-verdict.ts` | the per-state verdict — a PNG cannot say the component threw or logged |
-| `cmd-shot-island.ts` | the flags, and the one browser per declared viewport |
+| `cmd-shot-island.ts` | the flags, the refusals, and the one browser per declared viewport |
 
 The vocabulary is **`@ultimat3/testing`'s**, not this package's: `defineIslandStates`,
 `islandShotTargets`, `islandAddress` / `parseIslandAddress`, `findIslandStates`,
@@ -311,6 +314,43 @@ have hidden rather than shown: no probe, not the harness, no host element, a mou
 mount that never finished, a page that never went quiet, a zero-sized box, a box with no children
 and no text. Then a byte floor as a backstop. Every one of them otherwise comes out as a plausible
 image of the wrong thing.
+
+**`--all-islands` is a spelling, never `--island` with no value.** The parser refuses a bare
+`--island` ("expects a value") and `--island=` is an empty NAME, so "every island" had no form a
+reader could type that could not be read as a mistyped one. A boolean cannot be confused with a
+name. Every contradictory pair is refused BY NAME and before a value is read — beside `--island`,
+beside a route positional, and beside `--state`, which belongs to ONE manifest's vocabulary
+(`empty` in two manifests is two unrelated states). An app declaring no states at all is refused
+too, rather than answered with an empty gallery: "produced nothing and exited 0" is the one outcome
+a reader cannot tell from success. Its `fix:` names `x g island`, and deliberately not a states
+generator — a `fix:` may only cite a command this build ships (`fix-command.ts`), and there is none.
+
+**A sweep never aborts on a failure.** Every state the app CAN photograph is captured, every
+per-island `verdict.json` and the index are written, and only then does the missing-picture gate
+turn the reasons into a non-zero exit. One island that will not mount must not cost a reader the
+other nineteen — which is the same rule the per-state loop already followed, one level up.
+
+**`.x/shot/island/index.md` is the file an agent opens**, and it is written for a SINGLE-island run
+too: the file that says what a picture IS cannot be a property of how many islands were asked for.
+`island-shot-index.ts` is a pure renderer over (manifests, targets, verdicts) — no disk, no browser
+— and the caller does the writing, which is the split every check in this repo uses. It carries the
+counts, the re-run commands, the verdict's own `blind` list (handed in, never reworded: two
+wordings drift), and per state the `id`, the `title`, the `note` — the *"you cannot reach this by
+clicking, because …"* line, which is the whole reason a reviewer knows what they are looking at.
+
+**A console WARNING and an overflowing box are recorded and gate NOTHING.** `stateShotOk` reads
+neither, on purpose: a signal that fails a run is a signal an author switches off. The warnings were
+already in `page.console()` and already in `--json`; what was missing is that nobody counted them.
+The overflow is new and is the readiness probe's own answer — `scrollWidth > clientWidth` on the
+crop target, measured in the same round trip, because a fact measured after the shutter is a fact
+about a different page.
+
+**The clip carries a margin, clamped to the document.** It was the readiness box EXACTLY, and a
+pixel-tight rectangle shaves off everything a component paints outside its border box — a
+`box-shadow`, an outline, a focus ring, a hairline border on a subpixel — so a reviewer reads a
+component with no elevation as flat. `ISLAND_CROP_MARGIN_PX` is the one constant; the clamp reads
+the document's own extent off the probe (`page`), never the viewport, and it may only ever make the
+frame BIGGER than the component's box — a clamp that could shrink it would crop the subject.
 
 **One session per picture, and that is not an optimisation to collapse.** `page.console()` and
 `page.pageErrors()` are bounded rings over the whole SESSION, so a shared one files state A's
@@ -1487,7 +1527,20 @@ refuses). A guard returning `[1n]` is `X_GUARD_FINDING_INVALID`, per candidate, 
 entry costs its own line and not the real findings beside it. The mechanism whose job is producing
 structured failures handing back a stack trace is the one outcome it exists to prevent.
 
-**`x new` ships four guards, `As of 2026-08-22`.** The scaffolded `AGENTS.md` states nine
+**`x new` ships NINE guards, `As of 2026-09-08`** — the four below plus five interface rules
+(`semantic-interactive`, `focus-visible`, `image-dimensions`, `animated-layout-property`,
+`island-without-states`), each statically decidable and each carrying a legitimate-lookalike test
+that must NOT be reported. **Two of the original four were broken the whole time and nobody could
+see it**, because no guard had ever run against a real app: `raw-colour` reported all 87 uses of
+`rgb(var(--color-…))` — which IS the token form `_colors.scss` emits, so its own cause line ("a
+value no theme can restate") was false of every one — and `untranslated-string`'s JSX mask
+`/\{[^{}]*\}/g` does not nest, so `{t('k', { org: x })}` lost its inner brace group first and the
+remnant read as prose, flagging every `t()` call with an interpolation object or a template-literal
+key. Both are fixed and both now report zero against `examples/dummy`, which is the first tracked
+app to carry a `guards/` directory at all. Read the count, never this sentence:
+`bun -e "import {scaffoldGuardFiles} from './packages/cli/src/templates/scaffold-guards'; console.log(scaffoldGuardFiles().length)"`.
+
+The scaffolded `AGENTS.md` states nine
 non-negotiables, and five of them used to be prose — each proven green on `x verify`: a hardcoded
 JSX string beside a `t()` call, `color: #ff0000` in a stylesheet whose own scaffolded header called
 it "a lint failure", `toLocaleDateString('en-US')` with no `timeZone`, `t.number` money, and a bare

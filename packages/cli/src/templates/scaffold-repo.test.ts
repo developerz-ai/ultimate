@@ -158,6 +158,38 @@ describe('unit · the first commands a scaffold tells its author to run exist on
     expect(block.filter((line) => RUNNABLE.test(line) && !line.includes('bunx x'))).toEqual([]);
   });
 
+  test('the scaffold typechecks with the compiler the framework itself is gated on', async () => {
+    // The drift this catches is silent and one-directional: the framework bumps TypeScript, its
+    // packages ship `.d.ts` emitted by the new compiler, and `x new` keeps handing apps an older
+    // one that reads them. Measured 2026-09-08: the repo was on 7.0.2 and the scaffold pinned
+    // `^6.0.3` — a whole major behind, through no failing check. Biome's pin never drifted because
+    // it is spelled once as a constant; TypeScript's was a literal in a dependency block.
+    const scaffold = repoFiles(names('ledger-demo'), '1.0.0', true).find(
+      (file) => file.path === 'package.json',
+    );
+    expect(scaffold).toBeDefined();
+    // `contents` is `string | Uint8Array` — a scaffold writes binary files too (the icon) — so the
+    // narrow is the assertion: a `package.json` that arrived as bytes is a different defect.
+    const contents = scaffold?.contents;
+    expect(typeof contents).toBe('string');
+    const scaffolded = JSON.parse(typeof contents === 'string' ? contents : '{}') as {
+      devDependencies?: Record<string, string>;
+    };
+    const pinned = scaffolded.devDependencies?.['typescript'];
+    expect(pinned).toBeDefined();
+
+    const root = (await Bun.file(
+      new URL('../../../../package.json', import.meta.url).pathname,
+    ).json()) as { devDependencies?: Record<string, string> };
+    const ours = root.devDependencies?.['typescript'];
+    expect(ours).toBeDefined();
+
+    // Compared on the MAJOR, not the exact range: the repo may sit on a newer patch than the
+    // scaffold names without an app being wrong. A major apart is what breaks type resolution.
+    const majorOf = (range: string): string => /(\d+)/.exec(range)?.[1] ?? '';
+    expect(majorOf(pinned ?? '')).toBe(majorOf(ours ?? ''));
+  });
+
   test('the line `x new` prints last names a command the author can run', () => {
     const done = msg('cli.new.done', { name: 'ledger-demo' });
     expect(done).toContain('bin/setup');

@@ -15,11 +15,20 @@
   white-space: nowrap;
   cursor: pointer;
 
-  &:active:not(:disabled) {
+  &:active:not(:disabled, [aria-disabled='true']) {
     transform: translateY(1px);
   }
 
   @include t.disabled;
+
+  // A BUSY control is one the reader is waiting on, so it has to stay readable: `t.disabled` dims
+  // to 0.55, and WCAG exempts a disabled control from the contrast minimum precisely because
+  // nobody is meant to read it. `loading` now carries `aria-disabled` too — this is what keeps the
+  // two states from sharing one appearance. Written after the mixin: same specificity, later wins.
+  &[aria-busy='true'] {
+    opacity: 1;
+    cursor: progress;
+  }
 }
 
 .full {

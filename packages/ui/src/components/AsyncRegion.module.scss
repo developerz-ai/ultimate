@@ -1,0 +1,15 @@
+@use '../tokens' as t;
+
+// The reserved box, held in every branch: the placeholder, the error, the empty state and the
+// content are all at least this tall, so the answer arriving moves nothing below the region.
+.region {
+  min-block-size: var(--async-reserve);
+}
+
+// A refetch over content already on screen. Dimmed rather than replaced — the previous page stays
+// readable, which is what makes a search-as-you-type list feel fast instead of flickering.
+// Behind the global `prefers-reduced-motion` guard in `reset.scss` like every other animated rule.
+.stale {
+  opacity: 0.6;
+  transition: opacity t.duration(fast) t.easing(out);
+}

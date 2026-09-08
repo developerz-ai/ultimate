@@ -28,10 +28,21 @@ not exist — five of these had an empty column and were each measured green on 
 | Time | store UTC, format with an explicit IANA time zone | \`guards/unzoned-date.ts\` |
 | Strings | every user-facing string goes through \`t()\` | \`guards/untranslated-string.ts\` |
 | Colour | semantic tokens only, never a raw hex | \`guards/raw-colour.ts\` |
+| Interaction | a click is answered by a control — never a \`<div onClick>\`, and never a \`role=\` where the native tag exists | \`guards/semantic-interactive.ts\` |
+| Focus | \`outline: none\` replaces the ring in the same rule or the one beside it, or it does not remove it | \`guards/focus-visible.ts\` |
+| Images | every image carries width + height or an aspect-ratio, and the priority one is never \`loading="lazy"\` | \`guards/image-dimensions.ts\` |
+| Motion | animate \`transform\` and \`opacity\` — never a layout property, never \`transition: all\` | \`guards/animated-layout-property.ts\` |
+| Islands | every \`*.island.tsx\` has a sibling \`*.island.states.ts\`, so \`x shot --island\` can photograph its failures | \`guards/island-without-states.ts\` |
 | Size | one file, one job — ${LINE_CEILING} lines of reviewable logic, and split past it | \`X_FILE_TOO_LONG\` |
 
 \`guards/\` is yours: each file is one rule, discovered by \`x verify\` and run inside its
 \`boundaries\` step. Delete one to drop the rule, and \`x g guard <name>\` writes the next.
+
+The last five rows are about what this app is like to USE, and each is decidable from the file
+alone — which is why they are those five and not the many that are not. A role is a promise:
+\`role="button"\` obliges you to answer Space, Enter, focus and disabled, and the native element
+already does. Only \`transform\` and \`opacity\` animate without a layout pass. An image with no box
+moves everything under it when its bytes land.
 
 Size is a hard line and not a style note: past ${LINE_CEILING} lines a file has stopped being the
 unit of review, and \`x verify\` refuses it. The one exemption is a file that is nothing but re-exports —

@@ -28,6 +28,13 @@
       "@postly/web/*": ["./apps/web/*"]
     }
   },
-  "include": ["app.config.ts", "types/**/*", "apps/**/*", "packages/**/*", "scripts/**/*"],
+  "include": [
+    "app.config.ts",
+    "types/**/*",
+    "apps/**/*",
+    "guards/**/*",
+    "packages/**/*",
+    "scripts/**/*"
+  ],
   "exclude": ["node_modules", "**/dist"]
 }

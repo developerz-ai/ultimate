@@ -114,6 +114,39 @@ describe('unit · x shot refuses before it boots anything', () => {
   });
 
   /**
+   * `--all-islands` is the whole app, and every other subject contradicts it. Each pair is refused
+   * by NAME and before anything resolves — a reader who typed two subjects has a belief about
+   * which one runs, and half of them would be wrong.
+   */
+  test('--all-islands beside another subject is refused, and nothing is started', async () => {
+    for (const argv of [
+      ['shot', '--all-islands', '--island', 'settings'],
+      ['shot', '--all-islands', '/dash'],
+      ['shot', '--all-islands', '--state', 'empty'],
+    ]) {
+      const error = await thrownBy(() => shotCommand.run(contextFor(argv)));
+      expect(error['code']).toBe('X_CLI_BAD_FLAG');
+      expect(String(error['fix'])).toContain('x shot --');
+    }
+    expect(await startedADevServer()).toBe(false);
+  });
+
+  /**
+   * The outcome this whole command exists to make impossible, at the widest form it has: a sweep
+   * over an app that declares no states must refuse by name, not exit 0 having photographed
+   * nothing. A gallery with no pictures in it reads exactly like a clean run.
+   */
+  test('--all-islands in an app that declares no states refuses rather than producing nothing', async () => {
+    const error = await thrownBy(() => shotCommand.run(contextFor(['shot', '--all-islands'])));
+    expect(error['code']).toBe('X_CLI_BAD_FLAG');
+    expect(String(error['cause'])).toContain('declares no island states');
+    // The fix is a generator this build really ships — a `fix:` citing one it does not is the
+    // failure `fix-command.ts` exists to catch.
+    expect(String(error['fix'])).toContain('x g island');
+    expect(await startedADevServer()).toBe(false);
+  });
+
+  /**
    * An operator's own answer, wrong. It is reported as the path it is rather than replaced by a
    * probed one: a run that photographs a page in a browser nobody chose is worse than a refusal.
    */

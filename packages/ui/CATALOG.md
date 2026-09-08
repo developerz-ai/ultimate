@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-52 components: `Accordion` · `Alert` · `AppShell` · `Avatar` · `Badge` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `Container` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Link` · `LocaleSwitcher` · `Menu` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Spinner` · `Stack` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toolbar` · `Tooltip`
+54 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `Container` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Link` · `LocaleSwitcher` · `Menu` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Spinner` · `Stack` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
 
 ## Vocabulary
 
@@ -61,6 +61,20 @@ The page frame every app screen sits in: skip link, banner, navigation, main, co
 | `stickyHeader` | `boolean` | — | Keeps the header pinned while the main region scrolls. |
 | `class` | `string` | — |  |
 
+### AsyncRegion
+
+The one way to render a region whose content has to arrive. Four branches, decided by `asyncBranch` and never by the caller: a skeleton while it loads, the error report when it fails, the empty state when a completed result held nothing, and the content.  `empty` and `ready` are REQUIRED props, so a region that forgot what "nothing here" looks like is a type error rather than a review comment. `pending` and `failed` are not props at all — the placeholder is derived from `reserve` so it cannot mismatch the loaded box, and the failure renders through `ErrorState`, which is the one thing allowed to phrase an error.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `state` | `AsyncState<T>` | yes | A live-query accessor, a resource, or a plain signal — narrowed to one of four shapes. |
+| `reserve` | `ReserveBox` | yes | The box the placeholder holds, and the box the loaded content lands in. Same value, once. |
+| `ready` | `(data: T) => JSX.Element` | yes | The content. Called only with data a completed result actually carried. |
+| `empty` | `() => JSX.Element` | yes | Required with no default: "nothing here yet" is a screen, not an oversight, and `EmptyState` is one line of it — `empty={() => <EmptyState title={t('posts.none')} />}`. |
+| `isEmpty` | `((data: T) => boolean)` | — | Emptiness for a shape that is not a list. Defaults to `isEmptyData`. |
+| `onRetry` | `(() => void)` | — | Passed straight to `ErrorState` on the failed branch. |
+| `class` | `string` | — |  |
+
 ### Avatar
 
 Identity chip. An avatar image always carries intrinsic dimensions and an empty alt (the name is rendered as text or the accessible label), so it can never shift layout or duplicate the name to a screen reader.
@@ -99,7 +113,7 @@ Ancestor trail. The last item is the current page: rendered as text, never a lin
 
 ### Button
 
-The one button. Variants and tones are token-driven, so dark mode and RTL need no extra rules; `loading` keeps the label mounted to avoid a layout jump.
+The one button. Variants and tones are token-driven, so dark mode and RTL need no extra rules; `loading` keeps the label mounted to avoid a layout jump.  `loading` does NOT set the native `disabled` attribute, and that WILL read as a mistake — it set one until 2026-09. Four things go wrong when a control disables itself mid-flow: the browser moves focus off it to `<body>`, so a keyboard user's next Tab restarts at the top of the document; a disabled control is exempt from WCAG's contrast minimum, so the state the user most needs to read is the one allowed to be unreadable; it explains nothing, because `disabled` has no announced reason; and it does not actually prevent the double submit, which is a race on the server. `aria-disabled` says unavailable and keeps the control focusable, the click is refused here, and the form refuses it again — `Form busy` — because the button is not the only way in.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -191,7 +205,7 @@ Centred measure with a gutter. `margin-inline: auto` and `min()` mean one declar
 
 ### DataTable
 
-Data-driven table: sortable headers, cursor pagination, and the four states a real list always has (loading, error, empty, data). The error state renders an UltimateError with the same code/cause/fix strings the terminal prints.
+Data-driven table: sortable headers, cursor pagination, and the four states a real list always has (loading, error, empty, data). The error state renders an UltimateError with the same code/cause/fix strings the terminal prints.  The four-way decision itself is NOT here — it is `asyncBranch`, shared with `AsyncRegion`, so a table and a card list cannot disagree about what "loading with stale rows" looks like. Only the PLACEHOLDER is local, because a table's is table-shaped: rows of cells, not lines of text.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -355,7 +369,7 @@ A file picker that keeps the platform control and dresses it. The native button 
 
 ### Form
 
-Form shell. Owns the one thing every form needs and always forgets: a top-of-form error summary that is announced (the Alert inside it is a live region) and that TAKES focus when an error arrives — the focus move is what makes the summary reachable at all, since its id is internal.
+Form shell. Owns the one thing every form needs and always forgets: a top-of-form error summary that is announced (the Alert inside it is a live region) and that TAKES focus when an error arrives — the focus move is what makes the summary reachable at all, since its id is internal.  Focus goes to the first INVALID CONTROL when there is one, and to the summary only when there is not. GOV.UK's tested pattern is a summary whose entries LINK to their fields; that shape is not available here, because `Field` mints its control ids internally (`Field.tsx`) and inverting that ownership is the drift `Field` exists to prevent — a summary cannot write an `href` to an id it cannot see. Focusing the control directly reaches the same place in one step. The summary still announces, and is still where a form-level rejection (a policy refusal, an unmatched issue) puts the reader, because that one names no control to send them to.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -363,6 +377,8 @@ Form shell. Owns the one thing every form needs and always forgets: a top-of-for
 | `error` | `string` | — | Already-translated summary shown above the fields when submit fails. |
 | `errorTitle` | `string` | — | Already-translated heading for the error summary region. |
 | `actions` | `JSX.Element` | — |  |
+| `invalidField` | `string` | — | The `name` of the control a failed submit should send the reader to — `form.firstInvalidField()`. Focused in preference to the summary: the summary describes the problem, the control is where it is fixed, and leaving the user on the summary strands them one Tab away from nothing. |
+| `busy` | `boolean` | — | A submit is in flight — `form.pending()`. Suppresses the submit outright, so a double submit is refused HERE and not only on whatever control happened to be clicked: Enter in a text field submits a form with no button involved at all. |
 | `gap` | `SpaceStep` | — |  |
 | `method` | `'get' \| 'post'` | — |  |
 | `action` | `string` | — |  |
@@ -777,7 +793,9 @@ Transient notification. ToastRegion is the single live region for the app; indiv
 | `children` | `JSX.Element` | yes |  |
 | `label` | `string` | yes | Already-translated landmark name, e.g. "Notifications". |
 | `politeness` | `Politeness` | — | How the region announces. `polite` waits for a pause and is right for everything an app routinely confirms; `assertive` interrupts whatever the user is being read, so it belongs only to a region that carries errors alone. One region, one politeness — mixing tones inside one list cannot work, because the live semantics belong to the list, not to the message. |
-| `placement` | `'block-end-inline-end' \| 'block-start-inline-end' \| 'block-end-center'` | — |  |
+| `placement` | `ToastPlacement` | — |  |
+| `onHold` | `((reason: ToastHold) => void)` | — | Stop the dwell while the reader is engaged with the stack, and start it again when they leave. WCAG 2.2 2.2.1 wants a timing the user can extend, and a message that expires under the pointer reaching for its undo is the failure that rule is about.  Two reasons, reported separately: a pointer leaving a toast a keyboard user is still inside must not restart the countdown, which one boolean cannot express. |
+| `onRelease` | `((reason: ToastHold) => void)` | — |  |
 | `class` | `string` | — |  |
 
 ### Toast
@@ -792,6 +810,19 @@ Transient notification. ToastRegion is the single live region for the app; indiv
 | `action` | `JSX.Element` | — |  |
 | `onDismiss` | `(() => void)` | — |  |
 | `dismissLabel` | `string` | — |  |
+| `class` | `string` | — |  |
+
+### Toaster
+
+The one way to render a toast queue: the store's VISIBLE slice, inside the region that owns the live semantics. The half that was missing — `Toast` and `ToastRegion` shipped with no store, so every app wrote its own queue, its own dwell and its own pause rules.  Toasts over the cap are not drawn and not counted on screen: they are still queued, and their dwell has not started. A "+3 more" badge would be a message about messages, in a corner the reader is already being asked to look away to.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `store` | `ToastStore` | yes | The queue. One per app — `createToastStore()` in the island that mounts this. |
+| `label` | `string` | yes | Already-translated landmark name, e.g. "Notifications". |
+| `politeness` | `Politeness` | — |  |
+| `placement` | `ToastPlacement` | — |  |
+| `dismissLabel` | `string` | — | Already-translated; falls back to the `ui.dismiss` catalog key. |
 | `class` | `string` | — |  |
 
 ### Toolbar

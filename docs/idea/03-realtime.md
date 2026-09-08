@@ -10,7 +10,7 @@ Three tiers, one ladder. Same mutator shape at every rung — climbing is a **de
 |---|---|---|---|---|---|
 | 1 | **Channels** | `ctx.channel('org:1').publish(evt)` | truth + fanout | subscription | ~0 — pubsub over WS |
 | 2 | **Live queries** | `query({ live: true, sql })` | truth + change detection | a reactive result set | one replication slot + a matcher |
-| 3 | **Local-first** | the same `mutator` + `persist: true` on the query | truth + rebase | a durable local store, offline writes | IndexedDB store + rebase log |
+| 3 | **Local-first** | the same `mutator` + a `LocalStore` on the client (`persist: true` is designed, unimplemented) | truth + rebase | a durable local store, offline writes | OPFS SQLite store + rebase log |
 
 Tier 1 for presence, typing indicators, toasts, cursors. Tier 2 for "the list updates when someone else edits". Tier 3 for offline-capable apps, deferred to v2.
 
@@ -58,9 +58,9 @@ export const liveFeed = query({
 });
 ```
 
-Tier 3 adds one field to it — `persist: true` — and nothing else changes.
+Tier 3 adds one field to it — `persist: true` — and nothing else changes. **Designed, not shipped**, `As of 2026-09`: `query()` accepts no such key, and tier 3 is reached today by passing a `LocalStore` to the live client.
 
-`persist: true` swaps the client result store from memory to IndexedDB and turns the mutator queue durable. No new mutators, no new authz, no new server code. That is the whole promise of the ladder: teams adopt tier 2 in week one and can afford tier 3 in year two without a migration project.
+`persist: true` swaps the client result store from memory to a durable one — `createOpfsLocalStore` is SQLite over OPFS, never IndexedDB, which this line claimed until 2026-09 — and turns the mutator queue durable. No new mutators, no new authz, no new server code. That is the whole promise of the ladder: teams adopt tier 2 in week one and can afford tier 3 in year two without a migration project.
 
 ## Live query pipeline
 

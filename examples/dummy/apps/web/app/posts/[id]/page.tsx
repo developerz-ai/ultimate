@@ -43,7 +43,7 @@ const COMMENT_ENDPOINT = derivePath(COMMENT_ACTION).path;
  */
 const Like = island({
   src: './like.island.tsx',
-  props: ['postId', 'orgId', 'syncUrl', 'buildId', 'actorId', 'labels'],
+  props: ['postId', 'orgId', 'likeCount', 'syncUrl', 'buildId', 'actorId', 'labels'],
 });
 
 export const config = defineRoute({
@@ -76,16 +76,25 @@ export const config = defineRoute({
    */
   hydrate: 'idle',
   /**
-   * Measured 2026-08-25, not guessed: the island chunk is 46,658 bytes (`buildIslands` in
+   * Measured 2026-09-08, not guessed: the island chunk is 52,824 bytes (`buildIslands` in
    * `like.island.test.ts` reports it) plus the 774-byte `idle` hydration runtime
-   * (`hydrateRuntimeBytes`), so 47,432 against 51,200. Re-measure rather than adjust, and expect
+   * (`hydrateRuntimeBytes`), so 53,598 against 57,344. Re-measure rather than adjust, and expect
    * the chunk to move by up to the 512-byte shaker flap `island-bytes.test.ts` records: this
    * island reaches `@ultimat3/realtime`. Nearly all of it is the Solid runtime, `LiveClient` and
    * `OfflineQueue`; the control's own compiled markup is a few hundred bytes, which is why this
    * island renders plain elements rather than `@ultimat3/ui`'s `Button` — that component alone
    * costs more than the headroom left here.
+   *
+   * **This line said `50kb` and `46,658` until 2026-09-08, and both numbers were wrong in
+   * different ways.** The chunk had drifted to 48,972 with nothing in this app touched — a stale
+   * measurement under a still-true assertion — and then tier 3 was turned on, which costs a
+   * measured 3,852 bytes: 1,934 for `MemoryLocalStore`, 212 for `RebaseLog`, and 1,706 for the
+   * signal that reads the optimistic row plus the second translated count. That is the price of
+   * "my own click feels instant", and it is paid in the one island that writes; `/feed` reads and
+   * carries none of it. Every one of those four numbers came out of `buildIslands`, one import at
+   * a time — never arithmetic on the number above it.
    */
-  budget: { js: '50kb', lcp: 2000 },
+  budget: { js: '56kb', lcp: 2000 },
   /**
    * `postById` is a read, so it comes off the query client — `client` posts actions, and the two
    * registries are separate keys on `Api` precisely so this cannot be confused.
@@ -161,12 +170,20 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
             <Like
               postId={props.data.id}
               orgId={props.data.orgId}
+              likeCount={props.data.likeCount}
               syncUrl={syncUrlFrom(process.env)}
               buildId={process.env['BUILD_ID'] ?? 'dev'}
               actorId={actor.id}
               labels={{
                 like: t('app.post.like'),
                 count: t('app.post.likes', { count: props.data.likeCount }),
+                /*
+                  The count one like higher, translated HERE because the catalog is here: the
+                  island applies the optimistic twin the moment this member clicks, and a browser
+                  that built the string itself would be a second translator with no plural rules.
+                  One string per state the twin can reach, and it can reach exactly two.
+                */
+                countWithMine: t('app.post.likes', { count: props.data.likeCount + 1 }),
                 queued: t('errors.offlineQueued'),
               }}
             >

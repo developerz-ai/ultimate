@@ -257,14 +257,20 @@ The manifest is generated. Hand-editing a colour there drifts from the tokens an
 
 | Check | Enforcement |
 |---|---|
-| Contrast | the table above, run by `x verify`'s `unit` step |
-| Focus ring | `:focus-visible` from `--color-accent`; removing an outline without replacing it fails lint |
-| Reduced motion | honored globally, not per component |
+| Contrast, shipped pairings | the table above, run by `x verify`'s `unit` step |
+| Contrast, a `defineTheme()` override | **nothing**. `defineTheme()` validates channel *syntax* — three 0–255 integers — and measures no ratio. Assert it yourself: `contrastRatio` and `AA_TEXT` are exported for it |
+| Focus ring | `:focus-visible` from `--color-accent` in `reset.scss`, and `@include t.focus-ring` per control. Taking one away without painting one back is refused in an **app** by `guards/focus-visible.ts`, on `x verify`'s `boundaries` step — **not by lint**, which ignores `.scss` entirely |
+| Reduced motion | honored globally, not per component — and it *deletes* rather than reduces, see below |
 | Lighthouse a11y | minimum threshold in `app.config.ts`, default 95 → [Testing](Testing) |
+
+**The global guard collapses motion to `0.01ms !important` on `*`.** Substituting a cross-fade for
+a movement therefore needs the component's own `prefers-reduced-motion` block, `!important`, on a
+selector more specific than `*` — otherwise the feedback is gone rather than calmed. The rule and
+the rest of the motion vocabulary: [Interface rules](Interface-Rules#motion).
 
 ## Rules
 
-- Semantic tokens everywhere. A raw hex outside `packages/ui/src/tokens/` is a lint failure.
+- Semantic tokens everywhere. A raw hex — or an `rgb()`/`hsl()` called with numbers — in any `.scss` this package ships is a failing **test**, `packages/ui/src/tokens/tokens.test.ts`, on `x verify`'s `unit` step. Not lint: biome ignores `.scss`, and the rule said "lint" while nothing read it. Two files are exempt, because a literal is *supposed* to live in them: `tokens/_colors.scss` and `tokens/_shadow.scss`. In an app the same rule is `guards/raw-colour.ts`.
 - Each token defined once per theme, by the `emit` mixin: `:root`, the media query, and both `data-theme` mirrors.
 - `html[data-theme]` always beats `prefers-color-scheme`.
 - Theme applied before first paint by a blocking inline script.
@@ -276,3 +282,4 @@ The manifest is generated. Hand-editing a colour there drifts from the tokens an
 - Colours are themed; numbers, dates, and money are localized → [I18n](I18n), [Money](Money), [Timezones and dates](Timezones-And-Dates).
 
 Component-by-component props and the token vocabulary each one accepts: [UI components](UI-Components).
+What a screen has to do with those tokens — motion, focus, contrast, the four loading states: [Interface rules](Interface-Rules).

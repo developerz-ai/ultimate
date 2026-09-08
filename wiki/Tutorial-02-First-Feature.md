@@ -41,7 +41,7 @@ bunx x g resource todo --dry-run
   + apps/web/app/todos/page.module.scss
   + apps/web/app/todos/page.test.ts
   + apps/web/app/todos/page.e2e.test.ts
-✓ would write 28 file(s) for resource todo — nothing written
+✓ would write 29 file(s) for resource todo — nothing written
 ```
 
 **The form is an island, not a `ui/` component** — `todo-form.island.tsx` beside the slice rather than under `ui/`. A `createSignal` needs the browser, `.island.tsx` is what puts a module in the client bundle graph, and the route's `budget.js` is what bounds it. Everything under `ui/` renders on the server and ships no JS.
@@ -52,7 +52,7 @@ Drop `--dry-run` to write them. `x g` never clobbers — an existing file is `X_
 
 | Generator | Emits |
 |---|---|
-| `x g resource <n>` | the whole slice above — 28 files, 30 with `--admin` |
+| `x g resource <n>` | the whole slice above — 29 files, 31 with `--admin` |
 | `x g entity` / `policy` / `action` / `mutator` / `query` / `job` / `task` | that primitive plus its test — **and the slice modules its own source imports**, when the slice has none: `x g job` is 5 files into a bare slice, `x g action` 8. Which ones differ per generator, so a job plants no `policy.ts` ([CLI reference § x g](CLI-Reference)) |
 | `x g route <path> --surface site\|app` | `page.tsx`, its stylesheet, its test, its catalog keys |
 

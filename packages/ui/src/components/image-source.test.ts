@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { UI_ERROR_CODES, UiError } from '../errors';
 import type { ImageLoadingHints } from './image-source';
-import { assertNonEmptySrc, boxFor, loadingHints, srcsetFor } from './image-source';
+import { assertNonEmptySrc, boxFor, loadingHints, ratioFor, srcsetFor } from './image-source';
 
 /**
  * The thrown UiError itself, so a test can assert on `code` and `cause` together. Anything else
@@ -186,5 +186,21 @@ describe('assertNonEmptySrc', () => {
     expect(rejected(() => assertNonEmptySrc('Image', '   ', '   ')).code).toBe(
       UI_ERROR_CODES.invalidValue,
     );
+  });
+});
+
+describe('ratioFor', () => {
+  test('is the CSS ratio for a known box', () => {
+    expect(ratioFor({ width: 800, height: 600 })).toBe('800 / 600');
+  });
+
+  test('has nothing to say about an unmeasured image', () => {
+    // `undefined` and not `'auto'`: the component omits the property, and the stylesheet's own
+    // fallback is what decides — one place, not two.
+    expect(ratioFor(undefined)).toBeUndefined();
+  });
+
+  test('pairs with boxFor, so the ratio and the attributes cannot disagree', () => {
+    expect(ratioFor(boxFor(1200, 630))).toBe('1200 / 630');
   });
 });

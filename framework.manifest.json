@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "9833f836c30bb72007c419d562684b895aeb5acedf6e1af836ca395c4bf4c5a9",
+  "buildId": "9fd0fe644e6e1589254d9ae422618db07712a9cc3ad5a39f812edff760a5f416",
   "tiers": {
     "0": [
       "core",
@@ -3413,6 +3413,11 @@
       "code": "X_TYPECHECK_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UI_CONTRAST_INSUFFICIENT",
+      "owner": "ui",
+      "at": "packages/ui/src/errors.ts"
     },
     {
       "code": "X_UI_FORM_PATH_INVALID",

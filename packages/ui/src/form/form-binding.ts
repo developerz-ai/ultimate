@@ -17,10 +17,18 @@ import {
   distributeIssues,
   errorOf,
   type FormState,
+  firstInvalidField,
   IDLE_FORM_STATE,
   messagesOf,
   NO_FORM_ERRORS,
 } from './form-state';
+import {
+  type FormTouch,
+  markDirty,
+  markTouched,
+  NO_FORM_TOUCH,
+  sameFieldValue,
+} from './form-touch';
 
 export interface FormBindingOptions<TValues, TResult> {
   /**
@@ -40,6 +48,17 @@ export interface FormBindingOptions<TValues, TResult> {
   readonly schema?: FormSchema | undefined;
   /** Called on every transition — how a reactive shell mirrors the state into a signal. */
   readonly onState?: ((state: FormState<TResult>) => void) | undefined;
+  /**
+   * The values the form OPENED with, keyed by the same field paths — what `edit()` compares
+   * against to decide dirtiness. A create form passes nothing, and every non-blank value is then a
+   * change. A path missing from this map has a baseline of `undefined`, which `sameFieldValue`
+   * treats as equal to an empty control.
+   *
+   * The baseline is fixed for the life of the binding: a form that stays mounted after a save and
+   * wants the saved values as its new baseline builds a new binding, because this one never sees
+   * what the user typed and cannot invent one.
+   */
+  readonly initial?: Readonly<Record<string, unknown>> | undefined;
 }
 
 export interface FormBinding<TValues, TResult> {
@@ -49,6 +68,20 @@ export interface FormBinding<TValues, TResult> {
   readonly errorFor: (path: string) => string | undefined;
   /** Every message bound to one path, when a form renders more than one. */
   readonly messagesFor: (path: string) => readonly string[];
+  /**
+   * A submit is in flight. The one value that reaches BOTH the submit control (`<Button loading>`)
+   * and the form (`<Form busy>`) — one derivation, so a control can be busy and its form not.
+   */
+  readonly pending: () => boolean;
+  /**
+   * The first declared field a failed submit put an error on. What `<Form invalidField>` focuses:
+   * the thing that has to be fixed, rather than the summary that describes it.
+   */
+  readonly firstInvalidField: () => string | undefined;
+  /** The user left a control. */
+  readonly touch: (path: string) => void;
+  /** The user changed a control. Dirtiness is decided against `initial`, never by the caller. */
+  readonly edit: (path: string, value: unknown) => void;
   readonly reset: () => void;
 }
 
@@ -71,12 +104,35 @@ export function createFormBinding<TValues, TResult>(
 ): FormBinding<TValues, TResult> {
   const fields = declaredFields(options.fields);
   let state: FormState<TResult> = IDLE_FORM_STATE;
+  let touch: FormTouch = NO_FORM_TOUCH;
   let inFlight: Promise<FormState<TResult>> | null = null;
 
-  const publish = (next: FormState<TResult>): FormState<TResult> => {
-    state = next;
-    options.onState?.(next);
-    return next;
+  /**
+   * A transition names the submit's own members; `touched`/`dirty` are added here, from the one
+   * place that owns them. Spelling the parameter as the whole `FormState` would let a transition
+   * carry a stale pair — the exact drift `publishTouch` exists to prevent.
+   */
+  const publish = (next: Omit<FormState<TResult>, keyof FormTouch>): FormState<TResult> => {
+    state = { ...next, touched: touch.touched, dirty: touch.dirty };
+    options.onState?.(state);
+    return state;
+  };
+
+  /**
+   * The value this field opened with. `Object.hasOwn`, never the read alone: `initial` is the app's
+   * own object, so `initial['constructor']` answers the `Object` FUNCTION where an absent key must
+   * answer `undefined` — and that field would then read as permanently changed.
+   */
+  const baseline = (path: string): unknown => {
+    const initial = options.initial;
+    return initial !== undefined && Object.hasOwn(initial, path) ? initial[path] : undefined;
+  };
+
+  /** Progress through the form is not a transition, so it publishes without disturbing `status`. */
+  const publishTouch = (next: FormTouch): void => {
+    if (next === touch) return;
+    touch = next;
+    publish(state);
   };
 
   const failed = (issues: readonly FormIssue[]): FormState<TResult> =>
@@ -102,6 +158,9 @@ export function createFormBinding<TValues, TResult>(
 
     try {
       const result = await options.submit(values);
+      // The server accepted what the form held, so there is nothing left to lose. `touched` stays:
+      // the user has still visited those fields, and a hint that vanishes on save is a flicker.
+      touch = { touched: touch.touched, dirty: NO_FORM_TOUCH.dirty };
       return publish({ status: 'succeeded', ...NO_FORM_ERRORS, result, issues: [] });
     } catch (rejection) {
       return failed(issuesFromRejection(rejection));
@@ -121,7 +180,13 @@ export function createFormBinding<TValues, TResult>(
     },
     errorFor: (path) => errorOf(state, path),
     messagesFor: (path) => messagesOf(state, path),
+    pending: () => state.status === 'submitting',
+    firstInvalidField: () => firstInvalidField(state, fields),
+    touch: (path) => publishTouch(markTouched(touch, path)),
+    edit: (path, value) =>
+      publishTouch(markDirty(touch, path, !sameFieldValue(value, baseline(path)))),
     reset: () => {
+      touch = NO_FORM_TOUCH;
       publish(IDLE_FORM_STATE);
     },
   };

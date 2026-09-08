@@ -13,6 +13,16 @@
  * island whose offline badge can never render. `/feed`'s client carries no queue because it only
  * READS; this one writes, so it opens one.
  *
+ * **The STORE is the half nothing in this repo had ever supplied.**
+ * `packages/realtime/src/client-mutations.ts` applies the optimistic twin under
+ * `if (store && local && !collapsed)` and no app anywhere passed a `LocalStore`, so tier 3's
+ * "my own click feels instant" was a documented capability that had never executed — the count on
+ * screen sat at the server's value until a reload, and a refused write had nothing to take back.
+ * `MemoryLocalStore` + `RebaseLog` below are the two objects that turn it on: the store journals
+ * the twin's write under the mutation's idempotency key, the log holds the sequence a rollback
+ * replays around. Both, or neither: `rollbackFailed` (`client-frames.ts`) returns early without
+ * the pair, so a store with no log is an optimistic write that can never come off the screen.
+ *
  * Named for the control rather than for its directory, which is where the two precedents' rule
  * (`feed/feed.island.tsx`, `settings/settings.island.tsx`) stops answering: this directory is
  * `[id]`, a route PARAMETER, so `[id].island.tsx` would carry glob metacharacters and reduce to
@@ -24,17 +34,19 @@
  * construction — the scope hash is over the file's basename plus its source, never its path.
  */
 
-import type { MutatorLike } from '@ultimat3/realtime';
+import type { LocalStore, MutatorLike } from '@ultimat3/realtime';
 import {
   LiveClient,
+  MemoryLocalStore,
   MemoryQueueStore,
   OfflineQueue,
+  RebaseLog,
   setLiveClient,
   useConnection,
   useMutation,
 } from '@ultimat3/realtime';
 import type { JSX } from 'solid-js';
-import { Show } from 'solid-js';
+import { createSignal, onCleanup, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import { signal, socketFor } from '../../../shared/live-socket';
 import { LIKE_POST } from '../like-mutation';
@@ -45,6 +57,19 @@ export interface LikeLabels {
   readonly like: string;
   /** `t('app.post.likes', { count })` — pluralised where the catalog is, never in the browser. */
   readonly count: string;
+  /**
+   * The same key at `count + 1`: what the count reads the instant this member's own like is
+   * applied, before any server has answered.
+   *
+   * TWO strings and not a template, because a catalog cannot cross the wire and a browser that
+   * substituted a number into one would be a second translator with no plural rules. Two is also
+   * exactly how many the twin can produce: `likePostLocally` moves this row by one, once, and
+   * never back. What it does NOT cover is a `rebase` frame landing a count neither string was
+   * translated for — a concurrent like by somebody else. This island holds no live subscription
+   * over `posts`, so that frame is the only other writer, and phrasing its number needs the count
+   * to arrive as a live row rather than as a prop.
+   */
+  readonly countWithMine: string;
   readonly queued: string;
 }
 
@@ -52,6 +77,8 @@ export interface LikeIslandProps {
   readonly postId: string;
   /** `postLike` decides on the org, so it rides in the mutator's input and not on the session. */
   readonly orgId: string;
+  /** The server's count, as a NUMBER: it seeds the local row the optimistic twin then updates. */
+  readonly likeCount: number;
   /** `ws://host:port` of the sync node, resolved by `shared/sync-url.ts` on the server. */
   readonly syncUrl: string;
   /** This build, so the node can tell a stale tab to reload rather than serving it a patch. */
@@ -64,9 +91,29 @@ export interface LikeIslandProps {
 /** Hoisted: `useMutation` binds a fresh `MutatorRef` per call, and one intent has one name. */
 const MUTATOR: MutatorLike = LIKE_POST;
 
-function Like(props: LikeIslandProps): JSX.Element {
+interface LikeViewProps extends LikeIslandProps {
+  /**
+   * The client's own store. Deliberately not one of the island's props: those cross the seam as
+   * JSON and this is an object with methods. It is here so the count can read the row the twin
+   * writes, which is the only place an optimistic value exists.
+   */
+  readonly rows: LocalStore;
+}
+
+function Like(props: LikeViewProps): JSX.Element {
   const like = useMutation(MUTATOR);
   const connection = useConnection();
+
+  // The row, mirrored into a signal. `IdentityMap` notifies once per batch — one twin, one render
+  // — and every write produces a NEW row object, so a reference compare is enough to re-render.
+  // Subscribed here rather than in `mount` so the listener dies with the component.
+  const read = (): boolean => props.rows.tx.posts?.get(props.postId)?.['likedByMe'] === true;
+  const [likedByMe, setLikedByMe] = createSignal(read());
+  onCleanup(
+    props.rows.identity.subscribe(() => {
+      setLikedByMe(read());
+    }),
+  );
 
   return (
     <div class={styles.row}>
@@ -79,11 +126,15 @@ function Like(props: LikeIslandProps): JSX.Element {
       </button>
 
       {/*
-        The server's count, unmoved. The optimistic +1 is `mutator.ts`'s `local` twin, which is
-        replayed against the durable client store this app does not configure yet — inventing a
-        second count here would be a second optimistic path for one intent.
+        The optimistic count. `likedByMe` is the twin's own flag rather than an increment computed
+        here: a second arithmetic path for one intent is exactly what `local` exists to prevent,
+        and a rollback then has nothing to undo it by. Refused, the server's `ack` carries an error,
+        `rollbackFailed` undoes the journal under that key, this signal falls back to `false` and
+        the string returns to the count the server rendered.
       */}
-      <span class={styles.count}>{props.labels.count}</span>
+      <span class={styles.count} data-role="count">
+        {likedByMe() ? props.labels.countWithMine : props.labels.count}
+      </span>
 
       {/* The queue is durable, so this is information, not an error. */}
       <Show when={connection.offline && like.pending > 0}>
@@ -101,24 +152,34 @@ function Like(props: LikeIslandProps): JSX.Element {
  * here is not a race: `OfflineQueue.open` rehydrates from its store before a click can be handed a
  * client that has none.
  *
- * `MemoryQueueStore` is the store this app has. It survives a lost socket, which is what the badge
- * is about, and not a reload — the OPFS store that would is the same unshipped tier `live.ts`
- * records for `persist: true`.
+ * `MemoryQueueStore` and `MemoryLocalStore` are the two stores this app has. Both survive a lost
+ * socket, which is what the badge and the optimistic count are about, and neither survives a
+ * reload — the OPFS tier that would is the same unshipped one `live.ts` records for `persist: true`
+ * and `createOpfsLocalStore` refuses by name.
+ *
+ * The store is seeded with the ONE row this control is about, from the count the server already
+ * rendered: `LocalTable.update` is a no-op for a row the table does not hold, so an unseeded store
+ * is a twin that silently writes nothing — the same shape as having no store at all.
  *
  * `connect()` before `setLiveClient`, and both before the first render: a hook resolving the
  * client mid-render would mutate against a socket nothing has asked to open. The shell goes last
  * and it is load-bearing — Solid's `render` APPENDS when the container already has children.
  */
 export async function mount(el: HTMLElement, props: LikeIslandProps): Promise<void> {
+  const rows = new MemoryLocalStore({
+    posts: [{ id: props.postId, likeCount: props.likeCount, likedByMe: false }],
+  });
   const client = new LiveClient({
     signal,
     connect: () => socketFor(props.syncUrl),
     buildId: props.buildId,
     actorId: props.actorId,
     queue: await OfflineQueue.open(new MemoryQueueStore()),
+    store: rows,
+    log: new RebaseLog(),
   });
   client.connect();
   setLiveClient(client);
   el.textContent = '';
-  render(() => <Like {...props} />, el);
+  render(() => <Like {...props} rows={rows} />, el);
 }

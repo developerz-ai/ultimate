@@ -171,7 +171,7 @@ arrives on rule two.
 x g resource post --admin --locales en,es
 ```
 
-That invocation writes 30 files, `As of 2026-08-21` — `x g resource` writes 28 files without
+That invocation writes 31 files, `As of 2026-09-08` — `x g resource` writes 29 files without
 `--admin`, and the two extra are the override in row 12 and its test. Re-derive by counting
 `data.files` under `--dry-run --json`; a stale number here is `X_DOC_FILE_COUNT_STALE` from the
 gate's `manifest` step. `--locales` moves neither number: it merges keys into a catalog the plan

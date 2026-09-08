@@ -119,6 +119,11 @@ export class FakeElement extends Listeners {
     return this.children.flatMap((child) => [child, ...child.descendants()]);
   }
 
+  /** First match or `null`, exactly as the real one answers — `[0]` on an empty list is not it. */
+  querySelector(selector: string): FakeElement | null {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+
   querySelectorAll(selector: string): FakeElement[] {
     const groups = selector.split(',').map((one) => one.trim());
     return this.descendants().filter((el) => groups.some((one) => compoundMatches(el, one)));

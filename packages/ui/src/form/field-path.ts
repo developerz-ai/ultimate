@@ -89,3 +89,15 @@ export function parseFieldPath(name: string): readonly FieldPathSegment[] | null
   // `expectKey` still set means the name ended on a `.` or was empty — both are half a path.
   return expectKey ? null : segments;
 }
+
+/**
+ * The attribute selector that finds a control by its field path, or `null` for a name that is not
+ * one. The grammar above is the ALLOWLIST and the only thing between a caller's string and a
+ * selector: `parseFieldPath` accepts `[A-Za-z_$][A-Za-z0-9_$]*`, `.` and `[0]` and nothing else, so
+ * no name it returns a path for can carry a quote, a bracket it did not open, or a second selector.
+ * Refused rather than escaped, for the same reason the parser is total — a name no issue can name
+ * is a field whose errors land nowhere, and building a selector for it would hide that.
+ */
+export function fieldSelector(name: string): string | null {
+  return parseFieldPath(name) === null ? null : `[name="${name}"]`;
+}

@@ -12,7 +12,16 @@ import type { ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
 import { DEFAULT_PAGE_TIMEOUT_MS, systemScrapeClock } from '@ultimat3/scraping';
 import { requireAppRoot } from './app-root';
 import { appBrowser } from './browser-launcher';
-import { islandShot, islandShotResult, refuseRouteWithIsland } from './cmd-shot-island';
+import {
+  islandShot,
+  islandShotResult,
+  islandSweep,
+  islandSweepResult,
+  refuseRouteWithIsland,
+  refuseSweepWithIsland,
+  refuseSweepWithRoute,
+  refuseSweepWithState,
+} from './cmd-shot-island';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, MissingPositionalError } from './errors';
 import { intFlagOr, PORT_RANGE } from './flag-number';
@@ -275,9 +284,9 @@ export const shotResult = (artifacts: ShotArtifacts): CommandResult => ({
 export const shotCommand: CliCommand = {
   spec: {
     name: 'shot',
-    summary: 'photograph one route, or one island in a state it declares, from a real browser',
+    summary: 'photograph one route, one island in a state it declares, or every island in the app',
     usage:
-      'x shot <route> | --island <name> [--state <id>] [--port 0] [--out <dir>] [--settle 2000] [--json]',
+      'x shot <route> | --island <name> [--state <id>] | --all-islands [--port 0] [--out <dir>] [--settle 2000] [--json]',
     requiresApp: true,
     flags: [
       { name: 'port', type: 'string', summary: 'dev port (0 lets the kernel pick a free one)' },
@@ -305,6 +314,15 @@ export const shotCommand: CliCommand = {
         type: 'string',
         summary: 'one declared state of that island, not all of them',
       },
+      // Its own SPELLING and never `--island` with no value: the parser refuses a bare `--island`
+      // ("expects a value") and `--island=` is an empty name, so "every island" had no form a
+      // reader could type that could not be read as a mistyped one. A boolean cannot be confused
+      // with a name, and `x shot --all-islands` says what it does beside `x shot --island <name>`.
+      {
+        name: 'all-islands',
+        type: 'boolean',
+        summary: 'every island in the app, in every state it declares, plus an index.md',
+      },
     ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
@@ -312,11 +330,20 @@ export const shotCommand: CliCommand = {
     // Every value read before anything boots: a typo must not cost a browser and a dev server to
     // report, which is the rule `x routes` and `x mcp` already follow.
     const island = flagString(ctx.args, 'island');
+    const state = flagString(ctx.args, 'state');
     const positional = ctx.args.positionals[0];
+    const sweep = flagBool(ctx.args, 'all-islands');
+    // Every ambiguous pair refused BY NAME, before a value is read: a reader who typed two
+    // subjects has a belief about which one runs, and half of them would be wrong.
+    if (sweep && island !== undefined && island !== '') refuseSweepWithIsland(island);
+    if (sweep && positional !== undefined) refuseSweepWithRoute(positional);
+    // A state id is one manifest's vocabulary, so it cannot mean anything across every island.
+    if (sweep && state !== undefined && state !== '') refuseSweepWithState(state);
     if (island !== undefined && island !== '' && positional !== undefined) {
       refuseRouteWithIsland(positional, island);
     }
-    const route = island === undefined || island === '' ? readRoute(positional) : '';
+    const component = sweep || (island !== undefined && island !== '');
+    const route = component ? '' : readRoute(positional);
     const port = intFlag(ctx.args, 'port', PORT_RANGE.min, DEFAULT_PORT, PORT_RANGE.max);
     const settleMs = intFlag(ctx.args, 'settle', 0, DEFAULT_SETTLE_MS);
     const timeoutMs = intFlag(ctx.args, 'timeout', 1, DEFAULT_PAGE_TIMEOUT_MS);
@@ -332,24 +359,22 @@ export const shotCommand: CliCommand = {
     });
     const out = flagString(ctx.args, 'out');
     const boot = (): Promise<ShotServer> => devServerFor(root, ctx.env, port);
+    const shared = {
+      root,
+      ...(out === undefined ? {} : { out }),
+      settleMs,
+      timeoutMs,
+      ...(executablePath === undefined ? {} : { executablePath }),
+      ...(cdpUrl === undefined ? {} : { cdpUrl }),
+      ...(flagString(ctx.args, 'allow-hosts') === undefined
+        ? {}
+        : { extraHosts: flagString(ctx.args, 'allow-hosts') }),
+      boot,
+    };
+    if (sweep) return islandSweepResult(await islandSweep(shared));
     if (island !== undefined && island !== '') {
       return islandShotResult(
-        await islandShot({
-          root,
-          island,
-          ...(flagString(ctx.args, 'state') === undefined
-            ? {}
-            : { state: flagString(ctx.args, 'state') }),
-          ...(out === undefined ? {} : { out }),
-          settleMs,
-          timeoutMs,
-          ...(executablePath === undefined ? {} : { executablePath }),
-          ...(cdpUrl === undefined ? {} : { cdpUrl }),
-          ...(flagString(ctx.args, 'allow-hosts') === undefined
-            ? {}
-            : { extraHosts: flagString(ctx.args, 'allow-hosts') }),
-          boot,
-        }),
+        await islandShot({ ...shared, island, ...(state === undefined ? {} : { state }) }),
       );
     }
     // Resolved before the boot for the same reason: an app with no browser installed must not pay

@@ -1,12 +1,18 @@
 # UI components
 
-`@ultimat3/ui` — 52 SolidJS components on the semantic tokens in [Theming](Theming). SCSS modules, logical properties, no Tailwind, no CSS-in-JS.
+`@ultimat3/ui` — SolidJS components on the semantic tokens in [Theming](Theming). SCSS modules, logical properties, no Tailwind, no CSS-in-JS.
 
-`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+`As of 2026-09`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## The catalog is generated — read it, don't ask
 
-**[`packages/ui/CATALOG.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/CATALOG.md)** documents all 52 components with every prop, every type, and the token scales, parsed straight out of `packages/ui/src/components/*.tsx`. It ships inside the npm tarball, so it is on disk at `node_modules/@ultimat3/ui/CATALOG.md` in any app.
+**[`packages/ui/CATALOG.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/CATALOG.md)** documents every component with every prop, every type, and the token scales, parsed straight out of `packages/ui/src/components/*.tsx`. It ships inside the npm tarball, so it is on disk at `node_modules/@ultimat3/ui/CATALOG.md` in any app.
+
+**How many there are is a question for the file, never for this page.** It carried `52` for two majors:
+
+```bash
+head -7 node_modules/@ultimat3/ui/CATALOG.md   # the count and every name, on one line
+```
 
 | Concern | Answer |
 |---|---|
@@ -14,7 +20,12 @@
 | Drift | `catalog.test.ts` compares the committed file byte-for-byte against a fresh build; a prop change with no regen is a red `x verify` |
 | Hand edits | refused by the same test — the file carries a `GENERATED` banner |
 
-This page does **not** restate those 848 lines. It covers the four page composites, because they are the ones an agent picks wrong.
+This page does **not** restate the catalog. It covers the four page composites, because they are the ones an agent picks wrong.
+
+**Which component to reach for is not the same question as how it must behave.** The four-state
+decision, skeleton-versus-spinner, response tiers, optimistic writes, forms, motion, focus, toasts
+and images are [Interface rules](Interface-Rules) — one page, every rule marked either with the
+guard, type or gate step that refuses it, or as judgement nothing checks.
 
 ## The four page composites
 

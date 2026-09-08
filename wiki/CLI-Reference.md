@@ -258,7 +258,7 @@ Alias: `x generate`.
 | `--force` | boolean | `false` | overwrite existing files |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 
-`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **28 files** (30 with `--admin`; `--live` adds nothing, a resource already ships a live query), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>` then `x db gen "create <name>"`. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`.
+`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **29 files** (31 with `--admin`; `--live` adds nothing, a resource already ships a live query), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>` then `x db gen "create <name>"`. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`.
 
 **`x g admin:page` DECLARES the permission it requires**, `As of 2026-09`. It emitted
 `permissions: ['ops:read']` and nothing anywhere declared `ops:read`, so `assertPermission` threw
@@ -992,6 +992,8 @@ Three rules the set obeys:
 x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000]
                [--timeout 30000] [--browser <path>] [--cdp-url <ws://…>]
                [--allow-hosts a.com,b.com] [--json]
+x shot --island <name> [--state <id>] [--json]
+x shot --all-islands [--json]
 ```
 
 **The framework's stated primary developer is an agent, and an agent cannot look at anything.** It can read a file and run a command that prints. `x shot` turns a rendered route into both.
@@ -1037,6 +1039,7 @@ Three rules decide which browser a run gets, and the third is the one worth know
 
 ```bash
 x shot --island <name> [--state <id>] [--settle 2000] [--json]
+x shot --all-islands [--settle 2000] [--json]
 ```
 
 One **component**, in the states it declares, photographed one address at a time. A route shot answers "what does this page look like"; this answers "what does this component look like in the state a reviewer cannot click their way to" — an empty result set, a save the server refused, a quota banner.
@@ -1048,14 +1051,30 @@ The states come from a sibling `<name>.island.states.ts` beside the island, and 
 | `--island <name>` | required | the manifest's own `name`. A route positional beside it is refused — they are two different subjects, not two spellings of one |
 | `--state <id>` | every declared state | one state. An id the manifest does not declare is refused by name, with the known ids |
 | `--settle` | `2000` | the readiness window. Ready is **quiet**, not idle: fonts, then N consecutive frames with an unchanged network-activity counter — never "nothing in flight", which never comes for a fixture declared `pending` |
+| `--all-islands` | off | **every** island in the app, in every state each declares. Its own spelling and never `--island` with no value: the parser refuses a bare `--island` ("expects a value"), so "every island" had no form a reader could type that could not be read as a mistyped name. Naming it beside `--island`, beside `--state` or beside a route positional is refused by name |
 
-Everything else — `--out`, `--timeout`, `--browser`, `--cdp-url`, `--allow-hosts` — is the route shot's, unchanged. Pictures land at `.x/shot/island/<name>/<state>-<theme>.png`, one per state per theme, beside a `verdict.json` of the same shape.
+Everything else — `--out`, `--timeout`, `--browser`, `--cdp-url`, `--allow-hosts` — is the route shot's, unchanged. Pictures land at `.x/shot/island/<name>/<state>-<theme>.png`, one per state per theme, beside a `verdict.json` of the same shape and an `index.md` one level up.
+
+**`x shot --all-islands` is the one command that answers "what does this app look like".** It expands every `*.island.states.ts` in the app through the same plan the one-island form uses, boots one dev server, and keeps **one browser per declared viewport across every island** — forty states at one size is still one launch. A state that cannot be photographed does not stop the run, and not the next *island* either: every picture the app can produce is taken, every verdict and the index are written, and only then does the missing-picture gate turn the refusals into a non-zero exit. An app that declares no states at all is refused by name rather than answered with an empty gallery — "produced nothing and exited 0" is the one outcome a reader cannot tell from success.
+
+### .x/shot/island/index.md
+
+The file an agent opens instead of guessing at forty PNGs. Markdown, written by **both** forms — a single-island run gets one too, because the file that says what a picture *is* cannot be a property of how many islands were asked for.
+
+| It carries | Why |
+|---|---|
+| the counts, and the commands that re-run everything / one island / one state | an artifact that cannot be regenerated is one nobody trusts twice |
+| what the capture could **not** see | the verdict's own `blind` list, handed in rather than reworded — two wordings would drift |
+| per island: the app-relative path of the `.island.tsx` | so a reader can open the component the pictures are of |
+| per state: the `id`, the `title` and the `note` | the note is the *"you cannot reach this by clicking, because …"* line, and it is the whole reason a reviewer knows what they are looking at |
+| per state: one path per theme, and the state's own verdict | `ok`, or every reason it is not — a missing picture, a mount that never happened, a request no stub answers, a console error |
+| per state: console **warnings** and whether the content overflows its box | **recorded, and gating nothing.** A signal that fails a run is a signal an author switches off, and a box its content spills out of is the commonest ugly-UI symptom a pixel-tight PNG cannot show. `stateShotOk` reads neither |
 
 **One session per picture**, and it costs a browser launch each: `page.console()` and `page.pageErrors()` are bounded rings over the whole *session*, so a shared one files state A's console errors under state B — and per-state attribution is the half of the artifact that gates.
 
 **An unstubbed request fails the run.** The page's seal replaces `fetch`, `WebSocket`, `EventSource` and `XMLHttpRequest` before the island's chunk is imported, answers the state's `routes`, and publishes everything else; the capture refuses with `X_SHOT_ISLAND_UNSTUBBED_REQUEST` naming each method and path. A component whose fetch quietly hangs paints its own loading branch, and the picture then shows a fixture gap dressed up as a real component state.
 
-**The picture is the crop target**, `As of 2026-08-26` — the state's declared selector, or the island's host element. Measured before it: 720×560 for a component whose own box the same verdict reported as 688×104.
+**The picture is the crop target plus a small margin.** The rectangle is the state's declared selector, or the island's host element, translated out of viewport coordinates into the page's — `As of 2026-08-26`; measured before that, 720×560 for a component whose own box the same verdict reported as 688×104. The margin came later, because a pixel-tight crop shaves off everything a component paints *outside* its border box — a `box-shadow`, an outline, a focus ring, a hairline border on a subpixel — and a reviewer then reads a component with no elevation as flat, which is a change the component never made. It is clamped to the document at both ends, so the frame never starts in negative space and never runs past the page, and it may only ever make the frame **bigger** than the component's own box.
 
 **Both themes are photographed by emulating `prefers-color-scheme`**, not by setting an attribute — `As of 2026-08-26`. An attribute on the document is the *outcome* of a theme decision and the component owns it: one that resolves `'system'` itself deletes or overwrites it on mount, so the harness is silently overruled and both pictures converge. Measured on the reference app, `<state>-light.png` and `<state>-dark.png` came back byte-identical, same md5, from two addresses that really did serve different documents. The attribute is still set, because it is right for a component that *reads* a theme it does not own.
 

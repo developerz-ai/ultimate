@@ -1,12 +1,5 @@
 @use '../tokens' as t;
 
-@keyframes ultimate-toast-in {
-  from {
-    opacity: 0;
-    translate: 0 12px;
-  }
-}
-
 .region {
   position: fixed;
   z-index: t.z(toast);
@@ -47,8 +40,24 @@
   padding: t.space(4);
   border-inline-start: 3px solid var(--toast-accent);
   color: t.role('fg');
-  animation: ultimate-toast-in t.duration(base) t.easing(out);
   pointer-events: auto;
+
+  // A TRANSITION, not a keyframe animation, and `@starting-style` is what makes an entry
+  // transition possible with no JS at all. The difference is interruption: a transition retargets
+  // from wherever the property currently is when the state changes mid-flight, and a keyframe
+  // animation restarts from its own `from`. A toast stack is the surface where that shows — a
+  // second message arriving 200ms into the first one's entry restarted the whole stack's motion.
+  // `opacity` and `translate` are the two the compositor can run without laying the page out again.
+  opacity: 1;
+  translate: 0 0;
+  transition:
+    opacity t.duration(base) t.easing(out),
+    translate t.duration(base) t.easing(out);
+
+  @starting-style {
+    opacity: 0;
+    translate: 0 12px;
+  }
 }
 
 .content {

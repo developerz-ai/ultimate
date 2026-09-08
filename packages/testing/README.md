@@ -442,8 +442,16 @@ this package's own `DEFAULT_NOW`. A harness that freezes the instant and leaves 
 renders `12:00` on one machine and `14:00` on the next, and the review diff then says the component
 changed when only the reviewer moved.
 
-**The command that takes the pictures is not here yet.** `As of 2026-08-23` this package ships the
-vocabulary, the expansion and the refusals; the browser half is `x shot`'s.
+`islandShotPlan(manifests)` is the same expansion over a WHOLE SET, in the order the manifests
+arrived — the plan behind `x shot --all-islands`. It was exported and tested with zero callers for
+its whole life, which is what made "a picture of every component state in the app" a one-line wiring
+job rather than a feature.
+
+**The command that takes the pictures is `x shot`'s, and it ships.** This paragraph said it did not
+exist `As of 2026-08-23`, and `x shot --island <name>` landed on 2026-08-26 with the sweep after it.
+This package still owns the vocabulary, the expansion and the refusals, and owns no browser: the
+capture, the harness page and the crop are `@ultimat3/cli`'s, because `cli → testing` is the
+declared edge and the reverse is a `bun run boundaries` failure.
 
 ## The one assertion that waits
 

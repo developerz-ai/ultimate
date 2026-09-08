@@ -7,7 +7,7 @@ The loop, end to end. Worked example: **posts, with publishing, a live feed, and
 | # | Step | Command | Lands in |
 |---|---|---|---|
 | 0 | Pick the surface | — | see the table below |
-| 1 | Generate the slice | `x g resource post --live --admin` | 30 files — 28 without `--admin`, `As of 2026-08-21`. `--live` adds none: a resource already ships a live query. What each file is: [`12-generated-app.md`](./12-generated-app.md). Re-derive with `--dry-run --json` and count `data.files`; a stale number here is `X_DOC_FILE_COUNT_STALE` from the gate's `manifest` step |
+| 1 | Generate the slice | `x g resource post --live --admin` | 31 files — 29 without `--admin`, `As of 2026-09-08`. `--live` adds none: a resource already ships a live query. What each file is: [`12-generated-app.md`](./12-generated-app.md). Re-derive with `--dry-run --json` and count `data.files`; a stale number here is `X_DOC_FILE_COUNT_STALE` from the gate's `manifest` step |
 | 2 | Entity + invariants | edit | `packages/db/src/schema/posts.ts`, `apps/web/app/posts/entity.ts` |
 | 3 | Migration | `x db gen "create posts"` | `packages/db/migrations/<stamp>_create_posts.{sql,snapshot.json,hash}` |
 | 4 | Apply | `x db migrate` | the dev database |
@@ -190,7 +190,7 @@ export const liveFeed = query({
 
 - `live: false` — the data changes on user action only; a refetch after a mutation is enough.
 - `live: true` — someone else's write must appear without a refresh.
-- `live: true, persist: true` — writes must survive being offline (tier 3).
+- `live: true` plus a `LocalStore` on the client — writes must survive being offline (tier 3). **`persist: true` is the DESIGNED spelling and `query()` does not accept it**, `As of 2026-09`: tier 3 is reached by passing a `LocalStore` to the live client, not by a flag on the query. `packages/realtime/src/client-mutations.ts:58` gates the optimistic apply on `if (store && local && !collapsed)`.
 
 Every order ends with a key unique in the row shape, written out explicitly (`.orderBy('id')` last) — the live matcher computes a row's position from this list alone, and `createdAt desc` by itself is a partial order: two rows written in the same millisecond can swap places between evaluations. `sql` builds `SqlSource` through `from()`/`.where()`/`.orderBy()`/`.limit()` from `@ultimat3/query`, never a direct `db.<table>` call — that stays inside `repo.ts`. A `live: true` read the incremental matcher cannot evaluate (a join, an aggregate, an unbounded predicate) is `X_MATCHER_UNSUPPORTED`, naming the fix: simplify the `sql`, add `orderBy` + `limit`, or drop `live`. `x queries describe liveFeed --json` shows the declaration — schema, policy, tags, live flag — for anything already registered.
 
