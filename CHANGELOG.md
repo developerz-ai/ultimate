@@ -19,8 +19,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   the previous data rendered and dimmed under `aria-busy`, which is what stops a search feeling
   slow. `DataTable` was the ONLY place in the framework where `(loading, error, empty, data)` was
   one decision; it now calls the same rule, so there is one implementation and not two.
-- **A toast store** (`@ultimat3/ui`): `createToastStore`, `useToasts`, `Toaster`. `ToastRegion` and
-  `Toast` shipped with **zero consumers repo-wide** and no queue. Dwell is a token (4s / 8s /
+- **A toast store** (`@ultimat3/ui`): `createToastStore`, `useToasts` and `Toaster`, all three new.
+  `Toast` and `ToastRegion` already shipped — correctly, and the live-region reasoning in that file
+  is the hard part — but with **zero consumers repo-wide** and no queue behind them, so an app had
+  the two components and no way to drive them. Dwell is a token (4s / 8s /
   sticky), the visible stack is capped at 3, identical messages dedupe, and the timer pauses on
   hover, on focus-within **and** on `document.hidden` — a backgrounded tab burned the whole dwell
   and the reader never saw the message.
