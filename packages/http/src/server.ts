@@ -17,7 +17,7 @@ import {
 } from '@ultimat3/core';
 import type { Server } from 'bun';
 import { defineHttpConfig, type HttpConfig } from './config';
-import { serverNotStarted } from './errors';
+import { serverNotStarted, websocketPathTaken } from './errors';
 import type { ServerHooks } from './hooks';
 import type { Middleware } from './middleware';
 import { createPipeline, type Pipeline } from './pipeline';
@@ -189,25 +189,48 @@ export const createServer = (options: ServerOptions): ServerHandle => {
   };
 
   /**
-   * Static paths go into Bun's native route table so path dispatch happens in
-   * native code. Method resolution stays ours: Bun's automatic 405 would not carry
-   * our problem+json body. Param/wildcard paths fall through to `fetch`.
-   */
-  /**
    * The path alone. `new URL` rather than a string scan: a mount's path has to match what the
    * router would have matched, and `/_x/sync?build=abc` is that path with a query on it.
    */
   const pathOf = (request: Request): string => new URL(request.url).pathname;
 
+  /** What Bun's native table is keyed by, and what a mount's path is compared against. */
+  const prefix = config.basePath === '/' ? '' : config.basePath.replace(/\/$/, '');
+
+  /**
+   * Static paths go into Bun's native route table so path dispatch happens in
+   * native code. Method resolution stays ours: Bun's automatic 405 would not carry
+   * our problem+json body. Param/wildcard paths fall through to `fetch`.
+   */
   const nativeRoutes = (): Record<string, NativeHandler> => {
     const out: Record<string, NativeHandler> = {};
-    const prefix = config.basePath === '/' ? '' : config.basePath.replace(/\/$/, '');
     for (const description of describeRoutes(table)) {
       if (description.params.length > 0) continue;
       out[`${prefix}${description.path}`] = dispatch;
     }
     return out;
   };
+
+  /**
+   * A mount OWNS its path — and the table above is matched BEFORE `fetch`, so a static route (or a
+   * health endpoint) at the same path would take the upgrade request and answer it with a
+   * document: a websocket that never opens, and no error anywhere saying why. A param route cannot
+   * do that; it falls through to `fetch`, where the mount is asked first.
+   *
+   * Refused here rather than ranked, because either precedence is a surprise: a route silently
+   * shadowing the socket is the bug, and a mount silently shadowing a declared route would be the
+   * worse one. `X_ROUTE_CONFLICT` is the code two routes claiming one path already get.
+   */
+  const assertMountPathFree = (path: string): void => {
+    if (path === '/healthz' || path === '/readyz')
+      throw websocketPathTaken(path, 'the health endpoint');
+    for (const description of describeRoutes(table)) {
+      if (description.params.length > 0) continue;
+      if (`${prefix}${description.path}` === path)
+        throw websocketPathTaken(path, `the route \`${description.name}\``);
+    }
+  };
+  if (mount !== undefined) assertMountPathFree(mount.path);
 
   const handle: ServerHandle = {
     role,

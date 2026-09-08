@@ -23,9 +23,16 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   itself — publishes the app's port and not its neighbour's. A mount is `{ path, fetch, websocket }`
   and speaks Bun's own convention, which is `SyncNode.fetch`'s: `undefined` means the upgrade took,
   a `Response` is a refusal. Omitted, the `web` role opens no websocket, exactly as before.
+  A mount whose path is already answered — a static route, or `/healthz` and `/readyz` — is
+  refused at `createServer` with `X_ROUTE_CONFLICT`, the code two routes claiming one path already
+  get: Bun matches its native route table before `fetch`, so that route would take the upgrade and
+  answer it with a document, leaving a websocket that never opens and nothing saying why. A PARAM
+  route is not a conflict — it falls through to `fetch`, where the mount is asked first.
 - `SyncNode.path` (`@ultimat3/realtime`): the one path the node answers an upgrade on, published
   because a host that mounts it has to route exactly that path and a second copy of `/_x/sync` in
-  the host is the copy that stays behind when `SyncNodeOptions.path` moves.
+  the host is the copy that stays behind when `SyncNodeOptions.path` moves. **A minor, not a
+  patch**: `SyncNode` is exported, so a hand-built one — a test fake handed to `listenSyncNode` —
+  must add `path` to keep typechecking. Nothing that gets its node from `createSyncNode` changes.
 - `x dev` logs `sync reachable` with both addresses — the node's own listener and the same node on
   the app's origin. `sync node ready` said only that a node existed, so the first question a failing
   browser socket raises, "is the ws server up, and where?", had no answer in the boot output at all.

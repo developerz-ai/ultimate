@@ -360,6 +360,19 @@ export const routeConflict = (path: string, detail: string): HttpError =>
  * trusting the header at all is trusting the caller. Asked in the same shape as
  * `X_RATE_LIMIT_NOT_SHARED`, and for the same reason: only the app knows its own topology.
  */
+/**
+ * A websocket mount and something already answering its path. Same code as two routes claiming
+ * one, because it is the same fact: one path, two declarations, and the framework picks — Bun's
+ * native route table is matched BEFORE `fetch`, so the route wins and the upgrade never reaches
+ * the mount. Refused at `createServer`, not discovered as a socket that will not open.
+ */
+export const websocketPathTaken = (path: string, answered: string): HttpError =>
+  new HttpError({
+    code: 'X_ROUTE_CONFLICT',
+    cause: `the websocket mount claims ${path}, and ${answered} already answers it — Bun matches its native route table before \`fetch\`, so the upgrade would never reach the mount`,
+    fix: `x routes list --json   # then move the mount's path, or the declaration at ${path}`,
+  });
+
 export const trustProxyUnset = (): HttpError =>
   new HttpError({
     code: 'X_TRUST_PROXY_UNSET',
