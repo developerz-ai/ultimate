@@ -17,7 +17,7 @@ import {
 } from '@ultimat3/core';
 import type { Server } from 'bun';
 import { defineHttpConfig, type HttpConfig } from './config';
-import { serverNotStarted } from './errors';
+import { HttpError, serverNotStarted } from './errors';
 import type { ServerHooks } from './hooks';
 import type { Middleware } from './middleware';
 import { createPipeline, type Pipeline } from './pipeline';
@@ -25,6 +25,22 @@ import { createRateLimiter, type RateLimitStore } from './rate-limit';
 import { withRouteBuckets } from './rate-limit-buckets';
 import { json } from './response';
 import { createRouter, describeRoutes, type Route, type RouteDescription } from './router';
+
+/**
+ * Beside its one caller rather than in `errors.ts`, which is at the 500-line ceiling — the
+ * arrangement `dev-sync.ts` and `metrics-endpoint.ts` in `@ultimat3/cli` already take.
+ *
+ * A websocket mount and something already answering its path. Same code as two routes claiming
+ * one, because it is the same fact: one path, two declarations, and the framework picks — Bun's
+ * native route table is matched BEFORE `fetch`, so the route wins and the upgrade never reaches
+ * the mount. Refused at `createServer`, not discovered as a socket that will not open.
+ */
+const websocketPathTaken = (path: string, answered: string): HttpError =>
+  new HttpError({
+    code: 'X_ROUTE_CONFLICT',
+    cause: `the websocket mount claims ${path}, and ${answered} already answers it — Bun matches its native route table before \`fetch\`, so the upgrade would never reach the mount`,
+    fix: `x routes list --json   # then move the mount's path, or the declaration at ${path}`,
+  });
 
 /** Core owns the state machine; this alias exists so callers need one import. */
 export type LifecycleState = HealthState;
@@ -48,6 +64,63 @@ export interface ServerOptions {
    * passes a store that says the same, or `createServer` refuses here.
    */
   readonly rateLimitStore?: RateLimitStore;
+  /**
+   * A websocket served on THIS socket, beside the pipeline. Omitted, the `web` role opens no
+   * websocket at all — which is what it did everywhere, and is why the sync node was only ever
+   * reachable on a port of its own.
+   *
+   * The problem that is: `PORT + 1` is a rule the app's own origin cannot express. A browser that
+   * reaches the app through anything that publishes ONE port — VS Code's remote port forwarding,
+   * a Codespace, an ingress, a tunnel — loads the page and then dials a neighbour nobody
+   * forwarded. Measured 2026-09-07 over a VSCodium Remote-SSH workspace: the page on the
+   * forwarded `localhost:3000` rendered, `ws://localhost:3001/_x/sync` failed on every attempt of
+   * the reconnect ladder, and the same upgrade answered `101` from the box itself. Nothing was
+   * broken on either end — there was no tunnel between them.
+   *
+   * So a host may mount the socket on the port it already publishes, and the two-port topology
+   * stays exactly as it was: `x dev` does BOTH, `docker/` keeps its own `sync` service, and a
+   * client picks whichever origin it can actually reach.
+   */
+  readonly websocket?: WebSocketMount;
+}
+
+/**
+ * Structural view of `Bun.serve`'s server object, as much of one as an upgrade reads. Here rather
+ * than imported from `bun` so a mount can be written — and tested — without one, the same shape
+ * `@ultimat3/realtime`'s own `UpgradeTarget` already has: this option is the seam those two
+ * packages meet at, and neither may depend on the other.
+ */
+export interface UpgradeTarget {
+  upgrade(request: Request, options: { data: unknown }): boolean;
+}
+
+/**
+ * One path, taken off the pipeline and answered by a websocket host instead.
+ *
+ * `fetch` returning `undefined` means the upgrade TOOK and Bun owns the connection now — the
+ * convention `Bun.serve` itself uses, and the one `SyncNode.fetch` already speaks, so a node is a
+ * mount with no adapter in between. A `Response` is a refusal (`426`, `401`, a shed `503`) and is
+ * returned as it is.
+ *
+ * The handlers are structural for the reason above; `open`, `message` and `close` are declared as
+ * METHODS on purpose, so a host that types its socket precisely (`SyncWs`) still satisfies this.
+ */
+export interface WebSocketMount<TSocket = never> {
+  /** The one path this mount owns. Every other request goes to the pipeline, untouched. */
+  readonly path: string;
+  fetch(
+    request: Request,
+    server: UpgradeTarget,
+  ): Promise<Response | undefined> | Response | undefined;
+  readonly websocket: {
+    open(ws: TSocket): void;
+    message(ws: TSocket, message: string | Uint8Array): void;
+    close(ws: TSocket): void;
+    readonly idleTimeout?: number;
+    readonly backpressureLimit?: number;
+    readonly maxPayloadLength?: number;
+    readonly sendPings?: boolean;
+  };
 }
 
 export interface ServerHandle {
@@ -100,6 +173,7 @@ export const createServer = (options: ServerOptions): ServerHandle => {
   // "the app said 15 seconds" are different claims and `null` is what keeps them apart.
   if (config.drainTimeoutMs !== null) configureLifecycle({ deadlineMs: config.drainTimeoutMs });
 
+  const mount = options.websocket;
   let server: BunServer | undefined;
   let unregister: (() => void) | undefined;
   let unregisterClose: (() => void) | undefined;
@@ -131,19 +205,48 @@ export const createServer = (options: ServerOptions): ServerHandle => {
   };
 
   /**
+   * The path alone. `new URL` rather than a string scan: a mount's path has to match what the
+   * router would have matched, and `/_x/sync?build=abc` is that path with a query on it.
+   */
+  const pathOf = (request: Request): string => new URL(request.url).pathname;
+
+  /** What Bun's native table is keyed by, and what a mount's path is compared against. */
+  const prefix = config.basePath === '/' ? '' : config.basePath.replace(/\/$/, '');
+
+  /**
    * Static paths go into Bun's native route table so path dispatch happens in
    * native code. Method resolution stays ours: Bun's automatic 405 would not carry
    * our problem+json body. Param/wildcard paths fall through to `fetch`.
    */
   const nativeRoutes = (): Record<string, NativeHandler> => {
     const out: Record<string, NativeHandler> = {};
-    const prefix = config.basePath === '/' ? '' : config.basePath.replace(/\/$/, '');
     for (const description of describeRoutes(table)) {
       if (description.params.length > 0) continue;
       out[`${prefix}${description.path}`] = dispatch;
     }
     return out;
   };
+
+  /**
+   * A mount OWNS its path — and the table above is matched BEFORE `fetch`, so a static route (or a
+   * health endpoint) at the same path would take the upgrade request and answer it with a
+   * document: a websocket that never opens, and no error anywhere saying why. A param route cannot
+   * do that; it falls through to `fetch`, where the mount is asked first.
+   *
+   * Refused here rather than ranked, because either precedence is a surprise: a route silently
+   * shadowing the socket is the bug, and a mount silently shadowing a declared route would be the
+   * worse one. `X_ROUTE_CONFLICT` is the code two routes claiming one path already get.
+   */
+  const assertMountPathFree = (path: string): void => {
+    if (path === '/healthz' || path === '/readyz')
+      throw websocketPathTaken(path, 'the health endpoint');
+    for (const description of describeRoutes(table)) {
+      if (description.params.length > 0) continue;
+      if (`${prefix}${description.path}` === path)
+        throw websocketPathTaken(path, `the route \`${description.name}\``);
+    }
+  };
+  if (mount !== undefined) assertMountPathFree(mount.path);
 
   const handle: ServerHandle = {
     role,
@@ -168,7 +271,7 @@ export const createServer = (options: ServerOptions): ServerHandle => {
       // is the metrics endpoint, which answers `METRICS_PATH` and nothing else.
       markReady();
 
-      server = Bun.serve({
+      const listen = {
         port: config.port,
         hostname: config.hostname,
         development: config.dev,
@@ -179,8 +282,23 @@ export const createServer = (options: ServerOptions): ServerHandle => {
           '/healthz': () => healthResponse(healthzPayload()),
           '/readyz': () => healthResponse(readyzPayload()),
         },
-        fetch: (request, socket) => dispatch(request, socket),
-      });
+      };
+      // Two calls, not one options object with a spread: `Bun.serve` types `fetch` as returning a
+      // `Response` UNLESS `websocket` is present, and a conditionally-spread key leaves TypeScript
+      // on the first overload — where the `undefined` that means "upgraded" is an error. The
+      // mount's path is not in `routes` either: a native route answers before `fetch` runs, and
+      // an upgrade that never reaches `fetch` is a 404 with a websocket waiting behind it.
+      server =
+        mount === undefined
+          ? Bun.serve({ ...listen, fetch: (request, socket) => dispatch(request, socket) })
+          : Bun.serve({
+              ...listen,
+              fetch: async (request, socket) =>
+                pathOf(request) === mount.path
+                  ? await mount.fetch(request, socket as unknown as UpgradeTarget)
+                  : await dispatch(request, socket),
+              websocket: mount.websocket,
+            });
 
       // Tell core which socket we opened. A request to it is this process calling itself,
       // so the test seal can let it through without an allowlist entry per random port.

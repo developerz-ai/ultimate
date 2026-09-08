@@ -231,6 +231,44 @@ describe('unit · x dev --role', () => {
     expect(Number.parseInt(url.port, 10)).toBeGreaterThan(1);
   });
 
+  /**
+   * The socket a browser can actually reach. `x dev` binds the node on `PORT + 1`, and a page
+   * served through ONE published port — VS Code's remote forwarding, a Codespace, an ingress,
+   * `ssh -L` — has no route to a neighbour nobody forwarded. Measured 2026-09-07 over a
+   * Remote-SSH workspace: the page loaded on the forwarded `localhost:3000` and every dial of
+   * `ws://localhost:3001/_x/sync` failed, while the identical upgrade answered `101` from the box.
+   *
+   * So the same node answers on the web role's own port too. Both doors, one node.
+   */
+  test("the sync node answers the upgrade on the web role's own port", async () => {
+    running = await startRoles({
+      roles: selectRoles('web,sync'),
+      port: 0,
+      metricsPort: 0,
+      buildId: 'test',
+      runtime: fakeRuntime(),
+      env: {},
+      routes: [],
+    });
+
+    const app = running.url ?? expect.unreachable('the web role bound no port');
+    const socket = new WebSocket(`${app.replace('http', 'ws')}/_x/sync?build=test`);
+    await new Promise<void>((resolve, reject) => {
+      socket.onopen = () => {
+        resolve();
+      };
+      socket.onerror = () => {
+        reject(new Error('the app port refused the sync upgrade'));
+      };
+    });
+    expect(socket.readyState).toBe(WebSocket.OPEN);
+    socket.close();
+
+    // And the node's own listener is still there: `docker/` publishes it as a service of its own.
+    expect(running.syncUrl).toStartWith('ws://');
+    expect(new URL(running.syncUrl ?? '').port).not.toBe(new URL(app).port);
+  });
+
   test('a role that cannot bind rejects instead of handing back a half-started set', async () => {
     // Occupy the port the sync role will ask for, so `startSync` is the step that throws and the
     // web role started before it is the one the unwind has to give back.

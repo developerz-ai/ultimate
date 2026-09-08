@@ -43,6 +43,74 @@ describe('the drain budget', () => {
   });
 });
 
+/**
+ * A mount owns its path. Bun's native route table is matched before `fetch`, so a static route at
+ * the same path takes the upgrade and answers it with a document — a websocket that never opens,
+ * and nothing anywhere saying why. Caught at construction, in the process's own boot.
+ */
+describe('a websocket mount and the routes beside it', () => {
+  const mount = (path: string) =>
+    ({
+      path,
+      fetch: () => new Response('never reached', { status: 426 }),
+      websocket: { open: () => undefined, message: () => undefined, close: () => undefined },
+    }) as const;
+
+  const serve = (path: string, routes: readonly Route[]) =>
+    createServer({
+      routes,
+      role: 'web',
+      websocket: mount(path),
+      config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
+    });
+
+  test('a static route at the mount path is refused, naming the route', () => {
+    const taken: Route[] = [
+      {
+        method: 'GET',
+        path: '/_x/sync',
+        meta: { name: 'sync.page', auth: 'public' },
+        handler: () => text('no'),
+      },
+    ];
+    expect(() => serve('/_x/sync', taken)).toThrow(/X_ROUTE_CONFLICT|sync\.page/);
+  });
+
+  test('the health endpoints are declarations too, and they are refused the same way', () => {
+    expect(() => serve('/readyz', [])).toThrow(/X_ROUTE_CONFLICT/);
+    expect(() => serve('/healthz', [])).toThrow(/X_ROUTE_CONFLICT/);
+  });
+
+  test('a PARAM route that could match is not a conflict: it falls through to the mount', () => {
+    const params: Route[] = [
+      {
+        method: 'GET',
+        path: '/_x/:panel',
+        meta: { name: 'panel', auth: 'public' },
+        handler: () => text('panel'),
+      },
+    ];
+    expect(() => serve('/_x/sync', params)).not.toThrow();
+  });
+
+  test('with no mount nothing is checked, and nothing changes', () => {
+    expect(() =>
+      createServer({
+        routes: [
+          {
+            method: 'GET',
+            path: '/_x/sync',
+            meta: { name: 'sync.page', auth: 'public' },
+            handler: () => text('ok'),
+          },
+        ],
+        role: 'web',
+        config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
+      }),
+    ).not.toThrow();
+  });
+});
+
 const routes: readonly Route[] = [
   {
     method: 'GET',

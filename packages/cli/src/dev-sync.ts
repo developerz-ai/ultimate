@@ -3,7 +3,9 @@
 // and a listener of its own — and because that file is the boot's index, not its detail.
 
 import { createContext, logger, UltimateError } from '@ultimat3/core';
+import type { WebSocketMount } from '@ultimat3/http';
 import { listQueries } from '@ultimat3/query';
+import type { SyncNode, SyncWs } from '@ultimat3/realtime/server';
 import {
   ChannelHub,
   createSyncNode,
@@ -98,6 +100,32 @@ export function syncPortFor(port: number): number {
   return port + 1;
 }
 
+/**
+ * A node that is built and subscribed but bound to nothing yet — the one moment the `web` role can
+ * still mount its socket, since `web` binds its port first and a mount handed over after that is a
+ * server already listening without it.
+ */
+export interface PreparedSync {
+  readonly node: SyncNode;
+  readonly registry: LiveQueryRegistry;
+  /**
+   * The socket as the WEB role can serve it, on the port that role already publishes.
+   *
+   * `x dev` does BOTH: this mount on `PORT`, and the node's own listener on `PORT + 1` below. They
+   * are one node behind two doors, not two nodes — the sockets share the registry, the grants and
+   * the change subscription — and which door a browser uses is whichever one it can reach.
+   * `docker/` publishes the second; a laptop reached through one forwarded port uses the first.
+   */
+  readonly mount: WebSocketMount<SyncWs>;
+  /**
+   * Bind `PORT + 1`, and answer with the same object `startSync` always did. `appUrl` is the web
+   * role's own origin when one runs here, for the line below that names both doors.
+   */
+  listen(appUrl: string | null): Promise<RunningSync>;
+  /** Release the node when nothing ever bound it — a `web` role that threw after it was built. */
+  stop(): Promise<void>;
+}
+
 /** What `startRoles` holds on to: where the node listens, and how to take it down. */
 export interface RunningSync {
   readonly url: string;
@@ -141,13 +169,10 @@ export function registerLiveQueries(options: StartRolesOptions): LiveQueryRegist
 }
 
 /**
- * The sync role owns its own socket: websockets and the request pipeline drain differently.
- *
- * Port 0 is passed straight through rather than incremented — `+ 1` would ask the kernel for
- * port 1 instead of an ephemeral one — and the reported url is the listener's own bound address,
- * never a string built from the port that was requested.
+ * The node itself: its hub, its registry, its authenticator and its change subscription. Nothing
+ * bound — `listen()` and the `web` role's mount are the two doors, and this is what is behind both.
  */
-export async function startSync(options: StartRolesOptions): Promise<RunningSync> {
+export async function prepareSync(options: StartRolesOptions): Promise<PreparedSync> {
   const sockets = new SocketRegistry();
   const hub = new ChannelHub({ transport: options.runtime.transport, sockets });
   // The node evaluated no credential of its own and no host ever handed it one, so every socket
@@ -180,6 +205,35 @@ export async function startSync(options: StartRolesOptions): Promise<RunningSync
     }),
   });
   await node.start();
+  return {
+    node,
+    registry,
+    // The node's OWN path, asked rather than restated: `SyncNodeOptions.path` is settable and a
+    // second copy of `/_x/sync` here is the copy that stays behind when it moves.
+    mount: { path: node.path, fetch: node.fetch, websocket: node.websocket },
+    stop: () => node.stop(),
+    listen: async (appUrl) => await listen(options, node, registry, appUrl),
+  };
+}
+
+/**
+ * The node's own socket, on `PORT + 1`. The sync role owns it because websockets and the request
+ * pipeline drain differently, and `docker/` publishes it as a service of its own.
+ *
+ * Kept a step of its own so `web` binds BEFORE it: the two refusals below are about a taken
+ * neighbouring port, and reversing the order would answer a second `x dev` on this checkout with
+ * "port 3001 is in use" when the fact worth printing is that 3000 is.
+ *
+ * Port 0 is passed straight through rather than incremented — `+ 1` would ask the kernel for
+ * port 1 instead of an ephemeral one — and the reported url is the listener's own bound address,
+ * never a string built from the port that was requested.
+ */
+async function listen(
+  options: StartRolesOptions,
+  node: SyncNode,
+  registry: LiveQueryRegistry,
+  appUrl: string | null,
+): Promise<RunningSync> {
   const port = syncPortFor(options.port);
   try {
     // The SAME interface the web role binds, resolved from the same option and the same default.
@@ -192,6 +246,14 @@ export async function startSync(options: StartRolesOptions): Promise<RunningSync
     // seconds of every Ctrl-C (measured 2026-09-06, 5.0s of 5.1s) spent on a reconnect frame
     // whose target does not exist yet.
     const listener = listenSyncNode(node, { port, hostname: binding.hostname, drainGraceMs: 0 });
+    // BOTH doors, named, once. `sync node ready` said only that a node existed: the first question
+    // a failing browser socket raises — "is the ws server up, and where?" — had no answer anywhere
+    // in the boot output, and the port was never printed at all. It is also what an editor's port
+    // forwarding reads: a url in the terminal is how VS Code and a Codespace learn a port exists.
+    logger.info('sync reachable', {
+      node: `${listener.url}${node.path}`,
+      app: appUrl === null ? null : `${appUrl}${node.path}`,
+    });
     return {
       url: listener.url,
       registry,
@@ -206,4 +268,10 @@ export async function startSync(options: StartRolesOptions): Promise<RunningSync
     if (refusal !== undefined) throw refusal;
     throw error;
   }
+}
+
+/** Both steps, for a caller with no web role to mount anything on. */
+export async function startSync(options: StartRolesOptions): Promise<RunningSync> {
+  const prepared = await prepareSync(options);
+  return await prepared.listen(null);
 }
