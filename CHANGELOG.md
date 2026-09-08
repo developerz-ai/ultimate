@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 19.4.0 - 2026-09-08
+
 ### Added
 
 - `ServerOptions.websocket` on `createServer` (`@ultimat3/http`): one path, taken off the pipeline
@@ -38,6 +42,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   browser socket raises, "is the ws server up, and where?", had no answer in the boot output at all.
   It is also what an editor's port forwarding reads: a url in the terminal is how VS Code and a
   Codespace learn a port exists.
+
+### Commits
+
+- the socket answers on the port the app already publishes (#426)
 
 ## 19.3.3 - 2026-09-07
 
