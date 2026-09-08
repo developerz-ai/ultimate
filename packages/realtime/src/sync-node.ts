@@ -99,6 +99,8 @@ export interface SyncNodeOptions {
 export interface SyncNode {
   readonly sockets: SocketRegistry;
   readonly ready: boolean;
+  /** The one path it answers an upgrade on: a HOST has to route it, and must not restate it. */
+  readonly path: string;
   start(): Promise<void>;
   /**
    * Refuse new connections, keep every one this node holds. The SIGTERM `accept` phase calls it —
@@ -280,6 +282,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
 
   return {
     sockets,
+    path,
 
     get ready(): boolean {
       return ready;

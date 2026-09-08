@@ -8,7 +8,29 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `ServerOptions.websocket` on `createServer` (`@ultimat3/http`): one path, taken off the pipeline
+  and answered by a websocket host on the app's OWN port. `x dev` hands it the sync node, so the
+  socket is reachable at `<app origin>/_x/sync` as well as on the node's own `PORT + 1` listener —
+  one node, two doors, and `docker/` still publishes the second as a service of its own. Measured
+  in ai-maxxing on 2026-09-07 over a VSCodium Remote-SSH workspace: the editor forwards the app's
+  port and nothing else, so the page loaded on the forwarded `localhost:3000` while every dial of
+  `ws://localhost:3001/_x/sync` failed on the reconnect ladder for hours — the identical upgrade
+  answering `101` from the box itself. Nothing was broken at either end; there was no tunnel
+  between them. `PORT + 1` is a rule an origin cannot express, and every one-port surface — a
+  forwarded port, a Codespace, an ingress, `ssh -L`, a phone on the LAN reading `localhost` as
+  itself — publishes the app's port and not its neighbour's. A mount is `{ path, fetch, websocket }`
+  and speaks Bun's own convention, which is `SyncNode.fetch`'s: `undefined` means the upgrade took,
+  a `Response` is a refusal. Omitted, the `web` role opens no websocket, exactly as before.
+- `SyncNode.path` (`@ultimat3/realtime`): the one path the node answers an upgrade on, published
+  because a host that mounts it has to route exactly that path and a second copy of `/_x/sync` in
+  the host is the copy that stays behind when `SyncNodeOptions.path` moves.
+- `x dev` logs `sync reachable` with both addresses — the node's own listener and the same node on
+  the app's origin. `sync node ready` said only that a node existed, so the first question a failing
+  browser socket raises, "is the ws server up, and where?", had no answer in the boot output at all.
+  It is also what an editor's port forwarding reads: a url in the terminal is how VS Code and a
+  Codespace learn a port exists.
 
 ## 19.3.3 - 2026-09-07
 

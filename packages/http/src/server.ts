@@ -48,6 +48,63 @@ export interface ServerOptions {
    * passes a store that says the same, or `createServer` refuses here.
    */
   readonly rateLimitStore?: RateLimitStore;
+  /**
+   * A websocket served on THIS socket, beside the pipeline. Omitted, the `web` role opens no
+   * websocket at all — which is what it did everywhere, and is why the sync node was only ever
+   * reachable on a port of its own.
+   *
+   * The problem that is: `PORT + 1` is a rule the app's own origin cannot express. A browser that
+   * reaches the app through anything that publishes ONE port — VS Code's remote port forwarding,
+   * a Codespace, an ingress, a tunnel — loads the page and then dials a neighbour nobody
+   * forwarded. Measured 2026-09-07 over a VSCodium Remote-SSH workspace: the page on the
+   * forwarded `localhost:3000` rendered, `ws://localhost:3001/_x/sync` failed on every attempt of
+   * the reconnect ladder, and the same upgrade answered `101` from the box itself. Nothing was
+   * broken on either end — there was no tunnel between them.
+   *
+   * So a host may mount the socket on the port it already publishes, and the two-port topology
+   * stays exactly as it was: `x dev` does BOTH, `docker/` keeps its own `sync` service, and a
+   * client picks whichever origin it can actually reach.
+   */
+  readonly websocket?: WebSocketMount;
+}
+
+/**
+ * Structural view of `Bun.serve`'s server object, as much of one as an upgrade reads. Here rather
+ * than imported from `bun` so a mount can be written — and tested — without one, the same shape
+ * `@ultimat3/realtime`'s own `UpgradeTarget` already has: this option is the seam those two
+ * packages meet at, and neither may depend on the other.
+ */
+export interface UpgradeTarget {
+  upgrade(request: Request, options: { data: unknown }): boolean;
+}
+
+/**
+ * One path, taken off the pipeline and answered by a websocket host instead.
+ *
+ * `fetch` returning `undefined` means the upgrade TOOK and Bun owns the connection now — the
+ * convention `Bun.serve` itself uses, and the one `SyncNode.fetch` already speaks, so a node is a
+ * mount with no adapter in between. A `Response` is a refusal (`426`, `401`, a shed `503`) and is
+ * returned as it is.
+ *
+ * The handlers are structural for the reason above; `open`, `message` and `close` are declared as
+ * METHODS on purpose, so a host that types its socket precisely (`SyncWs`) still satisfies this.
+ */
+export interface WebSocketMount<TSocket = never> {
+  /** The one path this mount owns. Every other request goes to the pipeline, untouched. */
+  readonly path: string;
+  fetch(
+    request: Request,
+    server: UpgradeTarget,
+  ): Promise<Response | undefined> | Response | undefined;
+  readonly websocket: {
+    open(ws: TSocket): void;
+    message(ws: TSocket, message: string | Uint8Array): void;
+    close(ws: TSocket): void;
+    readonly idleTimeout?: number;
+    readonly backpressureLimit?: number;
+    readonly maxPayloadLength?: number;
+    readonly sendPings?: boolean;
+  };
 }
 
 export interface ServerHandle {
@@ -100,6 +157,7 @@ export const createServer = (options: ServerOptions): ServerHandle => {
   // "the app said 15 seconds" are different claims and `null` is what keeps them apart.
   if (config.drainTimeoutMs !== null) configureLifecycle({ deadlineMs: config.drainTimeoutMs });
 
+  const mount = options.websocket;
   let server: BunServer | undefined;
   let unregister: (() => void) | undefined;
   let unregisterClose: (() => void) | undefined;
@@ -135,6 +193,12 @@ export const createServer = (options: ServerOptions): ServerHandle => {
    * native code. Method resolution stays ours: Bun's automatic 405 would not carry
    * our problem+json body. Param/wildcard paths fall through to `fetch`.
    */
+  /**
+   * The path alone. `new URL` rather than a string scan: a mount's path has to match what the
+   * router would have matched, and `/_x/sync?build=abc` is that path with a query on it.
+   */
+  const pathOf = (request: Request): string => new URL(request.url).pathname;
+
   const nativeRoutes = (): Record<string, NativeHandler> => {
     const out: Record<string, NativeHandler> = {};
     const prefix = config.basePath === '/' ? '' : config.basePath.replace(/\/$/, '');
@@ -168,7 +232,7 @@ export const createServer = (options: ServerOptions): ServerHandle => {
       // is the metrics endpoint, which answers `METRICS_PATH` and nothing else.
       markReady();
 
-      server = Bun.serve({
+      const listen = {
         port: config.port,
         hostname: config.hostname,
         development: config.dev,
@@ -179,8 +243,23 @@ export const createServer = (options: ServerOptions): ServerHandle => {
           '/healthz': () => healthResponse(healthzPayload()),
           '/readyz': () => healthResponse(readyzPayload()),
         },
-        fetch: (request, socket) => dispatch(request, socket),
-      });
+      };
+      // Two calls, not one options object with a spread: `Bun.serve` types `fetch` as returning a
+      // `Response` UNLESS `websocket` is present, and a conditionally-spread key leaves TypeScript
+      // on the first overload — where the `undefined` that means "upgraded" is an error. The
+      // mount's path is not in `routes` either: a native route answers before `fetch` runs, and
+      // an upgrade that never reaches `fetch` is a 404 with a websocket waiting behind it.
+      server =
+        mount === undefined
+          ? Bun.serve({ ...listen, fetch: (request, socket) => dispatch(request, socket) })
+          : Bun.serve({
+              ...listen,
+              fetch: async (request, socket) =>
+                pathOf(request) === mount.path
+                  ? await mount.fetch(request, socket as unknown as UpgradeTarget)
+                  : await dispatch(request, socket),
+              websocket: mount.websocket,
+            });
 
       // Tell core which socket we opened. A request to it is this process calling itself,
       // so the test seal can let it through without an allowlist entry per random port.

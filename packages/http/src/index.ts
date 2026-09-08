@@ -200,7 +200,13 @@ export {
 } from './router';
 export type { SecurityConfig } from './security-headers';
 export { buildCsp, cspHashSource, DEFAULT_SECURITY, securityHeaders } from './security-headers';
-export type { LifecycleState, ServerHandle, ServerOptions } from './server';
+export type {
+  LifecycleState,
+  ServerHandle,
+  ServerOptions,
+  UpgradeTarget,
+  WebSocketMount,
+} from './server';
 export { createServer } from './server';
 // The stage vocabulary comes from its declaration site, beside the fourteen implementations it
 // names; `PIPELINE_STAGES` — the ORDER — stays `pipeline.ts`'s.

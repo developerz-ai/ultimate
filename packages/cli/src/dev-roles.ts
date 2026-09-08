@@ -8,7 +8,13 @@
 
 import type { Role } from '@ultimat3/core';
 import { createContext, isRole, logger, ROLES } from '@ultimat3/core';
-import type { RateLimitStore, Route, ServerHandle, ServerHooks } from '@ultimat3/http';
+import type {
+  RateLimitStore,
+  Route,
+  ServerHandle,
+  ServerHooks,
+  WebSocketMount,
+} from '@ultimat3/http';
 import {
   configuredAuthenticator,
   configuredHttp,
@@ -26,7 +32,7 @@ import {
   jobDriver,
   pgSchedulerState,
 } from '@ultimat3/jobs';
-import type { LiveQueryRegistry } from '@ultimat3/realtime/server';
+import type { LiveQueryRegistry, SyncWs } from '@ultimat3/realtime/server';
 import type { LiveReplicator } from '@ultimat3/testing';
 import { devHooks } from './dev-hooks';
 import type { LiveFeed } from './dev-live-feed';
@@ -36,7 +42,7 @@ import type { RunningReplicator } from './dev-replicator';
 import { startReplicator } from './dev-replicator';
 import type { RunningServices } from './dev-runtime';
 import type { Env } from './dev-services';
-import { startSync } from './dev-sync';
+import { prepareSync, type RunningSync } from './dev-sync';
 import { errorPageHook } from './error-pages';
 import { BadFlagError, PortInvalidError, RuntimeDriverSplitError } from './errors';
 import { DEFAULT_METRICS_PORT, startMetricsEndpoint } from './metrics-endpoint';
@@ -270,7 +276,9 @@ function rateLimitStoreFor(options: StartRolesOptions): RateLimitStore | undefin
   return supplied;
 }
 
-function startWeb(options: StartRolesOptions): ServerHandle {
+/** `mount` is the sync node's socket, served on THIS port as well as its own — why, in `dev-sync`.
+ * Undefined without the `sync` role, and then this server opens no websocket, as it always did. */
+function startWeb(options: StartRolesOptions, mount?: WebSocketMount<SyncWs>): ServerHandle {
   warnIfUnauthenticatable(options.routes);
   const binding = options.http ?? DEV_BINDING;
   const hops = trustedHopsFromEnv(options.env);
@@ -278,6 +286,7 @@ function startWeb(options: StartRolesOptions): ServerHandle {
   return createServer({
     routes: options.routes,
     role: 'web',
+    ...(mount === undefined ? {} : { websocket: mount }),
     hooks: devHooks({
       ...(options.devNotices === undefined ? {} : { devNotices: options.devNotices }),
       ...(options.root === undefined ? {} : { errorPage: errorPageHook(options.root) }),
@@ -373,11 +382,20 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     });
     started.push(async () => metrics.stop());
 
-    const server = selected.includes('web') ? startWeb(options) : null;
+    // BUILT here, BOUND below, the web role between them: `web` serves the node's socket on its
+    // own port and a listening server cannot be handed one, while the neighbouring-port refusals
+    // are only the right answer once the web port's own has been given.
+    const prepared = selected.includes('sync') ? await prepareSync(options) : null;
+    // One rollback entry, kept current — two would stop the node twice out of a failed boot.
+    let releaseSync = prepared?.stop ?? null;
+    if (prepared !== null) started.push(async () => await releaseSync?.());
+
+    const server = selected.includes('web') ? startWeb(options, prepared?.mount) : null;
     if (server !== null) started.push(() => server.stop());
 
-    const sync = selected.includes('sync') ? await startSync(options) : null;
-    if (sync !== null) started.push(sync.stop);
+    const sync: RunningSync | null =
+      prepared === null ? null : await prepared.listen(server === null ? null : server.url());
+    if (sync !== null) releaseSync = sync.stop;
 
     const worker = selected.includes('worker')
       ? createWorker({

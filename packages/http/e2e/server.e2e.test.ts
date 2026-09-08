@@ -76,6 +76,94 @@ describe('real socket', () => {
   });
 });
 
+/**
+ * One origin serves the app and its websocket.
+ *
+ * The failure this closes, measured 2026-09-07 over a VSCodium Remote-SSH workspace: `x dev` binds
+ * the app on 3000 and the sync node on 3001, the editor forwarded 3000 alone, and the page loaded
+ * while every dial of `ws://localhost:3001/_x/sync` failed — with the same upgrade answering `101`
+ * from the box itself. Nothing was broken at either end; there was no tunnel between them. A
+ * second port is a second thing to publish, and every one-port surface — a forwarded port, a
+ * Codespace, an ingress, `ssh -L` — publishes the app's and not its neighbour's.
+ *
+ * Only a socket can prove any of it: the upgrade never reaches `fetch` under `handle.fetch()`.
+ *
+ * ABOVE the two describes below: `stop()` delegates to core's `drain()`, which is process-wide —
+ * whichever server calls it takes every other listener in this file down with it.
+ */
+describe("a websocket mounted on the app's own port", () => {
+  const MOUNT_PATH = '/_x/echo';
+
+  const mounted = createServer({
+    routes,
+    role: 'web',
+    // The mount speaks Bun's own convention, which is `SyncNode.fetch`'s: `undefined` means the
+    // upgrade took, a `Response` is a refusal.
+    websocket: {
+      path: MOUNT_PATH,
+      fetch: (request, server) =>
+        server.upgrade(request, { data: { note: 'mounted' } })
+          ? undefined
+          : new Response('expected a websocket upgrade', { status: 426 }),
+      websocket: {
+        open: (ws: { send(data: string): void }) => {
+          ws.send('open');
+        },
+        message: (ws: { send(data: string): void }, message: string | Uint8Array) => {
+          ws.send(`echo:${String(message)}`);
+        },
+        close: () => undefined,
+      },
+    },
+    config: defineHttpConfig({
+      rateLimit: { scope: 'process' },
+      port: 0,
+      hostname: '127.0.0.1',
+      dev: false,
+    }),
+  }).start();
+
+  // No `afterAll` that stops it: `stop()` IS a process-wide drain, and one here would mark the
+  // lifecycle drained before the two describes below start servers of their own — `markReady`
+  // then refuses them with `X_LIFECYCLE_DRAINED`. The drain in `describe('drain')` closes this
+  // listener along with every other, which is the same fact stated once.
+
+  const dial = async (): Promise<readonly string[]> => {
+    const socket = new WebSocket(`${mounted.url().replace('http', 'ws')}${MOUNT_PATH}`);
+    const seen: string[] = [];
+    await new Promise<void>((resolve, reject) => {
+      socket.onerror = () => {
+        reject(new Error('the upgrade never took'));
+      };
+      socket.onmessage = (event: MessageEvent) => {
+        seen.push(String(event.data));
+        if (seen.length === 1) socket.send('ping');
+        else resolve();
+      };
+    });
+    socket.close();
+    return seen;
+  };
+
+  test('the upgrade takes on the mount path, and frames flow both ways', async () => {
+    expect(await dial()).toEqual(['open', 'echo:ping']);
+  });
+
+  test('every other path is still the pipeline, untouched', async () => {
+    expect(await (await fetch(`${mounted.url()}/ping`)).text()).toBe('pong');
+    expect((await fetch(`${mounted.url()}/nope`)).status).toBe(404);
+    // The health endpoints answer outside the pipeline and outside the mount alike.
+    expect((await fetch(`${mounted.url()}/readyz`)).status).toBe(200);
+  });
+
+  test("a refused upgrade is the mount's own answer, not a 404 from the router", async () => {
+    // No route is registered for this path: without the mount it would be `X_ROUTE_NOT_FOUND`.
+    const response = await fetch(`${mounted.url()}${MOUNT_PATH}`);
+    expect(response.status).toBe(426);
+    expect(await response.text()).toBe('expected a websocket upgrade');
+  });
+});
+
 describe('drain', () => {
   test('readyz reports 503 once draining, then the process reports stopped', async () => {
     const draining = createServer({
