@@ -16,7 +16,7 @@
 //
 //   bun run scripts/scaffold-first-run.ts <app dir> [--json]
 
-import { join } from 'node:path';
+import { resolve } from 'node:path';
 import { GENERATORS } from '@ultimat3/cli';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
@@ -37,7 +37,7 @@ const SCRIPT = 'scaffold-first-run';
  * thing under test, and `bun run x` here would run the CLI out of the checkout — proving the
  * workspace works, which is the claim the job already cannot make.
  */
-export const appBin = (dir: string): string => join(dir, 'node_modules', '.bin', 'x');
+export const appBin = (dir: string): string => resolve(dir, 'node_modules', '.bin', 'x');
 
 export interface FirstRunStep {
   /** Names the step in the log and in the `fix:`, so a red run says WHICH generator broke. */

@@ -17,16 +17,19 @@
 //
 //   bun run scripts/scaffold-gate.ts <app dir> [--json]
 
-// why: Bun has no path join — the two scripts are spawned by absolute path so that neither depends
-// on the cwd a caller happens to have, and a runner's temp directory is not this process's.
-import { join } from 'node:path';
+// why: Bun has no path resolve — the two scripts are spawned by ABSOLUTE path, and `resolve` is
+// what makes that true for a relative `<app dir>`. `join('demoapp', 'bin/setup')` stays relative,
+// and `exec` spawns it with `cwd: 'demoapp'`, so the process looks for `demoapp/demoapp/bin/setup`
+// and the gate dies on X_CLI_UNEXPECTED instead of reporting a scaffold finding. `x new --dir`
+// accepts a relative path, so that spelling is a real caller and not a hypothetical one.
+import { resolve } from 'node:path';
 import type { Runner } from '@ultimat3/cli';
 import { exec, quoteArg, VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { GateStep } from './reference-app-gate';
-import { declaredStepIssues, parseSteps, redSteps } from './reference-app-gate';
+import { declaredStepIssues, parseStepPayloads, parseSteps, redSteps } from './reference-app-gate';
 
 const SCRIPT = 'scaffold-gate';
 
@@ -54,7 +57,7 @@ export const reproduce = (dir: string): string =>
 export const reproduceSetup = (dir: string): string => `cd ${quoteArg(dir)} && ${SETUP_SCRIPT}`;
 
 /** Absolute, so neither script depends on the cwd a caller happens to have. Both `cd` themselves. */
-export const appScript = (dir: string, script: string): string => join(dir, script);
+export const appScript = (dir: string, script: string): string => resolve(dir, script);
 
 /** Wall time per command, in the order a box runs them — what the PR body's table is made of. */
 export interface ScaffoldTiming {
@@ -152,31 +155,19 @@ export const scaffoldFindings = (input: ScaffoldGateInput): readonly Finding[] =
   return findings;
 };
 
-/** Per-step wall time off the same `{`-line `parseSteps` reads, so the table is the run's own. */
-export const stepTimings = (stdout: string): readonly ScaffoldTiming[] => {
-  const line = stdout
-    .split('\n')
-    .map((part) => part.trim())
-    .findLast((part) => part.startsWith('{'));
-  if (line === undefined) return [];
-  let payload: unknown;
-  try {
-    payload = JSON.parse(line);
-  } catch {
-    return [];
-  }
-  const steps =
-    typeof payload === 'object' && payload !== null
-      ? (payload as { readonly steps?: unknown }).steps
-      : undefined;
-  if (!Array.isArray(steps)) return [];
-  return steps.flatMap((step: unknown) => {
+/**
+ * Per-step wall time off the SAME parsed payload the ratchet reads — `parseStepPayloads` is the one
+ * place that decides which line is the table and whether it can be read at all. `asStep` drops
+ * `durationMs` because the ratchet does not judge it, so the timings are mapped from the raw
+ * payload rather than from `parseSteps`' result.
+ */
+export const stepTimings = (stdout: string): readonly ScaffoldTiming[] =>
+  (parseStepPayloads(stdout) ?? []).flatMap((step: unknown) => {
     if (typeof step !== 'object' || step === null) return [];
     const { name, ok, durationMs } = step as Record<string, unknown>;
     if (typeof name !== 'string') return [];
     return [{ name, ms: typeof durationMs === 'number' ? durationMs : 0, ok: ok === true }];
   });
-};
 
 /** One row per command and per gate step, in run order — pasted into the PR body as measured. */
 export const timingLines = (timings: readonly ScaffoldTiming[]): readonly string[] => [

@@ -129,8 +129,15 @@ const staticAssets = (islands: IslandBundle, styles: StyleBundle): readonly Prec
  * silently controls a subdirectory. The `catch` because a registration that throws in a browser
  * with service workers disabled — an incognito profile, an enterprise policy — must not take an
  * otherwise working page down with it.
+ *
+ * EXPORTED because a static export has to put these bytes on disk BEFORE it renders, not after.
+ * The file is named by every document and weighed by `measureDocumentJs`, and it used to be
+ * written last, beside `sw.js` — so the measurement read a file that did not exist yet on a clean
+ * output directory, and the PREVIOUS build's copy on a reused one. `sw.js` still comes last, for
+ * the reason its own comment gives (its precache manifest is built from the rendered documents'
+ * content hashes); this half depends on nothing but two constants, so it can and must come first.
  */
-const registerSource = (): string =>
+export const serviceWorkerRegistration = (): string =>
   `if ('serviceWorker' in navigator) {
   addEventListener('load', function () {
     navigator.serviceWorker
@@ -199,7 +206,7 @@ export function serviceWorkerArtifacts(
   );
   return {
     source: output.source,
-    register: registerSource(),
+    register: serviceWorkerRegistration(),
     head,
     precache: output.precache,
     // `output.warnings` IS `output.precache.warnings` — the generator returns the manifest's list

@@ -85,17 +85,21 @@ warm Bun cache, `As of 2026-09-11`:
 | the first `bin/check`'s verdict | **green, 20 of 20 steps**, `budgets` included | **green, 20 of 20 steps**, `budgets` included |
 
 The cache is the variable to watch, not the box: a **cold** first install takes the `bun install`
-inside `bin/setup` to **12.0s** on the same machine. `budgets` is green on that first pass on both
-shapes because `bin/check` builds before it verifies — nothing is waived to get there.
+inside `bin/setup` to **12.0s** on the same machine.
 
-<!--
-  PLACEHOLDER — issue #430, the `ubuntu-latest` half. The same two scripts are measured by the CI
-  job that runs the scaffold's own `bin/setup && bin/check` on a fresh scaffold
-  (`.github/workflows/ci.yml`), which prints the same table on every run. Replace the numbers above
-  with the runner's — or add them as a third column — once that job has actually run, dated
-  `As of <YYYY-MM>`. Until then these are a developer box's, and the header says so.
--->
+And on a **free `ubuntu-latest` runner**, which is the measurement that speaks for a provisioned
+box — `ci.yml`'s `scaffold-smoke` job, running these same two scripts on a scaffold written outside
+the checkout, `As of 2026-09-12`:
 
-The same two scripts run in CI on an `ubuntu-latest` runner — a free one, no paid tier — and that
-job prints this table itself, which is the measurement that speaks for a provisioned box. A timing typed from a laptop describes that
-laptop, which is why the source of each row is named rather than implied.
+| Measure | Default scaffold | `--no-example` |
+|---|---|---|
+| files written | 151 | 123 |
+| `bin/setup` | **6,665ms** | **5,994ms** |
+| `bin/check` | **7,279ms** | **4,886ms** |
+| the first `bin/check`'s verdict | **green, 20 of 20 steps pass** | **green, 20 of 20 steps pass** |
+
+`budgets` is green on that first pass on every one of those runs, because `bin/check` builds before
+it verifies — nothing is waived to get there, and no printed `fix:` is followed before the verdict
+is taken. The job prints the table itself, one row per command and one per gate step, so the run is
+its own measurement rather than a number this page asserts: read it from the job's log when you want
+today's.

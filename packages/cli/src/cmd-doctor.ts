@@ -121,7 +121,7 @@ export const embeddedDatabaseFinding = (fact: EmbeddedDatabase): Finding | undef
   fact.selected && !fact.resolved
     ? finding(
         'X_DB_UNAVAILABLE',
-        `${PGLITE_MISSING} — and DATABASE_URL is unset, so the embedded one is the database this app would open`,
+        `${PGLITE_MISSING} — and DATABASE_URL is unset or blank, so the embedded one is the database this app would open`,
         PGLITE_FIX,
       )
     : undefined;

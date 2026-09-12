@@ -8,7 +8,9 @@ import type { ExecResult } from '@ultimat3/cli';
 import { VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { GateStep } from './reference-app-gate';
+import { parseSteps } from './reference-app-gate';
 import {
+  appScript,
   CHECK_SCRIPT,
   MEASURED_STEPS,
   reproduce,
@@ -242,6 +244,33 @@ describe('unit · the two scripts, and what they cost', () => {
       { name: 'lint', ms: 81, ok: true },
     ]);
     expect(stepTimings('no json here')).toEqual([]);
+  });
+
+  /**
+   * One reader, two callers. `stepTimings` had its own copy of the line scan, the `JSON.parse`
+   * guard and the array check, so "unreadable" was decided twice and the two were free to
+   * disagree — a table the ratchet refused could still have produced a timings row, and the run
+   * would have printed per-step milliseconds beside a finding saying no step's verdict was known.
+   */
+  test('the timings and the ratchet answer from the same parsed payload', () => {
+    for (const unreadable of ['', 'no json here', '{ not json', '{"steps":"nope"}']) {
+      expect(parseSteps(unreadable), unreadable).toBeUndefined();
+      expect(stepTimings(unreadable), unreadable).toEqual([]);
+    }
+    const readable = `built static\n${table(green)}`;
+    expect(parseSteps(readable)?.map((step) => step.name)).toEqual(
+      stepTimings(readable).map((timing) => timing.name),
+    );
+  });
+
+  /**
+   * `x new --dir` accepts a relative path, and `exec` spawns with `cwd: dir` — so a relative
+   * `bin/setup` is looked for at `demoapp/demoapp/bin/setup` and the gate dies on
+   * X_CLI_UNEXPECTED instead of reporting a scaffold finding. Reported by review on #431.
+   */
+  test('a relative app directory still spawns an absolute script path', () => {
+    expect(appScript('demoapp', SETUP_SCRIPT)).toBe(`${process.cwd()}/demoapp/${SETUP_SCRIPT}`);
+    expect(appScript(DIR, CHECK_SCRIPT)).toBe(`${DIR}/${CHECK_SCRIPT}`);
   });
 });
 

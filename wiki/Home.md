@@ -6,7 +6,7 @@ A full-stack, Bun-only, opinionated framework: Rails' philosophy applied to Bun 
 
 ## Is it for a project this size
 
-**Yes at both ends, and that is the design.** A homework assignment or a weekend idea gets a running app in four commands with nothing to install and nothing to choose; a very large product gets the scale ladder, the tier boundaries and the same 19-step gate the beginner's app already ran. One framework, no lite mode — [axiom 1](#the-rules-everything-else-follows) forbids the second path a lite mode would be.
+**Yes at both ends, and that is the design.** A homework assignment or a weekend idea gets a running app in four commands with nothing to install and nothing to choose; a very large product gets the scale ladder, the tier boundaries and the same 20-step gate the beginner's app already ran — the list is `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/verify-step.ts), whole or not at all. One framework, no lite mode — [axiom 1](#the-rules-everything-else-follows) forbids the second path a lite mode would be.
 
 The measured version of that claim, with the command behind every number: [`docs/idea/21-the-range.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/21-the-range.md).
 

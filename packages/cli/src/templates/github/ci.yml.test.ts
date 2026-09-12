@@ -60,6 +60,23 @@ describe('unit · the CI workflow x new writes', () => {
     expect(Object.keys(parsed().on ?? {}).sort()).toEqual(['pull_request', 'push']);
   });
 
+  // A `branches:` filter under `push` is silent when it is wrong: `x new` runs a plain `git init`
+  // and takes whatever `init.defaultBranch` this machine agreed on, so `[main]` on a `master`
+  // repository runs nothing at all and reports nothing. The generated `CLAUDE.md` promises a run
+  // on every push, and a promise the workflow does not keep is worse than no promise.
+  test('no branch filter — every push runs it, as the generated CLAUDE.md says', () => {
+    // `null` is the whole assertion: ANY filter — `branches`, `branches-ignore`, `paths`, `tags` —
+    // makes this a map. It rejects the narrowing without enumerating the ways to spell it.
+    expect(parsed().on?.['push'] ?? null).toBeNull();
+    expect(parsed().on?.['pull_request'] ?? null).toBeNull();
+    // And in the text, ignoring comments — this file's own prose says why there is no filter, and
+    // a `toContain` over the whole document would read that sentence as the thing it forbids.
+    const code = workflow()
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'));
+    expect(code.filter((line) => line.includes('branches'))).toEqual([]);
+  });
+
   // The contract this file exists for: the app's OWN scripts, in order, never a restatement of
   // their steps. A workflow that ran `bun install && x verify` would be green here and would be a
   // second gate free to drift from the one a human runs.

@@ -37,9 +37,12 @@ const ci = (app: NameSet): string => `name: ci
 # there is nothing to provision and nothing to wait on. Add one the day this app needs a real
 # server, beside the \`DATABASE_URL\` that selects it.
 
+# EVERY push, not just the default branch's. \`x new\` runs a plain \`git init\` and takes whatever
+# \`init.defaultBranch\` this machine already agreed on, so a \`branches: [main]\` filter silently
+# runs nothing on a repository whose branch is called something else — and \`CLAUDE.md\` promises a
+# run on every push, which a filter would make untrue for the app that read it.
 on:
   push:
-    branches: [main]
   pull_request:
 
 permissions:

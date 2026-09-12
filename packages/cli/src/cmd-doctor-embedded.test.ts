@@ -15,7 +15,10 @@ describe('unit · x doctor · the embedded database rule', () => {
     const found = embeddedDatabaseFinding({ selected: true, resolved: false });
     expect(found?.code).toBe('X_DB_UNAVAILABLE');
     expect(found?.cause).toContain(PGLITE_MISSING);
-    expect(found?.cause).toContain('DATABASE_URL is unset');
+    // "unset or blank", never "unset": `externalUrl` reads a whitespace-only value as no database
+    // too, and a cause is a stable diagnostic a reader greps — one that called a SET variable unset
+    // would send them looking for a variable they had already exported.
+    expect(found?.cause).toContain('DATABASE_URL is unset or blank');
     // The package's own runnable line, not a second wording for one condition.
     expect(found?.fix).toBe(PGLITE_FIX);
   });
@@ -45,5 +48,25 @@ describe('unit · x doctor · probeFor reads the embedded database without openi
     // The specifier the probe asks about is the package's own, so a rename cannot leave the probe
     // resolving a name nothing publishes.
     expect(PGLITE_PACKAGE).toBe('@electric-sql/pglite');
+  });
+
+  // A SET variable holding only whitespace is not a database, and `x db migrate` on it fails the
+  // same way an unset one does — so the probe reads it the same way, and the cause above says
+  // "unset or blank" rather than describing a variable the reader has already exported.
+  test('a whitespace-only DATABASE_URL selects the embedded database, like an unset one', async () => {
+    const before = process.env['DATABASE_URL'];
+    try {
+      process.env['DATABASE_URL'] = '   ';
+      expect(
+        (await probeFor(import.meta.dir, REQUIRED_BUN, 3000).embeddedDatabase()).selected,
+      ).toBe(true);
+      process.env['DATABASE_URL'] = 'postgres://user@localhost:5432/app';
+      expect(
+        (await probeFor(import.meta.dir, REQUIRED_BUN, 3000).embeddedDatabase()).selected,
+      ).toBe(false);
+    } finally {
+      if (before === undefined) delete process.env['DATABASE_URL'];
+      else process.env['DATABASE_URL'] = before;
+    }
   });
 });
