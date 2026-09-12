@@ -1,13 +1,13 @@
 # create-ultimate
 
 ```sh
-bunx create-ultimate myapp && cd myapp && bin/setup && x dev
+bunx create-ultimate myapp && cd myapp && bin/setup && bin/dev
 ```
 
 `bin/setup` is the scaffold's own script and it is not optional: `x new` writes files and installs
 nothing, so `x dev` on the tree it just wrote fails with `X_BUILD_FAILED`. The script installs the
-dependencies, writes `.env.development.local`, generates and applies the first migration, and
-seeds — idempotent, so it is safe to re-run after every pull.
+dependencies, writes `.env.development.local`, generates and applies the first migration, seeds,
+and writes `x.manifest.json` — six commands, idempotent, so it is safe to re-run after every pull.
 
 Thin wrapper over `x new` — same templates, same flags, no second code path.
 
@@ -15,7 +15,9 @@ Thin wrapper over `x new` — same templates, same flags, no second code path.
 |---|---|
 | `--dir <path>` | parent directory (default: cwd) |
 | `--no-example` | skip the example feature slice |
+| `--no-git` | leave a bare directory; do not `git init` and commit |
 | `--dry-run` | print the file list, write nothing |
+| `--force` | write into a directory that already exists |
 | `--json` | machine-readable output |
 
 What you get: `apps/web/{site,app,api,shared}`, `apps/admin` with MCP on, `apps/{mobile,desktop}`

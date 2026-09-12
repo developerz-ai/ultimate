@@ -88,6 +88,9 @@ describe('x build --target static', () => {
     expect(document).toContain('/x-sw-register.js');
   });
 
+  // The framework-bytes half of this build — `frameworkJsBytes` on a clean output directory and on
+  // a reused one — is `prerender-budgets.test.ts`, split out at the 500-line ceiling.
+
   // The offline document is the one entry `buildPrecacheManifest` adds itself, as
   // `reason: 'fallback'`, before any route — and `add()` keeps the first entry per url, so its
   // revision decides. It was the build id whatever the build knew, which re-downloaded the one

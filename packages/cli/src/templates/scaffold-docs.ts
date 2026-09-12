@@ -2,9 +2,11 @@
 // the bin/ shims and the optional dev compose. Separated from the config half so neither file has
 // to be scrolled to find the other — one file, one job applies to templates too. The image, its
 // ignore file, the production topology and the deploy page are `scaffold-container.ts`; the
-// `.claude/` harness that reads AGENTS.md is `scaffold-claude.ts`.
+// `.claude/` harness that reads AGENTS.md is `scaffold-claude.ts`; the one workflow is
+// `github/ci.yml.ts`.
 
 import { LINE_CEILING } from '../workspace-checks';
+import { githubFiles } from './github/ci.yml';
 import type { GeneratedFile, NameSet } from './naming';
 import { claudeFiles } from './scaffold-claude';
 import { containerFiles } from './scaffold-container';
@@ -19,7 +21,7 @@ not exist — five of these had an empty column and were each measured green on 
 
 | Rule | Detail | Refused by |
 |---|---|---|
-| One gate | \`x verify\` — green means shippable. Never merge red. | the gate itself |
+| One gate | \`bin/check\` — \`x build\` and then \`x verify\`. Green means shippable; never merge red. | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request |
 | One way | generators, not hand-rolled files: \`x g resource\`, \`x g action\`, \`x g route\` | review |
 | Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
 | Data | routes call actions and queries; only \`repo.ts\` touches the database | \`X_BOUNDARY_ROUTE_TO_DB\` |
@@ -54,7 +56,19 @@ see, and the type already fires — measured, \`price: 19.99\` in a seed is
 \`TS2322: Type 'number' is not assignable to type 'MoneyInput'\`. A guard that pretended to check
 it would be worse than the type that really does.
 
-Commands: \`x dev\`, \`x verify\`, \`x g <primitive>\`, \`x g guard <name>\`, \`x db branch create <name>\`, \`x doctor\`.
+\`bin/check\` is the gate and \`x verify\` is only its second half: the first is
+\`x build --target static\`, and the build is what writes the \`.x/build-stats.json\` the
+\`budgets\` step measures. Run \`x verify\` on a tree nobody has built and \`budgets\` is red with
+X_BUDGET_UNMEASURED — the gate reporting on a file that does not exist, not on your code.
+
+The platform's \`.dz/\` is ADDITIVE, in both directions. developerz.ai keeps its own files under
+\`.dz/maintainer/\` and \`.dz/pipeline/\`; nothing \`x new\` writes lands under \`.dz/\` and nothing
+here is generated from it. So the scaffold never clobbers a maintainer policy, the platform never
+clobbers \`AGENTS.md\`, \`bin/\`, \`.claude/\` or \`.github/\`, and deleting either side leaves the
+other exactly as it was.
+
+Commands: \`bin/setup\`, \`bin/dev\`, \`bin/check\`, \`x g <primitive>\`, \`x g guard <name>\`,
+\`x db branch create <name>\`, \`x doctor\`.
 
 Project notes for ${app.kebab}: replace this line with the conventions a newcomer could not guess.
 `;
@@ -63,7 +77,12 @@ const claude = (app: NameSet): string => `# CLAUDE.md
 
 ${app.kebab} — Ultimate app. Read AGENTS.md first; it is the same content in the same order.
 
-- Gate: \`x verify\` (add \`--json\` for machine output).
+- Gate: \`bin/check\` (add \`--json\` for machine output — it reaches both halves). It is
+  \`x build --target static\` and then \`x verify\`; \`x verify\` alone leaves \`budgets\` with
+  nothing to measure. \`.github/workflows/ci.yml\` runs \`bin/setup && bin/check\` on every push
+  and pull request, so CI and your terminal run the same two commands.
+- \`.dz/\` belongs to the developerz.ai platform and is additive both ways: the scaffold writes
+  nothing there, and nothing there is generated from this repo. Neither side clobbers the other.
 - Scaffold, do not hand-write: \`x g <kind> <name>\` — \`x g --help\` lists every kind, and is the
   only place that list is stated.
 - Destructive DB work goes in a branch: \`x db branch create <name>\`, never the shared dev DB.
@@ -83,7 +102,7 @@ Built with [Ultimate](https://github.com/developerz-ai/ultimate). Bun-only, Post
 \`\`\`sh
 bin/setup     # prerequisites, deps, env, the first migration, migrate, seed, the manifest
 bin/dev       # all roles in one process, embedded Postgres, /_x mounted
-bin/check     # the gate: typecheck, lint, boundaries, tests, drift, budgets
+bin/check     # the gate: a static build, then typecheck, lint, boundaries, tests, drift, budgets
 \`\`\`
 
 \`packages/db/migrations\` starts empty and \`x db gen\` is its only writer — \`bin/setup\` runs
@@ -102,6 +121,7 @@ with \`X_DB_DRIFT\`, and that is the fix it names.
 | \`packages/*\` | domain, db, i18n, ui, mcp |
 | \`app.config.ts\` | the one config file |
 | \`x.manifest.json\` | generated facts: routes, actions, jobs, policies |
+| \`.github/workflows/ci.yml\` | \`bin/setup\` then \`bin/check\`, on push and pull request |
 `;
 
 const binSetup = (): string => `#!/usr/bin/env bash
@@ -204,6 +224,10 @@ export function docsFiles(app: NameSet): readonly GeneratedFile[] {
     // The harness half of the same job AGENTS.md does. It lands in the app's own repo rather than
     // in a global config, so it is visible in the scaffold's diff and deletable in one line.
     ...claudeFiles(app),
+    // The same two commands `README.md` opens with, run by a machine that has never seen this
+    // repository. Registered here and not in `scaffold-repo.ts` because it is documentation of the
+    // gate in executable form, which is the job this file has.
+    ...githubFiles(app),
     ...containerFiles(app),
   ];
 }

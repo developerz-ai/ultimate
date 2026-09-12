@@ -12,6 +12,7 @@
 import { describe, expect, test } from 'bun:test';
 import { msg } from '../messages';
 import { names } from './naming';
+import { EXECUTABLE_FILES } from './scaffold-docs';
 import { repoFiles } from './scaffold-repo';
 
 interface BiomeConfig {
@@ -194,5 +195,21 @@ describe('unit · the first commands a scaffold tells its author to run exist on
     const done = msg('cli.new.done', { name: 'ledger-demo' });
     expect(done).toContain('bin/setup');
     expect(RUNNABLE.test(done.replace('bin/setup', ''))).toBe(false);
+  });
+
+  // `cmd-new.ts` chmods `EXECUTABLE_FILES` and NOTHING else, so a `bin/` script missing from that
+  // list is written 0644 and answers `Permission denied` the first time anyone runs it. Nothing
+  // would catch it: the scaffold gate runs `bin/setup` and `bin/check`, so `bin/dev` — the command
+  // `cli.new.done` and `README.md` both tell the author to run next — could ship unexecutable
+  // through a green gate. Derived from the emitted list rather than naming the three by hand, so
+  // a fourth script added tomorrow is covered by the act of emitting it.
+  test('every bin/ script x new writes is one cmd-new.ts makes executable', () => {
+    const emittedBin = repoFiles(names('ledger-demo'), '1.0.0', true)
+      .map((file) => file.path)
+      .filter((path) => path.startsWith('bin/'))
+      .sort();
+    // A filter matching nothing would agree with an empty EXECUTABLE_FILES.
+    expect(emittedBin).toContain('bin/dev');
+    expect(emittedBin).toEqual([...EXECUTABLE_FILES].sort());
   });
 });

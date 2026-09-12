@@ -4,6 +4,7 @@
 
 - [Getting started](Getting-Started)
 - [Installation](Installation)
+- [Bare VM](Bare-VM)
 - [Project layout](Project-Layout)
 - [Migrating an existing app](Migrating-An-Existing-App)
 

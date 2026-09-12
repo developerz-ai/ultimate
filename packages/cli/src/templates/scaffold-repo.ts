@@ -5,6 +5,7 @@
 // container files scaffold-container.ts.
 
 import { ENV_EXAMPLE_PATH } from '@ultimat3/core';
+import { REQUIRED_BUN } from '../app-root';
 import { VERIFY_FLOOR_FILE } from '../verify-floor';
 import type { VerifyStepName } from '../verify-step';
 import type { GeneratedFile, NameSet } from './naming';
@@ -37,6 +38,14 @@ const BIOME_VERSION = '2.5.8';
  */
 const TYPESCRIPT_VERSION = '^7.0.2';
 
+// `engines.bun` is `REQUIRED_BUN`, the floor the SHIPPED `x` enforces
+// (`packages/cli/src/app-root.ts`), and not a second literal. It was one: `>=1.3.0`, a whole minor
+// BELOW the CLI the app then runs, so on a box with Bun 1.3.x `bun install` succeeded and the very
+// next line of `bin/setup` died `X_BUN_VERSION: Bun 1.3.14 is older than the required 1.4.0` — a
+// floor admitting a runtime the app's own first command refuses. Interpolated, the two cannot
+// disagree; `scripts/bun-pin.test.ts` reads the emitted string as one more pin site, and
+// `github/ci.yml.ts` pins the workflow's Bun to the same constant.
+//
 // `version` is not decoration: the manifest's app version IS the contract's compatibility gate,
 // and the manifest never fabricates one — so an app scaffolded without it failed `x manifest`,
 // the `manifest` verify step and every production boot with X_APP_PACKAGE_INVALID.
@@ -89,7 +98,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "solid-js": "1.9.14"
   },
   "engines": {
-    "bun": ">=1.3.0"
+    "bun": ">=${REQUIRED_BUN}"
   }
 }
 `;

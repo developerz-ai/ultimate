@@ -27,10 +27,10 @@ Measured on a scaffold written by this checkout, `As of 2026-08-23`. Re-derive:
 | questions asked | **0** — all five of `x new`'s flags carry a default (`bun run x -- help new`) |
 | infrastructure to install first | **none** — no Docker daemon, no Postgres, no Redis, no NATS |
 | env values to supply before the first boot | **0** — `.env.development` ships committed non-secret defaults, and an empty `DATABASE_URL` means embedded PGlite |
-| files you write before the first page | **0 of 134** |
+| files you write before the first page | **0 of 151** — re-derived `As of 2026-09-11`; `scripts/generator-counts.ts` turns a stale count red on the commit that moves it |
 | commands from nothing to a running app | **4** |
 | packages installed | **104**, in the one `bun install` `bin/setup` runs |
-| `bin/setup` wall time, warm cache | **6.7s** — install, generate the first migration, apply it, seed |
+| `bin/setup` wall time, warm cache | **6,802ms** for all six steps, `As of 2026-09-11` — install, the env file, generate the first migration, apply it, seed, write the manifest. A **cold** first install takes it to 12.0s ([Bare VM](../../wiki/Bare-VM.md)) |
 | what `x dev` starts | 4 roles in one process (`web` `sync` `worker` `scheduler`), 11 `/_x` panels, `db=embedded events=embedded storage=embedded mail=embedded` |
 
 The four commands, and they are the whole of it:
@@ -38,7 +38,7 @@ The four commands, and they are the whole of it:
 ```sh
 bunx create-ultimate myapp
 cd myapp
-bin/setup     # bun install · x db gen "initial" · x db migrate · x db seed
+bin/setup     # bun install · .env.development.local · x db gen "initial" · x db migrate · x db seed · x manifest
 x dev
 ```
 
@@ -58,19 +58,21 @@ On the scaffold above, `As of 2026-08-23`:
 
 | Run | Result |
 |---|---|
-| `x verify` on a fresh scaffold (`x new vision-probe`) | red on `budgets` and on `lint`; 18.2s |
-| the same, after running the `fix:` lines it printed | **19 of 20 pass**, `budgets` the one red, `contract-diff` and `roadmap` skipped. The run itself was measured 2026-08-23, before the `policy` step landed on 2026-08-24; its verdict here is **carried forward, not re-measured** — on the evidence that both tracked apps answer `policy` with zero findings and that `scaffold-smoke` runs the scaffold's own gate. Re-run the command below to measure it directly |
-| `x verify` on `x new alpha` | `lint` is green on run one — the red above is **name-dependent** ([`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md)): the templates emit `@<app>/…` before `@ultimat3/…`, which `organizeImports` only accepts while the name sorts first |
+| `bin/setup && bin/check` on a fresh scaffold | the gate green on the **first** pass, **20 of 20 steps** with `budgets` among them. Measured on a WSL2 developer box — not a VM, not a CI runner — warm cache, `As of 2026-09-11`: `bin/setup` 6,802ms, `bin/check` 5,389ms; the `--no-example` shape 5,135ms and 3,909ms ([`wiki/Bare-VM.md`](../../wiki/Bare-VM.md)) |
+| `x verify` alone, on an app nobody has built | red on `budgets` — `X_BUDGET_UNMEASURED`, because `.x/build-stats.json` is written by `x build --target static` and by nothing else. The build is `bin/check`'s first line, which is the whole reason the two commands are in that order |
+| `lint` on run one | green, zero diagnostics across every source file the scaffold writes, `As of 2026-09-11`. It used to be **name-dependent** — the templates emit `@<app>/…` before `@ultimat3/…`, which `organizeImports` accepted only while the app name sorted first — until `sortedImports` closed that half ([`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md)) |
 
-Re-derive: `bun run scripts/scaffold-gate.ts <app dir> --allow-red budgets --fix-follow`. `budgets`
-is `X_BUDGET_UNMEASURED` — no `x build` has written `.x/build-stats.json` — and it is the one
-allowance CI grants, on a ratchet that fails the day the step starts passing
-([`scripts/scaffold-gate.ts`](../../scripts/scaffold-gate.ts)).
+Re-derive: `bun run scripts/scaffold-gate.ts <app dir> --json`, which runs that app's own two
+scripts and prints the wall time of each.
 
-That loop is the small end's real ergonomic: **red, paste the `fix:`, green**, bounded at three
-rounds so a `fix:` that reintroduces its own red is reported rather than looped
-([`scripts/scaffold-fix-follow.ts`](../../scripts/scaffold-fix-follow.ts), `MAX_ROUNDS = 3`). CI runs
-it on every push, outside the checkout, in `ci.yml`'s `scaffold-smoke` job.
+**No waiver and no fix-follow**, `As of 2026-09`. CI runs exactly those two scripts, once, on every
+push, outside the checkout, in `ci.yml`'s `scaffold-smoke` job — and the FIRST `bin/check` is the
+one that has to be green, because one pass is all a box gets. The `--allow-red budgets` allowance is
+gone: the build ahead of the gate left it nothing to excuse, and `budgets` is now asserted **green**
+rather than merely not-red, since a skipped step would mean that build bought nothing
+([`scripts/scaffold-gate.ts`](../../scripts/scaffold-gate.ts)). The bounded red-paste-green loop
+that used to stand in for this is deleted: "green after running the printed `fix:`" is a weaker
+question than the contract asks.
 
 ## Irreplaceable at the large end
 
@@ -102,7 +104,7 @@ convention removes.
 | What a model would otherwise have to decide | What decides it here | What happens when it guesses anyway |
 |---|---|---|
 | which library, which pattern, which layout | one blessed path, [axiom 1](./00-thesis.md#design-axioms) | there is no second path to guess between |
-| whether a failure is recoverable, and how | a stable `X_*` code, a cause and an executable `fix:`, [axiom 4](./00-thesis.md#design-axioms) | the model runs the `fix:` — proven end to end by the fix-follow loop above |
+| whether a failure is recoverable, and how | a stable `X_*` code, a cause and an executable `fix:`, [axiom 4](./00-thesis.md#design-axioms) | the model runs the `fix:` — every gate finding names a command, and `bun run scripts/doc-fixes.ts` holds the whole error reference to it |
 | whether the work is finished | `x verify`, [axiom 5](./00-thesis.md#design-axioms) | green or a named step, never an opinion |
 | what the app currently contains | `x.manifest.json` and `--json` on every command | it reads generated facts instead of inferring from source |
 | whether an edit crossed a boundary | `boundaries`, `filesize`, `errors`, `i18n`, `seo` as gate steps | a build error at the moment of the edit, not a review comment a week later |

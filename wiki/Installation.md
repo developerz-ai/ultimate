@@ -31,8 +31,16 @@ bunx create-ultimate myapp && cd myapp && bin/setup && x dev
 
 **`bin/setup` is not optional.** `x new` writes files and installs nothing, so `cd myapp && x dev`
 stops on `X_BUILD_FAILED` naming `bun install` (measured `As of 2026-08-23`; this page said
-otherwise until then). `bin/setup` is `bun install`, `x db gen "initial"`, `x db migrate`,
-`x db seed` — idempotent, safe to re-run.
+otherwise until then). `bin/setup` is six steps, idempotent and safe to re-run:
+
+| # | Step | Why it is in the script |
+|---|---|---|
+| 1 | `bun install` | `x new` writes files and installs nothing |
+| 2 | touch `.env.development.local` | per-box secrets, gitignored, wins over the committed `.env.development` |
+| 3 | `x db gen "initial"` | skipped when `packages/db/migrations` already holds a `.sql` — `x db gen` is that directory's only writer |
+| 4 | `x db migrate` | applies them, then diffs the live schema against the ledger |
+| 5 | `x db seed` | run through the CLI, never `bun run`: the CLI owns the connection, so it reaches the same embedded database the migration just wrote to |
+| 6 | `x manifest` | `x.manifest.json` is a projection of the loaded app, so `x new` cannot write it. Nothing else ever ran the command, and `x verify`'s `manifest` step now refuses its absence with `X_MANIFEST_MISSING` |
 
 Every flag, from the registry — `bun run x -- help new`, or `x help new` in an app. There are five,
 each with a default, so **`x new` asks nothing**: an agent cannot answer a prompt and is never given
@@ -62,6 +70,7 @@ What `x new` writes, and who owns it afterwards:
 | `x.manifest.json` | generated every build | routes, entities, actions, jobs, policies, tags, MCP tools, budgets. Never hand-edited; drift fails `x verify` |
 | `openapi.json` | generated | HTTP surface from `action` / `query` declarations |
 | `AGENTS.md` / `CLAUDE.md` | **human-authored stubs** | short, terse. Ultimate never generates prose docs at runtime |
+| `.github/workflows/ci.yml` | generated | `bin/setup` then `bin/check`, on push and pull request — yours to edit, and the same two commands the app's `README.md` opens with |
 | `docker/` | generated | dev compose + per-role prod compose + Dockerfile ([Deployment](Deployment)) |
 | `packages/db/migrations/` | **not written at all** | `x db gen` is its only writer, `As of 2026-08`. First commands in a new app: `x db gen "initial"`, then `x db migrate` — `bin/setup` runs both. Until the first one has, `x verify`'s `drift` step is red and names it, for any app declaring an entity; `--no-example` declares none, and zero against zero is agreement |
 

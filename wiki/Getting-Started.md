@@ -4,9 +4,12 @@
 bunx create-ultimate myapp && cd myapp && bin/setup && x dev
 ```
 
-**Four commands, and `bin/setup` is one of them.** It is the scaffold's own script — `bun install`,
-`x db gen "initial"`, `x db migrate`, `x db seed` — idempotent, so re-running it after a pull is
-safe. `bunx create-ultimate myapp && cd myapp && x dev` is what this page said until 2026-08-23 and
+**Four commands, and `bin/setup` is one of them.** It is the scaffold's own script, six steps —
+`bun install`, an `.env.development.local` touch, `x db gen "initial"` when
+`packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` — idempotent, so
+re-running it after a pull is safe. The last step is not optional either: `x.manifest.json` is a
+projection of the loaded app, nothing else ever runs the command, and `x verify`'s `manifest` step
+refuses its absence with `X_MANIFEST_MISSING`. `bunx create-ultimate myapp && cd myapp && x dev` is what this page said until 2026-08-23 and
 it does not work: `x new` writes files and installs nothing, so the app has no `node_modules`, no `x`
 of its own, and `x dev` stops on `X_BUILD_FAILED` — *"Could not resolve `@ultimat3/ui`. Maybe you
 need to `bun install`?"*
@@ -14,8 +17,12 @@ need to `bun install`?"*
 No Docker daemon, no `.env` scavenger hunt, no service to provision — `.env.development` ships
 committed non-secret defaults and an empty `DATABASE_URL` means embedded PGlite.
 
+No service to install either — bun and git are the whole prerequisite list → [Bare VM](Bare-VM).
+
 `bin/setup`, then `x dev`, measured on a fresh scaffold `As of 2026-08-23` (6.7s for setup on a warm
-Bun cache):
+Bun cache) — recorded **before** the `.env.development.local` touch and `x manifest` joined the
+script, so neither is in the transcript or the number, and the closing line now reads
+`next: bin/dev`:
 
 ```
 $ bin/setup
@@ -52,7 +59,7 @@ Measured on a fresh scaffold, `As of 2026-08-23`.
 | Landing page | `apps/web/site/page.tsx` | `render: 'static'`, `hydrate: 'never'`, `budget: { js: '0kb' }`, real meta + JSON-LD |
 | Dashboard | `apps/web/app/dashboard/page.tsx` | `render: 'ssr'`, `hydrate: 'visible'`, `budget: { js: '60kb' }`, behind `policy: { permission: 'dashboard:read' }`. **Not `stream`** — `stream` needs a hole marker the renderer does not yet have, and the template says so in its own comment |
 | Admin app | `apps/admin/` | one `ssr` page; your actions reach an agent through `mcp: { expose: true }` and `x mcp serve`, not through this app |
-| Green gate | `x verify` | 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. On a fresh scaffold: red on `lint` and `budgets`, then **19 of 20** after running the `fix:` lines it printed |
+| Green gate | `bin/check` — `x build --target static`, then `x verify` | 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `budgets` weighs `.x/build-stats.json`, which only `x build --target static` writes — reaching the gate through `bin/check` is what makes that step measurable, and a bare `x verify` on an app nobody has built reports `X_BUDGET_UNMEASURED`. The first-run verdict on a fresh scaffold is measured by CI, never asserted here |
 
 `x dev` runs **every role in one process** with isolation simulated, not skipped: separate ALS contexts, a real Postgres queue, real logical replication, a real SIGTERM drain on `x dev restart`. Nothing in the framework branches on `if (dev)` — only the drivers differ.
 

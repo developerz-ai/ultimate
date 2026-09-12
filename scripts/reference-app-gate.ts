@@ -87,11 +87,17 @@ const asStep = (value: unknown): GateStep | undefined => {
 };
 
 /**
+ * The step objects as the gate PRINTED them, before any field is dropped. Every consumer of a
+ * `verify --json` table goes through this one reader: `asStep` keeps the four fields the ratchet
+ * judges and discards `durationMs`, so a second consumer that wants the timings had re-implemented
+ * the line scan, the `JSON.parse` guard and the array check beside it — three copies of one
+ * decision about what "unreadable" means, free to disagree.
+ *
  * `x verify --json` prints one object on its own line. The last `{`-line is taken rather than the
  * whole stream so a stray write from a step's subprocess cannot make the gate unreadable — and
  * `undefined` (no table at all) is treated as the worst outcome, not as "nothing failed".
  */
-export const parseSteps = (stdout: string): readonly GateStep[] | undefined => {
+export const parseStepPayloads = (stdout: string): readonly unknown[] | undefined => {
   const line = stdout
     .split('\n')
     .map((part) => part.trim())
@@ -110,8 +116,14 @@ export const parseSteps = (stdout: string): readonly GateStep[] | undefined => {
     typeof payload === 'object' && payload !== null
       ? (payload as { readonly steps?: unknown }).steps
       : undefined;
-  if (!Array.isArray(steps)) return undefined;
-  const parsed = steps.map(asStep);
+  return Array.isArray(steps) ? steps : undefined;
+};
+
+/** The ratchet's view of that table: the four fields it judges, or `undefined` if any step is not one. */
+export const parseSteps = (stdout: string): readonly GateStep[] | undefined => {
+  const payloads = parseStepPayloads(stdout);
+  if (payloads === undefined) return undefined;
+  const parsed = payloads.map(asStep);
   return parsed.every((step) => step !== undefined) ? parsed : undefined;
 };
 

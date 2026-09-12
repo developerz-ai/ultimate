@@ -20,7 +20,7 @@ The loop, end to end. Worked example: **posts, with publishing, a live feed, and
 | 11 | i18n keys | `x i18n sync es` | `packages/i18n/catalogs/{en,es}.json` (merged in) |
 | 12 | Tests | fill the scaffolds | `*.test.ts` next to each source |
 | 13 | Manifest | `x manifest` | `x.manifest.json`, `openapi.json` |
-| 14 | Gate | `x verify` | exit 0 = shippable |
+| 14 | Gate | `bin/check` | `x build --target static`, then `x verify` — exit 0 = shippable. **Not `x verify` alone**: `budgets` weighs `.x/build-stats.json`, which only the build writes |
 
 ## 0. Pick the surface
 
@@ -275,11 +275,17 @@ The assertion that matters per type: **contract** — a non-owner is denied with
 
 ```bash
 x manifest
-x verify
-x verify --json | jq '.steps[] | select(.ok == false)'
+bin/check
+bin/check --json | tail -n 1 | jq '.steps[] | select(.ok == false)'
 ```
 
 Green = shippable. There is no `--skip`.
+
+`bin/check` is `x build --target static` and then `x verify`, in that order and for one reason: the
+`budgets` step compares each declared limit against measured bytes in `.x/build-stats.json`, and
+that build is the file's only writer — a bare `x verify` reports `X_BUDGET_UNMEASURED` on an app
+nobody has built. `--json` is forwarded to both commands, each emits one object, and a machine
+consumer takes the last line.
 
 ## When it fails
 

@@ -28,6 +28,7 @@ import {
   SW_REGISTER_PATH,
   serviceWorkerArtifacts,
   serviceWorkerHead,
+  serviceWorkerRegistration,
 } from './sw-artifacts';
 
 // Re-exported, never re-declared: `static-report.ts` owns the shape because the report on disk
@@ -194,6 +195,17 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // header). `serviceWorkerHead` is the one predicate behind both, so a page can never name a
   // script the export does not carry.
   const swHead = pwa === undefined ? undefined : serviceWorkerHead(pwa);
+  // The registration's BYTES now too, and not beside `sw.js` at the end. Every document below
+  // names this file and `measureDocumentJs` weighs it off disk, so writing it last made the
+  // measurement read whatever happened to be there: nothing on a clean `out` (recorded as 0) and
+  // the PREVIOUS build's copy on a reused one. That is the run-order dependence the `jsBytes`
+  // split removed, and it came straight back in `frameworkJsBytes` because the field changed and
+  // the ORDER did not. `serviceWorkerRegistration()` depends on two constants and no document, so
+  // it has nothing to wait for; `sw.js` still comes last, because its precache manifest really is
+  // built from the hashes of pages that do not exist yet.
+  if (swHead !== undefined) {
+    await Bun.write(join(options.out, SW_REGISTER_PATH.slice(1)), serviceWorkerRegistration());
+  }
   if (pwa !== undefined) {
     await Bun.write(join(options.out, WEB_MANIFEST_PATH.slice(1)), pwa.body);
     // And the icons that manifest NAMES. A static host runs no `assetRoutes()`, so every
@@ -252,6 +264,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
         routes.push({
           path: entry.path,
           jsBytes: measured.jsBytes,
+          frameworkJsBytes: measured.frameworkBytes,
           ...(chain === undefined ? {} : { heaviestChain: chain }),
         });
       } catch (error) {
@@ -314,6 +327,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       heaviest = {
         path: entry.path,
         jsBytes: measured.jsBytes,
+        frameworkJsBytes: measured.frameworkBytes,
         ...(chain === undefined ? {} : { heaviestChain: chain }),
       };
     }
@@ -334,9 +348,10 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
           styles,
           documents,
         });
+  // `sw.js` only: `serviceWorker.register` IS `serviceWorkerRegistration()`, already on disk above
+  // and identical by construction. A second writer of one path is how the two could ever disagree.
   if (serviceWorker !== undefined) {
     await Bun.write(join(options.out, SERVICE_WORKER_PATH.slice(1)), serviceWorker.source);
-    await Bun.write(join(options.out, SW_REGISTER_PATH.slice(1)), serviceWorker.register);
   }
   const stats = await writeBuildStats(options.root, { routes });
   // Written LAST and by the same call that writes the stats, so an app whose `prerender.ts` does

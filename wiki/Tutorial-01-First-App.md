@@ -2,7 +2,7 @@
 
 One command scaffolds a monorepo that already runs. No Docker daemon, no database to provision, no `.env` to fill in.
 
-`As of 2026-08-23`. **This page documents `main`, not a published release.** Every file count, gate result and command output below was re-measured on this tree: `x new` → `bun install` → the command, in a directory outside the checkout. Rows that still describe a published version say so in their own line.
+`As of 2026-08-23`, with every gate row re-measured `As of 2026-09-12`. **This page documents `main`, not a published release.** Every file count, gate result and command output below was re-measured on this tree: `x new` → `bun install` → the command, in a directory outside the checkout. Rows that still describe a published version say so in their own line.
 
 Series: **1** · [2 — first feature](Tutorial-02-First-Feature) · [3 — auth and admin](Tutorial-03-Auth-And-Admin) · [4 — jobs and realtime](Tutorial-04-Jobs-And-Realtime) · [5 — deploy free](Tutorial-05-Deploy-Free) · [6 — growing up](Tutorial-06-Growing-Up)
 
@@ -24,8 +24,8 @@ bunx create-ultimate myapp
 **Unpinned on purpose.** Pinning the tutorial to a version pins readers to a scaffold that stops matching this page on the next tag; `README.md` and `llms.txt` drop the pin for the same reason. To reproduce a specific release, add `@<version>` and read that release's tag of this page.
 
 ```text
-  136 files in /tmp/tmp.XXXXXXXX/myapp
-✓ created myapp — next: cd myapp && bun install && x db gen "initial" && x db migrate && x dev
+  151 files in /tmp/tmp.XXXXXXXX/myapp
+✓ created myapp — next: cd myapp && bin/setup && bin/dev
 ```
 
 Counts are a derived fact — `x new --dry-run --json` lists every file, and one added template moves the number.
@@ -38,53 +38,70 @@ cd myapp && bun install
 
 ### Two shapes, one generator
 
-Measured on `main`, `As of 2026-08-23`, `x new --dry-run --json | jq '.data.files | length'`:
+Counts are derived, never quoted here — `x new --dry-run --json | jq '.data.files | length'`, per
+shape. The verdicts are `ci.yml`'s `scaffold-smoke` job, `As of 2026-09-12`:
 
-| Invocation | Files | `x verify` on run one |
-|---|---|---|
-| `bunx create-ultimate myapp` | 136 | 16 pass, **1 fails**, 2 skipped — `budgets` [below](#the-one-red-step-on-run-one) |
-| `bunx create-ultimate myapp --no-example` | 107 | 13 pass, **1 fails**, 5 skipped — `budgets` alone, one fewer route |
+| Invocation | `bin/setup && bin/check` on run one |
+|---|---|
+| `bunx create-ultimate myapp` | **green, 20 of 20 steps pass** — `budgets` among them |
+| `bunx create-ultimate myapp --no-example` | **green, 20 of 20 steps pass** — one fewer route to weigh |
 
 `--no-example` omits the `post` feature slice and its route. Pick it when an agent is about to write the real feature anyway — [tutorial 2](Tutorial-02-First-Feature) starts there. Pick the default when you want a worked example to read.
 
 ## The gate, first thing
 
 ```bash
-bunx x verify
+bin/check
 ```
 
-`--no-example`, verbatim, on `main` `As of 2026-08-23`:
+The app's own gate: `x build --target static`, then `x verify`. The build first, because the
+`budgets` step weighs `.x/build-stats.json` and that build is its only writer.
+
+`--no-example`, verbatim, from `ci.yml`'s `scaffold-smoke` job on an `ubuntu-latest` runner,
+`As of 2026-09-12` — the whole gate, in the order it runs:
 
 ```text
-  ✓ typecheck          15746ms
-  ✓ lint               140ms
-  ✓ boundaries         21ms
-  ✓ filesize           6ms
-  ✓ package-shape      16ms
-  ✓ errors             12ms
-  ✓ unit               242ms
-  ✓ contract           116ms
-  - live               0ms
-  - job                0ms
-  - e2e                0ms
-  ✓ eval               359ms
-  ✓ drift              17ms
-  - contract-diff      0ms
-  ✗ budgets            14ms
-  ✓ seo                10ms
-  ✓ i18n               11ms
-  ✓ manifest           4ms
-  - roadmap            0ms
-✗ 1 of 20 steps failed — 5 skipped: live, job, e2e, contract-diff, roadmap
+  ✓ typecheck
+  ✓ lint
+  ✓ boundaries
+  ✓ filesize
+  ✓ package-shape
+  ✓ errors
+  ✓ unit
+  ✓ contract
+  - live
+  - job
+  - e2e
+  ✓ eval
+  ✓ drift
+  ✓ contract-diff
+  ✓ budgets
+  ✓ seo
+  ✓ i18n
+  ✓ policy
+  ✓ manifest
+  - roadmap
+  wall time
+    ✓ bin/setup  5994ms
+    ✓ bin/check  4886ms
+✓ bin/setup in 5994ms, bin/check green in 4886ms — 20 of 20 steps pass
 ```
 
-`-` is skipped, not passed: no live query, job or e2e test exists yet, so those steps have nothing to check. `contract` is **not** among them — the scaffold ships `apps/web/api/health.contract.test.ts`, which is what makes it a tick on run one. The summary counts skips and passes apart and names every skip, so a gate that is green because a suite does not exist says so on the one line you read. [Tutorial 2](Tutorial-02-First-Feature) turns more of those dashes into ticks.
+`-` is skipped, not passed: no live query, job or e2e test exists yet, so those steps have nothing
+to weigh, and `roadmap` is a framework-repo step. `contract` is **not** among them — the scaffold
+ships `apps/web/api/health.contract.test.ts`, which is what makes it a tick on run one. The summary
+names every skip, so a gate that is green because a suite does not exist says so on the one line you
+read. [Tutorial 2](Tutorial-02-First-Feature) turns more of those dashes into ticks.
 
-Timings are one Linux laptop, not a benchmark.
+Reach the gate through `bin/check` and `budgets` is a tick too, for the reason below. The list is
+`VERIFY_STEP_NAMES` ([`packages/cli/src/verify-step.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/verify-step.ts)), whole or not at all: the same steps run here and in the framework repo.
 
-### The one red step on run one
+### `budgets`, and why you reach the gate through `bin/check`
 
-`budgets`, one finding per route with a declared budget — measured `As of 2026-08-23`:
+`budgets` is green on the first pass when you run `bin/check`, because `bin/check` is
+`x build --target static` and then `x verify` — the build writes the `.x/build-stats.json` the step
+weighs. Run `x verify` on its own, on an app nobody has built, and you get one finding per route
+with a declared budget instead — measured `As of 2026-08-23`:
 
 ```text
   ✗ budgets            14ms
@@ -95,7 +112,9 @@ Timings are one Linux laptop, not a benchmark.
 
 Three routes with `--no-example` (`/`, `/admin`, `/dashboard`), four with the example slice (plus `/posts`).
 
-**Not a scaffold defect, and no template change closes it.** Every generated route declares a `budget:`, and the `budgets` step reads its measurement out of `.x/build-stats.json` — a file only `x build --target static` writes, through `apps/web/prerender.ts`. A bare `x build` defaults to `docker` and writes no stats. So on a fresh app every budget is unmeasured. Run the step's own `fix:` once and it goes green; closing it permanently is a change to the step, not to the scaffold. It is the one red step the framework's own `scaffold-smoke` CI job allows (`--allow-red budgets`), and that list may never grow.
+**Not a scaffold defect, and no template change closes it — the order of the two commands does.** Every generated route declares a `budget:`, and the `budgets` step reads its measurement out of `.x/build-stats.json`, a file only `x build --target static` writes, through `apps/web/prerender.ts`. A bare `x build` defaults to `docker` and writes no stats. So a gate run with nothing built ahead of it reports every budget unmeasured, and running the step's own `fix:` is what a reader used to do by hand.
+
+`bin/check` does it for you, and CI asserts the result: `scaffold-smoke` runs a fresh app's own `bin/setup && bin/check` **once, with no waiver and no fix-follow** (`As of 2026-09`), and `budgets` must come back **green** rather than merely not-red — a skip would mean the static build bought nothing. The `--allow-red budgets` allowance that used to sit in that job is gone, and nothing replaced it ([`scripts/scaffold-gate.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/scaffold-gate.ts)).
 
 ### The invariant block is typed from your columns
 
@@ -200,7 +219,7 @@ bunx x db gen "initial"    # entities → <id>.sql, <id>.snapshot.json, <id>.has
 bunx x db migrate          # applies them, then diffs the live schema against the ledger it wrote
 ```
 
-`bin/setup` runs both — `bun install`, `x db gen "initial"` when the directory holds no `.sql`, `x db migrate`, then the seed. `x db migrate` is `@ultimat3/db`'s own migrator, the one `ROLE=migrate` runs, so nothing extra has to be installed.
+`bin/setup` runs both — `bun install`, an `.env.development.local` touch, `x db gen "initial"` when the directory holds no `.sql`, `x db migrate`, `x db seed`, then `x manifest`. `x db migrate` is `@ultimat3/db`'s own migrator, the one `ROLE=migrate` runs, so nothing extra has to be installed.
 
 Until the generate has run, `x verify` is **red on its `drift` step** — correct behaviour with a runnable fix, not a defect:
 
@@ -239,7 +258,7 @@ If you do hit `X_ROUTE_MODE_INVALID` on a page you wrote, its `fix:` offers two 
 
 | Want | Command |
 |---|---|
-| is it shippable | `bunx x verify` (add `--json`) |
+| is it shippable | `bin/check` (add `--json`; it reaches both halves) |
 | what is wrong with my environment | `bunx x doctor --json` |
 | what does this error code mean | `bunx x errors explain X_FORBIDDEN` |
 | what does this app contain | `bunx x manifest --json` |

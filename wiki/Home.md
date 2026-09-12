@@ -6,7 +6,7 @@ A full-stack, Bun-only, opinionated framework: Rails' philosophy applied to Bun 
 
 ## Is it for a project this size
 
-**Yes at both ends, and that is the design.** A homework assignment or a weekend idea gets a running app in four commands with nothing to install and nothing to choose; a very large product gets the scale ladder, the tier boundaries and the same 19-step gate the beginner's app already ran. One framework, no lite mode — [axiom 1](#the-rules-everything-else-follows) forbids the second path a lite mode would be.
+**Yes at both ends, and that is the design.** A homework assignment or a weekend idea gets a running app in four commands with nothing to install and nothing to choose; a very large product gets the scale ladder, the tier boundaries and the same 20-step gate the beginner's app already ran — the list is `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/verify-step.ts), whole or not at all. One framework, no lite mode — [axiom 1](#the-rules-everything-else-follows) forbids the second path a lite mode would be.
 
 The measured version of that claim, with the command behind every number: [`docs/idea/21-the-range.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/21-the-range.md).
 
@@ -28,11 +28,11 @@ Those facts are repeated on several pages because the wiki is plain markdown wit
 bunx create-ultimate myapp && cd myapp && bin/setup && x dev
 ```
 
-`bin/setup` is the scaffold's own script — `bun install`, `x db gen "initial"`, `x db migrate`, `x db seed`, idempotent. **`x dev` straight after `cd` does not work**: `x new` installs nothing, so the app has no `node_modules` and no `x` of its own, and the boot stops on `X_BUILD_FAILED` naming `bun install`. Measured `As of 2026-08-23`; this page said otherwise until then → [Getting started](Getting-Started).
+`bin/setup` is the scaffold's own script, six steps — `bun install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` — idempotent. The app it writes needs **no Docker and no service** → [Bare VM](Bare-VM). **`x dev` straight after `cd` does not work**: `x new` installs nothing, so the app has no `node_modules` and no `x` of its own, and the boot stops on `X_BUILD_FAILED` naming `bun install`. Measured `As of 2026-08-23`; this page said otherwise until then → [Getting started](Getting-Started).
 
 | If you are | Read, in order |
 |---|---|
-| Evaluating it | [Getting started](Getting-Started) → [The eight primitives](The-Eight-Primitives) → [FAQ](FAQ) |
+| Evaluating it | [Getting started](Getting-Started) → [Bare VM](Bare-VM) → [The eight primitives](The-Eight-Primitives) → [FAQ](FAQ) |
 | Moving a production app off another stack | [Migrating an existing app](Migrating-An-Existing-App) → [Known gaps](Known-Gaps) → [Entities and migrations](Entities-And-Migrations) |
 | Building an app | [Installation](Installation) → [Project layout](Project-Layout) → [Actions](Actions) → [Testing](Testing) |
 | An agent driving the framework | [CLI reference](CLI-Reference) → [Error codes](Error-Codes) → [MCP and AI](MCP-And-AI) → [Agents](Agents) |
@@ -46,6 +46,7 @@ bunx create-ultimate myapp && cd myapp && bin/setup && x dev
 |---|---|
 | [Getting started](Getting-Started) | zero to a running app, one action, one green `x verify` |
 | [Installation](Installation) | prerequisites, `x new`, typed env, editor and MCP client setup |
+| [Bare VM](Bare-VM) | the four commands a fresh Ubuntu box with bun and git runs, and why no Docker and no service is needed |
 | [Project layout](Project-Layout) | the generated monorepo, the four surfaces, feature slices, the hard boundaries |
 | [Migrating an existing app](Migrating-An-Existing-App) | strangler fig off Rails/Node/Django, adopting a live schema, identity during cutover, and what does not work yet |
 

@@ -13,6 +13,7 @@ import type { Manifest, RouteFact } from '@ultimat3/manifest';
 import { formatBytes, parseByteBudget } from '@ultimat3/render';
 import type { Finding } from './output';
 import type { UnmeasuredRoute } from './static-report';
+import { SW_REGISTER_PATH } from './sw-artifacts';
 
 export const BUILD_STATS_FILE = join('.x', 'build-stats.json');
 
@@ -24,7 +25,14 @@ export interface RouteStats {
    * prerenders many pages contributes ONE row, holding its heaviest.
    */
   readonly path: string;
+  /** The APP's JavaScript, and only the app's — see `FRAMEWORK_SCRIPTS`. */
   readonly jsBytes: number;
+  /**
+   * The framework's own injected runtime, in bytes: reported, never budgeted. Optional because a
+   * stats file written before 2026-09-11 has no such key, and absent is not zero — a row from an
+   * older build simply did not count it, and `checkBudgets` reads `jsBytes` either way.
+   */
+  readonly frameworkJsBytes?: number;
   /**
    * **Written by nothing, `As of 2026-08`.** `apps/web/prerender.ts` is the only producer of this
    * file and it emits static HTML — there is no browser in the build to observe a paint. So the
@@ -212,10 +220,38 @@ export interface MeasuredEntry {
 }
 
 export interface MeasuredJs {
+  /** The app's own executable bytes — what `budget.js` is a promise about. */
   readonly jsBytes: number;
-  /** Every `src=`/`data-x-entry=` module, so a finding can name the heaviest by file. */
+  /** The framework's injected runtime, counted separately so it is reported and never charged. */
+  readonly frameworkBytes: number;
+  /** Every APP `src=`/`data-x-entry=` module, so a finding can name the heaviest by file. */
   readonly entries: readonly MeasuredEntry[];
 }
+
+/**
+ * Scripts the FRAMEWORK injects into a document, which a route's `budget.js` does not answer for.
+ * `budget.js` is a promise about the APP's JavaScript: an author can delete an import, move one
+ * behind `hydrate: 'interaction'` or drop an island, and can do NOTHING about a file the build
+ * writes into every document it renders. Charging it made `js: '0kb'` — the budget `x new`
+ * scaffolds on `site/` — unreachable for any installable app, and the `fix:` it printed named an
+ * import chain of one entry the author never wrote.
+ *
+ * It was also not a stable number. `/x-sw-register.js` is written AFTER the documents that name
+ * it are weighed (`prerender.ts` emits the worker last, because its precache manifest is built
+ * from their content hashes), so a clean `.x/` measured a file that did not exist and recorded 0,
+ * and the next build measured the one before it and recorded 250. Same commit, green then red,
+ * decided by whether anything had cleaned the output directory.
+ *
+ * ENUMERATED, and it is one entry: `serviceWorkerHead` is the only `<script src>` the framework
+ * puts in a prerendered document — measured on a fresh scaffold plus `x g island` and
+ * `x g route`, where `<script src="/x-sw-register.js" defer>` is the only script tag across every
+ * emitted page. Two framework scripts are deliberately NOT here. `render/src/hydrate.ts`'s inline
+ * module runtime is charged, because it exists only when the page ships an island — it is the
+ * cost of the app's own interactivity, and a page with a `0kb` budget has none. `island-props.ts`'
+ * `<script type="application/json">` is already excluded as data, by `carriesJson`. A third one
+ * joins this set by a decision, here, with the same argument.
+ */
+export const FRAMEWORK_SCRIPTS: ReadonlySet<string> = new Set([SW_REGISTER_PATH]);
 
 /**
  * What a rendered document actually makes the browser execute: the bytes of every inline script
@@ -226,6 +262,7 @@ export interface MeasuredJs {
  */
 export async function measureDocumentJs(html: string, out: string): Promise<MeasuredJs> {
   let jsBytes = 0;
+  let frameworkBytes = 0;
   const entries: MeasuredEntry[] = [];
   // Deduped ONCE, across both readers below, and the unit is the FETCH: a browser downloads a URL
   // once however many times the document names it, so `budget.js` — a byte budget — counts it
@@ -247,6 +284,14 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
     fetched.add(url);
     const file = Bun.file(join(out, url.slice(1)));
     const bytes = (await file.exists()) ? file.size : 0;
+    // Counted and set aside, not skipped: the bytes are real and a reader is owed the number.
+    // Kept out of `entries` as well as out of `jsBytes`, because `entries` is what a finding reads
+    // to name the heaviest import — and on a fresh scaffold every route's `heaviestChain` was
+    // `/x-sw-register.js`, a file the author cannot edit, delete or move.
+    if (FRAMEWORK_SCRIPTS.has(url)) {
+      frameworkBytes += bytes;
+      return;
+    }
     entries.push({ url, bytes });
     jsBytes += bytes;
   };
@@ -266,7 +311,7 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
     if (url === undefined) continue;
     await weigh(url);
   }
-  return { jsBytes, entries };
+  return { jsBytes, frameworkBytes, entries };
 }
 
 /**

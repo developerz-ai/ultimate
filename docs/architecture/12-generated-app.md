@@ -21,7 +21,8 @@ myapp/
     i18n/                 # app catalogs (en, es, ...)
     ui/                   # app-specific Solid components on top of @ultimat3/ui
     mcp/                  # the app's own MCP tools (its dashboards are AI-first too)
-  bin/                    # setup, dev, check — thin wrappers over `x`
+  bin/                    # setup (six steps), dev, check (x build --target static, then x verify)
+  .github/workflows/      # ci.yml — bin/setup then bin/check, on push and pull request
   docker/                 # compose (dev) + per-role compose (prod) + Dockerfile
   app.config.ts           # the one config file
   x.manifest.json         # GENERATED: routes, entities, actions, jobs, policies
@@ -44,7 +45,8 @@ myapp/
 | `packages/i18n/` | catalogs are data, versioned separately from code, extracted against | strings scattered per surface, locales drifting |
 | `packages/ui/` | app components on `@ultimat3/ui`, budgeted like `shared/` | components with fetching inside them, duplicated per surface |
 | `packages/mcp/` | the app's own tools, declared in one place next to their policies | MCP exposure defined far from the authz it depends on |
-| `bin/` | `bin/setup`, `bin/dev`, `bin/check` — thin wrappers over `x` | onboarding by README archaeology |
+| `bin/` | `bin/setup` — `bun install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest`; `bin/dev` — `x dev`; `bin/check` — `x build --target static` **and then** `x verify`, because `budgets` weighs `.x/build-stats.json` and only that build writes it | onboarding by README archaeology |
+| `.github/workflows/ci.yml` | the two commands the README opens with, run by a machine that has never seen the repository | a gate that only ever runs on the author's laptop |
 | `docker/` | dev compose + per-role prod compose + one Dockerfile | drift between what you tested and what runs ([`13-topology-runtime.md`](./13-topology-runtime.md)) |
 | `app.config.ts` | one config file, typed, validated at boot | five config files and an env scavenger hunt |
 | `x.manifest.json` | generated facts, drift-checked | prose docs an agent trusts and shouldn't ([`11-ai-surface.md`](./11-ai-surface.md)) |

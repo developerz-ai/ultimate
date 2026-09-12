@@ -84,7 +84,7 @@ $ x new myapp --dry-run --json
 {"ok":true,"command":"new","summary":"…","data":{"dir":"/home/me/myapp","files":["README.md","AGENTS.md",…],"dryRun":true}}
 ```
 
-**136 files** with the example slice, **109** with `--no-example` — measured on `main` `As of 2026-08-23`, up from 134/107 because the scaffold now writes `apps/web/app/auth/dev-actor.ts` and its test: `hooks.authenticate` is the only place an actor can come from, and a generated app configured none, so every route declaring a `policy:` refused every request and the boot warned `X_CONFIG_INVALID` on every start. Both numbers move the moment a template is added, and `scripts/generator-counts.ts` — a step of `x verify`'s `manifest` check — turns a stale one red on the same commit. Derive rather than quote anyway:
+**This page states no file count, deliberately** — one template added moves it, and a number hand-copied onto four pages goes stale on three of them. `scripts/generator-counts.ts` is the single source: it re-derives both shapes from the CLI's own generators and, as a step of `x verify`'s `manifest` check, turns any page quoting a stale one red on the same commit. Two moves worth knowing about rather than counting: the scaffold gained `apps/web/app/auth/dev-actor.ts` and its test, because `hooks.authenticate` is the only place an actor can come from and a generated app configured none — so every route declaring a `policy:` refused every request and the boot warned `X_CONFIG_INVALID` on every start; and it gained `.github/workflows/ci.yml`, which runs `bin/setup && bin/check` on every push and pull request. Derive the number:
 
 ```bash
 x new myapp --dry-run --json | jq '.data.files | length'
@@ -104,7 +104,8 @@ Deployment artifacts are part of the scaffold — an app is deployable the momen
 | `docker/docker-compose.dev.yml` | parity checks only; `x dev` needs none of it |
 | `docker/helm/` | the chart, 8 files — `Chart.yaml`, `values.yaml` and 6 templates (`_helpers.tpl`, `deployments`, `service`, `migrate-job`, `ingress`, `hpa`). Written `As of 2026-08-19`, which is what makes `x deploy --method helm` work in a scaffold |
 | `docker/README.md` | how the two compose files differ |
-| `bin/setup`, `bin/dev`, `bin/check` | written executable (`0755`) |
+| `.github/workflows/ci.yml` | the generated app's own CI: `bin/setup` then `bin/check`, on push and pull request — the same two commands its `README.md` opens with |
+| `bin/setup`, `bin/dev`, `bin/check` | written executable (`0755`). `bin/check` is **`x build --target static` and then `x verify`**, not the gate alone: `budgets` compares declared limits against measured bytes in `.x/build-stats.json`, which only that build writes, so a gate run with no build ahead of it reports `X_BUDGET_UNMEASURED` on a brand-new app. `--json` is forwarded to both, and a reader takes the last line |
 
 The framework repo's own `docker/helm` carries two templates the scaffold does not — `pdb.yaml` and `servicemonitor.yaml`. Neither ships in an npm tarball, so copying them is a `git clone` of this repo, not an install.
 
@@ -804,7 +805,9 @@ A tool this caller may not see is absent from `tools/list` and answers ToolNotFo
 x doctor [--port 3000] [--json]
 ```
 
-Checks Bun version, env completeness, source drift, **the newest migration's `.snapshot.json`**, port availability and PWA prerequisites — each failing check carries its own fix command. The snapshot half is `As of 2026-08` and separate from drift on purpose: they are two questions with two remedies, and `x db gen`'s own `X_MIGRATION_SNAPSHOT_MISSING` was a condition this diagnostic could not see at all, so `x doctor --json` — the `fix:` of the `X_CLI_UNEXPECTED` an author reaches it through — ran clean over a broken app.
+Checks Bun version, env completeness, source drift, **the newest migration's `.snapshot.json`**, port availability, PWA prerequisites and **embedded-Postgres readiness** — each failing check carries its own fix command.
+
+The embedded half is the bare-VM case: the external-database probe answers nothing the moment `DATABASE_URL` is unset, and that silence *is* the configuration a fresh box has. So `x doctor` also asks whether `@electric-sql/pglite` resolves from the app root — a resolve, never an import, because loading it boots the WASM build and takes the single-writer lock the next command needs. Red only where both hold: `DATABASE_URL` unset **and** the peer unresolvable, reported as `X_DB_UNAVAILABLE` with `@ultimat3/db`'s own sentence and its own runnable fix ([Bare VM](Bare-VM)). The snapshot half is `As of 2026-08` and separate from drift on purpose: they are two questions with two remedies, and `x db gen`'s own `X_MIGRATION_SNAPSHOT_MISSING` was a condition this diagnostic could not see at all, so `x doctor --json` — the `fix:` of the `X_CLI_UNEXPECTED` an author reaches it through — ran clean over a broken app.
 
 **It probes BOTH ports `x dev` binds** — `PORT` for the web role and `PORT + 1` for the sync node —
 and the suggestion moves both: `x doctor --port 3000` with 3001 taken answers `x dev --port 3002`,

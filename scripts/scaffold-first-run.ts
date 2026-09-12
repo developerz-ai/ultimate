@@ -1,16 +1,22 @@
 #!/usr/bin/env bun
 
-// What a stranger does in the first ten minutes after `x new`, run as a check: the documented
-// first-run sequence, then EVERY generator the CLI offers, then the migration those generators
-// earn. The scaffold-smoke job proved `x new` → `bun install` → `x verify` and nothing else, so it
-// invoked no generator and opened no database, and three shipped defects sat in that blind spot.
+// EVERY GENERATOR, run over an app whose `bin/setup` has already run. `bin/setup` is the documented
+// first run and CI now runs the real script (`scripts/scaffold-gate.ts`), so the three database
+// commands and the manifest write that used to be re-spelled here are gone: they were an
+// approximation of a script nobody executed, and two spellings of one sequence is the second path
+// axiom 1 forbids. What is left is the half `bin/setup` does not do and no other check reaches —
+// `x g` for every kind the CLI offers, then the migration those thirteen entities earn.
 //
-// Takes a FRESHLY scaffolded app and is not idempotent against a used one: `x g` never clobbers,
-// so a second run over the same directory is thirteen `X_GENERATE_CONFLICT`s. `x new` first.
+// The generators all exit 0 even when what they emit cannot resolve an import, so this sweep is not
+// itself the catch: the `bin/check` that follows it is (`TS2307: Cannot find module '../repo'` was
+// invisible to every exit code in this job). This is what gives that gate something to typecheck.
+//
+// Takes a scaffolded app whose `bin/setup` has run and is not idempotent against a used one: `x g`
+// never clobbers, so a second run over the same directory is thirteen `X_GENERATE_CONFLICT`s.
 //
 //   bun run scripts/scaffold-first-run.ts <app dir> [--json]
 
-import { join } from 'node:path';
+import { resolve } from 'node:path';
 import { GENERATORS } from '@ultimat3/cli';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
@@ -31,7 +37,7 @@ const SCRIPT = 'scaffold-first-run';
  * thing under test, and `bun run x` here would run the CLI out of the checkout — proving the
  * workspace works, which is the claim the job already cannot make.
  */
-export const appBin = (dir: string): string => join(dir, 'node_modules', '.bin', 'x');
+export const appBin = (dir: string): string => resolve(dir, 'node_modules', '.bin', 'x');
 
 export interface FirstRunStep {
   /** Names the step in the log and in the `fix:`, so a red run says WHICH generator broke. */
@@ -46,38 +52,31 @@ export interface FirstRunStep {
 export const generatorName = (kind: string): string => `smoke-${kind.replace(/:/g, '-')}`;
 
 /**
- * Six phases, and every one of them earns its line. The generators are projected from `GENERATORS`,
- * never a hand-written list: the defect was four of thirteen, so a sample would likely have missed
- * it — and a fourteenth generator is covered the day it lands rather than the day someone remembers
- * this file.
+ * The generators are projected from `GENERATORS`, never a hand-written list: the defect was four of
+ * thirteen, so a sample would likely have missed it — and a fourteenth generator is covered the day
+ * it lands rather than the day someone remembers this file.
  *
  * | # | Step | What only this step can tell you |
  * |---|---|---|
- * | 1 | `db migrate` (empty) | `packages/db/migrations` does not exist on a fresh scaffold and an apply over nothing is `applied 0`, not an error. This is the regression guard for the cycle #121 fixed: the scaffold used to hand-write `0000_initial.sql` with no snapshot sidecar, and a second writer coming back turns this green step red on `X_DB_DRIFT` before anything else has run |
- * | 2 | `db gen "initial"` | the app's documented first command — `bin/setup` runs exactly this line (`templates/scaffold-docs.ts`). It is what makes `x verify`'s `drift` step green, and a scaffold that reached `x verify` without it is red on `drift` by construction |
- * | 3 | `db migrate` (initial) | what step 2 wrote actually applies — a generator that emits SQL Postgres rejects is invisible to a check that only reads the file |
- * | 4 | `g <kind>` × 13 | every generator runs. They all exit 0 even when broken, so this step is not the catch: the `x verify` that follows is, and this is what gives it something to typecheck |
- * | 5 | `db gen "generated"` | `x db gen` against entities from EIGHT different generators in one diff — the only migration in CI written from generator output rather than from the scaffold's own example entity |
- * | 6 | `db migrate` (generated) | step 5's migration applies too |
+ * | 1 | `g <kind>` x 13 | every generator runs |
+ * | 2 | `db gen "generated"` | `x db gen` against entities from EIGHT different generators in one diff — the only migration in CI written from generator output rather than from the scaffold's own example entity |
  *
- * Step 1 looks like it duplicates step 3 and costs almost nothing: measured, it is 4.8s against
- * 2.9s for step 3, and the difference is PGlite's cold start on `.x/pgdata` — a boot the sequence
- * pays exactly once whichever step goes first. Its marginal cost is ~2s.
+ * Nothing APPLIES that migration here, deliberately: `bin/setup` runs `x db migrate`, and the
+ * `scripts/scaffold-gate.ts` run after this sweep runs `bin/setup` again — which is also what makes
+ * the script's own "idempotent, safe to re-run" claim a measurement rather than a comment.
+ *
+ * What is NOT here, and where it went: `x db migrate` over the empty migrations directory, the
+ * `x db gen "initial"` that follows it, and `x manifest` are `bin/setup`'s own lines, run from
+ * `bin/setup` itself by `scripts/scaffold-gate.ts` before this sweep starts. The empty-directory
+ * migrate in particular was never a step of the documented first run — `bin/setup` generates the
+ * initial migration BEFORE it migrates — so re-spelling it here tested a path no app takes.
  */
 export const firstRunPlan = (): readonly FirstRunStep[] => [
-  { name: 'db migrate (empty)', args: ['db', 'migrate', '--json'] },
-  { name: 'db gen initial', args: ['db', 'gen', 'initial', '--json'] },
-  { name: 'db migrate (initial)', args: ['db', 'migrate', '--json'] },
   ...GENERATORS.map((kind) => ({
     name: `g ${kind}`,
     args: ['g', kind, generatorName(kind), '--json'],
   })),
   { name: 'db gen generated', args: ['db', 'gen', 'generated', '--json'] },
-  { name: 'db migrate (generated)', args: ['db', 'migrate', '--json'] },
-  // `bin/setup` writes the manifest and this job never runs it, so without this step the smoke app
-  // reaches `x verify` with no `x.manifest.json` and the `manifest` step reports X_MANIFEST_MISSING.
-  // `x g` refreshes an existing manifest and never creates one, by its own documented refusal.
-  { name: 'manifest', args: ['manifest', '--json'] },
 ];
 
 /** Enough of the failure to read in a CI log without the finding swallowing the step table. */
