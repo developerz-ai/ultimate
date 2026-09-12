@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/seo",
-  "version": "20.0.0",
+  "version": "20.1.0",
   "description": "Enforced SEO: typed meta, JSON-LD, sitemap, robots, feeds, responsive images, perf budgets",
   "license": "MIT",
   "type": "module",
@@ -31,7 +31,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "20.0.0",
-    "@ultimat3/schema": "20.0.0"
+    "@ultimat3/core": "20.1.0",
+    "@ultimat3/schema": "20.1.0"
   }
 }

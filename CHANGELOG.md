@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 20.1.0 - 2026-09-12
+
 ### Added
 
 - **[Bare VM](https://github.com/developerz-ai/ultimate/wiki/Bare-VM)** (`wiki/Bare-VM.md`): the
@@ -66,6 +70,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Fixed
 
+- **The framework's own service-worker registration is no longer billed to the app's `js` budget.**
+  `/x-sw-register.js` is written by the framework and the author cannot edit, delete or move it, so
+  its bytes ate a budget nobody set and made every route on a fresh scaffold report it as the
+  `heaviestChain`. `measureDocumentJs` (`packages/cli/src/budgets.ts`) now counts it into
+  `frameworkBytes` and keeps it out of both `jsBytes` and `entries`, so `checkBudgets` compares the
+  declared `js` budget against the app's bytes alone and the framework's are reported per route as
+  `frameworkJsBytes` â€” counted, never charged. **And the number no longer depends on build order**:
+  `prerender` (`packages/cli/src/prerender.ts`) writes the registration BEFORE both measurements
+  instead of beside `sw.js` at the end, so it is a property of this build rather than of whatever
+  the output directory already held â€” 0 on a clean `out`, the previous build's copy on a reused
+  one. That is the run-order dependence the `jsBytes` split closed, which came straight back when
+  the field changed and the ORDER did not. `frameworkJsBytes` is optional on `RouteStats` because a
+  stats file written before this release carries no such key, and absent is not zero.
+
 - **Every page stating `bin/setup`'s command list was two steps short.** The scaffold's script runs
   six â€” `bun install`, an `.env.development.local` touch, `x db gen "initial"` when
   `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` â€” and nine
@@ -87,6 +105,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   current script's wall time; the env touch and `x manifest` joined it afterwards and are in
   neither number. `wiki/Getting-Started.md`'s transcript is marked the same way, and its closing
   line is `next: bin/dev`.
+
+### Commits
+
+- feat(cli,scripts,ci): the scaffold's own bin/setup and bin/check run green, and the app it emits carries CI (#431)
 
 ## 20.0.0 - 2026-09-08
 
