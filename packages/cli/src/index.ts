@@ -67,8 +67,14 @@ export type { DeployPlan } from './cmd-deploy';
 export { deployCommand, planDeploy } from './cmd-deploy';
 export type { DevServer, StartDevOptions } from './cmd-dev';
 export { devCommand, startDev } from './cmd-dev';
-export type { DoctorProbe } from './cmd-doctor';
-export { doctorCommand, ENV_DEVELOPMENT, probeFor, runDoctor } from './cmd-doctor';
+export type { DoctorProbe, EmbeddedDatabase } from './cmd-doctor';
+export {
+  doctorCommand,
+  ENV_DEVELOPMENT,
+  embeddedDatabaseFinding,
+  probeFor,
+  runDoctor,
+} from './cmd-doctor';
 export { ERRORS_SUBCOMMANDS, errorsCommand } from './cmd-errors';
 export { FIX_SUBCOMMANDS, fixCommand } from './cmd-fix';
 export type { GenerateOptions, Generator } from './cmd-generate';

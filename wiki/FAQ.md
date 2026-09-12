@@ -99,7 +99,7 @@ Yes. CI runs exactly `x verify` — no bespoke pipeline steps, because a check t
 
 ### Do I need Docker to develop?
 
-No. `x dev` uses embedded PGlite, in-process events, and a local directory in place of S3. `bunx create-ultimate myapp && cd myapp && bin/setup && x dev` — no Docker install, no `.env` scavenger hunt. `bin/setup` is `bun install` + the first migration + the seed, and is not optional: `x new` installs nothing ([Getting started](Getting-Started)). The compose files exist for parity debugging and CI jobs that want real services ([Deployment](Deployment)).
+No. `x dev` uses embedded PGlite, in-process events, and a local directory in place of S3. `bunx create-ultimate myapp && cd myapp && bin/setup && x dev` — no Docker install, no `.env` scavenger hunt. `bin/setup` is six steps — `bun install`, an `.env.development.local` touch, the first migration generated and applied, the seed, and `x manifest` — and is not optional: `x new` installs nothing ([Getting started](Getting-Started), [Bare VM](Bare-VM)). The compose files exist for parity debugging and CI jobs that want real services ([Deployment](Deployment)).
 
 ### Do I need Redis or NATS?
 

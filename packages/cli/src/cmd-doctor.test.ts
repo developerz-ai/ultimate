@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { ENV_EXAMPLE_PATH } from '@ultimat3/core';
+import { PGLITE_FIX, PGLITE_MISSING } from '@ultimat3/db';
 import { REQUIRED_BUN } from './app-root';
 import type { DoctorProbe } from './cmd-doctor';
 import { doctorCommand, doctorPort, ENV_DEVELOPMENT, probeFor, runDoctor } from './cmd-doctor';
@@ -31,6 +32,8 @@ const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   // Reachable, or embedded — the probe's own `null`. A test that opened a pool would be asking
   // about the box it runs on rather than about `runDoctor`.
   database: async () => null,
+  // The bare VM that WORKS: no DATABASE_URL, and `bun install` put the optional peer in place.
+  embeddedDatabase: async () => ({ selected: true, resolved: true }),
   drift: async () => [],
   snapshots: async () => [],
   // The app the scaffold writes: a declared fallback with a `site/` page answering it.
@@ -439,5 +442,28 @@ describe('unit · x doctor probes the whole surface x dev binds', () => {
 
   test('an embedded database is not probed at all — that lock belongs to x dev', async () => {
     expect(await codes(probe())).toEqual([]);
+  });
+
+  // The bare-VM hole, and the reason it stayed open: `database()` answers `null` with no
+  // DATABASE_URL, so the one configuration a dz-runner box actually has was the one configuration
+  // `x doctor` said nothing about. `bin/setup` reported it instead, four commands later, as an
+  // `x db migrate` failure.
+  test('a bare VM whose optional peer never installed is red, in @ultimat3/db own words', async () => {
+    const findings = await runDoctor(
+      probe({ embeddedDatabase: async () => ({ selected: true, resolved: false }) }),
+    );
+    expect(findings.map((entry) => entry.code)).toEqual(['X_DB_UNAVAILABLE']);
+    expect(findings[0]?.cause).toContain(PGLITE_MISSING);
+    expect(findings[0]?.cause).toContain('DATABASE_URL is unset');
+    // Runnable, and the package's own line — not a second wording for one condition.
+    expect(findings[0]?.fix).toBe(PGLITE_FIX);
+  });
+
+  // An app pointed at a real Postgres never loads PGlite, so an absent optional peer there is not
+  // a defect. `database()` owns that configuration, and a second finding about it is noise.
+  test('an app with a DATABASE_URL is not asked to install the embedded database', async () => {
+    expect(
+      await codes(probe({ embeddedDatabase: async () => ({ selected: false, resolved: false }) })),
+    ).toEqual([]);
   });
 });

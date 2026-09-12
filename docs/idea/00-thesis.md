@@ -105,7 +105,8 @@ Each one is a permanent no, not a "later".
 bunx create-ultimate myapp && cd myapp && bin/setup && x dev
 ```
 
-`bin/setup` is `bun install`, `x db gen "initial"`, `x db migrate`, `x db seed` — the scaffold's own
-script, and not optional ([`13-dx.md`](./13-dx.md)). No Docker install. No `.env` scavenger hunt. Embedded Postgres, in-process NATS, S3 → local dir. A landing page in `site/` at 0kb JS, an authed dashboard in `app/` streaming, an admin app that already speaks MCP, and `x verify` green — before the first line of user code.
+`bin/setup` is six steps — `bun install`, an `.env.development.local` touch, `x db gen "initial"`,
+`x db migrate`, `x db seed`, `x manifest` — the scaffold's own script, and not optional
+([`13-dx.md`](./13-dx.md)). No Docker install. No `.env` scavenger hunt. Embedded Postgres, in-process NATS, S3 → local dir. A landing page in `site/` at 0kb JS, an authed dashboard in `app/` streaming, an admin app that already speaks MCP, and `x verify` green — before the first line of user code.
 
 Then `x build --target docker` and it runs anywhere that runs containers.

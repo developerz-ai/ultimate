@@ -3,14 +3,20 @@
 // work back to the reader.
 
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import {
   ENV_EXAMPLE_PATH,
   ERROR_DOCS_URL,
   tryResolveEnvironment,
   usesDevCursorSecret,
 } from '@ultimat3/core';
-import { checkDb, createPostgresClient } from '@ultimat3/db';
+import {
+  checkDb,
+  createPostgresClient,
+  PGLITE_FIX,
+  PGLITE_MISSING,
+  PGLITE_PACKAGE,
+} from '@ultimat3/db';
 import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/storage';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
@@ -61,6 +67,16 @@ export interface DoctorProbe {
    * correctly answered `X_DB_UNAVAILABLE` (#F5).
    */
   database(): Promise<Finding | null>;
+  /**
+   * Is the EMBEDDED database usable, and is it the one this environment would open? A FACT and not
+   * a finding, the split `offlineFallback` makes below: reaching a module resolver is IO, and what
+   * an unresolvable optional peer MEANS is a pure rule with a pure test.
+   *
+   * `database()` answers `null` the moment `DATABASE_URL` is unset — which is exactly a bare VM,
+   * the configuration `x dev` invents a database FOR — so until this existed `x doctor` was silent
+   * about the only database a fresh box has. `bin/setup` found out instead, at `x db migrate`.
+   */
+  embeddedDatabase(): Promise<EmbeddedDatabase>;
   drift(): Promise<readonly Finding[]>;
   /**
    * The other half of the migrations directory: a newest migration with no `.snapshot.json`, which
@@ -76,10 +92,39 @@ export interface DoctorProbe {
   offlineFallback(): Promise<OfflineFallbackFact>;
 }
 
+/** What `x doctor` reads about the embedded database, without opening it. */
+export interface EmbeddedDatabase {
+  /**
+   * True while `DATABASE_URL` is unset or blank — the condition that makes PGlite the app's
+   * database (`resolveServices`), and the same reading `probeDatabase` returns `null` on.
+   */
+  readonly selected: boolean;
+  /** Does `@electric-sql/pglite` resolve from the app root? */
+  readonly resolved: boolean;
+}
+
 const finding = (code: string, cause: string, fix: string, at?: string): Finding =>
   at === undefined
     ? { code, cause, fix, docs: ERROR_DOCS_URL }
     : { code, cause, fix, docs: ERROR_DOCS_URL, at };
+
+/**
+ * The rule, pure. Red only where the embedded database is the one that would be opened: an app
+ * pointed at a real Postgres never loads PGlite, and a finding about an absent optional peer there
+ * is noise the reader learns to skim.
+ *
+ * `@ultimat3/db`'s own refusal, not a CLI twin of it — same `X_DB_UNAVAILABLE`, same sentence,
+ * same runnable fix. The package already says this the moment a query arrives; `x doctor` is what
+ * says it before `bin/setup` gets that far.
+ */
+export const embeddedDatabaseFinding = (fact: EmbeddedDatabase): Finding | undefined =>
+  fact.selected && !fact.resolved
+    ? finding(
+        'X_DB_UNAVAILABLE',
+        `${PGLITE_MISSING} — and DATABASE_URL is unset, so the embedded one is the database this app would open`,
+        PGLITE_FIX,
+      )
+    : undefined;
 
 /** The file `x doctor` reports missing, and the one the reader creates. */
 export const ENV_DEVELOPMENT = '.env.development';
@@ -229,6 +274,10 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   if (offline !== undefined) findings.push(offline);
   const database = await probe.database();
   if (database !== null) findings.push(database);
+  // The other half of the same question, and the half a bare VM lands on: `database()` is silent
+  // where there is no `DATABASE_URL`, and that silence IS the bare-VM configuration.
+  const embedded = embeddedDatabaseFinding(await probe.embeddedDatabase());
+  if (embedded !== undefined) findings.push(embedded);
   findings.push(...(await probe.drift()));
   // Last, and it is why `X_CLI_UNEXPECTED`'s `fix: x doctor --json` is not a dead end on the path an
   // author reaches it from: `x db gen` throwing `X_MIGRATION_SNAPSHOT_MISSING` used to be a
@@ -250,6 +299,45 @@ export const doctorPort = (args: ParsedArgs): number =>
   );
 
 /**
+ * `DATABASE_URL` as BOTH halves of the database question read it: unset and blank are one case.
+ * One seam, because the two halves are complementary — a second reading of the same variable is
+ * how a configuration ends up reported by neither probe, or by both.
+ */
+const externalUrl = (raw: string | undefined): string | undefined =>
+  raw === undefined || raw.trim() === '' ? undefined : raw;
+
+/**
+ * Is the optional peer INSTALLED for this app — a `node_modules` walk up from the app root.
+ *
+ * Never an IMPORT: loading PGlite boots 26 MB of WASM and takes the single-writer lock the next
+ * command needs, and a diagnostic must not be the reason `x dev` cannot open the database it just
+ * reported on.
+ *
+ * Never `Bun.resolveSync` either, which was this check's first draft. It falls back to Bun's
+ * machine-global install cache: measured 2026-09-11 against a freshly scaffolded app with no
+ * `node_modules` anywhere above it, `Bun.resolveSync('@electric-sql/pglite', <app>)` answered
+ * `~/.bun/install/cache/@electric-sql/pglite@0.5.8@@@1/dist/index.js` — a version the app does not
+ * depend on, in a directory `bun install` never wrote for it. A box that had downloaded the package
+ * ONCE, for anything, would have read as ready on every app after it, which is the exact opposite
+ * of the question. The walk asks what `bun add` answers, and nothing else.
+ *
+ * Up from the root and not at it, because an app checked out inside a larger workspace is installed
+ * by the hoisting one: `examples/dummy` in this repository has no `node_modules` of its own.
+ */
+const installedAbove = (dir: string, specifier: string): boolean => {
+  let current = resolve(dir);
+  // Bounded by the path itself — one segment per step — rather than by `for (;;)` and the promise
+  // that `dirname('/')` is `/`. The loop still stops on that, one step earlier.
+  for (let remaining = current.split(sep).length; remaining > 0; remaining -= 1) {
+    if (existsSync(join(current, 'node_modules', specifier, 'package.json'))) return true;
+    const parent = dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+  return false;
+};
+
+/**
  * A real `select 1` through the app's own driver, not a TCP connect: a running Postgres with the
  * wrong credentials or a database that does not exist accepts the socket and refuses the session,
  * which is the case an operator most needs told about before a deploy.
@@ -258,7 +346,7 @@ export const doctorPort = (args: ParsedArgs): number =>
  * next `x db migrate` cannot have.
  */
 async function probeDatabase(url: string | undefined): Promise<Finding | null> {
-  if (url === undefined || url.trim() === '') return null;
+  if (externalUrl(url) === undefined) return null;
   const client = createPostgresClient({ url, applicationName: 'x-doctor' });
   try {
     const report = await checkDb(client);
@@ -296,6 +384,12 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
     exists: (relativePath) => (root === undefined ? false : existsSync(join(root, relativePath))),
     portFree,
     database: () => probeDatabase(process.env['DATABASE_URL']),
+    // `root ?? cwd` because the walk needs a directory that exists; outside an app `runDoctor`
+    // returns on `X_NOT_IN_APP` before this is ever asked, so the value only has to be honest.
+    embeddedDatabase: async () => ({
+      selected: externalUrl(process.env['DATABASE_URL']) === undefined,
+      resolved: installedAbove(root ?? cwd, PGLITE_PACKAGE),
+    }),
     drift: async () => (root === undefined ? [] : checkMigrationDrift(root)),
     snapshots: async () => (root === undefined ? [] : checkMigrationSnapshots(root)),
     // `routes: undefined` outside an app is "not judged", which is what the caller already is:

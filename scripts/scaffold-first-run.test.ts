@@ -40,10 +40,13 @@ const fakeRunner = (
   };
 };
 
+/** The commands `bin/setup` owns, so this plan may not re-spell one. Pinned to the template. */
+const SETUP_OWNS = ['db migrate', 'db seed', 'manifest'] as const;
+
 /**
  * The planned steps among `wanted`, in plan order. Deliberately not `indexOf`: it answers -1 for a
  * step the plan does not hold, and -1 is below every real index — so a pairwise ordering assertion
- * passes for a plan missing the very step it claims to order (measured: dropping `db gen initial`
+ * passes for a plan missing the very step it claims to order (measured: dropping `db gen generated`
  * from `firstRunPlan` left `indexOf(…) < indexOf(…)` GREEN, on the test whose whole subject it is).
  * Compared with `toEqual`, presence, order and multiplicity are one assertion.
  */
@@ -62,58 +65,33 @@ describe('firstRunPlan', () => {
     expect([...invoked].sort()).toEqual([...GENERATORS].sort());
   });
 
-  // A scaffold ships NO migration as of #121 — `x db gen` is the one writer of
-  // `packages/db/migrations`. So the first apply runs over an empty directory, and it runs first so
-  // that a scaffold which became a second writer again is red here, alone, before anything else.
-  test('applies over the empty migrations directory before generating one', () => {
-    expect(firstRunPlan()[0]?.name).toBe('db migrate (empty)');
-    expect(stepsAmong(['db migrate (empty)', 'db gen initial'])).toEqual([
-      'db migrate (empty)',
-      'db gen initial',
-    ]);
-  });
-
   /**
-   * The ordering the `scaffold-smoke` job depends on: `x verify`'s `drift` step is red until
-   * `x db gen "initial"` has run, so a plan that generated only AFTER the generators — or not at
-   * all — would hand the job a red `drift` that no allowance covers. Measured both ways: a scaffold
-   * with no db command at all is 15 of 17 with `drift` red; the same scaffold after this step is
-   * 16 of 17 with only `budgets` red.
+   * The duplication this file's own subject used to be. `bin/setup` — written by
+   * `templates/scaffold-docs.ts` and now RUN by `scripts/scaffold-gate.ts` — migrates, seeds and
+   * writes the manifest; this plan re-spelled the first and the third, so CI ran an approximation
+   * of a script nobody executed. Derived from the template's bytes in both directions, so neither
+   * a command leaving `bin/setup` nor a command coming back here is a silent change.
    */
-  test('generates the initial migration, and applies it, before any generator runs', () => {
-    expect(stepsAmong(['db gen initial', 'db migrate (initial)', 'g entity'])).toEqual([
-      'db gen initial',
-      'db migrate (initial)',
-      'g entity',
-    ]);
-  });
-
-  // Eight of the thirteen generators emit an entity, and this is the only migration in CI written
-  // from generator output rather than from the scaffold's own example entity.
-  test('regenerates and re-applies after the generators, in that order', () => {
-    expect(stepsAmong(['g entity', 'db gen generated', 'db migrate (generated)'])).toEqual([
-      'g entity',
-      'db gen generated',
-      'db migrate (generated)',
-    ]);
-  });
-
-  /**
-   * The one first-run command this script does NOT get to choose. `bin/setup` — written by
-   * `templates/scaffold-docs.ts` — is what a scaffolded app documents as its first run, and if B1
-   * respells it (`"init"`, or a `--name` flag) this plan would keep running a command the app no
-   * longer documents and keep passing. Enforced against the template's own bytes instead.
-   */
-  test('runs the same `x db gen` line bin/setup runs, spelled the same way', async () => {
+  test('re-spells no command bin/setup already runs', async () => {
     const template = await Bun.file(
       `${repoRoot()}/packages/cli/src/templates/scaffold-docs.ts`,
     ).text();
-    const documented = template.match(/x db gen "([^"]+)"/);
-    expect(documented, 'templates/scaffold-docs.ts no longer runs `x db gen "<name>"`').not.toBe(
-      null,
-    );
-    const planned = firstRunPlan().find((step) => step.name === 'db gen initial');
-    expect(planned?.args).toEqual(['db', 'gen', documented?.[1] ?? '', '--json']);
+    for (const command of SETUP_OWNS) {
+      expect(template, `bin/setup no longer runs \`x ${command}\``).toContain(`bunx x ${command}`);
+      const respelled = firstRunPlan().filter((step) => step.args.join(' ').startsWith(command));
+      expect(
+        respelled.map((step) => step.name),
+        `${command} is bin/setup's line`,
+      ).toEqual([]);
+    }
+  });
+
+  // Eight of the thirteen generators emit an entity, and this is the only migration in CI written
+  // from generator output rather than from the scaffold's own example entity. The apply is
+  // `bin/setup`'s, on the `scaffold-gate` run that follows this sweep.
+  test('regenerates after the generators, as the plan’s last step', () => {
+    expect(stepsAmong(['g entity', 'db gen generated'])).toEqual(['g entity', 'db gen generated']);
+    expect(firstRunPlan().at(-1)?.name).toBe('db gen generated');
   });
 
   test('every step is named distinctly, so a red run says which one', () => {

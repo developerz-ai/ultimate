@@ -160,6 +160,8 @@ export {
   loadPgliteDriver,
   PGLITE_FIX,
   PGLITE_MEMORY,
+  PGLITE_MISSING,
+  PGLITE_PACKAGE,
   pgliteDataDir,
 } from './pglite';
 export type { PgliteBranchInfo, PgliteBranchOptions } from './pglite-branch';

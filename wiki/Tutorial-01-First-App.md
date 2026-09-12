@@ -82,9 +82,12 @@ bunx x verify
 
 Timings are one Linux laptop, not a benchmark.
 
-### The one red step on run one
+### `budgets`, and why you reach the gate through `bin/check`
 
-`budgets`, one finding per route with a declared budget — measured `As of 2026-08-23`:
+`budgets` is green on the first pass when you run `bin/check`, because `bin/check` is
+`x build --target static` and then `x verify` — the build writes the `.x/build-stats.json` the step
+weighs. Run `x verify` on its own, on an app nobody has built, and you get one finding per route
+with a declared budget instead — measured `As of 2026-08-23`:
 
 ```text
   ✗ budgets            14ms
@@ -95,7 +98,9 @@ Timings are one Linux laptop, not a benchmark.
 
 Three routes with `--no-example` (`/`, `/admin`, `/dashboard`), four with the example slice (plus `/posts`).
 
-**Not a scaffold defect, and no template change closes it.** Every generated route declares a `budget:`, and the `budgets` step reads its measurement out of `.x/build-stats.json` — a file only `x build --target static` writes, through `apps/web/prerender.ts`. A bare `x build` defaults to `docker` and writes no stats. So on a fresh app every budget is unmeasured. Run the step's own `fix:` once and it goes green; closing it permanently is a change to the step, not to the scaffold. It is the one red step the framework's own `scaffold-smoke` CI job allows (`--allow-red budgets`), and that list may never grow.
+**Not a scaffold defect, and no template change closes it — the order of the two commands does.** Every generated route declares a `budget:`, and the `budgets` step reads its measurement out of `.x/build-stats.json`, a file only `x build --target static` writes, through `apps/web/prerender.ts`. A bare `x build` defaults to `docker` and writes no stats. So a gate run with nothing built ahead of it reports every budget unmeasured, and running the step's own `fix:` is what a reader used to do by hand.
+
+`bin/check` does it for you, and CI asserts the result: `scaffold-smoke` runs a fresh app's own `bin/setup && bin/check` **once, with no waiver and no fix-follow** (`As of 2026-09`), and `budgets` must come back **green** rather than merely not-red — a skip would mean the static build bought nothing. The `--allow-red budgets` allowance that used to sit in that job is gone, and nothing replaced it ([`scripts/scaffold-gate.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/scaffold-gate.ts)).
 
 ### The invariant block is typed from your columns
 
@@ -200,7 +205,7 @@ bunx x db gen "initial"    # entities → <id>.sql, <id>.snapshot.json, <id>.has
 bunx x db migrate          # applies them, then diffs the live schema against the ledger it wrote
 ```
 
-`bin/setup` runs both — `bun install`, `x db gen "initial"` when the directory holds no `.sql`, `x db migrate`, then the seed. `x db migrate` is `@ultimat3/db`'s own migrator, the one `ROLE=migrate` runs, so nothing extra has to be installed.
+`bin/setup` runs both — `bun install`, an `.env.development.local` touch, `x db gen "initial"` when the directory holds no `.sql`, `x db migrate`, the seed, then `x manifest`. `x db migrate` is `@ultimat3/db`'s own migrator, the one `ROLE=migrate` runs, so nothing extra has to be installed.
 
 Until the generate has run, `x verify` is **red on its `drift` step** — correct behaviour with a runnable fix, not a defect:
 

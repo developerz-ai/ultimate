@@ -11,6 +11,7 @@
 import { describe, expect, test } from 'bun:test';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { planNewApp } from '@ultimat3/cli';
 import { APP_ROOTS } from './boundaries';
 
 const ROOT = join(import.meta.dir, '..');
@@ -90,6 +91,32 @@ const enginesFloors = async (): Promise<Record<string, string>> => {
 };
 
 /**
+ * The floor the SCAFFOLD EMITS — `engines.bun` in the `package.json` that `x new` writes, and the
+ * one site of all of them that ships to a stranger's machine. It was checked by NOTHING until
+ * 2026-09-11: `enginesFloors` globs manifests that exist ON DISK, and this manifest is a template
+ * literal (`packages/cli/src/templates/scaffold-repo.ts`) until the moment a user runs the
+ * generator. It had drifted a whole minor below the `x` it hands the app — `>=1.3.0` against a CLI
+ * that refuses anything under 1.4.0 — so `bin/setup`'s first line installed, and its second died.
+ *
+ * Read off the EMITTED file rather than off a constant in the template's source, deliberately: a
+ * symbol match asserts only that a name is present, and the thing that reaches the user is the
+ * bytes. Whatever `scaffold-repo.ts` spells the floor as, this reads what it produced.
+ */
+const scaffoldEnginesFloor = (): string => {
+  // `GeneratedFile.contents` is text OR bytes — an asset is bytes — so the manifest being text is
+  // part of what is asserted here, not an assumption cast away.
+  const emitted = planNewApp({ name: 'bun-pin', example: false }).find(
+    (file) => file.path === 'package.json',
+  )?.contents;
+  expect(typeof emitted, 'x new writes no root package.json as text').toBe('string');
+  const declared = (
+    JSON.parse(typeof emitted === 'string' ? emitted : '{}') as { engines?: { bun?: string } }
+  ).engines?.bun;
+  expect(declared, "the scaffold's root package.json declares no engines.bun").toBeDefined();
+  return seriesOf((declared ?? '').replace(/^[^\d]*/, ''));
+};
+
+/**
  * `@types/bun` is a pin site, `As of 2026-08-27`, and it was the one nobody counted — a `^1.4.0`
  * caret where every other Bun pin in the repository names an exact series. It decides which Bun API
  * surface `bun run typecheck` believes in, so a range here is the same defect as a range on the
@@ -119,6 +146,7 @@ describe('the Bun series is pinned once, in agreement', () => {
     const appImage = await slurp('packages/cli/src/templates/scaffold-container.ts');
     const setupScript = await slurp('scripts/setup.ts');
     const cliFloor = cliFloorSeries(await slurp('packages/cli/src/app-root.ts'));
+    const scaffoldEngines = scaffoldEnginesFloor();
     const typesSeries = await typesFloor();
     const engines = await enginesFloors();
     // A glob matching nothing would agree with every other pin.
@@ -151,6 +179,10 @@ describe('the Bun series is pinned once, in agreement', () => {
       trackedApps: tracked,
       contributorFloor: requiredBunSeries(setupScript),
       cliFloor,
+      // The app `x new` writes must accept the `x` it is handed: the generated floor is the CLI's
+      // floor, not a floor of its own, and a scaffold below it is an app whose own `bin/setup`
+      // cannot run.
+      scaffoldEngines,
       typesSeries,
       engines,
     };
@@ -163,6 +195,7 @@ describe('the Bun series is pinned once, in agreement', () => {
       ...Object.values(tracked).flat(),
       found.contributorFloor,
       found.cliFloor,
+      found.scaffoldEngines,
       found.typesSeries,
       ...Object.values(engines),
     ];

@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
-# The only gate. CI runs exactly this — a check that lives only in CI cannot be run locally.
+# The gate, in the shape `x new` writes it — a build and then a verify, because the `budgets` step
+# weighs `.x/build-stats.json` and `x build --target static` is its only writer. Without the build
+# the very first thing this app reports is X_BUDGET_UNMEASURED per route, which is a red that says
+# nothing about the app.
+#
+# NOT what CI runs here, and the difference is deliberate: `scripts/reference-app-gate.ts` drives
+# this app's `x verify` from the repo root against a ratchet (`scripts/lib/gated-apps.ts`), because
+# a tracked app inside the framework repo is graded on steps a scaffolded app has to pass outright.
+# The steps are the same 20 either way.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-exec x verify "$@"   # add --json for a machine-readable report
+# `--json` reaches BOTH or neither: one document on stdout is the contract, and a human renderer
+# from the build followed by the gate's JSON is neither.
+build_flags=""
+for arg in "$@"; do
+  case "$arg" in --json|-j) build_flags="--json" ;; esac
+done
+x build --target static $build_flags
+exec x verify "$@"

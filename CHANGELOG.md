@@ -8,7 +8,85 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **[Bare VM](https://github.com/developerz-ai/ultimate/wiki/Bare-VM)** (`wiki/Bare-VM.md`): the
+  four commands a fresh Ubuntu box with bun and git runs — `bunx create-ultimate demo --no-git`,
+  `cd demo`, `bin/setup`, `bin/check` — and why no Docker daemon and no provisioned service is
+  needed. An empty `DATABASE_URL` is not a hole to fill: it is the switch `resolveServices`
+  (`packages/cli/src/dev-services.ts`) reads to select the embedded database
+  (`packages/db/src/pglite.ts`), which is Postgres compiled to WASM in this process, an optional
+  peer resolved at first query. The page states what that database does **not** do —
+  no walsender, so no logical replication and no slot — and that its absence is `X_DB_UNAVAILABLE`
+  with a runnable `fix:`, never a silent skip. The wall-time table carries a first measurement from
+  a WSL2 developer box on a warm cache — `bin/setup` 6,802ms and `bin/check` 5,389ms on the default
+  scaffold, 5,135ms and 3,909ms with `--no-example`, 12.0s for a cold install, and the **first**
+  `bin/check` green at 20 of 20 steps on both shapes with `budgets` among them — plus a marked
+  placeholder for the `ubuntu-latest` half, which the CI job that runs the scaffold's own
+  `bin/setup && bin/check` prints on every run.
+
+- **A generated app ships `.github/workflows/ci.yml`** — `bin/setup` then `bin/check`, on push and
+  pull request: the same two commands its own `README.md` opens with, run by a machine that has
+  never seen the repository. Documented in `wiki/Installation.md`, `wiki/CLI-Reference.md` and
+  `docs/architecture/12-generated-app.md`.
+- **`x doctor` reports embedded-Postgres readiness.** The external-database probe answers nothing
+  where `DATABASE_URL` is unset, and that silence is exactly a bare VM, so the diagnostic was
+  blind to the only database a fresh box has and `bin/setup` found out at `x db migrate` instead.
+  It now asks whether `@electric-sql/pglite` **resolves** from the app root — a resolve, never an
+  import, since loading it boots the WASM build and takes the single-writer lock the next command
+  needs — and reports `X_DB_UNAVAILABLE` only where `DATABASE_URL` is unset **and** the peer is
+  unresolvable, reusing `@ultimat3/db`'s own sentence and fix rather than a CLI twin of them.
+
+### Changed
+
+- **The docs describing the scaffold's CI waiver are rewritten, because the waiver is gone.**
+  `scaffold-smoke` now runs a fresh app's own `bin/setup && bin/check` once, with **no
+  `--allow-red budgets` and no fix-follow**, and `budgets` is asserted green rather than merely
+  not-red — a skipped step would mean the static build ahead of the gate bought nothing.
+  `wiki/Tutorial-01-First-App.md`, `docs/idea/21-the-range.md`, `docs/idea/14-roadmap.md`
+  (milestone 10 is an unmodified green gate now), `docs/idea/README.md`, `README.md` and
+  `wiki/Error-Codes.md`'s `X_SCAFFOLD_GATE_RED` row all said otherwise. **Four rows in
+  `wiki/Error-Codes.md` documented codes nothing raises any more** — `X_SCAFFOLD_FIX_LOOP`,
+  `X_SCAFFOLD_FIX_UNFOLLOWED`, `X_SCAFFOLD_BUILD_FAILED`, `X_SCAFFOLD_BUILD_REGRESSED`, all four
+  belonging to the deleted fix-follow loop — and are deleted with it, from the table and from the
+  never-ships list.
+- **A fresh scaffold lints clean on the first run**, zero diagnostics across every source file it
+  writes. `docs/idea/14-roadmap.md` still said the first run "can be red on `lint`" and that it
+  "depends on the app's name"; that was closed when `sortedImports` landed.
+  `wiki/Known-Gaps.md`'s open line-width item is about `x g` output, and now says so.
+- **The generated brain names `bin/check` as the gate**, not `x verify`: the app's `AGENTS.md`,
+  `CLAUDE.md` and `README.md` now say the gate is a static build and then the gate proper, and that
+  the platform's `.dz/` is additive in both directions.
+- **The generated app's `engines.bun` is interpolated from the shipped CLI's own floor** instead of
+  being typed a second time. The two had drifted a whole minor apart, so `bun install` accepted a
+  runtime the very next line of `bin/setup` refused with `X_BUN_VERSION`;
+  `scripts/bun-pin.test.ts` now reads the emitted string as a pin site, which nothing did before —
+  `enginesFloors` globs manifests that exist on disk and this one is a template literal until the
+  generator runs.
+
+### Fixed
+
+- **Every page stating `bin/setup`'s command list was two steps short.** The scaffold's script runs
+  six — `bun install`, an `.env.development.local` touch, `x db gen "initial"` when
+  `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` — and nine
+  pages wrote the four-step form: `README.md`, `wiki/Home.md`, `wiki/Installation.md`,
+  `wiki/Getting-Started.md`, `wiki/FAQ.md`, `wiki/Tutorial-01-First-App.md`,
+  `docs/idea/00-thesis.md`, `docs/idea/13-dx.md`, `docs/idea/21-the-range.md`. `x manifest` is the
+  step that mattered: `x.manifest.json` is a projection of the loaded app, `x new` cannot write it,
+  nothing else runs the command, and `x verify`'s `manifest` step refuses its absence with
+  `X_MANIFEST_MISSING`.
+- **`bin/check` is a build and then a gate, and the docs called it the gate alone.**
+  `x build --target static` runs first because `budgets` compares declared limits against measured
+  bytes in `.x/build-stats.json` and that build is the file's only writer — so the build is what
+  makes the step measurable, and `--json` is forwarded to both commands.
+  `wiki/CLI-Reference.md`, `wiki/Getting-Started.md`, `docs/architecture/12-generated-app.md` and
+  `docs/architecture/15-adding-a-feature.md` now say so; step 14 of the feature loop is `bin/check`,
+  not `x verify`.
+- **The 6.7s `bin/setup` figure is dated to the script it was measured over.**
+  `docs/idea/13-dx.md` and `docs/idea/21-the-range.md` presented a four-step measurement as the
+  current script's wall time; the env touch and `x manifest` joined it afterwards and are in
+  neither number. `wiki/Getting-Started.md`'s transcript is marked the same way, and its closing
+  line is `next: bin/dev`.
 
 ## 20.0.0 - 2026-09-08
 

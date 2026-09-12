@@ -252,6 +252,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
         routes.push({
           path: entry.path,
           jsBytes: measured.jsBytes,
+          frameworkJsBytes: measured.frameworkBytes,
           ...(chain === undefined ? {} : { heaviestChain: chain }),
         });
       } catch (error) {
@@ -314,6 +315,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       heaviest = {
         path: entry.path,
         jsBytes: measured.jsBytes,
+        frameworkJsBytes: measured.frameworkBytes,
         ...(chain === undefined ? {} : { heaviestChain: chain }),
       };
     }

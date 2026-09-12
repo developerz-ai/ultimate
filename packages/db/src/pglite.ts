@@ -53,7 +53,20 @@ export const PGLITE_MEMORY = 'memory://';
 
 const PGLITE_URL = 'pglite://';
 
-const PGLITE_PACKAGE = '@electric-sql/pglite';
+/**
+ * The optional peer's specifier. Exported because `x doctor` asks whether it RESOLVES — a resolve,
+ * never an import, since loading it boots the WASM build and takes the single-writer lock — and a
+ * diagnostic that spelled the package name a second time is a diagnostic that can name the wrong
+ * one after a rename.
+ */
+export const PGLITE_PACKAGE = '@electric-sql/pglite';
+
+/**
+ * Why there is no embedded database when that specifier does not resolve. One sentence, shared:
+ * `x doctor` reports this condition BEFORE any query reaches this module, and two wordings for one
+ * cause are two answers to "what do I do".
+ */
+export const PGLITE_MISSING = `${PGLITE_PACKAGE} is not installed, so there is no embedded database`;
 
 /**
  * The specifier is held in a variable on purpose: a literal would make every consumer's `tsc`
@@ -90,7 +103,7 @@ export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<Pgl
   try {
     loaded = await (options.load ?? importPglite)();
   } catch (error) {
-    throw missing(`${PGLITE_PACKAGE} is not installed, so there is no embedded database`, error);
+    throw missing(PGLITE_MISSING, error);
   }
   const PGlite = pgliteConstructor(loaded);
   try {

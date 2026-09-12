@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "788fae18b0cf73f88cd322ce79e21271395ea88fe05b6d1d86dd48ac59c1d72d",
+  "buildId": "233701eadb2f25db2702a1e2a2fe2f5d52cf47b556abc305416734cc5af16f7e",
   "tiers": {
     "0": [
       "core",
@@ -2525,29 +2525,9 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
-      "code": "X_SCAFFOLD_BUILD_FAILED",
-      "owner": "scripts",
-      "at": "scripts/scaffold-fix-follow.ts"
-    },
-    {
-      "code": "X_SCAFFOLD_BUILD_REGRESSED",
-      "owner": "scripts",
-      "at": "scripts/scaffold-fix-follow.ts"
-    },
-    {
       "code": "X_SCAFFOLD_FIRST_RUN_FAILED",
       "owner": "scripts",
       "at": "scripts/scaffold-first-run.ts"
-    },
-    {
-      "code": "X_SCAFFOLD_FIX_LOOP",
-      "owner": "scripts",
-      "at": "scripts/scaffold-fix-follow.ts"
-    },
-    {
-      "code": "X_SCAFFOLD_FIX_UNFOLLOWED",
-      "owner": "scripts",
-      "at": "scripts/scaffold-fix-follow.ts"
     },
     {
       "code": "X_SCAFFOLD_GATE_RED",
@@ -2567,7 +2547,7 @@
     {
       "code": "X_SCAFFOLD_VERIFY_UNREADABLE",
       "owner": "scripts",
-      "at": "scripts/scaffold-fix-follow.ts"
+      "at": "scripts/scaffold-gate.ts"
     },
     {
       "code": "X_SCHEDULE_INVALID",
