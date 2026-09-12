@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 20.1.1 - 2026-09-12
+
 ### Fixed
 
 - **A gate step whose suite executed nothing reports as skipped, never as passed** (#434). `x verify`
@@ -24,6 +28,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   and a refusal. `StepResult.tests` now reaches `--json` and the human line, so `- e2e  found 1
   test(s) and every one skipped itself` is distinguishable from `- roadmap`, which has no suite at
   all.
+
+### Commits
+
+- fix(cli): a gate step whose suite executed nothing is skipped, not passed (#435)
 
 ## 20.1.0 - 2026-09-12
 
