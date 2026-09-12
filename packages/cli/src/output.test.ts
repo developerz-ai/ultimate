@@ -199,6 +199,28 @@ describe('unit · renderHuman says how a step was run', () => {
     expect(skipped).toContain('- unit');
   });
 
+  // #434: the whole point of reporting a zero-run suite as a skip is that a reader can tell it
+  // from a step with no suite at all, and the two shapes the counts take are two different
+  // repairs — read a skipped test's name, or find out why the files hold no test.
+  test('a skipped step that ran a suite says which kind of skip it is', () => {
+    const line = (tests: StepResult['tests']): string =>
+      renderHuman({
+        ok: true,
+        command: 'verify',
+        summary: 'ok',
+        steps: [
+          stepResult({ name: 'e2e', skipped: true, ...(tests === undefined ? {} : { tests }) }),
+        ],
+      });
+    expect(line({ ran: 0, skipped: 1 })).toContain(msg('cli.verify.allSkipped', { skipped: 1 }));
+    expect(line({ ran: 0, skipped: 0 })).toContain(msg('cli.verify.ranNothing'));
+    expect(line({ ran: 0, skipped: 0 })).not.toContain(
+      msg('cli.verify.allSkipped', { skipped: 0 }),
+    );
+    // A step with no suite — `roadmap` — has nothing to say beyond the dash.
+    expect(line(undefined).split('\n')[0]?.trim()).toBe('- e2e                40ms');
+  });
+
   test('a step with no workers field says nothing either', () => {
     expect(
       renderHuman({ ok: true, command: 'verify', summary: 'ok', steps: [stepResult({})] }),
