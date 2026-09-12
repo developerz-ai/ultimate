@@ -283,6 +283,10 @@ const CATALOG = {
   // tests ran. Each test's own name carries the reason it skipped, and `bun test` prints only the
   // counts — so the line says how many and `x test <type>` prints the names.
   'cli.verify.allSkipped': 'found {skipped} test(s) and every one skipped itself',
+  // The other shape the same counts can take: a suite that reported no test at all, skipped ones
+  // included. Its own line and not `allSkipped` with a zero, because the repair differs — there is
+  // no skipped test to read a reason off, so the files the step selected hold no test.
+  'cli.verify.ranNothing': 'found no test to run in the file(s) it selected',
   'cli.verify.serial': 'serial',
   'cli.verify.workers': '{workers} workers',
   'cli.env.checked': '{count} declared variable(s), all present and valid',

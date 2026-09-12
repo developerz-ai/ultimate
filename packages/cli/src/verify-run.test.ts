@@ -199,7 +199,7 @@ describe('a suite that executed nothing is a skip, never a pass', () => {
     await Bun.write(join(root, 'apps/web/app/posts/page.e2e.test.ts'), '// e2e\n');
     resetTestDiscovery();
     const step = TEST_STEPS.find((candidate) => candidate.name === 'e2e');
-    if (step === undefined) throw new RangeError('no e2e step');
+    if (step === undefined) return expect.unreachable('the e2e step is registered');
     return runVerify([...STEPS.slice(0, 2), step], { root, runner: suite(stdout) });
   };
 

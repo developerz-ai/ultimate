@@ -174,14 +174,17 @@ const width = (step: StepResult): string => {
 
 /**
  * Why a step is a dash, when the step itself can say. `- roadmap` is "there is nothing here to
- * check"; `- e2e  found 1 test(s) and every one skipped itself` is "the suite is here and it did
- * not run", which is the state issue #434 reported as a green check. The reason each test skipped
- * lives in that test's own NAME — `bun test` prints only the counts — so the line points at the
- * suite and `x test <type>` is what prints the names.
+ * check"; a step that spawned a suite and executed none of it is a different state, which is what
+ * issue #434 reported as a green check — so a step carrying counts always says which it is, in one
+ * of the two shapes its counts can take. The reason each test skipped lives in that test's own
+ * NAME — `bun test` prints only the counts — so the line points at the suite and `x test <type>`
+ * is what prints the names.
  */
 const why = (step: StepResult): string => {
-  if (step.skipped !== true || step.tests === undefined || step.tests.skipped === 0) return '';
-  return `  ${msg('cli.verify.allSkipped', { skipped: step.tests.skipped })}`;
+  const tests = step.tests;
+  if (step.skipped !== true || tests === undefined) return '';
+  if (tests.skipped === 0) return `  ${msg('cli.verify.ranNothing')}`;
+  return `  ${msg('cli.verify.allSkipped', { skipped: tests.skipped })}`;
 };
 
 export function renderHuman(result: CommandResult, verbose = false): string {
