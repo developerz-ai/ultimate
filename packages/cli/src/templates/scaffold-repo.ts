@@ -295,7 +295,9 @@ const biome = (): string => `{
  *
  * Two remain absent. `e2e` has a scaffolded file and it is an `e2eTest` — `test.skip` until the app
  * registers a browser driver, so the step would run zero tests and fail the ratchet on the
- * scaffold's own placeholder. `contract-diff` needs a committed `x.manifest.json`, which
+ * scaffold's own placeholder. Its absence is visible rather than silent: a suite that executed
+ * nothing reports as a SKIPPED step, not the green check it printed until #434, so the app's own
+ * gate line says `- e2e` and names it in the summary until a driver makes it run. `contract-diff` needs a committed `x.manifest.json`, which
  * `x manifest` writes later. Each joins the list in the commit that makes the app's gate run it.
  */
 const SCAFFOLD_FLOOR: readonly VerifyStepName[] = [

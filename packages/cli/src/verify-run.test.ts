@@ -10,10 +10,11 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { msg } from './messages';
-import { exitCodeFor } from './output';
+import { exitCodeFor, renderHuman, renderJson } from './output';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
 import { runVerify } from './verify-run';
 import type { VerifyContext, VerifyStep } from './verify-step';
+import { resetTestDiscovery, TEST_STEPS } from './verify-tests';
 
 /** The banner a narrowed run carries, from the catalog that renders it — never a second literal. */
 const NOT_A_GATE_RUN = msg('cli.verify.notAGateRun', { summary: '' }).trim();
@@ -167,5 +168,86 @@ describe('skips are counted apart from passes, and named', () => {
     expect(result.summary).toContain('1 of 3 steps failed');
     expect(result.summary).toContain('1 skipped: e2e');
     expect(result.data).toMatchObject({ failed: ['drift'], skipped: ['e2e'] });
+  });
+});
+
+// Issue #434: `x verify`'s `e2e` step printed `✓ e2e 46ms` and `"skipped": false` over a suite
+// whose only test skipped itself, because `bun test` exits 0 on a skip and the exit code was the
+// only thing the step's `ok` was read from. A gate that cannot tell a lane that ran from a lane
+// that did not is the one failure the step table exists to prevent, and it is the SAME question
+// the floor already answers one layer up (`X_VERIFY_SUITE_VANISHED`): the counts, not the code.
+describe('a suite that executed nothing is a skip, never a pass', () => {
+  // Bun's own summary for the scaffold's one e2e test on a box with no browser driver, verbatim.
+  // The reason lives in the test's NAME, which bun does not print — so the counts are the only
+  // channel, and this is exactly the output the gate had to read to be wrong about it.
+  const ALL_SKIPPED = ' 0 pass\n 1 skip\n 0 fail\nRan 1 test across 1 file. [46.00ms]';
+  const ONE_RAN = ' 1 pass\n 0 skip\n 0 fail\nRan 1 test across 1 file. [46.00ms]';
+
+  const suite =
+    (stdout: string): VerifyContext['runner'] =>
+    async (command) => ({
+      command,
+      code: 0,
+      ok: true,
+      stdout,
+      stderr: '',
+      durationMs: 46,
+    });
+
+  /** The real `e2e` step, over a root holding the file the scaffold writes for a new route. */
+  const e2eOver = async (stdout: string, root: string) => {
+    await Bun.write(join(root, 'apps/web/app/posts/page.e2e.test.ts'), '// e2e\n');
+    resetTestDiscovery();
+    const step = TEST_STEPS.find((candidate) => candidate.name === 'e2e');
+    if (step === undefined) throw new RangeError('no e2e step');
+    return runVerify([...STEPS.slice(0, 2), step], { root, runner: suite(stdout) });
+  };
+
+  const inTempRoot = async (run: (root: string) => Promise<void>): Promise<void> => {
+    const root = await mkdtemp(join(tmpdir(), 'x-verify-e2e-'));
+    try {
+      await run(root);
+    } finally {
+      resetTestDiscovery();
+      await rm(root, { recursive: true, force: true });
+    }
+  };
+
+  test('the step reports itself skipped, the way roadmap does', async () => {
+    await inTempRoot(async (root) => {
+      const result = await e2eOver(ALL_SKIPPED, root);
+      const e2e = result.steps?.find((step) => step.name === 'e2e');
+      expect(e2e?.skipped).toBe(true);
+      expect(dataOf(result.data).skipped).toEqual(['e2e']);
+    });
+  });
+
+  // Both renderers, because `--json` is what CI reads and the check mark is what a human reads,
+  // and the defect was visible in each.
+  test('neither renderer claims it passed', async () => {
+    await inTempRoot(async (root) => {
+      const result = await e2eOver(ALL_SKIPPED, root);
+      expect(result.summary).toContain('1 skipped: e2e');
+      expect(renderHuman(result)).toContain('- e2e');
+      expect(renderHuman(result)).not.toContain('✓ e2e');
+      const payload = JSON.parse(renderJson(result)) as {
+        readonly steps: readonly { readonly name: string; readonly skipped: boolean }[];
+      };
+      expect(payload.steps.find((step) => step.name === 'e2e')).toMatchObject({
+        skipped: true,
+        ok: true,
+        tests: { ran: 0, skipped: 1 },
+      });
+    });
+  });
+
+  // The other side of the enumeration: this may not turn a suite that ran into a skip.
+  test('one test that actually ran keeps the step a pass', async () => {
+    await inTempRoot(async (root) => {
+      const result = await e2eOver(ONE_RAN, root);
+      expect(result.steps?.find((step) => step.name === 'e2e')?.skipped).not.toBe(true);
+      expect(dataOf(result.data).skipped).toEqual([]);
+      expect(result.ok).toBe(true);
+    });
   });
 });

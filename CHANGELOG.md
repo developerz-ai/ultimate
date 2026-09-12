@@ -8,7 +8,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A gate step whose suite executed nothing reports as skipped, never as passed** (#434). `x verify`
+  printed `✓ e2e 46ms` and `"skipped": false` over the one `e2eTest` a scaffold writes, which
+  `test.skip`s itself until the app registers a browser driver — so a customer's green gate included
+  a lane that had never run, and nothing in the table or in `--json` said so. `bun test` exits 0 over
+  an all-skipped file, but it prints its own counts and `packages/cli/src/test-counts.ts` was already
+  reading them: the rule is now `tests.ran === 0` in `packages/cli/src/verify-run.ts`, read once and
+  answered two ways — a step the committed `x.verify.json` requires stays the `X_VERIFY_SUITE_VANISHED`
+  failure it already was, and a step no floor requires is a skip beside `roadmap`'s, counted apart
+  from the passes in the summary line. A missing browser driver is a skip rather than an error code
+  because the framework ships no browser by design (`packages/scraping/src/cdp-port.ts`: the app
+  installs `puppeteer-core`, the CLI asks for it) — unlike Bun's own floor, which is `X_BUN_VERSION`
+  and a refusal. `StepResult.tests` now reaches `--json` and the human line, so `- e2e  found 1
+  test(s) and every one skipped itself` is distinguishable from `- roadmap`, which has no suite at
+  all.
 
 ## 20.1.0 - 2026-09-12
 

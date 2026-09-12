@@ -70,7 +70,8 @@ export const e2eFixtures = (page: PageLike, browser: E2eBrowserPage): E2eFixture
  * declaration `driverFixtures()` registered — the ordinary way a driver arrives, last registration
  * wins — so every `test('…', async ({ page }) => …)` in the suite gets a browser. `useE2eDriver`
  * is the other half: it is what makes `hasE2eDriver()` answer true and stops `e2eTest` becoming a
- * `test.skip` a green gate reports over.
+ * `test.skip` — which the gate now reports as a SKIPPED step rather than the green check it
+ * printed until #434, and which a repo whose `x.verify.json` names `e2e` gets red for.
  *
  * `budget`, `signIn` and `deploy` are deliberately NOT registered here. Each needs something a
  * page cannot supply — byte counts off a built `dist/`, an app's own sign-in route, a second build

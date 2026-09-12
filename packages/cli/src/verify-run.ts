@@ -53,20 +53,29 @@ export async function runVerify(
         findings: [findingOf(error, step.name)],
       }),
     );
+    // A suite that executed nothing did not run, whatever its exit code says: `bun test` exits 0
+    // over an all-skipped file, so the counts are the only channel that can tell the two apart.
+    // ONE definition of "nothing ran", read twice, because the floor decides which of the two
+    // things it means — exactly as it already does for a step whose `applies` said no.
+    const tests = outcome.tests;
+    const nothingRan = tests !== undefined && tests.ran === 0;
+    const required = floorRequires(floor, step.name);
     // A step the floor requires whose suite executed nothing is the same vanished suite as a step
     // with no files at all — the run just had to finish before it could be seen. Appended to the
     // step's own findings so `data.failed`, the counts and every gate reading this table carry it.
-    const vanished =
-      floorRequires(floor, step.name) && outcome.tests !== undefined && outcome.tests.ran === 0
-        ? [skippedSuiteFinding(step.name, outcome.tests.skipped)]
-        : [];
+    const vanished = nothingRan && required ? [skippedSuiteFinding(step.name, tests.skipped)] : [];
     results.push({
       name: step.name,
       ok: outcome.ok && vanished.length === 0,
       durationMs: Math.round(performance.now() - started),
+      // Without a floor to require it, a suite that ran nothing is a SKIP and not a pass (#434):
+      // the `e2e` step printed `✓ e2e 46ms` over its one skipped test, which is the one thing a
+      // step table may never do — a reader cannot tell a lane that ran from a lane that did not.
+      skipped: nothingRan && !required,
       findings: [...outcome.findings, ...vanished],
       ...(outcome.output === undefined ? {} : { output: outcome.output }),
       ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
+      ...(tests === undefined ? {} : { tests }),
     });
   }
   const failedSteps = results.filter((step) => !step.ok).map((step) => step.name);

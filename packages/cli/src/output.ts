@@ -4,6 +4,7 @@
 
 import { ERROR_DOCS_URL, renderThrowable, singleLine, stringField } from '@ultimat3/core';
 import { msg } from './messages';
+import type { TestCounts } from './test-counts';
 
 export interface Finding {
   readonly code: string;
@@ -24,6 +25,13 @@ export interface StepResult {
   readonly output?: string;
   /** Worker processes the step used; `1` means it ran serially. Absent for a non-test step. */
   readonly workers?: number;
+  /**
+   * What the step's suite executed. Absent for a step that spawned no test process, which is NOT
+   * the same state as `{ ran: 0 }` — a step with no suite and a suite whose every test skipped
+   * itself both report `skipped`, and this is the only thing that tells a reader which one it is
+   * looking at (#434).
+   */
+  readonly tests?: TestCounts;
 }
 
 export type JsonValue =
@@ -164,10 +172,24 @@ const width = (step: StepResult): string => {
   return `  ${step.workers === 1 ? msg('cli.verify.serial') : msg('cli.verify.workers', { workers: step.workers })}`;
 };
 
+/**
+ * Why a step is a dash, when the step itself can say. `- roadmap` is "there is nothing here to
+ * check"; `- e2e  found 1 test(s) and every one skipped itself` is "the suite is here and it did
+ * not run", which is the state issue #434 reported as a green check. The reason each test skipped
+ * lives in that test's own NAME — `bun test` prints only the counts — so the line points at the
+ * suite and `x test <type>` is what prints the names.
+ */
+const why = (step: StepResult): string => {
+  if (step.skipped !== true || step.tests === undefined || step.tests.skipped === 0) return '';
+  return `  ${msg('cli.verify.allSkipped', { skipped: step.tests.skipped })}`;
+};
+
 export function renderHuman(result: CommandResult, verbose = false): string {
   const out: string[] = [];
   for (const step of result.steps ?? []) {
-    out.push(`  ${mark(step)} ${step.name.padEnd(18)} ${step.durationMs}ms${width(step)}`);
+    out.push(
+      `  ${mark(step)} ${step.name.padEnd(18)} ${step.durationMs}ms${width(step)}${why(step)}`,
+    );
     for (const finding of step.findings) out.push(renderFinding(finding, '      '));
     // NOT escaped, and that is the one exception: `output` is this process's own captured
     // subprocess stdout — `bun test`'s colour is the reason a human reads it at all, and it is
@@ -196,6 +218,9 @@ export function renderJson(result: CommandResult): string {
     skipped: step.skipped === true,
     findings: step.findings,
     ...(step.workers === undefined ? {} : { workers: step.workers }),
+    // The counts the human line's `why()` renders, as numbers: a `--json` reader deciding whether
+    // a skipped lane is missing a suite or missing a prerequisite needs the same fact CI's log has.
+    ...(step.tests === undefined ? {} : { tests: step.tests }),
     // A FAILED step carries its captured stdout, exactly as the human renderer prints it. CI runs
     // `--json`, and without this the log said only "one or more unit tests failed" with a generic
     // fix line — the failing test's name and its assertion diff existed and were thrown away, so

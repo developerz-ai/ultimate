@@ -216,12 +216,15 @@ describe('unit · x verify', () => {
       });
     });
 
-    // The floor is the claim; without one there is nothing to be measured against, and a repo that
-    // never committed one is not ratcheted in either direction.
-    test('with no floor, an all-skipped suite stays the honest pass it was', async () => {
+    // The floor is the claim; without one there is nothing to be measured against, so nothing is
+    // FAILED here. It is still not a pass: a suite that executed nothing is the same "nothing to
+    // check" a step with no files reports, and issue #434 is what a green check over it costs.
+    test('with no floor, an all-skipped suite is a skip rather than a pass', async () => {
       await withFloor(undefined, async (root) => {
         const result = await runVerify([...green, allSkipped], { ...ctx, root });
         expect(result.ok).toBe(true);
+        expect(result.data).toMatchObject({ failed: [], skipped: ['live'] });
+        expect(result.steps?.find((step) => step.name === 'live')?.skipped).toBe(true);
       });
     });
 

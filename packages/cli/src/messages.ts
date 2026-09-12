@@ -279,6 +279,10 @@ const CATALOG = {
   // The `errors` step's own coverage, in `output`: a scan without a parser reads most fix lines
   // and not all of them, and a step that reports findings alone claims a completeness it lacks.
   'cli.verify.fixCoverage': 'checked {checked} fix line(s), could not read {unreadable}',
+  // Why a skipped step is a dash when the step can say so: the suite exists and not one of its
+  // tests ran. Each test's own name carries the reason it skipped, and `bun test` prints only the
+  // counts — so the line says how many and `x test <type>` prints the names.
+  'cli.verify.allSkipped': 'found {skipped} test(s) and every one skipped itself',
   'cli.verify.serial': 'serial',
   'cli.verify.workers': '{workers} workers',
   'cli.env.checked': '{count} declared variable(s), all present and valid',

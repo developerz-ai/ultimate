@@ -96,13 +96,17 @@ let e2eDriver: ((name: string, body: E2eBody) => void) | undefined;
  * Register the browser-backed driver. Without one, `e2eTest` skips loudly — the skipped test's own
  * NAME carries the reason and the command that would build what it drives.
  *
- * What the gate then reports is a **pass over an all-skipped suite**, and that is stated here
- * rather than claimed away: this used to say "`x verify` reports the step as skipped rather than
- * green", which nothing implements. The step shells out to `bun test`, `bun test` exits 0 on a
- * skip, and an exit code is the only channel between the two — the driver is registered inside the
- * CHILD process, so the step cannot ask. Closing it means a channel the step can read, which is a
- * design decision and not a docstring. `As of 2026-08` there are zero registered drivers, so every
- * `e2eTest` in the tree is a skip; the framework's own `e2e` suites use plain `bun:test`.
+ * What the gate then reports is the step as **skipped**, `As of 2026-09-12` — a dash beside
+ * `roadmap`'s, counted apart from the passes and `"skipped": true` in `--json`. It reported a
+ * green check until then (#434), on the reasoning this block used to state: the step shells out to
+ * `bun test`, `bun test` exits 0 over a skip, and the driver is registered inside the CHILD
+ * process, so the step cannot ask. The exit code was never the only channel — `bun test` prints
+ * its own counts and `packages/cli/src/test-counts.ts` was already reading them — so the rule is
+ * `ran === 0` in `packages/cli/src/verify-run.ts`, and a repo whose `x.verify.json` already claims
+ * the suite gets `X_VERIFY_SUITE_VANISHED` instead of the skip.
+ *
+ * `As of 2026-08` there are zero registered drivers, so every `e2eTest` in the tree is a skip; the
+ * framework's own `e2e` suites use plain `bun:test`.
  */
 export function useE2eDriver(driver: (name: string, body: E2eBody) => void): void {
   e2eDriver = driver;
