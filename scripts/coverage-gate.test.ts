@@ -2,7 +2,14 @@
 // Bun's cross-package dilution, and the ratchet that fails in both directions.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { hasExecutableCode, judge, scopeLcov, unimportedSources } from './coverage-gate';
+import {
+  concurrency,
+  hasExecutableCode,
+  judge,
+  pool,
+  scopeLcov,
+  unimportedSources,
+} from './coverage-gate';
 import { COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
@@ -243,5 +250,34 @@ describe('unimportedSources', () => {
     expect(unimportedSources(root, 'money', `SF:${root}/${FILE}\nend_of_record\n`)).not.toContain(
       FILE,
     );
+  });
+});
+
+describe('running package suites side by side', () => {
+  test('--jobs defaults to every core and refuses anything but a positive integer', () => {
+    expect(concurrency(undefined)).toBe(Math.max(1, navigator.hardwareConcurrency));
+    expect(concurrency('3')).toBe(3);
+    for (const bad of ['0', '-1', '1.5', 'all', '']) expect(concurrency(bad)).toBeUndefined();
+  });
+
+  test('the pool answers in input order, never in finishing order', async () => {
+    const delays = [30, 0, 20, 10];
+    const out = await pool(delays, 4, async (ms) => {
+      await Bun.sleep(ms);
+      return ms;
+    });
+    expect(out).toEqual(delays);
+  });
+
+  test('the pool never has more than the limit in flight', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    await pool([1, 2, 3, 4, 5, 6, 7], 3, async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await Bun.sleep(5);
+      inFlight -= 1;
+    });
+    expect(peak).toBe(3);
   });
 });

@@ -132,3 +132,37 @@ describe('unit · the CI workflow x new writes', () => {
     expect(workflow()).toContain('timeout-minutes:');
   });
 });
+
+interface Efficient {
+  readonly concurrency?: { readonly group?: string; readonly 'cancel-in-progress'?: unknown };
+  readonly jobs?: Readonly<Record<string, { readonly if?: string }>>;
+}
+
+describe('unit · the CI workflow pays for each commit once', () => {
+  const doc = (): Efficient => YAML.parse(workflow()) as Efficient;
+
+  // Cancelling is safe only off the default branch: there the group is the SHA, so two commits can
+  // never share one and neither run can cancel the other.
+  test('a superseded run is cancelled, and a default-branch commit keys its own group', () => {
+    const concurrency = doc().concurrency;
+    expect(concurrency?.['cancel-in-progress']).toBe(true);
+    expect(concurrency?.group).toContain('github.event.repository.default_branch');
+    expect(concurrency?.group).toContain('github.sha');
+  });
+
+  // Both halves: dropping the pull_request run for a same-repo branch is the saving, and a fork's
+  // pull request — which fires no push in this repository — must still be gated.
+  test('a same-repository pull request is skipped, and a fork pull request still runs', () => {
+    const gate = doc().jobs?.['check']?.if ?? '';
+    expect(gate).toContain("github.event_name == 'push'");
+    expect(gate).toContain('github.event.pull_request.head.repo.full_name != github.repository');
+  });
+
+  test('the install cache is keyed on the lockfile, and restored before bin/setup installs', () => {
+    const cache = steps().findIndex((step) => step.uses?.startsWith('actions/cache@'));
+    const setup = steps().findIndex((step) => step.run === 'bin/setup');
+    expect(cache).toBeGreaterThanOrEqual(0);
+    expect(setup).toBeGreaterThan(cache);
+    expect(String(steps()[cache]?.with?.['key'])).toContain("hashFiles('bun.lock')");
+  });
+});

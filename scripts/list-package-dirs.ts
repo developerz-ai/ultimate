@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-// The package DIRECTORY names, derived from disk — what the per-package CI matrix fans out over.
+// The package DIRECTORY names, derived from disk — what the per-package typecheck gate walks.
 //
 // Separate from `list-workspaces.ts`, which answers package NAMES and versions for the publish
-// list. The matrix needs the directory (`core`, not `@ultimat3/core`), and deriving it here is what
+// list. A per-package gate needs the directory (`core`, not `@ultimat3/core`), and deriving it here is what
 // keeps a newly added package from being silently absent from its own gate.
 //
 //   bun run scripts/list-package-dirs.ts [--json]

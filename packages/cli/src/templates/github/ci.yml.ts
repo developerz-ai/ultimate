@@ -45,11 +45,22 @@ on:
   push:
   pull_request:
 
+# A newer push to a branch makes the run already in flight for it worthless, so it is cancelled —
+# except on the default branch, where every commit keeps its own verdict: that group is keyed by
+# SHA, so nothing there can supersede anything.
+concurrency:
+  group: ci-\${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.sha || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   check:
+    # A branch in THIS repository with an open pull request fires both events for one commit, and
+    # the push run already gates that exact tree — so the pull_request run is skipped, not paid for
+    # twice. A pull request from a FORK fires no push here, and it still runs.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     # A bound on a HANG, not on cost: a step that never returns holds a runner until GitHub's
     # six-hour default expires, and the failure is invisible for all six of them.
@@ -63,6 +74,13 @@ jobs:
           # whoever took the app at its word. Never \`latest\`: a Bun minor landing unannounced is a
           # runtime change nobody chose.
           bun-version: '${REQUIRED_BUN}'
+      # Bun's download cache, keyed on the lockfile: \`bin/setup\`'s install then links from disk
+      # instead of fetching every package again on every run.
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-\${{ runner.os }}-\${{ hashFiles('bun.lock') }}
+          restore-keys: bun-\${{ runner.os }}-
       # Two steps rather than one \`&&\`, so the log names which half failed and times each.
       - run: bin/setup
       - run: bin/check
