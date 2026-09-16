@@ -11,10 +11,17 @@ import {
 import { testName } from './test-types';
 
 // The gate is process-global and bun shares one process across files: a test that leaves the
-// process offline takes every later file's fetch down with it.
+// process offline takes every later file's fetch down with it — and one that leaves it UNSEALED
+// hands every later file real egress. So each test puts back the state this file found, which is
+// the preload's seal. `unsealNetwork()` here was the second leak: `harness.test.ts` asserts the
+// process arrives sealed, and failed whenever bun's file order ran it after this file — a runner
+// ordering, never a laptop one.
+const SEALED_AT_LOAD = isNetworkSealed();
+
 afterEach(() => {
   resetNetwork();
-  unsealNetwork();
+  if (SEALED_AT_LOAD) sealNetwork();
+  else unsealNetwork();
 });
 
 const URL_UNDER_TEST = 'https://api.stripe.test/v1/charges';
