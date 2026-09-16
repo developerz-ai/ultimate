@@ -79,10 +79,7 @@ afterAll(async () => {
   } finally {
     resetRegistries();
     restoreTags();
-    // `stop()` DRAINS core's process-wide lifecycle, and nothing put it back: every later file that
-    // serves a request answered 503 X_DRAINING. `dev-render.test.ts` failed that way on a runner
-    // whose file order ran it after this one — never on a laptop that ordered it first.
-    resetLifecycle();
+    resetLifecycle(); // `stop()` drained it: a later file's request would answer 503 X_DRAINING
   }
 }, BOOT_TIMEOUT_MS);
 
