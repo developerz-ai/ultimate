@@ -461,5 +461,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+      - name: DEBUG harness alone
+        continue-on-error: true
+        run: |
+          nproc; bun test packages/testing/src/harness.test.ts 2>&1 | tail -80
+          bun test packages/testing 2>&1 | grep -E '^\(fail\)|error|fail$|harness' | head -40
       - name: every package's tests + coverage, each in its own process, all cores
         run: bun run scripts/coverage-gate.ts --all
