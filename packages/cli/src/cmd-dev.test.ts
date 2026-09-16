@@ -11,7 +11,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
-import { createContext, logger, runWithContext, userActor } from '@ultimat3/core';
+import { createContext, logger, resetLifecycle, runWithContext, userActor } from '@ultimat3/core';
 import { statementObserver } from '@ultimat3/db';
 import { cspHashSource } from '@ultimat3/http';
 import { SyncSocket } from '@ultimat3/realtime/server';
@@ -79,6 +79,10 @@ afterAll(async () => {
   } finally {
     resetRegistries();
     restoreTags();
+    // `stop()` DRAINS core's process-wide lifecycle, and nothing put it back: every later file that
+    // serves a request answered 503 X_DRAINING. `dev-render.test.ts` failed that way on a runner
+    // whose file order ran it after this one — never on a laptop that ordered it first.
+    resetLifecycle();
   }
 }, BOOT_TIMEOUT_MS);
 
