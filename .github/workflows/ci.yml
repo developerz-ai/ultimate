@@ -464,6 +464,6 @@ jobs:
       - name: DEBUG cli
         continue-on-error: true
         run: |
-          bun test packages/cli 2>&1 | grep -B40 -A3 "(fail) unit · x dev renders the app routes > a static page answers" | head -120
+          bun test --coverage --coverage-reporter=lcov --coverage-dir=/tmp/cov packages/cli 2>&1 | grep -B30 -A2 "(fail) unit · x dev renders" | head -150
       - name: every package's tests + coverage, each in its own process, all cores
         run: bun run scripts/coverage-gate.ts --all
