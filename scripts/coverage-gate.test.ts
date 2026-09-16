@@ -8,6 +8,7 @@ import {
   judge,
   pool,
   scopeLcov,
+  suiteFailure,
   unimportedSources,
 } from './coverage-gate';
 import { COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
@@ -279,5 +280,35 @@ describe('running package suites side by side', () => {
       inFlight -= 1;
     });
     expect(peak).toBe(3);
+  });
+});
+
+describe('a suite that fails alone', () => {
+  // The defect: the exit code was never read, so a red suite with an lcov on disk passed.
+  test('a non-zero exit is X_TEST_FAILED, naming the failing tests', () => {
+    const stderr = [
+      'error: expect(received).toBe(expected)',
+      '(pass) money > adds',
+      '(fail) money > probe [0.27ms]',
+    ].join('\n');
+    const failure = suiteFailure('money', 1, stderr);
+    expect(failure?.code).toBe('X_TEST_FAILED');
+    expect(failure?.cause).toContain('(fail) money > probe');
+    expect(failure?.cause).not.toContain('(pass)');
+    expect(failure?.fix).toContain('bun test packages/money');
+  });
+
+  test('a zero exit is no failure, whatever stderr says', () => {
+    expect(suiteFailure('money', 0, '(fail) not really')).toBeUndefined();
+  });
+
+  test('a hook timeout is named, and a word merely containing the phrase is not', () => {
+    const cause = suiteFailure(
+      'cli',
+      1,
+      'beforeAll timed out after 5000ms\nuntimed outcomes',
+    )?.cause;
+    expect(cause).toContain('beforeAll timed out after 5000ms');
+    expect(cause).not.toContain('untimed outcomes');
   });
 });

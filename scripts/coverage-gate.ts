@@ -298,6 +298,30 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
   return { reading, required: pin, findings };
 }
 
+/**
+ * The verdict on a suite's exit code, which is the half of a coverage run that is not coverage and
+ * was never read: a package whose suite FAILED alone still wrote an lcov report, cleared its bar,
+ * and passed — so the isolation this gate runs per package to prove was proved by nothing.
+ * Measured: a probe asserting `1 === 2` in `packages/money` left `--package money` green.
+ */
+export function suiteFailure(
+  pkg: string,
+  exitCode: number,
+  stderr: string,
+): { code: string; cause: string; fix: string } | undefined {
+  if (exitCode === 0) return undefined;
+  const failed = stderr
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^\(fail\)|^error:|\btimed out\b/.test(line))
+    .slice(0, 12);
+  return {
+    code: 'X_TEST_FAILED',
+    cause: `bun test packages/${pkg} failed when run alone${failed.length > 0 ? `: ${failed.join('; ')}` : ''}`,
+    fix: `run bun test packages/${pkg} and fix what it reports — a suite green only beside other packages depends on something another package registered first`,
+  };
+}
+
 /** Runs one package's suite with coverage and reads the report back. */
 async function measure(root: string, pkg: string): Promise<CoverageReading> {
   const dir = join(root, '.x', 'coverage', pkg);
@@ -324,22 +348,8 @@ async function measure(root: string, pkg: string): Promise<CoverageReading> {
     { cwd: root, stdout: 'ignore', stderr: 'pipe' },
   );
   const stderr = await new Response(proc.stderr).text();
-  // The exit code is the half of this run that is not coverage, and it was never read: a package
-  // whose suite FAILED alone still wrote an lcov report, cleared its bar, and passed — so the
-  // isolation this gate is run per package to prove was proved by nothing. Measured: a probe test
-  // asserting `1 === 2` in `packages/money` left `--package money` green.
-  if ((await proc.exited) !== 0) {
-    const failed = stderr
-      .split('\n')
-      .filter((line) => /^\(fail\)|^error:|timed out/.test(line.trim()))
-      .slice(0, 12)
-      .map((line) => line.trim());
-    throw new ScriptError({
-      code: 'X_TEST_FAILED',
-      cause: `bun test packages/${pkg} failed when run alone${failed.length > 0 ? `: ${failed.join('; ')}` : ''}`,
-      fix: `run bun test packages/${pkg} and fix what it reports — a suite green only beside other packages depends on something another package registered first`,
-    });
-  }
+  const failure = suiteFailure(pkg, await proc.exited, stderr);
+  if (failure !== undefined) throw new ScriptError(failure);
   const file = Bun.file(join(dir, 'lcov.info'));
   if (!(await file.exists())) {
     throw new ScriptError({
