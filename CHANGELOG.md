@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 20.1.2 - 2026-09-16
+
 ### Changed
 
 - **A scaffolded app's CI gates each commit once.** A branch with an open pull request
@@ -32,6 +36,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   later request answered 503 `X_DRAINING`. Each file now restores the state it found.
 - **Framework CI: the 32-job per-package matrix is one `packages` job.** GitHub bills each job
   rounded up to a whole minute, so the matrix was 33 of the ~40 runner-minutes one push cost.
+
+### Commits
+
+- ci: one packages job instead of a 32-job matrix; coverage gate reads the test exit code (#437)
 
 ## 20.1.1 - 2026-09-12
 
