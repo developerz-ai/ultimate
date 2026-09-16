@@ -11,7 +11,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
-import { createContext, logger, runWithContext, userActor } from '@ultimat3/core';
+import { createContext, logger, resetLifecycle, runWithContext, userActor } from '@ultimat3/core';
 import { statementObserver } from '@ultimat3/db';
 import { cspHashSource } from '@ultimat3/http';
 import { SyncSocket } from '@ultimat3/realtime/server';
@@ -79,6 +79,7 @@ afterAll(async () => {
   } finally {
     resetRegistries();
     restoreTags();
+    resetLifecycle(); // `stop()` drained it: a later file's request would answer 503 X_DRAINING
   }
 }, BOOT_TIMEOUT_MS);
 

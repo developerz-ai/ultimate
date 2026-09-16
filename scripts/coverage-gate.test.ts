@@ -2,7 +2,15 @@
 // Bun's cross-package dilution, and the ratchet that fails in both directions.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { hasExecutableCode, judge, scopeLcov, unimportedSources } from './coverage-gate';
+import {
+  concurrency,
+  hasExecutableCode,
+  judge,
+  pool,
+  scopeLcov,
+  suiteFailure,
+  unimportedSources,
+} from './coverage-gate';
 import { COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
@@ -243,5 +251,64 @@ describe('unimportedSources', () => {
     expect(unimportedSources(root, 'money', `SF:${root}/${FILE}\nend_of_record\n`)).not.toContain(
       FILE,
     );
+  });
+});
+
+describe('running package suites side by side', () => {
+  test('--jobs defaults to every core and refuses anything but a positive integer', () => {
+    expect(concurrency(undefined)).toBe(Math.max(1, navigator.hardwareConcurrency));
+    expect(concurrency('3')).toBe(3);
+    for (const bad of ['0', '-1', '1.5', 'all', '']) expect(concurrency(bad)).toBeUndefined();
+  });
+
+  test('the pool answers in input order, never in finishing order', async () => {
+    const delays = [30, 0, 20, 10];
+    const out = await pool(delays, 4, async (ms) => {
+      await Bun.sleep(ms);
+      return ms;
+    });
+    expect(out).toEqual(delays);
+  });
+
+  test('the pool never has more than the limit in flight', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    await pool([1, 2, 3, 4, 5, 6, 7], 3, async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await Bun.sleep(5);
+      inFlight -= 1;
+    });
+    expect(peak).toBe(3);
+  });
+});
+
+describe('a suite that fails alone', () => {
+  // The defect: the exit code was never read, so a red suite with an lcov on disk passed.
+  test('a non-zero exit is X_TEST_FAILED, naming the failing tests', () => {
+    const stderr = [
+      'error: expect(received).toBe(expected)',
+      '(pass) money > adds',
+      '(fail) money > probe [0.27ms]',
+    ].join('\n');
+    const failure = suiteFailure('money', 1, stderr);
+    expect(failure?.code).toBe('X_TEST_FAILED');
+    expect(failure?.cause).toContain('(fail) money > probe');
+    expect(failure?.cause).not.toContain('(pass)');
+    expect(failure?.fix).toContain('bun test packages/money');
+  });
+
+  test('a zero exit is no failure, whatever stderr says', () => {
+    expect(suiteFailure('money', 0, '(fail) not really')).toBeUndefined();
+  });
+
+  test('a hook timeout is named, and a word merely containing the phrase is not', () => {
+    const cause = suiteFailure(
+      'cli',
+      1,
+      'beforeAll timed out after 5000ms\nuntimed outcomes',
+    )?.cause;
+    expect(cause).toContain('beforeAll timed out after 5000ms');
+    expect(cause).not.toContain('untimed outcomes');
   });
 });

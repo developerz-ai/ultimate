@@ -8,7 +8,30 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **A scaffolded app's CI gates each commit once.** A branch with an open pull request
+  fired `push` and `pull_request` for the same tree and gated it twice; the `pull_request` run is now
+  skipped for a branch in the app's own repository and still runs for a fork, which fires no push. A
+  newer push cancels the run in flight for its branch, except on the default branch, whose group is
+  keyed by SHA so every commit keeps its verdict. Bun's download cache is restored before
+  `bin/setup`, keyed on `bun.lock`. An existing app adopts it by copying the `concurrency:` block,
+  the job's `if:` and the `actions/cache` step from a fresh `x new` — the file is the app's own.
+
+### Fixed
+
+- **A package whose tests fail in isolation no longer passes the per-package coverage gate.**
+  `scripts/coverage-gate.ts` never read `bun test`'s exit code: a failing suite still wrote an lcov
+  report, cleared its bar, and reported green — measured with a probe `expect(1).toBe(2)` in
+  `packages/money`. It is now `X_TEST_FAILED`, naming the failing tests. `--all` runs the package
+  suites concurrently, one process each, on every core (`--jobs <n>` to bound it).
+- **Three framework suites passed only in a lucky file order**, found the moment the coverage gate
+  read the exit code on a runner: `@ultimat3/ai`'s `openai-models.test.ts` inherited a model
+  another file registered, `@ultimat3/testing`'s `fixture-network.test.ts` handed later files an
+  UNSEALED network, and `@ultimat3/cli`'s `cmd-dev.test.ts` left core's lifecycle drained, so every
+  later request answered 503 `X_DRAINING`. Each file now restores the state it found.
+- **Framework CI: the 32-job per-package matrix is one `packages` job.** GitHub bills each job
+  rounded up to a whole minute, so the matrix was 33 of the ~40 runner-minutes one push cost.
 
 ## 20.1.1 - 2026-09-12
 

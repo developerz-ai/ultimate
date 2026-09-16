@@ -4,8 +4,15 @@
  * DELIBERATE absence of the models this package would have had to guess at.
  */
 
-import { beforeEach, describe, expect, test } from 'bun:test';
-import { ANTHROPIC_MODEL_IDS, modelIds, modelSpec, moreCapableThan, registerModel } from './models';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import {
+  ANTHROPIC_MODEL_IDS,
+  modelIds,
+  modelSpec,
+  moreCapableThan,
+  registerModel,
+  resetModels,
+} from './models';
 import { OPENAI_MODEL_IDS, registerOpenAiModels } from './openai-models';
 import { costOf } from './provider';
 
@@ -16,7 +23,16 @@ const MTOK = {
   cacheWriteTokens: 0,
 };
 
+// Reset first: the registry is process state, and a model with no family that another file left
+// behind sits on the unfamilied ladder this file asserts — green or red by `bun test`'s file order,
+// which differs between a laptop and a runner.
 beforeEach(() => {
+  resetModels();
+  registerOpenAiModels();
+});
+
+afterAll(() => {
+  resetModels();
   registerOpenAiModels();
 });
 

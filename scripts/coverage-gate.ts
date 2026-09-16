@@ -8,7 +8,7 @@
 // when an unrelated package grows.
 //
 //   bun run scripts/coverage-gate.ts --package core [--json]
-//   bun run scripts/coverage-gate.ts --all [--json]
+//   bun run scripts/coverage-gate.ts --all [--jobs <n>] [--json]
 
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -298,6 +298,30 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
   return { reading, required: pin, findings };
 }
 
+/**
+ * The verdict on a suite's exit code, which is the half of a coverage run that is not coverage and
+ * was never read: a package whose suite FAILED alone still wrote an lcov report, cleared its bar,
+ * and passed — so the isolation this gate runs per package to prove was proved by nothing.
+ * Measured: a probe asserting `1 === 2` in `packages/money` left `--package money` green.
+ */
+export function suiteFailure(
+  pkg: string,
+  exitCode: number,
+  stderr: string,
+): { code: string; cause: string; fix: string } | undefined {
+  if (exitCode === 0) return undefined;
+  const failed = stderr
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^\(fail\)|^error:|\btimed out\b/.test(line))
+    .slice(0, 12);
+  return {
+    code: 'X_TEST_FAILED',
+    cause: `bun test packages/${pkg} failed when run alone${failed.length > 0 ? `: ${failed.join('; ')}` : ''}`,
+    fix: `run bun test packages/${pkg} and fix what it reports — a suite green only beside other packages depends on something another package registered first`,
+  };
+}
+
 /** Runs one package's suite with coverage and reads the report back. */
 async function measure(root: string, pkg: string): Promise<CoverageReading> {
   const dir = join(root, '.x', 'coverage', pkg);
@@ -324,7 +348,8 @@ async function measure(root: string, pkg: string): Promise<CoverageReading> {
     { cwd: root, stdout: 'ignore', stderr: 'pipe' },
   );
   const stderr = await new Response(proc.stderr).text();
-  await proc.exited;
+  const failure = suiteFailure(pkg, await proc.exited, stderr);
+  if (failure !== undefined) throw new ScriptError(failure);
   const file = Bun.file(join(dir, 'lcov.info'));
   if (!(await file.exists())) {
     throw new ScriptError({
@@ -337,6 +362,37 @@ async function measure(root: string, pkg: string): Promise<CoverageReading> {
   const reading = { ...scopeLcov(lcov, pkg), unimported: unimportedSources(root, pkg, lcov) };
   rmSync(dir, { recursive: true, force: true });
   return reading;
+}
+
+/**
+ * How many package suites run at once. Each is already its own `bun test` process — the isolation
+ * this gate exists for — so running them side by side changes nothing a suite can observe except
+ * the clock, and serially `--all` was 3m38s on a 12-core box that sat mostly idle. Defaults to
+ * every core; `--jobs 1` is the serial run.
+ */
+export function concurrency(flag: string | undefined): number | undefined {
+  if (flag === undefined) return Math.max(1, navigator.hardwareConcurrency);
+  const n = Number(flag);
+  return Number.isInteger(n) && n >= 1 ? n : undefined;
+}
+
+/** Maps `items` through `run` with at most `limit` in flight, answering in input order. */
+export async function pool<T, R>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      out[index] = await run(items[index] as T);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }
 
 async function packagesToGate(root: string, only: string | undefined): Promise<readonly string[]> {
@@ -363,17 +419,35 @@ if (import.meta.main) {
   }
 
   const names = await packagesToGate(root, only);
-  const verdicts: CoverageVerdict[] = [];
-  const findings: Finding[] = [];
-  for (const pkg of names) {
+  const jobs = concurrency(flagString(args, 'jobs'));
+  if (jobs === undefined) {
+    report(
+      {
+        ok: false,
+        script: 'coverage-gate',
+        summary: '--jobs takes a positive integer — the number of package suites run at once',
+        findings: [],
+      },
+      json,
+    );
+  }
+  const settled = await pool(names, jobs, async (pkg): Promise<CoverageVerdict | Finding> => {
     try {
-      const verdict = judge(await measure(root, pkg), COVERAGE_PINS[pkg]);
-      verdicts.push(verdict);
-      findings.push(...verdict.findings);
+      return judge(await measure(root, pkg), COVERAGE_PINS[pkg]);
     } catch (error) {
       if (!(error instanceof ScriptError)) throw error;
-      findings.push({ ...error.toFinding(), at: `packages/${pkg}` });
+      return { ...error.toFinding(), at: `packages/${pkg}` };
     }
+  });
+  // Reported in package order whatever order the pool finished in, so two runs of one tree print
+  // one report.
+  const verdicts: CoverageVerdict[] = [];
+  const findings: Finding[] = [];
+  for (const outcome of settled) {
+    if ('reading' in outcome) {
+      verdicts.push(outcome);
+      findings.push(...outcome.findings);
+    } else findings.push(outcome);
   }
 
   const ok = findings.length === 0;
