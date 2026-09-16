@@ -331,8 +331,8 @@ async function measure(root: string, pkg: string): Promise<CoverageReading> {
   if ((await proc.exited) !== 0) {
     const failed = stderr
       .split('\n')
-      .filter((line) => /^\(fail\)|^error:/.test(line.trim()))
-      .slice(0, 5)
+      .filter((line) => /^\(fail\)|^error:|timed out/.test(line.trim()))
+      .slice(0, 12)
       .map((line) => line.trim());
     throw new ScriptError({
       code: 'X_TEST_FAILED',
