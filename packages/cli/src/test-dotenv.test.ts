@@ -58,6 +58,15 @@ describe('unit · parseDotenvValues', () => {
 });
 
 describe('unit · devOnlyLeakedKeys', () => {
+  test('a dotenv key that names an Object.prototype member is read as data, not inherited', () => {
+    // `constructor=x` in a dotenv is legal. The environment does not set it, so it did not leak —
+    // and the read must not be answered by `Object.prototype.constructor`.
+    expect(devOnlyLeakedKeys({ devText: 'constructor=x', devLocalText: '', env: {} })).toEqual([]);
+    expect(
+      devOnlyLeakedKeys({ devText: 'constructor=x', devLocalText: '', env: { constructor: 'x' } }),
+    ).toEqual(['constructor']);
+  });
+
   test('a key the dev file sets, present in env with the SAME value, is leaked', () => {
     expect(
       devOnlyLeakedKeys({ devText: 'FOO=dev', devLocalText: '', env: { FOO: 'dev' } }),

@@ -65,15 +65,18 @@ const now = (): number => performance.now();
 function mergedEnv(
   overrides: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> {
-  const merged: Record<string, string> = {};
+  // A `Map`, not an object indexed by `key`: the keys are DATA (environment variable names), and
+  // a plain-object table read or deleted by a computed key is the `Object.prototype` hazard
+  // `scripts/proto-index.ts` ratchets. `Object.fromEntries` builds the record once, at the end.
+  const merged = new Map<string, string>();
   for (const [key, value] of Object.entries(Bun.env)) {
-    if (value !== undefined) merged[key] = value;
+    if (value !== undefined) merged.set(key, value);
   }
   for (const [key, value] of Object.entries(overrides)) {
-    if (value === undefined) delete merged[key];
-    else merged[key] = value;
+    if (value === undefined) merged.delete(key);
+    else merged.set(key, value);
   }
-  return merged;
+  return Object.fromEntries(merged);
 }
 
 function spawnOrRefuse(command: readonly string[], options: ExecOptions) {

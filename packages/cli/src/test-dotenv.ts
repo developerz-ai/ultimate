@@ -80,7 +80,10 @@ export function devOnlyLeakedKeys(input: DevOnlyLeakInput): readonly string[] {
   for (const [key, value] of parseDotenvValues(input.devLocalText)) merged.set(key, value);
   const leaked: string[] = [];
   for (const [key, devValue] of merged) {
-    if (input.env[key] === devValue) leaked.push(key);
+    // `Object.hasOwn` FIRST: `key` is data (a name out of a dotenv file), and `env['constructor']`
+    // on a plain object answers `Object.prototype`'s member, not `undefined` — the rule
+    // `scripts/proto-index.ts` ratchets, with its own sanctioned repair.
+    if (Object.hasOwn(input.env, key) && input.env[key] === devValue) leaked.push(key);
   }
   return leaked;
 }
