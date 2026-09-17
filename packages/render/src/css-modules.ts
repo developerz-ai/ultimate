@@ -81,6 +81,44 @@ const CLASS_SELECTOR = /\.(-?[A-Za-z_][\w-]*)/g;
 const NUL = '\u0000';
 const MASKED = new RegExp(`${NUL}(\\d+)${NUL}`, 'g');
 
+const GLOBAL_OPEN = ':global(';
+
+/**
+ * Unwrap every `:global(<selector>)` to `<selector>`, handing each payload to `keep` so the class
+ * rewrite that follows cannot touch it. `:global()` is CSS-MODULES syntax, not CSS: emitted as
+ * written it is an unknown pseudo-class, and a browser drops the whole rule. `Table.module.scss`
+ * shipped twelve such rules, so the catalog table reached every app with no cell padding, no row
+ * borders and no header ground — invisible to every test, because the CSS was never parsed by
+ * anything but a browser.
+ *
+ * A scanner rather than a regex: the payload is a selector and may hold its own parentheses
+ * (`tr:nth-child(even)`), so the wrapper closes on ITS parenthesis, found by depth. An unclosed
+ * wrapper is left exactly as written — swallowing the rest of the sheet to "repair" a typo would
+ * turn one broken rule into every rule after it.
+ */
+function unwrapGlobal(css: string, keep: (selector: string) => string): string {
+  let out = '';
+  let cursor = 0;
+  for (;;) {
+    const open = css.indexOf(GLOBAL_OPEN, cursor);
+    if (open === -1) return out + css.slice(cursor);
+    const start = open + GLOBAL_OPEN.length;
+    let depth = 1;
+    let end = start;
+    while (end < css.length && depth > 0) {
+      const char = css[end];
+      // A `{` means the selector list ended with the wrapper still open: not ours to repair.
+      if (char === '{') break;
+      if (char === '(') depth += 1;
+      else if (char === ')') depth -= 1;
+      end += 1;
+    }
+    if (depth !== 0) return out + css.slice(cursor);
+    out += css.slice(cursor, open) + keep(css.slice(start, end - 1));
+    cursor = end;
+  }
+}
+
 /**
  * Rewrite every class selector to its scoped name and report the map. Done on the compiled CSS
  * rather than the SCSS source so mixins, `@extend` and interpolation have already produced their
@@ -92,10 +130,13 @@ export function scopeClasses(
 ): { readonly css: string; readonly classes: Record<string, string> } {
   const classes: Record<string, string> = {};
   const literals: string[] = [];
-  const masked = css.replace(PROTECTED, (match) => {
+  const mask = (match: string): string => {
     literals.push(match);
     return `${NUL}${literals.length - 1}${NUL}`;
-  });
+  };
+  // Strings and `url()` first, so a `:global(` inside a `content:` string is never unwrapped;
+  // then each `:global()` payload joins the same mask and comes back unscoped.
+  const masked = unwrapGlobal(css.replace(PROTECTED, mask), mask);
   const scoped = masked.replace(CLASS_SELECTOR, (_match, name: string) => {
     const local = `${name}_${suffix}`;
     classes[name] = local;
