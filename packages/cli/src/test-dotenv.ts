@@ -23,7 +23,8 @@
 // value must never appear), and widening it to return values would change what a template
 // generator ships. This one exists to COMPARE values, a different job with a different file.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs'; // why: Bun ships no synchronous file read with a graceful-missing return.
+// why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 
 /** Bun's own grammar, matched against `env-example.ts`'s `ENV_KEY_RE` (kept separate: see header). */

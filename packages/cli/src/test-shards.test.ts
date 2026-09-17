@@ -9,9 +9,11 @@
 // be a test that cannot fail. What is left is what is still ours: the argv, and the reproduction.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun ships no mkdtemp, no recursive remove, and `Bun.write` alone cannot pre-create an empty
+// fixture root the way this test's own cleanup needs to remove afterward.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { tmpdir } from 'node:os'; // why: Bun exposes no temp-directory root.
+import { join } from 'node:path'; // why: Bun exposes no path-join primitive.
 import { testCommand } from './cmd-test';
 import type { ExecOptions, Runner } from './exec';
 import { renderJson } from './output';
