@@ -5,9 +5,11 @@
 // called `repo.byId`/`repo.listByOrg` and did not compile.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun has no API for a temporary directory or a symlink, and loading a generated file for
+// real needs both — a sandbox on disk that borrows the workspace's installed packages.
 import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { tmpdir } from 'node:os'; // why: same — no Bun native answers the platform temp root.
+import { join } from 'node:path'; // why: same — the sandbox's paths are joined, never concatenated.
 import { sandboxPath, workspaceRoot } from '../scaffold-typecheck';
 import { isTenantScopedSlice, jobFiles, taskFiles } from './job';
 
