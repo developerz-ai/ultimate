@@ -49,20 +49,20 @@ function runHarness(
 describe('unit · a live socket must not fail every state of a live island', () => {
   test('constructing window.WebSocket does not throw', () => {
     const { window } = runHarness();
-    const WS = window.WebSocket as new (url: string) => unknown;
+    const WS = window['WebSocket'] as new (url: string) => unknown;
     expect(() => new WS('ws://127.0.0.1:8788/_x/sync')).not.toThrow();
   });
 
   test('constructing window.EventSource does not throw', () => {
     const { window } = runHarness();
-    const ES = window.EventSource as new (url: string) => unknown;
+    const ES = window['EventSource'] as new (url: string) => unknown;
     expect(() => new ES('http://127.0.0.1:8788/_x/events')).not.toThrow();
   });
 
   test('a constructed socket never reports itself as an unstubbed request', () => {
     const { window } = runHarness();
-    const WS = window.WebSocket as new (url: string) => unknown;
-    const ES = window.EventSource as new (url: string) => unknown;
+    const WS = window['WebSocket'] as new (url: string) => unknown;
+    const ES = window['EventSource'] as new (url: string) => unknown;
     new WS('ws://127.0.0.1:8788/_x/sync');
     new ES('http://127.0.0.1:8788/_x/events');
     const state = window[HARNESS_GLOBAL] as { unstubbed: readonly string[] };
@@ -71,20 +71,20 @@ describe('unit · a live socket must not fail every state of a live island', () 
 
   test('close() is callable and a no-op — a component that tears down on unmount must not throw', () => {
     const { window } = runHarness();
-    const WS = window.WebSocket as new (url: string) => { close(): void };
+    const WS = window['WebSocket'] as new (url: string) => { close(): void };
     const socket = new WS('ws://127.0.0.1:8788/_x/sync');
     expect(() => socket.close()).not.toThrow();
   });
 
   test('a real unstubbed HTTP request is still refused — the refusal is not weakened', () => {
     const { window } = runHarness();
-    const fetchFn = window.fetch as (url: string) => Promise<unknown>;
+    const fetchFn = window['fetch'] as (url: string) => Promise<unknown>;
     expect(fetchFn('/api/nope')).rejects.toThrow(/no stub answers/);
   });
 
   test('a socket is recorded on its own list, and the probe carries it beside unstubbed', () => {
     const { window } = runHarness();
-    const WS = window.WebSocket as new (url: string) => unknown;
+    const WS = window['WebSocket'] as new (url: string) => unknown;
     new WS('ws://127.0.0.1:8788/_x/sync');
     const document = {
       querySelector: () => null,
