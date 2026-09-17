@@ -210,10 +210,11 @@ jobTest('${name.camel} derives the same key for the same input', () => {
   expect(${name.camel}.idempotencyKeyFor(input)).toBe(key);
 });
 
-jobTest('${name.camel} declares no tenant, and strips one rather than inheriting the worker\\'s', () => {
+jobTest('${name.camel} declares no tenant', () => {
   // This feature's entity names no tenant column (or has none yet) — \`tenant: 'none'\` is the
-  // declaration for that, and it is what stands between a read added here later and
-  // X_TENANCY_ACTOR_ORG_REQUIRED, or worse, another org's rows if this ever gains one.
+  // declaration for that, and it strips one rather than inheriting the worker's, which is what
+  // stands between a read added here later and X_TENANCY_ACTOR_ORG_REQUIRED, or worse, another
+  // org's rows if this ever gains one.
   expect(${name.camel}.tenantFor(input)).toBeUndefined();
 });
 
