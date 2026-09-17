@@ -15,6 +15,7 @@ import { TEST_TYPES } from '@ultimat3/testing';
 import { checkEvalBaselines, checkEvalCoverage, checkEvalRecording } from './app-evals';
 import { APP_CONFIG_FILE } from './app-root';
 import { countsOf } from './test-counts';
+import { testEnvOverrides } from './test-dotenv';
 import type { TestFile } from './test-select';
 import { discoverTests } from './test-select';
 import { defaultWorkers } from './test-workers';
@@ -201,7 +202,11 @@ export const resetTestDiscovery = (): void => discovered.clear();
 
 const runSerial = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome> => {
   const command = testStepCommand(type);
-  const result = await ctx.runner(command, { cwd: ctx.root });
+  const envOverrides = testEnvOverrides(ctx.root, ctx.env ?? Bun.env);
+  const result = await ctx.runner(command, {
+    cwd: ctx.root,
+    ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),
+  });
   return {
     ...fromExec(result, {
       code: 'X_TEST_FAILED',
@@ -223,6 +228,7 @@ const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome>
     files,
     workers: ctx.workers ?? defaultWorkers(),
     type,
+    ...(ctx.env === undefined ? {} : { env: ctx.env }),
   });
 };
 

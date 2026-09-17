@@ -9,6 +9,9 @@
 // be a test that cannot fail. What is left is what is still ours: the argv, and the reproduction.
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { testCommand } from './cmd-test';
 import type { ExecOptions, Runner } from './exec';
 import { renderJson } from './output';
@@ -117,6 +120,28 @@ describe('unit · x test execution', () => {
     // `workerId` already reads — so a `--parallel` run must NOT pin every worker to one database
     // by exporting `ULTIMATE_TEST_WORKER`, which is that function's first key.
     expect(calls[0]?.env?.['ULTIMATE_TEST_WORKER']).toBeUndefined();
+  });
+
+  test('a key `.env.development` leaked into this process is not handed to the bun test child', async () => {
+    // Real mechanism, not a mock of it: Bun auto-loads `.env.development` into the PARENT `x`
+    // process whenever `NODE_ENV` is unset, and `exec.ts`'s `spawnOrRefuse` used to spread
+    // `Bun.env` as the child's base regardless — so this key rode along into every `bun test`
+    // child even though a bare `bun test` (NODE_ENV=test) never reads `.env.development` at all.
+    const root = mkdtempSync(join(tmpdir(), 'x-verify-env-leak-'));
+    try {
+      writeFileSync(join(root, '.env.development'), 'ULTIMATE_ENV=development\n');
+      const { calls, runner } = recorder();
+      // The parent process's env, exactly as `.env.development` would have left it: nothing else
+      // set `ULTIMATE_ENV`, so its current value equals the dotenv file's.
+      const env = { ULTIMATE_ENV: 'development' };
+      await runShards({ root, runner, files: corpus(4), workers: 2, env });
+      // `undefined` is `exec.ts`'s own signal for "delete this key from the child" — present as an
+      // explicit override, not merely absent, so a base `Bun.env` spread cannot bring it back.
+      expect(Object.hasOwn(calls[0]?.env ?? {}, 'ULTIMATE_ENV')).toBe(true);
+      expect(calls[0]?.env?.['ULTIMATE_ENV']).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('--worker reruns one shard, and names its own database', async () => {

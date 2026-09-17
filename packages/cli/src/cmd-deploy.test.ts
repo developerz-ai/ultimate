@@ -179,10 +179,10 @@ describe('unit · x deploy --method is a closed set', () => {
 function recordingRunner(failing?: { role: string; code: number }): {
   runner: CommandContext['runner'];
   ran: string[][];
-  envs: (Readonly<Record<string, string>> | undefined)[];
+  envs: (Readonly<Record<string, string | undefined>> | undefined)[];
 } {
   const ran: string[][] = [];
-  const envs: (Readonly<Record<string, string>> | undefined)[] = [];
+  const envs: (Readonly<Record<string, string | undefined>> | undefined)[] = [];
   const runner: CommandContext['runner'] = async (command, options) => {
     ran.push([...command]);
     envs.push(options.env);

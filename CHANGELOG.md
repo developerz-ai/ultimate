@@ -8,7 +8,16 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`x verify`/`x test` no longer leak `.env.development` into the `bun test` children they
+  spawn.** Bun auto-loads `.env.development`/`.env.development.local` into the parent `x` process
+  whenever `NODE_ENV` is unset; `exec.ts` then spread that whole environment onto every `bun test`
+  child regardless, even though the child itself runs with `NODE_ENV=test` and would never load
+  those files on its own. A key is now dropped from a spawned test process when the parent's
+  current value for it matches exactly what `.env.development`/`.env.development.local` would have
+  set (`test-dotenv.ts`'s `testEnvOverrides`, wired into `test-shards.ts`, `verify-tests.ts`,
+  `verify-test-run.ts` and `mcp-host.ts`'s `runTests`). `x dev` is unaffected.
 
 ## 20.1.2 - 2026-09-16
 
