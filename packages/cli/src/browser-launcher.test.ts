@@ -13,6 +13,7 @@ import {
   cdpUrlProblem,
   executablePathFrom,
 } from './browser-launcher';
+import { CONTAINER_CHROME_ARGS } from './cdp-launch';
 
 const thrownBy = async (run: () => Promise<unknown>): Promise<Record<string, unknown>> =>
   run().then(
@@ -101,6 +102,69 @@ describe('unit · the app supplies the launcher', () => {
       load: () => Promise.resolve(launcher),
     });
     expect(seen).toEqual([`${BROWSER_PACKAGE} from /srv/app`]);
+  });
+});
+
+/**
+ * Defect D: `x shot` cannot launch Chrome where `x verify`'s e2e driver can — on Ubuntu 23.10+,
+ * AppArmor restricts the unprivileged user namespace Chrome's sandbox needs, and Chrome exits
+ * "No usable sandbox". `cdp-launch.ts`'s launcher already carries `--no-sandbox` and
+ * `--disable-dev-shm-usage` for exactly this container fact (see its own header); this launcher —
+ * a DIFFERENT process, `puppeteer-core`'s own `launch()` rather than `Bun.spawn` — passed neither,
+ * so the same box that runs the e2e gate green cannot run `x shot`. The two launchers must agree,
+ * for a LOCAL launch — an attach (`cdpUrl` set) starts nothing here and must read no local flag.
+ */
+describe('unit · a local launch gets the same container flags the e2e driver already needed', () => {
+  // `appBrowser` only builds the driver — `launch()` / `connect()` are not called until `open()`
+  // asks for a page, exactly like the real `runShot` call site. So the fake browser must survive
+  // far enough into `open()` for the call to have happened; it need not survive further; the
+  // resulting error (a fake page with no real methods) is caught and ignored, because it is
+  // this test's plumbing, not its subject.
+  const fakeBrowser = { newPage: () => Promise.resolve({}), close: () => Promise.resolve() };
+  const init = {
+    name: 'x shot',
+    rules: { allowHosts: ['dev.test'] },
+    clock: { now: () => new Date(0), sleep: () => Promise.resolve() },
+    timeoutMs: 1_000,
+  };
+
+  test('launch() receives --no-sandbox and --disable-dev-shm-usage', async () => {
+    let seen: Record<string, unknown> | undefined;
+    const launcher = {
+      launch: (launchOptions: Record<string, unknown>) => {
+        seen = launchOptions;
+        return Promise.resolve(fakeBrowser);
+      },
+    };
+    const driver = await appBrowser({
+      root: '/srv/app',
+      executablePath: '/usr/bin/google-chrome',
+      resolve: () => '/entry.js',
+      load: () => Promise.resolve(launcher),
+    });
+    await driver.open(init as never).catch(() => undefined);
+    const args = (seen?.['args'] ?? []) as readonly string[];
+    for (const flag of CONTAINER_CHROME_ARGS) {
+      expect(args).toContain(flag);
+    }
+  });
+
+  test('an attach reads no local container flag — nothing is launched here', async () => {
+    let seen: Record<string, unknown> | undefined;
+    const launcher = {
+      connect: (connectOptions: Record<string, unknown>) => {
+        seen = connectOptions;
+        return Promise.resolve(fakeBrowser);
+      },
+    };
+    const driver = await appBrowser({
+      root: '/srv/app',
+      cdpUrl: 'wss://cdp.example.com/session/abc',
+      resolve: () => '/entry.js',
+      load: () => Promise.resolve(launcher),
+    });
+    await driver.open(init as never).catch(() => undefined);
+    expect(seen?.['args']).toBeUndefined();
   });
 });
 
