@@ -82,6 +82,57 @@ describe('unit · a live socket must not fail every state of a live island', () 
     expect(fetchFn('/api/nope')).rejects.toThrow(/no stub answers/);
   });
 
+  // A component whose mount() awaits the socket's own `open` before rendering anything would
+  // hang forever against a stand-in that never opens — trading one impossible fix (an unsatisfiable
+  // stub match) for another (an unreachable --settle deadline). The reference app's own LiveClient
+  // does not need this — connect() registers callbacks and returns — but this harness may not
+  // assume that of every app on `@ultimat3/realtime`, so `open` fires exactly once regardless.
+  test('onopen fires exactly once, and no message or error ever follows', async () => {
+    const { window } = runHarness();
+    const WS = window['WebSocket'] as new (
+      url: string,
+    ) => {
+      readyState: number;
+      onopen: (() => void) | null;
+      onmessage: (() => void) | null;
+      onerror: (() => void) | null;
+    };
+    const socket = new WS('ws://127.0.0.1:8788/_x/sync');
+    let opens = 0;
+    let messages = 0;
+    socket.onopen = () => {
+      opens += 1;
+    };
+    socket.onmessage = () => {
+      messages += 1;
+    };
+    socket.onerror = () => {
+      messages += 1;
+    };
+    expect(socket.readyState).toBe(0);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(socket.readyState).toBe(1);
+    expect(opens).toBe(1);
+    expect(messages).toBe(0);
+    // A second wait proves "exactly once" rather than "at least once".
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(opens).toBe(1);
+  });
+
+  test('an addEventListener("open", …) listener fires the same as onopen', async () => {
+    const { window } = runHarness();
+    const WS = window['WebSocket'] as new (
+      url: string,
+    ) => { addEventListener(type: string, fn: () => void): void };
+    const socket = new WS('ws://127.0.0.1:8788/_x/sync');
+    let opened = false;
+    socket.addEventListener('open', () => {
+      opened = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(opened).toBe(true);
+  });
+
   test('a socket is recorded on its own list, and the probe carries it beside unstubbed', () => {
     const { window } = runHarness();
     const WS = window['WebSocket'] as new (url: string) => unknown;
