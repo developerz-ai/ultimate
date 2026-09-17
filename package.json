@@ -27,6 +27,7 @@
     "frozen-records": "bun run scripts/frozen-records.ts",
     "gate-codes": "bun run scripts/gate-codes.ts",
     "index-of-order": "bun run scripts/index-of-order.ts",
+    "wiki-index": "bun run scripts/wiki-index.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "lockfile": "bun run scripts/lockfile-pins.ts",

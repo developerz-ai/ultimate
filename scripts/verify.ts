@@ -58,6 +58,7 @@ import { testTypecheckFindings } from './test-typecheck-gate';
 import { throwFindings } from './to-throw-returns';
 import { versionStampFindings } from './version-stamps';
 import { frameDocFindings } from './wiki-frames';
+import { wikiIndexFindings } from './wiki-index';
 import { wikiTableFindings } from './wiki-tables';
 
 /**
@@ -274,6 +275,7 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await testTypecheckFindings(root)),
   ...(await generatorCountFindings(root)),
   ...(await releaseFactFindings(root)),
+  ...(await wikiIndexFindings(root)),
 ];
 
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {

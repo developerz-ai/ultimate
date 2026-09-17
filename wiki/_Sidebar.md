@@ -63,3 +63,4 @@
 - [Known gaps](Known-Gaps)
 - [FAQ](FAQ)
 - [Contributing](Contributing)
+- [Knowledge base](Knowledge-Base)

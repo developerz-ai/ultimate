@@ -238,3 +238,4 @@ The single public documentation surface; there is no separate marketing site. So
 - [6 · Growing up](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Tutorial-06-Growing-Up.md): the rung you should be on, and the signal to climb.
 - [UI components](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/UI-Components.md): the four page composites, and the generated 46-component catalog.
 - [Upgrading](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Upgrading.md): why the next release is a major, breaking-change detection, version skew — and that `x upgrade` is planned.
+- [Knowledge base](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Knowledge-Base.md): the agent retrieval index — every wiki page by topic, and the platform's agent-internal notes by slug.

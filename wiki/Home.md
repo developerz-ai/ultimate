@@ -127,6 +127,7 @@ Three shipped packages have no reference page on this wiki `As of 2026-08-23` �
 | [Troubleshooting](Troubleshooting) | symptom → cause → fix |
 | [FAQ](FAQ) | why Bun only, why no GraphQL, is it production ready |
 | [Contributing](Contributing) | package layout, import tiers, conventions, PR expectations |
+| [Knowledge base](Knowledge-Base) | the agent retrieval index — every wiki page by topic, and the platform's agent-internal notes by slug |
 
 ## The rules everything else follows
 
