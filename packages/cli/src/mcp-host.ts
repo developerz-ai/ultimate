@@ -44,7 +44,7 @@ import { execOutput } from './exec';
 import { databaseTarget } from './mcp-db-target';
 import { explainErrorCode } from './mcp-errors';
 import { parseBunTest } from './mcp-test-output';
-import { uiCapabilities } from './mcp-ui';
+import { type UiCapabilities, uiCapabilities } from './mcp-ui';
 import { readMigrations } from './migrations';
 import { retryMemo } from './retry-memo';
 import { testEnvOverrides } from './test-dotenv';
@@ -179,7 +179,11 @@ export async function readOnlyRows(
   return { columns, rows: kept.map((row) => columns.map((column) => row[column])), guards };
 }
 
-function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities {
+function capabilities(
+  input: DevHostInput,
+  lazy: LazyServices,
+  ui: UiCapabilities,
+): DevCapabilities {
   const { root, runner, env } = input;
   // Layer 1 is seven idempotent DDL statements, and `db.query` is a tool an agent calls in a
   // loop — resolve the role once per process and reuse the answer, `null` included. A FAILED
@@ -282,7 +286,7 @@ function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities 
 
     explainError: explainErrorCode,
 
-    ...uiCapabilities({ root, env }),
+    ...ui,
 
     async verify(fix: boolean): Promise<VerifyResult> {
       // The one safe autofix this repo actually has. Anything more would be the gate rewriting
@@ -313,11 +317,21 @@ export async function createDevMcpServer(input: DevHostInput): Promise<CliMcpSer
   // every code it could have quoted.
   await Promise.all([loadApp(input.root), loadCodeFixes()]);
   const lazy = lazyServices(input);
+  const ui = uiCapabilities({ root: input.root, env: input.env });
   const introspection = frameworkIntrospection({
     routes: () => describeRoutes(),
     policies: () => policyFacts(),
   });
-  const server = createDevServer({ host: devHost(introspection, capabilities(input, lazy)) });
+  const server = createDevServer({ host: devHost(introspection, capabilities(input, lazy, ui)) });
   const caller = localCaller();
-  return { server, caller, tools: server.tools.names(caller), close: () => lazy.close() };
+  return {
+    server,
+    caller,
+    tools: server.tools.names(caller),
+    // The scratch server first: it holds the same embedded database the lazy services would.
+    close: async () => {
+      await ui.close();
+      await lazy.close();
+    },
+  };
 }
