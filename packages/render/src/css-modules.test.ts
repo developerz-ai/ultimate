@@ -75,6 +75,12 @@ describe('scopeClasses', () => {
     expect(out.css).toBe('.striped_h tbody tr:nth-child(even) td{color:red}');
   });
 
+  test('a nested :global() is unwrapped all the way down', () => {
+    expect(scopeClasses('.a :global(:global(.is-open)){color:red}', 'h').css).toBe(
+      '.a_h .is-open{color:red}',
+    );
+  });
+
   test('an unclosed :global( is left exactly as written rather than swallowing the sheet', () => {
     const css = '.a :global(th{color:red}.b{color:blue}';
     expect(scopeClasses(css, 'h').css).toBe('.a_h :global(th{color:red}.b_h{color:blue}');

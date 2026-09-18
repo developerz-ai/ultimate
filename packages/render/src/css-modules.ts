@@ -114,7 +114,10 @@ function unwrapGlobal(css: string, keep: (selector: string) => string): string {
       end += 1;
     }
     if (depth !== 0) return out + css.slice(cursor);
-    out += css.slice(cursor, open) + keep(css.slice(start, end - 1));
+    // The payload is unwrapped FIRST, so `:global(:global(.x))` yields `.x` — a wrapper left inside
+    // the mask would be restored verbatim, and the browser would drop the rule after all.
+    out +=
+      css.slice(cursor, open) + keep(unwrapGlobal(css.slice(start, end - 1), (inner) => inner));
     cursor = end;
   }
 }
