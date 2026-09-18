@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 20.1.3 - 2026-09-18
+
 ### Fixed
 
 - **`x g job`/`x g task` no longer assume a feature has a tenant.** Both templates hard-coded
@@ -59,6 +63,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   browser ever parsed the CSS. The wrapper now closes on its OWN parenthesis
   (`:global(tr:nth-child(even) td)`), a class inside it keeps its unscoped name, and an unclosed
   wrapper is left as written rather than swallowing the sheet.
+
+### Commits
+
+- fix(render): unwrap :global() in a CSS module instead of shipping it (#455)
+- fix(cli): x verify/x test no longer leak .env.development into bun test children (#458)
+- fix(cli): x shot launches Chrome with the same container flags e2e needs (#451)
+- fix(cli): x shot --island gives a live socket an inert stand-in (#449)
+- fix(cli): x dev declares ULTIMATE_ENV=development so a fail-closed dev-actor still boots (#459)
+- fix(cli): x g job / x g task no longer assume a feature has a tenant (#457)
 
 ## 20.1.2 - 2026-09-16
 
