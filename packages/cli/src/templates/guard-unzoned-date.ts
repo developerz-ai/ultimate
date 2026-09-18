@@ -74,10 +74,17 @@ export function unzonedDates(files: readonly SourceFile[]): readonly Finding[] {
       const open = match.index + match[0].length - 1;
       if (argumentsOf(text, open).includes('timeZone')) continue;
       const line = lineOf(text, match.index);
+      // The bare \`.toLocaleString(\` is ALSO \`Number.prototype.toLocaleString\`, and a regex cannot
+      // tell a count from a date. The match stands — a date formatted this way is the defect this
+      // guard exists for — but the fix names the number exit too, because \`{ timeZone }\` is not
+      // one: a number ignores it, and an author following the fix verbatim would ship a lie.
+      const bare = match[0].trim() === '.toLocaleString(';
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${line} calls \${match[0].trim()}) with no timeZone — it formats in whatever zone the process happens to run in, so one row reads as two different days across two containers\`,
-        fix: \`pass an explicit IANA zone in \${file.path} — toLocaleDateString(locale, { timeZone: 'UTC' }) — then: x verify\`,
+        fix: bare
+          ? \`in \${file.path}: a Date → pass an explicit IANA zone, at.toLocaleString(locale, { timeZone: 'UTC' }); a NUMBER → new Intl.NumberFormat(locale).format(n) instead — then: x verify\`
+          : \`pass an explicit IANA zone in \${file.path} — toLocaleDateString(locale, { timeZone: 'UTC' }) — then: x verify\`,
         at: file.path,
       });
     }
@@ -128,6 +135,16 @@ unitTest('an explicit zone satisfies it, even nested behind another call', () =>
 unitTest('Intl.DateTimeFormat and toLocaleTimeString are the same rule', () => {
   expect(unzonedDates(file("new Intl.DateTimeFormat('en-US').format(at);"))).toHaveLength(1);
   expect(unzonedDates(file("at.toLocaleTimeString('en-US');"))).toHaveLength(1);
+});
+
+unitTest('the bare toLocaleString names the number exit, since a count matches it too', () => {
+  const findings = unzonedDates(file("const shown = count.toLocaleString('en-US');"));
+  expect(findings).toHaveLength(1);
+  expect(findings[0]?.fix).toContain('Intl.NumberFormat');
+  expect(findings[0]?.fix).toContain('timeZone');
+  // The dated forms are unambiguous and keep the zone-only fix.
+  const dated = unzonedDates(file("at.toLocaleDateString('en-US');"));
+  expect(dated[0]?.fix).not.toContain('Intl.NumberFormat');
 });
 
 unitTest('a commented-out call is a note, not a call', () => {

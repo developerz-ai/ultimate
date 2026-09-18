@@ -8,7 +8,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The scaffolded `unzoned-date` guard's fix names the number exit.** Its regex matches the bare
+  `.toLocaleString(` — which is also `Number.prototype.toLocaleString`, and a regex cannot tell a
+  count from a date. The match stands (a date formatted that way is the defect), but the printed
+  `fix:` told an author formatting a NUMBER to pass `{ timeZone }`, which a number ignores. For the
+  bare form it now names both exits: a Date → `{ timeZone }`; a number → `new
+  Intl.NumberFormat(locale).format(n)`. The dated forms keep the zone-only fix. An existing app
+  updates its `guards/unzoned-date.ts` by hand (`x new` writes it once). (#456)
 
 ## 20.1.3 - 2026-09-18
 
