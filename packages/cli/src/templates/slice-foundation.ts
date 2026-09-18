@@ -115,8 +115,12 @@ const listedExports = (code: string): readonly string[] =>
  */
 export function sliceExports(source: string, name: string): boolean {
   const code = stripComments(source);
+  // `(?:async\s+)?` before `function`: an `export async function byId` — every repo function
+  // `x g entity` scaffolds — matched neither this nor `listedExports`, so a caller checking for
+  // `byId`/`listByOrg` on a real repo.ts always read `false`. `async` has no meaning before
+  // `class`/`const`/`let`/`var`/`enum`, so it is scoped to `function` only.
   const declared = new RegExp(
-    `\\bexport\\s+(?:abstract\\s+)?(?:class|const|let|var|function|enum)\\s+${name}\\b`,
+    `\\bexport\\s+(?:abstract\\s+)?(?:class|const|let|var|(?:async\\s+)?function|enum)\\s+${name}\\b`,
   );
   return declared.test(code) || listedExports(code).includes(name);
 }
