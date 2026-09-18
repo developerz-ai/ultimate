@@ -10,6 +10,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A scratch boot (`x shot`, `ui.shot`) is a faithful `x dev`.** Two ways it was not, both found
+  by photographing a 20.1.4 app: (1) `declareDevEnvironment` ran in the `x dev` COMMAND only, so a
+  scratch server booted with no `ULTIMATE_ENV` and a scaffolded app's fail-closed dev actor
+  installed nothing — the picture was of a **401**. It now runs inside `startDev`, every boot.
+  (2) With `--port 0` the sync role went to the kernel too, while the wiki and every scaffolded
+  `sync-url.ts` say `PORT + 1` — every picture of a live island carried `WebSocket …
+  ERR_CONNECTION_REFUSED`. `listen()` now binds one above the port the web role actually bound
+  (`syncPortFor(0)` itself is unchanged: the pure function cannot know the bound port). (#466)
 - **`ui.shot` / `ui.island` work more than once per `x mcp serve` process.** Each call booted a
   scratch server through `devServerFor` and stopped it after the picture, as the one-shot `x shot`
   command does — but the dev MCP server is one process serving many calls, and a lifecycle drains
