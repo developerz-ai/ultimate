@@ -21,7 +21,16 @@ export interface ExecResult {
 
 export interface ExecOptions {
   readonly cwd: string;
-  readonly env?: Readonly<Record<string, string>>;
+  /**
+   * Overlaid onto `Bun.env`, key by key: a string sets/overrides it for the child, and
+   * `undefined` UNSETS it — the child does not inherit it at all, even though the parent has it.
+   * The delete case exists for one caller (`test-dotenv.ts`'s `testEnvOverrides`, spent by
+   * `test-shards.ts`/`verify-tests.ts`/`verify-test-run.ts`/`mcp-host.ts`): a `bun test` child
+   * must not inherit a key that reached the parent only through Bun auto-loading
+   * `.env.development`. A merge that only ever adds or overrides (`{ ...Bun.env, ...env }`) cannot
+   * express that — `Bun.env` is always the base, so a key just absent from `env` survives from it.
+   */
+  readonly env?: Readonly<Record<string, string | undefined>>;
   readonly stdin?: string;
 }
 
@@ -48,12 +57,34 @@ const now = (): number => performance.now();
  *
  * The return type is inferred so this stays one statement of `Bun.spawn`'s own shape.
  */
+/**
+ * `Bun.env` overlaid with `overrides`, an `undefined` value deleting the key rather than setting
+ * it to the string `"undefined"` — see `ExecOptions.env`'s own comment for why a delete has to be
+ * expressible here at all.
+ */
+function mergedEnv(
+  overrides: Readonly<Record<string, string | undefined>>,
+): Record<string, string> {
+  // A `Map`, not an object indexed by `key`: the keys are DATA (environment variable names), and
+  // a plain-object table read or deleted by a computed key is the `Object.prototype` hazard
+  // `scripts/proto-index.ts` ratchets. `Object.fromEntries` builds the record once, at the end.
+  const merged = new Map<string, string>();
+  for (const [key, value] of Object.entries(Bun.env)) {
+    if (value !== undefined) merged.set(key, value);
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) merged.delete(key);
+    else merged.set(key, value);
+  }
+  return Object.fromEntries(merged);
+}
+
 function spawnOrRefuse(command: readonly string[], options: ExecOptions) {
   const [head = '', ...rest] = command;
   try {
     return Bun.spawn([head, ...rest], {
       cwd: options.cwd,
-      env: options.env === undefined ? Bun.env : { ...Bun.env, ...options.env },
+      env: options.env === undefined ? Bun.env : mergedEnv(options.env),
       stdin: options.stdin === undefined ? 'ignore' : new TextEncoder().encode(options.stdin),
       stdout: 'pipe',
       stderr: 'pipe',

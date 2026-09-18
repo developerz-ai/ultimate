@@ -65,6 +65,13 @@ export type HostCheck = (root: string) => Promise<readonly Finding[]>;
 export interface VerifyContext {
   readonly root: string;
   readonly runner: Runner;
+  /**
+   * This process's own environment. Optional and defaulted to `Bun.env` at every reader
+   * (`verify-tests.ts`'s `runSerial`/`runType`): every real caller's IS `Bun.env` already
+   * (`cmd-verify.ts` passes `ctx.env`, itself `Bun.env`), so the default only matters to a test
+   * that constructs a `VerifyContext` fixture and never mentions `env`.
+   */
+  readonly env?: Readonly<Record<string, string | undefined>>;
   readonly hostChecks?: Partial<Record<VerifyStepName, HostCheck>>;
   /**
    * How wide the parallel test steps go. Absent means `defaultWorkers()` — a knob, never a

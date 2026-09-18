@@ -52,4 +52,29 @@ describe('unit · the CLI subprocess boundary', () => {
     expect(thrown['code']).toBe('X_CLI_UNEXPECTED');
     expect(String(thrown['cause'])).toContain('empty command');
   });
+
+  test('an `env` override of `undefined` unsets a key the parent process actually has', async () => {
+    // The case `test-dotenv.ts`'s `testEnvOverrides` exists for: a key inherited from `Bun.env`
+    // must not reach the child at all, and `{ ...Bun.env, ...options.env }` cannot express that —
+    // `Bun.env` is always the base, so a key simply absent from `options.env` survives from it.
+    const marker = 'X_EXEC_TEST_ENV_DELETE_PROBE';
+    process.env[marker] = 'present-in-parent';
+    try {
+      const result = await exec(['bun', '-e', `console.log(process.env['${marker}'] ?? 'gone')`], {
+        cwd: import.meta.dir,
+        env: { [marker]: undefined },
+      });
+      expect(result.stdout.trim()).toBe('gone');
+    } finally {
+      delete process.env[marker];
+    }
+  });
+
+  test('a string `env` override still sets/overrides the child, unaffected by delete support', async () => {
+    const result = await exec(
+      ['bun', '-e', "console.log(process.env['X_EXEC_TEST_ENV_SET_PROBE'])"],
+      { cwd: import.meta.dir, env: { X_EXEC_TEST_ENV_SET_PROBE: 'set-for-child' } },
+    );
+    expect(result.stdout.trim()).toBe('set-for-child');
+  });
 });

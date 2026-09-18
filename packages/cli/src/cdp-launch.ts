@@ -37,22 +37,31 @@ export async function findChrome(
 }
 
 /**
+ * The two flags a CONTAINER needs, regardless of which process launches Chrome: the sandbox needs
+ * privileges CI (and an Ubuntu 23.10+ host with AppArmor's unprivileged-user-namespace restriction
+ * — Chrome exits "No usable sandbox" there with neither) does not grant, and `/dev/shm` is 64 MB in
+ * a default container, which crashes the renderer on any real page.
+ *
+ * Exported so `browser-launcher.ts`'s `appBrowser` — a DIFFERENT launch path, `puppeteer-core`'s
+ * own `launch()` rather than the `Bun.spawn` below — passes the SAME two, rather than a second
+ * list that agrees today and drifts the next time either changes. `x shot` had neither before this
+ * export existed, so a box where `x verify`'s e2e gate ran green could not run `x shot` at all.
+ */
+export const CONTAINER_CHROME_ARGS: readonly string[] = ['--no-sandbox', '--disable-dev-shm-usage'];
+
+/**
  * The flags, and every one of them earns its line.
  *
  * `--headless=new` is Chrome's own headless rather than the retired shim. `--remote-debugging-port=0`
  * asks the OS for a free port, so two suites on one machine never collide — the port is read back
  * off stderr, which is the only place Chrome states the one it took. A throwaway `--user-data-dir`
  * because a run sharing a profile with a real browser inherits its cookies and locks its files.
- * `--no-sandbox` and `--disable-dev-shm-usage` are the two a container needs: the sandbox needs
- * privileges CI does not grant, and `/dev/shm` is 64 MB in a default container, which crashes the
- * renderer on any real page.
  */
 const flags = (profileDir: string): readonly string[] => [
   '--headless=new',
   '--remote-debugging-port=0',
   `--user-data-dir=${profileDir}`,
-  '--no-sandbox',
-  '--disable-dev-shm-usage',
+  ...CONTAINER_CHROME_ARGS,
   '--disable-gpu',
   // Nothing here should reach the network on its own account, and a first-run bubble or an update
   // check is a page load the test did not ask for.

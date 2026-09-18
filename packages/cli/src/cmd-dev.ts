@@ -24,6 +24,7 @@ import type { CliCommand, CommandContext } from './command';
 import { assetRoutes } from './dev-assets';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels } from './dev-dashboard';
+import { declareDevEnvironment } from './dev-environment';
 import { liveFeedLabel } from './dev-live-feed';
 import { clearLock, preflight, writeLock } from './dev-lock';
 import { createStatementLedger } from './dev-n-plus-one';
@@ -374,6 +375,9 @@ export const devCommand: CliCommand = {
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('dev', ctx.cwd).dir;
+    // BEFORE `startDev` imports a single app module — see `dev-environment.ts` for why this must
+    // run this early, and why it mutates the real `process.env` rather than `startDev`'s `env`.
+    declareDevEnvironment(ctx.env);
     // Validated, not `parseInt`'d: `x dev --port abc` handed `NaN` to `Bun.serve`, which binds an
     // arbitrary port — a dev server reachable at an address nothing printed.
     const port = intFlagOr(

@@ -267,6 +267,7 @@ export async function captureIslandState(
       box: seen?.box ?? { x: 0, y: 0, width: 0, height: 0 },
       mounted: seen?.mounted === true,
       unstubbed: seen?.unstubbed ?? [],
+      sockets: seen?.sockets ?? [],
       console: page.console(),
       pageErrors: page.pageErrors(),
       overflow: seen?.overflow ?? { x: false, y: false },
