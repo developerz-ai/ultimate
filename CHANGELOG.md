@@ -8,7 +8,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`x mcp serve` declares its environment before it loads the app.** The dev MCP server called
+  `loadApp` at creation, before any scratch boot had declared `ULTIMATE_ENV` â€” and a scaffolded
+  app's dev actor installs itself at import time, so it installed nothing. On 20.1.5 the first
+  `ui.shot` of a session photographed a **401** (`actorKind: anonymous`); the second rendered, only
+  because its scratch boot re-imported the app after declaring. Same rule as `x dev` and
+  `startDev` now: declare first, import second. Verified: the same three-call session answers
+  1/1 islands mounted and zero console errors on every call.
 
 ## 20.1.5 - 2026-09-18
 
