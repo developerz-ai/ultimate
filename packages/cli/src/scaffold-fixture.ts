@@ -22,6 +22,31 @@ export class LedgerClosedError extends UltimateError {}
 `;
 
 /**
+ * A feature slice whose entity is NOT tenant-scoped — the shape `x g entity`'s own comment
+ * describes for a single-tenant app, and never a shape the generator writes itself. The
+ * generator's INPUT only, the same way `HANDWRITTEN_ERRORS` above is: `x g job`/`x g task` read
+ * this from a real `entity.ts`, and a fixture that never exercised it compiled only the shape
+ * that never failed.
+ */
+export const HANDWRITTEN_ENTITY_NO_TENANT = `import { entity, text, uuid } from '@ultimat3/entity';
+
+export const shortLink = entity('short_links', {
+  columns: { id: uuid().primaryKey(), url: text({ max: 2000 }) },
+});
+
+export type ShortLink = typeof shortLink.$row;
+`;
+
+/** The paired `repo.ts`: no `byId`, no `listByOrg` — nothing this slice's job may call. */
+export const HANDWRITTEN_REPO_NO_TENANT = `import { db, sql } from '@ultimat3/db';
+import type { ShortLink } from './entity';
+
+export async function list(limit = 50): Promise<readonly ShortLink[]> {
+  return db().query<ShortLink>(sql\`select * from short_links order by url limit \${limit}\`);
+}
+`;
+
+/**
  * One realistic invocation of every generator, on top of `x new --example`. Names differ from
  * their feature on purpose: `x g query invoice --feature invoice` would collide with the entity
  * import, and a fixture that trips over its own naming stops testing the templates.
@@ -47,6 +72,23 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
   { kind: 'job', name: 'sweep-invoices', feature: 'invoice' },
   { kind: 'backfill', name: 'reindex-invoices', feature: 'invoice' },
   { kind: 'task', name: 'nightly-sweep', feature: 'invoice' },
+  // The other shape both templates have: a feature whose entity names no tenant column, so the
+  // job/task must not assume one — compiled here beside the tenant-scoped pair above, exactly as
+  // `ping-invoice`/`touch-invoice` compile the action's other shape beside `send-invoice`.
+  {
+    kind: 'job',
+    name: 'purge-orphans',
+    feature: 'short-link',
+    sliceEntity: HANDWRITTEN_ENTITY_NO_TENANT,
+    sliceRepo: HANDWRITTEN_REPO_NO_TENANT,
+  },
+  {
+    kind: 'task',
+    name: 'nightly-purge',
+    feature: 'short-link',
+    sliceEntity: HANDWRITTEN_ENTITY_NO_TENANT,
+    sliceRepo: HANDWRITTEN_REPO_NO_TENANT,
+  },
   { kind: 'route', name: 'pricing', surface: 'site' },
   { kind: 'route', name: 'billing', surface: 'app' },
   // `--at`, pointed at the `site/` route above: an island's whole reason to exist is a 0kb page

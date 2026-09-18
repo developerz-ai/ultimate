@@ -10,6 +10,18 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`x g job`/`x g task` no longer assume a feature has a tenant.** Both templates hard-coded
+  `input: t.object({ id, orgId })`, `tenant: (input) => input.orgId` and calls to
+  `repo.byId`/`repo.listByOrg`, on the assumption that `x g entity` always scaffolds
+  `tenant: 'orgId'`. A feature's entity need not be tenant-scoped — `x g task purgeOrphans
+  --feature links` into a feature with no `orgId` column and no `byId`/`listByOrg` in `repo.ts`
+  produced a job that did not compile. The generator now reads the feature's own `entity.ts`/
+  `repo.ts` off disk (the same pattern `sliceErrors` already uses for `x g action`) and emits a
+  `tenant: 'none'`-shaped job with a neutral body — no `../entity`, no `../repo`, no `orgId` — when
+  the entity declares no real tenant column or the repo lacks the pair the tenant-scoped body
+  calls. The tenant-scoped output is unchanged. Also fixed `sliceExports` (used to make that
+  decision): it never recognised `export async function <name>`, so it always read a real
+  `byId`/`listByOrg` as absent. (#447)
 - **`x verify`/`x test` no longer leak `.env.development` into the `bun test` children they
   spawn.** Bun auto-loads `.env.development`/`.env.development.local` into the parent `x` process
   whenever `NODE_ENV` is unset; `exec.ts` then spread that whole environment onto every `bun test`
