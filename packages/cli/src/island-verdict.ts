@@ -54,6 +54,13 @@ export interface IslandReadiness {
   readonly harness: boolean;
   readonly ready: boolean;
   readonly unstubbed: readonly string[];
+  /**
+   * `"WS <url>"` / `"SSE <url>"` for every socket a component constructed — recorded, never
+   * gating. The harness's stand-in is inert (constructs, never opens, `close()` is a no-op), so
+   * a component dialing `@ultimat3/realtime`'s `LiveClient.connect()` does not fail the state it
+   * is mounted in; this is the fact a picture cannot carry about that.
+   */
+  readonly sockets: readonly string[];
   readonly attached: boolean;
   readonly mounted: boolean;
   readonly failed: string | null;
@@ -86,6 +93,7 @@ const readinessSchema: StandardSchemaV1<unknown, IslandReadiness> = t.object({
   harness: t.boolean,
   ready: t.boolean,
   unstubbed: t.array(t.string),
+  sockets: t.array(t.string),
   attached: t.boolean,
   mounted: t.boolean,
   failed: t.nullable(t.string),
@@ -115,6 +123,8 @@ export interface IslandStateShot {
   readonly box: IslandBox;
   readonly mounted: boolean;
   readonly unstubbed: readonly string[];
+  /** See `IslandReadiness.sockets` — recorded, and read by neither `stateShotOk` nor the gate. */
+  readonly sockets: readonly string[];
   readonly console: readonly ConsoleLine[];
   readonly pageErrors: readonly PageError[];
   /**
@@ -184,6 +194,7 @@ const shotJson = (shot: IslandStateShot): JsonValue => ({
   warnings: stateShotWarnings(shot).length,
   overflow: { x: shot.overflow.x, y: shot.overflow.y },
   unstubbed: [...shot.unstubbed],
+  sockets: [...shot.sockets],
   console: shot.console.map((line) => ({ level: line.level, text: line.text, at: line.at })),
   pageErrors: shot.pageErrors.map((error) => ({
     message: error.message,
