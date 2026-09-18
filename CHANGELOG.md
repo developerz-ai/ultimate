@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 20.1.5 - 2026-09-18
+
 ### Fixed
 
 - **A scratch boot (`x shot`, `ui.shot`) is a faithful `x dev`.** Two ways it was not, both found
@@ -25,6 +29,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `X_READINESS_CHECK_DUPLICATE`. The scratch server (or the running `x dev` the lock names) is now
   booted at most once per host, `runShot` is handed a handle whose `stop` is a no-op, and the
   host's `close()` stops it. `x shot` the command is unchanged. (#467)
+
+### Commits
+
+- fix(mcp): boot the scratch server once per host, stop it on close (#469)
+- fix(cli): a scratch boot declares its environment and binds sync at the bound web port + 1 (#468)
 
 ## 20.1.4 - 2026-09-18
 
