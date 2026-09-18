@@ -8,7 +8,7 @@
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
-import type { ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
+import type { ColorScheme, ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
 import { DEFAULT_PAGE_TIMEOUT_MS, systemScrapeClock } from '@ultimat3/scraping';
 import { requireAppRoot } from './app-root';
 import { appBrowser } from './browser-launcher';
@@ -190,6 +190,12 @@ export interface ShotRun {
    * with `--port 0` the port — and therefore the origin — does not exist until after the boot.
    */
   readonly extraHosts?: string | undefined;
+  /**
+   * What `prefers-color-scheme` the page sees, emulated BEFORE navigation so the boot script's
+   * "system" branch answers the same on every box. Absent means the box's own preference — what
+   * `x shot` has always done — and `ui.shot` names one explicitly for exactly that reason.
+   */
+  readonly colorScheme?: ColorScheme | undefined;
   readonly now?: (() => Date) | undefined;
 }
 
@@ -219,6 +225,7 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
       timeoutMs: options.timeoutMs,
     });
     const page = session.page;
+    if (options.colorScheme !== undefined) await page.colorScheme(options.colorScheme);
     await page.goto(requestedUrl, { timeout: options.timeoutMs });
     if (options.settleMs > 0) await Bun.sleep(options.settleMs);
     // The probe may legitimately answer nothing — a page that refuses evaluation, a driver with no

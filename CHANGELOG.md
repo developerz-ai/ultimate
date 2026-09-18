@@ -8,6 +8,26 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+- **The dev MCP server can see the UI: `ui.shot` and `ui.island`.** Thirteen tools could
+  introspect routes, schema, policies, jobs and the queue, run the tests and the gate, and read
+  the logs — and none could look at a screen. Every visual defect found building an app on 20.1.x
+  (two `app/` routes rendering with no shell and no dark theme, a dialog pinned to the top-left
+  corner since the day it shipped, an inverted QR code) passed a green gate and was invisible
+  until a picture existed. `ui.shot` photographs one route at a named viewport (`phone` 390×844,
+  `tablet` 820×1180, `desktop` 1440×900, or an explicit `width`+`height`) in `light` or `dark`
+  — the scheme is emulated on the page BEFORE navigation, so a capture never depends on the box
+  that took it — against the running `x dev` (reused through its lock, otherwise a scratch
+  server), and answers the PNG's **path** plus the verdict `x shot` already writes: console, page
+  errors, refused requests, whether every island mounted. Never inlined bytes. It refuses a route
+  with no `budget.js` (`X_UI_SHOT_ROUTE_UNBUDGETED`) — the gate refuses the same route as
+  `X_BUDGET_UNMEASURED`, and a picture of a draft judges the wrong thing — and an unknown path
+  (`X_UI_SHOT_ROUTE_UNKNOWN`). `ui.island` is `x shot --island <name> [--state]` as a tool. Both
+  are `destructive: true` under `dev:test`: they launch a browser. Pure exposure of what
+  `x shot` does; `ui.inspect` / `ui.interact` / `ui.diff` are the proposal's next steps (#463).
+  `runShot` gains an optional `colorScheme`; `x shot`'s own behaviour is unchanged.
+
 ### Fixed
 
 - **The scaffolded `unzoned-date` guard's fix names the number exit.** Its regex matches the bare

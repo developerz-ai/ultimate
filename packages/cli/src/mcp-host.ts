@@ -44,6 +44,7 @@ import { execOutput } from './exec';
 import { databaseTarget } from './mcp-db-target';
 import { explainErrorCode } from './mcp-errors';
 import { parseBunTest } from './mcp-test-output';
+import { uiCapabilities } from './mcp-ui';
 import { readMigrations } from './migrations';
 import { retryMemo } from './retry-memo';
 import { testEnvOverrides } from './test-dotenv';
@@ -280,6 +281,8 @@ function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities 
     },
 
     explainError: explainErrorCode,
+
+    ...uiCapabilities({ root, env }),
 
     async verify(fix: boolean): Promise<VerifyResult> {
       // The one safe autofix this repo actually has. Anything more would be the gate rewriting

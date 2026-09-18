@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { DevHost } from './dev-server';
-import { DEV_SCOPES, devTools } from './dev-server';
+import { DEV_SCOPES, devTools, UI_VIEWPORTS, viewportOf } from './dev-server';
 import type { QueryRows } from './query-limits';
 import type { DatabaseTarget } from './readonly-sql';
 import type { AnyMcpTool, McpCaller, McpToolResult } from './registry';
@@ -69,6 +69,16 @@ function fakeHost(database: DatabaseTarget): { host: DevHost; ran: string[] } {
         : undefined,
     async verify() {
       return { ok: true, steps: [{ name: 'types', ok: true }] };
+    },
+    async shotRoute(input) {
+      ran.push(
+        `shot:${input.route}:${input.viewport.width}x${input.viewport.height}:${input.colorScheme}`,
+      );
+      return { ok: true, image: '/x/shot.png', verdictFile: '/x/verdict.json', verdict: {} };
+    },
+    async shotIsland(input) {
+      ran.push(`island:${input.island}:${input.state ?? '*'}`);
+      return { ok: true, dir: '/x/island', verdictFile: '/x/island/verdict.json', verdict: {} };
     },
   };
   return { host, ran };
@@ -354,6 +364,68 @@ describe('the tools that execute something report failure as isError', () => {
       { lines: 100, role: undefined },
       { lines: 5, role: 'worker' },
       { lines: 100, role: undefined },
+    ]);
+  });
+});
+
+describe('the ui tools photograph through the host and never inline the picture', () => {
+  test('ui.shot resolves a named viewport, defaults to desktop/dark, and passes the route through', async () => {
+    const { host, ran } = fakeHost(BRANCH);
+    const tools = devTools(host);
+    const shot = tools.find((t) => t.name === 'ui.shot');
+    if (shot === undefined) expect.unreachable('no ui.shot tool');
+    expect(shot.destructive).toBe(true);
+    expect(shot.scope).toBe(DEV_SCOPES.test);
+
+    const result = await shot.handle({ route: '/dashboard' }, caller);
+    expect(ran).toContain('shot:/dashboard:1440x900:dark');
+    // The answer names files; it carries no image bytes.
+    const answer = JSON.parse(textOf(result) ?? '{}') as { image: string };
+    expect(answer.image).toBe('/x/shot.png');
+    expect(textOf(result)).not.toContain('base64');
+
+    await shot.handle({ route: '/', viewport: 'phone', theme: 'light' }, caller);
+    expect(ran).toContain('shot:/:390x844:light');
+  });
+
+  test('an explicit width AND height beat the name; half a pair does not', () => {
+    expect(viewportOf({ width: 1024, height: 600, viewport: 'phone' })).toEqual({
+      width: 1024,
+      height: 600,
+    });
+    expect(viewportOf({ width: 1024, viewport: 'phone' })).toEqual(UI_VIEWPORTS.phone);
+    expect(viewportOf({})).toEqual(UI_VIEWPORTS.desktop);
+    // A name that is not one of ours is the default, never a crash and never a 0×0 frame.
+    expect(viewportOf({ viewport: 'watch' })).toEqual(UI_VIEWPORTS.desktop);
+  });
+
+  test('ui.shot and ui.island are errors exactly when the verdict is not ok', async () => {
+    const { host } = fakeHost(BRANCH);
+    const tools = devTools({
+      ...host,
+      async shotRoute() {
+        return { ok: false, image: '/x/shot.png', verdictFile: '/x/v.json', verdict: {} };
+      },
+      async shotIsland() {
+        return { ok: false, dir: '/x/i', verdictFile: '/x/i/v.json', verdict: {} };
+      },
+    });
+    const shot = tools.find((t) => t.name === 'ui.shot');
+    const island = tools.find((t) => t.name === 'ui.island');
+    expect((await shot?.handle({ route: '/a' }, caller))?.isError).toBe(true);
+    expect((await island?.handle({ island: 'feed' }, caller))?.isError).toBe(true);
+  });
+
+  test('ui.island passes the state through only when it is a string', async () => {
+    const { host, ran } = fakeHost(BRANCH);
+    const island = devTools(host).find((t) => t.name === 'ui.island');
+    await island?.handle({ island: 'feed' }, caller);
+    await island?.handle({ island: 'feed', state: 'empty' }, caller);
+    await island?.handle({ island: 'feed', state: 3 }, caller);
+    expect(ran.filter((r) => r.startsWith('island:'))).toEqual([
+      'island:feed:*',
+      'island:feed:empty',
+      'island:feed:*',
     ]);
   });
 });

@@ -68,6 +68,59 @@ export interface VerifyResult {
 }
 
 /** Description sources. Satisfied by `frameworkIntrospection` in a real app. */
+/**
+ * The viewports `ui.shot` names. Named, not free, so two agents (or one agent twice) photograph
+ * the same thing and can compare the pictures; `{ width, height }` stays available for the one
+ * case a name does not cover.
+ */
+export const UI_VIEWPORTS = {
+  phone: { width: 390, height: 844 },
+  tablet: { width: 820, height: 1180 },
+  desktop: { width: 1440, height: 900 },
+} as const;
+export type UiViewportName = keyof typeof UI_VIEWPORTS;
+export type UiColorScheme = 'light' | 'dark';
+
+export interface UiShotInput {
+  /** The route's path — `/dashboard`, `/links/abc123` — never a full URL. */
+  readonly route: string;
+  readonly viewport: { readonly width: number; readonly height: number };
+  /**
+   * What `prefers-color-scheme` the page sees. Emulated on the page BEFORE navigation, so a
+   * capture never depends on the box that took it; an app whose boot script honours a stored
+   * choice still wins, because the stored choice is what "explicit" means.
+   */
+  readonly colorScheme: UiColorScheme;
+  readonly fullPage: boolean;
+}
+
+/**
+ * What a picture is worth: the file, and the verdict beside it. The verdict is the SAME shape
+ * `x shot` writes to `verdict.json` — console lines, page errors, network refusals, whether every
+ * island mounted — so a picture with a hydration error is a finding, never merely a picture.
+ * The PNG is a PATH, never inlined bytes: an agent reads the picture it wants and pays for one.
+ */
+export interface UiShotResult {
+  readonly ok: boolean;
+  readonly image: string;
+  readonly verdictFile: string;
+  readonly verdict: unknown;
+}
+
+export interface UiIslandInput {
+  /** The island's name as `x shot --island <name>` takes it. */
+  readonly island: string;
+  /** One declared state, or every state the island declares. */
+  readonly state?: string | undefined;
+}
+
+export interface UiIslandResult {
+  readonly ok: boolean;
+  readonly dir: string;
+  readonly verdictFile: string;
+  readonly verdict: unknown;
+}
+
 export interface DevIntrospection {
   routes(): unknown;
   entities(): unknown;
@@ -94,6 +147,15 @@ export interface DevCapabilities {
   readManifest(): Promise<string>;
   explainError(code: string): ErrorExplanation | undefined;
   verify(fix: boolean): Promise<VerifyResult>;
+  /**
+   * Photograph one route against the running dev server (or a scratch one), the way `x shot
+   * <route>` does, at a viewport and colour scheme the caller names. Refuses a route that declares
+   * no JS budget: a picture of a route nobody has finished is a picture of a draft, and the gate
+   * refuses the same route as `X_BUDGET_UNMEASURED`.
+   */
+  shotRoute(input: UiShotInput): Promise<UiShotResult>;
+  /** `x shot --island <name> [--state <id>]` as a tool: every declared state, photographed and judged. */
+  shotIsland(input: UiIslandInput): Promise<UiIslandResult>;
 }
 
 export type DevHost = DevIntrospection & DevCapabilities;
@@ -103,6 +165,19 @@ const NAME_ARG: JsonSchema = {
   properties: { name: { type: 'string', description: 'Job name from jobs.inspect with no name.' } },
   additionalProperties: false,
 };
+
+/**
+ * An explicit `width`+`height` wins over the name; one of the pair alone is not a viewport and
+ * falls back to the name (default `desktop`) rather than to a half-sized frame.
+ */
+export function viewportOf(args: ToolArgs): { readonly width: number; readonly height: number } {
+  const width = args['width'];
+  const height = args['height'];
+  if (typeof width === 'number' && typeof height === 'number') return { width, height };
+  const name = args['viewport'];
+  const named = typeof name === 'string' && Object.hasOwn(UI_VIEWPORTS, name) ? name : 'desktop';
+  return UI_VIEWPORTS[named as UiViewportName];
+}
 
 /** Every dev tool, in one array so `x mcp serve` and the HTTP transport share the catalog. */
 export function devTools(host: DevHost): readonly AnyMcpTool[] {
@@ -255,6 +330,67 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
       },
       async handle(args: ToolArgs) {
         const result = await host.verify(args['fix'] === true);
+        return { ...jsonResult(result), ...(result.ok ? {} : { isError: true }) };
+      },
+    },
+    {
+      name: 'ui.shot',
+      description:
+        'Photograph one route at a named viewport (phone/tablet/desktop) or an explicit size, ' +
+        'in light or dark, against the running dev server. Returns the PNG path and the same ' +
+        'verdict x shot writes: console, page errors, refused requests, whether every island ' +
+        'mounted. Refuses a route with no declared JS budget. Launches a browser.',
+      scope: DEV_SCOPES.test,
+      destructive: true,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          route: { type: 'string', description: 'Route path, e.g. /dashboard.' },
+          viewport: {
+            type: 'string',
+            enum: Object.keys(UI_VIEWPORTS),
+            default: 'desktop',
+            description: 'phone 390×844, tablet 820×1180, desktop 1440×900.',
+          },
+          width: { type: 'integer', minimum: 320, maximum: 3840 },
+          height: { type: 'integer', minimum: 320, maximum: 2160 },
+          theme: { type: 'string', enum: ['light', 'dark'], default: 'dark' },
+          fullPage: { type: 'boolean', default: true },
+        },
+        required: ['route'],
+        additionalProperties: false,
+      },
+      async handle(args: ToolArgs) {
+        const route = typeof args['route'] === 'string' ? args['route'] : '';
+        const result = await host.shotRoute({
+          route,
+          viewport: viewportOf(args),
+          colorScheme: args['theme'] === 'light' ? 'light' : 'dark',
+          fullPage: args['fullPage'] !== false,
+        });
+        return { ...jsonResult(result), ...(result.ok ? {} : { isError: true }) };
+      },
+    },
+    {
+      name: 'ui.island',
+      description:
+        'Photograph an island in every state its *.island.states.ts declares (or one state), ' +
+        'as x shot --island does: PNGs plus a verdict per state. Launches a browser.',
+      scope: DEV_SCOPES.test,
+      destructive: true,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          island: { type: 'string', description: 'Island name, e.g. links-table.' },
+          state: { type: 'string', description: 'One declared state id; omit for all.' },
+        },
+        required: ['island'],
+        additionalProperties: false,
+      },
+      async handle(args: ToolArgs) {
+        const island = typeof args['island'] === 'string' ? args['island'] : '';
+        const state = typeof args['state'] === 'string' ? args['state'] : undefined;
+        const result = await host.shotIsland({ island, ...(state === undefined ? {} : { state }) });
         return { ...jsonResult(result), ...(result.ok ? {} : { isError: true }) };
       },
     },

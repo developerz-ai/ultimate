@@ -555,6 +555,8 @@ Three of them are raised at `notifier(...)`, while the app's modules load, so th
 
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
+| `X_UI_SHOT_ROUTE_UNKNOWN` | `ui.shot` was asked for a path no route in this app answers | a typo, a route that has not been declared yet, or a full URL where a path was expected | `x mcp`: call `routes.list`, then `ui.shot` with one of its `path` values |
+| `X_UI_SHOT_ROUTE_UNBUDGETED` | `ui.shot` refused a route that declares no `budget.js` | a picture of a route nobody has finished declaring is a picture of a draft — the gate refuses the same route as `X_BUDGET_UNMEASURED`, and an agent judging the picture would judge the wrong thing | declare `budget: { js: '<n>kb' }` in the route file, then `x build --target static && x verify --only budgets` |
 | `X_MCP_TOOL_UNKNOWN` | no such tool for this caller | a stale tool name, or one this caller may not see | call `tools/list` to read the catalog |
 | `X_MCP_ARGS_INVALID` | tool arguments failed the input schema | guessed arguments | re-read `inputSchema` from `tools/list` and resend |
 | `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope | a read token calling a write tool. The fix used to name `x token grant <scope>`, which is **planned** and exits `X_NOT_IMPLEMENTED` | reconnect with a token whose scopes include the one `cause` names — the app's `resolveToken(token)` is what returns them — or drop that scope from `defineAppMcp({ scopes })`. Scopes belong to the token and are fixed for the life of a connection, so a grant takes effect on the next one |

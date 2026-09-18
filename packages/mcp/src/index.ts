@@ -25,10 +25,16 @@ export type {
   MigrateResult,
   QueueDepth,
   TestRun,
+  UiColorScheme,
+  UiIslandInput,
+  UiIslandResult,
+  UiShotInput,
+  UiShotResult,
+  UiViewportName,
   VerifyResult,
   VerifyStep,
 } from './dev-server';
-export { DEV_SCOPES, devTools } from './dev-server';
+export { DEV_SCOPES, devTools, UI_VIEWPORTS, viewportOf } from './dev-server';
 export type { McpErrorCode } from './errors';
 export {
   MCP_ERROR_CODES,
