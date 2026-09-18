@@ -35,8 +35,8 @@ let onReload: (file: string) => void = () => undefined;
  * be reported as a hang, never as a boot that was 300ms slower than the runner's default.
  */
 const BOOT_TIMEOUT_MS = 60_000;
-
-/** Bound and released: `METRICS_PORT` is read as a NAMED port, so it can be neither 0 nor 9090. */
+const portOf = (url: string | null): number => Number(new URL(url ?? '').port);
+// Bound and released: `METRICS_PORT` is read as a NAMED port, so it can be neither 0 nor 9090.
 const METRICS_PORT = ((): number => {
   const probe = Bun.serve({ port: 0, hostname: 'localhost', fetch: () => new Response('') });
   const port = Number(new URL(probe.url).port);
@@ -100,7 +100,7 @@ describe('unit · x dev boots the app', () => {
     expect(server.roles).toEqual(['web', 'sync', 'worker', 'scheduler']);
     expect(server.running.worker).not.toBeNull();
     expect(server.running.scheduler).not.toBeNull();
-    expect(server.running.syncUrl).not.toBeNull();
+    expect(portOf(server.running.syncUrl)).toBe(portOf(server.url) + 1); // PORT + 1 at --port 0 too
     expect(server.findings).toEqual([]);
   });
 
