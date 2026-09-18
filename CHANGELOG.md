@@ -22,6 +22,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   calls. The tenant-scoped output is unchanged. Also fixed `sliceExports` (used to make that
   decision): it never recognised `export async function <name>`, so it always read a real
   `byId`/`listByOrg` as absent. (#447)
+- **`x dev` now declares `ULTIMATE_ENV=development` for the app it boots** when neither
+  `ULTIMATE_ENV` nor `NODE_ENV` is already set. `tryResolveEnvironment` answers `development` only
+  by DEFAULT in that case — indistinguishable from a process that never named its environment at
+  all — which is why a scaffolded app's `apps/web/app/auth/dev-actor.ts` had to fail OPEN. That
+  template now fails CLOSED (`fallback: 'production'`), and this is what keeps a bare `x dev`
+  installing its dev viewer regardless.
 - **`x shot --island` no longer fails every state of a live island.** A component whose `mount()`
   unconditionally dials `@ultimat3/realtime`'s `LiveClient.connect()` (or any `WebSocket` /
   `EventSource`) used to fail `X_SHOT_ISLAND_UNSTUBBED_REQUEST` in every state, and the error's own
