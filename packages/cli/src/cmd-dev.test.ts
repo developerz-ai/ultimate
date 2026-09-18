@@ -35,8 +35,8 @@ let onReload: (file: string) => void = () => undefined;
  * be reported as a hang, never as a boot that was 300ms slower than the runner's default.
  */
 const BOOT_TIMEOUT_MS = 60_000;
-
-/** Bound and released: `METRICS_PORT` is read as a NAMED port, so it can be neither 0 nor 9090. */
+const portOf = (url: string | null): number => Number(new URL(url ?? '').port);
+// Bound and released: `METRICS_PORT` is read as a NAMED port, so it can be neither 0 nor 9090.
 const METRICS_PORT = ((): number => {
   const probe = Bun.serve({ port: 0, hostname: 'localhost', fetch: () => new Response('') });
   const port = Number(new URL(probe.url).port);
@@ -100,20 +100,8 @@ describe('unit · x dev boots the app', () => {
     expect(server.roles).toEqual(['web', 'sync', 'worker', 'scheduler']);
     expect(server.running.worker).not.toBeNull();
     expect(server.running.scheduler).not.toBeNull();
-    expect(server.running.syncUrl).not.toBeNull();
+    expect(portOf(server.running.syncUrl)).toBe(portOf(server.url) + 1); // PORT + 1 at --port 0 too
     expect(server.findings).toEqual([]);
-  });
-
-  // The contract every scaffolded `sync-url.ts` computes from, and the wiki states: the sync
-  // role listens on PORT + 1. `--port 0` asked the kernel for the WEB port; `syncPortFor(0)` is
-  // 0 on purpose (a specific port would be picked instead), so the +1 has to come from the port
-  // the web role actually bound — which `listen()` is handed. Before this, a scratch server's
-  // pictures carried `WebSocket … ERR_CONNECTION_REFUSED` for every live island.
-  test('with --port 0, the sync role still binds one above the web port the kernel picked', () => {
-    const web = Number(new URL(server.url).port);
-    const sync = Number(new URL(server.running.syncUrl ?? '').port);
-    expect(web).toBeGreaterThan(0);
-    expect(sync).toBe(web + 1);
   });
 
   // `cmd-dev.ts` passed no `metricsPort`, so `METRICS_PORT` moved the scrape port in the container
