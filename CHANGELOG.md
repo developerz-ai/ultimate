@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 20.1.4 - 2026-09-18
+
 ### Added
 
 - **The dev MCP server can see the UI: `ui.shot` and `ui.island`.** Thirteen tools could
@@ -37,6 +41,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   bare form it now names both exits: a Date â†’ `{ timeZone }`; a number â†’ `new
   Intl.NumberFormat(locale).format(n)`. The dated forms keep the zone-only fix. An existing app
   updates its `guards/unzoned-date.ts` by hand (`x new` writes it once). (#456)
+
+### Commits
+
+- feat(mcp): ui.shot and ui.island â€” the dev server can see the UI (#464)
+- docs(wiki): record the unreproduced stale-typecheck sighting as a known gap (#450) (#462)
+- fix(cli): the unzoned-date guard's fix names the number exit for a bare toLocaleString (#461)
 
 ## 20.1.3 - 2026-09-18
 
