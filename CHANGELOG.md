@@ -8,7 +8,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`ui.shot` / `ui.island` work more than once per `x mcp serve` process.** Each call booted a
+  scratch server through `devServerFor` and stopped it after the picture, as the one-shot `x shot`
+  command does â€” but the dev MCP server is one process serving many calls, and a lifecycle drains
+  exactly once: the second call in a session answered `X_LIFECYCLE_DRAINED`, the third
+  `X_READINESS_CHECK_DUPLICATE`. The scratch server (or the running `x dev` the lock names) is now
+  booted at most once per host, `runShot` is handed a handle whose `stop` is a no-op, and the
+  host's `close()` stops it. `x shot` the command is unchanged. (#467)
 
 ## 20.1.4 - 2026-09-18
 
