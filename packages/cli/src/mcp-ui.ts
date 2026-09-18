@@ -41,14 +41,14 @@ export function assertBudgetedRoute(route: string, declared: readonly DeclaredRo
     throw new UltimateError({
       code: 'X_UI_SHOT_ROUTE_UNKNOWN',
       cause: `no route in this app answers ${route}`,
-      fix: 'x mcp: call routes.list, then ui.shot with one of its `path` values',
+      fix: 'x routes --json   # then ui.shot with one of its `path` values',
     });
   }
   if (hit.budgetJs === null) {
     throw new UltimateError({
       code: 'X_UI_SHOT_ROUTE_UNBUDGETED',
       cause: `${hit.file} declares no budget.js, so x verify would refuse it as X_BUDGET_UNMEASURED — a picture of it would be a picture of a draft`,
-      fix: `declare budget: { js: '<n>kb' } in ${hit.file}, then: x build --target static && x verify --only budgets`,
+      fix: `declare budget: { js: '<n>kb' } in ${hit.file}, then: x build --target static --json && x verify --only budgets --json`,
     });
   }
 }

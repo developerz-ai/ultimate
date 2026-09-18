@@ -55,6 +55,9 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_PACKAGE_DUPLICATED:
     'x i18n check --json   # the finding names both copies and the package.json to pin',
   X_SHOT_BROWSER_MISSING: 'bun add -d puppeteer-core',
+  X_UI_SHOT_ROUTE_UNKNOWN: 'x routes --json   # then ui.shot with one of its path values',
+  X_UI_SHOT_ROUTE_UNBUDGETED:
+    "x build --target static --json && x verify --only budgets --json   # after declaring budget: { js: '<n>kb' } in the route file",
   // The four island-capture codes. Each one's real repair is an edit to the app's own states file
   // or component, which no command can perform — so each names the command that REPRODUCES it with
   // the file and the reason attached, which is the runnable half.
