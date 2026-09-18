@@ -81,6 +81,12 @@ function fakeHost(database: DatabaseTarget, calls: HostCalls): DevHost {
     async verify() {
       return { ok: true, steps: [] };
     },
+    async shotRoute() {
+      return { ok: true, image: '', verdictFile: '', verdict: {} };
+    },
+    async shotIsland() {
+      return { ok: true, dir: '', verdictFile: '', verdict: {} };
+    },
   };
 }
 

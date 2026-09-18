@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d6d9347049768749701ba1f3b7b8d5c5f1106984f4b465f0c40da48718fced9b",
+  "buildId": "0c0c3fa49aba616e7a1e767fae59b4a13284d7772b44c6adbbeada5f95d4c2f7",
   "tiers": {
     "0": [
       "core",
@@ -3423,6 +3423,16 @@
       "code": "X_UI_RUNTIME_MISSING",
       "owner": "ui",
       "at": "packages/ui/src/errors.ts"
+    },
+    {
+      "code": "X_UI_SHOT_ROUTE_UNBUDGETED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UI_SHOT_ROUTE_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_UNAUTHENTICATED",

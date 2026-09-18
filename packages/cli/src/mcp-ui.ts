@@ -5,6 +5,7 @@
 // Nothing here is a new capability; it is the existing one made reachable from inside the loop
 // an agent already works in, so "does it look right" stops needing a hand-written script.
 
+// why: Bun exposes no path-join primitive, and the picture's directory is a path an agent opens.
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import type { UiIslandInput, UiIslandResult, UiShotInput, UiShotResult } from '@ultimat3/mcp';
