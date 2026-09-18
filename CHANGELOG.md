@@ -28,6 +28,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   all — which is why a scaffolded app's `apps/web/app/auth/dev-actor.ts` had to fail OPEN. That
   template now fails CLOSED (`fallback: 'production'`), and this is what keeps a bare `x dev`
   installing its dev viewer regardless.
+- **`x shot --island` no longer fails every state of a live island.** A component whose `mount()`
+  unconditionally dials `@ultimat3/realtime`'s `LiveClient.connect()` (or any `WebSocket` /
+  `EventSource`) used to fail `X_SHOT_ISLAND_UNSTUBBED_REQUEST` in every state, and the error's own
+  `fix:` named a stub `match` the harness's grammar could never accept (`WS ws://…` fails
+  `isStubMatch`). The harness now gives `WebSocket`/`EventSource` an inert stand-in — it constructs,
+  never opens, `close()`/`send()` are no-ops — recorded on its own `sockets` list rather than on
+  `unstubbed`; a real unanswered `fetch`/XHR still fails the run unchanged. (#448)
 
 ## 20.1.2 - 2026-09-16
 
