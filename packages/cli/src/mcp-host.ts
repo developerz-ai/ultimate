@@ -33,6 +33,7 @@ import { describeRoutes } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import { appManifest, policyFacts } from './app-manifest';
 import { runVerify, VERIFY_STEPS } from './cmd-verify';
+import { declareDevEnvironment } from './dev-environment';
 import type { RunningServices } from './dev-runtime';
 import { startServices } from './dev-runtime';
 import type { DevServices, Env } from './dev-services';
@@ -315,6 +316,12 @@ export async function createDevMcpServer(input: DevHostInput): Promise<CliMcpSer
   // `explainError` is synchronous by `DevCapabilities`' own signature, so the walk that reads the
   // framework's `fix:` lines happens here, once, or `errors.explain` answers with the fallback for
   // every code it could have quoted.
+  // BEFORE `loadApp` imports a single app module, for the reason `x dev` and `startDev` declare
+  // it first: a scaffolded app's dev actor installs itself at import time, and installs nothing
+  // into a process that has not said it is development. Measured on 20.1.5: the first `ui.shot`
+  // in a session photographed a 401 (`actorKind: anonymous`), and only the second call — whose
+  // scratch boot re-imported the app after declaring — rendered. Idempotent; a set key stays.
+  declareDevEnvironment(input.env);
   await Promise.all([loadApp(input.root), loadCodeFixes()]);
   const lazy = lazyServices(input);
   const ui = uiCapabilities({ root: input.root, env: input.env });
