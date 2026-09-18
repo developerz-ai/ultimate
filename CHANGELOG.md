@@ -22,6 +22,26 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   calls. The tenant-scoped output is unchanged. Also fixed `sliceExports` (used to make that
   decision): it never recognised `export async function <name>`, so it always read a real
   `byId`/`listByOrg` as absent. (#447)
+- **`x dev` now declares `ULTIMATE_ENV=development` for the app it boots** when neither
+  `ULTIMATE_ENV` nor `NODE_ENV` is already set. `tryResolveEnvironment` answers `development` only
+  by DEFAULT in that case — indistinguishable from a process that never named its environment at
+  all — which is why a scaffolded app's `apps/web/app/auth/dev-actor.ts` had to fail OPEN. That
+  template now fails CLOSED (`fallback: 'production'`), and this is what keeps a bare `x dev`
+  installing its dev viewer regardless.
+- **`x shot --island` no longer fails every state of a live island.** A component whose `mount()`
+  unconditionally dials `@ultimat3/realtime`'s `LiveClient.connect()` (or any `WebSocket` /
+  `EventSource`) used to fail `X_SHOT_ISLAND_UNSTUBBED_REQUEST` in every state, and the error's own
+  `fix:` named a stub `match` the harness's grammar could never accept (`WS ws://…` fails
+  `isStubMatch`). The harness now gives `WebSocket`/`EventSource` an inert stand-in — it constructs,
+  never opens, `close()`/`send()` are no-ops — recorded on its own `sockets` list rather than on
+  `unstubbed`; a real unanswered `fetch`/XHR still fails the run unchanged. (#448)
+- **`x shot` launches Chrome with the same container flags the e2e driver already needed.**
+  `cdp-launch.ts`'s launcher (`x verify`'s e2e step) passed `--no-sandbox` and
+  `--disable-dev-shm-usage`; `x shot`'s launcher — a different process, `puppeteer-core`'s own
+  `launch()` — passed neither, so on Ubuntu 23.10+ (AppArmor restricts the unprivileged user
+  namespace the sandbox needs) Chrome exited "No usable sandbox" and `x shot` could not run on a
+  box where the e2e gate ran green. Both launchers now read the same exported
+  `CONTAINER_CHROME_ARGS`. An attach (`--cdp-url`) is unaffected — it starts nothing locally. (#444)
 - **`x verify`/`x test` no longer leak `.env.development` into the `bun test` children they
   spawn.** Bun auto-loads `.env.development`/`.env.development.local` into the parent `x` process
   whenever `NODE_ENV` is unset; `exec.ts` then spread that whole environment onto every `bun test`

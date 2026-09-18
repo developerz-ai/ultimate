@@ -36,6 +36,7 @@ const shot = (
   box: { x: 0, y: 0, width: 420, height: 260 },
   mounted: true,
   unstubbed: [],
+  sockets: [],
   console: [],
   pageErrors: [],
   overflow: { x: false, y: false },

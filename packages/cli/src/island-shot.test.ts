@@ -43,6 +43,7 @@ const READY: IslandReadiness = {
   harness: true,
   ready: true,
   unstubbed: [],
+  sockets: [],
   attached: true,
   mounted: true,
   failed: null,

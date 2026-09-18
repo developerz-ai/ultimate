@@ -23,9 +23,13 @@ const devActor = (
 // \`X_CONFIG_INVALID\` — which is what a scaffolded app did on its very first \`x dev\`.
 //
 // DEVELOPMENT ONLY, and the guard is the point: a viewer that followed this to staging would sign
-// every visitor in as an admin. \`bun test\` sets \`NODE_ENV=test\`, so it does not install there
-// either — a fixture mints its own actor, and a second one arriving from a cookie would decide
-// which actor a test is about.
+// every visitor in as an admin. FAILS CLOSED (\`fallback: 'production'\`) rather than trusting
+// \`tryResolveEnvironment\`'s own default: that default is \`development\`, so a process that named
+// NEITHER \`ULTIMATE_ENV\` nor \`NODE_ENV\` would otherwise read as development too — indistinguishable
+// from the one this file exists to allow. \`x dev\` declares \`ULTIMATE_ENV=development\` for exactly
+// this reason (whenever neither key is already set), so a bare \`x dev\` still installs this viewer;
+// \`bun test\` sets \`NODE_ENV=test\`, so it does not install there either — a fixture mints its own
+// actor, and a second one arriving from a cookie would decide which actor a test is about.
 //
 // REPLACE IT with the real thing: resolve a session cookie to a row, and return that actor.
 // Everything downstream — pages, policies, live subscribers, MCP tools — reads what this returns.
@@ -78,7 +82,7 @@ export const devActorFor = (role: DevRole): Actor => ({
 export function installDevAuthenticator(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
-  if (tryResolveEnvironment({ env }) !== 'development') return false;
+  if (tryResolveEnvironment({ env, fallback: 'production' }) !== 'development') return false;
   configureAuthenticator((request) => devActorFor(devRoleFrom(request.header('cookie'))));
   logger.warn('every request is answered as a development viewer', {
     role: DEFAULT_DEV_ROLE,
@@ -133,6 +137,11 @@ unitTest('it installs in development and in no other environment', () => {
 
   expect(installDevAuthenticator({ ULTIMATE_ENV: 'production' })).toBe(false);
   expect(installDevAuthenticator({ ULTIMATE_ENV: 'staging' })).toBe(false);
+  // FAILS CLOSED: a process naming NEITHER key is production here, never the default-development
+  // a bare \`tryResolveEnvironment({ env })\` would answer. \`x dev\` is what makes a real \`x dev\`
+  // still install this viewer — it declares \`ULTIMATE_ENV=development\` before this module loads,
+  // for exactly the process this call simulates having none of.
+  expect(installDevAuthenticator({})).toBe(false);
   expect(configuredAuthenticator()).toBeUndefined();
 
   expect(installDevAuthenticator({ ULTIMATE_ENV: 'development' })).toBe(true);

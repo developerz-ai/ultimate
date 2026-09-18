@@ -13,7 +13,7 @@ import { existsSync } from 'node:fs';
 import { UltimateError } from '@ultimat3/core';
 import type { CdpLauncherLike, ScrapeDriver } from '@ultimat3/scraping';
 import { localBrowser, remoteBrowser } from '@ultimat3/scraping';
-import { CHROME_CANDIDATES } from './cdp-launch';
+import { CHROME_CANDIDATES, CONTAINER_CHROME_ARGS } from './cdp-launch';
 
 /**
  * The one library this works against. Playwright is not an alternative and is not a flag:
@@ -231,8 +231,15 @@ export async function appBrowser(options: AppBrowserOptions): Promise<ScrapeDriv
     ...(options.executablePath === undefined ? {} : { executablePath: options.executablePath }),
     // `LocalBrowserOptions.options` is passed through to `launch()` untouched, which is the seam
     // that lets the CLI size a browser without `@ultimat3/scraping` naming a puppeteer type.
-    ...(options.viewport === undefined
-      ? {}
-      : { options: { defaultViewport: { ...options.viewport } } }),
+    //
+    // `args` carries `CONTAINER_CHROME_ARGS` on EVERY local launch, viewport or not — the same
+    // `--no-sandbox` / `--disable-dev-shm-usage` `cdp-launch.ts`'s e2e driver already needed for
+    // this container, read from the one export rather than restated. Before this, `x shot` was the
+    // only browser-launching command in the tree with neither, so a box where the e2e gate ran
+    // green could not run `x shot` at all — Chrome exits "No usable sandbox".
+    options: {
+      args: [...CONTAINER_CHROME_ARGS],
+      ...(options.viewport === undefined ? {} : { defaultViewport: { ...options.viewport } }),
+    },
   });
 }

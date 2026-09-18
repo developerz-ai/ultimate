@@ -65,10 +65,54 @@ var method=(init&&init.method)||(typeof input==='object'&&input&&input.method)||
 var path=pathOf(url);var k=method.toUpperCase()+' '+path;
 var respond=stubFor(method,path);bump();
 return answer(respond,k).then(function(r){bump();return r},function(e){bump();throw e})};
-// A socket and an event stream have no stub vocabulary at all, so both are refused outright and
-// recorded: a live component that opened one would otherwise sit in its loading branch forever.
-window.WebSocket=function(url){W.unstubbed.push('WS '+url);throw refuse('WS '+url)};
-window.EventSource=function(url){W.unstubbed.push('SSE '+url);throw refuse('SSE '+url)};
+// A socket or an event stream needs no stub, because a SNAPSHOT of an island does not need a
+// LIVE one: every state's fixture already rides \`props\`/\`routes\`, so the component's own
+// realtime layer has nothing to tell it that the fetch/XHR seal does not already say. Refusing
+// the construction outright — as this did until the defect that made every live island
+// unphotographable — fails a component for opening a channel whose data this harness was never
+// asked to carry, in EVERY state, because \`mount()\` dials it unconditionally.
+//
+// So the stand-in is INERT rather than refused: no real dial, no network, no message and no error
+// ever delivered. \`close()\`/\`send()\` are no-ops. Recorded on \`W.sockets\`, never on
+// \`W.unstubbed\` — a real unanswered fetch still fails the run (the refusal above is unchanged),
+// but a socket a component merely opened and heard nothing from is not the same fact as a request
+// nobody stubbed, and \`stateShotOk\` must not conflate the two; neither field is hidden from the
+// verdict, both ride \`--json\` plainly, so this is not a candidate for \`ISLAND_BLIND_SPOTS\` —
+// that list is for a fact a PICTURE cannot show, and a socket's inertness is a fact this JSON
+// already states.
+//
+// \`readyState\` DOES leave CONNECTING, on a zero-delay timer, once: a component whose \`mount()\`
+// awaits the socket's own \`open\` before it renders anything — never true of the reference app's
+// \`LiveClient\`, whose \`connect()\` registers callbacks and returns, but not a fact this harness
+// may assume of every app — would otherwise hang the mount forever, trading one impossible
+// \`X_SHOT_ISLAND_UNSTUBBED_REQUEST\` fix for an unreachable \`--settle\` deadline, the same defect
+// under a different name. So \`onopen\`/an \`'open'\` listener fires exactly once; \`onmessage\` and
+// \`onerror\` never do, because this is a channel that opened and then heard nothing, not one that
+// received data no fixture could have supplied.
+function inertSocket(kind,url){
+W.sockets.push(kind+' '+url);
+var listeners={};
+var self={
+readyState:0,url:String(url),
+addEventListener:function(type,fn){(listeners[type]=listeners[type]||[]).push(fn)},
+removeEventListener:function(type,fn){var l=listeners[type];if(!l)return;
+var i=l.indexOf(fn);if(i>=0)l.splice(i,1)},
+dispatchEvent:function(){return true},
+send:function(){},
+close:function(){},
+onopen:null,onmessage:null,onerror:null,onclose:null};
+setTimeout(function(){
+self.readyState=1;
+var ev={type:'open',target:self};
+if(typeof self.onopen==='function')self.onopen(ev);
+var handlers=listeners['open'];
+if(handlers)for(var i=0;i<handlers.length;i+=1)handlers[i](ev)},0);
+return self}
+window.WebSocket=function(url){return inertSocket('WS',url)};
+window.WebSocket.CONNECTING=0;window.WebSocket.OPEN=1;
+window.WebSocket.CLOSING=2;window.WebSocket.CLOSED=3;
+window.EventSource=function(url){return inertSocket('SSE',url)};
+window.EventSource.CONNECTING=0;window.EventSource.OPEN=1;window.EventSource.CLOSED=2;
 var RealXHR=window.XMLHttpRequest;
 window.XMLHttpRequest=function(){var xhr=new RealXHR();var open=xhr.open;
 xhr.open=function(method,url){W.unstubbed.push(String(method).toUpperCase()+' '+pathOf(url));
@@ -117,7 +161,7 @@ requestAnimationFrame(tick)}
 /** The whole prelude, in the one order that works: state, seal, clock, then the readiness watch. */
 export function harnessScript(options: HarnessScriptOptions): string {
   return [
-    `window.${HARNESS_GLOBAL}={harness:true,activity:0,ready:false,unstubbed:[]};`,
+    `window.${HARNESS_GLOBAL}={harness:true,activity:0,ready:false,unstubbed:[],sockets:[]};`,
     sealScript(options.stubs),
     clockScript(options.now, options.timeZone),
     readyScript(),
@@ -138,6 +182,11 @@ export const readinessProbe = (selector: string): string =>
   'var r=box?box.getBoundingClientRect():{width:0,height:0,x:0,y:0};' +
   'return{harness:W.harness===true,ready:W.ready===true,' +
   'unstubbed:(W.unstubbed||[]).slice(),' +
+  // Recorded beside `unstubbed`, never merged into it: a socket a component opened and never
+  // heard back from is not the same fact as a request nobody stubbed, and `stateShotOk` reads
+  // neither — a component may legitimately hold an open, silent channel in a state that is
+  // otherwise clean.
+  'sockets:(W.sockets||[]).slice(),' +
   'attached:host!==null&&document.body.contains(host),' +
   'mounted:host!==null&&host.hasAttribute("data-x-mounted"),' +
   'failed:host&&host.hasAttribute("data-x-failed")?host.getAttribute("data-x-failed"):null,' +
