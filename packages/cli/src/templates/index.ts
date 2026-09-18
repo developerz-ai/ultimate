@@ -12,7 +12,8 @@ export { entityFiles } from './entity';
 export { guardCode, guardFiles } from './guard';
 export type { IslandOptions } from './island';
 export { islandFiles } from './island';
-export { jobFiles, taskFiles } from './job';
+export type { JobOptions } from './job';
+export { isTenantScopedSlice, jobFiles, taskFiles } from './job';
 export { CATALOG_ROOT, catalogPath, DEFAULT_LOCALES, resolveLocales } from './locales';
 // All three members of the `GeneratedFile` union, not two: the barrel exported the union and the
 // foundation variant only, so a consumer could hold a `GeneratedFile` and had no name to narrow it
