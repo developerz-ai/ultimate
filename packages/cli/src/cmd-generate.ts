@@ -72,12 +72,19 @@ export const generateCommand: CliCommand = {
     // imports `useT()` from is a fact about THIS app, and `generate` is a pure function.
     const catalogModule = await resolveCatalogModule(root);
     // Read for the same reason: which errors the slice declares is written on THIS app's disk.
-    const sliceErrors = await readSliceErrors(root, kind, sliceDir(surface, featureFlag ?? name));
+    const slice = sliceDir(surface, featureFlag ?? name);
+    const sliceErrors = await readSliceErrors(root, kind, slice);
+    // Same reason again: whether `job`/`task` may assume the tenant-scoped shape is a fact about
+    // THIS feature's own `entity.ts`/`repo.ts`, not a default the template gets to assume.
+    const sliceEntity = await readSliceFile(root, kind, slice, 'entity.ts');
+    const sliceRepo = await readSliceFile(root, kind, slice, 'repo.ts');
     const files = generate({
       kind,
       name,
       ...(featureFlag === undefined ? {} : { feature: featureFlag }),
       ...(sliceErrors === undefined ? {} : { sliceErrors }),
+      ...(sliceEntity === undefined ? {} : { sliceEntity }),
+      ...(sliceRepo === undefined ? {} : { sliceRepo }),
       ...(at === undefined ? {} : { at }),
       ...(permission === undefined ? {} : { permission }),
       surface,
@@ -155,5 +162,21 @@ async function readSliceErrors(
 ): Promise<string | undefined> {
   if (kind !== 'action' && kind !== 'mutator') return undefined;
   const file = containedPath(root, `${slice}/errors.ts`);
+  return existsSync(file) ? await Bun.file(file).text() : undefined;
+}
+
+/**
+ * `job` and `task` only: the slice's `entity.ts`/`repo.ts` as they stand on disk, absent when the
+ * generator's kind is neither or the file does not exist yet. `readSliceErrors`'s reason —
+ * whichever generator reads it decides on THIS app's disk, not on a default the template assumes.
+ */
+async function readSliceFile(
+  root: string,
+  kind: Generator,
+  slice: string,
+  name: 'entity.ts' | 'repo.ts',
+): Promise<string | undefined> {
+  if (kind !== 'job' && kind !== 'task') return undefined;
+  const file = containedPath(root, `${slice}/${name}`);
   return existsSync(file) ? await Bun.file(file).text() : undefined;
 }
