@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 20.1.6 - 2026-09-18
+
 ### Fixed
 
 - **`x mcp serve` declares its environment before it loads the app.** The dev MCP server called
@@ -17,6 +21,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   because its scratch boot re-imported the app after declaring. Same rule as `x dev` and
   `startDev` now: declare first, import second. Verified: the same three-call session answers
   1/1 islands mounted and zero console errors on every call.
+
+### Commits
+
+- fix(cli): x mcp serve declares its environment before it loads the app (#472)
 
 ## 20.1.5 - 2026-09-18
 
