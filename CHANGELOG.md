@@ -35,6 +35,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `isStubMatch`). The harness now gives `WebSocket`/`EventSource` an inert stand-in — it constructs,
   never opens, `close()`/`send()` are no-ops — recorded on its own `sockets` list rather than on
   `unstubbed`; a real unanswered `fetch`/XHR still fails the run unchanged. (#448)
+- **`x shot` launches Chrome with the same container flags the e2e driver already needed.**
+  `cdp-launch.ts`'s launcher (`x verify`'s e2e step) passed `--no-sandbox` and
+  `--disable-dev-shm-usage`; `x shot`'s launcher — a different process, `puppeteer-core`'s own
+  `launch()` — passed neither, so on Ubuntu 23.10+ (AppArmor restricts the unprivileged user
+  namespace the sandbox needs) Chrome exited "No usable sandbox" and `x shot` could not run on a
+  box where the e2e gate ran green. Both launchers now read the same exported
+  `CONTAINER_CHROME_ARGS`. An attach (`--cdp-url`) is unaffected — it starts nothing locally. (#444)
 
 ## 20.1.2 - 2026-09-16
 
