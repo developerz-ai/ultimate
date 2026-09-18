@@ -50,6 +50,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   current value for it matches exactly what `.env.development`/`.env.development.local` would have
   set (`test-dotenv.ts`'s `testEnvOverrides`, wired into `test-shards.ts`, `verify-tests.ts`,
   `verify-test-run.ts` and `mcp-host.ts`'s `runTests`). `x dev` is unaffected.
+- **`:global()` in a CSS module is unwrapped instead of shipped.** `scopeClasses`
+  (`packages/render/src/css-modules.ts`) rewrote `.class` selectors and knew nothing of
+  `:global(...)`, so it reached the browser as written — an unknown pseudo-class, which drops the
+  WHOLE rule. `@ultimat3/ui` has twelve such rules: `Table.module.scss`'s cell padding, row
+  borders, header ground, density and striping, and `ErrorState`'s `<dt>`/`<dd>` styling. Every app's
+  catalog table therefore rendered flush, centred and unruled, under a green gate — nothing but a
+  browser ever parsed the CSS. The wrapper now closes on its OWN parenthesis
+  (`:global(tr:nth-child(even) td)`), a class inside it keeps its unscoped name, and an unclosed
+  wrapper is left as written rather than swallowing the sheet.
 
 ## 20.1.2 - 2026-09-16
 

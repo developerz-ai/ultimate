@@ -54,6 +54,37 @@ describe('scopeClasses', () => {
   test('a descendant selector scopes both halves', () => {
     expect(scopeClasses('.a .b{color:red}', 'h').css).toBe('.a_h .b_h{color:red}');
   });
+
+  // `:global(...)` is CSS-modules syntax, not CSS. Emitted as written it is an unknown
+  // pseudo-class, and a browser drops the WHOLE rule — which is how `Table.module.scss` shipped
+  // twelve rules that never styled a cell (no padding, no borders, no header ground).
+  test(':global() is unwrapped, so the rule it guards reaches the browser', () => {
+    const out = scopeClasses('.table :global(th),.table :global(td){padding:0}', 'h');
+    expect(out.css).toBe('.table_h th,.table_h td{padding:0}');
+    expect(out.css).not.toContain(':global');
+  });
+
+  test('a class inside :global() keeps its name — that is what global means', () => {
+    const out = scopeClasses('.wrap :global(.is-open){color:red}', 'h');
+    expect(out.css).toBe('.wrap_h .is-open{color:red}');
+    expect(out.classes).toEqual({ wrap: 'wrap_h' });
+  });
+
+  test(':global() closes on ITS OWN parenthesis, not the first one inside it', () => {
+    const out = scopeClasses('.striped :global(tbody tr:nth-child(even) td){color:red}', 'h');
+    expect(out.css).toBe('.striped_h tbody tr:nth-child(even) td{color:red}');
+  });
+
+  test('a nested :global() is unwrapped all the way down', () => {
+    expect(scopeClasses('.a :global(:global(.is-open)){color:red}', 'h').css).toBe(
+      '.a_h .is-open{color:red}',
+    );
+  });
+
+  test('an unclosed :global( is left exactly as written rather than swallowing the sheet', () => {
+    const css = '.a :global(th{color:red}.b{color:blue}';
+    expect(scopeClasses(css, 'h').css).toBe('.a_h :global(th{color:red}.b_h{color:blue}');
+  });
 });
 
 describe('compileStylesheet', () => {
