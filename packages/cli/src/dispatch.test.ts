@@ -170,7 +170,7 @@ describe('unit · the dispatcher owns fd 1', () => {
   const answer = (extra: Partial<CommandResult> = {}): CommandResult => ({
     ok: true,
     command: 'mcp',
-    summary: 'mcp stdio serving 13 tools',
+    summary: 'mcp stdio serving 15 tools',
     ...extra,
   });
 

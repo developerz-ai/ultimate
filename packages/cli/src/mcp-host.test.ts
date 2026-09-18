@@ -30,6 +30,8 @@ const TOOL_NAMES = [
   'routes.list',
   'schema.describe',
   'tests.run',
+  'ui.island',
+  'ui.shot',
   'verify.run',
 ] as const;
 
@@ -79,6 +81,12 @@ function fakeHost(database: DatabaseTarget, calls: HostCalls): DevHost {
     async verify() {
       return { ok: true, steps: [] };
     },
+    async shotRoute() {
+      return { ok: true, image: '', verdictFile: '', verdict: {} };
+    },
+    async shotIsland() {
+      return { ok: true, dir: '', verdictFile: '', verdict: {} };
+    },
   };
 }
 
@@ -111,7 +119,7 @@ describe('unit · the dev tool catalog', () => {
   test('every dev tool is reachable by the local caller, by name', () => {
     const server = serverFor(BRANCH, noCalls());
     expect(server.tools.names(localCaller())).toEqual([...TOOL_NAMES]);
-    expect(TOOL_NAMES).toHaveLength(13);
+    expect(TOOL_NAMES).toHaveLength(15);
   });
 
   test('exactly the mutating tools bill the write bucket', () => {
@@ -119,7 +127,7 @@ describe('unit · the dev tool catalog', () => {
     const mutating = server.tools
       .names(localCaller())
       .filter((name) => server.tools.verbClass(name) === 'write');
-    expect(mutating).toEqual(['db.migrate', 'tests.run', 'verify.run']);
+    expect(mutating).toEqual(['db.migrate', 'tests.run', 'ui.island', 'ui.shot', 'verify.run']);
   });
 
   test('every tool the catalog lists carries an argument schema', () => {
