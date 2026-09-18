@@ -128,6 +128,10 @@ const envOf = (env: StartDevOptions['env']): { env?: string } => {
  * still be reachable while something is broken.
  */
 export async function startDev(options: StartDevOptions): Promise<DevServer> {
+  // EVERY boot, not only the `x dev` command: a scratch server (`x shot`, `ui.shot`) boots through
+  // here too, and without the declaration a scaffolded app's fail-closed dev actor installs
+  // nothing — the picture is of a 401. Idempotent: a key already set is left alone.
+  declareDevEnvironment(options.env);
   const services = resolveServices(options.root, options.env);
   const runtime: RunningServices = await startServices(services, options.env);
   // Installed before the app loads, so a span opened during registration is already recorded.
