@@ -46,6 +46,7 @@ import { explainErrorCode } from './mcp-errors';
 import { parseBunTest } from './mcp-test-output';
 import { readMigrations } from './migrations';
 import { retryMemo } from './retry-memo';
+import { testEnvOverrides } from './test-dotenv';
 
 export interface DevHostInput {
   readonly root: string;
@@ -178,7 +179,7 @@ export async function readOnlyRows(
 }
 
 function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities {
-  const { root, runner } = input;
+  const { root, runner, env } = input;
   // Layer 1 is seven idempotent DDL statements, and `db.query` is a tool an agent calls in a
   // loop — resolve the role once per process and reuse the answer, `null` included. A FAILED
   // resolution is not an answer: `??=` kept the rejection, so a statement timeout on the DDL
@@ -239,10 +240,14 @@ function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities 
 
     // `bun test <filter>` matches on the test path, the same rule `x test`'s `discoverTests` uses.
     async runTests(filter: string | undefined) {
+      // Same leak the CLI's own `x test`/`x verify` had: `.env.development` auto-loaded into
+      // THIS process must not ride along into the `bun test` child the dev MCP server spawns.
+      const envOverrides = testEnvOverrides(root, env);
       const result = await runner(
         filter === undefined ? ['bun', 'test'] : ['bun', 'test', filter],
         {
           cwd: root,
+          ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),
         },
       );
       return parseBunTest(execOutput(result), result.durationMs);

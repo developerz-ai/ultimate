@@ -6,6 +6,7 @@ import type { Runner } from './exec';
 import { execOutput } from './exec';
 import type { Finding } from './output';
 import { countsOf } from './test-counts';
+import { testEnvOverrides } from './test-dotenv';
 import type { TestFile } from './test-select';
 import { failureOf, testArgs } from './test-shards';
 import type { StepOutcome } from './verify-step';
@@ -20,6 +21,8 @@ export interface ParallelRunOptions {
   readonly workers: number;
   /** Carried into the `fix:` so a failure reproduces as `x test <type> --workers N`. */
   readonly type: TestType;
+  /** This process's own environment. Optional and defaulted to `Bun.env` — see `VerifyContext.env`. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 /**
@@ -38,7 +41,11 @@ export interface ParallelRunOptions {
 export async function runParallel(options: ParallelRunOptions): Promise<StepOutcome> {
   const files = options.files.map((file) => file.path);
   const workers = Math.max(1, Math.min(Math.trunc(options.workers), files.length || 1));
-  const result = await options.runner(testArgs({ files, workers }), { cwd: options.root });
+  const envOverrides = testEnvOverrides(options.root, options.env ?? Bun.env);
+  const result = await options.runner(testArgs({ files, workers }), {
+    cwd: options.root,
+    ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),
+  });
   // `failureOf` is `x test`'s own, imported rather than restated: the two paths report the SAME
   // failed `bun test`, so a second literal here is two `cause:` strings and two `fix:` lines free
   // to drift — and the one that drifts is the gate's, which is the one an agent reads first.

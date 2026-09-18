@@ -197,6 +197,7 @@ export const testCommand: CliCommand = {
     const result = await runShards({
       root: ctx.cwd,
       runner: ctx.runner,
+      env: ctx.env,
       files,
       workers,
       ...(only === undefined ? {} : { only }),

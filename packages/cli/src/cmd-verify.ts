@@ -59,6 +59,7 @@ export const verifyCommand: CliCommand = {
     return runVerify(VERIFY_STEPS, {
       root,
       runner: ctx.runner,
+      env: ctx.env,
       ...(workers === undefined ? {} : { workers }),
       ...(only === undefined ? {} : { only }),
     });

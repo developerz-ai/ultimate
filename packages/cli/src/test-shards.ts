@@ -40,6 +40,7 @@ import { execOutput } from './exec';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue, StepResult } from './output';
 import { quoteArg } from './shell-quote';
+import { testEnvOverrides } from './test-dotenv';
 import { testPasses } from './test-passes';
 import type { TestFile } from './test-select';
 import type { TestType } from './verify-tests';
@@ -165,6 +166,13 @@ export interface RunShardsOptions {
   readonly affected?: AffectedSelection;
   /** Everything after the caller's `--`, forwarded to every pass and printed in the reproduce. */
   readonly passthrough?: readonly string[];
+  /**
+   * This process's own environment, as `exec.ts` would otherwise hand it whole to the spawned
+   * child. Optional and defaulted to `Bun.env`: every real caller's is `Bun.env` already (`x
+   * test`/`x verify` read `CommandContext.env`, itself `Bun.env`), so the default is not a
+   * fallback so much as a seam this file's own tests use to hand it a fixture instead.
+   */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 /**
@@ -219,6 +227,11 @@ export const failureOf = (code: number, files: number, plan: ReproduceOptions): 
  */
 export async function runShards(options: RunShardsOptions): Promise<CommandResult> {
   const only = options.only;
+  // Computed ONCE per invocation, never per pass: every pass spawns from the same `root` and the
+  // same parent env, so the leaked-key set cannot differ pass to pass.
+  const envOverrides: Record<string, string | undefined> = {
+    ...testEnvOverrides(options.root, options.env ?? Bun.env),
+  };
   const passes = testPasses({
     files: options.files,
     workers: options.workers,
@@ -241,7 +254,14 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       }),
       {
         cwd: options.root,
-        ...(only === undefined ? {} : { env: { ULTIMATE_TEST_WORKER: String(only) } }),
+        ...(Object.keys(envOverrides).length === 0 && only === undefined
+          ? {}
+          : {
+              env: {
+                ...envOverrides,
+                ...(only === undefined ? {} : { ULTIMATE_TEST_WORKER: String(only) }),
+              },
+            }),
       },
     );
     const plan = planOf(options, pass);

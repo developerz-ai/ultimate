@@ -24,9 +24,12 @@ const summary = (pass: number, fail: number): string =>
 
 function testRunner(fails: boolean): {
   runner: Runner;
-  seen: { command: readonly string[]; env: Record<string, string> | undefined }[];
+  seen: { command: readonly string[]; env: Record<string, string | undefined> | undefined }[];
 } {
-  const seen: { command: readonly string[]; env: Record<string, string> | undefined }[] = [];
+  const seen: {
+    command: readonly string[];
+    env: Record<string, string | undefined> | undefined;
+  }[] = [];
   const runner: Runner = async (command, options) => {
     seen.push({ command, env: options.env });
     const result: ExecResult = {
