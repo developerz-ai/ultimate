@@ -55,6 +55,16 @@ export interface GenerateOptions {
    * import of a class the app never declared. Read at `sliceDir(surface, feature)/errors.ts`.
    */
   readonly sliceErrors?: string;
+  /**
+   * `job` and `task`: the slice's `entity.ts` as it stands on disk, absent when the feature has no
+   * entity yet. Supplied by `run` for `sliceErrors`'s reason — whether the feature is
+   * tenant-scoped is a fact about THIS app, and a template that assumed `tenant: 'orgId'` wrote
+   * `repo.byId`/`repo.listByOrg` calls into a feature whose entity names no tenant column. Read at
+   * `sliceDir(surface, feature)/entity.ts`.
+   */
+  readonly sliceEntity?: string;
+  /** `job` and `task`: the slice's `repo.ts` as it stands on disk, absent alongside `sliceEntity`. */
+  readonly sliceRepo?: string;
 }
 
 const DEFAULT_SURFACE_DIR: Record<Surface, string> = {
@@ -110,9 +120,21 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
     case 'query':
       return dedupe(queryFiles(options.name, { ...target, live: options.live === true }));
     case 'job':
-      return dedupe(jobFiles(options.name, target));
+      return dedupe(
+        jobFiles(options.name, {
+          ...target,
+          ...(options.sliceEntity === undefined ? {} : { sliceEntity: options.sliceEntity }),
+          ...(options.sliceRepo === undefined ? {} : { sliceRepo: options.sliceRepo }),
+        }),
+      );
     case 'task':
-      return dedupe(taskFiles(options.name, target));
+      return dedupe(
+        taskFiles(options.name, {
+          ...target,
+          ...(options.sliceEntity === undefined ? {} : { sliceEntity: options.sliceEntity }),
+          ...(options.sliceRepo === undefined ? {} : { sliceRepo: options.sliceRepo }),
+        }),
+      );
     case 'island':
       return dedupe(islandFiles(options.name, { dir: options.at ?? `${surfaceDir}/${feature}` }));
     // No `--at`, no surface, no feature: `guards/` is the one directory the gate discovers, and a
