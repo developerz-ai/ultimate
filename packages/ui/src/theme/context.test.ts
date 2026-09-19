@@ -14,7 +14,11 @@ import {
 } from '@ultimat3/i18n';
 import { configureTime, type TimeZone, timeConfig } from '@ultimat3/time';
 import { UI_ERROR_CODES } from '../errors';
+// The barrel itself, for the one thing it does besides re-export: its bare import of
+// `./theme/ambient` is what registers the server's reader, and that is asserted below.
+import { ambientUiContext as barrelAmbientUiContext } from '../index';
 import { ambientUiContext } from './ambient';
+import { ambientUiContext as browserAmbientUiContext } from './ambient.browser';
 import { registeredAmbientUiReader } from './ambient-slot';
 import {
   defaultUiContext,
@@ -161,9 +165,25 @@ describe('ambientUiContext', () => {
   // `useUi()` on the inert path reads through the slot rather than naming the reader.
   test('registers itself as the reader useUi() falls back to on the server', () => {
     expect(registeredAmbientUiReader()).toBe(ambientUiContext);
+    // And it is the barrel's export — the barrel imports the server's module, never the twin.
+    expect(barrelAmbientUiContext).toBe(ambientUiContext);
     clearSolidRuntime();
     configureLocales({ fallback: 'ar' as Locale });
     expect(useUi().dir).toBe('rtl');
+  });
+
+  // The twin a browser bundler is handed through `package.json`'s `browser` field. It answers
+  // the package defaults — what the server's reader answers outside a request — and registers
+  // nothing: importing it here must leave the server's registration exactly where it was.
+  test('the browser twin answers the defaults and registers nothing', () => {
+    const before = registeredAmbientUiReader();
+    const { t, ...rest } = browserAmbientUiContext();
+    const { t: defaultT, ...defaultRest } = defaultUiContext();
+    expect(rest).toEqual(defaultRest);
+    expect(isMiss(t('some.unknown.key'))).toBe(true);
+    expect(t.locale).toBe(defaultT.locale);
+    expect(registeredAmbientUiReader()).toBe(before);
+    expect(browserAmbientUiContext).not.toBe(ambientUiContext);
   });
 
   test('falls back to the package defaults with nothing configured and no request', () => {
