@@ -51,9 +51,13 @@ function register(fixture: RouteFixture): void {
   registerRoute(input);
 }
 
-const serve = (pwaHead?: string): ReturnType<typeof createServer> =>
+const serve = (pwaHead?: string, themeHead?: string): ReturnType<typeof createServer> =>
   createServer({
-    routes: appRoutes({ buildId: BUILD_ID, ...(pwaHead === undefined ? {} : { pwaHead }) }),
+    routes: appRoutes({
+      buildId: BUILD_ID,
+      ...(pwaHead === undefined ? {} : { pwaHead }),
+      ...(themeHead === undefined ? {} : { themeHead }),
+    }),
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
   });
@@ -346,6 +350,41 @@ describe('unit · x dev renders the app routes', () => {
     test('an app that is not installable carries nothing', async () => {
       register({ file: 'apps/web/site/page.tsx', render: 'static' });
       expect(await (await get('/')).text()).not.toContain('rel="manifest"');
+    });
+  });
+
+  // The no-flash theme boot rides the same document-level seam, and its ORDER is the point: it
+  // must run before the render-blocking stylesheet paints, or the first frame is the wrong scheme.
+  describe('the theme boot, before the stylesheet, on every mode', () => {
+    const THEME_HEAD =
+      '<script>document.documentElement.setAttribute("data-theme","dark")</script>';
+    const PAGES = [
+      { surface: 'site', file: 'apps/web/site/page.tsx', url: '/' },
+      { surface: 'app', file: 'apps/web/app/feed/page.tsx', url: '/feed' },
+    ] as const;
+    const CASES = PAGES.flatMap((page) =>
+      SURFACE_SPECS[page.surface].allowedModes.map((render) => ({ ...page, render })),
+    );
+
+    test.each(CASES)('$surface/ in $render carries it in <head>', async ({ file, url, render }) => {
+      register({ file, render, ...(render === 'isr' ? { revalidate: { ttl: '5m' } } : {}) });
+      const body = await (
+        await serve(undefined, THEME_HEAD).fetch(new Request(`http://dev.test${url}`))
+      ).text();
+      const head = body.slice(0, body.indexOf('</head>'));
+      expect(head).toContain(THEME_HEAD);
+    });
+
+    test('it precedes the stylesheet link when the surface has one', async () => {
+      loadStylesheet('/srv/demo/apps/web/site/page.module.scss', '.a{color:red}');
+      register({ file: 'apps/web/site/page.tsx', render: 'static' });
+      const body = await (
+        await serve(undefined, THEME_HEAD).fetch(new Request('http://dev.test/'))
+      ).text();
+      const script = body.indexOf(THEME_HEAD);
+      const link = body.indexOf('rel="stylesheet"');
+      expect(script).toBeGreaterThan(-1);
+      expect(link === -1 || script < link).toBe(true);
     });
   });
 });

@@ -178,7 +178,11 @@ The output lands in a `<style>` element, so a value that could close it is refus
 
 ## Resolution and first paint
 
-Order: **explicit `localStorage` choice → OS preference**. Applied by a blocking inline `<head>` script, before first paint, so there is no flash of the wrong theme. The snippet and its CSP `sha256` both come from [`packages/ui/src/theme/inline-script.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/src/theme/inline-script.ts) — never hand-copied, or the hash stops matching and CSP drops the script.
+Order: **explicit `localStorage` choice → `theme.defaultMode`**, where `'system'` (the default) means the OS preference and `'dark'` or `'light'` is the app's own opinion. Applied by a blocking inline `<head>` script, before first paint and before the render-blocking stylesheet, so there is no flash of the wrong theme.
+
+**The boot writes the script; the app writes nothing** (`As of 20.2.0`). `x dev`, the container and `x build`'s static export all inline `themeScript({ fallback })` from `@ultimat3/render` with `theme.defaultMode` from `app.config.ts` as the fallback, and the served processes admit its `sha256` to `script-src` from the same string — `packages/cli/src/theme-boot.ts`. An app that wants to open dark sets `theme: { defaultMode: 'dark' }` and is done. The storage key is `ultimate.theme` on both sides: the boot reads it, `ThemeToggle` writes it, and a test pins the two literals equal. Before this release neither of the framework's two theme scripts was inlined by anything, both fell back to light, and they disagreed on the key.
+
+[`packages/ui/src/theme/inline-script.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/src/theme/inline-script.ts) is deprecated and removed in 21 — an app that inlined it by hand keeps building and should delete that code.
 
 | Concern | Rule |
 |---|---|

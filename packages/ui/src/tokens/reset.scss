@@ -15,6 +15,13 @@
   padding: 0;
 }
 
+// The `*` above outranks the UA stylesheet's `dialog { margin: auto }`, which is the ONLY thing
+// that centres a modal `<dialog>` in its viewport — so every `Dialog` and every app dialog opened
+// pinned to the top-left corner until the app restated the margin itself. Restated once, here.
+dialog {
+  margin: auto;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;

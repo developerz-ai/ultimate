@@ -40,6 +40,7 @@ import { startServices } from './dev-runtime';
 import type { Env } from './dev-services';
 import { resolveServices } from './dev-services';
 import { storageRoutes } from './dev-storage';
+import { errorPageStyleSources } from './error-page-csp';
 import { PortInvalidError, RoleUnknownError } from './errors';
 import { holdUntilShutdown } from './hold';
 import { buildIslands } from './island-bundle';
@@ -53,6 +54,7 @@ import { styleBundle } from './style-bundle';
 import { styleRoutes } from './style-routes';
 import { serviceWorkerArtifacts } from './sw-artifacts';
 import { serviceWorkerRoutes } from './sw-routes';
+import { loadThemeMode, themeBoot } from './theme-boot';
 
 export const DEFAULT_PORT = 3000;
 
@@ -360,6 +362,7 @@ async function bootRoles(boot: {
   // on a laptop and absent in the image is exactly the dev/prod difference this file exists to
   // prevent, and it is the one an operator cannot see without installing the app.
   const pwa = await loadPwaArtifacts(options.root);
+  const theme = themeBoot(await loadThemeMode(options.root));
   // The worker, from the SAME route table this process is about to serve — `describeRoutes()` is
   // the one projection `x.manifest.json`, `/_x`, the sitemap and `sw.js` are all built from, so a
   // route added here cannot be missing from the precache manifest.
@@ -393,6 +396,7 @@ async function bootRoles(boot: {
     ...appRoutes({
       buildId,
       resolveIsland: (file) => islands.resolverFor(file),
+      themeHead: theme.head,
       ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
       // Only when a store was supplied. `createIsrController` defaults to a per-process memory
       // store, so twelve replicas hold twelve of them and a purge tag regenerates one twelfth of
@@ -419,6 +423,10 @@ async function bootRoles(boot: {
     // Same declaration `x dev` reads. Without it a container answers a browser that opened a
     // guarded page with the problem document, rendered as raw JSON in the viewport.
     signInPath: await loadSignInPath(options.root),
+    // The enforced policy this process sends must admit the app's own error pages' `<style>` and
+    // the theme boot the documents carry; `x dev` is report-only, so only here was it a blank page.
+    inlineStyles: await errorPageStyleSources(options.root),
+    inlineScripts: [theme.cspSource],
     // The app's own `apps/web/site/errors/<status>.html`, resolved inside `startWeb` so this
     // process and `x dev` cannot answer a browser differently.
     root: options.root,

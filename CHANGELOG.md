@@ -8,7 +8,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- **The framework inlines the no-flash theme script, with `theme.defaultMode` as its fallback.** `x dev`, the container and the static export write `themeScript({ fallback })` into every document's `<head>` before the stylesheet and admit its hash to `script-src` from the same string (`packages/cli/src/theme-boot.ts`). `theme.defaultMode` in `app.config.ts` had no reader before; `theme: { defaultMode: 'dark' }` is now all an app needs to open dark. `themeScript()` gains `fallback`, exports `themeScriptBody()`, and its storage key is `ultimate.theme` — the key `ThemeToggle` already wrote (`THEME_STORAGE_KEY`, pinned equal across render and ui by a test). `@ultimat3/ui`'s `THEME_INLINE_SCRIPT` and its helpers are deprecated, removed in 21.
+- **An app's own error pages are admitted to `style-src`.** `apps/web/site/errors/<status>.html` is served verbatim and carries its own `<style>`; the enforced policy a container sends blocked that block (invisible in `x dev`, which is report-only). Every `<style>` body in those files is hashed at boot (`packages/cli/src/error-page-csp.ts`).
+- **Three authoring mixins in `@ultimat3/ui/tokens`:** `data-text` (mono family, tabular figures — for slugs, counts, timestamps, ids), `label-caps` (the section-label voice) and `dot-grid` (the faded dot-grid ground for a hero or a dashboard main). Every value is a token.
+
+### Fixed
+- **`<dialog>` opened pinned to the top-left corner.** The reset's `* { margin: 0 }` outranks the UA stylesheet's `dialog { margin: auto }`, the only rule that centres a modal dialog; every app restated the margin itself. `reset.scss` restates it once.
 
 ## 20.1.6 - 2026-09-18
 
