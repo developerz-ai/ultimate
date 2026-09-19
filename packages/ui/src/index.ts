@@ -71,12 +71,21 @@ export type { CheckboxProps } from './components/Checkbox';
 export { Checkbox } from './components/Checkbox';
 export type { ComboboxProps } from './components/Combobox';
 export { Combobox } from './components/Combobox';
+export type { CommandPaletteLabels, CommandPaletteProps } from './components/CommandPalette';
+export { CommandPalette } from './components/CommandPalette';
 export type { ContainerProps, ContainerSize } from './components/Container';
 export { Container } from './components/Container';
 export type { CopyButtonProps } from './components/CopyButton';
 export { COPIED_MS, CopyButton } from './components/CopyButton';
 export type { ComboboxOption } from './components/combobox-filter';
 export { COMBOBOX_LIMIT, filterOptions, normalizeQuery } from './components/combobox-filter';
+export type { CommandPaletteItem, PaletteKeyAction } from './components/command-palette-view';
+export {
+  filterItems,
+  keyAction,
+  settleActive,
+  stepActive,
+} from './components/command-palette-view';
 export type { Column, DataTableProps } from './components/DataTable';
 export { DataTable } from './components/DataTable';
 export type { DateTimeProps } from './components/DateTime';
