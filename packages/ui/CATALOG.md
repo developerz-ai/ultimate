@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-54 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `Container` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Link` · `LocaleSwitcher` · `Menu` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Spinner` · `Stack` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
+58 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Kbd` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
 
 ## Vocabulary
 
@@ -201,6 +201,18 @@ Centred measure with a gutter. `margin-inline: auto` and `min()` mean one declar
 | `size` | `ContainerSize` | — |  |
 | `gutter` | `SpaceStep` | — |  |
 | `as` | `'div' \| 'main' \| 'section' \| 'article' \| 'header' \| 'footer'` | — |  |
+| `class` | `string` | — |  |
+
+### CopyButton
+
+Copies one string to the clipboard and says so — the control beside a short URL, an id, a command. Server-rendered as a real button; the clipboard write and the 1.6 s "copied" state are additive client behaviour, so with scripting off the button is there and does nothing, which is what a clipboard needs a script for anyway.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `value` | `string` | yes | What lands on the clipboard. |
+| `label` | `string` | — | The accessible name; defaults to the catalog's `ui.copy`. |
+| `copiedLabel` | `string` | — | Announced to assistive tech once the write succeeds; defaults to `ui.copied`. |
+| `size` | `Size` | — |  |
 | `class` | `string` | — |  |
 
 ### DataTable
@@ -489,6 +501,15 @@ Single-line text control. No `type="number"` convenience wrapper: numeric input 
 | `onChange` | `JSX.EventHandlerUnion<HTMLInputElement, Event>` | — |  |
 | `onBlur` | `JSX.EventHandlerUnion<HTMLInputElement, FocusEvent>` | — |  |
 
+### Kbd
+
+A keyboard key or chord as the user reads it — "⌘K", "Esc", "/". A native `<kbd>`, because a keyboard hint is inline code, not a badge: the element carries the meaning, so it works with no script and reads as a key to a screen reader.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `children` | `JSX.Element` | yes | The key or chord, already translated where a key name is a word. |
+| `class` | `string` | — |  |
+
 ### Link
 
 Anchor primitive. External links get `rel` hardening and a translated "opens in a new tab" hint automatically — never a bare `target="_blank"`.
@@ -530,6 +551,18 @@ Action menu: a trigger plus a `role="menu"` list with roving tabindex. Distinct 
 | `trigger` | `(control: { id: string; 'aria-haspopup': 'menu'; 'aria-expanded': boolean; 'aria-controls': string; }) => JSX.Element` | yes |  |
 | `label` | `string` | yes | Already-translated accessible name for the menu. |
 | `align` | `'start' \| 'end'` | — |  |
+| `class` | `string` | — |  |
+
+### Meter
+
+A thin horizontal bar showing one value against a maximum — a table cell's "how busy is this row" beside the number, or a quota. Decorative by default: with no `label` it is hidden from the accessibility tree, because the number beside it is the fact. With one it is a `meter` role with the value spoken.  An SVG with a `width` ATTRIBUTE rather than a styled box: it paints identically on the server copy and the hydrated one and asks nothing of the CSP's `style-src-attr`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `value` | `number` | yes |  |
+| `max` | `number` | yes |  |
+| `label` | `string` | — | The accessible name. Omit for a purely decorative bar beside a visible number. |
+| `tone` | `Tone` | — |  |
 | `class` | `string` | — |  |
 
 ### Money
@@ -692,6 +725,19 @@ Flex layout primitive. Gap comes from the space scale as a custom property, so t
 | `justify` | `Align` | — |  |
 | `wrap` | `boolean` | — |  |
 | `as` | `'div' \| 'ul' \| 'ol' \| 'nav' \| 'section' \| 'header' \| 'footer'` | — | Renders a semantic element instead of a div. |
+| `class` | `string` | — |  |
+
+### StatTile
+
+One labelled figure with an optional trend chip and a line of context — the tile a dashboard's top row is made of. The figure arrives formatted: number formatting is the caller's (`Intl.NumberFormat` against the page locale), so the tile never guesses a locale.  Intrinsic tags only: a runtime-chosen root (`const Tag = props.as ?? 'div'`) is called as a component by the island build, so a tile built on `Card` hydrated differently from how it was served. A `<div>` renders identically on both sides.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | The tile's caption, already translated — "Total links", "Clicks today". |
+| `value` | `string` | yes | The figure, already formatted as the string this tile shows. |
+| `stat` | `string` | yes | The stable hook a test or a live check reads the figure through: `data-stat`. |
+| `delta` | `StatDelta` | — | The trend chip; `deltaOf()` builds one from a current and a baseline. |
+| `hint` | `string` | — | One short line of context under the figure: "vs yesterday", "849 clicks". |
 | `class` | `string` | — |  |
 
 ### Switch

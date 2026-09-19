@@ -1,0 +1,86 @@
+@use '../tokens' as t;
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: t.space(2);
+  min-inline-size: 0;
+  padding: t.space(5);
+  border: 1px solid t.role('line', 0.6);
+  border-radius: t.radius(lg);
+  background: t.role('surface');
+  transition: border-color t.duration(fast) t.easing(out);
+
+  &:hover {
+    border-color: t.role('line');
+  }
+}
+
+.label {
+  @include t.label-caps;
+
+  margin: 0;
+  color: t.role('fg-muted');
+}
+
+.figure {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: t.space(3);
+}
+
+.value {
+  @include t.truncate;
+  @include t.data-text;
+
+  margin: 0;
+  font-size: t.text('2xl');
+  font-weight: t.weight(medium);
+  letter-spacing: t.tracking(tight);
+  line-height: t.leading(tight);
+  color: t.role('fg-strong');
+}
+
+.delta {
+  @include t.data-text;
+
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(1);
+  padding: 0 t.space(2);
+  border-radius: t.radius(pill);
+  font-size: t.text(xs);
+  line-height: t.leading(loose);
+}
+
+.arrow {
+  inline-size: 0.625rem;
+  block-size: 0.625rem;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trend-up {
+  background: t.role('success-soft');
+  color: t.role('success');
+}
+
+.trend-down {
+  background: t.role('danger-soft');
+  color: t.role('danger');
+}
+
+.trend-flat {
+  background: t.role('surface-raised');
+  color: t.role('fg-muted');
+}
+
+.hint {
+  margin: 0;
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+}
