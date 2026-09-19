@@ -106,7 +106,7 @@ Tier 4 (moved 5 → 4 on 2026-08-19, when the `admin → ui` exception was delet
 | `src/theme/inert-runtime.ts` | `INERT_SOLID_RUNTIME` — what a server render IS, not a stub of what it lacks |
 | `src/theme/theme.ts` | resolution: stored choice → OS; all side effects via injected `ThemeEnv` |
 | `src/theme/inline-script.ts` | anti-flash `<head>` snippet + its CSP sha256 |
-| `src/components/` | 61 components, `PascalCase.tsx` (component convention overrides the repo's kebab-case) |
+| `src/components/` | 62 components, `PascalCase.tsx` (component convention overrides the repo's kebab-case) |
 | `src/icons/glyphs/` | GENERATED: 1767 per-icon modules, `@ultimat3/ui/icons/<name>` → `icon<Name>` |
 | `src/icons/build-icons.ts` | the generator + the pinned `LUCIDE_VERSION`; `LICENSE.lucide` is upstream's ISC text |
 | `src/theme/brand.ts` | `defineTheme()` — the ONE brand-override seam; there is no SCSS `@use ... with ()` path |

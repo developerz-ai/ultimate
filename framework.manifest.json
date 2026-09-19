@@ -1,6 +1,10 @@
 {
   "version": 1,
+<<<<<<< HEAD
   "buildId": "412d63bb3310649e1762c979e5c86199b0c0f26bbe328dfff12ea39ac318b9fd",
+=======
+  "buildId": "d5111e4bd68aab4658f8ab4398a6c363a7014bdc74780725349088e6934776f4",
+>>>>>>> origin/main
   "tiers": {
     "0": [
       "core",
@@ -2641,6 +2645,11 @@
     },
     {
       "code": "X_SCRAPE_HTTP_FAILED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_KEY_INVALID",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
     },

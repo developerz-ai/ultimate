@@ -1,6 +1,7 @@
-// The dev MCP server's two eyes: `ui.shot` (a route) and `ui.island` (a component's states), as
-// the `DevCapabilities` half `packages/mcp` declares and cannot satisfy — a browser is the CLI's
-// to launch. Both are `x shot` under another name: the same server lookup (a running `x dev` is
+// The dev MCP server's eyes: `ui.shot` (a route), `ui.island` (a component's states) and
+// `ui.inspect` (DOM facts for a set of selectors, in `mcp-ui-inspect.ts`), as the `DevCapabilities`
+// half `packages/mcp` declares and cannot satisfy — a browser is the CLI's to launch. All three
+// are `x shot` under another name: the same server lookup (a running `x dev` is
 // reused through its lock, otherwise a scratch one boots), the same driver, the same verdict.
 // Nothing here is a new capability; it is the existing one made reachable from inside the loop
 // an agent already works in, so "does it look right" stops needing a hand-written script.
@@ -8,7 +9,14 @@
 // why: Bun exposes no path-join primitive, and the picture's directory is a path an agent opens.
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
-import type { UiIslandInput, UiIslandResult, UiShotInput, UiShotResult } from '@ultimat3/mcp';
+import type {
+  UiInspectInput,
+  UiInspectResult,
+  UiIslandInput,
+  UiIslandResult,
+  UiShotInput,
+  UiShotResult,
+} from '@ultimat3/mcp';
 import { describeRoutes } from '@ultimat3/render';
 import type { ScrapeDriver } from '@ultimat3/scraping';
 import { DEFAULT_PAGE_TIMEOUT_MS } from '@ultimat3/scraping';
@@ -17,6 +25,7 @@ import { DEFAULT_SETTLE_MS, runShot, SHOT_DIR, shotSlug } from './cmd-shot';
 import { islandShot } from './cmd-shot-island';
 import type { Env } from './dev-services';
 import { islandVerdictJson } from './island-verdict';
+import { inspectRoute } from './mcp-ui-inspect';
 import { retryMemo } from './retry-memo';
 import { shotBrowserChoice } from './shot-browser';
 import { devServerFor, type ShotServer } from './shot-server';
@@ -44,7 +53,7 @@ export function assertBudgetedRoute(route: string, declared: readonly DeclaredRo
     throw new UltimateError({
       code: 'X_UI_SHOT_ROUTE_UNKNOWN',
       cause: `no route in this app answers ${route}`,
-      fix: 'x routes --json   # then ui.shot with one of its `path` values',
+      fix: 'x routes --json   # then call the ui.* tool with one of its `path` values',
     });
   }
   if (hit.budgetJs === null) {
@@ -78,6 +87,7 @@ export interface UiHostInput {
 export interface UiCapabilities {
   shotRoute(shot: UiShotInput): Promise<UiShotResult>;
   shotIsland(island: UiIslandInput): Promise<UiIslandResult>;
+  inspectRoute(inspect: UiInspectInput): Promise<UiInspectResult>;
   /** Stops the scratch server, if one was booted. Never boots one in order to stop it. */
   close(): Promise<void>;
 }
@@ -100,6 +110,17 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
   // provider's CDP URL, or the launcher's own discovery.
   const browser = () => shotBrowserChoice({ cdpFlag: undefined, browserFlag: undefined, env });
   const routes = input.routes ?? describeRoutes;
+  // One browser per call, sized to the call: the injected driver in a test, `appBrowser` otherwise.
+  const driverFor = async (viewport: UiShotInput['viewport']): Promise<ScrapeDriver> => {
+    if (input.driver !== undefined) return input.driver(viewport);
+    const { cdpUrl, executablePath } = browser();
+    return appBrowser({
+      root,
+      viewport,
+      ...(executablePath === undefined ? {} : { executablePath }),
+      ...(cdpUrl === undefined ? {} : { cdpUrl }),
+    });
+  };
   let closed = false;
 
   return {
@@ -113,16 +134,7 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
 
     async shotRoute(shot) {
       assertBudgetedRoute(shot.route, routes());
-      const { cdpUrl, executablePath } = browser();
-      const driver =
-        input.driver === undefined
-          ? await appBrowser({
-              root,
-              viewport: shot.viewport,
-              ...(executablePath === undefined ? {} : { executablePath }),
-              ...(cdpUrl === undefined ? {} : { cdpUrl }),
-            })
-          : await input.driver(shot.viewport);
+      const driver = await driverFor(shot.viewport);
       // One directory per (route, viewport, scheme), so two pictures of one route at two widths
       // never overwrite each other and an agent can hold both.
       const outDir = join(
@@ -147,6 +159,13 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
         verdictFile: artifacts.verdictFile,
         verdict: verdictJson(artifacts.verdict),
       };
+    },
+
+    async inspectRoute(inspect) {
+      // The same gate as `ui.shot`, for the same reason: facts about a draft are facts about the
+      // wrong thing.
+      assertBudgetedRoute(inspect.route, routes());
+      return inspectRoute({ root, boot, driver: driverFor }, inspect);
     },
 
     async shotIsland(island) {

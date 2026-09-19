@@ -8,7 +8,7 @@ The differentiator. Not a chat widget, not an "AI SDK integration" — the frame
 
 `x dev` starts an MCP server on the dev socket. Point Claude Code (or any MCP client) at it and the agent stops guessing.
 
-Fifteen tools `As of 2026-09-18` — the whole catalog, spelled exactly as they must be called. No aliases; renaming one is a major.
+Sixteen tools `As of 2026-09-19` — the whole catalog, spelled exactly as they must be called. No aliases; renaming one is a major.
 
 | Tool | Introspects / does | Replaces the agent's usual guess |
 |---|---|---|
@@ -27,12 +27,13 @@ Fifteen tools `As of 2026-09-18` — the whole catalog, spelled exactly as they 
 | `logs.tail` | last N structured log lines, filterable by runtime role | scrollback archaeology |
 | `ui.shot` | photograph one route at a named viewport (`phone`/`tablet`/`desktop`, or `width`+`height`) in `light` or `dark`, against the running `x dev`; returns the PNG **path** and the same verdict `x shot` writes — console, page errors, refused requests, whether every island mounted. Refuses a route with no `budget.js` | a hand-written puppeteer script, and a picture nobody judged |
 | `ui.island` | `x shot --island <name> [--state]` as a tool: every declared state photographed and judged | the same, per component |
+| `ui.inspect` | DOM, computed-style and accessibility facts for up to 20 selectors in **one** navigation of a route: per match the tag, text (≤200 chars), box, visibility, attributes (≤20), the computed `styles` you name (≤32, kebab-case; the rest land in `droppedStyles`) and with `a11y: true` the browser-computed role and name; plus `title`, `data-theme`, the focused element, the island count, console and page errors. ≤25 matches per selector, 64 KB on the wire (matches are dropped from the LAST selectors first, `truncated: true`); an unparsable selector answers `valid: false`. Takes the same PNG and verdict as `ui.shot` under `inspect/`; same budget gate | `page.evaluate` scripts written per question, and a browser launched per question |
 
 | Class | Tools | Exposure |
 |---|---|---|
 | read | `routes.list`, `schema.describe`, `policies.list`, `actions.describe`, `jobs.inspect`, `queue.depth`, `manifest.read`, `errors.explain` | scope `dev:read`, unrestricted in dev |
 | gated read | `db.query`, `logs.tail` | scope `db:read` / `dev:logs` |
-| executes code | `tests.run`, `verify.run`, `ui.shot`, `ui.island` | scope `dev:test`; all four declare `destructive: true`, so none is metered as read chatter — the two `ui.*` tools launch a browser |
+| executes code | `tests.run`, `verify.run`, `ui.shot`, `ui.island`, `ui.inspect` | scope `dev:test`; all five declare `destructive: true`, so none is metered as read chatter — the three `ui.*` tools launch a browser |
 | write | `db.migrate` | scope `db:migrate`, **branch environments only** |
 
 None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose leading keyword must be `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — necessary, never sufficient. Batches, any write keyword at statement level (a data-modifying CTE included), locking clauses (`FOR UPDATE`/`FOR SHARE`), `EXPLAIN ANALYZE`, and whole function families matched by prefix of the called name, quoted and schema-qualified spellings included — file access (`pg_read_*`, `pg_ls_*`, `lo_*`, `dblink`), locks (`pg_advisory_*`), session settings (`set_config`) and sleeps (`pg_sleep*`) — are **refused**, not discouraged — `X_MCP_QUERY_REJECTED`, enforced before the host sees the string. Its Postgres SELECT-only role is conditional on the connection's own rights; the answer's `guards` array names the defences that engaged. `db.migrate` refuses a target that is not a branch database — `X_MCP_NOT_BRANCH_DB`.

@@ -92,3 +92,14 @@ export function parseSnapshots(raw: unknown): readonly ElementSnapshot[] {
     attrs: browserRecord(attrsOf(rows[index])),
   }));
 }
+
+/**
+ * Moving focus, as an expression — for a FRAME, where the port has no `focus` method. The page
+ * target calls `page.focus()`, which the library resolves against the top-level document, so a
+ * frame's focus travels as text into the frame's own `evaluate`, exactly as `clearExpression`
+ * does. A selector matching nothing REJECTS, as `page.focus()` does — the `.focus()` call on a
+ * null match is the throw, deliberately unguarded — and `cdp-target.ts`'s `guard()` re-labels the
+ * frame's rejection the same way it re-labels any other page throw.
+ */
+export const focusExpression = (selector: string): string =>
+  `(() => { document.querySelector(${JSON.stringify(selector)}).focus(); })()`;

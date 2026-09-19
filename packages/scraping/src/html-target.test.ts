@@ -124,3 +124,42 @@ describe('unit · a download is armed only by a RECORDED selector', () => {
     expect(file.filename).toBe('orders.csv');
   });
 });
+
+describe('unit · press, focus and accessibility offline', () => {
+  test('focus on a present element resolves; on a missing one it is a FIXTURE gap', async () => {
+    const target = targetOver({ url: PAGE_URL, html: '<input id="q">' });
+    await expect(target.focus('#q')).resolves.toBeUndefined();
+    expect(await codeOf(() => target.focus('#missing'))).toBe('X_SCRAPE_FIXTURE_MISSING');
+  });
+
+  test('a frame focus reads the FRAME document, not the parent', async () => {
+    const target = targetOver({
+      url: PAGE_URL,
+      html: '<input id="parent-only"><iframe name="idp"></iframe>',
+      frames: { idp: '<input id="frame-only">' },
+    });
+    const inner = (await target.frames())[0]?.target;
+    expect(inner).toBeDefined();
+    if (inner === undefined) return;
+    await expect(inner.focus('#frame-only')).resolves.toBeUndefined();
+    expect(await codeOf(() => inner.focus('#parent-only'))).toBe('X_SCRAPE_FIXTURE_MISSING');
+  });
+
+  test('press parses the chord and stops — a bad chord is refused with no keyboard at all', async () => {
+    const target = targetOver({ url: PAGE_URL, html: '<p>o</p>' });
+    await expect(target.press('Meta+K')).resolves.toBeUndefined();
+    expect(await codeOf(() => target.press('Meta+'))).toBe('X_SCRAPE_KEY_INVALID');
+  });
+
+  test('accessibility REFUSES, and the refusal is a REJECTION — for setOfflineMode`s reason', async () => {
+    const target = targetOver({ url: PAGE_URL, html: '<div role="button">x</div>' });
+    let caught: unknown;
+    // `role="button"` is in the markup and is NOT answered: the read is of what the browser
+    // computed, and no browser computed anything here.
+    await target.accessibility('div', 25).catch((thrown: unknown) => {
+      caught = thrown;
+    });
+    expect((caught as { code?: string } | undefined)?.code).toBe('X_NOT_IMPLEMENTED');
+    expect((caught as { fix?: string } | undefined)?.fix).toContain('localBrowser()');
+  });
+});
