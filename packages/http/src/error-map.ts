@@ -347,6 +347,11 @@ export const ERROR_STATUS = {
   // blanks the cause of an unclassified failure outside dev, which would hide the one thing that
   // makes this error actionable: the role and the measured ratio.
   X_UI_CONTRAST_INSUFFICIENT: 500,
+  // @ultimat3/ui — `<QrCode>` was handed a value past the encoder's version-3 ceiling. The value
+  // is the app's own (a short URL it minted), never the caller's, so 500 is the honest class —
+  // and a declared 500 for the contrast code's reason: `toProblem` blanks an unclassified
+  // failure's cause outside dev, and the cause is where the byte count and the ceiling are.
+  X_UI_QR_CAPACITY: 500,
   // @ultimat3/render — an island handed props it cannot carry: an undeclared key, a value that is
   // not JSON, or a bag over `ISLAND_PROPS_MAX_BYTES`. The author's fault and never the caller's,
   // so 500 is the honest class — and it HAS to be a declared 500. Without a row the code was an

@@ -542,6 +542,7 @@ of truth for the one thing the server decides.
 | `X_UI_RUNTIME_MISSING` | a DOM render with no registered Solid runtime, `<UiProvider>` on the server, or `browserThemeEnv()` off-DOM. A server render with no runtime is **not** one of them — it gets `INERT_SOLID_RUNTIME` |
 | `X_UI_FORM_PATH_INVALID` | a form field or control name the path grammar cannot read (`items.0.price`, `items[]`, `__proto__`), or two control names describing different shapes for one path (`user` beside `user.name`) |
 | `X_UI_CONTRAST_INSUFFICIENT` | a `defineTheme()` palette whose resolved channels put a pairing in `CONTRAST_PAIRS` below WCAG 2.2 AA — 4.5:1 for text, 3:1 for the focus ring. Only pairings the brand changed are measured; the cause names the measured ratio and the required one |
+| `X_UI_QR_CAPACITY` | a `<QrCode>` value over version 3's 42-byte ceiling (byte mode, error-correction level M). The encoder draws versions 1–3 only; the cause names the byte count and the ceiling |
 | `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other, a heading level off 1–6, a `defineTheme()` value that is not a token value, an `<Icon>` glyph with a tag/attribute/colour outside `ICON_TAGS`, two `Accordion` items sharing an id, `InfiniteScroll` with `hasMore` and no `nextHref`, a negative `debounce` window, or (`As of 2026-08`) upstream icon data `bun run icons` refuses (not an object, no renderable nodes, an attribute value that is not glyph geometry) |
 
 ## Commands

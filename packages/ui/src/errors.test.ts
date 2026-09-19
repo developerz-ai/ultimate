@@ -9,6 +9,7 @@ import {
   invalidFieldPathError,
   invalidThemeError,
   invalidValueError,
+  qrCapacityError,
   runtimeMissingError,
   UI_ERROR_CODES,
   UiError,
@@ -30,6 +31,10 @@ describe('UI_ERROR_CODES', () => {
     expect(hasErrorCode(UI_ERROR_CODES.formPathInvalid)).toBe(true);
     expect(describeErrorCode(UI_ERROR_CODES.formPathInvalid).title).toBe(
       'a form control name is not a usable field path',
+    );
+    expect(hasErrorCode(UI_ERROR_CODES.qrCapacity)).toBe(true);
+    expect(describeErrorCode(UI_ERROR_CODES.qrCapacity).title).toBe(
+      'text is too long for a QR code this component can draw',
     );
   });
 
@@ -66,6 +71,16 @@ describe('invalidThemeError', () => {
   test('handles non-string values via JSON.stringify', () => {
     const err = invalidThemeError(null);
     expect(err.cause).toContain('null');
+  });
+});
+
+describe('qrCapacityError', () => {
+  test('names the byte count and the ceiling, and points at a shorter value', () => {
+    const err = qrCapacityError(62, 42);
+    expect(err).toBeUltimateError(UI_ERROR_CODES.qrCapacity);
+    expect(err.cause).toContain('62 bytes');
+    expect(err.cause).toContain('42-byte ceiling');
+    expect(err.fix).toContain('shorten the value');
   });
 });
 

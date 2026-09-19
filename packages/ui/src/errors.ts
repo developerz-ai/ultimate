@@ -10,6 +10,7 @@ export const UI_ERROR_CODES = {
   invalidValue: 'X_UI_INVALID_VALUE',
   formPathInvalid: 'X_UI_FORM_PATH_INVALID',
   contrastInsufficient: 'X_UI_CONTRAST_INSUFFICIENT',
+  qrCapacity: 'X_UI_QR_CAPACITY',
 } as const;
 
 export type UiErrorCode = (typeof UI_ERROR_CODES)[keyof typeof UI_ERROR_CODES];
@@ -24,6 +25,7 @@ registerErrorCodes({
   X_UI_INVALID_VALUE: { title: 'a formatting component received an unrenderable value' },
   X_UI_FORM_PATH_INVALID: { title: 'a form control name is not a usable field path' },
   X_UI_CONTRAST_INSUFFICIENT: { title: 'a brand palette pairing does not meet WCAG 2.2 AA' },
+  X_UI_QR_CAPACITY: { title: 'text is too long for a QR code this component can draw' },
 });
 
 export class UiError extends UltimateError {
@@ -203,5 +205,19 @@ export function conflictingFieldNameError(name: string, at: string): UiError {
     code: UI_ERROR_CODES.formPathInvalid,
     cause: `form control "${name}" cannot be read: "${at}" already holds a value of another shape`,
     fix: `rename one of the two controls — a path segment holds a value or a container, never both`,
+  });
+}
+
+/**
+ * `<QrCode>` was handed more bytes than version 3 holds. Its own code rather than
+ * X_UI_INVALID_VALUE: the value is not malformed, it is too long for THIS encoder, and the fix is
+ * a shorter value or a full-range library — neither of which "parse it in the loader" describes.
+ * Refused rather than truncated, because a truncated link scans and then leads nowhere.
+ */
+export function qrCapacityError(byteLength: number, ceiling: number): UiError {
+  return new UiError({
+    code: UI_ERROR_CODES.qrCapacity,
+    cause: `<QrCode> value is ${byteLength} bytes in UTF-8; @ultimat3/ui encodes byte mode up to version 3 at error-correction level M, a ${ceiling}-byte ceiling`,
+    fix: 'shorten the value (a short URL, not a full page URL), or draw it with a full-range QR library outside @ultimat3/ui',
   });
 }
