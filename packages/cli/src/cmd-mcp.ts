@@ -1,4 +1,4 @@
-// `x mcp serve` — the framework's dev MCP server over stdio or HTTP. The 15 tools, the JSON-RPC
+// `x mcp serve` — the framework's dev MCP server over stdio or HTTP. The 16 tools, the JSON-RPC
 // dispatch, both transports and the structural SQL refusals all come from `@ultimat3/mcp`; the CLI
 // supplies only the app, the caller and the socket. A tool answered here would be a second answer
 // to a question the framework already answers.
@@ -117,7 +117,7 @@ export function startMcpHttp(host: CliMcpServer, port: number): McpHttpServer {
  * What the session reports when it is over — on STDERR, which is the half this file's header
  * claimed and did not have. `dispatch` renders a `CommandResult` only after `run` resolves, and
  * this resolves when the peer closes stdin, so nothing lands mid-session; but fd 1 under this
- * transport carries JSON-RPC frames, and `✓ mcp stdio serving 15 tools` arriving on it after the
+ * transport carries JSON-RPC frames, and `✓ mcp stdio serving 16 tools` arriving on it after the
  * loop is a malformed frame to a peer still draining, and a second document under `--json`.
  *
  * Its own function so the addressing is testable without a live peer: `serveStdio` resolves only
