@@ -17,10 +17,13 @@ export const routeConfig = (load: string): string => `export const config = defi
   // Auth is a policy, never a route-local flag: one authz system, evaluated everywhere.
   policy: { permission: 'dashboard:read' },
   // Only the toggle island hydrates; the tiles, the chart and the table are server markup. The
-  // island measured 60.9kb minified under Bun 1.4.2 — solid-js is 12.6kb of it, the catalog's
-  // toggle, provider and the ui runtime they share are the rest — so 64kb is that figure plus
-  // the few hundred bytes the minifier moves between Bun patch versions, not headroom to spend.
-  budget: { js: '64kb' },${load}
+  // island measured 34.0kb minified under Bun 1.4.0 (37.0kb under 1.4.2, which honours
+  // \`sideEffects\` and keeps core's declared modules) — solid-js is 15.1kb of it, the catalog's
+  // toggle, provider, the ui runtime they share and the error registry are the rest. It was
+  // 60.9kb before the framework stopped shipping solid-js twice and the i18n catalog with it
+  // (issue #490), which is what put this at 64kb; 60kb is the figure the scaffold budgets held
+  // before that, kept rather than tightened so a Bun patch cannot red a first \`bin/check\`.
+  budget: { js: '60kb' },${load}
   meta: ({ t }) => ({
     title: t('app.dashboard.title'),
     description: t('app.dashboard.description'),
@@ -69,6 +72,6 @@ unitTest('the dashboard renders on the server, is gated, and has an offline stra
 
 unitTest('the dashboard hydrates its one island inside a stated budget', () => {
   expect(config.hydrate).toBe('visible');
-  expect(config.budget.js).toBe('64kb');
+  expect(config.budget.js).toBe('60kb');
 });
 `;

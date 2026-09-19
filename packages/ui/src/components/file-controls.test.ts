@@ -3,6 +3,10 @@
 // the picker returned passes every test that helper has — and whether the progress bar it renders
 // is a real determinate `progressbar` rather than a styled div.
 
+// Bare, as `index.ts` imports it: the server's `useUi()` reader — the request locale and the
+// catalog behind every string asserted below — is registered by the barrel, and this file reaches
+// components by their module paths (issue #490).
+import '../theme/ambient';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';

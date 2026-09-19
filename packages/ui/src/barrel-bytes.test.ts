@@ -3,9 +3,10 @@
 // Two claims, and they answer issue #275 in opposite directions. The barrel SHAKES — a deep path
 // into a component module and the barrel retain the same MODULES, so component subpath exports
 // (`@ultimat3/ui/button`) would buy zero bytes and cost a second import idiom. What does not shake
-// is `sideEffects`: `./src/errors.ts` runs `registerErrorCodes()` at import, so any module that
-// reaches it drags @ultimat3/core's whole error registry along — which is why the runtime slot is
-// its own module and why the ceiling below is small enough to notice it coming back.
+// is `sideEffects`: `./src/error-registry.ts` runs `registerErrorCodes()` at import and `errors.ts`
+// imports it bare, so any module that constructs a `UiError` drags @ultimat3/core's whole error
+// registry along — which is why the runtime slot is its own module and why the ceiling below is
+// small enough to notice it coming back.
 //
 // **The parity half is a MODULE LIST, not a byte allowance, `As of 2026-08-25`.** It compared byte
 // counts against a hand-copied `BUN_SHAKE_FLAP_BYTES = 512`, measured when Bun 1.4.0's
@@ -35,6 +36,18 @@
 // `moneyText` graph — so all four titles are in the chunk whether core's module survived or not
 // (measured: a shaken 33,876 B chunk carrying every one of them). A predicate reading `true` on
 // both sides of a flap sends the pair to the equality branch and fails it: 3 reds in 240 pairs.
+
+//
+// **The third claim is the scaffold's one island, `As of 2026-09-19` (issue #490).** `<UiProvider>
+// <ThemeToggle mode="toggle" /></UiProvider>` measured 62,463 B minified under CI's own `file:`
+// links — solid-js TWICE (the symlinked package resolved its own copy: 12.4 kB, now
+// `packages/cli/src/island-solid-dedupe.ts`'s), and 16.1 kB of `@ultimat3/i18n` — the framework
+// catalog `index.ts` installs at import, `@ultimat3/time`, and core's logger behind both — reached
+// by `useUi()`'s SERVER branch alone. That branch now reads a slot `theme/ambient.ts` fills, and
+// `package.json`'s `browser` field maps that file to `theme/ambient.browser.ts` for a browser
+// build. The test below reads the module list the browser build retains and refuses those
+// packages by PATH — a list, on both sides of Bun's `sideEffects` change (1.4.0 ignored the array,
+// oven-sh/bun#40650; 1.4.2 honours it), where any byte ceiling would have to pick one.
 
 import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no path API and no directory-removal API, and the entry has to be written INSIDE
@@ -82,6 +95,44 @@ const SHAKEN_FOOTPRINT: readonly string[] = [
 ];
 const CORE_MANIFEST = resolve(import.meta.dir, '..', '..', 'core', 'package.json');
 
+/** `packages/<name>` — the directory a retained module's path is refused or allowed by. */
+const packageDir = (name: string): string => `${resolve(import.meta.dir, '..', '..', name)}/`;
+
+/**
+ * Packages the theme-toggle island's graph must not reach at all. Each was in it on 2026-09-19 and
+ * each is reachable only from `useUi()`'s server branch — `currentLocale()`, `currentTimeZone()`,
+ * `useI18n()` — which a DOM never takes. `money` was never in this graph; it is listed because
+ * `context.ts` is what every formatting component retains, and the day it reaches money it
+ * reaches money for every island.
+ */
+const SERVER_ONLY_PACKAGES = ['i18n', 'time', 'money'] as const;
+
+/**
+ * Every module of THIS package the island may retain — `ThemeToggle` (both modes: `mode` is a
+ * prop, so `Select` rides along), `IconButton`, the provider and the runtime adapter, the theme
+ * rules, and `errors.ts` with its registry behind the throw sites. A list rather than a count so
+ * a regression names its module. The `.module.scss` files ride along as assets and are allowed by
+ * suffix below rather than named one by one.
+ */
+const THEME_TOGGLE_UI_MODULES: readonly string[] = [
+  'a11y.ts',
+  'cx.ts',
+  'error-registry.ts',
+  'errors.ts',
+  'i18n-keys.ts',
+  'index.ts',
+  'components/IconButton.tsx',
+  'components/Select.tsx',
+  'components/ThemeToggle.tsx',
+  'theme/ambient-slot.ts',
+  'theme/context.ts',
+  'theme/inert-runtime.ts',
+  'theme/provider.tsx',
+  'theme/runtime-slot.ts',
+  'theme/solid-adapter.ts',
+  'theme/theme.ts',
+].map((module) => resolve(import.meta.dir, module));
+
 async function bundle(name: string, source: string, minify: boolean): Promise<string> {
   const entry = join(FIXTURE_DIR, `${name}.ts`);
   await Bun.write(entry, source);
@@ -123,9 +174,20 @@ async function bannerPath(banner: string): Promise<string | null> {
 interface Chunk {
   /** Every source module the chunk retained, sorted — what a subpath export could remove. */
   readonly modules: readonly string[];
-  /** The retained CODE, with the banners removed, so two entries are comparable byte for byte. */
+  /**
+   * The retained CODE, with the banners removed, so two entries are comparable byte for byte —
+   * module by module, in PATH order rather than the order Bun wrote them. The order it writes is
+   * evaluation order, which is import order: the barrel reaches `errors.ts` through its first
+   * import and `money-view.ts` reaches `@ultimat3/money`'s before its own, so the same modules
+   * with the same bytes came out 35 lines apart and the whole-artifact comparison this used to
+   * make read that as a retention difference (`As of 2026-09-19`). What either path retains of a
+   * module is the claim; where Bun put it is not.
+   */
   readonly code: string;
 }
+
+/** The key the entry's own code is filed under — the two entries have different names. */
+const ENTRY_KEY = '';
 
 /**
  * A banner resolving to a file that exists IS a module — Bun strips source comments, so nothing
@@ -135,18 +197,24 @@ interface Chunk {
  */
 async function chunkOf(name: string, source: string): Promise<Chunk> {
   const output = await bundle(name, source, false);
-  const modules = new Set<string>();
-  const code: string[] = [];
+  const sections = new Map<string, string[]>();
+  let current = ENTRY_KEY;
   for (const line of output.split('\n')) {
     if (line.trim() === '') continue;
-    if (!line.startsWith('// ')) {
-      code.push(line);
-      continue;
+    if (line.startsWith('// ')) {
+      const path = await bannerPath(line.slice(3).trim());
+      if (path !== null) {
+        current = path.startsWith(FIXTURE_DIR) ? ENTRY_KEY : path;
+        continue;
+      }
     }
-    const path = await bannerPath(line.slice(3).trim());
-    if (path !== null && !path.startsWith(FIXTURE_DIR)) modules.add(path);
+    const section = sections.get(current) ?? [];
+    section.push(line);
+    sections.set(current, section);
   }
-  return { modules: [...modules].sort(), code: code.join('\n') };
+  const modules = [...sections.keys()].filter((key) => key !== ENTRY_KEY).sort();
+  const code = [ENTRY_KEY, ...modules].map((key) => (sections.get(key) ?? []).join('\n'));
+  return { modules, code: code.join('\n') };
 }
 
 /** The generated entry's specifier for a module in `src/`, so the fixture depth is never spelled. */
@@ -243,4 +311,48 @@ describe('the @ultimat3/ui barrel', () => {
     },
     30_000,
   );
+
+  /**
+   * The scaffold's island, as an entry this package can build without the JSX plugin: the same
+   * three names `theme-toggle.island.tsx` imports, held so nothing shakes. What is asserted is
+   * the module LIST — which packages are absent, and which of this package's modules are present
+   * — because the bytes of a build without Solid's compiler are not the island's bytes.
+   */
+  test('the theme-toggle island retains no server-only package, and only its own modules', async () => {
+    const chunk = await chunkOf(
+      'theme-toggle',
+      [
+        `import { setSolidRuntime, ThemeToggle, UiProvider } from '${specifier('index')}';`,
+        'export const held = [setSolidRuntime, ThemeToggle, UiProvider];',
+        '',
+      ].join('\n'),
+    );
+    // Not vacuous: the island's own modules are in the list.
+    expect(chunk.modules).toContain(resolve(import.meta.dir, 'components/ThemeToggle.tsx'));
+    expect(chunk.modules).toContain(resolve(import.meta.dir, 'theme/provider.tsx'));
+
+    // The mechanism: the browser build took the mapped file and not the server's. Only the
+    // absence is asserted — `ambient.browser.ts` is one unused function, so Bun shakes every
+    // statement it has and writes no banner for it, while `ambient.ts` registers at import and
+    // would be here, i18n behind it, if the `browser` field had not been read.
+    expect(chunk.modules).not.toContain(resolve(import.meta.dir, 'theme/ambient.ts'));
+
+    // The packages a DOM render has no use for, refused by path.
+    for (const name of SERVER_ONLY_PACKAGES) {
+      const reached = chunk.modules.filter((path) => path.startsWith(packageDir(name)));
+      expect(`@ultimat3/${name} modules in the theme-toggle graph: ${reached.join(', ')}`).toBe(
+        `@ultimat3/${name} modules in the theme-toggle graph: `,
+      );
+    }
+
+    // And of this package, nothing outside the list — a new import in any of these modules that
+    // reaches a component, a formatter or the icon tables lands here by name.
+    const own = chunk.modules.filter((path) => path.startsWith(packageDir('ui')));
+    const unexpected = own.filter(
+      (path) => !path.endsWith('.module.scss') && !THEME_TOGGLE_UI_MODULES.includes(path),
+    );
+    expect(`@ultimat3/ui modules outside the theme-toggle list: ${unexpected.join(', ')}`).toBe(
+      '@ultimat3/ui modules outside the theme-toggle list: ',
+    );
+  }, 30_000);
 });

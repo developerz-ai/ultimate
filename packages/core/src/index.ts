@@ -517,6 +517,8 @@ export {
   shutdownHookCount,
 } from './lifecycle';
 export { isSelfOrigin, listeningOrigins, markListening, resetListeners } from './listeners';
+export type { Direction } from './locale-direction';
+export { directionOf, isRtl } from './locale-direction';
 export { isMcpExposed, type McpExposureDeclaration } from './mcp-exposure';
 export { nearestName } from './nearest-name';
 export { type CappedBody, readWithinLimit } from './read-capped';

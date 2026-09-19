@@ -443,7 +443,12 @@ describe('this repository', () => {
       // and `index.ts` (the client half) is inert, which is what lets it bundle for a browser.
       expect(measured.get('packages/render')).toEqual(['src/errors.ts', 'src/server.ts']);
       expect(measured.get('packages/time')).toEqual(['src/errors.ts']);
-      expect(measured.get('packages/ui')).toEqual(['src/errors.ts']);
+      // `errors.ts` is pure since #490: the `registerErrorCodes()` call is its own module, and
+      // `theme/ambient.ts` registers the server's `useUi()` reader at import.
+      expect(measured.get('packages/ui')).toEqual([
+        'src/error-registry.ts',
+        'src/theme/ambient.ts',
+      ]);
     },
     SCAN_TIMEOUT_MS,
   );

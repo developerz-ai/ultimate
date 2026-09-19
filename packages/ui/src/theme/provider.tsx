@@ -1,7 +1,10 @@
 // UiProvider — the single place an app injects presentation context. Reactive
-// access goes through the Solid adapter, so this file imports only solid types.
+// access goes through the Solid adapter, so this file imports only solid types — and only TYPES
+// from `@ultimat3/i18n`: `directionOf` is core's, because a value import of the i18n barrel is
+// the framework catalog in every island chunk with a provider (issue #490).
 
-import { directionOf, type Locale, type Translator } from '@ultimat3/i18n';
+import { directionOf } from '@ultimat3/core';
+import type { Locale, Translator } from '@ultimat3/i18n';
 import type { TimeZone } from '@ultimat3/time';
 import type { JSX } from 'solid-js';
 import { providerNeedsRuntimeError } from '../errors';

@@ -2,6 +2,10 @@
 // no catalog of its own, and the "you are here" marker belongs to exactly one entry. The links
 // shape is the 0kb-JS path a `site/` route uses, and it must carry `hreflang` as well as `lang`.
 
+// Bare, as `index.ts` imports it: the server's `useUi()` reader — the request locale and the
+// catalog behind every string asserted below — is registered by the barrel, and this file reaches
+// components by their module paths (issue #490).
+import '../theme/ambient';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Locale } from '@ultimat3/i18n';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';

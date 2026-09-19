@@ -5,9 +5,13 @@
   "license": "MIT",
   "type": "module",
   "sideEffects": [
-    "./src/errors.ts",
+    "./src/error-registry.ts",
+    "./src/theme/ambient.ts",
     "**/*.scss"
   ],
+  "browser": {
+    "./src/theme/ambient.ts": "./src/theme/ambient.browser.ts"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/developerz-ai/ultimate.git",

@@ -44,28 +44,10 @@ export const SUPPORTED_LOCALES: readonly Locale[] = [
   'zh',
 ];
 
-/**
- * Right-to-left scripts, by primary subtag. A static CLDR-derived set rather than
- * `Intl.Locale.prototype.getTextInfo` so direction is deterministic across runtimes.
- */
-const RTL_LOCALES: ReadonlySet<string> = new Set([
-  'ar',
-  'arc',
-  'ckb',
-  'dv',
-  'fa',
-  'he',
-  'ks',
-  'ku',
-  'nqo',
-  'ps',
-  'sd',
-  'ug',
-  'ur',
-  'yi',
-]);
-
-export type Direction = 'ltr' | 'rtl';
+// Direction moved to `@ultimat3/core` (`locale-direction.ts`) so a browser chunk that needs only
+// `directionOf` does not reach this barrel and the framework catalog it installs (issue #490).
+// Re-exported under the same names: every caller of this package is unchanged.
+export { type Direction, directionOf, isRtl } from '@ultimat3/core';
 
 /**
  * Strip region, lowercase, fall back to the default.
@@ -154,13 +136,4 @@ export function negotiateLocale(
     if (match !== '') return match;
   }
   return fallback;
-}
-
-export function isRtl(locale: Locale): boolean {
-  const primary = locale.split('-')[0]?.toLowerCase() ?? '';
-  return RTL_LOCALES.has(primary);
-}
-
-export function directionOf(locale: Locale): Direction {
-  return isRtl(locale) ? 'rtl' : 'ltr';
 }
