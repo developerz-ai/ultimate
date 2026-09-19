@@ -1,19 +1,17 @@
 // The ambient presentation contract every component reads: theme, locale, tz, currency, direction,
 // translator. Formatting components take nothing from a process-wide default — it arrives from
 // `UiProvider` where a Solid runtime is registered, and from the request everywhere else.
+//
+// This module is what every component's `useUi()` retains, so it imports NO value from
+// `@ultimat3/i18n` or `@ultimat3/time`: the i18n barrel installs the framework catalog at import,
+// and the request readers live in `ambient.ts`, reached through `ambient-slot.ts` (issue #490).
 
-import type { Translator } from '@ultimat3/i18n';
-import {
-  createTranslator,
-  currentDirection,
-  currentLocale,
-  type Direction,
-  directionOf,
-  type Locale,
-  useI18n,
-} from '@ultimat3/i18n';
-import { currentTimeZone, type TimeZone } from '@ultimat3/time';
+import type { Direction } from '@ultimat3/core';
+import { directionOf } from '@ultimat3/core';
+import type { Locale, Translator } from '@ultimat3/i18n';
+import type { TimeZone } from '@ultimat3/time';
 import type { Theme } from '../tokens/tokens';
+import { registeredAmbientUiReader } from './ambient-slot';
 import { hasSolidRuntime } from './runtime-slot';
 import { type SolidContext, type SolidRuntime, solid } from './solid-adapter';
 
@@ -35,9 +33,23 @@ export const UI_DEFAULT_LOCALE: Locale = 'en';
 export const UI_DEFAULT_TIME_ZONE = 'UTC' as TimeZone;
 export const UI_DEFAULT_CURRENCY = 'USD';
 
-/** Loud-miss translator: a forgotten catalog key renders ⟦key⟧, never blank. */
+/**
+ * Loud-miss translator: a forgotten catalog key renders ⟦key⟧, never blank.
+ *
+ * Written here rather than as `createTranslator({}, locale)`, and behaviourally the same call: an
+ * empty catalog has no key, so every lookup is a miss, `has` is false, `raw` is undefined and
+ * `keys` is empty — `context.test.ts` holds each of those against `@ultimat3/i18n`'s own. What
+ * the spelling buys is that a browser chunk with a `UiProvider` in it no longer reaches the i18n
+ * barrel for a translator that cannot translate.
+ */
 export function fallbackTranslator(locale: Locale = UI_DEFAULT_LOCALE): Translator {
-  return createTranslator({}, locale);
+  const miss = (key: string): string => `⟦${key}⟧`;
+  return Object.assign(miss, {
+    has: (): boolean => false,
+    raw: (): string | undefined => undefined,
+    keys: (): string[] => [],
+    locale,
+  });
 }
 
 export function defaultUiContext(): UiContextValue {
@@ -48,30 +60,6 @@ export function defaultUiContext(): UiContextValue {
     currency: UI_DEFAULT_CURRENCY,
     dir: directionOf(UI_DEFAULT_LOCALE),
     t: fallbackTranslator(),
-  };
-}
-
-/**
- * The presentation context of a server render, read from the request the framework already
- * resolved: `currentLocale()` and `currentTimeZone()` are the ambient answers `@ultimat3/i18n` and
- * `@ultimat3/time` keep on the request context, and `useI18n()` is the translator built from the
- * registered catalogs. No second ambient store, and no process-wide default — outside a request
- * each of them returns its own configured fallback, which is where `defaultUiContext()`'s values
- * come from in the first place.
- *
- * `theme` and `currency` have no ambient source and are not given one. The server cannot know the
- * theme — `data-theme` is decided in the browser by the anti-flash script — and a default display
- * currency is business convention: a `Money` carries its own, and an app that wants another for
- * bare minor units wraps `<Money currency="EUR">` once (axiom 8).
- */
-export function ambientUiContext(): UiContextValue {
-  return {
-    theme: 'light',
-    locale: currentLocale(),
-    timeZone: currentTimeZone(),
-    currency: UI_DEFAULT_CURRENCY,
-    dir: currentDirection(),
-    t: useI18n(),
   };
 }
 
@@ -99,8 +87,15 @@ export function uiContext(): SolidContext<UiContextValue> {
  * Solid context is provably empty — an inert tree is walked outside every owner, so `useContext`
  * returns the context's default value even with a real runtime registered — so reading the
  * request's own answers is strictly more true than reading a provider that provided nothing.
+ *
+ * Those answers come through the slot: `ambient.ts` registers `ambientUiContext` when the barrel
+ * is imported, and a browser build — where this branch is unreachable — never has it. The
+ * defaults are the fallback for a caller that reached this module without the barrel, which is
+ * what `ambientUiContext()` itself answers outside a request.
  */
 export function useUi(): UiContextValue {
   const runtime = solid();
-  return hasSolidRuntime() ? runtime.useContext(uiContext()) : ambientUiContext();
+  if (hasSolidRuntime()) return runtime.useContext(uiContext());
+  const ambient = registeredAmbientUiReader();
+  return ambient === null ? defaultUiContext() : ambient();
 }

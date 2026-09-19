@@ -1261,6 +1261,7 @@ missing.
 | File | Job |
 |---|---|
 | `island-bundle.ts` | discover `*.island.tsx`, build each as its own entry point, hash it, resolve a page's specifier to its URL |
+| `island-solid-dedupe.ts` | the plugin installed FIRST: every `solid-js` specifier in an island's graph resolves to the APP's copy. `Bun.build` resolves from a module's real path, so a package reached through a symlink (`file:` overrides, `bun link`) brought its own `solid-js` — the scaffold's theme toggle shipped two runtimes under CI's own links, 62,463 B against 50,042 B with one (issue #490), and two runtimes are two reactive graphs |
 | `island-routes.ts` | serve those chunks, at `ISLAND_BASE_PATH`, immutable |
 | `dev-render.ts` | one collector **per render**, and `hydrateRuntime` after the body |
 | `prerender.ts` | build first, write the chunks into the export, then measure |

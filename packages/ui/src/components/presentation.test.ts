@@ -3,6 +3,10 @@
 // the catalog. Outside a request the translator is the loud-miss one, so a resolved key renders as
 // uiString('ui.loading'): a component that wrote its own English would render the English.
 
+// Bare, as `index.ts` imports it: the server's `useUi()` reader — the request locale and the
+// catalog behind every string asserted below — is registered by the barrel, and this file reaches
+// components by their module paths (issue #490).
+import '../theme/ambient';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';

@@ -6,6 +6,12 @@
 // would be TS2307 there. The reference pulls the contract along with the entry.
 /// <reference path="./scss.d.ts" />
 
+// Bare, and above every re-export: `theme/ambient.ts` registers the server's `useUi()` reader at
+// import, and a bundler may drop a re-exported module whose binding nobody used. A browser build
+// resolves this specifier to `theme/ambient.browser.ts` through `package.json`'s `browser` field,
+// so an island never carries the i18n barrel for it (issue #490).
+import './theme/ambient';
+
 export type {
   FocusTrap,
   LiveRegionAttrs,
@@ -290,11 +296,11 @@ export {
   TAB_SELECTOR,
   tabStopIndex,
 } from './roving';
+export { ambientUiContext } from './theme/ambient';
 export type { Brand, BrandInput, FontSlot } from './theme/brand';
 export { brandStyleCspSource, brandStyleTag, defineTheme, FONT_SLOTS } from './theme/brand';
 export type { Direction, UiContextValue } from './theme/context';
 export {
-  ambientUiContext,
   defaultUiContext,
   fallbackTranslator,
   UI_DEFAULT_CURRENCY,

@@ -2,6 +2,10 @@
 // Every claim here is an accessibility-tree one, because that is the half a screenshot cannot
 // check and the half these components exist to get right.
 
+// Bare, as `index.ts` imports it: the server's `useUi()` reader — the request locale and the
+// catalog behind every string asserted below — is registered by the barrel, and this file reaches
+// components by their module paths (issue #490).
+import '../theme/ambient';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { FakeElement } from '../fake-dom';

@@ -4,11 +4,19 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createContext, runWithContext } from '@ultimat3/core';
-import { configureLocales, directionOf, isMiss, type Locale, localeConfig } from '@ultimat3/i18n';
+import {
+  configureLocales,
+  createTranslator,
+  directionOf,
+  isMiss,
+  type Locale,
+  localeConfig,
+} from '@ultimat3/i18n';
 import { configureTime, type TimeZone, timeConfig } from '@ultimat3/time';
 import { UI_ERROR_CODES } from '../errors';
+import { ambientUiContext } from './ambient';
+import { registeredAmbientUiReader } from './ambient-slot';
 import {
-  ambientUiContext,
   defaultUiContext,
   fallbackTranslator,
   UI_DEFAULT_CURRENCY,
@@ -81,6 +89,22 @@ describe('fallbackTranslator', () => {
     const t = fallbackTranslator('fr');
     expect(t.locale).toBe('fr');
   });
+
+  // The spelling changed and the behaviour must not have: this used to be
+  // `createTranslator({}, locale)`, and every member is held against that call so the local
+  // translator cannot drift from the one it replaced (issue #490).
+  test('answers exactly what an empty i18n catalog answers, member for member', () => {
+    const local = fallbackTranslator('fr');
+    const empty = createTranslator({}, 'fr');
+    for (const key of ['some.unknown.key', 'items', 'constructor', '__proto__', '']) {
+      expect(local(key)).toBe(empty(key));
+      expect(local(key, { count: 2 })).toBe(empty(key, { count: 2 }));
+      expect(local.has(key)).toBe(empty.has(key));
+      expect(local.raw(key)).toBe(empty.raw(key));
+    }
+    expect(local.keys()).toEqual(empty.keys());
+    expect(local.locale).toBe(empty.locale);
+  });
 });
 
 describe('defaultUiContext', () => {
@@ -131,6 +155,15 @@ describe('ambientUiContext', () => {
     expect(ctx.timeZone).toBe('Asia/Tokyo' as TimeZone);
     expect(ctx.locale).toBe('ar' as Locale);
     expect(ctx.dir).toBe('rtl');
+  });
+
+  // Importing the module IS the registration — the barrel imports it bare for exactly this, and
+  // `useUi()` on the inert path reads through the slot rather than naming the reader.
+  test('registers itself as the reader useUi() falls back to on the server', () => {
+    expect(registeredAmbientUiReader()).toBe(ambientUiContext);
+    clearSolidRuntime();
+    configureLocales({ fallback: 'ar' as Locale });
+    expect(useUi().dir).toBe('rtl');
   });
 
   test('falls back to the package defaults with nothing configured and no request', () => {

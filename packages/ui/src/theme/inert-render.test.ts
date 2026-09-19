@@ -35,6 +35,10 @@ import { ThemeToggle } from '../components/ThemeToggle';
 import { Toast } from '../components/Toast';
 import { Toolbar } from '../components/Toolbar';
 import { UI_ERROR_CODES } from '../errors';
+// Bare, as `index.ts` imports it: the server's `useUi()` reader is registered by the barrel, and
+// this file reaches components by their module paths — so without the same import the inert
+// path below would read the package defaults instead of the request (issue #490).
+import './ambient';
 import { UiProvider } from './provider';
 import { clearSolidRuntime } from './runtime-slot';
 

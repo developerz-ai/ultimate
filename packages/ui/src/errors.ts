@@ -1,7 +1,12 @@
 // @ultimat3/ui error codes. Every throw carries a stable code, the cause, and
 // the exact fix — identical in the terminal, the browser overlay, and `--json`.
 
-import { registerErrorCodes, renderCauseValue, UltimateError } from '@ultimat3/core';
+import { renderCauseValue, UltimateError } from '@ultimat3/core';
+// The registration is `error-registry.ts`, imported bare: this module is then side-effect-free
+// as `package.json` declares it, so a bundler that honours `sideEffects` (Bun 1.4.2 does; 1.4.0
+// ignored the array, oven-sh/bun#40650) drops it from a chunk that reaches it only through the
+// barrel — and keeps it, registration included, wherever a constructor below is actually called.
+import './error-registry';
 
 export const UI_ERROR_CODES = {
   tokenUnknown: 'X_TOKEN_UNKNOWN',
@@ -14,19 +19,6 @@ export const UI_ERROR_CODES = {
 } as const;
 
 export type UiErrorCode = (typeof UI_ERROR_CODES)[keyof typeof UI_ERROR_CODES];
-
-// Unconditional like every other package: every code here is ui's own, and a second package
-// claiming one has to throw X_ERROR_CODE_DUPLICATE at import. Taking the process down there is the
-// point — the alternative is two packages shipping two meanings for one code, decided by load order.
-registerErrorCodes({
-  X_TOKEN_UNKNOWN: { title: 'design token role does not exist' },
-  X_THEME_INVALID: { title: 'theme is not "light" or "dark"' },
-  X_UI_RUNTIME_MISSING: { title: 'a host capability @ultimat3/ui needs is absent' },
-  X_UI_INVALID_VALUE: { title: 'a formatting component received an unrenderable value' },
-  X_UI_FORM_PATH_INVALID: { title: 'a form control name is not a usable field path' },
-  X_UI_CONTRAST_INSUFFICIENT: { title: 'a brand palette pairing does not meet WCAG 2.2 AA' },
-  X_UI_QR_CAPACITY: { title: 'text is too long for a QR code this component can draw' },
-});
 
 export class UiError extends UltimateError {
   override readonly name: string = 'UiError';
