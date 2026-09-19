@@ -412,6 +412,18 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
       colorScheme = scheme === 'no-preference' ? null : scheme;
       return Promise.resolve();
     },
+    /**
+     * ACCEPTED, for `setColorScheme`'s reason and not `setOfflineMode`'s. This driver parses
+     * markup and executes none of it, so there is no document script for the expression to run
+     * ahead of — and no assertion a resolved promise could let through: what a prepared script
+     * seeds is the INPUT to a boot this driver never runs. Refusing would cost `x shot` and every
+     * `ui.*` tool their unit tests on a machine with no Chrome, for an outcome that does not exist
+     * here. `live()` still refuses a closed target, which is the one thing this can be wrong about
+     * — and `async`, so that refusal REJECTS rather than escaping a caller's `.catch()`.
+     */
+    async prepare(_expression: string): Promise<void> {
+      live();
+    },
     screenshot: (options: CaptureOptions): Promise<Uint8Array> =>
       Promise.resolve(framedPng(options.clip, colorScheme)),
     pdf: (_options: CaptureOptions): Promise<Uint8Array> => Promise.resolve(FAKE_PDF),

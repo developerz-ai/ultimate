@@ -261,7 +261,15 @@ export const VIEWPORT_ARGS = {
   },
   width: { type: 'integer', minimum: 320, maximum: 3840 },
   height: { type: 'integer', minimum: 320, maximum: 2160 },
-  theme: { type: 'string', enum: ['light', 'dark'], default: 'dark' },
+  theme: {
+    type: 'string',
+    enum: ['light', 'dark'],
+    default: 'dark',
+    description:
+      'The theme the capture is of: prefers-color-scheme is emulated AND the scheme is stored as ' +
+      "the visitor's choice (localStorage, the boot's key) before navigation, so an app whose " +
+      'theme.defaultMode differs still captures what a visitor who chose this theme sees.',
+  },
 } as const;
 
 /**

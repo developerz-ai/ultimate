@@ -300,6 +300,18 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
         // puppeteer's own `Page` needs it.
         await emulate.call(init.page, colorSchemeFeatures(scheme));
       }),
+    prepare: (expression: string): Promise<void> =>
+      guard('prepare', async () => {
+        // Read off the object and called through it, for `setColorScheme`'s reason.
+        const evaluateOnNewDocument = init.page.evaluateOnNewDocument;
+        if (typeof evaluateOnNewDocument !== 'function') {
+          throw scrapeNotImplemented(
+            'prepare() on a CDP page with no evaluateOnNewDocument() method',
+            'upgrade the launcher to a puppeteer-core that exposes page.evaluateOnNewDocument(), or seed the state from the app under test instead of the browser',
+          );
+        }
+        await evaluateOnNewDocument.call(init.page, expression);
+      }),
     screenshot: (options: CaptureOptions) =>
       guard('screenshot', async () => {
         // `fullPage` is OMITTED when a clip is given rather than sent as `false`: the two are

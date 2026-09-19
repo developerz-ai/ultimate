@@ -994,7 +994,7 @@ Three rules the set obeys:
 ```bash
 x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000]
                [--timeout 30000] [--browser <path>] [--cdp-url <ws://…>]
-               [--allow-hosts a.com,b.com] [--json]
+               [--allow-hosts a.com,b.com] [--theme light|dark] [--json]
 x shot --island <name> [--state <id>] [--json]
 x shot --all-islands [--json]
 ```
@@ -1012,6 +1012,7 @@ x shot --all-islands [--json]
 | `--browser` | `PUPPETEER_EXECUTABLE_PATH`, then `CHROME_PATH` | refused before anything boots if the path does not exist |
 | `--cdp-url` | `SCRAPE_CDP_URL` | **attach** to a browser somebody else is running instead of launching one here. `ws:`/`wss:`/`http:`/`https:`; anything else is refused before the attach |
 | `--allow-hosts` | the app's host only | extra hosts the page may request |
+| `--theme` | absent — the box's own preference and the app's own `theme.defaultMode` | `light` or `dark`, `As of 2026-09-19`. Both `prefers-color-scheme` is emulated **and** the scheme is stored as the visitor's choice under `THEME_STORAGE_KEY` before navigation — the boot script since 20.2.0 answers `defaultMode` before the OS, so emulation alone photographs a dark-default app dark whatever was asked (#489). The `ui.shot`/`ui.inspect`/`ui.interact` tools' `theme` is this flag. Refused beside `--island`, which photographs both themes |
 
 **`verdict.json` is the half that gates**, and the more important of the two files: a picture cannot tell you the island threw or logged. It carries the console lines, the island counts, the canvas size, the network tallies — and `blind`, which names what this capture could **not** observe. A tool that silently omits what it cannot see is worse than one that says so.
 

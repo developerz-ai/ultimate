@@ -98,6 +98,12 @@ export interface FakeCdpBrowser extends CdpBrowserLike {
   readonly pressed: readonly string[];
   /** Every selector `page.focus()` was handed, in order. */
   readonly focused: readonly string[];
+  /**
+   * Every expression `page.evaluateOnNewDocument()` was handed, in order — the scripts a real
+   * browser would run ahead of each document's own. Recorded, never executed: this fake has no JS
+   * engine, and a test asserts on WHAT was prepared and that it was prepared before `goto`.
+   */
+  readonly prepared: readonly string[];
   /** How many raw CDP sessions were created and how many detached — a leak is a difference. */
   readonly sessions: { readonly created: number; readonly detached: number };
 }
@@ -149,6 +155,7 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
   let cookies: readonly ScrapeCookie[] = init.cookies ?? [];
   const pressed: string[] = [];
   const focused: string[] = [];
+  const prepared: string[] = [];
   const sessions = { created: 0, detached: 0 };
   const axBySelector = init.accessibility ?? {};
 
@@ -316,6 +323,10 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
       focused.push(selector);
       return Promise.resolve();
     },
+    evaluateOnNewDocument: (expression: string) => {
+      prepared.push(expression);
+      return Promise.resolve(undefined);
+    },
     createCDPSession: () => {
       sessions.created += 1;
       return Promise.resolve(cdpSession());
@@ -391,6 +402,7 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
     },
     pressed,
     focused,
+    prepared,
     sessions,
   };
 }
