@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
+import { clearRoutes, defineRoute, registerRoute, themeScriptBody } from '@ultimat3/render';
 import { readBuildStats } from './budgets';
 import { prerenderSite } from './prerender';
 import { serviceWorkerRegistration } from './sw-artifacts';
@@ -67,7 +67,12 @@ afterEach(async () => {
 // from the rendered documents' content hashes, which is a real dependency.
 // ---------------------------------------------------------------------------------------------
 describe('x build --target static · the framework`s bytes are counted, never charged', () => {
-  const REGISTRATION_BYTES = Buffer.byteLength(serviceWorkerRegistration(), 'utf8');
+  // Two framework scripts on every document: the service-worker registration (a `<script src>`)
+  // and the inlined theme boot (`pwaConfig()` declares no `theme.defaultMode`, so `'system'`).
+  // Both are counted in `frameworkJsBytes` and neither is charged to the route.
+  const REGISTRATION_BYTES =
+    Buffer.byteLength(serviceWorkerRegistration(), 'utf8') +
+    Buffer.byteLength(themeScriptBody({ fallback: 'system' }), 'utf8');
 
   test('the registration has bytes at all, or both assertions below are vacuous', () => {
     expect(REGISTRATION_BYTES).toBeGreaterThan(0);
