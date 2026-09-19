@@ -8,10 +8,16 @@
 //
 // Precedent: `packages/storage/src/driver-s3-fixture.ts` ships the same way.
 
-import type { CdpBrowserLike, CdpFrameLike, CdpLauncherLike, CdpPageLike } from './cdp-port';
+import type {
+  CdpBrowserLike,
+  CdpFrameLike,
+  CdpLauncherLike,
+  CdpPageLike,
+  CdpSessionLike,
+} from './cdp-port';
 import { COLOR_SCHEME_FEATURE } from './color-scheme';
 import { queryHtml } from './html-query';
-import type { ElementSnapshot, ScrapeCookie } from './target';
+import type { AxNode, ElementSnapshot, ScrapeCookie } from './target';
 
 /** The selector inside `snapshotExpression()`'s `document.querySelectorAll("…")`. */
 const selectorOf = (expression: string): string | undefined => {
@@ -54,6 +60,14 @@ export interface FakeCdpPageInit {
   readonly userAgent?: string;
   /** Selectors whose element is covered at its centre — what only a layout engine can see. */
   readonly covered?: readonly string[];
+  /**
+   * What the accessibility tree answers, BY SELECTOR — the nodes `Accessibility.getPartialAXTree`
+   * would compute for each match, in document order. Canned rather than derived from the markup,
+   * deliberately: a fake that read `role=` off the tag would be the offline driver's refusal
+   * re-implemented as a lie, and the point of this session is to exercise `cdp-a11y.ts`'s four
+   * protocol calls and its parse, not to compute a role.
+   */
+  readonly accessibility?: Readonly<Record<string, readonly AxNode[]>>;
 }
 
 type Handlers = Map<string, ((payload: unknown) => void)[]>;
@@ -77,6 +91,15 @@ export interface FakeCdpBrowser extends CdpBrowserLike {
    * something sets one, which is the launcher's own default and not a value this fake invents.
    */
   readonly colorScheme: string | null;
+  /**
+   * Every keyboard event, in order — `down Meta`, `press K`, `up Meta` — so a test asserts on the
+   * SEQUENCE a chord became: a modifier released before the key, or never released, is the defect.
+   */
+  readonly pressed: readonly string[];
+  /** Every selector `page.focus()` was handed, in order. */
+  readonly focused: readonly string[];
+  /** How many raw CDP sessions were created and how many detached — a leak is a difference. */
+  readonly sessions: { readonly created: number; readonly detached: number };
 }
 
 /** A layout box every element gets, so the CDP path exercises the fields the fake target lacks. */
@@ -124,6 +147,75 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
   const covered = new Set(init.covered ?? []);
   const storage: Record<string, string> = { ...init.storage };
   let cookies: readonly ScrapeCookie[] = init.cookies ?? [];
+  const pressed: string[] = [];
+  const focused: string[] = [];
+  const sessions = { created: 0, detached: 0 };
+  const axBySelector = init.accessibility ?? {};
+
+  /**
+   * A raw session answering the four commands `cdp-a11y.ts` sends, in CDP's own wire shapes —
+   * `{ value }` wrappers, a `properties` list — so the parse in that file is what is under test.
+   * Node ids are minted per `querySelectorAll` and looked up on the way back, which is how the
+   * real protocol addresses nodes too.
+   */
+  const cdpSession = (): CdpSessionLike => {
+    const byNodeId = new Map<number, AxNode>();
+    const wrap = (value: string | boolean | undefined): { value?: string | boolean } =>
+      value === undefined ? {} : { value };
+    return {
+      send: (method: string, params?: Record<string, unknown>) => {
+        if (method === 'DOM.getDocument') return Promise.resolve({ root: { nodeId: 1 } });
+        if (method === 'DOM.querySelectorAll') {
+          const selector = typeof params?.['selector'] === 'string' ? params['selector'] : '';
+          const nodes = Object.hasOwn(axBySelector, selector) ? (axBySelector[selector] ?? []) : [];
+          const nodeIds = nodes.map((node, index) => {
+            const nodeId = 100 + byNodeId.size + index;
+            byNodeId.set(nodeId, node);
+            return nodeId;
+          });
+          return Promise.resolve({ nodeIds });
+        }
+        if (method === 'DOM.describeNode') {
+          const nodeId = typeof params?.['nodeId'] === 'number' ? params['nodeId'] : 0;
+          return Promise.resolve({ node: { backendNodeId: nodeId * 10 } });
+        }
+        if (method === 'Accessibility.getPartialAXTree') {
+          const backend =
+            typeof params?.['backendNodeId'] === 'number' ? params['backendNodeId'] : 0;
+          const node = byNodeId.get(backend / 10);
+          if (node === undefined) return Promise.resolve({ nodes: [] });
+          const properties = [
+            ...(node.focused === undefined ? [] : [{ name: 'focused', value: wrap(node.focused) }]),
+            ...(node.disabled === undefined
+              ? []
+              : [{ name: 'disabled', value: wrap(node.disabled) }]),
+          ];
+          return Promise.resolve({
+            nodes: [
+              {
+                nodeId: `ax-${String(backend)}`,
+                ignored: node.ignored,
+                role: { type: 'role', ...wrap(node.role) },
+                name: { type: 'computedString', ...wrap(node.name) },
+                ...(node.description === undefined
+                  ? {}
+                  : { description: { type: 'computedString', value: node.description } }),
+                ...(node.value === undefined
+                  ? {}
+                  : { value: { type: 'string', value: node.value } }),
+                properties,
+              },
+            ],
+          });
+        }
+        return Promise.resolve({});
+      },
+      detach: () => {
+        sessions.detached += 1;
+        return Promise.resolve();
+      },
+    };
+  };
 
   const documentOf = (read: () => string): FakeDocument => ({ html: read, typed: new Map() });
   const pageDocument = documentOf(() => html);
@@ -206,6 +298,28 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
     screenshot: () => Promise.resolve(new Uint8Array([1, 2, 3])),
     pdf: () => Promise.resolve(new Uint8Array([4, 5])),
     setRequestInterception: () => Promise.resolve(),
+    keyboard: {
+      down: (key: string) => {
+        pressed.push(`down ${key}`);
+        return Promise.resolve();
+      },
+      up: (key: string) => {
+        pressed.push(`up ${key}`);
+        return Promise.resolve();
+      },
+      press: (key: string) => {
+        pressed.push(`press ${key}`);
+        return Promise.resolve();
+      },
+    },
+    focus: (selector: string) => {
+      focused.push(selector);
+      return Promise.resolve();
+    },
+    createCDPSession: () => {
+      sessions.created += 1;
+      return Promise.resolve(cdpSession());
+    },
     setOfflineMode: (enabled: boolean) => {
       offline = enabled;
       return Promise.resolve();
@@ -275,6 +389,9 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
     get colorScheme(): string | null {
       return colorScheme;
     },
+    pressed,
+    focused,
+    sessions,
   };
 }
 

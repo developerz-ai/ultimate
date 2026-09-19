@@ -38,6 +38,7 @@ export const SCRAPE_OWNED_ERROR_CODES = [
   'X_SCRAPE_SESSION_EXPIRED',
   'X_SCRAPE_PROMPT_UNANSWERED',
   'X_SCRAPE_BLOCKED',
+  'X_SCRAPE_KEY_INVALID',
 ] as const;
 
 /**
@@ -89,6 +90,7 @@ export const SCRAPE_ERROR_TITLES: Readonly<Record<ScrapeOwnedErrorCode, string>>
   X_SCRAPE_SESSION_EXPIRED: 'the restored session is no longer valid and nothing can renew it',
   X_SCRAPE_PROMPT_UNANSWERED: 'a login step asked for a code and nothing answered',
   X_SCRAPE_BLOCKED: 'the site refused this client — the identity is spent',
+  X_SCRAPE_KEY_INVALID: 'the key chord names no key a browser can press',
 };
 
 // One unconditional call, so a second package claiming one of these codes throws
@@ -186,6 +188,10 @@ export const SCRAPE_ERROR_RETRY = {
   X_SCRAPE_AUTH_FAILED: 'terminal',
   X_SCRAPE_SESSION_EXPIRED: 'terminal',
   X_SCRAPE_PROMPT_UNANSWERED: 'terminal',
+  // A declaration error, for `X_SCRAPE_CAPTURE_INVALID`'s reason: the chord is the caller's own
+  // literal, attempt 2 passes the identical string, and a retry is a browser launch for no chance
+  // of a different parse. Refused before any key goes down, so no modifier is left held.
+  X_SCRAPE_KEY_INVALID: 'terminal',
 } as const satisfies Readonly<Record<ScrapeOwnedErrorCode, 'retryable' | 'terminal'>>;
 
 registerErrorRetry(SCRAPE_ERROR_RETRY);

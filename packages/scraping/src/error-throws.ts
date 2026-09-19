@@ -437,3 +437,17 @@ export const captureClipOnPdf = (clip: CaptureClip): ScrapeError =>
     fix: 'call page.screenshot({ clip }) for one component, or page.pdf() with no clip for the document',
     meta: { clip: { ...clip } },
   });
+
+/**
+ * A chord that cannot be pressed. Refused before ANY key goes down, which is the reason it is a
+ * parse and not a try: `press()` holds every modifier, presses the key, then releases — and a
+ * chord refused halfway through would leave `Control` held on the page for every later verb.
+ * Terminal for `X_SCRAPE_CAPTURE_INVALID`'s reason: the chord is the caller's own literal.
+ */
+export const keyInvalid = (chord: string, reason: string): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_KEY_INVALID',
+    cause: `the key chord ${JSON.stringify(chord)} ${reason}`,
+    fix: "spell the chord as zero or more of Meta, Control, Alt, Shift joined by '+' and then the key — 'Meta+K', 'Escape', 'Shift+Tab' — using the browser's own key names",
+    meta: { chord },
+  });
