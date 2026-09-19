@@ -47,7 +47,7 @@ Everything derivable from code is **not** in this file — routes, actions, poli
 | `defaultLocale` | `string` | `'en'` | must appear in `locales` |
 | `defaultTimeZone` | IANA zone | `'UTC'` | display default only; a user's own `tz` column always wins |
 | `defaultCurrency` | ISO 4217 | `'USD'` | default for `Money` formatting. Never a conversion rate |
-| `theme.defaultMode` | `'light' \| 'dark' \| 'system'` | `'system'` | `theme.tokens` is the semantic token map; raw hex is a lint error in components |
+| `theme.defaultMode` | `'light' \| 'dark' \| 'system'` | `'system'` | what a visitor with no stored choice gets. The boot inlines the no-flash theme script into every document with this as its fallback and admits it to the CSP — `As of 20.2.0`; before that the key was read by nothing. `theme.tokens` is the semantic token map; raw hex is a lint error in components |
 | `roles` | `Role[]` | every `ROLE` | which runtime roles this app runs. Empty is `X_CONFIG_INVALID` |
 
 There is no `url` field. The canonical origin is an env key the app reads at its point of use (`APP_URL`), so the same image deploys to every environment.

@@ -231,13 +231,15 @@ describe('unit · nineteen readers is the alarm, not the all-clear', () => {
 
 describe('unit · the ratchet', () => {
   /**
-   * The four this tree reds on with the pins removed, spelled out. It was five: `cache.urlEnv` was
+   * The three this tree reds on with the pins removed, spelled out. It was five: `cache.urlEnv` was
    * `database.urlEnv`'s defect verbatim — `config.ts` validated that the key was PRESENT while the
    * URL came from a hardcoded `env['REDIS_URL']` — and it was DELETED with `cache.driver` rather
    * than re-pinned. `realtime.urlEnv` is the same defect against `env['NATS_URL']` and is still
    * pinned, which is what a ratchet that may only shrink looks like from one release to the next.
+   * Then four became three: `theme.defaultMode` gained its first reader (`cli/src/theme-boot.ts`,
+   * which inlines the no-flash script with it as the fallback) and was unpinned.
    */
-  test('unpinned, this tree reports exactly the four keys nothing in packages/*/src reads', () => {
+  test('unpinned, this tree reports exactly the three keys nothing in packages/*/src reads', () => {
     const gaps = checkConfigReaders({ ...input, pins: {}, ambiguousPins: {} }).filter(
       (gap) => gap.kind === 'unread',
     );
@@ -245,7 +247,6 @@ describe('unit · the ratchet', () => {
       'defaultCurrency',
       'defaultTimeZone',
       'realtime.urlEnv',
-      'theme.defaultMode',
     ]);
     expect(gaps.every((gap) => gap.kind === 'unread')).toBe(true);
   });
@@ -256,7 +257,6 @@ describe('unit · the ratchet', () => {
       'defaultCurrency',
       'defaultTimeZone',
       'realtime.urlEnv',
-      'theme.defaultMode',
     ]);
   });
 
@@ -333,7 +333,7 @@ describe('unit · the ratchet', () => {
     const after = await Bun.file(path).text();
     expect(after).not.toContain("'realtime.urlEnv'");
     // The neighbours are untouched: a wrapped reason must not take the next entry with it.
-    expect(after).toContain("'theme.defaultMode'");
+    expect(after).toContain('defaultCurrency');
     expect(after).toContain('defaultTimeZone');
   });
 

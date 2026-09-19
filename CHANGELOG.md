@@ -9,21 +9,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 ## [Unreleased]
 
 ### Added
-
+### Added
 - **`@ultimat3/scraping`: `press`, `focus` and `accessibility` on the page vocabulary.**
-  `page.focus(selector)` waits for `actionable` and moves focus; `page.press('Meta+K')` holds each
-  modifier, presses the key and releases in reverse, with the chord parsed by `parseKeyChord`
-  BEFORE any key goes down (`X_SCRAPE_KEY_INVALID`, terminal, on every driver — `'Ctrl+K'` is
-  refused offline exactly as it is live); `page.accessibility(selector, { max })` answers the
-  browser's COMPUTED role and name per match over a raw CDP session (`cdp-a11y.ts`,
-  `Accessibility.getPartialAXTree`), detached in a `finally`. All three are REQUIRED on
-  `ScrapeTarget` where the matching `CdpPageLike` members (`keyboard`, `focus`, `createCDPSession`)
-  are optional, and a launcher lacking one is refused BY NAME. The offline drivers accept `focus`
-  (the selector must exist) and `press` (parse, then stop — no JS engine) and REFUSE
-  `accessibility` with `X_NOT_IMPLEMENTED` rather than reading `role=` off the markup; a frame of
-  the real driver refuses it too. `cdp-arm.ts` holds the request/console/`pageerror`/`error`
-  handlers `cdp-target.ts` armed, extracted verbatim because that file stood at 478 lines against
-  the 500-line ceiling. Part of #463.
+- **The framework inlines the no-flash theme script, with `theme.defaultMode` as its fallback.** `x dev`, the container and the static export write `themeScript({ fallback })` into every document's `<head>` before the stylesheet and admit its hash to `script-src` from the same string (`packages/cli/src/theme-boot.ts`). `theme.defaultMode` in `app.config.ts` had no reader before; `theme: { defaultMode: 'dark' }` is now all an app needs to open dark. The script is counted and never charged by `budgets` (`FRAMEWORK_INLINE_SCRIPTS`), for `x-sw-register.js`'s reason: an author cannot edit, delete or move it. `themeScript()` gains `fallback`, exports `themeScriptBody()`, and its storage key is `ultimate.theme` — the key `ThemeToggle` already wrote (`THEME_STORAGE_KEY`, pinned equal across render and ui by a test). `@ultimat3/ui`'s `THEME_INLINE_SCRIPT` and its helpers are deprecated, removed in 21.
+- **An app's own error pages are admitted to `style-src`.** `apps/web/site/errors/<status>.html` is served verbatim and carries its own `<style>`; the enforced policy a container sends blocked that block (invisible in `x dev`, which is report-only). Every `<style>` body in those files is hashed at boot (`packages/cli/src/error-page-csp.ts`).
+- **Three authoring mixins in `@ultimat3/ui/tokens`:** `data-text` (mono family, tabular figures — for slugs, counts, timestamps, ids), `label-caps` (the section-label voice) and `dot-grid` (the faded dot-grid ground for a hero or a dashboard main). Every value is a token.
+
+### Fixed
+- **`<dialog>` opened pinned to the top-left corner.** The reset's `* { margin: 0 }` outranks the UA stylesheet's `dialog { margin: auto }`, the only rule that centres a modal dialog; every app restated the margin itself. `reset.scss` restates it once.
 
 ## 20.1.6 - 2026-09-18
 

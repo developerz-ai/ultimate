@@ -65,6 +65,12 @@ export interface DocumentOptions {
    * boot knows it, the renderer cannot ask.
    */
   readonly pwaHead?: string;
+  /**
+   * The no-flash theme `<script>` from `theme-boot.ts`, or absent for a caller that renders no
+   * documents a browser paints. Document-level for `pwaHead`'s reason — the same tag on every page,
+   * decided by `app.config.ts`, which the boot read and the renderer cannot.
+   */
+  readonly themeHead?: string;
 }
 
 export interface DevRenderOptions extends DocumentOptions {
@@ -99,7 +105,9 @@ const headFor = async (
       await entry.config.meta(metaContextFor(ctx, data)),
       seoRenderers({ path: new URL(ctx.url).pathname }),
     ),
-  ) + (options.pwaHead ?? '');
+  ) +
+  (options.themeHead ?? '') +
+  (options.pwaHead ?? '');
 
 /**
  * `<link rel="stylesheet">` for the surface's own stylesheets, or nothing at all when the surface

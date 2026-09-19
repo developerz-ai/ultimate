@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Manifest, RouteFact } from '@ultimat3/manifest';
-import { formatBytes, parseByteBudget } from '@ultimat3/render';
+import { formatBytes, parseByteBudget, themeScriptBody } from '@ultimat3/render';
 import type { Finding } from './output';
 import type { UnmeasuredRoute } from './static-report';
 import { SW_REGISTER_PATH } from './sw-artifacts';
@@ -254,6 +254,18 @@ export interface MeasuredJs {
 export const FRAMEWORK_SCRIPTS: ReadonlySet<string> = new Set([SW_REGISTER_PATH]);
 
 /**
+ * The inline bodies the boot puts in EVERY document, keyed by the same argument as
+ * `FRAMEWORK_SCRIPTS`: the author cannot edit, delete or move them, so charging one against a
+ * `0kb` budget is a finding nobody can act on. Today that is the no-flash theme script, in each
+ * of its three fallbacks (`theme-boot.ts` uses `themeScript`'s defaults for everything else, so
+ * these are the exact strings a document carries). The hydration runtime is NOT here — it exists
+ * only when the page ships an island, and is the cost of the app's own interactivity.
+ */
+export const FRAMEWORK_INLINE_SCRIPTS: ReadonlySet<string> = new Set(
+  (['light', 'dark', 'system'] as const).map((fallback) => themeScriptBody({ fallback })),
+);
+
+/**
  * What a rendered document actually makes the browser execute: the bytes of every inline script
  * the parser will run, the size of every file a `src` points at, and the size of every island
  * chunk it boots. A JSON-typed script is skipped — it is data the parser never runs. Measured
@@ -301,7 +313,10 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
     if (carriesJson(attrs)) continue;
     const src = SRC_ATTR.exec(attrs)?.groups?.['src'];
     if (src === undefined) {
-      jsBytes += Buffer.byteLength(match.groups?.['body'] ?? '', 'utf8');
+      const body = match.groups?.['body'] ?? '';
+      const bytes = Buffer.byteLength(body, 'utf8');
+      if (FRAMEWORK_INLINE_SCRIPTS.has(body)) frameworkBytes += bytes;
+      else jsBytes += bytes;
       continue;
     }
     await weigh(src);
