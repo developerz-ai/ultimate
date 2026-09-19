@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-54 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `Container` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Link` · `LocaleSwitcher` · `Menu` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Spinner` · `Stack` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
+61 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `CommandPalette` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Kbd` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Sparkline` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
 
 ## Vocabulary
 
@@ -101,6 +101,17 @@ Small status label. Tone maps straight onto the status colour roles so the same 
 | `dot` | `boolean` | — | Renders a leading dot; pair with a tone that carries the meaning. |
 | `class` | `string` | — |  |
 
+### BarChart
+
+A bar chart of one series — clicks per day, signups per week — as static SVG. No charting library: the framework's own docs use a sparkline pulling one in as the cautionary example, and a route's JS budget counts raw minified bytes. `<rect>` bars cost nothing to hydrate, so the server-rendered shell IS the chart. Geometry lives in `bar-chart-view.ts`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | The accessible name for the whole chart, already translated. |
+| `points` | `readonly ChartPoint[]` | yes | Oldest first. Every bar comes from exactly this array — the caller zero-fills gaps. |
+| `highlightLast` | `boolean` | — | Draw the last bar at full strength — the eye lands where the live number is. Default on. |
+| `class` | `string` | — |  |
+
 ### Breadcrumb
 
 Ancestor trail. The last item is the current page: rendered as text, never a link, and marked `aria-current="page"`. Separators are decorative CSS.
@@ -191,6 +202,27 @@ A searchable text field with suggestions: one `<input list>` plus a `<datalist>`
 | `aria-describedby` | `string` | — |  |
 | `aria-invalid` | `boolean` | — |  |
 
+### CommandPalette
+
+The ⌘K palette: a filter field over a list of commands and destinations, in a NON-modal `<dialog>` driven by its `open` attribute — never `showModal()`, so a test harness with no dialog methods and a server with no DOM both render it the same way. Controlled and presentational: the open flag, the query and the active item all live in the caller, and the rules (`filterItems`, `stepActive`, `keyAction`) live in `command-palette-view.ts` so the caller does not rewrite them. Renders closed on the server unless told otherwise; with scripting off it is inert markup.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `open` | `boolean` | yes |  |
+| `labels` | `CommandPaletteLabels` | yes |  |
+| `query` | `string` | yes |  |
+| `items` | `readonly CommandPaletteItem[]` | yes | Already filtered — `filterItems(all, query)` is the caller's one line. |
+| `activeId` | `string` | — | The roving selection; `settleActive`/`stepActive` keep it inside `items`. |
+| `onQueryInput` | `(value: string) => void` | yes |  |
+| `onFilterKeyDown` | `(event: KeyboardEvent) => void` | yes | The raw key event; `keyAction(event.key)` says what it means. |
+| `onHoverItem` | `(id: string) => void` | yes |  |
+| `onRunItem` | `(id: string) => void` | yes |  |
+| `onClose` | `() => void` | yes |  |
+| `id` | `string` | — | The element's id, so a trigger can name it with `aria-controls`. |
+| `filterRef` | `((el: HTMLInputElement) => void)` | — | Refs out, so a caller can read focus or the attribute behind its own capability guard. |
+| `dialogRef` | `((el: HTMLDialogElement) => void)` | — |  |
+| `class` | `string` | — |  |
+
 ### Container
 
 Centred measure with a gutter. `margin-inline: auto` and `min()` mean one declaration covers every viewport and both writing directions.
@@ -201,6 +233,18 @@ Centred measure with a gutter. `margin-inline: auto` and `min()` mean one declar
 | `size` | `ContainerSize` | — |  |
 | `gutter` | `SpaceStep` | — |  |
 | `as` | `'div' \| 'main' \| 'section' \| 'article' \| 'header' \| 'footer'` | — |  |
+| `class` | `string` | — |  |
+
+### CopyButton
+
+Copies one string to the clipboard and says so — the control beside a short URL, an id, a command. Server-rendered as a real button; the clipboard write and the 1.6 s "copied" state are additive client behaviour, so with scripting off the button is there and does nothing, which is what a clipboard needs a script for anyway.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `value` | `string` | yes | What lands on the clipboard. |
+| `label` | `string` | — | The accessible name; defaults to the catalog's `ui.copy`. |
+| `copiedLabel` | `string` | — | Announced to assistive tech once the write succeeds; defaults to `ui.copied`. |
+| `size` | `Size` | — |  |
 | `class` | `string` | — |  |
 
 ### DataTable
@@ -489,6 +533,15 @@ Single-line text control. No `type="number"` convenience wrapper: numeric input 
 | `onChange` | `JSX.EventHandlerUnion<HTMLInputElement, Event>` | — |  |
 | `onBlur` | `JSX.EventHandlerUnion<HTMLInputElement, FocusEvent>` | — |  |
 
+### Kbd
+
+A keyboard key or chord as the user reads it — "⌘K", "Esc", "/". A native `<kbd>`, because a keyboard hint is inline code, not a badge: the element carries the meaning, so it works with no script and reads as a key to a screen reader.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `children` | `JSX.Element` | yes | The key or chord, already translated where a key name is a word. |
+| `class` | `string` | — |  |
+
 ### Link
 
 Anchor primitive. External links get `rel` hardening and a translated "opens in a new tab" hint automatically — never a bare `target="_blank"`.
@@ -530,6 +583,18 @@ Action menu: a trigger plus a `role="menu"` list with roving tabindex. Distinct 
 | `trigger` | `(control: { id: string; 'aria-haspopup': 'menu'; 'aria-expanded': boolean; 'aria-controls': string; }) => JSX.Element` | yes |  |
 | `label` | `string` | yes | Already-translated accessible name for the menu. |
 | `align` | `'start' \| 'end'` | — |  |
+| `class` | `string` | — |  |
+
+### Meter
+
+A thin horizontal bar showing one value against a maximum — a table cell's "how busy is this row" beside the number, or a quota. Decorative by default: with no `label` it is hidden from the accessibility tree, because the number beside it is the fact. With one it is a `meter` role with the value spoken.  An SVG with a `width` ATTRIBUTE rather than a styled box: it paints identically on the server copy and the hydrated one and asks nothing of the CSP's `style-src-attr`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `value` | `number` | yes |  |
+| `max` | `number` | yes |  |
+| `label` | `string` | — | The accessible name. Omit for a purely decorative bar beside a visible number. |
+| `tone` | `Tone` | — |  |
 | `class` | `string` | — |  |
 
 ### Money
@@ -668,6 +733,16 @@ Loading placeholder. Sized by the caller so the real content lands in the same b
 | `lines` | `number` | — | Repeat as stacked lines, e.g. a paragraph placeholder. |
 | `class` | `string` | — |  |
 
+### Sparkline
+
+One series as a single line with no axes — the trend beside a figure, in a table cell, on a detail page. Static SVG for `BarChart`'s reason: the framework's own docs use a sparkline pulling in a chart library as the cautionary example, and this file IS that sparkline written the way the docs say to. The path comes from `sparkline-view.ts`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | The accessible name for the whole chart, already translated. |
+| `points` | `readonly ChartPoint[]` | yes | Oldest first. Every point comes from exactly this array — the caller zero-fills gaps. |
+| `class` | `string` | — |  |
+
 ### Spinner
 
 Indeterminate progress. `role="status"` plus a translated name, because a spinner with no accessible name is silence to a screen reader.
@@ -692,6 +767,19 @@ Flex layout primitive. Gap comes from the space scale as a custom property, so t
 | `justify` | `Align` | — |  |
 | `wrap` | `boolean` | — |  |
 | `as` | `'div' \| 'ul' \| 'ol' \| 'nav' \| 'section' \| 'header' \| 'footer'` | — | Renders a semantic element instead of a div. |
+| `class` | `string` | — |  |
+
+### StatTile
+
+One labelled figure with an optional trend chip and a line of context — the tile a dashboard's top row is made of. The figure arrives formatted: number formatting is the caller's (`Intl.NumberFormat` against the page locale), so the tile never guesses a locale.  Intrinsic tags only: a runtime-chosen root (`const Tag = props.as ?? 'div'`) is called as a component by the island build, so a tile built on `Card` hydrated differently from how it was served. A `<div>` renders identically on both sides.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | The tile's caption, already translated — "Total links", "Clicks today". |
+| `value` | `string` | yes | The figure, already formatted as the string this tile shows. |
+| `stat` | `string` | yes | The stable hook a test or a live check reads the figure through: `data-stat`. |
+| `delta` | `StatDelta` | — | The trend chip; `deltaOf()` builds one from a current and a baseline. |
+| `hint` | `string` | — | One short line of context under the figure: "vs yesterday", "849 clicks". |
 | `class` | `string` | — |  |
 
 ### Switch

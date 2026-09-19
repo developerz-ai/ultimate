@@ -1,0 +1,18 @@
+@use '../tokens' as t;
+
+@include t.tone-classes;
+
+.meter {
+  display: block;
+  inline-size: 100%;
+  block-size: 0.25rem;
+  overflow: visible;
+}
+
+.track {
+  fill: t.role('line', 0.5);
+}
+
+.fill {
+  fill: var(--tone);
+}

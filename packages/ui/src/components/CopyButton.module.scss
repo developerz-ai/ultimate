@@ -1,0 +1,40 @@
+@use '../tokens' as t;
+
+.copy {
+  @include t.focus-ring;
+  @include t.transition(color, background-color, border-color);
+
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: t.radius(md);
+  background: transparent;
+  color: t.role('fg-muted');
+  cursor: pointer;
+
+  &:hover {
+    border-color: t.role('line');
+    background: t.role('surface-raised');
+    color: t.role('fg-strong');
+  }
+
+  &[data-copied='true'] {
+    color: t.role('success');
+  }
+}
+
+.size-sm {
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+}
+
+.size-md {
+  inline-size: 2rem;
+  block-size: 2rem;
+}
+
+.size-lg {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+}

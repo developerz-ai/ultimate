@@ -1,0 +1,15 @@
+@use '../tokens' as t;
+
+.kbd {
+  @include t.data-text;
+
+  padding: t.space(1) t.space(2);
+  border: 1px solid t.role('line');
+  border-radius: t.radius(sm);
+  background: t.role('bg-soft');
+  color: t.role('fg-strong');
+  font-size: t.text(xs);
+  line-height: t.leading(tight);
+  box-shadow: t.shadow(sm);
+  white-space: nowrap;
+}
