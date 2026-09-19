@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d5111e4bd68aab4658f8ab4398a6c363a7014bdc74780725349088e6934776f4",
+  "buildId": "782b393871323f8d12e48a7a2b992ec1b46f56db7836a8a3ca775d5dd3bd9da4",
   "tiers": {
     "0": [
       "core",
@@ -3418,6 +3418,26 @@
       "code": "X_UI_FORM_PATH_INVALID",
       "owner": "ui",
       "at": "packages/ui/src/errors.ts"
+    },
+    {
+      "code": "X_UI_INTERACT_LEFT_APP",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UI_INTERACT_SECRET_FIELD",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UI_INTERACT_STEP_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UI_INTERACT_STEPS_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_UI_INVALID_VALUE",
