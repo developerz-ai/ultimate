@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RouteFact } from '@ultimat3/manifest';
 import { buildManifest } from '@ultimat3/manifest';
+import { themeScriptBody } from '@ultimat3/render';
 import type { BuildStats } from './budgets';
 import {
   BUILD_STATS_FILE,
@@ -372,5 +373,26 @@ describe("unit · the framework-injected runtime is not the app's JS", () => {
       stats({ path: '/', jsBytes: 1, frameworkJsBytes: 250 }),
     );
     expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_EXCEEDED']);
+  });
+});
+
+describe('the theme boot is counted, never charged', () => {
+  // No `src` anywhere in these documents, so the output directory is never read.
+  const out = tmpdir();
+
+  test('a 0kb site page carrying only the inlined theme script ships 0 bytes of its own JS', async () => {
+    for (const fallback of ['light', 'dark', 'system'] as const) {
+      const html = `<!doctype html><html><head><script>${themeScriptBody({ fallback })}</script></head><body></body></html>`;
+      const measured = await measureDocumentJs(html, out);
+      expect(measured.jsBytes).toBe(0);
+      expect(measured.frameworkBytes).toBeGreaterThan(0);
+    }
+  });
+
+  test("a body that merely resembles it — a key the boot never uses — is the app's own script", async () => {
+    const custom = themeScriptBody({ fallback: 'dark', storageKey: 'my-theme' });
+    const own = await measureDocumentJs(`<script>${custom}</script>`, out);
+    expect(own.jsBytes).toBe(Buffer.byteLength(custom, 'utf8'));
+    expect(own.frameworkBytes).toBe(0);
   });
 });
