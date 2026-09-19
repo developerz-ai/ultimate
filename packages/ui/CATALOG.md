@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-60 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Kbd` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Sparkline` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
+61 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `CommandPalette` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Kbd` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Sparkline` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
 
 ## Vocabulary
 
@@ -201,6 +201,27 @@ A searchable text field with suggestions: one `<input list>` plus a `<datalist>`
 | `aria-label` | `string` | — |  |
 | `aria-describedby` | `string` | — |  |
 | `aria-invalid` | `boolean` | — |  |
+
+### CommandPalette
+
+The ⌘K palette: a filter field over a list of commands and destinations, in a NON-modal `<dialog>` driven by its `open` attribute — never `showModal()`, so a test harness with no dialog methods and a server with no DOM both render it the same way. Controlled and presentational: the open flag, the query and the active item all live in the caller, and the rules (`filterItems`, `stepActive`, `keyAction`) live in `command-palette-view.ts` so the caller does not rewrite them. Renders closed on the server unless told otherwise; with scripting off it is inert markup.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `open` | `boolean` | yes |  |
+| `labels` | `CommandPaletteLabels` | yes |  |
+| `query` | `string` | yes |  |
+| `items` | `readonly CommandPaletteItem[]` | yes | Already filtered — `filterItems(all, query)` is the caller's one line. |
+| `activeId` | `string` | — | The roving selection; `settleActive`/`stepActive` keep it inside `items`. |
+| `onQueryInput` | `(value: string) => void` | yes |  |
+| `onFilterKeyDown` | `(event: KeyboardEvent) => void` | yes | The raw key event; `keyAction(event.key)` says what it means. |
+| `onHoverItem` | `(id: string) => void` | yes |  |
+| `onRunItem` | `(id: string) => void` | yes |  |
+| `onClose` | `() => void` | yes |  |
+| `id` | `string` | — | The element's id, so a trigger can name it with `aria-controls`. |
+| `filterRef` | `((el: HTMLInputElement) => void)` | — | Refs out, so a caller can read focus or the attribute behind its own capability guard. |
+| `dialogRef` | `((el: HTMLDialogElement) => void)` | — |  |
+| `class` | `string` | — |  |
 
 ### Container
 
