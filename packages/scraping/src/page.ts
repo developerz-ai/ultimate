@@ -155,6 +155,18 @@ export interface ScrapePage extends ScrapeFrame {
    */
   colorScheme(scheme: ColorScheme): Promise<void>;
   /**
+   * A script the browser runs in EVERY document this page navigates to, BEFORE the document's
+   * own scripts — the one moment that beats an inlined boot script. Call it before `goto()`: what
+   * it seeds (a `localStorage` key a boot reads, a flag a component checks) is then in place for
+   * the first script the page executes, where an `evaluate()` after navigation is one boot too
+   * late. Same string discipline as `evaluate()`: an expression, never a closure.
+   *
+   * ACCEPTED on every driver, for `colorScheme()`'s reason: the offline drivers run no scripts,
+   * so nothing there could be wrong about it. `X_NOT_IMPLEMENTED` is reserved for a LAUNCHER
+   * that lacks the method, which is a fact about the build rather than about the driver.
+   */
+  prepare(expression: string): Promise<void>;
+  /**
    * The handoff, made explicit: what the HTTP leg will send, as a value an author can inspect and
    * a fixture can assert on. `http` uses it automatically — this is for seeing what carried over.
    */

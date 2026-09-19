@@ -274,6 +274,10 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
     async colorScheme(scheme: ColorScheme): Promise<void> {
       await target.setColorScheme(scheme);
     },
+    // `async`, for `offline()`'s reason.
+    async prepare(expression: string): Promise<void> {
+      await target.prepare(expression);
+    },
     cookies: (): Promise<readonly ScrapeCookie[]> => target.cookies(),
     session: () => target.session(),
     // Redacted BY VALUE on the way out, the same pass `html()` makes. A console line and a request
