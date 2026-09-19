@@ -1,0 +1,45 @@
+@use '../tokens' as t;
+
+.chart {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+}
+
+.grid {
+  stroke: t.role('line', 0.45);
+  stroke-width: 1;
+  // Hairlines stay hairlines however wide the chart is stretched.
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 2 4;
+}
+
+.bar {
+  fill: t.role('accent');
+  opacity: 0.5;
+  // Only opacity, never a layout property: a hover that resized the bar would reflow every bar
+  // beside it.
+  transition: opacity t.duration(fast) t.easing(out);
+
+  &:hover {
+    opacity: 1;
+  }
+}
+
+.last {
+  opacity: 1;
+}
+
+.axis {
+  @include t.data-text;
+
+  // SVG text scales with the chart: below `sm` these shrink to unreadable specks, and an
+  // unreadable label is noise. Every bar still carries its `<title>`.
+  display: none;
+  font-size: 8px;
+  fill: t.role('fg-muted');
+
+  @include t.respond-to(sm) {
+    display: block;
+  }
+}

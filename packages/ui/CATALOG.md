@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-58 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Kbd` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
+60 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Kbd` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Sparkline` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
 
 ## Vocabulary
 
@@ -99,6 +99,17 @@ Small status label. Tone maps straight onto the status colour roles so the same 
 | `size` | `Size` | — |  |
 | `variant` | `'soft' \| 'solid' \| 'outline'` | — |  |
 | `dot` | `boolean` | — | Renders a leading dot; pair with a tone that carries the meaning. |
+| `class` | `string` | — |  |
+
+### BarChart
+
+A bar chart of one series — clicks per day, signups per week — as static SVG. No charting library: the framework's own docs use a sparkline pulling one in as the cautionary example, and a route's JS budget counts raw minified bytes. `<rect>` bars cost nothing to hydrate, so the server-rendered shell IS the chart. Geometry lives in `bar-chart-view.ts`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | The accessible name for the whole chart, already translated. |
+| `points` | `readonly ChartPoint[]` | yes | Oldest first. Every bar comes from exactly this array — the caller zero-fills gaps. |
+| `highlightLast` | `boolean` | — | Draw the last bar at full strength — the eye lands where the live number is. Default on. |
 | `class` | `string` | — |  |
 
 ### Breadcrumb
@@ -699,6 +710,16 @@ Loading placeholder. Sized by the caller so the real content lands in the same b
 | `height` | `string` | — |  |
 | `shape` | `'text' \| 'block' \| 'circle'` | — |  |
 | `lines` | `number` | — | Repeat as stacked lines, e.g. a paragraph placeholder. |
+| `class` | `string` | — |  |
+
+### Sparkline
+
+One series as a single line with no axes — the trend beside a figure, in a table cell, on a detail page. Static SVG for `BarChart`'s reason: the framework's own docs use a sparkline pulling in a chart library as the cautionary example, and this file IS that sparkline written the way the docs say to. The path comes from `sparkline-view.ts`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | The accessible name for the whole chart, already translated. |
+| `points` | `readonly ChartPoint[]` | yes | Oldest first. Every point comes from exactly this array — the caller zero-fills gaps. |
 | `class` | `string` | — |  |
 
 ### Spinner

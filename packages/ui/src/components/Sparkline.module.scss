@@ -1,0 +1,20 @@
+@use '../tokens' as t;
+
+.sparkline {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+}
+
+.line {
+  stroke: t.role('accent');
+  stroke-width: 2;
+  // The box scales with its column; the line must not (it rendered ~7px thick at full width).
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.last {
+  fill: t.role('accent');
+}
