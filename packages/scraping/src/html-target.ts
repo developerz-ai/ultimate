@@ -19,6 +19,7 @@ import { queryHtml } from './html-query';
 import { markupRequests } from './html-requests';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict, refusalEntry } from './intercept';
+import { parseKeyChord } from './key-chord';
 import type { PageRecording } from './recording';
 import { splitDownload } from './recording';
 import type { ConsoleLine, NetworkEntry, PageError } from './rings';
@@ -26,6 +27,7 @@ import { createRing } from './rings';
 import type { SessionSnapshot } from './session-state';
 import { EMPTY_SESSION } from './session-state';
 import type {
+  AxNode,
   CaptureOptions,
   ElementSnapshot,
   FrameRef,
@@ -296,6 +298,12 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
       type: (selector, text) => typeIn(document, selector, text),
       clear: (selector) => setIn(document, selector, ''),
       select: (selector, values) => setIn(document, selector, values[0] ?? ''),
+      // The frame's OWN document, for `click`'s reason: inheriting `base.focus` would refuse a
+      // selector that exists only in the frame, and accept one that exists only in the parent.
+      async focus(selector: string): Promise<void> {
+        const element = await atIn(document, selector, 0);
+        if (element === undefined) throw fixtureMissing(`${url} ${selector}`, init.source);
+      },
       frames: () => Promise.resolve([]),
     };
   };
@@ -326,6 +334,35 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
     clear: (selector: string): Promise<void> => setIn(pageDocument, selector, ''),
     select: (selector: string, values: readonly string[]): Promise<void> =>
       setIn(pageDocument, selector, values[0] ?? ''),
+    /**
+     * PARSED and then resolved, for `setColorScheme`'s reason and not `setOfflineMode`'s. There is
+     * no JS engine here, so no `keydown` listener can hear the chord — but the one thing this
+     * driver CAN be wrong about, the chord's spelling, is checked by the same `parseKeyChord` the
+     * real driver runs, so `'Ctrl+K'` is `X_SCRAPE_KEY_INVALID` offline exactly as it is live. What
+     * it cannot prove is that the page reacted; a test that needs that runs on `localBrowser()`.
+     */
+    press(chord: string): Promise<void> {
+      live();
+      parseKeyChord(chord);
+      return Promise.resolve();
+    },
+    /** The selector must exist, as `click` requires — a focus on nothing is a fixture gap. */
+    async focus(selector: string): Promise<void> {
+      const element = await at(selector, 0);
+      if (element === undefined) throw fixtureMissing(`${page.url} ${selector}`, init.source);
+    },
+    /**
+     * REFUSED, and `async` so it REJECTS. No accessibility engine runs here, and the honest
+     * alternative — reading `role=` and `aria-label=` off the markup — is the defect the read
+     * exists to catch: a `<div onclick>` has no computed role, and a fake that answered the
+     * attribute would pass every test against the element a screen reader cannot reach.
+     */
+    async accessibility(_selector: string, _max: number): Promise<readonly AxNode[]> {
+      throw scrapeNotImplemented(
+        `accessibility() on the ${init.driver} driver`,
+        'run this assertion on localBrowser()/remoteBrowser(), whose accessibility() reads the tree the browser computed — an offline driver parses markup and computes no role',
+      );
+    },
     evaluate(expression: string): Promise<unknown> {
       live();
       const answer = recorded(page.evaluate, expression);

@@ -47,6 +47,24 @@ export interface ElementSnapshot {
   readonly hitTarget?: boolean | undefined;
 }
 
+/**
+ * One node of the browser's accessibility tree, as of one observation — what a screen reader is
+ * told about an element, which is a different fact from what `ElementSnapshot` says about its
+ * markup. `role` and `name` are always answered, `''` when the browser computed nothing: absent is
+ * a real answer for a `<div>`, and a fabricated `generic` would hide the elements a reader cannot
+ * name. A VALUE, like `ElementSnapshot`: it cannot go stale behind the caller's back, only old.
+ */
+export interface AxNode {
+  readonly role: string;
+  readonly name: string;
+  readonly description?: string | undefined;
+  readonly value?: string | undefined;
+  readonly focused?: boolean | undefined;
+  readonly disabled?: boolean | undefined;
+  /** Pruned from the tree a reader walks — `aria-hidden`, or a wrapper with nothing to say. */
+  readonly ignored: boolean;
+}
+
 export interface ScrapeCookie {
   readonly name: string;
   readonly value: string;
@@ -133,6 +151,25 @@ export interface ScrapeTarget {
   select(selector: string, values: readonly string[]): Promise<void>;
   /** The expression runs in the page. The result is `unknown` and is parsed by the caller. */
   evaluate(expression: string): Promise<unknown>;
+  /**
+   * A key chord — `'Meta+K'`, `'Escape'`, `'Shift+Tab'` — pressed on whatever holds focus. The
+   * PAGE's keyboard, on a frame target too: a browser has one keyboard, and the focused element
+   * is what decides which document hears it. REQUIRED here where `CdpPageLike.keyboard` is
+   * optional, for `setOfflineMode`'s reason: the asymmetry is the enforcement. A driver with no
+   * keyboard still PARSES the chord (`key-chord.ts`) and then resolves — the refusal an offline
+   * driver can give is the one it does give.
+   */
+  press(chord: string): Promise<void>;
+  /** Moves focus to the first match. Refused when nothing matches. */
+  focus(selector: string): Promise<void>;
+  /**
+   * The accessibility node of every match, bounded by `max` — the browser's own computed role and
+   * name, which no HTML parse can reproduce. REQUIRED for `press`'s reason, and a driver with no
+   * accessibility engine answers `X_NOT_IMPLEMENTED`, never an invented role: a fake that read
+   * `role="button"` off the markup would pass a test against a `<div onclick>` a reader cannot
+   * reach, which is the exact defect this read exists to catch.
+   */
+  accessibility(selector: string, max: number): Promise<readonly AxNode[]>;
   /**
    * The browser goes offline, or comes back. REQUIRED on this port where it is optional on
    * `CdpPageLike`, and the asymmetry is the enforcement: a driver author gets a type error naming

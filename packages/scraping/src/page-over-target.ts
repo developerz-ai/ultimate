@@ -4,7 +4,7 @@
 // driver a test uses and the driver production uses.
 
 import type { Secret } from '@ultimat3/core';
-import { isSecret, revealSecret } from '@ultimat3/core';
+import { finiteCount, isSecret, revealSecret } from '@ultimat3/core';
 import type { ActionabilityState } from './actionability';
 import { awaitActionable } from './actionability';
 import { assertCaptureFraming } from './capture-clip';
@@ -14,6 +14,7 @@ import type { ColorScheme } from './color-scheme';
 import { hostBlocked, secretExposed, selectorMissing } from './error-throws';
 import { hostDecision } from './hosts';
 import type {
+  AccessibilityOptions,
   CaptureRequest,
   DownloadRequest,
   ElementValue,
@@ -21,10 +22,12 @@ import type {
   ScrapePage,
   WaitOptions,
 } from './page';
+import { DEFAULT_ACCESSIBILITY_MAX } from './page';
 import type { RobotsGate } from './robots';
 import type { ScrapeSecrets } from './secrets';
 import { safeConsole, safeHtml, safeNetwork, safePageErrors } from './secrets';
 import type {
+  AxNode,
   CaptureOptions,
   ElementSnapshot,
   ScrapeCookie,
@@ -130,6 +133,28 @@ function frameOver(
     async select(selector, values, options): Promise<void> {
       await wait(selector, options, 'actionable');
       await (await resolve()).select(selector, values);
+    },
+    // `actionable`, like `click`: focus moved to a hidden or disabled control is focus the page
+    // will not keep, and the chord that follows lands on the body.
+    async focus(selector, options): Promise<void> {
+      await wait(selector, options, 'actionable');
+      await (await resolve()).focus(selector);
+    },
+    // `async`, for `download()`'s reason: a third-party target that throws synchronously from a
+    // promise-typed method must still reach the caller's `.catch()`.
+    async press(chord): Promise<void> {
+      await (await resolve()).press(chord);
+    },
+    async accessibility(selector, options?: AccessibilityOptions): Promise<readonly AxNode[]> {
+      // Screened, never `??`-defaulted alone: `NaN` is not nullish, and `slice(0, NaN)` is
+      // `slice(0, 0)` — an empty answer that reads as "nothing matched" (`finiteCount`, core).
+      const max = finiteCount(
+        'page.accessibility()',
+        'max',
+        options?.max ?? DEFAULT_ACCESSIBILITY_MAX,
+        1,
+      );
+      return await (await resolve()).accessibility(selector, max);
     },
     // Resolved through `resolve()` like every other verb, which is what makes a FRAME's `query`
     // read the frame's document: `resolve` is `resolveChild` there, and both drivers override
