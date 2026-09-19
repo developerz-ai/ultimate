@@ -80,7 +80,10 @@ function fakeHost(database: DatabaseTarget): { host: DevHost; ran: string[] } {
       ran.push(`island:${input.island}:${input.state ?? '*'}`);
       return { ok: true, dir: '/x/island', verdictFile: '/x/island/verdict.json', verdict: {} };
     },
-    // Exercised in `dev-ui-diff.test.ts` (this file is at the ceiling); here it satisfies the type.
+    interactRoute: async (input) => ({
+      ...{ ok: true, route: input.route, finalUrl: '', image: '', verdictFile: '', verdict: {} },
+      steps: [],
+    }),
     async diffShots({ before, after }) {
       const changedBox = { x: 1, y: 1, width: 1, height: 1 };
       const counts = { width: 2, height: 2, changedPixels: 1, changedPercent: 25 };

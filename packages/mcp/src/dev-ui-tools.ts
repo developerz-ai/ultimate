@@ -222,7 +222,37 @@ export function viewportOf(args: ToolArgs): { readonly width: number; readonly h
 const strings = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
-const VIEWPORT_ARGS = {
+export interface InspectSpecRead {
+  readonly spec: Pick<UiInspectInput, 'selectors' | 'styles' | 'a11y' | 'activeElement'>;
+  /** Selectors past the cap were dropped — the answer must say `truncated: true`. */
+  readonly trimmed: boolean;
+  readonly droppedStyles: readonly string[];
+}
+
+/**
+ * The four `ui.inspect` fields, bounded HERE and not in the schema: `validate-args.ts` enforces
+ * no `maxItems`, and a bound the catalog cannot state is one the handler must apply and then
+ * confess to. Shared with `ui.interact`, whose `inspect` block is these same four fields.
+ */
+export function inspectSpecOf(args: ToolArgs): InspectSpecRead {
+  const wanted = strings(args['selectors']);
+  const selectors = wanted.slice(0, UI_INSPECT_LIMITS.selectors);
+  const named = strings(args['styles']);
+  const valid = named.filter((name) => STYLE_NAME.test(name));
+  const styles = valid.slice(0, UI_INSPECT_LIMITS.styles);
+  return {
+    spec: {
+      selectors,
+      styles,
+      a11y: args['a11y'] === true,
+      activeElement: args['activeElement'] !== false,
+    },
+    trimmed: wanted.length > selectors.length,
+    droppedStyles: named.filter((name) => !styles.includes(name)),
+  };
+}
+
+export const VIEWPORT_ARGS = {
   viewport: {
     type: 'string',
     enum: Object.keys(UI_VIEWPORTS),
@@ -333,27 +363,17 @@ export function uiTools(host: UiHost, scopes: UiScopes): readonly AnyMcpTool[] {
       },
       async handle(args: ToolArgs) {
         const route = typeof args['route'] === 'string' ? args['route'] : '';
-        // Bounded HERE, not in the schema: `validate-args.ts` enforces no `maxItems`, and a bound
-        // the catalog cannot state is one the handler must apply and then confess to.
-        const wanted = strings(args['selectors']);
-        const selectors = wanted.slice(0, UI_INSPECT_LIMITS.selectors);
-        const named = strings(args['styles']);
-        const valid = named.filter((name) => STYLE_NAME.test(name));
-        const styles = valid.slice(0, UI_INSPECT_LIMITS.styles);
-        const droppedStyles = named.filter((name) => !styles.includes(name));
+        const asked = inspectSpecOf(args);
         const result = await host.inspectRoute({
           route,
           viewport: viewportOf(args),
           colorScheme: args['theme'] === 'light' ? 'light' : 'dark',
-          selectors,
-          styles,
-          a11y: args['a11y'] === true,
-          activeElement: args['activeElement'] !== false,
+          ...asked.spec,
         });
         const answer: UiInspectResult = {
           ...result,
-          truncated: result.truncated || wanted.length > selectors.length,
-          droppedStyles,
+          truncated: result.truncated || asked.trimmed,
+          droppedStyles: asked.droppedStyles,
         };
         return { ...jsonResult(answer), ...(answer.ok ? {} : { isError: true }) };
       },

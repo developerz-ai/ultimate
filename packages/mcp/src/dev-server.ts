@@ -10,6 +10,8 @@
 // packages of this same tier, and the shell-side capabilities (db, tests, logs) belong to
 // the CLI, so this file defines the interface and the CLI satisfies it.
 
+import type { UiInteractInput, UiInteractResult } from './dev-ui-interact';
+import { uiInteractTools } from './dev-ui-interact';
 import type {
   UiDiffInput,
   UiDiffResult,
@@ -30,6 +32,16 @@ import { jsonResult, textResult } from './registry';
 import type { JsonSchema } from './wire';
 import { NO_ARGS } from './wire';
 
+export type {
+  UiInspectSpec,
+  UiInteractInput,
+  UiInteractInspect,
+  UiInteractResult,
+  UiInteractStep,
+  UiInteractStepKind,
+  UiInteractStepResult,
+} from './dev-ui-interact';
+export { UI_INTERACT_LIMITS, UI_INTERACT_STEP_SCHEMA, uiInteractTools } from './dev-ui-interact';
 // Re-exported, not re-declared: `index.ts` and the CLI import the `ui.*` vocabulary from here, and
 // the extraction to `dev-ui-tools.ts` was about the ceiling, never about moving the API.
 export type {
@@ -149,6 +161,12 @@ export interface DevCapabilities {
    * as `shotRoute`; takes the same PNG and verdict, under an `inspect/` subdirectory.
    */
   inspectRoute(input: UiInspectInput): Promise<UiInspectResult>;
+  /**
+   * Drive the route through a bounded step list (click, type, press, focus, wait), each step
+   * followed by an island settle, then photograph it and optionally read `inspectRoute`'s facts —
+   * ONE navigation. Same route gate; the PNG lands under `interact-<hash of the steps>/`.
+   */
+  interactRoute(input: UiInteractInput): Promise<UiInteractResult>;
   /**
    * Compare two PNGs the `ui.*` tools wrote — both paths relative to the app root and confined to
    * `.x/shot/`, which is what lets a tool that reads files sit under `dev:read`. No browser: the
@@ -319,9 +337,11 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
         return { ...jsonResult(result), ...(result.ok ? {} : { isError: true }) };
       },
     },
-    // The four `ui.*` tools live in `dev-ui-tools.ts` (ceiling); same catalog. Three launch a
-    // browser under `dev:test`; `ui.diff` reads two files it already wrote, under `dev:read`.
+    // The five `ui.*` tools live in `dev-ui-tools.ts` and `dev-ui-interact.ts` (ceiling); same
+    // catalog. Four launch a browser under `dev:test`; `ui.diff` reads two files they already
+    // wrote, under `dev:read`.
     ...uiTools(host, { test: DEV_SCOPES.test, read: DEV_SCOPES.read }),
+    ...uiInteractTools(host, DEV_SCOPES.test),
     {
       name: 'logs.tail',
       description: 'Last N log lines, optionally for one runtime role (web/sync/worker/...).',

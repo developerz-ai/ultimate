@@ -32,6 +32,7 @@ const TOOL_NAMES = [
   'tests.run',
   'ui.diff',
   'ui.inspect',
+  'ui.interact',
   'ui.island',
   'ui.shot',
   'verify.run',
@@ -89,18 +90,20 @@ function fakeHost(database: DatabaseTarget, calls: HostCalls): DevHost {
     async shotIsland() {
       return { ok: true, dir: '', verdictFile: '', verdict: {} };
     },
-    async diffShots(input) {
+    async interactRoute(input) {
       return {
         ok: true,
-        before: input.before,
-        after: input.after,
-        width: 0,
-        height: 0,
-        changedPixels: 0,
-        changedPercent: 0,
-        changedBox: null,
-        diff: '',
+        route: input.route,
+        finalUrl: '',
+        image: '',
+        verdictFile: '',
+        verdict: {},
+        steps: [],
       };
+    },
+    async diffShots({ before, after }) {
+      const counts = { width: 0, height: 0, changedPixels: 0, changedPercent: 0 };
+      return { ok: true, before, after, ...counts, changedBox: null, diff: '' };
     },
     async inspectRoute(input) {
       return {
@@ -153,7 +156,7 @@ describe('unit · the dev tool catalog', () => {
   test('every dev tool is reachable by the local caller, by name', () => {
     const server = serverFor(BRANCH, noCalls());
     expect(server.tools.names(localCaller())).toEqual([...TOOL_NAMES]);
-    expect(TOOL_NAMES).toHaveLength(17);
+    expect(TOOL_NAMES).toHaveLength(18);
   });
 
   test('exactly the mutating tools bill the write bucket', () => {
@@ -165,6 +168,7 @@ describe('unit · the dev tool catalog', () => {
       'db.migrate',
       'tests.run',
       'ui.inspect',
+      'ui.interact',
       'ui.island',
       'ui.shot',
       'verify.run',

@@ -157,6 +157,12 @@ export const CLI_OWNED_ERROR_CODES = [
   // `ui.shot` (the dev MCP server): a route it will not photograph, and why.
   'X_UI_SHOT_ROUTE_UNKNOWN',
   'X_UI_SHOT_ROUTE_UNBUDGETED',
+  // `ui.interact`: the four ways a step list is refused. All four REFUSE rather than trim or skip
+  // — a step dropped, a keystroke swallowed or a navigation followed changes what the picture is of.
+  'X_UI_INTERACT_STEPS_INVALID',
+  'X_UI_INTERACT_SECRET_FIELD',
+  'X_UI_INTERACT_LEFT_APP',
+  'X_UI_INTERACT_STEP_FAILED',
   // `ui.diff`: the three ways two captures fail to become a comparison. The path gate is what
   // lets a file-reading tool sit under `dev:read` — it reads `.x/shot/` and nothing else.
   'X_UI_DIFF_PATH_OUTSIDE',
@@ -307,6 +313,10 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_SHOT_BROWSER_MISSING: 'x shot found no browser library in the app',
   X_UI_SHOT_ROUTE_UNKNOWN: 'a ui.* tool was asked for a path no route answers',
   X_UI_SHOT_ROUTE_UNBUDGETED: 'a ui.* tool refused a route that declares no budget.js',
+  X_UI_INTERACT_STEPS_INVALID: 'a ui.interact step list is over its bounds or malformed',
+  X_UI_INTERACT_SECRET_FIELD: 'ui.interact refused to type into a password field',
+  X_UI_INTERACT_LEFT_APP: 'a ui.interact step navigated off the dev server origin',
+  X_UI_INTERACT_STEP_FAILED: 'a ui.interact step raised a scraping error',
   X_UI_DIFF_PATH_OUTSIDE: 'ui.diff was handed a path that does not resolve inside .x/shot/',
   X_UI_DIFF_FILE_MISSING: 'ui.diff was handed a capture that is not on disk',
   X_UI_DIFF_SIZE_MISMATCH: 'ui.diff was handed two captures of different sizes',

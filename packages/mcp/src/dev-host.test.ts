@@ -192,6 +192,7 @@ describe('createDevServer', () => {
       'tests.run',
       'ui.diff',
       'ui.inspect',
+      'ui.interact',
       'ui.island',
       'ui.shot',
       'verify.run',
@@ -248,6 +249,7 @@ function capabilities(): { host: DevCapabilities; ran: string[] } {
     shotRoute: refuse('shotRoute'),
     shotIsland: refuse('shotIsland'),
     inspectRoute: refuse('inspectRoute'),
+    interactRoute: refuse('interactRoute'),
     diffShots: refuse('diffShots'),
   } as unknown as DevCapabilities;
   return { host, ran };
