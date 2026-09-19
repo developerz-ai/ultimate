@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d5111e4bd68aab4658f8ab4398a6c363a7014bdc74780725349088e6934776f4",
+  "buildId": "29a68546f11d537891c4ca1a91c71e758722c5c6b0f9132676983ead9cb9738a",
   "tiers": {
     "0": [
       "core",
@@ -3420,7 +3420,32 @@
       "at": "packages/ui/src/errors.ts"
     },
     {
+      "code": "X_UI_INTERACT_LEFT_APP",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UI_INTERACT_SECRET_FIELD",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UI_INTERACT_STEP_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UI_INTERACT_STEPS_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_UI_INVALID_VALUE",
+      "owner": "ui",
+      "at": "packages/ui/src/errors.ts"
+    },
+    {
+      "code": "X_UI_QR_CAPACITY",
       "owner": "ui",
       "at": "packages/ui/src/errors.ts"
     },

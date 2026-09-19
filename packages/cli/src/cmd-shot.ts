@@ -8,7 +8,7 @@
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
-import type { ColorScheme, ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
+import type { ColorScheme, ScrapeDriver, ScrapePage, ScrapeSession } from '@ultimat3/scraping';
 import { DEFAULT_PAGE_TIMEOUT_MS, systemScrapeClock } from '@ultimat3/scraping';
 import { requireAppRoot } from './app-root';
 import { appBrowser } from './browser-launcher';
@@ -197,6 +197,15 @@ export interface ShotRun {
    */
   readonly colorScheme?: ColorScheme | undefined;
   readonly now?: (() => Date) | undefined;
+  /**
+   * Something to do with the page AFTER the islands settled and BEFORE the picture — `ui.inspect`
+   * reads the DOM here, on the one navigation the picture already paid for. `settle` re-runs the
+   * island poll (an action that mounts something changes the count the verdict reports); the
+   * caller who never calls it gets the count from the first settle.
+   */
+  readonly act?:
+    | ((page: ScrapePage, settle: () => Promise<IslandCount | null>) => Promise<void>)
+    | undefined;
 }
 
 /** Nothing here may replace the failure that caused it, so a teardown throw is swallowed. */
@@ -239,10 +248,15 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
     // The same budget again, and deliberately no new flag: `settleMs` is the deadline at which the
     // runtime CALLS `import()`, so a mount gets exactly as long to settle as the runtime got to
     // start it — and `--settle 0`, which asks for no wait, still gets none.
-    const islands = await settleIslands(probe, {
-      windowMs: options.settleMs,
-      pollMs: SETTLE_POLL_MS,
-    });
+    const settle = (): Promise<IslandCount | null> =>
+      settleIslands(probe, { windowMs: options.settleMs, pollMs: SETTLE_POLL_MS });
+    let islands = await settle();
+    if (options.act !== undefined) {
+      await options.act(page, async () => {
+        islands = await settle();
+        return islands;
+      });
+    }
     const bytes = await page.screenshot({ fullPage: options.fullPage });
     // Read AFTER the capture, so an error logged while the page settled is in the verdict that
     // ships with the picture it explains.

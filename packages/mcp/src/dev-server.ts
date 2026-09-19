@@ -10,6 +10,17 @@
 // packages of this same tier, and the shell-side capabilities (db, tests, logs) belong to
 // the CLI, so this file defines the interface and the CLI satisfies it.
 
+import type { UiInteractInput, UiInteractResult } from './dev-ui-interact';
+import { uiInteractTools } from './dev-ui-interact';
+import type {
+  UiInspectInput,
+  UiInspectResult,
+  UiIslandInput,
+  UiIslandResult,
+  UiShotInput,
+  UiShotResult,
+} from './dev-ui-tools';
+import { uiTools } from './dev-ui-tools';
 import type { QueryLimits, QueryRows } from './query-limits';
 import { capQueryRows, DEFAULT_QUERY_ROWS, QUERY_LIMITS, resolveQueryLimits } from './query-limits';
 import type { DatabaseTarget } from './readonly-sql';
@@ -18,6 +29,35 @@ import type { AnyMcpTool, McpToolResult, ToolArgs } from './registry';
 import { jsonResult, textResult } from './registry';
 import type { JsonSchema } from './wire';
 import { NO_ARGS } from './wire';
+
+export type {
+  UiInspectSpec,
+  UiInteractInput,
+  UiInteractInspect,
+  UiInteractResult,
+  UiInteractStep,
+  UiInteractStepKind,
+  UiInteractStepResult,
+} from './dev-ui-interact';
+export { UI_INTERACT_LIMITS, UI_INTERACT_STEP_SCHEMA, uiInteractTools } from './dev-ui-interact';
+// Re-exported, not re-declared: `index.ts` and the CLI import the `ui.*` vocabulary from here, and
+// the extraction to `dev-ui-tools.ts` was about the ceiling, never about moving the API.
+export type {
+  UiColorScheme,
+  UiInspectActive,
+  UiInspectBox,
+  UiInspectInput,
+  UiInspectIslands,
+  UiInspectMatch,
+  UiInspectResult,
+  UiInspectSelector,
+  UiIslandInput,
+  UiIslandResult,
+  UiShotInput,
+  UiShotResult,
+  UiViewportName,
+} from './dev-ui-tools';
+export { STYLE_NAME, UI_INSPECT_LIMITS, UI_VIEWPORTS, uiTools, viewportOf } from './dev-ui-tools';
 
 /** Scopes the dev server gates on. A token carries a subset; the rest is invisible. */
 export const DEV_SCOPES = {
@@ -68,59 +108,6 @@ export interface VerifyResult {
 }
 
 /** Description sources. Satisfied by `frameworkIntrospection` in a real app. */
-/**
- * The viewports `ui.shot` names. Named, not free, so two agents (or one agent twice) photograph
- * the same thing and can compare the pictures; `{ width, height }` stays available for the one
- * case a name does not cover.
- */
-export const UI_VIEWPORTS = {
-  phone: { width: 390, height: 844 },
-  tablet: { width: 820, height: 1180 },
-  desktop: { width: 1440, height: 900 },
-} as const;
-export type UiViewportName = keyof typeof UI_VIEWPORTS;
-export type UiColorScheme = 'light' | 'dark';
-
-export interface UiShotInput {
-  /** The route's path — `/dashboard`, `/links/abc123` — never a full URL. */
-  readonly route: string;
-  readonly viewport: { readonly width: number; readonly height: number };
-  /**
-   * What `prefers-color-scheme` the page sees. Emulated on the page BEFORE navigation, so a
-   * capture never depends on the box that took it; an app whose boot script honours a stored
-   * choice still wins, because the stored choice is what "explicit" means.
-   */
-  readonly colorScheme: UiColorScheme;
-  readonly fullPage: boolean;
-}
-
-/**
- * What a picture is worth: the file, and the verdict beside it. The verdict is the SAME shape
- * `x shot` writes to `verdict.json` — console lines, page errors, network refusals, whether every
- * island mounted — so a picture with a hydration error is a finding, never merely a picture.
- * The PNG is a PATH, never inlined bytes: an agent reads the picture it wants and pays for one.
- */
-export interface UiShotResult {
-  readonly ok: boolean;
-  readonly image: string;
-  readonly verdictFile: string;
-  readonly verdict: unknown;
-}
-
-export interface UiIslandInput {
-  /** The island's name as `x shot --island <name>` takes it. */
-  readonly island: string;
-  /** One declared state, or every state the island declares. */
-  readonly state?: string | undefined;
-}
-
-export interface UiIslandResult {
-  readonly ok: boolean;
-  readonly dir: string;
-  readonly verdictFile: string;
-  readonly verdict: unknown;
-}
-
 export interface DevIntrospection {
   routes(): unknown;
   entities(): unknown;
@@ -156,6 +143,18 @@ export interface DevCapabilities {
   shotRoute(input: UiShotInput): Promise<UiShotResult>;
   /** `x shot --island <name> [--state <id>]` as a tool: every declared state, photographed and judged. */
   shotIsland(input: UiIslandInput): Promise<UiIslandResult>;
+  /**
+   * DOM, computed-style and (optionally) accessibility facts for a set of selectors, read in ONE
+   * navigation of the route — the browser is the cost, so one call reads many. Same route gate
+   * as `shotRoute`; takes the same PNG and verdict, under an `inspect/` subdirectory.
+   */
+  inspectRoute(input: UiInspectInput): Promise<UiInspectResult>;
+  /**
+   * Drive the route through a bounded step list (click, type, press, focus, wait), each step
+   * followed by an island settle, then photograph it and optionally read `inspectRoute`'s facts —
+   * ONE navigation. Same route gate; the PNG lands under `interact-<hash of the steps>/`.
+   */
+  interactRoute(input: UiInteractInput): Promise<UiInteractResult>;
 }
 
 export type DevHost = DevIntrospection & DevCapabilities;
@@ -165,19 +164,6 @@ const NAME_ARG: JsonSchema = {
   properties: { name: { type: 'string', description: 'Job name from jobs.inspect with no name.' } },
   additionalProperties: false,
 };
-
-/**
- * An explicit `width`+`height` wins over the name; one of the pair alone is not a viewport and
- * falls back to the name (default `desktop`) rather than to a half-sized frame.
- */
-export function viewportOf(args: ToolArgs): { readonly width: number; readonly height: number } {
-  const width = args['width'];
-  const height = args['height'];
-  if (typeof width === 'number' && typeof height === 'number') return { width, height };
-  const name = args['viewport'];
-  const named = typeof name === 'string' && Object.hasOwn(UI_VIEWPORTS, name) ? name : 'desktop';
-  return UI_VIEWPORTS[named as UiViewportName];
-}
 
 /** Every dev tool, in one array so `x mcp serve` and the HTTP transport share the catalog. */
 export function devTools(host: DevHost): readonly AnyMcpTool[] {
@@ -333,67 +319,10 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
         return { ...jsonResult(result), ...(result.ok ? {} : { isError: true }) };
       },
     },
-    {
-      name: 'ui.shot',
-      description:
-        'Photograph one route at a named viewport (phone/tablet/desktop) or an explicit size, ' +
-        'in light or dark, against the running dev server. Returns the PNG path and the same ' +
-        'verdict x shot writes: console, page errors, refused requests, whether every island ' +
-        'mounted. Refuses a route with no declared JS budget. Launches a browser.',
-      scope: DEV_SCOPES.test,
-      destructive: true,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          route: { type: 'string', description: 'Route path, e.g. /dashboard.' },
-          viewport: {
-            type: 'string',
-            enum: Object.keys(UI_VIEWPORTS),
-            default: 'desktop',
-            description: 'phone 390×844, tablet 820×1180, desktop 1440×900.',
-          },
-          width: { type: 'integer', minimum: 320, maximum: 3840 },
-          height: { type: 'integer', minimum: 320, maximum: 2160 },
-          theme: { type: 'string', enum: ['light', 'dark'], default: 'dark' },
-          fullPage: { type: 'boolean', default: true },
-        },
-        required: ['route'],
-        additionalProperties: false,
-      },
-      async handle(args: ToolArgs) {
-        const route = typeof args['route'] === 'string' ? args['route'] : '';
-        const result = await host.shotRoute({
-          route,
-          viewport: viewportOf(args),
-          colorScheme: args['theme'] === 'light' ? 'light' : 'dark',
-          fullPage: args['fullPage'] !== false,
-        });
-        return { ...jsonResult(result), ...(result.ok ? {} : { isError: true }) };
-      },
-    },
-    {
-      name: 'ui.island',
-      description:
-        'Photograph an island in every state its *.island.states.ts declares (or one state), ' +
-        'as x shot --island does: PNGs plus a verdict per state. Launches a browser.',
-      scope: DEV_SCOPES.test,
-      destructive: true,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          island: { type: 'string', description: 'Island name, e.g. links-table.' },
-          state: { type: 'string', description: 'One declared state id; omit for all.' },
-        },
-        required: ['island'],
-        additionalProperties: false,
-      },
-      async handle(args: ToolArgs) {
-        const island = typeof args['island'] === 'string' ? args['island'] : '';
-        const state = typeof args['state'] === 'string' ? args['state'] : undefined;
-        const result = await host.shotIsland({ island, ...(state === undefined ? {} : { state }) });
-        return { ...jsonResult(result), ...(result.ok ? {} : { isError: true }) };
-      },
-    },
+    // The four `ui.*` tools live in `dev-ui-tools.ts` and `dev-ui-interact.ts` (ceiling); same
+    // scope, same catalog.
+    ...uiTools(host, DEV_SCOPES.test),
+    ...uiInteractTools(host, DEV_SCOPES.test),
     {
       name: 'logs.tail',
       description: 'Last N log lines, optionally for one runtime role (web/sync/worker/...).',

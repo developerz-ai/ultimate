@@ -26,6 +26,20 @@ export type {
   QueueDepth,
   TestRun,
   UiColorScheme,
+  UiInspectActive,
+  UiInspectBox,
+  UiInspectInput,
+  UiInspectIslands,
+  UiInspectMatch,
+  UiInspectResult,
+  UiInspectSelector,
+  UiInspectSpec,
+  UiInteractInput,
+  UiInteractInspect,
+  UiInteractResult,
+  UiInteractStep,
+  UiInteractStepKind,
+  UiInteractStepResult,
   UiIslandInput,
   UiIslandResult,
   UiShotInput,
@@ -34,7 +48,16 @@ export type {
   VerifyResult,
   VerifyStep,
 } from './dev-server';
-export { DEV_SCOPES, devTools, UI_VIEWPORTS, viewportOf } from './dev-server';
+export {
+  DEV_SCOPES,
+  devTools,
+  STYLE_NAME,
+  UI_INSPECT_LIMITS,
+  UI_INTERACT_LIMITS,
+  UI_INTERACT_STEP_SCHEMA,
+  UI_VIEWPORTS,
+  viewportOf,
+} from './dev-server';
 export type { McpErrorCode } from './errors';
 export {
   MCP_ERROR_CODES,

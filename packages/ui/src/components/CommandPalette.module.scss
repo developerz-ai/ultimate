@@ -1,0 +1,110 @@
+@use '../tokens' as t;
+
+.palette {
+  position: fixed;
+  inset-block-start: 12vh;
+  inset-inline-start: 50%;
+  inline-size: min(32rem, calc(100vw - #{t.space(8)}));
+  max-block-size: 60vh;
+  margin: 0;
+  padding: 0;
+  border: 1px solid t.role('line');
+  border-radius: t.radius(lg);
+  background: t.role('surface-raised');
+  color: t.role('fg');
+  // Two shadows: the lift, and a viewport-sized spread that dims the page behind. A NON-modal
+  // `<dialog open>` has no `::backdrop` to style — this is the scrim.
+  box-shadow:
+    t.shadow(xl),
+    0 0 0 100vmax t.role('scrim', 0.55);
+  overflow: hidden;
+  z-index: t.z(dialog);
+
+  // Transform-only translate keeps the 50% inline offset from fighting `margin-inline`.
+  transform: translateX(-50%) translateY(-4px) scale(0.98);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    transform t.duration(fast) t.easing(out),
+    opacity t.duration(fast) t.easing(out),
+    visibility t.duration(fast) t.easing(out);
+
+  &[open] {
+    transform: translateX(-50%) translateY(0) scale(1);
+    opacity: 1;
+    visibility: visible;
+    transition-duration: t.duration(base);
+  }
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  max-block-size: 60vh;
+}
+
+.filterRow {
+  display: flex;
+  align-items: center;
+  gap: t.space(2);
+  padding: t.space(3) t.space(4);
+  border-block-end: 1px solid t.role('line');
+}
+
+.filter {
+  @include t.focus-ring;
+
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: t.role('fg-strong');
+  font-size: t.text(md);
+}
+
+.empty {
+  padding: t.space(6) t.space(4);
+  color: t.role('fg-muted');
+  text-align: center;
+}
+
+.list {
+  @include t.custom-scrollbar;
+
+  overflow-y: auto;
+  padding: t.space(2);
+  margin: 0;
+  list-style: none;
+}
+
+.item {
+  @include t.focus-ring;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: t.space(3);
+  inline-size: 100%;
+  padding: t.space(2) t.space(3);
+  border: 0;
+  border-radius: t.radius(sm);
+  background: transparent;
+  color: t.role('fg');
+  text-align: start;
+  cursor: pointer;
+
+  &[data-active='true'] {
+    background: t.role('bg-soft');
+  }
+}
+
+.label {
+  color: t.role('fg-strong');
+}
+
+.hint {
+  @include t.data-text;
+  @include t.truncate;
+
+  font-size: t.text(xs);
+  color: t.role('fg-muted');
+}

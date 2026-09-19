@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-60 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Kbd` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Sparkline` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
+62 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `CommandPalette` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Kbd` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `QrCode` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Sparkline` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
 
 ## Vocabulary
 
@@ -201,6 +201,27 @@ A searchable text field with suggestions: one `<input list>` plus a `<datalist>`
 | `aria-label` | `string` | — |  |
 | `aria-describedby` | `string` | — |  |
 | `aria-invalid` | `boolean` | — |  |
+
+### CommandPalette
+
+The ⌘K palette: a filter field over a list of commands and destinations, in a NON-modal `<dialog>` driven by its `open` attribute — never `showModal()`, so a test harness with no dialog methods and a server with no DOM both render it the same way. Controlled and presentational: the open flag, the query and the active item all live in the caller, and the rules (`filterItems`, `stepActive`, `keyAction`) live in `command-palette-view.ts` so the caller does not rewrite them. Renders closed on the server unless told otherwise; with scripting off it is inert markup.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `open` | `boolean` | yes |  |
+| `labels` | `CommandPaletteLabels` | yes |  |
+| `query` | `string` | yes |  |
+| `items` | `readonly CommandPaletteItem[]` | yes | Already filtered — `filterItems(all, query)` is the caller's one line. |
+| `activeId` | `string` | — | The roving selection; `settleActive`/`stepActive` keep it inside `items`. |
+| `onQueryInput` | `(value: string) => void` | yes |  |
+| `onFilterKeyDown` | `(event: KeyboardEvent) => void` | yes | The raw key event; `keyAction(event.key)` says what it means. |
+| `onHoverItem` | `(id: string) => void` | yes |  |
+| `onRunItem` | `(id: string) => void` | yes |  |
+| `onClose` | `() => void` | yes |  |
+| `id` | `string` | — | The element's id, so a trigger can name it with `aria-controls`. |
+| `filterRef` | `((el: HTMLInputElement) => void)` | — | Refs out, so a caller can read focus or the attribute behind its own capability guard. |
+| `dialogRef` | `((el: HTMLDialogElement) => void)` | — |  |
+| `class` | `string` | — |  |
 
 ### Container
 
@@ -633,6 +654,17 @@ Non-modal anchored panel. Positioning is CSS-only (a relatively positioned ancho
 | `label` | `string` | yes | Already-translated accessible name for the panel. |
 | `placement` | `Placement` | — |  |
 | `align` | `'start' \| 'center' \| 'end'` | — |  |
+| `class` | `string` | — |  |
+
+### QrCode
+
+A QR code of one short value — a link's short URL, a join code — as static SVG from the pure-TypeScript encoder in `qr-encode.ts` / `qr-matrix.ts`. No QR library: a route's JS budget counts raw minified bytes, and one `<rect>` per dark module costs nothing to hydrate, so the server-rendered shell IS the code. Versions 1-3 only (42 bytes); longer is `X_UI_QR_CAPACITY`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `value` | `string` | yes | What the code encodes — a short URL, at most 42 UTF-8 bytes. Longer throws. |
+| `label` | `string` | yes | The accessible name, already translated — say what scanning it does, not "QR code". |
+| `quietZone` | `number` | — | Light modules on every side. Default 4, the minimum a scanner needs to find the finders. |
 | `class` | `string` | — |  |
 
 ### Radio

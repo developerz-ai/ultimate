@@ -157,6 +157,12 @@ export const CLI_OWNED_ERROR_CODES = [
   // `ui.shot` (the dev MCP server): a route it will not photograph, and why.
   'X_UI_SHOT_ROUTE_UNKNOWN',
   'X_UI_SHOT_ROUTE_UNBUDGETED',
+  // `ui.interact`: the four ways a step list is refused. All four REFUSE rather than trim or skip
+  // — a step dropped, a keystroke swallowed or a navigation followed changes what the picture is of.
+  'X_UI_INTERACT_STEPS_INVALID',
+  'X_UI_INTERACT_SECRET_FIELD',
+  'X_UI_INTERACT_LEFT_APP',
+  'X_UI_INTERACT_STEP_FAILED',
   // `x shot --island` — one code per way a component's named state fails to become a picture.
   // The last of the four is the one that gates: it is checked against the expansion computed
   // before a browser existed, so a capture loop that swallowed a failure cannot exit 0.
@@ -300,8 +306,12 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_WORKSPACE_DEP_UNDECLARED: 'a workspace imports another workspace it does not declare',
   X_PACKAGE_DUPLICATED: 'two copies of one registry-holding framework package are installed',
   X_SHOT_BROWSER_MISSING: 'x shot found no browser library in the app',
-  X_UI_SHOT_ROUTE_UNKNOWN: 'ui.shot was asked for a path no route answers',
-  X_UI_SHOT_ROUTE_UNBUDGETED: 'ui.shot refused a route that declares no budget.js',
+  X_UI_SHOT_ROUTE_UNKNOWN: 'a ui.* tool was asked for a path no route answers',
+  X_UI_SHOT_ROUTE_UNBUDGETED: 'a ui.* tool refused a route that declares no budget.js',
+  X_UI_INTERACT_STEPS_INVALID: 'a ui.interact step list is over its bounds or malformed',
+  X_UI_INTERACT_SECRET_FIELD: 'ui.interact refused to type into a password field',
+  X_UI_INTERACT_LEFT_APP: 'a ui.interact step navigated off the dev server origin',
+  X_UI_INTERACT_STEP_FAILED: 'a ui.interact step raised a scraping error',
   X_SHOT_ISLAND_STATES_EMPTY: 'an island states file declares no manifest',
   X_SHOT_ISLAND_UNPHOTOGRAPHABLE: 'the island never reached a state worth photographing',
   X_SHOT_ISLAND_UNSTUBBED_REQUEST: 'the island requested something no state stub answers',
