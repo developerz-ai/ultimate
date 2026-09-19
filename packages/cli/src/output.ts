@@ -64,7 +64,7 @@ export interface CommandResult {
    * Which fd this result is written to. `stdout` for every command, absent included — and
    * `stderr` for the one case where fd 1 is not the command's to write on: `x mcp serve
    * --transport stdio`, whose stdout carries JSON-RPC frames, and where the `✓ mcp stdio serving
-   * 17 tools` line printed after the loop exits is a malformed frame to whatever is reading.
+   * 18 tools` line printed after the loop exits is a malformed frame to whatever is reading.
    *
    * Behaviour, not a fact, exactly like `hold` above — so NEITHER renderer carries it. It says
    * where a rendered line goes, and a payload that also claimed it would be a second answer to a

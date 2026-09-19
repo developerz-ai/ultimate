@@ -1,5 +1,6 @@
-// The dev server's eyes: `ui.shot` (a route), `ui.island` (a component's states) and `ui.inspect`
-// (DOM, computed-style and accessibility facts for a set of selectors, in ONE navigation). Split
+// The dev server's eyes: `ui.shot` (a route), `ui.island` (a component's states), `ui.inspect`
+// (DOM, computed-style and accessibility facts for a set of selectors, in ONE navigation) and
+// `ui.diff` (two captures the others wrote, compared without a browser). Split
 // out of `dev-server.ts` because that file stood at 439 lines against the 500-line ceiling and a
 // third `ui.*` literal would have crossed it — the catalog is still one array; `devTools` spreads
 // this one in. Every type here is re-exported from `dev-server.ts`, so the CLI and the package
@@ -163,11 +164,46 @@ export interface UiInspectResult {
   readonly droppedStyles: readonly string[];
 }
 
-/** The capability half these three tools need. `DevCapabilities` satisfies it structurally. */
+export interface UiDiffInput {
+  /** Both paths relative to the app root, and both under `.x/shot/` — the host refuses the rest. */
+  readonly before: string;
+  readonly after: string;
+  /** Per-channel delta as a fraction of 255 above which a pixel counts as changed. */
+  readonly threshold: number;
+  /** Where to write the diff PNG, relative to the app root; default beside `after`. */
+  readonly out?: string | undefined;
+}
+
+export interface UiDiffResult {
+  readonly ok: true;
+  readonly before: string;
+  readonly after: string;
+  readonly width: number;
+  readonly height: number;
+  readonly changedPixels: number;
+  /** Two decimals. */
+  readonly changedPercent: number;
+  /** The bounding box of every changed pixel, or `null` when the two captures match. */
+  readonly changedBox: UiInspectBox | null;
+  /** The written diff PNG's path. */
+  readonly diff: string;
+}
+
+/** The default `threshold`: a tenth of the channel range, which absorbs a one-level wobble. */
+export const UI_DIFF_DEFAULT_THRESHOLD = 0.1;
+
+/** The capability half these four tools need. `DevCapabilities` satisfies it structurally. */
 export interface UiHost {
   shotRoute(input: UiShotInput): Promise<UiShotResult>;
   shotIsland(input: UiIslandInput): Promise<UiIslandResult>;
   inspectRoute(input: UiInspectInput): Promise<UiInspectResult>;
+  diffShots(input: UiDiffInput): Promise<UiDiffResult>;
+}
+
+/** The scopes the `ui.*` tools split across: the browser-launching three, and the one that reads. */
+export interface UiScopes {
+  readonly test: string;
+  readonly read: string;
 }
 
 /**
@@ -228,8 +264,12 @@ export const VIEWPORT_ARGS = {
   theme: { type: 'string', enum: ['light', 'dark'], default: 'dark' },
 } as const;
 
-/** The three `ui.*` tools. `scope` is the dev server's `dev:test`, passed in to keep this file a leaf. */
-export function uiTools(host: UiHost, scope: string): readonly AnyMcpTool[] {
+/**
+ * The four `ui.*` tools. The scopes are the dev server's `dev:test` and `dev:read`, passed in to
+ * keep this file a leaf; `ui.diff` is the one under `read` — it opens no browser.
+ */
+export function uiTools(host: UiHost, scopes: UiScopes): readonly AnyMcpTool[] {
+  const scope = scopes.test;
   return [
     {
       name: 'ui.shot',
@@ -336,6 +376,55 @@ export function uiTools(host: UiHost, scope: string): readonly AnyMcpTool[] {
           droppedStyles: asked.droppedStyles,
         };
         return { ...jsonResult(answer), ...(answer.ok ? {} : { isError: true }) };
+      },
+    },
+    {
+      name: 'ui.diff',
+      description:
+        'Compare two PNGs the other ui.* tools wrote (paths relative to the app root, under ' +
+        '.x/shot/ only — anything else is refused) pixel by pixel: the changed-pixel count and ' +
+        'percentage, the bounding box of the change, and the path of a diff PNG (after faded to ' +
+        'a quarter, changed pixels solid red). A pixel is changed when any channel moved by more ' +
+        'than threshold × 255; no anti-alias detection. Refuses two sizes. Launches no browser.',
+      scope: scopes.read,
+      destructive: false,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          before: {
+            type: 'string',
+            description: 'Path under .x/shot/, e.g. .x/shot/dashboard/1440x900-dark/page.png.',
+          },
+          after: { type: 'string', description: 'Path under .x/shot/ of the later capture.' },
+          threshold: {
+            type: 'number',
+            minimum: 0,
+            maximum: 1,
+            default: UI_DIFF_DEFAULT_THRESHOLD,
+            description:
+              'Per-channel delta as a fraction of 255 above which a pixel counts as changed.',
+          },
+          out: {
+            type: 'string',
+            description: 'Where to write the diff PNG (under .x/shot/); default beside `after`.',
+          },
+        },
+        required: ['before', 'after'],
+        additionalProperties: false,
+      },
+      async handle(args: ToolArgs) {
+        const before = typeof args['before'] === 'string' ? args['before'] : '';
+        const after = typeof args['after'] === 'string' ? args['after'] : '';
+        const threshold =
+          typeof args['threshold'] === 'number' ? args['threshold'] : UI_DIFF_DEFAULT_THRESHOLD;
+        const out = typeof args['out'] === 'string' ? args['out'] : undefined;
+        const result = await host.diffShots({
+          before,
+          after,
+          threshold,
+          ...(out === undefined ? {} : { out }),
+        });
+        return jsonResult(result);
       },
     },
   ];

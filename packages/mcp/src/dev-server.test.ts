@@ -84,6 +84,11 @@ function fakeHost(database: DatabaseTarget): { host: DevHost; ran: string[] } {
       ...{ ok: true, route: input.route, finalUrl: '', image: '', verdictFile: '', verdict: {} },
       steps: [],
     }),
+    async diffShots({ before, after }) {
+      const changedBox = { x: 1, y: 1, width: 1, height: 1 };
+      const counts = { width: 2, height: 2, changedPixels: 1, changedPercent: 25 };
+      return { ok: true, before, after, ...counts, changedBox, diff: '/x/diff.png' };
+    },
     async inspectRoute(input) {
       ran.push(
         `inspect:${input.route}:${input.viewport.width}x${input.viewport.height}:${input.colorScheme}:` +

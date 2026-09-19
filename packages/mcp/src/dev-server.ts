@@ -13,6 +13,8 @@
 import type { UiInteractInput, UiInteractResult } from './dev-ui-interact';
 import { uiInteractTools } from './dev-ui-interact';
 import type {
+  UiDiffInput,
+  UiDiffResult,
   UiInspectInput,
   UiInspectResult,
   UiIslandInput,
@@ -44,6 +46,8 @@ export { UI_INTERACT_LIMITS, UI_INTERACT_STEP_SCHEMA, uiInteractTools } from './
 // the extraction to `dev-ui-tools.ts` was about the ceiling, never about moving the API.
 export type {
   UiColorScheme,
+  UiDiffInput,
+  UiDiffResult,
   UiInspectActive,
   UiInspectBox,
   UiInspectInput,
@@ -53,11 +57,19 @@ export type {
   UiInspectSelector,
   UiIslandInput,
   UiIslandResult,
+  UiScopes,
   UiShotInput,
   UiShotResult,
   UiViewportName,
 } from './dev-ui-tools';
-export { STYLE_NAME, UI_INSPECT_LIMITS, UI_VIEWPORTS, uiTools, viewportOf } from './dev-ui-tools';
+export {
+  STYLE_NAME,
+  UI_DIFF_DEFAULT_THRESHOLD,
+  UI_INSPECT_LIMITS,
+  UI_VIEWPORTS,
+  uiTools,
+  viewportOf,
+} from './dev-ui-tools';
 
 /** Scopes the dev server gates on. A token carries a subset; the rest is invisible. */
 export const DEV_SCOPES = {
@@ -155,6 +167,12 @@ export interface DevCapabilities {
    * ONE navigation. Same route gate; the PNG lands under `interact-<hash of the steps>/`.
    */
   interactRoute(input: UiInteractInput): Promise<UiInteractResult>;
+  /**
+   * Compare two PNGs the `ui.*` tools wrote — both paths relative to the app root and confined to
+   * `.x/shot/`, which is what lets a tool that reads files sit under `dev:read`. No browser: the
+   * pixels are decoded, counted and written back by `@ultimat3/core`'s raw-pixel seam.
+   */
+  diffShots(input: UiDiffInput): Promise<UiDiffResult>;
 }
 
 export type DevHost = DevIntrospection & DevCapabilities;
@@ -319,9 +337,10 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
         return { ...jsonResult(result), ...(result.ok ? {} : { isError: true }) };
       },
     },
-    // The four `ui.*` tools live in `dev-ui-tools.ts` and `dev-ui-interact.ts` (ceiling); same
-    // scope, same catalog.
-    ...uiTools(host, DEV_SCOPES.test),
+    // The five `ui.*` tools live in `dev-ui-tools.ts` and `dev-ui-interact.ts` (ceiling); same
+    // catalog. Four launch a browser under `dev:test`; `ui.diff` reads two files they already
+    // wrote, under `dev:read`.
+    ...uiTools(host, { test: DEV_SCOPES.test, read: DEV_SCOPES.read }),
     ...uiInteractTools(host, DEV_SCOPES.test),
     {
       name: 'logs.tail',

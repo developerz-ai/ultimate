@@ -190,12 +190,14 @@ describe('createDevServer', () => {
       'routes.list',
       'schema.describe',
       'tests.run',
+      'ui.diff',
       'ui.inspect',
       'ui.interact',
       'ui.island',
       'ui.shot',
       'verify.run',
     ]);
+    expect(server.tools.verbClass('ui.diff')).toBe('read');
     expect(server.tools.verbClass('db.migrate')).toBe('write');
     expect(server.tools.verbClass('ui.shot')).toBe('write');
     expect(server.tools.verbClass('routes.list')).toBe('read');
@@ -248,6 +250,7 @@ function capabilities(): { host: DevCapabilities; ran: string[] } {
     shotIsland: refuse('shotIsland'),
     inspectRoute: refuse('inspectRoute'),
     interactRoute: refuse('interactRoute'),
+    diffShots: refuse('diffShots'),
   } as unknown as DevCapabilities;
   return { host, ran };
 }
