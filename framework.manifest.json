@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "3f6650f9854b67585cf7eeb45cad7a8ee585f4b111196a9c80bf8b524cd00cd7",
+  "buildId": "412d63bb3310649e1762c979e5c86199b0c0f26bbe328dfff12ea39ac318b9fd",
   "tiers": {
     "0": [
       "core",
@@ -3416,6 +3416,11 @@
     },
     {
       "code": "X_UI_INVALID_VALUE",
+      "owner": "ui",
+      "at": "packages/ui/src/errors.ts"
+    },
+    {
+      "code": "X_UI_QR_CAPACITY",
       "owner": "ui",
       "at": "packages/ui/src/errors.ts"
     },

@@ -1,0 +1,41 @@
+@use '../tokens' as t;
+
+.qr {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  max-inline-size: 10rem;
+}
+
+// why: this is the ONE component allowed a theme selector. A QR code is a machine-readable
+// symbol, not themed decoration: scanners expect DARK modules on a LIGHT ground, and many refuse
+// the inverse. The tokens are theme-bound and raw colours are refused, so the ROLES swap per
+// theme instead — whichever role is light becomes the ground, whichever is dark the modules — and
+// the swap has to cover BOTH ways a document goes dark: the OS preference with no `data-theme`
+// set (the media path), and an explicit `data-theme='dark'` (the attribute path). A page that
+// followed the theme drew a light-on-dark code no phone would read.
+.ground {
+  fill: t.role('surface-raised');
+}
+
+.module {
+  fill: t.role('fg-strong');
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme='light']) .ground {
+    fill: t.role('fg-strong');
+  }
+
+  html:not([data-theme='light']) .module {
+    fill: t.role('bg');
+  }
+}
+
+html[data-theme='dark'] .ground {
+  fill: t.role('fg-strong');
+}
+
+html[data-theme='dark'] .module {
+  fill: t.role('bg');
+}

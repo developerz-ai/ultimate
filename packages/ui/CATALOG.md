@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-60 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Kbd` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Sparkline` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
+61 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Kbd` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `QrCode` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Sparkline` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
 
 ## Vocabulary
 
@@ -633,6 +633,17 @@ Non-modal anchored panel. Positioning is CSS-only (a relatively positioned ancho
 | `label` | `string` | yes | Already-translated accessible name for the panel. |
 | `placement` | `Placement` | — |  |
 | `align` | `'start' \| 'center' \| 'end'` | — |  |
+| `class` | `string` | — |  |
+
+### QrCode
+
+A QR code of one short value — a link's short URL, a join code — as static SVG from the pure-TypeScript encoder in `qr-encode.ts` / `qr-matrix.ts`. No QR library: a route's JS budget counts raw minified bytes, and one `<rect>` per dark module costs nothing to hydrate, so the server-rendered shell IS the code. Versions 1-3 only (42 bytes); longer is `X_UI_QR_CAPACITY`.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `value` | `string` | yes | What the code encodes — a short URL, at most 42 UTF-8 bytes. Longer throws. |
+| `label` | `string` | yes | The accessible name, already translated — say what scanning it does, not "QR code". |
+| `quietZone` | `number` | — | Light modules on every side. Default 4, the minimum a scanner needs to find the finders. |
 | `class` | `string` | — |  |
 
 ### Radio
