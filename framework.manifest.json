@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "f82cc2797469e174ebf50e34a132e90f43cb0c89b3b60bd35461d0a09eb99742",
+  "buildId": "96a79ffdacdcc5319962f2d92830a5f3c1778920879f0133a5908b0f71227d09",
   "tiers": {
     "0": [
       "core",
@@ -3413,6 +3413,21 @@
       "code": "X_UI_CONTRAST_INSUFFICIENT",
       "owner": "ui",
       "at": "packages/ui/src/errors.ts"
+    },
+    {
+      "code": "X_UI_DIFF_FILE_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UI_DIFF_PATH_OUTSIDE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UI_DIFF_SIZE_MISMATCH",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_UI_FORM_PATH_INVALID",

@@ -14,6 +14,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`BarChart` and `Sparkline` in the catalog.** One series as static SVG — `<rect>` bars with a quarter grid, a `<title>` per bar and `data-bar` hooks; a single `M`/`L` path with a dot on the last point — so the server-rendered shell IS the chart and nothing waits for hydration. No charting library, deliberately: the wiki's own cautionary example is a sparkline pulling one into the pricing page. Geometry in pure `bar-chart-view.ts` / `sparkline-view.ts` (`ChartPoint { key, value }`, `barRects`, `sparklinePath`).
 - **Four catalog components: `StatTile`, `Meter`, `Kbd`, `CopyButton`.** The pieces a dashboard's top row and a data table's cells are made of, lifted from an app that had to hand-roll every one of them. `StatTile` (label, pre-formatted value, `data-stat` hook, trend chip from the pure `deltaOf(current, baseline)`, hint), `Meter` (an SVG bar with a `width` attribute — identical on the server and after hydration, nothing for `style-src-attr`; decorative by default, a `meter` role with a label), `Kbd` (a native `<kbd>`), `CopyButton` (a real button server-side; the clipboard write and the 1.6 s check mark are additive client behaviour; strings from the new `ui.copy` / `ui.copied` keys). Intrinsic tags only, because a runtime-chosen root is called as a component by the island build.
 - **`@ultimat3/scraping`: `press`, `focus` and `accessibility` on the page vocabulary.**
+- **`ui.diff` on the dev MCP server (17 tools).** Compare two PNGs the other `ui.*` tools wrote
+  without a browser and without a dependency: `before`/`after` are paths relative to the app root
+  and must resolve — lexically and through any symlink — inside `.x/shot/`
+  (`X_UI_DIFF_PATH_OUTSIDE`), which is what lets a file-reading tool sit under `dev:read` as
+  `destructive: false`. Answers `changedPixels`, `changedPercent` (two decimals), `changedBox`
+  (the bounding box of every changed pixel, or `null`) and the path of a diff PNG written beside
+  `after` as `diff-<hash8 of before>.png` (or `out`, gated the same way): the `after` capture
+  faded to a quarter over grey, changed pixels solid red. A pixel is changed when any channel
+  moved by more than `threshold × 255` (default `0.1`); no anti-alias detection, deliberately.
+  Decodes through core's raw-pixel seam, and a PNG in another shape (Chrome's RGB for an opaque
+  page) takes one pass through `transformImageBytes` first. Two sizes are
+  `X_UI_DIFF_SIZE_MISMATCH` naming both; a missing file `X_UI_DIFF_FILE_MISSING`. Pure
+  `ui-diff.ts` (`diffPixels`, `changedPercent`) and `mcp-ui-diff.ts` (the gate, the decode, the
+  write). `uiTools` now takes `{ test, read }` scopes. Closes the last step of #463.
 - **`ui.inspect` on the dev MCP server (16 tools).** DOM, computed-style and accessibility facts
   for up to 20 selectors in ONE navigation of a budgeted route — per match the tag, text
   (≤200 chars), bounding box, visibility, attributes (≤20), the computed `styles` named (≤32,

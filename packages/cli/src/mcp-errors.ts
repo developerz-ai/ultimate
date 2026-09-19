@@ -59,6 +59,14 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x routes --json   # then call the ui.* tool with one of its path values',
   X_UI_SHOT_ROUTE_UNBUDGETED:
     "x build --target static --json && x verify --only budgets --json   # after declaring budget: { js: '<n>kb' } in the route file",
+  // The three `ui.diff` codes. Every capture it can compare was written by `x shot` or a `ui.*`
+  // tool under `.x/shot/`, so the runnable half is the command that writes one there.
+  X_UI_DIFF_PATH_OUTSIDE:
+    'x shot / --json   # then pass the image path it answers, relative to the app root: ui.diff reads .x/shot/ and nothing else',
+  X_UI_DIFF_FILE_MISSING:
+    'x shot / --json   # then diff the image path it answers; a capture ui.shot wrote is listed in its own answer',
+  X_UI_DIFF_SIZE_MISMATCH:
+    'x shot / --json   # photograph both captures at one viewport with one fullPage setting, then diff those two',
   // The four island-capture codes. Each one's real repair is an edit to the app's own states file
   // or component, which no command can perform — so each names the command that REPRODUCES it with
   // the file and the reason attached, which is the runnable half.

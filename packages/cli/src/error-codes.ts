@@ -157,6 +157,11 @@ export const CLI_OWNED_ERROR_CODES = [
   // `ui.shot` (the dev MCP server): a route it will not photograph, and why.
   'X_UI_SHOT_ROUTE_UNKNOWN',
   'X_UI_SHOT_ROUTE_UNBUDGETED',
+  // `ui.diff`: the three ways two captures fail to become a comparison. The path gate is what
+  // lets a file-reading tool sit under `dev:read` — it reads `.x/shot/` and nothing else.
+  'X_UI_DIFF_PATH_OUTSIDE',
+  'X_UI_DIFF_FILE_MISSING',
+  'X_UI_DIFF_SIZE_MISMATCH',
   // `x shot --island` — one code per way a component's named state fails to become a picture.
   // The last of the four is the one that gates: it is checked against the expansion computed
   // before a browser existed, so a capture loop that swallowed a failure cannot exit 0.
@@ -302,6 +307,9 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_SHOT_BROWSER_MISSING: 'x shot found no browser library in the app',
   X_UI_SHOT_ROUTE_UNKNOWN: 'a ui.* tool was asked for a path no route answers',
   X_UI_SHOT_ROUTE_UNBUDGETED: 'a ui.* tool refused a route that declares no budget.js',
+  X_UI_DIFF_PATH_OUTSIDE: 'ui.diff was handed a path that does not resolve inside .x/shot/',
+  X_UI_DIFF_FILE_MISSING: 'ui.diff was handed a capture that is not on disk',
+  X_UI_DIFF_SIZE_MISMATCH: 'ui.diff was handed two captures of different sizes',
   X_SHOT_ISLAND_STATES_EMPTY: 'an island states file declares no manifest',
   X_SHOT_ISLAND_UNPHOTOGRAPHABLE: 'the island never reached a state worth photographing',
   X_SHOT_ISLAND_UNSTUBBED_REQUEST: 'the island requested something no state stub answers',

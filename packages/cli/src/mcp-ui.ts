@@ -1,7 +1,8 @@
-// The dev MCP server's eyes: `ui.shot` (a route), `ui.island` (a component's states) and
-// `ui.inspect` (DOM facts for a set of selectors, in `mcp-ui-inspect.ts`), as the `DevCapabilities`
-// half `packages/mcp` declares and cannot satisfy — a browser is the CLI's to launch. All three
-// are `x shot` under another name: the same server lookup (a running `x dev` is
+// The dev MCP server's eyes: `ui.shot` (a route), `ui.island` (a component's states),
+// `ui.inspect` (DOM facts for a set of selectors, in `mcp-ui-inspect.ts`) and `ui.diff` (two
+// captures compared, in `mcp-ui-diff.ts`), as the `DevCapabilities` half `packages/mcp` declares
+// and cannot satisfy — a browser is the CLI's to launch, and the files are the CLI's to read.
+// The three that look are `x shot` under another name: the same server lookup (a running `x dev` is
 // reused through its lock, otherwise a scratch one boots), the same driver, the same verdict.
 // Nothing here is a new capability; it is the existing one made reachable from inside the loop
 // an agent already works in, so "does it look right" stops needing a hand-written script.
@@ -10,6 +11,8 @@
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import type {
+  UiDiffInput,
+  UiDiffResult,
   UiInspectInput,
   UiInspectResult,
   UiIslandInput,
@@ -25,6 +28,7 @@ import { DEFAULT_SETTLE_MS, runShot, SHOT_DIR, shotSlug } from './cmd-shot';
 import { islandShot } from './cmd-shot-island';
 import type { Env } from './dev-services';
 import { islandVerdictJson } from './island-verdict';
+import { diffShots } from './mcp-ui-diff';
 import { inspectRoute } from './mcp-ui-inspect';
 import { retryMemo } from './retry-memo';
 import { shotBrowserChoice } from './shot-browser';
@@ -88,6 +92,8 @@ export interface UiCapabilities {
   shotRoute(shot: UiShotInput): Promise<UiShotResult>;
   shotIsland(island: UiIslandInput): Promise<UiIslandResult>;
   inspectRoute(inspect: UiInspectInput): Promise<UiInspectResult>;
+  /** Two captures under `.x/shot/` compared without a browser; never boots the scratch server. */
+  diffShots(diff: UiDiffInput): Promise<UiDiffResult>;
   /** Stops the scratch server, if one was booted. Never boots one in order to stop it. */
   close(): Promise<void>;
 }
@@ -167,6 +173,10 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
       assertBudgetedRoute(inspect.route, routes());
       return inspectRoute({ root, boot, driver: driverFor }, inspect);
     },
+
+    // No route gate and no boot: the captures were gated when they were taken, and a diff of two
+    // files needs neither a server nor a browser.
+    diffShots: (diff) => diffShots({ root }, diff),
 
     async shotIsland(island) {
       const { cdpUrl, executablePath } = browser();
