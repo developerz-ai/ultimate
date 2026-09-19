@@ -1,6 +1,11 @@
 // The blocking <head> snippet that kills the flash of wrong theme. Built from the
 // same constants as theme.ts so the two can never disagree. Server/build-only:
 // the hash is computed with Bun's hasher for the CSP header.
+//
+// DEPRECATED `As of 20.2.0`: the framework's boot inlines this script itself, from
+// `@ultimat3/render`'s `themeScript({ fallback })` with `theme.defaultMode` in `app.config.ts` as
+// the fallback, and admits it to the CSP — an app no longer writes either half. This module stays
+// exported for one major so an app that inlined it by hand keeps building; it is removed in 21.
 
 import { runtimeMissingError } from '../errors';
 import { THEME_ATTRIBUTE, THEME_MEDIA_QUERY, THEME_STORAGE_KEY } from './theme';

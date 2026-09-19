@@ -100,6 +100,8 @@ export interface StartRolesOptions {
    * serves: that policy is what rendered every deployed app completely unstyled.
    */
   readonly inlineStyles?: readonly string[];
+  /** `script-src` sources beyond the hydration runtime's — the theme boot's hash. */
+  readonly inlineScripts?: readonly string[];
   /**
    * Non-fatal findings the browser overlay shows next to an error, for the request being answered.
    * Only `x dev` supplies one — `serve.ts` boots through this same function and omits it, so a
@@ -321,16 +323,14 @@ function startWeb(options: StartRolesOptions, mount?: WebSocketMount<SyncWs>): S
         rateLimit: { scope: store?.scope ?? 'process' },
         // Hashes, never `'unsafe-inline'`: a `render: 'static'` page is a file on disk, so
         // nothing can stamp a per-response nonce into it, but its body is fixed and a hash is a
-        // function of that body. Read after `loadApp` — importing the app IS what registered them.
-        // BOTH directives, and the script half is the one that was missing: the hydration runtime
-        // is emitted inline in every document that carries an island, so `script-src 'self'` meant
-        // no island booted anywhere the policy is enforced — which is every container, and never
-        // `x dev`, where it is report-only.
+        // function of that body. BOTH directives: the hydration runtime is emitted inline in every
+        // document that carries an island, so `script-src 'self'` meant no island booted anywhere
+        // the policy is enforced — every container, and never `x dev`, where it is report-only.
         security: {
           csp: {
             extend: {
               'style-src': inlineStyleSources(options.inlineStyles ?? []),
-              'script-src': inlineScriptSources(),
+              'script-src': inlineScriptSources(options.inlineScripts ?? []),
             },
           },
         },

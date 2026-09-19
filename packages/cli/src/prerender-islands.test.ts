@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { clearRoutes, defineRoute, island, registerRoute } from '@ultimat3/render';
+import { clearRoutes, defineRoute, island, registerRoute, themeScriptBody } from '@ultimat3/render';
 import { appManifest } from './app-manifest';
 import { checkBudgets, readBuildStats } from './budgets';
 import { prerenderSite } from './prerender';
@@ -143,8 +143,12 @@ describe('x build --target static, with islands', () => {
     expect(html).toContain('requestIdleCallback');
     expect(html.indexOf('requestIdleCallback')).toBeLessThan(html.indexOf('</body>'));
 
-    // Axiom 6: the static page beside it renders through the same assembler and pays nothing.
-    expect(await Bun.file(join(out, 'index.html')).text()).not.toContain('<script');
+    // Axiom 6: the static page beside it renders through the same assembler and pays nothing —
+    // the one script it carries is the framework's own theme boot, which every document has.
+    const beside = await Bun.file(join(out, 'index.html')).text();
+    expect([...beside.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])).toEqual([
+      themeScriptBody({ fallback: 'system' }),
+    ]);
 
     const stats = await readBuildStats(ROOT);
     const measured = new Map((stats?.routes ?? []).map((route) => [route.path, route]));

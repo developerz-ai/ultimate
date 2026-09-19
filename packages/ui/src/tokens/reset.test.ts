@@ -17,6 +17,13 @@ describe('reset.scss', () => {
     expect(rule.test(css)).toBe(true);
   });
 
+  test('keeps the UA centring of a <dialog>, which the universal margin reset would otherwise erase', async () => {
+    const css = await Bun.file(RESET).text();
+    // `* { margin: 0 }` beats the UA's `dialog { margin: auto }`; without this rule a modal opens
+    // pinned to the top-left corner of the viewport, and every app restated the margin itself.
+    expect(/dialog\s*\{[^}]*margin:\s*auto/.test(css)).toBe(true);
+  });
+
   test('Dialog points at where the lock actually lives, rather than claiming to do it', async () => {
     const source = await Bun.file(DIALOG).text();
     expect(source).toContain('tokens/reset.scss');
