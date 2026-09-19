@@ -84,6 +84,9 @@ One interface, three drivers, no driver type in it.
 | `cookies` / `session` | the handoff to the HTTP leg, as a value you can inspect |
 | `query(selector)` | every match as a snapshot — tag, attributes, text, **and `visible`**. The one definition of "visible" in the framework; nothing else may compute it |
 | `offline(enabled)` | the browser's own offline mode. **Not** `@ultimat3/testing`'s sealed network, which patches `fetch` in the *test process* and a browser's requests never traverse — a test built on that would pass against a fully online app |
+| `focus(selector, { timeout })` | waits for `actionable`, then moves focus — the setup for a `press()` |
+| `press(chord)` | `'Meta+K'`, `'Escape'`, `'Shift+Tab'` on whatever holds focus. Modifiers are `Meta`, `Control`, `Alt`, `Shift` in the browser's own spelling; `'Ctrl+K'` is `X_SCRAPE_KEY_INVALID` on **every** driver, offline included — the parse is the one thing an offline driver can be wrong about, so it runs there too, then stops |
+| `accessibility(selector, { max })` | what a screen reader is told about each match — the browser's **computed** role and name, after ARIA and label association, at most `max` (default 25) nodes. Refused with `X_NOT_IMPLEMENTED` on the offline drivers and on a frame of the real one, never answered from `role=` on the tag: a `<div onclick>` computing no role *is* the finding |
 | `console()` / `network()` | bounded rings, 200 entries each |
 | `pageErrors()` / `pageErrorsDropped()` | uncaught exceptions, a **third** ring — not console lines |
 
@@ -232,7 +235,7 @@ recover: async ({ page, failure, attempt }) => { /* return true to re-run the bo
 
 ## Error codes
 
-26 owned codes, split by whether the same request can succeed unchanged. `x errors explain <CODE> --json` prints the cause, a runnable fix and the docs URL for any of them ([Error codes](Error-Codes)).
+31 owned codes, split by whether the same request can succeed unchanged. `x errors explain <CODE> --json` prints the cause, a runnable fix and the docs URL for any of them ([Error codes](Error-Codes)).
 
 | Retryable | Why |
 |---|---|
@@ -241,7 +244,7 @@ recover: async ({ page, failure, attempt }) => { /* return true to re-run the bo
 | `X_SCRAPE_HTTP_FAILED` | 408, 409, 425, 429, any 5xx, a deploy — transient far more often than not. **Which 4xx are permanent is `@ultimat3/core`'s `isRetryableStatus`, not this package's**, `As of 2026-08-23`: a private copy here called 408 and 425 terminal while the rest of the framework called them retryable, and a terminal classification dead-letters the run on the attempt that failed rather than spending its declared `attempts` |
 | `X_SCRAPE_BLOCKED` | retryable **and it burns the session first**: retrying a block on the same flagged cookies re-trips it every time |
 
-Everything else is terminal, including `X_SCRAPE_SELECTOR_MISSING` (the markup changed), `X_SCRAPE_OUTPUT_INVALID` (the rows are the wrong shape), `X_SCRAPE_YIELD_COLLAPSED` and `X_SCRAPE_SECRET_EXPOSED`.
+Everything else is terminal, including `X_SCRAPE_SELECTOR_MISSING` (the markup changed), `X_SCRAPE_OUTPUT_INVALID` (the rows are the wrong shape), `X_SCRAPE_YIELD_COLLAPSED`, `X_SCRAPE_SECRET_EXPOSED` and `X_SCRAPE_KEY_INVALID` (the chord is the caller's own literal).
 
 ## Testing offline
 

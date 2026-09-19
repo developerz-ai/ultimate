@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "3f6650f9854b67585cf7eeb45cad7a8ee585f4b111196a9c80bf8b524cd00cd7",
+  "buildId": "d5111e4bd68aab4658f8ab4398a6c363a7014bdc74780725349088e6934776f4",
   "tiers": {
     "0": [
       "core",
@@ -2641,6 +2641,11 @@
     },
     {
       "code": "X_SCRAPE_HTTP_FAILED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_KEY_INVALID",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
     },

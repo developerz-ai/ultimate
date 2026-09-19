@@ -21,15 +21,23 @@ export { burnSession, createPrompt, ensureAuthenticated, restorableSession } fro
 export { browserRecord } from './browser-record';
 export type { CaptureClip, CaptureFraming } from './capture-clip';
 export { assertCaptureFraming } from './capture-clip';
+export { axNodesFor } from './cdp-a11y';
 export type {
   CdpBrowserLike,
   CdpFrameLike,
+  CdpKeyboardLike,
   CdpLauncherLike,
   CdpPageLike,
   CdpRequestLike,
   CdpScreenshotOptions,
+  CdpSessionLike,
 } from './cdp-port';
-export { clearExpression, parseSnapshots, snapshotExpression } from './cdp-snapshot';
+export {
+  clearExpression,
+  focusExpression,
+  parseSnapshots,
+  snapshotExpression,
+} from './cdp-snapshot';
 export type { CdpTargetInit } from './cdp-target';
 export { CDP_DRIVER, cdpTarget } from './cdp-target';
 export type { Deadline, ScrapeClock, TestScrapeClock } from './clock';
@@ -62,6 +70,7 @@ export {
   fixtureStale,
   hostBlocked,
   httpFailed,
+  keyInvalid,
   notActionable,
   outputInvalid,
   pageCrashed,
@@ -117,9 +126,12 @@ export type { RedirectHop } from './http-redirect';
 export { MAX_REDIRECT_HOPS, redirectHop } from './http-redirect';
 export type { InterceptRules, InterceptVerdict } from './intercept';
 export { interceptVerdict, refusalEntry } from './intercept';
+export type { KeyChord, KeyModifier } from './key-chord';
+export { KEY_MODIFIERS, parseKeyChord } from './key-chord';
 export type { OfflineSessionInit } from './offline-session';
 export { openOfflineSession } from './offline-session';
 export type {
+  AccessibilityOptions,
   CaptureRequest,
   DownloadRequest,
   ElementValue,
@@ -127,6 +139,7 @@ export type {
   ScrapePage,
   WaitOptions,
 } from './page';
+export { DEFAULT_ACCESSIBILITY_MAX } from './page';
 export type { PageContext } from './page-over-target';
 export { pageOverTarget } from './page-over-target';
 export type { Pacer } from './rate';
@@ -197,6 +210,7 @@ export {
   storageSessionStore,
 } from './session-state';
 export type {
+  AxNode,
   CaptureOptions,
   ElementBox,
   ElementSnapshot,
