@@ -24,6 +24,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   the real driver refuses it too. `cdp-arm.ts` holds the request/console/`pageerror`/`error`
   handlers `cdp-target.ts` armed, extracted verbatim because that file stood at 478 lines against
   the 500-line ceiling. Part of #463.
+- **`ui.inspect` on the dev MCP server (16 tools).** DOM, computed-style and accessibility facts
+  for up to 20 selectors in ONE navigation of a budgeted route — per match the tag, text
+  (≤200 chars), bounding box, visibility, attributes (≤20), the computed `styles` named (≤32,
+  `^[a-z][a-z0-9-]*$`; the rest are answered in `droppedStyles`) and, with `a11y: true`, the
+  browser-computed role and name (`page.accessibility`, merged by index); per document the title,
+  `data-theme`, the focused element, the island count, console errors, page errors and refused
+  requests. Bounds: 25 matches per selector applied in the page, a 64 KB wire cap that drops
+  `matches` from the last selectors first, `truncated: true` on either; an unparsable selector is
+  `valid: false`, never a crash. Takes the same PNG and verdict as `ui.shot`, under
+  `.x/shot/<slug>/<WxH-scheme>/inspect/`, and `ok` is that verdict's. `runShot` grew an `act`
+  hook (after the islands settled, before the picture); the three `ui.*` tool literals and their
+  types moved from `dev-server.ts` (439 lines) to `dev-ui-tools.ts`, re-exported. The two
+  `X_UI_SHOT_ROUTE_*` titles now name "a `ui.*` tool". Part of #463.
 
 ## 20.1.6 - 2026-09-18
 

@@ -190,6 +190,7 @@ describe('createDevServer', () => {
       'routes.list',
       'schema.describe',
       'tests.run',
+      'ui.inspect',
       'ui.island',
       'ui.shot',
       'verify.run',
@@ -244,6 +245,7 @@ function capabilities(): { host: DevCapabilities; ran: string[] } {
     verify: refuse('verify'),
     shotRoute: refuse('shotRoute'),
     shotIsland: refuse('shotIsland'),
+    inspectRoute: refuse('inspectRoute'),
   } as unknown as DevCapabilities;
   return { host, ran };
 }

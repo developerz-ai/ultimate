@@ -80,6 +80,35 @@ function fakeHost(database: DatabaseTarget): { host: DevHost; ran: string[] } {
       ran.push(`island:${input.island}:${input.state ?? '*'}`);
       return { ok: true, dir: '/x/island', verdictFile: '/x/island/verdict.json', verdict: {} };
     },
+    async inspectRoute(input) {
+      ran.push(
+        `inspect:${input.route}:${input.viewport.width}x${input.viewport.height}:${input.colorScheme}:` +
+          `${input.selectors.join(',')}:${input.styles.join(',')}:${String(input.a11y)}:${String(input.activeElement)}`,
+      );
+      return {
+        ok: true,
+        route: input.route,
+        finalUrl: `http://localhost:3000${input.route}`,
+        title: 'Dash',
+        theme: 'dark',
+        activeElement: null,
+        islands: null,
+        consoleErrors: [],
+        pageErrors: [],
+        refused: 0,
+        selectors: input.selectors.map((selector) => ({
+          selector,
+          valid: true,
+          count: 0,
+          truncated: false,
+          matches: [],
+        })),
+        image: '/x/inspect/shot.png',
+        verdictFile: '/x/inspect/verdict.json',
+        truncated: false,
+        droppedStyles: [],
+      };
+    },
   };
   return { host, ran };
 }
@@ -414,6 +443,36 @@ describe('the ui tools photograph through the host and never inline the picture'
     const island = tools.find((t) => t.name === 'ui.island');
     expect((await shot?.handle({ route: '/a' }, caller))?.isError).toBe(true);
     expect((await island?.handle({ island: 'feed' }, caller))?.isError).toBe(true);
+  });
+
+  test('ui.inspect defaults to desktop/dark, no a11y, activeElement on; errors when not ok', async () => {
+    const { host, ran } = fakeHost(BRANCH);
+    const inspect = devTools(host).find((t) => t.name === 'ui.inspect');
+    if (inspect === undefined) expect.unreachable('no ui.inspect tool');
+    expect(inspect.destructive).toBe(true);
+    expect(inspect.scope).toBe(DEV_SCOPES.test);
+    const result = await inspect.handle({ route: '/dash', selectors: ['h1', '.card'] }, caller);
+    expect(ran).toContain('inspect:/dash:1440x900:dark:h1,.card::false:true');
+    const answer = JSON.parse(textOf(result) ?? '{}') as {
+      selectors: readonly { selector: string }[];
+      truncated: boolean;
+      droppedStyles: readonly string[];
+    };
+    expect(answer.selectors.map((entry) => entry.selector)).toEqual(['h1', '.card']);
+    expect(answer.truncated).toBe(false);
+    expect(answer.droppedStyles).toEqual([]);
+    expect(result.isError).toBeUndefined();
+    const explicit = { viewport: 'phone', theme: 'light', a11y: true, activeElement: false };
+    await inspect.handle({ route: '/', selectors: ['a'], ...explicit }, caller);
+    expect(ran).toContain('inspect:/:390x844:light:a::true:false');
+
+    const red = devTools({
+      ...host,
+      async inspectRoute(input) {
+        return { ...(await host.inspectRoute(input)), ok: false };
+      },
+    }).find((t) => t.name === 'ui.inspect');
+    expect((await red?.handle({ route: '/a', selectors: ['h1'] }, caller))?.isError).toBe(true);
   });
 
   test('ui.island passes the state through only when it is a string', async () => {
