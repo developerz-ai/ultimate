@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 20.2.0 - 2026-09-19
+
 ### Added
 - **`x new` scaffolds a designed app, dark by default.** The generated app opens with `theme: { defaultMode: 'dark' }` and ships a shell (`apps/web/shared/shell.tsx` over the catalog's `AppShell`: brand mark, sidebar with `aria-current`, environment pill, page actions, footer), a landing hero (dot-grid ground, eyebrow, balanced headline, lede, two calls to action, three feature cards â€” still `0kb`), the one island the scaffold has (`theme-toggle.island.tsx`, the catalog's `ThemeToggle` with the boot's verdict as its starting point), and `apps/web/site/errors/404.html` / `500.html` (self-contained, `noindex`, the same two hex values as `pwa.colors`). The dashboard is honest per invocation: `--example` aggregates the seeded posts through a pure `dashboard-view.ts` (`postStats`, `bucketByDay`) into a `StatTile` row, a `BarChart` and a `DataTable`; `--no-example` shows framework facts (routes, locales, roles, version) and the route table, and draws no chart because nothing honest exists to chart. Templates split into `scaffold-site.ts`, `scaffold-shell.ts`, `scaffold-dashboard*.ts`, `scaffold-errors.ts`; file counts 161 / 133; the dashboard budget is `64kb` (the toggle island measures 60.9kb minified, solid-js being 12.6kb of it).
 - **`ui.interact` on the dev MCP server (17 tools).** Drive a budgeted route through at most
@@ -64,6 +68,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Fixed
 - **`<dialog>` opened pinned to the top-left corner.** The reset's `* { margin: 0 }` outranks the UA stylesheet's `dialog { margin: auto }`, the only rule that centres a modal dialog; every app restated the margin itself. `reset.scss` restates it once.
+
+### Commits
+
+- feat(mcp): ui.diff compares two captures without a browser or a dependency (#486)
+- feat(scaffold): x new emits a premium default shell, dashboard, hero and error pages, dark by default (#485)
+- feat(mcp): ui.interact drives a route through bounded steps, then captures and inspects it (#484)
+- feat(ui): QrCode joins the catalog with a pure-TS encoder (#483)
+- feat(ui): CommandPalette joins the catalog (#480)
+- feat(mcp): ui.inspect reads DOM, computed styles and a11y facts in one navigation (#481)
+- feat(ui): BarChart and Sparkline join the catalog (#478)
+- feat(ui): StatTile, Meter, Kbd and CopyButton join the catalog (#479)
+- feat(scraping): press, focus and accessibility on the page port (#476)
+- feat(theme): boot inlines the theme script from theme.defaultMode; dialog centring; data-text/label-caps/dot-grid mixins (#475)
 
 ## 20.1.6 - 2026-09-18
 
