@@ -130,6 +130,14 @@ export interface CdpPageLike {
   /** `page.focus(selector)`. OPTIONAL for `keyboard`'s reason, and refused by name when absent. */
   focus?(selector: string): Promise<void>;
   /**
+   * `page.evaluateOnNewDocument(expression)`: a script the browser runs in EVERY document this
+   * page navigates to, before any of the document's own scripts — `Page.addScriptToEvaluateOnNewDocument`
+   * under CDP. It is the only moment that beats an inlined boot script, which is what a
+   * storage-seeded theme choice needs (`ScrapePage.prepare`). The string form, for `evaluate`'s
+   * reason. OPTIONAL for `keyboard`'s reason, and refused by name when absent.
+   */
+  evaluateOnNewDocument?(expression: string): Promise<unknown>;
+  /**
    * A raw protocol session, for the one read this package makes that the library has no method
    * for: the accessibility tree (`Accessibility.getPartialAXTree`). OPTIONAL for `keyboard`'s
    * reason, and refused by name when absent.

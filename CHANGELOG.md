@@ -8,7 +8,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+- **`ui.shot`, `ui.inspect`, `ui.interact`: a requested `theme` is stored as the visitor's choice, so a dark-default app captures light.** `theme: 'light'` only emulated `prefers-color-scheme`, and since 20.2.0 the inlined boot script answers `theme.defaultMode` before the OS — so on an app with `defaultMode: 'dark'` every "light" capture came back dark, and `ui.inspect` reported `theme: 'dark'` for a light request (#489). `runShot` now also seeds `localStorage[THEME_STORAGE_KEY]` on the page's origin BEFORE the document's own scripts, through a new page verb `ScrapePage.prepare(expression)` (`@ultimat3/scraping`: `ScrapeTarget.prepare`, the CDP port's optional `evaluateOnNewDocument`, refused by name with `X_NOT_IMPLEMENTED` on a launcher that lacks it; the offline drivers accept it, as they do `colorScheme()`, and the CDP fake records it as `prepared`). The expression is `themeChoiceExpression(scheme)` in `@ultimat3/cli` (`shot-theme.ts`), derived from `@ultimat3/render`'s `THEME_STORAGE_KEY`, never restated. Nothing is seeded when no theme is requested: the capture is then the app's own default, which is the point of `defaultMode`. `ui.island` is unaffected — the island harness renders its own `data-theme` and carries no boot script.
 
 ## 20.2.0 - 2026-09-19
 

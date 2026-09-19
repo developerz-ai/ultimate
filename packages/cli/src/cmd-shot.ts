@@ -32,6 +32,7 @@ import { shotBrowserChoice } from './shot-browser';
 import type { BootDevServer, ShotServer } from './shot-server';
 import { allowHostsFrom, devServerFor, SHOT_DIR } from './shot-server';
 import { SETTLE_POLL_MS, settleIslands } from './shot-settle';
+import { readThemeFlag, themeChoiceExpression } from './shot-theme';
 import type { IslandCount, ShotArtifacts } from './shot-verdict';
 import {
   buildVerdict,
@@ -191,9 +192,13 @@ export interface ShotRun {
    */
   readonly extraHosts?: string | undefined;
   /**
-   * What `prefers-color-scheme` the page sees, emulated BEFORE navigation so the boot script's
-   * "system" branch answers the same on every box. Absent means the box's own preference — what
-   * `x shot` has always done — and `ui.shot` names one explicitly for exactly that reason.
+   * The theme the picture is of. Two things happen BEFORE navigation, because the boot script runs
+   * inline and nothing after `goto` can reach it: `prefers-color-scheme` is emulated so the boot's
+   * "system" branch answers the same on every box, AND the scheme is stored as the visitor's
+   * choice under `THEME_STORAGE_KEY` (`shot-theme.ts`), because an app with `theme.defaultMode`
+   * set answers that before the OS and only a stored choice beats it (issue #489). Absent means
+   * neither: the box's own preference and the app's own default — what `x shot` has always done,
+   * and the point of `defaultMode` — and `ui.shot` names one explicitly for exactly that reason.
    */
   readonly colorScheme?: ColorScheme | undefined;
   readonly now?: (() => Date) | undefined;
@@ -234,7 +239,11 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
       timeoutMs: options.timeoutMs,
     });
     const page = session.page;
-    if (options.colorScheme !== undefined) await page.colorScheme(options.colorScheme);
+    if (options.colorScheme !== undefined) {
+      await page.colorScheme(options.colorScheme);
+      const choice = themeChoiceExpression(options.colorScheme);
+      if (choice !== undefined) await page.prepare(choice);
+    }
     await page.goto(requestedUrl, { timeout: options.timeoutMs });
     if (options.settleMs > 0) await Bun.sleep(options.settleMs);
     // The probe may legitimately answer nothing — a page that refuses evaluation, a driver with no
@@ -322,6 +331,11 @@ export const shotCommand: CliCommand = {
         summary: 'attach to a browser somebody else is running (a provider session, a sidecar)',
       },
       { name: 'allow-hosts', type: 'string', summary: 'extra hosts the page may request' },
+      {
+        name: 'theme',
+        type: 'string',
+        summary: "light or dark, stored as the visitor's choice; absent is the app's own default",
+      },
       // A FLAG on `x shot` and never a second command: photographing a route and photographing a
       // component are one job with two subjects, and a parallel command would be the second path
       // axiom 1 refuses.
@@ -352,6 +366,7 @@ export const shotCommand: CliCommand = {
     // report, which is the rule `x routes` and `x mcp` already follow.
     const island = flagString(ctx.args, 'island');
     const state = flagString(ctx.args, 'state');
+    const theme = readThemeFlag(flagString(ctx.args, 'theme'));
     const positional = ctx.args.positionals[0];
     const sweep = flagBool(ctx.args, 'all-islands');
     // Every ambiguous pair refused BY NAME, before a value is read: a reader who typed two
@@ -364,6 +379,16 @@ export const shotCommand: CliCommand = {
       refuseRouteWithIsland(positional, island);
     }
     const component = sweep || (island !== undefined && island !== '');
+    // An island is photographed in BOTH themes by the harness, which owns its `data-theme` and
+    // carries no boot script — so a theme asked for beside one is a request nothing could honour.
+    if (component && theme !== undefined) {
+      throw new BadFlagError({
+        flag: 'theme',
+        command: 'shot',
+        reason: 'photographs a route; an island is photographed in both themes',
+        fix: 'x shot / --theme light --json',
+      });
+    }
     const route = component ? '' : readRoute(positional);
     const port = intFlag(ctx.args, 'port', PORT_RANGE.min, DEFAULT_PORT, PORT_RANGE.max);
     const settleMs = intFlag(ctx.args, 'settle', 0, DEFAULT_SETTLE_MS);
@@ -415,6 +440,7 @@ export const shotCommand: CliCommand = {
         timeoutMs,
         fullPage: flagBool(ctx.args, 'full'),
         extraHosts: flagString(ctx.args, 'allow-hosts'),
+        ...(theme === undefined ? {} : { colorScheme: theme }),
       }),
     );
   },

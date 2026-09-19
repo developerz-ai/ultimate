@@ -201,6 +201,20 @@ export interface ScrapeTarget {
    * so a driver that dropped the preference fails a test rather than passing every one.
    */
   setColorScheme(scheme: ColorScheme): Promise<void>;
+  /**
+   * A script every document this target navigates to runs BEFORE its own — the browser's
+   * `evaluateOnNewDocument`. REQUIRED here where `CdpPageLike.evaluateOnNewDocument` is optional,
+   * for `setOfflineMode`'s reason: the asymmetry is the enforcement, and a launcher without the
+   * method is `X_NOT_IMPLEMENTED`.
+   *
+   * A DRIVER WITH NO JS ENGINE ACCEPTS IT, for `setColorScheme`'s reason and not
+   * `setOfflineMode`'s: the offline drivers execute nothing, so there is no document script for
+   * the expression to run ahead of and no assertion a resolved promise could let through — a
+   * seeded `localStorage` key is the INPUT to a boot script this driver never runs. Refusing
+   * would make `x shot` and every `ui.*` tool untestable on a machine with no Chrome, and the
+   * outcome it would protect does not exist here. The call is still checked for a closed target.
+   */
+  prepare(expression: string): Promise<void>;
   screenshot(options: CaptureOptions): Promise<Uint8Array>;
   pdf(options: CaptureOptions): Promise<Uint8Array>;
   cookies(): Promise<readonly ScrapeCookie[]>;

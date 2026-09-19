@@ -25,6 +25,7 @@ import {
 } from './cmd-shot';
 import { DEV_LOCK_FILE } from './dev-lock';
 import { resolveServices } from './dev-services';
+import { themeChoiceExpression } from './shot-theme';
 import { ISLAND_PROBE } from './shot-verdict';
 
 const SERVER_URL = 'http://localhost:4321';
@@ -101,6 +102,31 @@ const withConsole = (base: ScrapeDriver, lines: readonly ConsoleLine[]): ScrapeD
   open: async (init): Promise<ScrapeSession> => {
     const session = await base.open(init);
     return { ...session, page: { ...session.page, console: () => lines } };
+  },
+});
+
+/**
+ * The ORDER of what `runShot` asks the page before the picture, as a driver sees it. Composed over
+ * the real fake: `prepare` and `goto` are forwarded after being logged, so the page still answers.
+ */
+const ordering = (base: ScrapeDriver, log: string[]): ScrapeDriver => ({
+  name: base.name,
+  open: async (init): Promise<ScrapeSession> => {
+    const session = await base.open(init);
+    return {
+      ...session,
+      page: {
+        ...session.page,
+        prepare: (expression: string): Promise<void> => {
+          log.push(`prepare ${expression}`);
+          return session.page.prepare(expression);
+        },
+        goto: (url: string, options?: { readonly timeout?: number | undefined }): Promise<void> => {
+          log.push(`goto ${url}`);
+          return session.page.goto(url, options);
+        },
+      },
+    };
   },
 });
 
@@ -234,6 +260,32 @@ describe('unit · one route, two artifacts', () => {
     expect([artifacts.verdict.ok, artifacts.verdict.errors]).toEqual([false, 1]);
     const verdict = (await readVerdict(out))['console'] as { errors: number };
     expect(verdict.errors).toBe(1);
+  });
+});
+
+describe("unit · a requested theme is the visitor's choice", () => {
+  // Issue #489: `prefers-color-scheme` alone loses to an app's `theme.defaultMode`, so the boot's
+  // storage key is seeded BEFORE navigation — an `evaluate` after `goto` is one boot too late.
+  test('the storage seed runs before the navigation when a theme is given', async () => {
+    const log: string[] = [];
+    await runShot(
+      runFor(join(dir, 'theme-light'), {
+        driver: ordering(siteDriver(), log),
+        colorScheme: 'light',
+      }),
+    );
+    expect(log).toEqual([
+      `prepare ${themeChoiceExpression('light')}`,
+      `goto ${SERVER_URL}${ROUTE}`,
+    ]);
+  });
+
+  // The point of `defaultMode`: with no theme asked for, the capture is the app's own default,
+  // and a seed here would photograph a choice nobody made.
+  test('nothing is seeded when no theme is requested', async () => {
+    const log: string[] = [];
+    await runShot(runFor(join(dir, 'theme-none'), { driver: ordering(siteDriver(), log) }));
+    expect(log).toEqual([`goto ${SERVER_URL}${ROUTE}`]);
   });
 });
 
