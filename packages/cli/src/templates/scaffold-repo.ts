@@ -14,6 +14,7 @@ import { dbPackageFiles } from './scaffold-db-package';
 import { docsFiles } from './scaffold-docs';
 import { domainPackageFiles } from './scaffold-domain-package';
 import { envExampleSource, envSchemaSource } from './scaffold-env';
+import { PWA_COLORS } from './scaffold-errors';
 import { scaffoldGuardFiles } from './scaffold-guards';
 import { i18nFiles } from './scaffold-i18n';
 import { mcpPackageFiles } from './scaffold-mcp-package';
@@ -213,10 +214,14 @@ export const config = defineConfig({
     offline: { fallback: '/offline' },
     name: '${titleCase(app.raw)}',
     colors: {
-      light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
-      dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' },
+      light: { themeColor: '${PWA_COLORS.themeColor}', backgroundColor: '${PWA_COLORS.lightBackground}' },
+      dark: { themeColor: '${PWA_COLORS.themeColor}', backgroundColor: '${PWA_COLORS.darkBackground}' },
     },
   },
+  // The theme a first visit opens in; the framework inlines the no-flash boot script that reads
+  // it, and a choice stored by the theme toggle wins over it on every later visit; 'system' follows
+  // the OS.
+  theme: { defaultMode: 'dark' },
   ai: { mcp: { expose: true, path: '/mcp' } },
 });
 `;

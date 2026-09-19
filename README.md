@@ -40,7 +40,7 @@ Rails' philosophy on a Bun + Postgres + SolidJS stack. Everything is one of **ei
 
 | End of the range | The claim | Measured `As of 2026-08-23` |
 |---|---|---|
-| **small** — a weekend idea, a first app | not overkill: nothing to install, nothing to choose | `x new` asks **0** questions (all five flags defaulted), writes **151** files you never edit (re-derived `As of 2026-09-11`), installs **104** packages, and reaches a running app in **4** commands with **0** env values supplied |
+| **small** — a weekend idea, a first app | not overkill: nothing to install, nothing to choose | `x new` asks **0** questions (all five flags defaulted), writes **161** files you never edit (re-derived `As of 2026-09-19`), installs **104** packages, and reaches a running app in **4** commands with **0** env values supplied |
 | **large** — many teams, real traffic | the ladder, the tier boundaries and the 20-step gate are already in the beginner's app | the same `x verify`, the same primitives, the same image; climbing is `ROLE`, env and replica counts ([scale ladder](docs/idea/17-scale-ladder.md)) |
 | **the model you can afford** | enforced conventions and executable `fix:` lines are worth *more* the cheaper the model | a fresh scaffold's own `bin/setup && bin/check` is **green on the first pass**, no waiver and no fix-follow, asserted on every push in CI; every red a model does reach names the command that clears it |
 

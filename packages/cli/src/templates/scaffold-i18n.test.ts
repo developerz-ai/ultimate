@@ -46,6 +46,23 @@ describe('unit · the generated app catalog index', () => {
     }
   });
 
+  test('the catalog carries every key the shell, the hero and both dashboards read', () => {
+    const files = i18nFiles(names('demo'), '1.0.0');
+    const catalog = files.find((file) => file.path === 'packages/i18n/catalogs/en.json');
+    const parsed = JSON.parse(String(catalog?.contents)) as Record<string, Record<string, unknown>>;
+    const family = (name: string, child: string): Record<string, unknown> =>
+      (parsed[name]?.[child] ?? {}) as Record<string, unknown>;
+    // One key per family is enough to prove the family landed; the emitted i18n gate proves the rest.
+    expect(parsed['shell']?.['brand']).toBe('Demo');
+    expect(parsed['shell']?.['footer']).toBeDefined();
+    expect(family('site', 'home')['headline']).toBeDefined();
+    expect(family('site', 'home')['f3Body']).toBeDefined();
+    const dashboard = family('app', 'dashboard');
+    // Both shapes read the same file: the example's chart keys and the bare app's route keys.
+    expect(dashboard['chartLabel']).toBeDefined();
+    expect(dashboard['columnRender']).toBeDefined();
+  });
+
   test('i18nFiles still scaffolds the single-locale shape at x new time', () => {
     const files = i18nFiles(names('demo'), '1.0.0');
     const index = files.find((file) => file.path === 'packages/i18n/src/index.ts');

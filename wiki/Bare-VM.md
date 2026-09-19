@@ -79,7 +79,7 @@ warm Bun cache, `As of 2026-09-11`:
 
 | Measure | Default scaffold | `--no-example` |
 |---|---|---|
-| files written | 151 | 123 |
+| files written | 161 | 133 |
 | `bin/setup` | **6,802ms** | **5,135ms** |
 | `bin/check` | **5,389ms** | **3,909ms** |
 | the first `bin/check`'s verdict | **green, 20 of 20 steps**, `budgets` included | **green, 20 of 20 steps**, `budgets` included |
@@ -93,7 +93,7 @@ the checkout, `As of 2026-09-12`:
 
 | Measure | Default scaffold | `--no-example` |
 |---|---|---|
-| files written | 151 | 123 |
+| files written | 161 | 133 |
 | `bin/setup` | **6,665ms** | **5,994ms** |
 | `bin/check` | **7,279ms** | **4,886ms** |
 | the first `bin/check`'s verdict | **green, 20 of 20 steps pass** | **green, 20 of 20 steps pass** |

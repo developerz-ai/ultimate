@@ -146,6 +146,11 @@ const overlay = (root: string, app: string): string =>
       compilerOptions: {
         noEmit: true,
         paths: {
+          // The two subpath exports a generated app reaches for, spelled the way the packages'
+          // own `exports` maps spell them — the wildcard below would read `ui/icons/zap` as a
+          // package name. Longest prefix wins, so these are consulted first.
+          '@ultimat3/ui/icons/*': [`${root}/packages/ui/src/icons/glyphs/*`],
+          '@ultimat3/render/server': [`${root}/packages/render/src/server`],
           '@ultimat3/*': [`${root}/packages/*/src`],
           [`@${app}/web/*`]: ['./apps/web/*'],
           [`@${app}/admin/*`]: ['./apps/admin/*'],
