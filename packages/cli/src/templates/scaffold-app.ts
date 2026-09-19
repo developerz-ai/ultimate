@@ -6,10 +6,14 @@ import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { apiFiles } from './scaffold-api';
 import { authFiles } from './scaffold-auth';
+import { dashboardFiles } from './scaffold-dashboard';
 import { entryFiles } from './scaffold-entries';
+import { errorPageFiles } from './scaffold-errors';
 import { httpFiles } from './scaffold-http';
 import { icon } from './scaffold-icon';
 import { rolesFiles } from './scaffold-roles';
+import { shellFiles } from './scaffold-shell';
+import { siteFiles } from './scaffold-site';
 
 // The one dependency this manifest names, and it is not decoration: every page below reads its
 // strings through `@<app>/i18n`'s `useT()`, so the surface that renders a string DEPENDS on the
@@ -40,154 +44,6 @@ const tsconfig = (): string => `{
   "extends": "../../tsconfig.json",
   "include": ["**/*.ts", "**/*.tsx", "../../types/scss.d.ts"]
 }
-`;
-
-const sitePage = (
-  app: NameSet,
-): string => `// The landing page. site/ is 0kb JS: static render, hydrate never, no framework script tag.
-//
-// Strings come from \`useT()\` — this app's own catalog module — and never from
-// \`t\` in @ultimat3/i18n. That import is what puts the module holding \`defineCatalogs()\` in
-// this page's graph, so rendering a string is what registers the catalogs. A page that reached
-// past it shipped every string as \`\u27e6key\u27e7\` with \`x verify\` green (issue #249).
-${sortedImports([
-  `import { useT } from '@${app.kebab}/i18n';`,
-  `import { defineRoute } from '@ultimat3/render';`,
-])}
-import styles from './page.module.scss';
-
-export const config = defineRoute({
-  render: 'static',
-  hydrate: 'never',
-  offline: 'precache',
-  budget: { js: '0kb' },
-  // \`t\` is handed to \`meta\` by the router — one translator per render, resolved against the
-  // request's locale before the head is built.
-  meta: ({ t }) => ({
-    title: t('site.home.title'),
-    description: t('site.home.description'),
-  }),
-});
-
-export function HomePage() {
-  const t = useT();
-
-  return (
-    <main class={styles.hero}>
-      <h1>{t('site.home.title')}</h1>
-      <p>{t('site.home.description')}</p>
-      <a class={styles.cta} href="/dashboard">
-        {t('site.home.cta')}
-      </a>
-    </main>
-  );
-}
-
-export const appName = '${app.kebab}';
-`;
-
-const siteStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
-
-.hero {
-  display: grid;
-  gap: tokens.space(4);
-  padding: tokens.space(8);
-  background: tokens.role('bg');
-  color: tokens.role('fg');
-}
-
-.cta {
-  justify-self: start;
-  padding: tokens.space(2) tokens.space(4);
-  border-radius: tokens.radius('md');
-  background: tokens.role('accent');
-  color: tokens.role('accent-fg');
-}
-`;
-
-const sitePageTest =
-  (): string => `// The landing page ships zero JS and declares its metadata. Both are promises the file makes in
-// its config, and both are the kind that rot silently when someone adds one import.
-import { metaContextFor, routeDataFor } from '@ultimat3/render';
-import { expect, unitTest } from '@ultimat3/testing';
-import { config } from './page';
-
-// The same two objects a render builds: \`routeDataFor\` resolves the route's data once, and
-// \`metaContextFor\` wraps it the way every render mode wraps it before calling \`meta\`.
-const ctx = { params: {}, url: 'https://example.test/' };
-
-unitTest('the landing page ships zero JS and declares metadata', async () => {
-  expect(config.render).toBe('static');
-  expect(config.hydrate).toBe('never');
-  expect(config.budget.js).toBe('0kb');
-  const meta = await config.meta(metaContextFor(ctx, await routeDataFor(config, ctx)));
-  expect(meta.title ?? '').not.toBe('');
-});
-`;
-
-const dashboardPage = (
-  app: NameSet,
-): string => `// The authed dashboard. app/ streams: a static shell is flushed instantly and the holes arrive
-// as their data resolves.
-
-// \`useT()\`, not \`t\` from @ultimat3/i18n — see apps/web/site/page.tsx for why.
-${sortedImports([
-  `import { useT } from '@${app.kebab}/i18n';`,
-  `import { defineRoute } from '@ultimat3/render';`,
-])}
-import styles from './page.module.scss';
-
-export const config = defineRoute({
-  // 'ssr', not 'stream', and this is not a downgrade: 'stream' needs a boundary to stream into,
-  // and the framework has no hole marker yet. Solid's <Suspense> is not it — it throws outside a
-  // Solid renderer, and the server JSX factory is inert on purpose. A scaffolded 'stream' route
-  // therefore failed x routes with X_ROUTE_MODE_INVALID on the first run, printing a fix nobody
-  // could follow. Ship the mode that works. Async data needs no boundary: await it in the page.
-  render: 'ssr',
-  // Stated with no island on the page, deliberately and for free — \`apps/admin/app/admin/page.tsx\`
-  // carries the reason.
-  hydrate: 'visible',
-  offline: 'runtime',
-  // Auth is a policy, never a route-local flag: one authz system, evaluated everywhere.
-  policy: { permission: 'dashboard:read' },
-  budget: { js: '60kb' },
-  meta: ({ t }) => ({
-    title: t('app.dashboard.title'),
-    description: t('app.dashboard.description'),
-  }),
-});
-
-export function DashboardPage() {
-  const t = useT();
-
-  return (
-    <section class={styles.panel}>
-      <h1>{t('app.dashboard.title')}</h1>
-    </section>
-  );
-}
-`;
-
-const dashboardStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
-
-.panel {
-  padding: tokens.space(6);
-  background: tokens.role('surface-raised');
-  color: tokens.role('fg');
-}
-`;
-
-const dashboardTest =
-  (): string => `// The dashboard renders per request, is gated by a policy, and has an offline strategy. Losing
-// the policy is the interesting regression: the page still renders, to anyone.
-import { expect, unitTest } from '@ultimat3/testing';
-import { config } from './page';
-
-unitTest('the dashboard renders on the server, is gated, and has an offline strategy', () => {
-  expect(config.render).toBe('ssr');
-  expect(config.policy?.permission).toBe('dashboard:read');
-  expect(config.offline).toBe('runtime');
-});
 `;
 
 const offlineTest =
@@ -419,7 +275,8 @@ restructure.
 | Start | \`x new ${app.kebab}-${surface}\` inside this directory, or wire it by hand |
 `;
 
-/** `example` reaches only `apps/web/api/index.ts`: the slice it registers is written elsewhere. */
+/** `example` decides the API registration, the shell's nav and which dashboard is written; the
+ * slice itself is written elsewhere. */
 export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile[] {
   return [
     { path: 'apps/web/package.json', contents: webPackage(app) },
@@ -427,12 +284,14 @@ export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile
     // The process a container starts and the artifact a CDN is handed — `scaffold-entries.ts`.
     ...entryFiles(),
     { path: 'apps/web/site/icon.png', contents: icon() },
-    { path: 'apps/web/site/page.tsx', contents: sitePage(app) },
-    { path: 'apps/web/site/page.module.scss', contents: siteStyle() },
-    { path: 'apps/web/site/page.test.ts', contents: sitePageTest() },
-    { path: 'apps/web/app/dashboard/page.tsx', contents: dashboardPage(app) },
-    { path: 'apps/web/app/dashboard/page.module.scss', contents: dashboardStyle() },
-    { path: 'apps/web/app/dashboard/page.test.ts', contents: dashboardTest() },
+    // The landing page: hero, two calls to action, three feature cards — `scaffold-site.ts`.
+    ...siteFiles(app),
+    // The signed-in product: its frame and the one island it ships (`scaffold-shell.ts`), then the
+    // dashboard in the shape the invocation earns (`scaffold-dashboard.ts`).
+    ...shellFiles(app, example),
+    ...dashboardFiles(app, example),
+    // Served verbatim for those statuses and carried into the static export — `scaffold-errors.ts`.
+    ...errorPageFiles(app),
     // The third piece of the authz story the scaffold already tells twice: the routes declare a
     // policy and `shared/roles.ts` declares the grants, and until this file existed nothing
     // answered "who is this?" — so every one of those routes refused every request.

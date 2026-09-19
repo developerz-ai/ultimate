@@ -258,7 +258,7 @@ jobs:
 
       # The SECOND scaffold. `scaffold-gate.ts` takes one directory per run by design, so covering
       # both shapes is two invocations rather than a flag. `--no-example` is an app with no islands
-      # and no example slice — 123 files against the default's 151, measured with
+      # and no example slice — 133 files against the default's 161, measured with
       # `x new <name> --dry-run --json` and derived by `scripts/generator-counts.ts`, never counted
       # by hand — which is precisely why it stayed green through a default scaffold whose fix chain
       # was a loop: the steps that read emitted island and feature files had nothing to read.
