@@ -44,6 +44,29 @@ export interface CdpRequestLike {
   continue(): Promise<void>;
 }
 
+/**
+ * The page's keyboard — `page.keyboard` under puppeteer, a PROPERTY and not a method, which is why
+ * it is declared as one. `key` stays a bare `string`: the library's `KeyInput` union is its own
+ * vocabulary, and a launcher whose union is wider or narrower must still satisfy the port. The
+ * chord grammar is checked in `key-chord.ts` before any of these is called.
+ */
+export interface CdpKeyboardLike {
+  down(key: string): Promise<void>;
+  up(key: string): Promise<void>;
+  press(key: string): Promise<void>;
+}
+
+/**
+ * A raw protocol session — `page.createCDPSession()` under puppeteer. `method` and `params` are
+ * the wire's own shapes, restated as `string` and a plain record: the library's typed command map
+ * is the library's, and naming it here would make this file depend on somebody else's protocol
+ * tables. Every answer is `unknown` and is parsed by the caller (`cdp-a11y.ts`), never cast.
+ */
+export interface CdpSessionLike {
+  send(method: string, params?: Record<string, unknown>): Promise<unknown>;
+  detach(): Promise<void>;
+}
+
 export interface CdpPageLike {
   url(): string;
   goto(url: string, options?: { readonly timeout?: number }): Promise<unknown>;
@@ -97,6 +120,21 @@ export interface CdpPageLike {
    * the library's own types for them.
    */
   on(event: string, handler: (payload: unknown) => void): unknown;
+  /**
+   * OPTIONAL, read defensively, for `setOfflineMode`'s reason: a provider SDK or a launcher that
+   * predates the member must still satisfy the port. `cdp-target.ts` refuses BY NAME with
+   * `X_NOT_IMPLEMENTED` when a launcher lacks it — a chord on a page with no keyboard is a coded
+   * refusal, never a silent no-op that leaves a command palette closed and a test green.
+   */
+  readonly keyboard?: CdpKeyboardLike | undefined;
+  /** `page.focus(selector)`. OPTIONAL for `keyboard`'s reason, and refused by name when absent. */
+  focus?(selector: string): Promise<void>;
+  /**
+   * A raw protocol session, for the one read this package makes that the library has no method
+   * for: the accessibility tree (`Accessibility.getPartialAXTree`). OPTIONAL for `keyboard`'s
+   * reason, and refused by name when absent.
+   */
+  createCDPSession?(): Promise<CdpSessionLike>;
   frames(): readonly CdpFrameLike[];
   close(): Promise<void>;
 }
