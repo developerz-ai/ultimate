@@ -9,6 +9,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 ## [Unreleased]
 
 ### Added
+- **`ui.interact` on the dev MCP server (17 tools).** Drive a budgeted route through at most
+  12 steps — `{click}`, `{type: {selector, text}}` (≤500 chars), `{press}` (a key chord),
+  `{focus}`, `{wait: ms ≤ 5000 | selector}` — then photograph it (`fullPage` defaults to FALSE:
+  a dialog is judged on the fold) and, with an `inspect` block, read the same facts `ui.inspect`
+  reads, in ONE navigation. After every step the islands settle again (`runShot`'s `act` seam)
+  and one `SETTLE_POLL_MS` passes for the CSS transition; per step `{ index, kind, ms,
+  navigated, url }`. Four refusals, each whole and never a trim: `X_UI_INTERACT_STEPS_INVALID`
+  (bounds, a step with zero or two keys), `X_UI_INTERACT_SECRET_FIELD` (`<input
+  type="password">`, before any keystroke), `X_UI_INTERACT_LEFT_APP` (a step left the dev
+  server's origin; same-origin navigation is allowed and reported), `X_UI_INTERACT_STEP_FAILED`
+  (a scraping error, wrapped with `meta.step` and `meta.code`). PNG and verdict under
+  `.x/shot/<slug>/<WxH-scheme>/interact-<hash8 of the steps>/`, deterministic per step list and
+  never over `ui.shot`'s. `ok` is the verdict's, except that a navigation a step caused is not
+  the redirect the verdict fails a capture for. `ui.inspect`'s read (`readInspect`) and the
+  handler's selector/style bounding (`inspectSpecOf`) are shared, not duplicated. Part of #463
+  (step 4).
 - **`QrCode` in the catalog, with a pure-TS encoder.** One short value — a link's short URL, a join code — as static SVG: a ground `<rect>` plus one `<rect>` per dark module, `role="img"` with a translated `label`, a `quietZone` prop (default 4). No QR library: `qr-encode.ts` / `qr-matrix.ts` implement byte mode at error-correction level M for versions 1–3 only (21×21 to 29×29, a 42-byte ceiling) — the versions with at most one alignment pattern, no version block and one Reed-Solomon block, which is what keeps the encoder two pages instead of a dependency. Past the ceiling is the new `X_UI_QR_CAPACITY`, refused rather than truncated. `encodeQr` and `QrMatrix` are exported. The stylesheet is the one component allowed a theme selector: a QR must stay dark-on-light in both themes because scanners refuse the inverse, so the ground and module roles swap under both the media path and `data-theme='dark'`.
 - **`CommandPalette` in the catalog.** The ⌘K palette: a filter field over commands and destinations in a NON-modal `<dialog>` driven by its `open` attribute (never `showModal()`, so a harness with no dialog methods and a server with no DOM render it alike), a viewport-sized `box-shadow` as the scrim, roving tabindex over native buttons, and every string a prop. Controlled: the open flag, query and active item live in the caller, and the rules live in pure `command-palette-view.ts` — `filterItems`, `stepActive`, `settleActive`, `keyAction` — so a caller wires four lines instead of rewriting them.
 - **`BarChart` and `Sparkline` in the catalog.** One series as static SVG — `<rect>` bars with a quarter grid, a `<title>` per bar and `data-bar` hooks; a single `M`/`L` path with a dot on the last point — so the server-rendered shell IS the chart and nothing waits for hydration. No charting library, deliberately: the wiki's own cautionary example is a sparkline pulling one into the pricing page. Geometry in pure `bar-chart-view.ts` / `sparkline-view.ts` (`ChartPoint { key, value }`, `barRects`, `sparklinePath`).

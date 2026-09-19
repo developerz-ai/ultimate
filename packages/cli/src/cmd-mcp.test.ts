@@ -94,10 +94,10 @@ describe('unit · x mcp tools', () => {
   test('prints the framework catalog, not a list the CLI keeps', async () => {
     const result = await mcpCommand.run(context(['mcp', 'tools', '--json']));
     const { tools } = result.data as unknown as CatalogData;
-    expect(tools).toHaveLength(16);
+    expect(tools).toHaveLength(17);
     expect(tools.map((tool) => tool.name)).toContain('verify.run');
     for (const tool of tools) expect(tool.description.length).toBeGreaterThan(20);
-    expect(result.summary).toBe('mcp none serving 16 tools');
+    expect(result.summary).toBe('mcp none serving 17 tools');
     // `x mcp tools` builds the catalog, which now resolves every code's fix by walking the whole
     // framework scope — real I/O over every published package's `src`. The scan is the point and
     // the timeout is what moves. A literal rather than `scripts/lib/run.ts`'s constant: a published
@@ -198,9 +198,9 @@ describe('unit · x mcp serve --transport http', () => {
   test('the minted token is reported so an agent reads it from --json', () => {
     expect(data.url).toMatch(/^http:\/\/localhost:\d+\/mcp$/);
     expect(data.token.length).toBeGreaterThan(16);
-    expect(data.tools).toBe(16);
+    expect(data.tools).toBe(17);
     expect(data.scopes).toEqual(SCOPES);
-    expect(server.result.summary).toBe('mcp http serving 16 tools');
+    expect(server.result.summary).toBe('mcp http serving 17 tools');
   });
 
   test('no token is 401, and the body says how to get one', async () => {
@@ -237,10 +237,10 @@ describe('unit · x mcp serve --transport http', () => {
     expect(body.result.serverInfo.name).toBe('ultimate-dev');
   });
 
-  test('the minted token lists all 16 tools', async () => {
+  test('the minted token lists all 17 tools', async () => {
     const response = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, data.token);
     const body = (await response.json()) as { result: { tools: readonly ToolRow[] } };
-    expect(body.result.tools).toHaveLength(16);
+    expect(body.result.tools).toHaveLength(17);
     expect(body.result.tools.map((tool) => tool.name)).toContain('db.query');
   });
 
@@ -253,16 +253,16 @@ describe('unit · x mcp serve --transport http', () => {
 /**
  * Under `--transport stdio`, stdout is the WIRE: `serveStdio` reads JSON-RPC frames off stdin and
  * writes them to fd 1. This file's own header has always said "nothing here writes to it
- * directly", and the command's result — `✓ mcp stdio serving 16 tools`, rendered by `dispatch`
+ * directly", and the command's result — `✓ mcp stdio serving 17 tools`, rendered by `dispatch`
  * after the loop exits — went to fd 1 anyway, which is a malformed frame to whatever is still
  * reading. Under `--json` it is worse: a second document after the protocol traffic.
  */
 describe('unit · x mcp serve --transport stdio leaves stdout to the protocol', () => {
   test('the session result is addressed to stderr, and says what it served', () => {
-    const result = stdioResult(16);
+    const result = stdioResult(17);
     expect(result.stream).toBe('stderr');
-    expect(result.summary).toBe('mcp stdio serving 16 tools');
-    expect(result.data).toEqual({ transport: 'stdio', tools: 16 });
+    expect(result.summary).toBe('mcp stdio serving 17 tools');
+    expect(result.data).toEqual({ transport: 'stdio', tools: 17 });
   });
 
   test('the http transport keeps stdout: its url and token ARE the answer', async () => {

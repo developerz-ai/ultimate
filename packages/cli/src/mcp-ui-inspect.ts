@@ -11,7 +11,7 @@
 import { join } from 'node:path';
 import type { UiInspectInput, UiInspectResult, UiInspectSelector } from '@ultimat3/mcp';
 import { UI_INSPECT_LIMITS } from '@ultimat3/mcp';
-import type { AxNode, ScrapeDriver } from '@ultimat3/scraping';
+import type { AxNode, ScrapeDriver, ScrapePage } from '@ultimat3/scraping';
 import { DEFAULT_PAGE_TIMEOUT_MS } from '@ultimat3/scraping';
 import { DEFAULT_SETTLE_MS, runShot, SHOT_DIR, shotSlug } from './cmd-shot';
 import type { ShotServer } from './shot-server';
@@ -27,10 +27,40 @@ export interface InspectDeps {
 }
 
 /** What the page answered before the parser had a say — `null` selectors when it answered nothing. */
-interface Seen {
+export interface Seen {
   probe: InspectProbe | null;
   /** Per selector, in the input's order: the a11y nodes, or `null` when not asked. */
   a11y: readonly (readonly AxNode[] | null)[];
+}
+
+/** The four fields the read is built from — `ui.inspect`'s input, or `ui.interact`'s block. */
+export type InspectSpecInput = Pick<
+  UiInspectInput,
+  'selectors' | 'styles' | 'a11y' | 'activeElement'
+>;
+
+/**
+ * The read itself, on a page somebody else navigated: the one probe expression, then (on request)
+ * one accessibility round trip per selector. `.catch(() => null)` for the island probe's reason:
+ * a page that refuses evaluation is a page with no facts, and the verdict — not a throw here — is
+ * what says why. Shared by `ui.inspect` and `ui.interact`, so both read the same facts.
+ */
+export async function readInspect(page: ScrapePage, spec: InspectSpecInput): Promise<Seen> {
+  const expression = inspectExpression({
+    selectors: spec.selectors,
+    styles: spec.styles,
+    activeElement: spec.activeElement,
+  });
+  const probe = await page
+    .evaluate(expression)
+    .then(parseInspectProbe)
+    .catch(() => null);
+  if (!spec.a11y) return { probe, a11y: [] };
+  const nodes: (readonly AxNode[] | null)[] = [];
+  for (const selector of spec.selectors) {
+    nodes.push(await page.accessibility(selector, { max: UI_INSPECT_LIMITS.matches }));
+  }
+  return { probe, a11y: nodes };
 }
 
 /**
@@ -46,7 +76,7 @@ const unanswered = (selector: string): UiInspectSelector => ({
   matches: [],
 });
 
-function selectorsOf(input: UiInspectInput, seen: Seen): readonly UiInspectSelector[] {
+export function selectorsOf(input: InspectSpecInput, seen: Seen): readonly UiInspectSelector[] {
   return input.selectors.map((selector, index): UiInspectSelector => {
     const found = seen.probe?.selectors[index];
     if (found === undefined) return unanswered(selector);
@@ -96,12 +126,7 @@ export async function inspectRoute(
   deps: InspectDeps,
   input: UiInspectInput,
 ): Promise<UiInspectResult> {
-  const expression = inspectExpression({
-    selectors: input.selectors,
-    styles: input.styles,
-    activeElement: input.activeElement,
-  });
-  // A holder rather than two `let`s: an assignment inside the `act` closure does not reach the
+  // A holder rather than a `let`: an assignment inside the `act` closure does not reach the
   // narrowing below, and a `let` typed `null` after the await is what the compiler would see.
   const seen: Seen = { probe: null, a11y: [] };
   const driver = await deps.driver(input.viewport);
@@ -124,18 +149,9 @@ export async function inspectRoute(
     fullPage: true,
     colorScheme: input.colorScheme,
     act: async (page) => {
-      // `.catch(() => null)` for the island probe's reason: a page that refuses evaluation is a
-      // page with no facts, and the verdict — not a throw here — is what says why.
-      seen.probe = await page
-        .evaluate(expression)
-        .then(parseInspectProbe)
-        .catch(() => null);
-      if (!input.a11y) return;
-      const nodes: (readonly AxNode[] | null)[] = [];
-      for (const selector of input.selectors) {
-        nodes.push(await page.accessibility(selector, { max: UI_INSPECT_LIMITS.matches }));
-      }
-      seen.a11y = nodes;
+      const read = await readInspect(page, input);
+      seen.probe = read.probe;
+      seen.a11y = read.a11y;
     },
   });
   const verdict = artifacts.verdict;

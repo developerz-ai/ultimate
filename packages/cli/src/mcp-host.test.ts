@@ -31,6 +31,7 @@ const TOOL_NAMES = [
   'schema.describe',
   'tests.run',
   'ui.inspect',
+  'ui.interact',
   'ui.island',
   'ui.shot',
   'verify.run',
@@ -88,6 +89,17 @@ function fakeHost(database: DatabaseTarget, calls: HostCalls): DevHost {
     async shotIsland() {
       return { ok: true, dir: '', verdictFile: '', verdict: {} };
     },
+    async interactRoute(input) {
+      return {
+        ok: true,
+        route: input.route,
+        finalUrl: '',
+        image: '',
+        verdictFile: '',
+        verdict: {},
+        steps: [],
+      };
+    },
     async inspectRoute(input) {
       return {
         ok: true,
@@ -139,7 +151,7 @@ describe('unit · the dev tool catalog', () => {
   test('every dev tool is reachable by the local caller, by name', () => {
     const server = serverFor(BRANCH, noCalls());
     expect(server.tools.names(localCaller())).toEqual([...TOOL_NAMES]);
-    expect(TOOL_NAMES).toHaveLength(16);
+    expect(TOOL_NAMES).toHaveLength(17);
   });
 
   test('exactly the mutating tools bill the write bucket', () => {
@@ -151,6 +163,7 @@ describe('unit · the dev tool catalog', () => {
       'db.migrate',
       'tests.run',
       'ui.inspect',
+      'ui.interact',
       'ui.island',
       'ui.shot',
       'verify.run',

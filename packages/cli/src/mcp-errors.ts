@@ -59,6 +59,16 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x routes --json   # then call the ui.* tool with one of its path values',
   X_UI_SHOT_ROUTE_UNBUDGETED:
     "x build --target static --json && x verify --only budgets --json   # after declaring budget: { js: '<n>kb' } in the route file",
+  // The four `ui.interact` refusals. None can be repaired by a command — each is a change to the
+  // step list the agent sends — so each names the command that SHOWS what a valid resend needs.
+  X_UI_INTERACT_STEPS_INVALID:
+    'x help shot --json   # then resend ui.interact with at most 12 one-key steps, type.text under 500 chars and wait under 5000 ms',
+  X_UI_INTERACT_SECRET_FIELD:
+    'x shot --all-islands --json   # or --island <name>: a declared state renders the filled form without the secret ever being typed',
+  X_UI_INTERACT_LEFT_APP:
+    'x routes --json   # then resend ui.interact with steps that stay on one of its paths',
+  X_UI_INTERACT_STEP_FAILED:
+    'x routes --json   # then run ui.inspect on the route first and copy a selector it reports with count >= 1',
   // The four island-capture codes. Each one's real repair is an edit to the app's own states file
   // or component, which no command can perform — so each names the command that REPRODUCES it with
   // the file and the reason attached, which is the runnable half.

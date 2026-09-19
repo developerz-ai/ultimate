@@ -80,6 +80,10 @@ function fakeHost(database: DatabaseTarget): { host: DevHost; ran: string[] } {
       ran.push(`island:${input.island}:${input.state ?? '*'}`);
       return { ok: true, dir: '/x/island', verdictFile: '/x/island/verdict.json', verdict: {} };
     },
+    interactRoute: async (input) => ({
+      ...{ ok: true, route: input.route, finalUrl: '', image: '', verdictFile: '', verdict: {} },
+      steps: [],
+    }),
     async inspectRoute(input) {
       ran.push(
         `inspect:${input.route}:${input.viewport.width}x${input.viewport.height}:${input.colorScheme}:` +
