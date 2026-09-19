@@ -41,6 +41,10 @@ export const UI_KEYS = {
   loadMore: 'ui.load.more',
   /** InfiniteScroll: announced when the last page has arrived. */
   endOfList: 'ui.load.end',
+  /** CopyButton: the control's name before a copy. */
+  copy: 'ui.copy',
+  /** CopyButton: announced, and the control's name, once the write succeeded. */
+  copied: 'ui.copied',
   errorCode: 'ui.error.code',
   errorCause: 'ui.error.cause',
   errorFix: 'ui.error.fix',
