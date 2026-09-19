@@ -8,7 +8,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`@ultimat3/scraping`: `press`, `focus` and `accessibility` on the page vocabulary.**
+  `page.focus(selector)` waits for `actionable` and moves focus; `page.press('Meta+K')` holds each
+  modifier, presses the key and releases in reverse, with the chord parsed by `parseKeyChord`
+  BEFORE any key goes down (`X_SCRAPE_KEY_INVALID`, terminal, on every driver — `'Ctrl+K'` is
+  refused offline exactly as it is live); `page.accessibility(selector, { max })` answers the
+  browser's COMPUTED role and name per match over a raw CDP session (`cdp-a11y.ts`,
+  `Accessibility.getPartialAXTree`), detached in a `finally`. All three are REQUIRED on
+  `ScrapeTarget` where the matching `CdpPageLike` members (`keyboard`, `focus`, `createCDPSession`)
+  are optional, and a launcher lacking one is refused BY NAME. The offline drivers accept `focus`
+  (the selector must exist) and `press` (parse, then stop — no JS engine) and REFUSE
+  `accessibility` with `X_NOT_IMPLEMENTED` rather than reading `role=` off the markup; a frame of
+  the real driver refuses it too. `cdp-arm.ts` holds the request/console/`pageerror`/`error`
+  handlers `cdp-target.ts` armed, extracted verbatim because that file stood at 478 lines against
+  the 500-line ceiling. Part of #463.
 
 ## 20.1.6 - 2026-09-18
 

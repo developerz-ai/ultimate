@@ -13,13 +13,20 @@ import type { CaptureFraming } from './capture-clip';
 import type { ColorScheme } from './color-scheme';
 import type { ConsoleLine, NetworkEntry, PageError } from './rings';
 import type { SessionSnapshot } from './session-state';
-import type { ElementSnapshot, ScrapeCookie, ScrapeDownloadFile } from './target';
+import type { AxNode, ElementSnapshot, ScrapeCookie, ScrapeDownloadFile } from './target';
 
 export interface WaitOptions {
   readonly state?: ActionabilityState | undefined;
   /** Milliseconds. Falls back to the scrape's own `timeout`. */
   readonly timeout?: number | undefined;
 }
+
+/** How many matches `accessibility()` describes. A bound, because each match is a round trip. */
+export interface AccessibilityOptions {
+  readonly max?: number | undefined;
+}
+
+export const DEFAULT_ACCESSIBILITY_MAX = 25;
 
 export interface ElementValue {
   readonly tag: string;
@@ -49,6 +56,28 @@ export interface ScrapeFrame {
   /** Clears first, then types — the spelling a login form wants. */
   fill(selector: string, text: string | Secret, options?: WaitOptions): Promise<void>;
   select(selector: string, values: readonly string[], options?: WaitOptions): Promise<void>;
+  /**
+   * Waits for the element to be actionable, then moves focus to it — the setup for a `press()`,
+   * and the half of keyboard navigation a click cannot stand in for.
+   */
+  focus(selector: string, options?: WaitOptions): Promise<void>;
+  /**
+   * A key chord on whatever holds focus: `'Meta+K'`, `'Escape'`, `'Shift+Tab'`, `'Enter'`.
+   * Modifiers are `Meta`, `Control`, `Alt`, `Shift`, in the browser's own spelling — `'Ctrl+K'`
+   * is `X_SCRAPE_KEY_INVALID` on every driver, offline included, because the parse is the one
+   * thing an offline driver can be wrong about. The browser has ONE keyboard, so a chord pressed
+   * through a frame handle reaches whichever element that frame's `focus()` put focus on.
+   */
+  press(chord: string): Promise<void>;
+  /**
+   * What a screen reader is told about each match — the browser's computed role and name, after
+   * ARIA and label association, which `query()` cannot answer from attributes. At most
+   * `options.max` (default `DEFAULT_ACCESSIBILITY_MAX`) nodes, in document order. Refused with
+   * `X_NOT_IMPLEMENTED` on a driver with no accessibility engine — an offline driver, or a frame
+   * of the real one — never answered from the markup: a `<div onclick>` computing no role IS the
+   * finding, and a fake reading `role=` off the tag would hide it.
+   */
+  accessibility(selector: string, options?: AccessibilityOptions): Promise<readonly AxNode[]>;
   /**
    * Every match, as SNAPSHOTS — `visible`, `enabled` and (on a driver with a layout engine) the
    * box and hit-target, which `values()` projects away.
