@@ -8,6 +8,8 @@
 @use 'colors';
 @use 'motion';
 @use 'radius';
+@use 'space';
+@use 'typography';
 
 /// Keyboard-only focus, drawn from the accent role so it themes automatically.
 @mixin focus-ring($role: 'accent', $width: 2px, $offset: 2px) {
@@ -189,6 +191,34 @@
       backdrop-filter: blur($blur);
     }
   }
+}
+
+/// The mono family with tabular figures, for slugs, counts, timestamps, ids and URLs — data
+/// whose columns must not wobble as the value changes. Lifted from an app that had restated
+/// these two lines in six stylesheets before the catalog carried them.
+@mixin data-text {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/// The section-label voice: smallest text step, medium weight, wide tracking, uppercase. An
+/// eyebrow over a hero, a stat tile's label, a table's column head.
+@mixin label-caps {
+  font-size: typography.text('xs');
+  font-weight: typography.weight('medium');
+  letter-spacing: typography.tracking('wide');
+  text-transform: uppercase;
+}
+
+/// A dot grid faded toward the top-left, where the text sits, over the soft background — the
+/// "quietly technical" ground a hero or a dashboard main sits on. Two layers: the fade (so the
+/// dots never compete with the copy) and the grid itself, pitched on one spacing step. Every
+/// colour is a role, so it themes with the page.
+@mixin dot-grid($pitch: space.space(5), $alpha: 0.55) {
+  background:
+    radial-gradient(ellipse 70% 90% at 0% 0%, colors.role('bg') 35%, transparent 100%),
+    radial-gradient(colors.role('line', $alpha) 1px, transparent 1px) 0 0 / $pitch $pitch,
+    colors.role('bg-soft');
 }
 
 /// Inline run of items on one baseline — a toolbar, a header, an icon beside a label.

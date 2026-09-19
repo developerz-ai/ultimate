@@ -161,10 +161,17 @@ function carriesJson(tag: HeadTag): boolean {
   return type.trim().toLowerCase().endsWith('json');
 }
 
+export type ThemeFallback = 'light' | 'dark' | 'system';
+
 export interface ThemeScriptOptions {
   /** Attribute the tokens key off. Never a class, never a raw colour. */
   readonly attribute?: string;
   readonly storageKey?: string;
+  /**
+   * What a visitor with no stored choice gets. `'system'` (the default) asks the OS; `'dark'` or
+   * `'light'` is the app's own opinion — the seam `theme.defaultMode` in `app.config.ts` reaches.
+   */
+  readonly fallback?: ThemeFallback;
   /** Hard cap; a theme script that grows past this is no longer "one inlined script". */
   readonly maxBytes?: number;
 }
@@ -172,22 +179,45 @@ export interface ThemeScriptOptions {
 export const THEME_SCRIPT_MAX_BYTES = 512;
 
 /**
+ * The storage key `@ultimat3/ui`'s `ThemeToggle` reads (`THEME_STORAGE_KEY` there). One literal on
+ * each side, pinned equal by a test in `@ultimat3/cli`: render sits below ui in the tier table and
+ * cannot import it, and the two keys disagreeing was exactly the bug — the boot stamped one key,
+ * the toggle wrote another, and a visitor's choice never survived a reload.
+ */
+export const THEME_STORAGE_KEY = 'ultimate.theme';
+
+/**
+ * The script's text alone, so the CSP hash and the tag come from one string: a policy hashed from
+ * a restatement admits a script that is not the one the document carries.
+ *
+ * Only `"light"` and `"dark"` are honoured from storage — anything else (a stale value, a typo,
+ * another app's key) falls through to `fallback`, so no page can be stamped with a scheme the
+ * tokens have no block for.
+ */
+export function themeScriptBody(options: ThemeScriptOptions = {}): string {
+  const attribute = options.attribute ?? 'data-theme';
+  const storageKey = options.storageKey ?? THEME_STORAGE_KEY;
+  const fallback = options.fallback ?? 'system';
+  const os = 'matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"';
+  const otherwise = fallback === 'system' ? os : JSON.stringify(fallback);
+  // `JSON.stringify`, never a value pasted between two quotes: both options land INSIDE a JS
+  // string in a `<script>` body, where one `"` ends the string and the rest is code the page runs.
+  // Author-supplied today — the same status every `emitIslandAttributes` value had before it was
+  // routed through `html.ts`. The element's own raw-text rule is applied by `renderTag` below.
+  return (
+    `try{var s=localStorage.getItem(${JSON.stringify(storageKey)}),` +
+    `t=s==="light"||s==="dark"?s:${otherwise};` +
+    `document.documentElement.setAttribute(${JSON.stringify(attribute)},t)}catch(e){}`
+  );
+}
+
+/**
  * The injection point for the no-flash theme flip. It sets a semantic attribute and
  * nothing else — every colour is a token, so the whole scheme swap is one attribute.
  * Returns a `HeadTag` so it participates in dedupe like any other tag.
  */
 export function themeScript(options: ThemeScriptOptions = {}): HeadTag {
-  const attribute = options.attribute ?? 'data-theme';
-  const storageKey = options.storageKey ?? 'x-theme';
-  // `JSON.stringify`, never a value pasted between two quotes: both options land INSIDE a JS
-  // string in a `<script>` body, where one `"` ends the string and the rest is code the page runs.
-  // Author-supplied today — the same status every `emitIslandAttributes` value had before it was
-  // routed through `html.ts`. The element's own raw-text rule is applied by `renderTag` below.
-  const source =
-    `try{var t=localStorage.getItem(${JSON.stringify(storageKey)})||` +
-    `(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");` +
-    `document.documentElement.setAttribute(${JSON.stringify(attribute)},t)}catch(e){}`;
-
+  const source = themeScriptBody(options);
   const bytes = new TextEncoder().encode(source).byteLength;
   // `bytes > NaN` is false for every script, so a cap that arrived non-finite does not admit a
   // bigger script — it removes the only budget a 0kb `site/` route has.

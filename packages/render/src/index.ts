@@ -42,6 +42,7 @@ export type {
   HeadTagKind,
   LdRenderer,
   MetaRenderer,
+  ThemeFallback,
   ThemeScriptOptions,
 } from './head';
 export {
@@ -50,7 +51,9 @@ export {
   mergeHead,
   renderHead,
   THEME_SCRIPT_MAX_BYTES,
+  THEME_STORAGE_KEY,
   themeScript,
+  themeScriptBody,
 } from './head';
 export { headTagKey, seoRenderers, toHeadTag } from './head-seo';
 export type { IslandDirective } from './hydrate';

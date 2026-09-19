@@ -11,7 +11,9 @@ const MIXINS = new URL('./_mixins.scss', import.meta.url).pathname;
  * the test, and `expect.unreachable` says so where an empty string would pass every assertion. */
 async function body(name: string): Promise<string> {
   const source = await Bun.file(MIXINS).text();
-  const found = new RegExp(String.raw`@mixin ${name}\s*\{([^}]*)\}`).exec(source);
+  // Parameter lists may nest parentheses (`$pitch: space.space(5)`), so the list is skipped up
+  // to the first `{` rather than parsed.
+  const found = new RegExp(String.raw`@mixin ${name}[^{]*\{([^}]*)\}`).exec(source);
   return found?.[1] ?? expect.unreachable(`_mixins.scss declares no @mixin ${name}`);
 }
 
@@ -51,5 +53,33 @@ describe('visually-hidden', () => {
     expect(declarations).toMatch(/clip-path:\s*inset\(50%\)/);
     expect(declarations).toMatch(/width:\s*1px/);
     expect(declarations).toMatch(/height:\s*1px/);
+  });
+});
+
+describe('data-text', () => {
+  test('is the mono family with tabular figures — columns of data must not wobble', async () => {
+    const css = await body('data-text');
+    expect(css).toMatch(/font-family:\s*var\(--font-mono\)/);
+    expect(css).toMatch(/font-variant-numeric:\s*tabular-nums/);
+  });
+});
+
+describe('label-caps', () => {
+  test('sets size, weight and tracking from tokens, never a raw value', async () => {
+    const css = await body('label-caps');
+    expect(css).toMatch(/typography\.text\('xs'\)/);
+    expect(css).toMatch(/typography\.weight\('medium'\)/);
+    expect(css).toMatch(/typography\.tracking\('wide'\)/);
+    expect(css).toMatch(/text-transform:\s*uppercase/);
+    expect(css).not.toMatch(/\d+(px|rem|em)/);
+  });
+});
+
+describe('dot-grid', () => {
+  test('draws every layer from a colour role, so the ground themes with the page', async () => {
+    const css = await body('dot-grid');
+    expect(css).toMatch(/colors\.role\('line'/);
+    expect(css).toMatch(/colors\.role\('bg-soft'\)/);
+    expect(css).not.toMatch(/#[0-9a-f]{3,8}\b/i);
   });
 });

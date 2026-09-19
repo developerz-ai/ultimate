@@ -30,6 +30,7 @@ import {
   serviceWorkerHead,
   serviceWorkerRegistration,
 } from './sw-artifacts';
+import { loadThemeMode, themeBoot } from './theme-boot';
 
 // Re-exported, never re-declared: `static-report.ts` owns the shape because the report on disk
 // carries it, and this file already imports that module.
@@ -186,6 +187,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // wiring exists to close. `undefined` when the app is not installable, and then no document
   // names it either.
   const pwa = await loadPwaArtifacts(options.root);
+  const theme = themeBoot(await loadThemeMode(options.root));
   // The registration TAG now, the worker itself after the render loop — the two halves are wanted
   // at different moments and used to be taken at the same one. Every document below has to name
   // `/x-sw-register.js`, and the worker's precache manifest is built from the content hash of
@@ -238,6 +240,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     runWithContext(as, () =>
       routeDocument(entry, data, {
         resolveIsland: (file: string) => islands.resolverFor(file),
+        themeHead: theme.head,
         ...(pwa === undefined ? {} : { pwaHead: pwa.head + (swHead ?? '') }),
       }),
     );

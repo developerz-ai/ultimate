@@ -40,6 +40,7 @@ import { describeServices, reportedUrls, resolveServices } from './dev-services'
 import { storageRoutes } from './dev-storage';
 import { createTraceRecorder } from './dev-traces';
 import { watchTree } from './dev-watch-tree';
+import { errorPageStyleSources } from './error-page-csp';
 import { intFlagOr, PORT_RANGE } from './flag-number';
 import { holdUntilShutdown } from './hold';
 import type { IslandBundle } from './island-bundle';
@@ -59,6 +60,7 @@ import { styleBundle } from './style-bundle';
 import { styleRoutes } from './style-routes';
 import { serviceWorkerArtifacts } from './sw-artifacts';
 import { serviceWorkerRoutes } from './sw-routes';
+import { loadThemeMode, themeBoot } from './theme-boot';
 
 const DEFAULT_PORT = 3000;
 
@@ -187,6 +189,8 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   // name it. `undefined` for an app that is not installable, and then nothing is mounted and no
   // document changes — the 0kb baseline is not spent on a `<link>` to a file that does not exist.
   const pwa = await loadPwaArtifacts(options.root);
+  const theme = themeBoot(await loadThemeMode(options.root));
+  const errorStyles = await errorPageStyleSources(options.root);
   // Built once at boot, from this process's own route table and island bundle. `x dev` rebuilds
   // islands on the watcher tick and the worker is NOT rebuilt with them, deliberately: a service
   // worker that changes under a page it already controls is the update path, and re-emitting one
@@ -241,6 +245,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     ...appRoutes({
       buildId,
       resolveIsland: (file) => state.islands.resolverFor(file),
+      themeHead: theme.head,
       ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
     }),
   ];
@@ -264,23 +269,17 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     runtime,
     routes,
     env: options.env,
-    // Read from `app.config.ts` rather than threaded through `DevOptions`: it is the app's own
-    // declaration, and `x dev` and `serve.ts` must not be able to disagree about where the app's
-    // sign-in page is.
+    // Read from `app.config.ts` rather than threaded through `DevOptions`: `x dev` and `serve.ts`
+    // must not be able to disagree about where the app's sign-in page is.
     signInPath: await loadSignInPath(options.root),
-    // The same seam `serve.ts` passes: the app's own error page is a FILE, so the root is what
-    // `startWeb` needs to find one.
+    // The same seam `serve.ts` passes: the app's own error page is a FILE under this root.
     root: options.root,
-    // The documents this process serves that the app did not write — the `/_x` shell and the
-    // screenshot harness's frame. The app's OWN surfaces need no entry any more: their CSS is a
-    // content-hashed file `'self'` already admits (`style-bundle.ts`). `x dev` sends the policy
-    // report-only, so an uncovered `<style>` here is a console report rather than a blank page —
-    // which is how this reached production.
-    inlineStyles: [await devShellStyle(), FRAME_STYLE],
-    // The fourth surface, and the only one an author sees without leaving the page they broke:
-    // the overlay renders this request's own loops under the error it is already showing.
-    // `serve.ts` boots through the same `startRoles` and passes nothing, so production has no
-    // diagnostic to call.
+    // The `/_x` shell, the harness's frame, and the app's own error pages — the inline bodies this
+    // process serves; the app's surfaces are content-hashed files `'self'` admits.
+    inlineStyles: [await devShellStyle(), FRAME_STYLE, ...errorStyles],
+    inlineScripts: [theme.cspSource],
+    // The overlay renders this request's own loops under the error it is already showing.
+    // `serve.ts` boots through the same `startRoles` and passes nothing (axiom 6).
     devNotices: (ctx: RequestContext): readonly OverlayNotice[] =>
       statements.repeatsFor(asCtx(ctx)).map(loopFacts).map(loopNotice),
     // The read-replica scope, opened per request. Absent for every app that names no

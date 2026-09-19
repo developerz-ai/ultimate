@@ -11,7 +11,10 @@ import { HYDRATE_RUNTIME_BODIES } from '@ultimat3/render';
  * Hashes, never a nonce: a `render: 'static'` page is a file on disk, so no per-response value can
  * reach it. Read from `@ultimat3/render`'s own enumeration rather than restated here — the body
  * the document carries and the body the policy hashes have to be one string.
+ *
+ * `extra` is for sources the caller already hashed from a body it emits — the theme boot's,
+ * which `theme-boot.ts` derives from the same string it inlines.
  */
-export function inlineScriptSources(): readonly string[] {
-  return [...new Set(HYDRATE_RUNTIME_BODIES.map(cspHashSource))].sort();
+export function inlineScriptSources(extra: readonly string[] = []): readonly string[] {
+  return [...new Set([...HYDRATE_RUNTIME_BODIES.map(cspHashSource), ...extra])].sort();
 }

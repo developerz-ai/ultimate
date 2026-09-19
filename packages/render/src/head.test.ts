@@ -14,6 +14,7 @@ import {
   renderHead,
   THEME_SCRIPT_MAX_BYTES,
   themeScript,
+  themeScriptBody,
 } from './head';
 
 describe('mergeHead', () => {
@@ -278,7 +279,7 @@ describe('themeScript', () => {
 
   test('the script checks localStorage under the default key and falls back to matchMedia', () => {
     const tag = themeScript();
-    expect(tag.content).toContain('localStorage.getItem("x-theme")');
+    expect(tag.content).toContain('localStorage.getItem("ultimate.theme")');
     expect(tag.content).toContain('matchMedia("(prefers-color-scheme: dark)")');
     expect(tag.content).toContain('document.documentElement.setAttribute("data-theme"');
   });
@@ -287,7 +288,7 @@ describe('themeScript', () => {
     const tag = themeScript({ attribute: 'data-x-theme', storageKey: 'my-theme' });
     expect(tag.content).toContain('localStorage.getItem("my-theme")');
     expect(tag.content).toContain('document.documentElement.setAttribute("data-x-theme"');
-    expect(tag.content).not.toContain('localStorage.getItem("x-theme")');
+    expect(tag.content).not.toContain('localStorage.getItem("ultimate.theme")');
     expect(tag.content).not.toContain('setAttribute("data-theme"');
   });
 
@@ -301,6 +302,36 @@ describe('themeScript', () => {
 
   test('a script within the default cap does not throw', () => {
     expect(() => themeScript()).not.toThrow();
+  });
+
+  test("fallback: 'dark' stamps dark when storage holds no choice, and never asks the OS", () => {
+    const body = themeScriptBody({ fallback: 'dark' });
+    expect(body).toContain('t=s==="light"||s==="dark"?s:"dark"');
+    expect(body).not.toContain('matchMedia');
+  });
+
+  test("fallback: 'system' is the default and asks the OS", () => {
+    expect(themeScriptBody()).toBe(themeScriptBody({ fallback: 'system' }));
+    expect(themeScriptBody()).toContain('matchMedia("(prefers-color-scheme: dark)")');
+  });
+
+  test('a stored value that is neither light nor dark falls through to the fallback', () => {
+    // The script only honours the two schemes the tokens have blocks for; a stale or foreign
+    // value must not be stamped onto the document.
+    const body = themeScriptBody({ fallback: 'light' });
+    expect(body).toContain('s==="light"||s==="dark"?s:"light"');
+  });
+
+  test('the tag carries exactly the body, so one hash admits it', () => {
+    expect(themeScript({ fallback: 'dark' }).content).toBe(themeScriptBody({ fallback: 'dark' }));
+  });
+
+  test('every fallback stays under the 512-byte cap', () => {
+    for (const fallback of ['light', 'dark', 'system'] as const) {
+      expect(
+        new TextEncoder().encode(themeScriptBody({ fallback })).byteLength,
+      ).toBeLessThanOrEqual(THEME_SCRIPT_MAX_BYTES);
+    }
   });
 });
 

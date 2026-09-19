@@ -26,8 +26,6 @@ export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {
     "read by APP code and by `config.ts`'s own validator (`isIanaZoneName`). The framework may not read it — CLAUDE.md forbids an ambient time zone, so every framework format takes an explicit `timeZone`; this key is the value an app passes.",
   defaultCurrency:
     "read by APP code and by `config.ts`'s validator (`CURRENCY_RE`). Same shape as `defaultTimeZone`: `Money` always carries its own currency, so the framework never defaults one for you.",
-  'theme.defaultMode':
-    "read by an app's own root layout when it decides the initial `data-theme`. `@ultimat3/ui` takes the mode as a prop and never reaches for config — SUSPECT: no tracked app reads it either, so this row is the weakest of the five and is a candidate for deletion in the next major.",
   'realtime.urlEnv':
     'SUSPECT, the same defect as `cache.urlEnv`: validated by `config.ts` (`realtime.transport "nats" requires realtime.urlEnv`), value read by nobody — `packages/cli/src/dev-services.ts:38` and `cmd-jobs.ts:73` read the literal `env[\'NATS_URL\']`.',
 };
