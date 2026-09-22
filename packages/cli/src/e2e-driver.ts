@@ -14,7 +14,14 @@ import {
 import type { E2eBrowserPage, E2ePageOptions } from './e2e-page';
 import { e2ePage } from './e2e-page';
 
-export type E2eDriverOptions = E2ePageOptions;
+export interface E2eDriverOptions extends E2ePageOptions {
+  /**
+   * Switch the running app to a new build — the SERVER half no page port can speak for. Given, it
+   * becomes the `deploy` fixture's `newBuild()` and `e2eTest`'s `update()`; absent, both refuse by
+   * name. The gate's e2e preload passes the spawned app's `restart({ BUILD_ID })`.
+   */
+  readonly newBuild?: (() => Promise<void>) | undefined;
+}
 
 /**
  * A member this driver cannot build is a REFUSAL, never a no-op. A fixture that silently did
@@ -52,15 +59,21 @@ const networkFixtures = (browser: E2eBrowserPage): Pick<E2eFixtures, 'offline' |
 };
 
 /** What `e2eTest` hands its body: a real page, the network condition, and one honest refusal. */
-export const e2eFixtures = (page: PageLike, browser: E2eBrowserPage): E2eFixtures => ({
+export const e2eFixtures = (
+  page: PageLike,
+  browser: E2eBrowserPage,
+  newBuild?: () => Promise<void>,
+): E2eFixtures => ({
   page,
   ...networkFixtures(browser),
-  // The one that is still genuinely out of reach, and it is not a port gap: a new build id is a
-  // fact about the SERVER, which no page port has ever been able to speak for.
-  update: refuse(
-    'update',
-    'a second build served under a new immutable build id, which is a server fact',
-  ),
+  // A new build id is a fact about the SERVER, which no page port can speak for — so it is
+  // forwarded when whoever spawned the app can restart it, and refused by name otherwise.
+  update:
+    newBuild ??
+    refuse(
+      'update',
+      'a second build served under a new immutable build id, which is a server fact',
+    ),
 });
 
 /**
@@ -73,7 +86,7 @@ export const e2eFixtures = (page: PageLike, browser: E2eBrowserPage): E2eFixture
  * `test.skip` — which the gate now reports as a SKIPPED step rather than the green check it
  * printed until #434, and which a repo whose `x.verify.json` names `e2e` gets red for.
  *
- * `budget`, `signIn` and `deploy` are deliberately NOT registered here. Each needs something a
+ * `budget` and `signIn` are deliberately NOT registered here, and `deploy` only with `newBuild`. Each needs something a
  * page cannot supply — byte counts off a built `dist/`, an app's own sign-in route, a second build
  * — so each keeps refusing with `X_TEST_FIXTURE_UNAVAILABLE` naming what it waits for.
  *
@@ -82,16 +95,23 @@ export const e2eFixtures = (page: PageLike, browser: E2eBrowserPage): E2eFixture
  */
 export function installE2eDriver(options: E2eDriverOptions): () => void {
   const page = e2ePage(options);
-  defineFixtures({ page: () => page });
+  const newBuild = options.newBuild;
+  defineFixtures({
+    page: () => page,
+    ...(newBuild === undefined ? {} : { deploy: () => ({ newBuild }) }),
+  });
   useE2eDriver((name, body: E2eBody) => {
-    bunTest(name, () => body(e2eFixtures(page, options.page)));
+    bunTest(name, () => body(e2eFixtures(page, options.page, newBuild)));
   });
   return () => {
     // Both halves, because both were installed. Putting the DECLARATION back — rather than
     // deleting the key — is what keeps a later file's `{ page }` failing as
     // `X_TEST_FIXTURE_UNAVAILABLE` (a driver is missing) instead of `X_TEST_FIXTURE_UNKNOWN`
     // (register it), which is the wrong instruction for a name the framework declares.
-    defineFixtures({ page: unavailableFixture('page') });
+    defineFixtures({
+      page: unavailableFixture('page'),
+      ...(newBuild === undefined ? {} : { deploy: unavailableFixture('deploy') }),
+    });
     resetE2eDriver();
   };
 }

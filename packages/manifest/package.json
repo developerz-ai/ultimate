@@ -35,6 +35,7 @@
     "@ultimat3/core": "20.2.1",
     "@ultimat3/entity": "20.2.1",
     "@ultimat3/jobs": "20.2.1",
-    "@ultimat3/query": "20.2.1"
+    "@ultimat3/query": "20.2.1",
+    "@ultimat3/realtime": "20.2.1"
   }
 }

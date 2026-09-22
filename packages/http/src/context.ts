@@ -24,6 +24,7 @@ import type { AuthzDecision } from './hooks';
 import { readCookie } from './locale';
 import type { PeerIdentity } from './peer-identity';
 import type { RateLimitDecision } from './rate-limit';
+import { bindRequestServices } from './request-services';
 import type { CacheHint, RedirectIntent } from './response';
 import type { Route, RouteParams } from './router';
 
@@ -195,8 +196,11 @@ export const createRequestContext = (init: RequestContextInit): RequestContext =
       ? {}
       : { deadlineAt: init.deadlineAt }),
     ...(init.services === undefined ? {} : { services: init.services }),
+    // Registered services are bound lazily below, to the actor the `auth` stage authenticates —
+    // built here they would close over the anonymous actor for the whole request.
+    installServices: false,
   });
-  return {
+  const ctx: RequestContext = {
     ...base,
     // Everything below is either this package's own or a core member the PIPELINE rewrites: the
     // mutable slots are re-declared here so a stage can write them, and they must therefore be
@@ -227,6 +231,8 @@ export const createRequestContext = (init: RequestContextInit): RequestContext =
     response: undefined,
     error: undefined,
   };
+  bindRequestServices(ctx, init.services ?? {});
+  return ctx;
 };
 
 /**

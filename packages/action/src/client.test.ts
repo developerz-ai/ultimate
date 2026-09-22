@@ -1,10 +1,11 @@
-import { describe, expect, test } from 'bun:test';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { afterEach, describe, expect, test } from 'bun:test';
+import type { RecordRows, RecordSink, Row } from '@ultimat3/core';
+import { ERROR_DOCS_URL, pageClient, RECORDS_HEADER } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { type FetchLike, rpc } from './client';
-import { RemoteActionError, RpcFailedError } from './errors';
+import { RemoteActionError } from './errors';
 import { BUILD_ID_HEADER } from './http';
 
 const Input = t.object({ postId: t.uuid });
@@ -157,7 +158,7 @@ describe('typed client', () => {
     expect((smuggled as RemoteActionError).docs).toBe('https://app.test/problems/closed');
   });
 
-  test('a body naming no framework code is X_RPC_FAILED, not a synthesized one', async () => {
+  test('a body naming no framework code is X_CLIENT_TRANSPORT_FAILED — the code a query gets', async () => {
     for (const body of [
       { code: '' },
       { code: 'error' },
@@ -165,8 +166,11 @@ describe('typed client', () => {
       { message: 'nope' },
     ]) {
       const failure = await failWith({ body, status: 502 });
-      expect(failure).toBeInstanceOf(RpcFailedError);
-      expect((failure as RpcFailedError).code).toBe('X_RPC_FAILED');
+      // Not a synthesized code off the body, and not action's own `X_RPC_FAILED` either: one
+      // failure, one code, whichever typed client met it.
+      expect(failure).not.toBeInstanceOf(RemoteActionError);
+      expect((failure as { code?: string }).code).toBe('X_CLIENT_TRANSPORT_FAILED');
+      expect((failure as { meta?: Record<string, unknown> }).meta?.['status']).toBe(502);
     }
   });
 
@@ -330,5 +334,83 @@ describe('a document’s declared meta, off the wire', () => {
     expect(meta['sessionId']).toBe('s-1');
     expect(meta['admin']).toBeUndefined();
     expect(Object.getPrototypeOf(meta)).toBe(Object.prototype);
+  });
+});
+
+/**
+ * The records half of the one transport: an answer carrying entity rows feeds the page's one store
+ * on the way past, and the caller still gets exactly the action's output.
+ */
+describe('a response carrying records', () => {
+  const ROW: Row = { id: POST_ID, published: true };
+  const envelope = {
+    data: { id: POST_ID, published: true },
+    records: { post: { [POST_ID]: ROW } },
+  };
+
+  function sink(): RecordSink & { readonly adopted: [string, RecordRows][] } {
+    const adopted: [string, RecordRows][] = [];
+    return {
+      adopted,
+      adopt: (type, rows) => {
+        adopted.push([type, rows]);
+      },
+      remove: () => {},
+    };
+  }
+
+  afterEach(() => {
+    pageClient().store = undefined;
+  });
+
+  test('adopts the rows into the installed store and returns only the data', async () => {
+    const store = sink();
+    pageClient().store = store;
+    const fetchStub: FetchLike = async () =>
+      Response.json(envelope, { headers: { [RECORDS_HEADER]: '1' } });
+    const api = rpc<typeof actions>({ baseUrl: 'https://app.test', fetch: fetchStub });
+
+    const result = await api.publishPost({ postId: POST_ID });
+
+    expect(result).toEqual({ id: POST_ID, published: true });
+    expect(store.adopted).toEqual([['post', { [POST_ID]: ROW }]]);
+  });
+
+  test('without the header the body IS the output, even one shaped like an envelope', async () => {
+    const store = sink();
+    pageClient().store = store;
+    const fetchStub: FetchLike = async () => Response.json(envelope);
+    const api = rpc<typeof actions>({ baseUrl: 'https://app.test', fetch: fetchStub });
+
+    // The header is the only thing that makes a body an envelope; the shape never does.
+    expect(await api.publishPost({ postId: POST_ID })).toEqual(envelope as never);
+    expect(store.adopted).toEqual([]);
+  });
+
+  test('no store installed drops the rows and still answers', async () => {
+    const fetchStub: FetchLike = async () =>
+      Response.json(envelope, { headers: { [RECORDS_HEADER]: '1' } });
+    const api = rpc<typeof actions>({ baseUrl: 'https://app.test', fetch: fetchStub });
+
+    expect(await api.publishPost({ postId: POST_ID })).toEqual({ id: POST_ID, published: true });
+  });
+
+  test('the idempotency key and the caller headers reach the wire through the transport', async () => {
+    let sent: Headers | undefined;
+    const fetchStub: FetchLike = async (_url, init) => {
+      sent = new Headers(init.headers);
+      return Response.json({ id: POST_ID, published: true });
+    };
+    const api = rpc<typeof actions>({
+      baseUrl: 'https://app.test',
+      fetch: fetchStub,
+      headers: { 'x-tenant': 't1' },
+    });
+
+    await api.publishPost({ postId: POST_ID }, { idempotencyKey: 'k-1' });
+
+    expect(sent?.get('idempotency-key')).toBe('k-1');
+    expect(sent?.get('x-tenant')).toBe('t1');
+    expect(sent?.get('content-type')).toBe('application/json');
   });
 });

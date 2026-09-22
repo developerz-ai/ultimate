@@ -161,6 +161,7 @@ services:
 | `migrate` completes before `web`/`sync` start | a new schema must exist before new code reads it |
 | `web` and `sync` at 1 replica | each publishes a host port, and a host port has exactly one binder |
 | `PORT: 3000` on `sync`, published as `3001:3001` | the `sync` role binds `PORT + 1`; naming 3001 opens 3002 and publishes a socket nothing in the container ever opened |
+| `SYNC_URL=ws://<host>:3001/_x/sync` in `.env.prod` | a page dials `/_x/sync` on its own origin by default, and on this rung that is `web`'s port, which does not serve the socket. With no proxy in front, only the deployment knows where `sync` is published. The shipped compose file refuses to start `web` without it (`${SYNC_URL:?…}`). Must be `ws://` or `wss://`, else `X_CONFIG_INVALID` at boot. Unreleased, 21.0.0 |
 | `scheduler` and `replicator` at 1 replica | leader lock makes a second one a standby, not throughput |
 | `stop_grace_period` >= `DRAIN_TIMEOUT` | otherwise SIGKILL truncates the drain and the reconnect fanout |
 | Health probes from `/readyz` | never from a TCP check — a process can accept sockets while unable to serve |

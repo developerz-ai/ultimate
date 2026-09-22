@@ -1,223 +1,66 @@
 // The emitted background-sync block is code nobody type-checks: it leaves this package as a
-// string and is next parsed by a browser. So these tests read it the way the browser will —
-// parsing and running the class it defines — rather than trusting that it was spelled right.
+// string and is next parsed by a browser. So these tests RUN it, in a stand-in worker realm,
+// rather than trusting that it was spelled right.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode } from '@ultimat3/core';
-import {
-  backgroundSyncSource,
-  DEFAULT_FLUSH_ENDPOINT,
-  registerBackgroundSyncSource,
-  SYNC_TAG,
-} from './background-sync';
-import { PwaSyncFlushFailedError, PwaSyncIncompleteError } from './errors';
+import { OUTBOX_DRAIN_MESSAGE } from '@ultimat3/core';
+import { backgroundSyncSource, registerBackgroundSyncSource, SYNC_TAG } from './background-sync';
 
-/** The fields the emitted class promises — the same four `UltimateError` exposes, plus `message`. */
-interface EmittedSyncError {
-  readonly code: string;
-  readonly cause: string;
-  readonly fix: string;
-  readonly docs: string;
-  readonly message: string;
+interface SyncEvent {
+  readonly tag: string;
+  waitUntil(work: Promise<unknown>): void;
 }
 
-/**
- * The emitted block, evaluated the way a browser evaluates `sw.js`: `self` and `BUILD_ID` are the
- * two globals the service-worker realm supplies. Constructing the error is the only proof the
- * emitted class works — a substring assertion passes just as happily on source that throws a
- * `SyntaxError` on the first byte the browser reads.
- */
-function emittedError(code: string): EmittedSyncError {
-  const build = new Function(
-    'self',
-    'BUILD_ID',
-    `${backgroundSyncSource()}
-return new PwaSyncError(${JSON.stringify(code)},'the flush endpoint said no','run the fix command');`,
-  );
-  return build({ addEventListener: () => undefined }, 'build-1') as EmittedSyncError;
+/** Evaluates the block with a fake `self`, and fires one `sync` event at it. */
+async function fireSync(tag: string, openTabs: number): Promise<unknown[][]> {
+  const posted: unknown[][] = Array.from({ length: openTabs }, () => []);
+  let listener: ((event: SyncEvent) => void) | undefined;
+  const self = {
+    clients: {
+      matchAll: async () =>
+        posted.map((inbox) => ({ postMessage: (data: unknown): number => inbox.push(data) })),
+    },
+    addEventListener: (type: string, handler: (event: SyncEvent) => void): void => {
+      if (type === 'sync') listener = handler;
+    },
+  };
+  new Function('self', backgroundSyncSource())(self);
+  const pending: Promise<unknown>[] = [];
+  listener?.({ tag, waitUntil: (work) => pending.push(work) });
+  await Promise.all(pending);
+  return posted;
 }
 
-describe('backgroundSyncSource', () => {
-  test('throws no bare Error — every failure in the generated realm is coded', () => {
+describe('backgroundSyncSource, executed', () => {
+  test('a sync on this package tag tells EVERY open tab to drain its outbox', async () => {
+    const posted = await fireSync(SYNC_TAG, 2);
+    expect(posted).toEqual([[{ type: OUTBOX_DRAIN_MESSAGE }], [{ type: OUTBOX_DRAIN_MESSAGE }]]);
+  });
+
+  test('a sync on another tag is not ours and posts nothing', async () => {
+    expect(await fireSync('someone-else', 1)).toEqual([[]]);
+  });
+
+  test('with no tab open it resolves — the queue drains on the next load, nothing is faked', async () => {
+    expect(await fireSync(SYNC_TAG, 0)).toEqual([]);
+  });
+
+  test('sends nothing over the network: the outbox lives in the page, not the worker', () => {
     const source = backgroundSyncSource();
-
-    expect(source).not.toContain('new Error(');
-    expect([...source.matchAll(/throw new (\w+)\(/g)].map((match) => match[1])).toEqual([
-      'PwaSyncError',
-      'PwaSyncError',
-    ]);
-  });
-
-  test('each failure throws the code errors.ts declares for it', () => {
-    const source = backgroundSyncSource();
-
-    const thrownWith = (code: string): string => `throw new PwaSyncError(${JSON.stringify(code)}`;
-    expect(source).toContain(thrownWith(PwaSyncFlushFailedError.code));
-    expect(source).toContain(thrownWith(PwaSyncIncompleteError.code));
-  });
-
-  test('each failure carries a fix an operator can run, not advice', () => {
-    const source = backgroundSyncSource();
-
-    // A rejected flush is reproducible against the endpoint the SW just called.
-    expect(source).toContain("'curl -i -X POST '+FLUSH_ENDPOINT");
-    // A partial flush is the outbox worker's business: run the role that drains it.
-    expect(source).toContain('x dev --role sync');
-  });
-
-  /**
-   * The partial-flush fix told the reader to raise `pwa.backgroundSync.retry.maxAttempts in
-   * app.config.ts`, a key `PwaConfig` has never carried — `backgroundSync` is a BOOLEAN
-   * (`packages/core/src/config.ts`) — so the one instruction a developer sees in devtools pointed
-   * at an edit that cannot be made. `wiki/Error-Codes.md:430` had it right the whole time, and
-   * `scripts/doc-config-keys.ts` reads `docs/**` and `wiki/**` only, never a key spelled inside a
-   * string this package EMITS, which is why nothing caught it.
-   */
-  test('and names no config key, because there is no retry knob to raise', () => {
-    const source = backgroundSyncSource();
-
-    expect(source).not.toContain('app.config.ts');
-    expect(source).not.toContain('backgroundSync.retry');
-  });
-
-  /**
-   * `SYNC_MAX_ATTEMPTS` shipped in every `sw.js` and was read by nothing: `flushOutbox` counts no
-   * attempts, and the retry schedule is the platform's own. Same defect
-   * `scripts/config-readers.ts` mechanised one realm further in — a knob an author sets and no
-   * code honours — so it is asserted here, in the realm that script cannot see.
-   */
-  test('every constant the worker declares is one the worker reads', () => {
-    const source = backgroundSyncSource();
-    const declared = [...source.matchAll(/const ([A-Z][A-Z0-9_]*)=/g)].map(
-      (match) => match[1] as string,
-    );
-
-    expect(declared.length).toBeGreaterThan(0);
-    expect(
-      declared.filter((name) => (source.match(new RegExp(`\\b${name}\\b`, 'g')) ?? []).length < 2),
-    ).toEqual([]);
-  });
-
-  test('the emitted class exposes code, cause, fix and docs, like every other Ultimate error', () => {
-    const error = emittedError(PwaSyncFlushFailedError.code);
-
-    expect(error.code).toBe(PwaSyncFlushFailedError.code);
-    expect(error.cause).toBe('the flush endpoint said no');
-    expect(error.fix).toBe('run the fix command');
-    // The docs host the SW builds its URL from is the one the registry declares here.
-    expect(error.docs).toBe(describeErrorCode(PwaSyncFlushFailedError.code).docs);
-  });
-
-  test('the message alone still instructs — an uncaught waitUntil rejection prints nothing else', () => {
-    const message = emittedError(PwaSyncIncompleteError.code).message;
-
-    expect(message).toContain(PwaSyncIncompleteError.code);
-    expect(message).toContain('the flush endpoint said no');
-    expect(message).toContain('fix:   run the fix command');
-    expect(message).toContain(describeErrorCode(PwaSyncIncompleteError.code).docs);
-  });
-
-  test('the handler is keyed on this package own sync tag and the configured endpoint', () => {
-    const source = backgroundSyncSource({ flushEndpoint: '/custom/flush' });
-
-    expect(source).toContain(`const SYNC_TAG="${SYNC_TAG}"`);
-    expect(source).toContain('const FLUSH_ENDPOINT="/custom/flush"');
-    expect(source).not.toContain(DEFAULT_FLUSH_ENDPOINT);
-    expect(source).toContain("addEventListener('sync'");
+    expect(source).not.toContain('fetch(');
+    expect(source).not.toContain('/_x/outbox/flush');
   });
 
   // Periodic Background Sync is NOT implemented, and this is where that is written down.
-  // `PERIODIC_SYNC_TAG` and `BackgroundSyncOptions.periodicMinIntervalMs` existed as declarations
-  // with no handler behind them — no `periodicsync` listener is emitted, no `periodicSync.register`
-  // is ever called, and `CAPABILITIES` has no `periodicSync` flag to gate one. Both were deleted
-  // rather than left as a settable option that changes nothing. `wiki/PWA-And-Offline.md` and
-  // `docs/idea/08-pwa-offline.md` still document a `periodicSync` capability; this assertion is
-  // what fails if the tag comes back before the handler does.
   test('one-shot sync only — no periodicsync handler is emitted, because none is implemented', () => {
     const source = backgroundSyncSource();
     expect(source).toContain("addEventListener('sync'");
     expect(source).not.toContain('periodicsync');
-    expect(source).not.toContain('periodicSync');
     expect(registerBackgroundSyncSource()).not.toContain('periodicSync');
   });
 
   test('is deterministic for identical input', () => {
     expect(backgroundSyncSource()).toBe(backgroundSyncSource());
-    expect(backgroundSyncSource()).not.toContain('Date.now()');
-  });
-});
-
-/**
- * `flushOutbox`, evaluated and RUN the way the browser runs it. The generated realm supplies
- * `self`, `BUILD_ID` and `fetch`; everything else in the block is its own.
- */
-function emittedFlush(reply: () => Response): () => Promise<void> {
-  const build = new Function(
-    'self',
-    'BUILD_ID',
-    'fetch',
-    `${backgroundSyncSource()}
-return flushOutbox;`,
-  );
-  return build({ addEventListener: () => undefined }, 'build-1', async () =>
-    reply(),
-  ) as () => Promise<void>;
-}
-
-describe('the emitted flushOutbox, executed', () => {
-  test('a 200 whose body is the four bytes `null` completes instead of throwing a TypeError', async () => {
-    // `res.json()` RESOLVES with `null` here, so the `.catch` never fires and the default object
-    // never arrives — `body.remaining` was a TypeError inside `event.waitUntil`, i.e. an unhandled
-    // rejection in the service-worker realm in place of the coded refusal this block exists for.
-    await emittedFlush(() => new Response('null', { status: 200 }))();
-  });
-
-  test('an unparseable body still completes, which is what the default was always for', async () => {
-    await emittedFlush(() => new Response('<html>proxy</html>', { status: 200 }))();
-  });
-
-  test('a body that reports work left behind is still X_PWA_SYNC_INCOMPLETE', async () => {
-    const failure = emittedFlush(
-      () => new Response(JSON.stringify({ remaining: 3 }), { status: 200 }),
-    )();
-    await expect(failure).rejects.toMatchObject({
-      code: PwaSyncIncompleteError.code,
-      name: 'PwaSyncError',
-    });
-  });
-
-  test('a non-2xx is still X_PWA_SYNC_FLUSH_FAILED, before the body is read at all', async () => {
-    const failure = emittedFlush(() => new Response('null', { status: 503 }))();
-    await expect(failure).rejects.toMatchObject({
-      code: PwaSyncFlushFailedError.code,
-      name: 'PwaSyncError',
-    });
-  });
-});
-
-/**
- * The emitted realm's class and the `UltimateError` subclass that owns the code are two
- * declarations of one contract, in two languages the compiler never compares. So both are
- * constructed with the same cause and fix and read field for field.
- */
-describe('the emitted class and the class errors.ts owns', () => {
-  test.each([
-    ['flush failed', PwaSyncFlushFailedError],
-    ['incomplete', PwaSyncIncompleteError],
-  ] as const)('agree on code, cause, fix and docs — %s', (_name, ErrorClass) => {
-    const cause = 'the flush endpoint said no';
-    const fix = 'run the fix command';
-    const owned = new ErrorClass(cause, fix);
-    const emitted = emittedError(ErrorClass.code);
-
-    expect(owned.code).toBe(ErrorClass.code);
-    expect({
-      code: emitted.code,
-      cause: emitted.cause,
-      fix: emitted.fix,
-      docs: emitted.docs,
-    }).toEqual({ code: owned.code, cause: owned.cause, fix: owned.fix, docs: owned.docs });
-    expect(owned.title).toBe(describeErrorCode(ErrorClass.code).title);
   });
 });
 

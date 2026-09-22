@@ -37,6 +37,7 @@ import { UltimateError } from './errors';
 import { finiteOption } from './finite-option';
 import { traceId as newTraceId, uuid } from './ids';
 import { type Logger, logger as rootLogger, setLoggerContextFields } from './logger';
+import { installTraceHeaders } from './outbound-headers';
 import { type Role, resolveRole } from './roles';
 import { installedServices, isManagedService } from './service';
 
@@ -130,6 +131,13 @@ export interface CtxInit {
   /** Epoch ms. `@ultimat3/http`'s `startDeadline` is the one production writer. */
   readonly deadlineAt?: number | undefined;
   readonly services?: ServiceBag | undefined;
+  /**
+   * `false` installs no `defineService` factory — only `services` — and leaves the registered
+   * ones to the caller. `@ultimat3/http` is that caller: its context exists before the `auth`
+   * stage names the actor, and a service built here would act as anonymous for the whole request.
+   * Default `true`.
+   */
+  readonly installServices?: boolean | undefined;
 }
 
 /**
@@ -184,7 +192,8 @@ export function createContext(init: CtxInit = {}): Ctx {
   // wins over an auto-installed one of the same name — a test's hand-built mock overrides the
   // real thing on purpose.
   const preview: CtxFacts = Object.freeze({ ...explicit, ...fields, services: explicit });
-  const services: ServiceBag = Object.freeze({ ...installedServices(preview), ...explicit });
+  const installed = init.installServices === false ? {} : installedServices(preview);
+  const services: ServiceBag = Object.freeze({ ...installed, ...explicit });
   const ctx = {
     // Services ride ON the context, not only under `ctx.services`: `CtxServices` exists to be
     // augmented, so `ctx.posts` has to BE the service. Spread first, so a service that collides
@@ -208,6 +217,8 @@ export function createContext(init: CtxInit = {}): Ctx {
 }
 
 export function runWithContext<T>(ctx: Ctx, fn: () => T): T {
+  // A request scope is what gives an outbound typed call a budget to forward; see the module.
+  installTraceHeaders();
   return requestContext.run(ctx, fn);
 }
 

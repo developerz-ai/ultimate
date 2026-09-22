@@ -18,7 +18,7 @@ import type {
   StringSchema,
 } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
-import { type LocalRow, type Mutator, mutator } from './mutator';
+import { type Mutator, mutator } from './mutator';
 import type { ActionPolicy } from './policy-gate';
 
 /**
@@ -126,9 +126,9 @@ export function transition<
       const input = valuesOf(raw);
       // `as Partial<…>`: a computed key widens to an index signature, which is never assignable to
       // a `Partial` of a type parameter. `def.column` is `keyof Row`, so the shape is a real one.
-      tx.table<Row & LocalRow>(def.localTable).update(input.id, {
+      tx.table<Row>(def.localTable).update(input.id, {
         [def.column]: input.to,
-      } as Partial<Row & LocalRow>);
+      } as Partial<Row>);
     },
     // No cast on `from`/`to`: they are the enum's own union, which is `Row[K]`. And no legality
     // check here — `X_STATE_TRANSITION_ILLEGAL`, `X_STATE_CONFLICT` and `X_STATE_UNDECLARED` are

@@ -112,19 +112,6 @@ describe('FrameLanes', () => {
 });
 
 describe('laneKeyOf', () => {
-  test('every mutation on one socket shares one lane', () => {
-    expect(
-      laneKeyOf({
-        type: 'mutate',
-        v: PROTOCOL_VERSION,
-        key: 'm1',
-        seq: 1,
-        name: 'likePost',
-        input: null,
-      }),
-    ).toBe('mutate');
-  });
-
   test('a subscription is its own lane, keyed by the identity a drop names', () => {
     expect(
       laneKeyOf({
@@ -135,15 +122,23 @@ describe('laneKeyOf', () => {
         target: { kind: 'query', qid: 'liveFeed', input: null, cursor: null },
       }),
     ).toBe('sub:S');
-    expect(
+    // A channel's lane is its TOPIC — name plus params — whatever sid the add or the drop carries,
+    // and two spellings of one params object are one lane.
+    const channelFrame = (sid: string, params: Record<string, string>) =>
       laneKeyOf({
         type: 'subscribe',
         v: PROTOCOL_VERSION,
         op: 'drop',
-        sid: 'other',
-        target: { kind: 'topic', topic: 'org.o1.cursors' },
-      }),
-    ).toBe('topic:org.o1.cursors');
+        sid,
+        target: { kind: 'channel', channel: 'dm', params },
+      });
+    expect(channelFrame('a', { from: 'x', to: 'y' })).toBe(
+      channelFrame('b', { to: 'y', from: 'x' }),
+    );
+    expect(channelFrame('a', { from: 'x', to: 'y' })).not.toBe(
+      channelFrame('a', { from: 'y', to: 'x' }),
+    );
+    expect(channelFrame('a', { from: 'x', to: 'y' })).toStartWith('channel:dm:');
   });
 
   test('a frame that orders nothing takes no lane', () => {

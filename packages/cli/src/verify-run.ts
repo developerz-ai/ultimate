@@ -14,7 +14,7 @@ import {
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 
 /**
- * Run every step in order, never bailing early: an agent fixing three things at once needs all
+ * Run every step, never bailing early: an agent fixing three things at once needs all
  * three findings from one run, not one per round-trip.
  *
  * `ctx.only` narrows the list to one step. The narrowing lives HERE rather than in `cmd-verify.ts`
@@ -26,61 +26,43 @@ export async function runVerify(
   ctx: VerifyContext,
 ): Promise<CommandResult> {
   const floor = await readVerifyFloor(ctx.root);
-  const results: StepResult[] = [];
   const selected = ctx.only === undefined ? steps : steps.filter((step) => step.name === ctx.only);
+  const byName = new Map<string, StepResult>();
+  const began = performance.now();
+  // The static steps wait for the serial suites and then run BESIDE them — only when `live` is in
+  // the list, so a one-step run (`--only`) and a list with no serial suite keep today's order.
+  const overlapping = selected.some((step) => step.name === SERIAL_SUITES[0]);
+  const beside = overlapping ? selected.filter((step) => BESIDE_SERIAL_SUITES.has(step.name)) : [];
+  let pending: Promise<void> | undefined;
+  const join = async (): Promise<void> => {
+    await pending;
+    pending = undefined;
+  };
   for (const step of selected) {
-    const applies = step.applies === undefined ? true : await step.applies(ctx);
-    if (!applies) {
-      // A skip this repo already ruled out is not a skip. The step ran here before — the floor is
-      // that claim, committed — so "nothing to check" now means the suite was deleted, and the
-      // gate says so on the step's own line rather than counting one more thing not to worry
-      // about. Recorded as failed and NOT as skipped, so every reader of a step table sees it:
-      // the summary, `data.failed`, and the reference-app gate's own red list.
-      const required = floorRequires(floor, step.name);
-      results.push({
-        name: step.name,
-        ok: !required,
-        durationMs: 0,
-        skipped: !required,
-        findings: required ? [vanishedSuiteFinding(step.name)] : [],
-      });
-      continue;
+    if (beside.includes(step)) continue;
+    if (step.name === SERIAL_SUITES[0]) {
+      pending = Promise.all(
+        beside.map(async (other) => {
+          byName.set(other.name, await runStep(other, ctx, floor));
+        }),
+      ).then(() => undefined);
+    } else if (!SERIAL_SUITES.includes(step.name)) {
+      await join();
     }
-    const started = performance.now();
-    const outcome = await step.run(ctx).catch(
-      (error: unknown): StepOutcome => ({
-        ok: false,
-        findings: [findingOf(error, step.name)],
-      }),
-    );
-    // A suite that executed nothing did not run, whatever its exit code says: `bun test` exits 0
-    // over an all-skipped file, so the counts are the only channel that can tell the two apart.
-    // ONE definition of "nothing ran", read twice, because the floor decides which of the two
-    // things it means — exactly as it already does for a step whose `applies` said no.
-    const tests = outcome.tests;
-    const nothingRan = tests !== undefined && tests.ran === 0;
-    const required = floorRequires(floor, step.name);
-    // A step the floor requires whose suite executed nothing is the same vanished suite as a step
-    // with no files at all — the run just had to finish before it could be seen. Appended to the
-    // step's own findings so `data.failed`, the counts and every gate reading this table carry it.
-    const vanished = nothingRan && required ? [skippedSuiteFinding(step.name, tests.skipped)] : [];
-    results.push({
-      name: step.name,
-      ok: outcome.ok && vanished.length === 0,
-      durationMs: Math.round(performance.now() - started),
-      // Without a floor to require it, a suite that ran nothing is a SKIP and not a pass (#434):
-      // the `e2e` step printed `✓ e2e 46ms` over its one skipped test, which is the one thing a
-      // step table may never do — a reader cannot tell a lane that ran from a lane that did not.
-      skipped: nothingRan && !required,
-      findings: [...outcome.findings, ...vanished],
-      ...(outcome.output === undefined ? {} : { output: outcome.output }),
-      ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
-      ...(tests === undefined ? {} : { tests }),
-    });
+    byName.set(step.name, await runStep(step, ctx, floor));
   }
+  await join();
+  // Reported in the declared order, whatever order the steps finished in: the table, `--json` and
+  // every gate parsing either read the same sequence they always did.
+  const results = selected.flatMap((step) => {
+    const result = byName.get(step.name);
+    return result === undefined ? [] : [result];
+  });
   const failedSteps = results.filter((step) => !step.ok).map((step) => step.name);
   const skippedSteps = results.filter((step) => step.skipped === true).map((step) => step.name);
-  const totalMs = results.reduce((sum, step) => sum + step.durationMs, 0);
+  // WALL time, not the sum of step times: with steps overlapping, the sum overstates what a run
+  // costs, and the wall clock is the number a CI job waits on.
+  const totalMs = Math.round(performance.now() - began);
   const summary = verifySummary({
     results,
     failed: failedSteps,
@@ -137,6 +119,79 @@ function verifySummary(input: {
     return msg(clean ? 'cli.verify.pass' : 'cli.verify.passSkipped', params);
   }
   return msg(clean ? 'cli.verify.fail' : 'cli.verify.failSkipped', params);
+}
+
+/**
+ * `x verify`'s wall time was the SUM of 20 serial steps (#14, the DX ledger): measured locally, 395s,
+ * of which `lint`, `boundaries`, `filesize`, `package-shape` and `errors` were 127s spent while
+ * nothing else ran. They read the tree and write nothing a later step reads (`lint` is biome over
+ * files; the rest are in-process scans), so they run BESIDE the serial suites — `live` and `e2e`
+ * are one worker each, Postgres- and browser-bound, and mostly waiting. `typecheck` stays first
+ * and alone: `tsc -b` writes `.tsbuildinfo` and `dist/`, and `unit` saturates every core.
+ */
+export const BESIDE_SERIAL_SUITES: ReadonlySet<string> = new Set([
+  'lint',
+  'boundaries',
+  'filesize',
+  'package-shape',
+  'errors',
+]);
+
+/** The consecutive run of steps the static group overlaps, in the order `VERIFY_STEP_NAMES` holds. */
+export const SERIAL_SUITES: readonly string[] = ['live', 'job', 'e2e', 'eval'];
+
+async function runStep(
+  step: VerifyStep,
+  ctx: VerifyContext,
+  floor: Awaited<ReturnType<typeof readVerifyFloor>>,
+): Promise<StepResult> {
+  const applies = step.applies === undefined ? true : await step.applies(ctx);
+  if (!applies) {
+    // A skip this repo already ruled out is not a skip. The step ran here before — the floor is
+    // that claim, committed — so "nothing to check" now means the suite was deleted, and the
+    // gate says so on the step's own line rather than counting one more thing not to worry
+    // about. Recorded as failed and NOT as skipped, so every reader of a step table sees it:
+    // the summary, `data.failed`, and the reference-app gate's own red list.
+    const required = floorRequires(floor, step.name);
+    return {
+      name: step.name,
+      ok: !required,
+      durationMs: 0,
+      skipped: !required,
+      findings: required ? [vanishedSuiteFinding(step.name)] : [],
+    };
+  }
+  const started = performance.now();
+  const outcome = await step.run(ctx).catch(
+    (error: unknown): StepOutcome => ({
+      ok: false,
+      findings: [findingOf(error, step.name)],
+    }),
+  );
+  // A suite that executed nothing did not run, whatever its exit code says: `bun test` exits 0
+  // over an all-skipped file, so the counts are the only channel that can tell the two apart.
+  // ONE definition of "nothing ran", read twice, because the floor decides which of the two
+  // things it means — exactly as it already does for a step whose `applies` said no.
+  const tests = outcome.tests;
+  const nothingRan = tests !== undefined && tests.ran === 0;
+  const required = floorRequires(floor, step.name);
+  // A step the floor requires whose suite executed nothing is the same vanished suite as a step
+  // with no files at all — the run just had to finish before it could be seen. Appended to the
+  // step's own findings so `data.failed`, the counts and every gate reading this table carry it.
+  const vanished = nothingRan && required ? [skippedSuiteFinding(step.name, tests.skipped)] : [];
+  return {
+    name: step.name,
+    ok: outcome.ok && vanished.length === 0,
+    durationMs: Math.round(performance.now() - started),
+    // Without a floor to require it, a suite that ran nothing is a SKIP and not a pass (#434):
+    // the `e2e` step printed `✓ e2e 46ms` over its one skipped test, which is the one thing a
+    // step table may never do — a reader cannot tell a lane that ran from a lane that did not.
+    skipped: nothingRan && !required,
+    findings: [...outcome.findings, ...vanished],
+    ...(outcome.output === undefined ? {} : { output: outcome.output }),
+    ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
+    ...(tests === undefined ? {} : { tests }),
+  };
 }
 
 function findingOf(error: unknown, step: string): Finding {

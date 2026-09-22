@@ -49,6 +49,8 @@ export async function startLiveFeed(input: LiveFeedInput): Promise<RunningLiveFe
   }
   const bridge = await startLiveReplicator({
     registry: input.sync.registry,
+    // The same changes the channels read — a real node's change subscription feeds both.
+    channels: input.sync.hub,
     // Logged, never thrown: one change nobody could fan out must not take the dev server down.
     onError: (error) =>
       logger.warn('live.bridge_delivery_failed', { error: renderThrowable(error) }),

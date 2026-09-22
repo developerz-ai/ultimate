@@ -48,7 +48,20 @@ export interface RouteStats {
 
 export interface BuildStats {
   readonly routes: readonly RouteStats[];
+  /** The measurement rules that wrote the file — `BUILD_STATS_RULES` at the time. */
+  readonly measuredBy?: number;
+  /** Set by `readBuildStats` on a file an earlier rule wrote: there are no numbers to read. */
+  readonly stale?: true;
 }
+
+/**
+ * The version of the rules `measureDocumentJs` measures by. BUMP IT whenever what is charged
+ * changes — a script exempted, a kind of tag excluded — so every stats file written under the old
+ * rule stops being read as a measurement. `.x/` survives across framework upgrades, and
+ * `examples/dummy` was charged 250 B for `/x-sw-register.js` by a file written before
+ * `FRAMEWORK_SCRIPTS` exempted it. `2`: that exemption and the page-boot decision (ledger #28).
+ */
+export const BUILD_STATS_RULES = 2;
 
 const chainOf = (stats: RouteStats): string =>
   stats.heaviestChain === undefined ? 'unknown import chain' : stats.heaviestChain.join(' -> ');
@@ -78,7 +91,16 @@ function declaredBudgets(js: number | null, lcp: number | undefined): string {
  * second build's. Reporting the first as the second is what sends a reader to re-run a build that
  * already did everything it was going to do.
  */
-function unmeasuredFinding(url: string, declared: string, built: boolean): Finding {
+function unmeasuredFinding(url: string, declared: string, built: boolean, stale = false): Finding {
+  if (stale) {
+    return {
+      code: 'X_BUDGET_UNMEASURED',
+      cause: `${url} declares a ${declared} budget and ${BUILD_STATS_FILE} was written by an earlier measurement rule than this gate's (v${String(BUILD_STATS_RULES)}), so its numbers are not this gate's to read`,
+      fix: 'x build --target static --json && x verify --json',
+      docs: ERROR_DOCS_URL,
+      at: url,
+    };
+  }
   return {
     code: 'X_BUDGET_UNMEASURED',
     cause: built
@@ -153,7 +175,12 @@ export function checkBudgets(
       if (js !== null || lcp !== undefined) {
         findings.push(
           ownCodeFinding(route.url, unmeasured) ??
-            unmeasuredFinding(route.url, declaredBudgets(js, lcp), stats !== undefined),
+            unmeasuredFinding(
+              route.url,
+              declaredBudgets(js, lcp),
+              stats !== undefined,
+              stats?.stale === true,
+            ),
         );
       }
       continue;
@@ -183,7 +210,9 @@ export function checkBudgets(
 export async function readBuildStats(root: string): Promise<BuildStats | undefined> {
   const path = join(root, BUILD_STATS_FILE);
   if (!existsSync(path)) return undefined;
-  return (await Bun.file(path).json()) as BuildStats;
+  const read = (await Bun.file(path).json()) as BuildStats;
+  // A file the current rules did not write carries no numbers this gate may read.
+  return read.measuredBy === BUILD_STATS_RULES ? read : { routes: [], stale: true };
 }
 
 const SCRIPT_TAG = /<script(?<attrs>[^>]*)>(?<body>[\s\S]*?)<\/script>/g;
@@ -242,14 +271,17 @@ export interface MeasuredJs {
  * and the next build measured the one before it and recorded 250. Same commit, green then red,
  * decided by whether anything had cleaned the output directory.
  *
- * ENUMERATED, and it is one entry: `serviceWorkerHead` is the only `<script src>` the framework
- * puts in a prerendered document — measured on a fresh scaffold plus `x g island` and
- * `x g route`, where `<script src="/x-sw-register.js" defer>` is the only script tag across every
- * emitted page. Two framework scripts are deliberately NOT here. `render/src/hydrate.ts`'s inline
- * module runtime is charged, because it exists only when the page ships an island — it is the
- * cost of the app's own interactivity, and a page with a `0kb` budget has none. `island-props.ts`'
- * `<script type="application/json">` is already excluded as data, by `carriesJson`. A third one
- * joins this set by a decision, here, with the same argument.
+ * ENUMERATED, and it is one entry — the service-worker register is the only framework
+ * `<script src>` EXEMPTED, not the only one emitted. Three framework scripts are deliberately
+ * CHARGED. The page boot (plan 101: the page client, the principal fence, the sync target) is
+ * framework-emitted too, and charged by decision (DX ledger #28, 2026-09-22): it ships only on a
+ * page that hydrates something, so it is part of the interactivity the app opted into, and
+ * `examples/dummy`'s route budgets already include it. `render/src/hydrate.ts`'s inline module
+ * runtime is charged for the same reason — it exists only when the page ships an island, and a
+ * page with a `0kb` budget has none. `island-props.ts`' `<script type="application/json">` is
+ * excluded as data, by `carriesJson`, not by this set. A further entry joins this set by a
+ * decision, here, with the register's argument: every document carries it and no author can
+ * remove it.
  */
 export const FRAMEWORK_SCRIPTS: ReadonlySet<string> = new Set([SW_REGISTER_PATH]);
 
@@ -335,6 +367,7 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
  */
 export async function writeBuildStats(root: string, stats: BuildStats): Promise<string> {
   const path = join(root, BUILD_STATS_FILE);
-  await Bun.write(path, `${JSON.stringify(stats, null, 2)}\n`);
+  const stamped: BuildStats = { ...stats, measuredBy: BUILD_STATS_RULES };
+  await Bun.write(path, `${JSON.stringify(stamped, null, 2)}\n`);
   return path;
 }

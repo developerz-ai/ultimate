@@ -433,6 +433,7 @@ describe('this repository', () => {
 
       expect(measured.get('packages/core')).toEqual([
         'src/context.ts',
+        'src/core-error-codes.ts',
         'src/lifecycle-errors.ts',
         'src/schema-error-codes.ts',
         'src/secrets-errors.ts',

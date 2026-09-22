@@ -3,8 +3,8 @@
 // skeleton. Both are decisions, so both are pinned here rather than reviewed per screen.
 
 import { describe, expect, test } from 'bun:test';
+import type { AsyncState } from '@ultimat3/core';
 import {
-  type AsyncState,
   asyncBranch,
   asyncStateOf,
   isBusyBranch,

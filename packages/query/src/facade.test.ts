@@ -166,14 +166,14 @@ describe('the fluent surface', () => {
     expect((failure as { fix?: string }).fix).toBe('x queries describe orgFeed --json');
   });
 
-  test('a gateway answering instead of the app is X_RPC_FAILED', async () => {
+  test('a gateway answering instead of the app is X_CLIENT_TRANSPORT_FAILED', async () => {
     const { target } = defineFeed();
     const fetchStub: FetchLike = async () => new Response('<html>502</html>', { status: 502 });
 
     const call = target.client({ baseUrl: 'https://app.test', fetch: fetchStub });
     const failure = await call({ orgId: ORG }).catch((error: unknown) => error);
 
-    expect((failure as { code?: string }).code).toBe('X_RPC_FAILED');
+    expect((failure as { code?: string }).code).toBe('X_CLIENT_TRANSPORT_FAILED');
   });
 
   test('a named twin carries the façade, not just the name', async () => {

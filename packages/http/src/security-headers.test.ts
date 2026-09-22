@@ -221,3 +221,36 @@ describe('DEFAULT_SECURITY', () => {
     expect(DEFAULT_SECURITY.hsts).not.toBeNull();
   });
 });
+
+/**
+ * The realtime socket lives in a same-origin `SharedWorker` (`/_x/sync-worker.js`, plan 101 slice
+ * 11), and so does the service worker. `worker-src` governs both, and a policy without `'self'`
+ * there fails OPEN in the worst way: the constructor throws, the page falls back to one socket per
+ * tab, and nothing reports it. Pinned here rather than trusted to the baseline's comment.
+ */
+describe("worker-src admits the framework's own workers", () => {
+  const sources = (csp: string): string[] => directive(csp, 'worker-src').split(' ').slice(1);
+
+  test("the default policy carries worker-src 'self'", () => {
+    expect(sources(buildCsp(DEFAULT_SECURITY))).toContain("'self'");
+  });
+
+  test('an extend can widen worker-src but never drops self', () => {
+    const config: SecurityConfig = {
+      ...DEFAULT_SECURITY,
+      csp: { ...DEFAULT_SECURITY.csp, extend: { 'worker-src': ['https://cdn.example.com'] } },
+    };
+    const worker = sources(buildCsp(config));
+    expect(worker).toContain("'self'");
+    expect(worker).toContain('https://cdn.example.com');
+  });
+
+  test('report-only mode sends the same worker-src', () => {
+    const headers = securityHeaders({
+      ...DEFAULT_SECURITY,
+      csp: { ...DEFAULT_SECURITY.csp, reportOnly: true },
+    });
+    const csp = headers['content-security-policy-report-only'] ?? '';
+    expect(sources(csp)).toContain("'self'");
+  });
+});

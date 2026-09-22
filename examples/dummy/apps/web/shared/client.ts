@@ -21,6 +21,7 @@
 
 import { rpc } from '@ultimat3/action';
 import { EnvMissingError } from '@ultimat3/core';
+import { useRequestHeader } from '@ultimat3/http';
 import { queryClient } from '@ultimat3/query';
 import type { Api } from '../api';
 
@@ -61,3 +62,31 @@ export const queries = queryClient<Api['queries']>({
     return appUrl();
   },
 });
+
+/**
+ * The same reads, AS THE MEMBER WHO ASKED — what an `app/` page's `load` calls. A load runs on the
+ * server and reaches this app over HTTP, so the read is a second request, and a second request
+ * carries only what is put on it: `queries` sends no cookie, the demo authenticator then answered
+ * that request as its default member, and every `app/` page loaded ada's view — so `/posts/{id}`
+ * answered mara 403 on her own org's post while ada saw hers, and kenji's feed counted Acme as ada.
+ *
+ * The inbound `cookie`, and nothing else, onto this app's own `APP_URL` — never another origin.
+ * `useRequestHeader` and not a try-form on purpose: outside a request it throws `X_NO_REQUEST`,
+ * and a member read with no member to forward must refuse rather than fall back to the default
+ * one, which is the defect this exists to close. `site/` keeps `queries`: a public read's answer
+ * never depends on who asks, and a prerender has no request to forward.
+ */
+export const memberQueries = queryClient<Api['queries']>({
+  get baseUrl() {
+    return appUrl();
+  },
+  get headers() {
+    return memberHeaders();
+  },
+});
+
+/** What `memberQueries` puts on every read: the inbound cookie, or nothing when none was sent. */
+export function memberHeaders(): Readonly<Record<string, string>> {
+  const cookie = useRequestHeader('cookie');
+  return cookie === null ? {} : { cookie };
+}

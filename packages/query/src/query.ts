@@ -89,6 +89,15 @@ export interface QueryDef<TInput extends StandardSchemaV1, TRow extends object> 
    * is legal — a join reads relations the shape's single `entity` cannot name.
    */
   readonly subscribes?: readonly string[];
+  /**
+   * The row schema, when every row IS an entity's row — `rows: Post.$schema`. Typed against the
+   * row `sql:` answers, so a projection (`from<PostSummary>`) cannot claim a full entity's schema.
+   * It is what the route reads to answer the record envelope (`x-ultimate-records: 1`) so the
+   * page's one store adopts the rows; absent, or unbranded, the wire is the bare rows it has
+   * always been. `sql:` names a table as a STRING, so nothing else carries the schema to derive
+   * from — this key is that carrier, never a `records:` switch.
+   */
+  readonly rows?: StandardSchemaV1<unknown, TRow>;
   sql(input: InferOutput<TInput>, ctx: Ctx): SqlSource<TRow>;
   readonly cache?: QueryCache;
   readonly mcp?: QueryMcp;
@@ -179,6 +188,7 @@ export interface AnyQueryDef {
   readonly policy: QueryPolicy;
   readonly live?: boolean;
   readonly subscribes?: readonly string[];
+  readonly rows?: StandardSchemaV1;
   sql(input: unknown, ctx: Ctx): SqlSource<object>;
   readonly cache?: QueryCache;
   readonly mcp?: QueryMcp;
@@ -196,6 +206,8 @@ export interface AnyQuery {
   readonly policy: QueryPolicy;
   /** Lifted for the same reason `rateLimit` is: `toLiveQuery` cross-checks it without `defOf`. */
   readonly subscribes?: readonly string[];
+  /** Lifted for the route: whether an answer is a record envelope is decided at projection. */
+  readonly rows?: StandardSchemaV1;
   readonly cache?: QueryCache;
   readonly mcp?: QueryMcp;
   /** Lifted so `toQueryRoute` reads the declaration without reaching through `defOf`. */
@@ -240,6 +252,7 @@ export type QueryFacade<TInput extends StandardSchemaV1, TRow extends object> = 
   | 'input'
   | 'policy'
   | 'subscribes'
+  | 'rows'
   | 'cache'
   | 'mcp'
   | 'rateLimit'

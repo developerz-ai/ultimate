@@ -1,7 +1,7 @@
 // The SERVER half of the public API: the bus, the Postgres replication path, the sync node and the
 // live-query registry it fans out through. Split from `index.ts` because `nats` require()s
 // `stream/web` and the WAL decoder is a Postgres client — one barrel carrying both made the browser
-// island `useLive` promises unbuildable. Every name here has exactly one home; the shared
+// island realtime promises unbuildable. Every name here has exactly one home; the shared
 // vocabulary (the wire, the errors, `Row`, the backoff) stays on `@ultimat3/realtime`.
 
 // ---- the retained change window one node fans out from ------------------------------------------
@@ -38,14 +38,9 @@ export {
 export {
   ChannelHub,
   type ChannelHubOptions,
-  channelFrame,
   DEFAULT_MAX_TOPICS_PER_NODE,
-  type Topic,
-  type TopicGuard,
-  type TopicGuardArgs,
-  type TopicGuardResult,
-  topic,
 } from './channel';
+export { type ChannelDescription, describeChannels } from './channel-describe';
 export {
   InProcessTransport,
   type InProcessTransportOptions,
@@ -200,7 +195,6 @@ export {
   createFrameRouter,
   type FrameRouter,
   type FrameRouterOptions,
-  type MutationHandler,
 } from './sync-frames';
 export {
   type ListenOptions,

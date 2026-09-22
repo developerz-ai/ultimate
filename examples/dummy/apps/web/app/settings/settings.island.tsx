@@ -19,6 +19,11 @@
 import type { JSX } from 'solid-js';
 import { createEffect, createSignal, For } from 'solid-js';
 import { render } from 'solid-js/web';
+import type { Api } from '../../api';
+import { browserClient } from '../../shared/browser-client';
+
+/** The action's own input type — the selects hold strings the server already constrained. */
+type SavePreferencesInput = Parameters<Api['actions']['savePreferences']>[0];
 
 /** One `<option>`: the value the action takes, and the label the server already translated. */
 export interface PreferenceOption {
@@ -52,8 +57,6 @@ export interface SettingsProps {
    * save-failed` photographs the retry banner by declaring this prop.
    */
   readonly status?: SaveState;
-  /** `derivePath('savePreferences')`, minted on the server: one namer for the action's path. */
-  readonly endpoint: string;
   /** The request clock as a UTC instant. The preview reformats THIS, never the wall clock. */
   readonly nowIso: string;
   readonly locale: string;
@@ -107,23 +110,21 @@ function Preferences(props: SettingsProps): JSX.Element {
   });
 
   /**
-   * A plain `fetch` to the path the server minted, not the typed client: `rpc()` pulls
-   * `@ultimat3/action` into the chunk, which is 14.8 kB — still comparable to this whole
-   * island, and it was 42.6 kB until 2026-08-23. The naming rule
-   * is still the framework's; only the transport is second.
+   * The typed client, not a raw `fetch`: one naming rule, one transport, and the saved member row
+   * reaches the page's record store on the way back. Any refusal is the retry banner.
    */
   const save = async (): Promise<void> => {
-    const response = await fetch(props.endpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        locale: locale(),
-        tz: zone(),
-        theme: theme(),
+    try {
+      await browserClient.savePreferences({
+        locale: locale() as SavePreferencesInput['locale'],
+        tz: zone() as SavePreferencesInput['tz'],
+        theme: theme() as SavePreferencesInput['theme'],
         digestOptIn: digestOptIn(),
-      }),
-    });
-    setState(response.ok ? 'saved' : 'failed');
+      });
+      setState('saved');
+    } catch {
+      setState('failed');
+    }
   };
 
   const status = (): string => {

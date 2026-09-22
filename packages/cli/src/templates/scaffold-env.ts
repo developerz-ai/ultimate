@@ -29,6 +29,12 @@ export const SCAFFOLD_ENV_SCHEMA = {
     role: 'sync',
     description: 'Realtime fan-out cluster. Only the sync role is asked for it.',
   },
+  SYNC_URL: {
+    type: 'string',
+    required: false,
+    role: 'web',
+    description: 'Where a page dials the sync socket. Compose: ws://<host>:3001/_x/sync',
+  },
   SESSION_SECRET: {
     type: 'string',
     required: false,

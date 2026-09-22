@@ -9,6 +9,7 @@ import { describeActions } from '@ultimat3/action';
 import { describeEntities } from '@ultimat3/entity';
 import { describeJobs } from '@ultimat3/jobs';
 import { describeQueries } from '@ultimat3/query';
+import { describeChannels } from '@ultimat3/realtime/server';
 import type { ManifestSources } from './build';
 import type { ErrorCodeFact, JsonValue, PolicyFact, RouteFact, TaskFact } from './schema';
 
@@ -85,6 +86,17 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       // empty list is refused at `query()`, so absence carries the whole meaning.
       ...(query.subscribes === null ? {} : { subscribes: query.subscribes }),
       cacheTags: query.tags,
+    })),
+    // Already the fact's shape, sorted and flattened by `describeChannels` — projected field by
+    // field all the same, for the reason above.
+    channels: describeChannels().map((channel) => ({
+      name: channel.name,
+      params: channel.params,
+      catchUp: channel.catchUp,
+      records: channel.records,
+      events: channel.events,
+      policy: channel.policy,
+      permissions: channel.permissions,
     })),
     jobs: describeJobs().map((job) => ({
       name: job.name,

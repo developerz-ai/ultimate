@@ -34,6 +34,11 @@ export interface RowPatch {
   readonly row: JsonObject | null;
   readonly lsn: string;
   readonly index?: number;
+  /**
+   * The row's RECORD key when it is not its `id` — the entity's primary key, rendered by its
+   * projection on the server. Absent means the key is the `id`.
+   */
+  readonly key?: string;
 }
 
 export function isJsonObject(value: unknown): value is JsonObject {

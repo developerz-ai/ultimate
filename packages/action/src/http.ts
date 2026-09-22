@@ -6,7 +6,12 @@
  */
 
 import { tagKeys } from '@ultimat3/cache';
-import { isMcpExposed, isUltimateError } from '@ultimat3/core';
+import {
+  isMcpExposed,
+  isUltimateError,
+  RECORDS_OPENAPI_HEADER,
+  recordEnvelopeSchema,
+} from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 // `toBucket` is `@ultimat3/http`'s, not this package's: http owns `Bucket` and the limiter maths,
 // and `@ultimat3/query` needs the identical conversion while being the same tier as this one — so
@@ -26,6 +31,7 @@ import {
   toOperationId,
 } from './naming';
 import { admitsAnonymous, policyCapability } from './policy-gate';
+import { carriesRecords, recordResponse } from './record-wire';
 import { IDEMPOTENCY_HEADER } from './wire-headers';
 
 /**
@@ -49,6 +55,7 @@ export function toRoute(target: AnyAction): Route {
   // Rendered ONCE, at projection: a date that cannot become a header is a mount-time refusal,
   // not a surprise on the first request — the same rule `toBucket` follows for a rate limit.
   const sunsetting = deprecationHeadersFor(name, def.deprecated);
+  const enveloped = carriesRecords(target.output);
 
   const handler = async (req: UltimateRequest): Promise<Response> => {
     if (sunsetting !== undefined) recordDeprecatedCall('action', name);
@@ -71,7 +78,12 @@ export function toRoute(target: AnyAction): Route {
       // reader staring at `{"ok":true}`. Only this projection honours it: a redirect is an HTTP
       // fact, and the MCP tool and the job handle share none of it.
       const to = takeRedirect(req.ctx);
-      const response = to === undefined ? json(result) : redirect(to.location, to.status);
+      const response =
+        to !== undefined
+          ? redirect(to.location, to.status)
+          : enveloped
+            ? recordResponse(target.output, result)
+            : json(result);
       if (key !== null) response.headers.set(REPLAYED_HEADER, replayed ? '1' : '0');
       // On the failure path too, below: a client polling a deprecated endpoint that is currently
       // 403ing still has to learn the endpoint is going away. Announcing it only on 200 hides the
@@ -148,6 +160,8 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
   const path = derivePath(name);
   const idempotent = def.idempotent === true;
   const deprecation = deprecationMetaFor(name, def.deprecated);
+  const outputRef = schemaRef(outputSchemaName(name));
+  const enveloped = carriesRecords(target.output);
   return {
     operationId: toOperationId(name),
     tags: [path.resource],
@@ -159,10 +173,15 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
       content: { 'application/json': { schema: { $ref: schemaRef(inputSchemaName(name)) } } },
     },
     responses: {
-      '200': {
-        description: 'ok',
-        content: { 'application/json': { schema: { $ref: schemaRef(outputSchemaName(name)) } } },
-      },
+      // Only an output that references an entity row changes shape: every other operation's
+      // bytes are the ones `x verify`'s contract diff already holds.
+      '200': enveloped
+        ? {
+            description: 'ok',
+            headers: RECORDS_OPENAPI_HEADER,
+            content: { 'application/json': { schema: recordEnvelopeSchema({ $ref: outputRef }) } },
+          }
+        : { description: 'ok', content: { 'application/json': { schema: { $ref: outputRef } } } },
       // BOTH, because they are two different failures and this operation published only one of
       // them while the route answered only the other. `X_INPUT_INVALID` is the body that parsed
       // and failed THIS action's declared schema — the primitive's own code, identical over MCP,

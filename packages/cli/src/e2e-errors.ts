@@ -101,3 +101,17 @@ export class E2eServiceWorkerAbsentError extends UltimateError {
     });
   }
 }
+
+/**
+ * The app an e2e run spawns (`e2e-app.ts`) did not come up: its reset, its seed, or its boot. The
+ * cause carries that process's own output, rendered, because it is the only place the reason is.
+ */
+export class E2eAppFailedError extends UltimateError {
+  constructor(input: { readonly step: string; readonly output: string }) {
+    super({
+      code: 'X_E2E_APP_FAILED',
+      cause: `${renderCauseValue(input.step)} failed for the e2e app: ${renderCauseValue(input.output)}`,
+      fix: 'x dev --json   # boot the same app by hand and read why it would not start; the e2e run used a throwaway ULTIMATE_STATE_DIR, so your own .x is untouched',
+    });
+  }
+}

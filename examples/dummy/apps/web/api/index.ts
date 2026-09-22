@@ -21,6 +21,7 @@
  */
 
 import { defineApi } from '@ultimat3/action';
+import * as authActions from '../app/auth/actions';
 import * as contactActions from '../app/contact/actions';
 import * as contactJobs from '../app/contact/jobs';
 import * as digestJobs from '../app/digest/jobs';
@@ -31,6 +32,7 @@ import * as orgJobs from '../app/orgs/jobs';
 // installed wherever this module has run, including tests.
 import '../app/orgs/service';
 import * as postActions from '../app/posts/actions';
+import '../app/posts/channels';
 // A backfill IS a job — `backfill()` is a factory over `job()` — so it registers in the `jobs`
 // list and nowhere else. It carries its own `name`, unlike a plain job whose export name becomes
 // its queue key, because a sweep's name is a durable key the `x_backfills` ledger already holds.
@@ -47,7 +49,7 @@ import * as settingsMutators from '../app/settings/mutator';
 import * as scheduledTasks from './tasks';
 
 export const api = defineApi({
-  actions: [postActions, orgActions, settingsActions, contactActions],
+  actions: [postActions, orgActions, settingsActions, contactActions, authActions],
   mutators: [postMutators, settingsMutators],
   queries: [postQueries],
   jobs: [postJobs, postBackfills, orgJobs, digestJobs, contactJobs],

@@ -12,29 +12,35 @@ import { join, posix } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { RouteEntry } from '@ultimat3/render';
 import { ISLAND_EXTENSION, routeEntries } from '@ultimat3/render';
+import { discoverIslands } from './island-bundle';
 import type { Finding } from './output';
 
 /**
- * The exports that only work with a registered `LiveClient`. Each one either subscribes, mutates
- * or reads the connection, so a module naming one is a module that needs a browser to have booted
- * it — `hasLiveClient` and `LiveClient` itself are deliberately absent: the first IS the guard, and
- * the second is what an island's `mount()` constructs.
+ * The exports that only work in a booted browser page: each one reads the page's store, its socket
+ * or its connection, so a module naming one needs an island to have run it. `hasPageSocket` is
+ * deliberately absent — it IS the guard — and so is `installRealtime`, which the island bundle
+ * writes for the author (plan 101, slice 14).
  */
 export const LIVE_HOOKS = [
-  'useLive',
-  'liveHookFor',
+  'useQuery',
   'useConnection',
   'useMutation',
   'useMutationQueue',
+  'useRecord',
+  'useChannel',
 ] as const;
 
 /**
- * The one escape hatch, and it is a call an author writes on purpose: a module that ASKS whether
- * there is a client has already written what happens when there is none. `app/update-banner.tsx`
- * in the reference app is the shape — imported by the layout, so by every page, and correct on all
- * of them.
+ * NOT an escape hatch, `As of 2026-09-22`: `hasPageSocket()` answers false on the server, every
+ * time, so a module that guards on it and never runs in a browser renders nothing forever. It was
+ * exempted here — "a module that asks has handled the absence" — and that is exactly how
+ * `examples/dummy`'s update banner, in a layout no island imports, never showed "A new version is
+ * ready.". It is a browser-only read like any hook, so it is reported like one.
  */
-const GUARD = 'hasLiveClient';
+const GUARD = 'hasPageSocket';
+
+/** Everything that only means something in a booted browser page: the hooks, and the guard. */
+const BROWSER_ONLY: readonly string[] = [GUARD, ...LIVE_HOOKS];
 
 /** Value imports only: `import type` is erased, so it boots nothing and needs nothing. */
 const REALTIME_IMPORT = /import\s+([^;]*?)from\s*['"]@ultimat3\/realtime(?:\/[\w-]+)?['"]/g;
@@ -45,18 +51,14 @@ const bindingsOf = (clause: string): readonly string[] =>
     .map((entry) => entry.split(/\bas\b/)[0]?.trim() ?? '')
     .filter((name) => name.length > 0 && !name.startsWith('type '));
 
-/**
- * Which live hooks one module imports, or `[]` — including for a module that guards, which is a
- * per-FILE verdict on purpose: the guard is written next to the read it protects.
- */
+/** Which browser-only reads one module imports — the hooks and `hasPageSocket` — or `[]`. */
 export function liveHooksIn(source: string): readonly string[] {
   const hooks: string[] = [];
   for (const match of source.matchAll(REALTIME_IMPORT)) {
     const clause = match[1] ?? '';
     if (clause.trimStart().startsWith('type ')) continue;
     const names = bindingsOf(clause);
-    if (names.includes(GUARD)) return [];
-    for (const hook of LIVE_HOOKS) if (names.includes(hook)) hooks.push(hook);
+    for (const hook of BROWSER_ONLY) if (names.includes(hook)) hooks.push(hook);
   }
   return hooks;
 }
@@ -88,14 +90,18 @@ export interface LiveReach {
 }
 
 /**
- * Walk the route module's own import graph and answer the first live hook in it.
+ * Walk a module's own import graph and answer the first thing `probe` finds in it.
  *
  * Relative specifiers only. A bare one resolves through `node_modules` or a workspace name, and
  * following either would mean guessing which package a name came from — the limit `fix-imports.ts`
  * records for the same walk. So this UNDER-reports rather than over-reports: a finding here is
  * always a real one, which is what lets the rule ship with no pin table.
  */
-export async function liveReachOf(root: string, file: string): Promise<LiveReach | undefined> {
+export async function firstInGraph<T>(
+  root: string,
+  file: string,
+  probe: (source: string, path: string) => T | undefined,
+): Promise<T | undefined> {
   const seen = new Set<string>();
   const queue = [file];
   while (queue.length > 0) {
@@ -104,8 +110,8 @@ export async function liveReachOf(root: string, file: string): Promise<LiveReach
     seen.add(next);
     const module = await readModule(root, next);
     if (module === undefined) continue;
-    const hook = liveHooksIn(module.source)[0];
-    if (hook !== undefined) return { at: module.path, hook };
+    const found = probe(module.source, module.path);
+    if (found !== undefined) return found;
     const loader = module.path.endsWith('x') ? 'tsx' : 'ts';
     // Bun's transpiler is the parser, exactly as in `scripts/boundaries.ts`: it erases type-only
     // imports and finds the dynamic ones, which no regex over this source could do.
@@ -115,6 +121,36 @@ export async function liveReachOf(root: string, file: string): Promise<LiveReach
     }
   }
   return undefined;
+}
+
+/** Every module in a file's relative import graph, app-root-relative — one walk, no probe. */
+export async function graphModules(root: string, file: string): Promise<ReadonlySet<string>> {
+  const seen = new Set<string>();
+  await firstInGraph(root, file, (_source, path) => {
+    seen.add(path);
+    return undefined;
+  });
+  return seen;
+}
+
+/** Every module a browser can run: the union of every island's graph in the app. */
+async function islandModules(root: string): Promise<ReadonlySet<string>> {
+  const modules = new Set<string>();
+  for (const island of await discoverIslands(root)) {
+    for (const path of await graphModules(root, island)) modules.add(path);
+  }
+  return modules;
+}
+
+/** Each module in the route's graph that reads a browser-only name, with the first name it reads. */
+async function browserOnlyReads(root: string, file: string): Promise<readonly LiveReach[]> {
+  const reads: LiveReach[] = [];
+  await firstInGraph(root, file, (source, path) => {
+    const hook = liveHooksIn(source)[0];
+    if (hook !== undefined) reads.push({ at: path, hook });
+    return undefined;
+  });
+  return reads;
 }
 
 export interface LiveRouteGap extends LiveReach {
@@ -132,28 +168,34 @@ const generatorFor = (file: string): string => {
 };
 
 /**
- * Every route that reads live rows with nothing to receive them. Two shapes, one condition — no
- * island at all, and an island the route declares `hydrate: 'never'` for. `X_ISLAND_NOT_HYDRATED`
- * covers the second only at render time, and only for a render that reaches the island, so a route
- * can hold the contradiction and never be asked.
+ * Every browser-only read a route's SERVER graph holds that no browser will ever run. A page's
+ * imports are server-rendered — an island is reached by a `src` string, never an import — so a
+ * module there runs in a browser only if some island's own graph imports it too. Anything else
+ * renders its server state (nothing, or `loading`) forever, at 200. `hydrate: 'never'` boots no
+ * island at all, so every read on such a route is reported. One finding per MODULE: a layout every
+ * page imports is one mistake, not one per route.
  */
 export async function liveRouteGaps(
   root: string,
   entries: readonly RouteEntry[],
 ): Promise<readonly LiveRouteGap[]> {
+  const inBrowser = await islandModules(root);
+  const reported = new Set<string>();
   const gaps: LiveRouteGap[] = [];
   for (const entry of entries) {
     if (entry.surface === 'api') continue;
-    if (entry.islands.length > 0 && entry.config.hydrate !== 'never') continue;
-    const reach = await liveReachOf(root, entry.file);
-    if (reach === undefined) continue;
-    gaps.push({
-      ...reach,
-      route: entry.path,
-      file: entry.file,
-      hydrate: entry.config.hydrate,
-      islands: entry.islands,
-    });
+    const never = entry.config.hydrate === 'never';
+    for (const read of await browserOnlyReads(root, entry.file)) {
+      if (reported.has(read.at) || (!never && inBrowser.has(read.at))) continue;
+      reported.add(read.at);
+      gaps.push({
+        ...read,
+        route: entry.path,
+        file: entry.file,
+        hydrate: entry.config.hydrate,
+        islands: entry.islands,
+      });
+    }
   }
   return gaps;
 }
@@ -161,14 +203,12 @@ export async function liveRouteGaps(
 export const liveRouteFindingFor = (gap: LiveRouteGap): Finding => ({
   code: 'X_LIVE_ROUTE_NO_ISLAND',
   cause:
-    `${gap.route} reads ${gap.hook}() (${gap.at}) and ` +
-    (gap.islands.length === 0
-      ? 'declares no island'
-      : `declares hydrate: 'never' beside ${gap.islands.join(', ')}`) +
-    ', so no module of this route ever runs in a browser: its rows have nowhere to arrive and the page renders its loading branch forever, at 200',
+    `${gap.route} reads ${gap.hook}() in ${gap.at}, which ` +
+    (gap.hydrate === 'never' ? `sits on a route declaring hydrate: 'never'` : 'no island imports') +
+    ' — so it only ever runs on the server, where it answers its server state (nothing, or loading) forever, at 200',
   fix:
-    `${generatorFor(gap.file)}, declare it with island({ src: './${posix.basename(posix.dirname(gap.file))}${ISLAND_EXTENSION}' }) above defineRoute in ${gap.file}, ` +
-    `and move the ${gap.hook}() read into its mount() — which is where setLiveClient() can be called`,
+    `move it into an island: ${generatorFor(gap.file)}, import ${gap.at} from that island's mount(), and declare it with island({ src: './${posix.basename(posix.dirname(gap.file))}${ISLAND_EXTENSION}' }) in ${gap.file}` +
+    (gap.hydrate === 'never' ? `, with a hydrate other than 'never'` : ''),
   docs: ERROR_DOCS_URL,
   at: gap.at,
 });

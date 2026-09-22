@@ -62,8 +62,29 @@ Locale and zone are declared per test when the behavior under test depends on th
 | **contract** | `x test contract` | an action's input/output schema, its policy denials, its emitted OpenAPI + MCP tool shape | cloned DB |
 | **live** | `x test live` | a live query's initial snapshot, incremental patches on write, reconnect delta, and that a policy-failing row is never delivered | cloned DB + in-process replicator + in-process NATS |
 | **job** | `x test job` | step-level replay (a step already run is not re-run), idempotency-key dedupe, retry/backoff, concurrency and rate limits, outbox atomicity on rollback | cloned DB + frozen clock |
-| **e2e** | `x test e2e` | real browser against the built output: render mode behavior, streaming holes filling, hydration timing, SW install + offline fallback, version-skew reload | built app + cloned DB |
+| **e2e** | `x test e2e` | a real browser (Chrome over raw CDP, no Playwright) against the app: render mode behavior, streaming holes filling, hydration timing, SW install + offline fallback, version-skew reload, two tabs, offline writes | the app spawned on a throwaway database (`ULTIMATE_STATE_DIR`) + a real browser, when Chrome is present |
 | **eval** | `x test eval` | prompt quality vs. a baseline: exact, schema, rubric (judge), or regression tolerance | pinned models, recorded fixtures |
+
+**The e2e step drives a real browser, `As of 2026-09-22`** (21.0.0, unreleased). When Chrome is on the
+machine, `x verify`'s `e2e` step spawns the app with `startE2eApp` (reset, seed, boot, on its own
+throwaway `ULTIMATE_STATE_DIR`) and runs the suite with a real `page`
+(`packages/cli/src/verify-e2e.ts`). **Before this, the reference app's e2e suite ran with no
+browser at all**, and its browser-backed cases skipped under a green gate; this page described
+them as running. The session API (`openE2eBrowser()`, `cdpE2eSession`) can open a second tab in the
+same profile (`newTab`) and add an init script. It can take the page offline, workers included,
+and set cookies. It lists the page's sockets and requests, reads IndexedDB database names, and
+waits for an expression (`waitFor`). That is what the two-tab and offline cases rest on. The spawned
+app runs with `APP_URL` set to its own origin, `NODE_ENV` stripped and `ULTIMATE_ENV=development`:
+a `NODE_ENV=test` inherited from `bun test` made it resolve as `test`, and a missing `APP_URL`
+answered 500 with `X_ENV_MISSING`. Readiness is polled over `node:http`, because the e2e preload
+seals `fetch` against egress. Each e2e test gets 60 s (`E2E_TEST_TIMEOUT_MS`). A spawned app
+that will not come up is `X_E2E_APP_FAILED`.
+
+| Fixture or call | What it is |
+|---|---|
+| `e2eApp()` | the spawned app: `{ base, stateDir, stop(), restart(env?) }` |
+| `deploy.newBuild()` | restarts the app with a new `BUILD_ID`, so a version-skew test sees a real deploy. Registered only when the runner can restart the app (`installE2eDriver({ newBuild })`); refused by name otherwise. `x dev` honours a set `BUILD_ID` for this |
+| the liveness probe | between tests the preload asks the browser to answer (`answersWithin`) and relaunches one that stopped, so one crashed tab fails one test, not the rest of the suite |
 
 Each type is a first-class runner with its own fixture shape — not a naming convention on top of one runner. Every command supports `--json`.
 
@@ -393,7 +414,7 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 | `contract` | action/query schemas, policy denials, emitted OpenAPI and MCP shapes |
 | `live` | live-query snapshot, incremental patches, reconnect delta, policy-filtered rows |
 | `job` | step replay, idempotency dedupe, retry/backoff, concurrency, outbox atomicity |
-| `e2e` | the built output under Playwright, offline and SW update included |
+| `e2e` | a real browser (raw CDP, no Playwright) against the app, spawned on a throwaway database, when Chrome is on the machine; otherwise its browser cases skip, or refuse under `E2E_BROWSER_REQUIRED=1` |
 | `eval` | a prompt scoring below its committed baseline, or a prompt with no eval at all |
 | `drift` | schema differs from migrations, or a migration is not reversible-or-marked |
 | `contract-diff` | a breaking change to a published action/query without a version bump |

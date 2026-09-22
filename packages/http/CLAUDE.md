@@ -126,6 +126,21 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `logger` loses to the request's own field and stays reachable as `ctx.services['actor']`; the
   context's meaning never depends on what an app named a service. `context.test.ts` pins the
   factory install, the spread and the collision order.
+- **A member's saved locale and zone apply, re-resolved after `auth`** (21.0.0). The `locale`
+  stage runs before `auth`, so it resolved from the cookie and `Accept-Language` alone and the
+  `user` rung of `resolveLocale` / `resolveTimeZone` was filled by nothing since 2.0.0. Core's
+  `Actor` now carries `locale?` / `tz?` (the saved preferences, set by whoever authenticates), and
+  the `auth` stage re-runs `resolvePreferences` when either is present — the owners' order, so a
+  locale cookie still beats a saved locale and a saved zone beats the cookie. `member-preferences.test.ts`.
+- **A request's registered services are LAZY and bound to the actor that authenticated**
+  (`request-services.ts`, 21.0.0). The context is built before the `auth` stage names anyone, and
+  core's constructor built every `defineService` factory right there — so every service acted as
+  the anonymous actor for the whole request while `ctx.actor` read the real one: the reference
+  app's like answered 500 `X_ORG_NOT_A_MEMBER` for a member. `createRequestContext` passes core
+  `installServices: false` and `bindRequestServices` turns `ctx.services` and each registered
+  `ctx.<name>` into getters: built on first read, rebuilt only if the actor, locale or tz it closed
+  over changed. One build for a handler; a hook that reads a service before auth gets its own.
+  `request-services.test.ts` drives the real pipeline. Pre-existing since 13.0.0.
 - **The two inbound ids are read BEFORE the context and the span, in `correlation.ts`.** `startSpan`
   resolves its parent from `currentSpanContext()`, which reads `ctx.traceId`, so a `traceparent`
   parsed by a stage arrived one frame after the span's context was already frozen: the caller's

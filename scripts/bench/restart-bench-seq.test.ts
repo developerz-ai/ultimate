@@ -5,9 +5,11 @@ import { describe, expect, test } from 'bun:test';
 import {
   beginSeqEpoch,
   newSeqCounters,
+  recordReplayGap,
   recordSeq,
   type SeqCounters,
   summarizeSeq,
+  unrepairedFindings,
 } from './restart-bench-seq';
 
 /** Feeds a whole stream and returns what each value parsed to, so no call is a bare statement. */
@@ -122,6 +124,10 @@ describe('unit · restart-bench seq accounting', () => {
       received: 5,
       missing: 2,
       gapEvents: 1,
+      replayGaps: 0,
+      repaired: 0,
+      unrepaired: 2,
+      clientsUnrepaired: 1,
       duplicates: 0,
       rewinds: 0,
       malformed: 0,
@@ -136,9 +142,54 @@ describe('unit · restart-bench seq accounting', () => {
       received: 0,
       missing: 0,
       gapEvents: 0,
+      replayGaps: 0,
+      repaired: 0,
+      unrepaired: 0,
+      clientsUnrepaired: 0,
       duplicates: 0,
       rewinds: 0,
       malformed: 0,
     });
+  });
+});
+
+describe('unit · restart-bench repair accounting', () => {
+  test('a hole followed by replay-gap is repaired, not lost', () => {
+    const counters = newSeqCounters();
+    feed(counters, 1, 2, 5);
+    expect(counters.pending).toBe(2);
+    recordReplayGap(counters);
+    expect(counters).toMatchObject({ missing: 2, repaired: 2, pending: 0, replayGaps: 1 });
+    expect(unrepairedFindings(summarizeSeq([counters]))).toEqual([]);
+  });
+
+  test('a hole with no replay-gap after it is the run failing, and says how much', () => {
+    const repaired = newSeqCounters();
+    feed(repaired, 1, 3);
+    recordReplayGap(repaired);
+    const lost = newSeqCounters();
+    feed(lost, 1, 2, 4, 7);
+    const summary = summarizeSeq([repaired, lost]);
+    expect(summary).toMatchObject({ missing: 4, repaired: 1, unrepaired: 3, clientsUnrepaired: 1 });
+    expect(unrepairedFindings(summary)).toEqual([
+      expect.stringContaining('3 channel frame(s) lost on 1 client(s)'),
+    ]);
+  });
+
+  test('the replay-gap the node sends BEFORE the next frame covers the hole that frame reveals', () => {
+    const counters = newSeqCounters();
+    feed(counters, 1, 2);
+    recordReplayGap(counters); // seq 3 was dropped; the node answers before sending 4
+    feed(counters, 4, 5, 7); // 3 is covered by the re-read; 6 is not — nothing answered it
+    expect(counters).toMatchObject({ missing: 2, repaired: 1, pending: 1 });
+  });
+
+  test('a replay-gap repairs a hole left on a connection that has since closed', () => {
+    const counters = newSeqCounters();
+    feed(counters, 1, 3);
+    beginSeqEpoch(counters);
+    feed(counters, 40, 41);
+    recordReplayGap(counters);
+    expect(summarizeSeq([counters]).unrepaired).toBe(0);
   });
 });

@@ -6,17 +6,17 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 
 | May import | Must not |
 |---|---|
-| `@ultimat3/core`, `@ultimat3/query` | anything tier 4+ (`render`, `pwa`, `mcp`, `ui`, `cli`) |
+| `@ultimat3/core`, `@ultimat3/query`, `@ultimat3/entity` (`/record` only: `recordTypeForTable`, server-side) | anything tier 4+ (`render`, `pwa`, `mcp`, `ui`, `cli`) |
 | `@ultimat3/policy` **only via** `@ultimat3/query`'s `guard` | a second authz path of any kind |
-| — | `solid-js` (the client takes an injected signal factory) |
+| — | `solid-js` (each island bundle installs its own signal factory: `installRealtime`) |
 | `nats` (the one external dependency, pinned exact) — from `nats-lib-client.ts`, and no other file | `nats` from anywhere else: a second importer is the failure this row exists to prevent. Every other file is written against the port in `nats-client.ts` |
 
 ## Rules
 
 - **Two entries, and a name lives in exactly ONE of them (2026-08-22, BREAKING).** `.` is the
-  client half — `hooks`, `client*`, `identity-map`, `live-rows`, `apply-patches`, `offline-queue`,
-  `rebase`, `local-store`, `sync-protocol`, `json`, `cursor`, `errors`, and the client's half of
-  `thundering-herd`. `./server` (`src/server.ts`) is everything that touches `nats`, Postgres, the
+  client half — `use-*` hooks, `page-*`, `reactivity`, `record-*`, `client*`, `browser-socket`,
+  `live-rows`, `apply-patches`, `offline-queue`, `sync-protocol`, `json`, `cursor`, `errors`, and
+  the client's half of `thundering-herd`. `./server` (`src/server.ts`) is everything that touches `nats`, Postgres, the
   sync node, the channel hub, the live-query registry or the fanout. The reason is measured, not
   aesthetic: `nats` `require()`s `stream/web`, so one barrel carrying `openNatsClient` beside
   `useLive` failed `bun build --target=browser` with
@@ -51,7 +51,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   does not accept `persist` either. `fix-specifier.test.ts` is the build error — every
   `@ultimat3/realtime/<subpath>` written in shipped source must be a key of `exports`, comments
   included, because a comment naming a subpath that does not exist is the next fix line's source.
-  It cannot see WHICH names a fix promises, so the OPFS one is pinned by name beside it.
+  The OPFS refusal it was written for is deleted with `local-store.ts` (21.0.0).
 - **`@ultimat3/realtime/server` needs its own `paths` entry in `tsconfig.base.json`**, beside
   `@ultimat3/admin/dev`'s. `@ultimat3/*` maps `realtime/server` to `packages/realtime/server/src`,
   which does not exist, and the root program has no `node_modules/@ultimat3` symlink to fall back
@@ -394,87 +394,59 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   the library refuses a malformed subject itself, and a second spelling of that rule here is a second
   place it can drift. A presence key or member id is user data, so it is base64url-encoded
   (`encodeToken`) rather than validated — no name is refused for its spelling.
-- **One row value per `(entity, id)` per client, and `identity-map.ts` is the only place one lives.**
-  A live window is an ordered list of ids over that map and a local-store table is membership over
-  it — neither holds a row of its own, because two components holding two copies of post #7 is the
-  bug the map exists to make unrepresentable. A `LiveClient` takes the map off its store when tier 3
-  is configured (`options.store.identity`) and builds one otherwise: a second map here would be that
-  same duplication, one level up.
-- **The scope is `(entity, id)`, never `id` alone, and the entity comes from the server.** The
-  compiled shape's root entity (`live.shape.entity`) is the one name the live path, `ChangeEvent`,
-  a mutator's `tx.<table>` and `rebase`'s `ack.entity` all already agree on; a browser cannot derive
-  it, because the shape is compiled out of `sql`. It rides on the `snapshot` frame, and a
-  subscription that is told no entity keeps its rows under `?query:<name>` — private, colliding with
-  nothing. Wrong sharing merges two entities into one row; no sharing only costs a stale view.
-- **`snapshot.entity` is additive, and that is why `PROTOCOL_VERSION` did NOT move.** The bump rule
-  exists for a shape change that makes an old frame unreadable. This one is readable both ways — an
-  old node omits the field and the client falls back to the private scope, an old client drops it in
-  `decode` — so bumping would refuse every in-flight client during a rolling deploy in exchange for
-  nothing. An *incompatible* frame change still bumps, and every kind still needs a fixture.
-- **A value is replaced, never mutated, and a write merges columns rather than replacing the row.**
-  A mutated row is a render that never happens — the projections hand rows to a signal, which
-  compares by reference. And two queries may project different columns of one row, so a snapshot
-  from the narrower one must not blank what the wider one is rendering. Only a `delete` removes.
-- **A row lives exactly as long as something holds it.** Every projection retains its ids and
-  releases them when it lets go (`RowWindows` on a re-snapshot, a patch, a close; a table on delete
-  and rollback). The last release drops the value — without it an infinite scroll retains every row
-  it ever saw. It is what lets a rollback of an optimistic insert leave a row a live window still
-  holds: the table's membership goes, the row does not.
-- `local(tx, input)` is pure: no I/O, no `Date.now()`, no `Math.random()`. Rebase replays it.
-- One registered `LiveClient` per app (`setLiveClient`), and every hook reads it through that seam —
-  no hook takes a client argument, and an unregistered one is `X_LIVE_CLIENT_MISSING`, never a
-  lazily-constructed default.
-- **A DOM is the whole of the question, and it decides what "no client" MEANS** (2026-08-23, issue
-  #271). Deliberately the same rule, the same probe and the same words as `@ultimat3/ui`'s
-  `solid()`: with a DOM, a hook that finds no registration is a real bug — the app entry forgot
-  `setLiveClient` and every live query on the page is dead — so it stays `X_LIVE_CLIENT_MISSING`.
-  Without one there is no socket a client could have been registered *for*; that is a **server
-  render**, and it gets `serverRenderLiveClient()`. Before it, a page whose whole body read a live
-  query could not server-render at all: `useConnection()` threw and the route answered 500, and the
-  existing `hasLiveClient()` guard could not help — it only serves a component that already has a
-  static fallback written. `hasLiveClient()` still answers **false** on the server, on purpose,
-  because that is exactly what such a component is asking.
-- **The server client serves the first render and opens no socket, so it holds nothing per
-  request.** One instance per process, and that is only safe because `useLive` on it registers
-  nothing: a client that kept a registration per call would grow by one entry per request forever
-  and pin a row window with each. `state()` is **`loading`**, never `offline` and never `live` — the
-  rows arrive over a socket this render does not have, so the page's own loading fallback is what
-  the document carries. `offline` would be read as a settled answer (`state() !== 'loading'` is the
-  gate a page writes), so an empty result set would render "you have no posts" for a feed that has
-  some. `connected` is `true` for the mirror-image reason: `useConnection().offline` is a banner
-  about this visitor's connectivity, and the request being served is the proof it is up. Everything
-  that can only mean "talk to the socket" — `mutate`, `drain` — refuses with
-  `X_LIVE_SERVER_RENDER`, because a dropped mutation looks exactly like one that happened.
-- **The hook seam takes `LiveClientLike`, not the `LiveClient` class, and that is a measurement.**
-  A value import of the class from `hooks.ts` put the whole connection lifecycle — heartbeat, topic
-  book, mutation sender, wire protocol, backoff — into every island that calls `useLive`: a
-  `useLive`-only browser chunk went **8,368 B → 26,571 B**. Against the structural shape it is
-  9,356 B, and the ~1 kB is the server client and its refusal. `type-pins.ts`
-  (`_LiveClientSatisfiesTheHookSeam`) is what keeps the two in step.
-- **A server render that renders is not a live page.** A page component never runs in a browser —
-  only an `island()` module does — so `useLive` in a page body server-renders its loading branch and
-  nothing replaces it unless that route ships an island that registers a client. The server client
-  removes the 500; it does not make a page live, and it must never be described as if it did.
-  `examples/dummy`'s `/feed` is exactly that state and its own header says so.
+- **One record store per PAGE, and `record-store.ts` is the only place a record lives (21.0.0).**
+  Keyed `type:key` — the entity's NAME and the key the SERVER computed with the entity's own
+  projection (`live-record-type.ts`, via `recordProjectionForTable`): an envelope arrives keyed, a
+  live snapshot carries `keys` and a patch `key` whenever the record key is not the row's `id`, and a
+  non-live `useQuery` window is the key order of the answer's `records[type]`. The browser never
+  derives a key; an answer with no envelope holds its own rows, not records. Two layers: SYNCED is server truth, the OVERLAY is every pending optimistic write,
+  REPLAYED over synced truth whenever it moves — never a before-image restored over newer truth,
+  which is what the old journal did. A live window, a `useQuery` list and a `useRecord` are all
+  projections over it; none holds a row of its own. It is core's `RecordSink`, installed on
+  `pageClient().store`, so an HTTP answer adopts into it without this package in the call.
+- **Page state lives on `globalThis[Symbol.for('ultimate.realtime')]` (`page-store.ts`), never in
+  module scope.** Every island is its own bundle with its own copy of this package, so a module
+  singleton is one store and one socket PER ISLAND — the bug the plan-101 major ended.
+  `page-client.test.ts` builds this package twice with `Bun.build` and proves one store and one
+  `new WebSocket` between the copies. Never `instanceof` across copies: the class is whichever
+  bundle's copy made it.
+- **The signal factory is per BUNDLE, the store per PAGE.** Each island carries its own solid-js, so
+  a signal must come from the bundle whose effects read it: `installRealtime({ signal, sync })`
+  (`reactivity.ts`, module scope on purpose) is what the island bootstrap calls. No install and a
+  DOM is `X_REALTIME_UNINSTALLED`; no install and no DOM is a server render — every hook answers
+  `pending`/online and creates NO page state (on a server that would be one store for every
+  request). `useRecord` and `useQuery` return `AsyncState` accessors the caller releases.
+- **One socket per page, built by the first live hook (`page-socket.ts`), and `browser-socket.ts`
+  holds the framework's only `new WebSocket`.** A form-only or `useRecord`-only island never
+  imports that module, so it ships none of the lifecycle — measured, a `useRecord`-only chunk
+  carries no `WebSocket`. `import()` would buy nothing: islands build with `splitting: false`, and
+  Bun inlines a dynamic import there. `hasPageSocket()` lives in `page-store.ts` so asking costs no
+  socket bytes either. A principal change (`rescope`) clears the store and redials.
+- **The socket is READ-ONLY (protocol 3, 21.0.0).** `mutate`/`rebase` frames and
+  `createSyncNode({ onMutate })` are deleted; an old client's `mutate` decodes to
+  `X_PROTOCOL_VERSION`. A write is `useMutation`: the twin into the overlay, then `POST
+  actionPath(name)` through core's `clientTransport` with an idempotency key; the answer's records
+  are adopted INSIDE the transport call, before `settle` drops the overlay, so a convergent twin
+  never flickers. A refusal drops the overlay. An `ack` is now only ever a refusal: `ref` is a
+  subscription's sid (that window renders `failed`) or the socket (reported through `onError`).
+- **`LiveClient` holds no signal.** It is shared by every bundle on the page, and a signal belongs to
+  one bundle — so status is plain reads plus `onStatus`, and a live window is `LiveHandle` reads
+  plus `onChange`. Hooks wrap both in the calling bundle's own signal.
+- **An answer that did not carry a row the write touched does not end its overlay.** `useMutation`
+  settles against the answer's own records (`onEnvelope`); a touched row it did not carry (an
+  action that returns a view, not the entity) keeps its overlay until the server's next row for it
+  — a frame, another answer — bounded by `DEFAULT_AWAIT_SERVER_MS` (10 s), after which the synced
+  layer stands. Without it, a like showed `+1`, fell back, then rose again on the frame.
+- `local(tx, input)` is pure and CONVERGENT: no I/O, no `Date.now()`, no `Math.random()`, and
+  applying it over its own result changes nothing. The overlay replays it on every server update.
 - Anything a component reads is a **getter or an accessor**, never a value snapshotted at hook time:
-  a plain field cannot re-render. `MutatorLike.local` is declared with method syntax so an
-  `@ultimat3/action` `Mutator` assigns with no cast — a function-typed property would not.
-- `useLive`'s thunk input is read once, at subscribe time. There is no reactive runtime here to
-  re-run it, and pretending otherwise would be a silently stale subscription.
-- Every subscription handle client code gets back — `LiveHandle` (`useLive`'s return, and
-  `LiveRows` one layer up through the hook), `Unsubscribe` (`client.subscribe(topic, …)`'s return)
-  — is `Disposable`. `[Symbol.dispose]` is the exact same function reference as `unsubscribe`,
-  never a second implementation that could drift from it, so `using sub = client.useLive(...)` and
-  `sub.unsubscribe()` are one teardown path either way. Pinned in `type-pins.ts`
-  (`_LiveHandleIsDisposable`, `_LiveRowsIsDisposable`, `_UnsubscribeIsDisposable`) so a refactor
-  that drops the member fails the build, not a call site months later.
-- `liveHookFor(query)` is the typed projection the wiki promises as `useLiveFeed({ orgId })`. It
-  **binds** `useLive` — it never re-implements a subscribe path, because two of those is two places
-  a subscription can be opened wrong. It names `Query`'s shape structurally (`LiveQuerySource`)
-  rather than importing `@ultimat3/query` as a value: a hook is browser code, and a value import
-  would pull the server's read path into the bundle.
-- The query's name is read **per call**, never captured at bind time. `export const useLiveFeed =
-  liveHookFor(liveFeed)` runs at import; `registerQueries()` stamps the name later, at boot.
+  a plain field cannot re-render. `MutatorLike.local` is declared with method syntax so a twin
+  typed over its own `tx` assigns with no cast.
+- `useQuery`'s input is read once, at call time. There is no reactive runtime here to re-run it.
+- Every subscription handle client code gets back — `LiveHandle` (`subscribeLive`), the
+  `useQuery`/`useRecord` accessors, `Unsubscribe` (`client.subscribe(topic, …)`) — is `Disposable`,
+  and `[Symbol.dispose]` is the exact same function reference as the release, never a second
+  teardown path. Pinned in `type-pins.ts`.
 - Type claims about the hook go in `type-pins.ts`, never in a `.test.ts` — `tsconfig.json` excludes
   test files, so `tsc -b` never reads one and an assertion written there can never fail.
 - **`backoffDelay` is `@ultimat3/core`'s, and `attempt + 1` is the whole of the seam** (`As of
@@ -567,7 +539,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   spread and nothing re-sends it, so `drain()` returns `DrainedSocket[]` with `notified` per socket
   and logs `sync.drain_frames_dropped`.
 - **A socket's actor comes from `createSyncNode({ authenticate })` and from nowhere else.** The node
-  imports no authenticator — the app supplies one, exactly as it supplies `onMutate` — and it runs
+  imports no authenticator — the app supplies one — and it runs
   on the upgrade *before* `server.upgrade`, so a refused credential never costs a websocket.
   `null` is a **decision** (401, `X_SOCKET_UNAUTHENTICATED`, a client fault that pages nobody); a
   throw is a **failure** (503, `X_SOCKET_AUTH_UNAVAILABLE`, reported) — the same rule the row gate
@@ -634,13 +606,12 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   every topic on every re-authenticated socket on the node, silently, with the client never told to
   resubscribe. The initial `subscribe` is deliberately NOT split: there is no subscription to keep,
   so a raising guard refuses that subscribe and the client hears about it.
-- **The `rebase` frame goes out BEFORE its `ack`, and an `ack` refers to what failed.** The ack is
-  the receipt and the receipt retires the client's journal row and rebase-log entry, so a rebase
-  landing after it has no entry to read `conflict` off — every merge silently becomes `server-wins`
-  — and no sequence to decide which later optimistic writes to replay. Two frames on one socket:
-  the order is the only coordination there is. `ackRefOf` answers the mutation key for a `mutate`
-  and the sid for a `subscribe`; the socket id is only for a frame that could not be decoded, since
-  `queue.fail(ref)` looks up by idempotency key and a socket id names a key no queue holds.
+- **One conflict vocabulary, and it is not declared here.** A mutator's `conflict` is
+  `ConflictPolicy` from `@ultimat3/core`, over ROWS, and `RecordStore.settle` hands it to core's
+  `resolveConflict` with the overlay's row and the adopted server row — in that order. Until 21.0.0
+  there were two spellings bridged by a filter in `hooks.ts` that dropped one and handed the other
+  a `{ local, base, server }` bag, so no merge an app declared ever decided a row. A server delete,
+  or a row the client never held, is not a conflict: the server's answer stands, no merge runs.
 - **Inbound frames run in a lane, and the lane is NEVER the socket.** `sync-node.message` dispatches
   every frame as `void (async () => routeFrame(…))()`, so nothing upstream orders them. A global
   per-socket lane would put every frame behind the slowest one, and the slowest one is a subscribe's
@@ -663,16 +634,30 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `WsLike.subscribe`/`unsubscribe` stay declared and unused — a tracked app implements the
   interface structurally, so removing the members is that app's typecheck failure — and the
   declaration says so, because a member that looks live is one someone will call.
-- **A dropped channel frame is counted in three places and repaired in none.** The series
-  `channel_frames_dropped_total` (no attributes — a topic is client-chosen, so a per-topic label is
-  unbounded series one socket can mint), the log `channel.frames_dropped` with `{ topic, dropped,
-  total }`, and `SocketRegistry.droppedChannelFrames` for a test or a bench that cannot scrape.
-  Node-wide because a socket past `maxDroppedFrames` is closed and removed — a per-socket count
-  leaves exactly when loss is worst — and distinct from `SyncSocket.droppedFrames`, which counts
-  every frame kind and dies with its socket. Repair needs a per-topic sequence on the wire: a
-  channel's lsn is the publishing hub's own per-node counter, so a client cannot tell a gap from a
-  message that came via another node. Declared in `socket.ts`, not core's `runtime-metrics.ts`:
-  that file is the series every process emits, this one exists only where channels do.
+- **A dropped `records` frame is counted AND repaired (plan 101, slice 10).** Every declared
+  channel carries a per-node `seq` and `epoch`; a frame backpressure refuses marks that socket
+  gapped on that channel, and the node sends `replay-gap` the moment the socket drains (the
+  websocket `drain` handler → `gapRepairs.repairAll`), counted as `channel_replay_gaps_total` beside
+  `channel_frames_dropped_total`. The client re-runs the channel's catch-up query, holds every frame
+  that arrives meanwhile, and applies those over the read. The server owns the gap verdict: a
+  numeric hole on its own is never one (a row this socket may not see is skipped for it). A resume
+  sends `since` = the highest seq with no hole below it; duplicates are dropped, a replay that
+  fills a hole is applied (`client-channels.ts`).
+- **A channel is a DECLARATION, never a topic string.** `channel(name, { params, policy, catchUp,
+  records?, events? })` spells the topic; a subscribe names the declaration and its params, and a
+  name no declaration carries is `X_TOPIC_FORBIDDEN`. Presence rides the channel's `events` frames
+  (`readPresence`) — only a channel declared `events: true` has a room. `useChannel` / `usePresence`
+  hold one membership per topic per page, however many components ask.
+- **One socket per ORIGIN and principal, in a SharedWorker (plan 101, slice 11).** `socket-engine.ts`
+  holds the real socket and talks to every tab only over a `MessagePort`; to each tab's `LiveClient`
+  its port IS a socket (`socket-host.ts`'s virtual socket). Channel wants are reference-counted
+  across ports and every server frame is ROUTED to the ports that want it; live-query sids carry the
+  port. A tab's own beat is the engine's ping: a port silent for `REAP_AFTER_BEATS` is a closed tab
+  and is reaped. When the real socket drops, every tab's virtual socket closes and each tab
+  resubscribes from its OWN cursors — the engine keeps nothing that could go stale. No
+  `SharedWorker`, a constructor that throws, or no built worker: the in-page host runs the same
+  engine over a `MessageChannel`, one socket per tab. The worker is named by principal, so two
+  principals never share a socket.
 - **A qid is `@ultimat3/query`'s `queryHash(name, input)`, and this package derives none of its
   own — `As of 2026-08`.** `qidOf` was the same two lines over a local copy of the canonical form
   (`stableDigest(canonicalJson(input))`), and `canonicalJson`/`stableDigest` were this package's
@@ -805,14 +790,6 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `maxBufferedBytes` and `maxDroppedFrames` were until 2026-08. Forwarded the same way
   `maxFramesPerSecond`/`frameBurst` already are (`...(x === undefined ? {} : { x })`, so an unset
   option keeps `SyncSocket`'s own default rather than overwriting it with `undefined`).
-- **One socket's buffer has one number on the server and a separate one in the browser.**
-  `DEFAULT_MAX_BUFFERED_BYTES` (`socket.ts`) is both `SyncSocket`'s send-side ceiling and the
-  `backpressureLimit` `sync-node.ts` hands Bun — two spellings of one buffer on one side, and the
-  runtime's limit set lower means our check never fires and a frame is dropped with nothing marked
-  desynced. `client-mutations.ts`'s `MAX_BUFFERED_BYTES` is deliberately *not* imported from it:
-  that is browser code and `socket.ts` is the node's registry, its metrics and its close codes.
-  `sync-limits.test.ts` pins the server pair through behaviour, not by comparing two constants that
-  are now one declaration — an equality between them is a test that cannot fail.
 - **A `SubscriptionLimitError` names the knob, never the default.** `knob` defaults to
   `maxPerSocket`/`maxPerTenant`, which are `LiveQueryRegistry`'s — so the channel hub's per-socket
   *topic* cap, thrown without one, told an operator to move a number in a different constructor
@@ -879,6 +856,54 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   "equality satisfied by both sides failing open together" failure the row-parity test names. The
   rule governs what this package **throws**, never what a test hands it.
 
+## Browser bytes, per hook (`As of 2026-09-22`)
+
+`bun build --target=browser --minify --metafile`, one entry importing one hook from the barrel.
+Re-measure before quoting.
+
+| Hook | Before the page boot moved | After the page boot moved | After the light core entry (current) |
+|---|---|---|---|
+| `useRecord` | 34,838 | 19,404 | **13,226** |
+| `useMutation` | 37,073 | 35,480 | **29,907** |
+| `useQuery` | 64,183 | 62,596 | **56,647** |
+| `useChannel` | 62,155 | 60,566 | **54,621** |
+| `@ultimat3/realtime/boot` (once per page, cached immutable) | — | 34,884 | not re-measured |
+
+The last column (`As of 2026-09-22`, `bun build --target=browser --minify`, one entry per hook)
+is after every browser-reachable file here moved its core imports to **`@ultimat3/core/page`** and
+`@ultimat3/query/client` stopped reaching `@ultimat3/query`'s `errors.ts`: no hook loads a titles
+table any more — not core's (`core-error-codes.ts`), not schema's, not query's. A browser file here
+imports core from `@ultimat3/core/page`; `packages/core/src/page-bundle.test.ts` and
+`packages/query/src/client-bundle.test.ts` are the guards.
+
+`examples/dummy`'s islands, built by `x build`'s own `buildIslands`: `likes-badge` 48,598 → 32,882,
+`feed` 95,983 → 94,174, `like` 84,351 → 82,503; `settings` and `contact-sales` reach no realtime
+and are unchanged.
+
+- **The disk boot is ONE page script, never island code.** `boot.ts` (`./boot`) restores the
+  principal's persisted records and opens the outbox; the CLI builds it like the sync worker
+  (`/_x/page-boot/<hash>.js`, immutable) and renders one `<script defer>` on a document that carries
+  the scope tag AND emitted an island reaching realtime. The boot first wipes every stored scope
+  but the current principal's (rows and outbox) — a sign-out by full navigation never calls
+  `rescope()` — then restores; an unscoped page wipes nothing. Two principals in two tabs: the newer
+  boot wipes the other's disk, which keeps its records in memory and re-persists on its next write.
+  `page-store.ts` imports none of it: `booted` reads the boot's promise off
+  `globalThis[Symbol.for('ultimate.page-boot')]` per access, so an island that ran first still waits.
+  A lazy `import()` could not have done this: islands build with `splitting: false`, and Bun inlines
+  a dynamic import, so bytes leave a bundle only by leaving its import graph.
+- Everything else on these paths buys function: the in-page `socket-engine` is the no-SharedWorker
+  fallback, `client-channels` rides the ONE page client every bundle shares, the decoders are one
+  copy. Core's error-registry chain (~8.4 kB with the schema and query titles) WAS core's to cut,
+  and is cut: see the last column above.
+- **A browser path never loads realtime's code table.** The refusals a browser can reach live in
+  `page-errors.ts`; `errors.ts` re-exports them and keeps the table and its one
+  `registerErrorCodes()`. Measured the same day, same method: `useRecord` 21,629 → 18,600,
+  `useMutation` 38,225 → 35,194, `useQuery` 65,964 → 62,935 (`useChannel` 60,903 after).
+  `page-errors-bundle.test.ts` fails if `errors.ts` comes back into `useRecord` or `useMutation`.
+  In a browser that loaded no table a code titles itself from its name; `code`, `cause` and `fix`
+  are unchanged. The ~7.6 kB of core's `UltimateError` chain that was left under `useRecord` is now
+  the class and the lookup alone (~2.4 kB): core's titles table is an anchor only its barrel loads.
+
 ## Map
 
 | File | Owns |
@@ -896,10 +921,23 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `nats-jetstream.ts` / `nats-kv.ts` / `nats-transport.ts` | the JetStream KV bucket, presence over it, and the production `Transport` — all three written against the port |
 | `nats-fake.ts` | an in-memory bus implementing the port — server semantics, not wire bytes; the only way to prove multi-node fanout under a sealed network |
 | `cursor.ts` / `change-buffer.ts` / `thundering-herd.ts` | reconnect — the highest-risk area. `thundering-herd.ts`'s backoff is core's, shifted 0-based to 1-based; the drain plan and the accept budget are its own |
-| `identity-map.ts` | the client's single source of truth: one row value per `(scope, id)`, its holds and its batched change notification |
-| `live-rows.ts` | one subscription's window over that map — its scope, its order, its retain/release, and `Registration` itself |
-| `local-store.ts` / `offline-queue.ts` / `rebase.ts` | tier 3 |
-| `client.ts` / `sync-node.ts` | the two halves — connection lifecycle, subscriptions, mutations |
+| `page-errors.ts` | the refusals a browser can reach — the store, the hooks, the wire check, the local store — without the code table |
+| `record-store.ts` | the page's one record store: the optimistic overlay over synced truth, batched notification, and `settle` under the conflict policy |
+| `record-key.ts` / `record-synced.ts` / `record-await.ts` | a record's `type:key` name and `carriedBy`; the synced layer (merge, holds, provisional disk rows); the overlays waiting on server truth and what a write heard while in flight |
+| `record-tx.ts` | the overlay replay and the `tx` a mutator's `local` half writes through |
+| `page-store.ts` | the page state on `globalThis` — the store, the sync target, the write counts — and `hasPageSocket` |
+| `boot.ts` | `./boot`: the page's ONE boot script — the disk restore and the outbox open, never in an island |
+| `page-socket.ts` / `browser-socket.ts` | the page's one socket, built by the first live hook, and the framework's one `new WebSocket` |
+| `reactivity.ts` | `installRealtime`: this bundle's signal factory, and the server-render test |
+| `use-record.ts` / `use-query.ts` / `use-mutation.ts` / `use-connection.ts` / `use-channel.ts` | the hooks — the only surface an island calls |
+| `client-channels.ts` | the client's declared channels: one membership per topic, the seq/epoch cursor, the catch-up read and the frames held during it |
+| `socket-engine.ts` / `socket-host.ts` / `sync-worker.ts` | the one socket per origin: the port-driven engine (dial, beat, redial, reap), the tab's host choice and virtual socket, the SharedWorker entry (`./sync-worker`) |
+| `socket-port.ts` / `socket-routes.ts` | the engine ⇄ tab port messages; the multiplexing — one membership per topic, every frame routed only to the ports that want it |
+| `sync-meta.ts` | the sync target and worker URL read off the document's `<meta>` tags (core's names) |
+| `live-record-type.ts` | the live path's record type and record key per table, from the entity's own projection |
+| `live-rows.ts` | one live subscription's window over the store — its record type, its order, its retain/release, and `Registration` itself |
+| `offline-queue.ts` | the durable outbox, unwired since 21.0.0 until plan 101 slice 12 replays it over HTTP |
+| `client.ts` / `sync-node.ts` | the two halves — connection lifecycle and subscriptions; the socket carries no writes |
 | `sync-auth.ts` | what a socket's identity IS (`SyncGrant`), the book that holds one per socket, and the pass that re-decides an expired one |
 | `sync-frames.ts` | what a RECEIVED frame does to server state — the node's inbound surface, and the mirror of `client-frames.ts` |
 | `sync-upgrade.ts` | the node's HTTP surface: `/healthz`, `/readyz`, load shedding, and the authenticated upgrade — `WsData` and `UpgradeTarget` are declared with the decision that builds them |
@@ -908,18 +946,14 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `query-window.ts` | the shared pre-policy window per query id: built once, read once for N subscribers, and replaced when it is known to be wrong |
 | `client-frames.ts` | what a RECEIVED frame does to client state, and `ClientFrameTarget` — the only inbound surface the client exposes. The mirror of `sync-frames.ts` |
 | `client-harness-fixture.ts` | the injected socket + scheduler + harness both client suites drive. Excluded from the tarball |
-| `hooks-fixture.ts` | the same, for the two hook suites (`hooks.test.ts`, `hooks-identity.test.ts`). Excluded from the tarball |
+| `hooks-fixture.ts` | the page harness the hook and frame suites drive: a fake socket, a page reset, a fetch double. Excluded from the tarball |
 | `subscription-book.ts` | who holds which subscription, keyed by `(socket, sid)`, and the per-socket/per-tenant caps answered from it |
 | `apply-patches.ts` | folding a patch list onto a row list (`applyPatches`) or onto ids alone (`orderAfterPatches`, what a window uses) — the client's one stateless piece, and one fold, not two |
-| `hooks.ts` | the ambient client seam + the four component hooks — the only file an app imports |
-| `query-hook.ts` | the typed projection: one declared query bound to one named hook |
-| `type-pins.ts` | compile-time assertions `tsc` checks — the hook's input type, its row type, the `Query` seam |
+| `type-pins.ts` | compile-time assertions `tsc` checks — the hooks answer `AsyncState`, a query ref has no server field, every handle is `Disposable` |
 | `window-lock.ts` | one FIFO lane per query id — the only thing that orders a fanout |
 | `frame-lanes.ts` | the order one socket's INBOUND frames are applied in, and the lane key each kind belongs to. `WindowLock` again, keyed differently — and it bounds no cap |
 | `live-fanout.ts` | what one change does inside one entry's lane: match, fold, one policy pass per subscriber, and the re-snapshot that repairs a desynced one |
-| `client-mutations.ts` | the outbound mutation path — the optimistic twin, the rebase entry, the queue entry, and the sender the drain hands each frame to |
 | `client-heartbeat.ts` | when to beat and when to give up. A policy, which is why it is not in `client.ts`'s connection lifecycle |
-| `client-topics.ts` | the client's channel book, and the one membership frame its two callers (`subscribe`, the reconnect replay) must never spell differently |
 | `client-contract.ts` | the client's injected shapes — `ClientSocket`, `LiveClientOptions`, `LiveHandle` — declared apart from the class that consumes them |
 | `policy-gate.ts` | the only authz seam |
 | `subscriber-gate.ts` | the per-subscriber pass of a definition's row policy, and its two counters — `rowsDenied` and `gateFailures`. Evaluates no policy of its own |

@@ -3,14 +3,14 @@
 // built with, and the retry classification a code carries. One group because a code, its title,
 // its rendering and its retry class are one contract; `index.ts` re-exports every name explicitly.
 
+export type { CoreErrorCode } from '../core-error-codes';
+export { CORE_ERROR_CODES } from '../core-error-codes';
 export type {
-  CoreErrorCode,
   ErrorCodeDeclaration,
   ErrorCodeDescriptor,
   ErrorCodeEntry,
 } from '../error-codes';
 export {
-  CORE_ERROR_CODES,
   describeErrorCode,
   ERROR_DOCS_URL,
   errorCodeSnapshot,

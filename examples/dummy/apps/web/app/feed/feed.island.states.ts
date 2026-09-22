@@ -23,14 +23,22 @@ import { defineIslandStates } from '@ultimat3/testing';
 import type { FeedIslandProps } from './feed.island';
 
 const BASE = {
-  syncUrl: 'ws://localhost:3001',
-  buildId: 'shot',
-  actorId: '00000000-0000-4000-8000-0000000000bb',
   orgId: '00000000-0000-4000-8000-0000000000aa',
+  locale: 'en',
+  zone: 'Asia/Tokyo',
   labels: {
-    loading: 'Loading the feed…',
     empty: 'Nothing published yet.',
     offline: 'You are offline — this is the copy on this device.',
+    likes: { locale: 'en', forms: { one: '{count} like', other: '{count} likes' } },
+    like: 'Like',
+    queued: 'You are offline — this will be sent when you reconnect.',
+    update: 'A new version is ready.',
+    reload: 'Reload',
+  },
+  ui: {
+    'ui.empty': 'Nothing here yet',
+    'ui.error.title': 'Something went wrong',
+    'ui.retry': 'Try again',
   },
 } satisfies FeedIslandProps;
 
@@ -46,15 +54,16 @@ export const feedStates = defineIslandStates({
     },
     {
       id: 'long-labels',
-      title: 'the same three notices in a locale whose words for them are much longer',
+      title: 'the same four notices in a locale whose words for them are much longer',
       note: 'you cannot reach this by clicking: it needs a locale this app was not written in',
       props: {
         ...BASE,
         labels: {
-          loading: 'Se încarcă fluxul de postări al organizației…',
+          ...BASE.labels,
           empty: 'Nu a fost publicată încă nicio postare în această organizație.',
           offline:
             'Sunteți offline — acesta este exemplarul aflat pe acest dispozitiv, nu cel de pe server.',
+          queued: 'Sunteți offline — aprecierea va fi trimisă când conexiunea revine.',
         },
       },
     },

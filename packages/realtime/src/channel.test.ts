@@ -1,6 +1,8 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { type Actor, userActor } from '@ultimat3/core';
-import { ChannelHub, topic } from './channel';
+import { ChannelHub, type Topic } from './channel';
+import { channel, topic } from './channel-decl';
+import { clearChannels } from './channel-registry';
 import { SubscriptionLimitError, TopicForbiddenError } from './errors';
 import { InProcessTransport } from './fanout';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
@@ -8,9 +10,10 @@ import { decode, type Frame } from './sync-protocol';
 
 const actor = (id: string): Actor => userActor({ id });
 
-/** Membership lives in the app, not on the socket — the guard reads it, exactly like a policy. */
+/** Membership lives in the app, not on the socket — the policy reads it off the actor's id. */
 const membership = new Map<string, string>([
   ['alice', 'o1'],
+  ['bob', 'o1'],
   ['carol', 'o2'],
 ]);
 const inOrg = (id: string, org: string): void => {
@@ -55,107 +58,76 @@ function connect(sockets: SocketRegistry, who: Actor): { socket: SyncSocket; ws:
   return { socket, ws };
 }
 
+afterAll(() => {
+  clearChannels();
+});
+
+/** `org.<orgId>.<leaf>`: one declared channel, open to the members of that org. */
+const org = channel('org', {
+  params: ['orgId', 'leaf'],
+  catchUp: { name: 'orgRead' },
+  events: true,
+  policy: {
+    kind: 'allow',
+    label: 'org-member',
+    permissions: [],
+    children: [],
+    run: ({ actor: who, input }) =>
+      membership.get(who?.id ?? '') === (input as { orgId?: string }).orgId
+        ? { allowed: true }
+        : { allowed: false, reason: 'not a member', code: 'X_FORBIDDEN' },
+  },
+});
+
+const cursors = (leaf = 'cursors', orgId = 'o1'): Topic => org.topic({ orgId, leaf });
+const paramsOf = (name: Topic) => {
+  const [, orgId = '', leaf = ''] = name.split('.');
+  return { orgId, leaf };
+};
+const subscribe = (hub: ChannelHub, socket: SyncSocket, name: Topic): Promise<Topic> =>
+  hub.subscribeChannel(socket, { kind: 'channel', channel: 'org', params: paramsOf(name) });
+const publish = (hub: ChannelHub, name: Topic, event: { x: number; y: number }): Promise<void> =>
+  hub.publishEvent(org, paramsOf(name), event);
+
 describe('channels', () => {
   test('topic segments are validated, never escaped', () => {
     // `String(...)`, because `Topic` is a BRANDED string: the matcher is typed on what it
     // received, so a bare literal is not a `Topic` and the assertion could not be written.
-    expect(String(topic('org', 'o1', 'cursors'))).toBe('org.o1.cursors');
+    expect(String(cursors())).toBe('org.o1.cursors');
     expect(() => topic('org', 'o1.evil', 'cursors')).toThrow(TopicForbiddenError);
-    expect(() => topic('org', '>', 'cursors')).toThrow(TopicForbiddenError);
+    expect(() => org.topic({ orgId: '>', leaf: 'cursors' })).toThrow(TopicForbiddenError);
   });
 
-  test('a topic with no guard is forbidden — authz holes are not a config option', async () => {
+  test('a channel nobody declared is forbidden — authz holes are not a config option', async () => {
     const { hub, sockets } = harness();
     const { socket } = connect(sockets, actor('alice'));
-    await expect(hub.subscribe(socket, topic('org', 'o1', 'cursors'))).rejects.toThrow(
-      TopicForbiddenError,
-    );
+    await expect(
+      hub.subscribeChannel(socket, { kind: 'channel', channel: 'nobody', params: {} }),
+    ).rejects.toThrow(TopicForbiddenError);
   });
 
-  test('a published message reaches subscribers of that topic only', async () => {
+  test('a published event reaches subscribers of that topic only', async () => {
     const { hub, sockets } = harness();
-    hub.guard(
-      'org.*.cursors',
-      ({ actor: who, segments }) => membership.get(who?.id ?? '') === segments[1],
-    );
     const mine = connect(sockets, actor('alice'));
     const other = connect(sockets, actor('carol'));
 
-    await hub.subscribe(mine.socket, topic('org', 'o1', 'cursors'));
-    await expect(hub.subscribe(other.socket, topic('org', 'o1', 'cursors'))).rejects.toThrow(
-      TopicForbiddenError,
-    );
+    await subscribe(hub, mine.socket, cursors());
+    await expect(subscribe(hub, other.socket, cursors())).rejects.toThrow(TopicForbiddenError);
 
-    await hub.publish(topic('org', 'o1', 'cursors'), { x: 12, y: 40 });
+    await publish(hub, cursors(), { x: 12, y: 40 });
 
     expect(mine.ws.frames).toHaveLength(1);
     const frame = mine.ws.frames[0];
-    if (frame?.type !== 'patch') throw new Error('expected a channel patch frame');
-    expect(frame.patches[0]?.row).toEqual({ x: 12, y: 40 });
+    if (frame?.type !== 'events') return expect.unreachable('expected a channel events frame');
+    expect(frame.event).toEqual({ x: 12, y: 40 });
     expect(other.ws.frames).toHaveLength(0);
-  });
-
-  // Two `sync` nodes publish to one topic, and the patch id came off a per-PROCESS counter — so
-  // node A's third message and node B's third message reached one subscriber carrying the same id.
-  // A channel topic has no cursor and no re-snapshot, so nothing downstream can repair a collision:
-  // a client keying by id (a de-dupe set, a message list) drops or overwrites the second one.
-  test('two nodes publishing to one topic never mint the same patch id', async () => {
-    const transport = new InProcessTransport();
-    const sockets = new SocketRegistry();
-    const nodeA = new ChannelHub({ transport, sockets });
-    const nodeB = new ChannelHub({ transport, sockets, nodeId: 'sync-7' });
-    nodeA.guard('org.*.cursors', () => true);
-    const { socket, ws } = connect(sockets, actor('alice'));
-    const name = topic('org', 'o1', 'cursors');
-    await nodeA.subscribe(socket, name);
-
-    await nodeA.publish(name, { x: 1, y: 1 });
-    await nodeB.publish(name, { x: 2, y: 2 });
-
-    expect(ws.frames).toHaveLength(2);
-    const ids = ws.frames.map((frame) =>
-      frame.type === 'patch' ? frame.patches[0]?.id : expect.unreachable('not a patch frame'),
-    );
-    expect(new Set(ids).size).toBe(2);
-    // A declared id is stamped as declared, so an operator reading one frame knows which node
-    // minted it; an undeclared one is a per-hub random mark rather than nothing.
-    expect(String(ids[1])).toContain('sync-7');
-  });
-
-  // The collision above, arriving through the field that exists to prevent it. `??` answers only
-  // for `undefined`, so `nodeId: ''` — an unset `POD_NAME` interpolated into a config — was stored
-  // as the mark, and both hubs minted `:0000000000000001` for their first publish.
-  test('a blank nodeId is read as omitted, not as the empty mark', async () => {
-    const transport = new InProcessTransport();
-    const sockets = new SocketRegistry();
-    const nodeA = new ChannelHub({ transport, sockets, nodeId: '' });
-    const nodeB = new ChannelHub({ transport, sockets, nodeId: '   ' });
-    nodeA.guard('org.*.cursors', () => true);
-    const { socket, ws } = connect(sockets, actor('alice'));
-    const name = topic('org', 'o1', 'cursors');
-    await nodeA.subscribe(socket, name);
-
-    await nodeA.publish(name, { x: 1, y: 1 });
-    await nodeB.publish(name, { x: 2, y: 2 });
-
-    const ids = ws.frames.map((frame) =>
-      frame.type === 'patch' ? String(frame.patches[0]?.id) : expect.unreachable('not a patch'),
-    );
-    expect(ids).toHaveLength(2);
-    expect(new Set(ids).size).toBe(2);
-    // And neither id starts at the separator, which is what the empty mark looked like.
-    for (const id of ids) expect(id.startsWith(':')).toBe(false);
   });
 
   test('an actor change re-checks every live subscription', async () => {
     const { hub, sockets } = harness();
-    hub.guard(
-      'org.*.cursors',
-      ({ actor: who, segments }) => membership.get(who?.id ?? '') === segments[1],
-    );
     const { socket, ws } = connect(sockets, actor('alice'));
-    const name = topic('org', 'o1', 'cursors');
-    await hub.subscribe(socket, name);
+    const name = cursors();
+    await subscribe(hub, socket, name);
     // The socket's own set and the registry's index, which are the two halves of one membership.
     // Bun's native topic set is deliberately not a third: nothing publishes to it.
     expect(socket.topics.has(name)).toBe(true);
@@ -164,11 +136,12 @@ describe('channels', () => {
     // The session changed: same socket, different actor, no longer a member of o1.
     inOrg('alice', 'o2');
     const dropped = await hub.onActorChange(socket, actor('alice'));
+    inOrg('alice', 'o1');
 
     expect(dropped).toEqual([name]);
     expect(socket.topics.size).toBe(0);
     expect(hub.subscriberCount(name)).toBe(0);
-    await hub.publish(name, { x: 1, y: 1 });
+    await publish(hub, name, { x: 1, y: 1 });
     expect(ws.frames).toHaveLength(0);
   });
 });
@@ -183,14 +156,11 @@ class CountingSet extends Set<string> {
 }
 
 describe('what a channel costs the node', () => {
-  const openTo = 'org.*.cursors';
-
   test('delivery reads a per-topic index instead of scanning every socket', async () => {
     const { hub, sockets } = harness();
-    hub.guard(openTo, () => true);
     const subscriber = connect(sockets, actor('alice'));
-    const name = topic('org', 'o1', 'cursors');
-    await hub.subscribe(subscriber.socket, name);
+    const name = cursors();
+    await subscribe(hub, subscriber.socket, name);
     // Sockets on this node that are not on this topic. Asked, one message with one legitimate
     // subscriber costs every socket the node holds — 50,000 of them at the repo's own benchmark
     // scale. The count is the assertion, not the clock: a scan is a scan at any size.
@@ -201,7 +171,7 @@ describe('what a channel costs the node', () => {
       return counting;
     });
 
-    for (let i = 0; i < 10; i += 1) await hub.publish(name, { x: i, y: i });
+    for (let i = 0; i < 10; i += 1) await publish(hub, name, { x: i, y: i });
 
     expect(subscriber.ws.frames).toHaveLength(10);
     expect(bystanders.reduce((total, one) => total + one.asked, 0)).toBe(0);
@@ -209,27 +179,25 @@ describe('what a channel costs the node', () => {
 
   test('a socket that closed stops being delivered to and leaves the index', async () => {
     const { hub, sockets } = harness();
-    hub.guard(openTo, () => true);
-    const name = topic('org', 'o1', 'cursors');
+    const name = cursors();
     const { socket, ws } = connect(sockets, actor('alice'));
-    await hub.subscribe(socket, name);
+    await subscribe(hub, socket, name);
     socket.close();
-    await hub.publish(name, { x: 1, y: 1 });
+    await publish(hub, name, { x: 1, y: 1 });
     expect(ws.frames).toHaveLength(0);
     expect(hub.subscriberCount(name)).toBe(0);
   });
 
   test('unsubscribing removes only that socket from the topic', async () => {
     const { hub, sockets } = harness();
-    hub.guard(openTo, () => true);
-    const name = topic('org', 'o1', 'cursors');
+    const name = cursors();
     const stays = connect(sockets, actor('alice'));
     const goes = connect(sockets, actor('bob'));
-    await hub.subscribe(stays.socket, name);
-    await hub.subscribe(goes.socket, name);
+    await subscribe(hub, stays.socket, name);
+    await subscribe(hub, goes.socket, name);
     hub.unsubscribe(goes.socket, name);
     expect(hub.subscriberCount(name)).toBe(1);
-    await hub.publish(name, { x: 1, y: 1 });
+    await publish(hub, name, { x: 1, y: 1 });
     expect(stays.ws.frames).toHaveLength(1);
     expect(goes.ws.frames).toHaveLength(0);
   });
@@ -244,16 +212,15 @@ describe('what a channel costs the node', () => {
     const transport = new InProcessTransport();
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport, sockets, maxTopicsPerSocket: 1, maxTopicsPerNode: 1 });
-    hub.guard('org.>', () => true);
     const one = connect(sockets, actor('alice'));
-    await hub.subscribe(one.socket, topic('org', 'o1', 'a'));
+    await subscribe(hub, one.socket, cursors('a'));
 
-    const perSocket = await hub.subscribe(one.socket, topic('org', 'o1', 'b')).catch((e) => e);
+    const perSocket = await subscribe(hub, one.socket, cursors('b')).catch((e) => e);
     expect(perSocket).toBeInstanceOf(SubscriptionLimitError);
     expect((perSocket as SubscriptionLimitError).fix).toContain('maxTopicsPerSocket');
 
     const two = connect(sockets, actor('bob'));
-    const perNode = await hub.subscribe(two.socket, topic('org', 'o1', 'c')).catch((e) => e);
+    const perNode = await subscribe(hub, two.socket, cursors('c')).catch((e) => e);
     expect(perNode).toBeInstanceOf(SubscriptionLimitError);
     expect((perNode as SubscriptionLimitError).fix).toContain('maxTopicsPerNode');
   });
@@ -262,21 +229,20 @@ describe('what a channel costs the node', () => {
     const transport = new InProcessTransport();
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport, sockets, maxTopicsPerNode: 2 });
-    hub.guard('org.>', () => true);
     // Each distinct topic is one live transport subscription, and `topic()` admits any name
     // inside a tenant's own prefix — so a per-socket cap bounds nothing node-wide.
     const first = connect(sockets, actor('alice'));
     const second = connect(sockets, actor('bob'));
-    await hub.subscribe(first.socket, topic('org', 'o1', 'a'));
-    await hub.subscribe(second.socket, topic('org', 'o1', 'b'));
-    await expect(hub.subscribe(first.socket, topic('org', 'o1', 'c'))).rejects.toThrow(
+    await subscribe(hub, first.socket, cursors('a'));
+    await subscribe(hub, second.socket, cursors('b'));
+    await expect(subscribe(hub, first.socket, cursors('c'))).rejects.toThrow(
       SubscriptionLimitError,
     );
     // A topic that already exists is free: the cap bounds the bridge, not the subscriber.
-    await expect(hub.subscribe(first.socket, topic('org', 'o1', 'b'))).resolves.toBeUndefined();
+    await expect(subscribe(hub, first.socket, cursors('b'))).resolves.toBe(cursors('b'));
     // And a released topic gives its slot back.
-    hub.unsubscribe(first.socket, topic('org', 'o1', 'a'));
-    hub.unsubscribe(second.socket, topic('org', 'o1', 'a'));
-    await expect(hub.subscribe(first.socket, topic('org', 'o1', 'c'))).resolves.toBeUndefined();
+    hub.unsubscribe(first.socket, cursors('a'));
+    hub.unsubscribe(second.socket, cursors('a'));
+    await expect(subscribe(hub, first.socket, cursors('c'))).resolves.toBe(cursors('c'));
   });
 });

@@ -164,6 +164,54 @@ describe('lockstep is a claim about dependencies and about the lockfile', () => 
     expect(gaps[0]?.at).toBe('bun.lock');
   });
 
+  test('a DECLARED edge the lockfile block does not record is a finding — action → entity', () => {
+    // DX ledger #13: adding a workspace dependency left `bun.lock`'s block without the edge, and
+    // this rule walked LOCKED edges only, so the missing one was read as nothing to compare.
+    const gaps = checkVersionStamps({
+      files: [footer(stamped)],
+      versions: lockstep,
+      internalDeps: { 'packages/action': { '@ultimat3/entity': '1.2.0' } },
+      lockedDeps: { 'packages/action': {} },
+    });
+    expect(gaps.map((gap) => gap.kind)).toEqual(['lockfile']);
+    expect(gaps[0]?.detail).toContain('@ultimat3/entity');
+  });
+
+  test('a workspace the lockfile has no block for at all is a finding too', () => {
+    const gaps = checkVersionStamps({
+      files: [footer(stamped)],
+      versions: lockstep,
+      internalDeps: { 'packages/newcomer': { '@ultimat3/core': '1.2.0' } },
+      lockedDeps: { 'packages/action': {} },
+    });
+    expect(gaps.map((gap) => gap.kind)).toEqual(['lockfile']);
+  });
+
+  test('no lockfile read at all judges no declared edge — a root with no bun.lock', () => {
+    expect(
+      checkVersionStamps({
+        files: [footer(stamped)],
+        versions: lockstep,
+        internalDeps: { 'packages/action': { '@ultimat3/entity': '1.2.0' } },
+      }),
+    ).toEqual([]);
+  });
+
+  test('a lock block with no @ultimat3 edge is still read as a block', async () => {
+    // Dropping it read as "no block at all", so an edge newly declared by `packages/core` would be
+    // reported as a missing BLOCK, and `lockfile:fix` has no block to add it to.
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-locked-deps-'));
+    try {
+      await Bun.write(
+        join(dir, 'bun.lock'),
+        '{\n  "workspaces": {\n    "packages/core": {\n      "name": "@ultimat3/core",\n    },\n  },\n}\n',
+      );
+      expect(await readLockedDeps(dir)).toEqual({ 'packages/core': {} });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test('a lockfile edge no package.json declares is not judged', () => {
     // A stale edge is `bun install`'s to remove; this rule only compares what both files carry.
     expect(

@@ -12,19 +12,24 @@ type LocalPost = LocalTables['posts'];
 const POST = '00000000-0000-4000-8000-0000000000aa';
 const ORG = '00000000-0000-4000-8000-000000000002';
 
-/** The Map-backed LocalTx @ultimat3/realtime implements over OPFS SQLite. */
+/** The Map-backed LocalTx the page's record store implements — keyed, exactly like it. */
 const fakeTx = (rows: Map<string, LocalPost>): LocalTx => {
   const posts: LocalTable<LocalPost> = {
-    insert: (row) => {
-      rows.set(row.id, row);
+    get: (key) => rows.get(key),
+    all: () => [...rows.values()],
+    insert: (key, row) => {
+      rows.set(key, row);
     },
-    update: (id, patch) => {
-      const current = rows.get(id);
+    upsert: (key, row) => {
+      rows.set(key, { ...rows.get(key), ...row });
+    },
+    update: (key, patch) => {
+      const current = rows.get(key);
       if (current === undefined) return;
-      rows.set(id, { ...current, ...(typeof patch === 'function' ? patch(current) : patch) });
+      rows.set(key, { ...current, ...(typeof patch === 'function' ? patch(current) : patch) });
     },
-    delete: (id) => {
-      rows.delete(id);
+    delete: (key) => {
+      rows.delete(key);
     },
   };
   // One cast, at one seam: `LocalTx` also carries the string-keyed escape hatch generated code

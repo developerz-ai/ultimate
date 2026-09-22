@@ -88,6 +88,29 @@ describe('retry, on the framework executor', () => {
     expect(clock.waits).toEqual([50, 100]);
   });
 
+  test('a per-call retry overrides the flight’s policy for that one read', async () => {
+    let calls = 0;
+    const fetchStub: FetchLike = () => {
+      calls += 1;
+      return Promise.resolve(
+        calls < 3 ? new Response('bad gateway', { status: 503 }) : new Response(ROWS),
+      );
+    };
+    const clock = recordedSleep();
+    // The flight's own policy is the default — one attempt, no retry.
+    const flight = createClientFlight({ principal: () => 'alice', sleep: clock.sleep });
+    const client = queryClient<typeof queries>({
+      baseUrl: 'https://app.test',
+      fetch: fetchStub,
+      flight,
+    });
+
+    const rows = await client.publicPost({ slug: 'x' }, { retry: { attempts: 3 } });
+
+    expect(rows).toEqual([{ id: 'a', title: 't' }]);
+    expect(calls).toBe(3);
+  });
+
   test('a 400 is the request’s own fault and is never sent again', async () => {
     let calls = 0;
     const fetchStub: FetchLike = () => {
@@ -175,8 +198,9 @@ describe('retry, on the framework executor', () => {
   });
 
   test('the status is what classifies a wire failure, and it reaches `error.retry`', async () => {
-    // The premise this rests on: nobody has declared X_RPC_FAILED, so the status decides.
-    expect(declaredErrorRetry('X_RPC_FAILED')).toBeUndefined();
+    // The premise this rests on: nobody has declared X_CLIENT_TRANSPORT_FAILED, so the status
+    // decides — the code a gateway's non-problem answer becomes in core's `clientTransport`.
+    expect(declaredErrorRetry('X_CLIENT_TRANSPORT_FAILED')).toBeUndefined();
     const fetchStub: FetchLike = () => Promise.resolve(new Response('nope', { status: 502 }));
     const read = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
@@ -185,7 +209,7 @@ describe('retry, on the framework executor', () => {
 
     const outcome = await read({ slug: 'x' }).catch((caught: unknown) => caught);
 
-    expect(outcome).toBeUltimateError('X_RPC_FAILED');
+    expect(outcome).toBeUltimateError('X_CLIENT_TRANSPORT_FAILED');
     expect((outcome as { retry: string }).retry).toBe('retryable');
   });
 });

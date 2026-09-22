@@ -57,12 +57,19 @@ export const CONTAINER_CHROME_ARGS: readonly string[] = ['--no-sandbox', '--disa
  * off stderr, which is the only place Chrome states the one it took. A throwaway `--user-data-dir`
  * because a run sharing a profile with a real browser inherits its cookies and locks its files.
  */
-const flags = (profileDir: string): readonly string[] => [
+export const chromeLaunchFlags = (profileDir: string): readonly string[] => [
   '--headless=new',
   '--remote-debugging-port=0',
   `--user-data-dir=${profileDir}`,
   ...CONTAINER_CHROME_ARGS,
   '--disable-gpu',
+  // The cookie store's encryption key comes from the OS keyring, asked over D-Bus on the first
+  // cookie access — which is the first navigation. With no keyring answering, Chrome waits out the
+  // D-Bus timeout: measured 7-25 s on the first `Page.navigate` of every launch, against a 30 s CDP
+  // deadline, which is the intermittent `X_CDP_TIMEOUT` of a full e2e run. A throwaway profile has
+  // no secret worth a keyring. `puppeteer-core` passes both by default, so `x shot` never had this.
+  '--password-store=basic',
+  '--use-mock-keychain',
   // Nothing here should reach the network on its own account, and a first-run bubble or an update
   // check is a page load the test did not ask for.
   '--no-first-run',
@@ -90,9 +97,18 @@ export interface LaunchOptions {
  * it there rather than polling `/json/version` is what makes `--remote-debugging-port=0` safe: with
  * a random port there is no URL to poll until Chrome has said which one it took.
  */
+/** Consume a stream to its end, keeping nothing. A read that fails means the process is gone. */
+async function drain(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+  try {
+    for (;;) if ((await reader.read()).done) return;
+  } catch {
+    // The browser was killed under the read; there is nothing left to drain.
+  }
+}
+
 export async function launchChrome(options: LaunchOptions): Promise<LaunchedBrowser> {
   const profileDir = mkdtempSync(join(tmpdir(), 'x-e2e-chrome-'));
-  const child = Bun.spawn([options.executable, ...flags(profileDir)], {
+  const child = Bun.spawn([options.executable, ...chromeLaunchFlags(profileDir)], {
     stderr: 'pipe',
     stdout: 'ignore',
   });
@@ -105,17 +121,21 @@ export async function launchChrome(options: LaunchOptions): Promise<LaunchedBrow
   const decoder = new TextDecoder();
   let seen = '';
   const deadline = Bun.nanoseconds() + options.timeoutMs * 1_000_000;
-  try {
-    while (Bun.nanoseconds() < deadline) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      seen += decoder.decode(value, { stream: true });
-      const found = ENDPOINT.exec(seen);
-      if (found?.[1] !== undefined) return { endpoint: found[1], close };
+  while (Bun.nanoseconds() < deadline) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    seen += decoder.decode(value, { stream: true });
+    const found = ENDPOINT.exec(seen);
+    if (found?.[1] !== undefined) {
+      // Read to the end and DISCARD, for the life of the process. A pipe nobody reads fills, and
+      // Chrome's next stderr write then blocks the thread making it — a browser that stops
+      // answering mid-run for a reason no log shows. Kept a pipe rather than `'ignore'` because the
+      // lines before the endpoint are the launch-failure diagnostics below.
+      void drain(reader);
+      return { endpoint: found[1], close };
     }
-  } finally {
-    reader.releaseLock();
   }
+  reader.releaseLock();
   close();
   // Chrome's own stderr is the actionable half — a missing library, a sandbox refusal, a bad flag
   // are all named there — so it is reported rather than "the launch failed".

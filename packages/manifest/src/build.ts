@@ -19,6 +19,7 @@
 import { canonicalJson } from '@ultimat3/core';
 import type {
   ActionFact,
+  ChannelFact,
   EntityFact,
   ErrorCodeFact,
   JobFact,
@@ -36,6 +37,7 @@ export interface ManifestSources {
   readonly entities?: readonly EntityFact[];
   readonly actions?: readonly ActionFact[];
   readonly queries?: readonly QueryFact[];
+  readonly channels?: readonly ChannelFact[];
   readonly jobs?: readonly JobFact[];
   readonly tasks?: readonly TaskFact[];
   readonly policies?: readonly PolicyFact[];
@@ -48,6 +50,7 @@ export function buildManifest(sources: ManifestSources): Manifest {
   const entities = sortBy(sources.entities ?? [], (e) => e.name).map(normalizeEntity);
   const actions = sortBy(sources.actions ?? [], (a) => a.name).map(normalizeAction);
   const queries = sortBy(sources.queries ?? [], (q) => q.name).map(normalizeQuery);
+  const channels = sortBy(sources.channels ?? [], (c) => c.name).map(normalizeChannel);
   const jobs = sortBy(sources.jobs ?? [], (j) => j.name).map(normalizeJob);
   const tasks = sortBy(sources.tasks ?? [], (t) => t.name).map((t) => ({
     ...t,
@@ -70,6 +73,7 @@ export function buildManifest(sources: ManifestSources): Manifest {
     ...policies.map((p) => p.permission),
     ...actions.flatMap((a) => a.permissions),
     ...queries.flatMap((q) => q.permissions),
+    ...channels.flatMap((c) => c.permissions),
   ]);
 
   const body = {
@@ -79,6 +83,7 @@ export function buildManifest(sources: ManifestSources): Manifest {
     entities,
     actions,
     queries,
+    channels,
     jobs,
     tasks,
     policies,
@@ -150,6 +155,14 @@ const normalizeQuery = (query: QueryFact): QueryFact => ({
   // Conditional, not `?? []`: the fact is absent when the read declared nothing, and writing an
   // empty array would make every plain read carry a key that means the same as no key.
   ...(query.subscribes === undefined ? {} : { subscribes: [...query.subscribes].sort() }),
+});
+
+// `params` keep their DECLARED order — it is the order a topic's segments are spelled in, so it is
+// part of the wire contract, not a set.
+const normalizeChannel = (channel: ChannelFact): ChannelFact => ({
+  ...channel,
+  records: [...channel.records].sort(),
+  permissions: [...channel.permissions].sort(),
 });
 
 // Job steps keep their DECLARED order — a job's steps are a sequence, not a set, and

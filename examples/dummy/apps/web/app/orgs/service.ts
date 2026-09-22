@@ -12,6 +12,7 @@ import {
   NotAMember,
   quoteUpgrade,
 } from '@postly/core';
+import type { Member as MemberRow } from '@postly/db';
 import type { AppLocale, AppTheme, AppZone } from '@postly/domain';
 import { type MemberId, type OrgId, type PlanCode, seatLimit } from '@postly/domain';
 // `Actor` and not `CtxFacts['actor']`: `CtxFacts` is `ServiceFactory`'s parameter type and
@@ -132,7 +133,7 @@ export const orgsService = defineService('orgs', (ctx) => ({
     locale?: AppLocale;
     theme?: AppTheme;
     digestOptIn?: boolean;
-  }): Promise<MemberView> {
+  }): Promise<MemberRow> {
     const acting = actingMember(ctx.actor);
     return updatePreferences(acting.orgId, acting.memberId, values);
   },

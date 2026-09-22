@@ -37,7 +37,7 @@ This file is a link map, not a status page. **It states no version, count or ver
 ## Start here
 
 - [README](https://raw.githubusercontent.com/developerz-ai/ultimate/main/README.md): the entry point — what it is, how to run it, the package table, the gate, and one hop to everything else.
-- [Thesis](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/00-thesis.md): the eight design axioms, the inspire-explicitly table, the permanent exclusions. Read before arguing with a default.
+- [Thesis](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/00-thesis.md): the nine design axioms, the inspire-explicitly table, the permanent exclusions. Read before arguing with a default.
 - [The eight primitives](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/02-primitives.md): canonical shape and rules for each. Read before writing any app code. A new capability arrives as a factory over an existing primitive — `llm()` returns an action, `backfill()` returns a job — never as a ninth kind.
 - [Adding a feature](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/15-adding-a-feature.md): the end-to-end walkthrough an agent should follow.
 - [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/CLAUDE.md): boundaries, dependencies, commands and non-negotiables for working inside this repo.
@@ -101,7 +101,7 @@ Generated from `bun run scripts/list-workspaces.ts --json` and each package's ow
 
 ## Design — docs/idea
 
-- [00-thesis.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/00-thesis.md): Rails' philosophy, but the primary developer is an AI agent — plus the inspire-explicitly table and the 8 axioms.
+- [00-thesis.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/00-thesis.md): Rails' philosophy, but the primary developer is an AI agent — plus the inspire-explicitly table and the 9 axioms.
 - [01-stack.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/01-stack.md): One locked choice per layer; Bun natives delete ~40 dependencies before you write a line.
 - [02-primitives.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/02-primitives.md): Eight primitives. `action` projects to six artifacts. Two authz systems is how every Meteor-like framework died.
 - [03-realtime.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/03-realtime.md): Channels → live queries → local-first: a ladder, not three products. Tier 2 → 3 is `persist: true` on a **query** — never a config key: `realtime.tier` was read by nothing and was deleted in 10.0.0.
@@ -127,13 +127,13 @@ Generated from `bun run scripts/list-workspaces.ts --json` and each package's ow
 ## Internals — docs/architecture
 
 - [00-conventions.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/00-conventions.md): File layout, naming, export surface, LOC ceilings — the rules Biome and `x verify` enforce.
-- [01-package-map.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/01-package-map.md): 29 packages, 6 tiers, one reason to change each. What every package owns and must never do.
+- [01-package-map.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/01-package-map.md): 30 packages, 6 tiers, one reason to change each. What every package owns and must never do.
 - [02-boundaries.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/02-boundaries.md): Tier violations are build errors. `scripts/boundaries.ts` resolves the transitive chain and prints it.
 - [03-request-lifecycle.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/03-request-lifecycle.md): 14 ordered stages, four phases, and why each sits where it does. ALS context, so no layer threads `actor`.
 - [04-error-contract.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/04-error-contract.md): `UltimateError`: one object, three renderings. Every error carries an executable `fix:`.
 - [05-type-chain.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/05-type-chain.md): DB column → entity → action → OpenAPI → client → component. Rename a field, count the compile errors.
 - [06-data-layer.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/06-data-layer.md): Entities, repos, tenancy. Cursor pagination only. Migrations that cannot lie.
-- [07-realtime-internals.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/07-realtime-internals.md): WAL → change feed → matcher → fanout → patch. Per-subscriber policy, reconnect cost model.
+- [07-realtime-internals.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/07-realtime-internals.md): WAL → change feed → matcher → fanout → patch, declared channels with seq/epoch repair, and the browser half: one page store, one socket per origin in a SharedWorker, writes over HTTP, the offline outbox.
 - [08-jobs-internals.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/08-jobs-internals.md): Memoized step replay, the real `SKIP LOCKED` claim SQL, lease-row leader election.
 - [09-rendering-internals.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/09-rendering-internals.md): Two bundle graphs, the streaming envelope, four hydration strategies, ISR single-flight.
 - [10-cross-cutting.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/10-cross-cutting.md): i18n, theming, timezones, money — four concerns, enforced rather than documented.
@@ -147,6 +147,7 @@ Generated from `bun run scripts/list-workspaces.ts --json` and each package's ow
 - [18-observer-seam.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/18-observer-seam.md): The two funnels every statement passes through, attribution, and why an uninstalled diagnostic costs production one branch.
 - [19-cutting-a-major.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/19-cutting-a-major.md): One `wiki/Upgrading.md` section per major, written when the first breaking change lands. What `CHANGELOG.md` owns, what the wiki owns, and which of the three rules nothing enforces.
 - [20-flight-control.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/20-flight-control.md): Tier 0 retry, backoff, single-flight, concurrency gate and generation fence. What four engines and four dedupers looked like before, which adoptions changed behaviour, and the four that were refused with the measurement that refused them.
+- [21-client-data-layer.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/21-client-data-layer.md): One record store per tab, one browser HTTP seam, one socket per origin, all projected from `entity`. Decided for 21.0.0 and not released; a status column per row says what has landed.
 
 ## Operations — docs/ops
 

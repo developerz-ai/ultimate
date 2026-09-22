@@ -3,12 +3,16 @@
 // Presence lives in `transport.shared`, never in a node's heap: when a `sync` node dies its members
 // simply stop heartbeating and expire, and every other node already sees the same set. Ephemeral
 // state is never modelled as rows — that rule is what keeps presence off the write path entirely.
+// On the wire it is not a frame kind: a roster change is an `events` frame on the channel the member
+// joined (`channel-presence.ts` is the payload), so only a channel declared `events: true` has one.
 
 import { type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core';
 import type { ChannelHub, Topic } from './channel';
+import { presenceEvent } from './channel-presence';
+import type { ChannelEventsFrame } from './channel-wire';
 import type { Transport } from './fanout';
 import type { JsonObject } from './json';
-import { type Frame, PROTOCOL_VERSION, type PresenceMember } from './sync-protocol';
+import { PROTOCOL_VERSION, type PresenceMember } from './sync-protocol';
 
 export const PRESENCE_KEY_PREFIX = 'presence';
 /** Separate namespace: the sweep lease is one member per *node*, never one per participant. */
@@ -218,7 +222,7 @@ export class PresenceRegistry {
   }
 
   /** Full-set frame for a client that just (re)connected — presence has no delta protocol. */
-  async syncFrame(name: Topic): Promise<Frame> {
+  async syncFrame(name: Topic): Promise<ChannelEventsFrame> {
     const roster = await this.roster(name);
     return presenceFrame(name, 'sync', roster.members, roster.total);
   }
@@ -256,23 +260,27 @@ export class PresenceRegistry {
     members: readonly PresenceMember[],
   ): Promise<void> {
     if (!this.#hub) return;
-    await this.#hub.publishFrame(name, presenceFrame(name, op, members));
+    await this.#hub.emit(name, presenceEvent(op, members));
   }
 }
 
 /**
- * `total` belongs to a **full set** and to nothing else: a `join`/`leave`/`update` frame carries the
- * members that changed, so a count beside them would read as "and the rest were truncated". Absent
- * is a defined answer — the client renders what it was sent.
+ * The roster as the `events` frame ONE socket is sent directly — the join reply. Everything else
+ * reaches sockets through `ChannelHub.emit`, the channel's own events path. `total` belongs to a
+ * full `sync` set and to nothing else: a delta carries the members that changed.
  */
 export function presenceFrame(
   name: Topic,
   op: 'join' | 'leave' | 'update' | 'sync',
   members: readonly PresenceMember[],
   total?: number,
-): Frame {
-  const base = { type: 'presence', v: PROTOCOL_VERSION, topic: name, op, members } as const;
-  return total === undefined ? base : { ...base, total };
+): ChannelEventsFrame {
+  return {
+    type: 'events',
+    v: PROTOCOL_VERSION,
+    channel: name,
+    event: presenceEvent(op, members, total),
+  };
 }
 
 function parseMember(id: string, value: string): PresenceMember | null {

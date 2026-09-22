@@ -4,6 +4,6 @@
 // Bundled AND imported by `realtime-browser-barrel.test.ts` — the import is what gives it an lcov
 // record, since `Bun.build()` reads this file without evaluating it.
 
-import { useLive } from '@ultimat3/realtime';
+import { useQuery } from '@ultimat3/realtime';
 
-export const probeUseLive = useLive;
+export const probeUseQuery = useQuery;

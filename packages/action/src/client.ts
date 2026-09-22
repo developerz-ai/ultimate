@@ -8,14 +8,25 @@
  * not pay a byte for any of them — an `import type` is erased and the value import would not be.
  * Dedup is deliberately unreachable from this file — a mutation may never join another mutation,
  * and the way that is guaranteed is that `keyFor` is never called here.
+ *
+ * Every call dispatches through core's `clientTransport`: credentials, the JSON body, the
+ * idempotency header, the record envelope and its adoption into the page store, and the principal
+ * fence are decided there once. This file adds only what the action alone knows — the build-id
+ * check (`onResponse`) and the action-named error decode (`decodeError`). The caller still gets exactly the action's output — the envelope
+ * never reaches the return type.
  */
-import type { ClientFlight, ClientRetry, UltimateError, WireAnswer } from '@ultimat3/core';
-import { FRAMEWORK_CODE, isJsonObject, problemOf, traceHeaders } from '@ultimat3/core';
+import type { ClientFlight, ClientRetry, FetchLike, UltimateError } from '@ultimat3/core';
+import {
+  actionPath,
+  clientTransport,
+  FRAMEWORK_CODE,
+  isJsonObject,
+  problemOf,
+} from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action } from './action';
-import { ContractDriftError, RemoteActionError, RpcFailedError } from './errors';
-import { derivePath } from './naming';
-import { BUILD_ID_HEADER, IDEMPOTENCY_HEADER } from './wire-headers';
+import { ContractDriftError, RemoteActionError } from './errors';
+import { BUILD_ID_HEADER } from './wire-headers';
 import { issuesFromWire } from './wire-issues';
 
 /**
@@ -52,7 +63,8 @@ export type ClientMethod<TIn extends StandardSchemaV1, TOut extends StandardSche
   options?: CallOptions,
 ) => Promise<InferOutput<TOut>>;
 
-export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
+/** Core's one declaration, re-exported by name so `import type { FetchLike }` keeps resolving. */
+export type { FetchLike } from '@ultimat3/core';
 
 export interface ClientOptions {
   readonly baseUrl: string;
@@ -61,8 +73,8 @@ export interface ClientOptions {
   readonly buildId?: string;
   readonly headers?: Readonly<Record<string, string>>;
   /**
-   * Opt-in flight control — `createClientFlight({ … })`. Absent, a call is one `fetch` and nothing
-   * else, which is what every caller written before this option existed already gets.
+   * Opt-in flight control — `createClientFlight({ … })`. Absent, a call is one dispatch and
+   * nothing else, which is what every caller written before this option existed already gets.
    */
   readonly flight?: ClientFlight;
 }
@@ -97,84 +109,43 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
   name: string,
   options: ClientOptions,
 ): ClientMethod<TInput, TOutput> {
-  const doFetch: FetchLike = options.fetch ?? ((input, init) => fetch(input, init));
-  const base = options.baseUrl.replace(/\/+$/, '');
+  const url = `${options.baseUrl.replace(/\/+$/, '')}${actionPath(name)}`;
+  const onResponse = (response: Response): void =>
+    assertSameBuild(options.buildId, response.headers.get(BUILD_ID_HEADER), name);
+  const decodeError = (status: number, text: string): UltimateError | undefined =>
+    toUltimateError(text, status, name);
   // Erased at the wire seam; the response type is this action's by construction.
   return (input, callOptions = {}) =>
-    call(doFetch, base, options, name, input, callOptions) as Promise<InferOutput<TOutput>>;
+    clientTransport({
+      method: 'POST',
+      url,
+      body: input ?? {},
+      headers: headersFor(options),
+      signal: callOptions.signal,
+      idempotencyKey: callOptions.idempotencyKey,
+      flight: options.flight,
+      // Only alongside a key: a retried mutation with no key is a second write, not a second
+      // attempt, so the flight's own policy is overridden with one attempt rather than inherited.
+      retry: callOptions.idempotencyKey === undefined ? ONCE : (callOptions.retry ?? ONCE),
+      onResponse,
+      decodeError,
+      fetchImpl: options.fetch,
+    }) as Promise<InferOutput<TOutput>>;
 }
 
 /** One attempt, and no retry at all. What a mutation carrying no idempotency key is allowed. */
 const ONCE: ClientRetry = { attempts: 1 };
 
-async function call(
-  doFetch: FetchLike,
-  base: string,
-  options: ClientOptions,
-  name: string,
-  input: unknown,
-  callOptions: CallOptions,
-): Promise<unknown> {
-  const url = `${base}${derivePath(name).path}`;
-  const body = JSON.stringify(input ?? {});
-  const dispatch = (signal: AbortSignal | undefined): Promise<WireAnswer> =>
-    postOnce(doFetch, url, body, options, name, callOptions, signal ?? callOptions.signal);
-
-  const flight = options.flight;
-  const answer =
-    flight === undefined
-      ? await dispatch(undefined)
-      : await flight.run({
-          // `undefined`, unconditionally: a mutation may never join another mutation, and the
-          // enforcement is that this file never calls `flight.keyFor`.
-          key: undefined,
-          // NEVER aborted. A fence bump and a deadline both mean "this answer no longer matters";
-          // closing the socket does not un-commit the write, it only destroys the one chance this
-          // caller had of learning whether it landed.
-          abortable: false,
-          retry: callOptions.idempotencyKey === undefined ? ONCE : (callOptions.retry ?? ONCE),
-          run: dispatch,
-        });
-  if (answer.status === 204) return undefined;
-  return JSON.parse(answer.text) as unknown;
-}
-
-/** One dispatch. Everything above it decides how many times this happens; it decides none. */
-async function postOnce(
-  doFetch: FetchLike,
-  url: string,
-  body: string,
-  options: ClientOptions,
-  name: string,
-  callOptions: CallOptions,
-  signal: AbortSignal | undefined,
-): Promise<WireAnswer> {
-  const headers: Record<string, string> = {
-    'content-type': 'application/json',
-    // Before the caller's headers, so an explicit `traceparent` still wins. Without this a
-    // service-to-service hop started a fresh root trace on the other side, which makes "which of
-    // my downstreams is slow" unanswerable across every Ultimate-to-Ultimate call.
-    ...traceHeaders(),
-    ...options.headers,
-  };
+/**
+ * The caller's headers plus the build id. The trace and the request budget are NOT here: the
+ * transport adds them server-side from its outbound-header slot (`@ultimat3/core`'s
+ * `outbound-headers.ts`), before these, so an explicit `traceparent` still wins — and a browser,
+ * which never has a trace, no longer bundles telemetry to learn that.
+ */
+function headersFor(options: ClientOptions): Readonly<Record<string, string>> {
+  const headers: Record<string, string> = { ...options.headers };
   if (options.buildId !== undefined) headers[BUILD_ID_HEADER] = options.buildId;
-  if (callOptions.idempotencyKey !== undefined) {
-    headers[IDEMPOTENCY_HEADER] = callOptions.idempotencyKey;
-  }
-
-  const init: RequestInit = {
-    method: 'POST',
-    headers,
-    body,
-    ...(signal === undefined ? {} : { signal }),
-  };
-  const response = await doFetch(url, init);
-  assertSameBuild(options.buildId, response.headers.get(BUILD_ID_HEADER), name);
-  // Read as TEXT once: a `Response` body is a single-use stream, so the failure path and the
-  // answer path cannot both have it.
-  const text = response.status === 204 ? '' : await response.text();
-  if (!response.ok) throw toUltimateError(text, response.status, name);
-  return { status: response.status, text };
+  return headers;
 }
 
 /**
@@ -198,17 +169,19 @@ function assertSameBuild(
  * `application/problem+json` back into the error the server threw. The code rides along
  * verbatim — carrying one is the point of the document — but it is a code this bundle may never
  * have registered, so the result is a `RemoteActionError`: marked remote-origin, and linked only
- * to a page that exists. A body naming no framework code is a proxy answering rather than the
- * app, which is what `RpcFailedError` already says.
+ * to a page that exists.
+ *
+ * A body naming no framework code is a proxy answering rather than the app, and that answer is
+ * `undefined` here: the transport's shared decode makes it `X_CLIENT_TRANSPORT_FAILED`, the SAME
+ * code a query gets for the same failure. `X_RPC_FAILED` was this branch until 21.0.0; the code
+ * stays registered (shipped codes never change) and nothing in the framework throws it now.
  */
-function toUltimateError(text: string, status: number, name: string): UltimateError {
+function toUltimateError(text: string, status: number, name: string): UltimateError | undefined {
   // `problemOf` is total — a gateway's HTML, an empty body and a truncated stream all answer `{}`,
-  // which carries no `code` and therefore lands on `RpcFailedError` exactly as before.
+  // which carries no `code` and therefore falls through to the transport's decode.
   const body = problemOf(text);
   const code = body['code'];
-  if (typeof code !== 'string' || !FRAMEWORK_CODE.test(code)) {
-    return new RpcFailedError(name, status);
-  }
+  if (typeof code !== 'string' || !FRAMEWORK_CODE.test(code)) return undefined;
   return new RemoteActionError({
     action: name,
     status,

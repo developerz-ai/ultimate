@@ -17,7 +17,7 @@ import {
   RingChangeBuffer,
   SocketRegistry,
 } from '@ultimat3/realtime/server';
-import { BENCH_TOPIC } from './restart-bench-shared';
+import { probeChange } from './restart-bench-channel';
 
 function parsePort(argv: readonly string[]): number {
   const flag = argv.indexOf('--port');
@@ -57,8 +57,9 @@ if (import.meta.main) {
   const port = parsePort(process.argv.slice(2));
   const sockets = new SocketRegistry();
   const transport = new InProcessTransport();
+  // No channel list: `BENCH_CHANNEL` registered itself on import, and it declares no policy, so
+  // every socket may join it.
   const hub = new ChannelHub({ transport, sockets });
-  hub.guard('bench.>', () => true);
   const node = createSyncNode({
     hub,
     registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
@@ -85,7 +86,9 @@ if (import.meta.main) {
           if (url.pathname === '/bench/publish' && request.method === 'POST') {
             publishSeq += 1;
             const seq = publishSeq;
-            void hub.publish(BENCH_TOPIC, { seq });
+            // A committed row, as the change feed would hand it to this node. The node mints the
+            // frame's seq itself, so it equals `seq` here — one probe, one frame, per process.
+            hub.deliverChange(probeChange(seq, Date.now()));
             return Response.json({ seq });
           }
           // Awaited, not `??`-defaulted: `node.fetch` is async now — the credential is decided

@@ -414,7 +414,11 @@ to know about everything — so the join is here, and it is the same rule
 | `cdp-browser.ts` | the two doors: `openE2eBrowserIfAvailable()` (undefined when there is no browser) and `openE2eBrowser()` (refuses by name), and the close that undoes both halves |
 | `cdp-launch.ts` | which Chrome, and starting it — the candidate list, the flags, and the endpoint read off its stderr |
 | `cdp-connection.ts` | CDP over Bun's own `WebSocket`: request framing, reply correlation by `id`, one-shot event waiters, the per-call deadline |
-| `cdp-e2e-page.ts` | `E2eBrowserPage`'s five methods over an attached, flattened session |
+| `cdp-e2e-session.ts` | the BROWSER half, `E2eSession`: every target auto-attached at browser level and PAUSED until its Network domain is on (a SharedWorker opens its socket at start-up); `newTab()`, `addInitScript()`, `offline()` for every page and worker including later ones, `setCookie()`, and the log of every WebSocket (`sockets()`) and request (`requests()`) in any realm. A page's own workers attach under it UNPAUSED — paused there, the emitted service worker never took control (measured, `e2e/service-worker.e2e.test.ts`) |
+| `cdp-e2e-page.ts` | one TAB, `E2eTab`: `E2eBrowserPage`'s five methods plus `reload`, `waitFor`, `indexedDbNames`, `close`. `offline()` forwards to the session — the switch is browser-wide |
+| `e2e-app.ts` | `startE2eApp({ root, mode: 'dev' \| 'serve', seed })`: reset + seed + spawn on a THROWAWAY `ULTIMATE_STATE_DIR` (database, disk, dev lock) and a free web AND metrics port, `/readyz`-gated, `stop()` removes the directory. Never the developer's `.x/pgdata`; two apps and an `x dev` coexist. Measured: `examples/dummy` up in ~12 s |
+| `e2e-preload.ts` + `e2e-browser-handle.ts` | the `e2e` step's own preload: with `ULTIMATE_E2E_BASE_URL` set it opens ONE browser, `installE2eDriver`s its first tab, and publishes the whole `E2eBrowser` for `e2eBrowser()`; `e2eBaseUrl()` is the app's origin |
+| `verify-e2e.ts` | `withE2eApp`: in an APP on a machine with Chrome, the `e2e` step spawns the app and runs the suite with `--preload e2e-preload.ts`. No browser or not an app: the suite runs exactly as before. Until this, no app ever installed a driver, so every `e2eTest` skipped and every `page` fixture refused |
 | `cdp-errors.ts` | one constructor per way the browser half refuses |
 
 **Absent by default, and that is a requirement rather than a state.** Nothing here runs until
@@ -1248,6 +1252,70 @@ every fixture in the tree, because `table` defaults to the name verbatim and all
 is a fact about the deployment, not an app config choice, and one image runs behind an ingress in
 one cluster and behind nothing on a laptop. Without it `ctx.ip` is the ingress's socket address on
 every request, so the limiter keys the whole fleet's anonymous traffic into one bucket.
+
+### The document carries the page's client scope — on private documents only
+
+`dev-render.ts` puts `@ultimat3/render`'s `clientScopeTag(clientScopeOf(ctx.actor))` (`@ultimat3/auth`) in the head of a
+gated `ssr` page and every `stream` — the documents whose own headers say `private`
+(`documentCarriesScope`). A shareable document carries none, because a CDN would hand one visitor's
+scope to the next. `dev-render-scope.test.ts` drives `static`, `isr`, `ssr` (gated and not) and `stream` over the real pipeline. There is
+no island bootstrap: the page client is created lazily by the first transport call or realtime hook
+(plan 101, decided 2026-09-22; `island-bundle.ts`'s header records what an eager one cost).
+
+### The page's sync target is the framework's, and so is the worker that hosts the socket
+
+`page-sync.ts` is ONE call `cmd-dev.ts` and `serve.ts` both make (plan 101 slice 11, `As of
+2026-09-22`), so the two boots cannot serve different targets:
+
+| File | Job |
+|---|---|
+| `sync-url.ts` | `syncUrlFrom(env)`: `SYNC_URL` verbatim (must be `ws:`/`wss:`, else `X_CONFIG_INVALID` at boot), otherwise the same-origin `SYNC_PATH` — `/_x/sync`, which `x dev`, a combined-role container and the chart's ingress all serve. Never a derived neighbouring port: behind an ingress that is a URL nothing publishes. No app owns a `sync-url.ts` any more |
+| `worker-bundle.ts` | `@ultimat3/realtime/sync-worker`, resolved from the APP root, built as ONE classic-script (`iife`) browser bundle, source-addressed with `island-bundle.ts`'s `graphHash`, served `immutable` at `/_x/sync-worker/<hash>.js`. `undefined` when the app cannot resolve it — no realtime means no socket to share, and the tab-side host falls back in-page. Built at boot only: it is framework code, and a new URL per deploy is what keeps an old tab on the worker it started with. The SAME builder makes `@ultimat3/realtime/boot` at `/_x/page-boot/<hash>.js`: the disk restore and the outbox, once per page instead of in every island (a `useRecord` island 34.8 → 19.4 kB, `examples/dummy`'s `likes-badge` 48.6 → 32.9 kB) |
+| `dev-route-table.ts` | `x dev`'s route table in mount order, and the theme, error-page styles and MCP path it resolved on the way — split from `cmd-dev.ts` at its 500-line ceiling. It is where `pageSync` is called on the dev side |
+| `page-sync.ts` → `persisted` | `@ultimat3/entity`'s `persistedRecordTypes`, read per render, passed as `DocumentOptions.persisted` by both boots: render's `clientPersistTags` puts `ultimate-persist` beside the scope tag and ONLY there — persistence is per principal, so a shareable document names none |
+| `dev-render.ts` | `DocumentOptions.sync` → render's `clientSyncTags`: `ultimate-sync`, `ultimate-build`, `ultimate-sync-worker` on EVERY document (principal-free, unlike the scope tag). The page boot's `<script defer>` (render's `clientBootTags`) is rendered after the body, only when the document carries the SCOPE tag (restoring and replaying are per principal) AND an island this render emitted reaches `@ultimat3/realtime` (`island-realtime.ts` records the answer every island build computes; a page whose islands never touch a record — `examples/dummy`'s settings — pays nothing). `dev-render-scope.test.ts`. Both framework scripts resolve realtime from the root, then from `apps/*` — a workspace app's realtime is `apps/web`'s dependency, and resolving from the root alone silently built no worker and no boot for `examples/dummy`. The static export carries none — it has no sync node |
+
+### Realtime is installed FOR the author, only where it is used
+
+`island-realtime.ts` (plan 101 slice 14, `As of 2026-09-22`): an island whose own import graph
+reaches `@ultimat3/realtime` — walked with `live-routes.ts`'s `firstInGraph`, relative specifiers
+only, the transpiler reading re-exports and erasing `import type` — is built from a virtual entry
+that calls `installRealtime({ signal: createSignal })` with that bundle's solid-js before the
+island's module body runs. Every other island is built from its own file, byte for byte. +103 B on
+a Solid island reading `useConnection`, +0 elsewhere. A PACKAGE importing realtime for an island is
+the walk's blind spot, and a hook there throws `X_REALTIME_UNINSTALLED` by name.
+
+### `x verify` runs the static steps beside the serial suites
+
+`verify-run.ts`'s `BESIDE_SERIAL_SUITES` — `lint`, `boundaries`, `filesize`, `package-shape`,
+`errors` — start when `live` does and are joined before the first step after `eval` (DX ledger #14).
+They read the tree and write nothing a later step reads; `typecheck` stays first and alone, `unit`
+alone. The table, `--json` and every step name keep the declared order; `data.durationMs` is WALL
+time now, not the sum of step times. Measured locally on the framework root, 12 cores, one run
+each, `As of 2026-09-22`: **395 s → 270 s** wall. `verify-run-overlap.test.ts` pins both halves.
+
+### A browser-only read in a module no island imports is `X_LIVE_ROUTE_NO_ISLAND`
+
+`live-routes.ts`, `As of 2026-09-22`: the rule walks each route's SERVER graph (the page's relative
+imports — an island is a `src` string, never an import) and reports every module there that reads
+`useQuery`, `useConnection`, `useMutation`, `useMutationQueue`, `useRecord`, `useChannel` **or
+`hasPageSocket`**, unless some island's own graph imports that module too. Once per module, however
+many routes reach it. `hasPageSocket()` was an EXEMPTION until this date, on the argument that a
+module asking had written its fallback; on the server it answers false every time, so a guarded
+module no browser runs renders nothing forever — `examples/dummy`'s update banner, in a layout no
+island imported, never showed "A new version is ready.". The fix line starts "move it into an
+island".
+
+### A registered code nothing throws must say so
+
+`error-unthrown.ts`'s `checkErrorCodesThrown(root, page)` (DX ledger #9, `X_ERROR_CODE_UNTHROWN`):
+a code a package registry names, used nowhere else in shipped `packages/*/src` — not at a `code:`,
+not as a fallback literal, not through a table member something reads — is reported unless its
+reference row says `thrown by nothing` / `not thrown` or sits under `## Reserved codes`. The fix is
+the row, never the registration: a shipped code is stable forever. A host check, like the other
+reference-page rules — in a generated app every framework code would read as unthrown. Its limit:
+an exported class holding `code: 'X_…'` counts as a thrower whether or not anything constructs it,
+which is why `X_RPC_FAILED`'s `RpcFailedError` is not reported.
 
 ### `island-bundle.ts` is the bundler half of `hydrate`
 

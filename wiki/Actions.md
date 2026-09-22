@@ -39,7 +39,7 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 | Member | Type | Use |
 |---|---|---|
 | `ctx.actor` | `Actor` | `{ kind: 'user' \| 'service' \| 'agent' \| 'anonymous', id, orgId?, roles, scopes }`. Read-only; authz already ran |
-| `ctx.<service>` | app-augmented | repos and services (`ctx.posts`, `ctx.orgs`, `ctx.mail`) — declared via `CtxServices` |
+| `ctx.<service>` | app-augmented | repos and services (`ctx.posts`, `ctx.orgs`, `ctx.mail`) — declared via `CtxServices`, registered with `defineService`. On an HTTP request each is built **lazily, on first read, for the authenticated actor**, and rebuilt if the actor, locale or time zone changes (`packages/http/src/request-services.ts`). From 13.0.0 until 21.0.0 they were built before the `auth` stage and acted as the anonymous actor |
 | `ctx.jobs` | job client | the facade `<job>.enqueue(input)` resolves; enqueue is transactional via the outbox |
 | `ctx.requestId` / `ctx.traceId` | `string` | W3C trace id; the same value crosses HTTP → job → live query |
 | `ctx.locale` / `ctx.tz` | `string` | BCP-47 and IANA. Never format a date without `ctx.tz` |

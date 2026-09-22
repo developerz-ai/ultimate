@@ -8,7 +8,6 @@
  * update check does not fire on a no-op deploy.
  */
 
-import type { BackgroundSyncOptions } from './background-sync';
 import { backgroundSyncSource } from './background-sync';
 import type { CapabilityFlags, ResolvedCapabilities } from './capabilities';
 import { isEnabled, resolveCapabilities } from './capabilities';
@@ -53,7 +52,6 @@ export interface ServiceWorkerConfig {
   readonly offlineFallbackRevision?: string;
   readonly offlineFallbackBytes?: number;
   readonly vapid?: VapidConfig;
-  readonly backgroundSync?: BackgroundSyncOptions;
   /** Build ids whose caches must survive this activation (see `retentionPlan`). */
   readonly retainBuildIds?: readonly string[];
   readonly precacheWarnBytes?: number;
@@ -236,7 +234,7 @@ export function generateServiceWorker(
     blocks.push(pushSource({ badging: isEnabled(capabilities, 'badging') }));
   }
   if (isEnabled(capabilities, 'backgroundSync')) {
-    blocks.push(backgroundSyncSource(config.backgroundSync ?? {}));
+    blocks.push(backgroundSyncSource());
   }
 
   return {
@@ -335,8 +333,24 @@ self.addEventListener('activate',(event)=>{
     await self.clients.claim();
     const cs=await self.clients.matchAll({type:'window'});
     for(const c of cs)c.postMessage({type:${JSON.stringify(APP_UPDATE_AVAILABLE)},to:BUILD_ID});
+    await Promise.all(cs.map((c)=>warm(c.url)));
   })());
-});`.trim();
+});
+// The page that installed this worker loaded BEFORE the worker controlled it, so no strategy ever
+// saw it and a runtime-cached route was unavailable offline until a second online visit. Now that
+// the worker controls the window, its URL is run through its own route's strategy — the same rule
+// that caches every later visit, never a second one. Best effort: a failure costs the warm-up only.
+async function warm(href){
+  if(typeof href!=='string')return;
+  const url=new URL(href);
+  if(url.origin!==self.location.origin||NEVER_CACHE.some((p)=>url.pathname.startsWith(p)))return;
+  const rule=ruleFor(url);
+  if(!rule||rule.c!=='pages')return;
+  const fn=STRATEGIES[rule.s];
+  if(!fn)return;
+  const req=new Request(url.href,{headers:withBuild(new Headers())});
+  try{await fn(req,cacheName(rule.c),()=>offlineFallback(req))}catch(e){}
+}`.trim();
 }
 
 /**
@@ -415,15 +429,16 @@ async function healSkew(req,res){
  * the page is what sends it: `registerOutboxSync` falls back to an `online` listener posting this
  * message wherever `registration.sync` is absent — Safari and Firefox — and with no branch for it
  * the offline mutation queue was never drained on exactly the browsers the fallback exists for.
- * Silent, too: no rejection, no request, no log.
+ * Silent, too: no rejection, no request, no log. The worker answers it by telling EVERY open tab
+ * to drain (`drainOutbox`), because the outbox lives in the pages, not here.
  *
- * Gated on the capability, because `flushOutbox` is only emitted with `backgroundSyncSource`. An
+ * Gated on the capability, because `drainOutbox` is only emitted with `backgroundSyncSource`. An
  * unconditional branch would answer the message with a `ReferenceError` inside `waitUntil`, which
  * the page that sent it cannot catch, in every app that leaves `backgroundSync` off.
  */
 function messageBlock(backgroundSync: boolean): string {
   const flush = backgroundSync
-    ? "\n  if(d.type==='flush-outbox')event.waitUntil(flushOutbox());"
+    ? "\n  if(d.type==='flush-outbox')event.waitUntil(drainOutbox());"
     : '';
   return `
 self.addEventListener('message',(event)=>{

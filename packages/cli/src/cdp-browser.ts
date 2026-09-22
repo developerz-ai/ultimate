@@ -10,17 +10,25 @@
 import { finiteCount } from '@ultimat3/core';
 import type { CdpConnection } from './cdp-connection';
 import { cdpConnect } from './cdp-connection';
-import { cdpE2ePage } from './cdp-e2e-page';
+import type { E2eTab } from './cdp-e2e-page';
+import type { E2eSession } from './cdp-e2e-session';
+import { cdpE2eSession } from './cdp-e2e-session';
 import { CdpBrowserMissingError } from './cdp-errors';
 import type { LaunchedBrowser } from './cdp-launch';
 import { CHROME_CANDIDATES, findChrome, launchChrome } from './cdp-launch';
-import type { E2eBrowserPage } from './e2e-page';
 
 /** How long a launch, a connect or a single CDP call may take. One number, three deadlines. */
 export const DEFAULT_CDP_TIMEOUT_MS = 30_000;
 
 export interface E2eBrowser {
-  readonly page: E2eBrowserPage;
+  /** The first tab — what `installE2eDriver({ page })` drives. */
+  readonly page: E2eTab;
+  /**
+   * The browser itself: more tabs in the same profile, init scripts, the offline switch for every
+   * page and worker, and the log of every socket and request. What a multi-tab acceptance suite
+   * drives, on the same launch as `page` — one harness, never a second one beside the driver.
+   */
+  readonly session: E2eSession;
   /** Idempotent, and it closes both halves: the CDP socket, then the process and its profile. */
   close(): void;
 }
@@ -43,9 +51,11 @@ const budget = (options: OpenE2eBrowserOptions): number =>
 const compose = (
   launched: LaunchedBrowser,
   connection: CdpConnection,
-  page: E2eBrowserPage,
+  session: E2eSession,
+  page: E2eTab,
 ): E2eBrowser => ({
   page,
+  session,
   close(): void {
     // The socket first: closing the process out from under an open connection makes every
     // in-flight call report "the browser closed the CDP connection", which is true and useless.
@@ -90,8 +100,8 @@ async function openLaunched(executable: string, timeoutMs: number): Promise<E2eB
     throw error;
   }
   try {
-    const page = await cdpE2ePage({ connection, loadTimeoutMs: timeoutMs });
-    return compose(launched, connection, page);
+    const session = await cdpE2eSession({ connection, loadTimeoutMs: timeoutMs });
+    return compose(launched, connection, session, await session.newTab());
   } catch (error) {
     connection.close();
     launched.close();

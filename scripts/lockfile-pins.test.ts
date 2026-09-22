@@ -87,18 +87,47 @@ describe('correcting the recorded ranges', () => {
     expect(text).toContain('"@biomejs/biome": "2.5.5"');
   });
 
-  test('a package.json range the lockfile has no line for adds nothing', () => {
-    // The pass rewrites what is recorded; it never invents an edge, because a missing edge is a
-    // question for `bun install`, not for a text rewrite.
+  test('a declared edge the block does not record is ADDED, sorted into its section', () => {
+    // DX ledger #13, reversing what this test used to assert ("it never invents an edge"): the
+    // missing edge was exactly the stale fact nothing reported, and `bun install` does not add it
+    // for a workspace whose manifest it considers unchanged.
     const { text, edits } = correctLockfile(LOCK, {
-      deps: { 'packages/action': { '@ultimat3/core': '3.0.0', '@ultimat3/nothing': '3.0.0' } },
+      deps: { 'packages/action': { '@ultimat3/core': '3.0.0', '@ultimat3/entity': '3.0.0' } },
       versions: {},
     });
-    // The one real correction still happens; the edge the lockfile never recorded is not invented.
-    expect(edits.map((edit) => (edit.kind === 'range' ? edit.dep : edit.dir))).toEqual([
-      '@ultimat3/core',
+    expect(edits.map((edit) => `${edit.kind}:${'dep' in edit ? edit.dep : edit.dir}`)).toEqual([
+      'range:@ultimat3/core',
+      'missing:@ultimat3/entity',
     ]);
-    expect(text).not.toContain('@ultimat3/nothing');
+    expect(text).toContain(
+      '"@ultimat3/core": "3.0.0",\n        "@ultimat3/entity": "3.0.0",\n        "@ultimat3/schema": "3.0.0",',
+    );
+    expect(
+      correctLockfile(text, {
+        deps: { 'packages/action': { '@ultimat3/entity': '3.0.0' } },
+        versions: {},
+      }).edits,
+    ).toEqual([]);
+  });
+
+  test('a block with no section for it gets one, in the section the manifest names', () => {
+    const { text, edits } = correctLockfile(LOCK, {
+      deps: { 'packages/core': { '@ultimat3/schema': '3.0.0' } },
+      versions: {},
+      sections: { 'packages/core': { '@ultimat3/schema': 'devDependencies' } },
+    });
+    expect(edits).toEqual([
+      {
+        kind: 'missing',
+        dir: 'packages/core',
+        dep: '@ultimat3/schema',
+        locked: '',
+        declared: '3.0.0',
+      },
+    ]);
+    expect(text).toContain(
+      '"version": "3.0.0",\n      "devDependencies": {\n        "@ultimat3/schema": "3.0.0",\n      },\n    },',
+    );
   });
 });
 
@@ -153,7 +182,7 @@ describe('a root that is not a repo', () => {
     // failure: the operator gets a stack trace where a finding belonged.
     const dir = await mkdtemp(join(tmpdir(), 'ultimate-lockfile-pins-'));
     try {
-      expect(await declaredFacts(dir)).toEqual({ deps: {}, versions: {} });
+      expect(await declaredFacts(dir)).toEqual({ deps: {}, versions: {}, sections: {} });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -203,5 +232,21 @@ describe('the lockfile as committed', () => {
     const lock = await Bun.file(`${ROOT}/bun.lock`).text();
     const { edits } = correctLockfile(lock, await declaredFacts(ROOT));
     expect(edits).toEqual([]);
+  });
+});
+
+describe('the real action → entity case, on a copy of the committed lockfile', () => {
+  test('deleting the edge from bun.lock is reported, and correcting it restores the file byte for byte', async () => {
+    const real = await Bun.file(`${ROOT}/bun.lock`).text();
+    const facts = await declaredFacts(ROOT);
+    // Only meaningful while action declares the edge; the assertion says which fact it rests on.
+    expect(facts.deps['packages/action']?.['@ultimat3/entity']).toBeDefined();
+    const line = /\n {8}"@ultimat3\/entity": "[^"]+",(?=[\s\S]*?\n {4}"packages\/admin")/;
+    const block = real.slice(real.indexOf('    "packages/action": {'));
+    const stale = real.replace(block, block.replace(line, ''));
+    expect(stale).not.toBe(real);
+    const { text, edits } = correctLockfile(stale, facts);
+    expect(edits.map((edit) => `${edit.kind}:${edit.dir}`)).toEqual(['missing:packages/action']);
+    expect(text).toBe(real);
   });
 });

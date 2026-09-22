@@ -13,6 +13,8 @@ export const PWA_OWNED_ERROR_CODES = [
   'X_BUILD_ID_MISSING',
   'X_SW_SCOPE_INVALID',
   'X_PWA_STRATEGY_EXHAUSTED',
+  // Shipped, so stable forever — and thrown by nothing since 21.0.0, when the worker stopped
+  // POSTing to `/_x/outbox/flush` (`background-sync.ts`). Registered so an old log still explains.
   'X_PWA_SYNC_FLUSH_FAILED',
   'X_PWA_SYNC_INCOMPLETE',
 ] as const;
@@ -125,36 +127,6 @@ export class PwaStrategyExhaustedError extends UltimateError {
       code: PwaStrategyExhaustedError.code,
       cause: `no cached response and the network failed for "${input.cacheName}"`,
       fix: 'pass options.fallback to staleWhileRevalidate(request, env, options), or set pwa.offline.fallback in app.config.ts',
-    });
-  }
-}
-
-/**
- * Titles one of the two failures `backgroundSyncSource()` emits into `sw.js`, and owns the `code`
- * the emitted source throws. The generated code runs in the browser's service-worker realm, which
- * has no bundler and no `@ultimat3/core` to import — so it defines a local `PwaSyncError` carrying
- * this same code, cause, fix and docs rather than constructing this class. This class is what gives
- * the code one title and one wiki row, the same as every other code in this file.
- */
-export class PwaSyncFlushFailedError extends UltimateError {
-  static readonly code = 'X_PWA_SYNC_FLUSH_FAILED' as const;
-  constructor(cause: string, fix: string) {
-    super({
-      code: PwaSyncFlushFailedError.code,
-      cause,
-      fix,
-    });
-  }
-}
-
-/** Documented for the same reason as {@link PwaSyncFlushFailedError} — see its comment. */
-export class PwaSyncIncompleteError extends UltimateError {
-  static readonly code = 'X_PWA_SYNC_INCOMPLETE' as const;
-  constructor(cause: string, fix: string) {
-    super({
-      code: PwaSyncIncompleteError.code,
-      cause,
-      fix,
     });
   }
 }

@@ -9,10 +9,8 @@ export type { OfflineStrategy, RenderMode } from '@ultimat3/core';
 // Moved to `@ultimat3/core` (one formatter, `b`/`kb`/`mb`/`gb`); still named here because a service
 // worker's size report is what a caller of this package prints.
 export { formatBytes } from '@ultimat3/core';
-export type { BackgroundSyncOptions } from './background-sync';
 export {
   backgroundSyncSource,
-  DEFAULT_FLUSH_ENDPOINT,
   registerBackgroundSyncSource,
   SYNC_TAG,
 } from './background-sync';

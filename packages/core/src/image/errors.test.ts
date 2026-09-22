@@ -3,12 +3,8 @@
 // humanised fallback — so only a test can tell "registered" from "silently degraded".
 
 import { describe, expect, test } from 'bun:test';
-import {
-  type CoreErrorCode,
-  describeErrorCode,
-  ERROR_DOCS_URL,
-  hasErrorCode,
-} from '../error-codes';
+import type { CoreErrorCode } from '../core-error-codes';
+import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '../error-codes';
 import { UltimateError } from '../errors';
 import {
   ImageDecodeFailedError,

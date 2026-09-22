@@ -51,8 +51,8 @@ describe('realtime barrels', () => {
   });
 
   test('the client entry carries the hook and the wire, and neither the bus nor the WAL', () => {
-    expect(client.useLive).toBeTypeOf('function');
-    expect(client.liveHookFor).toBeTypeOf('function');
+    expect(client.useQuery).toBeTypeOf('function');
+    expect(client.useRecord).toBeTypeOf('function');
     expect(client.decode).toBeTypeOf('function');
     for (const name of ['openNatsClient', 'bunPgStream', 'NatsTransport', 'createSyncNode']) {
       expect(Object.keys(client)).not.toContain(name);

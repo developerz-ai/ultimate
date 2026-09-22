@@ -22,6 +22,13 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | whether an answer still applies — `X_SUPERSEDED` | `generation-fence.ts` |
 | the five composed into one typed-client call — dedup, fence, retry, deadline, ceiling | `client-flight.ts` |
 | what a typed client puts on the wire and reads back off it | `client-wire.ts` |
+| the ONE browser HTTP function — credentials, JSON, the error decode, records, the fence | `client-transport.ts` + `client-dispatch.ts` + `client-problem.ts` |
+| the ONE URL rule for actions and queries | `client-paths.ts` |
+| the records envelope an answer carries behind `x-ultimate-records: 1` | `record-envelope.ts` |
+| the per-tab page handle (`globalThis[Symbol.for('ultimate.client')]`) records land in | `record-sink.ts` |
+| which principal the page acts for, and the epoch that moves when it changes | `client-scope.ts` |
+| which row survives a conflict — `server-wins`, `last-write-wins`, `custom` | `conflict-policy.ts` |
+| the four shapes an async region can be in | `async-state.ts` |
 | is this `unknown` a keyed record? | `json-object.ts` |
 | typed env validated at boot | `env.ts` |
 | `.env.example` rendered from that schema, and its drift check | `env-example.ts` |
@@ -561,6 +568,22 @@ cause and a runnable `fix:` with the fact that something was retried, which no r
 
 `classifyThrown` and `statedDelayMs` live in `error-retry.ts`, one import away from the table they
 read; `@ultimat3/jobs` re-exports both rather than keeping a second pair.
+
+## One browser seam — transport, records, page handle, principal fence
+
+| Export | The one answer | The question it settles |
+|---|---|---|
+| `clientTransport({ method, url, body?, rawBody?, headers?, signal?, idempotencyKey?, flight?, fresh?, retry?, onResponse?, decodeError?, onEnvelope?, fetchImpl? })` | every browser request | `credentials: 'same-origin'`, JSON in and out, the `idempotency-key` header, a non-2xx `problem+json` back into the server's code (`meta.origin: 'remote'`) unless `decodeError` answers first, a network `TypeError` into `X_CLIENT_TRANSPORT_FAILED`. A GET is abortable on `rescope()` and deduped only when a `flight` is passed (`fresh` refuses to join); any other method is never deduped and never aborted by the fence. `rawBody` goes out verbatim with no default header and resolves `undefined`. `onResponse` sees headers before the body is read. `onEnvelope` sees the decoded records envelope after adoption — the one way to learn the order of `records[type]`. `fetchImpl` defaults to `globalThis.fetch`, read at call time |
+| `actionPath(name)`, `actionRoute(name)`, `queryPath(name)`, `QUERY_PATH_PREFIX`, `splitWords`, `pluralize` | the one URL rule | `publishPost` → `/api/posts/publish`, `liveFeed` → `/_x/query/live-feed`. Tier 0 so `action`, `query` and `realtime` derive one URL with no sideways import |
+| `RECORDS_HEADER`, `encodeRecordEnvelope`, `decodeRecordEnvelope`, `RecordRows` | `{ data, records?: { [type]: { [key]: Row } }, removed?: { [type]: key[] } }`, only behind `x-ultimate-records: 1` | how an answer carries entity rows without changing the wire of an answer that has none. A malformed envelope is `X_CLIENT_RECORD_ENVELOPE_INVALID` |
+| `pageClient()` → `{ store, socket, scope }`, `RecordSink` | one handle per TAB, not per module copy | every island bundle carries its own core; the handle lives on `globalThis` under one `Symbol.for` key so all of them resolve the same store. No store installed = records dropped |
+| `rescope(principal)`, `onRescope(fn)`, `isSuperseded(error)` | the principal fence | a principal change bumps the epoch and notifies synchronously; reads in flight reject `X_CLIENT_SCOPE_CHANGED`, writes complete but their records are not adopted. `isSuperseded` answers true for it and for `X_SUPERSEDED` |
+| `resolveConflict(policy, local, server, { clockField? })`, `ConflictPolicy`, `Row` | one conflict vocabulary, over ROWS | `last-write-wins` keeps the local row only when its numeric clock field (default `updatedAt`) is newer; no provable clock = the server's row |
+| `AsyncState<T>` | `pending \| refreshing \| ready \| failed` | the type `realtime` produces and `ui` renders; tier 0 because neither may import the other |
+
+`clientTransport` does not value-import `createClientFlight` or `traceHeaders()` — measured sizes
+are in its file header. A server-side caller that propagates a trace passes `traceHeaders()` in
+`headers` itself.
 
 ## One image pipeline, everywhere
 

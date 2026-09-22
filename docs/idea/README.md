@@ -4,7 +4,7 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 
 | Doc | Hook |
 |---|---|
-| [`00-thesis.md`](./00-thesis.md) | Rails' philosophy, but the primary developer is an AI agent — plus the inspire-explicitly table and the 8 axioms. |
+| [`00-thesis.md`](./00-thesis.md) | Rails' philosophy, but the primary developer is an AI agent — plus the inspire-explicitly table and the 9 axioms. |
 | [`01-stack.md`](./01-stack.md) | One locked choice per layer; Bun natives delete ~40 dependencies before you write a line. |
 | [`02-primitives.md`](./02-primitives.md) | Eight primitives. `action` projects to six artifacts. Two authz systems is how every Meteor-like framework died. |
 | [`03-realtime.md`](./03-realtime.md) | Channels → live queries → local-first: a ladder, not three products. Tier 2 → 3 is `persist: true` on a **query** — never a config key: `realtime.tier` was read by nothing and was deleted in 10.0.0. |
@@ -57,6 +57,7 @@ Bun-only, opinionated, full-stack. Postgres with no ORM, SolidJS pinned at `1.9.
 | 6 | Static path never pays for the app path. |
 | 7 | Deploy anywhere = containers only. |
 | 8 | Ultimate ships mechanism; your app ships convention. |
+| 9 | Useful, then efficient. |
 
 Consequences of each in [`00-thesis.md`](./00-thesis.md); axiom 8 in full in [`19-mechanism-not-convention.md`](./19-mechanism-not-convention.md).
 

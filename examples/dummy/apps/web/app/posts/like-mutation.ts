@@ -25,8 +25,9 @@ import type { MutatorLike } from '@ultimat3/realtime';
 import type { Api } from '../../api';
 
 /**
- * The local twin's row shape, keyed by the entity's TABLE — which is what makes the optimistic row
- * and the row a live query renders one row rather than two (`IdentityMap` is keyed by that name).
+ * The local twin's row shape, keyed by the record TYPE — the entity's name — which is what makes the
+ * optimistic row and the record every island renders one object rather than two: the page's store
+ * keys `posts:<id>`, and `tx.posts.update(postId, …)` writes that same key.
  *
  * `likedByMe` is what makes the twin replayable. It is per-device state about the acting member,
  * not a column on `posts` — the server's authoritative row is the `likes` composite key, and this
@@ -62,21 +63,21 @@ export interface LikeLocalInput {
  * — so replaying the mutation server-side is a no-op too, and the two halves agree.
  */
 export function likePostLocally(tx: LocalTx, { postId }: LikeLocalInput): void {
+  // Keyed explicitly: the browser holds no entity schema, so the twin names the record's key — the
+  // post's id, which is what `posts`' primary key is.
   tx.posts.update(postId, (post) =>
     post.likedByMe ? {} : { likedByMe: true, likeCount: post.likeCount + 1 },
   );
 }
 
 /**
- * What `useMutation` queues under. `defineApi` names a mutator after its export, so `name` is it.
- *
- * `entity` is the TABLE the twin writes, which is what a `rebase` frame's server truth lands
- * against, and `conflict` is the same `'server-wins'` the declaration carries — a client that
- * announced a different strategy would resolve the same disagreement two ways.
+ * What `useMutation` sends under. `defineApi` names a mutator after its export, so `name` is it.
+ * No `entity`: the twin names its table (`tx.posts`) and its key, and the store is keyed by record
+ * type, so there is nothing left for a hint to say. `conflict` is the same `'server-wins'` the
+ * declaration carries — a client announcing another would resolve one disagreement two ways.
  */
 export const LIKE_POST: MutatorLike = {
   name: 'likePost' satisfies keyof Api['actions'],
-  entity: 'posts',
   conflict: 'server-wins',
   local: likePostLocally,
 };

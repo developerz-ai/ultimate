@@ -18,6 +18,9 @@ import { type BackoffPolicy, backoffDelay, defaultBackoff, type Rng } from './th
 
 export const CHANGE_SUBJECT_PREFIX = 'x.change';
 
+/** Every change subject: what a `sync` node subscribes to. A changefeed subject, never a channel. */
+export const CHANGE_SUBJECT_ALL = `${CHANGE_SUBJECT_PREFIX}.>`;
+
 /** Session-scoped mutual exclusion. Postgres-backed in production, in-memory for `x dev`. */
 export interface AdvisoryLock {
   readonly key: string;

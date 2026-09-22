@@ -110,6 +110,47 @@ describe('parsing', () => {
   });
 });
 
+// DX ledger #12: the in-flight major's row was skipped on purpose, so its "**N** so far" was
+// checked by nobody until the release, and a release is the one moment nobody reads it.
+describe('the unreleased summary row', () => {
+  const PENDING = GOOD_CHANGELOG.replace(
+    'Nothing yet.',
+    '- **BREAKING — a third thing moved.** Do the third edit.\n- **BREAKING — a fourth.** Edit.',
+  );
+  const withRow = (claimed: number): string =>
+    GOOD_UPGRADING.replace(
+      '| 1.x → 2.0.0 | **2** | the',
+      `| 2.x → 3.0.0 | **${claimed}** so far, and **unreleased** | the \`2.x → 3.0.0\` section below. Its entries sit under \`[Unreleased]\` in \`CHANGELOG.md\` until the tag |\n| 1.x → 2.0.0 | **2** | the`,
+    );
+
+  test('is recognised by the [Unreleased] it names, and is neither a major nor the total', () => {
+    const rows = parseMigrationTable(withRow(2));
+    expect(rows.map((row) => row.unreleased)).toEqual([true, false, false]);
+    expect(rows[0]?.target).toBeUndefined();
+    expect(rows[0]?.aggregate).toBe(false);
+  });
+
+  test('a count that matches [Unreleased]`s own BREAKING entries is silent', () => {
+    expect(kinds(PENDING, withRow(2))).toEqual([]);
+  });
+
+  test('the real page`s in-flight row is read — the rule is not vacuous on this repo', async () => {
+    const changelog = await Bun.file(`${repoRoot()}/${CHANGELOG_PATH}`).text();
+    const upgrading = await Bun.file(`${repoRoot()}/${UPGRADING_PATH}`).text();
+    const pending = parseChangelog(changelog).find((one) => one.version === 'unreleased');
+    const rows = parseMigrationTable(upgrading).filter((row) => row.unreleased);
+    // While a major is in flight, its row exists and is compared; between majors, neither.
+    expect(rows.length).toBe((pending?.breaking ?? 0) > 0 ? 1 : 0);
+  });
+
+  test('a count that does not is a count finding at the row', () => {
+    const gaps = checkChangelog({ changelog: PENDING, upgrading: withRow(1) });
+    expect(gaps.map((gap) => gap.kind)).toEqual(['count']);
+    expect(gaps[0]?.at).toBe(`${UPGRADING_PATH}:5`);
+    expect(gaps[0]?.detail).toContain('[Unreleased]');
+  });
+});
+
 describe('the rules, each proved against the fixture that breaks it', () => {
   test('the good fixture is silent, so every finding below is caused by the mutation', () => {
     expect(kinds(GOOD_CHANGELOG, GOOD_UPGRADING, '2.0.0')).toEqual([]);

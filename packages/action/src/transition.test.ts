@@ -11,7 +11,7 @@ import { describe, expect, test } from 'bun:test';
 import { createContext, UltimateError, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import type { LocalRow, LocalTable, LocalTx } from './mutator';
+import type { LocalTable, LocalTx } from './mutator';
 import { type TransitionTarget, transition } from './transition';
 
 const STATES = ['pending', 'paid', 'shipped'] as const;
@@ -22,7 +22,8 @@ const ctx = createContext({ actor: { ...userActor({ id: 'u1' }), permissions: ['
 
 const OrderView = t.object({ id: t.uuid, reference: t.string, status: t.enum(STATES) });
 
-interface OrderRow extends LocalRow {
+interface OrderRow {
+  readonly id: string;
   readonly reference: string;
   readonly status: State;
 }
@@ -73,16 +74,21 @@ const audited = transition({
 
 const fakeTx = (rows: Map<string, OrderRow>): LocalTx => {
   const local: LocalTable<OrderRow> = {
-    insert: (row) => {
-      rows.set(row.id, row);
+    get: (key) => rows.get(key),
+    all: () => [...rows.values()],
+    insert: (key, row) => {
+      rows.set(key, row);
     },
-    update: (id, patch) => {
-      const current = rows.get(id);
+    upsert: (key, row) => {
+      rows.set(key, { ...rows.get(key), ...row });
+    },
+    update: (key, patch) => {
+      const current = rows.get(key);
       if (current === undefined) return;
-      rows.set(id, { ...current, ...(typeof patch === 'function' ? patch(current) : patch) });
+      rows.set(key, { ...current, ...(typeof patch === 'function' ? patch(current) : patch) });
     },
-    delete: (id) => {
-      rows.delete(id);
+    delete: (key) => {
+      rows.delete(key);
     },
   };
   return { table: () => local } as unknown as LocalTx;

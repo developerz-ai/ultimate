@@ -17,9 +17,10 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `facade.ts` | the fluent surface — binds each projection to the query, re-implements none |
 | `http.ts` | route projection (`GET /_x/query/<kebab>`, `enforcedBy: 'handler'`) |
 | `mcp-tool.ts` | MCP read descriptor, same `sourceFor` |
-| `client.ts` | typed read client (browser-safe: no server imports) |
+| `client.ts` | typed read client (browser-safe: no server imports); dispatches through `@ultimat3/core`'s `clientTransport`, never `fetch` |
+| `record-answer.ts` | a read's HTTP answer: bare rows, or the record envelope when `rows:` is an entity's branded row schema |
 | — | opt-in flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, re-exported from `src/index.ts`. There is no local copy and must not be one |
-| `naming.ts` | export name → `/_x/query/<kebab>`. Pure string math. **Paths only** — no tool name |
+| `naming.ts` | export name → `/_x/query/<kebab>` — `derivePath` IS `@ultimat3/core`'s `queryPath`, re-exported. **Paths only** — no tool name |
 | `registry.ts` | export-name registration, `describeQueries()`, and the `registerPrimitiveRegistrar('query', …)` announcement |
 | `live.ts` | `LiveQuery` descriptor + cursor arithmetic |
 | `subscribes.ts` | the relations a live read declares, and the two assertions that keep them true |
@@ -193,14 +194,46 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   promises. It lives in `packages/core/src/client-flight.ts` now; the tests that pin it from this
   side still drive it through this package's own client.
 - **`ClientFlight` is a TYPE inside `client.ts` and never a value.** That erasure is the entire
-  tree-shaking story: `rpc` alone is 14,759 B minified for the browser and `queryClient` alone is
-  12,755 B, against 20,292 B / 17,912 B with `createClientFlight` imported beside them — ±376 B run
-  to run, which is `Bun.build` 1.4.0 dropping core's `schema-error-codes.ts` (issue #273). A caller
-  who wants a plain typed fetch must not pay for the fence, the dedup map or the retry loop —
-  `packages/cli/src/templates/resource-form-island.ts` and `examples/dummy`'s contact-sales island
-  both write a bare `fetch` today because that bill used to be unavoidable. Never import
-  `createClientFlight` for a VALUE from `client.ts` — `ClientFlight` and `ClientRetry` are
-  `import type` from `@ultimat3/core` and must stay that way.
+  tree-shaking story: a caller who wants a plain typed read must not pay for the fence, the dedup
+  map or the retry loop. Never import `createClientFlight` for a VALUE from `client.ts` —
+  `ClientFlight` and `ClientRetry` are `import type` from `@ultimat3/core` and must stay that way.
+- **Every read dispatches through `@ultimat3/core`'s `clientTransport`, and `client.ts` calls no
+  `fetch`** (`As of 2026-09-22`, 21.0.0, plan 101 slice 05). The `fetch` option is handed on as the
+  transport's injected `fetchImpl`. The transport owns `Accept`, the trace/budget headers, the
+  principal fence, the error decode and the record envelope — so a gateway's HTML is core's
+  `X_CLIENT_TRANSPORT_FAILED` now, and `QueryRequestFailedError` / `X_RPC_FAILED` are gone from this
+  package. The flight is handed to the transport, which is what dedups concurrent identical reads
+  (`client.test.ts`, one `fetchImpl` call); `fresh` and a per-call `retry` ride on the request
+  to it. The path is core's `queryPath` — `naming.ts` re-exports it as `derivePath`. `slice 15`'s `browser-transport` guard is what will make
+  a `fetch(` call here a build error; until then the check is
+  `rg -n 'fetch\(' packages/query/src --glob '!*.test.ts'` finding nothing.
+- **Bundle, `bun build --target=browser --minify`, `import { queryClient } from '@ultimat3/query'`**
+  (`As of 2026-09-22`): **19,026 B** at 20.2.1 (raw `fetch`), **24,114 B** on `clientTransport`;
+  the deep `src/client.ts` import 15,690 → 20,774 B. The +5.1 kB is entirely core's transport graph
+  (`client-transport.ts`, `client-dispatch.ts`, `client-problem.ts`, `record-envelope.ts`,
+  `client-scope.ts`, `record-sink.ts`, `client-paths.ts`); `client.ts` itself shrank. The 12,755 B this file
+  quoted was already false at 20.2.1. Shrinking it is a `packages/core` edit, never a raw `fetch`
+  here.
+- **`@ultimat3/query/client` is the read client without the barrel** (`As of 2026-09-22`). The
+  barrel anchors `errors.ts` and `registry.ts` (`sideEffects`) and exports the server projections;
+  an island that only reads needs neither. `import { queryClient } from '@ultimat3/query/client'`,
+  measured `bun build --target=browser --minify`: **16,458 B** against **23,611 B** through the
+  barrel. `@ultimat3/realtime`'s `useQuery` is the caller it exists for. `client-subpath.test.ts`
+  pins that the specifier resolves and carries no server export.
+- **…and reaches no titles table** (`As of 2026-09-22`, same method): **10,210 B**, from 16,640 B
+  that morning. `client.ts` and `naming.ts` import core from `@ultimat3/core/page`, and the two
+  page keys live in `page-keys.ts` — a leaf, because `page-controls.ts` refuses a bad value and so
+  imports `errors.ts`, which registers this package's whole code table at import. `client.ts` may
+  never import `page-controls.ts` or `stable.ts` again; `client-bundle.test.ts` fails on
+  `core-error-codes.ts`, `schema-error-codes.ts` or `errors.ts` in the graph, and past 11 kB.
+- **The record envelope is derived from `rows:`, never switched on** (`record-answer.ts`). A read's
+  `sql:` names its table as a STRING, so the query declaration carries no schema the envelope could
+  be derived from; `rows?: StandardSchemaV1<unknown, TRow>` is that carrier, typed against the row
+  `sql:` answers so a projection cannot claim a full entity's schema. `answersRecords(rows)`
+  (`hasEntityRows`, `@ultimat3/entity`) is decided ONCE at projection and read by both `http.ts`
+  and `openapi.ts`; the envelope is sent on EVERY answer (`records: {}` when none came back) — one body
+  shape per operation, action's rule, described once by core's `recordEnvelopeSchema`. No `rows:`,
+  or an unbranded one, is byte-identical on the wire and in `openapi.json`.
 - **The `sideEffects` array is what makes the barrel shakable, and it is load-bearing** (`As of
   2026-08-23`). Declaring nothing meant a bundler had to assume every module ran at import, so
   `import { rpc } from '@ultimat3/action'` was 43,104 B and `import { queryClient } from

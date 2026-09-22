@@ -17,8 +17,9 @@
 // `feed.island.tsx` DOES reach that module, through `@ultimat3/realtime` -> `@ultimat3/core`, and
 // is therefore excluded from byte EQUALITY. `posts/[id]/like.island.tsx` joined it on 2026-08-25
 // for the same reason and by the same derivation, not by being listed. The other two islands
-// import no `@ultimat3/*` package at all, so no `sideEffects`-declared module can be in their
-// graph however the shaker feels that run, and they were stable across the same runs.
+// imported no `@ultimat3/*` package until 2026-09-22 (plan 101, slice 16), when their raw `fetch`
+// became the typed action client — so all four are now judged by the discriminator below, whose
+// equality branch still demands byte-identical chunks whenever the shaker answers alike.
 //
 // **The root cause is UPSTREAM and this file is a workaround, not a fix.** Verified 2026-08-25
 // against the registry: `packages/core/package.json` DECLARES `"./src/schema-error-codes.ts"` in
@@ -215,13 +216,30 @@ test('every island in the app is measured, and each is classified by its own gra
   expect([...first.keys()].sort()).toEqual([
     'apps/web/app/feed/feed.island.tsx',
     'apps/web/app/posts/[id]/like.island.tsx',
+    'apps/web/app/posts/[id]/likes-badge.island.tsx',
     'apps/web/app/settings/settings.island.tsx',
+    'apps/web/app/update-banner.island.tsx',
     'apps/web/site/pricing/contact-sales.island.tsx',
   ]);
-  expect(reachable.get('apps/web/app/feed/feed.island.tsx')).toEqual(['@ultimat3/realtime']);
+  // Plain DOM; `@ultimat3/core/page` — constants only — for the two names it shares with the
+  // worker and the render. Never the core barrel, which was 8,344 B of a 710 B chunk.
+  expect(reachable.get('apps/web/app/update-banner.island.tsx')).toEqual(['@ultimat3/core/page']);
+  // `@ultimat3/time` for the row's date, day only (`formatDate`) — already in the chunk through ui.
+  expect(reachable.get('apps/web/app/feed/feed.island.tsx')).toEqual([
+    '@ultimat3/realtime',
+    '@ultimat3/time',
+    '@ultimat3/ui',
+  ]);
   expect(reachable.get('apps/web/app/posts/[id]/like.island.tsx')).toEqual(['@ultimat3/realtime']);
-  expect(reachable.get('apps/web/app/settings/settings.island.tsx')).toEqual([]);
-  expect(reachable.get('apps/web/site/pricing/contact-sales.island.tsx')).toEqual([]);
+  expect(reachable.get('apps/web/app/posts/[id]/likes-badge.island.tsx')).toEqual([
+    '@ultimat3/realtime',
+  ]);
+  // Both reach the typed action client through `shared/browser-client.ts` (plan 101, slice 16):
+  // no island hand-rolls a `fetch` any more, so no island is free of `@ultimat3/*`.
+  expect(reachable.get('apps/web/app/settings/settings.island.tsx')).toEqual(['@ultimat3/action']);
+  expect(reachable.get('apps/web/site/pricing/contact-sales.island.tsx')).toEqual([
+    '@ultimat3/action',
+  ]);
 });
 
 test('the module the shaker drops is one a package still declares as a side effect', async () => {
@@ -233,13 +251,11 @@ test('the module the shaker drops is one a package still declares as a side effe
   expect(manifest.sideEffects ?? []).toContain('./src/schema-error-codes.ts');
 });
 
-test('buildIslands is byte-reproducible for every island the shaker answers the same way', () => {
-  const pure = [...first.keys()].filter((file) => (reachable.get(file) ?? []).length === 0).sort();
-  expect(pure).toHaveLength(2);
-
-  for (const file of pure) {
-    expectSameChunk(first.get(file) as IslandChunk, second.get(file) as IslandChunk);
-  }
+test('no island is pure any more, so the discriminator below judges every one', () => {
+  // Kept as an assertion rather than deleted: an island that drops its last `@ultimat3/*` import
+  // becomes pure again and must then be byte-identical outright, which this test is where to add.
+  const pure = [...first.keys()].filter((file) => (reachable.get(file) ?? []).length === 0);
+  expect(pure).toEqual([]);
 });
 
 test('the rename tolerance is narrow: a moved literal or a moved byte count still fails', () => {
@@ -258,7 +274,7 @@ test('the rename tolerance is narrow: a moved literal or a moved byte count stil
 
 test('an island that reaches a side-effecting module differs by that module and by nothing else', () => {
   const impure = [...first.keys()].filter((file) => (reachable.get(file) ?? []).length > 0);
-  expect(impure).toHaveLength(2);
+  expect(impure).toHaveLength(6);
   for (const file of impure) {
     const before = first.get(file) as IslandChunk;
     const after = second.get(file) as IslandChunk;

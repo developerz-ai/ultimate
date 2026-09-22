@@ -51,7 +51,14 @@ function superseded(subject: string, issued: number, current: number): UltimateE
   });
 }
 
-/** Whether a caught value is this refusal. The one reader a caller needs; never `error.code`. */
+/**
+ * Whether a caught value is a supersession — this fence's refusal, or `X_CLIENT_SCOPE_CHANGED`,
+ * the principal fence's (`client-scope.ts`). One reader for both, because a caller does the same
+ * thing with either: drop the answer and render nothing. Never `error.code`.
+ */
 export function isSuperseded(error: unknown): boolean {
-  return isUltimateError(error) && error.code === 'X_SUPERSEDED';
+  return (
+    isUltimateError(error) &&
+    (error.code === 'X_SUPERSEDED' || error.code === 'X_CLIENT_SCOPE_CHANGED')
+  );
 }

@@ -38,6 +38,12 @@ export const posts = entity('posts', {
     createdAt: timestamp().defaultNow(),
     updatedAt: timestamp().defaultNow().onUpdateNow(),
   },
+  /**
+   * A browser keeps `posts` records on disk (IndexedDB, per principal): a like made offline is
+   * still on screen after a reload, and replays once the page is back. The only persisted entity —
+   * a member's feed is theirs to see, and every other record is re-read on the next page.
+   */
+  persist: true,
   invariants: (c) => [
     /**
      * The PATTERN, not the predicate — `matches(SLUG_PATTERN)` renders `slug ~ '…'` into a real

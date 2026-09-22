@@ -10,11 +10,12 @@
  * The app decides what to do with that message. This package never navigates a client.
  */
 
-import { finiteCount } from '@ultimat3/core';
+import { APP_UPDATE_MESSAGE, CLIENT_BUILD_META, finiteCount } from '@ultimat3/core';
 import { BuildIdMissingError } from './errors';
 
 export const BUILD_ID_HEADER = 'x-ultimate-build';
-export const BUILD_ID_META = 'x-ultimate-build';
+/** Shipped name for core's `CLIENT_BUILD_META` — the meta render writes, one literal for both. */
+export const BUILD_ID_META = CLIENT_BUILD_META;
 
 export type DeployChannel = 'production' | 'preview' | 'branch';
 
@@ -136,9 +137,10 @@ export function detectSkew(
  * the literal the worker emits, so the two can no longer differ.
  */
 export interface AppUpdateAvailable {
-  readonly type: 'AppUpdateAvailable';
+  readonly type: typeof APP_UPDATE_MESSAGE;
   /** The build the worker that posted this was generated for. */
   readonly to: string;
 }
 
-export const APP_UPDATE_AVAILABLE = 'AppUpdateAvailable' as const;
+/** Shipped name for core's `APP_UPDATE_MESSAGE` — one literal for the worker and the page. */
+export const APP_UPDATE_AVAILABLE = APP_UPDATE_MESSAGE;

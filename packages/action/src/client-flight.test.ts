@@ -111,7 +111,7 @@ describe('a retried mutation needs an idempotency key', () => {
       .publishPost({ postId: POST_ID }, { retry: { attempts: 5 } })
       .catch((caught: unknown) => caught);
 
-    expect(outcome).toBeUltimateError('X_RPC_FAILED');
+    expect(outcome).toBeUltimateError('X_CLIENT_TRANSPORT_FAILED');
     expect(calls).toBe(1);
     expect(clock.waits).toEqual([]);
   });

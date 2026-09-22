@@ -9,9 +9,9 @@
 //      to a socket and nothing more, so a drained mutation is `inflight` — not `acked` — until an
 //      `ack`/`fail` frame settles it, or a lost connection returns it to the queue.
 
-import { renderThrowable, stringField } from '@ultimat3/core';
+import { renderThrowable, stringField } from '@ultimat3/core/page';
 import type { JsonValue } from './json';
-import { type Frame, PROTOCOL_VERSION, type WireError } from './sync-protocol';
+import type { WireError } from './sync-protocol';
 
 export type MutationStatus = 'pending' | 'inflight' | 'acked' | 'failed';
 
@@ -33,7 +33,7 @@ export interface QueueState {
   readonly nextSeq: number;
 }
 
-/** Durability seam: OPFS/IndexedDB in the browser, memory in tests. */
+/** Durability seam: IndexedDB in the browser (`page-outbox.ts`), memory in tests. */
 export interface QueueStore {
   load(): Promise<QueueState>;
   save(state: QueueState): Promise<void>;
@@ -131,8 +131,8 @@ export class OfflineQueue {
     // UI — collapsing onto it makes an explicit idempotency key unusable for the rest of the
     // session, because nothing ever retries a denial. Re-issuing one is a NEW intent, so the old
     // entry is dropped and this one takes a new sequence at the back of the queue.
-    if (existing)
-      this.#mutations = this.#mutations.filter((candidate) => candidate.key !== args.key);
+    // By identity: `existing` IS the entry for this key, found above — no second key comparison.
+    if (existing) this.#mutations = this.#mutations.filter((entry) => entry !== existing);
     const mutation: QueuedMutation = {
       key: args.key,
       seq: this.#nextSeq,
@@ -316,18 +316,8 @@ export class OfflineQueue {
   }
 }
 
-export function mutateFrame(mutation: QueuedMutation): Frame {
-  return {
-    type: 'mutate',
-    v: PROTOCOL_VERSION,
-    key: mutation.key,
-    seq: mutation.seq,
-    name: mutation.name,
-    input: mutation.input,
-  };
-}
-
-function toQueueError(error: unknown): WireError {
+/** A thrown value as the queue records it — `code`, `cause`, `fix`, never a throw of its own. */
+export function toQueueError(error: unknown): WireError {
   return {
     // `stringField`, not `shape?.code`: the sender is a transport the app supplied, so the probe
     // for "did it throw a coded error" is itself a property read on an app value. A getter that

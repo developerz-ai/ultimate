@@ -7,9 +7,11 @@
  * `[id]/like.island.tsx`, which replaces this markup once a browser has booted it; this file is the
  * shell inside the island's wrapper, and the same `.module.scss` styles both.
  *
- * The button is `disabled` rather than wired to the mutator's HTTP twin, and that is the honest
- * statement: a like is applied through the socket the island opens, so before the island there is
- * nothing behind it to press.
+ * The button is live, not `disabled`: a like is an HTTP write (`useMutation` POSTs the mutator's
+ * action), and a click that lands before the island has booted is captured by the hydration
+ * runtime and replayed onto the island's own button once it mounts (`@ultimat3/render`'s
+ * `hydrate.ts`, which re-aims at whatever is under the pointer when the shell was replaced). A
+ * `disabled` button swallowed that first press instead.
  */
 
 import { useT } from '@postly/i18n';
@@ -26,7 +28,7 @@ export const LikeButton = (props: LikeButtonProps): JSX.Element => {
 
   return (
     <div class={styles.row}>
-      <button class={styles.button} type="button" disabled>
+      <button class={styles.button} type="button">
         {t('app.post.like')}
       </button>
       <span class={styles.count}>{t('app.post.likes', { count: props.likeCount })}</span>

@@ -45,7 +45,8 @@ Tier 4 (moved 5 → 4 on 2026-08-19, when the `admin → ui` exception was delet
   (`src/components/async-branch.ts`) is the ONLY place the `(pending, failed, empty, data)` decision
   is made — `AsyncRegion` renders it and `DataTable` calls it, so a table and a card list cannot
   disagree about what "loading with stale rows" looks like. The property is structural: an
-  `AsyncState` in `pending` carries no data, so nothing can be found empty in it, and "No results"
+  `AsyncState` (declared in `@ultimat3/core` since 21.0.0 — imported here, never re-exported, so
+  it has one import path) in `pending` carries no data, so nothing can be found empty in it, and "No results"
   for one frame before the first page arrives is unconstructible rather than discouraged.
   `<AsyncRegion>`'s `empty` and `ready` are REQUIRED props, so forgetting the empty state is a type
   error. `refreshing` CARRIES the previous data — a refetch dims what is on screen (`aria-busy`) and

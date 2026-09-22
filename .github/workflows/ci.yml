@@ -102,6 +102,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # `scripts/budget-raises.ts` compares every route budget with origin/main's TIP, so one commit
+      # at depth 1 is all it needs — never `fetch-depth: 0`. Skipped on a push to main, where HEAD
+      # IS that tip: the rule then prints that it compared nothing, and there is nothing to raise.
+      - name: fetch origin/main's tip for budget-raises
+        if: github.ref != 'refs/heads/main'
+        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
       - uses: ./.github/actions/setup
       # `wal_level = logical` is a server argument, and a service container takes none —
       # so the replication server is started by hand. Without it the logical-replication
@@ -371,7 +377,9 @@ jobs:
           touch .env.production
           trap 'rm -f .env.production' EXIT
           docker compose -f docker/docker-compose.dev.yml config -q
-          docker compose -f docker/docker-compose.prod.yml config -q
+          # The prod file refuses an unset SYNC_URL (`${SYNC_URL:?…}`) — a page must dial the sync
+          # role's own port — so the syntax check supplies the value an operator would.
+          SYNC_URL=ws://localhost:3001/_x/sync docker compose -f docker/docker-compose.prod.yml config -q
           echo "ok: both compose files parse"
 
       - name: helm lint

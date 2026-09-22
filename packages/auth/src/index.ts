@@ -52,6 +52,9 @@ export {
 } from './auth';
 
 export { BuiltinAdapter } from './builtin-adapter';
+/** The opaque per-principal id a per-request document hands the page's client store. */
+export type { ClientScopeOptions } from './client-scope';
+export { clientScopeOf } from './client-scope';
 export type { AuthUserSummary } from './directory';
 export { describeUser, findUserByExternalId, listOrgUsers } from './directory';
 // The one normalisation an address gets before it is an identity key. Public because an app
@@ -316,6 +319,9 @@ export {
   sessionExpiry,
   verifySession,
 } from './session';
+/** A sign-out response's headers: the session cookie expired, and `Clear-Site-Data`. */
+export type { SignOutHeadersOptions } from './sign-out';
+export { SIGN_OUT_CLEAR_SITE_DATA, signOutHeaders } from './sign-out';
 
 export {
   AUTH_TABLE_NAMES,

@@ -77,11 +77,8 @@ export interface LiveNodeOptions {
   readonly buildId?: string;
   /** Pins the reconnect epoch, so a test can force a refetch by changing it. */
   readonly epoch?: string;
-  // No `onMutate`. `SyncNodeOptions` takes one — `{ socket, name, key, seq, input }`, the actor
-  // read off the socket — and nothing here needs it: the mutation half of a live subscription is
-  // the CLIENT's local store and offline queue, which this driver deliberately does not hold. A
-  // forwarded option no test passes is a declaration nothing reads, which is what 4.0.0 spent a
-  // major deleting. It arrives with its first caller, in that caller's shape.
+  // No `onMutate`: the socket carries no writes any more (plan 101, decision 2) — a mutation goes
+  // over HTTP as an action, and `createSyncNode` takes no mutation hook to forward.
 }
 
 export interface LiveNodeHandle {

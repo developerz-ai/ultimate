@@ -2,10 +2,11 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Eighteen majors have shipped, and this page walks all eighteen** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Nineteen majors have shipped, and this page walks all nineteen** — a twentieth, 21.0.0, is in flight and has its section already, marked **unreleased** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 20.x → 21.0.0 | **26** so far, and **unreleased** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. More land with the client data layer, one entry per removed surface | the `20.x → 21.0.0` section below, in order. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 19.x → 20.0.0 | **2**, both `@ultimat3/ui` component behaviour and neither a type change — a `DataTable` that keeps its rows while reloading, and a `Button` whose `loading` no longer sets the native `disabled`. Nothing fails to compile; what changes is what a screen does | the `20.0.0` section, in order |
 | 18.x → 19.0.0 | **2**, both from the same hole — the service worker had no build behind it, so the config key that steers it and the route it falls back to both had to move | the `19.0.0` section, in order |
 | 17.x → 18.0.0 | **5** — a runtime floor that was a minor behind what the CLI emits, two PWA config surfaces that had to grow before an app could be installable, a `--json` shape, and one scraping interface | the `18.0.0` section, in order |
@@ -25,7 +26,7 @@
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 11.x → 17.0.0 | **38** | every major section `CHANGELOG.md` still carries, oldest first |
+| 11.x → 20.0.0 | **47** | every major section `CHANGELOG.md` still carries, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
@@ -65,6 +66,61 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 20.x → 21.0.0, entry by entry — **unreleased**
+
+**Twenty-six entries so far.** Entries 1–3, 5, 8, 9, 11–17 and 20–23 are compile errors. Entry 24
+is a stale file one rebuild replaces, entry 25 is a `budgets` finding, and entry 26 is capacity
+planning, not code. Entry 10
+throws when the module loads, and entry 18 when `docker compose up` starts. Entry 19 is a
+number that means something else. Entries 4, 6 and 7 compile
+unchanged and answer differently: a wider `isSuperseded`, a coded error where a bare `TypeError`
+or `SyntaxError` used to arrive, and a new response body for non-framework HTTP clients. Entry 2
+also changes what `'last-write-wins'` keeps, and entry 8 leaves two error codes that nothing
+throws. 21.0.0 is the client data layer: one record store per tab, one HTTP seam and one socket
+per origin. More entries land here as each old client surface is removed. Not on npm yet. The
+entries sit under `## [Unreleased]` in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md).
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `AsyncState` | you import it from `@ultimat3/ui`. It moved to `@ultimat3/core` unchanged, and ui does not re-export it. `import type { AsyncState } from '@ultimat3/ui'` → `import type { AsyncState } from '@ultimat3/core'`, plus `@ultimat3/core` in that workspace's `dependencies` if it is missing. `AsyncRegion`, `asyncBranch`, `AsyncBranch` and `AsyncFlags` stay in ui |
+| 2 | a mutator's `conflict: custom(merge)` | you wrote a `merge`. It now receives the local and server **rows** of the record, not the mutator's parsed outputs: `custom<PostRow>((local, server) => ({ ...server, title: local.title }))`. The output-shaped merge never ran. Realtime's rebase holds rows, so it dropped the policy without a word and used its default. Also: `resolveConflict` moved to `@ultimat3/core` (its answer is `Row`, so narrow it); `Conflict`, `CustomConflict` and `strategyOf` are gone from `@ultimat3/action`, and `strategyOf(c)` is `typeof c === 'string' ? c : c.kind`. **No compile error warns you** that `'last-write-wins'` now keeps the local row only when its `updatedAt` is newer than the server's. A row with no numeric clock resolves to the server's |
+| 3 | `ConflictLike`, `custom`, `CustomMerge`, `MergeArgs` or `ConflictStrategy` from `@ultimat3/realtime` | you import any of them. Types: `import type { ConflictPolicy } from '@ultimat3/core'`. Realtime's own `custom(({ local, base, server }) => …)` becomes action's `custom((local, server) => …)`: no `base`, and the merge must return a row with a string `id`, or the rebase throws `X_REBASE_CONFLICT`. **Delete any branch that returned `null` to accept a delete.** The merge is no longer called when the server deleted the row or the client never held one; the server's answer lands as it is |
+| 4 | `isSuperseded(error)` | you took `true` to mean `X_SUPERSEDED`. It is also `true` for `X_CLIENT_SCOPE_CHANGED`, a read in flight when the page changed principal. Code that branches on `isSuperseded` needs nothing; code that needs the specific code reads `error.code` |
+| 5 | `QueryRequestFailedError`, `QueryProblem` from `@ultimat3/query` | you import either. A query's failure is a plain `UltimateError` now: `if (e instanceof QueryRequestFailedError)` → `if (isUltimateError(e))`, then switch on `e.code`. A query's non-2xx with no framework code is `X_CLIENT_TRANSPORT_FAILED`, not `X_RPC_FAILED`, so update a match on the old code |
+| 6 | a typed client's network fault, non-JSON 2xx, or non-2xx with no framework code | you catch `TypeError`, `SyntaxError` or `RpcFailedError`, or match `'X_RPC_FAILED'`, around `rpc()`, `.client()`, `queryClient()` or `@ultimat3/storage`'s `uploadFile()` on its no-XHR fallback (`fetchSignedPut`). All of them are `X_CLIENT_TRANSPORT_FAILED` now: `if (isUltimateError(e) && e.code === 'X_CLIENT_TRANSPORT_FAILED')`. `RpcFailedError` still exports and nothing throws it, so an `instanceof` check against it compiles and never matches. `RemoteActionError` (the server's own code) and `X_CONTRACT_DRIFT` are unchanged |
+| 7 | the body and OpenAPI `200` of an action whose output references an entity row | something other than an `@ultimat3/*` client reads it: a generated SDK, `curl`, a test posting with `fetch`. Under `x-ultimate-records: 1` the output is `body.data`, beside `records`. Regenerate an SDK from the new `openapi.json`. `rpc()` and `.client()` strip the envelope, so typed callers need nothing |
+| 8 | `@ultimat3/pwa`'s background sync | you pass `backgroundSync: { flushEndpoint }` to `generateServiceWorker`, import `DEFAULT_FLUSH_ENDPOINT` or `BackgroundSyncOptions`, call `backgroundSyncSource(opts)`, or mounted `/_x/outbox/flush` yourself. Delete the option and the imports, call `backgroundSyncSource()` with no arguments, and delete the route. The worker now posts `OUTBOX_DRAIN_MESSAGE` to open tabs, and the page's outbox replays. `pwa.backgroundSync: true` in `app.config.ts` is unchanged. **Also delete any branch matching `X_PWA_SYNC_FLUSH_FAILED` or `X_PWA_SYNC_INCOMPLETE`:** both stay registered, nothing throws them, and such a branch compiles and never runs |
+| 9 | `ClientScope.principal` | you narrow it with `!== null` and use it as a `string`. It is `string \| null \| undefined` now. `undefined` is an unscoped page, rendered for nobody, for which nothing is persisted. Test `typeof principal === 'string'`, and give a `switch` an `undefined` arm |
+| 10 | a mutator declaring `conflict: 'last-write-wins'` | its entity has no **number** `updatedAt` the server writes (a `timestamp()` string does not count), or its output carries no entity row. It now throws `X_MUTATOR_CLOCK_MISSING` when the module loads. Add `updatedAt` as a number column (epoch ms) that the server writes on every update, or declare `conflict: 'server-wins'`. Without a clock the server row already won every time, so `'server-wins'` changes no behaviour |
+| 11 | `setLiveClient`, `clearLiveClient`, `hasLiveClient`, `LiveClient`, `ClientSocket` | your island builds a `LiveClient`. Delete the socket adapter, the sync-URL module, `new LiveClient(…)`, `client.connect()` and `setLiveClient(client)`. Add `installRealtime({ signal: createSignal })` in `mount` before the first render. `hasLiveClient()` → `hasPageSocket()`. `client.subscribe(topic, fn)` → `useChannel(decl, params, { onEvent, onPresence })` or `usePresence(decl, params)` |
+| 12 | `useLive`, `LiveRows`, `LiveInput`, `liveHookFor` | you read a live query. `useLive<Row>({ name }, input)` → `useQuery<Row>({ name, live: true }, input)`. `feed.state() === 'live'` → `feed().status === 'ready'`, the rows are `feed().data`, and `unsubscribe()` → `release()`. Delete `liveHookFor` bindings |
+| 13 | `IdentityMap`, `privateScope`, `rowKey`, `RowScope`, `RowKey` | you import them. `RecordStore`, `recordKey(type, key)`, `RecordKey`; read one record with `useRecord(type, key)` |
+| 14 | `MemoryLocalStore`, `createOpfsLocalStore`, `LocalStore`, `RebaseLog`, `reconcile`, `rebaseFrame`, `strategyName`, `serverRenderLiveClient` | you pass a store, queue or log to the client, or use them in a test. Delete them. The optimistic apply needs nothing now; durable offline writes are pending |
+| 15 | `useMutation`, `useMutationQueue`, `MutatorLike` | you call `drain()`, set `entity:` on a `MutatorLike`, or re-query after a write. Delete `drain()` and `entity:`. The call resolves with the action's output, so read it directly. Writes go over HTTP, so a mutation now persists where it used to answer `X_NOT_IMPLEMENTED`. With no response at all (`meta.failure: 'network'`) the call resolves `undefined` and the write is queued; code that needs the output checks for it. A `'status'` or `'body'` failure still rejects |
+| 16 | sync protocol 3; `createSyncNode({ onMutate })`, `MutationHandler` | you run a `sync` node. Delete `onMutate`, and redeploy clients and nodes together: a v2 client and a v3 node refuse each other with `X_PROTOCOL_VERSION` |
+| 17 | `topic` / `Topic` from `@ultimat3/realtime/server` | you import it there. Import it from `@ultimat3/realtime` |
+| 18 | Compose deploys: `docker-compose.prod.yml`, the scaffold, both tracked apps | you deploy with Compose. `web` now refuses to start without `SYNC_URL`. Set `SYNC_URL=ws://<host>:3001/_x/sync` in `.env.prod`, or proxy `/_x/sync` to `sync` and set `SYNC_URL=wss://<host>/_x/sync`. A copied compose file adds the same line to `web` |
+| 19 | `x verify --json` → `data.durationMs` | you sum step times or read the total as a sum. It is wall time now; the static steps overlap the serial suites |
+| 20 | the `presence` frame, `PresenceFrame` | you read rosters. Declare the room `channel(name, { …, events: true })` and read `readPresence(frame.event)` in its events handler; a roster is an `events` frame `{ presence: op, members, total? }` now |
+| 21 | `ChannelHub#guard`, `subscribe(socket, topic)`, `publish(topic)`, `publishFrame`, `channelFrame`, `TopicGuard*`, `nodeId`, `{ kind: 'topic' }` | you run a hub. Declare each channel with `channel(name, { params, policy, row?, catchUp, records?, events? })`. Build the hub as `new ChannelHub({ transport, sockets })`. `guard` → the declaration's `policy`; `publish(topic, event)` → `hub.publishEvent(decl, params, event)`. Delete `nodeId`. An undeclared name is `X_TOPIC_FORBIDDEN` |
+| 22 | `LocalTable`, `LocalRow`, `tx.<type>.insert(row)` / `upsert(row)` / `update(id, …)` | you write rows in a `local` twin, or type one. Tables are addressed by record key: `tx.posts.insert(post.id, post)`, `upsert(key, row)`, `update(key, patch)`, `delete(key)`, and `get(key)` / `all()` to read. `LocalRow` is gone: `LocalTable<Post>` |
+| 23 | `cdpE2ePage`, `CdpE2ePageOptions` from `@ultimat3/cli` | your e2e suite opens a page itself. Use `openE2eBrowser()` and its page tab, `session.newTab()` for a second tab, or `cdpE2eTab({ … })` on an existing connection |
+| 24 | `.x/build-stats.json` | you ran `x build` before upgrading. Every budgeted route reads `X_BUDGET_UNMEASURED` until `x build --target static` runs again, because the stats file carries the measurement rules that wrote it and v1 files are not read |
+| 25 | `hasPageSocket()` as a guard in page code | a module no island imports calls it (an offline banner, an update prompt in a layout). The `budgets` step now reports it as `X_LIVE_ROUTE_NO_ISLAND`. Move the module into an island: `x g island <route-dir> --at <route-dir>`, import it from the island's `mount()`, declare `island({ src })` |
+| 26 | a browser's reconnect backoff | you sized a sync node on the 30 s spread of reconnects. Browsers now redial within 4 s (`equal` jitter from 500 ms). Check the node's `AcceptBudget` sheds a SIGKILL herd arriving in 2–4 s. Nothing to change in app code |
+
+### Where the sites are
+
+```sh
+grep -rnE "import type \{[^}]*AsyncState[^}]*\} from '@ultimat3/ui'" apps packages --include=*.ts --include=*.tsx
+grep -rnE "ConflictLike|ConflictStrategy|CustomMerge|MergeArgs|CustomConflict|strategyOf|resolveConflict|custom\(|QueryRequestFailedError|QueryProblem|X_RPC_FAILED|instanceof (TypeError|SyntaxError|RpcFailedError)|isSuperseded|flushEndpoint|DEFAULT_FLUSH_ENDPOINT|BackgroundSyncOptions|outbox/flush|X_PWA_SYNC_|\.principal|last-write-wins|LiveClient|useLive|liveHookFor|IdentityMap|rowKey|privateScope|LocalStore|RebaseLog|reconcile|serverRenderLiveClient|drain\(|onMutate|realtime/server|PresenceFrame|\.guard\(|publishFrame|channelFrame|TopicGuard|nodeId" apps packages --include=*.ts --include=*.tsx
+```
+
+The `typecheck` step finds every removed name for you. It does not find a `custom(` merge whose
+type argument is still the output type: `custom<TRow>` takes any object type, so that merge
+compiles and reads `undefined` for every output field that is not a column of the row. The second
+grep lists every `custom(`. Read each one.
 
 ## 19.x → 20.0.0, entry by entry
 
@@ -761,7 +817,8 @@ browser, out of identical props. `@ultimat3/ui` has no ambient locale to fall ba
 + backgroundSyncSource({ flushEndpoint });
 ```
 
-`BackgroundSyncOptions` is `{ flushEndpoint?: string }` and nothing else. This package schedules no
+`BackgroundSyncOptions` is `{ flushEndpoint?: string }` and nothing else — in this release. 21.0.0
+removes it as well, together with the flush route; see entry 8 of `20.x → 21.0.0`. This package schedules no
 retry and never did: the one-shot `sync` handler rejects and the **platform** decides when to wake it
 again. Of the policy only `maxAttempts` reached the emitted worker, as a `SYNC_MAX_ATTEMPTS` constant
 nothing read, and `X_PWA_SYNC_INCOMPLETE`'s `fix:` told the reader to raise

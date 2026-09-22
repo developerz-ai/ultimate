@@ -3,10 +3,12 @@
 // type-level claim written in one can never fail. This module emits nothing and exports nothing
 // anybody imports — a regression here is a build error, the only enforcement that counts.
 
+import type { Row } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action, AnyAction } from './action';
 import type { ClientMethod } from './client';
 import type { ActionJobHandle } from './job-handle';
+import type { LocalTable } from './mutator';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
 type Assert<T extends true> = T;
@@ -42,4 +44,18 @@ export type _ErasedClientIsNotASupertype = Assert<
   ClientMethod<PublishInput, PublishOutput> extends ClientMethod<StandardSchemaV1, StandardSchemaV1>
     ? false
     : true
+>;
+
+/**
+ * A mutator's `tx` table is `@ultimat3/realtime`'s store tx, member for member — the store is what
+ * a twin runs against, so a member here it lacks is a twin that typechecks and throws. Pinned by
+ * the member set because realtime (tier 3, sideways) cannot be imported to compare the types.
+ */
+export type _LocalTableIsTheStoreTxShape = Assert<
+  Equals<keyof LocalTable, 'get' | 'all' | 'insert' | 'upsert' | 'update' | 'delete'>
+>;
+
+/** Addressed by KEY: an insert names the key its server twin answers under, never a column. */
+export type _LocalInsertTakesTheKey = Assert<
+  Equals<Parameters<LocalTable['insert']>, [key: string, row: Row]>
 >;

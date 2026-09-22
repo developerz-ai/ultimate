@@ -3,6 +3,13 @@
 // byte-deterministic), plus the resolver that turns a page's `src` specifier into the URL its
 // `data-x-entry` carries. One entry point per island is axiom 6 made mechanical — the page's graph
 // never reaches an island, so a `site/` document stays at 0kb whatever the island imports.
+//
+// No page-client bootstrap is prepended (plan 101, decided 2026-09-22): the handle is one
+// `globalThis` object created lazily by the first transport call or realtime hook. Measured before
+// that decision on `examples/dummy`, a core-importing wrapper cost contact-sales 875 → 8,827 B.
+// What IS prepended is the realtime install, and only where the island's graph reaches
+// `@ultimat3/realtime` (`island-realtime.ts`). Measured on a fixture, As of 2026-09-22: a Solid
+// island reading `useConnection` 64,964 → 65,067 B (+103 B); an island not reaching realtime +0.
 
 // Bun ships no path API. `posix` does the specifier arithmetic (an app-relative route file is
 // POSIX by construction), `join`/`basename` the filesystem side.
@@ -11,6 +18,7 @@ import { frameworkVersion, renderThrowable } from '@ultimat3/core';
 import { ISLAND_EXTENSION, IslandInvalidError, islandModuleId } from '@ultimat3/render';
 import { contentHash } from '@ultimat3/render/server';
 import { IslandBuildFailedError } from './errors';
+import { islandRealtimePlugin, REALTIME_ISLAND_ENTRY, reachesRealtime } from './island-realtime';
 import { solidDedupePlugin } from './island-solid-dedupe';
 import { islandStylesPlugin } from './island-styles';
 import { hasPathSegment } from './path-segments';
@@ -75,10 +83,13 @@ export async function discoverIslands(root: string): Promise<readonly string[]> 
 async function buildOne(root: string, file: string): Promise<IslandChunk> {
   // `Bun.build` REJECTS on a failed bundle, it does not answer `success: false` — so the catch is
   // the real path here and the `success` test below is the belt for a future default.
+  // Only an island whose own graph reaches `@ultimat3/realtime` is wrapped (`island-realtime.ts`);
+  // every other one is built from its own file, byte for byte what it was.
+  const realtime = await reachesRealtime(root, file);
   let built: Awaited<ReturnType<typeof Bun.build>>;
   try {
     built = await Bun.build({
-      entrypoints: [join(root, file)],
+      entrypoints: [realtime ? REALTIME_ISLAND_ENTRY : join(root, file)],
       target: 'browser',
       format: 'esm',
       splitting: false,
@@ -96,7 +107,12 @@ async function buildOne(root: string, file: string): Promise<IslandChunk> {
       // The dedupe goes FIRST: it answers `solid-js` specifiers before either plugin loads a file,
       // so the `solid-js/web` helpers the JSX transform writes into a symlinked package resolve
       // to the app's one copy. See `island-solid-dedupe.ts` for the measurement.
-      plugins: [solidDedupePlugin(root), solidJsxPlugin, islandStylesPlugin],
+      plugins: [
+        ...(realtime ? [islandRealtimePlugin(root, file)] : []),
+        solidDedupePlugin(root),
+        solidJsxPlugin,
+        islandStylesPlugin,
+      ],
       // The third one, and it is a `define` rather than the plugin this used to be: Bun selects
       // the `development`/`production` export condition from the BUILD PROCESS's own `NODE_ENV`,
       // and a defined `process.env.NODE_ENV` overrides it. Measured on 1.4.0, `solid-js` plus
@@ -153,7 +169,7 @@ async function buildOne(root: string, file: string): Promise<IslandChunk> {
  */
 const DEBUG_ID_COMMENT = '\n//# debugId=';
 
-function stripDebugId(code: string): string {
+export function stripDebugId(code: string): string {
   const at = code.lastIndexOf(DEBUG_ID_COMMENT);
   return at === -1 ? code : code.slice(0, at);
 }
@@ -185,7 +201,7 @@ function stripDebugId(code: string): string {
  * measured at 193,590 bytes against 131,649, +47% raw and +20% gzipped, on every island of every
  * app. Delete this the day `Bun.build` is deterministic.
  */
-function graphHash(file: string, map: string): string {
+export function graphHash(file: string, map: string): string {
   const parsed: unknown = JSON.parse(map);
   const contents = sourcesContentOf(parsed);
   if (contents === undefined) {

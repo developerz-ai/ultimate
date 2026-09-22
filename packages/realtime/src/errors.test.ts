@@ -48,6 +48,12 @@ const ADDED_SINCE = [
   'X_LIVE_SERVER_RENDER',
   // Borrowed from core, not owned: the shared window read's deadline is the first thrower.
   'X_TIMEOUT',
+  // 21.0.0 (plan 101): the page's one store and one socket.
+  'X_REALTIME_UNINSTALLED',
+  'X_SYNC_UNCONFIGURED',
+  'X_RECORD_REJECTED',
+  'X_CHANNEL_DECLARATION_INVALID',
+  'X_LOCAL_STORE_UNAVAILABLE',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */

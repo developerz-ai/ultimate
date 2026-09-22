@@ -287,35 +287,14 @@ export class FixTargetUnknownError extends UltimateError {
   }
 }
 
-/**
- * A build target names an entry file the app does not have. `x build` refuses before it spawns the
- * builder: `bun build`'s own "module not found" says nothing about which file an Ultimate app is
- * supposed to own, and `docker build`'s says nothing about which target wanted it.
- */
-export class BuildEntryMissingError extends UltimateError {
-  constructor(input: { target: string; entry: string }) {
-    super({
-      code: 'X_BUILD_ENTRY_MISSING',
-      cause: `x build --target ${input.target} builds from ${input.entry}, and the app does not have it`,
-      fix: `x new scratch-app --dry-run --json   # its file list carries ${input.entry}; copy that file into this app`,
-    });
-  }
-}
-
-/**
- * A client entry would not compile. `X_BUILD_FAILED`, not a code of its own: an island is a bundle
- * entry point like any other, and the target's own logs are what says which line. The fix builds
- * exactly that one file, so the next message an author reads is the compiler's and not the CLI's.
- */
-export class IslandBuildFailedError extends UltimateError {
-  constructor(input: { file: string; logs: string }) {
-    super({
-      code: 'X_BUILD_FAILED',
-      cause: `${input.file} is an island entry point and would not bundle: ${input.logs}`,
-      fix: `bun build --target browser ${input.file}`,
-    });
-  }
-}
+// The build and bundle refusals live in `build-errors.ts` (split at the 500-line ceiling); re-exported
+// here so every existing `from './errors'` import keeps resolving.
+export type { FrameworkScriptKind } from './build-errors';
+export {
+  BuildEntryMissingError,
+  FrameworkScriptBuildFailedError,
+  IslandBuildFailedError,
+} from './build-errors';
 
 /**
  * `ROLE` selects what a container is. One image runs every role, so a typo is a process that would

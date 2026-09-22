@@ -5,17 +5,12 @@
  * contract tests for free, and its authz is the same single evaluation.
  */
 
-import type { Ctx } from '@ultimat3/core';
-import { assertNever } from '@ultimat3/core';
+import type { ConflictPolicy, Ctx, Row } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action, ActionCache, ActionDef, ActionDescriptor, ActionMcp } from './action';
 import { action, isAction } from './action';
+import { assertConflictClock } from './mutator-clock';
 import type { ActionPolicy } from './policy-gate';
-
-/** Minimum shape of a locally-stored row: an id the local twin can address. */
-export interface LocalRow {
-  readonly id: string;
-}
 
 /**
  * Augmented by the app so `tx.posts` is typed:
@@ -33,34 +28,47 @@ export interface LocalTables {
 
 export type LocalTableName = Exclude<keyof LocalTables, '~ultimate'>;
 
-export interface LocalTable<TRow extends LocalRow> {
-  insert(row: TRow): void;
-  update(id: string, patch: Partial<TRow> | ((row: TRow) => Partial<TRow>)): void;
-  delete(id: string): void;
+/**
+ * One table as a mutator's `local` half sees it — the SAME shape as `@ultimat3/realtime`'s store tx
+ * (`record-tx.ts`), so a twin typed against this runs against the page's record store unchanged.
+ * Rows are addressed by KEY, never by a column: the browser holds no entity schema and cannot know
+ * a primary key, so an optimistic insert names the key its server twin will answer under.
+ */
+export interface LocalTable<TRow extends object = Row> {
+  get(key: string): TRow | undefined;
+  all(): readonly TRow[];
+  insert(key: string, row: TRow): void;
+  /** Merged over what the table holds; an `undefined` field leaves the column alone. */
+  upsert(key: string, row: TRow): void;
+  /** Changed fields only — or a function returning them. A no-op for a key the table does not hold. */
+  update(key: string, patch: Partial<TRow> | ((row: TRow) => Partial<TRow>)): void;
+  delete(key: string): void;
 }
 
 /**
- * The client-side write surface a mutator's `local()` gets. @ultimat3/realtime
- * implements it over OPFS SQLite; tests implement it over a Map.
+ * The client-side write surface a mutator's `local()` gets. `@ultimat3/realtime` implements it over
+ * the page's record store; tests implement it over a Map.
  */
 export type LocalTx = {
-  readonly [K in LocalTableName]: LocalTable<Extract<LocalTables[K], LocalRow>>;
+  readonly [K in LocalTableName]: LocalTable<Extract<LocalTables[K], object>>;
 } & {
   /** Escape hatch for generated code that only knows the table name as a string. */
-  table<TRow extends LocalRow>(name: string): LocalTable<TRow>;
+  table<TRow extends object = Row>(name: string): LocalTable<TRow>;
 };
 
-export interface CustomConflict<TOutput> {
-  readonly strategy: 'custom';
-  merge(local: TOutput, server: TOutput): TOutput;
-}
-
-export type Conflict<TOutput> = 'server-wins' | 'last-write-wins' | CustomConflict<TOutput>;
-
-export function custom<TOutput>(
-  merge: (local: TOutput, server: TOutput) => TOutput,
-): CustomConflict<TOutput> {
-  return { strategy: 'custom', merge };
+/**
+ * `conflict: custom(merge)` — core's row-shaped `ConflictPolicy`, built. `merge` receives the local
+ * ROW and the server ROW, because the client store is row-shaped: the output-shaped variant this
+ * replaced was dropped silently by realtime's rebase, which only ever had rows to hand it.
+ *
+ * `TRow` is the app's declared row shape, a caller-side annotation only — at rebase the resolver
+ * hands over whatever the store holds for that record, which is the entity's row.
+ */
+export function custom<TRow extends object = Row>(
+  merge: (local: TRow, server: TRow) => TRow,
+): ConflictPolicy {
+  // The one widening in the vocabulary: core's policy is over `Row`, the app's merge over its row.
+  return { kind: 'custom', merge: merge as unknown as (local: Row, server: Row) => Row };
 }
 
 export interface MutatorDef<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1> {
@@ -84,7 +92,7 @@ export interface MutatorDef<TInput extends StandardSchemaV1, TOutput extends Sta
     ctx: Ctx,
     input: InferOutput<TInput>,
   ): Promise<InferOutput<TOutput>> | InferOutput<TOutput>;
-  readonly conflict: Conflict<InferOutput<TOutput>>;
+  readonly conflict: ConflictPolicy;
 }
 
 export type MutatorDescriptor = Omit<ActionDescriptor, 'kind'> & {
@@ -102,7 +110,7 @@ export interface Mutator<
    * Renaming it here would silently turn every mutator back into a plain action downstream.
    */
   readonly isMutator: true;
-  readonly conflict: Conflict<InferOutput<TOutput>>;
+  readonly conflict: ConflictPolicy;
   /**
    * Applied on the client before the server round trip, and replayed on every
    * rebase — so it must stay a pure function of `(tx, input)`: no I/O, no clock,
@@ -133,6 +141,8 @@ export function mutator<TInput extends StandardSchemaV1, TOutput extends Standar
     ...(def.audit === undefined ? {} : { audit: def.audit }),
     handle: ({ input, ctx }) => def.server(ctx, input),
   };
+  // Before the action is built: a policy that cannot do what it says is refused at declaration.
+  if (def.conflict === 'last-write-wins') assertConflictClock(def.output);
   return wrap(def, action(actionDef));
 }
 
@@ -174,28 +184,7 @@ function wrap<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>
   return self;
 }
 
-export function strategyOf<TOutput>(
-  conflict: Conflict<TOutput>,
-): 'server-wins' | 'last-write-wins' | 'custom' {
-  return typeof conflict === 'string' ? conflict : conflict.strategy;
-}
-
-/**
- * Rebase decision for @ultimat3/realtime: which value survives when the local
- * twin and the server disagree.
- */
-export function resolveConflict<TOutput>(
-  conflict: Conflict<TOutput>,
-  local: TOutput,
-  server: TOutput,
-): TOutput {
-  if (typeof conflict !== 'string') return conflict.merge(local, server);
-  switch (conflict) {
-    case 'server-wins':
-      return server;
-    case 'last-write-wins':
-      return local;
-    default:
-      return assertNever(conflict);
-  }
+/** The descriptor's name for a policy — the manifest and `x actions describe` print this. */
+function strategyOf(conflict: ConflictPolicy): MutatorDescriptor['conflict'] {
+  return typeof conflict === 'string' ? conflict : conflict.kind;
 }

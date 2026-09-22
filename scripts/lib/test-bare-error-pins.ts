@@ -43,7 +43,7 @@ export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   jobs: 23,
   mcp: 6,
   query: 11,
-  realtime: 28,
+  realtime: 25,
   render: 6,
   scraping: 1,
   seo: 8,

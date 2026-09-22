@@ -13,5 +13,8 @@
  */
 export const BUILD_ID_HEADER = 'x-ultimate-build';
 
-/** RFC 9110's spelling, lower-cased, as `Headers` normalises it. */
-export const IDEMPOTENCY_HEADER = 'idempotency-key';
+/**
+ * RFC 9110's spelling, lower-cased. Core's, re-exported by name: `clientTransport` sets it and
+ * this package's route reads it, so a second declaration here would be two answers to one header.
+ */
+export { IDEMPOTENCY_HEADER } from '@ultimat3/core';

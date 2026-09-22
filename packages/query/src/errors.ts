@@ -1,8 +1,8 @@
 /** Every failure @ultimat3/query can produce, one subclass per stable code. */
-import { assertNever, registerErrorCodes, retryForStatus, UltimateError } from '@ultimat3/core';
+import { assertNever, registerErrorCodes, UltimateError } from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
 
-// No `docs:` on the classes below, with one exception noted at `QueryRequestFailedError`.
+// No `docs:` on the classes below.
 // `UltimateError` fills it from `describeErrorCode(code).docs`, which is `@ultimat3/core`'s
 // `ERROR_DOCS_URL` — one page for every code, never one per code, because `wiki/` is the
 // framework's only public documentation surface and a code lives there in a TABLE ROW, which has
@@ -29,11 +29,12 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Codes `@ultimat3/action` owns that this package only throws. Both describe an action's job —
- * enforcing an input schema, and speaking the typed RPC wire — so action declares the title and
- * query never re-declares it: two copies of a title are two titles, one of which is stale.
+ * Codes `@ultimat3/action` owns that this package only throws. It describes an action's job —
+ * enforcing an input schema — so action declares the title and query never re-declares it: two
+ * copies of a title are two titles, one of which is stale. `X_RPC_FAILED` left this list in
+ * 21.0.0: the typed read client's wire failures are `@ultimat3/core`'s `clientTransport`'s now.
  */
-export const QUERY_BORROWED_ERROR_CODES = ['X_INPUT_INVALID', 'X_RPC_FAILED'] as const;
+export const QUERY_BORROWED_ERROR_CODES = ['X_INPUT_INVALID'] as const;
 
 // One unconditional call: a presence guard would turn "another package claims one of these codes"
 // from an X_ERROR_CODE_DUPLICATE at import into whichever module loaded first deciding the title.
@@ -304,47 +305,4 @@ export class QueryInputInvalidError extends UltimateError {
       fix: `x queries describe ${name} --json  # prints the expected input schema`,
     });
   }
-}
-
-/** The `problem+json` fields a failing read can send back. All optional: a proxy sends none. */
-export interface QueryProblem {
-  readonly code?: unknown;
-  readonly cause?: unknown;
-  readonly detail?: unknown;
-  readonly fix?: unknown;
-  readonly docs?: unknown;
-}
-
-/**
- * The typed client's failure. A `problem+json` body is re-thrown verbatim — the
- * server already said what broke and how to fix it, and inventing a second story
- * here would bury it. Anything else answered instead of the app, so it is
- * `X_RPC_FAILED` and the fix line points at the gateway.
- */
-export class QueryRequestFailedError extends UltimateError {
-  constructor(name: string, status: number, problem: QueryProblem = {}) {
-    const code = text(problem.code) ?? 'X_RPC_FAILED';
-    const served = text(problem.docs);
-    super({
-      code,
-      // The status is what says "send it again", and only where nobody has classified the code:
-      // `UltimateError` otherwise fills `retry` from `retryFor(code)`, which fails closed, so a
-      // 502 out of a typed read announced itself as `terminal` on the one field the framework
-      // promises a client never has to infer.
-      retry: retryForStatus(code, status),
-      cause: text(problem.cause) ?? text(problem.detail) ?? `${name} returned HTTP ${status}`,
-      fix:
-        text(problem.fix) ??
-        `check the gateway in front of the app, then: x queries describe ${name} --json`,
-      // The one place a `docs` is passed: the SERVER's, re-thrown verbatim beside the cause and
-      // fix it came with. An app that documents its own codes somewhere else is entitled to say
-      // so, and overwriting it with this framework's page would bury the answer. Absent, the
-      // constructor resolves `ERROR_DOCS_URL` like every other error here.
-      ...(served === undefined ? {} : { docs: served }),
-    });
-  }
-}
-
-function text(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }

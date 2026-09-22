@@ -79,6 +79,7 @@ describe('manifestJson', () => {
       'entities',
       'actions',
       'queries',
+      'channels',
       'jobs',
       'tasks',
       'policies',

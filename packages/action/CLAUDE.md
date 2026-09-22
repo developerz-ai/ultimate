@@ -5,6 +5,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 ## Boundary
 
 - May import: `core`, `schema` (t0), `cache`, `i18n`, `time` (t1), `entity`, `policy`, `http` (t2).
+  `entity` is a real edge since 21.0.0 (`record-wire.ts` → `hasEntityRows`/`rowsOf`), downward 3→2.
 - Never import: `query`, `jobs`, `realtime` (sideways), or any tier 4-5 package.
 - Never re-implement authz, validation or caching — call `policy`, `schema`, `cache`.
 
@@ -20,7 +21,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `define-api.ts` | `defineApi({ actions, mutators, queries, llm, jobs, tasks })` — the app's one boot call |
 | `http.ts` | route projection (`enforcedBy: 'handler'`) + OpenAPI operation |
 | `openapi.ts` | deterministic OpenAPI 3.1 document |
-| `client.ts` | typed RPC client (browser-safe: no server imports) |
+| `client.ts` | typed RPC client (browser-safe: no server imports) — dispatches through core's `clientTransport` |
+| `record-wire.ts` | the record envelope on the HTTP projection: `carriesRecords` (from the output schema), the enveloped 200, and its OpenAPI shape. Server-only — `client.ts` never imports it |
 | `wire-issues.ts` | the ONE reader of a problem document's `issues` member — an untrusted array back into `@ultimat3/schema`'s `ValidationIssue` shape |
 | `transition.ts` | `transition()`: a MUTATOR factory over one entity column's state machine. Declares no error code — entity's three propagate |
 | — | opt-in flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, re-exported from `src/index.ts`. There is no local copy and must not be one |
@@ -46,6 +48,32 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 
 ## Invariants
 
+- **Every browser call goes through `@ultimat3/core`'s `clientTransport`, `As of 2026-09-22`.**
+  `client.ts` hands it the method, the URL (core's `actionPath`, the one path rule — `naming.ts`'s
+  `derivePath`/`pluralize`/`splitWords` are core's too, re-exported), body, headers, signal,
+  idempotency key, flight and this call's `retry`; the transport owns credentials, the JSON body,
+  the idempotency header, envelope decode, adoption into `pageClient().store`, the principal fence
+  and the terminal `fetch`. Only what the action alone knows rides in as hooks: `onResponse` (the
+  build-id check, `X_CONTRACT_DRIFT`) and `decodeError` (`RemoteActionError` for a body naming a
+  framework code; `undefined` otherwise, so the transport answers `X_CLIENT_TRANSPORT_FAILED` — the
+  same code a query gets for the same failure). `X_RPC_FAILED` / `RpcFailedError` stay registered
+  and exported — a shipped code never changes — and nothing in the framework throws them since
+  21.0.0.
+  `retry` is computed here — `{ attempts: 1 }` unless the call carries an idempotency key — so a
+  flight-wide retry never re-sends an unkeyed write.
+- **The record envelope is derived from the output schema, decided per ACTION, never per
+  response.** `carriesRecords(output)` is `@ultimat3/entity`'s `hasEntityRows`, evaluated once in
+  `toRoute`; an enveloped action answers `{ data, records }` under `x-ultimate-records: 1` even
+  when this call returned no row, so one operation has one wire shape and one OpenAPI schema. An
+  output with no entity row is byte-identical on the wire and in the spec — `record-wire.test.ts`
+  pins both, the bytes as `JSON.stringify(output)`. The envelope is HTTP-only: MCP, `.job()` and a
+  direct call still answer the bare output.
+- **`conflict` is `@ultimat3/core`'s `ConflictPolicy`, over ROWS.** `custom(merge)` builds
+  `{ kind: 'custom', merge(localRow, serverRow) }`; the output-shaped `CustomConflict`,
+  `Conflict<T>`, `strategyOf` and this package's `resolveConflict` are deleted (21.0.0) — core's
+  `resolveConflict` is the one resolver, and its `last-write-wins` compares the server's
+  `updatedAt` rather than preferring the local side. `strategyOf` survives as a private helper for
+  `describeMutator()`.
 - **`X_INPUT_INVALID` carries the rejections TWICE, and they are one value.** The flattened line
   stays in `cause` — it is what an operator reads in a log and what a non-form caller sees — and
   `meta.issues` carries the same list structured, so a client rebuilding a form knows WHICH field
@@ -304,7 +332,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   still separates them only for a package that declared its own `docs:`, which is why the branch
   stays. The
   code must be `X_SCREAMING_SNAKE` to be taken at all — `typeof code === 'string'` accepted `""`
-  from a gateway — and anything else is `RpcFailedError`, which is what that code means.
+  from a gateway — and anything else is core's `X_CLIENT_TRANSPORT_FAILED` (it was
+  `RpcFailedError` until 21.0.0).
   `docs` and `type` travel to `remoteDocs` as an ordered pair, not `docs ?? type`: preference is
   not selection, and picking the preferred slot on presence alone let one `javascript:` string
   bury a perfectly good `type` the same response had already offered.
@@ -548,14 +577,24 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   promises. It lives in `packages/core/src/client-flight.ts` now; the tests that pin it from this
   side still drive it through this package's own client.
 - **`ClientFlight` is a TYPE inside `client.ts` and never a value.** That erasure is the entire
-  tree-shaking story: `rpc` alone is 14,759 B minified for the browser and `queryClient` alone is
-  12,755 B, against 20,292 B / 17,912 B with `createClientFlight` imported beside them — ±376 B run
-  to run, which is `Bun.build` 1.4.0 dropping core's `schema-error-codes.ts` (issue #273). A caller
-  who wants a plain typed fetch must not pay for the fence, the dedup map or the retry loop —
-  `packages/cli/src/templates/resource-form-island.ts` and `examples/dummy`'s contact-sales island
-  both write a bare `fetch` today because that bill used to be unavoidable. Never import
-  `createClientFlight` for a VALUE from `client.ts` — `ClientFlight` and `ClientRetry` are
-  `import type` from `@ultimat3/core` and must stay that way.
+  tree-shaking story: a caller who wants a plain typed call must not pay for the fence, the dedup
+  map or the retry loop. Never import `createClientFlight` for a VALUE from `client.ts` —
+  `ClientFlight` and `ClientRetry` are `import type` from `@ultimat3/core` and must stay that way.
+  **Measured, `bun build --target=browser --minify`, one entry importing from `@ultimat3/action`,
+  `As of 2026-09-22`:**
+
+  | Entry | before (HEAD `98d16d84`) | after (`clientTransport`) |
+  |---|---|---|
+  | `rpc` | 18,097 B | 23,007 B |
+  | `rpc` + `createClientFlight` | 23,903 B | 28,823 B |
+
+  The 14,759 B this file used to quote does not reproduce on the tree it was checked against
+  (18,097 B); the numbers above are both measured the same way, same day. The growth is +4,910 B,
+  of which the envelope decoder is ~1,020 B (`decodeRecordEnvelope` added to a
+  `UltimateError`+`problemOf`+`traceHeaders` entry: 13,059 → 14,079 B). The rest is core's
+  transport graph — the scope fence, the dispatch module, and core's shared problem decoder, which
+  now answers a body with no framework code (`X_CLIENT_TRANSPORT_FAILED`) behind `decodeError`. That is OVER the plan's bound ("must not grow beyond the envelope decoder") and is
+  reported, not hidden.
 - **The `sideEffects` array is what makes the barrel shakable, and it is load-bearing** (`As of
   2026-08-23`). Declaring nothing meant a bundler had to assume every module ran at import, so
   `import { rpc } from '@ultimat3/action'` was 43,104 B and `import { queryClient } from

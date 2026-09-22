@@ -141,6 +141,7 @@ Three shipped packages have no reference page on this wiki `As of 2026-08-23` �
 | The static path never pays for the app path | `site/` cannot import `app/`; 0kb JS is structural |
 | Deploy anywhere = containers only | zero platform primitives |
 | Ultimate ships mechanism; your app ships convention | mechanisms and structural conventions ship; business conventions never do. Tenancy ships, an org model does not — primitives are functions returning values, so an app wraps one → [Building your own base](Building-Your-Own-Base) |
+| Useful, then efficient | working function first, bytes second. A budget is a measurement, not a ceiling to game: raise it by the measured amount, with the reason, rather than cut a feature. The static path still pays nothing for the app path |
 
 ## Source docs in the repo
 

@@ -33,7 +33,6 @@ const LABELS: SettingsProps['labels'] = {
 
 /** What a working read hands the editor — the baseline each state below departs from. */
 const BASE = {
-  endpoint: '/api/save-preferences',
   nowIso: '2026-03-04T09:00:00.000Z',
   locale: 'en',
   timezone: 'Europe/Bucharest',

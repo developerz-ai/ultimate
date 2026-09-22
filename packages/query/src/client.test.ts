@@ -3,7 +3,9 @@
  * client derives, the headers it sends and the property names the proxy may answer.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import type { RecordEnvelope, RecordRows, RecordSink } from '@ultimat3/core';
+import { createClientFlight, pageClient, RECORDS_HEADER } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { type FetchLike, queryClient, queryClientMethodFor } from './client';
@@ -120,13 +122,30 @@ describe('the map-wide read client', () => {
 
     const error = await read({ slug: 'hello' }).catch((caught: unknown) => caught);
 
-    expect(error).toBeUltimateError('X_RPC_FAILED');
-    expect((error as { cause: string }).cause).toContain('publicPost returned HTTP 502');
+    // Core's transport decodes every client failure one way; the read is named by its URL.
+    expect(error).toBeUltimateError('X_CLIENT_TRANSPORT_FAILED');
+    expect((error as { cause: string }).cause).toContain('/_x/query/public-post');
+    expect((error as { cause: string }).cause).toContain('HTTP 502');
   });
 
   test('headers and an abort signal reach the wire', async () => {
-    const { fetch, seen } = recorder();
     const controller = new AbortController();
+    const seen: {
+      headers: Headers;
+      abortedBefore?: boolean | undefined;
+      abortedAfter?: boolean | undefined;
+    } = {
+      headers: new Headers(),
+    };
+    // Observed WHILE in flight: the transport hands the wire its own signal — the principal fence
+    // aborts it too — and forwards the caller's abort into it until the dispatch settles.
+    const fetch: FetchLike = async (_url, init) => {
+      seen.headers = new Headers(init.headers);
+      seen.abortedBefore = init.signal?.aborted;
+      controller.abort();
+      seen.abortedAfter = init.signal?.aborted;
+      return Response.json([]);
+    };
     const client = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
       fetch,
@@ -135,10 +154,10 @@ describe('the map-wide read client', () => {
 
     await client.publicPost({ slug: 'hello' }, { signal: controller.signal });
 
-    const headers = new Headers(seen.init?.headers);
-    expect(headers.get('accept-language')).toBe('es');
-    expect(headers.get('accept')).toBe('application/json');
-    expect(seen.init?.signal).toBe(controller.signal);
+    expect(seen.headers.get('accept-language')).toBe('es');
+    expect(seen.headers.get('accept')).toBe('application/json');
+    expect(seen.abortedBefore).toBe(false);
+    expect(seen.abortedAfter).toBe(true);
   });
 
   test('a symbol property is undefined, so the client is not mistaken for a thenable', async () => {
@@ -195,5 +214,102 @@ describe('the page half of the read client', () => {
     const client = queryClient<typeof queries>({ baseUrl: 'http://dev.test', fetch });
     await client.publicPost.page({ slug: 'x' }, { first: 1 });
     expect(seen.url).toBe('http://dev.test/_x/query/public-post?slug=x&_first=1');
+  });
+});
+
+describe('the read client on the page store', () => {
+  afterEach(() => {
+    pageClient().store = undefined;
+  });
+
+  function fakeSink(): { readonly sink: RecordSink; readonly adopted: [string, RecordRows][] } {
+    const adopted: [string, RecordRows][] = [];
+    return {
+      adopted,
+      sink: {
+        adopt: (type, rows) => {
+          adopted.push([type, rows]);
+        },
+        remove: () => undefined,
+      },
+    };
+  }
+
+  test('an envelope adopts its records into the installed store and returns only data', async () => {
+    const row = { id: ORG_ID, title: 'hello' };
+    const { sink, adopted } = fakeSink();
+    pageClient().store = sink;
+    const fetch: FetchLike = async () =>
+      Response.json(
+        { data: [row], records: { post: { [ORG_ID]: row } } },
+        { headers: { [RECORDS_HEADER]: '1' } },
+      );
+    const client = queryClient<typeof queries>({ baseUrl: 'https://app.test', fetch });
+
+    const rows = await client.publicPost({ slug: 'hello' });
+
+    expect(rows).toEqual([row]);
+    expect(adopted).toEqual([['post', { [ORG_ID]: row }]]);
+  });
+
+  test('onEnvelope reaches the caller, on a plain read and on .page()', async () => {
+    const row = { id: ORG_ID, title: 'hello' };
+    const fetch: FetchLike = async (url) =>
+      Response.json(
+        {
+          data: url.includes('_first=')
+            ? { rows: [row], endCursor: null, hasNextPage: false }
+            : [row],
+          records: { post: { [ORG_ID]: row } },
+        },
+        { headers: { [RECORDS_HEADER]: '1' } },
+      );
+    const client = queryClient<typeof queries>({ baseUrl: 'https://app.test', fetch });
+    const seen: string[][] = [];
+    const onEnvelope = (envelope: RecordEnvelope): void => {
+      seen.push(Object.keys(envelope.records?.['post'] ?? {}));
+    };
+
+    await client.publicPost({ slug: 'hello' }, { onEnvelope });
+    await client.publicPost.page({ slug: 'hello' }, { first: 1 }, { onEnvelope });
+
+    expect(seen).toEqual([[ORG_ID], [ORG_ID]]);
+  });
+
+  test('a body with no header is the rows, even when it looks like an envelope', async () => {
+    const { sink, adopted } = fakeSink();
+    pageClient().store = sink;
+    const lookalike = [{ data: 1, records: { post: [] } }];
+    const fetch: FetchLike = async () => Response.json(lookalike);
+    const client = queryClient<typeof queries>({ baseUrl: 'https://app.test', fetch });
+
+    expect(await client.publicPost({ slug: 'hello' })).toEqual(lookalike as unknown as PostRow[]);
+    expect(adopted).toEqual([]);
+  });
+
+  test('two concurrent identical reads are one fetchImpl call', async () => {
+    let calls = 0;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetch: FetchLike = async () => {
+      calls += 1;
+      await gate;
+      return Response.json([{ id: ORG_ID, title: 'x' }]);
+    };
+    const client = queryClient<typeof queries>({
+      baseUrl: 'https://app.test',
+      fetch,
+      flight: createClientFlight({ principal: () => 'alice' }),
+    });
+
+    const both = Promise.all([client.publicPost({ slug: 'x' }), client.publicPost({ slug: 'x' })]);
+    release();
+    const [one, two] = await both;
+
+    expect(calls).toBe(1);
+    expect(one).toEqual(two);
+    expect(one).not.toBe(two);
   });
 });

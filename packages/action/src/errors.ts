@@ -9,6 +9,7 @@ import {
   ERROR_DOCS_URL,
   hasErrorCode,
   registerErrorCodes,
+  renderFixShellArg,
   retryForStatus,
   UltimateError,
 } from '@ultimat3/core';
@@ -50,6 +51,8 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
     'a retried Idempotency-Key replays a first attempt that failed after it may have committed',
   X_IDEMPOTENCY_STATUS_UNKNOWN: 'an idempotency record holds a status this build cannot read',
   X_INPUT_INVALID: 'input failed schema validation',
+  X_MUTATOR_CLOCK_MISSING:
+    "a mutator declares conflict: 'last-write-wins' and its entity has no number clock column",
   X_OUTPUT_INVALID: 'a handler returned a value its output schema rejects',
   X_RPC_FAILED: 'an RPC call failed without a problem+json body',
 };
@@ -301,7 +304,7 @@ function remoteDocs(code: string, sent: readonly (string | undefined)[] = []): s
  * policy decision — but a code the server owns is one this bundle may never have registered, so
  * the error says where it came from rather than passing as locally declared: `name` marks it in
  * a stack trace and `meta.origin` marks it in `--json`, the dev overlay and the error reporter.
- * `RpcFailedError` stays the answer when no framework code came back at all.
+ * A body naming no framework code is core's `X_CLIENT_TRANSPORT_FAILED`, as it is for a query.
  */
 export class RemoteActionError extends UltimateError {
   override readonly name = 'RemoteActionError';
@@ -336,7 +339,12 @@ export class RemoteActionError extends UltimateError {
   }
 }
 
-/** The client got a non-`problem+json` failure — a proxy, not our server, answered. */
+/**
+ * A non-`problem+json` failure — a proxy, not our server, answered. **No framework code throws this
+ * since 21.0.0**: the typed client answers that failure with core's `X_CLIENT_TRANSPORT_FAILED`, the
+ * code a query gets. Kept exported and `X_RPC_FAILED` kept registered because a shipped code never
+ * changes and an app may still construct or match it.
+ */
 export class RpcFailedError extends UltimateError {
   constructor(name: string, status: number) {
     super({
@@ -398,6 +406,30 @@ export class AuditSinkFailedError extends UltimateError {
       meta: { action, replayable },
       sourceError,
     });
+  }
+}
+
+/**
+ * `conflict: 'last-write-wins'` with nothing to compare. Refused at declaration, because the
+ * alternative is a policy that reads as "newest wins" and resolves to the server row every time.
+ */
+export class MutatorClockMissingError extends UltimateError {
+  constructor(entity: string | undefined, clock: string) {
+    super(
+      entity === undefined
+        ? {
+            code: 'X_MUTATOR_CLOCK_MISSING',
+            cause: `a mutator declares conflict: 'last-write-wins' and its output carries no entity row, so there is no ${clock} to compare`,
+            fix: "return the entity row from the mutator's output, or declare conflict: 'server-wins'",
+            meta: { clock },
+          }
+        : {
+            code: 'X_MUTATOR_CLOCK_MISSING',
+            cause: `a mutator declares conflict: 'last-write-wins' and entity ${entity} has no number ${clock} column the server writes, so the server row would win every time`,
+            fix: `add ${clock} (a number, epoch ms, written by the server) to ${renderFixShellArg(entity, '<entity>')}, or declare conflict: 'server-wins'`,
+            meta: { entity, clock },
+          },
+    );
   }
 }
 

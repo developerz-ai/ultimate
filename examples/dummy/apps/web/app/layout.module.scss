@@ -47,3 +47,17 @@
   padding-inline: var(--space-4);
   inline-size: 100%;
 }
+
+// The sign-out control: a native form, so it works before any script. Styled as a quiet link.
+.signOut button {
+  background: none;
+  border: 0;
+  color: rgb(var(--color-fg-muted));
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+
+  &:hover {
+    color: rgb(var(--color-fg));
+  }
+}

@@ -89,7 +89,9 @@ without consulting the table. A per-route `strategy` overrides both.
 
 Overriding `offline` is allowed. Contradictions are **not** rejected `As of 2026-08`: `offline: 'precache'` on a `render: 'ssr'` route is accepted, and `X_SW_UNCACHEABLE` is a reserved name nothing raises ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)). The scope half *is* enforced — `X_SW_SCOPE_INVALID`, when the service-worker scope cannot serve the routes it precaches. Until the coherence check ships, review the pairing yourself: a per-request render has no cacheable body, so `precache` on `ssr` means the shell is served stale.
 
-Mutations are never cached. **Offline writes go through the tier-3 mutator queue ([Realtime](Realtime)), not through Background Sync guesswork** — a durable queue with a declared `conflict` strategy per mutator, replayed on reconnect and rebased against server truth. Background Sync, when enabled, is only a wake-up trigger for that queue; it is never the queue.
+**The installing page is cached too**, `As of 2026-09-22` (21.0.0, unreleased). The page that registers the worker loaded before the worker controlled it, so no strategy saw it, and an `offline: 'runtime'` route was unavailable offline until a second online visit. On `activate`, the worker now runs each open window's URL through its route's own strategy, the same rule every later visit follows. It is best effort: a failure costs the warm-up only.
+
+Mutations are never cached. **Offline writes go through the tier-3 mutator queue ([Realtime](Realtime)), not through Background Sync guesswork** — a durable queue with a declared `conflict` strategy per mutator, replayed on reconnect and rebased against server truth. Background Sync, when enabled, is only a wake-up trigger for that queue; it is never the queue. **One outbox, and it is realtime's**, in the page's IndexedDB, keyed by principal. On a `sync` event the worker posts `OUTBOX_DRAIN_MESSAGE` (`'x-outbox-drain'`, from `@ultimat3/core`) to every open tab and sends nothing itself. With no tab open the queue waits on disk for the next page load. `As of 2026-09-22` (21.0.0, unreleased) both halves are in the tree: the page's outbox listens for the message. Until 21.0.0 the worker POSTed `/_x/outbox/flush`, a route nothing ever mounted.
 
 ### Manifest, icons, splash
 
@@ -154,20 +156,25 @@ Server behaviour on a stale build ID:
 Off by default. Each flag adds permission prompts, review burden, or platform surface, so none is implicit.
 
 ```ts
+// app.config.ts: the two capabilities an app can switch on, both booleans
 pwa: {
+  enabled: true,
   offline: { fallback: '/offline' },
-  push:           { enabled: true, vapid: env.VAPID },
-  backgroundSync: { enabled: true, queues: ['mutations'] },
-  badging:        { enabled: true, count: () => unreadCount() },
-  shareTarget:    { enabled: true, accept: ['image/*', 'text/plain'] },
-  fileHandlers:   [{ action: '/import', accept: { 'text/csv': ['.csv'] } }],
+  backgroundSync: true,
+  push: true, // emits nothing until a VAPID key exists; see Configuration
 }
 ```
+
+`badging`, `shareTarget` and `fileHandlers` are `CapabilityFlags` on `@ultimat3/pwa`'s
+`generateServiceWorker`, **not** `app.config.ts` keys, `As of 2026-09-22`. `x build` passes only
+`backgroundSync` and `push` through (`packages/cli/src/sw-artifacts.ts`). This block showed all five
+as config objects (`{ enabled, queues }`, `{ enabled, vapid }`, …), and no such shape was ever
+accepted.
 
 | Flag | Generates | Cost of enabling |
 |---|---|---|
 | `push` | SW push handler, subscription endpoint action, a `job` for send fanout | notification permission prompt; needs VAPID keys |
-| `backgroundSync` | SW sync registration wired to the mutator queue | replay must be idempotent — enforced by the mutator's `conflict` field |
+| `backgroundSync` | a SW `sync` listener that posts `OUTBOX_DRAIN_MESSAGE` to every open tab, and the page registration with an `online` fallback where the Background Sync API is missing | replay must be idempotent. By design each queued write carries an idempotency key, so `action`'s idempotency store answers a replay rather than applying it twice. The queue is IndexedDB-backed, per principal |
 | `badging` | badge update from a live query — **only alongside `push`** `As of 2026-08-20`: the badge call is emitted inside the push block, so `badging: true` on its own changes nothing while `capabilities.badging` still reports `true` | Chromium-only surface |
 | `shareTarget` | manifest entry + a POST route | must handle untrusted payloads; the target route gets a required policy |
 | `fileHandlers` | manifest entry + route | OS-level file association |

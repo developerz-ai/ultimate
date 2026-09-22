@@ -33,6 +33,19 @@ routeDocument(entry, data)     → renderHead(headFromMeta(await config.meta(dat
 | the document | [`packages/cli/src/dev-render.ts`](../../packages/cli/src/dev-render.ts) | head + style + body, per mode |
 | measured budgets | [`packages/cli/src/budgets.ts`](../../packages/cli/src/budgets.ts) | `measureJsBytes` over the emitted HTML, `.x/build-stats.json` |
 
+**`BUILD_STATS_RULES` is a version, and bumping it is a maintainer's edit.** `.x/build-stats.json`
+records the rules that wrote it (`measuredBy`), and the `budgets` step reads only a file stamped
+with the current `BUILD_STATS_RULES` (`packages/cli/src/budgets.ts`). A stale file is
+`X_BUDGET_UNMEASURED`, never a number. **Bump it in the same change as anything that alters what a
+budget charges**: a script added to or removed from `FRAMEWORK_SCRIPTS` or
+`FRAMEWORK_INLINE_SCRIPTS`, a tag kind excluded, a framework script decided charged. Otherwise a
+file written under the old rule is read as a measurement of the new one. `.x/` survives upgrades,
+and that is how the reference app was charged 250 B for `/x-sw-register.js` after it was exempted.
+`2` is that exemption, plus the decision to **charge** the page boot: it ships only on a page that
+hydrates something, so it is part of the interactivity the app opted into. No check enforces the
+bump, so it is a convention; a test that fingerprints the exemption sets against a pinned
+`BUILD_STATS_RULES` would make it a build error.
+
 ## Why the loader installs on import
 
 `Bun.plugin` only transforms modules loaded **after** it, so the install is a module-scope side effect of [`packages/render/src/server.ts`](../../packages/render/src/server.ts) — every consumer that will load a `.tsx` route (`x dev`, `x build`, `server.ts`, a test that `await import()`s a page) imports `@ultimat3/render/server` before the source it loads. Any later hook would be four places one fact can be wrong instead of none.

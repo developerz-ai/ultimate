@@ -12,7 +12,7 @@ import { defineRoute } from '@ultimat3/render';
 import { Button, Stack, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import type { Api } from '../../../api';
-import { Layout } from '../../layout';
+import { Layout, updateBannerIsland } from '../../layout';
 import styles from './page.module.scss';
 
 /**
@@ -26,6 +26,9 @@ import styles from './page.module.scss';
 const CREATE_ACTION = 'createPost' satisfies keyof Api['actions'];
 const CREATE_ENDPOINT = derivePath(CREATE_ACTION).path;
 
+/** The layout's update banner — an island of THIS route, so it is declared here. */
+const Banner = updateBannerIsland('../../update-banner.island.tsx');
+
 export const config = defineRoute({
   render: 'ssr',
   offline: 'runtime',
@@ -35,9 +38,20 @@ export const config = defineRoute({
    * off the response. The row-level half stays with `createPost`'s own `postCreate`.
    */
   policy: { permission: 'post:create' satisfies KnownPermission },
-  /** The only interactive part is the submit button, which the browser owns. */
-  hydrate: 'never',
-  budget: { js: '0kb', lcp: 1200 },
+  /**
+   * `idle`, for the layout's update banner alone: the form itself is the browser's, but an editor
+   * left open across a deploy is exactly the page that must hear a new build is live.
+   */
+  hydrate: 'idle',
+  /**
+   * measured: 2,456 B (2026-09-22; `buildIslands`, `hydrateRuntimeBytes`) — the update banner
+   * 712 + the `idle` runtime 1,744, against 3,072. No page boot: no realtime island renders here.
+   * why: the update banner (`app/update-banner.island.tsx`) — plain DOM, the service worker's
+   * announcement, no realtime and no page boot, and `@ultimat3/core/page` for the two names it
+   * shares with the worker and the render. It was 0 while the banner was a server component that
+   * could never appear.
+   */
+  budget: { js: '3kb', lcp: 1200 },
   meta: ({ t }) => ({ title: t('posts.create'), robots: { index: false } }),
 });
 
@@ -45,7 +59,7 @@ export function Page(): JSX.Element {
   const t = useT();
 
   return (
-    <Layout>
+    <Layout banner={Banner}>
       <form class={styles.form} method="post" action={CREATE_ENDPOINT}>
         <Stack gap={4}>
           <h1>{t('posts.create')}</h1>

@@ -80,6 +80,7 @@ export { assertInvariants, invariant, MAX_ASSERTED_ROWS } from './invariants';
 export { memoryRepo, memoryTransactor } from './memory-repo';
 export type { StatementLoop } from './n-plus-one';
 export { N_PLUS_ONE_THRESHOLD, nPlusOne, preloadsFor } from './n-plus-one';
+export { persistedRecordTypes } from './persisted-types';
 export type { PostgresDriverOptions } from './pg-driver';
 export { postgresDriver, postgresRepo, postgresTransactor } from './pg-driver';
 // The two page bounds, beside `N_PLUS_ONE_THRESHOLD` and for the same reason: an app validating
@@ -88,6 +89,12 @@ export { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './plan';
 export type { RelatedTable, RelatedTables } from './preload';
 export type { Preloaded, ReadBuilder, Table } from './query';
 export { tableFor } from './query';
+// The client projection of an entity (plan 101): record type, record key, and the brand on
+// `$schema` that lets an action or query derive its record envelope from its output schema.
+// Value-light — no Postgres driver behind any of them — so a browser store may import them here.
+export type { ProjectedEntity, RecordProjection } from './record-projection';
+export { ENTITY_BRAND, recordProjection } from './record-projection';
+export { recordProjectionForTable, recordTypeForTable } from './record-table';
 export type {
   ColumnDescription,
   EntityDescription,
@@ -119,6 +126,8 @@ export type {
 } from './repo';
 export type { RowBulkChange, RowChange, RowChangeOp, RowObserver } from './row-observer';
 export { observedRepo, rowObserver, setRowObserver } from './row-observer';
+export type { RecordsByKey, RecordsByType } from './rows-of';
+export { hasEntityRows, projectionsIn, rowsOf } from './rows-of';
 // Full-text search. The LANGUAGE set and the weights are values an app reads to build a form;
 // `SEARCH_PROPERTY` is what a `matches` predicate names, which a hand-built `QueryPlan` needs.
 export type { SearchInit, SearchLanguage, SearchSource, SearchVector } from './search';

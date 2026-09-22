@@ -250,3 +250,51 @@ describe('snapshotFrame is the one place the identity scope is decided', () => {
     });
   });
 });
+
+describe('a live row travels under its RECORD key', () => {
+  /** A composite-key entity's projection, as `liveRecords` hands it over: `orgId:id`. */
+  const composite = (row: Row): string => `${String(row['orgId'])}:${row.id}`;
+
+  function keyed(): QueryEntry {
+    const definition: LiveQueryDefinition = {
+      name: 'liveFeed',
+      entities: ['posts'],
+      snapshot: async () => ({ rows: seated, lsn: '' }),
+      visible: () => true,
+      matcher: () => ({ entities: ['posts'], match: () => patched }),
+      rowEntity: () => 'posts',
+      rowKey: () => composite,
+    };
+    const entry = createEntry('liveFeed:1', definition, input, definition.matcher(input));
+    entry.rows = seated;
+    return entry;
+  }
+
+  test('a snapshot carries `keys` parallel to its rows when a key is not the id', () => {
+    const entry = keyed();
+    const frame = snapshotFrame(entry, 's1', seated, makeCursor(entry.qid, '', seated, 0));
+    expect(frame).toMatchObject({ keys: ['o1:p1', 'o1:p2'] });
+  });
+
+  test('an entity keyed by id sends the frame it always sent — no `keys`', () => {
+    const { entry } = rig(() => patched);
+    const byId = { ...entry, rowKey: (row: Row) => row.id };
+    expect(
+      snapshotFrame(byId, 's1', seated, makeCursor(entry.qid, '', seated, 0)),
+    ).not.toHaveProperty('keys');
+  });
+
+  test('a patch is keyed from the change WHOLE row — the patch itself holds only what changed', async () => {
+    const entry = keyed();
+    const deps: FanoutDeps = {
+      gate: new SubscriberGate({}),
+      source: new RingChangeBuffer(),
+      clock: systemClock,
+    };
+    const alice = connect();
+    subscribe(entry, alice.socket, 's1');
+    await fanoutChange(deps, entry, change('1'));
+    const sent = alice.ws.frames.find((frame) => frame.type === 'patch');
+    expect(sent?.type === 'patch' && sent.patches[0]?.key).toBe('o1:p1');
+  });
+});

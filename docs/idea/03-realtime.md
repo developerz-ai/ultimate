@@ -2,7 +2,7 @@
 
 Three tiers, one ladder. Same mutator shape at every rung — climbing is a **declaration** change, never a rewrite.
 
-**A tier is not a config value.** It is what the app declares: a `channel()` topic is tier 1, a `live: true` query is tier 2, `persist: true` on that query is tier 3. `realtime.tier` was an `app.config.ts` key that accepted `1 | 2 | 3`, was read by nothing, and was deleted in 10.0.0 — the one config edit that major asks for ([`wiki/Upgrading.md`](../../wiki/Upgrading.md)). What remains in config is `realtime.enabled`, `realtime.transport` and `realtime.urlEnv`.
+**A tier is not a config value.** It is what the app declares: a `channel()` topic is tier 1, a `live: true` query is tier 2, and `persist: true` on the **entity** is tier 3 (21.0.0, unreleased). `realtime.tier` was an `app.config.ts` key that accepted `1 | 2 | 3`, was read by nothing, and was deleted in 10.0.0 — the one config edit that major asks for ([`wiki/Upgrading.md`](../../wiki/Upgrading.md)). What remains in config is `realtime.enabled`, `realtime.transport` and `realtime.urlEnv`.
 
 ## The ladder
 
@@ -10,7 +10,7 @@ Three tiers, one ladder. Same mutator shape at every rung — climbing is a **de
 |---|---|---|---|---|---|
 | 1 | **Channels** | `ctx.channel('org:1').publish(evt)` | truth + fanout | subscription | ~0 — pubsub over WS |
 | 2 | **Live queries** | `query({ live: true, sql })` | truth + change detection | a reactive result set | one replication slot + a matcher |
-| 3 | **Local-first** | the same `mutator` + a `LocalStore` on the client (`persist: true` is designed, unimplemented) | truth + rebase | a durable local store, offline writes | OPFS SQLite store + rebase log |
+| 3 | **Local-first** | the same `mutator` + `entity(name, { persist: true })` | truth + rebase | a durable local store, offline writes | IndexedDB, keyed by principal, + one outbox |
 
 Tier 1 for presence, typing indicators, toasts, cursors. Tier 2 for "the list updates when someone else edits". Tier 3 for offline-capable apps, deferred to v2.
 
@@ -58,9 +58,25 @@ export const liveFeed = query({
 });
 ```
 
-Tier 3 adds one field to it — `persist: true` — and nothing else changes. **Designed, not shipped**, `As of 2026-09`: `query()` accepts no such key, and tier 3 is reached today by passing a `LocalStore` to the live client.
+Tier 3 adds one field, and it goes on the **entity**, not the query: `entity(name, { persist: true })`.
+A record is private data by default, and disk is a decision per record type, not per read.
+`As of 2026-09-22` (21.0.0, unreleased) the store, the persister and the outbox are in the tree
+and wired. The 20.x OPFS `createOpfsLocalStore` is deleted: the durable store is
+**IndexedDB**, the portable browser store.
 
-`persist: true` swaps the client result store from memory to a durable one — `createOpfsLocalStore` is SQLite over OPFS, never IndexedDB, which this line claimed until 2026-09 — and turns the mutator queue durable. No new mutators, no new authz, no new server code. That is the whole promise of the ladder: teams adopt tier 2 in week one and can afford tier 3 in year two without a migration project.
+| Piece | Rule |
+|---|---|
+| keying | every entry by `[scope, type, key]`. Scope is `p:<principal>`, or `anon` for the anonymous visitor; an **unscoped** page (rendered for nobody) persists nothing |
+| what persists | the types the server lists in a private document's `<meta name="ultimate-persist">`; the page cannot import the `entity()` declarations to ask |
+| what is written | **synced** rows only, never an optimistic overlay: a write the server later refuses must not survive a reload as if it had landed. Debounced 250 ms, and flushed on `pagehide` and when the page goes hidden |
+| restore | before the socket connects. A restored row is stale until confirmed, and the first server row for that key wins outright |
+| the outbox | a write the network took nothing of is queued, its overlay kept, and `useMutation` resolves `undefined`. One queue, replayed **in order** over HTTP to `actionPath(name)` through `clientTransport`, each write with its original idempotency key: when the page socket (re)connects, on `online`, and on the service worker's `OUTBOX_DRAIN_MESSAGE` |
+| a failed replay | a retryable failure stops the pass, so nothing behind it overtakes it. A refusal is final: kept for the UI, never resent, and its optimistic overlay is rolled back |
+| a principal change | within one page (`rescope()`), wipes the previous scope's rows **and its queue**; writes still queued are **lost**, deliberately, because sending them as the next principal would be worse. A sign-out that **navigates** is covered at the next page's boot, which wipes every stored scope except the current principal's before restoring. Two principals in two tabs of one browser: the newer boot wipes the other's disk, and that tab keeps its records and queue in memory until its next write re-persists them |
+| IndexedDB blocked | falls back to memory with one `X_LOCAL_STORE_UNAVAILABLE` warning. The page works, and remembers nothing across a reload |
+
+No new mutators, no new authz, no new server code. That is the whole promise of the ladder: teams
+adopt tier 2 in week one and can afford tier 3 in year two without a migration project.
 
 ## Live query pipeline
 

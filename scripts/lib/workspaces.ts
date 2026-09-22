@@ -3,7 +3,9 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { renderThrowable } from '@ultimat3/core';
+// The leaf, not core's barrel: `bun run lockfile` reaches this module and must run while a package
+// is mid-edit (DX ledger #10).
+import { renderThrowable } from '../../packages/core/src/error-render';
 import { ScriptError } from './script-error';
 import { tierOf } from './tiers';
 

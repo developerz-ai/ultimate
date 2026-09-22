@@ -32,6 +32,8 @@ export interface QueryEntry {
   readonly input: JsonValue;
   /** Told to the client on every snapshot: the identity scope its rows belong under. */
   readonly rowEntity: string | null;
+  /** The record key a row travels under; `null` = its `id` (a plain table). */
+  readonly rowKey: ((row: Row) => string) | null;
   readonly shape: SubscriptionShape;
   readonly matcher: IncrementalMatcher;
   readonly subscribers: Map<string, LiveSubscription>;
@@ -87,6 +89,7 @@ export function createEntry(
     // Resolved with the matcher, from the same build: `prepare` has already run, so a definition
     // that compiles its shape per input can answer.
     rowEntity: definition.rowEntity?.(input) ?? null,
+    rowKey: definition.rowKey?.(input) ?? null,
     shape: {
       qid,
       // The matcher knows the dependency set this *input* produced; `definition.entities` is the

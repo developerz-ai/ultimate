@@ -25,6 +25,7 @@
 - [Entities and migrations](Entities-And-Migrations)
 - [Policies and authz](Policies-And-Authz)
 - [Queries and live queries](Queries-And-Live-Queries)
+- [Client data](Client-Data)
 - [Jobs and workflows](Jobs-And-Workflows)
 - [Scheduled tasks](Scheduled-Tasks)
 - [Routes and render modes](Routes-And-Render-Modes)

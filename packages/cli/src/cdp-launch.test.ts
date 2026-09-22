@@ -3,7 +3,20 @@
 // the candidate order and the refusal.
 
 import { describe, expect, test } from 'bun:test';
-import { CHROME_CANDIDATES, CHROME_PATH_ENV, findChrome, launchFoundChrome } from './cdp-launch';
+// why: a throwaway executable script is the fake browser; Bun has no mkdtemp, chmod or recursive rm of its own.
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+// why: the scratch directory lives under the OS temp dir, which Bun does not expose.
+import { tmpdir } from 'node:os';
+// why: joining the script and marker paths.
+import { join } from 'node:path';
+import {
+  CHROME_CANDIDATES,
+  CHROME_PATH_ENV,
+  chromeLaunchFlags,
+  findChrome,
+  launchChrome,
+  launchFoundChrome,
+} from './cdp-launch';
 
 const NOWHERE = '/nonexistent/definitely-not-a-browser';
 
@@ -51,5 +64,54 @@ describe('launchFoundChrome', () => {
     expect((thrown as { code?: string }).code).toBe('X_CDP_BROWSER_MISSING');
     expect((thrown as { cause?: string }).cause).toContain('/usr/bin/google-chrome');
     expect((thrown as { fix?: string }).fix).toContain(CHROME_PATH_ENV);
+  });
+});
+
+describe('chromeLaunchFlags', () => {
+  test('the profile never asks the OS keyring for its cookie key', () => {
+    // Measured on this repo's Linux box, a throwaway profile, a plain `Page.navigate` to a local
+    // server: without `--password-store=basic` the FIRST navigation of every launch stalled 7-25 s
+    // — Chrome asks the Secret Service over D-Bus for the key that encrypts its cookie store and
+    // waits out a D-Bus timeout when no keyring answers — and 80-145 ms with it. A 30 s CDP deadline
+    // sat on the far side of that stall, which is the intermittent `X_CDP_TIMEOUT` a full e2e run
+    // reported for suites that passed alone. `--use-mock-keychain` is the same question on macOS.
+    const flags = chromeLaunchFlags('/tmp/profile');
+
+    expect(flags).toContain('--password-store=basic');
+    expect(flags).toContain('--use-mock-keychain');
+    expect(flags).toContain('--user-data-dir=/tmp/profile');
+    // The page to open stays LAST: Chrome reads a trailing non-flag argument as the url.
+    expect(flags.at(-1)).toBe('about:blank');
+  });
+});
+
+describe('launchChrome', () => {
+  test('keeps draining stderr after the endpoint, so a chatty browser never blocks on a full pipe', async () => {
+    // A pipe nobody reads fills, and the browser's next write past it BLOCKS the thread doing it.
+    // 16 MB and not 64 KB: Bun's stream buffers well beyond the kernel pipe (256 KB passed with the
+    // reader released), and 16 MB stalled the undrained launcher on every run while taking ~200 ms
+    // drained. The fake writes it after its endpoint, then leaves a marker only a drained run reaches.
+    const dir = await mkdtemp(join(tmpdir(), 'x-launch-drain-'));
+    const marker = join(dir, 'done');
+    const fake = join(dir, 'chrome');
+    await writeFile(
+      fake,
+      `#!/bin/sh\necho 'DevTools listening on ws://127.0.0.1:1/devtools/browser/x' >&2\n` +
+        `head -c 16777216 /dev/zero | tr '\\0' 'x' >&2\ntouch '${marker}'\nsleep 5\n`,
+      'utf8',
+    );
+    await chmod(fake, 0o755);
+    const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
+    try {
+      let reached = false;
+      for (let i = 0; i < 40 && !reached; i += 1) {
+        reached = await Bun.file(marker).exists();
+        if (!reached) await Bun.sleep(50);
+      }
+      expect(reached).toBe(true);
+    } finally {
+      launched.close();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -135,9 +135,14 @@ function hush(){}
 // `hush` above: `boot` rethrows, so every runtime below has to terminate the chain it starts or
 // the page reports an unhandled rejection for a failure it already recorded on the element.
 
+// `idle` hydrates on the browser's schedule, not the visitor's, so its server-rendered controls
+// are pressable for the idle wait plus the chunk's download — up to IDLE_HYDRATE_TIMEOUT_MS and
+// more. A press in that window reached a node with no handler and was lost, which is every app's
+// first click. It catches up exactly as `interaction` does, through the one `catchUp` below; the
+// only difference left between the two is that `idle` also boots when the browser goes idle.
 const RUNTIME_IDLE = `
 each('[data-x-hydrate="idle"]',function(el){
-var go=function(){boot(el).catch(hush)};
+var go=catchUp(el);
 if('requestIdleCallback'in window)requestIdleCallback(go,{timeout:${IDLE_HYDRATE_TIMEOUT_MS}});else setTimeout(go,1)})
 `.trim();
 
@@ -171,7 +176,16 @@ io.observe(el)})
 // root is never visited. The root is the last resort, not the repair: it is where an event with no
 // coordinates goes (a `keydown` has no `clientX`), and where a hit landing outside this island goes
 // — synthesizing a click on an element the visitor never pressed is worse than losing the replay.
-// `typeof` and not `ev.clientX||ev.clientY`, because (0, 0) is a coordinate.
+// `typeof` and not `ev.clientX||ev.clientY`, because (0, 0) is a coordinate — but not when
+// `ev.detail` is 0: a keyboard-activated or scripted `click()` fires at (0, 0) and names no point,
+// so hit-testing the page's corner found nothing of the island and the press went to the root.
+//
+// Between the hit test and the root sits the STRUCTURAL answer: `path` records, when the event is
+// caught, the child-element indices from the root to the target plus the target's tag, and `aim`
+// walks the same indices in the mounted tree. Same tag at the same place is the island's own render
+// of the control that was pressed — which is what a keyboard press, a `keydown`, and a hit landing
+// on a sticky header all lack otherwise. A different tag there is a different control and falls
+// through to the root, for the stranger rule above.
 //
 // `off` is BOTH arms of the `then`, and the rejection arm is the reason it is a named function.
 // `boot` rethrows on purpose (see the prelude), so `el.__x` holds a rejected promise from the
@@ -181,18 +195,32 @@ io.observe(el)})
 // grew by one retained `Event` — each holding a live `target` — per click, for an island that
 // will never mount. Swallowing here loses no signal: the DOM already carries the failure as
 // `data-x-failed`, which is the documented observable.
-const RUNTIME_INTERACTION = `
-function aim(el,ev){var t=ev.target;if(t&&el.contains(t))return t;
-var x=ev.clientX,h=typeof x==='number'?document.elementFromPoint(x,ev.clientY):null;
-return h&&el.contains(h)?h:el}
-each('[data-x-hydrate="interaction"]',function(el){
-var evs=(el.getAttribute('data-x-events')||'click').split(' ');
+//
+// `catchUp(el)` attaches the capture listeners and answers `go`, the one boot-then-flush both
+// strategies call: a caught event calls it, and `idle` calls it again from its idle callback. Every
+// `go` chains on the same `el.__x`, and the first flush empties `q` and sets `done`, so however many
+// ran, each caught event is replayed exactly once and an untouched island still lets go of its
+// listeners at mount — a listener left behind would replay every later click a second time.
+const RUNTIME_CATCH_UP = `
+function path(el,t){var p=[t&&t.tagName];
+for(;t&&t!==el&&t.parentNode;t=t.parentNode)p.unshift(Array.prototype.indexOf.call(t.parentNode.children,t));
+return t===el?p:null}
+function aim(el,ev,p){var t=ev.target;if(t&&el.contains(t))return t;
+var x=ev.clientX,h=typeof x==='number'&&ev.detail!==0?document.elementFromPoint(x,ev.clientY):null;
+if(h&&el.contains(h))return h;
+for(var n=el,i=0;p&&n&&i<p.length-1;i++)n=n.children[p[i]];
+return p&&n&&n.tagName===p[p.length-1]?n:el}
+function catchUp(el){var evs=(el.getAttribute('data-x-events')||'click').split(' ');
 var q=[],done=false;
 var off=function(){done=true;evs.forEach(function(n){el.removeEventListener(n,on,true)});q=[]};
-var on=function(ev){if(done)return;q.push(ev);
-boot(el).then(function(){var r=q;off();
-r.forEach(function(ev){var c=new ev.constructor(ev.type,ev);aim(el,ev).dispatchEvent(c)})},off)};
-evs.forEach(function(n){el.addEventListener(n,on,true)})})
+var go=function(){boot(el).then(function(){var r=q;off();
+r.forEach(function(e){var ev=e[0],c=new ev.constructor(ev.type,ev);aim(el,ev,e[1]).dispatchEvent(c)})},off)};
+var on=function(ev){if(done)return;q.push([ev,path(el,ev.target)]);go()};
+evs.forEach(function(n){el.addEventListener(n,on,true)});return go}
+`.trim();
+
+const RUNTIME_INTERACTION = `
+each('[data-x-hydrate="interaction"]',catchUp)
 `.trim();
 
 const RUNTIME_PARTS: Readonly<Record<Exclude<HydrateStrategy, 'never'>, string>> = {
@@ -220,6 +248,9 @@ const RUNTIME_ORDER: readonly Exclude<HydrateStrategy, 'never'>[] = HYDRATE_STRA
 const runtimeBody = (needed: ReadonlySet<Exclude<HydrateStrategy, 'never'>>): string =>
   [
     RUNTIME_PRELUDE,
+    // Emitted once for whichever of the two catch-up strategies the page uses; a `visible`-only
+    // page never pays for it.
+    ...(needed.has('idle') || needed.has('interaction') ? [RUNTIME_CATCH_UP] : []),
     ...RUNTIME_ORDER.filter((strategy) => needed.has(strategy)).map(
       (strategy) => RUNTIME_PARTS[strategy],
     ),

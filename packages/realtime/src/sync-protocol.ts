@@ -1,14 +1,15 @@
-// The wire. One protocol for all three tiers: a channel subscribe, a live-query subscribe, and an
-// offline mutation drain are frames in the same union — so moving a route from tier 2 to tier 3
-// needs no new protocol, and THAT is the half this file enforces.
-// It is not a `persist: true` config flag: this header said so until 2026-09 and `query()` has
-// never accepted the key (`local-store.ts` records the same). Tier 3 is reached by passing a
-// `LocalStore` to the live client, which is a client-side wiring decision this file cannot see —
-// claiming to enforce it here is the declared-and-never-wired shape the repo keeps re-shipping.
+// The wire, READ-ONLY for the client: channel and live-query subscriptions go up, snapshots,
+// patches, presence and refusals come down. A client write is HTTP (`useMutation`), never a frame —
+// so there is one write path, with the action's authz, idempotency store and contract behind it.
 
-import { renderThrowable, stringField } from '@ultimat3/core';
-import { CURSOR_ID_LIMIT, type LiveCursor } from './cursor';
-import { ProtocolVersionError } from './errors';
+import { renderThrowable, stringField } from '@ultimat3/core/page';
+import type {
+  ChannelEventsFrame,
+  ChannelRecordsFrame,
+  ChannelSubscribeTarget,
+  ReplayGapFrame,
+} from './channel-wire';
+import type { LiveCursor } from './cursor';
 import {
   isJsonObject,
   isRow,
@@ -17,41 +18,19 @@ import {
   type Row,
   type RowPatch,
 } from './json';
+import { ProtocolVersionError } from './page-errors';
+import { channelTarget, events, records, replayGap } from './wire-channel';
+import { bounded, fail, list, nullableStr, num, object, pick, str } from './wire-read';
+import { FRAME_LIMITS, PROTOCOL_VERSION } from './wire-version';
 
-/**
- * **2 since 2026-08-24**, when `cursor.digest` and `cursor.count` were deleted. The version guards
- * incompatibility, never novelty — an additive optional field (`snapshot.entity`) and a removed
- * field read through `list()` (`hello.resume`) both stayed at 1, because `decode` is a whitelist
- * and `list()` answers `[]` for an absent field. `cursor()` is the other kind of reader: it reads
- * through `str`/`num`, which THROW on an absent field, so a cursor without those two is a frame a
- * node or a client one deploy behind cannot read — in BOTH directions, since a cursor rides the
- * client's `subscribe` and the node's `snapshot`. That is exactly what this number refuses, with
- * one instruction instead of a per-frame "field \"digest\" must be a string".
- */
-export const PROTOCOL_VERSION = 2;
-
-/**
- * What one frame may contain. Hard ceilings a caller cannot widen — the shape
- * `packages/mcp/src/query-limits.ts` uses — because every one of them is read off a socket the
- * node has already paid for: an unbounded `cursor.ids` was consumed raw into a `Set`, and an
- * `input` of arbitrary depth reached `canonicalJson`, which recurses.
- *
- * Every number clears what this node itself produces, or the decoder refuses its own frames on
- * the next reconnect: `cursorIds` is `CURSOR_ID_LIMIT`, `patches` clears
- * `defaultReconnectBudget.maxPatches`.
- */
-export const FRAME_LIMITS = Object.freeze({
-  cursorIds: CURSOR_ID_LIMIT,
-  patches: 4_096,
-  rows: 10_000,
-  members: 4_096,
-  /** Nesting one `input` may reach. 32 is far past any query's real argument shape. */
-  inputDepth: 32,
-  /** Values one `input` may hold in total, so a flat-but-enormous object is refused too. */
-  inputNodes: 10_000,
-});
-
-export type ConflictStrategyName = 'server-wins' | 'last-write-wins' | 'custom';
+export type {
+  ChannelEventsFrame,
+  ChannelRecordsFrame,
+  ChannelSubscribeTarget,
+  ReplayGapFrame,
+} from './channel-wire';
+/** The version and the ceilings live below this file so the readers can share them without a cycle. */
+export { FRAME_LIMITS, PROTOCOL_VERSION } from './wire-version';
 
 export interface WireError {
   readonly code: string;
@@ -69,7 +48,8 @@ export interface PresenceMember {
 }
 
 export type SubscribeTarget =
-  | { readonly kind: 'topic'; readonly topic: string }
+  /** A declared `channel()`: its NAME and params, never a topic string the client spelled. */
+  | ChannelSubscribeTarget
   | {
       /**
        * Client -> server, `qid` carries the *query name*; the server derives the real qid from
@@ -124,6 +104,12 @@ export interface SnapshotFrame {
    * skews are safe in both directions, which is why it carries no `PROTOCOL_VERSION` bump.
    */
   readonly entity?: string;
+  /**
+   * Each row's RECORD key, parallel to `rows`, sent only when some key is not its row's `id` (a
+   * composite primary key). The server renders it with the entity's projection; the browser never
+   * derives a key.
+   */
+  readonly keys?: readonly string[];
 }
 
 export interface PatchFrame {
@@ -134,49 +120,16 @@ export interface PatchFrame {
   readonly lsn: string;
 }
 
-export interface MutateFrame {
-  readonly type: 'mutate';
-  readonly v: number;
-  /** Idempotency key. The server collapses repeats; the client never renumbers. */
-  readonly key: string;
-  readonly seq: number;
-  readonly name: string;
-  readonly input: JsonValue;
-}
-
 export interface AckFrame {
   readonly type: 'ack';
   readonly v: number;
-  /** Mutation key or subscription id being acknowledged. */
+  /**
+   * What a refusal refers to: the sid of a subscription the node refused, or the socket id for a
+   * frame it could not read at all. The socket carries no writes, so an ack is never a receipt.
+   */
   readonly ref: string;
   readonly lsn: string | null;
   readonly error: WireError | null;
-}
-
-export interface RebaseFrame {
-  readonly type: 'rebase';
-  readonly v: number;
-  readonly key: string;
-  readonly entity: string;
-  readonly strategy: ConflictStrategyName;
-  /** Server truth for the row the mutation touched; `null` when the server deleted it. */
-  readonly row: Row | null;
-}
-
-export interface PresenceFrame {
-  readonly type: 'presence';
-  readonly v: number;
-  readonly topic: string;
-  readonly op: 'join' | 'leave' | 'update' | 'sync';
-  readonly members: readonly PresenceMember[];
-  /**
-   * Members in the whole set behind a `sync` frame, which is capped: a 5,000-avatar row is not a UI
-   * anyone renders, and the count is what lets a client say "and 4,744 others" without holding
-   * them. Optional and **additive**, exactly like `snapshot.entity`: an old node omits it and a new
-   * one reads its absence as "this frame is the whole set", so neither skew is unreadable and
-   * `PROTOCOL_VERSION` does not move. Never set on a `join`/`leave`/`update` — those are deltas.
-   */
-  readonly total?: number;
 }
 
 export interface ReconnectFrame {
@@ -198,12 +151,12 @@ export type Frame =
   | SubscribeFrame
   | SnapshotFrame
   | PatchFrame
-  | MutateFrame
   | AckFrame
-  | RebaseFrame
-  | PresenceFrame
   | ReconnectFrame
-  | UpdateAvailableFrame;
+  | UpdateAvailableFrame
+  | ChannelRecordsFrame
+  | ChannelEventsFrame
+  | ReplayGapFrame;
 
 export type FrameKind = Frame['type'];
 
@@ -212,12 +165,12 @@ export const FRAME_KINDS: readonly FrameKind[] = [
   'subscribe',
   'snapshot',
   'patch',
-  'mutate',
   'ack',
-  'rebase',
-  'presence',
   'reconnect',
   'update-available',
+  'records',
+  'events',
+  'replay-gap',
 ];
 
 export function encode(frame: Frame): string {
@@ -265,7 +218,14 @@ export function decode(raw: string | Uint8Array): Frame {
         cursor: cursor(parsed['cursor']),
       } as const;
       const entity = nullableStr(parsed, 'entity');
-      return entity === null ? base : { ...base, entity };
+      const scoped = entity === null ? base : { ...base, entity };
+      if (parsed['keys'] === undefined) return scoped;
+      const keys = list(parsed, 'keys', FRAME_LIMITS.rows).map((key) => {
+        if (typeof key !== 'string') throw fail('snapshot.keys must hold strings');
+        return key;
+      });
+      if (keys.length !== base.rows.length) throw fail('snapshot.keys must pair with rows');
+      return { ...scoped, keys };
     }
     case 'patch':
       return {
@@ -275,15 +235,6 @@ export function decode(raw: string | Uint8Array): Frame {
         patches: list(parsed, 'patches', FRAME_LIMITS.patches).map(patch),
         lsn: str(parsed, 'lsn'),
       };
-    case 'mutate':
-      return {
-        type: 'mutate',
-        v: PROTOCOL_VERSION,
-        key: str(parsed, 'key'),
-        seq: num(parsed, 'seq'),
-        name: str(parsed, 'name'),
-        input: bounded(parsed['input'] ?? null, 'input'),
-      };
     case 'ack':
       return {
         type: 'ack',
@@ -292,25 +243,6 @@ export function decode(raw: string | Uint8Array): Frame {
         lsn: nullableStr(parsed, 'lsn'),
         error: wireError(parsed['error']),
       };
-    case 'rebase':
-      return {
-        type: 'rebase',
-        v: PROTOCOL_VERSION,
-        key: str(parsed, 'key'),
-        entity: str(parsed, 'entity'),
-        strategy: pick(parsed, 'strategy', ['server-wins', 'last-write-wins', 'custom'] as const),
-        row: parsed['row'] === null ? null : row(parsed['row']),
-      };
-    case 'presence': {
-      const base = {
-        type: 'presence',
-        v: PROTOCOL_VERSION,
-        topic: str(parsed, 'topic'),
-        op: pick(parsed, 'op', ['join', 'leave', 'update', 'sync'] as const),
-        members: list(parsed, 'members', FRAME_LIMITS.members).map(member),
-      } as const;
-      return parsed['total'] === undefined ? base : { ...base, total: num(parsed, 'total') };
-    }
     case 'reconnect':
       return {
         type: 'reconnect',
@@ -320,6 +252,12 @@ export function decode(raw: string | Uint8Array): Frame {
       };
     case 'update-available':
       return { type: 'update-available', v: PROTOCOL_VERSION, buildId: str(parsed, 'buildId') };
+    case 'records':
+      return records(parsed);
+    case 'events':
+      return events(parsed);
+    case 'replay-gap':
+      return replayGap(parsed);
     default:
       throw fail(`unknown frame type ${JSON.stringify(kind)}`);
   }
@@ -338,80 +276,6 @@ export function toWireError(error: unknown): WireError {
   const fix = stringField(error, 'fix') ?? 'x doctor realtime';
   const docs = stringField(error, 'docs');
   return docs === undefined ? { code, cause, fix } : { code, cause, fix, docs };
-}
-
-function fail(detail: string): ProtocolVersionError {
-  return new ProtocolVersionError({ got: detail, expected: PROTOCOL_VERSION, detail });
-}
-
-function str(obj: JsonObject, key: string): string {
-  const value = obj[key];
-  if (typeof value !== 'string') throw fail(`field "${key}" must be a string`);
-  return value;
-}
-
-function nullableStr(obj: JsonObject, key: string): string | null {
-  const value = obj[key];
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'string') throw fail(`field "${key}" must be a string or null`);
-  return value;
-}
-
-function num(obj: JsonObject, key: string): number {
-  const value = obj[key];
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw fail(`field "${key}" must be a finite number`);
-  }
-  return value;
-}
-
-function pick<T extends string>(obj: JsonObject, key: string, allowed: readonly T[]): T {
-  const value = str(obj, key);
-  const found = allowed.find((candidate) => candidate === value);
-  if (found === undefined) throw fail(`field "${key}" must be one of ${allowed.join('|')}`);
-  return found;
-}
-
-/**
- * An array field, with the ceiling the caller had to choose. `max` is required rather than
- * defaulted: a new list field on a new frame is a new thing an authenticated socket can make
- * arbitrarily large, and a default would let one ship without anyone deciding its size.
- */
-function list(obj: JsonObject, key: string, max: number, label = key): JsonValue[] {
-  const value = obj[key];
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw fail(`field "${label}" must be an array`);
-  if (value.length > max) {
-    throw fail(`field "${label}" carries ${value.length} entries, over the limit of ${max}`);
-  }
-  return value;
-}
-
-/**
- * A client-supplied value, walked ITERATIVELY to its limits. Iteratively because the thing being
- * refused is a stack overflow: `queryHash` -> `canonicalJson` recurses over exactly this value, so a
- * depth check that recursed would be the same crash one frame earlier.
- */
-function bounded(value: JsonValue, label: string): JsonValue {
-  const stack: { node: JsonValue; depth: number }[] = [{ node: value, depth: 1 }];
-  let seen = 0;
-  while (stack.length > 0) {
-    // `pop` cannot answer undefined here — the loop guard is the length — and the check is what
-    // makes that readable to the compiler without a cast.
-    const next = stack.pop();
-    if (next === undefined) break;
-    seen += 1;
-    if (seen > FRAME_LIMITS.inputNodes) {
-      throw fail(`field "${label}" holds more than ${FRAME_LIMITS.inputNodes} values`);
-    }
-    if (next.depth > FRAME_LIMITS.inputDepth) {
-      throw fail(`field "${label}" is nested deeper than ${FRAME_LIMITS.inputDepth}`);
-    }
-    if (next.node === null || typeof next.node !== 'object') continue;
-    const children = Array.isArray(next.node) ? next.node : Object.values(next.node);
-    for (const child of children) stack.push({ node: child, depth: next.depth + 1 });
-  }
-  return value;
 }
 
 function row(value: unknown): Row {
@@ -440,23 +304,15 @@ function patch(value: unknown): RowPatch {
     row: value['row'] === null || value['row'] === undefined ? null : object(value['row']),
     lsn: str(value, 'lsn'),
   };
-  return value['index'] === undefined ? base : { ...base, index: num(value, 'index') };
-}
-
-function member(value: unknown): PresenceMember {
-  if (!isJsonObject(value)) throw fail('presence member must be an object');
-  return {
-    id: str(value, 'id'),
-    actorId: nullableStr(value, 'actorId'),
-    meta: object(value['meta'] ?? {}),
-    updatedAt: num(value, 'updatedAt'),
-  };
+  const indexed = value['index'] === undefined ? base : { ...base, index: num(value, 'index') };
+  const key = nullableStr(value, 'key');
+  return key === null ? indexed : { ...indexed, key };
 }
 
 function target(value: unknown): SubscribeTarget {
   if (!isJsonObject(value)) throw fail('subscribe.target must be an object');
-  const kind = pick(value, 'kind', ['topic', 'query'] as const);
-  if (kind === 'topic') return { kind, topic: str(value, 'topic') };
+  const kind = pick(value, 'kind', ['query', 'channel'] as const);
+  if (kind === 'channel') return channelTarget(value);
   return {
     kind,
     qid: str(value, 'qid'),
@@ -464,11 +320,6 @@ function target(value: unknown): SubscribeTarget {
     cursor:
       value['cursor'] === null || value['cursor'] === undefined ? null : cursor(value['cursor']),
   };
-}
-
-function object(value: unknown): JsonObject {
-  if (!isJsonObject(value)) throw fail('expected a JSON object');
-  return value;
 }
 
 function wireError(value: unknown): WireError | null {

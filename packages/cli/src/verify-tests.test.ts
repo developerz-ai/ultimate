@@ -16,6 +16,7 @@ import { belongsToType } from './test-select';
 import { filesIn } from './test-shards';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import {
+  E2E_TEST_TIMEOUT_MS,
   ownerOf,
   resetTestDiscovery,
   SERIAL_TYPES,
@@ -168,6 +169,14 @@ describe('unit · a type claims a file by a boundary, never a bare substring', (
     expect(belongsToType(path, 'e2e')).toBe(false);
     // The directory still decides for a filename that declares nothing.
     expect(ownerOf('packages/app/e2e/boot.test.ts')).toBe('e2e');
+  });
+
+  test('the e2e step gives each test the budget a first navigation under x dev needs', () => {
+    // bun's own default is 5 s, and a first navigation waits on `x dev` compiling the route and its
+    // island — a timeout there reads as an app bug that is not one. No other type is widened.
+    expect(testStepCommand('e2e')).toContain(`--timeout=${String(E2E_TEST_TIMEOUT_MS)}`);
+    expect(E2E_TEST_TIMEOUT_MS).toBe(60_000);
+    expect(testStepCommand('live').join(' ')).not.toContain('--timeout');
   });
 
   test('the e2e step is told to skip the files its directory filter does not own', () => {

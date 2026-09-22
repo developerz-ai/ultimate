@@ -8,7 +8,452 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+**21.0.0 in progress: one client store, one transport, one socket.** The design is
+[`docs/architecture/21-client-data-layer.md`](docs/architecture/21-client-data-layer.md). Every
+removed surface gets a `BREAKING —` entry here and a manual edit in the
+[Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `20.x → 21.0.0` section. There
+is no codemod and no compatibility shim.
+
+### Added
+
+- **`@ultimat3/core/page`, a browser-light entry.** The page handle, the scope fence, the page-meta
+  constants (`APP_UPDATE_MESSAGE` among them), `UltimateError`, `clientTransport`, `actionPath`,
+  `queryPath` and the helpers browser code needs, with **no error-titles table**.
+  `page-bundle.test.ts` fails if it ever grows one back. Core's titles moved to
+  `core-error-codes.ts`, anchored by the barrel. So a browser bundle that imports only
+  `@ultimat3/core/page` and throws shows a code's **name** as its title, not the registered title.
+  `@ultimat3/realtime`'s browser errors split into `page-errors.ts` by the same rule.
+  `@ultimat3/query/client` carries no titles table either.
+- **`browserBackoff` and `BROWSER_RECONNECT_MAX_MS`** are exported from `@ultimat3/realtime`: the
+  browser's reconnect curve (500 ms base, factor 2, `equal` jitter, 4 s cap). The restart bench
+  client now uses it.
+- **`locale?` and `tz?` on `Actor` / `ActorInit`** (`@ultimat3/core`): a member's saved preferences,
+  which `resolveLocale` and `resolveTimeZone` read as their `user` rung.
+- **A channel's first join is caught up.** A join with no cursor on a channel that carries records
+  is answered with one `replay-gap`, so the client runs one catch-up read. The rows written between
+  the page's render and its join reach it. `x dev`'s in-process change bridge now feeds the
+  declared channels too, so their `records` flow in development
+  (`packages/testing/src/live-replicator.ts`).
+- **Deploys under e2e.**
+  - `e2eApp()` returns the spawned app, `{ base, stateDir, stop(), restart(env?) }`.
+  - The framework's `deploy` fixture offers `newBuild()`, which restarts the app with a new
+    `BUILD_ID`. It is registered only when the runner can restart the app
+    (`installE2eDriver({ newBuild })`) and is refused by name otherwise.
+  - `x dev` honours a set `BUILD_ID`, as `serve.ts` already did.
+  - Between tests the preload probes the browser (`answersWithin`) and relaunches one that stopped
+    answering.
+- **`createContext({ installServices: false })` and `registeredServiceNames()`** in `@ultimat3/core`:
+  a context that installs no registered services, and the names `installedServices` would build
+  without building them. They are how `@ultimat3/http` binds services lazily, after `auth`.
+- **Sign-out clears the browser.** `signOutHeaders({ session?, cookieName? })` in `@ultimat3/auth`
+  returns the expired session cookie (when `session` is given) and
+  `Clear-Site-Data: "cache", "storage"` (`SIGN_OUT_CLEAR_SITE_DATA`), never `"cookies"`. The browser
+  then drops the page store's IndexedDB, local storage, the service worker and its cached pages,
+  in a secure context. A PWA's offline cache is reinstalled on the next load, deliberately: a cached
+  private page is the previous member's data. The page boot's wipe of other scopes stays as the
+  second line.
+- **`FRAMEWORK_SCRIPTS` and `FRAMEWORK_INLINE_SCRIPTS`** are exported from `@ultimat3/cli`: the
+  scripts `budgets` counts and never charges to the app, because the author cannot edit, delete or
+  move them. Today those are the service-worker registration and the no-flash theme script
+  (`packages/cli/src/budgets.ts`).
+- **HTTP statuses for the plan's new codes** in `@ultimat3/http`'s error map:
+  - `X_CLIENT_TRANSPORT_FAILED` and `X_CLIENT_RECORD_ENVELOPE_INVALID` are 502;
+  - `X_CLIENT_SCOPE_CHANGED` is 499;
+  - the declaration and browser-only codes are 500.
+- **The e2e app** runs with `APP_URL` set, `NODE_ENV` stripped and `ULTIMATE_ENV=development`. Its
+  readiness is polled over `node:http`, and each e2e test gets 60 s.
+- **The `e2e` step drives a real browser against a spawned app.** When Chrome is present,
+  `x verify`'s `e2e` step starts the app on a throwaway database (`startE2eApp`, `ULTIMATE_STATE_DIR`)
+  and hands the suite a real `page`. Before this, the reference app's e2e suite ran with no browser,
+  and its browser cases skipped. New in `@ultimat3/cli`:
+  - `startE2eApp`, `e2eBrowser()` and `e2eBaseUrl()`;
+  - an e2e session API: `newTab`, `addInitScript`, `offline` (workers included), `setCookie`,
+    `sockets()`, `requests()`, `indexedDbNames()` and `waitFor`.
+
+  A spawned app that will not come up is `X_E2E_APP_FAILED`.
+- **`ULTIMATE_STATE_DIR`** relocates `.x/` (the embedded database, disk and dev lock) for one
+  process tree.
+- **One page boot script per private document.** `/_x/page-boot/<hash>.js`, a deferred classic
+  script built from `@ultimat3/realtime/boot`, restores the principal's persisted records and opens
+  the outbox, once per page. It is rendered only on documents that carry a scope tag and emitted an island reaching
+  `@ultimat3/realtime`. Its first job is to wipe every stored scope except the current principal's,
+  so a sign-out by full navigation leaves nothing of the previous principal on disk. The worker and
+  the boot are resolved from the app root and then from each `apps/*` workspace. Until that fix, a
+  workspace app (the reference app included) was served neither. Moving that
+  work out of the islands took a `useRecord`-only chunk from 34,838 B to 19,404 B, per
+  `packages/realtime/CLAUDE.md`. `X_BUILD_FAILED`'s cause now names `sync worker` or `page boot`
+  when a framework script fails to bundle.
+- **`useRecords(type, keys)`**, and **`useQuery(ref, input, { first })`** reading in pages, with
+  `more()` and `hasMore()` (non-live queries). `recordProjectionForTable(table)` in `@ultimat3/entity`
+  and `@ultimat3/entity/record`. `onEnvelope` on `TransportRequest` (core) and on a query client's
+  `QueryCallOptions`, which hands a caller the decoded record envelope.
+- **`meta.failure` on `X_CLIENT_TRANSPORT_FAILED`**: `'network' | 'status' | 'body'`
+  (`TransportFailure` in `@ultimat3/core`), so a caller branches on how the request failed instead
+  of on the message.
+- **One socket per origin, in a `SharedWorker`.** Every tab of an origin shares one sync socket,
+  hosted in a worker named by principal (`socket-engine.ts`, `socket-host.ts`, `sync-worker.ts`).
+  Frames are routed only to the ports that want a channel, a port is released on `pagehide`, and a
+  silent one is reaped after 3 missed beats. Where `SharedWorker` is absent, the same engine runs
+  in the page over a `MessageChannel`. The worker is served at `/_x/sync-worker/<hash>.js`.
+- **`useChannel(decl, params, { onEvent, onPresence })` and `usePresence(decl, params)`.** A
+  channel's records reach the page's store; its events and rosters reach the handlers. One
+  membership per page however many components hold it.
+- **Durable offline writes (tier 3).** `entity(name, { persist: true })` records survive a reload
+  in IndexedDB, per principal, and are restored before the socket connects. A write the network
+  took nothing of is queued and replayed in order over HTTP, with its idempotency key.
+- **`release()` on `Mutate`, `MutationQueue` and `Connection`**, the listener a hook installs on the
+  page, for `onCleanup`.
+- **The manifest lists every realtime channel** (`ChannelFact`: name, params, policy, record types,
+  events, catch-up read), read by `describeChannels` on `@ultimat3/realtime/server`. In a contract
+  diff, these are **breaking**: a channel removed, its params changed, its policy changed, a record
+  type no longer carried, or `events` switched off. A channel added or a record type added is
+  additive; a new catch-up read is internal (`packages/manifest/src/diff-channels.ts`).
+- **Records answered before the page's store exists are held, not dropped.** The store is installed
+  by the first realtime hook, and an action or query can answer earlier than that. In a browser,
+  `pageClient()` now holds the latest row per `type:key`, plus the keys removed since, and hands
+  them to the store once, when it is installed (`packages/core/src/pending-records.ts`). A
+  `rescope()` clears what it holds, because those rows were the previous principal's.
+- **A query with an entity `rows:` always answers the record envelope**, even for zero rows. That is
+  one response shape per operation, the same rule actions follow, so a generated SDK never has to
+  branch on whether rows came back.
+- **The framework says where a page's socket dials.** Every document carries
+  `<meta name="ultimate-sync">` and `<meta name="x-ultimate-build">`, plus
+  `<meta name="ultimate-sync-worker">` when the app has realtime. The target is `/_x/sync` on the
+  page's own origin, which `x dev`, a combined-role container and the Helm ingress all serve.
+  `SYNC_URL` overrides it, and must be `ws:`/`wss:` or boot fails with `X_CONFIG_INVALID`. **The
+  Compose rung needs it set**, because `sync` is published on its own port with nothing in front:
+  `SYNC_URL=ws://<host>:3001/_x/sync`. The worker is served `immutable` at
+  `/_x/sync-worker/<hash>.js`. Not breaking: the `APP_URL` + 1 port rule was an app file
+  (`examples/dummy/apps/web/shared/sync-url.ts`), never framework API, and it keeps working until
+  the app deletes it.
+- **The client seam in `@ultimat3/core`.**
+  - `pageClient()` is the one per-tab handle every island bundle resolves.
+  - `clientTransport` is the one browser HTTP function.
+  - `actionPath` / `actionRoute` and `queryPath` are the one URL rule, moved from `action` and
+    `query`.
+  - `OUTBOX_DRAIN_MESSAGE` is what the service worker posts.
+  - Also new: `AsyncState`, `ConflictPolicy` / `resolveConflict`, the record envelope
+    (`RECORDS_HEADER`, `encodeRecordEnvelope`, `decodeRecordEnvelope`) and the scope fence
+    (`rescope`, `onRescope`).
+
+  The design is [`docs/architecture/21-client-data-layer.md`](docs/architecture/21-client-data-layer.md),
+  and the app-author recipe is [Client data](https://github.com/developerz-ai/ultimate/wiki/Client-Data).
+- **`<meta name="ultimate-scope">` on private documents.** `@ultimat3/auth`'s `clientScopeOf(actor)`
+  names the principal a per-request page was rendered for. It is an opaque keyed SHA-256, never the
+  id, and an impersonating admin gets a scope distinct from the user's own.
+  `@ultimat3/render`'s `clientScopeTag` writes it only when the response is `cache-control:
+  private` (`documentCarriesScope`), so a shared cache never serves one visitor's scope to the next.
+  `pageClient()` reads it once, when the handle is created.
+- **`entity(name, { persist: true })`.** Declares that a browser keeps this entity's records on
+  disk, per principal. Default `false`. It is read into `recordProjection(e).persist`. Its consumer,
+  realtime's persister, is still landing.
+- **The trace headers a server-side typed call sends onward now come from a slot**, filled by
+  `runWithContext` / `startSpan` and never at import. A browser runs neither, so
+  `clientTransport` carries no telemetry, context or logger code: 12.9 kB that every island calling
+  `rpc()` or `queryClient()` used to pay, per `packages/core/src/outbound-headers.ts`'s header.
+
+- **`rows:` on `query()`: a read whose rows are an entity's answers the record envelope.**
+  `query({ …, rows: Post.$schema })` types the key against the row `sql:` returns, so a projection
+  cannot claim a full entity's schema. The route then answers `{ data, records }` under
+  `x-ultimate-records: 1`, and the page's one record store adopts the rows. Without the key, or
+  with a schema carrying no entity brand, the wire is the bare rows it always was. It is a carrier,
+  not a switch: `sql:` names its table as a string, so no other declaration holds the schema.
+
+### Fixed
+
+- **`idle` hydration kept a click made before the island mounted.** It captures the click and
+  replays it once the island has mounted, through the same catch-up `interaction` uses. The replay
+  targets the same element structurally, by its path, because the server-rendered node the visitor
+  pressed has been replaced by then. A keyboard or scripted click (`detail: 0`) is no longer
+  hit-tested at `(0, 0)` (`packages/render/src/hydrate.ts`). The runtime is now 1,744 B for `idle`,
+  1,629 B for `interaction` and 846 B for `visible` (`packages/render/CLAUDE.md`).
+- **e2e: Chrome's first navigation stalled about 25 s on the Linux keyring**, which surfaced as an
+  intermittent `X_CDP_TIMEOUT`. Chrome is now launched with `--password-store=basic` and
+  `--use-mock-keychain` (`packages/cli/src/cdp-launch.ts`).
+- **A signed-in member's saved locale and time zone now apply.** The `locale` stage ran before
+  `auth` and read only the cookie and the headers, so the `user` rung of `resolveLocale` and
+  `resolveTimeZone` was never filled (since at least 2.0.0). Once `auth` has run, `@ultimat3/http`
+  now re-resolves `ctx.locale`, `ctx.tz` and `content-language` with the actor's preferences, through
+  the same owners, so each package's own order still decides (`packages/http/src/stages.ts`). To use
+  it, set `locale` and `tz` on the actor your `authenticate` hook returns:
+  `userActor({ id, locale, tz })`.
+- **The page that installs the service worker is cached on activation.** It loaded before the
+  worker controlled it, so no strategy saw it, and an `offline: 'runtime'` route was unavailable
+  offline until a second online visit. On `activate`, the worker now runs each open window's URL
+  through that route's own strategy (`packages/pwa/src/service-worker.ts`, `warm`).
+- **`defineService` services on an HTTP request acted as the anonymous actor, from 13.0.0 until
+  now** (commit 753ab6e5, #348). The request context built them before the `auth` stage named
+  anyone, so a service closed over `anonymous` for the whole request, whoever had signed in. They
+  are now built lazily, per request, on first read, for the authenticated actor, and rebuilt if
+  the actor, locale or time zone changes (`packages/http/src/request-services.ts`). An explicit
+  `init.services` still overrides the registered one, so a test's mock keeps working.
+- **A button-only form posted `400`.** A `<form>` with no fields sends an empty
+  `application/x-www-form-urlencoded` or `multipart/form-data` body (`content-length: 0`), which was
+  read as no input and failed every schema. An empty form body now reads as `{}`
+  (`packages/http/src/request.ts`).
+
+### Changed
+
+- **BREAKING — `AsyncState` is imported from `@ultimat3/core`, not `@ultimat3/ui`.** It is the same
+  four-member union (`pending | refreshing | ready | failed`), moved verbatim to
+  `packages/core/src/async-state.ts`. realtime's read hooks (tier 3) must return it and ui (tier 4)
+  renders it, and neither may import the other. `@ultimat3/ui` no longer re-exports it, so it has
+  one home. `AsyncBranch`, `AsyncFlags`, `asyncBranch` and `AsyncRegion` stay in ui. The edit:
+  `import type { AsyncState } from '@ultimat3/ui'` → `import type { AsyncState } from '@ultimat3/core'`,
+  and add `@ultimat3/core` to that workspace's `dependencies` if it is missing. The compile error
+  (`TS2305`) names every site.
+- **BREAKING — a mutator's `custom(merge)` receives the local and server ROWS, not the mutator's
+  outputs.** Realtime's rebase is the only caller that ever resolves a conflict, and it holds rows.
+  So it dropped `@ultimat3/action`'s output-shaped policy without a word (`replayable()` in
+  `packages/realtime/src/hooks.ts`) and fell back to its default: a declared merge that never ran.
+  `custom()` now builds core's `ConflictPolicy`, `{ kind: 'custom', merge(local: Row, server: Row): Row }`.
+  `@ultimat3/action` no longer exports `Conflict`, `CustomConflict`, `resolveConflict` or
+  `strategyOf`. The edits:
+  - rewrite a `merge` written against the output type so it takes the entity's row:
+    `custom<PostRow>((local, server) => …)`. The type argument is a caller-side annotation only.
+  - `import { resolveConflict } from '@ultimat3/action'` → `from '@ultimat3/core'`. Its answer is
+    typed `Row`, so the caller narrows it.
+  - a `conflict.strategy === 'custom'` test → `typeof conflict !== 'string' && conflict.kind === 'custom'`.
+  - `strategyOf(c)` → `typeof c === 'string' ? c : c.kind`.
+
+  **One behaviour change raises no compile error.** The old `resolveConflict` answered
+  `'last-write-wins'` with the local value every time. Core's keeps the local row only when its
+  `updatedAt` is a finite number newer than the server's, which is what realtime's rebase always
+  did. A row without a numeric clock now resolves to the server's row.
+- **BREAKING — `@ultimat3/realtime` no longer exports `ConflictLike`, `custom`, `CustomMerge`,
+  `MergeArgs` or `ConflictStrategy`.** It had its own `custom()`, whose merge took
+  `{ local, base, server }`, beside action's. `ConflictLike` accepted both spellings and then
+  dropped action's. The rebase now takes core's `ConflictPolicy` and calls core's `resolveConflict`,
+  so a custom merge declared on a mutator is actually called. The edits:
+  - `ConflictLike` or `ConflictStrategy` imported from `@ultimat3/realtime` →
+    `import type { ConflictPolicy } from '@ultimat3/core'`. `CustomMerge` and `MergeArgs` have no
+    replacement; the merge is the plain `(local, server) => row` function.
+  - `custom(({ local, base, server }) => …)` from realtime → `custom((local, server) => …)` from
+    `@ultimat3/action`. There is no `base` any more. Merge against `server`, which is the row the
+    other writes produced.
+  - a merge that returned `null` to accept a server delete → delete that branch. The merge is no
+    longer called when the server deleted the row, or when the client never held a local row. The
+    server's answer lands as it is.
+  - a merge must return a row with a string `id`. Anything else throws `X_REBASE_CONFLICT` and is
+    never written half-way.
+- **BREAKING — `isSuperseded(error)` also answers `true` for `X_CLIENT_SCOPE_CHANGED`.** It is
+  `@ultimat3/core`'s, and `@ultimat3/action` and `@ultimat3/query` re-export it. A read that was in
+  flight when the page changed principal rejects with that code
+  (`packages/core/src/client-scope.ts`). Its answer belongs to the previous principal, so it is
+  exactly the "drop it and render nothing" case the function exists for
+  (`packages/core/src/generation-fence.ts`). The edit: code that branches on `isSuperseded` needs
+  nothing. Code that took `isSuperseded(e) === true` to mean `e.code === 'X_SUPERSEDED'` reads
+  `e.code` instead.
+- **BREAKING — `@ultimat3/query` no longer exports `QueryRequestFailedError` or `QueryProblem`.**
+  The typed read client now fails through core's `clientTransport`. A non-2xx body that names a
+  framework code is re-thrown as a plain `UltimateError` carrying that code, `meta.origin: 'remote'`.
+  A non-2xx with no framework code is `X_CLIENT_TRANSPORT_FAILED`, where it was `X_RPC_FAILED`. The
+  edit: `catch (e) { if (e instanceof QueryRequestFailedError) … }` →
+  `if (isUltimateError(e)) { switch (e.code) { … } }`, with `isUltimateError` from `@ultimat3/core`.
+  Any match on `'X_RPC_FAILED'` for a query becomes `'X_CLIENT_TRANSPORT_FAILED'`. `QueryProblem`
+  has no replacement; the server's `cause`, `fix` and `docs` are on the error itself.
+- **BREAKING — a typed client's network fault or non-JSON answer is `X_CLIENT_TRANSPORT_FAILED`.**
+  This covers `rpc()`, an action's `.client()`, `queryClient()` and a query's `.client()`, and
+  `@ultimat3/storage`'s `fetchSignedPut`: the upload fallback `uploadFile()` uses where there is no
+  `XMLHttpRequest`. That fallback now goes through `clientTransport` too. A disk that refuses the
+  PUT is still `X_STORAGE_UPLOAD_FAILED`, carrying the disk's status. A
+  `fetch` that produced no response used to reach the caller as a bare `TypeError`, and a 2xx body
+  that was not JSON as a bare `SyntaxError` from `JSON.parse`. Neither carried a code, a cause or
+  a `fix:`. Both are now `X_CLIENT_TRANSPORT_FAILED`. So is an action's non-2xx whose body names no
+  framework code, which was `X_RPC_FAILED`: a gateway's HTML now reads the same from an action and
+  from a query. It is `retryable` for a read, and for a write carrying an `idempotencyKey`, and not
+  for an unkeyed write, which may have landed. `RpcFailedError` stays exported and `X_RPC_FAILED`
+  stays registered, because a shipped code never changes, but nothing in the framework throws
+  either now. The edit: `instanceof TypeError`, `instanceof SyntaxError`,
+  `instanceof RpcFailedError` and `e.code === 'X_RPC_FAILED'` all become
+  `isUltimateError(e) && e.code === 'X_CLIENT_TRANSPORT_FAILED'`. A server's own code
+  (`RemoteActionError`) and version skew (`X_CONTRACT_DRIFT`) are unchanged.
+- **BREAKING — an action whose output references an entity row answers `{ data, records }`, with
+  `x-ultimate-records: 1`.** The rows under `data` are also sent, keyed by record type, so the
+  page's one record store adopts them. Which actions do this is decided from the output schema at
+  projection, never per response (`packages/action/src/record-wire.ts`). Every other action's
+  body is byte-identical. The OpenAPI `200` of those actions changes the same way: an object with
+  a required `data` holding the declared output, optional `records` and `removed`, and the
+  required `x-ultimate-records` response header. The typed clients strip the envelope, so
+  `rpc()` and `.client()` return what they always did. The edit applies only to a client that is
+  not `@ultimat3/*`: a generated SDK, `curl` in a script, a test posting with `fetch`. When the
+  response carries `x-ultimate-records: 1`, read the output from `body.data`. Regenerate an SDK
+  from the new `openapi.json`.
+- **BREAKING — the service worker no longer POSTs `/_x/outbox/flush`; it tells the open tabs to
+  drain.** `@ultimat3/pwa` removes `DEFAULT_FLUSH_ENDPOINT`, `BackgroundSyncOptions` and
+  `ServiceWorkerConfig.backgroundSync`, and `backgroundSyncSource()` takes no arguments. Nothing in
+  the framework ever mounted the flush route, so no background sync ever reached a handler. The outbox is
+  `@ultimat3/realtime`'s and lives in the page, which holds the store, the principal and
+  `clientTransport`. On a `sync` event the worker therefore posts `OUTBOX_DRAIN_MESSAGE`
+  (`'x-outbox-drain'`, from `@ultimat3/core`) to every open window, and does nothing when no window
+  is open: the queue stays on disk, and the next page load replays it. `pwa.backgroundSync: true`
+  in `app.config.ts` is unchanged. The edits:
+  - delete `backgroundSync: { flushEndpoint }` from any `generateServiceWorker({ … })` call.
+  - delete `DEFAULT_FLUSH_ENDPOINT` and `BackgroundSyncOptions` imports.
+  - `backgroundSyncSource(opts)` → `backgroundSyncSource()`.
+  - delete any `/_x/outbox/flush` route an app mounted itself.
+
+  `X_PWA_SYNC_FLUSH_FAILED` and `X_PWA_SYNC_INCOMPLETE` stay registered, because a shipped code
+  never changes meaning, and an old log still explains itself. But nothing throws either now, so
+  code that matches on them compiles and **never matches**. Delete those branches.
+- **BREAKING — `ClientScope.principal` is `string | null | undefined`.** `undefined` is a new
+  third answer: an **unscoped** page, rendered for nobody. That is a shared, cacheable document
+  carrying no `<meta name="ultimate-scope">`, and nothing is persisted for it. `null` is still the
+  anonymous visitor. The edit: code that narrowed with `principal !== null` and then used the
+  result as a `string` now fails to compile. Test `typeof principal === 'string'` instead, and
+  decide what the unscoped page does. A `switch` that handled `null` and `string` needs an
+  `undefined` arm.
+- **BREAKING — `mutator({ conflict: 'last-write-wins' })` throws `X_MUTATOR_CLOCK_MISSING` at
+  declaration unless it can compare clocks.** Every entity row in the mutator's output must carry a
+  **number** `updatedAt` column (epoch ms, written by the server). A `timestamp()` string column does
+  not count. An output with no entity row fails too. Without a clock, core's `resolveConflict` can
+  never prove the local row newer, so the server row won every time: `'last-write-wins'` silently
+  meant `'server-wins'`, which `examples/dummy`'s `setTheme` shipped
+  (`packages/action/src/mutator-clock.ts`). The edit is either one:
+  - add `updatedAt` as a number column the server writes on every update to that entity.
+  - declare `conflict: 'server-wins'`, which is what the mutator was doing anyway.
+- **BREAKING — the app no longer builds or registers a live client.** `@ultimat3/realtime` no
+  longer exports `setLiveClient`, `clearLiveClient`, `hasLiveClient`, `LiveClient`,
+  `LiveClientLike`, `LiveClientOptions`, `ClientSocket` or `MutatorRef` from `'.'`. The page has one
+  socket (`packages/realtime/src/page-socket.ts`), opened by the first live hook, dialling the
+  document's `<meta name="ultimate-sync">` (or `SYNC_URL`). An island installs its signal factory
+  with `installRealtime({ signal: createSignal })`; a browser hook in a bundle that never did is
+  `X_REALTIME_UNINSTALLED`. `X_LIVE_CLIENT_MISSING` stays registered and is thrown by nothing. The
+  edits:
+  - delete the app's socket adapter (`shared/live-socket.ts`), its sync-URL module, the
+    `new LiveClient(…)`, `client.connect()` and `setLiveClient(client)` in each island's `mount`.
+  - add `installRealtime({ signal: createSignal })` in that `mount`, before the first render.
+  - `hasLiveClient()` → `hasPageSocket()`, the guard an offline banner or an update prompt asks.
+  - `client.subscribe(topic, handler)` / `client.publish(topic, …)` → `useChannel(decl, params, { onEvent, onPresence })`
+    or `usePresence(decl, params)` on a `channel()` declaration. A client never publishes.
+- **BREAKING — one read hook: `useQuery(ref, input)`.** `useLive`, `LiveRows`, `LiveInput`,
+  `liveHookFor`, `LiveQueryHook` and `LiveQuerySource` are deleted. `useQuery({ name, live: true }, input)`
+  returns an `AsyncState` accessor (`pending | refreshing | ready | failed`) where `useLive` returned
+  rows plus `.state()`. A non-live query uses the same hook: name its `entity` to make the rows store
+  records. `X_QUERY_NOT_SUBSCRIBABLE` stays registered and is thrown by nothing. The edits:
+  - `useLive<Row>({ name }, input)` → `useQuery<Row>({ name, live: true }, input)`.
+  - `feed.state() === 'live'` → `feed().status === 'ready'`.
+  - `feed()` (the rows) → `feed().data`, once the status is `ready` or `refreshing`.
+  - `feed.unsubscribe()` → `feed.release()`.
+  - `const useX = liveHookFor(query)` → delete it and call `useQuery` with the query's name.
+- **BREAKING — `IdentityMap` is `RecordStore`, keyed `type:key`.** `IdentityMap`, `privateScope`,
+  `rowKey`, `RowScope`, `RowKey` and `IdentityListener` are gone. Their replacements are
+  `RecordStore`, `recordKey`, `RecordKey` and `RecordListener` (`packages/realtime/src/record-store.ts`).
+  A record's key comes from the server, never a per-query scope. The edit: rename the imports.
+  `rowKey(scope, id)` → `recordKey(type, key)`. Code that read the map directly reads one record
+  with `useRecord(type, key)`.
+- **BREAKING — the 20.x local store and rebase log are deleted.** `MemoryLocalStore`,
+  `createOpfsLocalStore`, `LocalStore`, `OpfsLocalStoreOptions`, `RebaseLog`, `RebaseEntry`,
+  `reconcile`, `ReconcileOptions`, `ReconcileResult`, `ServerAck`, `rebaseFrame`, `strategyName`,
+  `mutateFrame`, `MutateFrame`, `RebaseFrame`, `ConflictStrategyName` and `serverRenderLiveClient`
+  are gone. The optimistic apply they gated now needs nothing: `useMutation` writes the mutator's
+  `local` twin into the record store's overlay. Durable offline writes are pending (IndexedDB and
+  one outbox). The edit: delete the `store`, `queue` and `log` you passed to `new LiveClient(…)`,
+  and any `new MemoryLocalStore()`. There is no durable replacement yet.
+- **BREAKING — `useMutation` writes over HTTP and resolves with the action's output.** It posts
+  `actionPath(mutator.name)` through `clientTransport` with an idempotency key, where it used to
+  send a socket `mutate` frame that no host ever answered (`X_NOT_IMPLEMENTED`). The call now
+  resolves with the output, where it resolved `void`. The one exception is a write that got **no
+  response at all** (`X_CLIENT_TRANSPORT_FAILED` with `meta.failure: 'network'`): the call resolves
+  `undefined`, and the write is queued in the page's outbox with its overlay kept, to be replayed.
+  A `'status'` failure rejects and drops the overlay. A `'body'` failure (a 2xx that was not JSON,
+  which may have landed) rejects and keeps the overlay until the next server row it touched. `useMutationQueue()` keeps `pending` and
+  `failed` and loses `drain()`, because there is no socket queue to drain. `MutatorLike.entity` is
+  gone. The edits:
+  - delete `useMutationQueue().drain()` calls.
+  - delete `entity:` from `MutatorLike` literals.
+  - read the answer where you used to re-query for it: `const row = await like({ postId })`.
+- **BREAKING — sync protocol 3.** The `mutate` and `rebase` frame kinds are deleted, and so are
+  `createSyncNode({ onMutate })` and `MutationHandler`. `ack` now only answers a refusal. `records`,
+  `events` and `replay-gap` are new. A v2 client and a v3 node refuse each other with
+  `X_PROTOCOL_VERSION`. The edits:
+  - delete `onMutate` from `createSyncNode({ … })`.
+  - redeploy clients and `sync` nodes together.
+- **BREAKING — `topic` and `Topic` moved from `@ultimat3/realtime/server` to `@ultimat3/realtime`.**
+  A channel topic is spelled by a `channel()` declaration, which browser code needs as much as
+  server code. The edit: `import { topic } from '@ultimat3/realtime/server'` →
+  `from '@ultimat3/realtime'`.
+- **BREAKING — a Compose deploy refuses to start without `SYNC_URL`.** `docker/docker-compose.prod.yml`,
+  `x new`'s scaffold and both tracked apps now pass
+  `SYNC_URL: ${SYNC_URL:?set SYNC_URL=ws://<host>:3001/_x/sync, see wiki/Deployment.md}` to `web`.
+  On that rung `sync` is published on its own port with nothing in front, so the default
+  `/_x/sync` dialled `web`'s port, which does not serve the socket: a page with realtime connected
+  to nothing, with no error anywhere. The edit: set `SYNC_URL=ws://<host>:3001/_x/sync` in
+  `.env.prod`, or put a proxy in front that routes `/_x/sync` to `sync` and set
+  `SYNC_URL=wss://<host>/_x/sync`. An app that copied the old compose file adds the same
+  `environment` line to `web`.
+- **BREAKING — `x verify --json`'s `data.durationMs` is wall time, not the sum of step times.** The
+  static steps (`lint`, `boundaries`, `filesize`, `package-shape`, `errors`) now run beside the
+  serial suites (`live`, `job`, `e2e`, `eval`), so the sum overstates the run
+  (`packages/cli/src/verify-run.ts`). Each step's own `durationMs` is unchanged. The edit: a
+  dashboard that summed the steps to get the run, or read `data.durationMs` as that sum, now reads
+  `data.durationMs` as the wall clock.
+- **BREAKING — the `presence` sync frame and `PresenceFrame` are removed.** A roster now arrives as
+  an `events` frame on its channel, `{ presence: op, members, total? }`, where `op` is
+  `join | leave | update | sync`. That is one frame kind for everything ephemeral, carried by a
+  declaration rather than beside it. The edits:
+  - declare the room with `channel(name, { …, events: true })`.
+  - read the roster with `readPresence(frame.event)` in that channel's events handler; it answers
+    `null` for an ordinary event.
+- **BREAKING — a channel hub serves declared channels only.** Removed:
+  - `ChannelHub#guard`, `subscribe(socket, topic)`, `publish(topic, …)` and `publishFrame`;
+  - `channelFrame`, `TopicGuard`, `TopicGuardArgs` and `TopicGuardResult`;
+  - the `nodeId` option;
+  - the `{ kind: 'topic' }` subscribe target.
+
+  A raw topic string was a second way to name a channel, so a publisher and a subscriber could
+  drift onto two spellings with no error on either side. The edits:
+  - declare each channel once: `channel(name, { params, policy, row?, catchUp, records?, events? })`
+    from `@ultimat3/realtime`. It registers itself.
+  - construct the hub as `new ChannelHub({ transport, sockets })`; it serves every declared channel.
+  - `hub.guard(pattern, fn)` → the declaration's `policy` (plus `row` for the subject it decides
+    about).
+  - `hub.publish(topic, event)` → `hub.publishEvent(decl, params, event)`.
+  - delete `nodeId`.
+
+  An undeclared name is `X_TOPIC_FORBIDDEN`.
+- **BREAKING — a mutator's `local` tables are addressed by record key.** `@ultimat3/action`'s
+  `LocalTable` is now `get(key)`, `all()`, `insert(key, row)`, `upsert(key, row)`,
+  `update(key, patch | fn)` and `delete(key)`, where it was `insert(row)`, `update(id, …)` and
+  `delete(id)` over a `LocalRow` with an `id`. `LocalRow` is removed. `LocalTable` is the same shape
+  as realtime's store transaction (`packages/realtime/src/record-tx.ts`), so a twin typed against
+  it runs against the page's record store unchanged. The store keys a record by its entity's primary
+  key, which a browser cannot derive from a row. The edits:
+  - `tx.posts.insert(post)` → `tx.posts.insert(post.id, post)`, and the same for `upsert`.
+  - `LocalTable<LocalRow & Post>` → `LocalTable<Post>`.
+
+  Every site is a compile error.
+- **BREAKING — `cdpE2ePage` and `CdpE2ePageOptions` are removed from `@ultimat3/cli`.** An e2e page
+  now belongs to a session that can open further tabs in the same browser profile, which a page
+  created on its own could not. The edits:
+  - `cdpE2ePage(opts)` → `openE2eBrowser()` and its page tab, or `session.newTab()` for another tab
+    in the same profile.
+  - a tab on an existing connection → `cdpE2eTab({ … })`.
+- **BREAKING — a `.x/build-stats.json` written before 21.0.0 is stale.** The file now records the
+  measurement rules that wrote it (`measuredBy`), and the `budgets` step reads only a file written
+  under the current rules (`BUILD_STATS_RULES = 2`, `packages/cli/src/budgets.ts`). Version 2 exempts
+  the service-worker registration (`FRAMEWORK_SCRIPTS`) and records the decision to charge the page
+  boot. Until the next build, every budgeted route reads `X_BUDGET_UNMEASURED` ("written by an
+  earlier measurement rule than this gate's (v2)"), because `.x/` survives upgrades and an old file
+  charged, for example, 250 B for `/x-sw-register.js`. The edit: run `x build --target static`
+  again, then `x verify`.
+- **BREAKING — `hasPageSocket()` no longer exempts a module from `X_LIVE_ROUTE_NO_ISLAND`.** The
+  `budgets` step reports a browser-only read (`useQuery`, `useConnection`, `useMutation`,
+  `useMutationQueue`, `useRecord`, `useChannel`, and now `hasPageSocket`) in a module of a route's
+  server graph that no island imports. Guarding on `hasPageSocket()` used to count as having
+  handled the absence. But it answers `false` on the server every time, so the guarded code renders
+  its fallback forever, at 200: that is how the reference app's update banner, in a layout no
+  island imports, never showed (`packages/cli/src/live-routes.ts`). The edit: move the module into
+  an island (`x g island <route-dir> --at <route-dir>`, import it from the island's `mount()`,
+  declare `island({ src })`).
+- **BREAKING — a browser reconnects within 4 s, not 30 s.** The page socket redials on
+  `browserBackoff`: base 500 ms, factor 2, `equal` jitter, capped at `BROWSER_RECONNECT_MAX_MS = 4_000`
+  (`packages/realtime/src/thundering-herd.ts`). A 20.x `LiveClient` used the server-side
+  `defaultBackoff`, `full` jitter up to 30 s. That was measured after a deploy leaving the returning
+  node, and the `update-available` it held for the tab, unreached for 27 s. A server-directed
+  `reconnect` frame from a draining node still assigns each socket its slot. The edit is only for a
+  deployment sized on the old spread: a SIGKILLed node's herd now redials inside a 2–4 s window, so
+  check the sync node's `AcceptBudget` sheds that burst before any query runs.
 
 ## 20.2.1 - 2026-09-19
 

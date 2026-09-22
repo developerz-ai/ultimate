@@ -1,8 +1,7 @@
 // The node's inbound surface under the only condition it actually runs in: several frames from one
 // socket in flight at once. `sync-node` dispatches every frame as `void (async () => …)()`, so
-// nothing upstream orders them — two mutations from one client could reach the database in the
-// reverse of the order that client sent them, and a subscribe/drop pair for one sid could strand
-// the subscription it was meant to end.
+// nothing upstream orders them — a subscribe/drop pair for one sid could strand the subscription it
+// was meant to end.
 
 import { describe, expect, test } from 'bun:test';
 import { type Actor, userActor } from '@ultimat3/core';
@@ -13,8 +12,8 @@ import { InProcessTransport } from './fanout';
 import type { Row } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
-import { CLOSE, SocketRegistry, SyncSocket, type WsLike } from './socket';
-import { ackRefOf, createFrameRouter, type MutationHandler } from './sync-frames';
+import { SocketRegistry, SyncSocket, type WsLike } from './socket';
+import { ackRefOf, createFrameRouter } from './sync-frames';
 import { decode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 class FakeWs implements WsLike {
@@ -63,7 +62,6 @@ interface Rig {
 function rig(
   options: {
     snapshot?: () => Promise<{ rows: readonly Row[]; lsn: string }>;
-    onMutate?: MutationHandler;
     /** Bytes already queued on the socket, so every `send` below is refused by backpressure. */
     buffered?: number;
   } = {},
@@ -93,19 +91,9 @@ function rig(
     hub: new ChannelHub({ transport, sockets }),
     registry,
     buildId: 'build-1',
-    ...(options.onMutate ? { onMutate: options.onMutate } : {}),
   });
   return { socket, ws, registry, route: (frame) => route(socket, frame) };
 }
-
-const mutate = (key: string, seq: number): Frame => ({
-  type: 'mutate',
-  v: PROTOCOL_VERSION,
-  key,
-  seq,
-  name: 'likePost',
-  input: { postId: 'p1' },
-});
 
 const subscribeQuery = (sid: string, op: 'add' | 'drop'): Frame => ({
   type: 'subscribe',
@@ -113,53 +101,6 @@ const subscribeQuery = (sid: string, op: 'add' | 'drop'): Frame => ({
   op,
   sid,
   target: { kind: 'query', qid: 'liveFeed', input: { orgId: 'o1' }, cursor: null },
-});
-
-describe("one client's mutations reach the database in the order it sent them", () => {
-  test('a slow mutation holds the ones behind it, on that socket', async () => {
-    const first = deferred<{ lsn: string }>();
-    const applied: string[] = [];
-    const target = rig({
-      onMutate: async ({ key }) => {
-        if (key === 'm1') await first.promise;
-        applied.push(key);
-        return { lsn: formatLsn(applied.length) };
-      },
-    });
-
-    // Both dispatched before either finishes — exactly what `sync-node.message` does.
-    const both = Promise.all([target.route(mutate('m1', 1)), target.route(mutate('m2', 2))]);
-    await flush();
-    expect(applied).toEqual([]);
-    first.resolve({ lsn: formatLsn(1) });
-    await both;
-
-    // `local(tx, input)` is replayed against the server's answers in this order; applied backwards,
-    // the client's rebase folds an older write over a newer one and the row stays wrong.
-    expect(applied).toEqual(['m1', 'm2']);
-    expect(
-      target.ws.frames.map((frame) => (frame.type === 'ack' ? frame.ref : frame.type)),
-    ).toEqual(['m1', 'm2']);
-  });
-
-  test('a slow subscribe does NOT hold this socket’s mutations behind it', async () => {
-    const read = deferred<{ rows: readonly Row[]; lsn: string }>();
-    const target = rig({
-      snapshot: () => read.promise,
-      onMutate: async () => ({ lsn: formatLsn(1) }),
-    });
-
-    const subscribing = target.route(subscribeQuery('S', 'add'));
-    const mutating = target.route(mutate('m1', 1));
-    await mutating;
-
-    // A snapshot read is a database round trip; a global per-socket lane would put every other
-    // frame this client sends behind it, once per reconnect, for every query it holds.
-    expect(target.ws.frames.map((frame) => frame.type)).toEqual(['ack']);
-    read.resolve({ rows, lsn: formatLsn(1) });
-    await subscribing;
-    expect(target.ws.frames.map((frame) => frame.type)).toEqual(['ack', 'snapshot']);
-  });
 });
 
 describe('one sid is one lane, so a drop cannot overtake the add it ends', () => {
@@ -202,36 +143,6 @@ describe('one sid is one lane, so a drop cannot overtake the add it ends', () =>
 
     expect(target.registry.subscription('sock-1', 'A')).toBeDefined();
     expect(target.registry.subscription('sock-1', 'B')).toBeDefined();
-  });
-});
-
-describe('what a successful mutation answers with', () => {
-  // The ack is the receipt and the rebase is the state, so the receipt goes LAST: an ack retires
-  // the client's record of the mutation — its journal row and its rebase-log entry — and a rebase
-  // that arrives after that has no entry to read the mutator's conflict strategy off, and no
-  // sequence to decide which later optimistic writes to replay over server truth.
-  test('sends the rebase before the ack that retires the record it needs', async () => {
-    const target = rig({
-      onMutate: async () => ({
-        lsn: formatLsn(1),
-        entity: 'posts',
-        row: { id: 'p1', orgId: 'o1' },
-      }),
-    });
-
-    await target.route(mutate('m1', 1));
-
-    expect(target.ws.frames.map((frame) => frame.type)).toEqual(['rebase', 'ack']);
-  });
-
-  test('a handler that names no entity answers with the ack alone', async () => {
-    const target = rig({ onMutate: async () => ({ lsn: formatLsn(1) }) });
-
-    await target.route(mutate('m1', 1));
-
-    // Which is exactly why the ack has to commit on its own: for this handler nothing else ever
-    // comes, and a client that waited for a rebase would hold that journal for the session.
-    expect(target.ws.frames.map((frame) => frame.type)).toEqual(['ack']);
   });
 });
 
@@ -313,10 +224,6 @@ describe('a hello names the build the client is on', () => {
 });
 
 describe('ackRefOf', () => {
-  test('names the mutation key, which is the only thing the client can look one up by', () => {
-    expect(ackRefOf(mutate('m1', 1), 'sock-1')).toBe('m1');
-  });
-
   test('names the sid for a subscribe, and the socket only when the frame is unreadable', () => {
     expect(ackRefOf(subscribeQuery('S', 'add'), 'sock-1')).toBe('S');
     expect(ackRefOf(null, 'sock-1')).toBe('sock-1');
@@ -336,8 +243,8 @@ describe('ackRefOf', () => {
 });
 
 /**
- * `send` answers `false` when backpressure dropped the frame, and this file's four sends threw that
- * answer away. The subscription is the repairable one and the one that was silently wrong: the
+ * `send` answers `false` when backpressure dropped the frame, and this file's sends threw that
+ * answer away. The subscribe reply is the repairable one and the one that was silently wrong: the
  * registry has already seated it and cleared its desync mark by the time the reply is written, so a
  * dropped snapshot left the server believing a client holding no rows was in sync — every later
  * change delivered to it as a PATCH folded onto nothing, forever, on a socket that has since
@@ -363,73 +270,5 @@ describe('a reply the socket refuses is not a reply that was delivered', () => {
 
     expect(target.ws.frames.map((frame) => frame.type)).toEqual(['snapshot']);
     expect([...target.socket.desynced]).toEqual([]);
-  });
-
-  test('a settlement the socket refuses closes it, so the client requeues and replays', async () => {
-    const target = rig({ buffered: 4_096, onMutate: async () => ({ lsn: formatLsn(1) }) });
-
-    await target.route(mutate('m1', 1));
-
-    // Nothing on the node holds a mutation after `onMutate` returns, and a client only hands an
-    // `inflight` mutation back to its queue when the connection dies. Left open, that write is
-    // never retired and never retried, with the server believing it settled.
-    expect(target.ws.frames).toHaveLength(0);
-    expect(target.ws.closes).toEqual([[CLOSE.overloaded, 'settlement undeliverable']]);
-  });
-
-  test('a dropped rebase is never followed by the ack that would retire it', async () => {
-    const target = rig({
-      buffered: 4_096,
-      onMutate: async () => ({ lsn: formatLsn(1), entity: 'posts', row: { id: 'p1' } }),
-    });
-
-    await target.route(mutate('m1', 1));
-
-    // The ack retires the client's rebase-log entry. Acking a rebase that never left is the same
-    // divergence the rebase-before-ack order exists to prevent, one frame later.
-    expect(target.ws.closes).toHaveLength(1);
-  });
-});
-
-/**
- * A node built without `onMutate` is a read-only node. A client that mutates against one has to
- * be TOLD — dropped, its optimistic write stays `inflight` forever: never rolled back, never
- * retried, and invisible to the queue that would have done either.
- */
-describe('a node with no mutation handler', () => {
-  test('answers a mutate with a failure ack that names the missing wiring', async () => {
-    const target = rig();
-
-    await target.route(mutate('like:p1', 1));
-
-    const ack = target.ws.frames[0];
-    expect(ack?.type).toBe('ack');
-    if (ack?.type !== 'ack') return;
-    expect(ack.ref).toBe('like:p1');
-    expect(ack.lsn).toBeNull();
-    expect(ack.error?.code).toBe('X_NOT_IMPLEMENTED');
-    // A receipt has to be actionable: the fix names the one construction site that adds it.
-    expect(ack.error?.fix).toContain('createSyncNode({ onMutate })');
-    expect(target.ws.closes).toEqual([]);
-  });
-
-  test('every mutate gets its own receipt, keyed by the client key it arrived under', async () => {
-    const target = rig();
-
-    await target.route(mutate('like:p1', 1));
-    await target.route(mutate('like:p2', 2));
-
-    const refs = target.ws.frames.map((frame) => (frame.type === 'ack' ? frame.ref : frame.type));
-    expect(refs).toEqual(['like:p1', 'like:p2']);
-  });
-
-  test('a receipt the socket refuses closes it, exactly as a real settlement would', async () => {
-    const target = rig({ buffered: 4_096 });
-
-    await target.route(mutate('like:p1', 1));
-
-    // Undelivered, the client keeps an `inflight` write that only a dead connection releases.
-    expect(target.ws.frames).toHaveLength(0);
-    expect(target.ws.closes).toEqual([[CLOSE.overloaded, 'settlement undeliverable']]);
   });
 });

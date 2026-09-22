@@ -313,3 +313,4 @@ Every row's command is the error's own registered `fix:` line, not a paraphrase 
 - Never enqueue outside a transaction, never paginate with an offset, never format a date without a zone, never put money in a float.
 - Never hand-edit a generated artifact (`sw.js`, `x.manifest.json`, `openapi.json`, migrations already applied).
 - Read the `fix:` line. It is a command, and it is meant to be run.
+- Adding an `X_*` code to a **framework package** is `bun run new-error-code`: one command writes the registration and the `wiki/Error-Codes.md` row together ([`04-error-contract.md`](./04-error-contract.md#adding-a-code)). An app's own codes are registered in the app, and this repository's wiki does not document them.

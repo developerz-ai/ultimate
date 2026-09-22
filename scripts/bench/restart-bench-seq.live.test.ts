@@ -13,9 +13,11 @@ import {
   SocketRegistry,
   type SyncNode,
 } from '@ultimat3/realtime/server';
+import { BENCH_CHANNEL, BENCH_ROOM, probeChange } from './restart-bench-channel';
 import { type ClientStats, newClientStats, runClient } from './restart-bench-client';
-import { summarizeSeq } from './restart-bench-seq';
-import { BENCH_TOPIC } from './restart-bench-shared';
+import { summarizeSeq, unrepairedFindings } from './restart-bench-seq';
+
+const BENCH_TOPIC = BENCH_CHANNEL.topic({ room: BENCH_ROOM });
 
 const CLIENTS = 24;
 
@@ -39,8 +41,11 @@ interface BenchNode {
   readonly port: number;
   /** The publisher's own counter — resets to zero here exactly as it does per server process. */
   publish(): Promise<number>;
-  /** Burns a sequence number without publishing it: one frame the swarm can never receive. */
-  skip(): void;
+  /**
+   * Makes every socket's NEXT records frame be refused as backpressure would refuse it — so the
+   * node counts the drop, marks the socket and owes it a `replay-gap`, exactly the real path.
+   */
+  dropNextFrame(): void;
   stop(): Promise<void>;
 }
 
@@ -60,7 +65,6 @@ async function startNode(port: number): Promise<BenchNode> {
   const sockets = new SocketRegistry();
   const transport = new InProcessTransport();
   const hub = new ChannelHub({ transport, sockets });
-  hub.guard('bench.>', () => true);
   const node: SyncNode = createSyncNode({
     hub,
     registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
@@ -86,11 +90,21 @@ async function startNode(port: number): Promise<BenchNode> {
     port: server.port ?? port,
     publish: async (): Promise<number> => {
       seq += 1;
-      await hub.publish(BENCH_TOPIC, { seq });
+      hub.deliverChange(probeChange(seq, Date.now()));
       return seq;
     },
-    skip: (): void => {
-      seq += 1;
+    dropNextFrame: (): void => {
+      for (const socket of sockets.all()) {
+        const send = socket.send.bind(socket);
+        let armed = true;
+        socket.send = (frame) => {
+          if (armed && frame.type === 'records') {
+            armed = false;
+            return false;
+          }
+          return send(frame);
+        };
+      }
     },
     stop: async (): Promise<void> => {
       server.stop(true);
@@ -158,28 +172,32 @@ describe('live · restart-bench seq accounting over real sockets', () => {
       // Two connections each, so the second epoch re-anchored rather than measuring back to the
       // first — the one fact that makes `missing` mean "lost" instead of "restarted".
       expect(afterRestart.epochs).toBe(CLIENTS * 2);
+      expect(unrepairedFindings(afterRestart)).toEqual([]);
     } finally {
       await stopSwarm(swarm, node);
     }
   }, 60_000);
 
-  test('a frame the node never sends is counted, once per client', async () => {
+  test('a frame the node drops is counted once per client AND repaired: zero unrepaired', async () => {
     const node = await startNode(0);
     const swarm = startSwarm(node.port);
     try {
       expect(await waitFor(() => subscribed(node))).toBe(true);
       await node.publish();
       await node.publish();
-      node.skip(); // seq 3 exists to the publisher and reaches nobody
+      node.dropNextFrame(); // seq 3 is minted, refused on every socket, and marked
       await node.publish();
-      await node.publish();
-      expect(await waitFor(() => allReceived(swarm, 4))).toBe(true);
+      await node.publish(); // the owed replay-gap goes out first, then seq 4
+      expect(await waitFor(() => allReceived(swarm, 3))).toBe(true);
+      // Two: every first join is answered with a replay-gap of its own, so only the SECOND is the
+      // repair of the dropped frame.
+      expect(await waitFor(() => swarm.stats.every((s) => s.seq.replayGaps >= 2))).toBe(true);
 
       const summary = summarizeSeq(swarm.stats.map((s) => s.seq));
-      expect(summary.received).toBe(CLIENTS * 4);
+      expect(summary.received).toBe(CLIENTS * 3);
       expect(summary.missing).toBe(CLIENTS);
-      expect(summary.gapEvents).toBe(CLIENTS);
-      expect(summary.clientsWithGaps).toBe(CLIENTS);
+      expect(summary.repaired).toBe(CLIENTS);
+      expect(unrepairedFindings(summary)).toEqual([]);
     } finally {
       await stopSwarm(swarm, node);
     }

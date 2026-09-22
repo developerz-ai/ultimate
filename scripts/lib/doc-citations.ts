@@ -3,8 +3,10 @@
 // `scripts/doc-commands.ts` (every other page) — because two scanners over two file sets is the
 // drift both rules exist to refuse.
 
-import type { FixCitation } from '@ultimat3/cli';
-import { fixCitations } from '@ultimat3/cli';
+// The LEAF module, never the `@ultimat3/cli` barrel: the barrel links every package in the tree, so
+// one half-written module anywhere crashed this module's guards with a bare SyntaxError (DX ledger #10).
+import type { FixCitation } from '../../packages/cli/src/fix-command';
+import { fixCitations } from '../../packages/cli/src/fix-command';
 
 export interface MarkdownFile {
   readonly path: string;

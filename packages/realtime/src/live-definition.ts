@@ -14,6 +14,7 @@ import { type AnyQuery, queryHash, queryName } from '@ultimat3/query';
 import { LiveRowUnidentifiedError } from './errors';
 import { isRow, type JsonValue, type Row } from './json';
 import type { LiveQueryDefinition, SnapshotResult } from './live-contract';
+import { liveRecords } from './live-record-type';
 import { type IncrementalMatcher, matcherFor, type Projection } from './matcher-bridge';
 import { authorizeWithPolicy, visibleWithPolicy } from './policy-gate';
 
@@ -47,6 +48,8 @@ interface SharedWindow {
   readonly matcher: IncrementalMatcher;
   /** The compiled shape's root entity — the client's identity scope for every row of this read. */
   readonly rowEntity: string;
+  /** Its projection's record key; `null` for a plain table keyed by `id`. */
+  readonly rowKey: ((row: Row) => string) | null;
   read(): Promise<readonly Row[]>;
 }
 
@@ -109,11 +112,14 @@ export function liveQueryDefinition(
     // a second subject-less copy — which is what this did — paid for the parse and the `sql()`
     // twice per query id and left two descriptions of one read that agreed only by luck.
     const projection = learnProjection();
+    const records = liveRecords(live.shape.entity);
     const built: SharedWindow = {
       matcher: matcherFor(live, projection.read),
-      // `assertMatchable` already refused a shape without one, so this is the entity the matcher
-      // patches rows of — the same name `ChangeEvent.entity` and `tx.<table>` use.
-      rowEntity: live.shape.entity,
+      // `assertMatchable` already refused a shape without one. The shape names the TABLE (what a
+      // `ChangeEvent` carries); the client store keys records by ENTITY name, so the snapshot tells
+      // it the record type, and every frame carries the key the entity's projection renders.
+      rowEntity: records.type,
+      rowKey: records.key,
       read: async () => {
         const rows = rowsOf(name, await live.execute());
         projection.teach(rows);
@@ -142,6 +148,7 @@ export function liveQueryDefinition(
     // Read off the same resolved window as the matcher, so the scope the client keys rows under and
     // the entity the matcher patches them from can never be two different names.
     rowEntity: (input) => windows.get(queryHash(name, input))?.rowEntity ?? null,
+    rowKey: (input) => windows.get(queryHash(name, input))?.rowKey ?? null,
     // The two per-subscriber gates, both through the package's one authz seam. Neither result is
     // memoised anywhere: `authorize` runs on every subscribe, `visible` on every row of every
     // delivery, and there is no key here an actor could share with another actor.

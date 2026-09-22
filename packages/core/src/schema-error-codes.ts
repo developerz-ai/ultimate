@@ -23,7 +23,7 @@ export const SCHEMA_ERROR_CODE_TITLES: Readonly<Record<string, string>> = Object
   ),
 );
 
-// Registered here rather than in `error-codes.ts`'s `CORE_CODE_TITLES` because core does not own
+// Registered here rather than in `core-error-codes.ts`'s `CORE_CODE_TITLES` because core does not own
 // these codes — `@ultimat3/schema` does — and `registerErrorCodes` is the one mechanism that
 // raises `X_ERROR_CODE_DUPLICATE` if a package that DOES own one of them ever tries to register it
 // too, which pins ownership even though the registration happens here.

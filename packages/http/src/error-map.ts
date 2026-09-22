@@ -401,6 +401,19 @@ export const ERROR_STATUS = {
   // the answer. Deliberately not 409 — that spelling asks the client to reconcile and try again,
   // and a fenced answer has nothing to reconcile against.
   X_SUPERSEDED: 499,
+  // Plan 101's client seam. A typed call made from a server handler: an upstream that gave no usable
+  // answer is 502, the fence is `X_SUPERSEDED`'s twin. The rest are browser-side or declaration-time
+  // refusals no request carries; their rows keep the table closed.
+  X_CLIENT_TRANSPORT_FAILED: 502,
+  X_CLIENT_RECORD_ENVELOPE_INVALID: 502,
+  X_CLIENT_SCOPE_CHANGED: 499,
+  X_CHANNEL_DECLARATION_INVALID: 500,
+  X_LOCAL_STORE_UNAVAILABLE: 500,
+  X_MUTATOR_CLOCK_MISSING: 500,
+  X_REALTIME_UNINSTALLED: 500,
+  X_RECORD_KEY_MISSING: 500,
+  X_RECORD_REJECTED: 500,
+  X_SYNC_UNCONFIGURED: 500,
   X_INTERNAL: 500,
   // The keys are LITERAL — deliberately not `Readonly<Record<string, number>>`, which is what the
   // annotation used to say. This table is the closed one, so `ERROR_STATUS.X_QUERY_NOT_PAGABLE`

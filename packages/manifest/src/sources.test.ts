@@ -20,6 +20,7 @@ import { clearRegistry as clearEntities, entity, invariant, text, uuid } from '@
 import { job, resetJobs } from '@ultimat3/jobs';
 import { and, can } from '@ultimat3/policy';
 import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
+import { channel, clearChannels } from '@ultimat3/realtime';
 import { frameworkSources } from './sources';
 
 const APP = { name: 'acme', version: '1.4.2' } as const;
@@ -105,9 +106,18 @@ beforeAll(() => {
     retry: { attempts: 5, backoff: 'exponential' },
     run: () => Promise.resolve(),
   });
+
+  clearChannels();
+  channel('sources-feed', {
+    params: ['orgId'],
+    catchUp: { name: 'recentSourcesPosts' },
+    policy: and(can('post:read'), can('org:administer')),
+    events: true,
+  });
 });
 
 afterAll(() => {
+  clearChannels();
   clearEntities();
   resetActions();
   resetQueries();
@@ -233,6 +243,20 @@ describe('the query and job projections', () => {
     // Absent, never `[]`: a key on every plain read would be bytes for no fact, and the emitter
     // reads absence as "this read asks for no table".
     expect(silent).not.toHaveProperty('subscribes');
+  });
+
+  test('a channel carries its params, catch-up read, policy label and flattened permissions', () => {
+    expect(frameworkSources({ app: APP }).channels).toEqual([
+      {
+        name: 'sources-feed',
+        params: ['orgId'],
+        catchUp: 'recentSourcesPosts',
+        records: [],
+        events: true,
+        policy: expect.stringContaining('post:read'),
+        permissions: ['org:administer', 'post:read'],
+      },
+    ]);
   });
 
   test('a job carries its queue and retry policy, and no steps', () => {

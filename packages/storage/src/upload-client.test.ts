@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { isStorageError, uploadFailed } from './errors';
 import type { UploadGrant, UploadRequest } from './grant';
 import type { SignedPutInput, UploadProgress, UploadSource } from './upload-client';
-import { uploadFile, xhrSignedPut } from './upload-client';
+import { fetchSignedPut, uploadFile, xhrSignedPut } from './upload-client';
 
 const GRANT: UploadGrant = {
   key: 'org/org-1/pending/u-1.png',
@@ -228,6 +228,90 @@ describe('xhrSignedPut', () => {
       expect(await codeOf(() => settled)).toBe('X_STORAGE_UPLOAD_FAILED');
       expect(FakeXhr.built[0]?.aborted).toBe(true);
       expect(counts.removed).toBe(counts.added);
+    });
+  });
+});
+
+describe('fetchSignedPut — the fallback where XHR does not exist', () => {
+  interface Sent {
+    readonly url: string;
+    readonly method: string | undefined;
+    readonly headers: Headers;
+    readonly bytes: number;
+  }
+
+  /**
+   * `clientTransport` reads `globalThis.fetch` at call time, so the fallback is observed there —
+   * which is also the proof it goes through the transport rather than a `fetch` of its own.
+   */
+  async function withFetch<T>(
+    answer: Response,
+    run: () => Promise<T>,
+  ): Promise<{ readonly sent: Sent[]; readonly result: T | undefined; readonly error: unknown }> {
+    const sent: Sent[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      const body = init.body as Blob;
+      sent.push({ url, method: init.method, headers: new Headers(init.headers), bytes: body.size });
+      return answer;
+    }) as typeof fetch;
+    try {
+      return { sent, result: await run(), error: undefined };
+    } catch (error) {
+      return { sent, result: undefined, error };
+    } finally {
+      globalThis.fetch = original;
+    }
+  }
+
+  test('PUTs the raw bytes under the grant content type, with no JSON header of its own', async () => {
+    const progress: number[] = [];
+    const { sent, error } = await withFetch(new Response(null, { status: 200 }), () =>
+      fetchSignedPut({
+        url: GRANT.url,
+        contentType: 'image/png',
+        body: fileOf(64),
+        onProgress: (p) => progress.push(p.ratio),
+      }),
+    );
+
+    expect(error).toBeUndefined();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.method).toBe('PUT');
+    expect(sent[0]?.bytes).toBe(64);
+    expect(sent[0]?.headers.get('content-type')).toBe('image/png');
+    expect(sent[0]?.headers.get('accept')).toBeNull();
+    expect(progress).toEqual([0, 1]);
+  });
+
+  test('no response at all is the transport’s X_CLIENT_TRANSPORT_FAILED, never a bare TypeError', async () => {
+    const original = globalThis.fetch;
+    // What a browser rejects `fetch` with offline. Input to the code under test, not a verdict.
+    globalThis.fetch = (() =>
+      Promise.reject(new TypeError('Failed to fetch'))) as unknown as typeof fetch;
+    try {
+      const error = await fetchSignedPut({
+        url: GRANT.url,
+        contentType: 'image/png',
+        body: fileOf(8),
+      }).catch((caught: unknown) => caught);
+      expect(error).toBeUltimateError('X_CLIENT_TRANSPORT_FAILED');
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  test('a refusal is X_STORAGE_UPLOAD_FAILED with the disk status, not a transport code', async () => {
+    const { error } = await withFetch(new Response('too big', { status: 413 }), () =>
+      fetchSignedPut({ url: GRANT.url, contentType: 'image/png', body: fileOf(8) }),
+    );
+
+    expect(isStorageError(error) ? error.code : 'not a storage error').toBe(
+      'X_STORAGE_UPLOAD_FAILED',
+    );
+    expect(isStorageError(error) ? error.meta : undefined).toMatchObject({
+      status: 413,
+      detail: 'too big',
     });
   });
 });

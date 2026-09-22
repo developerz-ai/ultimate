@@ -160,6 +160,15 @@ $ x verify
 
 Ordering principle: **cheapest and most informative first**, and never run a check whose result would be meaningless because an earlier one failed. Steps 1–4 complete in seconds, which is what makes the local loop usable.
 
+**Not all serial, `As of 2026-09-22`** (21.0.0, unreleased). The static steps (`lint`, `boundaries`,
+`filesize`, `package-shape`, `errors`) read the tree and write nothing a later step reads, so they
+run **beside** the serial suites (`live`, `job`, `e2e`, `eval`). Those are one worker each, Postgres-
+and browser-bound, and mostly waiting. `typecheck` stays first and alone, because `tsc -b` writes
+`.tsbuildinfo` and `dist/`, and `unit` saturates every core. The static group used to be 127 s of a
+395 s local run in which nothing else ran (`packages/cli/src/verify-run.ts`'s header). The
+after-figure has not been measured in CI. `data.durationMs` in `--json` is now the wall time, not
+the sum of the steps.
+
 ### Why it is the shippability contract
 
 | Property | Consequence |

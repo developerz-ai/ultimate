@@ -5,7 +5,7 @@
 // material and is excluded from the package tarball.
 
 import { frozenClock } from '@ultimat3/core';
-import { type ClientSocket, LiveClient, type SignalFactory } from './client';
+import { type ClientSocket, LiveClient } from './client';
 import { decode, type Frame } from './sync-protocol';
 import type { BackoffPolicy, Scheduler } from './thundering-herd';
 
@@ -13,17 +13,6 @@ import type { BackoffPolicy, Scheduler } from './thundering-herd';
 export class HarnessMisuse extends Error {
   override readonly name = 'HarnessMisuse';
 }
-
-/** Synchronous and closure-backed: enough to prove an accessor re-reads, with no reactive runtime. */
-export const signal: SignalFactory = <T>(initial: T) => {
-  let value = initial;
-  return [
-    () => value,
-    (next: T) => {
-      value = next;
-    },
-  ];
-};
 
 /** No jitter, so a delay is a number the test can name rather than a range it has to bracket. */
 export const backoff: BackoffPolicy = { baseMs: 500, maxMs: 30_000, factor: 2, jitter: 'none' };
@@ -149,6 +138,9 @@ export interface HarnessOptions {
    * backoff curve. The heartbeat suite turns it on and owns the clock.
    */
   readonly heartbeatMs?: number;
+  /** `'client-default'` leaves the client's own curve in place, rolled by `rng`. */
+  readonly backoff?: BackoffPolicy | 'client-default';
+  readonly rng?: () => number;
 }
 
 export function harness(options: HarnessOptions = {}): Harness {
@@ -158,7 +150,6 @@ export function harness(options: HarnessOptions = {}): Harness {
   const clock = frozenClock(1_000);
   let failures = 0;
   const client = new LiveClient({
-    signal,
     heartbeatMs: options.heartbeatMs ?? 0,
     connect: () => {
       if (failures > 0) {
@@ -172,7 +163,9 @@ export function harness(options: HarnessOptions = {}): Harness {
       return socket;
     },
     buildId: 'build-1',
-    backoff,
+    catchUp: async () => undefined,
+    ...(options.backoff === 'client-default' ? {} : { backoff: options.backoff ?? backoff }),
+    ...(options.rng === undefined ? {} : { rng: options.rng }),
     clock,
     scheduler: timers.schedule,
     onError: (error) => {
@@ -192,3 +185,10 @@ export function harness(options: HarnessOptions = {}): Harness {
 }
 
 export const feed = { name: 'feed' };
+
+/** A declared channel as a browser names it: its name, its catch-up read, its topic rule. */
+export const cursorsChannel = {
+  name: 'org-cursors',
+  catchUp: 'orgCursors',
+  topic: (params: Readonly<Record<'orgId', string>>) => `org-cursors.${params.orgId}`,
+};

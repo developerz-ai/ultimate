@@ -46,13 +46,27 @@ const withStylesheet = (
   { path: `${DIR}/ui.module.scss`, contents: '.item {\n  padding: 1rem;\n}\n' },
 ];
 
+/**
+ * Until the status line says something, a bounded number of macrotasks. The send is several awaits
+ * deep inside `clientTransport` (dispatch, `response.text()`, the decode), so counting microtasks
+ * pins the transport's internals rather than the form's outcome.
+ */
+async function statusSettled(mounted: { text(selector: string): string }): Promise<void> {
+  for (let tick = 0; tick < 50; tick += 1) {
+    if (mounted.text('[data-role="status"]') !== '') return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+}
+
 const fetchStub = (
   calls: { url: string; body: unknown }[],
   ok = true,
 ): Readonly<Record<string, unknown>> => ({
-  fetch: (url: string, init: { body: string }): Promise<{ ok: boolean }> => {
+  // The form sends through `clientTransport`, which calls `globalThis.fetch` — this stub — and
+  // reads a real `Response`: status, headers, text.
+  fetch: (url: string, init: { body: string }): Promise<Response> => {
     calls.push({ url, body: JSON.parse(init.body) as unknown });
-    return Promise.resolve({ ok });
+    return Promise.resolve(Response.json(ok ? { id: 'created' } : {}, { status: ok ? 200 : 500 }));
   },
 });
 
@@ -107,6 +121,14 @@ describe('unit · x g resource emits its form as a client entry', () => {
     // minified, measured), and the bundle case below is what proves the shaking actually happens.
     expect(source).not.toMatch(/^import \* as /m);
   });
+
+  test('the island sends through clientTransport and never calls fetch itself', () => {
+    const source = emitted()[0]?.contents ?? '';
+    // Plan 101: every browser request crosses the one seam. A raw `fetch(` here is a scaffolded
+    // app shipping the bypass on its first command.
+    expect(source).toContain("import { clientTransport } from '@ultimat3/core';");
+    expect(source).not.toMatch(/\bfetch\(/);
+  });
 });
 
 describe('unit · the form x g resource emits ships a shaken solid-js', () => {
@@ -144,7 +166,7 @@ describe('unit · the form x g resource emits actually mounts', () => {
     // indistinguishable from a selector typo otherwise.
     expect(mounted.fire(field, 'input')).toBe(true);
     expect(mounted.fire('form', 'submit', { preventDefault: (): void => {} })).toBe(true);
-    await Promise.resolve();
+    await statusSettled(mounted);
 
     expect(calls).toEqual([{ url: ENDPOINT, body: { title: 'First invoice' } }]);
     // The signal reached the DOM: an eager JSX factory renders '' here and never runs again.
@@ -171,8 +193,7 @@ describe('unit · the form x g resource emits actually mounts', () => {
     });
 
     expect(mounted.fire('form', 'submit', { preventDefault: (): void => {} })).toBe(true);
-    await Promise.resolve();
-    await Promise.resolve();
+    await statusSettled(mounted);
 
     expect(mounted.text('[data-role="status"]')).toBe(LABELS.retry);
   }, 60_000);

@@ -13,7 +13,7 @@ import {
   type JitterMode,
   type Random,
   systemClock,
-} from '@ultimat3/core';
+} from '@ultimat3/core/page';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 /** Injected so tests are deterministic and `local` mutators stay replayable. */
@@ -38,6 +38,24 @@ export const defaultBackoff: BackoffPolicy = {
   maxMs: 30_000,
   factor: 2,
   jitter: 'full',
+};
+
+/** The longest a browser waits between two dials, whatever the attempt. */
+export const BROWSER_RECONNECT_MAX_MS = 4_000;
+
+/**
+ * A browser's redial: the same curve, capped at seconds rather than `defaultBackoff`'s thirty.
+ * Measured after a deploy — six dials in ~3s, then a full-jitter roll under a 30s cap left the
+ * node that came back (and the `update-available` it had for the tab) unreached for 27s. `equal`
+ * jitter, because at the cap it keeps a floor: a SIGKILLed node's herd redials inside a 2-4s
+ * window rather than at once, and the `AcceptBudget` sheds the excess before any query runs. A
+ * PLANNED restart never reaches this: the drain's `reconnect` frame assigns each socket its slot.
+ */
+export const browserBackoff: BackoffPolicy = {
+  baseMs: 500,
+  maxMs: BROWSER_RECONNECT_MAX_MS,
+  factor: 2,
+  jitter: 'equal',
 };
 
 /**

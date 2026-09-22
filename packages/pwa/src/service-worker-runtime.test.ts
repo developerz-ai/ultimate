@@ -4,6 +4,7 @@
 // TEXT — rules, markers, refusals — is `service-worker.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
+import { OUTBOX_DRAIN_MESSAGE } from '@ultimat3/core';
 import type { ServiceWorkerConfig } from './service-worker';
 import { generateServiceWorker } from './service-worker';
 import type { PwaRoute } from './strategies';
@@ -75,12 +76,13 @@ function swHarness() {
   /** The `x-ultimate-build` each proxied request carried, in order. `null` means unstamped. */
   const stamps: (string | null)[] = [];
   const messages: unknown[] = [];
+  const windows: string[] = [];
   let offline = false;
   let respond: ((request: Request) => Response | undefined) | undefined;
   const fetcher = async (request: Request | string): Promise<Response> => {
-    // A worker resolves a bare string against its own scope, so the stub must too — otherwise the
-    // one emitted call that passes a path rather than a `Request` (`flushOutbox`) fails here on
-    // `new URL`, which reads as a broken worker rather than a broken harness.
+    // A worker resolves a bare string against its own scope, so the stub must too — otherwise an
+    // emitted call passing a path rather than a `Request` would fail here on `new URL`, which reads
+    // as a broken worker rather than a broken harness.
     const url = typeof request === 'string' ? new URL(request, SW_ORIGIN).href : request.url;
     fetched.push(url);
     stamps.push(typeof request === 'string' ? null : request.headers.get('x-ultimate-build'));
@@ -117,7 +119,12 @@ function swHarness() {
     },
     clients: {
       claim: async (): Promise<void> => undefined,
-      matchAll: async () => [{ postMessage: (data: unknown): void => void messages.push(data) }],
+      // One window by default, with no URL; `openWindows` names the pages the worker controls.
+      matchAll: async () =>
+        (windows.length === 0 ? [undefined] : windows).map((url) => ({
+          url,
+          postMessage: (data: unknown): void => void messages.push(data),
+        })),
     },
     skipWaiting: (): void => undefined,
   };
@@ -141,6 +148,19 @@ function swHarness() {
         request: typeof SwRequest,
       ) => void;
       factory(self, cacheStorage, fetcher, SwRequest);
+    },
+    openWindows(...urls: string[]): void {
+      windows.push(...urls);
+    },
+    async activate(): Promise<void> {
+      let work: Promise<unknown> = Promise.resolve();
+      listeners.get('activate')?.({
+        waitUntil: (p) => {
+          work = p;
+        },
+        respondWith: () => undefined,
+      });
+      await work;
     },
     async install(): Promise<void> {
       let work: Promise<unknown> = Promise.resolve();
@@ -350,13 +370,14 @@ describe('the offline outbox drain, executed', () => {
     capabilities: { backgroundSync: true },
   };
 
-  test('the no-Background-Sync fallback message drains the outbox', async () => {
+  test('the no-Background-Sync fallback message tells the open tabs to drain', async () => {
     const sw = swHarness();
     sw.load(generateServiceWorker([], syncConfig, 'build-1').source);
 
     await sw.message({ type: 'flush-outbox' });
 
-    expect(sw.fetched).toEqual(['https://app.test/_x/outbox/flush']);
+    expect(sw.messages).toEqual([{ type: OUTBOX_DRAIN_MESSAGE }]);
+    expect(sw.fetched).toEqual([]);
   });
 
   test('and no other message type does, so a skip-waiting is not a flush', async () => {
@@ -366,11 +387,11 @@ describe('the offline outbox drain, executed', () => {
     await sw.message({ type: 'skip-waiting' });
     await sw.message({ type: 'build-id' });
 
-    expect(sw.fetched).toEqual([]);
+    expect(sw.messages).toEqual([]);
   });
 
   /**
-   * `flushOutbox` is only emitted with the capability, so an unconditional handler would answer a
+   * `drainOutbox` is only emitted with the capability, so an unconditional handler would answer a
    * `flush-outbox` with a `ReferenceError` inside `waitUntil` — uncatchable by the page that sent
    * it — in every app that leaves `backgroundSync` off.
    */
@@ -380,6 +401,46 @@ describe('the offline outbox drain, executed', () => {
 
     await sw.message({ type: 'flush-outbox' });
 
+    expect(sw.messages).toEqual([]);
+  });
+});
+
+/**
+ * The page that installed the worker loaded BEFORE the worker controlled it, so no strategy saw it:
+ * a runtime-cached route was unavailable offline until a second online visit. Activation now runs
+ * each controlled window's URL through its own route's strategy.
+ */
+describe('the emitted activate block, executed', () => {
+  const runtimeRoutes: readonly PwaRoute[] = [
+    { path: '/feed', surface: 'app', mode: 'ssr', offline: 'runtime' },
+    { path: '/live', surface: 'app', mode: 'ssr', offline: 'network-only' },
+  ];
+
+  test('the installing page is cached on activate, so it is there offline on the first reload', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(runtimeRoutes, config, 'build-1').source);
+    sw.openWindows(`${SW_ORIGIN}/feed`);
+    await sw.activate();
+
+    sw.goOffline();
+    const response = await sw.request('/feed');
+    expect(await response.text()).toBe('bytes for /feed');
+  });
+
+  test('a network-only route, another origin and a window with no URL are left alone', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(runtimeRoutes, config, 'build-1').source);
+    sw.openWindows(`${SW_ORIGIN}/live`, 'https://elsewhere.test/feed');
+    await sw.activate();
     expect(sw.fetched).toEqual([]);
+  });
+
+  test('a warm-up that fails does not fail the activation', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(runtimeRoutes, config, 'build-1').source);
+    sw.openWindows(`${SW_ORIGIN}/feed`);
+    sw.goOffline();
+    await sw.activate();
+    expect(sw.messages).toHaveLength(1);
   });
 });

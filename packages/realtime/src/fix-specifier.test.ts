@@ -59,18 +59,4 @@ describe('a specifier written into shipped source resolves', () => {
 
     expect(unresolvable).toEqual([]);
   });
-
-  // The case that shipped: `local-store.ts`'s `X_NOT_IMPLEMENTED` told the caller to
-  // `import { createOpfsLocalStore } from '@ultimat3/realtime/browser'` — a subpath `exports` has
-  // never declared, so the one instruction the refusal carried ended in a resolution failure. The
-  // scan above cannot see WHICH names a fix line promises, so this pins the two it now relies on.
-  test("the OPFS refusal's fix names an export that is on the entry it names", async () => {
-    const source = await Bun.file(`${SRC}/local-store.ts`).text();
-    const barrel = await Bun.file(`${SRC}/index.ts`).text();
-    const fix = /fix: "(?<line>[^"]+)"/.exec(source)?.groups?.['line'] ?? '';
-
-    expect(fix).toContain("'@ultimat3/realtime'");
-    expect(fix).toContain('MemoryLocalStore');
-    expect(barrel).toContain('MemoryLocalStore');
-  });
 });

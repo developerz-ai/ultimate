@@ -1,10 +1,16 @@
-// The two callable surfaces — actions and queries — and the permissions they require.
+// The two callable surfaces — actions and queries — and the permissions they require. The
+// permission rule is exported: a channel's subscribe requires permissions the same way.
 
 import { canonicalJson, isMcpExposed } from '@ultimat3/core';
 import type { ManifestChange } from './diff-change';
 import { diffScalar, index } from './diff-change';
 import { diffRateLimit } from './diff-rate-limit';
 import type { ActionFact, QueryFact } from './schema';
+
+/** Any fact that names the permissions it requires — an action, a query, a channel. */
+export interface PermissionBearing {
+  readonly permissions: readonly string[];
+}
 
 export function diffActions(
   before: readonly ActionFact[],
@@ -165,10 +171,10 @@ export function diffQueries(
  * (`and(post:publish, org:administer)`) equals no permission, so a rule reading it would call
  * every non-trivially-guarded operation unchanged while both of its real grants moved.
  */
-function diffPermissions(
+export function diffPermissions(
   path: string,
-  before: ActionFact | QueryFact,
-  after: ActionFact | QueryFact,
+  before: PermissionBearing,
+  after: PermissionBearing,
 ): readonly ManifestChange[] {
   const declared = readPermissions(before);
   const next = readPermissions(after);
@@ -204,7 +210,7 @@ function diffPermissions(
 }
 
 /** The list as the FILE carries it, or `undefined` when it carries nothing this can compare. */
-function readPermissions(fact: ActionFact | QueryFact): readonly string[] | undefined {
+function readPermissions(fact: PermissionBearing): readonly string[] | undefined {
   const value: unknown = fact.permissions;
   if (!Array.isArray(value)) return undefined;
   return value.every((entry) => typeof entry === 'string')

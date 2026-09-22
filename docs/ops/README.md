@@ -50,6 +50,15 @@ Two ways past it, in order of cost:
 | more `web`/`sync` on the same box | delete their `ports:` lines, add a reverse proxy of your choosing to the compose file, point it at the service names — compose DNS resolves each to every replica |
 | more `web`/`sync`, full stop | climb to rung 3; `docker/helm` already carries a per-role HPA and an ingress |
 
+**Set `SYNC_URL` on this rung**, `As of 2026-09-22` (21.0.0, unreleased). A page's one socket dials
+`/_x/sync` on the page's own origin unless `SYNC_URL` says otherwise
+(`packages/cli/src/sync-url.ts`). Here `web` answers on 3000 and `sync` on 3001, with nothing in
+front to route between them, so write `SYNC_URL=ws://<host>:3001/_x/sync` (or `wss://`) into
+`.env.prod`. The shipped compose file makes it required (`${SYNC_URL:?…}`), so `docker compose up`
+refuses to start `web` without it. A value that is not `ws:`/`wss:` is `X_CONFIG_INVALID` at boot. Add a reverse proxy
+that routes `/_x/sync` to `sync`, and the default works with no variable. Rung 3's ingress
+already does that.
+
 The framework ships neither proxy. A proxy image in `docker-compose.prod.yml` would be a dependency
 every app inherits and a second answer to "how does traffic reach a role" beside the chart's
 Ingress — [`../idea/18-build-vs-wrap.md`](../idea/18-build-vs-wrap.md)'s bar, not cleared.

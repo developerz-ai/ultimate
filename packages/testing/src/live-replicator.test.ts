@@ -40,6 +40,27 @@ describe('the in-process replicator', () => {
     replicator.stop();
   });
 
+  // `x dev`'s only change feed under the embedded database: a channel it skipped never carried a
+  // write to another tab, while the live-query half stayed green.
+  test('feeds the declared channels the same change, even when the live-query fanout fails', async () => {
+    const changes: unknown[] = [];
+    const replicator = await startLiveReplicator({
+      registry: fakeRegistry(() => Promise.reject(new Error('lane failed'))),
+      channels: { deliverChange: (change) => changes.push(change) },
+      onError: () => undefined,
+    });
+    const db = database({ memos }, { driver: memoryDriver() });
+    await db.memos.insert({ id: ONE, label: 'one' });
+    await replicator.settled();
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({
+      entity: 'replicated_memos',
+      op: 'insert',
+      after: { id: ONE },
+    });
+    replicator.stop();
+  });
+
   /**
    * One failed fanout must not silence every change behind it, and a rejection with nobody left to
    * hand it to ends the Bun process — so the chain catches and reports rather than rethrows.

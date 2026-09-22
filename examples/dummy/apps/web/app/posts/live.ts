@@ -1,9 +1,9 @@
 /**
  * The posts feature's reads. `liveFeed` is `live: true`, so the feed is pushed a patch per change
- * over the socket instead of polling. It is NOT offline: the durable client store — `persist: true`
- * over OPFS SQLite — has not shipped, `As of 2026-08`, so a disconnected client keeps whatever the
- * in-memory store last held and nothing survives a reload. `publicPost` is a plain
- * cached read: the public blog does not need a socket.
+ * over the socket instead of polling, and its rows are records of the page's store. `posts` is
+ * declared `persist: true` (`@postly/db`), so those records are on the device's disk too, per
+ * principal, and a reload offline still shows them. `publicPost` is a plain cached read: the
+ * public blog does not need a socket.
  *
  * `t` comes from @ultimat3/query, not @ultimat3/schema: a query file imports one package.
  *
@@ -20,7 +20,7 @@
  * Ascending, to match the direction the repo appends.
  */
 
-import { tag } from '@postly/db';
+import { type Post, posts, tag } from '@postly/db';
 import { orgId as toOrgId, postId as toPostId } from '@postly/domain';
 import { publicPostRead } from '@postly/web/shared/policies';
 import { from, query, t } from '@ultimat3/query';
@@ -47,6 +47,38 @@ export const liveFeed = query({
       .orderBy('createdAt', 'desc')
       .orderBy('id')
       .limit(limit),
+});
+
+/**
+ * The org's recent posts as whole ROWS — the `org-posts` channel's catch-up read (`channels.ts`).
+ * `rows: posts.$schema` is what makes the answer a record envelope, so a client re-reading after a
+ * `replay-gap` lands the rows in the page's store and every island showing one re-renders.
+ */
+export const orgPosts = query({
+  input: t.object({ orgId: t.uuid }),
+  policy: feedRead,
+  rows: posts.$schema,
+  sql: ({ orgId }) =>
+    from<Post>('posts', () => repo.recentRows(toOrgId(orgId), 50))
+      .where({ orgId })
+      .orderBy('createdAt', 'desc')
+      .orderBy('id')
+      .limit(50),
+});
+
+/**
+ * One post as its whole ROW, the record `useRecord('posts', id)` reads — how the like islands on
+ * `/posts/{id}` seed the store before a channel frame has anything to say about it.
+ */
+export const postRecord = query({
+  input: t.object({ orgId: t.uuid, postId: t.uuid }),
+  policy: postRead,
+  rows: posts.$schema,
+  sql: ({ orgId, postId }) =>
+    from<Post>('posts', () => repo.rowById(toOrgId(orgId), toPostId(postId)))
+      .where({ orgId, id: postId })
+      .orderBy('id')
+      .limit(1),
 });
 
 /** The single post page. Comments come with it: one round trip, one cache entry, two tags. */

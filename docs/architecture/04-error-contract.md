@@ -134,11 +134,11 @@ Over HTTP the same fields become the problem+json body, with `statusFor(code)` a
 | # | Step | File |
 |---|---|---|
 | 1 | Confirm no existing code fits (discriminate with `meta` if it nearly does) | `packages/*/src/errors.ts` |
-| 2 | Add the code + `title` to your package's `registerErrorCodes()` call | `packages/<pkg>/src/errors.ts` |
+| 2 | Register the code **and** write its wiki row in one command: `bun run new-error-code X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --fix '<command or edit>' [--meaning '…'] [--section '<## heading>']`. It adds the title to the package's `…TITLES` table and codes list (or its literal `registerErrorCodes({ … })`) and the row to `wiki/Error-Codes.md`, planned together so neither lands alone. An `errors.ts` in no shape it recognises is refused by name, `X_NEW_ERROR_CODE_PATTERN_UNKNOWN`, and then steps 2 and 6 are done by hand, in the same change | `packages/<pkg>/src/errors.ts`, `wiki/Error-Codes.md` |
 | 3 | Write the `fix` as a command you have actually run | same |
 | 4 | Classify it with `registerErrorRetry({ X_YOUR_CODE: 'retryable' })` **only** if it is not terminal — `terminal` is the default and the safe one | same |
 | 5 | Add a test that asserts the code **and** that `fix` is non-empty | `packages/<pkg>/src/errors.test.ts` |
-| 6 | Add the code's row to the error reference — the `errors` step requires it | `wiki/Error-Codes.md` |
+| 6 | Check the row step 2 wrote: the cause and fix columns are what a reader acts on. The `errors` step requires a row for every declared code | `wiki/Error-Codes.md` |
 | 7 | If cross-cutting, add a row to the table below | `docs/architecture/04-error-contract.md` |
 | 8 | Verify: uniqueness at registration, `fix` shape and docs coverage in the `errors` step | `x verify` |
 

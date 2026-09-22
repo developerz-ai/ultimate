@@ -119,6 +119,35 @@ A `member` writes todos and does not reach the admin. Anonymous holds nothing:
 {"anon":"anonymous","hasWrite":false}
 ```
 
+### Signing out clears the browser too
+
+`logout(auth, token)` ends the session row. The **response** does the rest, through
+`signOutHeaders()`, in 21.0.0 (unreleased):
+
+```ts
+import { logout, signOutHeaders } from '@ultimat3/auth';
+import { auth } from './auth';
+
+declare const token: string;
+declare const headers: Headers; // the action's ctx.headers
+
+await logout(auth, token);
+for (const [name, value] of signOutHeaders({ session: auth.sessions.policy })) {
+  headers.append(name, value);
+}
+```
+
+| Header | Effect |
+|---|---|
+| `set-cookie` (with `session`) | the framework session cookie, expired. An app with its own cookie omits `session` and sets its own |
+| `Clear-Site-Data: "cache", "storage"` (`SIGN_OUT_CLEAR_SITE_DATA`) | the browser drops what the previous member left on the origin: the page store's IndexedDB, local storage, the service worker and its cached pages. **Never `"cookies"`**, which would also clear the signed-out cookie this response sets |
+
+**Trade-off, deliberate:** a PWA's offline cache does not outlive the person it was cached for.
+The next load reinstalls the worker and re-precaches. Browsers act on `Clear-Site-Data` only in a
+secure context (HTTPS, or `localhost`). A sign-out with no response at all falls back on the page
+boot, which wipes every stored scope but the current principal's
+([Realtime](Realtime#tier-3-is-pending-in-2100)). The reference app's `endSession` action uses it.
+
 ### Failures say one thing
 
 Wrong password, unknown address and disabled account are indistinguishable in message **and** duration:

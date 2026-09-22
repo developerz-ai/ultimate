@@ -273,5 +273,16 @@ Gotchas:
   `sweepOrphans` cannot be tested against it with a frozen clock — `attachment.test.ts` uses a
   stub driver with authored timestamps, and `driver-local.test.ts` proves the disk half.
 - `upload-client.ts` defaults to `XMLHttpRequest`, not `fetch`: `fetch` reports no upload
-  progress in any shipping browser, and a bar that jumps 0 → 100 is a bar that is lying.
+  progress in any shipping browser, and a bar that jumps 0 → 100 is a bar that is lying. It is
+  **the declared XHR seam** of plan 101 (decision 13): the one `XMLHttpRequest` the framework
+  ships, and the one file slice 15's `browser-transport` guard exempts for it — the header says so.
+- **`fetchSignedPut` goes through `@ultimat3/core`'s `clientTransport`** (`As of 2026-09-22`,
+  plan 101 slice 05): `rawBody` sends the `Blob` verbatim under the grant's content type with no
+  default header, and `decodeError` keeps a refusal `X_STORAGE_UPLOAD_FAILED` with the disk's
+  status. A request with no response at all is the transport's `X_CLIENT_TRANSPORT_FAILED` — it was a
+  bare `TypeError` before. This file calls no `fetch`; the XHR above is the one exemption.
+- **Bundle, `bun build --target=browser --minify`, `import { uploadFile } from '@ultimat3/storage'`**
+  (`As of 2026-09-22`): **11,822 B** at 20.2.1, **17,767 B** on `clientTransport`. The +5.9 kB is
+  core's transport graph, paid only where the chunk did not already carry it — an island that
+  also calls an action or a query already does.
 - `exactOptionalPropertyTypes` is on — declare optional fields as `x?: T | undefined`.

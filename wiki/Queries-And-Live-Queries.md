@@ -2,7 +2,7 @@
 
 A `query` is a read. `live: true` makes it subscribable. Never writes, never enqueues, never sends mail.
 
-`As of 2026-08-23`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 of [Realtime](Realtime) ship. Tier 3 (local-first) is **half-built and not shipped**: `@ultimat3/realtime` exports `MemoryLocalStore`, `OfflineQueue` and `createOpfsLocalStore`, and the last one throws `X_NOT_IMPLEMENTED` on call — so the durable store an offline app needs does not exist. `persist` is **not a field `query()` accepts**; writing it is a `TS2353` excess property.
+`As of 2026-08-23`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 of [Realtime](Realtime) ship. Tier 3 (local-first) is **not shipped**. In 21.0.0 (unreleased) `persist` is an `entity()` option, and the IndexedDB store and outbox that read it are pending ([Realtime](Realtime#tier-3-is-pending-in-2100)). `persist` is **not a field `query()` accepts**; writing it is a `TS2353` excess property.
 
 ## The canonical shape
 
@@ -54,36 +54,39 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 | Projection | Derived from | Shape |
 |---|---|---|
 | HTTP GET | name + `input` | `GET /_x/query/live-feed?orgId=…`, errors as `UltimateError` JSON |
-| Typed client hook | `input` + `sql` return type | `const feed = useLiveFeed({ orgId })` in `app/` — no fetch, no codegen step. Bound once with `liveHookFor`, below |
-| Live subscription | `live: true` | WS frames `{qid, op, row, lsn}` patched into a Solid signal |
+| Read hook | the query's name, and `live` | `const feed = useQuery({ name: 'liveFeed', live: true }, { orgId })` in an island. It returns an `AsyncState` accessor; see below |
+| Live subscription | `live: true` | WS frames `{qid, op, row, lsn}` patched into the page's one record store |
 | Cache entry | tags from `sql` | key is the query name + a fingerprint of the parsed input + the sorted tag keys — the actor is not in it; see [Caching and invalidation](Caching-And-Invalidation) |
 | MCP read tool | `input` + `policy` + name | one read tool per query, named for the export **verbatim** — `liveFeed`, never `live_feed`. The URL is kebab-cased; the tool name is not. Identical authz. See [MCP and AI](MCP-And-AI) |
 
-### The typed client hook, precisely
+### The read hook, precisely
 
-`liveHookFor` (`@ultimat3/realtime`) binds one live query to one named hook. The binding is a line in `app/`, not a generated file — the types come off the declaration, so a wrong input key is a compile error in the component.
+**One read hook, `useQuery`**, in 21.0.0 (unreleased). `useLive` and `liveHookFor` are deleted.
+Live-ness belongs to the query declaration, not to the hook an island picks.
 
 ```ts
-// app/feed/hooks.ts
-import { liveHookFor } from '@ultimat3/realtime';
-import { liveFeed } from '../posts/live';
+import { useQuery } from '@ultimat3/realtime';
 
-export const useLiveFeed = liveHookFor(liveFeed);
-```
+type FeedRow = { id: string; title: string };
+declare const orgId: string;
 
-```tsx
-const feed = useLiveFeed({ orgId: actor.orgId }); // feed(), feed.state(), feed.cursor(), feed.unsubscribe()
+const feed = useQuery<FeedRow>({ name: 'liveFeed', live: true }, { orgId });
+// feed(): AsyncState<readonly FeedRow[]>; feed.refetch(); feed.release()
 ```
 
 | Fact | Rule |
 |---|---|
-| Types | the query's own `input` and row type. `useLiveFeed({ orgIdd })` does not compile, and `feed()[0].titel` does not compile |
-| Transport | the subscription, not a fetch — the hook *is* `useLive` with the query's name and types already bound. One subscribe path, never two |
-| Input | a value or a thunk, read **once**, at subscribe time. There is no reactive runtime at tier 3 to re-run it; new input is a new subscription |
-| Naming | read per call, never at bind time — `registerQueries()` stamps the name at boot, after the module-level binding has already run |
-| Lifetime | the caller owns `unsubscribe()`. This layer does not know what a mount is |
-| A query without `live: true` | `X_QUERY_NOT_SUBSCRIBABLE`, thrown where the binding is written. A non-live read from a component is `query.client({ baseUrl })` over the HTTP GET below — a read that never patches has no subscription for a hook to hold |
-| No registered client | `X_LIVE_CLIENT_MISSING`. One `setLiveClient` per app, in the entry, above the first render |
+| The ref | `{ name, live?, entity? }`: the registered name, never the query **value**. Importing the value drags its read path into the island; measured at 698,801 B for the reference feed |
+| `live: true` | rows arrive and move over the page's one socket |
+| no `live` | one `GET /_x/query/<kebab>` through `clientTransport`. Name its `entity` to make the rows store records that any write moves; without it the list holds its rows itself and only `refetch()` moves them |
+| What it returns | an `AsyncState` accessor: `pending`, `refreshing` (keeps the rows on screen), `ready`, `failed` |
+| Lists hold ids | the rows come from the page's `RecordStore`, so a record updated through any path re-renders every list holding it |
+| Input | read **once**, at call time. A changed input is a new `useQuery` |
+| Lifetime | the caller owns `release()` (Solid: `onCleanup`) |
+| Not derived, `As of 2026-09-22` | `live` and `entity` are stated on the ref by hand, and nothing checks them against the query declaration. A ref saying `live: true` for a non-live query subscribes to nothing |
+| Types | the row type is the caller's annotation (`useQuery<FeedRow>`), not inferred from the query. That is the price of never importing the query value |
+| A server render | answers `pending` with no subscription |
+| A browser bundle that never called `installRealtime()` | `X_REALTIME_UNINSTALLED` |
 
 ### The HTTP GET, precisely
 
@@ -115,7 +118,7 @@ export const queries = queryClient<Api['queries']>({ baseUrl }); // reads
 | When the map-wide one is the only option | a surface that may not import the feature — `site/`, where an edge into `app/` is `X_BOUNDARY_VIOLATION`. `.client()` needs the query object; `queryClient` needs only the `Api` **type** |
 | Why two clients and not one | actions and queries are two registries (`defineApi`'s `actions:` and `queries:` keys) answering two methods. A read taken off the action client is a name that does not exist on `Api['actions']` — a compile error, which is the point |
 | Types | the read's own `input` and row type. A read answers `readonly TRow[]`, `limit(1)` included: a detail route unwraps the row, it is never handed one by the client |
-| Failures | the server's own code, off `problem+json` — `X_INPUT_INVALID` stays `X_INPUT_INVALID`. A gateway answering HTML is `X_RPC_FAILED` naming the read |
+| Failures | the server's own code, off `problem+json` — `X_INPUT_INVALID` stays `X_INPUT_INVALID`. A gateway answering HTML, a network fault and a 2xx body that is not JSON are `X_CLIENT_TRANSPORT_FAILED`, the same code an action's client answers. It was `X_RPC_FAILED` until 21.0.0 |
 | Rows are JSON | what `response.json()` parsed, exactly as `rpc` hands back. A query declares no output schema — row types come from the `SqlSource` its `sql:` returns — so a `Date` column arrives as the ISO string, and the surface that formats one converts at its `load` |
 | `then` is not a read | the proxy answers `undefined` for it, so `await queries` resolves to the client instead of fetching `/_x/query/then`. Same rule in `rpc` |
 

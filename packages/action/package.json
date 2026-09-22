@@ -36,6 +36,7 @@
   "dependencies": {
     "@ultimat3/cache": "20.2.1",
     "@ultimat3/core": "20.2.1",
+    "@ultimat3/entity": "20.2.1",
     "@ultimat3/http": "20.2.1",
     "@ultimat3/policy": "20.2.1",
     "@ultimat3/schema": "20.2.1"

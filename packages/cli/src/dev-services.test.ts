@@ -85,3 +85,19 @@ test('the app root is carried, not left to be re-derived from stateDir', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// A throwaway state directory is how an e2e run boots the app without touching the developer's
+// `.x/pgdata`: the database, the disk and the dev lock all move with it.
+test('ULTIMATE_STATE_DIR moves the embedded database, the disk and the lock together', () => {
+  const root = mkdtempSync(join(tmpdir(), 'x-dev-services-root-'));
+  const state = mkdtempSync(join(tmpdir(), 'x-dev-services-state-'));
+  try {
+    const services = resolveServices(root, { ULTIMATE_STATE_DIR: state });
+    expect(services.stateDir).toBe(state);
+    expect(services.db.url).toBe(`pglite://${join(state, 'pgdata')}`);
+    expect(services.storage.url).toBe(`file://${join(state, 'storage')}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
