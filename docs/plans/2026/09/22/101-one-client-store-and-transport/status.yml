@@ -1,0 +1,52 @@
+plan: 101-one-client-store-and-transport
+title: One client store, one transport, one socket
+status: not_started
+created_by: sebi
+worked_by: ""
+owner: sebi
+percent: 0
+current_focus: "01-core-transport.md"
+slices:
+  - file: 01-core-transport.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 02-entity-record-key.md
+    tier: 2
+    status: not_started
+    percent: 0
+  - file: 03-action-query-clients.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 04-realtime-store-socket.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 05-realtime-channels.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 06-offline.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 07-cli-default-and-mutate.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 08-guards.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 09-apps.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 10-docs.md
+    tier: 5
+    status: not_started
+    percent: 0
+evidence: []
+notes: "Ships as major 21.0.0 (decided 2026-09-22); each removing slice writes its BREAKING entry in the same PR. Slice 07 onMutate wiring is an independent live bug and may land first."
+last_updated: 2026-09-22
