@@ -1,6 +1,6 @@
-# 08 — Guards: the one path is a build error
+# 15 — Guards: the one path is a build error
 
-> Part of [`overview.md`](overview.md). Depends on: 03, 04, 05, 07. Tier: scripts (gate `unit` step).
+> Part of [`overview.md`](overview.md). Depends on: 05, 06, 09, 14. Tier: scripts (gate `unit` step).
 
 ## Files to change
 - `scripts/browser-transport.ts` (new) + `.test.ts` — model on `scripts/async-context-guard.ts` (seam constant, scans `packages/*/src` + `APP_ROOTS` = `{examples,dummy}` per `scripts/boundaries.ts:359`, skips tests). Reports, in browser-reachable source:
@@ -14,7 +14,7 @@
 | any of the above | `packages/pwa/src/service-worker.ts`, `strategies.ts` (SW realm, no page store) |
 
   Browser-reachable = `*.island.tsx` and their import closure, plus framework `src/` not under a `server` export. Server-only fetches (`auth/oauth-*`, `mail/driver-resend.ts`, `jobs/webhook.ts`, `core/otlp.ts`, `cache/purge-http.ts`) are out of scope by that closure, not by pin. A local identifier named `fetch` (`action/src/idempotency-postgres.ts:210`) is not a call of the global — resolve by binding.
-  Code `X_BROWSER_TRANSPORT_BYPASS`, fix line names the seam: `use <action>.client() / <query>.client() / useChannel()`. Pinned at **zero**, enforcing outright — slices 03/07/09 land the sweep first.
+  Code `X_BROWSER_TRANSPORT_BYPASS`, fix line names the seam: `use useQuery() / useMutation() / <action>.client() / useChannel()`. Pinned at **zero**, enforcing outright — slices 05/14/16 land the sweep first.
 - `scripts/channel-literals.ts` (new) + `.test.ts` — refuses a string literal passed where a channel is expected / a topic built by concatenation outside `realtime/src/channel.ts`. Code `X_CHANNEL_LITERAL`. Zero.
 - Gate wiring: the `unit` step list alongside `async-context-guard` (find where it is invoked from `packages/cli/src/verify-step.ts`); root `package.json` scripts `browser-transport`, `channel-literals`.
 - `CLAUDE.md` Commands table: one row each, house style (why it exists, what it matched on, pinned at zero).
@@ -23,7 +23,7 @@
 
 ## Steps
 1. Write rule + tests covering each false positive listed above (a noisy rule gets switched off).
-2. Run against the tree after slices 03–07 + 09: must be zero.
+2. Run against the tree after slices 05–14 + 16: must be zero.
 3. Wire into gate, docs, manifest.
 
 ## Tests
