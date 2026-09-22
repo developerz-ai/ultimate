@@ -8,7 +8,23 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- `defineService` services on an HTTP request acted as the **anonymous** actor, from 13.0.0
+  (753ab6e5, #348) until now: `createRequestContext` built them inside core's `createContext`,
+  before the `auth` stage named anyone, so a service closed over `anonymous` whoever had signed in
+  while `ctx.actor` read the real one. They are now built lazily, on first read, for the
+  authenticated actor, and rebuilt only if the actor, locale or time zone changed
+  (`packages/http/src/request-services.ts`). An explicit `services` bag still overrides a
+  registered one, so a test's mock keeps working.
+- A button-only `<form>` (an empty urlencoded or multipart body) posted 400: the empty body read as
+  no input. An empty form body now reads as `{}` (`packages/http/src/request.ts`).
+
+### Added
+
+- `createContext({ installServices: false })` and `registeredServiceNames()` in `@ultimat3/core`
+  â€” the seam `@ultimat3/http` binds request services through; `installedServices` is exported
+  beside them.
 
 ## 20.2.1 - 2026-09-19
 
