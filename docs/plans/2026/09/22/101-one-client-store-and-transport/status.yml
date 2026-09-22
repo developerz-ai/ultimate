@@ -7,46 +7,23 @@ owner: sebi
 percent: 0
 current_focus: "01-core-transport.md"
 slices:
-  - file: 01-core-transport.md
-    tier: 0
-    status: not_started
-    percent: 0
-  - file: 02-entity-record-key.md
-    tier: 2
-    status: not_started
-    percent: 0
-  - file: 03-action-query-clients.md
-    tier: 3
-    status: not_started
-    percent: 0
-  - file: 04-realtime-store-socket.md
-    tier: 3
-    status: not_started
-    percent: 0
-  - file: 05-realtime-channels.md
-    tier: 3
-    status: not_started
-    percent: 0
-  - file: 06-offline.md
-    tier: 3
-    status: not_started
-    percent: 0
-  - file: 07-cli-default-and-mutate.md
-    tier: 5
-    status: not_started
-    percent: 0
-  - file: 08-guards.md
-    tier: 5
-    status: not_started
-    percent: 0
-  - file: 09-apps.md
-    tier: 5
-    status: not_started
-    percent: 0
-  - file: 10-docs.md
-    tier: 5
-    status: not_started
-    percent: 0
-evidence: []
-notes: "Ships as major 21.0.0 (decided 2026-09-22); each removing slice writes its BREAKING entry in the same PR. Slice 07 onMutate wiring is an independent live bug and may land first."
+  - {file: 01-core-transport.md, tier: 0, status: not_started, percent: 0}
+  - {file: 02-core-shared-types.md, tier: 0, status: not_started, percent: 0}
+  - {file: 03-core-scope-fence.md, tier: 0, status: not_started, percent: 0}
+  - {file: 04-entity-record-key.md, tier: 2, status: not_started, percent: 0}
+  - {file: 05-action-query-clients.md, tier: 3, status: not_started, percent: 0}
+  - {file: 06-realtime-store-socket.md, tier: 3, status: not_started, percent: 0}
+  - {file: 07-realtime-use-query.md, tier: 3, status: not_started, percent: 0}
+  - {file: 08-realtime-writes-over-http.md, tier: 3, status: not_started, percent: 0}
+  - {file: 09-realtime-channels.md, tier: 3, status: not_started, percent: 0}
+  - {file: 10-realtime-channel-seq.md, tier: 3, status: not_started, percent: 0}
+  - {file: 11-realtime-cross-tab.md, tier: 3, status: not_started, percent: 0}
+  - {file: 12-offline.md, tier: 3, status: not_started, percent: 0}
+  - {file: 13-ui-async-state.md, tier: 4, status: not_started, percent: 0}
+  - {file: 14-cli-default.md, tier: 5, status: not_started, percent: 0}
+  - {file: 15-guards.md, tier: 5, status: not_started, percent: 0}
+  - {file: 16-apps.md, tier: 5, status: not_started, percent: 0}
+  - {file: 17-docs.md, tier: 5, status: not_started, percent: 0}
+evidence: ["#499"]
+notes: "Ships as major 21.0.0 (decided 2026-09-22). All design decisions recorded in overview.md -> Decisions; do not reopen. Each removing slice writes its BREAKING entry in the same PR."
 last_updated: 2026-09-22
