@@ -65,8 +65,8 @@ island ─ useQuery / useRecord / useChannel            useMutation / action.cli
    RecordStore (realtime, 1/tab) ◀── adopt ─── core clientTransport ── fetch
      ▲ overlay (optimistic)  ▲ restore               │ scope fence (rescope)
      │ frames (seq/epoch)    │                        ▼
-   socket (leader tab only, 1/origin) ── channels + live queries, READ-ONLY
-     │  ▲ BroadcastChannel relay to follower tabs
+   socket in a SharedWorker (1/origin/principal) ── channels + live queries, READ-ONLY
+     │  ▲ MessagePort per tab, frames routed by wanted channel (in-page fallback)
    LocalStore (IndexedDB, keyed by principal) ◀─ persist + outbox (HTTP replay)
 ```
 
@@ -91,7 +91,7 @@ All made; an executor does not reopen them.
 | 4 | **One read hook** `useQuery`; live-ness belongs to the query declaration. `useLive` and `liveHookFor` deleted | 07 |
 | 5 | Lists hold ids; rows come from the store, for live AND non-live queries | 06, 07 |
 | 6 | Channels carry `seq` + `epoch`; server owns the gap verdict (`replay-gap`); catch-up read named on the channel declaration | 09, 10 |
-| 7 | One socket per origin via Web Locks leader + `BroadcastChannel`; store stays per tab | 11 |
+| 7 | One socket per origin **in a `SharedWorker`** named by principal; one engine over a `MessagePort`, in-page `MessageChannel` host as the transparent fallback; frames routed per wanted channel; dead ports reaped by ping; store stays per tab. (A Web Locks leader tab was considered and dropped: a leader closing forces a reconnect, a worker does not) | 11 |
 | 8 | Principal scope fence in core: reads abort, writes finish but never adopt into the new scope | 03 |
 | 9 | One conflict vocabulary, row-shaped, in core; action's output-shaped `custom()` is gone | 02 |
 | 10 | `AsyncState` moves to core; ui takes hook accessors directly, no adapter | 02, 13 |
@@ -124,7 +124,7 @@ Land lowest tier first. No new declared edge: every import is downward.
 8. [`08-realtime-writes-over-http.md`](08-realtime-writes-over-http.md) — tier 3: `useMutation` over HTTP; socket writes deleted.
 9. [`09-realtime-channels.md`](09-realtime-channels.md) — tier 3: typed `channel()`, `records` frames, derived publish.
 10. [`10-realtime-channel-seq.md`](10-realtime-channel-seq.md) — tier 3: `seq`/`epoch`, `replay-gap`, catch-up.
-11. [`11-realtime-cross-tab.md`](11-realtime-cross-tab.md) — tier 3: one socket per origin.
+11. [`11-realtime-cross-tab.md`](11-realtime-cross-tab.md) — tier 3 (+ cli worker bundle): one socket per origin in a `SharedWorker`.
 12. [`12-offline.md`](12-offline.md) — tiers 3–4: IndexedDB, persist, one outbox.
 13. [`13-ui-async-state.md`](13-ui-async-state.md) — tier 4: ui takes hook state directly.
 14. [`14-cli-default.md`](14-cli-default.md) — tier 5: island bootstrap, scaffold, `LIVE_HOOKS`.
