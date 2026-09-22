@@ -171,6 +171,15 @@ export class UltimateRequest {
     // `content-length: 0`, and reading that as `undefined` failed every schema with 400.
     const form = type === 'application/x-www-form-urlencoded' || type === 'multipart/form-data';
     if (type === '') return undefined;
+    // A multipart body is only a FORM with the boundary its header must announce. Checked before
+    // the empty-form shortcut below, so a zero-length body cannot launder a malformed header into
+    // `{}` — without it the parser would have refused, and an empty body must refuse the same.
+    if (
+      type === 'multipart/form-data' &&
+      !/;\s*boundary=[^;\s]/i.test(this.header('content-type') ?? '')
+    ) {
+      throw bodyInvalid(this.pathname, ['multipart/form-data without a boundary parameter']);
+    }
     if (declared === 0) return form ? {} : undefined;
 
     // One capped read for every content type, multipart included: the parser runs on bytes this

@@ -281,6 +281,8 @@ describe('bodyRaw() — no body to parse', () => {
       { 'content-length': '0' },
       '',
     ],
+    // Chunked: no declared length, and the stream turns out to carry nothing.
+    ['multipart, no length and no bytes', 'multipart/form-data; boundary=x', {}, ''],
   ] as const)('an empty form body is an empty form: %s', async (_label, type, extra, body) => {
     const { req } = build('https://example.com/x', {
       method: 'POST',
@@ -289,6 +291,24 @@ describe('bodyRaw() — no body to parse', () => {
     });
     expect(await req.bodyRaw()).toEqual({});
   });
+
+  // The empty-form shortcut must not launder a malformed header: with a body, a multipart with no
+  // boundary is refused by the parser, so without one it is refused the same way.
+  test.each([
+    ['content-length 0', { 'content-length': '0' }],
+    ['no length and no bytes', {}],
+  ] as const)(
+    'an empty multipart body with no boundary is X_BODY_INVALID: %s',
+    async (_label, extra) => {
+      const { req } = build('https://example.com/x', {
+        method: 'POST',
+        headers: { 'content-type': 'multipart/form-data', ...extra },
+        body: '',
+      });
+      const error = await captureError(() => req.bodyRaw());
+      expect(error?.code).toBe('X_BODY_INVALID');
+    },
+  );
 });
 
 describe('bodyRaw() — content-type dispatch', () => {

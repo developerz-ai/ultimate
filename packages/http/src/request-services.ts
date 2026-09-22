@@ -52,8 +52,10 @@ export function bindRequestServices(ctx: RequestContext, explicit: ServiceBag): 
   };
   Object.defineProperty(ctx, 'services', { get: bag, enumerable: false, configurable: true });
   for (const name of registeredServiceNames()) {
-    // A framework field keeps its meaning whatever an app named a service — core's rule, kept.
-    if (Object.hasOwn(explicit, name) || Object.hasOwn(ctx, name)) continue;
+    // Already an own property: a framework field (which keeps its meaning whatever an app named a
+    // service — core's rule) or an explicit `init.services` entry, which core's constructor spread
+    // onto the context and which overrides the registered factory of the same name.
+    if (Object.hasOwn(ctx, name)) continue;
     Object.defineProperty(ctx, name, {
       get: () => bag()[name],
       enumerable: false,
