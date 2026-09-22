@@ -64,3 +64,12 @@ export function installedServices(ctx: CtxFacts): ServiceBag {
 export function resetServices(): void {
   factories.clear();
 }
+
+/**
+ * The names `installedServices` would build, without building them. `@ultimat3/http` binds each as
+ * a lazy member of a request context, because the actor a request's services must close over is
+ * only known once its `auth` stage has run — after the context exists.
+ */
+export function registeredServiceNames(): readonly string[] {
+  return [...factories.keys()];
+}

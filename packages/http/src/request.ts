@@ -167,7 +167,11 @@ export class UltimateRequest {
       throw bodyInvalid(this.pathname, [`body is ${declared} bytes, limit is ${limit}`]);
     }
     const type = contentTypeOf(this.raw);
-    if (type === '' || declared === 0) return undefined;
+    // An EMPTY form is a form with no fields, never "no input": a button-only `<form>` posts
+    // `content-length: 0`, and reading that as `undefined` failed every schema with 400.
+    const form = type === 'application/x-www-form-urlencoded' || type === 'multipart/form-data';
+    if (type === '') return undefined;
+    if (declared === 0) return form ? {} : undefined;
 
     // One capped read for every content type, multipart included: the parser runs on bytes this
     // process already agreed to hold, never on a stream it hands to the runtime unbounded.
@@ -175,7 +179,7 @@ export class UltimateRequest {
     if ('over' in read) {
       throw bodyInvalid(this.pathname, [`body is at least ${read.over} bytes, limit is ${limit}`]);
     }
-    if (read.bytes.byteLength === 0) return undefined;
+    if (read.bytes.byteLength === 0) return form ? {} : undefined;
 
     if (type === 'multipart/form-data') {
       try {

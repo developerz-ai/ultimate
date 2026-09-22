@@ -551,7 +551,13 @@ export { DEFAULT_ROLE, isRole, ROLE_INFO, ROLES, resolveRole } from './roles';
 export type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
 export { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from './route-vocabulary';
 export { safeUrl, URL_ATTRIBUTES } from './safe-url';
-export { defineService, resetServices, type ServiceFactory } from './service';
+export {
+  defineService,
+  installedServices,
+  registeredServiceNames,
+  resetServices,
+  type ServiceFactory,
+} from './service';
 export type { FlightJoin, Scheduler, SingleFlight, SingleFlightOptions } from './single-flight';
 export { createSingleFlight } from './single-flight';
 export { endOfLiteral, maskLiterals, QUOTES, stripComments } from './source-mask';

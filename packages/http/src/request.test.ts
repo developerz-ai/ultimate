@@ -264,6 +264,31 @@ describe('bodyRaw() — no body to parse', () => {
     });
     expect(await req.bodyRaw()).toBeUndefined();
   });
+
+  // A button-only `<form>` posts no fields at all. That is an empty form — `{}` — and a schema
+  // with no required field accepts it; `undefined` was a 400 on every such button.
+  test.each([
+    [
+      'urlencoded, content-length 0',
+      'application/x-www-form-urlencoded',
+      { 'content-length': '0' },
+      '',
+    ],
+    ['urlencoded, no length and no bytes', 'application/x-www-form-urlencoded', {}, ''],
+    [
+      'multipart, content-length 0',
+      'multipart/form-data; boundary=x',
+      { 'content-length': '0' },
+      '',
+    ],
+  ] as const)('an empty form body is an empty form: %s', async (_label, type, extra, body) => {
+    const { req } = build('https://example.com/x', {
+      method: 'POST',
+      headers: { 'content-type': type, ...extra },
+      body,
+    });
+    expect(await req.bodyRaw()).toEqual({});
+  });
 });
 
 describe('bodyRaw() — content-type dispatch', () => {
