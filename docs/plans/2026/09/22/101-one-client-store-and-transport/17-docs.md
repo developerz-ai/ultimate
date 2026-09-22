@@ -4,7 +4,7 @@
 
 ## Files to change
 - `docs/architecture/21-client-data-layer.md` (new; next number after `20-flight-control.md`) — the three seams, data-flow diagram from `overview.md`, rules: one record per `entity:id`; lists hold ids, the store holds rows; optimistic = overlay, never synced layer; one frame one write; a patch omitting a field never clears it; channels are the only realtime subscription; persisted rows are keyed by principal scope. Add to `docs/architecture/README.md`.
-- The architecture page also states the decisions: writes over HTTP only, socket read-only; channels carry `seq`/`epoch` and the server owns the gap verdict; one socket per origin via a leader tab; `useQuery` is the one read hook; `ConflictPolicy` and `AsyncState` live in core; `splitting: false` kept, shared runtime chunk named as the next lever.
+- The architecture page also states the decisions: writes over HTTP only, socket read-only; channels carry `seq`/`epoch` and the server owns the gap verdict; one socket per origin in a `SharedWorker` (in-page fallback, same engine); `useQuery` is the one read hook; `ConflictPolicy` and `AsyncState` live in core; `splitting: false` kept, shared runtime chunk named as the next lever.
 - `docs/idea/00-thesis.md:39` — "Shipped As of 2026-08" was false (per-island, per-query key); restate `As of <release month>`.
 - `docs/idea/03-realtime.md:9-15,61-63` — `persist: true` shipped; OPFS removed in favour of IndexedDB.
 - `docs/idea/08-pwa-offline.md:49,125` — one outbox; flush route deleted.
