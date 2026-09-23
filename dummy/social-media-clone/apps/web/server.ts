@@ -4,7 +4,7 @@
 // localhost is unreachable through its own port mapping.
 
 import { join } from 'node:path';
-import { runRole } from '@ultimat3/cli';
+import { runRole } from '@ultimat3/cli/serve';
 
 /**
  * Where the app is. From this file normally — the image's WORKDIR is not the app root's business.

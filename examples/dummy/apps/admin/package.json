@@ -1,7 +1,7 @@
 {
   "name": "@postly/admin",
   "version": "0.0.1",
-  "description": "Postly's generated admin dashboard \u2014 20 lines and an MCP surface",
+  "description": "Postly's generated admin dashboard and its MCP surface, declared (not yet mounted)",
   "license": "UNLICENSED",
   "private": true,
   "type": "module",
@@ -13,8 +13,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test",
-    "dev": "x dev --app admin"
+    "test": "bun test"
   },
   "dependencies": {
     "@postly/db": "0.0.1",

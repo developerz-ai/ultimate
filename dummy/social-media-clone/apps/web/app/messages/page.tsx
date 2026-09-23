@@ -3,9 +3,8 @@
 // (docs/gotchas.md). `hydrate: 'never'` and a 0kb budget say the same thing out loud — there is no
 // DOM renderer in this dependency set, so no page here ships client JS.
 //
-// The component is `async` because a route has no `load` seam: RouteDefinition carries render,
-// offline, hydrate, budget, meta and policy, and nothing that fetches. The renderer awaits a
-// promise, so an async component works — recorded, not hidden.
+// The threads are the route's `load`, resolved once per render inside the request's context and
+// handed to the page as `data`.
 
 import { actorOf } from '@ultimat3/action';
 import { useContext } from '@ultimat3/core';
@@ -27,6 +26,12 @@ export const config = defineRoute({
   // the send action evaluate against the participants row.
   policy: { permission: 'message:read' },
   budget: { js: '0kb', lcp: 2000 },
+  // The framework's own identity, not `currentViewer()`: membership is a row keyed by user id, so
+  // the resolved friend/block graph a post rule needs is not part of this question.
+  load: async (): Promise<{ readonly threads: readonly ThreadSummary[] }> => {
+    const viewer = actorOf(useContext());
+    return { threads: viewer === null ? [] : await threadsFor(viewer.id) };
+  },
   // An authed screen is never indexable: the crawler that fetched it would be signed in as
   // somebody, and a thread list has no public URL to rank.
   meta: () => ({
@@ -36,12 +41,12 @@ export const config = defineRoute({
   }),
 });
 
-export async function Page(props: { readonly url?: string | undefined }) {
+export function Page(props: {
+  readonly data: { readonly threads: readonly ThreadSummary[] };
+  readonly url?: string | undefined;
+}) {
   const ctx = useContext();
-  // The framework's own identity, not `currentViewer()`: membership is a row keyed by user id, so
-  // the resolved friend/block graph a post rule needs is not part of this question.
-  const viewer = actorOf(ctx);
-  const threads = viewer === null ? [] : await threadsFor(viewer.id);
+  const { threads } = props.data;
 
   return (
     <AppShell url={props.url}>

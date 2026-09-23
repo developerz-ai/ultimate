@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "ce9c37ed7cde37f9",
+  "buildId": "8bae2522e37cb615",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -104,7 +104,7 @@
       ],
       "surface": "site",
       "budget": {
-        "js": "21kb",
+        "js": "21.2kb",
         "lcp": 1500
       }
     },
@@ -143,13 +143,15 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "id",
           "type": "uuid",
           "nullable": false,
-          "primaryKey": true
+          "primaryKey": true,
+          "hasDefault": true
         },
         {
           "name": "org_id",
@@ -178,7 +180,8 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "member_id",
@@ -212,13 +215,15 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "digest_opt_in",
           "type": "boolean",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "email",
@@ -230,13 +235,15 @@
           "name": "id",
           "type": "uuid",
           "nullable": false,
-          "primaryKey": true
+          "primaryKey": true,
+          "hasDefault": true
         },
         {
           "name": "locale",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "name",
@@ -255,19 +262,22 @@
           "name": "role",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "theme",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "tz",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "user_id",
@@ -289,19 +299,22 @@
           "name": "billing_currency",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "id",
           "type": "uuid",
           "nullable": false,
-          "primaryKey": true
+          "primaryKey": true,
+          "hasDefault": true
         },
         {
           "name": "name",
@@ -313,7 +326,8 @@
           "name": "plan_code",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "slug",
@@ -325,7 +339,8 @@
           "name": "updated_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         }
       ],
       "invariants": [
@@ -407,7 +422,8 @@
           "name": "created_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "excerpt",
@@ -419,13 +435,15 @@
           "name": "id",
           "type": "uuid",
           "nullable": false,
-          "primaryKey": true
+          "primaryKey": true,
+          "hasDefault": true
         },
         {
           "name": "like_count",
           "type": "integer",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "org_id",
@@ -450,7 +468,8 @@
           "name": "status",
           "type": "text",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         },
         {
           "name": "title",
@@ -462,7 +481,8 @@
           "name": "updated_at",
           "type": "timestamptz",
           "nullable": false,
-          "primaryKey": false
+          "primaryKey": false,
+          "hasDefault": true
         }
       ],
       "invariants": [

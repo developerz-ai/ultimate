@@ -7,8 +7,8 @@
  * nothing here reads words — mara reads "0 me gusta", and an English pattern found no count at all.
  */
 
-import type { E2eSession, E2eTab } from '@ultimat3/cli';
 import { ISLAND_FAILED_ATTRIBUTE, ISLAND_MOUNTED_ATTRIBUTE } from '@ultimat3/render';
+import type { E2eSession, E2eTab } from '@ultimat3/testing';
 import { fail } from './postly';
 
 const countsSelector = (postId: string): string =>

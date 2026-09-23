@@ -1,6 +1,6 @@
-// Every read and write the posts feature makes. No business rules here — the service decides what
-// to do, this file decides how to ask. Only this file and a query's `sql` may touch `db`; a route
-// or a component importing it is X_BOUNDARY_VIOLATION.
+// Every read the public feed makes. No business rules here — the service decides what to do, this
+// file decides how to ask. Only this file and a query's `sql` may touch `db`; a route importing it
+// is X_BOUNDARY_ROUTE_TO_DB.
 
 import { db, type Post } from '@social-media-clone/db';
 
@@ -20,7 +20,7 @@ export type FeedPost = Post;
  * partial order and two posts written in the same millisecond can swap between evaluations —
  * which makes a bounded page silently drop or repeat one at its boundary.
  *
- * Visibility is NOT filtered here. `feedRead` decides it per row, per subscriber, because the
+ * Visibility is NOT filtered here. `canSeePost` decides it per row, in `service.ts`, because the
  * answer depends on the viewer's friend and block sets rather than on anything in the row. A
  * `where` clause here would be a second, weaker copy of that rule.
  */

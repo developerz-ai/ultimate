@@ -1,13 +1,12 @@
 // Authorization for notifications. A notification is addressed to exactly one person, so the rule
 // is ownership and nothing else — no audience ladder, no friendship, no block.
 //
-// Both rules decide on INPUT alone, and that is forced rather than chosen. `MutatorDef`
-// (packages/action/src/mutator.ts:66) carries no `row` loader — `mutator()` builds its `ActionDef`
-// from input/output/policy/cache/mcp/idempotent and drops anything else — so a mutator's policy can
-// never be handed a row, and a row-level rule attached to one would deny every call from
-// `row === null`. Ownership is therefore enforced where a mutator CAN enforce it: every write is
-// scoped by `userId` in `repo.markRead`, so an id belonging to somebody else is not found and not
-// written. That is one decision plus a scoped write, never a second authz path.
+// Both rules decide on the actor alone, and for the write that is the shape of the call rather than
+// a gap: `markNotificationsRead` takes a BATCH of ids, and a row-level policy decides about one row
+// (a mutator can carry `row` since 2026-09-23, as an action always could). Ownership is therefore
+// enforced by the SCOPE of the write — every update in `repo.markRead` is keyed by `userId`, so an
+// id belonging to somebody else is not found and not written. One decision plus a scoped write,
+// never a second authz path.
 
 import { can, definePermissions } from '@ultimat3/policy';
 

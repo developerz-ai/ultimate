@@ -6,8 +6,8 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { E2eSession } from '@ultimat3/cli';
-import { openE2eBrowser } from '@ultimat3/cli';
+import type { E2eSession } from '@ultimat3/testing';
+import { openE2eBrowser } from '@ultimat3/testing';
 import type { AcceptanceBrowser } from './fixtures/postly';
 import { noBrowser } from './fixtures/postly';
 

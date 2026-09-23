@@ -10,7 +10,7 @@ import { viewerFor } from './viewer';
 
 /**
  * Registered at module scope: `loadApp` imports every module under `apps/*` before a listener
- * binds, and `dev-hooks.ts` reads the value back at server start — so importing this file IS the
+ * binds, and `@ultimat3/cli`'s `runtime-hooks.ts` reads the value back at server start — so importing this file IS the
  * wiring, in `x dev` and in the container alike.
  *
  * This is also the ONE place the relational graph is resolved. Everything downstream — a page, a

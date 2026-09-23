@@ -6,10 +6,9 @@
  */
 
 import { expect } from 'bun:test';
-import type { E2eApp, E2eSession } from '@ultimat3/cli';
-import { findChrome, openE2eBrowser, startE2eApp } from '@ultimat3/cli';
 import { seedId } from '@ultimat3/entity';
-import { allowHost } from '@ultimat3/testing';
+import type { E2eApp, E2eSession } from '@ultimat3/testing';
+import { allowHost, findChrome, openE2eBrowser, startE2eApp } from '@ultimat3/testing';
 
 /** A test's verdict, never a bare Error (`bun run scripts/test-bare-error.ts`). */
 export const fail = (message: string): never => expect.unreachable(message);

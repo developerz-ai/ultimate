@@ -14,7 +14,7 @@
     "verify": "x verify",
     "typecheck": "tsc -b --pretty",
     "lint": "biome check .",
-    "test": "bun test",
+    "test": "bun test --isolate",
     "db:migrate": "x db migrate",
     "db:seed": "bun run packages/db/src/seed.ts"
   },

@@ -3,6 +3,7 @@
 // app concern, and a second provider arrives as a second adapter, never as a branch in here.
 
 import { env } from '../../../../app.config';
+import { isSet } from '../../../../production-env';
 
 /**
  * What the auth service depends on. Deliberately narrower than any provider's API: a boolean is
@@ -98,10 +99,9 @@ export const hcaptcha = (options: HcaptchaOptions): CaptchaVerifier => {
 let selected: CaptchaVerifier | undefined;
 
 export const captcha = (): CaptchaVerifier => {
-  selected ??=
-    env.HCAPTCHA_SECRET === undefined || env.HCAPTCHA_SECRET.trim().length === 0
-      ? nullCaptcha()
-      : hcaptcha({ secret: env.HCAPTCHA_SECRET });
+  selected ??= isSet(env.HCAPTCHA_SECRET)
+    ? hcaptcha({ secret: env.HCAPTCHA_SECRET })
+    : nullCaptcha();
   return selected;
 };
 

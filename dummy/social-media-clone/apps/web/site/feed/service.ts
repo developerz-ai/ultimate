@@ -1,5 +1,7 @@
-// Business logic for posts, composed from the repo. A page calls this; it never calls the repo and
-// it never sees `db`.
+// The public feed's read, composed from the repo. The page's `load` calls this; it never calls the
+// repo and it never sees `db`. Under `site/feed/` beside the one page that reads it, the way
+// `site/u/service.ts` sits beside the profile: it lived in `app/posts/`, and the static page
+// reaching for it was X_BOUNDARY_SITE_TO_APP, dragging `app/`'s policy module across the line.
 //
 // Visibility is applied HERE rather than in SQL, and that is the design rather than an oversight:
 // who may read a post depends on the viewer's friend and block sets, which are a graph, not a
@@ -7,7 +9,7 @@
 // drift the first time either changed.
 
 import type { Actor } from '../../shared/actor';
-import { canSeePost } from './policy';
+import { canSeePost } from '../../shared/visibility';
 import { authorsByIds, type FeedPost, feedPage } from './repo';
 
 /** What a rendered feed row needs. Derived from the post; the author is joined in by name. */

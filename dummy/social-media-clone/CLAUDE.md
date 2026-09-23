@@ -5,15 +5,14 @@ A router, not an encyclopedia. Facts live in `x.manifest.json`; this file holds 
 infer from the code.
 
 `x verify` here is **blocking on the framework repo's CI**, through the ratchet in
-`../../scripts/lib/gated-apps.ts`: this app's own `expectedRed` pins `boundaries` and `budgets`,
-and every other step must stay green. That table is the executable copy — read it, and
-`bun run ../../scripts/reference-app-gate.ts` re-derives the verdict, rather than trusting the
-sentence below it.
+`../../scripts/lib/gated-apps.ts`: this app's own `expectedRed` pins `budgets` alone, and every
+other step must stay green. That table is the executable copy — read it, and
+`bun run ../../scripts/reference-app-gate.ts` re-derives the verdict (it builds first, as
+`bin/check` does), rather than trusting the sentence below it.
 
 | Pinned step | Red today, and the repair |
 |---|---|
-| `boundaries` | `X_BOUNDARY_SITE_TO_APP` ×3 — `apps/web/site/feed/page.tsx` reaching `apps/web/app/posts/service.ts`. The static feed needs a query, not the authed service |
-| `budgets` | `X_BUDGET_UNMEASURED` on every route declaring one, because no `.x/build-stats.json` has ever existed here — repaired by running `x build` ahead of the gate, never by dropping the `budget:` |
+| `budgets` | `X_BUDGET_UNMEASURED` on `/messages/:id` alone: the build's measuring pass renders it with empty params, and its `load` refuses with `X_NOT_A_PARTICIPANT` — correctly. Repaired in the measuring pass (plan 101 slice 11 m), never by catching the denial or dropping the `budget:` |
 
 `examples/dummy` has its own table; neither app's pins excuse the other's red step. Turn a pinned step green and you must
 delete its pin in the same change

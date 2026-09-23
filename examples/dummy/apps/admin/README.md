@@ -1,39 +1,48 @@
 # @postly/admin
 
-The admin dashboard, in one file. `src/index.ts` is the whole app.
+The admin dashboard, in one file: `src/index.ts` declares it with `defineAdmin` and projects it for
+agents with `adminMcp`. `src/index.test.ts` is what proves it constructs against this app's real
+entities and actions.
 
-```bash
-x dev --app admin     # http://localhost:3002/admin
-```
+**Declared, not mounted** — `As of 2026-09-23`. Nothing serves these routes or the MCP route:
+an app contributes actions, queries and pages to the server (`packages/cli/src/serve.ts`), and
+there is no seam for a raw `Route`. `index.test.ts` pins that as a fact somebody chose. The mounted
+admin in this repo is the deployed demo's (`dummy/social-media-clone/apps/admin`).
 
-## What the 20 lines buy
+## What the declaration buys
 
-| Declared | Generated |
+`defineAdmin` receives four keys here — `branding`, `entities`, `actions` and `auth`:
+
+| Declared | Derived |
 |---|---|
-| `entities` | list, detail, create and edit screens with the entity's own invariants as validation |
-| `tenant: 'orgId'` | every screen scoped to the acting org — the dashboard has no cross-tenant mode |
-| `actions` | a button per action, running the *same* action with the *same* policy |
-| `policies` | visibility and edit rights; a denied action is not rendered and would be refused anyway |
-| `search` | indexed search over the named columns |
-| `mcp: { expose: true }` | an MCP server over the same actions, authenticated as the signed-in admin |
+| `entities: [orgs, members, posts, comments]` | a resource per entity, served at `/admin/<entity name>` (`/admin/orgs`, never a guessed plural) — list columns, filters and the searchable columns come from the column metadata, tenancy from each entity's own tenant column |
+| `actions` | a toolbar button per action on its own entity (`orgs:upgradePlan`, `members:inviteMember`, `posts:publishPost`), running the action's one callable (`action.as(actor, input)`) — the same input parse, policy and handler as over HTTP |
+| `auth: { actor, authz: policyAuthz({ policies }) }` | the actor the app's pipeline already resolved, and every admin permission mapped onto the app's own `can('org:administer')` — no admin-only policy |
+| `branding: { nameKey: 'admin.title' }` | the dashboard's title, through `t()` |
 
-## Why it ships with MCP on
+`likes` and `plans` are left out on purpose: both key on more than one column, and
+`@ultimat3/admin` refuses a composite primary key (`X_ADMIN_FIELD_UNSUPPORTED`).
 
-An admin dashboard is where operations happen: republish a post, move an org to a plan, fix a
-membership. Those are exactly the tasks people want an agent to do. Because the tools are the
-app's own actions, the agent inherits the human's permissions — it can never exceed the person
-it acts for, and there is no separate "API permissions" screen to get wrong.
+A toolbar action whose policy carries no permission, or more than one, throws
+`X_ADMIN_POLICY_MISSING` at import rather than guessing a permission.
 
-```
-ws://localhost:3002/admin/_mcp
-  postly.publishPost     policy post:publish
-  postly.inviteMember    policy org:invite
-  postly.upgradePlan     policy org:administer
-```
+## The agent surface
+
+`adminMcp({ app: admin, actor })` projects the same dashboard as MCP tools, answered per caller —
+a tool the actor may not use is absent from `tools/list`, and a direct call answers not-found:
+
+| Tools | Count |
+|---|---|
+| `admin.<entity>.list` · `.read` · `.create` · `.update` · `.delete` | 4 entities × 5 |
+| `admin.action.publishPost` · `admin.action.inviteMember` · `admin.action.upgradePlan` | 3 |
+| `admin.search` | 1 |
+
+24 in all, asserted by `index.test.ts`. The agent acts as the signed-in person, so it can never
+exceed the permissions of the person it acts for.
 
 ## Rules
 
 - No business logic here. If admin needs a rule, it belongs in `@postly/core` where the web app
   and the worker can use it too.
 - No admin-only policy. A rule that exists only for admin is a second authz system.
-- Adding an entity to `entities` is the entire change needed to administer it.
+- Adding an entity to `ENTITIES` is the entire change needed to administer it.

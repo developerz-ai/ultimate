@@ -1,7 +1,14 @@
 // The one config file. Everything the app needs to boot is here, typed and validated at startup —
 // a missing value fails the boot with the exact command that fixes it, never at the first request.
 // A named export, never a default: the CLI and the runtime both import `config` by name.
-import { defineConfig, defineEnv } from '@ultimat3/core';
+import {
+  defineConfig,
+  defineEnv,
+  defineMeasurementActor,
+  logger,
+  resolveEnvironment,
+} from '@ultimat3/core';
+import { checkProductionEnv } from './production-env';
 
 /**
  * Every environment variable this app reads, declared once. Parsed at module scope, so *importing
@@ -24,10 +31,12 @@ export const env = defineEnv({
   // Stamped by CI from the git sha. Namespaces every service-worker cache, drives version-skew
   // detection, and tags reported errors with the commit that caused them.
   BUILD_ID: { type: 'string', required: false },
+  // Required in PRODUCTION only — `production-env.ts`, below, because the schema has no
+  // per-environment form. The `http://localhost:3000` default it replaced was accepted there too.
   APP_URL: {
     type: 'url',
-    default: 'http://localhost:3000',
-    description: 'absolute origin; the typed client has no origin without it',
+    required: false,
+    description: 'absolute origin; required when ULTIMATE_ENV/NODE_ENV is production',
   },
 
   // --- Object storage (S3 API; R2 in production) ---
@@ -39,7 +48,8 @@ export const env = defineEnv({
 
   // --- Anti-bot ---
   // The site key is public and ships to the browser. The secret is server-only and never bundled;
-  // unset selects the null verifier so signup and login work locally with no keys.
+  // unset selects the null verifier so signup and login work locally with no keys — and outside
+  // development/test that is a boot WARNING (`production-env.ts`), not yet a refusal.
   HCAPTCHA_SITE_KEY: { type: 'string', required: false },
   HCAPTCHA_SECRET: { type: 'string', required: false, secret: true },
 
@@ -48,6 +58,10 @@ export const env = defineEnv({
   // unset value must read as "reporting off", never as "on but broken".
   SENTRY_DSN: { type: 'string', required: false },
 });
+
+// At module scope, beside the parse above, so a production pod with no origin fails before any
+// listener binds — and one with no hCaptcha secret says so in its first log lines.
+checkProductionEnv(env, resolveEnvironment(), logger);
 
 export const config = defineConfig({
   name: 'social-media-clone',
@@ -80,4 +94,17 @@ export const config = defineConfig({
     },
   },
   ai: { mcp: { expose: true, path: '/mcp' } },
+});
+
+/**
+ * Who `x build`'s budget pass renders the signed-in pages as: the seeded `user` member, with an
+ * empty friend and block graph — weighing bytes needs no one's data. Loaded lazily, because the app
+ * imports this file and a static import back into `apps/` would be a cycle.
+ */
+defineMeasurementActor(async () => {
+  const [{ seedId }, { viewerActor }] = await Promise.all([
+    import('@ultimat3/entity'),
+    import('./apps/web/shared/actor'),
+  ]);
+  return viewerActor({ id: seedId('user:user'), role: 'member' });
 });

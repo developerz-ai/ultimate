@@ -9,7 +9,7 @@
  * (`apps/web/shared/client.ts`) rather than being smuggled in here as a field nothing validates.
  */
 
-import { defineConfig } from '@ultimat3/core';
+import { defineConfig, defineMeasurementActor } from '@ultimat3/core';
 
 export const config = defineConfig({
   name: 'postly',
@@ -45,9 +45,12 @@ export const config = defineConfig({
 
   jobs: { queues: ['default', 'mail', 'digest'], concurrency: 8 },
 
-  // NATS rather than the in-process transport, because this app is the one that has to prove the
-  // multi-node shape. There is no `tier:` key: nothing ever read it, so it is deleted.
-  realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' },
+  // In-process, because this is what the app's own gate boots: `x dev` and `apps/web/server.ts`
+  // under e2e, with no bus. Since 22.0.0 the boot BUILDS what this says — `'nats'` with NATS_URL
+  // unset refuses (`X_CONFIG_INVALID`), where it used to fall back to in-process in silence. To run
+  // more than one node: `{ enabled: true, transport: 'nats', urlEnv: 'NATS_URL' }` and the same
+  // NATS_URL on web, sync and the replicator. There is no `tier:` key: nothing ever read it.
+  realtime: { enabled: true, transport: 'memory' },
 
   pwa: {
     enabled: true,
@@ -64,4 +67,16 @@ export const config = defineConfig({
   },
 
   ai: { mcp: { expose: true, path: '/mcp' } },
+});
+
+/**
+ * Who `x build`'s budget pass renders `app/` as. Those routes read the request's member and org
+ * (`useActor()`), and the framework's default measurement actor is a `service` with neither, so
+ * /posts/new and /settings refused with X_ACTOR_UNRESOLVED and were never weighed. The demo owner
+ * is a declared viewer — no row has to exist — and it is loaded lazily: `demo-actor.ts` imports
+ * this file, and a static import back would be a cycle.
+ */
+defineMeasurementActor(async () => {
+  const { DEFAULT_DEMO_MEMBER, demoActorFor } = await import('./apps/web/app/auth/demo-actor');
+  return demoActorFor(DEFAULT_DEMO_MEMBER);
 });

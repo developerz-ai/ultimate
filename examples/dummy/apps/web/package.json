@@ -16,7 +16,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test",
-    "dev": "x dev --app web",
+    "dev": "x dev",
     "build": "x build --app web"
   },
   "dependencies": {

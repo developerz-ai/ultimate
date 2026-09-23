@@ -76,8 +76,14 @@ export const config = defineRoute({
    * (so a page open across a deploy answers `X_CONTRACT_DRIFT` instead of posting a stale shape),
    * and one error decode. It was 1,894 B as an 875-byte raw-`fetch` chunk; trimming back means a
    * second transport, which is the thing slice 16 removed. It still imports no `solid-js`.
+   *
+   * measured: 21,617 B (2026-09-23; `x build --target static`'s `.x/build-stats.json`) — the
+   * island chunk 19,988 + the `interaction` runtime 1,629, against 21,708 (`21.2kb`).
+   * why: the chunk is 130 B heavier than on 2026-09-22 from `@ultimat3/core`'s browser transport,
+   * which it imports whole; the in-process dispatch `x build` measures `app/` routes with costs 0 B
+   * here (it wraps `fetch` server-side only), so this raise is that 130 B and nothing else.
    */
-  budget: { js: '21kb', lcp: 1500 },
+  budget: { js: '21.2kb', lcp: 1500 },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every

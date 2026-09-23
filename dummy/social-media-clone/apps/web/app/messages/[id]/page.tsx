@@ -20,7 +20,7 @@ import { iconMessageSquare } from '@ultimat3/ui/icons/message-square';
 import { ActionButton } from '../../../shared/ui/action';
 import { AppShell } from '../../../shared/ui/app-shell';
 import { EmptyState } from '../../../shared/ui/empty-state';
-import { threadFor } from '../service';
+import { type Thread, threadFor } from '../service';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -29,21 +29,25 @@ export const config = defineRoute({
   offline: 'runtime',
   policy: { permission: 'message:read' },
   budget: { js: '0kb', lcp: 2000 },
+  // Refuses before reading a single message, and refuses identically for a conversation that does
+  // not exist. The rejection is never caught here: `routeDataFor` rethrows an `UltimateError` as
+  // itself, with its code, cause and fix, and a page that turned a denial into an empty list would
+  // be a page that lies about authorization.
+  load: async ({ params }): Promise<{ readonly thread: Thread }> => ({
+    thread: await threadFor(actorOf(useContext())?.id ?? null, params.id ?? ''),
+  }),
   meta: () => ({ title: t('app.messages.thread.title'), robots: { index: false } }),
 });
 
-export async function Page(props: {
+export function Page(props: {
+  readonly data: { readonly thread: Thread };
   readonly params: RouteParams;
   readonly url?: string | undefined;
 }) {
   const ctx = useContext();
   const viewer = actorOf(ctx);
   const conversationId = props.params.id ?? '';
-  // Refuses before reading a single message, and refuses identically for a conversation that does
-  // not exist. The rejection is never caught here: the framework renders an `UltimateError` with
-  // its code, cause and fix, and a page that turned a denial into an empty list would be a page
-  // that lies about authorization.
-  const thread = await threadFor(viewer?.id ?? null, conversationId);
+  const { thread } = props.data;
 
   return (
     <AppShell url={props.url}>

@@ -54,12 +54,12 @@ export const config = defineRoute({
 /** A list route renders the page of rows the read answered, unwrapped by nothing. */
 type BlogIndex = Awaited<ReturnType<typeof queries.publicPosts>>;
 
-export function Page(props: {
-  readonly data: BlogIndex;
-  readonly request: { locale?: string; zone?: string };
-}): JSX.Element {
+export function Page(props: { readonly data: BlogIndex }): JSX.Element {
   const t = useT();
-  const viewer = () => anonymousViewer(props.request);
+  // An ISR document is ONE page for every reader, so it renders in the default zone — never one
+  // reader's, and never the server's. The locale is the render's own. There is no `request` prop:
+  // no renderer passes one, and reading it crashed this page as soon as a post was published.
+  const viewer = () => anonymousViewer({ locale: t.locale });
 
   return (
     <main class={styles.page}>

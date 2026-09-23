@@ -17,7 +17,7 @@
     "check": "bin/check",
     "build": "x build",
     "typecheck": "bun run --filter '*' typecheck",
-    "test": "bun test",
+    "test": "bun test --isolate",
     "db:gen": "x db gen",
     "db:migrate": "x db migrate",
     "db:seed": "x db seed dev",

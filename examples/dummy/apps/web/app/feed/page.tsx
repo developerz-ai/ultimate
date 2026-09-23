@@ -44,7 +44,7 @@ export const config = defineRoute({
   render: 'stream',
   /**
    * The org's feed is not public, and the route has to say so: a page declaring no `policy` is
-   * registered `auth: 'public'` (`metaOf` in `packages/cli/src/dev-render.ts`), which also skips
+   * registered `auth: 'public'` (`metaOf` in `packages/cli/src/runtime-render.ts`), which also skips
    * `render-ssr`'s gated branch — so the response carries no `vary: cookie` and a shared cache may
    * hand one member's feed to the next visitor. The coarse permission only; `liveFeed`'s own
    * `feedRead` still decides the org, per subscriber, on every row.

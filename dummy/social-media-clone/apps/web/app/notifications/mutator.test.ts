@@ -113,9 +113,9 @@ unitTest("a batch naming somebody else's notification cannot touch it", async ()
   );
 
   // Short by exactly the row that was not the caller's: the write is scoped by `userId`, so a
-  // foreign id is ABSENT rather than refused-and-then-written. `MutatorDef` carries no `row`
-  // loader (packages/action/src/mutator.ts:66), so the scope is the enforcement — and the count is
-  // the most a caller may learn about rows that are not theirs.
+  // foreign id is ABSENT rather than refused-and-then-written. The input is a batch, which no
+  // one-row `row` loader can answer for, so the scope is the enforcement — and the count is the
+  // most a caller may learn about rows that are not theirs.
   expect(result.marked).toBe(1);
   expect(await unreadFor(ADA)).toBe(0);
   expect(await unreadFor(MARA)).toBe(1);

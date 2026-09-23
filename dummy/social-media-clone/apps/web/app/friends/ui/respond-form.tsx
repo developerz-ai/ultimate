@@ -1,8 +1,7 @@
 // The two answers to a friend request, as a real form.
 //
-// A form and not a click handler: this screen ships 0kb of JS — the framework has no client bundler
-// yet — and `POST /api/friends/respond` already parses `application/x-www-form-urlencoded`, so the
-// buttons work with nothing loaded. The same `respondFriend` action answers the form, the typed
+// A form and not a click handler: this screen ships 0kb of JS, and `POST /api/friends/respond`
+// already parses `application/x-www-form-urlencoded`, so the buttons work with nothing loaded. The same `respondFriend` action answers the form, the typed
 // client and the MCP tool, which is the one authz path rather than three.
 
 import { t } from '@ultimat3/i18n';

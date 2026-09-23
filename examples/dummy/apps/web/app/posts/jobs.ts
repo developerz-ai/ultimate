@@ -32,7 +32,7 @@ export const notifySubscribers = job({
 
     // No channel announcement here, and it is a gap rather than a decision: a `ChannelHub` is
     // built by the process that serves sockets (`new ChannelHub(...)` in
-    // packages/cli/src/dev-roles.ts) and there is no seam by which an app reaches it — a worker
+    // packages/cli/src/role-sync.ts) and there is no seam by which an app reaches it — a worker
     // building its own would publish onto a transport nothing bridges. This step used to call
     // `ctx.channel(...)`, a service nothing registered, so every run of this job dead-lettered on
     // a `TypeError` before it mailed anybody. The feed stays live through `live.ts`'s

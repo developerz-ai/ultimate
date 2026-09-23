@@ -42,10 +42,10 @@ contractTest('sign-out declares a field, so an empty form body cannot 422', () =
   expect(() => named.destroySession.input.parse({})).toThrow();
 });
 
-contractTest('a session response tells a JS-less browser where to go next', () => {
-  // The action cannot answer a form POST with a 303 — `toRoute` wraps every return value in
-  // `json()` (`packages/action/src/http.ts:54`), so `next` is the redirect target as DATA. A
-  // caller that ignores it lands on the JSON body, which is the framework gap this names.
+contractTest('a session response tells an agent where to go next', () => {
+  // A browser never reads this: `landAfter` answers its form POST with a 303 through
+  // `setRedirect`, which `toRoute` honours (`app/auth/pipeline.contract.test.ts` pins all three
+  // forms). An agent posting JSON gets the same destination as data, from the one declaration.
   const shape = named.createSession.output.parse({ ok: true, next: '/feed', handle: 'user' });
   expect(shape.next).toBe('/feed');
 });

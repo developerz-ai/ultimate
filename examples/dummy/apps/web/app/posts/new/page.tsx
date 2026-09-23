@@ -34,7 +34,7 @@ export const config = defineRoute({
   offline: 'runtime',
   /**
    * Authoring is behind a grant, and the route has to say so: a page with no `policy` is declared
-   * `auth: 'public'` (`packages/cli/src/dev-render.ts`'s `metaOf`), which also drops `vary: cookie`
+   * `auth: 'public'` (`packages/cli/src/runtime-render.ts`'s `metaOf`), which also drops `vary: cookie`
    * off the response. The row-level half stays with `createPost`'s own `postCreate`.
    */
   policy: { permission: 'post:create' satisfies KnownPermission },
