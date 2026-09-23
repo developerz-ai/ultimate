@@ -1,6 +1,6 @@
 // How a process binds its sockets, and what it admits about itself. A LEAF: it imports nothing,
-// so every role can read it without pulling `dev-roles` — which is what made this its own file.
-// `dev-sync` needs the default and `dev-roles` already imports `dev-sync`, so reading it from
+// so every role can read it without pulling `role-start` — which is what made this its own file.
+// `role-sync` needs the default and `role-start` already imports `role-sync`, so reading it from
 // there would be a runtime import cycle in the framework's own boot path.
 
 export interface WebBinding {

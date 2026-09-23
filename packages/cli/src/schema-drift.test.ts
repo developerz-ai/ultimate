@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import type { EntityDescriptionLike, SchemaDescription, TableDescription } from '@ultimat3/db';
 import { MIGRATIONS_DIR, snapshotFileName } from './migrations';
 import type { Finding } from './output';
-import { checkMigrationDrift, checkSnapshotDrift } from './schema-drift';
+import { checkMigrationDrift, checkSnapshotDrift, schemaDifferenceCause } from './schema-drift';
 
 const DB_PACKAGE = join('packages', 'db');
 
@@ -208,5 +208,18 @@ describe('unit · the two no-database detectors compose', () => {
       expect(findings).toHaveLength(1);
       expect(findings[0]?.code).toBe('X_DB_DRIFT');
     });
+  });
+});
+
+// Row w: the table part read `table "customers" on table "customers"`.
+describe('unit · a table difference names its table once', () => {
+  test('a table cause is not doubled; a column cause still names both', () => {
+    const base = { direction: 'unmigrated', table: 'customers', detail: 'is declared' } as const;
+    expect(schemaDifferenceCause({ ...base, part: 'table', name: 'customers' })).toBe(
+      'table "customers" is declared',
+    );
+    expect(schemaDifferenceCause({ ...base, part: 'column', name: 'email' })).toBe(
+      'column "email" on table "customers" is declared',
+    );
   });
 });

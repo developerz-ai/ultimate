@@ -5,13 +5,22 @@
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
+import {
+  type HelmTarget,
+  helmUpgradeArgs,
+  readHelmTimeout,
+  readLabel,
+  readReleaseName,
+  readRollout,
+} from './cmd-deploy-helm';
+import { deploySpec } from './cmd-deploy-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, UnknownCommandError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagBool, flagString } from './parse';
 import { quoteArg } from './shell-quote';
-import { PROD_ENV_FILE } from './templates/scaffold-container';
+import { PROD_ENV_FILE } from './templates/scaffold-container-compose';
 
 /**
  * Ordered, and the order is the design. `migrate` GATES — it runs to completion before anything
@@ -105,8 +114,40 @@ export function helmImageOverrides(image: string): readonly string[] {
     : ['--set', `image.repository=${repository}`, '--set', `image.tag=${tag}`];
 }
 
-export function planDeploy(image: string, method: DeployMethod, root: string): DeployPlan {
+/** What was asked for: the method, and for helm the release it is aimed at. */
+export type DeployRequest =
+  | { readonly method: 'compose' }
+  | ({ readonly method: 'helm' } & HelmTarget);
+
+/**
+ * The plan for one method. A helm plan takes its target — release, namespace, timeout — because
+ * the release is read off `app.config.ts`, which only the command can import; the compose plan
+ * needs none, so its three-argument form is unchanged.
+ */
+export function planDeploy(image: string, method: 'compose', root: string): DeployPlan;
+export function planDeploy(
+  image: string,
+  method: 'helm',
+  root: string,
+  target: HelmTarget,
+): DeployPlan;
+export function planDeploy(
+  image: string,
+  method: DeployMethod,
+  root: string,
+  target?: HelmTarget,
+): DeployPlan {
   if (method === 'helm') {
+    // A caller from plain JS can still reach this without one; `app` for every app is the
+    // defect the target exists to end, so it is refused rather than defaulted back.
+    if (target === undefined) {
+      throw new BadFlagError({
+        flag: 'release',
+        command: 'deploy',
+        reason: 'a helm plan names its release, and planDeploy was called with no target',
+        fix: 'x deploy --method helm --release my-app --json',
+      });
+    }
     // `repo@sha256:…` is a reference this chart cannot express: it renders `repository:tag` and
     // has no digest branch, so passing one through would deploy `repo@sha256:…:<appVersion>` —
     // a tag no registry has. Refused here rather than by a `helm upgrade` failing halfway.
@@ -121,19 +162,7 @@ export function planDeploy(image: string, method: DeployMethod, root: string): D
     return {
       image,
       env: {},
-      steps: [
-        {
-          role: 'all',
-          command: [
-            'helm',
-            'upgrade',
-            '--install',
-            'app',
-            join(root, 'docker', 'helm'),
-            ...helmImageOverrides(image),
-          ],
-        },
-      ],
+      steps: [{ role: 'all', command: helmUpgradeArgs(root, target, helmImageOverrides(image)) }],
     };
   }
   return {
@@ -171,33 +200,50 @@ export function planDeploy(image: string, method: DeployMethod, root: string): D
  * renderers and the failure `fix:` go through here, so the plan `--json` reports, the plan the
  * terminal shows and the line the refusal hands back can never name three different deployments.
  */
+/** The flags only a helm deploy reads. Named once: the spec, the refusal and the reader agree. */
+const HELM_ONLY_FLAGS = ['release', 'namespace', 'timeout'] as const;
+
+/**
+ * The method and its target. A helm-only flag on the compose method is REFUSED, never dropped:
+ * `--namespace staging` on a compose deploy would otherwise run against the one box there is and
+ * report success, which is the silent direction every declared-and-ignored knob in this repo took.
+ */
+export async function readDeployRequest(
+  ctx: CommandContext,
+  method: DeployMethod,
+  root: string,
+): Promise<DeployRequest> {
+  if (method === 'compose') {
+    const stray = HELM_ONLY_FLAGS.find((flag) => flagString(ctx.args, flag) !== undefined);
+    if (stray !== undefined) {
+      throw new BadFlagError({
+        flag: stray,
+        command: 'deploy',
+        reason: 'it applies to --method helm only; a compose deploy has one box and no release',
+        fix: 'x deploy --method helm --release my-app --namespace my-namespace --json',
+      });
+    }
+    return { method };
+  }
+  const namespace = flagString(ctx.args, 'namespace');
+  return {
+    method,
+    release: await readReleaseName(root, flagString(ctx.args, 'release')),
+    namespace: namespace === undefined ? undefined : readLabel('namespace', namespace),
+    timeout: readHelmTimeout(flagString(ctx.args, 'timeout')),
+  };
+}
+
 const stepLine = (env: Readonly<Record<string, string>>, command: readonly string[]): string =>
-  [...Object.entries(env).map(([name, value]) => `${name}=${quoteArg(value)}`), ...command].join(
-    ' ',
-  );
+  [
+    ...Object.entries(env).map(([name, value]) => `${name}=${quoteArg(value)}`),
+    // Every word quoted where it must be: the chart and compose paths are joined from the app
+    // root, and a root holding a space or a `$(` pasted back as two words, or as a second command.
+    ...command.map(quoteArg),
+  ].join(' ');
 
 export const deployCommand: CliCommand = {
-  spec: {
-    name: 'deploy',
-    summary: 'run the container deploy plan: migrate first, then the serving roles',
-    usage: 'x deploy --image repo/app:tag [--method compose|helm] [--dry-run] [--json]',
-    requiresApp: true,
-    flags: [
-      { name: 'image', type: 'string', summary: 'image reference to deploy' },
-      { name: 'method', type: 'string', summary: 'compose | helm', default: 'compose' },
-      { name: 'dry-run', type: 'boolean', summary: 'print the plan, run nothing' },
-      // `--critical` was here and is gone. It parsed, it was echoed into the plan JSON as
-      // `critical: <bool>`, and no file in `packages/` read that field — so the flag changed
-      // nothing about what `x deploy` did, on either method. `flag-reads.ts`'s
-      // `X_CLI_FLAG_UNREAD` passed it, because that gate proves a flag is READ and this one was:
-      // into a field with no reader. It is not coming back: `@ultimat3/pwa`'s
-      // `updateSignal({ reason: 'security' })`, the call it was to have triggered, is **deleted**
-      // as of 9.0.0 for having had no runtime caller of its own, and nothing in the framework
-      // force-navigates a client. A deploy also has no channel to one — the plan is
-      // `docker compose up` / `helm upgrade`, and the client's build id is read by `http` (tier 2)
-      // and `sync` (tier 3), neither of which may import a tier-4 package to act on it.
-    ],
-  },
+  spec: deploySpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('deploy', ctx.cwd).dir;
     const image = flagString(ctx.args, 'image') ?? 'ultimate-app:dev';
@@ -208,10 +254,27 @@ export const deployCommand: CliCommand = {
     // `docker/docker-compose.prod.yml`. An app that deleted the chart gets helm's own error through
     // X_DEPLOY_FAILED, whose fix is the exact command to rerun.
     const method = readMethod(flagString(ctx.args, 'method'));
-    const plan = planDeploy(image, method, root);
-    const planJson: JsonValue = {
+    const request = await readDeployRequest(ctx, method, root);
+    const plan =
+      request.method === 'helm'
+        ? planDeploy(image, 'helm', root, request)
+        : planDeploy(image, 'compose', root);
+    // What the helm flags resolved to — the release above all, which is read off `app.config.ts`
+    // and so is not something the operator typed. Absent on compose, which has no release.
+    const target: { readonly [key: string]: JsonValue } =
+      request.method === 'helm'
+        ? {
+            helm: {
+              release: request.release,
+              namespace: request.namespace ?? null,
+              timeout: request.timeout,
+            },
+          }
+        : {};
+    const planJson: { readonly [key: string]: JsonValue } = {
       image: plan.image,
       method,
+      ...target,
       // Reported, because it is what makes `image` above true on the compose method — a dry run
       // that names an image the steps do not carry is the defect this field closed.
       env: { ...plan.env },
@@ -231,8 +294,13 @@ export const deployCommand: CliCommand = {
         ),
       };
     }
+    // helm prints its release record (`--output json`), so the report carries helm's own verdict
+    // and revision rather than an exit code standing in for one. Compose has no such record.
+    let rollout: { readonly [key: string]: JsonValue } = {};
     for (const step of plan.steps) {
       const result = await ctx.runner(step.command, { cwd: root, env: plan.env });
+      if (request.method === 'helm')
+        rollout = { rollout: { ...readRollout(request, result.stdout) } };
       if (!result.ok) {
         return {
           ok: false,
@@ -246,7 +314,7 @@ export const deployCommand: CliCommand = {
               docs: ERROR_DOCS_URL,
             },
           ],
-          data: planJson,
+          data: { ...planJson, ...rollout },
         };
       }
     }
@@ -254,7 +322,7 @@ export const deployCommand: CliCommand = {
       ok: true,
       command: 'deploy',
       summary: msg('cli.deploy.plan', { images: 1, roles }),
-      data: planJson,
+      data: { ...planJson, ...rollout },
     };
   },
 };

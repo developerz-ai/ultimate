@@ -13,6 +13,7 @@ import type { GeneratedFile, NameSet } from './naming';
 import { names, pascal } from './naming';
 import { policyFiles } from './policy';
 import { queryFiles } from './query';
+import { resourceCreateFiles } from './resource-create';
 import { formIslandFiles } from './resource-form-island';
 import { routeDir, routeFiles } from './route';
 
@@ -178,13 +179,18 @@ export function resourceFiles(rawName: string, target: ResourceOptions): readonl
   // question and only one of them reaches `routeFiles`.
   const pageDir = routeDir('app', feature.pluralKebab);
   const locales = resolveLocales(target.locales);
+  const entity = entityFiles(rawName, slice);
+  // The entity this same call writes, handed to the generators composed below as if it were on
+  // disk: they write into a slice that HAS data, so they read it rather than a neutral body.
+  const sliceEntity = String(entity.find((file) => file.path.endsWith('/entity.ts'))?.contents);
   return [
-    ...entityFiles(rawName, slice),
+    ...entity,
     ...policyFiles(rawName, slice),
-    ...actionFiles(`create-${feature.kebab}`, slice),
-    ...actionFiles(`archive-${feature.kebab}`, slice),
+    // Not `x g action`'s body: a resource's create INSERTS (`resource-create.ts`).
+    ...resourceCreateFiles(rawName, dir),
+    ...actionFiles(`archive-${feature.kebab}`, { ...slice, sliceEntity }),
     ...queryFiles(`${feature.camel}List`, { ...slice, live: true }),
-    ...jobFiles(`reindex-${feature.kebab}`, slice),
+    ...jobFiles(`reindex-${feature.kebab}`, { ...slice, sliceEntity }),
     { path: `${dir}/service.ts`, contents: serviceSource(feature) },
     { path: `${dir}/service.test.ts`, contents: serviceTest(feature) },
     { path: `${dir}/ui.tsx`, contents: uiSource(feature, target.catalogModule) },

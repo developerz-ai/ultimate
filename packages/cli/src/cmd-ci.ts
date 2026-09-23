@@ -9,13 +9,17 @@ import type { CiLogLine } from './ci-log';
 import { findingsFrom, jobsInLog, parseLogLines, tailOf } from './ci-log';
 import type { CiJob, CiRun } from './ci-runs';
 import { failedLog, isFailed, isRunning, latestPerWorkflow, listRuns, viewRun } from './ci-runs';
+import { ciSpec, TAIL_LINES } from './cmd-ci-spec';
 import type { CliCommand, CommandContext } from './command';
 import { parseIntFlag } from './flag-number';
+import { commentBlock } from './foreign-text';
 import type { GhRepo } from './gh-target';
 import { currentBranch, resolveRepo } from './gh-target';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import { flagBool, flagString } from './parse';
+
+export { TAIL_LINES } from './cmd-ci-spec';
 
 /**
  * Every catalog key this command renders, declared — `msg()` answers `⟦key⟧` for a key nobody
@@ -33,9 +37,6 @@ export const CI_MESSAGE_KEYS = [
   'cli.ci.pending',
   'cli.ci.logs.empty',
 ] as const;
-
-/** Log lines kept per failed job. Enough to hold a findings block, short enough to read. */
-export const TAIL_LINES = 40;
 
 /** How far back a branch's run history is read before "the latest run of each workflow". */
 export const RUN_LOOKBACK = 20;
@@ -55,22 +56,7 @@ const RUN_FLAG = { name: 'run', command: 'ci', min: 1, example: 'x ci --run 3248
 const TAIL_FLAG = { name: 'tail', command: 'ci', min: 1, example: 'x ci --tail 80 --json' };
 
 export const ciCommand: CliCommand = {
-  spec: {
-    name: 'ci',
-    summary: 'the workflow runs for this branch, and the findings inside the failed steps log',
-    usage: 'x ci [--branch <name>] [--run <id>] [--repo owner/name] [--tail <n>] [--full] [--json]',
-    flags: [
-      { name: 'repo', type: 'string', summary: 'owner/name; the checkout own remote by default' },
-      { name: 'branch', type: 'string', summary: 'branch to read runs for; this one by default' },
-      { name: 'run', type: 'string', summary: 'one run id, instead of this branch latest' },
-      {
-        name: 'tail',
-        type: 'string',
-        summary: `log lines kept per failed job (default ${TAIL_LINES})`,
-      },
-      { name: 'full', type: 'boolean', summary: 'the whole failed-step log, not the tail' },
-    ],
-  },
+  spec: ciSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const repo = await resolveRepo(ctx, 'ci', flagString(ctx.args, 'repo'));
     const rawRun = flagString(ctx.args, 'run');
@@ -142,7 +128,14 @@ async function inspect(
     const pool: readonly CiLogLine[] = own.length > 0 ? own : lines;
     const job = failed.find((candidate) => candidate.name === name);
     for (const finding of findingsFrom(pool)) {
-      findings.push(finding.at === undefined ? { ...finding, at: name } : finding);
+      findings.push({
+        ...finding,
+        at: finding.at ?? name,
+        // Fenced and tagged: the log is foreign text, and a `fix:` reconstructed from it is the
+        // log author's instruction, not this CLI's. `commentBlock` is `x pr review`'s fence.
+        fix: commentBlock(`ci-log ${name}`, [finding.fix]).join('\n'),
+        source: 'ci-log',
+      });
     }
     failures.push({
       job: name,
@@ -229,7 +222,8 @@ function runLines(entry: RunReport): readonly string[] {
       continue;
     }
     out.push(msg('cli.ci.tail', { job: failure.job }));
-    for (const line of failure.tail) out.push(`      | ${line}`);
+    for (const line of commentBlock(`ci-log ${failure.job}`, failure.tail))
+      out.push(`      | ${line}`);
   }
   const jobs = entry.jobs;
   if (jobs !== undefined && jobs.length > failures.length) {
@@ -266,6 +260,8 @@ function runJson(entry: RunReport): JsonValue {
             job: failure.job,
             url: failure.url,
             failedSteps: [...failure.failedSteps],
+            // Raw lines for a machine, labelled as foreign: the log's author wrote every one.
+            tailSource: 'ci-log',
             tail: [...failure.tail],
           })),
         }),

@@ -28,27 +28,31 @@ const i18nPackage = (app: NameSet, version: string): string => `{
 `;
 
 /**
- * `en` first, then every other locale alphabetically — a stable order so a diff shows only the
- * locale a run actually added, never a reshuffle. `en` is always included: `default: 'en'` below
- * requires it to be a registered locale, and every real catalog set already has one from `x new`
- * scaffold time.
+ * The default locale first, then every other one alphabetically — a stable order so a diff shows
+ * only the locale a run actually added. The default is `en` when the set holds it (and when the set
+ * is empty, which is `x new`), else the first tag: importing an `en.json` the app does not have is
+ * a file that does not compile.
  */
+export const defaultLocaleOf = (locales: readonly string[]): string =>
+  locales.length === 0 || locales.includes('en') ? 'en' : ([...locales].sort()[0] ?? 'en');
+
 const orderedLocales = (locales: readonly string[]): readonly string[] => {
+  const first = defaultLocaleOf(locales);
   const rest = new Set(locales);
-  rest.delete('en');
-  return ['en', ...[...rest].sort()];
+  rest.delete(first);
+  return [first, ...[...rest].sort()];
 };
 
 /** A locale tag is not always a valid JS binding (`zh-hant`) — `camel()` is the one identifier
  * derivation every generated file already uses for names, so the import agrees with the rest of
  * the app's own naming instead of inventing a second casing rule. */
-const localeImport = (locale: string): string =>
+export const localeImport = (locale: string): string =>
   `import ${camel(locale)} from '../catalogs/${locale}.json';`;
 
 /** The object-literal entry for one locale: shorthand when the binding IS the tag (`en`, `es`, …),
  * `'tag': binding` when `camel()` had to reshape it (`zh-hant` → `zhHant`) — `defineCatalogs` reads
  * the locale from the key, never the identifier, so the quoted form is what keeps it addressable. */
-const localeEntry = (locale: string): string => {
+export const localeEntry = (locale: string): string => {
   const binding = camel(locale);
   return binding === locale ? binding : `'${locale}': ${binding}`;
 };
@@ -61,6 +65,7 @@ const localeEntry = (locale: string): string => {
  */
 export function i18nIndex(locales: readonly string[]): string {
   const ordered = orderedLocales(locales);
+  const fallback = defaultLocaleOf(locales);
   const imports = ordered.map(localeImport).join('\n');
   const entries = ordered.map(localeEntry).join(', ');
   return `// The app's catalog, registered once and typed against English. Every surface resolves strings
@@ -75,13 +80,13 @@ import {
 } from '@ultimat3/i18n';
 ${imports}
 
-export const catalogs = defineCatalogs({ default: 'en', locales: { ${entries} } });
+export const catalogs = defineCatalogs({ default: '${fallback}', locales: { ${entries} } });
 
 /**
  * English is the source of truth for the key space — a second locale must match it exactly, or
  * \`x verify\` fails.
  */
-export type AppCatalog = typeof en;
+export type AppCatalog = typeof ${camel(fallback)};
 
 /** Every key this app's catalog defines — dot-paths, plus the stem of each plural family. */
 export type TranslationKey = KeyOf<AppCatalog>;

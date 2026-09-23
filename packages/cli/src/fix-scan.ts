@@ -3,16 +3,9 @@
 // class's constructor. Split out of `ts-scan.ts` when the third shape and cross-file resolution
 // (`fix-imports.ts`) took the file past the 500-line ceiling; the masking primitives stay there.
 
+import { endOfLiteral, maskLiterals, QUOTES } from '@ultimat3/core';
 import type { FixSite } from './ts-scan';
-import {
-  CLOSERS,
-  endOfLiteral,
-  lineIndex,
-  maskLiterals,
-  OPENERS,
-  QUOTES,
-  valueLiterals,
-} from './ts-scan';
+import { CLOSERS, lineIndex, OPENERS, valueLiterals } from './ts-scan';
 
 /** The lookbehind rejects member access: `cond ? e.fix : ''` is a ternary, not a declaration. */
 const FIX_KEY = /(?<![.\w$])fix\s*:\s*/g;

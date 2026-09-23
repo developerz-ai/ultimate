@@ -17,9 +17,9 @@ import type { Runner } from './exec';
 import { parseArgs } from './parse';
 import { discoverTests } from './test-select';
 import { filesIn } from './test-shards';
-import { defaultWorkers, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
+import { defaultWorkers, SERIAL_TYPES, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
 import type { TestType } from './verify-tests';
-import { SERIAL_TYPES, TEST_TYPES } from './verify-tests';
+import { TEST_TYPES } from './verify-tests';
 
 interface Recorder {
   readonly calls: readonly (readonly string[])[];

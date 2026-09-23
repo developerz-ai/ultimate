@@ -146,11 +146,14 @@ const overlay = (root: string, app: string): string =>
       compilerOptions: {
         noEmit: true,
         paths: {
-          // The two subpath exports a generated app reaches for, spelled the way the packages'
-          // own `exports` maps spell them — the wildcard below would read `ui/icons/zap` as a
-          // package name. Longest prefix wins, so these are consulted first.
+          // The subpath exports a generated app reaches for, spelled the way the packages' own
+          // `exports` maps spell them — the wildcard below would read `ui/icons/zap` as a package
+          // name, and `cli/serve` as `packages/cli/serve`. Longest prefix wins, so these are
+          // consulted first. `@ultimat3/cli/serve` is what `x new`'s `apps/web/server.ts` imports.
           '@ultimat3/ui/icons/*': [`${root}/packages/ui/src/icons/glyphs/*`],
           '@ultimat3/render/server': [`${root}/packages/render/src/server`],
+          '@ultimat3/cli/serve': [`${root}/packages/cli/src/serve-entry`],
+          '@ultimat3/testing/test-types': [`${root}/packages/testing/src/test-types`],
           '@ultimat3/*': [`${root}/packages/*/src`],
           [`@${app}/web/*`]: ['./apps/web/*'],
           [`@${app}/admin/*`]: ['./apps/admin/*'],

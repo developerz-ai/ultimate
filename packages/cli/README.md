@@ -14,7 +14,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x verify` | **the gate** | 20 named steps, each with pass/fail + duration |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|branch\|backfill` | everything DB | `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. `x db studio` is **planned** — it parses, and exits `X_NOT_IMPLEMENTED` naming `/_x`'s db panel |
-| `x mcp serve` | `@ultimat3/mcp`'s 13 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
+| `x mcp serve` | `@ultimat3/mcp`'s 18 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
 | `x doctor` | environment, ports, drift, PWA prerequisites | every finding carries a fix command |
 | `x deploy` | container deploy plan | compose or helm; zero platform primitives |
 | `x manifest` / `x routes` | generated facts | `x.manifest.json`, `openapi.json`, route table |
@@ -118,7 +118,7 @@ is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUAR
 | `app-runtime.ts` | the app's `RuntimeOverrides`: `apps/<app>/runtime.ts` exports `runtime`, read by `x dev` and by `runRole` when its caller passed none |
 | `local-cli.ts` | which `x` runs: a global CLI inside an app hands over to the app's own, because a second module instance is an empty registry |
 | `measurement-actor.ts` | the actor a weigh-and-discard render runs as — every permission, never served |
-| `dev-live-feed.ts` | what feeds the sync node this process booted: the in-process row observer under the embedded database, the WAL decoder with a real one, nothing without the role — `live=` on the ready line |
+| `runtime-live-feed.ts` | what feeds the sync node this process booted: the in-process row observer under the embedded database, the WAL decoder with a real one, nothing without the role — `live=` on the ready line |
 | `app-manifest.ts` | `x.manifest.json`, projected by `@ultimat3/manifest` |
 | `app-openapi.ts` | `openapi.json`, projected by `@ultimat3/action` |
 | `app-boundaries.ts` | app import boundaries, over `@ultimat3/render`'s surface check |
@@ -160,3 +160,41 @@ Every emitted source has a `<file>.test.ts` beside it that passes on the first r
 
 `X_CLI_UNKNOWN_COMMAND` `X_CLI_BAD_FLAG` `X_VERIFY_FAILED` `X_NOT_IN_APP` `X_BUN_VERSION`
 `X_NOT_IMPLEMENTED` `X_GUARD_INVALID` `X_GUARD_FAILED` `X_GUARD_FINDING_INVALID`
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `BadFlagError` | `X_CLI_BAD_FLAG` | `src/errors.ts` |
+| `BuildEntryMissingError` | `X_BUILD_ENTRY_MISSING` | `src/build-errors.ts` |
+| `BunVersionError` | `X_BUN_VERSION` | `src/errors.ts` |
+| `CatalogExistsError` | `X_GENERATE_CONFLICT` | `src/errors.ts` |
+| `CdpBrowserMissingError` | `X_CDP_BROWSER_MISSING` | `src/cdp-errors.ts` |
+| `CdpCallFailedError` | `X_CDP_CALL_FAILED` | `src/cdp-errors.ts` |
+| `CdpLaunchFailedError` | `X_CDP_LAUNCH_FAILED` | `src/cdp-errors.ts` |
+| `CdpTimeoutError` | `X_CDP_TIMEOUT` | `src/cdp-errors.ts` |
+| `CliNotImplementedError` | `X_NOT_IMPLEMENTED` | `src/errors.ts` |
+| `DeclarationUnknownError` | `X_DECLARATION_UNKNOWN` | `src/errors.ts` |
+| `E2eAppFailedError` | `X_E2E_APP_FAILED` | `src/e2e-errors.ts` |
+| `E2eEvaluateCapturedError` | `X_E2E_EVALUATE_CAPTURED` | `src/e2e-errors.ts` |
+| `E2eEvaluateThrewError` | `X_E2E_EVALUATE_THREW` | `src/e2e-errors.ts` |
+| `E2eEvaluateUnsupportedError` | `X_E2E_EVALUATE_UNSUPPORTED` | `src/e2e-errors.ts` |
+| `E2eLocatorAmbiguousError` | `X_E2E_LOCATOR_AMBIGUOUS` | `src/e2e-errors.ts` |
+| `E2eLocatorEmptyError` | `X_E2E_LOCATOR_EMPTY` | `src/e2e-errors.ts` |
+| `E2eServiceWorkerAbsentError` | `X_E2E_SERVICE_WORKER_ABSENT` | `src/e2e-errors.ts` |
+| `ErrorCodeUnknownError` | `X_ERROR_CODE_UNKNOWN` | `src/errors.ts` |
+| `FixTargetUnknownError` | `X_FIX_TARGET_UNKNOWN` | `src/errors.ts` |
+| `FrameworkSchemaFailedError` | `X_FRAMEWORK_SCHEMA_FAILED` | `src/schema-errors.ts` |
+| `JobUnknownError` | `X_JOB_UNKNOWN` | `src/errors.ts` |
+| `MissingPositionalError` | `X_CLI_BAD_FLAG` | `src/errors.ts` |
+| `MissingSubcommandError` | `X_CLI_BAD_FLAG` | `src/errors.ts` |
+| `NoTestFilesError` | `X_TEST_NO_FILES` | `src/errors.ts` |
+| `NotInAppError` | `X_NOT_IN_APP` | `src/errors.ts` |
+| `PortInvalidError` | `X_PORT_INVALID` | `src/errors.ts` |
+| `QuerySubscribesUnknownError` | `X_QUERY_SUBSCRIBES_UNKNOWN` | `src/db-subscribes.ts` |
+| `RoleUnknownError` | `X_ROLE_UNKNOWN` | `src/errors.ts` |
+| `UnknownCommandError` | `X_CLI_UNKNOWN_COMMAND` | `src/errors.ts` |
+| `VerifyFailedError` | `X_VERIFY_FAILED` | `src/errors.ts` |

@@ -4,12 +4,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no path joiner and no recursive remove — the rule `cmd-db.test.ts` records.
 import { rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(); a fixture lives outside the checkout, where a parallel worker
+// globbing the tree cannot meet it half-deleted.
+import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { clearRoutes, defineRoute, island, registerRoute, routeEntries } from '@ultimat3/render';
 import { LIVE_HOOKS, liveHooksIn, liveRouteFindings, liveRouteGaps } from './live-routes';
 
-const ROOT = join(import.meta.dir, '..', '.live-routes-fixture');
+const ROOT = join(tmpdir(), `x-live-routes-${process.pid}`);
 const PAGE = 'apps/web/app/feed/page.tsx';
 
 const write = (file: string, source: string): Promise<number> =>

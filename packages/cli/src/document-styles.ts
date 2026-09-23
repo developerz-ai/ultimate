@@ -25,7 +25,7 @@ export const definesRootCustomProperties = (css: string): boolean => ROOT_CUSTOM
 
 export interface SurfaceDocument {
   readonly surface: Surface;
-  /** Exactly the CSS `dev-render.ts` would inline into a document on this surface. */
+  /** Exactly the CSS `runtime-render.ts` would inline into a document on this surface. */
   readonly css: string;
 }
 

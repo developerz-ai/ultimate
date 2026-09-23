@@ -11,7 +11,10 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+// `canonicalJson` is core's, the one serializer every content hash in the framework uses. A private
+// copy here wrote `"key":null` for an unset optional field where core drops the key, so the schema
+// hash agreed with nothing else (plan 101 slice 18 h; 22.0.0 re-stamps every sidecar once).
+import { canonicalJson, ERROR_DOCS_URL } from '@ultimat3/core';
 import { describeEntities } from '@ultimat3/entity';
 import { countDeclaredEntities } from './app-entities';
 import { loadApp } from './app-load';
@@ -22,23 +25,6 @@ import type { Finding } from './output';
 
 export const DB_PACKAGE = join('packages', 'db');
 const SCHEMA_GLOB = 'packages/db/src/**/*.ts';
-
-/**
- * Canonical JSON: object keys sorted, arrays in their own order. The registry's description is a
- * BUILD INPUT committed to disk as a hash, so a field reordered inside `describe()` upstream would
- * otherwise move every app's hash and report drift over a framework upgrade nobody made.
- */
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (typeof value === 'object' && value !== null) {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-      a < b ? -1 : a > b ? 1 : 0,
-    );
-    return `{${entries.map(([key, held]) => `${JSON.stringify(key)}:${canonicalJson(held)}`).join(',')}}`;
-  }
-  // `undefined` has no JSON form and an optional field left unset must hash as absent, not throw.
-  return JSON.stringify(value) ?? 'null';
-}
 
 /**
  * What the app's entities declare, as the registry describes them — the half `SCHEMA_GLOB` cannot

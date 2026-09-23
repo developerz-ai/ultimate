@@ -8,11 +8,11 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { join } from 'node:path';
 import { createServer, defineHttpConfig } from '@ultimat3/http';
 import { clearRoutes, defineRoute, island, registerRoute } from '@ultimat3/render';
-import { appRoutes } from './dev-render';
 import { fixProblem } from './error-contract';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands } from './island-bundle';
 import { islandRoutes } from './island-routes';
+import { appRoutes } from './runtime-render';
 
 const ROOT = join(import.meta.dir, '..', '.island-routes-fixture');
 const BUILD_ID = 'islands-under-test';

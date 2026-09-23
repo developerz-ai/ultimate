@@ -45,7 +45,7 @@ export { entryFiles } from './scaffold-entries';
 export { errorPageFiles, PWA_COLORS } from './scaffold-errors';
 // The nine guards `x new` ships, distinct from `guardFiles` above, which is `x g guard <name>`.
 export { scaffoldGuardFiles } from './scaffold-guards';
-export { i18nIndex } from './scaffold-i18n';
+export { i18nIndex, localeEntry, localeImport } from './scaffold-i18n';
 export { repoFiles } from './scaffold-repo';
 export { shellFiles } from './scaffold-shell';
 export { siteFiles } from './scaffold-site';

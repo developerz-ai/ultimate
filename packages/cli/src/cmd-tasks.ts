@@ -8,6 +8,7 @@ import type { TaskHandle } from '@ultimat3/jobs';
 import type { CronPhrases } from '@ultimat3/time';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
+import { tasksSpec } from './cmd-tasks-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, DeclarationUnknownError } from './errors';
 import { msg } from './messages';
@@ -130,22 +131,7 @@ function runShow(ctx: CommandContext, nowMs: number, findings: readonly Finding[
 }
 
 export const tasksCommand: CliCommand = {
-  spec: {
-    name: 'tasks',
-    summary: 'cron tasks, their timezone and their next run',
-    usage: 'x tasks [list|show <name>] [--count n] [--json]',
-    requiresApp: true,
-    subcommands: ['list', 'show'],
-    defaultSubcommand: 'list',
-    flags: [
-      {
-        name: 'count',
-        type: 'string',
-        summary: 'show: how many upcoming occurrences to list',
-        subcommands: ['show'],
-      },
-    ],
-  },
+  spec: tasksSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('tasks', ctx.cwd).dir;
     const { findings } = await loadApp(root);

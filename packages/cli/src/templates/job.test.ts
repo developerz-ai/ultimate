@@ -10,6 +10,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os'; // why: same — no Bun native answers the platform temp root.
 import { join } from 'node:path'; // why: same — the sandbox's paths are joined, never concatenated.
+import { INVOICE_ENTITY } from '../scaffold-fixture';
 import { sandboxPath, workspaceRoot } from '../scaffold-typecheck';
 import { isTenantScopedSlice, jobFiles, taskFiles } from './job';
 
@@ -46,8 +47,8 @@ const sourceOf = (
 };
 
 describe('unit · isTenantScopedSlice reads what the feature actually has', () => {
-  test('no entity yet: the fresh scaffold is about to be tenant-scoped, so this counts as scoped', () => {
-    expect(isTenantScopedSlice(undefined, undefined)).toBe(true);
+  test('no entity: not scoped — a job never invents the table it would read', () => {
+    expect(isTenantScopedSlice(undefined, undefined)).toBe(false);
   });
 
   test('an entity with no tenant column at all is not scoped', () => {
@@ -80,8 +81,12 @@ describe('unit · isTenantScopedSlice reads what the feature actually has', () =
 });
 
 describe('unit · x g job emits the tenant-scoped shape only where the slice earns it', () => {
-  test('a fresh feature gets the tenant-scoped job, byte-identical to before this fix', () => {
-    const files = jobFiles('sweep-invoices', { surfaceDir: 'apps/web/app', feature: 'invoice' });
+  test('a feature whose entity is tenant-scoped gets the tenant-scoped job', () => {
+    const files = jobFiles('sweep-invoices', {
+      surfaceDir: 'apps/web/app',
+      feature: 'invoice',
+      sliceEntity: INVOICE_ENTITY,
+    });
     const source = sourceOf(files, 'jobs/sweep-invoices.ts');
     expect(source).toContain('input: t.object({ id: t.uuid, orgId: t.uuid })');
     expect(source).toContain('tenant: (input) => input.orgId');
@@ -135,8 +140,12 @@ describe('unit · x g task composes the same decision as x g job', () => {
     expect(job).toContain("tenant: 'none'");
   });
 
-  test('a tenant-scoped task keeps the orgId payload, byte-identical to before this fix', () => {
-    const files = taskFiles('nightly-sweep', { surfaceDir: 'apps/web/app', feature: 'invoice' });
+  test('a tenant-scoped task keeps the orgId payload', () => {
+    const files = taskFiles('nightly-sweep', {
+      surfaceDir: 'apps/web/app',
+      feature: 'invoice',
+      sliceEntity: INVOICE_ENTITY,
+    });
     const source = sourceOf(files, 'tasks/nightly-sweep.ts');
     expect(source).toContain('orgId');
   });

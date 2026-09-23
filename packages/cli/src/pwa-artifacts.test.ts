@@ -30,7 +30,7 @@ afterEach(async () => {
 
 const writeConfig = (body: string) => Bun.write(join(root, 'app.config.ts'), body);
 
-/** The one file the whole icon matrix derives from. `dev-assets.test.ts`'s fixture, verbatim. */
+/** The one file the whole icon matrix derives from. `runtime-assets.test.ts`'s fixture, verbatim. */
 const writeSourceIcon = () =>
   Bun.write(join(root, ICON_SOURCE), encodeImage(createRaster(1024, 1024, 'fixture'), 'png'));
 
@@ -169,7 +169,7 @@ describe('unit · the web manifest an installable app promises', () => {
     expect(route.meta.auth).toBe('public');
     expect(route.meta.cache).toEqual({ mode: 'public', maxAgeSeconds: 3600 });
 
-    // Through a real `UltimateRequest` and a real `RequestContext`, `dev-assets.test.ts`'s shape:
+    // Through a real `UltimateRequest` and a real `RequestContext`, `runtime-assets.test.ts`'s shape:
     // a cast would hide a dependency on either appearing later.
     const url = new URL(`http://dev.test${WEB_MANIFEST_PATH}`);
     const config = defineHttpConfig({ rateLimit: { scope: 'process' } });

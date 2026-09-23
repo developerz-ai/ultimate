@@ -14,12 +14,12 @@ import { TEST_TYPES as TESTING_TEST_TYPES } from '@ultimat3/testing';
 import type { ExecOptions, ExecResult } from './exec';
 import { belongsToType } from './test-select';
 import { filesIn } from './test-shards';
+import { SERIAL_TYPES } from './test-workers';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import {
   E2E_TEST_TIMEOUT_MS,
   ownerOf,
   resetTestDiscovery,
-  SERIAL_TYPES,
   TEST_STEPS,
   TEST_TYPES,
   testStepCommand,

@@ -8,6 +8,8 @@
 // and the index are written, and only then does the missing-picture gate turn the reasons into a
 // non-zero exit. One island that will not mount must not cost a reader the other nineteen.
 
+// why: Bun has no file delete that tolerates an absent file.
+import { rm } from 'node:fs/promises';
 // why: no Bun native joins a path; `Bun.write` and `Bun.file` both take one already joined.
 import { join } from 'node:path';
 import { finiteCount } from '@ultimat3/core';
@@ -95,6 +97,9 @@ export async function runIslandSweep(options: IslandSweepRun): Promise<IslandSwe
       // for each one it cannot, and the missing-shot gate below is what turns those reasons into
       // a non-zero exit.
       try {
+        // Deleted FIRST: the missing-shot gate reads the disk, and a picture an earlier run left
+        // there made a capture that failed today read as taken.
+        await rm(join(options.outDir, target.file), { force: true });
         shots.push(await captureIslandState(options, server, target, floor));
       } catch (error) {
         failures.push(error);

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { resetAppLoad } from './app-load';
+import { OPENAPI_FILE } from './app-openapi';
 import { REQUIRED_BUN } from './app-root';
 import { GENERATORS, generateCommand, writeFiles } from './cmd-generate';
 import type { CommandContext } from './command';
@@ -322,6 +323,18 @@ describe('unit · x g refreshes a manifest and never invents one', () => {
     expect(result.summary).toContain(`wrote ${result.lines?.length} file(s)`);
     expect((result.data as { files?: readonly string[] }).files).toContain(MANIFEST_FILENAME);
     expect(await Bun.file(join(ROOT, MANIFEST_FILENAME)).text()).not.toBe('{}\n');
+  });
+
+  // Both contracts or the gate goes red on this command's own output: `contract-diff` compares
+  // `openapi.json` against the code, and `x g` refreshed only the manifest.
+  test('a committed openapi.json is refreshed beside the manifest, and reported', async () => {
+    await Bun.write(join(ROOT, MANIFEST_FILENAME), '{}\n');
+    await Bun.write(join(ROOT, OPENAPI_FILE), '{}\n');
+    resetAppLoad();
+    const result = await generateCommand.run(contextFor('contracted'));
+    expect((result.data as { files?: readonly string[] }).files).toContain(OPENAPI_FILE);
+    const written = (await Bun.file(join(ROOT, OPENAPI_FILE)).json()) as { openapi?: unknown };
+    expect(typeof written.openapi).toBe('string');
   });
 });
 

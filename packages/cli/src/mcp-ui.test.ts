@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { fakeBrowser } from '@ultimat3/scraping';
+import { fakeShotDriver } from './browser-launcher-fake';
 import { assertBudgetedRoute, matches, uiCapabilities } from './mcp-ui';
 import { ISLAND_PROBE } from './shot-verdict';
 
@@ -22,6 +22,18 @@ describe('unit · ui.shot only photographs a declared, budgeted route', () => {
   test('a budgeted route passes, with or without a query string', () => {
     expect(() => assertBudgetedRoute('/dashboard', ROUTES)).not.toThrow();
     expect(() => assertBudgetedRoute('/links/abc123?ref=x', ROUTES)).not.toThrow();
+  });
+
+  // Row o: `/\\localhost:9200` MATCHES `/links/:slug`'s shape one level up, and a browser reads
+  // the backslash as `/` — every `ui.*` tool then navigated to another service on the box.
+  test('an origin-escaping route is refused before it is matched against a pattern', () => {
+    const catchAll = [{ path: '/:slug', file: 'apps/web/app/[slug]/page.tsx', budgetJs: '9kb' }];
+    for (const route of ['/\\localhost:9200', '//localhost:9200', 'http://evil.test/']) {
+      expect(() => assertBudgetedRoute(route, catchAll)).toThrow(
+        expect.objectContaining({ code: 'X_CLI_BAD_FLAG' }),
+      );
+    }
+    expect(assertBudgetedRoute('/abc', catchAll)).toBe('/abc');
   });
 
   test('an unknown path is refused by name, with the tool that lists the real ones', () => {
@@ -76,7 +88,7 @@ describe('unit · ui.shot boots the server it photographs once per host, never o
         };
       },
       driver: async () =>
-        fakeBrowser([
+        fakeShotDriver([
           { url: `${SERVER_URL}/dash`, html: PAGE, evaluate: { [ISLAND_PROBE]: CLEAN } },
         ]),
       routes: () => [{ path: '/dash', file: 'apps/web/app/dash/page.tsx', budgetJs: '10kb' }],

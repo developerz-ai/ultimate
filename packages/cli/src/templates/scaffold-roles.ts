@@ -4,9 +4,23 @@
 // many answers as the app has folders, and the framework's two tracked apps already disagree.
 
 import type { GeneratedFile } from './naming';
+import { wrapList } from './wrap';
 
-const rolesSource =
-  (): string => `// Who holds which permission, for the whole app. Roles are sugar: every one expands to a flat
+/**
+ * A role's grants as Biome prints them. The example slice's \`post:read\`/\`post:write\` ride along
+ * with it: \`x g resource post\` would have granted them, and the scaffold writes that result.
+ */
+const grants = (base: string, example: string | undefined): string =>
+  wrapList(
+    '    ',
+    'grants: [',
+    [base, ...(example === undefined ? [] : [example])].map((grant) => `'${grant}'`),
+    '],',
+  );
+
+const rolesSource = (
+  example: boolean,
+): string => `// Who holds which permission, for the whole app. Roles are sugar: every one expands to a flat
 // permission set before any policy runs, so a rule never reasons about the hierarchy.
 //
 // ONE file, and it lives in shared/ — the leaf both site/ and app/ already import, and the one the
@@ -16,8 +30,9 @@ const rolesSource =
 // role HERE; calling defineRoles() again from a feature folder works and is the drift this file
 // exists to prevent.
 //
-// \`x g policy <feature>\` declares \`<feature>:read\` and \`<feature>:write\`. Granting them is this
-// file's job — a permission no role holds is one no actor can ever exercise.
+// \`x g policy <feature>\` declares \`<feature>:read\` and \`<feature>:write\` and grants them below —
+// read to member, write to admin. A permission no role holds is one no actor can ever exercise,
+// and \`x verify\`'s policy step refuses it (X_PERMISSION_UNGRANTED).
 
 import { definePermissions, defineRoles } from '@ultimat3/policy';
 
@@ -32,11 +47,11 @@ export const appPermissions = definePermissions(['admin:read', 'dashboard:read']
 export const roles = defineRoles({
   member: {
     description: 'Signed in. Reads the app surface.',
-    grants: ['dashboard:read'],
+${grants('dashboard:read', example ? 'post:read' : undefined)}
   },
   admin: {
     description: 'Runs the app: the /admin surface, plus everything a member may do.',
-    grants: ['admin:read'],
+${grants('admin:read', example ? 'post:write' : undefined)}
     inherits: ['member'],
   },
 });
@@ -49,12 +64,25 @@ import { expandRoles, isKnownPermission, rolesGranting } from '@ultimat3/policy'
 import { expect, unitTest } from '@ultimat3/testing';
 import { appPermissions, roles } from './roles';
 
+// Every feature's policy.ts, imported the way the boot scan imports it: \`x g policy\` grants the
+// permissions a policy.ts DECLARES, so the registry below is only whole once they have run.
+const features = new Bun.Glob('{app,site}/*/policy.ts');
+for await (const file of features.scan({ cwd: \`\${import.meta.dir}/..\` })) {
+  await import(\`\${import.meta.dir}/../\${file}\`);
+}
+
 // The map is passed explicitly rather than read off the module-global one: a test that depended on
 // which module imported first would pass alone and fail inside a suite.
 
+// Subsets, never exact lists: every \`x g policy\` adds a grant here, and a pinned list would make
+// the generator's correct edit a red test.
 unitTest('admin inherits every member grant and adds its own', () => {
-  expect(expandRoles(['member'], roles)).toEqual(['dashboard:read']);
-  expect(expandRoles(['admin'], roles)).toEqual(['admin:read', 'dashboard:read']);
+  const member = expandRoles(['member'], roles);
+  const admin = expandRoles(['admin'], roles);
+  expect(member).toContain('dashboard:read');
+  expect(member).not.toContain('admin:read');
+  expect(admin).toContain('admin:read');
+  for (const permission of member) expect(admin).toContain(permission);
 });
 
 unitTest('a role nobody declared grants nothing', () => {
@@ -88,9 +116,9 @@ unitTest('the routes this app ships require permissions this app declares', () =
 `;
 
 /** `apps/web/shared/roles.ts` and its test. Written by `x new`, with or without the example slice. */
-export function rolesFiles(): readonly GeneratedFile[] {
+export function rolesFiles(example = false): readonly GeneratedFile[] {
   return [
-    { path: 'apps/web/shared/roles.ts', contents: rolesSource() },
+    { path: 'apps/web/shared/roles.ts', contents: rolesSource(example) },
     { path: 'apps/web/shared/roles.test.ts', contents: rolesTest() },
   ];
 }

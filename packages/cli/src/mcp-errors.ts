@@ -54,7 +54,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --json   # the package-shape finding carries the dependency line to add',
   X_PACKAGE_DUPLICATED:
     'x i18n check --json   # the finding names both copies and the package.json to pin',
-  X_SHOT_BROWSER_MISSING: 'bun add -d puppeteer-core',
+  X_SHOT_BROWSER_MISSING: 'export CHROME_PATH=/usr/bin/google-chrome',
   X_UI_SHOT_ROUTE_UNKNOWN:
     'x routes --json   # then call the ui.* tool with one of its path values',
   X_UI_SHOT_ROUTE_UNBUDGETED:
@@ -69,6 +69,12 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x routes --json   # then resend ui.interact with steps that stay on one of its paths',
   X_UI_INTERACT_STEP_FAILED:
     'x routes --json   # then run ui.inspect on the route first and copy a selector it reports with count >= 1',
+  X_SHOT_HOST_REFUSED: 'x shot /route --allow-hosts cdn.example.com --json',
+  X_SHOT_ELEMENT_MISSING:
+    'x routes --json   # then run ui.inspect on the route first and copy a selector it reports with count >= 1',
+  X_SHOT_ELEMENT_UNREADY:
+    'x routes --json   # then run ui.inspect on the route first and copy a selector it reports with count >= 1',
+  X_SHOT_KEY_INVALID: 'x help shot --json   # a chord is modifiers then one key: Meta+K',
   // The three `ui.diff` codes. Every capture it can compare was written by `x shot` or a `ui.*`
   // tool under `.x/shot/`, so the runnable half is the command that writes one there.
   X_UI_DIFF_PATH_OUTSIDE:
@@ -88,30 +94,6 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x help shot --json   # the cause lists every request the state must answer under routes',
   X_SHOT_ISLAND_MISSING:
     'x help shot --json   # every absent picture carries its own named refusal in the run above',
-  // The six e2e-driver codes. Every one of them is raised inside a running suite, so the runnable
-  // half is the command that re-runs that suite — the cause already names the closure, the locator
-  // call or the budget, and no `x` command can edit a test for its author.
-  X_E2E_EVALUATE_UNSUPPORTED:
-    'x test e2e --json   # the cause quotes the closure; page.evaluate takes a zero-parameter arrow',
-  X_E2E_EVALUATE_CAPTURED:
-    'x test e2e --json   # the fix line names the binding to inline into the closure',
-  X_E2E_EVALUATE_THREW:
-    'x dev --json   # then run the expression the cause quotes in the browser console; the throw is the page\u2019s',
-  X_E2E_LOCATOR_EMPTY:
-    'x test e2e --json   # the fix line carries the toBeVisible() assertion to await first',
-  X_E2E_LOCATOR_AMBIGUOUS:
-    'x test e2e --json   # the fix line carries the same call with .first() on it',
-  X_E2E_SERVICE_WORKER_ABSENT: 'x build --target static --json',
-  X_E2E_APP_FAILED: 'x dev --json',
-  // The four raw-CDP codes. `x doctor` for the missing browser, because that is the command whose
-  // whole job is reporting what this machine does not have; the other three are raised inside a
-  // running suite, so the runnable half is the command that re-runs it.
-  X_CDP_BROWSER_MISSING:
-    'x doctor --json   # or set CHROME_PATH to a Chrome binary; unset, the browser-backed suite skips',
-  X_CDP_LAUNCH_FAILED:
-    'x test e2e --json   # the cause carries the last lines of the browser\u2019s own stderr',
-  X_CDP_CALL_FAILED: 'x test e2e --json   # the cause names the DevTools call the browser refused',
-  X_CDP_TIMEOUT: 'x test e2e --json   # the cause names the call that never answered',
   X_GH_UNAVAILABLE: 'gh auth login   # install first from https://cli.github.com',
   X_GH_NOT_AUTHENTICATED: 'gh auth login',
   X_GH_COMMAND_FAILED: 'x ci --json   # the finding carries the gh invocation that failed',
@@ -126,7 +108,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_ERROR_CODE_UNTHROWN:
     'x errors explain X_ERROR_CODE_UNTHROWN --json   # then mark the row "registered, thrown by nothing since <version>"',
   X_CLI_UNEXPECTED: 'x doctor --json',
-  X_TYPECHECK_FAILED: 'bunx tsc -b --pretty false',
+  // `-p .`: an app root has no `references`, so the gate's own step runs this form (#450).
+  X_TYPECHECK_FAILED: 'bunx tsc -p . --pretty false',
   X_LINT_FAILED: 'bunx biome check --write .',
   X_TEST_FAILED: 'x test --json   # the finding carries the exact bun test invocation that failed',
   // The same two edits `vanishedSuiteFinding` names, verbatim, so both surfaces of this code hand
@@ -182,6 +165,10 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_PORT_INVALID: 'docker run -e PORT=3000 my-app:latest',
   X_RUNTIME_DRIVER_SPLIT: 'x dev --json   # the boot names the driver the app installed twice',
   X_GENERATE_CONFLICT: 'x g route posts --force --json',
+  X_APP_NAME_EMPTY:
+    'x new my-app --json   # a name with letters or digits; it becomes the directory',
+  X_APP_EMPTY:
+    'x doctor --json   # then check the app root: no module under apps/ or packages/ loaded',
   X_PORT_IN_USE: 'x dev --port 3001 --json',
   X_DEV_ALREADY_RUNNING:
     'x dev --json   # after stopping the x dev that already owns this checkout',
@@ -221,8 +208,9 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // consent and stays in the cause: it is the answer only for a container with a fixed argv.
   X_SEED_ENVIRONMENT:
     'x db seed --dry-run --json   # then name the tier: x db seed <name> --tier dev --json',
+  // The finding's own `fix:` is the concrete edit (`boundary-findings.ts`): the file and the import.
   X_BOUNDARY_SITE_TO_APP:
-    'x verify --json   # then: x fix boundary <the file the finding names> --json',
+    'x verify --only boundaries --json   # each finding names the import to delete, and where',
   X_BOUNDARY_SHARED_LEAF:
     'x verify --json   # then: x fix boundary <the file the finding names> --json',
   X_BOUNDARY_APP_TO_API:
@@ -231,6 +219,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --json   # then: x fix boundary <the file the finding names> --json',
   X_BOUNDARY_SERVICE_TO_HTTP:
     'x verify --json   # then: x fix boundary <the file the finding names> --json',
+  X_BOUNDARY_SURFACE_IMPORT:
+    'x verify --only boundaries --json   # then move the imported code into shared/',
   // The app's own guards. All three are reported by the gate and by nothing else, so the runnable
   // half is the gate — the narrowing behind the `#` is the edit, because only the finding knows
   // which file in `guards/` is the one to open.
@@ -245,6 +235,17 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // Render's code, thrown here by the bundler half: the cause names the specifier and the file it
   // resolved to, and `x g island` is what puts that file where the page already says it is.
   X_ISLAND_INVALID: 'x routes --json   # the cause names the src; then: x g island <name>',
+  // The four slice-11 codes: generated code that passed the gate and failed at runtime.
+  X_PERMISSION_UNGRANTED:
+    'x verify --only policy --json   # then add the permission to a role in apps/web/shared/roles.ts',
+  X_JOB_UNREGISTERED:
+    'x manifest --json   # after listing the module under jobs: [...] in apps/web/api/index.ts',
+  X_FEATURE_UNKNOWN:
+    'x entities --json   # then x g resource <feature> for the one the cause names',
+  X_BUDGET_PARAMS_UNDECLARED:
+    'x build --target static --json   # after adding prerender() with one real path to the route',
+  X_ROUTE_ASYNC_PAGE:
+    'x verify --only budgets --json   # after moving each await in Page into export const load',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

@@ -80,7 +80,10 @@ const compareSpecifiers = (left: string, right: string): number => {
  * than spelled in each template, because the correct spelling is not knowable at authoring time.
  */
 export const sortSpecifiers = (names: readonly string[]): readonly string[] =>
-  [...names].sort(compareSpecifiers);
+  [...names].sort((left, right) => compareSpecifiers(bare(left), bare(right)));
+
+/** An inline \`type X\` sorts as \`X\`: Biome orders by the imported name, never by the modifier. */
+const bare = (name: string): string => (name.startsWith('type ') ? name.slice(5) : name);
 
 /**
  * A named import, sorted and wrapped. Its own function because the braces are spaced on one line

@@ -11,8 +11,8 @@
 import { join } from 'node:path';
 import type { UiInspectInput, UiInspectResult, UiInspectSelector } from '@ultimat3/mcp';
 import { UI_INSPECT_LIMITS } from '@ultimat3/mcp';
-import type { AxNode, ScrapeDriver, ScrapePage } from '@ultimat3/scraping';
-import { DEFAULT_PAGE_TIMEOUT_MS } from '@ultimat3/scraping';
+import type { AxNode, ShotDriver, ShotPage } from './browser-launcher-port';
+import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
 import { DEFAULT_SETTLE_MS, runShot, SHOT_DIR, shotSlug } from './cmd-shot';
 import type { ShotServer } from './shot-server';
 import type { ShotVerdict } from './shot-verdict';
@@ -23,7 +23,7 @@ export interface InspectDeps {
   readonly root: string;
   /** The memoised scratch server (or the running `x dev`), as `uiCapabilities` hands it out. */
   readonly boot: () => Promise<ShotServer>;
-  readonly driver: (viewport: UiInspectInput['viewport']) => Promise<ScrapeDriver>;
+  readonly driver: (viewport: UiInspectInput['viewport']) => Promise<ShotDriver>;
 }
 
 /** What the page answered before the parser had a say — `null` selectors when it answered nothing. */
@@ -45,7 +45,7 @@ export type InspectSpecInput = Pick<
  * a page that refuses evaluation is a page with no facts, and the verdict — not a throw here — is
  * what says why. Shared by `ui.inspect` and `ui.interact`, so both read the same facts.
  */
-export async function readInspect(page: ScrapePage, spec: InspectSpecInput): Promise<Seen> {
+export async function readInspect(page: ShotPage, spec: InspectSpecInput): Promise<Seen> {
   const expression = inspectExpression({
     selectors: spec.selectors,
     styles: spec.styles,

@@ -77,7 +77,7 @@ describe('unit · a permission a role grants must be one the app declared', () =
 });
 
 describe('unit · a permission a route requires must be one the app declared', () => {
-  test('the route table is read, not the source — the same field dev-hooks builds can() from', () => {
+  test('the route table is read, not the source — the same field runtime-hooks builds can() from', () => {
     definePermissions(['admin:read']);
     registerRoute({
       file: 'apps/web/app/dashboard/page.tsx',

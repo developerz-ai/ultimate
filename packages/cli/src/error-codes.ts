@@ -178,30 +178,26 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_SHOT_ISLAND_UNPHOTOGRAPHABLE',
   'X_SHOT_ISLAND_UNSTUBBED_REQUEST',
   'X_SHOT_ISLAND_MISSING',
-  // The browser-backed e2e driver — `e2e-driver.ts` and the three modules under it. Owned by the
-  // CLI because the ADAPTER is: `@ultimat3/testing` declares `PageLike` and may not import a
-  // browser, `@ultimat3/scraping` owns the browser and may not import the harness, and neither
-  // package can name a failure that only exists where the two meet.
-  'X_E2E_EVALUATE_UNSUPPORTED',
-  'X_E2E_EVALUATE_CAPTURED',
-  'X_E2E_EVALUATE_THREW',
-  'X_E2E_LOCATOR_EMPTY',
-  'X_E2E_LOCATOR_AMBIGUOUS',
-  'X_E2E_SERVICE_WORKER_ABSENT',
-  'X_E2E_APP_FAILED',
-  // The raw-CDP browser under that driver — `cdp-launch.ts`, `cdp-connection.ts`,
-  // `cdp-e2e-page.ts`, `cdp-browser.ts`. Four codes and not one, because the four repairs differ:
-  // install a browser, read the browser's own stderr, look at the page, raise a deadline.
-  'X_CDP_BROWSER_MISSING',
-  'X_CDP_LAUNCH_FAILED',
-  'X_CDP_CALL_FAILED',
-  'X_CDP_TIMEOUT',
+  // The raw-CDP shot page's own refusals (`cdp-shot-errors.ts` holds the classes): which host it
+  // may open, which element it was pointed at, and which key it was asked to press.
+  'X_SHOT_HOST_REFUSED',
+  'X_SHOT_ELEMENT_MISSING',
+  'X_SHOT_ELEMENT_UNREADY',
+  'X_SHOT_KEY_INVALID',
   'X_GH_UNAVAILABLE',
   'X_GH_NOT_AUTHENTICATED',
   'X_GH_COMMAND_FAILED',
   'X_GH_RESPONSE_INVALID',
   'X_PR_NOT_FOUND',
   'X_CI_RUN_NOT_FOUND',
+  'X_APP_NAME_EMPTY',
+  'X_APP_EMPTY',
+  'X_BOUNDARY_SURFACE_IMPORT',
+  'X_PERMISSION_UNGRANTED',
+  'X_JOB_UNREGISTERED',
+  'X_FEATURE_UNKNOWN',
+  'X_ROUTE_ASYNC_PAGE',
+  'X_BUDGET_PARAMS_UNDECLARED',
 ] as const;
 
 /**
@@ -316,7 +312,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_SECRETS_EDIT_FAILED: 'the editor exited non-zero, so nothing was resealed',
   X_WORKSPACE_DEP_UNDECLARED: 'a workspace imports another workspace it does not declare',
   X_PACKAGE_DUPLICATED: 'two copies of one registry-holding framework package are installed',
-  X_SHOT_BROWSER_MISSING: 'x shot found no browser library in the app',
+  X_SHOT_BROWSER_MISSING: '`x shot` has no browser to launch',
   X_UI_SHOT_ROUTE_UNKNOWN: 'a ui.* tool was asked for a path no route answers',
   X_UI_SHOT_ROUTE_UNBUDGETED: 'a ui.* tool refused a route that declares no budget.js',
   X_UI_INTERACT_STEPS_INVALID: 'a ui.interact step list is over its bounds or malformed',
@@ -330,23 +326,25 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_SHOT_ISLAND_UNPHOTOGRAPHABLE: 'the island never reached a state worth photographing',
   X_SHOT_ISLAND_UNSTUBBED_REQUEST: 'the island requested something no state stub answers',
   X_SHOT_ISLAND_MISSING: 'a declared island picture is not on disk',
-  X_E2E_EVALUATE_UNSUPPORTED: 'a page.evaluate() closure cannot be sent into the browser',
-  X_E2E_EVALUATE_CAPTURED: 'a page.evaluate() closure named a binding the page does not have',
-  X_E2E_EVALUATE_THREW: 'an expression an e2e page ran threw inside the browser',
-  X_E2E_LOCATOR_EMPTY: 'an e2e locator matched no element',
-  X_E2E_LOCATOR_AMBIGUOUS: 'an e2e locator matched more than one element and was asked to click',
-  X_E2E_SERVICE_WORKER_ABSENT: 'no service worker took control of the page within the budget',
-  X_E2E_APP_FAILED: 'the app an e2e run spawned did not come up',
-  X_CDP_BROWSER_MISSING: 'no Chrome or Chromium is installed for the e2e driver to launch',
-  X_CDP_LAUNCH_FAILED: 'the browser started and never announced a DevTools endpoint',
-  X_CDP_CALL_FAILED: 'the browser refused a DevTools call',
-  X_CDP_TIMEOUT: 'a DevTools call did not answer inside its deadline',
+  X_SHOT_HOST_REFUSED: "x shot was asked to open a host outside the run's allow list",
+  X_SHOT_ELEMENT_MISSING: 'no element matched the selector before the deadline',
+  X_SHOT_ELEMENT_UNREADY: 'the element matched and never became ready to act on',
+  X_SHOT_KEY_INVALID: 'a key chord the browser cannot press',
   X_GH_UNAVAILABLE: 'the GitHub CLI is not runnable from here',
   X_GH_NOT_AUTHENTICATED: 'gh holds no credentials for this host',
   X_GH_COMMAND_FAILED: 'a gh invocation exited non-zero',
   X_GH_RESPONSE_INVALID: "gh's output is not the shape the command reads",
   X_PR_NOT_FOUND: 'no pull request for this checkout',
   X_CI_RUN_NOT_FOUND: 'no workflow run for this branch',
+  X_APP_NAME_EMPTY: 'the app name has no letters or digits',
+  X_APP_EMPTY: 'an app with an app.config.ts registered no primitive',
+  X_BOUNDARY_SURFACE_IMPORT: 'a surface imports one SURFACE_SPECS does not allow',
+  X_PERMISSION_UNGRANTED: 'an action, query or route requires a permission no role grants',
+  X_JOB_UNREGISTERED: 'a job reached the manifest under its positional anonymous name',
+  X_FEATURE_UNKNOWN: 'x g --feature names a slice that does not exist',
+  X_ROUTE_ASYNC_PAGE: 'a route exports an async Page',
+  X_BUDGET_PARAMS_UNDECLARED:
+    'a dynamic route with a budget declares no prerender() paths to weigh it by',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

@@ -29,7 +29,7 @@ const ctx: VerifyContext = {
 
 describe('unit · x verify · typecheckBin', () => {
   // `x.verify.json`'s `typecheckBin` swaps the binary `bunx` invokes and nothing else — same
-  // `-b --pretty false`, same step, same finding either way. Absent means `tsc`, unchanged.
+  // mode, same step, same finding either way. Absent means `tsc`, unchanged.
   test("the typecheck step runs the floor's typecheckBin, and tsc without one", async () => {
     const step = VERIFY_STEPS.find((candidate) => candidate.name === 'typecheck');
     const root = await mkdtemp(join(tmpdir(), 'x-typecheck-bin-'));
@@ -40,9 +40,14 @@ describe('unit · x verify · typecheckBin', () => {
         return { command, code: 0, ok: true, stdout: '', stderr: '', durationMs: 0 };
       };
       await step?.run({ ...ctx, root, runner });
-      expect(ran.at(-1)).toEqual(['bunx', 'tsc', '-b', '--pretty', 'false']);
+      // No root `references`: one program, checked by content rather than by date (#450).
+      expect(ran.at(-1)).toEqual(['bunx', 'tsc', '-p', '.', '--pretty', 'false']);
 
       await Bun.write(join(root, VERIFY_FLOOR_FILE), '{"steps":[],"typecheckBin":"tsgo"}');
+      await step?.run({ ...ctx, root, runner });
+      expect(ran.at(-1)).toEqual(['bunx', 'tsgo', '-p', '.', '--pretty', 'false']);
+
+      await Bun.write(join(root, 'tsconfig.json'), '{ "references": [{ "path": "./a" }], }');
       await step?.run({ ...ctx, root, runner });
       expect(ran.at(-1)).toEqual(['bunx', 'tsgo', '-b', '--pretty', 'false']);
     } finally {

@@ -5,6 +5,7 @@ import { nearestName, singleLine } from '@ultimat3/core';
 // a plausible-sounding explanation an agent would then act on.
 
 import type { ErrorExplanation } from '@ultimat3/mcp';
+import { errorsSpec } from './cmd-errors-spec';
 import type { CliCommand, CommandContext } from './command';
 import type { ErrorCatalog } from './error-catalog';
 import { loadErrorCatalog } from './error-catalog';
@@ -14,7 +15,7 @@ import { explainErrorCode, explainEveryErrorCode } from './mcp-errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 
-export const ERRORS_SUBCOMMANDS = ['explain', 'list'] as const;
+export { ERRORS_SUBCOMMANDS } from './cmd-errors-spec';
 
 /**
  * `site` is the throw site as DATA, and it is why the `fix:` for a code whose fix is built at run
@@ -85,22 +86,7 @@ function listAll(catalog: ErrorCatalog): CommandResult {
 }
 
 export const errorsCommand: CliCommand = {
-  spec: {
-    name: 'errors',
-    summary: 'an X_* code, explained: cause, runnable fix, docs URL',
-    usage: 'x errors [explain <CODE>|list] [--json]',
-    subcommands: ERRORS_SUBCOMMANDS,
-    // `explain`, deliberately: the bare `x errors` then answers with `MissingPositionalError`,
-    // which names `<CODE>` and hands back a real invocation. `list` would silently print 200 rows
-    // to a caller who meant to explain one — see `MissingPositionalError`'s own note.
-    defaultSubcommand: 'explain',
-    // `x errors X_PERMISSION_UNKNOWN` is the form every reader tries first — `x help` prints
-    // `errors  an X_* code, explained`, which reads as exactly that — and it answered
-    // `X_CLI_UNKNOWN_COMMAND … fix: x help`, which leads back to the line that suggested it.
-    // Safe to declare here and nowhere else so far: the only thing that is not `explain` or
-    // `list` in this slot is a code, and a near miss of either is still refused (#F16).
-    defaultSubcommandTakesPositional: true,
-  },
+  spec: errorsSpec,
   // `async` is load-bearing: a synchronous throw would escape every caller that awaits the
   // promise this signature promises, including the dispatcher's own error path.
   async run(ctx: CommandContext): Promise<CommandResult> {

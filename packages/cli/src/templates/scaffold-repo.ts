@@ -64,9 +64,9 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "dev": "x dev",
     "check": "bin/check",
     "verify": "x verify",
-    "typecheck": "tsc -b --pretty",
+    "typecheck": "tsc -p . --pretty",
     "lint": "biome check .",
-    "test": "bun test",
+    "test": "bun test --isolate",
     "db:migrate": "x db migrate",
     "db:seed": "x db seed"
   },
@@ -89,6 +89,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "@ultimat3/i18n": "^${version}",
     "@ultimat3/jobs": "^${version}",
     "@ultimat3/mcp": "^${version}",
+    "@ultimat3/money": "^${version}",
     "@ultimat3/policy": "^${version}",
     "@ultimat3/pwa": "^${version}",
     "@ultimat3/query": "^${version}",
@@ -106,14 +107,16 @@ const rootPackage = (app: NameSet, version: string): string => `{
 
 /**
  * `"incremental": true` is ONE line and it is the difference between a 4.9s typecheck and a 92s
- * one. `x verify`'s first step is `tsc -b`, and `-b` decides "up to date?" by comparing emitted
- * OUTPUTS against inputs — with `noEmit` and no `composite`/`references`, the output it looks for
- * is an `app.config.js` that will never exist (`Project 'tsconfig.json' is out of date because
- * output file 'app.config.js' does not exist`), so every run rebuilt the whole program from
- * scratch, forever. Measured on a 166-file scaffold with no source change between runs: 92s wall
- * / 43s user CPU without it, 4.9s / 8.8s warm with it, and the whole gate at 12s rather than
- * 24-71s. This was the only tree in the framework without incremental typechecking — the repo
- * root has 32 `references` and `examples/dummy/tsconfig.json` sets `composite`.
+ * one. Measured on a 166-file scaffold with no source change between runs: 92s wall / 43s user CPU
+ * without it, 4.9s / 8.8s warm with it.
+ *
+ * The typecheck is `tsc -p .`, never `-b`, `As of 2026-09-23` (#450) — here, in the scaffold's
+ * `typecheck` script, and in `x verify`'s step (`verify-typecheck.ts`, for any root without
+ * `references`). `-b` decides "up to date?" by MTIME, and Bun installs a dependency as hardlinks
+ * carrying its cache's old mtimes: upgrading to a version already in the cache left every input
+ * older than the buildinfo, so `-b` skipped the program and reported green while a cold CI was
+ * red. `-p` with `incremental` compares content hashes. `-b` also wanted an emitted
+ * `app.config.js` that `noEmit` never writes, which is why this line was first needed.
  *
  * The note lives HERE and not in the emitted file, for the reason `biome.json` below gives: an
  * app author has no use for eight lines of framework archaeology in their own tsconfig, and

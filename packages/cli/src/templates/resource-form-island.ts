@@ -32,12 +32,14 @@ const formIslandSource = (
 // the PAGE, which is one directory across from this one:
 //   const ${feature.pascal}Form = island({
 //     src: '${specifier}',
-//     props: ['endpoint', 'locale', 'labels'],
+//     props: ['endpoint', 'locale', 'currency', 'labels'],
 //   });
-//   <${feature.pascal}Form endpoint={derivePath('create${feature.pascal}').path} locale={locale} labels={labels} />
+//   <${feature.pascal}Form endpoint={derivePath('create${feature.pascal}').path} locale={locale}
+//     currency="USD" labels={labels} />
 // A string has no import edge, so the page's bundle graph stays the page's (axiom 6).
 
 import { clientTransport } from '@ultimat3/core';
+import { fromDecimal } from '@ultimat3/money';
 import { Button, Form, Input, setSolidRuntime, UiProvider } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import {
@@ -58,8 +60,11 @@ export interface ${feature.pascal}FormProps {
   readonly endpoint: string;
   /** The request's own locale. A browser has no ambient one the server ever agreed to. */
   readonly locale: string;
+  /** The ISO code the price is entered in. The amount is typed as a decimal and sent as minor units. */
+  readonly currency: string;
   readonly labels: {
     readonly title: string;
+    readonly price: string;
     readonly submit: string;
     readonly saved: string;
     readonly retry: string;
@@ -78,14 +83,23 @@ type SaveState = 'idle' | 'saved' | 'failed';
  */
 function ${feature.pascal}FormBody(props: ${feature.pascal}FormProps): JSX.Element {
   const [title, setTitle] = createSignal('');
+  const [amount, setAmount] = createSignal('');
   const [state, setState] = createSignal<SaveState>('idle');
 
   // A refusal and a request that never got a response both REJECT here — the transport turns a
   // non-2xx into its code and an offline \`fetch\` into X_CLIENT_TRANSPORT_FAILED — and both are the
   // outcome \`retry\` exists for. Without the catch the rejection escapes \`void send()\` unhandled.
+  // The body is the create action's input: the entity's own columns, the price as integer minor
+  // units. \`fromDecimal\` reads the typed digits as a string, never a float, and refuses what is not
+  // a number — the same \`retry\` state, because the server would refuse it too.
   const send = async (): Promise<void> => {
     try {
-      await clientTransport({ method: 'POST', url: props.endpoint, body: { title: title() } });
+      const price = fromDecimal(amount(), props.currency);
+      await clientTransport({
+        method: 'POST',
+        url: props.endpoint,
+        body: { title: title(), price },
+      });
       setState('saved');
     } catch {
       setState('failed');
@@ -109,6 +123,12 @@ function ${feature.pascal}FormBody(props: ${feature.pascal}FormProps): JSX.Eleme
         aria-label={props.labels.title}
         value={title()}
         onInput={(event) => setTitle(event.currentTarget.value)}
+      />
+      <Input
+        aria-label={props.labels.price}
+        inputmode="decimal"
+        value={amount()}
+        onInput={(event) => setAmount(event.currentTarget.value)}
       />
       <Button type="submit">{props.labels.submit}</Button>
       <p data-role="status" role="status" aria-live="polite">
@@ -174,7 +194,13 @@ const APP_ROOT = join(import.meta.dir, ${upToAppRoot(dir)});
 const ISLAND = '${dir}/${feature.kebab}-form.island.tsx';
 const ENDPOINT = '/api/${feature.kebab}/create-${feature.kebab}';
 
-const LABELS = { title: 'Title', submit: 'Save', saved: 'Saved', retry: 'Try again' };
+const LABELS = {
+  title: 'Title',
+  price: 'Price',
+  submit: 'Save',
+  saved: 'Saved',
+  retry: 'Try again',
+};
 
 const calls: { url: string; body: Record<string, unknown> }[] = [];
 
@@ -191,7 +217,7 @@ beforeAll(async () => {
     build: buildIslands,
     root: APP_ROOT,
     file: ISLAND,
-    props: { endpoint: ENDPOINT, locale: 'en', labels: LABELS },
+    props: { endpoint: ENDPOINT, locale: 'en', currency: 'USD', labels: LABELS },
     // What the server rendered inside the island's wrapper. \`mount\` replaces it.
     shell: '<p>Loading</p>',
     globals: {
@@ -244,17 +270,25 @@ describe('the ${feature.kebab} form island', () => {
     expect(mounted.code).not.toMatch(/\\bReact\\b/);
   });
 
-  test('the field tracks, and submit posts what was typed', async () => {
-    const field: FakeElement | null = mounted.find('input');
-    expect(field).not.toBeNull();
-    if (field !== null) field.value = 'First ${feature.camel}';
+  test('the fields track, and submit posts the create input', async () => {
+    const title: FakeElement | null = mounted.find('input[aria-label="Title"]');
+    const price: FakeElement | null = mounted.find('input[aria-label="Price"]');
+    expect(title).not.toBeNull();
+    expect(price).not.toBeNull();
+    if (title !== null) title.value = 'First ${feature.camel}';
+    if (price !== null) price.value = '12.50';
     // \`false\` means no handler ran — an island whose onInput never reached the DOM looks
     // identical to a selector typo otherwise.
-    expect(mounted.fire(field, 'input')).toBe(true);
+    expect(mounted.fire(title, 'input')).toBe(true);
+    expect(mounted.fire(price, 'input')).toBe(true);
     expect(mounted.fire('form', 'submit', { preventDefault: () => {} })).toBe(true);
     await statusSettled();
 
-    expect(calls).toEqual([{ url: ENDPOINT, body: { title: 'First ${feature.camel}' } }]);
+    const body = {
+      title: 'First ${feature.camel}',
+      price: { minor: 1250, currency: 'USD' },
+    };
+    expect(calls).toEqual([{ url: ENDPOINT, body }]);
   });
 
   test('the status line answers the response', () => {
@@ -300,10 +334,12 @@ import type { ${feature.pascal}FormProps } from './${feature.kebab}-form.island'
 
 /** What a working render hands the form — the baseline the state below departs from. */
 const BASE = {
-  endpoint: '/api/create-${feature.kebab}',
+  endpoint: '/api/${feature.pluralKebab}/create',
   locale: 'en',
+  currency: 'USD',
   labels: {
     title: 'Title',
+    price: 'Price',
     submit: 'Save',
     saved: 'Saved',
     retry: 'That did not save. Try again.',
@@ -327,6 +363,7 @@ export const ${feature.camel}FormStates = defineIslandStates({
         locale: 'de',
         labels: {
           title: 'Bezeichnung des Beitrags',
+          price: 'Preis',
           submit: 'Änderungen speichern',
           saved: 'Änderungen gespeichert',
           retry: 'Das konnte nicht gespeichert werden. Bitte erneut versuchen.',

@@ -68,7 +68,7 @@ const repoSource = (name: NameSet, table: string): string => {
   const row = name.pascal;
   const byIdCall = wrapList(
     '  ',
-    `const row = await db().one<${row}>(`,
+    'const row = await db().one<Physical>(',
     [`sql\`select * from ${table} where id = \${id}\``],
     ');',
   );
@@ -90,32 +90,37 @@ const repoSource = (name: NameSet, table: string): string => {
 // join the caller's transaction without knowing one is open.
 
 import { db, sql } from '@ultimat3/db';
-import { dbDrift, newId } from '@ultimat3/entity';
-import type { ${name.pascal} } from './entity';
+import { dbDrift, decodeRow, newId } from '@ultimat3/entity';
+${wrapImport([`type ${name.pascal}`, name.camel], './entity')}
+
+// What \`select *\` answers: snake_case columns, and money as three of them. Never cast to the row
+// type — \`decodeRow\` is the entity's own reading of it, so \`price\` is a Money again.
+type Physical = Readonly<Record<string, unknown>>;
 
 export async function byId(id: string): Promise<${name.pascal} | undefined> {
 ${byIdCall}
-  return row ?? undefined;
+  return row === null ? undefined : decodeRow(${name.camel}, row);
 }
 
 ${listSignature}
   // Ordered and bounded: an unordered page is a different page on every request.
-  return db().query<${name.pascal}>(
+  const rows = await db().query<Physical>(
     sql\`select * from ${table} where org_id = \${orgId} order by created_at desc limit \${limit}\`,
   );
+  return rows.map((row) => decodeRow(${name.camel}, row));
 }
 
 ${insertSignature}
   // Money is three physical columns — integer minor units, the ISO code, and the scale, never a
   // float. \`scale ?? null\`: an amount at the currency's own minor unit carries no scale at all,
   // and writing \`0\` for it would claim whole units — a 100x reinterpretation of the price.
-  const created = await db().one<${name.pascal}>(sql\`
+  const created = await db().one<Physical>(sql\`
     insert into ${table} (id, org_id, title, price_minor, price_currency, price_scale)
     values (\${newId()}, \${row.orgId}, \${row.title}, \${row.price.minor}, \${row.price.currency},
             \${row.price.scale ?? null})
     returning *\`);
   if (created === null) throw dbDrift('${table}', 'id');
-  return created;
+  return decodeRow(${name.camel}, created);
 }
 `;
 };

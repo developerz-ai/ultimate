@@ -3,7 +3,7 @@
 // `policyFiles`; the five generators that write *into* a slice imported the same files and wrote
 // none of them, so each emitted TS2307 in any slice a resource had not been run in first.
 
-import { stripComments } from '../ts-scan';
+import { stripComments } from '@ultimat3/core';
 import type { FeatureTarget } from './entity';
 import { entityFiles } from './entity';
 import type { GeneratedFile, NameSet } from './naming';

@@ -69,7 +69,7 @@ const CATALOG = {
   'cli.dev.ready': 'dev ready on {url} — /_x mounted ({panels} panels), {services}',
   // The mail and CDN halves of that boot line. Rendered text, so it lives here — while
   // `describeMail`/`describeCdn` keep the same wording as the fixed vocabulary `x dev --json`
-  // carries, and `dev-runtime.test.ts` pins the two together so neither can drift alone.
+  // carries, and `runtime-services.test.ts` pins the two together so neither can drift alone.
   'cli.dev.cdn.external': 'cdn=external({driver} via {detail})',
   'cli.dev.cdn.none': 'cdn=none',
   'cli.dev.mail.embedded': 'mail=embedded',
@@ -204,8 +204,6 @@ const CATALOG = {
   'cli.shot.pageError': '  threw    {message}  {at}',
   'cli.shot.picture': '  picture  {path}',
   'cli.shot.verdict': '  verdict  {path}',
-  'cli.shot.blind.status':
-    'HTTP response status is not observed — the port records requests, never responses',
   // `--island`. A component capture reports per STATE, so the summary counts pictures and the
   // lines name one state each; nothing here restates a fact `--json` does not carry.
   'cli.shot.island.ok':

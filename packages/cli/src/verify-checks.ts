@@ -15,12 +15,13 @@ import {
 import type { MetaIssue } from '@ultimat3/seo';
 import { validateMeta } from '@ultimat3/seo';
 import { checkAgentsMd } from './app-agents-md';
-import { checkAppBoundaries } from './app-boundaries';
 import { envExampleFindings } from './app-env';
 import { appManifest, readAppManifest } from './app-manifest';
-import { OPENAPI_FILE, openApiJson } from './app-openapi';
+import { OPENAPI_FILE, openApiStaleness } from './app-openapi';
 import { policyFindings } from './app-permissions';
 import { APP_CONFIG_FILE } from './app-root';
+import { asyncPageFindings } from './async-pages';
+import { appBoundaryFindings } from './boundary-findings';
 import { checkBudgets, readBuildStats } from './budgets';
 import { checkDestructiveMigrations } from './db-destructive';
 import { checkUngeneratableMigrations } from './db-ungeneratable';
@@ -28,17 +29,21 @@ import { checkDocumentStyles, documentSurfaces } from './document-styles';
 import { checkErrorCodeResolution, checkErrorFixReport } from './error-contract';
 import { guardFindings } from './guards';
 import { catalogFindings } from './i18n-registration';
+import { unregisteredJobFindings } from './job-registration';
 import { liveRouteFindings } from './live-routes';
+import { withLoadFindings, withoutLoadFindings } from './load-findings';
 import { msg } from './messages';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { checkMigrationDrift } from './schema-drift';
 import { scanSiteMeta } from './seo-meta';
+import { quoteArg } from './shell-quote';
 import { readStaticReport } from './static-report';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
 import type { VerifyStep } from './verify-step';
 import { fromExec, fromFindings, hostFindings } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
+import { typecheckArgs } from './verify-typecheck';
 import { checkFileSizes, checkPackageShape, hasWorkspacePackages } from './workspace-checks';
 import { checkWorkspaceDependencies } from './workspace-graph';
 
@@ -49,22 +54,21 @@ const ROADMAP_FILE = join('docs', 'idea', '14-roadmap.md');
 export const VERIFY_STEPS: readonly VerifyStep[] = [
   {
     name: 'typecheck',
-    summary: 'tsc -b across every project the root references',
+    summary: 'tsc -b across every project the root references, tsc -p . where it references none',
     // `typecheckBin` (`x.verify.json`, beside `agentsMdMaxBytes`) swaps the binary and nothing
-    // else: same `-b --pretty false` invocation, same output format to parse, same `X_TYPECHECK_
-    // FAILED` finding either way. Absent means `tsc` — the only checker every app already has,
-    // since `typescript` is a framework dependency and a drop-in replacement is the app's own
-    // devDependency to add, never a default this step could assume.
+    // else: same invocation, same output format to parse, same `X_TYPECHECK_FAILED` finding either
+    // way. Absent means `tsc` — the only checker every app already has, since `typescript` is a
+    // framework dependency and a drop-in replacement is the app's own devDependency to add, never
+    // a default this step could assume. `-b` or `-p .` is `typecheckArgs`' call (#450).
     async run(ctx) {
       const floor = await readVerifyFloor(ctx.root);
-      const bin = floor?.typecheckBin ?? 'tsc';
-      const result = await ctx.runner(['bunx', bin, '-b', '--pretty', 'false'], {
-        cwd: ctx.root,
-      });
+      const argv = await typecheckArgs(ctx.root, floor?.typecheckBin ?? 'tsc');
+      const result = await ctx.runner(['bunx', ...argv], { cwd: ctx.root });
       return fromExec(result, {
         code: 'X_TYPECHECK_FAILED',
         cause: 'the project does not typecheck',
-        fix: `bunx ${bin} -b --pretty false`,
+        // Joined, never spliced: `typecheckBin` is a value from the app's `x.verify.json`.
+        fix: ['bunx', ...argv.map(quoteArg)].join(' '),
       });
     },
   },
@@ -99,7 +103,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // extension model rejects.
     run: async (ctx) =>
       fromFindings([
-        ...(await checkAppBoundaries(ctx.root)),
+        ...(await appBoundaryFindings(ctx.root)),
         ...(await guardFindings(ctx.root)),
         ...(await hostFindings(ctx, 'boundaries')),
       ]),
@@ -187,10 +191,11 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     async run(ctx) {
       const committed = await readAppManifest(ctx.root);
       const { manifest, findings } = await appManifest(ctx.root);
-      return fromFindings([
+      // A module that will not import is `manifest`'s to report (`load-findings.ts`).
+      return withoutLoadFindings(ctx.root, [
         ...findings,
         ...(committed === undefined ? [] : contractFindings(committed, manifest)),
-        ...(await specFindings(ctx.root, manifest)),
+        ...(await openApiStaleness(ctx.root, manifest)),
       ]);
     },
   },
@@ -224,21 +229,27 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       // reported under `X_ISLAND_PROPS_INVALID` — the build's own sentence, naming the prop and
       // its bytes — and not as an `X_BUDGET_UNMEASURED` whose fix is to go and read this file.
       const report = await readStaticReport(ctx.root);
-      // The load's own findings, FIRST and never dropped. A module that would not import registers
-      // no route, so its budget is missing from the manifest and every route it declared reads as
-      // `X_BUDGET_UNMEASURED` — the symptom, pointing the reader at `x build` for a file that will
-      // not compile. `contract-diff` reports these too when it applies; two red steps naming one
-      // broken module is honest, and one of them silently green over it is the false green.
+      // The load's own findings are `manifest`'s, reported there once; this step's output says so.
+      // A module that would not import registers no route, so every route it declared still reads
+      // as `X_BUDGET_UNMEASURED` here — the symptom stays this step's, and the gate stays red.
       const { manifest, findings } = await appManifest(ctx.root);
-      return fromFindings([
+      const outcome = await withoutLoadFindings(ctx.root, [
         ...findings,
         ...checkDocumentStyles(documentSurfaces()),
         // The third rider, and the same question this step already asks one level down: what
         // JavaScript does this route's document boot? A live read with no island is a route
         // whose answer is "none", which no suite can fail on — the page renders, at 200.
         ...(await liveRouteFindings(ctx.root)),
+        // The fourth: a data read in an async Page rather than in `load` (`async-pages.ts`).
+        ...asyncPageFindings(),
         ...checkBudgets(manifest, stats, report?.unmeasured),
       ]);
+      // What no build can weigh, said out loud rather than dropped (`measure-paths.ts`).
+      const notes = (report?.unmeasured ?? [])
+        .filter((one) => one.weighable === false)
+        .map((one) => `not weighed: ${one.reason}`);
+      const output = [outcome.output, ...notes].filter((line) => line !== undefined).join('\n');
+      return output === '' ? outcome : { ...outcome, output };
     },
   },
   {
@@ -293,7 +304,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // registers no routes — SKIPPED there, never passed, for the reason `i18n` gives: a step that
     // answers `ok` about nothing is the vacuous green these checks exist to refuse.
     applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
-    run: async (ctx) => fromFindings(await policyFindings(ctx.root)),
+    run: async (ctx) => withoutLoadFindings(ctx.root, await policyFindings(ctx.root)),
   },
   {
     name: 'manifest',
@@ -315,9 +326,16 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       // and reading it after the check would enforce the default on a repo that raised it.
       const floor = await readVerifyFloor(ctx.root);
       const agents = await checkAgentsMd(ctx.root, floor?.agentsMdMaxBytes);
+      // The app's load failures, once, here — every other step that loaded it points at this one.
+      const app = existsSync(join(ctx.root, APP_CONFIG_FILE));
+      const drift = await driftFindings(ctx.root);
       const findings = [
         ...manifestMissingFindings(ctx.root),
-        ...(await driftFindings(ctx.root)),
+        ...(app ? await withLoadFindings(ctx.root, drift) : drift),
+        // An app only: the framework monorepo declares no `defineApi`, so it has no list to be in.
+        ...(existsSync(join(ctx.root, APP_CONFIG_FILE))
+          ? await unregisteredJobFindings(ctx.root)
+          : []),
         ...(await envExampleFindings(ctx.root)),
         ...floorProblemFindings(floor),
         ...agents.findings,
@@ -392,22 +410,6 @@ function contractFindings(before: Manifest, after: Manifest): readonly Finding[]
   } catch (error) {
     return [{ ...findingFrom(error), at: MANIFEST_FILENAME }];
   }
-}
-
-/** The typed client is generated from `openapi.json`, so a stale spec ships a wrong client. */
-async function specFindings(root: string, manifest: Manifest): Promise<readonly Finding[]> {
-  const path = join(root, OPENAPI_FILE);
-  if (!existsSync(path)) return [];
-  if ((await Bun.file(path).text()) === openApiJson(manifest)) return [];
-  return [
-    {
-      code: 'X_MANIFEST_STALE',
-      cause: `${OPENAPI_FILE} does not match the actions the code registers`,
-      fix: 'x manifest',
-      docs: ERROR_DOCS_URL,
-      at: OPENAPI_FILE,
-    },
-  ];
 }
 
 /**

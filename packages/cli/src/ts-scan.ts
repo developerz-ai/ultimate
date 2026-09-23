@@ -30,13 +30,10 @@ export interface CodeScan {
   readonly unresolved: readonly UnresolvedCodeSite[];
 }
 
-// The masking itself — `QUOTES`, `endOfLiteral`, `stripComments`, `maskLiterals` — lives in
-// `@ultimat3/core`'s `source-mask.ts` since 2026-09-05, because `@ultimat3/i18n`'s key extractor
-// (tier 1) needed it and could not reach a tier-5 package. Re-exported here so every scanner in
-// this package, and this package's public API, keep the names they had.
+// The masking itself — `QUOTES`, `endOfLiteral`, `stripComments`, `maskLiterals` — is
+// `@ultimat3/core`'s (`source-mask.ts`), imported from there by every scanner. It was re-exported
+// here and from this package's barrel: two import paths for one function (22.0.0 removed both).
 import { endOfLiteral, maskLiterals, QUOTES, stripComments } from '@ultimat3/core';
-
-export { endOfLiteral, maskLiterals, QUOTES, stripComments };
 
 // `ReadonlySet`, so a consumer cannot mutate what every scan in this package reads.
 export const OPENERS: ReadonlySet<string> = new Set(['(', '[', '{']);

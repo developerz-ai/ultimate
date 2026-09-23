@@ -4,9 +4,9 @@
 
 // `dirname`/`join` are `node:`-only by necessity: Bun exposes no path-join primitive.
 import { dirname, join } from 'node:path';
+import { endOfLiteral, maskLiterals } from '@ultimat3/core';
 import type { FixHelper } from './fix-scan';
 import { scanFixHelpers } from './fix-scan';
-import { endOfLiteral, maskLiterals } from './ts-scan';
 
 /**
  * A named import, matched over the MASKED source and anchored at the start of a line, so an

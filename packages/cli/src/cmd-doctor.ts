@@ -19,9 +19,9 @@ import {
 } from '@ultimat3/db';
 import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/storage';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
+import { DEFAULT_DOCTOR_PORT, doctorSpec } from './cmd-doctor-spec';
 import type { CliCommand, CommandContext } from './command';
 import { checkMigrationSnapshots } from './db-snapshot';
-import { syncPortFor } from './dev-sync';
 import type { OfflineFallbackFact } from './doctor-offline';
 import { offlineFallbackFinding, offlineFallbackProbe } from './doctor-offline';
 import { intFlagOr, PORT_RANGE, portPairAfter } from './flag-number';
@@ -31,6 +31,7 @@ import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
 import type { ParsedArgs } from './parse';
 import { portFree } from './port-probe';
+import { syncPortFor } from './role-sync';
 import { checkMigrationDrift } from './schema-drift';
 
 /**
@@ -129,9 +130,6 @@ export const embeddedDatabaseFinding = (fact: EmbeddedDatabase): Finding | undef
 /** The file `x doctor` reports missing, and the one the reader creates. */
 export const ENV_DEVELOPMENT = '.env.development';
 
-/** The port `x dev` binds by default, so the probe answers about the port the developer will use. */
-const DEFAULT_DOCTOR_PORT = 3000;
-
 /**
  * Both ports `x dev` binds, each labelled with the role that wants it. `x dev --port 3999` printed
  * `web listening on 3999`, then died on 4000 as `X_CLI_UNEXPECTED` with a caught `Error` rendered
@@ -144,7 +142,7 @@ const DEFAULT_DOCTOR_PORT = 3000;
  * N+1 is still not a runnable command. It did not move both until 2026-09 — the line was
  * `neighbouringPort(probe.port)`, which for the sync finding IS the port the finding is about, and
  * a docblock claiming otherwise is how it survived. `portPairAfter` is the one reader of that rule
- * and `dev-sync.ts`'s own refusal shares it.
+ * and `role-sync.ts`'s own refusal shares it.
  *
  * The sync port is `syncPortFor`, never `neighbouringPort` again: that helper answers 65534 for a
  * web port of 65535 — BELOW the web port, and a port `x dev` never binds — where the boot refuses
@@ -400,19 +398,7 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
 }
 
 export const doctorCommand: CliCommand = {
-  spec: {
-    name: 'doctor',
-    summary: 'environment, versions, drift, ports, PWA prerequisites — each with a fix command',
-    usage: 'x doctor [--port 3000] [--json]',
-    flags: [
-      {
-        name: 'port',
-        type: 'string',
-        summary: 'port to test',
-        default: String(DEFAULT_DOCTOR_PORT),
-      },
-    ],
-  },
+  spec: doctorSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const port = doctorPort(ctx.args);
     const findings = await runDoctor(probeFor(ctx.cwd, ctx.bunVersion, port));

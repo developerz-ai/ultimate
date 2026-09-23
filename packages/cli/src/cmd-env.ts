@@ -5,8 +5,9 @@
 // Bun ships no path-join primitive, and `.env.example` is written app-root-relative.
 import { join } from 'node:path';
 import { checkEnv, ENV_EXAMPLE_PATH, ERROR_DOCS_URL, maskedEnvValues } from '@ultimat3/core';
-import { ENV_SCHEMA_EXPORT, envExampleFor, loadEnvSchema } from './app-env';
-import { APP_CONFIG_FILE, requireAppRoot } from './app-root';
+import { envExampleFor, loadEnvSchema } from './app-env';
+import { requireAppRoot } from './app-root';
+import { envSpec } from './cmd-env-spec';
 import type { CliCommand, CommandContext } from './command';
 import { EnvSchemaMissingError } from './errors';
 import { msg } from './messages';
@@ -73,17 +74,7 @@ async function checkProcessEnv(ctx: CommandContext): Promise<CommandResult> {
 }
 
 export const envCommand: CliCommand = {
-  spec: {
-    name: 'env',
-    summary: `the typed environment declared by ${ENV_SCHEMA_EXPORT} in ${APP_CONFIG_FILE}`,
-    usage: 'x env [check|example] [--json]',
-    requiresApp: true,
-    subcommands: ['check', 'example'],
-    // The bare `x env` answers the question the fix line on every `X_ENV_MISSING` in this
-    // framework already tells its reader to run.
-    defaultSubcommand: 'check',
-    flags: [],
-  },
+  spec: envSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     // `subcommand`, never `positionals[0]`: the parser has already lifted a declared subcommand
     // out of the positionals, so reading the array here matches nothing and every invocation

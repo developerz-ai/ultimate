@@ -94,6 +94,19 @@ export {};
  *
  * `x db seed` owns the connection, the tier and the per-seed transaction. One runner, one answer.
  */
+/**
+ * The seed's two package imports in the order Biome sorts them: the app's own scope can sort on
+ * either side of \`@ultimat3\`, and a fixed order is a lint failure for half of all app names.
+ */
+const seedImports = (app: NameSet): string =>
+  [
+    [`@${app.kebab}/web/shared/demo-org`, 'DEMO_ORG_LABEL'],
+    ['@ultimat3/entity', 'defineSeed'],
+  ]
+    .sort(([a = ''], [b = '']) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([from, name]) => `import { ${name} } from '${from}';`)
+    .join('\n');
+
 const dbSeed = (app: NameSet, example: boolean): string =>
   example
     ? `// Deterministic fixtures: the same rows every time, so a test, a demo and a branch database
@@ -104,7 +117,7 @@ const dbSeed = (app: NameSet, example: boolean): string =>
 // included), and wraps each seed in its own transaction. Never a plain \`bun run\` script: that
 // reaches the database through \`db()\`, which needs a \`postgres:\` \`DATABASE_URL\` and so cannot
 // see the embedded database at all.
-import { defineSeed } from '@ultimat3/entity';
+${seedImports(app)}
 import { post } from './schema';
 
 /** Stable across runs: \`id('post:hello')\` is a UUID v5 of the label, not a random one. */
@@ -112,13 +125,13 @@ export const ${app.camel}Seed = defineSeed('${app.kebab}', async ({ insert, id }
   await insert(post, [
     {
       id: id('post:hello'),
-      orgId: id('org:demo'),
+      orgId: id(DEMO_ORG_LABEL),
       title: 'Hello ${app.pascal}',
       price: { minor: 0, currency: 'USD' },
     },
     {
       id: id('post:second'),
-      orgId: id('org:demo'),
+      orgId: id(DEMO_ORG_LABEL),
       title: 'Second post',
       price: { minor: 1900, currency: 'USD' },
     },

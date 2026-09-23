@@ -25,10 +25,11 @@ import {
 import { createMemoryDriver as createMemoryMailDriver } from '@ultimat3/mail';
 import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime/server';
 import { defineStorage, localDriver } from '@ultimat3/storage';
-import type { RunningRoles } from './dev-roles';
-import { startRoles, trustedHopsFromEnv } from './dev-roles';
-import type { RunningServices } from './dev-runtime';
-import { resolveServices } from './dev-services';
+import type { RunningRoles } from './role-start';
+import { startRoles, trustedHopsFromEnv } from './role-start';
+import { resolveServices } from './runtime-bindings';
+import { REALTIME_DEFAULTS } from './runtime-realtime';
+import type { RunningServices } from './runtime-services';
 
 const ROOT = `${import.meta.dir}/../.overrides-fixture`;
 
@@ -41,6 +42,7 @@ function fakeRuntime(): RunningServices {
     outbox: createMemoryOutboxStore(),
     events: createMemoryEventBus(),
     transport,
+    realtime: REALTIME_DEFAULTS,
     transportDetail: 'in-process fanout',
     presenceTtlMs: DEFAULT_PRESENCE_TTL_MS,
     storage: defineStorage({ disks: { local: localDriver({ root: `${ROOT}/storage` }) } }),
@@ -88,7 +90,7 @@ describe('an override that reaches the enqueue side but not the worker is refuse
 
   test('the same driver on both sides boots — the check refuses divergence, not installation', async () => {
     const runtime = fakeRuntime();
-    // What `dev-queue.ts` does: install the driver it is about to hand back, so the two agree.
+    // What `runtime-queue.ts` does: install the driver it is about to hand back, so the two agree.
     setJobDriver(runtime.jobs);
 
     running = await startRoles({

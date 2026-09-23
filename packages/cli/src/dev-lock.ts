@@ -14,7 +14,7 @@
 // The lock file is what makes the second one nameable at all: nothing else in the process can tell
 // "another dev server owns this directory" from "the database is broken".
 
-import { closeSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringField, UltimateError } from '@ultimat3/core';
 import { exec, type Runner } from './exec';
@@ -76,10 +76,26 @@ export const isProcessAlive = (pid: number): boolean => {
 };
 
 /**
+ * The lock a LIVE `x dev` holds on this state directory, or `undefined` — for a command that must
+ * not run beside one (`x db reset` deletes the data directory that process has open). A missing,
+ * unreadable or stale lock is no holder: only `preflight` may clear one.
+ */
+export const liveDevLock = (stateDir: string): DevLock | undefined => {
+  let raw: string;
+  try {
+    raw = readFileSync(lockPath(stateDir), 'utf-8');
+  } catch {
+    return undefined;
+  }
+  const lock = parseLock(raw);
+  return lock !== null && isProcessAlive(lock.pid) ? lock : undefined;
+};
+
+/**
  * Refused before boot, so the failure names the process holding the directory.
  *
  * The lock is on the CHECKOUT, not on the database, and the cause says so. `x dev` is one process
- * running every role (`dev-roles.ts`), so a second one is unsupported whatever the services are.
+ * running every role (`role-start.ts`), so a second one is unsupported whatever the services are.
  * The embedded-Postgres sentence is appended only when the database actually IS embedded — with an
  * external `DATABASE_URL` it would name a mechanism that is not in play, which is the same defect
  * as the message this whole module replaced.

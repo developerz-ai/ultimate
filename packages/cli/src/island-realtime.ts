@@ -56,12 +56,15 @@ export function realtimeIslandFiles(): ReadonlySet<string> {
 const ENTRY_SOURCE = `import '${INSTALL}';\nexport * from '${MODULE}';\n`;
 
 /**
- * The install resolves `@ultimat3/realtime` from the ISLAND's own directory — the resolution the
- * island itself gets — so the bundle holds one copy and the signal lands where the hooks read it.
+ * The install names `@ultimat3/realtime` BARE, and `islandRealtimePlugin` resolves it from the
+ * ISLAND's own directory — the resolution the island itself gets — so the bundle holds one copy
+ * and the signal lands where the hooks read it. Never the resolved absolute path spliced in: this
+ * source is part of the chunk's `sourcesContent`, which is what `graphHash` names the URL from, so
+ * a path in it gave the same island a different URL in every checkout and every image build.
  * `solid-js` goes through `island-solid-dedupe.ts` like every other import in the graph.
  */
-const INSTALL_SOURCE = (realtime: string): string =>
-  `import { installRealtime } from ${JSON.stringify(realtime)};\n` +
+const INSTALL_SOURCE =
+  `import { installRealtime } from '${REALTIME}';\n` +
   `import { createSignal } from 'solid-js';\n` +
   `installRealtime({ signal: createSignal });\n`;
 
@@ -79,11 +82,15 @@ export function islandRealtimePlugin(root: string, file: string): BunPlugin {
         namespace: NAMESPACE,
       }));
       build.onResolve({ filter: /^ultimate:island-module$/ }, () => ({ path: island }));
+      // Every bare `@ultimat3/realtime` in this build, the virtual install's included — a virtual
+      // module has no directory to resolve from. The island's directory for all of them, which is
+      // what the island itself would get, and one copy in the bundle is the requirement anyway:
+      // the signal the install sets is only read by hooks from the same module instance.
+      build.onResolve({ filter: /^@ultimat3\/realtime$/ }, () => ({
+        path: Bun.resolveSync(REALTIME, dirname(island)),
+      }));
       build.onLoad({ filter: /.*/, namespace: NAMESPACE }, (args) => ({
-        contents:
-          args.path === 'entry'
-            ? ENTRY_SOURCE
-            : INSTALL_SOURCE(Bun.resolveSync(REALTIME, dirname(island))),
+        contents: args.path === 'entry' ? ENTRY_SOURCE : INSTALL_SOURCE,
         loader: 'js',
       }));
     },

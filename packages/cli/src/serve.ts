@@ -4,212 +4,33 @@
 // `dev: true`. The only production-shaped decisions live here: which role, which port, and which
 // interface — every one by default, because a container is reached through a port mapping.
 
-import type { Role } from '@ultimat3/core';
-import {
-  configureErrorReporting,
-  isRole,
-  logger,
-  ROLES,
-  sentryErrorReporter,
-} from '@ultimat3/core';
-import {
-  assertNoDrift,
-  checkDrift,
-  type DriftReport,
-  type MigrationReport,
-  migrate,
-} from '@ultimat3/db';
-import type { Route } from '@ultimat3/http';
-import { describeRoutes } from '@ultimat3/render';
-import { createIsrController } from '@ultimat3/render/server';
-import { apiRoutes } from './api-routes';
-import { loadSignInPath } from './app-auth';
-import { loadApp } from './app-load';
-import { appManifest } from './app-manifest';
-import { mountAppMcp } from './app-mcp';
+import { assertNoDevSecretsOutsideLocal, logger } from '@ultimat3/core';
+import { assertNoDrift, checkDrift, migrate } from '@ultimat3/db';
 import { loadAppRuntime } from './app-runtime';
 import { acceptCreatedTables } from './db-accept-created';
-import { assetRoutes } from './dev-assets';
-import { startQueue } from './dev-queue';
-import { appRoutes } from './dev-render';
-import { replicaOverrides } from './dev-replica';
-import type { RunningRoles, WebBinding } from './dev-roles';
-import { startRoles } from './dev-roles';
-import type { RunningServices } from './dev-runtime';
-import { startServices } from './dev-runtime';
-import type { Env } from './dev-services';
-import { resolveServices } from './dev-services';
-import { storageRoutes } from './dev-storage';
-import { errorPageStyleSources } from './error-page-csp';
-import { PortInvalidError, RoleUnknownError } from './errors';
 import { holdUntilShutdown } from './hold';
-import { buildIslands } from './island-bundle';
-import { islandRoutes } from './island-routes';
-import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
+import { startMetricsEndpoint } from './metrics-endpoint';
 import { readMigrations } from './migrations';
-import { startOtlpExport } from './otlp-export';
-import { pageSync } from './page-sync';
-import { loadPwaArtifacts } from './pwa-artifacts';
-import type { RuntimeOverrides } from './runtime-overrides';
-import { styleBundle } from './style-bundle';
-import { styleRoutes } from './style-routes';
-import { serviceWorkerArtifacts } from './sw-artifacts';
-import { serviceWorkerRoutes } from './sw-routes';
-import { loadThemeMode, themeBoot } from './theme-boot';
+import { resolveServices } from './runtime-bindings';
+import { startQueue } from './runtime-queue';
+import { startServices } from './runtime-services';
+import { bootRoles } from './serve-boot';
+import { containerBinding, metricsPortFor, portFromEnv, roleFromEnv } from './serve-env';
+import type { MigratedApp, ServedApp, ServeOptions, StartedApp } from './serve-types';
 
-export const DEFAULT_PORT = 3000;
-
-/**
- * Every interface, which is what a role binds when nothing says otherwise: a container bound to
- * loopback is unreachable through its own port mapping. `HOST` and `ServeOptions.hostname` are the
- * two ways of saying otherwise — see `hostnameFromEnv`.
- */
-export const CONTAINER_BINDING: WebBinding = { dev: false, hostname: '0.0.0.0' };
-
-/**
- * The interface the `web` and `sync` roles bind, and the metrics endpoint with them (`WebBinding`
- * is one decision). Read the way `PORT` is: empty or whitespace is the default.
- *
- * Exists because a container had exactly one binding, `0.0.0.0`, and an app whose auth mode is
- * "nobody logs in, one implicit actor" must refuse a public interface — so it could not run in a
- * container at all. `HOST=127.0.0.1` is unreachable through `docker run -p` (the proxy connects to
- * the container's bridge address, never its loopback); it is reachable where the container shares
- * the host's network namespace (`--network host`), or through a sidecar and `ssh -L` inside it —
- * which is the exposure such an app wants. Not `HOSTNAME`: Docker sets that to the container id.
- */
-export function hostnameFromEnv(env: Env): string {
-  const raw = env['HOST']?.trim();
-  return raw === undefined || raw.length === 0 ? CONTAINER_BINDING.hostname : raw;
-}
-
-/** What `serveApp` hands `startRoles`: the caller's hostname, else `HOST`, else every interface. */
-export const containerBinding = (env: Env, hostname?: string): WebBinding => ({
-  dev: false,
-  hostname: hostname ?? hostnameFromEnv(env),
-});
-
-/**
- * `ROLE` is the one knob one image exposes. Validated rather than defaulted: a typo that fell back
- * to `web` would start a process that serves nothing the operator asked for and reports healthy.
- */
-export function roleFromEnv(env: Env): Role {
-  const raw = env['ROLE'] ?? 'web';
-  if (!isRole(raw)) throw new RoleUnknownError({ role: raw, known: ROLES });
-  return raw;
-}
-
-/**
- * `Number.parseInt` would read `80abc` as 80, so the whole string has to be a port — a
- * partially-parsed port is a deploy that binds somewhere nobody asked for.
- */
-function portValue(env: Env, name: string, fallback: number): number {
-  const raw = env[name];
-  if (raw === undefined || raw.trim().length === 0) return fallback;
-  const port = Number(raw.trim());
-  if (!Number.isInteger(port) || port < 0 || port > 65_535)
-    throw new PortInvalidError({ value: raw, name });
-  return port;
-}
-
-/** Every PaaS injects `PORT` and routes traffic to exactly it. */
-export function portFromEnv(env: Env): number {
-  return portValue(env, 'PORT', DEFAULT_PORT);
-}
-
-/**
- * The scrape port, deliberately its own env var and not `PORT + n`: an operator who moves the app
- * port must not silently move the port their Prometheus is configured against, and the roles that
- * set no `PORT` at all — `worker`, `scheduler`, `replicator` — still need this one.
- */
-export function metricsPortFromEnv(env: Env): number {
-  return portValue(env, 'METRICS_PORT', DEFAULT_METRICS_PORT);
-}
-
-/**
- * The scrape port a boot uses, given the app port it already resolved. One expression, and it is
- * exported because `x dev` is the second caller: `cmd-dev.ts` passed no `metricsPort` at all, so
- * `METRICS_PORT` was honoured in the container and ignored on a laptop — the dev/prod parity break
- * `dev-roles.ts`'s own header forbids, and a second copy of this rule would be the same break
- * one edit later.
- *
- * An in-process caller asking for an ephemeral app port is a test, and a test that grabbed the
- * fixed 9090 would fail the next suite to boot beside it. An environment that names the port still
- * wins — that is the deploy talking.
- */
-export const metricsPortFor = (env: Env, port: number, override?: number): number =>
-  override ?? (port === 0 && env['METRICS_PORT'] === undefined ? 0 : metricsPortFromEnv(env));
-
-/**
- * The one env var that turns error monitoring on, and the only vendor-shaped name in the boot
- * path. Not a platform primitive (axiom 7): the value is a URL to whatever the operator runs, the
- * wire format behind it is documented and self-hostable, and `SENTRY_DSN` is what every monitor
- * that speaks it already documents — inventing a second spelling would mean an operator's existing
- * tooling sets a variable this framework ignores. Exactly the precedent
- * `OTEL_EXPORTER_OTLP_ENDPOINT` already sets in `docker/helm/values.yaml`.
- */
-export const ERROR_DSN_KEY = 'SENTRY_DSN';
-
-/**
- * Switch reporting on for this process. Unset DSN leaves core's no-op reporter in place, so a
- * laptop and a CI run pay nothing and page nobody — and the release every event carries is the
- * build id this boot already computed, never a second identity for the same deploy.
- */
-export function configureReporting(env: Env, buildId: string): void {
-  const dsn = env[ERROR_DSN_KEY]?.trim();
-  configureErrorReporting({
-    release: buildId,
-    // A malformed DSN throws here, at boot, rather than at the first outage: a monitor that was
-    // never connected looks exactly like an app that never failed.
-    ...(dsn === undefined || dsn.length === 0 ? {} : { reporter: sentryErrorReporter({ dsn }) }),
-  });
-}
-
-export interface ServeOptions {
-  readonly root: string;
-  readonly env: Env;
-  /** Overrides `ROLE`; `runRole` reads the environment when this is absent. */
-  readonly role?: Role;
-  /** Overrides `PORT`. 0 asks the kernel for an ephemeral one, which is what a test wants. */
-  readonly port?: number;
-  /** Overrides `METRICS_PORT`, on the same terms. */
-  readonly metricsPort?: number;
-  /**
-   * Overrides `HOST`: the interface the HTTP roles bind. An app that must never answer on a public
-   * interface passes `'127.0.0.1'` here rather than trusting the deployment to set the variable.
-   */
-  readonly hostname?: string;
-  /**
-   * The drivers this deployment supplies instead of the ones the environment would select.
-   *
-   * This field is why `apps/web/server.ts` can stay three lines and still run a custom queue, a
-   * shared ISR store or an app's own middleware. Before it there was nowhere to hand the framework
-   * a driver, so the only way was an ambient setter from an app module — which `loadApp` imports
-   * AFTER `startServices` has captured its own, giving a process that enqueues to one queue and
-   * claims from another. `startRoles` now refuses that split outright.
-   */
-  readonly runtime?: RuntimeOverrides;
-}
-
-export interface ServedApp {
-  readonly kind: 'served';
-  readonly role: Role;
-  /** `http://…` for the web role; null for the roles that open no HTTP socket. */
-  readonly url: string | null;
-  readonly buildId: string;
-  readonly running: RunningRoles;
-  readonly runtime: RunningServices;
-  stop(): Promise<void>;
-}
-
-export interface MigratedApp {
-  readonly kind: 'migrated';
-  readonly role: 'migrate';
-  readonly report: MigrationReport;
-  /** The post-condition: the live schema against the ledger this run just wrote. */
-  readonly drift: DriftReport;
-}
-
-export type StartedApp = ServedApp | MigratedApp;
+export {
+  CONTAINER_BINDING,
+  configureReporting,
+  containerBinding,
+  DEFAULT_PORT,
+  ERROR_DSN_KEY,
+  hostnameFromEnv,
+  metricsPortFor,
+  metricsPortFromEnv,
+  portFromEnv,
+  roleFromEnv,
+} from './serve-env';
+export type { MigratedApp, ServedApp, ServeOptions, StartedApp } from './serve-types';
 
 /**
  * The release phase, as a role. `migrate` is not a server: it applies the app's own migrations
@@ -309,159 +130,35 @@ export async function withAppRuntime(options: ServeOptions): Promise<ServeOption
 }
 
 export async function serveApp(input: ServeOptions): Promise<ServedApp> {
+  // FIRST, before any service starts: a production process on a key this framework publishes is
+  // refused, rather than reported by `x doctor` and served anyway (plan 101, slices 01 e and 12 h).
+  // The storage twin is `startStorage`'s own `LocalDiskUnsafeError`, one step later, where the
+  // disk is chosen.
+  assertNoDevSecretsOutsideLocal({ env: input.env });
   const options = await withAppRuntime(input);
   const role = options.role ?? roleFromEnv(options.env);
-  const runtime = await startServices(
-    resolveServices(options.root, options.env),
-    options.env,
-    options.runtime,
-  );
+  // The scrape listener before ANY boot work — the services, the app's modules, the island build —
+  // so a cold pod answers `/metrics` (and the chart's startup probe on it) while it boots. It was
+  // opened inside `startRoles`, after all of that, so `_helpers.tpl`'s "FIRST" was not true.
+  const port = options.port ?? portFromEnv(options.env);
+  const metrics = startMetricsEndpoint({
+    port: metricsPortFor(options.env, port, options.metricsPort),
+    hostname: containerBinding(options.env, options.hostname).hostname,
+  });
   // Everything acquired from here down, in order, so a throw anywhere below gives it all back.
-  const acquired: (() => void | Promise<void>)[] = [() => runtime.stop()];
+  const acquired: (() => void | Promise<void>)[] = [() => metrics.stop()];
   try {
-    return await bootRoles({ options, role, runtime, acquired });
+    const runtime = await startServices(
+      resolveServices(options.root, options.env),
+      options.env,
+      options.runtime,
+    );
+    acquired.push(() => runtime.stop());
+    return await bootRoles({ options, role, runtime, acquired, metrics });
   } catch (error) {
     await releaseBoot(acquired);
     throw error;
   }
-}
-
-/** The half of `serveApp` whose every acquisition is registered for rollback. */
-async function bootRoles(boot: {
-  readonly options: ServeOptions;
-  readonly role: Role;
-  readonly runtime: RunningServices;
-  readonly acquired: (() => void | Promise<void>)[];
-}): Promise<ServedApp> {
-  const { options, role, runtime, acquired } = boot;
-  // Importing the app's modules IS the registration: every route, action and job below is
-  // whatever this call put in the registries.
-  await loadApp(options.root);
-  // The build stamps `BUILD_ID` into the image; unstamped, the manifest's content hash is the same
-  // answer computed here, so `x-ultimate-build` is never absent and never a lie. Projected only
-  // when unstamped, because a stamped image already paid for it at build time and a replica's boot
-  // should not repeat it — the load above is the part every boot needs either way.
-  const stamped = options.env['BUILD_ID'];
-  const buildId =
-    stamped !== undefined && stamped.length > 0
-      ? stamped
-      : (await appManifest(options.root)).manifest.buildId;
-  // Before the first socket opens: everything above this line fails loudly into the container's
-  // own logs, everything below it is a served request, a claimed job or a routed frame.
-  configureReporting(options.env, buildId);
-  // Beside error reporting, and for the same reason it is here: `OTEL_EXPORTER_OTLP_ENDPOINT` is
-  // in the shipped chart and nothing read it, so every deployment that configured a collector got
-  // an empty dashboard. `x dev` keeps its own recorder — the `/_x` timeline is a different sink
-  // with a different lifetime — so this is the production boot's alone (axiom 6).
-  const stopOtlp = startOtlpExport(options.env);
-  acquired.push(stopOtlp);
-  // Built at boot rather than shipped prebuilt, so the container serves the same chunks `x dev`
-  // does from the same source — the alternative is a second bundler invocation in the image build
-  // whose output nothing compares against the one the dev loop proved.
-  const islands = await buildIslands(options.root);
-  // The same two strings `x dev` resolves, from the same reader: a `<link rel="manifest">` served
-  // on a laptop and absent in the image is exactly the dev/prod difference this file exists to
-  // prevent, and it is the one an operator cannot see without installing the app.
-  const pwa = await loadPwaArtifacts(options.root);
-  const theme = themeBoot(await loadThemeMode(options.root));
-  // The page's sync target and its scripts — the same call `x dev` makes, so the two cannot differ.
-  // Before the service worker, which precaches those scripts.
-  const sync = await pageSync(options.root, options.env, buildId);
-  // The worker, from the SAME route table this process is about to serve — `describeRoutes()` is
-  // the one projection `x.manifest.json`, `/_x`, the sitemap and `sw.js` are all built from, so a
-  // route added here cannot be missing from the precache manifest.
-  const serviceWorker =
-    pwa === undefined
-      ? undefined
-      : serviceWorkerArtifacts({
-          pwa,
-          buildId,
-          routes: describeRoutes(),
-          islands,
-          styles: styleBundle(),
-          scripts: sync.scripts,
-        });
-  // The app's own MCP endpoint, through the same call `x dev` makes — see `app-mcp.ts`.
-  const mcpMount = await mountAppMcp(options.root);
-  const routes: readonly Route[] = [
-    ...apiRoutes(),
-    ...mcpMount.routes,
-    ...(serviceWorker === undefined ? [] : serviceWorkerRoutes(serviceWorker)),
-    ...assetRoutes({
-      root: options.root,
-      storage: runtime.storage,
-      ...(options.runtime?.images === undefined ? {} : { images: options.runtime.images }),
-      ...(pwa === undefined ? {} : { pwa }),
-    }),
-    ...storageRoutes({ storage: runtime.storage }),
-    ...islandRoutes(() => islands),
-    // The surface stylesheets the documents link. Built from the registry the `loadApp` above
-    // filled, so this process serves exactly the CSS it renders against.
-    ...styleRoutes(() => styleBundle()),
-    // The page's one socket: its worker script, served beside the islands for their reason.
-    ...sync.routes,
-    ...appRoutes({
-      buildId,
-      resolveIsland: (file) => islands.resolverFor(file),
-      sync: sync.head,
-      persisted: sync.persisted,
-      themeHead: theme.head,
-      ...(pwa === undefined ? {} : { pwaHead: pwa.head + (serviceWorker?.head ?? '') }),
-      // Only when a store was supplied. `createIsrController` defaults to a per-process memory
-      // store, so twelve replicas hold twelve of them and a purge tag regenerates one twelfth of
-      // the fleet while the other eleven keep serving the page it just invalidated.
-      ...(options.runtime?.isrStore === undefined
-        ? {}
-        : { isr: createIsrController({ buildId, store: options.runtime.isrStore }) }),
-    }),
-  ];
-  const port = options.port ?? portFromEnv(options.env);
-  // An in-process caller asking for an ephemeral app port is a test, and a test that grabbed the
-  // fixed 9090 would fail the next suite to boot beside it. An environment that names the port
-  // still wins — that is the deploy talking.
-  const metricsPort = metricsPortFor(options.env, port, options.metricsPort);
-  const replicaOverride = replicaOverrides(options.runtime, runtime.services.db, options.env);
-  const running = await startRoles({
-    roles: [role],
-    port,
-    metricsPort,
-    buildId,
-    runtime,
-    routes,
-    env: options.env,
-    // Same declaration `x dev` reads. Without it a container answers a browser that opened a
-    // guarded page with the problem document, rendered as raw JSON in the viewport.
-    signInPath: await loadSignInPath(options.root),
-    // The enforced policy this process sends must admit the app's own error pages' `<style>` and
-    // the theme boot the documents carry; `x dev` is report-only, so only here was it a blank page.
-    inlineStyles: await errorPageStyleSources(options.root),
-    inlineScripts: [theme.cspSource],
-    // The app's own `apps/web/site/errors/<status>.html`, resolved inside `startWeb` so this
-    // process and `x dev` cannot answer a browser differently.
-    root: options.root,
-    http: containerBinding(options.env, options.hostname),
-    // The read-replica scope rides in FRONT of whatever the host supplied, or the host's own value
-    // passes through untouched. `DATABASE_REPLICA_URL` was read by no booted process before this:
-    // `defaultClient()` is the one composer of a replicated pair and it runs only when an app
-    // installed no client, which no framework boot leaves true (`dev-queue.ts`).
-    ...(replicaOverride === undefined ? {} : { overrides: replicaOverride }),
-  });
-  acquired.push(() => running.stop());
-  return {
-    kind: 'served',
-    role,
-    url: running.url,
-    buildId,
-    running,
-    runtime,
-    async stop() {
-      await running.stop();
-      await runtime.stop();
-      // Last: the exporters outlive the roles they were recording, so the drain's own spans and
-      // the final counter snapshot still have somewhere to go.
-      stopOtlp();
-    },
-  };
 }
 
 /**

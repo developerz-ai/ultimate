@@ -9,10 +9,10 @@
 
 // why: no Bun native joins or resolves a path; `--out` is resolved against the app root.
 import { join, resolve } from 'node:path';
-import type { ScrapeDriver } from '@ultimat3/scraping';
 import type { IslandStatesManifest, IslandViewport } from '@ultimat3/testing';
 import { findIslandStates } from '@ultimat3/testing';
 import { appBrowser } from './browser-launcher';
+import type { ShotDriver } from './browser-launcher-port';
 import { BadFlagError } from './errors';
 import type { IslandBrowser } from './island-shot';
 import { ISLAND_SHOT_DIR, runIslandShot, runIslandSweep } from './island-shot';
@@ -39,19 +39,18 @@ export function islandBrowser(input: {
   readonly executablePath?: string | undefined;
   readonly cdpUrl?: string | undefined;
 }): IslandBrowser {
-  const byViewport = new Map<string, Promise<ScrapeDriver>>();
-  return (viewport: IslandViewport): Promise<ScrapeDriver> => {
+  const byViewport = new Map<string, Promise<ShotDriver>>();
+  return (viewport: IslandViewport): Promise<ShotDriver> => {
     const key = `${viewport.width}x${viewport.height}`;
-    const held = byViewport.get(key);
-    if (held !== undefined) return held;
-    const started = appBrowser({
-      root: input.root,
-      ...(input.executablePath === undefined ? {} : { executablePath: input.executablePath }),
-      ...(input.cdpUrl === undefined ? {} : { cdpUrl: input.cdpUrl }),
-      viewport: { width: viewport.width, height: viewport.height },
-    });
-    byViewport.set(key, started);
-    return started;
+    const held =
+      byViewport.get(key) ??
+      appBrowser({
+        ...(input.executablePath === undefined ? {} : { executablePath: input.executablePath }),
+        ...(input.cdpUrl === undefined ? {} : { cdpUrl: input.cdpUrl }),
+        viewport: { width: viewport.width, height: viewport.height },
+      });
+    byViewport.set(key, held);
+    return held;
   };
 }
 

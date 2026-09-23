@@ -71,6 +71,12 @@ export type UnmeasuredRoute = {
   readonly code?: string;
   readonly cause?: string;
   readonly fix?: string;
+  /**
+   * `false` when no build can weigh the route by construction — a `render: 'ssr'` page with params,
+   * which may not declare `prerender()`, so the build holds no value to render it at. Not a defect
+   * in the app, so the `budgets` step prints it and raises no finding (`measure-paths.ts`).
+   */
+  readonly weighable?: false;
 };
 
 /** One HTML file in the artifact, and the declared route that produced it. */
@@ -192,7 +198,8 @@ const isUnmeasured = (value: unknown): value is UnmeasuredRoute =>
   typeof value['reason'] === 'string' &&
   optionalString(value['code']) &&
   optionalString(value['cause']) &&
-  optionalString(value['fix']);
+  optionalString(value['fix']) &&
+  (value['weighable'] === undefined || value['weighable'] === false);
 
 const isEmitted = (value: unknown): value is EmittedPage =>
   isRecord(value) &&

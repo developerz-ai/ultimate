@@ -10,6 +10,7 @@ import {
   UnknownCommandError,
 } from './errors';
 import type { Surface } from './templates';
+import { camel, kebab } from './templates/naming';
 
 export const GENERATORS = [
   'resource',
@@ -106,11 +107,62 @@ export function readSurface(raw: string | undefined, kind: Generator, name: stri
  * is a command that runs.
  */
 export function readName(raw: string | undefined, kind: Generator): string {
-  if (raw !== undefined) return raw;
-  throw new MissingPositionalError({
+  if (raw === undefined) {
+    throw new MissingPositionalError({
+      command: `g ${kind}`,
+      positional: 'name',
+      example: exampleFor(kind),
+    });
+  }
+  refusePath(raw, 'name', kind);
+  refuseBadIdentifier(raw, kind);
+  return raw;
+}
+
+/** `--feature`, refused where it is a path: it is a DIRECTORY under the surface, one segment. */
+export function readFeature(raw: string | undefined, kind: Generator): string | undefined {
+  if (raw !== undefined) refusePath(raw, 'feature', kind);
+  return raw;
+}
+
+/** A name is one directory segment: `x g action ../../../evil` wrote outside `apps/`. */
+function refusePath(raw: string, flag: string, kind: Generator): void {
+  if (!/[\\/]/.test(raw) && raw.trim() !== '..' && raw.trim() !== '.') return;
+  throw new BadFlagError({
+    flag,
     command: `g ${kind}`,
-    positional: 'name',
-    example: exampleFor(kind),
+    reason: `"${raw}" is a path, and a generator ${flag} is one directory segment under the surface`,
+    fix: exampleFor(kind),
+  });
+}
+
+/** Strict-mode reserved words: `export const delete = …` does not parse. */
+const RESERVED = new Set(
+  (
+    'break case catch class const continue debugger default delete do else enum export extends ' +
+    'false finally for function if import in instanceof new null return super switch this throw ' +
+    'true try typeof var void while with yield let static implements interface package private ' +
+    'protected public await arguments eval'
+  ).split(' '),
+);
+
+/**
+ * The name becomes `camel(name)` in emitted source, so it has to be an identifier there: not a
+ * reserved word, not starting with a digit. The fix is the same run with a name that is one — the
+ * kind appended to a reserved word, prepended to a leading digit.
+ */
+function refuseBadIdentifier(raw: string, kind: Generator): void {
+  const identifier = camel(raw);
+  const digit = /^[0-9]/.test(identifier);
+  if (identifier !== '' && !digit && !RESERVED.has(identifier)) return;
+  const noun = kind.split(':').at(-1) ?? kind;
+  const suggestion = digit ? `${noun}-${kebab(raw)}` : `${kebab(raw)}-${noun}`;
+  throw new BadFlagError({
+    flag: 'name',
+    command: `g ${kind}`,
+    reason: `"${raw}" becomes the identifier "${identifier}" in generated source, which ${digit ? 'starts with a digit' : identifier === '' ? 'is empty' : 'is a reserved word'}`,
+    // Joined, never spliced: the suggestion is kebab output, and the rule reads the shape.
+    fix: ['x g', kind, suggestion].join(' '),
   });
 }
 

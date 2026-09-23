@@ -147,12 +147,16 @@ Intl.DateTimeFormat=ShotDTF;
 
 /**
  * Ready is quiet, not idle. Fonts first — a picture taken mid-swap photographs the fallback face —
- * then `QUIET_FRAMES` consecutive frames in which nothing started and nothing settled.
+ * then `QUIET_FRAMES` consecutive frames in which nothing started and nothing settled, counted only
+ * once the island has MOUNTED or FAILED (#474): an `idle` island mounts in idle time, after frames
+ * that were quiet only because nothing had started yet. A page with no island host is not waited on.
  */
 const readyScript = (): string => `
 var last=-1;var still=0;
+function answered(){var h=document.querySelector("[data-x-island]");
+return !h||h.hasAttribute("data-x-mounted")||h.hasAttribute("data-x-failed")}
 function tick(){var seen=W.activity;
-if(seen===last)still+=1;else{still=0;last=seen}
+if(!answered()){still=0;last=seen}else if(seen===last)still+=1;else{still=0;last=seen}
 if(still>=${QUIET_FRAMES}){W.ready=true;return}
 requestAnimationFrame(tick)}
 (document.fonts?document.fonts.ready:Promise.resolve()).then(function(){requestAnimationFrame(tick)});

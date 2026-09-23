@@ -24,7 +24,7 @@ export const MANIFEST_FILE = 'x.manifest.json';
  * (`bun run typecheck` is clean against `@types/bun@1.3.14`), and `>=1.4.0` therefore bars Bun 1.3
  * users for a capability the framework does not use. What refused it is a Bun 1.3.14 defect, not
  * the paperwork: a service shutdown against a destroyed database never resolves there
- * (`queue.stop()`, reproduced by `dev-runtime.live.test.ts`), so an app on a runtime this line
+ * (`queue.stop()`, reproduced by `runtime-services.live.test.ts`), so an app on a runtime this line
  * declared supported would hang on graceful shutdown the moment its database went away. The full
  * measurement is in `.github/actions/setup/action.yml`; read it before lowering this.
  */

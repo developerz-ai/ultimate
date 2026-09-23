@@ -17,9 +17,9 @@ import { postgresDriver } from '@ultimat3/entity';
 import { requireAppRoot } from './app-root';
 import { runBackfillCommand } from './cmd-db-backfill';
 import { runBranchCommand } from './cmd-db-branch';
+import { DB_SUBCOMMANDS, dbSpec } from './cmd-db-spec';
 import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
-import { BRANCH_SUBCOMMANDS } from './db-branch';
 import { stepFinding } from './db-finding';
 import { generateAppMigration, unrenderedJson, unrenderedLines } from './db-generate';
 import type { SeedPassRow } from './db-seed';
@@ -32,109 +32,20 @@ import {
   seedTotals,
   selectSeeds,
 } from './db-seed';
-import { resolveServices } from './dev-services';
+import { DevAlreadyRunningError, liveDevLock } from './dev-lock';
 import { CliNotImplementedError, MissingSubcommandError, UnknownCommandError } from './errors';
 import { withJobDriver } from './jobs-driver';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
 import { flagBool, flagString } from './parse';
+import { resolveServices } from './runtime-bindings';
 import { runMigrations } from './serve';
 
-export const DB_SUBCOMMANDS = [
-  'gen',
-  'migrate',
-  'reset',
-  'seed',
-  'studio',
-  'branch',
-  'backfill',
-] as const;
+export { DB_SUBCOMMANDS } from './cmd-db-spec';
 
 export const dbCommand: CliCommand = {
-  spec: {
-    name: 'db',
-    summary: 'gen, migrate, reset, seed, studio, branch, backfill',
-    usage:
-      'x db gen "add publish_at" | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | studio | branch ls | branch create <name> | branch drop <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n]',
-    requiresApp: true,
-    subcommands: DB_SUBCOMMANDS,
-    // Declared from the constant `runBranchCommand` validates against, never a second literal: it
-    // is what lets the `errors` step resolve `x db branch ls` — a fix line three shipped errors
-    // hand out, which read `ls` as a branch name and cloned a database until 1.2.x.
-    subcommandPositionals: { branch: BRANCH_SUBCOMMANDS },
-    // Each flag whose summary begins `<subcommand>:` declares that scope, and the parser refuses
-    // it anywhere else: `x db gen --dry-run` used to parse, reach `runGen` and WRITE the
-    // migration. `cmd-db.test.ts` pins summary and scope to the same fact.
-    flags: [
-      {
-        name: 'name',
-        type: 'string',
-        summary: 'migration, branch or seed name, or backfill to filter',
-      },
-      {
-        name: 'tier',
-        type: 'string',
-        summary: 'seed: which tier to run — reference or dev; also ULTIMATE_SEED_TIER',
-        subcommands: ['seed'],
-      },
-      {
-        name: 'dry-run',
-        type: 'boolean',
-        summary: 'seed: report what each seed would write, and write nothing',
-        subcommands: ['seed'],
-      },
-      {
-        name: 'list',
-        type: 'boolean',
-        summary: 'backfill: print the x_backfills ledger',
-        subcommands: ['backfill'],
-      },
-      {
-        name: 'pending',
-        type: 'boolean',
-        summary: 'backfill: declared minus completed; non-zero exit when anything is unswept',
-        subcommands: ['backfill'],
-      },
-      {
-        name: 'all',
-        type: 'boolean',
-        summary: 'backfill: every pending sweep, isolated per name',
-        subcommands: ['backfill'],
-      },
-      {
-        name: 'write',
-        type: 'boolean',
-        summary: 'backfill: enqueue the pass; dry run without it',
-        subcommands: ['backfill'],
-      },
-      {
-        name: 'force',
-        type: 'boolean',
-        summary: 'backfill: sweep a name the ledger records as completed, as a NEW ledger row',
-        subcommands: ['backfill'],
-      },
-      {
-        name: 'status',
-        type: 'string',
-        summary: 'backfill: filter by running, completed or failed',
-        subcommands: ['backfill'],
-      },
-      {
-        name: 'limit',
-        type: 'string',
-        summary: 'backfill: max ledger rows to return',
-        subcommands: ['backfill'],
-      },
-      // Declared because `X_MIGRATION_IRREVERSIBLE`'s own fix line names it. A `fix:` is copied
-      // and run verbatim, so a flag the parser refuses would make the error unfollowable.
-      {
-        name: 'allow-destructive',
-        type: 'boolean',
-        summary: 'let x db gen emit a drop whose down cannot restore the rows',
-      },
-    ],
-  },
+  spec: dbSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('db', ctx.cwd).dir;
     // No default, and no `?? 'migrate'` here either: `gen` writes a migration file and `reset`
@@ -297,6 +208,16 @@ async function runReset(ctx: CommandContext, root: string): Promise<CommandResul
     throw new CliNotImplementedError({
       feature: 'x db reset against an external Postgres',
       fix: 'drop and recreate the database yourself, then run: x db migrate',
+    });
+  }
+  // A running `x dev` has this directory open: deleting it under a live embedded Postgres is data
+  // loss mid-write, not a reset. The dev lock is the one fact that says someone holds it.
+  const holder = liveDevLock(services.stateDir);
+  if (holder !== undefined) {
+    throw new DevAlreadyRunningError({
+      lock: holder,
+      stateDir: services.stateDir,
+      embeddedDb: true,
     });
   }
   await rm(join(services.stateDir, 'pgdata'), { recursive: true, force: true });

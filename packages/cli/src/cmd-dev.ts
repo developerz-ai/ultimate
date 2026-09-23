@@ -17,25 +17,18 @@ import { loadSignInPath } from './app-auth';
 import { appManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
 import { loadAppRuntime } from './app-runtime';
+import { devSpec } from './cmd-dev-spec';
 import type { CliCommand, CommandContext } from './command';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devPanels } from './dev-dashboard';
-import { declareDevEnvironment } from './dev-environment';
-import { liveFeedLabel } from './dev-live-feed';
+import { declareDevEnvironment, needsDevEnvironmentDeclaration } from './dev-environment';
 import { clearLock, preflight, writeLock } from './dev-lock';
 import { createStatementLedger } from './dev-n-plus-one';
+import { devPortFor } from './dev-port';
 import { coalesceReloads } from './dev-reload';
-import { replicaOverrides } from './dev-replica';
-import type { RunningRoles } from './dev-roles';
-import { DEV_BINDING, DEV_ROLES, selectRoles, startRoles } from './dev-roles';
 import { devRouteTable } from './dev-route-table';
-import type { RunningServices } from './dev-runtime';
-import { cdnLabel, describeCdn, describeMail, mailLabel, startServices } from './dev-runtime';
-import type { DevServices } from './dev-services';
-import { describeServices, reportedUrls, resolveServices } from './dev-services';
 import { createTraceRecorder } from './dev-traces';
 import { watchTree } from './dev-watch-tree';
-import { intFlagOr, PORT_RANGE } from './flag-number';
 import { holdUntilShutdown } from './hold';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands } from './island-bundle';
@@ -44,10 +37,23 @@ import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
 import { flagString } from './parse';
-import { metricsPortFor } from './serve';
+import type { RunningRoles } from './role-start';
+import { DEV_BINDING, DEV_ROLES, selectRoles, startRoles } from './role-start';
+import type { DevServices } from './runtime-bindings';
+import {
+  describeServices,
+  reportedUrls,
+  resolveServices,
+  withRealtimeEvents,
+} from './runtime-bindings';
+import { liveFeedLabel } from './runtime-live-feed';
+import { replicaOverrides } from './runtime-replica';
+import type { RunningServices } from './runtime-services';
+import { cdnLabel, describeCdn, describeMail, mailLabel, startServices } from './runtime-services';
+import { metricsPortFor, releaseBoot } from './serve';
 import { loopFacts, loopFinding, loopNotice } from './statement-loop';
 
-const DEFAULT_PORT = 3000;
+const _DEFAULT_PORT = 3000;
 
 export interface DevServer {
   readonly url: string;
@@ -121,13 +127,41 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   // EVERY boot: a scratch server (`x shot`, `ui.shot`) boots here too, and without this a
   // fail-closed dev actor installs nothing — the picture is of a 401. Idempotent.
   declareDevEnvironment(options.env);
-  const services = resolveServices(options.root, options.env);
-  const runtime: RunningServices = await startServices(services, options.env);
+  // The declaration lands on `process.env`; the env this boot passes on must carry it too, or every
+  // service resolved from `options.env` still reads no `ULTIMATE_ENV`.
+  const env = needsDevEnvironmentDeclaration(options.env)
+    ? { ...options.env, ULTIMATE_ENV: 'development' }
+    : options.env;
+  const resolved = resolveServices(options.root, env);
+  const runtime: RunningServices = await startServices(resolved, env);
+  // The events binding the boot line reports is the bus the runtime chose, read off it.
+  const services = withRealtimeEvents(resolved, env, runtime.realtime);
+  // `serve.ts`'s `releaseBoot` shape: everything acquired from here on is released, newest first,
+  // if the boot throws — a failed `x dev` left PGlite holding `.x/pgdata` for the retry to meet.
+  const acquired: (() => void | Promise<void>)[] = [() => runtime.stop()];
+  try {
+    return await bootDev(options, services, runtime, acquired);
+  } catch (error) {
+    await releaseBoot(acquired);
+    throw error;
+  }
+}
+
+async function bootDev(
+  options: StartDevOptions,
+  services: ReturnType<typeof resolveServices>,
+  runtime: RunningServices,
+  acquired: (() => void | Promise<void>)[],
+): Promise<DevServer> {
   // Installed before the app loads, so a span opened during registration is already recorded.
   // Tracing is always on in the framework and free until an exporter is configured; `x dev` is
   // what configures one, which is the whole reason `/_x/timeline` has anything to draw.
   const traces = createTraceRecorder();
   configureTelemetry({ exporter: traces.exporter });
+  acquired.push(() => {
+    configureTelemetry({ exporter: noopExporter });
+    traces.reset();
+  });
   // Installed at the same moment and for the same reason: an observer is the single switch that
   // turns statement instrumentation on at all (`@ultimat3/db`'s `observe.ts`), so the timeline's
   // SQL rows and the repeat counts arrive together rather than through two toggles. `serve.ts`
@@ -135,6 +169,10 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   // uninstalled, and nothing more (axiom 6).
   const statements = createStatementLedger();
   setStatementObserver(statements.observer);
+  acquired.push(() => {
+    setStatementObserver(undefined);
+    statements.reset();
+  });
   // ONE load at boot, the same call the rebuild below makes: the manifest and the findings are
   // two projections of one scan. Until 2026-09-07 this was `loadApp` for the findings and then
   // `appManifest` — which loads again — for the manifest, so a save landing between the two put
@@ -224,6 +262,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     // standby — so this key does not exist on a homework app's boot at all.
     ...(replicaOverride === undefined ? {} : { overrides: replicaOverride }),
   });
+  acquired.push(() => running.stop());
 
   // One rebuild at a time, and the last save wins: a tick arriving mid-build coalesces into ONE
   // trailing rebuild instead of racing the one in flight for `state.manifest` and `state.islands`.
@@ -295,32 +334,12 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
 }
 
 export const devCommand: CliCommand = {
-  spec: {
-    name: 'dev',
-    summary: 'all roles in one process: embedded services, sub-second reload, /_x mounted',
-    usage: 'x dev [--port 3000] [--role web,worker] [--once] [--json]',
-    requiresApp: true,
-    flags: [
-      { name: 'port', type: 'string', summary: 'HTTP port', default: String(DEFAULT_PORT) },
-      {
-        name: 'role',
-        type: 'string',
-        // `replicator` is named because it is selectable and NOT default — it takes a replication
-        // slot on a shared database, which is not something every `x dev` should do by starting.
-        summary: `roles to run (default: all of ${DEV_ROLES.join(',')}; replicator is opt-in)`,
-      },
-      { name: 'once', type: 'boolean', summary: 'boot, report, exit — for smoke tests and CI' },
-    ],
-  },
+  spec: devSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('dev', ctx.cwd).dir;
     // Validated, not `parseInt`'d: `x dev --port abc` handed `NaN` to `Bun.serve`, which binds an
     // arbitrary port — a dev server reachable at an address nothing printed.
-    const port = intFlagOr(
-      ctx.args,
-      { name: 'port', command: 'dev', ...PORT_RANGE, example: `x dev --port ${DEFAULT_PORT}` },
-      DEFAULT_PORT,
-    );
+    const port = devPortFor(ctx.args, ctx.env);
     const roles = selectRoles(flagString(ctx.args, 'role'));
     // BEFORE anything boots. Both failures this catches were reachable and both reported the wrong
     // thing: a taken port surfaced as X_CLI_UNEXPECTED wrapping "Is port 3000 in use?" with a `fix:`

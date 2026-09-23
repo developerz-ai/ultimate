@@ -7,7 +7,7 @@
 // `<link rel="manifest">`, no `theme-color` and no apple-touch icon — and no browser has ever
 // offered to install one, however the config was written.
 //
-// WHY HERE. `dev-assets.ts`'s reason exactly: three packages declare what an installable app is and
+// WHY HERE. `runtime-assets.ts`'s reason exactly: three packages declare what an installable app is and
 // none of them can read a config file off disk. This one composes tier 0's `pwa` block with tier
 // 4's generator and hands both served surfaces and the static export the same two strings.
 //
@@ -16,11 +16,11 @@
 // manifest is not, so the worker lands behind a real browser check rather than beside this.
 
 // why: Bun exposes no synchronous file-existence primitive, and this read is the same one
-// `app-auth.ts` and `dev-cache.ts` each make before importing an app's config — a root with no
+// `app-auth.ts` and `runtime-cache.ts` each make before importing an app's config — a root with no
 // `app.config.ts` is an ordinary answer here (a scratch root, `x build` outside an app).
 import { existsSync } from 'node:fs';
 // why: Bun exposes no path-join primitive, and `APP_CONFIG_FILE` is app-root-relative — the same
-// necessity `favicon.ts` and `dev-assets.ts` each record for their own root-relative constant.
+// necessity `favicon.ts` and `runtime-assets.ts` each record for their own root-relative constant.
 import { join } from 'node:path';
 import type { PwaColors, PwaOfflineConfig } from '@ultimat3/core';
 import type { CacheHint, Route, UltimateRequest } from '@ultimat3/http';

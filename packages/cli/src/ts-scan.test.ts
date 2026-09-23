@@ -1,12 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  isCodeRegistry,
-  maskLiterals,
-  scanBorrowedCodes,
-  scanCodeDeclarations,
-  scanCodes,
-  stripComments,
-} from './ts-scan';
+import { maskLiterals, stripComments } from '@ultimat3/core';
+import { isCodeRegistry, scanBorrowedCodes, scanCodeDeclarations, scanCodes } from './ts-scan';
 
 describe('stripComments', () => {
   test('blanks line and block comments but keeps line numbers', () => {

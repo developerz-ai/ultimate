@@ -24,17 +24,17 @@ import type {
   UiShotResult,
 } from '@ultimat3/mcp';
 import { describeRoutes } from '@ultimat3/render';
-import type { ScrapeDriver } from '@ultimat3/scraping';
-import { DEFAULT_PAGE_TIMEOUT_MS } from '@ultimat3/scraping';
 import { appBrowser } from './browser-launcher';
-import { DEFAULT_SETTLE_MS, runShot, SHOT_DIR, shotSlug } from './cmd-shot';
+import type { ShotDriver } from './browser-launcher-port';
+import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
+import { DEFAULT_SETTLE_MS, readRoute, runShot, SHOT_DIR, shotSlug } from './cmd-shot';
 import { islandShot } from './cmd-shot-island';
-import type { Env } from './dev-services';
 import { islandVerdictJson } from './island-verdict';
 import { diffShots } from './mcp-ui-diff';
 import { inspectRoute } from './mcp-ui-inspect';
 import { interactRoute } from './mcp-ui-interact';
 import { retryMemo } from './retry-memo';
+import type { Env } from './runtime-bindings';
 import { shotBrowserChoice } from './shot-browser';
 import { devServerFor, type ShotServer } from './shot-server';
 import { verdictJson } from './shot-verdict';
@@ -54,7 +54,11 @@ export interface DeclaredRoute {
   readonly budgetJs: string | null;
 }
 
-export function assertBudgetedRoute(route: string, declared: readonly DeclaredRoute[]): void {
+export function assertBudgetedRoute(raw: string, declared: readonly DeclaredRoute[]): string {
+  // `readRoute` FIRST, for every `ui.*` caller: `/\\localhost:9200` matches `/:slug` and a
+  // browser reads it as `//localhost:9200`, another service on the box. `x shot` ran it; the three
+  // MCP tools skipped it, and this is the one function all four pass through.
+  const route = readRoute(raw);
   const path = route.split('?')[0] ?? route;
   const hit = declared.find((entry) => matches(entry.path, path));
   if (hit === undefined) {
@@ -71,6 +75,7 @@ export function assertBudgetedRoute(route: string, declared: readonly DeclaredRo
       fix: `declare budget: { js: '<n>kb' } in ${hit.file}, then: x build --target static --json && x verify --only budgets --json`,
     });
   }
+  return route;
 }
 
 /** `/links/:slug` matches `/links/abc123`; one segment per `:param`, no globbing. */
@@ -87,7 +92,7 @@ export interface UiHostInput {
   /** Injected by a test: the server a picture is of, in place of `devServerFor`. */
   readonly boot?: (() => Promise<ShotServer>) | undefined;
   /** Injected by a test: the browser, in place of `appBrowser` (which needs Chrome). */
-  readonly driver?: ((viewport: UiShotInput['viewport']) => Promise<ScrapeDriver>) | undefined;
+  readonly driver?: ((viewport: UiShotInput['viewport']) => Promise<ShotDriver>) | undefined;
   /** Injected by a test: the route table, in place of the registry. */
   readonly routes?: (() => readonly DeclaredRoute[]) | undefined;
 }
@@ -122,11 +127,10 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
   const browser = () => shotBrowserChoice({ cdpFlag: undefined, browserFlag: undefined, env });
   const routes = input.routes ?? describeRoutes;
   // One browser per call, sized to the call: the injected driver in a test, `appBrowser` otherwise.
-  const driverFor = async (viewport: UiShotInput['viewport']): Promise<ScrapeDriver> => {
+  const driverFor = async (viewport: UiShotInput['viewport']): Promise<ShotDriver> => {
     if (input.driver !== undefined) return input.driver(viewport);
     const { cdpUrl, executablePath } = browser();
     return appBrowser({
-      root,
       viewport,
       ...(executablePath === undefined ? {} : { executablePath }),
       ...(cdpUrl === undefined ? {} : { cdpUrl }),
@@ -144,18 +148,18 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
     },
 
     async shotRoute(shot) {
-      assertBudgetedRoute(shot.route, routes());
+      const route = assertBudgetedRoute(shot.route, routes());
       const driver = await driverFor(shot.viewport);
       // One directory per (route, viewport, scheme), so two pictures of one route at two widths
       // never overwrite each other and an agent can hold both.
       const outDir = join(
         root,
         SHOT_DIR,
-        shotSlug(shot.route),
+        shotSlug(route),
         `${shot.viewport.width}x${shot.viewport.height}-${shot.colorScheme}`,
       );
       const artifacts = await runShot({
-        route: shot.route,
+        route,
         outDir,
         driver,
         boot,
@@ -175,13 +179,13 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
     async inspectRoute(inspect) {
       // The same gate as `ui.shot`, for the same reason: facts about a draft are facts about the
       // wrong thing.
-      assertBudgetedRoute(inspect.route, routes());
-      return inspectRoute({ root, boot, driver: driverFor }, inspect);
+      const route = assertBudgetedRoute(inspect.route, routes());
+      return inspectRoute({ root, boot, driver: driverFor }, { ...inspect, route });
     },
 
     async interactRoute(interact) {
-      assertBudgetedRoute(interact.route, routes());
-      return interactRoute({ root, boot, driver: driverFor }, interact);
+      const route = assertBudgetedRoute(interact.route, routes());
+      return interactRoute({ root, boot, driver: driverFor }, { ...interact, route });
     },
     // No route gate and no boot: the captures were gated when they were taken, and a diff of two
     // files needs neither a server nor a browser.

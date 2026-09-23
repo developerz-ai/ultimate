@@ -6,9 +6,7 @@
 // The reference is load-bearing, not decorative: @ultimat3/cli ships SOURCE, so an APP's
 // `tsc` compiles this file inside ITS program, where a `.d.ts` sitting in this directory is
 // not included and its `declare module` never applies. `tsc -b` proves it in this repo.
-import { transformAsync } from '@babel/core';
 import { contentHash } from '@ultimat3/render/server';
-import solidPreset from 'babel-preset-solid';
 import type { BunPlugin } from 'bun';
 import { IslandBuildFailedError } from './errors';
 
@@ -31,6 +29,31 @@ const PRESET_OPTIONS = { generate: 'dom', hydratable: false } as const;
  * here.
  */
 const PARSER_PLUGINS = ['typescript', 'jsx'] as const;
+
+/**
+ * Babel and the Solid preset, loaded on the first island transform and never at import: ~330ms of
+ * module evaluation, measured, paid by every process that imported the island bundler — `x dev`'s
+ * whole module graph and the CLI registry before it went lazy — whether or not an island was built.
+ */
+let loadedBabel:
+  | Promise<{
+      readonly transformAsync: typeof import('@babel/core').transformAsync;
+      /** Opaque, as `types/babel-modules.d.ts` declares it: handed to `presets:`, never called. */
+      readonly solidPreset: unknown;
+    }>
+  | undefined;
+
+const babel = () => {
+  loadedBabel ??= Promise.all([import('@babel/core'), import('babel-preset-solid')]).then(
+    // The preset is CommonJS: a dynamic import hands back its `module.exports` as `default`,
+    // which the static default import it replaced was reading all along.
+    ([core, preset]) => ({
+      transformAsync: core.transformAsync,
+      solidPreset: Reflect.get(Object(preset), 'default') as unknown,
+    }),
+  );
+  return loadedBabel;
+};
 
 interface CacheEntry {
   /** `contentHash` of the source the code was compiled from. */
@@ -76,6 +99,7 @@ export async function transformIslandTsx(source: string, path: string): Promise<
     // `transformAsync` and never `transformFileAsync`: the latter is gated behind `@babel/core`'s
     // `browser` export condition and throws "Transforming files is not supported in browsers"
     // under `bun --conditions=browser`, which is the condition Solid work runs in.
+    const { transformAsync, solidPreset } = await babel();
     const result = await transformAsync(source, {
       filename: path,
       // The app's own Babel config is not this transform's business, and an app that happens to

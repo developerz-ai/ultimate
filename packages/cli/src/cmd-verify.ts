@@ -9,13 +9,14 @@
 
 import { nearestName } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
+import { verifySpec } from './cmd-verify-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError } from './errors';
 import { readIntFlag } from './flag-number';
 import type { CommandResult } from './output';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
-import { WORKER_CEILING, WORKER_FLOOR, WORKER_OVERSUBSCRIBE } from './test-workers';
+import { WORKER_CEILING, WORKER_FLOOR } from './test-workers';
 import { VERIFY_STEPS } from './verify-checks';
 import { runVerify } from './verify-run';
 import type { VerifyStepName } from './verify-step';
@@ -28,28 +29,7 @@ export { VERIFY_STEPS } from './verify-checks';
 export { runVerify } from './verify-run';
 
 export const verifyCommand: CliCommand = {
-  spec: {
-    name: 'verify',
-    summary: 'the gate: typecheck, lint, boundaries, all tests, drift, contract, budgets',
-    usage: 'x verify [--only <step>] [--workers N] [--json]',
-    requiresApp: true,
-    // Two flags, and only one of them narrows. `--workers` changes how wide the test steps
-    // spread, never which steps run. `--only` runs one step and says so in both renderers —
-    // never silently, which is the whole of what makes it safe to have.
-    flags: [
-      {
-        name: 'workers',
-        type: 'string',
-        summary: `test processes per parallel step (default: ${WORKER_OVERSUBSCRIBE}x CPUs, min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
-      },
-      {
-        name: 'only',
-        type: 'string',
-        summary:
-          'run ONE step by name — an iteration loop, NOT A GATE RUN; the gate is this command with no flag',
-      },
-    ],
-  },
+  spec: verifySpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('verify', ctx.cwd).dir;
     // Both readers before the run: an unrunnable flag must be refused in milliseconds, not after

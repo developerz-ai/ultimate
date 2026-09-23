@@ -37,7 +37,7 @@ afterEach(() => {
   lines.length = 0;
 });
 
-/** Capture `logger.warn` the way `dev-roles.test.ts` does — the one seam a log line is testable at. */
+/** Capture `logger.warn` the way `role-start.test.ts` does — the one seam a log line is testable at. */
 function capture(): void {
   logger.warn = (line: string): void => {
     lines.push(line);

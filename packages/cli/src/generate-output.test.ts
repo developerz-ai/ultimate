@@ -5,6 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { GENERATORS, generate } from './cmd-generate';
+import { INVOICE_ENTITY } from './scaffold-fixture';
 import type { GeneratedFile } from './templates';
 import { thrownBy } from './thrown-by';
 
@@ -59,7 +60,12 @@ describe('unit · what x g emits', () => {
   });
 
   test('the action generator writes the action, its test and the feature error type', () => {
-    const files = generate({ kind: 'action', name: 'publish-invoice', feature: 'invoice' });
+    const files = generate({
+      kind: 'action',
+      name: 'publish-invoice',
+      feature: 'invoice',
+      sliceEntity: INVOICE_ENTITY,
+    });
     const paths = files.map((file) => file.path);
     expect(paths).toContain('apps/web/app/invoice/actions/publish-invoice.ts');
     // Two tests, one per gate step: the declaration's own assertions are `unit`, the projections
@@ -86,9 +92,9 @@ describe('unit · what x g emits', () => {
     if (testFile === undefined) return expect.unreachable('x g action emitted no contract test');
     const source = textOf(testFile);
     expect(source).toContain('.contract()');
-    // One authz object across surfaces — the claim the whole DSL rests on.
-    expect(source).toContain('.tool().policy');
     expect(source).toContain('.openapi().operationId');
+    // No MCP tool until an author writes its description: a placeholder is what an agent would read.
+    expect(source).toContain('target.mcp?.expose ?? false');
     for (const reached of ['toMcpTool(', 'toOpenApiOperation(', 'contractTestsFor(']) {
       expect(source.includes(reached)).toBe(false);
     }
@@ -132,7 +138,12 @@ describe('unit · what x g emits', () => {
   });
 
   test('a job is generated with a required idempotency key', () => {
-    const files = generate({ kind: 'job', name: 'reindex', feature: 'invoice' });
+    const files = generate({
+      kind: 'job',
+      name: 'reindex',
+      feature: 'invoice',
+      sliceEntity: INVOICE_ENTITY,
+    });
     const source = files.find((file) => file.path.endsWith('reindex.ts'));
     expect(source?.contents).toContain('idempotencyKey:');
     const testFile = files.find((file) => file.path.endsWith('reindex.job.test.ts'));

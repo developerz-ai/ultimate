@@ -5,7 +5,7 @@
 
 // why: Bun exposes no path-join primitive, and `FAVICON_SOURCE` is app-root-relative, so resolving
 // it against the root is string work no `Bun.file` overload does — the same necessity
-// `dev-assets.ts` records for `ICON_SOURCE`.
+// `runtime-assets.ts` records for `ICON_SOURCE`.
 import { join } from 'node:path';
 import { createRaster, encodeImage } from '@ultimat3/core';
 import type { CacheHint, Route, UltimateRequest } from '@ultimat3/http';
@@ -69,7 +69,7 @@ const builtinBytes = (): Uint8Array => {
 const iconResponse = (bytes: Uint8Array, contentType: string): Response =>
   applyCacheHeaders(
     // Copied, not passed through: a `Uint8Array<ArrayBufferLike>` may be backed by a
-    // `SharedArrayBuffer`, which `Response` does not accept — `dev-assets.ts`'s rule, verbatim.
+    // `SharedArrayBuffer`, which `Response` does not accept — `runtime-assets.ts`'s rule, verbatim.
     new Response(new Uint8Array(bytes), { headers: { 'content-type': contentType } }),
     FAVICON_CACHE,
   );

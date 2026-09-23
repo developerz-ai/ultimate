@@ -5,9 +5,9 @@
 
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { scanAllImports } from './import-scan';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest, isVendored } from './source-files';
-import { maskLiterals } from './ts-scan';
 
 export interface WorkspaceNode {
   /** package.json "name". */
@@ -144,43 +144,20 @@ export function packageOfSpecifier(specifier: string): string | undefined {
 }
 
 /**
- * Every form that names a module: `… from '…'`, a bare `import '…'`, `import('…')`, `require('…')`.
- * `from` is matched only where a quote follows it directly, so `from<Row>('posts', …)` — the query
- * builder, which reads exactly like an import — cannot be one.
+ * Every package a source file imports, deduplicated, in first-appearance order — type-only imports
+ * included, because a type edge still needs its manifest line. The transpiler is the parser, so a
+ * generator's template literal (even one nested in a `${…}`, #493) is a string and never an import,
+ * and `from<Row>('posts')` is a call. A file it cannot parse throws rather than reading as empty.
  */
-const IMPORT_FORM =
-  /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|(?:^|[;{])\s*import\s+)['"]([^'"]*)['"]/g;
-
-/**
- * Every package a source file imports, deduplicated, in first-appearance order.
- *
- * Read from the MASKED text, because a generator's template literal holds whole programs: every
- * `templates/*.ts` here emits `import … from '@ultimat3/ui'` as a string, and a scan that read
- * those would bill the CLI for the imports of the app it writes. The line a masked hit falls on is
- * then re-read from the real source — the specifier itself is what masking blanks.
- */
-export function importedPackages(source: string): readonly string[] {
-  const masked = maskLiterals(source).split('\n');
-  const lines = source.split('\n');
+export function importedPackages(source: string, path = 'source.ts'): readonly string[] {
   const packages = new Set<string>();
-  for (const [index, maskedLine] of masked.entries()) {
-    const line = lines[index];
-    // `matchAll` clones the regex, so the shared `lastIndex` is never carried between lines.
-    if (line === undefined || [...maskedLine.matchAll(IMPORT_FORM)].length === 0) continue;
-    for (const match of line.matchAll(IMPORT_FORM)) {
-      const name = packageOfSpecifier(match[1] ?? '');
-      if (name !== undefined) packages.add(name);
-    }
+  for (const specifier of scanAllImports({ path, source })) {
+    const name = packageOfSpecifier(specifier);
+    if (name !== undefined) packages.add(name);
   }
   return [...packages];
 }
 
-/**
- * Borrowed, not twinned: `X_APP_PACKAGE_INVALID` already means "this package.json supplies no
- * usable name", and a workspace manifest is that same file one directory down. `bun pm pkg set`
- * is not the fix here — it parses the file it edits, so it fails on exactly the input this
- * reports.
- */
 export const unreadableWorkspaceFinding = (path: string): Finding => ({
   code: 'X_APP_PACKAGE_INVALID',
   cause: `${path} is claimed by the root "workspaces" globs and supplies no readable "name"`,
@@ -228,7 +205,7 @@ export async function checkWorkspaceDependencies(root: string): Promise<readonly
     if (isTest(path) || isGenerated(path)) continue;
     const owner = owners.find((node) => path.startsWith(`${node.dir}/`));
     if (owner === undefined) continue;
-    for (const name of importedPackages(await Bun.file(join(root, path)).text())) {
+    for (const name of importedPackages(await Bun.file(join(root, path)).text(), path)) {
       const target = byName.get(name);
       if (target === undefined || target.name === owner.name) continue;
       if (owner.dependencies.includes(target.name)) continue;

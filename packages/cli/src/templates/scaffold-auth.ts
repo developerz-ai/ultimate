@@ -35,6 +35,7 @@ const devActor = (
 // Everything downstream — pages, policies, live subscribers, MCP tools — reads what this returns.
 import { type Actor, logger, tryResolveEnvironment } from '@ultimat3/core';
 import { configureAuthenticator, readCookie } from '@ultimat3/http';
+import { DEMO_ORG_ID } from '../../shared/demo-org';
 
 /** Set it to a role from \`apps/web/shared/roles.ts\` to browse as that role. */
 export const DEV_ROLE_COOKIE = '${app.kebab}_dev_role';
@@ -66,7 +67,8 @@ export const devRoleFrom = (cookieHeader: string | null): DevRole => {
 export const devActorFor = (role: DevRole): Actor => ({
   kind: 'user',
   id: 'dev-actor',
-  orgId: 'dev-org',
+  // The seed's org, never an invented string: a generated tenant policy compares it with a uuid.
+  orgId: DEMO_ORG_ID,
   roles: [role],
   // Both required, and both deliberately empty: \`scopes\` is the framework's own escape hatch
   // (\`tenancy:cross\`) and \`permissions\` is a DIRECT grant that bypasses the role map — a

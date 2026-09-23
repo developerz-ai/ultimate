@@ -3,7 +3,7 @@
 // answers that must never collapse into a zero — an unreadable canvas and an uncounted island.
 
 import { describe, expect, test } from 'bun:test';
-import type { ConsoleLine, NetworkEntry, PageError } from '@ultimat3/scraping';
+import type { ConsoleLine, NetworkEntry, PageError } from './browser-launcher-port';
 import { messageKeys } from './messages';
 import type { ShotInput } from './shot-verdict';
 import {
@@ -298,18 +298,37 @@ describe('unit · the artifact says what it does not know', () => {
     expect(json['islands']).toBeNull();
   });
 
-  test('every verdict names its blind spots', () => {
+  test('every verdict carries its blind-spot list, even when the list is empty', () => {
     const json = verdictJson(buildVerdict(inputFor())) as { blind: readonly string[] };
-    // Asserted by CONTENT, not by count: a count derived from `BLIND_SPOTS` would agree with
-    // itself forever, and a literal count reds on every edit without saying which claim moved.
-    // Response status is the one left — the browser port records requests, never responses.
-    expect(json.blind.join(' ')).toContain('status');
-    expect(json.blind.length).toBeGreaterThan(0);
+    expect(Array.isArray(json.blind)).toBe(true);
+  });
+
+  /**
+   * RETIRED with the raw-CDP driver (22.0.0): `Network.responseReceived` fills every request's
+   * status, so "HTTP response status is not observed" stopped being true of any shot.
+   */
+  test('the artifact no longer claims response status is unobserved, and counts the failures', () => {
+    const json = verdictJson(
+      buildVerdict(
+        inputFor({
+          network: [
+            entry({ status: 200 }),
+            entry({ status: 404 }),
+            entry({ status: 503 }),
+            entry(),
+          ],
+        }),
+      ),
+    ) as { blind: readonly string[]; network: { failed: number }; ok: boolean };
+    expect(json.blind.join(' ')).not.toContain('status');
+    expect(json.network.failed).toBe(2);
+    // Recorded, never gating: a missing favicon would otherwise fail every shot of every app.
+    expect(json.ok).toBe(true);
   });
 
   /**
    * Two blind spots were RETIRED on 2026-08-21 — `pageerror` capture landed in
-   * `@ultimat3/scraping`, and the hydration prelude began marking a mount's outcome. This asserts
+   * the shot driver, and the hydration prelude began marking a mount's outcome. This asserts
    * the retirement, which is the half that rots: a stale caveat is not harmless, it teaches an
    * agent to distrust an answer the tool can now give and to go look at a picture instead.
    */

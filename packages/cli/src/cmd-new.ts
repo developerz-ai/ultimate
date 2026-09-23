@@ -7,13 +7,16 @@ import { chmod } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import { dedupe } from './cmd-generate';
+import { newSpec } from './cmd-new-spec';
 import type { CliCommand, CommandContext } from './command';
 import { invocationOf } from './command';
-import { AppNameIsPathError, MissingPositionalError } from './errors';
+import { AppNameEmptyError, AppNameIsPathError, MissingPositionalError } from './errors';
 import type { Runner } from './exec';
+import { reproducedFlags } from './invocation-flags';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagBool, flagString } from './parse';
+import { quoteArg } from './shell-quote';
 import type { GeneratedFile } from './templates';
 import { appFiles, EXECUTABLE_FILES, names, repoFiles, resourceFiles } from './templates';
 import { loadVersion } from './version-loader';
@@ -58,6 +61,17 @@ const GIT_STEPS: readonly (readonly string[])[] = [
 
 /** What `--no-git` records, so `data.git` has the same shape whichever way the flag went. */
 const NO_GIT: RepositoryInit = { initialized: false, committed: false, problem: SKIPPED };
+
+/** `--force` into a directory that already existed: its files are not ours to commit. */
+const PRE_EXISTING: RepositoryInit = {
+  initialized: false,
+  committed: false,
+  problem: 'the directory already existed, so nothing was committed — its files are yours',
+};
+
+/** Every flag the caller set, in the spelling that reproduces it (`invocation-flags.ts`). */
+const callerFlags = (ctx: CommandContext): readonly string[] =>
+  reproducedFlags(newCommand.spec, ctx.args);
 
 /**
  * A scaffold is a REPOSITORY, because three surfaces of this CLI already assume one and answered
@@ -151,34 +165,7 @@ export function appNamePath(raw: string): { parent: string; base: string } | und
 }
 
 export const newCommand: CliCommand = {
-  spec: {
-    name: 'new',
-    summary: 'scaffold a new Ultimate monorepo that already runs',
-    // Every flag the table below declares, in the spelling that turns it off where the default is
-    // on: the usage line offered `--no-example` while the table listed `--example`, and a reader
-    // had to reconcile the two to answer "which one do I get if I type neither".
-    usage: 'x new <name> [--dir path] [--no-example] [--no-git] [--dry-run] [--force] [--json]',
-    flags: [
-      { name: 'dir', type: 'string', summary: 'parent directory (default: cwd)' },
-      {
-        // The summary carries the default and the negation because the page has to answer "which
-        // one do I get if I type neither": the usage line offered `--no-example`, this table said
-        // `--example`, and `default: true` is a field only `--json` renders. 136 files against 109.
-        name: 'example',
-        type: 'boolean',
-        summary: 'include the example feature slice (default: on; --no-example for an empty app/)',
-        default: true,
-      },
-      {
-        name: 'git',
-        type: 'boolean',
-        summary: 'git init and commit the scaffold (default: on; --no-git for a bare directory)',
-        default: true,
-      },
-      { name: 'dry-run', type: 'boolean', summary: 'print the file list, write nothing' },
-      { name: 'force', type: 'boolean', summary: 'write into a directory that already exists' },
-    ],
-  },
+  spec: newSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const raw = ctx.args.positionals[0];
     // The class, not a hand-built finding with the same code: `MissingPositionalError` is what
@@ -202,6 +189,13 @@ export const newCommand: CliCommand = {
       throw new AppNameIsPathError({ name: raw, invocation: invocationOf(ctx, 'new'), ...path });
     }
     const app = names(raw);
+    if (app.kebab === '') {
+      throw new AppNameEmptyError({
+        name: raw,
+        invocation: invocationOf(ctx, 'new'),
+        flags: callerFlags(ctx),
+      });
+    }
     const target = resolve(parentDir(ctx.cwd, flagString(ctx.args, 'dir')), app.kebab);
     const options: NewAppOptions = { name: raw, example: ctx.args.flags.get('example') !== false };
 
@@ -224,22 +218,33 @@ export const newCommand: CliCommand = {
           {
             code: 'X_GENERATE_CONFLICT',
             cause: `${target} already exists`,
-            fix: `x new ${app.kebab} --force, or choose another name`,
+            // The invocation the caller ran, with every flag it set: dropping `--dir` wrote a
+            // second app into the cwd, and the literal `x` is not installed under create-ultimate.
+            fix: `${[invocationOf(ctx, 'new'), quoteArg(app.kebab), ...callerFlags(ctx), '--force'].join(' ')}   # or choose another name`,
             docs: ERROR_DOCS_URL,
             at: target,
           },
         ],
       };
     }
+    // Read BEFORE writing: `--force` into a directory that already held files must never
+    // `git add -A && git commit` them — they are the user's, and `x new` did not write them.
+    const existed = existsSync(target);
     const written = await writeNewApp(target, options);
     const git =
-      ctx.args.flags.get('git') === false ? NO_GIT : await initRepository(ctx.runner, target);
+      ctx.args.flags.get('git') === false
+        ? NO_GIT
+        : existed
+          ? PRE_EXISTING
+          : await initRepository(ctx.runner, target);
     const lines = [msg('cli.new.wrote', { count: written.files.length, dir: target })];
-    if (git.problem !== null && git.problem !== SKIPPED) {
+    if (git.problem !== null && git.problem !== SKIPPED && git !== PRE_EXISTING) {
       lines.push(msg('cli.new.noRepository', { problem: git.problem }));
       // Raw, unlike the two prose lines around it: this one is an instruction to run verbatim, and
       // a translated command is a broken one (`packages/cli/CLAUDE.md`).
-      lines.push(`  run: cd ${target} && git init && git add -A && git commit -m 'x new'`);
+      lines.push(
+        `  run: cd ${quoteArg(target)} && git init && git add -A && git commit -m 'x new'`,
+      );
     }
     return {
       ok: true,

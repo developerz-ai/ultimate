@@ -16,6 +16,7 @@ import { BadFlagError } from './errors';
 import type { Finding, JsonValue } from './output';
 import { findingFrom } from './output';
 import { hasPathSegment } from './path-segments';
+import { isTest } from './source-files';
 import { renderTable } from './table';
 
 /**
@@ -102,10 +103,11 @@ export async function discoverSeeds(root: string): Promise<SeedDiscovery> {
   const seen = new Set<string>();
   for (const pattern of SEED_GLOBS) {
     for await (const absolute of new Bun.Glob(pattern).scan({ cwd: root, absolute: true })) {
-      if (hasPathSegment(absolute, 'node_modules') || absolute.includes('.test.')) continue;
+      const file = relative(root, absolute).split(sep).join('/');
+      // Root-relative, as `loadApp` tests it: an absolute path under `my.test.app/` is no test.
+      if (hasPathSegment(absolute, 'node_modules') || isTest(file)) continue;
       if (seen.has(absolute)) continue;
       seen.add(absolute);
-      const file = relative(root, absolute).split(sep).join('/');
       let module: Record<string, unknown>;
       try {
         module = (await import(absolute)) as Record<string, unknown>;

@@ -1,7 +1,7 @@
 // One question: does the source list name the exact bytes a document still carries INLINE — and
 // nothing else? A hash of a body no response emits is a rule describing a document nobody serves,
 // which is what the app's own surface CSS became when it moved into a file: 157 kB hashed at boot
-// to admit a `<style>` block `dev-render.ts` no longer writes.
+// to admit a `<style>` block `runtime-render.ts` no longer writes.
 
 import { describe, expect, test } from 'bun:test';
 import { cspHashSource } from '@ultimat3/http';

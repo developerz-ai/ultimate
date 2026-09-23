@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createServer, defineHttpConfig } from '@ultimat3/http';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { clearStylesheets, loadStylesheet } from '@ultimat3/render/server';
-import { appRoutes } from './dev-render';
 import { fixProblem } from './error-contract';
+import { appRoutes } from './runtime-render';
 import { styleBundle } from './style-bundle';
 import { styleRoutes } from './style-routes';
 

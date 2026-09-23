@@ -34,7 +34,7 @@ describe('unit · adding a locale registers it', () => {
     expect(before).not.toContain('catalogs/fr.json');
 
     await Bun.write(join(root, 'packages/i18n/catalogs/fr.json'), '{"nav":{"home":"Accueil"}}\n');
-    expect(await syncI18nIndex(root)).toBe(true);
+    expect((await syncI18nIndex(root)).registered).toBe(true);
 
     const after = await Bun.file(join(root, I18N_INDEX_PATH)).text();
     expect(after).toContain("import fr from '../catalogs/fr.json';");
@@ -53,7 +53,59 @@ describe('unit · adding a locale registers it', () => {
   test('an app with no i18n package is left alone and says so', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'x-i18n-index-'));
     roots.push(dir);
-    expect(await syncI18nIndex(dir)).toBe(false);
+    expect((await syncI18nIndex(dir)).registered).toBe(false);
+  });
+});
+
+// Row p: the index was OVERWRITTEN with the template on every `x g` and `x i18n add|sync` — a
+// hand-set `default: 'es'` became `'en'`, hand-written code vanished, and an app with no `en.json`
+// got an import of one.
+describe('unit · a hand-edited index is edited, never replaced', () => {
+  const HAND = [
+    "import { defineCatalogs } from '@ultimat3/i18n';",
+    "import es from '../catalogs/es.json';",
+    '',
+    "export const catalogs = defineCatalogs({ default: 'es', locales: { es } });",
+    'export const mine = 1; // the author wrote this',
+    '',
+  ].join('\n');
+
+  test('a missing locale is added beside the others; the default and the rest survive', async () => {
+    const root = await appRoot();
+    await rm(join(root, 'packages/i18n/catalogs/en.json'));
+    await Bun.write(join(root, 'packages/i18n/catalogs/es.json'), '{}\n');
+    await Bun.write(join(root, 'packages/i18n/catalogs/fr.json'), '{}\n');
+    await Bun.write(join(root, I18N_INDEX_PATH), HAND);
+
+    const sync = await syncI18nIndex(root);
+
+    expect(sync).toEqual({ registered: true, findings: [] });
+    const after = await Bun.file(join(root, I18N_INDEX_PATH)).text();
+    expect(after).toContain("import fr from '../catalogs/fr.json';");
+    expect(after).toContain("defineCatalogs({ default: 'es', locales: { es, fr } })");
+    expect(after).toContain('export const mine = 1; // the author wrote this');
+    expect(after).not.toContain('en.json');
+  });
+
+  test('a shape this writer cannot edit is refused with the edit named, and left untouched', async () => {
+    const root = await appRoot();
+    const odd = "export { catalogs } from './elsewhere';\n";
+    await Bun.write(join(root, I18N_INDEX_PATH), odd);
+    await Bun.write(join(root, 'packages/i18n/catalogs/fr.json'), '{}\n');
+
+    const sync = await syncI18nIndex(root);
+
+    expect(sync.registered).toBe(false);
+    expect(sync.findings.map((finding) => finding.code)).toEqual(['X_CATALOG_UNREGISTERED']);
+    expect(sync.findings[0]?.fix).toContain("import fr from '../catalogs/fr.json'");
+    expect(await Bun.file(join(root, I18N_INDEX_PATH)).text()).toBe(odd);
+  });
+
+  test('the template never imports an en.json the catalogs do not hold', () => {
+    const source = i18nIndex(['es', 'fr']);
+    expect(source).not.toContain('en.json');
+    expect(source).toContain("defineCatalogs({ default: 'es', locales: { es, fr } })");
+    expect(source).toContain('export type AppCatalog = typeof es;');
   });
 });
 

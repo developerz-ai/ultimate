@@ -7,6 +7,7 @@ import type { GeneratedFile, NameSet } from './naming';
 import { apiFiles } from './scaffold-api';
 import { authFiles } from './scaffold-auth';
 import { dashboardFiles } from './scaffold-dashboard';
+import { demoOrgFiles } from './scaffold-demo-org';
 import { entryFiles } from './scaffold-entries';
 import { errorPageFiles } from './scaffold-errors';
 import { httpFiles } from './scaffold-http';
@@ -309,11 +310,13 @@ export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile
     { path: 'apps/web/shared/global.ts', contents: sharedGlobalModule() },
     { path: 'apps/web/shared/actor.ts', contents: sharedActor() },
     { path: 'apps/web/shared/actor.test.ts', contents: sharedActorTest() },
+    // The one org the dev actor, the seed and the dashboard all name — `scaffold-demo-org.ts`.
+    ...demoOrgFiles(),
     // The app's role map, beside the actor that reads it. `shared/` and not a feature folder:
     // `defineRoles()` merges, so a per-feature call is legal and is how an app ends up with no
     // answer to "which roles exist?" — see `scaffold-roles.ts`.
     ...httpFiles(app),
-    ...rolesFiles(),
+    ...rolesFiles(example),
     { path: 'apps/admin/package.json', contents: adminPackage(app) },
     { path: 'apps/admin/tsconfig.json', contents: tsconfig() },
     // `apps/admin/app/admin/page.tsx`, not `apps/admin/app/page.tsx`: the directory IS the URL,

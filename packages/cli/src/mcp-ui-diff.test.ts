@@ -85,6 +85,7 @@ beforeAll(async () => {
   await Bun.write(`${shot}/rgb2.png`, rgbPng([10, 20, 30], [250, 20, 30]));
   await Bun.write(`${root}/secrets/leak.png`, png(4, 3, [0, 0, 0, 255]));
   await Bun.$`ln -s ${root}/secrets/leak.png ${shot}/link.png`.quiet();
+  await Bun.$`ln -s ${root}/secrets ${root}/.x/shot/escape`.quiet();
 });
 
 afterAll(async () => {
@@ -171,6 +172,21 @@ describe('unit · ui.diff compares two captures under .x/shot/ and nothing else'
     expect(await codeOf(diffShots({ root }, { before: link, after: inside, threshold: 0.1 }))).toBe(
       'X_UI_DIFF_PATH_OUTSIDE',
     );
+  });
+
+  // Row u: `out` was checked LEXICALLY only, so an `out` under a symlinked directory inside
+  // `.x/shot/` wrote the diff wherever the link pointed.
+  test('an `out` under a symlinked directory that leaves .x/shot/ is refused, and nothing is written', async () => {
+    const inside = '.x/shot/dash/1440x900-dark/a.png';
+    expect(
+      await codeOf(
+        diffShots(
+          { root },
+          { before: inside, after: inside, threshold: 0.1, out: '.x/shot/escape/diff.png' },
+        ),
+      ),
+    ).toBe('X_UI_DIFF_PATH_OUTSIDE');
+    expect(await Bun.file(`${root}/secrets/diff.png`).exists()).toBe(false);
   });
 
   test('a capture that is not on disk is X_UI_DIFF_FILE_MISSING, with the path in the cause', async () => {

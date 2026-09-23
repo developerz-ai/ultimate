@@ -47,6 +47,16 @@ export async function list(limit = 50): Promise<readonly ShortLink[]> {
 `;
 
 /**
+ * The `invoice` resource's own `entity.ts`, as `x g` would read it off disk after the resource
+ * below ran — the generators writing INTO that slice are handed it, because a slice with no entity
+ * now gets the neutral body and no invented table.
+ */
+export const INVOICE_ENTITY = String(
+  generate({ kind: 'entity', name: 'invoice' }).find((file) => file.path.endsWith('/entity.ts'))
+    ?.contents,
+);
+
+/**
  * One realistic invocation of every generator, on top of `x new --example`. Names differ from
  * their feature on purpose: `x g query invoice --feature invoice` would collide with the entity
  * import, and a fixture that trips over its own naming stops testing the templates.
@@ -59,19 +69,31 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
   { kind: 'resource', name: 'invoice', admin: true },
   { kind: 'entity', name: 'credit-note', feature: 'credit-note' },
   { kind: 'policy', name: 'credit-note', feature: 'credit-note' },
-  { kind: 'action', name: 'send-invoice', feature: 'invoice' },
-  { kind: 'mutator', name: 'rename-invoice', feature: 'invoice' },
+  { kind: 'action', name: 'send-invoice', feature: 'invoice', sliceEntity: INVOICE_ENTITY },
+  { kind: 'mutator', name: 'rename-invoice', feature: 'invoice', sliceEntity: INVOICE_ENTITY },
   // The other shape both templates have: a slice whose `errors.ts` is the author's and declares
   // no `InvoiceNotFoundError`. The resource's own `errors.ts` still lands in the sandbox (it does
   // declare one), which is the point — this compiles the file `x g action` writes when it must
   // not import that class, beside the one it writes when it may.
-  { kind: 'action', name: 'ping-invoice', feature: 'invoice', sliceErrors: HANDWRITTEN_ERRORS },
-  { kind: 'mutator', name: 'touch-invoice', feature: 'invoice', sliceErrors: HANDWRITTEN_ERRORS },
+  {
+    kind: 'action',
+    name: 'ping-invoice',
+    feature: 'invoice',
+    sliceErrors: HANDWRITTEN_ERRORS,
+    sliceEntity: INVOICE_ENTITY,
+  },
+  {
+    kind: 'mutator',
+    name: 'touch-invoice',
+    feature: 'invoice',
+    sliceErrors: HANDWRITTEN_ERRORS,
+    sliceEntity: INVOICE_ENTITY,
+  },
   { kind: 'query', name: 'invoice-search', feature: 'invoice' },
   { kind: 'query', name: 'invoice-feed', feature: 'invoice', live: true },
-  { kind: 'job', name: 'sweep-invoices', feature: 'invoice' },
+  { kind: 'job', name: 'sweep-invoices', feature: 'invoice', sliceEntity: INVOICE_ENTITY },
   { kind: 'backfill', name: 'reindex-invoices', feature: 'invoice' },
-  { kind: 'task', name: 'nightly-sweep', feature: 'invoice' },
+  { kind: 'task', name: 'nightly-sweep', feature: 'invoice', sliceEntity: INVOICE_ENTITY },
   // The other shape both templates have: a feature whose entity names no tenant column, so the
   // job/task must not assume one — compiled here beside the tenant-scoped pair above, exactly as
   // `ping-invoice`/`touch-invoice` compile the action's other shape beside `send-invoice`.

@@ -81,7 +81,7 @@ export interface MetricsEndpoint {
 export function startMetricsEndpoint(options: MetricsEndpointOptions = {}): MetricsEndpoint {
   // Screened here rather than left to `Bun.serve`, which refuses a `NaN` with a bare `RangeError`
   // — no code, no `fix:` — at exactly the boot path the refusal below exists to stop reporting
-  // that way. Floor 0, because 0 asks the kernel for a free port and `dev-roles.ts` passes it for
+  // that way. Floor 0, because 0 asks the kernel for a free port and `role-start.ts` passes it for
   // an ephemeral boot; the ceiling stays Bun's, which names the range it refuses.
   const port = finiteCount('startMetricsEndpoint', 'port', options.port ?? DEFAULT_METRICS_PORT);
   // `startRoles` opens this FIRST, before any role, so `Bun.serve`'s own bare `Error` was what a

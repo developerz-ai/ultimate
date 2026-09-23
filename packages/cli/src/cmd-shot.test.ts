@@ -1,5 +1,5 @@
 // `x shot` drives a real browser, so every rule it holds is proved here through an INJECTED one:
-// `fakeBrowser()` plus a stub server. A test that needed Chrome would be a test CI cannot run, and
+// `fakeShotDriver()` plus a stub server. A test that needed Chrome would be a test CI cannot run, and
 // this command is deliberately not a step of `x verify` — so its suite must not need one either.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -10,8 +10,8 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import type { ConsoleLine, ScrapeDriver, ScrapeSession } from '@ultimat3/scraping';
-import { fakeBrowser } from '@ultimat3/scraping';
+import { fakeShotDriver } from './browser-launcher-fake';
+import type { ConsoleLine, ShotDriver, ShotSession } from './browser-launcher-port';
 import {
   allowHostsFrom,
   devServerFor,
@@ -24,7 +24,7 @@ import {
   shotSlug,
 } from './cmd-shot';
 import { DEV_LOCK_FILE } from './dev-lock';
-import { resolveServices } from './dev-services';
+import { resolveServices } from './runtime-bindings';
 import { themeChoiceExpression } from './shot-theme';
 import { ISLAND_PROBE } from './shot-verdict';
 
@@ -59,21 +59,23 @@ const CLEAN_ANSWER = JSON.stringify({
   failures: [],
 });
 
-const driverAnswering = (answer: string): ScrapeDriver =>
-  fakeBrowser([{ url: `${SERVER_URL}${ROUTE}`, html: PAGE, evaluate: { [ISLAND_PROBE]: answer } }]);
+const driverAnswering = (answer: string): ShotDriver =>
+  fakeShotDriver([
+    { url: `${SERVER_URL}${ROUTE}`, html: PAGE, evaluate: { [ISLAND_PROBE]: answer } },
+  ]);
 
-const siteDriver = (): ScrapeDriver => driverAnswering(PROBE_ANSWER);
+const siteDriver = (): ShotDriver => driverAnswering(PROBE_ANSWER);
 
 /**
  * A driver whose probe answers a DIFFERENT thing each time it is asked — the one seam that can
  * tell "read once" from "read until it settles". Composed over the real fake, so everything the
  * page is asked that is not the probe stays honest.
  */
-const probing = (answers: readonly string[]): ScrapeDriver => {
+const probing = (answers: readonly string[]): ShotDriver => {
   const base = siteDriver();
   return {
     name: base.name,
-    open: async (init): Promise<ScrapeSession> => {
+    open: async (init): Promise<ShotSession> => {
       const session = await base.open(init);
       let index = 0;
       return {
@@ -97,9 +99,9 @@ const probing = (answers: readonly string[]): ScrapeDriver => {
  * that can prove `runShot` reads `page.console()` at all is a driver that answers some. Composed
  * over the real fake rather than hand-built: everything else on the session stays honest.
  */
-const withConsole = (base: ScrapeDriver, lines: readonly ConsoleLine[]): ScrapeDriver => ({
+const withConsole = (base: ShotDriver, lines: readonly ConsoleLine[]): ShotDriver => ({
   name: base.name,
-  open: async (init): Promise<ScrapeSession> => {
+  open: async (init): Promise<ShotSession> => {
     const session = await base.open(init);
     return { ...session, page: { ...session.page, console: () => lines } };
   },
@@ -109,9 +111,9 @@ const withConsole = (base: ScrapeDriver, lines: readonly ConsoleLine[]): ScrapeD
  * The ORDER of what `runShot` asks the page before the picture, as a driver sees it. Composed over
  * the real fake: `prepare` and `goto` are forwarded after being logged, so the page still answers.
  */
-const ordering = (base: ScrapeDriver, log: string[]): ScrapeDriver => ({
+const ordering = (base: ShotDriver, log: string[]): ShotDriver => ({
   name: base.name,
-  open: async (init): Promise<ScrapeSession> => {
+  open: async (init): Promise<ShotSession> => {
     const session = await base.open(init);
     return {
       ...session,
@@ -245,7 +247,7 @@ describe('unit · one route, two artifacts', () => {
 
   test('a page the probe cannot answer leaves islands null and still writes the picture', async () => {
     const out = join(dir, 'unprobed');
-    const driver = fakeBrowser([{ url: `${SERVER_URL}${ROUTE}`, html: PAGE }]);
+    const driver = fakeShotDriver([{ url: `${SERVER_URL}${ROUTE}`, html: PAGE }]);
     const artifacts = await runShot(runFor(out, { driver }));
     expect(artifacts.verdict.islands).toBeNull();
     expect(existsSync(join(out, SHOT_IMAGE))).toBe(true);
@@ -297,12 +299,12 @@ describe('unit · nothing is left running', () => {
       runShot(
         runFor(out, {
           // A page nobody recorded: the offline driver refuses rather than reaching the network.
-          driver: fakeBrowser([{ url: `${SERVER_URL}/other`, html: PAGE }]),
+          driver: fakeShotDriver([{ url: `${SERVER_URL}/other`, html: PAGE }]),
           boot: () => Promise.resolve(stub.server),
         }),
       ),
     );
-    expect(error['code']).toBe('X_SCRAPE_FIXTURE_MISSING');
+    expect(error['code']).toBe('X_CDP_CALL_FAILED');
     expect(stub.stopped()).toBe(1);
     expect(existsSync(join(out, SHOT_IMAGE))).toBe(false);
   });

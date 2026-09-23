@@ -18,7 +18,7 @@ import { parseArgs } from './parse';
 import { testPasses } from './test-passes';
 import type { TestFile } from './test-select';
 import { filesIn } from './test-shards';
-import { SERIAL_TYPES } from './verify-tests';
+import { SERIAL_TYPES } from './test-workers';
 
 interface Recorder {
   readonly calls: readonly (readonly string[])[];

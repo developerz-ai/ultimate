@@ -5,6 +5,7 @@
 // `reviewDecision` outlives the push that answered it, and a RESOLVED thread is a closed
 // conversation rather than a fixed finding.
 
+import { PR_SUBCOMMANDS, prSpec } from './cmd-pr-spec';
 import type { CliCommand, CommandContext } from './command';
 import {
   BadFlagError,
@@ -13,6 +14,7 @@ import {
   UnknownCommandError,
 } from './errors';
 import { parseIntFlag } from './flag-number';
+import { commentBlock } from './foreign-text';
 import { PrNotFoundError, resolvePrNumber, resolveRepo } from './gh-target';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
@@ -20,7 +22,7 @@ import { flagBool, flagString } from './parse';
 import type { PrReviewReport, PrThread } from './pr-threads';
 import { fetchReviewReport, replyToThread, resolveThread, THREAD_PAGE } from './pr-threads';
 
-export const PR_SUBCOMMANDS = ['review', 'resolve', 'reply'] as const;
+export { PR_SUBCOMMANDS } from './cmd-pr-spec';
 
 /**
  * Every catalog key this command renders, declared. `msg()` answers `⟦key⟧` for a key nobody
@@ -51,38 +53,7 @@ export const PR_MESSAGE_KEYS = [
 export const BODY_LINES = 20;
 
 export const prCommand: CliCommand = {
-  spec: {
-    name: 'pr',
-    summary: 'inline review threads: list them with their ids, resolve one, reply in one',
-    usage:
-      'x pr review [--pr <n>] [--repo owner/name] [--all] [--full] | x pr resolve <thread-id> | x pr reply <thread-id> --body "…"',
-    subcommands: PR_SUBCOMMANDS,
-    flags: [
-      { name: 'repo', type: 'string', summary: 'owner/name; the checkout own remote by default' },
-      { name: 'pr', type: 'string', summary: 'pull request number; this branch own by default' },
-      // Scoped to the subcommand each summary already names: `resolve` and `reply` WRITE to
-      // somebody else's pull request, and a flag they silently ignore is a flag whose caller
-      // believed it did something to a request that cannot be re-run.
-      {
-        name: 'all',
-        type: 'boolean',
-        summary: 'review: resolved threads too, not just open ones',
-        subcommands: ['review'],
-      },
-      {
-        name: 'full',
-        type: 'boolean',
-        summary: 'review: whole comment bodies, never truncated',
-        subcommands: ['review'],
-      },
-      {
-        name: 'body',
-        type: 'string',
-        summary: 'reply: the comment text to post in the thread',
-        subcommands: ['reply'],
-      },
-    ],
-  },
+  spec: prSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     // No `defaultSubcommand`: `resolve` and `reply` both WRITE to a pull request, so "whatever the
     // caller left out" is not a safe guess for any of the three.
@@ -201,38 +172,7 @@ function threadLines(thread: PrThread, bodyLines: number): readonly string[] {
   return out;
 }
 
-const BLOCK_OPEN = '<comment id=';
-const BLOCK_CLOSE = '</comment>';
-
-/**
- * The fence, as a READER would parse it rather than as this file spells it.
- *
- * Two literal `replaceAll`s were the whole neutralisation, and markup is not spelled one way:
- * `</comment >`, `</COMMENT>` and `< comment id=` all end or open a block for anything reading
- * tags, and none of the three matched. One pattern over `<`, an optional `/`, and whitespace
- * around a case-insensitive `comment` covers every spelling of the delimiter; the escape goes on
- * the `<`, so what the reviewer wrote after it survives byte for byte.
- */
-const BLOCK_DELIMITER = /<(\s*\/?\s*comment\b)/gi;
-
-/**
- * One comment body, fenced and labelled with the thread id it came from — `@ultimat3/ai`'s
- * `documentBlock` (`rag.ts`), applied to the other place foreign text enters an agent's context.
- * `x pr review` exists because an agent cannot read the GitHub web UI, and a review body is
- * written by anyone who can comment on the pull request: rendered as bare indented text it arrived
- * in that agent's context indistinguishable from the command's own output, which is prompt
- * injection with a shell attached.
- *
- * The fence is neutralised INSIDE the payload rather than deleted, so every word the reviewer
- * wrote still reads, and the label is stripped of the three characters that would end the
- * attribute. Influence only, and deliberately not sold as more: a fence tells a reader this text
- * is data, and it can never stop one that decides otherwise.
- */
-export function commentBlock(id: string, lines: readonly string[]): readonly string[] {
-  const label = id.replaceAll('"', "'").replaceAll('>', ')').replaceAll('<', '(');
-  const body = lines.map((line) => line.replace(BLOCK_DELIMITER, '<\\$1'));
-  return [`${BLOCK_OPEN}"${label}">`, ...body, BLOCK_CLOSE];
-}
+export { commentBlock };
 
 /**
  * A review body is prose written for a browser: the ones in this repo run to six thousand

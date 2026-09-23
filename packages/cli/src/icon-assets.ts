@@ -1,6 +1,6 @@
 // Single responsibility: the one source image every generated icon derives from, where the matrix
 // is served, and the renderer that turns one into the other. Its own module so the two things that
-// need it — `dev-assets.ts`, which SERVES the matrix, and `pwa-artifacts.ts`, which NAMES it in the
+// need it — `runtime-assets.ts`, which SERVES the matrix, and `pwa-artifacts.ts`, which NAMES it in the
 // web manifest — can share it without importing each other.
 
 // why: Bun exposes no path-join primitive, and `ICON_SOURCE` is app-root-relative, so resolving it

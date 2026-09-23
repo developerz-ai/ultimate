@@ -8,15 +8,16 @@ import { appImportGraph, readAppSources } from './app-boundaries';
 import { requireAppRoot } from './app-root';
 import type { BoundaryCut } from './boundary-cuts';
 import { planBoundaryCuts } from './boundary-cuts';
+import { fixSpec } from './cmd-fix-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, FixTargetUnknownError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 
+export { FIX_SUBCOMMANDS } from './cmd-fix-spec';
+
 export type { BoundaryCut };
 export { planBoundaryCuts };
-
-export const FIX_SUBCOMMANDS = ['boundary'] as const;
 
 /**
  * Accept either an app-root-relative path or a suffix that matches exactly one scanned file —
@@ -88,17 +89,7 @@ const editCount = (cuts: readonly BoundaryCut[]): number =>
   new Set(cuts.map((cut) => JSON.stringify([cut.edge.from, cut.edge.to]))).size;
 
 export const fixCommand: CliCommand = {
-  spec: {
-    name: 'fix',
-    // Says "plan" in the one line `x help` prints. The name is kept — five packages' `fix:` lines
-    // cite `x fix boundary <file>` and renaming a shipped command breaks every one of them — so
-    // the honest move is to stop the summary from promising a repair the command never performs.
-    summary: 'plan the minimal cut for an import that crossed a surface boundary (never rewrites)',
-    usage: 'x fix boundary <file> [--json]',
-    requiresApp: true,
-    subcommands: FIX_SUBCOMMANDS,
-    defaultSubcommand: 'boundary',
-  },
+  spec: fixSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('fix', ctx.cwd).dir;
     // Refused before the scan, never defaulted to `''`: an empty string reached `resolveTarget` as

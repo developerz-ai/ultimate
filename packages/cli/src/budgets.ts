@@ -131,7 +131,11 @@ function unmeasuredFinding(url: string, declared: string, built: boolean, stale 
  * reporting them under their own codes would tell the author to fix a database the gate never
  * had. The list grows by a decision, per code, here.
  */
-const REPORTED_BY_OWN_CODE: ReadonlySet<string> = new Set(['X_ISLAND_PROPS_INVALID']);
+const REPORTED_BY_OWN_CODE: ReadonlySet<string> = new Set([
+  'X_ISLAND_PROPS_INVALID',
+  // A dynamic route that lists no `prerender()` path: the edit is in the route, not the build.
+  'X_BUDGET_PARAMS_UNDECLARED',
+]);
 
 /**
  * The build's own finding for a route it could not weigh, when that failure is an instruction.
@@ -166,8 +170,14 @@ export function checkBudgets(
   unmeasured: readonly UnmeasuredRoute[] = [],
 ): readonly Finding[] {
   const byPath = new Map((stats?.routes ?? []).map((route) => [route.path, route]));
+  // Routes no build can weigh by construction (`UnmeasuredRoute.weighable`): printed by the step,
+  // never a finding — an instruction with no edit behind it is noise.
+  const unweighable = new Set(
+    unmeasured.filter((one) => one.weighable === false).map((one) => one.path),
+  );
   const findings: Finding[] = [];
   for (const route of manifest.routes) {
+    if (unweighable.has(route.url)) continue;
     const measured = byPath.get(route.url);
     const js = jsBudgetOf(route);
     const lcp = route.budget?.lcp;

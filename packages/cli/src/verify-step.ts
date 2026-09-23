@@ -79,9 +79,9 @@ export interface VerifyContext {
    */
   readonly workers?: number;
   /**
-   * ONE step, by name — an iteration loop, and the one thing here that IS a narrowing. Every
-   * iteration of the whole gate costs ~18s (14s of it `tsc -b`), which is the cost of asking a
-   * question about one step. It does not weaken axiom 5, and the two rules that keep it honest are
+   * ONE step, by name — an iteration loop, and the one thing here that IS a narrowing. The
+   * whole gate costs minutes (3m19s at the framework root on 12 cores, `As of 2026-09-23`), which
+   * is the cost of asking a question about one step. It does not weaken axiom 5, and the two rules that keep it honest are
    * mechanical rather than remembered: a run with this set prints `NOT A GATE RUN` in the summary
    * AND carries `notAGateRun` in `--json` (`verify-run.ts`), so no reader of either can mistake it
    * for the gate; and nothing writes `x.verify.json`, so the suite floor cannot be lowered by a

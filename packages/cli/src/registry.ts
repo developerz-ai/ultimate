@@ -1,34 +1,42 @@
 // The command registry: the one list the parser, the help catalogue and the dispatcher all read.
 // A command that is not here does not exist — there is no second place to register one.
+//
+// LAZY, `As of 2026-09-23`: every declaration is static (`cmd-<name>-spec.ts`) and every body is
+// `await import()`ed when that command runs. Importing all 28 bodies to answer one of them was
+// the CLI's whole startup: `x --help` paid for `sass`, Babel, every framework package and the
+// dev server it never started (plan 101 slice 12 d).
 
-import { affectedCommand } from './cmd-affected';
-import { buildCommand } from './cmd-build';
-import { ciCommand } from './cmd-ci';
-import { dbCommand } from './cmd-db';
-import { deployCommand } from './cmd-deploy';
-import { devCommand } from './cmd-dev';
-import { docsCommand } from './cmd-docs';
-import { doctorCommand } from './cmd-doctor';
-import { envCommand } from './cmd-env';
-import { errorsCommand } from './cmd-errors';
-import { fixCommand } from './cmd-fix';
-import { generateCommand } from './cmd-generate';
+import { affectedSpec } from './cmd-affected-spec';
+import { buildSpec } from './cmd-build-spec';
+import { ciSpec } from './cmd-ci-spec';
+import { dbSpec } from './cmd-db-spec';
+import { deploySpec } from './cmd-deploy-spec';
+import { devSpec } from './cmd-dev-spec';
+import { docsSpec } from './cmd-docs-spec';
+import { doctorSpec } from './cmd-doctor-spec';
+import { envSpec } from './cmd-env-spec';
+import { errorsSpec } from './cmd-errors-spec';
+import { fixSpec } from './cmd-fix-spec';
+import { generateSpec } from './cmd-generate-spec';
+// Registered here, not by whichever command body happens to load: `dispatch` renders a CLI code's
+// title for a refusal raised before any body is imported.
+import './error-codes';
 import { createHelpCommand, createVersionCommand } from './cmd-help';
-import { i18nCommand } from './cmd-i18n';
-import { jobsCommand } from './cmd-jobs';
-import { manifestCommand } from './cmd-manifest';
-import { mcpCommand } from './cmd-mcp';
-import { newCommand } from './cmd-new';
+import { i18nSpec } from './cmd-i18n-spec';
+import { jobsSpec } from './cmd-jobs-spec';
+import { manifestSpec } from './cmd-manifest-spec';
+import { mcpSpec } from './cmd-mcp-spec';
+import { newSpec } from './cmd-new-spec';
 import { plannedCommands } from './cmd-planned';
-import { policyCommand } from './cmd-policy';
-import { prCommand } from './cmd-pr';
-import { actionsCommand, entitiesCommand, queriesCommand } from './cmd-registries';
-import { routesCommand } from './cmd-routes';
-import { secretsCommand } from './cmd-secrets';
-import { shotCommand } from './cmd-shot';
-import { tasksCommand } from './cmd-tasks';
-import { testCommand } from './cmd-test';
-import { verifyCommand } from './cmd-verify';
+import { policySpec } from './cmd-policy-spec';
+import { prSpec } from './cmd-pr-spec';
+import { actionsSpec, entitiesSpec, queriesSpec } from './cmd-registries-spec';
+import { routesSpec } from './cmd-routes-spec';
+import { secretsSpec } from './cmd-secrets-spec';
+import { shotSpec } from './cmd-shot-spec';
+import { tasksSpec } from './cmd-tasks-spec';
+import { testSpec } from './cmd-test-spec';
+import { verifySpec } from './cmd-verify-spec';
 import type { CliCommand } from './command';
 import type { CommandSpec } from './parse';
 import { loadVersion } from './version-loader';
@@ -48,35 +56,44 @@ export function cliVersion(): string {
   return cliVersionCache;
 }
 
+/**
+ * A command whose body loads on first run. The spec is the module's own (`cmd-<name>.ts` reads
+ * the same `cmd-<name>-spec.ts`), so the parser and the body can never describe two commands.
+ */
+const lazy = (spec: CommandSpec, load: () => Promise<CliCommand>): CliCommand => ({
+  spec,
+  run: async (ctx) => (await load()).run(ctx),
+});
+
 const CORE: readonly CliCommand[] = [
-  newCommand,
-  devCommand,
-  buildCommand,
-  testCommand,
-  verifyCommand,
-  generateCommand,
-  dbCommand,
-  mcpCommand,
-  doctorCommand,
-  deployCommand,
-  envCommand,
-  secretsCommand,
-  manifestCommand,
-  routesCommand,
-  actionsCommand,
-  queriesCommand,
-  entitiesCommand,
-  jobsCommand,
-  tasksCommand,
-  policyCommand,
-  i18nCommand,
-  errorsCommand,
-  docsCommand,
-  fixCommand,
-  affectedCommand,
-  shotCommand,
-  prCommand,
-  ciCommand,
+  lazy(newSpec, async () => (await import('./cmd-new')).newCommand),
+  lazy(devSpec, async () => (await import('./cmd-dev')).devCommand),
+  lazy(buildSpec, async () => (await import('./cmd-build')).buildCommand),
+  lazy(testSpec, async () => (await import('./cmd-test')).testCommand),
+  lazy(verifySpec, async () => (await import('./cmd-verify')).verifyCommand),
+  lazy(generateSpec, async () => (await import('./cmd-generate')).generateCommand),
+  lazy(dbSpec, async () => (await import('./cmd-db')).dbCommand),
+  lazy(mcpSpec, async () => (await import('./cmd-mcp')).mcpCommand),
+  lazy(doctorSpec, async () => (await import('./cmd-doctor')).doctorCommand),
+  lazy(deploySpec, async () => (await import('./cmd-deploy')).deployCommand),
+  lazy(envSpec, async () => (await import('./cmd-env')).envCommand),
+  lazy(secretsSpec, async () => (await import('./cmd-secrets')).secretsCommand),
+  lazy(manifestSpec, async () => (await import('./cmd-manifest')).manifestCommand),
+  lazy(routesSpec, async () => (await import('./cmd-routes')).routesCommand),
+  lazy(actionsSpec, async () => (await import('./cmd-registries')).actionsCommand),
+  lazy(queriesSpec, async () => (await import('./cmd-registries')).queriesCommand),
+  lazy(entitiesSpec, async () => (await import('./cmd-registries')).entitiesCommand),
+  lazy(jobsSpec, async () => (await import('./cmd-jobs')).jobsCommand),
+  lazy(tasksSpec, async () => (await import('./cmd-tasks')).tasksCommand),
+  lazy(policySpec, async () => (await import('./cmd-policy')).policyCommand),
+  lazy(i18nSpec, async () => (await import('./cmd-i18n')).i18nCommand),
+  lazy(errorsSpec, async () => (await import('./cmd-errors')).errorsCommand),
+  lazy(docsSpec, async () => (await import('./cmd-docs')).docsCommand),
+  lazy(fixSpec, async () => (await import('./cmd-fix')).fixCommand),
+  lazy(affectedSpec, async () => (await import('./cmd-affected')).affectedCommand),
+  lazy(shotSpec, async () => (await import('./cmd-shot')).shotCommand),
+  lazy(prSpec, async () => (await import('./cmd-pr')).prCommand),
+  lazy(ciSpec, async () => (await import('./cmd-ci')).ciCommand),
 ];
 
 /**

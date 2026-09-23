@@ -8,6 +8,7 @@ import type { RouteDescriptor, Surface } from '@ultimat3/render';
 import { describeRoutes, SURFACES } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
+import { routesSpec } from './cmd-routes-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError } from './errors';
 import { msg } from './messages';
@@ -65,13 +66,7 @@ export function readSurfaceFilter(raw: string | undefined): Surface | undefined 
 }
 
 export const routesCommand: CliCommand = {
-  spec: {
-    name: 'routes',
-    summary: 'the route table: path, surface, render mode, hydrate, offline',
-    usage: 'x routes [--surface site|app|api|shared] [--json]',
-    requiresApp: true,
-    flags: [{ name: 'surface', type: 'string', summary: 'filter by surface' }],
-  },
+  spec: routesSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('routes', ctx.cwd).dir;
     // Read before the app is loaded: a typo must not cost a boot to report, the rule `x mcp`'s

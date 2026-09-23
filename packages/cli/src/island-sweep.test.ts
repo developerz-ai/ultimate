@@ -13,10 +13,10 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
-import type { ScrapeDriver } from '@ultimat3/scraping';
-import { fakeBrowser } from '@ultimat3/scraping';
 import type { IslandStatesManifest, IslandViewport } from '@ultimat3/testing';
 import { defineIslandStates, islandShotPlan } from '@ultimat3/testing';
+import { fakeShotDriver } from './browser-launcher-fake';
+import type { ShotDriver } from './browser-launcher-port';
 import {
   refuseSweepWithIsland,
   refuseSweepWithRoute,
@@ -72,8 +72,8 @@ const READY: IslandReadiness = {
 const PROBE = readinessProbe('[data-x-island]');
 
 /** Every address the plan expands to, minus the ones named — those addresses answer nothing. */
-const driverFor = (skip: readonly string[] = []): ScrapeDriver =>
-  fakeBrowser(
+const driverFor = (skip: readonly string[] = []): ShotDriver =>
+  fakeShotDriver(
     islandShotPlan(ALL)
       .filter((target) => !skip.includes(target.file))
       .map((target) => ({
@@ -112,7 +112,7 @@ const sweep = (driver: IslandBrowser, out: string) =>
   });
 
 const oneDriver =
-  (driver: ScrapeDriver): IslandBrowser =>
+  (driver: ShotDriver): IslandBrowser =>
   () =>
     Promise.resolve(driver);
 
@@ -158,7 +158,7 @@ describe('unit · one command, every island', () => {
   test('the browser is memoised per viewport ACROSS islands, not per island', async () => {
     const base = driverFor();
     let launches = 0;
-    const held = new Map<string, Promise<ScrapeDriver>>();
+    const held = new Map<string, Promise<ShotDriver>>();
     const memoised: IslandBrowser = (viewport: IslandViewport) => {
       const key = `${viewport.width}x${viewport.height}`;
       const found = held.get(key);

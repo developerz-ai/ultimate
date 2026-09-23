@@ -4,19 +4,27 @@
 
 import { existsSync } from 'node:fs';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
-import { appManifest, writeAppManifest } from './app-manifest';
+import { registerGeneratedPrimitives } from './api-registration';
+import { writeAppArtifacts } from './app-artifacts';
+import { appManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
+import { generateSpec } from './cmd-generate-spec';
 import type { CliCommand, CommandContext } from './command';
+import { invocationOf } from './command';
+import { assertFeatureExists } from './generate-feature';
 import { generate, sliceDir } from './generate-files';
+import { grantGeneratedPermissions } from './generate-grants';
 import type { Generator } from './generate-kinds';
-import { GENERATORS, readKind, readName, readPermission, readSurface } from './generate-kinds';
+import { readFeature, readKind, readName, readPermission, readSurface } from './generate-kinds';
 import { containedPath, writeFiles } from './generate-write';
 import { resolveCatalogModule } from './i18n-audit';
 import { syncI18nIndex } from './i18n-index';
+import { reproducedFlags } from './invocation-flags';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagBool, flagList, flagString } from './parse';
-import { resolveLocales } from './templates';
+import { quoteArg } from './shell-quote';
+import { kebab, resolveLocales } from './templates';
 
 // One import path for the generator, unchanged by the split: `index.ts`, `x new` and the scaffold
 // fixture reach the kinds, the pure file list and the writer through this module, and a second path
@@ -29,36 +37,12 @@ export type { WriteReport } from './generate-write';
 export { dedupe, writeFiles } from './generate-write';
 
 export const generateCommand: CliCommand = {
-  spec: {
-    name: 'g',
-    aliases: ['generate'],
-    summary: 'scaffold a primitive with its passing test',
-    // Projected from `GENERATORS`, never restated: the literal that used to live here had already
-    // drifted — it omitted `backfill` — and a usage line that can disagree with the list it
-    // describes is exactly the second source of truth axiom 2 forbids.
-    usage: `x g ${GENERATORS.join('|')} <name> [--feature f]`,
-    // Declared from the SAME constant `readKind` validates against: without it `fix-command.ts`
-    // has no set to judge the word after `x g`, and two shipped `@ultimat3/admin` fix lines said
-    // `x g migration` — a generator that has never existed — straight through the `errors` gate.
-    positionalChoices: GENERATORS,
-    requiresApp: true,
-    flags: [
-      { name: 'feature', type: 'string', summary: 'feature slice to write into' },
-      { name: 'surface', type: 'string', summary: 'site | app', default: 'app' },
-      { name: 'live', type: 'boolean', summary: 'subscribable query' },
-      { name: 'admin', type: 'boolean', summary: 'resource: also emit the admin override' },
-      { name: 'locales', type: 'string', summary: 'comma-separated locales, default en' },
-      { name: 'at', type: 'string', summary: 'island, admin:page: directory to write into' },
-      { name: 'permission', type: 'string', summary: 'admin:page: the permission it needs' },
-      { name: 'force', type: 'boolean', summary: 'overwrite existing files' },
-      { name: 'dry-run', type: 'boolean', summary: 'print the file list, write nothing' },
-    ],
-  },
+  spec: generateSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('g', ctx.cwd).dir;
     const kind = readKind(ctx.args.positionals[0]);
     const name = readName(ctx.args.positionals[1], kind);
-    const featureFlag = flagString(ctx.args, 'feature');
+    const featureFlag = readFeature(flagString(ctx.args, 'feature'), kind);
     // Both flags are resolved before a single file is planned: a bad surface or a locale that is
     // really a path fails here, with nothing written and nothing to undo.
     const surface = readSurface(flagString(ctx.args, 'surface'), kind, name);
@@ -72,7 +56,9 @@ export const generateCommand: CliCommand = {
     // imports `useT()` from is a fact about THIS app, and `generate` is a pure function.
     const catalogModule = await resolveCatalogModule(root);
     // Read for the same reason: which errors the slice declares is written on THIS app's disk.
-    const slice = sliceDir(surface, featureFlag ?? name);
+    const slice = sliceDir(surface, kebab(featureFlag ?? name));
+    // A named slice that is not there is refused, never invented (X_FEATURE_UNKNOWN).
+    assertFeatureExists(root, kind, featureFlag, slice);
     const sliceErrors = await readSliceErrors(root, kind, slice);
     // Same reason again: whether `job`/`task` may assume the tenant-scoped shape is a fact about
     // THIS feature's own `entity.ts`/`repo.ts`, not a default the template gets to assume.
@@ -102,16 +88,27 @@ export const generateCommand: CliCommand = {
         lines: files.map((file) => msg('cli.file.added', { path: file.path })),
       };
     }
-    const report = await writeFiles(
-      root,
-      files,
-      flagBool(ctx.args, 'force'),
-      `x g ${kind} ${name}`,
-    );
+    // The caller's own invocation, EVERY flag it set included: without `--feature` the fix wrote
+    // a second slice beside the one that conflicted.
+    const invocation = [
+      invocationOf(ctx, 'g'),
+      kind,
+      quoteArg(name),
+      ...reproducedFlags(generateCommand.spec, ctx.args),
+    ].join(' ');
+    const report = await writeFiles(root, files, flagBool(ctx.args, 'force'), invocation);
+    // The two edits a generated primitive needs outside its own slice, performed rather than left
+    // as findings: a declared permission granted to a role, and a job listed in `defineApi`.
+    // Before the manifest load below, so the projection sees both.
+    const edited = [
+      ...(await grantGeneratedPermissions(root, report.written)),
+      ...(await registerGeneratedPrimitives(root, report.written)),
+    ];
     // A locale's catalog existing on disk and the app being able to select it are two different
     // facts — see `syncI18nIndex`. Runs before the manifest load below so a route or resource
     // this same invocation just wrote never gets projected against a stale catalog registration.
-    if (report.written.length > 0) await syncI18nIndex(root);
+    const indexSync =
+      report.written.length > 0 ? await syncI18nIndex(root) : { registered: true, findings: [] };
     // Facts, not prose: every `x g` run leaves the route/action/entity/job/policy table current,
     // the same guarantee `x manifest` makes on its own — an agent reading it after `x g` never
     // sees a resource that exists on disk but not in the manifest.
@@ -124,18 +121,23 @@ export const generateCommand: CliCommand = {
     // partial load would replace the compatibility contract with a subset of the app. The scaffold
     // stays on disk — only the projection is withheld, and the load failures travel as findings.
     const loadFailures: Finding[] = [];
+    // `openapi.json` rides with it (`writeAppArtifacts`): refreshing one contract and not the other
+    // made this command's own output fail the `contract-diff` step.
+    const artifacts: string[] = [];
     if (report.written.length > 0 && existsSync(containedPath(root, MANIFEST_FILENAME))) {
       const { manifest, findings } = await appManifest(root);
       if (findings.length === 0) {
-        await writeAppManifest(root, manifest);
+        artifacts.push(
+          ...(await writeAppArtifacts(root, manifest, { openapi: true, onlyExisting: true })),
+        );
         buildId = manifest.buildId;
       } else loadFailures.push(...findings);
     }
-    const findings = [...report.conflicts, ...loadFailures];
+    const findings = [...report.conflicts, ...indexSync.findings, ...loadFailures];
     // One list behind all three renderings. The manifest was printed as a `+` line while the count
     // beside it came from `report.written` alone, so `x g island` said "wrote 2 file(s)" over three
     // lines — and `--json` carried the shorter list, which is the drift `--json` exists to prevent.
-    const written = [...report.written, ...(buildId === undefined ? [] : [MANIFEST_FILENAME])];
+    const written = [...report.written, ...edited, ...artifacts];
     return {
       ok: findings.length === 0,
       command: 'g',
@@ -166,7 +168,7 @@ async function readSliceErrors(
 }
 
 /**
- * `job` and `task` only: the slice's `entity.ts`/`repo.ts` as they stand on disk, absent when the
+ * `job`, `task`, `action` and `mutator`: the slice's `entity.ts`/`repo.ts` as they stand on disk, absent when the
  * generator's kind is neither or the file does not exist yet. `readSliceErrors`'s reason —
  * whichever generator reads it decides on THIS app's disk, not on a default the template assumes.
  */
@@ -176,7 +178,9 @@ async function readSliceFile(
   slice: string,
   name: 'entity.ts' | 'repo.ts',
 ): Promise<string | undefined> {
-  if (kind !== 'job' && kind !== 'task') return undefined;
+  if (kind !== 'job' && kind !== 'task' && kind !== 'action' && kind !== 'mutator') {
+    return undefined;
+  }
   const file = containedPath(root, `${slice}/${name}`);
   return existsSync(file) ? await Bun.file(file).text() : undefined;
 }

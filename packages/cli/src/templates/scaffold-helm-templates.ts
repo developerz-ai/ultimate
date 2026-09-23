@@ -12,8 +12,18 @@ const helpers = (
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{/*
+helm create's rule: a release whose name already contains the chart's is the full name on its own.
+x deploy --method helm names the release after the app, which IS the chart name, so without it
+every object would be ${app.kebab}-${app.kebab}-web.
+*/}}
 {{- define "${app.kebab}.fullname" -}}
-{{- printf "%s-%s" .Release.Name (include "${app.kebab}.name" .) | trunc 63 | trimSuffix "-" -}}
+{{- $name := include "${app.kebab}.name" . -}}
+{{- if contains $name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -92,15 +102,38 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
   HTTP and get both. worker, scheduler and replicator open no HTTP socket at all — the scrape
   listener is their only port — so they take liveness on it and NO readiness: nothing routes to
   them, and a readiness flap would drop the pod out of the Service and so out of the scrape.
+
+  Every one of them takes a startupProbe too, because no listener opens early: the server builds
+  the app's islands before any role binds a port, and a liveness probe counting from container
+  start restarts a pod that is merely booting. 30 x 5s = 150s of boot, then the ordinary checks.
   */}}
   {{- if $cfg.port }}
+  startupProbe:
+    httpGet: { path: /healthz, port: http }
+    periodSeconds: 5
+    failureThreshold: 30
   readinessProbe:
     httpGet: { path: /readyz, port: http }
     periodSeconds: 5
   livenessProbe:
     httpGet: { path: /healthz, port: http }
     periodSeconds: 15
+  {{- /*
+  Holds SIGTERM back while the pod is already out of its Service's endpoints, so a proxy that has
+  not caught up still reaches a listener that answers. lifecycle.preStop.sleep exists from
+  Kubernetes 1.30 and this chart's floor is 1.27, so it renders only where the API server knows it;
+  below that the framework's own readiness grace (/readyz at 503, listener still open) covers it.
+  */}}
+  {{- if semverCompare ">=1.30-0" $root.Capabilities.KubeVersion.Version }}
+  lifecycle:
+    preStop:
+      sleep: { seconds: {{ $root.Values.drain.preStopSleepSeconds | int }} }
+  {{- end }}
   {{- else if $scraped }}
+  startupProbe:
+    httpGet: { path: /metrics, port: metrics }
+    periodSeconds: 5
+    failureThreshold: 30
   livenessProbe:
     httpGet: { path: /metrics, port: metrics }
     periodSeconds: 15
@@ -114,8 +147,9 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
 `;
 
 const deployments = (app: NameSet): string => `{{/*
-One Deployment per enabled role, from one image. terminationGracePeriodSeconds matches the
-framework's SIGTERM drain: in-flight requests, open websockets and running job steps finish.
+One Deployment per enabled role, from one image. terminationGracePeriodSeconds covers the preStop
+sleep, the framework's readiness grace and its SIGTERM drain: in-flight requests, open websockets
+and running job steps finish.
 */}}
 {{- range $role, $cfg := .Values.roles }}
 {{- if $cfg.enabled }}
@@ -151,9 +185,11 @@ spec:
       code that reaches the filesystem, which for a web role is one path traversal. */}}
       automountServiceAccountToken: false
       securityContext: {{- toYaml $.Values.podSecurityContext | nindent 8 }}
-      {{/* At least the framework's drain deadline (25s by default), which is what
-      X_SHUTDOWN_TIMEOUT's fix line tells an operator. Raise this WITH configureLifecycle({
-      deadlineMs }), never instead of it: the drain abandons its hooks at its own deadline. */}}
+      {{/* Spent in order: the preStop sleep (drain.preStopSleepSeconds, 1.30+), the framework's
+      readiness grace (5s outside local environments) and its drain deadline (25s, which is what
+      X_SHUTDOWN_TIMEOUT's fix line names) — 35s, so 45 leaves 10s before SIGKILL. Raise this WITH
+      configureLifecycle({ deadlineMs, readinessGraceMs }), never instead of it: the drain
+      abandons its hooks at its own deadline. */}}
       terminationGracePeriodSeconds: 45
       containers:
         {{- include "${app.kebab}.container" (dict "role" $role "cfg" $cfg "root" $) | nindent 8 }}
@@ -259,12 +295,16 @@ spec:
         paths:
           {{- /* The path the sync node actually serves. Routing /_sync instead sends every
           websocket to the web role, which answers no upgrade. */}}
+          {{- /* Only when the sync role runs: a rule naming a Service the chart did not render is an
+          ingress that 503s every websocket instead of letting it reach nothing at all. */}}
+          {{- if .Values.roles.sync.enabled }}
           - path: /_x/sync
             pathType: Prefix
             backend:
               service:
                 name: {{ include "${app.kebab}.fullname" . }}-sync
                 port: { name: http }
+          {{- end }}
           - path: /
             pathType: Prefix
             backend:
@@ -277,8 +317,13 @@ spec:
 const hpa = (app: NameSet): string => `{{/*
 Per-role autoscalers, off until you turn one on. Each role scales on the signal that predicts ITS
 saturation — CPU is a lagging proxy for all three and scales the wrong thing at the wrong time.
-A Pods metric needs a metrics adapter in the cluster; without one the HPA reads <unknown> and
+Either metric type needs a metrics adapter in the cluster; without one the HPA reads <unknown> and
 holds at minReplicas, which is why these are opt-in rather than a default nobody wired.
+
+autoscaling.type says whose number it is. Pods (the default) is a per-pod series — rps, open
+sockets — averaged across pods. External is ONE series for the whole role, divided by the replica
+count: queue_depth is that shape, because every worker publishes the same global backlog, and read
+as Pods it asked for N times the workers the queue needed. Any other type fails the render.
 */}}
 {{- range $role, $cfg := .Values.roles }}
 {{- if and $cfg.enabled $cfg.autoscaling $cfg.autoscaling.enabled }}
@@ -297,7 +342,20 @@ spec:
     name: {{ include "${app.kebab}.fullname" $ }}-{{ $role }}
   minReplicas: {{ $cfg.autoscaling.minReplicas }}
   maxReplicas: {{ $cfg.autoscaling.maxReplicas }}
+  {{- $type := default "Pods" $cfg.autoscaling.type }}
+  {{- if not (has $type (list "Pods" "External")) }}
+  {{- fail (printf "roles.%s.autoscaling.type is %q — set it to Pods (a per-pod series) or External (one series for the whole role, e.g. queue_depth)" $role $type) }}
+  {{- end }}
   metrics:
+    {{- if eq $type "External" }}
+    - type: External
+      external:
+        metric:
+          name: {{ $cfg.autoscaling.metric }}
+        target:
+          type: AverageValue
+          averageValue: {{ $cfg.autoscaling.targetAverageValue | quote }}
+    {{- else }}
     - type: Pods
       pods:
         metric:
@@ -305,6 +363,7 @@ spec:
         target:
           type: AverageValue
           averageValue: {{ $cfg.autoscaling.targetAverageValue | quote }}
+    {{- end }}
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 30

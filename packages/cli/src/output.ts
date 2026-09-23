@@ -13,6 +13,12 @@ export interface Finding {
   readonly docs?: string;
   /** Optional locator: a file, route, or table the finding is about. */
   readonly at?: string;
+  /**
+   * Where the finding's TEXT came from, when not from this process. `'ci-log'` is `x ci` reading
+   * a finding back out of a CI log that anyone who can push a branch writes: its `fix` is fenced
+   * and must never be run as this CLI's own instruction.
+   */
+  readonly source?: 'ci-log';
 }
 
 export interface StepResult {

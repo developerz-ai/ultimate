@@ -6,7 +6,7 @@ import { probeImage } from '@ultimat3/core';
 import { ISLAND_FAILED_ATTRIBUTE, ISLAND_MOUNTED_ATTRIBUTE } from '@ultimat3/render';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { t, validate } from '@ultimat3/schema';
-import type { ConsoleLine, NetworkEntry, PageError } from '@ultimat3/scraping';
+import type { ConsoleLine, NetworkEntry, PageError } from './browser-launcher-port';
 import { msg } from './messages';
 import type { JsonValue } from './output';
 
@@ -38,7 +38,6 @@ export const SHOT_MESSAGE_KEYS = [
   'cli.shot.console',
   'cli.shot.threw',
   'cli.shot.pageError',
-  'cli.shot.blind.status',
 ] as const;
 
 /**
@@ -157,6 +156,11 @@ export interface ShotVerdict extends ShotInput {
   readonly warnings: number;
   readonly canvas: ShotCanvas | null;
   readonly refused: number;
+  /**
+   * Responses with a status of 400 or above — a 404 script, a 500 API read. RECORDED and never
+   * gating, like a console warning: a missing favicon would otherwise fail every shot of every app.
+   */
+  readonly failed: number;
   /** What this verdict cannot see, stated every time — a `0` whose blind spots are named. */
   readonly blind: readonly string[];
 }
@@ -166,12 +170,14 @@ export interface ShotVerdict extends ShotInput {
  * these are properties of the browser port, not of a run — and in the artifact because `errors: 0`
  * read without them is a claim the tool cannot support.
  *
- * It was three. `pageErrors` and `hydration` both left on 2026-08-21, when `@ultimat3/scraping`
- * learned to capture `pageerror` and the hydration prelude learned to mark a mount's outcome. A
- * blind spot is worth stating while it is true and worth DELETING the moment it is not: a stale
- * one teaches an agent to distrust an answer the tool can now give.
+ * It was three. `pageErrors` and `hydration` both left on 2026-08-21, when the driver learned to
+ * capture `pageerror` and the hydration prelude learned to mark a mount's outcome; response status
+ * left in 22.0.0, when the raw-CDP driver began reading `Network.responseReceived`. A blind spot is
+ * worth stating while it is true and worth DELETING the moment it is not: a stale one teaches an
+ * agent to distrust an answer the tool can now give. The list is empty and stays in the artifact,
+ * so the next one has a place to be stated.
  */
-export const BLIND_SPOTS = ['cli.shot.blind.status'] as const;
+export const BLIND_SPOTS: readonly string[] = [];
 
 const levelCount = (lines: readonly ConsoleLine[], level: ConsoleLine['level']): number =>
   lines.filter((line) => line.level === level).length;
@@ -204,6 +210,7 @@ export function buildVerdict(input: ShotInput): ShotVerdict {
     warnings: levelCount(input.console, 'warn'),
     canvas: canvasOf(input.bytes),
     refused: input.network.filter((entry) => entry.refused !== undefined).length,
+    failed: input.network.filter((entry) => (entry.status ?? 0) >= 400).length,
     blind: BLIND_SPOTS.map((key) => msg(key)),
   };
 }
@@ -267,6 +274,7 @@ export function verdictJson(verdict: ShotVerdict): JsonValue {
     network: {
       requests: verdict.network.length,
       refused: verdict.refused,
+      failed: verdict.failed,
       dropped: verdict.networkDropped,
     },
     blind: [...verdict.blind],
@@ -308,6 +316,7 @@ export function shotLines(artifacts: ShotArtifacts): readonly string[] {
     msg('cli.shot.network', {
       requests: verdict.network.length,
       refused: verdict.refused,
+      failed: verdict.failed,
       dropped: verdict.networkDropped,
     }),
     ...verdict.pageErrors.map((error) =>

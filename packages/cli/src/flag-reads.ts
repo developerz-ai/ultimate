@@ -9,11 +9,10 @@
 
 // `join`/`relative` are `node:`-only by necessity: Bun exposes no path-join primitive.
 import { join, relative } from 'node:path';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ERROR_DOCS_URL, stripComments } from '@ultimat3/core';
 import type { Finding } from './output';
 import type { CommandSpec, FlagSpec } from './parse';
 import { GLOBAL_FLAGS } from './parse';
-import { stripComments } from './ts-scan';
 
 /** A flag as declared, with the command that declares it. */
 export interface DeclaredFlag {
