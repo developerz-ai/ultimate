@@ -242,7 +242,8 @@ version history is the shape a bootstrap leaves behind, and it is two versions l
 
 Repo → **Settings** → **Environments** → **New environment** → name it `npm-publish`. **No
 required reviewers**, by the owner's decision on 2026-09-05: a release is cut by the gate
-(`bun run verify` on the release commit, then again inside `release.yml`) and by the `v*` tag
+(`bun run verify` on the release commit, then ci.yml's `verify` job on that commit, whose verdict
+`release.yml`'s `check` job requires) and by the `v*` tag
 rule below, and a human click between "green on a tag" and "published" was one more thing to
 wait for at 9am. The environment's value is the tag rule (step 3) and the trusted-publisher
 binding (step 4), not a reviewer.
@@ -327,17 +328,35 @@ A release with nothing under `[Unreleased]` and no commit since the previous tag
    A write it cannot perform is a **refusal** carrying the command that performs that one write, and
    `--check <version>` now asks the same three questions — so a tree that owes any of them is
    refused by the release workflow's own "the repo is stamped at the version this tag claims" step,
-   before `verify` reaches it. **v19.3.0 is the tag that shipped without them**: `--check 19.3.0`
-   answered `31 packages are stamped at 19.3.0` on that tree, `verify` refused it 157 seconds later
-   on all three, and the run published nothing. Read the state, never this paragraph:
+   in the `check` job, before the publish job exists. **v19.3.0 is the tag that shipped without
+   them**: `--check 19.3.0` answered `31 packages are stamped at 19.3.0` on that tree, the
+   workflow's own `verify` re-run (since removed) refused it 157 seconds later on all three, and the
+   run published nothing. Read the state, never this paragraph:
    `bun run scripts/release.ts --check <version> --json`.
-2. Commit, tag `vX.Y.Z`, push.
+
+   **It refuses two things before it writes anything**, `As of 2026-09-23`: a working tree with
+   changes in it (`X_RELEASE_TREE_DIRTY` — the release commit would carry them; the cause lists the
+   paths), and a version that does not move forward (`X_RELEASE_VERSION_INVALID` — `--version` at or
+   below the current one, or `--version` and `--bump` together, where one used to win silently).
+2. Commit, push to `main`, and let ci.yml go green on that commit. Then tag it —
+   `git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`. Annotated: `--follow-tags` skips a
+   lightweight tag, and `release.ts` prints this exact command as its `next` line.
 3. Publish a GitHub Release for that tag (or **Actions → release → Run workflow** with the tag
    selected and the version typed in). **A branch will not do**: the workflow's first step refuses
    any ref that is not `refs/tags/v*`.
-4. Nobody approves anything: the environment has no reviewers (step 2 above).
-5. The workflow installs, checks the repo is stamped at the tag's version, runs the full `verify`
-   gate, then publishes each tier over OIDC.
+4. The workflow's **`check` job** runs first, with no environment and no `id-token`: the ref must
+   be `refs/tags/v*`, the tree must be stamped at the tag's version (`release.ts --check`), and
+   ci.yml's `verify` job must have concluded `success` on the tagged commit — read, never re-run,
+   waiting up to 20 minutes for a run still in flight. A Release cut before the bump (the
+   `developerz-ai[bot]` shape) fails here, before any `npm-publish` deployment is requested.
+5. Only then does the **`publish` job** start behind `environment: npm-publish` — nobody approves
+   anything today, the environment has no reviewers (step 2 above) — and publish each tier over
+   OIDC.
+
+**A publish that failed half way is resumed by re-running it**:
+`gh run rerun <run-id> --failed`. The publish step asks `npm view <pkg>@<version> version` first
+and skips, with a `::notice::`, every package npm already holds at that version. Until 2026-09-23
+the re-run died `E403` on the first package the failed attempt had published.
 
 ## Releasing without a human in the loop
 
@@ -389,16 +408,19 @@ published is the signal; `bun run scripts/registry-audit.ts --json` names each g
 | Requirement | Where |
 |---|---|
 | `permissions: id-token: write` | lets npm mint the OIDC token |
-| `environment: npm-publish` | a human approves before the identity above is usable |
+| `id-token: write` on the `publish` job only | the `check` job runs `bun install` and never holds the publishing identity |
+| a `check` job with no environment, `publish` `needs:` it | a refusable release is refused before any `npm-publish` deployment is requested |
+| `environment: npm-publish` | the `v*` tag rule holds the identity above to release tags; reviewers, if ever configured, approve here |
 | ref must be `refs/tags/v*` | the first step, before checkout — a dispatch off a branch cannot publish |
 | npm CLI `>= 11.5.1` | the workflow upgrades npm; Node 22 ships an older one |
 | npm pinned to `11.5.2` | 11.6.x regressed provenance (`Cannot find module 'sigstore'`) |
-| third-party actions pinned by commit SHA | `oven-sh/setup-bun`; the rule is in `.github/actions/setup/action.yml` |
+| every action pinned by commit SHA, `actions/*` included | stricter than the repo rule in `.github/actions/setup/action.yml`, because this workflow ends in an irreversible publish |
 | `publishConfig.access: public` + `provenance: true` | every package.json |
 | a real `LICENSE` per package, tests excluded from `files` | enforced by the `package-shape` step |
 | `concurrency.cancel-in-progress: false` | an npm publish cannot be undone |
-| `scripts/release.ts --check <version>` before the gate | the tag and the manifests must be the same version — see below |
-| `bun run scripts/verify.ts` before the first publish | nothing reaches the registry unverified |
+| `scripts/release.ts --check <version>` in the `check` job | the tag and the manifests must be the same version — see below |
+| ci.yml's `verify` job `success` on the tagged commit | nothing reaches the registry unverified — and verified by the job that has Postgres, NATS and Redis. The workflow used to re-run `verify` itself with none of them: the 21.0.0 run executed 10 of 342 live tests |
+| a package already on npm at the version is skipped | a failed publish is resumable (`gh run rerun <run-id> --failed`) |
 
 ### Why `--check` is a separate gate from `verify`
 

@@ -6,9 +6,13 @@ description: Bun, the dependency cache and a frozen install — the three steps 
 # Pinning rule for this repo, and it is one rule with one boundary: an action from the `actions/`
 # org follows its major tag (GitHub owns the runner and the tag together), and EVERY action from
 # anywhere else is pinned by commit SHA with its version in the trailing comment. `@v2` is a tag a
-# third party can move, and this composite runs first in every job in the repository — including the
-# publish job, which holds `id-token: write`. Dependabot's `github-actions` ecosystem updates a SHA
-# pin and rewrites the comment with it, so the pin does not rot.
+# third party can move, and this composite runs first in nearly every job in the repository —
+# including the release workflow's `check` job. Dependabot's `github-actions` ecosystem updates a
+# SHA pin and rewrites the comment with it, so the pin does not rot.
+#
+# ONE exception, stricter rather than looser: `.github/workflows/release.yml` pins `actions/*` by
+# SHA too, and its `publish` job — the one holding `id-token: write` — does NOT use this composite
+# (whose `actions/cache` follows its tag). `scripts/release-workflow-shape.test.ts` enforces both.
 
 runs:
   using: composite

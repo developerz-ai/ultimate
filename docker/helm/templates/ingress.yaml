@@ -22,12 +22,16 @@ spec:
           and 404s off. `/_sync` routed a path no client ever requests, so every websocket fell
           through to the `/` rule below and reached `web`, which answers no upgrade.
           */}}
+          {{- /* Only when the sync role runs: a rule naming a Service the chart did not render is an
+          ingress that 503s every websocket instead of letting it reach nothing at all. */}}
+          {{- if .Values.roles.sync.enabled }}
           - path: /_x/sync
             pathType: Prefix
             backend:
               service:
                 name: {{ include "ultimate.fullname" . }}-sync
                 port: { name: http }
+          {{- end }}
           - path: /
             pathType: Prefix
             backend:

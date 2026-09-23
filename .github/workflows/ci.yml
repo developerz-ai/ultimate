@@ -3,11 +3,12 @@ name: ci
 # The gate. Same steps a contributor runs locally with `bun run verify` — a check that lives only
 # in CI is a check developers cannot run. Free GitHub-hosted runners only.
 #
-# Five jobs, and each answers a question no other job answers: does the framework ship (`verify`),
+# Six jobs, and each answers a question no other job answers: does the framework ship (`verify`),
 # do the tracked apps still gate (`reference-app-verify`), can a stranger scaffold an app that
-# gates (`scaffold-smoke`), do the deployable artifacts BUILD and RENDER (`container`), and is each
-# package green and above its coverage bar in isolation (`packages`). The last two each carry their
-# own argument, above the job. There is deliberately no separate `lint`,
+# gates (`scaffold-smoke`), do the deployable artifacts BUILD and RENDER (`container`), does a
+# rolling upgrade on the scaffolded chart drop a request (`deploy-proof`, main only), and is each
+# package green and above its coverage bar in isolation (`packages`). The last three each carry
+# their own argument, above the job. There is deliberately no separate `lint`,
 # `typecheck`, `boundaries` or `test` job — those are steps of `x verify`, and running them again
 # beside the gate is the second path axiom 1 forbids. It also cost what it duplicated: the four
 # jobs took ~2.2 runner-minutes and, because `verify` waited on them through `needs`, added their
@@ -46,7 +47,7 @@ env:
   ULTIMATE_TEST_SEED: '20260101'
   # A browser IS present on `ubuntu-latest`, so an e2e suite that skips for want of one here is a
   # green step over nothing — which is exactly what the first run of
-  # `packages/cli/e2e/cdp-browser.e2e.test.ts` was: 2,958ms on a step that takes 31s with a
+  # `packages/testing/e2e/cdp-browser.e2e.test.ts` was: 2,958ms on a step that takes 31s with a
   # browser. Set, the suite refuses by name (`X_CDP_BROWSER_MISSING`) instead of skipping, so the
   # day the runner image drops Chrome is a red job naming the paths it tried rather than silence.
   E2E_BROWSER_REQUIRED: '1'
@@ -146,8 +147,10 @@ jobs:
       - name: x verify
         run: bun run scripts/verify.ts --json
 
-  # Both tracked apps — `examples/dummy` and the deployed `dummy/social-media-clone` — run the
-  # same 19-step gate a generated app would, and this job BLOCKS on both. Independent of `verify`:
+  # Both tracked apps — `examples/dummy` and the deployed `dummy/social-media-clone` — are BUILT
+  # (`x build --target static`, as a generated app's `bin/check` does, because `budgets` weighs what
+  # the build writes) and then run the same 20-step gate a generated app would, and this job BLOCKS
+  # on both. Independent of `verify`:
   # the framework gate and the app gate are two different contracts, checked separately — a red app
   # doesn't hide a green framework or vice versa. One job, not two, because they answer the same
   # question about two directories; the script names the app in every finding.
@@ -157,7 +160,7 @@ jobs:
   # instead: every step passing today must keep passing, every step pinned in that app's
   # `expectedRed` table (scripts/lib/gated-apps.ts) must still be failing, and the moment an app's
   # `typecheck` comes off the pin it has to join the root `tsc -b` solution. The pin can only ever
-  # shrink, and when it empties the job is asserting a plain 19 of 19. Human render, not `--json`:
+  # shrink, and when it empties the job is asserting a plain 20 of 20. Human render, not `--json`:
   # the whole step table, every failing step and every fix line belong in the log for the person
   # reading a red run.
   #
@@ -175,7 +178,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: x verify (every tracked app), against the ratchet
+      - name: x build + x verify (every tracked app), against the ratchet
         run: bun run scripts/reference-app-gate.ts
 
   # The end-to-end promise, proved for real and proved as the PLATFORM consumes it: a dz-runner box
@@ -403,6 +406,7 @@ jobs:
             --set serviceMonitor.enabled=true \
             --set ingress.enabled=true \
             --set roles.replicator.enabled=true \
+            --set roles.sync.enabled=true \
             --set nameOverride=demo > /dev/null
           helm template app docker/helm \
             --set roles.web.autoscaling.enabled=false \
@@ -432,14 +436,127 @@ jobs:
             exit 1
           fi
 
-          # create: true + a name — the chart owns the account, under the name it was given.
-          helm template app docker/helm --set serviceAccount.name=my-sa > /tmp/sa-on.yaml
-          refs="$(refs_of /tmp/sa-on.yaml)"; made="$(count_sa /tmp/sa-on.yaml)"
+          # create: true + a name — the chart owns the account, under the name it was given. Read
+          # off the Deployments and service.yaml alone: the migrate Job runs as its own hook-created
+          # account (the next step), which is not the account an operator's name is for.
+          helm template app docker/helm --set serviceAccount.name=my-sa \
+            --show-only templates/deployments.yaml > /tmp/sa-on.yaml
+          helm template app docker/helm --set serviceAccount.name=my-sa \
+            --show-only templates/service.yaml > /tmp/sa-on-svc.yaml
+          refs="$(refs_of /tmp/sa-on.yaml)"; made="$(count_sa /tmp/sa-on-svc.yaml)"
           echo "create=true name=my-sa -> refs=[${refs}] serviceAccounts=${made}"
           if [ "$refs" != "my-sa" ] || [ "$made" != "1" ]; then
             echo "::error title=serviceAccount.name not honoured on create::With serviceAccount.create=true and name=my-sa the chart rendered serviceAccountName=[${refs}] and ${made} ServiceAccount object(s); it must render exactly [my-sa] and 1. fix: see the 'ultimate.serviceAccountName' helper in docker/helm/templates/_helpers.tpl."
             exit 1
           fi
+
+      # The rolling-restart contract, rendered. Each assertion names the defect it holds shut:
+      #
+      #   - the first install hung: the pre-install migrate Job named the chart's ServiceAccount,
+      #     which Helm creates only AFTER pre-install hooks, so admission refused every pod
+      #     (`serviceaccount "app-ultimate" not found`) until the timeout;
+      #   - the worker HPA ran away: every pod publishes the one global `queue_depth`, and a
+      #     `Pods` metric averaged it as each pod's own backlog;
+      #   - a booting pod was restarted by liveness while it built its islands (no startupProbe);
+      #   - the grace period must cover preStop + the framework's readiness grace + its drain
+      #     deadline (5 + 5 + 25 = 35s), and the preStop sleep may only render where the API
+      #     server knows the field (1.30+; the chart's floor is 1.27).
+      - name: the chart drains, boots and scales the way a rolling restart needs
+        run: |
+          set -euo pipefail
+          fail() { echo "::error title=$1::$2"; exit 1; }
+          # One document per `---`, so a field is judged on the object that carries it.
+          doc_with() { awk -v want="$2" 'BEGIN{RS="\n---\n"} index($0, want) {print; exit}' "$1"; }
+
+          helm template app docker/helm --show-only templates/migrate-job.yaml > /tmp/migrate.yaml
+          job_sa="$(doc_with /tmp/migrate.yaml 'kind: Job' | awk '/serviceAccountName:/ {print $2}')"
+          sa_doc="$(doc_with /tmp/migrate.yaml 'kind: ServiceAccount')"
+          echo "migrate Job runs as [${job_sa}]"
+          case "$sa_doc" in *"name: ${job_sa}"*"helm.sh/hook: pre-install,pre-upgrade"*'helm.sh/hook-weight: "-10"'*) ;;
+            *) fail "migrate hook account" "the migrate Job runs as '${job_sa}', and no pre-install hook of a lower weight creates it, so a first helm install waits on pods admission refuses. fix: keep the hook ServiceAccount in docker/helm/templates/migrate-job.yaml, weight -10, and point the Job's serviceAccountName at it." ;;
+          esac
+
+          helm template app docker/helm --show-only templates/hpa.yaml > /tmp/hpa.yaml
+          case "$(doc_with /tmp/hpa.yaml 'name: app-ultimate-worker')" in *"- type: External"*) ;;
+            *) fail "worker HPA metric type" "the worker HPA does not read queue_depth as an External metric, so each pod's copy of the one global backlog is averaged as its own. fix: roles.worker.autoscaling.type: External in docker/helm/values.yaml." ;;
+          esac
+          if helm template app docker/helm --set roles.web.autoscaling.type=Podz >/dev/null 2>&1; then
+            fail "autoscaling.type not closed" "an autoscaling.type of 'Podz' rendered. fix: keep the (list \"Pods\" \"External\") check in docker/helm/templates/hpa.yaml."
+          fi
+
+          helm template app docker/helm --kube-version 1.30.0 --show-only templates/deployments.yaml > /tmp/deploy-130.yaml
+          helm template app docker/helm --kube-version 1.29.0 --show-only templates/deployments.yaml > /tmp/deploy-129.yaml
+          deployments="$(grep -c '^kind: Deployment$' /tmp/deploy-130.yaml)"
+          startups="$(grep -c '^ *startupProbe:$' /tmp/deploy-130.yaml)"
+          prestop_130="$(grep -c '^ *preStop:$' /tmp/deploy-130.yaml || true)"
+          prestop_129="$(grep -c '^ *preStop:$' /tmp/deploy-129.yaml || true)"
+          echo "deployments=${deployments} startupProbes=${startups} preStop@1.30=${prestop_130} preStop@1.29=${prestop_129}"
+          [ "$startups" = "$deployments" ] || fail "startupProbe missing" "${startups} of ${deployments} Deployments carry a startupProbe. fix: every branch of the probes block in docker/helm/templates/_helpers.tpl declares one."
+          [ "$prestop_130" -gt 0 ] || fail "preStop missing on 1.30" "no Deployment renders a preStop sleep on Kubernetes 1.30. fix: see the semverCompare block in docker/helm/templates/_helpers.tpl."
+          [ "$prestop_129" = 0 ] || fail "preStop below 1.30" "a preStop sleep rendered on Kubernetes 1.29, which has no lifecycle.preStop.sleep and rejects the object. fix: gate it on semverCompare \">=1.30-0\" .Capabilities.KubeVersion.Version."
+          while read -r grace; do
+            [ "$grace" -ge 35 ] || fail "grace period too short" "terminationGracePeriodSeconds is ${grace}, below preStop (5) + readiness grace (5) + drain deadline (25) = 35, so the kubelet SIGKILLs a pod that is still draining. fix: raise it in docker/helm/templates/deployments.yaml."
+          done < <(awk '/terminationGracePeriodSeconds:/ {print $2}' /tmp/deploy-130.yaml)
+          echo "ok: hook account, External worker metric, startup probes, gated preStop, grace >= 35s"
+
+  # The rolling restart, PERFORMED — milestone 11's proof. `container` renders the chart; nothing
+  # there can say whether an upgrade drops a request, because that is a property of a running
+  # cluster: endpoint removal racing SIGTERM, the readiness grace, keep-alive connections held by
+  # kube-proxy to a pod that is going away. This job scaffolds an app on THIS tree's packages,
+  # builds its image twice (only BUILD_ID differs), installs it into kind with `x deploy --method
+  # helm`, then upgrades it while a pod inside the cluster sends mixed GET and POST through the
+  # Service, and fails on a single non-2xx. Every step is `docker/deploy-proof/run.sh`, which a
+  # developer runs unchanged on a laptop.
+  #
+  # Main only, and only when a file that decides the answer moved: kind plus two image builds is
+  # minutes, not seconds, and a PR that touches none of those paths cannot change the verdict.
+  # Budget: <= 8 minutes; the timeout below is the ceiling, not the target.
+  deploy-proof:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # A `paths:` filter belongs to a whole workflow, never to one job, so the filter is a step.
+      # `github.event.before` is the tip main held before this push; a new ref or a manual run has
+      # none worth diffing against, and runs the proof.
+      - name: did a file that decides the verdict move?
+        id: paths
+        env:
+          BEFORE: ${{ github.event.before }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          run=true
+          if [ "$EVENT" = push ] && [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+            git fetch --no-tags --depth=1 origin "$BEFORE"
+            if ! git diff --name-only "$BEFORE" "$GITHUB_SHA" \
+              | grep -Eq '^(\.github/workflows/ci\.yml|docker/|packages/cli/src/templates/scaffold-|packages/cli/src/(cmd-deploy|serve|role-|runtime-)|packages/core/src/lifecycle|packages/http/src/(server|stages)\.ts)'; then
+              run=false
+            fi
+          fi
+          echo "run=${run}" >> "$GITHUB_OUTPUT"
+          echo "deploy proof runs: ${run}"
+      - uses: ./.github/actions/setup
+        if: steps.paths.outputs.run == 'true'
+      - name: kind, helm, kubectl and jq, from the runner image
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          for tool in docker kind helm kubectl jq; do
+            command -v "$tool" >/dev/null || {
+              echo "::error title=${tool} missing::The ubuntu-latest runner image no longer ships ${tool}, so the deploy proof cannot run. fix: add a SHA-pinned setup action for ${tool} to this job — the pinning rule and its reason are in .github/actions/setup/action.yml."
+              exit 1
+            }
+          done
+          kind version; helm version --short; kubectl version --client | head -1
+      - name: install, then upgrade under load — zero failed requests
+        if: steps.paths.outputs.run == 'true'
+        env:
+          WORK: ${{ runner.temp }}/deploy-proof
+        run: mkdir -p "$WORK" && bash docker/deploy-proof/run.sh
 
   # Every package's own tests and its own coverage bar, each in isolation. No lint — `verify`'s
   # `biome check .` is a strict superset of any per-package lint, and a second one cannot fail alone.

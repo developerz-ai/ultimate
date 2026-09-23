@@ -1,0 +1,28 @@
+# The deploy proof's database: one throwaway Postgres in the kind cluster, so the release under
+# test has a real DATABASE_URL — the app refuses an embedded database outside a local environment.
+# Test infrastructure only; nothing in this directory ships in the chart or in an app.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: postgres }
+spec:
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - { name: POSTGRES_PASSWORD, value: proof }
+            - { name: POSTGRES_DB, value: proofapp }
+          ports: [{ containerPort: 5432 }]
+          readinessProbe:
+            exec: { command: [pg_isready, -U, postgres] }
+            periodSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata: { name: postgres }
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432 }]

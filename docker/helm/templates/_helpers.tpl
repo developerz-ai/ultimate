@@ -109,18 +109,48 @@ in values.yaml, where the two numbers would drift.
 
   Liveness only for those three, never readiness: nothing routes to them, and a readiness flap would
   drop the pod out of the Service's Endpoints and so out of the Prometheus scrape — losing the
-  `queue_depth` series precisely when the worker is busiest. `startRoles` opens the metrics listener
-  FIRST, before any role, so it is up early; `failureThreshold: 4` at 15s means ~60s of no event
-  loop before a restart, not a boot-time restart loop.
+  `queue_depth` series precisely when the worker is busiest.
+
+  A `startupProbe` on every role, because NO listener is up early. This comment said `startRoles`
+  opens the metrics listener "FIRST" and so needed no startup allowance; that is first within
+  `startRoles` only. `serveApp` (packages/cli/src/serve.ts) reads the manifest and runs
+  `buildIslands` BEFORE it calls `startRoles`, so on a cold pod nothing answers for as long as the
+  island build takes, and a liveness probe counting from container start restarts a pod that is
+  merely booting. The startup probe holds liveness and readiness off until the port answers:
+  30 × 5s = 150s of boot, after which the ordinary thresholds apply.
   */}}
   {{- if $cfg.port }}
+  startupProbe:
+    httpGet: { path: /healthz, port: http }
+    periodSeconds: 5
+    failureThreshold: 30
   readinessProbe:
     httpGet: { path: /readyz, port: http }
     periodSeconds: 5
   livenessProbe:
     httpGet: { path: /healthz, port: http }
     periodSeconds: 15
+  {{- /*
+  The endpoint-removal race, closed from the kubelet's side where the cluster can express it. A
+  `preStop` sleep holds SIGTERM back while the pod is already out of the Service's Endpoints, so a
+  kube-proxy or an ingress controller that has not caught up yet still reaches a listener that
+  answers. `lifecycle.preStop.sleep` is a 1.30 field (PodLifecycleSleepAction, beta and on by
+  default from 1.30) and this chart's floor is 1.27, so it is rendered only where the API server
+  knows it. No `exec: [sleep, …]` fallback: it would tie the chart to an image that carries a
+  `sleep` binary, which the scaffold's alpine image does and a distroless one does not. Below 1.30 the
+  FRAMEWORK's readiness grace (`drain.readinessGraceMs`, packages/core) is what covers the race:
+  `/readyz` answers 503 while the listener stays open for that long after SIGTERM.
+  */}}
+  {{- if semverCompare ">=1.30-0" $root.Capabilities.KubeVersion.Version }}
+  lifecycle:
+    preStop:
+      sleep: { seconds: {{ $root.Values.drain.preStopSleepSeconds | int }} }
+  {{- end }}
   {{- else if $scraped }}
+  startupProbe:
+    httpGet: { path: /metrics, port: metrics }
+    periodSeconds: 5
+    failureThreshold: 30
   livenessProbe:
     httpGet: { path: /metrics, port: metrics }
     periodSeconds: 15

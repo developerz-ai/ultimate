@@ -28,16 +28,39 @@ name: ultimate
 
 x-image: &image ${IMAGE:-ultimate-app:latest}
 
+# Every service's logs, rotated. Docker's default `json-file` driver never rotates, so a chatty
+# role on a long-lived box filled the disk the database lives on; 3 × 10 MB per container is the
+# ceiling, and a real aggregator reads the stream long before the oldest file is dropped.
+x-logging: &logging
+  driver: json-file
+  options: { max-size: 10m, max-file: '3' }
+
 x-common: &common
   image: *image
   restart: unless-stopped
   env_file: [../.env.production]
-  # SIGTERM drains in-flight work before the process exits. At least `DEFAULT_DEADLINE_MS`
-  # (packages/core/src/lifecycle.ts, 25s) — the drain abandons a hook at its own deadline, so a
-  # value below that is Docker SIGKILLing a process that was about to exit cleanly, and the twin of
-  # `terminationGracePeriodSeconds` in docker/helm/templates/deployments.yaml. Raise this WITH
-  # `configureLifecycle({ deadlineMs })`, never instead of it.
-  stop_grace_period: 30s
+  logging: *logging
+  # SIGTERM drains in-flight work before the process exits, and it is spent in two halves: the
+  # readiness grace (`drain.readinessGraceMs`, packages/core — /readyz at 503 with the listener still
+  # open, 5s outside local environments) and then the drain itself, bounded by `DEFAULT_DEADLINE_MS`
+  # (packages/core/src/lifecycle.ts, 25s). 5 + 25 = 30s, so 40s leaves 10s before Docker SIGKILLs a
+  # process that was about to exit cleanly — the twin of `terminationGracePeriodSeconds` in
+  # docker/helm/templates/deployments.yaml. Raise this WITH `configureLifecycle({ deadlineMs })`,
+  # never instead of it.
+  stop_grace_period: 40s
+  # The hardening the chart's `securityContext` already applies, on the rung that had none: a
+  # read-only root filesystem (an exploited role cannot drop a binary or rewrite the app), every
+  # Linux capability dropped (a Bun server binding ports above 1024 needs none), and no privilege
+  # escalation through a setuid binary. The two writable paths are tmpfs, so nothing written there
+  # outlives the container: `/tmp`, and `/app/.x`, where any binding still embedded keeps its state
+  # — which is why production names a real DATABASE_URL and object store, and never relies on it.
+  read_only: true
+  tmpfs: [/tmp, /app/.x]
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+  # A leak or a runaway island build takes one container down, never the box. The chart's largest
+  # per-role limit; lower it per service once a role's working set is measured.
+  mem_limit: 1g
 
 # The image's own HEALTHCHECK fetches `/readyz` on $PORT, and only `web` and `sync` open an HTTP
 # socket — `startRoles` (packages/cli/src/dev-roles.ts) gives every role the scrape listener and
@@ -123,8 +146,16 @@ services:
       timeout: 3s
       start_period: 30s
       retries: 3
+    # OFF by default (zero replicas). A sync node on this database hears committed changes only
+    # from a replicator it can reach, and this file runs none: booted anyway it is refused
+    # (X_REALTIME_TOPOLOGY). To turn live queries and channels on: declare realtime: { enabled:
+    # true, transport: 'nats', urlEnv: 'NATS_URL' } in app.config.ts, add a NATS service and set the
+    # SAME NATS_URL for web, sync and a replicator service (ROLE=replicator, exactly one), start
+    # Postgres with wal_level=logical and a publication for the entity tables, then set replicas: 1.
+    # A NATS_URL under transport 'memory' refuses the boot (X_CONFIG_INVALID), and so does 'nats'
+    # without one.
     deploy:
-      replicas: 1
+      replicas: 0
 
   # Scales on queue depth.
   worker:

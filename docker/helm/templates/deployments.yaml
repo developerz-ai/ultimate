@@ -1,6 +1,7 @@
 {{/*
-One Deployment per enabled role, from one image. terminationGracePeriodSeconds matches the
-framework's SIGTERM drain: in-flight requests, open websockets and running job steps finish.
+One Deployment per enabled role, from one image. terminationGracePeriodSeconds covers the preStop
+sleep, the framework's readiness grace and its SIGTERM drain: in-flight requests, open websockets
+and running job steps finish.
 */}}
 {{- range $role, $cfg := .Values.roles }}
 {{- if $cfg.enabled }}
@@ -42,10 +43,17 @@ spec:
       # the blast radius of one path traversal.
       automountServiceAccountToken: false
       securityContext: {{- toYaml $.Values.podSecurityContext | nindent 8 }}
-      # At least `drainDeadlineMs()` (packages/core/src/lifecycle.ts, DEFAULT_DEADLINE_MS = 25s),
-      # which is what X_SHUTDOWN_TIMEOUT's fix line tells an operator. Raise this WITH
-      # `configureLifecycle({ deadlineMs })`, never instead of it: the drain abandons its hooks at
-      # its own deadline, so a larger grace period alone buys nothing.
+      # The kubelet's whole budget from the moment it decides to stop the pod, and three things
+      # spend it in order: the `preStop` sleep (`drain.preStopSleepSeconds`, 1.30+ only), then the
+      # framework's readiness grace — `/readyz` answering 503 with the listener still open,
+      # `drain.readinessGraceMs` in packages/core, 5s by default outside local environments — then
+      # the drain itself, bounded by `drainDeadlineMs()` (packages/core/src/lifecycle.ts, 25s by
+      # default). 5 + 5 + 25 = 35s, so 45 leaves 10s of headroom before SIGKILL.
+      #
+      # Raise this WITH `configureLifecycle({ deadlineMs })` or a larger readiness grace, never
+      # instead of them: the drain abandons its hooks at its own deadline, so a larger grace period
+      # alone buys nothing. The container job in .github/workflows/ci.yml renders this and refuses
+      # a value below the sum.
       terminationGracePeriodSeconds: 45
       containers:
         {{- include "ultimate.container" (dict "role" $role "cfg" $cfg "root" $) | nindent 8 }}

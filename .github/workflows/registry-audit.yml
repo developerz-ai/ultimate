@@ -31,8 +31,16 @@ concurrency:
 jobs:
   audit:
     runs-on: ubuntu-latest
+    # One npm round trip per package, measured well under a minute. Without a bound a hung registry
+    # call holds the runner for GitHub's default of 6 hours, every morning it hangs.
+    timeout-minutes: 10
     steps:
+      # `persist-credentials: false`: the checkout would otherwise leave the job's `issues: write`
+      # token in .git/config through `bun install`, readable by every dependency's install script.
+      # The issue step below passes its own `GH_TOKEN` and needs nothing from the checkout.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
 
       - name: audit the registry

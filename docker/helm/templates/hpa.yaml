@@ -4,6 +4,13 @@ lagging proxy for all three and would scale the wrong thing at the wrong time:
   web    -> requests per second
   sync   -> concurrent websocket connections
   worker -> queue depth
+
+`autoscaling.type` says whose number it is. `Pods` is a per-pod series (rps, open sockets), averaged
+across the pods. `External` is ONE series for the whole Deployment, and `AverageValue` divides it by
+the replica count: `queue_depth` is that shape, because every worker publishes the same global
+backlog. Read as `Pods` it was averaged as if each pod held the whole queue, so the HPA asked for N
+times the workers the backlog needed and ran to maxReplicas. Anything else fails the render — a
+misspelt type must not fall back to the one that runs away.
 */}}
 {{- range $role, $cfg := .Values.roles }}
 {{- if and $cfg.enabled $cfg.autoscaling $cfg.autoscaling.enabled }}
@@ -22,7 +29,20 @@ spec:
     name: {{ include "ultimate.fullname" $ }}-{{ $role }}
   minReplicas: {{ $cfg.autoscaling.minReplicas }}
   maxReplicas: {{ $cfg.autoscaling.maxReplicas }}
+  {{- $type := default "Pods" $cfg.autoscaling.type }}
+  {{- if not (has $type (list "Pods" "External")) }}
+  {{- fail (printf "roles.%s.autoscaling.type is %q — set it to Pods (a per-pod series) or External (one series for the whole role, e.g. queue_depth)" $role $type) }}
+  {{- end }}
   metrics:
+    {{- if eq $type "External" }}
+    - type: External
+      external:
+        metric:
+          name: {{ $cfg.autoscaling.metric }}
+        target:
+          type: AverageValue
+          averageValue: {{ $cfg.autoscaling.targetAverageValue | quote }}
+    {{- else }}
     - type: Pods
       pods:
         metric:
@@ -30,6 +50,7 @@ spec:
         target:
           type: AverageValue
           averageValue: {{ $cfg.autoscaling.targetAverageValue | quote }}
+    {{- end }}
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 30
