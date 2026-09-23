@@ -2,11 +2,11 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Nineteen majors have shipped, and this page walks all nineteen** — a twentieth, 21.0.0, is in flight and has its section already, marked **unreleased** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Twenty majors have shipped, and this page walks all twenty** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 20.x → 21.0.0 | **27** so far, and **unreleased** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. More land with the client data layer, one entry per removed surface | the `20.x → 21.0.0` section below, in order. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
+| 20.x → 21.0.0 | **27** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. The client data layer, one entry per removed surface | the `21.0.0` section, in order |
 | 19.x → 20.0.0 | **2**, both `@ultimat3/ui` component behaviour and neither a type change — a `DataTable` that keeps its rows while reloading, and a `Button` whose `loading` no longer sets the native `disabled`. Nothing fails to compile; what changes is what a screen does | the `20.0.0` section, in order |
 | 18.x → 19.0.0 | **2**, both from the same hole — the service worker had no build behind it, so the config key that steers it and the route it falls back to both had to move | the `19.0.0` section, in order |
 | 17.x → 18.0.0 | **5** — a runtime floor that was a minor behind what the CLI emits, two PWA config surfaces that had to grow before an app could be installable, a `--json` shape, and one scraping interface | the `18.0.0` section, in order |
@@ -32,7 +32,7 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' <(awk '/^## /{u = ($0 == "## [Unreleased]")} !u' CHANGELOG.md)
-# 47 As of 2026-09-08 — every RELEASED section, which is the sum of every row above whose section
+# 74 As of 2026-09-23 — every RELEASED section, which is the sum of every row above whose section
 # the changelog still carries. `[Unreleased]` is cut by the awk deliberately: a bare whole-file
 # grep agrees with this number only while that section is empty, so it moved on every PR that
 # landed a breaking change and moved BACK when the release promoted the section — a count that can
@@ -67,9 +67,9 @@ Each entry changes a surface the table below covers.
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
 
-## 20.x → 21.0.0, entry by entry — **unreleased**
+## 20.x → 21.0.0, entry by entry
 
-**Twenty-seven entries so far.** Entries 1–3, 5, 8, 9, 11–17, 20–23 and 27 are compile errors. Entry 24
+**Twenty-seven entries.** Entries 1–3, 5, 8, 9, 11–17, 20–23 and 27 are compile errors. Entry 24
 is a stale file one rebuild replaces, entry 25 is a `budgets` finding, and entry 26 is capacity
 planning, not code. Entry 10
 throws when the module loads, and entry 18 when `docker compose up` starts. Entry 19 is a
@@ -78,8 +78,7 @@ unchanged and answer differently: a wider `isSuperseded`, a coded error where a 
 or `SyntaxError` used to arrive, and a new response body for non-framework HTTP clients. Entry 2
 also changes what `'last-write-wins'` keeps, and entry 8 leaves two error codes that nothing
 throws. 21.0.0 is the client data layer: one record store per tab, one HTTP seam and one socket
-per origin. More entries land here as each old client surface is removed. Not on npm yet. The
-entries sit under `## [Unreleased]` in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md).
+per origin. The entries are `CHANGELOG.md`'s `21.0.0` section.
 
 | # | Surface | Costs you an edit if |
 |---|---|---|
