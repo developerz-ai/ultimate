@@ -187,7 +187,7 @@ excess-property checking and gets **no error at all** → [Known gaps](Known-Gap
 | `capacity` | `new RingChangeBuffer({ … })` | `1024` | retained patches per query hash; a reconnect inside the window is a delta, not a snapshot |
 | `maxQueries` | same | `4096` | retained query hashes, least-recently-written dropped first |
 
-**The per-tenant cap is reachable but not wired** `As of 2026-08`. It reads `socket.actor`, which was hardcoded `null` until WebSocket authentication landed, so it could not fire at all; and the boot ([`dev-roles.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/dev-roles.ts)) passes `source: new RingChangeBuffer()` and **no caps**. So a per-tenant limit is not protecting you today whatever you configure — set `maxPerTenant` **and** `tenantOf` on the registry yourself if you need one. The per-socket cap needs nothing and is enforced at its default.
+**The per-tenant cap is reachable but not wired** `As of 2026-08`. It reads `socket.actor`, which was hardcoded `null` until WebSocket authentication landed, so it could not fire at all; and the boot ([`role-start.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/role-start.ts)) passes `source: new RingChangeBuffer()` and **no caps**. So a per-tenant limit is not protecting you today whatever you configure — set `maxPerTenant` **and** `tenantOf` on the registry yourself if you need one. The per-socket cap needs nothing and is enforced at its default.
 
 ## `cache`
 
@@ -224,8 +224,8 @@ runtime, so one image deploys to every environment.
 | `FASTLY_API_TOKEN` + `FASTLY_SERVICE_ID` | Fastly | batch surrogate-key purge, 256 keys per call |
 | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_ID` | Cloudflare | cache-tag purge, 30 tags per call, Enterprise zones |
 
-The surrogate keys are the tags — `post`, `post:1` — so the edge purges exactly what
-`invalidates: [tag.post]` busts.
+The surrogate keys are the tags — `post`, `post:1` — sent on every `public`/`immutable` response as `Surrogate-Key` (space-separated, what Fastly reads) and `Cache-Tag` (comma-separated, what Cloudflare reads), so the edge purges exactly what
+`invalidates: [tag.post]` busts. `As of 2026-09-23`; `x-cache-tags`, which neither edge reads, is gone.
 
 | Failure | Code | Raised by | Lands |
 |---|---|---|---|
@@ -269,7 +269,7 @@ pwa: {
 | `pwa.offline.font` | `string \| null` | `null` | **read** — placeholder served for a font request the cache cannot answer |
 | `pwa.offline.neverCache` | `string[]` | `[]` | **read** — path prefixes the worker passes straight through. Auth and payments belong here: a stale 200 is worse than a failure |
 | ~~`pwa.offline` as a string~~ | — | — | **Changed in the release that closed [#390](https://github.com/developerz-ai/ultimate/issues/390).** It was `'precache' \| 'runtime' \| 'network-only'`, an app-wide default for a field `defineRoute` makes **required** on every route — so it defaulted nothing and was read by nobody. Migration: `offline: 'runtime'` → `offline: { fallback: '/offline' }`, plus a route at that path ([Upgrading](Upgrading)) |
-| `pwa.backgroundSync` | `boolean` | `false` | **read**. The emitted worker's `sync` event posts `OUTBOX_DRAIN_MESSAGE` to every open tab, which drains realtime's outbox (21.0.0, unreleased) |
+| `pwa.backgroundSync` | `boolean` | `false` | **read**. The emitted worker's `sync` event posts `OUTBOX_DRAIN_MESSAGE` to every open tab, which drains realtime's outbox (21.0.0) |
 | `pwa.push` | `boolean` | `false` | **read, and it wires nothing yet** — `generateServiceWorker` emits a push handler only when a VAPID key comes with the capability, and there is no `pwa.vapid` key. Setting it makes `x build --json` report a `serviceWorkerWarnings` entry saying so, rather than leaving the switch quietly inert |
 | ~~`pwa.installPrompt`~~ | — | — | **Deleted in 8.0.0.** Declared, defaulted and merged, and read by nothing — `@ultimat3/pwa`'s `createInstallController` is real and complete and no code ever threaded this flag into it, so both tracked apps and every scaffolded app carried a switch with no wire. Migration: delete the key and call `createInstallController` from your own affordance ([PWA and offline](PWA-And-Offline)) |
 
@@ -473,8 +473,8 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 | `DATABASE_REPLICA_URL` | all | no — unset is one pool | `As of 2026-08-24`: a read-only standby. Set it and `baseClient()` builds a primary + replica client; unset and the client is byte-identical to the single-pool one. Routing is still opt-in per scope (`withReplicaReads`), so setting it alone changes nothing — see [Read replicas](#read-replicas) |
 | `APP_URL` | `web`, `sync` | yes | the canonical origin. An app-read key, not a config field — declare it in `defineEnv` |
 | `SESSION_SECRET` | `web`, `sync` | yes | >=32 chars |
-| `ULTIMATE_STATE_DIR` | all, under `x dev` | no — default `<app>/.x` | relocates the whole of `.x/` (the embedded database, the local disk, the dev lock) for one process tree. The e2e step uses it to boot the app on a throwaway database beside a running `x dev` (`packages/cli/src/dev-services.ts`). 21.0.0, unreleased |
-| `SYNC_URL` | `web` | no — unset dials `/_x/sync` on the page's own origin | where the page's one socket dials, rendered into every document as `<meta name="ultimate-sync">`. Must be `ws://` or `wss://`; anything else is `X_CONFIG_INVALID` at boot. **Required on the Compose rung**, where `sync` is published on its own port with no proxy in front: `SYNC_URL=ws://<host>:3001/_x/sync`. The shipped compose file refuses to start `web` without it. `x dev`, a combined-role container and the Helm chart's ingress all serve `/_x/sync` on the page origin, so they need nothing. `As of 2026-09-22`, unreleased (21.0.0) |
+| `ULTIMATE_STATE_DIR` | all, under `x dev` | no — default `<app>/.x` | relocates the whole of `.x/` (the embedded database, the local disk, the dev lock) for one process tree. The e2e step uses it to boot the app on a throwaway database beside a running `x dev` (`packages/cli/src/runtime-bindings.ts`). 21.0.0 |
+| `SYNC_URL` | `web` | no — unset dials `/_x/sync` on the page's own origin | where the page's one socket dials, rendered into every document as `<meta name="ultimate-sync">`. Must be `ws://` or `wss://`; anything else is `X_CONFIG_INVALID` at boot. **Required on the Compose rung**, where `sync` is published on its own port with no proxy in front: `SYNC_URL=ws://<host>:3001/_x/sync`. The shipped compose file refuses to start `web` without it. `x dev`, a combined-role container and the Helm chart's ingress all serve `/_x/sync` on the page origin, so they need nothing. `As of 2026-09-22` (21.0.0) |
 | `WORKER_QUEUES` | `worker` | no — default `default` | comma-separated; one pool per name |
 | `NATS_URL` | `sync`, `replicator` | no — unset is in-process fanout | one node only; a second replica shares nothing. Unreachable → `X_TRANSPORT_UNAVAILABLE` at boot, not at readiness |
 | `NATS_KV_BUCKET` | `sync` | no — default `x_presence` | the JetStream KV bucket presence lives in. `[a-zA-Z0-9_-]+`; anything else is `X_TRANSPORT_PROTOCOL` at boot |

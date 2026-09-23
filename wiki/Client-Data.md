@@ -16,19 +16,19 @@ it is. The design is
 | Task | Write | Status |
 |---|---|---|
 | declare what a record is | `entity('post', { columns: { id: uuid().primaryKey(), … } })` | shipped |
-| an action that returns a record | `output: Post.$schema`, or a schema that contains it | in tree, unreleased |
-| a query whose rows are records | `rows: Post.$schema` on `query()` | in tree, unreleased |
+| an action that returns a record | `output: Post.$schema`, or a schema that contains it | shipped in 21.0.0 |
+| a query whose rows are records | `rows: Post.$schema` on `query()` | shipped in 21.0.0 |
 | call an action from an island | `rpc<Api['actions']>({ baseUrl: '' })` | shipped; now goes through the one transport |
 | call a query from an island | `queryClient<Api['queries']>({ baseUrl: '' })` | shipped; now goes through the one transport |
-| ignore an answer for a principal that signed out | `if (isSuperseded(error)) return;` | in tree, unreleased |
+| ignore an answer for a principal that signed out | `if (isSuperseded(error)) return;` | shipped in 21.0.0 |
 | any other failure | `isUltimateError(error)`, then switch on `error.code` | shipped |
-| install realtime in an island | nothing: `x build` does it for every island whose own graph imports `@ultimat3/realtime`. An island that reaches realtime only through a package calls `installRealtime({ signal: createSignal })` in `mount` | in tree, unreleased |
-| show one record in a component | `useRecord('post', id)`: record type, then record key, from `@ultimat3/realtime` | in tree, unreleased |
-| show a list | `useQuery({ name: 'postList', entity: 'post' }, input)`, or `{ name, live: true }` for a live query | in tree, unreleased |
-| follow a channel | declare it on one ref in two halves: `channelRef('org-feed', { params, catchUp })` for the browser, `channel(ORG_FEED, { records, policy })` on the server. Then `useChannel(ORG_FEED, { orgId }, { onEvent, onPresence })` in the island: records reach the store, events the handlers. `usePresence(ORG_FEED, params)` for a roster | in tree, unreleased |
-| sign out | an action (the reference app's `endSession`, `POST /api/sessions/end`), posted by a native form, whose response appends `signOutHeaders()` from `@ultimat3/auth`: `Clear-Site-Data: "cache", "storage"` empties the page store, local storage and the service worker's cache. The redirect is a full navigation, so the next document carries the new scope | in tree, unreleased |
-| keep a record type on disk across reloads | `entity('post', { columns, persist: true })`. Default `false`: a record is private data, and disk is a decision | in tree, unreleased |
-| write with an optimistic update | `useMutation({ name: 'renamePost', local, conflict })`, posted over HTTP | in tree, unreleased |
+| install realtime in an island | nothing: `x build` does it for every island whose own graph imports `@ultimat3/realtime`. An island that reaches realtime only through a package calls `installRealtime({ signal: createSignal })` in `mount` | shipped in 21.0.0 |
+| show one record in a component | `useRecord('post', id)`: record type, then record key, from `@ultimat3/realtime` | shipped in 21.0.0 |
+| show a list | `useQuery({ name: 'postList', entity: 'post' }, input)`, or `{ name, live: true }` for a live query | shipped in 21.0.0 |
+| follow a channel | declare it on one ref in two halves: `channelRef('org-feed', { params, catchUp })` for the browser, `channel(ORG_FEED, { records, policy })` on the server. Then `useChannel(ORG_FEED, { orgId }, { onEvent, onPresence })` in the island: records reach the store, events the handlers. `usePresence(ORG_FEED, params)` for a roster | shipped in 21.0.0 |
+| sign out | an action (the reference app's `endSession`, `POST /api/sessions/end`), posted by a native form, whose response appends `signOutHeaders()` from `@ultimat3/auth`: `Clear-Site-Data: "cache", "storage"` empties the page store, local storage and the service worker's cache. The redirect is a full navigation, so the next document carries the new scope | shipped in 21.0.0 |
+| keep a record type on disk across reloads | `entity('post', { columns, persist: true })`. Default `false`: a record is private data, and disk is a decision | shipped in 21.0.0 |
+| write with an optimistic update | `useMutation({ name: 'renamePost', local, conflict })`, posted over HTTP | shipped in 21.0.0 |
 
 Never write `fetch(` in an island. `bun run browser-transport` refuses it with
 `X_BROWSER_TRANSPORT_BYPASS` and names the line. `As of 2026-09-22` it is a standalone command,

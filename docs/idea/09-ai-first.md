@@ -11,14 +11,14 @@ The differentiator. Not a chat widget, not an "AI SDK integration" — the frame
 | `routes.list` | route table: path, render mode, hydrate, offline, budget, meta status | grepping a router directory |
 | `schema.describe` | tables, columns, types, indexes, FKs, invariants | reading migration files in order |
 | `policies.list` | every `policy`, which actions/queries use it, its denial reason | "is this endpoint protected?" |
-| `actions.list` | inputs, outputs, tags, MCP exposure | reading `api/` by hand |
-| `manifest.get` | the whole `x.manifest.json` | ten separate reads |
+| `actions.describe` | every action and query: inputs, outputs, policy, cache tags, MCP exposure | reading `api/` by hand |
+| `manifest.read` | the whole `x.manifest.json` | ten separate reads |
 | `tests.run` | run a test type or a single file, structured results | parsing terminal output |
 | `logs.tail` | structured logs + OTel spans, filterable | scrollback archaeology |
 | `db.query` | **read-only** SQL, 100-row default and 1000-row maximum, `EXPLAIN` on request | inventing a query and hoping |
 | `db.migrate` | generate + apply migrations **in a branch DB only** | mutating the dev database |
 | `errors.explain` | `X_*` code → cause, fix command, docs URL | web search |
-| `budgets.report` | per-route bytes/LCP with the import chain that caused a regression | bisecting bundles |
+| `budgets.report` — **designed, not built** (`As of 2026-09-23`) | per-route bytes/LCP with the import chain that caused a regression; today `x build` writes the per-route bytes to `.x/build-stats.json` and `x verify`'s `budgets` step reads them | bisecting bundles |
 
 Read tools are unrestricted in dev. Write tools (`db.migrate`, `tests.run` with fixtures) are scoped to branch environments. The dev server is never exposed in `ROLE=web`.
 

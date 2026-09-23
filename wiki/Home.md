@@ -52,7 +52,7 @@ bunx create-ultimate myapp && cd myapp && bin/setup && x dev
 
 ## Tutorials
 
-Follow in order. Each page states what it was executed against in its own first line — tutorial 1 is re-measured on `main`, the rest against published 1.1.0 packages — and names the gaps it hits with the workaround.
+Follow in order. Each page states what it was executed against in its own first line — tutorial 1 is re-measured on `main`; 2–5 were executed against published 1.1.0 packages and have **not yet been re-run on `main`**. A workaround for a gap fixed since has been removed rather than left to mislead.
 
 | Page | You end with |
 |---|---|
@@ -90,6 +90,12 @@ Follow in order. Each page states what it was executed against in its own first 
 | [Agents](Agents) | `agent()` as an action factory, tools as real actions, `hive()`, `agentJob()`, and the at-least-once trap |
 | [Admin dashboard](Admin-Dashboard) | the generated admin app and its MCP surface |
 | [Scraping](Scraping) | `scrape()` as a job factory, the driver-blind page vocabulary, robots and host gates, the yield alarm |
+| [Auth](Auth) | sessions, OAuth, MFA, API keys and service tokens — the output is an `Actor` |
+| [Mail](Mail) | one template renders HTML and text, every string a key, sending is a job |
+| [Notify](Notify) | `notifier()` as a job factory: fan-out, preference gate, digest window, ledger, inbox |
+| [Storage and uploads](Storage-And-Uploads) | named disks, safe keys, the three-call signed upload, quarantine, orphans |
+| [Feature flags](Feature-Flags) | permanent switches and temporary ones that cannot be forgotten |
+| [SEO](SEO) | enforced meta, typed JSON-LD, sitemaps, fail-closed robots, feeds, responsive images |
 
 ## Cross-cutting
 
@@ -103,16 +109,6 @@ Follow in order. Each page states what it was executed against in its own first 
 | [Resource management](Resource-Management) | `Disposable` db resources, `using`/`await using`, idempotent release, compile-time pins |
 | [Migrations and backfills](Migrations-And-Backfills) | one migration engine and ledger, the destructive-migration rail, `backfill()` as a `job` factory |
 | [Testing](Testing) | six test types, cloned databases, sealed network, `x verify` |
-
-## Capabilities with no page here yet
-
-Three shipped packages have no reference page on this wiki `As of 2026-08-23` — named rather than left to be discovered, because a capability nobody can find is a capability nobody uses. Their public API is in the package's own `README.md`, and every error they raise is in [Error codes](Error-Codes).
-
-| Capability | Package | Read | Where it is mentioned here |
-|---|---|---|---|
-| Feature flags — permanent switches, and temporary ones that cannot be forgotten | `@ultimat3/flags` | [`packages/flags/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/flags/README.md) | [FAQ](FAQ), [Upgrading](Upgrading) |
-| Named disks, safe keys, signed URLs, sniffed uploads | `@ultimat3/storage` | [`packages/storage/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/storage/README.md) · [`docs/architecture/17-uploads.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/architecture/17-uploads.md) | [Known gaps](Known-Gaps), [6 · Growing up](Tutorial-06-Growing-Up) |
-| Transactional email as data — one template renders HTML and text, sent through a job | `@ultimat3/mail` | [`packages/mail/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/mail/README.md) | [The eight primitives](The-Eight-Primitives), [6 · Growing up](Tutorial-06-Growing-Up) |
 
 ## Reference
 

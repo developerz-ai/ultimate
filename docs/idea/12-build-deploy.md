@@ -50,7 +50,7 @@ services:
   minio:    { image: minio/minio, command: 'server /data', ports: ['9000:9000'] }
 ```
 
-`ROLE=all` runs every role in one process. The default local loop (`x dev`) uses embedded Postgres, in-process NATS, and a local directory for S3 — **Docker is not required to develop** ([`13-dx.md`](./13-dx.md)). This compose file exists for parity debugging and for CI jobs that want real services.
+There is no `ROLE=all` — the six roles are the whole set, and anything else is `X_ROLE_UNKNOWN` at boot. `x dev` co-locates `web`, `sync`, `worker` and `scheduler` in one process instead. The default local loop (`x dev`) uses embedded Postgres, in-process NATS, and a local directory for S3 — **Docker is not required to develop** ([`13-dx.md`](./13-dx.md)). This compose file exists for parity debugging and for CI jobs that want real services.
 
 ## Prod compose
 

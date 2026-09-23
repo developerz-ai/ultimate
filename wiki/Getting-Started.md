@@ -55,7 +55,7 @@ Measured on a fresh scaffold, `As of 2026-08-23`.
 | Mail | `/_x` inbox | captured, never sent |
 | Redis (the shared cache tier) | not started | the scaffold's `cache.tiers` is `['request-memo', 'lru']`; adding `'redis'` is what builds the shared rung |
 | `/_x` dev panel | `http://localhost:3000/_x` | 11 panels: routes, timeline, live, jobs, db, mail, cache, policy, manifest, services, boundaries |
-| MCP server | `x mcp serve` | 13 dev tools over `stdio` or `http`. **Not started by `x dev`** — `/mcp` on the dev server is 404 |
+| MCP server | `x mcp serve` | 18 dev tools over `stdio` or `http` (13 framework tools plus five `ui.*`). **Not started by `x dev`** — `/mcp` on the dev server is 404 |
 | Landing page | `apps/web/site/page.tsx` | `render: 'static'`, `hydrate: 'never'`, `budget: { js: '0kb' }`, real meta + JSON-LD |
 | Dashboard | `apps/web/app/dashboard/page.tsx` | `render: 'ssr'`, `hydrate: 'visible'`, `budget: { js: '64kb' }` (one island, the theme toggle), behind `policy: { permission: 'dashboard:read' }`. **Not `stream`** — `stream` needs a hole marker the renderer does not yet have, and the template says so in its own comment |
 | Admin app | `apps/admin/` | one `ssr` page; your actions reach an agent through `mcp: { expose: true }` and `x mcp serve`, not through this app |
@@ -167,10 +167,10 @@ Introspection an agent should use instead of grepping:
 
 | Want | Command | MCP tool |
 |---|---|---|
-| every action + schemas | `x actions list --json` | `actions.list` |
-| one action in detail | `x actions describe publishPost --json` | `actions.list` |
+| every action + schemas | `x actions list --json` | `actions.describe` (no arguments — every action and query) |
+| one action in detail | `x actions describe publishPost --json` | `actions.describe`, then pick the entry |
 | is this protected | `x policy explain publishPost --json` | none — `policies.list` returns the catalog, not the per-declaration matrix |
-| the whole app as data | `x manifest --json` | `manifest.get` |
+| the whole app as data | `x manifest --json` | `manifest.read` |
 | what an `X_*` code means | `x errors explain X_FORBIDDEN` | `errors.explain` |
 
 ## 4. `x verify`
@@ -209,4 +209,4 @@ $ x verify
 
 ## Status
 
-`As of 2026-08-23`. Stable API — semver from here ([Upgrading](Upgrading)). The repository holds 30 `@ultimat3/*` packages plus the unscoped `create-ultimate` and versions all 30 in lockstep. Every major so far has been a correctness sweep with no codemod, so each `BREAKING —` entry names its own manual edit; [Upgrading](Upgrading) walks all of them, oldest first, and each section states its own count. Only the [footer](_Footer) stamps a version number, and this page states none. **What `bunx create-ultimate myapp` installs is npm's `latest`**, one version for all 31 workspaces, each published by the release workflow over OIDC with a provenance attestation. Resolve it, do not trust this line — `npm view @ultimat3/core version`, and `npm view @ultimat3/core dist.attestations` for the attestation. **No publication holes**: `@ultimat3/scraping` was the last never-published package, bootstrapped by hand at 2.0.0, so `bun add @ultimat3/scraping` resolves. Milestones 0–10 are ✅; milestone 11 is 🚧, open on its two-platform deploy proof. Realtime tiers 1–2 ship; tier 3 (local-first) has **not shipped**. The 50k-socket forced-restart benchmark **is measured and committed** — first patch on the reconnected socket at p50 54.0s / p90 105.5s, on one node; delivery is a second run, 10,000 clients, 1,666,882 patches, 0 observed sequence gaps ([Realtime](Realtime)). Status markers come from [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md). See [FAQ](FAQ).
+`As of 2026-08-23`. Stable API — semver from here ([Upgrading](Upgrading)). The repository holds 30 `@ultimat3/*` packages plus the unscoped `create-ultimate` and versions all 30 in lockstep. Every major so far has been a correctness sweep with no codemod, so each `BREAKING —` entry names its own manual edit; [Upgrading](Upgrading) walks all of them, oldest first, and each section states its own count. Only the [footer](_Footer) stamps a version number, and this page states none. **What `bunx create-ultimate myapp` installs is npm's `latest`**, one version for all 31 workspaces, each published by the release workflow over OIDC with a provenance attestation. Resolve it, do not trust this line — `npm view @ultimat3/core version`, and `npm view @ultimat3/core dist.attestations` for the attestation. **No publication holes**: `@ultimat3/scraping` was the last never-published package, bootstrapped by hand at 2.0.0, so `bun add @ultimat3/scraping` resolves. Milestones 0–10 are ✅; milestone 11 is 🚧, open on its two-platform deploy proof. Realtime tiers 1–2 ship, and tier 3 (local-first) shipped in 21.0.0, opt-in per entity (`entity(name, { persist: true })`). The 50k-socket forced-restart benchmark **is measured and committed** — first patch on the reconnected socket at p50 54.0s / p90 105.5s, on one node; delivery is a second run, 10,000 clients, 1,666,882 patches, 0 observed sequence gaps ([Realtime](Realtime)). Status markers come from [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md). See [FAQ](FAQ).

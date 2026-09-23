@@ -413,16 +413,22 @@ Reads move **before** writes, and that ordering is what makes Phase 4 rollback-s
 
 Which is why the unit of migration is a **slice**: move a table's reads and writes together, or accept staleness on the half you did not move.
 
-### One thing a renamed column does not survive: a live query
+### A renamed column and a live query — on 21.x only
 
-`As of 2026-08` a **live query** delivers a renamed column under its **physical** name. `@ultimat3/realtime` rebuilds an entity row from the replication stream's physical column names alone — `camel()` in [`packages/realtime/src/pg-entity-row.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/pg-entity-row.ts) — and never consults `.column()` overrides, because that package is tier 3 and declares no dependency on `@ultimat3/entity` at tier 2.
+On **21.x**, a **live query** fed by the WAL decoder (a real `DATABASE_URL` and the `replicator`
+role) delivers a renamed column under its **physical** name: the decoder rebuilt an entity row from
+the replication stream's column names alone and never consulted `.column()` overrides.
 
-| Read through | `githubLogin: text().column('gh_login')` arrives as |
+| Read through, on 21.x | `githubLogin: text().column('gh_login')` arrives as |
 |---|---|
 | a repository / `query()` | `githubLogin` |
 | a **live** query patch | `ghLogin` |
 
-Real, unfixed, and a design call rather than an oversight: the alternative is a tier violation or a second copy of the naming rule. **Action:** do not make a slice with renamed columns your first live slice, or have the subscriber map the physical name itself.
+**The next major closes it** — in the tree, not yet tagged, `As of 2026-09-23`: `entityRow` in
+[`packages/realtime/src/pg-entity-row.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/pg-entity-row.ts)
+decodes through the registered entity (`decodeRow`, the repository's own reader), so a live patch
+carries `githubLogin` too. **Action on 21.x:** do not make a slice with renamed columns your first
+live slice, or have the subscriber map the physical name itself.
 
 ---
 

@@ -101,7 +101,7 @@ other — the projections come from `action()`, and nothing was lost by not wrap
 `accept.ts` owns no `Request`, no `Response` and no status number: `@ultimat3/http`'s
 `error-map.ts` is the only place an `X_*` code becomes a status, and a second table in a tier-1
 package is the drift that rule exists to prevent. The host mounts two routes around the two
-calls — the same shape `packages/cli/src/dev-assets.ts` already uses for `/media/*`:
+calls — the same shape `packages/cli/src/runtime-assets.ts` already uses for `/media/*`:
 
 ```ts
 { method: 'PUT', path: '/_storage/:disk/*key', meta: { name: 'storage.put', auth: 'required' },
@@ -121,7 +121,7 @@ disagree with the route. `s3Driver` presigns against the provider, declares no `
 never touches this route.
 
 **Only the `GET` half is mounted by the framework**, `As of 2026-08-19`:
-[`packages/cli/src/dev-storage.ts:227`](../../packages/cli/src/dev-storage.ts) serves
+[`packages/cli/src/runtime-storage.ts:227`](../../packages/cli/src/runtime-storage.ts) serves
 `GET /_storage/:disk/*key` and there is no shipped `PUT`, so `acceptSignedUpload` is reachable only
 from a route an app writes. The snippet above is that route → [`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md).
 

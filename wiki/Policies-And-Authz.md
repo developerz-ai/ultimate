@@ -112,7 +112,7 @@ The matrix runs **outside a request**: no input, no row. A rule that reads eithe
 |---|---|---|
 | one subject explained | `x policy explain <subject> --json` | none — no dev tool takes a subject, and `policies.list` returns the catalog without the per-declaration matrix |
 | every permission + who grants and enforces it | `x policy list --json` | `policies.list` (no arguments) |
-| unprotected surfaces | `x verify --json` (the `boundaries` step) | `budgets.report` / `manifest.get` |
+| unprotected surfaces | `x verify --json` (the `boundaries` step) | `manifest.read` (there is no budgets tool) |
 
 `x policy list` also names the permissions **no** action or query enforces. A grant nothing checks is a grant that does nothing, and it is invisible from any single declaration.
 

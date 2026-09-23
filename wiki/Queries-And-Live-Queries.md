@@ -2,7 +2,7 @@
 
 A `query` is a read. `live: true` makes it subscribable. Never writes, never enqueues, never sends mail.
 
-`As of 2026-08-23`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 of [Realtime](Realtime) ship. Tier 3 (local-first) is **not shipped**. In 21.0.0 (unreleased) `persist` is an `entity()` option, and the IndexedDB store and outbox that read it are pending ([Realtime](Realtime#tier-3-is-pending-in-2100)). `persist` is **not a field `query()` accepts**; writing it is a `TS2353` excess property.
+`As of 2026-08-23`. Stable API — semver from here ([Upgrading](Upgrading)). All three tiers of [Realtime](Realtime) ship. Tier 3 (local-first) shipped in 21.0.0, opt-in: `persist` is an `entity()` option, read by realtime's IndexedDB store and one outbox ([Realtime](Realtime#tier-3-shipped-in-2100)). `persist` is **not a field `query()` accepts**; writing it is a `TS2353` excess property.
 
 ## The canonical shape
 
@@ -61,7 +61,7 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 
 ### The read hook, precisely
 
-**One read hook, `useQuery`**, in 21.0.0 (unreleased). `useLive` and `liveHookFor` are deleted.
+**One read hook, `useQuery`**, in 21.0.0. `useLive` and `liveHookFor` are deleted.
 Live-ness belongs to the query declaration, not to the hook an island picks.
 
 ```ts

@@ -30,7 +30,7 @@ routeDocument(entry, data)     → renderHead(headFromMeta(await config.meta(dat
 | escaping | [`packages/render/src/html.ts`](../../packages/render/src/html.ts) | the one escaper, the attribute table, void elements |
 | SCSS | [`packages/render/src/css-modules.ts`](../../packages/render/src/css-modules.ts) | `sass` + the class-scope rewrite + bare-specifier resolution |
 | which export is the page | [`packages/render/src/route-component.ts`](../../packages/render/src/route-component.ts) | `Page` → single `…Page` → single capitalised function |
-| the document | [`packages/cli/src/dev-render.ts`](../../packages/cli/src/dev-render.ts) | head + style + body, per mode |
+| the document | [`packages/cli/src/runtime-render.ts`](../../packages/cli/src/runtime-render.ts) | head + style + body, per mode |
 | measured budgets | [`packages/cli/src/budgets.ts`](../../packages/cli/src/budgets.ts) | `measureJsBytes` over the emitted HTML, `.x/build-stats.json` |
 
 **`BUILD_STATS_RULES` is a version, and bumping it is a maintainer's edit.** `.x/build-stats.json`

@@ -20,7 +20,7 @@
 
 </div>
 
-> **If you are a coding agent, start with [`llms.txt`](llms.txt).** Every doc, wiki page and package README as one link map, generated from the on-disk indexes rather than hand-maintained — and carrying no version number at all, only the commands that resolve one.
+> **If you are a coding agent, start with [`llms.txt`](llms.txt).** Every doc, wiki page and package README as one link map, whose package and wiki lists are generated from the on-disk indexes (`bun run llms-txt --write`; `bun run llms-txt` fails when they drift) — and carrying no version number at all, only the commands that resolve one.
 
 ## What it is
 
@@ -40,7 +40,7 @@ Rails' philosophy on a Bun + Postgres + SolidJS stack. Everything is one of **ei
 
 | End of the range | The claim | Measured `As of 2026-08-23` |
 |---|---|---|
-| **small** — a weekend idea, a first app | not overkill: nothing to install, nothing to choose | `x new` asks **0** questions (all five flags defaulted), writes **161** files you never edit (re-derived `As of 2026-09-19`), installs **104** packages, and reaches a running app in **4** commands with **0** env values supplied |
+| **small** — a weekend idea, a first app | not overkill: nothing to install, nothing to choose | `x new` asks **0** questions (all five flags defaulted), writes **163** files you never edit (**135** with `--no-example`; re-derived `As of 2026-09-23`), installs **104** packages, and reaches a running app in **4** commands with **0** env values supplied |
 | **large** — many teams, real traffic | the ladder, the tier boundaries and the 20-step gate are already in the beginner's app | the same `x verify`, the same primitives, the same image; climbing is `ROLE`, env and replica counts ([scale ladder](docs/idea/17-scale-ladder.md)) |
 | **the model you can afford** | enforced conventions and executable `fix:` lines are worth *more* the cheaper the model | a fresh scaffold's own `bin/setup && bin/check` is **green on the first pass**, no waiver and no fix-follow, asserted on every push in CI; every red a model does reach names the command that clears it |
 
@@ -96,8 +96,6 @@ export const publishPost = action({
 None of the six is hand-written and every one is drift-checked by `x verify`. Measured on the deployed demo: **~16 code lines per fully-projected endpoint**, and one 51-line action producing 179 lines of committed generated interface — [the counts and how to re-derive them](#how-much-code-you-do-not-write).
 
 **Authz is defined once and enforced across HTTP, live queries, jobs and MCP.** Two authz systems is how every framework of this shape has died.
-
-> **`As of 2026-08`, the handler's `ctx` is not the full `Ctx`.** Over HTTP it is a cast of the request context: it carries `actor`, `locale`, `tz`, `requestId` and `traceId`, and **not** `logger`, `now()`, `clock`, `signal` or `services`. So `ctx.posts` and `ctx.logger.info(...)` throw on the HTTP path, though both work under a job. Import your service and call the job handle directly, as above. Tracked with the fix in [Known gaps](wiki/Known-Gaps.md).
 
 ## The eight primitives
 
@@ -346,10 +344,10 @@ The 1,767 generated Lucide glyph files are excluded on purpose — leaving them 
 
 | Not claimed | Why |
 |---|---|
-| that the demo passes its own gate | it is **pinned red on 2 steps**, `As of 2026-08-23` — `boundaries` (`X_BOUNDARY_SITE_TO_APP` ×3, the static feed importing the authed post service) and `budgets` (`X_BUDGET_UNMEASURED`, no `.x/build-stats.json` has ever existed there). It was 3: `drift` came off when the migration reconciling its foreign keys landed. [`examples/dummy`](examples/dummy/README.md) is pinned on 4 steps — `typecheck`, `e2e`, `drift`, `budgets`. The pins and their reasons are [`scripts/lib/gated-apps.ts`](scripts/lib/gated-apps.ts); `bun run scripts/reference-app-gate.ts` re-derives them |
+| that the demo passes its own gate | it is **pinned red on 2 steps**, `As of 2026-09-23` — `boundaries` (`X_BOUNDARY_SITE_TO_APP` ×3, the static feed importing the authed post service) and `budgets` (`X_BUDGET_UNMEASURED`, no `.x/build-stats.json` has ever existed there). It was 3: `drift` came off when the migration reconciling its foreign keys landed. [`examples/dummy`](examples/dummy/README.md) is pinned on 1 step — `budgets`. The pins and their reasons are [`scripts/lib/gated-apps.ts`](scripts/lib/gated-apps.ts); `bun run scripts/reference-app-gate.ts` re-derives them |
 | that low lines means high leverage | partly it means **few features**. Roughly half of [`DOMAIN.md`](dummy/social-media-clone/DOMAIN.md) is a plan, not a build: `likes` and `comments` are entities with migrations and no write path |
 | that the framework wrote the auth | it did not. 13 non-test files hand-write argon2id parameters, `__Host-` cookie prefixes, session token hashing and a captcha, and **`@ultimat3/auth` is imported nowhere in that app**. `@ultimat3/storage` likewise, despite a media feature. The largest thing the framework could have projected and did not |
-| that live messaging works | the one live query is declared, unit-tested and **not wired**: nothing calls `installRealtimeTopics` at boot, and [`apps/web/api/realtime.ts`](dummy/social-media-clone/apps/web/api/realtime.ts) says so in its own header |
+| that live messaging works | the thread's live query ([`app/messages/live.ts`](dummy/social-media-clone/apps/web/app/messages/live.ts)) and its channel ([`app/messages/topics.ts`](dummy/social-media-clone/apps/web/app/messages/topics.ts)) are declared and tested against a real hub, and **no island subscribes to either** — there is no `useChannel` or `useQuery` in the app — and the deployed stack runs no `sync` role, `As of 2026-09-23` |
 | that the typed client is proven | it is projected and unused. There is **no `.client()` call in either tracked app**; the demo's forms post HTML |
 
 **The larger win is not the lines** — it is that a bug is found once, here, where the fix reaches every app at once. The sweeps in [`CHANGELOG.md`](CHANGELOG.md) closed defects of exactly that kind:

@@ -274,9 +274,9 @@ A bare `x db backfill` is refused rather than defaulted: the four shapes answer 
 
 `requires` is checked against `x_migrations` here, and the three answers are distinct on purpose: the ids that are applied, `[]` when the table does not exist (nothing has ever been applied, so every `requires` is unsatisfied and the sweep is refused), and a **propagated error** when the read itself failed. A permission error or a timeout read as "nothing to check" would let a sweep run against exactly the shape it was declared to wait for.
 
-### `ROLE=backfill` triggers; it never gates
+### The `backfill` deploy step triggers; it never gates
 
-`DEPLOY_ROLES` is `migrate → web → sync → worker → scheduler → backfill`, and the position is the design:
+`backfill` is a **deploy step**, not a `ROLE` — there is no `ROLE=backfill` (`packages/core/src/roles.ts` names six roles). `DEPLOY_ROLES` is `migrate → web → sync → worker → scheduler → backfill`, and the position is the design:
 
 | Role | Shape | Why there |
 |---|---|---|

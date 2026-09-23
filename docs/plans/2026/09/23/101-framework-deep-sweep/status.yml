@@ -1,88 +1,88 @@
 plan: 101-framework-deep-sweep
 title: "Framework deep sweep: bugs, gaps, refactors, speed"
-status: not_started
+status: in_progress
 created_by: sebi
-worked_by: ""
+worked_by: "claude (coordinator) + 4 workers"
 owner: sebi
-percent: 0
-current_focus: "17-docs.md row e (plan 102 semver fix), then 01-core-schema.md; 14-guards-gate.md row a can run in parallel"
+percent: 95
+current_focus: "gate green on the whole tree, then tier-ordered PRs, then 22.0.0 release, then 19 a/h"
 slices:
   - file: 01-core-schema.md
     tier: 0
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 02-tier1-data-edge.md
     tier: 1
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 03-entity-query.md
     tier: 2
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 04-http-auth.md
     tier: 2
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 05-action-jobs.md
     tier: 3
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 06-realtime-server.md
     tier: 3
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 07-realtime-client.md
     tier: 3
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 08-tier4-services.md
     tier: 4
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 09-admin-testing.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 10-cli-correctness.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 11-cli-generators-dx.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 12-prod-boot-perf.md
     tier: 3
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 13-deploy.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 14-guards-gate.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 15-ci-release.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 16-apps.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 17-docs.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
   - file: 18-major-22.md
     tier: 6        # cross-tier release slice; 6 sorts it after every tier-0–5 slice, as overview.md requires
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 90
   - file: 19-infrastructure.md
     tier: 6        # edited from ../infrastructure, in its own repo
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 80
 evidence: ["#510"]
-notes: "Three audit passes plus a read-only audit of ../infrastructure's demo stack. First two passes at 5262dc32 (21.0.0), 18 agents. Decisions pending in 18-major-22.md rows e, f, g, h."
-last_updated: 2026-09-23
+notes: "Built 2026-09-23 by a 4-worker hive in one checkout. Decisions: 18 e raw CDP survives (x shot moved off puppeteer; cli -> scraping edge deleted); 18 f cli pruned fully, other packages non-error internals only; 18 g boot folds the auth 1.3 upgrade; 18 h drift re-stamp shipped (no app hash changed); 18 m realtime keys wired, realtime.enabled defaults true; 01 e reuses X_CURSOR_SECRET_DEV; 06 n/h sync ships off by default in charts/compose. Dropped (code contradicted the row): 02 e, 04 k, 06 j live-window half, 06 n readiness half, 11 h, 14 e, 14 q (scanner unified instead). Deferred: 18 l (plan 102 majors, own plan), 16 j + 19 a/h (need the 22.0.0 release and NATS deploy), measuring dynamic ssr routes (no seam in render), scripts/ -1k LOC target (missed, +139), hCaptcha secret (needs a human). Infra rows b-g,i-k merged as developerz-ai/infrastructure#1633."
+last_updated: 2026-09-24

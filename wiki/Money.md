@@ -269,7 +269,7 @@ import { formatMoney } from '@ultimat3/money';
 | Site | Shape |
 |---|---|
 | LLM budgets | `budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } }` — exceeding it throws before spending |
-| LLM cost accounting | per call, per tenant, per prompt version; reported by `budgets.report`. `x ai cache --json` is **planned** and exits `X_NOT_IMPLEMENTED`; `x test eval --json` is the shipped command it points at |
+| LLM cost accounting | per call, per tenant, per prompt version. No MCP tool reports it yet — `budgets.report` is designed and not built. `x ai cache --json` is **planned** and exits `X_NOT_IMPLEMENTED`; `x test eval --json` is the shipped command it points at |
 | Job cost accounting | per job run and per step, so an expensive retry loop is visible in the queue view |
 | Admin columns | a money column renders as a right-aligned formatted amount with the currency code; the raw minor value is shown on hover |
 | OTel span attributes | `cost.minor` + `cost.currency` as separate attributes, never a formatted string |

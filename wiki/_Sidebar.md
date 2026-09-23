@@ -41,6 +41,12 @@
 - [Agents](Agents)
 - [Admin dashboard](Admin-Dashboard)
 - [Scraping](Scraping)
+- [Auth](Auth)
+- [Mail](Mail)
+- [Notify](Notify)
+- [Storage and uploads](Storage-And-Uploads)
+- [Feature flags](Feature-Flags)
+- [SEO](SEO)
 
 **Cross-cutting**
 

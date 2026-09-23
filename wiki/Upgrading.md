@@ -6,6 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 21.x → 22.0.0 | **23** so far — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the in-flight major, still [Unreleased] in `CHANGELOG.md` — the `21.x → 22.0.0` section below, in order |
 | 20.x → 21.0.0 | **27** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. The client data layer, one entry per removed surface | the `21.0.0` section, in order |
 | 19.x → 20.0.0 | **2**, both `@ultimat3/ui` component behaviour and neither a type change — a `DataTable` that keeps its rows while reloading, and a `Button` whose `loading` no longer sets the native `disabled`. Nothing fails to compile; what changes is what a screen does | the `20.0.0` section, in order |
 | 18.x → 19.0.0 | **2**, both from the same hole — the service worker had no build behind it, so the config key that steers it and the route it falls back to both had to move | the `19.0.0` section, in order |
@@ -67,6 +68,58 @@ Each entry changes a surface the table below covers.
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
 
+## 21.x → 22.0.0, entry by entry
+
+**Twenty-three entries so far** — 22.0.0 is in flight, and this section tracks `CHANGELOG.md`'s
+`[Unreleased]` entries as they land. Entries 4, 7, 9, 10, 11, 12, 13, 14, 18, 20 and 21 are compile
+errors, and so are parts of 3 (`planDeploy`'s fourth argument), 6 (a declaration with no `policy`)
+and 19 (`selectTransport`'s second argument, `'redis'`). Entry 15 throws when a `sync` pod boots,
+entry 19 when any realtime role boots with a transport and `NATS_URL` that disagree, and entry 6
+when a channel module loads. Entries 1, 2 and 5 compile unchanged and refuse a string they used to
+accept; entry 17 changes a `meta.code`, and entry 23 throws where a query silently answered `[]`.
+Entry 3 also installs a **new** helm release beside the old one unless you name it. Entry 16 is a
+dependency you can drop, entry 22 is one `x db gen` if `drift` asks for it, and entry 8 needs no
+edit. 22.0.0 is plan 101's deep sweep: every framework package, both tracked apps and the deploy
+path.
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `t.date` | you send a date that is not ISO-8601 in shape (`'March 14, 2026'`, `'3/14/2026'`, `'12'`). It is refused at validation now (`coerceQuery` no longer rewrites it). `new Date` read it at the host's local midnight, so the stored day depended on `TZ`. Send `'2026-03-14'`. Epoch-ms numbers and `Date` objects are unchanged |
+| 2 | `timestamp()` columns | you write a string with no `Z` and no offset (`'2026-03-14T09:00'`) or a non-ISO one. Refused now; it used to be parsed in the host's zone. Write `'2026-03-14T09:00:00Z'` or a `Date` |
+| 3 | `x deploy --method helm`, `planDeploy` | you deployed with helm before. The release is now named after `app.config.ts`'s `name`, not the literal `app`, so the next deploy installs a **second** release beside the old one. Keep the old one with `x deploy --method helm --release app`, or `helm uninstall app` after the new one is up. The deploy now waits for the rollout (default `--timeout 15m`) and reports `data.rollout`. `planDeploy(image, 'helm', root)` needs a fourth argument, `{ release, namespace, timeout }`. `--release`, `--namespace` and `--timeout` are refused on `--method compose` |
+| 4 | `invokeAdminAction({ … expectedConfirmation })` | you pass `expectedConfirmation`. Delete it; the gate derives the token from the action's entity and `subject.id`, and the browser still echoes `confirmationToken(entity, id)` in `confirmation`. With both fields omitted a destructive action used to run unconfirmed; it is refused now |
+| 5 | `@ultimat3/ui` `DateTime`, `toDate` | you pass a non-ISO string (`'August 14, 2026 09:00'`, `'8/14/2026'`). Pass an ISO date, a date-time with `Z` or an offset, or a `Date` |
+| 6 | `channel(name, { … })` with no `policy` | a declaration omits it. It is a type error and throws `X_CHANNEL_DECLARATION_INVALID` at load. A public channel says so: `policy: allow('public')`. `ChannelDescription.policy` is `string`, no longer `string \| null` — delete a `null` branch |
+| 7 | a custom `QueueStore` or `LocalStore` | you implement one. `QueueStore.save(state)` → `write(change: QueueChange)`, and `LocalStore.saveQueue(scope, state)` → `writeQueue(scope, change)`: one change per mutation, by key. Whole-queue records a 21.x page wrote are converted on first read, so queued writes survive the upgrade. The shipped stores need nothing |
+| 8 | the page's SharedWorker | nothing to edit. The worker is named per build now (`workerName(scope, buildId)`, internal), so tabs of two deploys never share a socket host |
+| 9 | `ChangeOp` | you `switch` over it exhaustively. Add `case 'truncate':` — a rowless change: a `TRUNCATE` empties the affected live windows and starts a new epoch on every open channel topic |
+| 10 | `Result`, `Ok`, `Err`, `ok`, `err`, `map`, `mapErr`, `isOk`, `isErr`, `tryCatch`, `unwrap`, `unwrapOr` from `@ultimat3/core` | you import any of them. Gone: `throw` an `UltimateError` and `try`/`catch` it |
+| 11 | `X_USERS_TABLE`, `X_SESSIONS_TABLE`, `X_ACCOUNTS_TABLE`, `X_VERIFICATIONS_TABLE`, `X_API_KEYS_TABLE`, `X_USERS_MIGRATION_1_3` from `@ultimat3/auth` | you import them, or pasted them into a migration. Delete both: every boot applies `AUTH_TABLES` (the 1.3 upgrade included, as `add column if not exists`) |
+| 12 | internals removed from package barrels | you import a runtime value that no other package used — `CHANGELOG.md`'s `[Unreleased]` lists them per package (auth, ui, core, http, entity, query, mcp, ai, mail, notify, pwa, render, scraping, manifest). None is an error class, a code table or a documented API. Copy the constant into your app, or use the documented API it served |
+| 13 | the e2e driver: `installE2eDriver`, `e2eFixtures`, `startE2eApp`, `e2eApp`, `e2eBaseUrl`, `e2eBrowser`, `openE2eBrowser`, `cdpConnect`, `cdpE2eTab`, `findChrome`, `launchChrome`, the `Cdp*Error` / `E2e*Error` classes and their types, from `@ultimat3/cli` | you import any of them. Import them from `@ultimat3/testing`; the test preload is `@ultimat3/testing/e2e-preload`. `FRAMEWORK_SCRIPTS` and `FRAMEWORK_INLINE_SCRIPTS` stay on `@ultimat3/cli`. The `X_E2E_*` / `X_CDP_*` codes are unchanged |
+| 14 | `entityRow`, `camel` from `@ultimat3/realtime/server` | you decode WAL tuples yourself. `entityRow(physical)` → `entityRow(relation, physical, 'before' \| 'after')`; it decodes through the registered entity (`decodeRow`, `.column()` renames and money included) and refuses a table with no registered entity (`X_REPLICATION_PROTOCOL`). `camel` is gone |
+| 15 | a `sync` role on a real database | it has no reachable change feed. It refuses to boot with `X_REALTIME_TOPOLOGY`; it used to come up healthy and deliver nothing. Set `NATS_URL` on `web`, `sync` and one `replicator`, or leave `sync` off. (`x dev --role sync,replicator` runs both in one process, for development.) The scaffolded chart (`roles.sync.enabled: false`) and Compose file (`replicas: 0`) ship `sync` off, with the enable recipe beside the switch; a chart or compose file you copied earlier keeps whatever it had |
+| 16 | `x shot`, `x shot --island`, the `ui.*` MCP tools | you installed `puppeteer-core` for them. They drive Chrome over raw CDP on the e2e step's launcher now: `bun remove puppeteer-core` if nothing else imports it. `X_SHOT_BROWSER_MISSING` now means "no Chrome to launch" — `export CHROME_PATH=<binary>` where Chrome is not at `/usr/bin/google-chrome` or the other probed paths, or pass `--cdp-url`. A request to a host off the allow list is refused inside the browser and recorded as `refused: "host"` in the verdict |
+| 17 | `ui.interact` step failures | you match `meta.code` against `X_SCRAPE_*`. A failed step carries `X_SHOT_ELEMENT_MISSING`, `X_SHOT_ELEMENT_UNREADY` or `X_SHOT_KEY_INVALID` now |
+| 18 | `backoffDelay` from `@ultimat3/realtime` | you import it. Import core's: `import { backoffDelay } from '@ultimat3/core'`, and pass `attempt: n + 1` — realtime's copy counted from 0, core's counts from 1. A failed channel catch-up now retries after the base wait, not twice it |
+| 19 | `realtime.transport`, `NATS_URL`, `selectTransport` | your deploy relied on `NATS_URL` alone to pick the bus. `realtime.transport` decides now: `'nats'` dials the variable `realtime.urlEnv` names and refuses the boot (`X_CONFIG_INVALID`) when it is unset — it used to fall back to in-process in silence — and `'memory'` with `NATS_URL` set refuses too. Set `transport: 'nats'` where the fleet shares a bus, or unset `NATS_URL`. `realtime.enabled: false` now starts no `sync` node and no replicator. `transport: 'redis'` (never built) no longer typechecks. `selectTransport(env)` → `selectTransport(env, { transport, urlEnv })` |
+| 20 | `startLiveReplicator`, `LiveReplicator`, `LiveReplicatorOptions` from `@ultimat3/testing` | you import them — a live-query test or a hand-rolled dev boot. Import them from `@ultimat3/realtime/server`; `@ultimat3/testing`'s `subscribe` fixture needs nothing |
+| 21 | `@ultimat3/cli`'s barrel | you import anything from it but `newCommand`, `dbCommand`, `verifyCommand` and the documented API — 236 internals are gone (command objects, scan internals, report helpers, option types). `maskLiterals` / `stripComments` → `import { maskLiterals, stripComments } from '@ultimat3/core'`. The CLI no longer depends on `@ultimat3/scraping`, so a workspace that reached scraping through it declares it itself |
+| 22 | `x db gen`'s schema hash | `x verify --only drift` reports drift right after the upgrade with no entity edited: the hash now uses core's `canonicalJson`. Run `x db gen` once. Neither tracked app needed it |
+| 23 | a query's `sql: () => from(…)` over rows its loader `select`ed | the query filters (`where`) or sorts (`orderBy`) on a column the loader's `select({ … })` leaves out. That read used to answer `[]` in silence; it throws `X_QUERY_COLUMN_UNSELECTED` (`QueryColumnUnselectedError`) now. Add the column to the loader's `select`, or drop the filter if the loader already applies it. The reference app's `publicPostSlugs` was one — the blog prerendered no article until `publishedSlugs` selected `status` and `publishedAt` |
+
+### Where the sites are
+
+```sh
+grep -rnE "from<|from '@ultimat3/cli'|LiveReplicator|puppeteer|X_SCRAPE_|backoffDelay|selectTransport|transport: 'redis'|expectedConfirmation|planDeploy\(|\bResult<|\b(tryCatch|unwrapOr|mapErr)\(|X_(USERS|SESSIONS|ACCOUNTS|VERIFICATIONS|API_KEYS)_TABLE|X_USERS_MIGRATION_1_3|saveQueue|entityRow\(|\bcamel\b|case 'delete':" apps packages --include=*.ts --include=*.tsx
+grep -rnE "from '@ultimat3/cli'" apps packages scripts --include=*.ts | grep -E "e2e|cdp|Chrome|E2e|Cdp"
+grep -rnE "channel\(" apps packages --include=*.ts | grep -v policy
+```
+
+The `typecheck` step finds every removed name, `planDeploy`'s arity and a missing `policy`. It does
+not find a non-ISO date string in a fixture, a seed or a client — those fail at validation, so run
+your contract and e2e suites — nor a helm release still named `app`.
+
 ## 20.x → 21.0.0, entry by entry
 
 **Twenty-seven entries.** Entries 1–3, 5, 8, 9, 11–17, 20–23 and 27 are compile errors. Entry 24
@@ -95,7 +148,7 @@ per origin. The entries are `CHANGELOG.md`'s `21.0.0` section.
 | 11 | `setLiveClient`, `clearLiveClient`, `hasLiveClient`, `LiveClient`, `ClientSocket` | your island builds a `LiveClient`. Delete the socket adapter, the sync-URL module, `new LiveClient(…)`, `client.connect()` and `setLiveClient(client)`. Add `installRealtime({ signal: createSignal })` in `mount` before the first render. `hasLiveClient()` → `hasPageSocket()`. `client.subscribe(topic, fn)` → `useChannel(decl, params, { onEvent, onPresence })` or `usePresence(decl, params)` |
 | 12 | `useLive`, `LiveRows`, `LiveInput`, `liveHookFor` | you read a live query. `useLive<Row>({ name }, input)` → `useQuery<Row>({ name, live: true }, input)`. `feed.state() === 'live'` → `feed().status === 'ready'`, the rows are `feed().data`, and `unsubscribe()` → `release()`. Delete `liveHookFor` bindings |
 | 13 | `IdentityMap`, `privateScope`, `rowKey`, `RowScope`, `RowKey` | you import them. `RecordStore`, `recordKey(type, key)`, `RecordKey`; read one record with `useRecord(type, key)` |
-| 14 | `MemoryLocalStore`, `createOpfsLocalStore`, `LocalStore`, `RebaseLog`, `reconcile`, `rebaseFrame`, `strategyName`, `serverRenderLiveClient` | you pass a store, queue or log to the client, or use them in a test. Delete them. The optimistic apply needs nothing now; durable offline writes are pending |
+| 14 | `createOpfsLocalStore`, `RebaseLog`, `reconcile`, `rebaseFrame`, `strategyName`, `serverRenderLiveClient`; the journalling `MemoryLocalStore` / `LocalStore` | you pass a store, queue or log to the client, or use them in a test. Delete them: the optimistic apply needs nothing now. `MemoryLocalStore` and `LocalStore` still export, but name the **persistence** store now (`rows`, `write`, `queue`, `wipe`), not 20.x's journal (`apply`, `rollback`, `commit`), so code written against the old shape stops compiling. Durable offline writes ship: an entity declared `persist: true` is restored from IndexedDB by the page boot (`openLocalStore`, `pageLocalStore`), and its queued mutations replay through `pageOutbox()` |
 | 15 | `useMutation`, `useMutationQueue`, `MutatorLike` | you call `drain()`, set `entity:` on a `MutatorLike`, or re-query after a write. Delete `drain()` and `entity:`. The call resolves with the action's output, so read it directly. Writes go over HTTP, so a mutation now persists where it used to answer `X_NOT_IMPLEMENTED`. With no response at all (`meta.failure: 'network'`) the call resolves `undefined` and the write is queued; code that needs the output checks for it. A `'status'` or `'body'` failure still rejects |
 | 16 | sync protocol 3; `createSyncNode({ onMutate })`, `MutationHandler` | you run a `sync` node. Delete `onMutate`, and redeploy clients and nodes together: a v2 client and a v3 node refuse each other with `X_PROTOCOL_VERSION` |
 | 17 | `topic` / `Topic` from `@ultimat3/realtime/server` | you import it there. Import it from `@ultimat3/realtime` |
@@ -2025,8 +2078,8 @@ Job code never changes across a driver: `steps` is a driver member, so step pers
 | From → to | Change | Notes |
 |---|---|---|
 | tier 1 → tier 2 | `live: true` on the query | needs a `replicator` role and `orderBy` + `limit` on the `sql` |
-| tier 2 → tier 3 | `persist: true` on the query | not shipped `As of 2026-08`. No new mutators, no new authz, no new server code |
-| `memory` → `nats` transport | `realtime.transport`, and **`realtime.urlEnv`** — the env *key name*, not a URL. There is no `realtime.url` field | roll `sync` and `replicator`; clients reconnect with server-directed backoff. What actually decides the transport at boot is **`NATS_URL` being set**: `selectTransport(env)` never reads `config.realtime.transport`, so the config field documents intent and the env var makes the switch ([Configuration](Configuration)) |
+| tier 2 → tier 3 | `persist: true` on the **entity** | shipped in 21.0.0, opt-in per entity. No new mutators, no new authz, no new server code ([Realtime](Realtime#tier-3-shipped-in-2100)) |
+| `memory` → `nats` transport | `realtime.transport: 'nats'`, and **`realtime.urlEnv`** — the env *key name*, not a URL (default `NATS_URL`). There is no `realtime.url` field | roll `sync` and `replicator`; clients reconnect with server-directed backoff. **`realtime.transport` decides the bus** (`selectTransport(env, { transport, urlEnv })`), `As of 2026-09-23` (in the tree, not yet tagged): `'nats'` with its variable unset refuses the boot, and so does `'memory'` with `NATS_URL` set (`X_CONFIG_INVALID`). On 21.x the presence of `NATS_URL` decided it and the config field was never read ([Configuration](Configuration)) |
 
 ## Where the facts live
 

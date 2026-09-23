@@ -14,10 +14,10 @@ x version              # CLI version
 | `--json` | every command accepts it and prints a single machine-readable object on stdout. Human output goes to stdout too, but never mixed with JSON |
 | Exit codes | `0` success · `1` the command failed (a typed `X_*` error is printed) · `2` usage error (`X_CLI_BAD_FLAG`, `X_CLI_UNKNOWN_COMMAND`) |
 | Errors | always `code` + `cause` + `fix`. See [Error codes](Error-Codes) |
-| App detection | most commands walk up for `app.config.ts` and fail with `X_NOT_IN_APP` if there is none. The exceptions: `new`, `test`, `doctor`, `errors`, `help`, `version` |
+| App detection | most commands walk up for `app.config.ts` and fail with `X_NOT_IN_APP` if there is none. The exceptions: `new`, `test`, `doctor`, `errors`, `docs`, `affected`, `ci`, `pr`, `help`, `version` |
 | Flags | long form only, `--flag value` or `--flag=value`. Booleans negate as `--no-<flag>` |
 | Global flags | `--json` / `-j`, `--help` / `-h`, `--cwd <dir>`, `--verbose` — accepted by every command |
-| Subcommands | when a command has them, its default is **declared**, never positional: `x actions` is `x actions list` because that command sets `defaultSubcommand: 'list'`. A command with no defensible default declares none and refuses the bare form with `X_CLI_BAD_FLAG` — exactly `db` and `mcp`, pinned by `parse.test.ts`. Those two are also the two where `--help` does not work: the subcommand is resolved before the flag loop, so `x db --help` raises that same error. Use `x help db`. The parser answered `subcommands[0]` until 1.2.0, which is why `x db` used to run the migration **generator** |
+| Subcommands | when a command has them, its default is **declared**, never positional: `x actions` is `x actions list` because that command sets `defaultSubcommand: 'list'`. A command with no defensible default declares none and refuses the bare form with `X_CLI_BAD_FLAG` — exactly `db` and `mcp`, pinned by `parse.test.ts`. `--help` is read before the subcommand, so `x db --help` and `x mcp --help` print usage like `x help db`. The parser answered `subcommands[0]` until 1.2.0, which is why `x db` used to run the migration **generator** |
 | Passthrough | a bare `--` sends everything after it to the underlying tool untouched |
 | `--json` shape | `{ ok, command, summary, steps?, findings?, data? }`. Findings are `{ code, cause, fix, docs?, at? }` |
 
@@ -225,9 +225,11 @@ rather than rendering an empty one as an answer.
 | Env | Unset means | Set means |
 |---|---|---|
 | `DATABASE_URL` | PGlite in this process | that Postgres |
-| `NATS_URL` | in-process fanout | that NATS server |
+| the variable `realtime.urlEnv` names | in-process fanout | that NATS server — read only under `realtime: { transport: 'nats' }`, which refuses to boot with it unset. `transport: 'memory'` (the default) refuses to boot while `NATS_URL` is set, so a bus meant for another node is never silently ignored |
 | `NATS_KV_BUCKET` | the KV bucket `x_presence` | that bucket — one per app on a shared cluster |
 | `S3_ENDPOINT` | `.x/storage` on disk | that S3 |
+
+`realtime.enabled: false` in `app.config.ts` drops the `sync` and `replicator` roles from the set `x dev` starts, and a container's `ROLE=sync` answers the same way — no node, so no live feed.
 
 `migrate` is a real role but not a dev role: it runs once, as `x db migrate`; naming it under
 `--role` is `X_CLI_BAD_FLAG`. `replicator` does run under `x dev --role replicator`, but stays out
@@ -600,13 +602,16 @@ Budgets are unchanged and still measured in **real bytes on disk** — `measureD
 ## x deploy
 
 ```bash
-x deploy --image repo/app:tag [--method compose|helm] [--dry-run] [--json]
+x deploy --image repo/app:tag [--method compose|helm] [--release name] [--namespace ns] [--timeout 15m] [--dry-run] [--json]
 ```
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--image` | string | `ultimate-app:dev` | image reference to deploy |
 | `--method` | string | `compose` | `compose` or `helm` |
+| `--release` | string | `app.config.ts`'s `name` | helm release name; `helm` only |
+| `--namespace` | string | the kube context's | helm namespace; `helm` only |
+| `--timeout` | string | `15m` | how long helm waits for the migrate hook and the rollout; `helm` only |
 | `--dry-run` | boolean | `false` | print the plan, run nothing |
 
 `compose` is six ordered steps against `docker/docker-compose.prod.yml` — `run --rm migrate` to
@@ -616,8 +621,16 @@ open against a database still serving the previous release, so data sweeps are e
 new pods serve and the workers already draining the queue perform them. The `backfill` service runs
 `x db backfill --all --write --json` and exits. Steps run sequentially and stop
 at the first non-zero exit; the `fix` is that step's command, so you can rerun it directly for full
-output. `helm` is one `helm upgrade --install app docker/helm --set image=<ref>` against the chart **`x new`
-writes**, `As of 2026-08-19`. There is no `X_NOT_IMPLEMENTED` branch: the command implements helm
+output. `helm` is one `helm upgrade --install <release> docker/helm [--namespace <ns>] --wait
+--timeout <timeout> --output json --set image.repository=… --set image.tag=…` against the chart
+**`x new` writes**. **It waits**, `As of 2026-09-23`: without `--wait` the command exited 0 the
+moment the API server accepted the objects, and helm's own 5m default failed an upgrade whose
+migrate hook was still applying a long migration. `--json` reports helm's own verdict as
+`data.rollout` — `{ release, namespace, revision, status }`, `status` being helm's word
+(`deployed`, `failed`) or `unknown` when helm printed no record. The release was the literal `app`
+for every app; it is now `app.config.ts`'s `name`, and `--release app` addresses a release an
+earlier version created. `--release`, `--namespace` and `--timeout` on `--method compose` are
+refused (`X_CLI_BAD_FLAG`), never ignored. There is no `X_NOT_IMPLEMENTED` branch: the command implements helm
 completely, so an app that deleted its chart gets helm's own error and an app with no `helm` on
 `PATH` gets `X_CLI_UNEXPECTED` naming the binary to install. An image pinned by digest is refused
 before the upgrade starts — the chart renders `repository:tag` with no digest branch.
@@ -627,7 +640,7 @@ before the upgrade starts — the chart renders `repository:tag` with no digest 
 `method: "compose"` back to an operator who asked for a Helm upgrade.
 
 **There is no `--critical` flag**, `As of 2026-08-23`. It was deleted; the parser answers
-`X_CLI_BAD_FLAG` and lists the seven flags `deploy` does declare. It parsed, it was echoed into the
+`X_CLI_BAD_FLAG` and lists the flags `deploy` does declare. It parsed, it was echoed into the
 plan JSON as `critical: <bool>`, and no file in `packages/` read that field — so it changed nothing
 about what the command did, on either method
 ([`packages/cli/src/cmd-deploy.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/cmd-deploy.ts)
@@ -637,8 +650,11 @@ and no longer pretends to →
 The flag list this build ships is `x help --json`, never this page.
 
 Errors: `X_DEPLOY_FAILED` (a step exited non-zero — its `fix:` is that step's exact command),
-`X_CLI_BAD_FLAG` (a digest-pinned `--image` under `--method helm`, or a flag `deploy` does not
-declare), `X_CLI_UNKNOWN_COMMAND`, `X_CLI_UNEXPECTED`.
+`X_CLI_BAD_FLAG` (a digest-pinned `--image` under `--method helm`, a helm-only flag under
+`--method compose`, a `--timeout` helm would reject, a `--release`/`--namespace` that is not a
+DNS-1123 label, or a flag `deploy` does not declare), `X_CONFIG_INVALID` (`--method helm` with no
+`--release` and an `app.config.ts` whose `name` is not a helm release name),
+`X_CLI_UNKNOWN_COMMAND`, `X_CLI_UNEXPECTED`.
 
 `X_MIGRATE_CONCURRENT` **is thrown**, `As of 2026-08`. `ROLE=migrate` takes the migration lock by a
 **bounded** `pg_try_advisory_lock` poll on one pinned session — one try per 500ms against a 60s
@@ -766,7 +782,7 @@ x mcp serve [--transport stdio|http] [--port 9229] [--json]
 | `--transport` | string | `stdio` | `stdio` for an editor client, `http` for a socket |
 | `--port` | string | `9229` | HTTP port when `--transport http` |
 
-Serves `@ultimat3/mcp`'s dev server — 13 tools, one catalog, the same on both transports. Every
+Serves `@ultimat3/mcp`'s dev server — 18 tools, one catalog, the same on both transports. Every
 tool declares a scope; the local developer's caller carries all five, and an HTTP caller carries
 whatever its bearer token was issued.
 
@@ -785,6 +801,11 @@ whatever its bearer token was issued.
 | `tests.run` | run the suite, structured results | `dev:test` |
 | `verify.run` | run `x verify`, structured per-step result | `dev:test` |
 | `logs.tail` | last N log lines, optionally for one role | `dev:logs` |
+| `ui.shot` | photograph one route at a named viewport, light or dark; PNG path plus verdict. Launches a browser | `dev:test` |
+| `ui.island` | photograph an island in every state its `*.island.states.ts` declares, as `x shot --island` does | `dev:test` |
+| `ui.inspect` | DOM, computed-style and accessibility facts for a bounded set of selectors, in one navigation | `dev:test` |
+| `ui.interact` | drive one route through a bounded step list, then photograph it; refuses a password field and any step that leaves the origin | `dev:test` |
+| `ui.diff` | pixel-compare two PNGs the other `ui.*` tools wrote under `.x/shot/`; launches no browser | `dev:read` |
 
 `db.query` and `db.migrate` refuse structurally — multiple statements, a mutating keyword
 (a data-modifying CTE included), a locking clause, `EXPLAIN ANALYZE`, a non-branch target —
@@ -861,7 +882,7 @@ x jobs [ls|show <id>|retry <id>|cancel <id>|drain --to <driver>] [--queue q] [--
 |---|---|
 | `ls` | queue depth, the matching rows, the dead-letter list — a dead job is never filtered out of view — and the `backfill()` passes **in flight**, with rows so far and cursor |
 | `show <id>` | state, attempt, every step's result, the remaining retry delays, and the `x_backfills` row for this run when the job is a backfill (`backfill: null` for every other job) |
-| `retry <id>` | re-queue; `--from-step <name>` drops that step so it re-executes while everything before it replays from storage |
+| `retry <id>` | re-queue a job that has FINISHED; a job still `ready`, `delayed` or running is refused with `X_JOB_NOT_REQUEUEABLE`. `--from-step <name>` drops that step and every step that started after it, so they re-execute while everything before it replays from storage |
 | `cancel <id>` | stop a job that has not finished — the way to end a runaway `backfill()` sweep. `--reason <text>` is recorded on the job. Re-reads the row after cancelling, so **exit 0 means it is genuinely stopped**: a job that already finished, an id no queue holds, and a driver with no `introspect.cancel` (the redis and nats stubs) all raise `X_JOB_NOT_CANCELLABLE` rather than reporting success |
 | `drain --to redis\|nats` | move every `ready`/`delayed`/`suspended` job onto another **durable** driver; `--dry-run` reports the plan and moves nothing. `--to memory` is refused by name (`X_CLI_BAD_FLAG`), `As of 2026-09`: it built a `Map` inside the command's own process, enqueued every job into it and acked the durable rows — the queue emptied, the copy died at exit, and the command reported `ok: true` |
 
@@ -1006,7 +1027,7 @@ x shot --all-islands [--json]
 | `<route>` | required | a path on the app. An absolute URL is `X_CLI_BAD_FLAG` — pointing a headless browser inside your network at someone else's site is not a screenshot tool's job |
 | `--port` | `0` | the kernel picks a free one. **Never 3000**, which another project usually holds |
 | `--out` | `<root>/.x/shot/<slug>/` | `.x/` is already gitignored in every scaffold |
-| `--full` | on (`--no-full` for the fold) | puppeteer's 800×600 viewport crops nearly every route |
+| `--full` | on (`--no-full` for the fold) | a fold-sized viewport crops nearly every route |
 | `--settle` | `2000` | matches the hydration runtime's own `requestIdleCallback` timeout |
 | `--timeout` | `30000` | one navigation |
 | `--browser` | `PUPPETEER_EXECUTABLE_PATH`, then `CHROME_PATH` | refused before anything boots if the path does not exist |
@@ -1020,7 +1041,7 @@ x shot --all-islands [--json]
 
 **It drives `x dev`, never the static build.** `x build --target static` prerenders `site/` only, so an `app/` route would photograph the landing page. If an `x dev` is already running on the checkout it is **reused** rather than booted over — embedded Postgres is single-writer, so a second boot is `X_DEV_ALREADY_RUNNING` and no picture is ever taken. The verdict says which happened.
 
-**The framework ships no browser.** `x shot` imports `puppeteer-core` from the app and answers `X_SHOT_BROWSER_MISSING` with `bun add -d puppeteer-core` when it is absent. Playwright is not an alternative: its `connectOverCDP` cannot perform the WebSocket upgrade under Bun.
+**`x shot` launches Chrome itself**, over raw CDP — no browser library in the app. It takes `--browser`, else `CHROME_PATH`, else the first of the probed paths (`/usr/bin/google-chrome` and its siblings), or attaches with `--cdp-url`. With none of them it answers `X_SHOT_BROWSER_MISSING`, whose fix is `export CHROME_PATH=/usr/bin/google-chrome`.
 
 **`--cdp-url` is how a run gets a browser this box could not have started**, `As of 2026-08-24`. Every stealth provider — Browser Use Cloud, Scrapfly, Browserless, Remote Browser and the CAPTCHA-solving services — sells the same shape: create a session over their API, get a `wss://` CDP endpoint back, connect to a real un-fingerprintable Chromium behind it. `@ultimat3/scraping`'s `remoteBrowser({ cdpUrl })` has called that its **primary production path** since it shipped, and until now no CLI command could reach it: `x shot` only ever called `localBrowser()`, so a CI runner or a container with no Chrome could take no picture at all.
 

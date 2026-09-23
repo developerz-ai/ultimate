@@ -2,7 +2,7 @@
 
 Three tiers, one ladder. Same mutator shape at every rung — climbing is a **declaration** change, never a rewrite.
 
-**A tier is not a config value.** It is what the app declares: a `channel()` topic is tier 1, a `live: true` query is tier 2, and `persist: true` on the **entity** is tier 3 (21.0.0, unreleased). `realtime.tier` was an `app.config.ts` key that accepted `1 | 2 | 3`, was read by nothing, and was deleted in 10.0.0 — the one config edit that major asks for ([`wiki/Upgrading.md`](../../wiki/Upgrading.md)). What remains in config is `realtime.enabled`, `realtime.transport` and `realtime.urlEnv`.
+**A tier is not a config value.** It is what the app declares: a `channel()` topic is tier 1, a `live: true` query is tier 2, and `persist: true` on the **entity** is tier 3 (21.0.0). `realtime.tier` was an `app.config.ts` key that accepted `1 | 2 | 3`, was read by nothing, and was deleted in 10.0.0 — the one config edit that major asks for ([`wiki/Upgrading.md`](../../wiki/Upgrading.md)). What remains in config is `realtime.enabled`, `realtime.transport` and `realtime.urlEnv`.
 
 ## The ladder
 
@@ -12,7 +12,7 @@ Three tiers, one ladder. Same mutator shape at every rung — climbing is a **de
 | 2 | **Live queries** | `query({ live: true, sql })` | truth + change detection | a reactive result set | one replication slot + a matcher |
 | 3 | **Local-first** | the same `mutator` + `entity(name, { persist: true })` | truth + rebase | a durable local store, offline writes | IndexedDB, keyed by principal, + one outbox |
 
-Tier 1 for presence, typing indicators, toasts, cursors. Tier 2 for "the list updates when someone else edits". Tier 3 for offline-capable apps (21.0.0, unreleased).
+Tier 1 for presence, typing indicators, toasts, cursors. Tier 2 for "the list updates when someone else edits". Tier 3 for offline-capable apps (21.0.0).
 
 **Tiers 1–2 became multi-tenant-safe in this branch, and were not before.** Until it, the socket upgrade hardcoded `actorId: null`, so there was no way to authenticate a WebSocket at all: every channel guard, live-query gate, presence entry and tenant cap ran correctly against an actor that was always anonymous. The idiomatic guard `actor?.orgId === segments[1]` therefore denied everyone, and the only way to ship was `hub.guard('org.>', () => true)` — which is what this repo's own benchmark server does. `createSyncNode({ authenticate })` closes it, and re-authorization on a timer closes the second half: a socket is no longer authorized forever once accepted.
 
@@ -60,7 +60,7 @@ export const liveFeed = query({
 
 Tier 3 adds one field, and it goes on the **entity**, not the query: `entity(name, { persist: true })`.
 A record is private data by default, and disk is a decision per record type, not per read.
-`As of 2026-09-22` (21.0.0, unreleased) the store, the persister and the outbox are in the tree
+`As of 2026-09-22` (21.0.0) the store, the persister and the outbox are in the tree
 and wired. The 20.x OPFS `createOpfsLocalStore` is deleted: the durable store is
 **IndexedDB**, the portable browser store.
 
@@ -130,7 +130,7 @@ What people mean by "make it realtime" is almost always: the list updates withou
 
 Tier 3 buys exactly one additional property: **writes that survive being offline**. That property is worth real money for field apps, note-taking, and mobile-first tools — and it costs a durable local store, an outbox replayed in order, and a conflict story per mutator. Charging every app for it is how "realtime frameworks" become slow frameworks.
 
-So: tiers 1–2 shipped first; tier 3 is in the tree for 21.0.0 (unreleased), opt-in per entity: no record of an entity without `persist: true` is written to disk. See [`14-roadmap.md`](./14-roadmap.md) for the sequencing and [`15-risks.md`](./15-risks.md) for why this is the single largest line item.
+So: tiers 1–2 shipped first; tier 3 shipped in 21.0.0, opt-in per entity: no record of an entity without `persist: true` is written to disk. See [`14-roadmap.md`](./14-roadmap.md) for the sequencing and [`15-risks.md`](./15-risks.md) for why this is the single largest line item.
 
 ## Rules
 

@@ -122,7 +122,7 @@ A `member` writes todos and does not reach the admin. Anonymous holds nothing:
 ### Signing out clears the browser too
 
 `logout(auth, token)` ends the session row. The **response** does the rest, through
-`signOutHeaders()`, in 21.0.0 (unreleased):
+`signOutHeaders()`, in 21.0.0:
 
 ```ts
 import { logout, signOutHeaders } from '@ultimat3/auth';
@@ -146,7 +146,7 @@ for (const [name, value] of signOutHeaders({ session: auth.sessions.policy })) {
 The next load reinstalls the worker and re-precaches. Browsers act on `Clear-Site-Data` only in a
 secure context (HTTPS, or `localhost`). A sign-out with no response at all falls back on the page
 boot, which wipes every stored scope but the current principal's
-([Realtime](Realtime#tier-3-is-pending-in-2100)). The reference app's `endSession` action uses it.
+([Realtime](Realtime#tier-3-shipped-in-2100)). The reference app's `endSession` action uses it.
 
 ### Failures say one thing
 
@@ -184,7 +184,11 @@ Absolute and idle expiry are evaluated **independently**: activity never moves t
 
 ### Auth tables
 
-`@ultimat3/auth` exports `AUTH_TABLES` — the DDL `BuiltinAdapter` expects, as plain strings, so what auth stores is verifiable by reading. Nothing wires them into a migration at 1.1.0 (`x db gen` does not know the constant, and it is [broken anyway](Tutorial-02-First-Feature#migrations)). Paste each statement into its own migration file, following the one-statement rule from tutorial 2.
+`@ultimat3/auth` exports `AUTH_TABLES` — the DDL `BuiltinAdapter` expects, as plain strings, so what
+auth stores is verifiable by reading. **Every boot applies them** (`@ultimat3/cli`'s
+`FRAMEWORK_SCHEMA`), the upgrade of an older `x_users` included, so an app writes no migration for
+`x_users`, `x_sessions`, `x_accounts`, `x_verifications` or `x_api_keys`, `As of 2026-09-23`. The
+per-table constants that were once pasted into migrations are gone (22.0.0).
 
 ## The admin surface
 

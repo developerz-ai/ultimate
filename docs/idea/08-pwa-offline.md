@@ -46,7 +46,7 @@ Excluded always: `api/` responses, anything under an authenticated path unless `
 
 Overriding `offline` is allowed. Contradictions are **not** rejected `As of 2026-08`: `offline: 'precache'` on an `ssr` route is accepted, and `X_SW_UNCACHEABLE` is a reserved name with no thrower. `X_ROUTE_OFFLINE_MISSING` refuses only an absent or unknown strategy; `X_SW_SCOPE_INVALID` covers only the scope half.
 
-Mutations are never cached. Offline writes go through the tier-3 mutator queue ([`03-realtime.md`](./03-realtime.md)), not through Background Sync guesswork. **One outbox, and it is realtime's**, in the page's IndexedDB, keyed by principal. On a `sync` event the worker posts `OUTBOX_DRAIN_MESSAGE` (`'x-outbox-drain'`, from `@ultimat3/core`) to every open tab and sends nothing itself. With no tab open the queue waits on disk for the next page load. `As of 2026-09-22` (21.0.0, unreleased) both halves are in the tree: the page's outbox listens for the message. Until 21.0.0 the worker POSTed `/_x/outbox/flush`, a route nothing ever mounted.
+Mutations are never cached. Offline writes go through the tier-3 mutator queue ([`03-realtime.md`](./03-realtime.md)), not through Background Sync guesswork. **One outbox, and it is realtime's**, in the page's IndexedDB, keyed by principal. On a `sync` event the worker posts `OUTBOX_DRAIN_MESSAGE` (`'x-outbox-drain'`, from `@ultimat3/core`) to every open tab and sends nothing itself. With no tab open the queue waits on disk for the next page load. `As of 2026-09-22` (21.0.0) both halves are in the tree: the page's outbox listens for the message. Until 21.0.0 the worker POSTed `/_x/outbox/flush`, a route nothing ever mounted.
 
 ### Manifest, icons, splash
 

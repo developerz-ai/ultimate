@@ -19,8 +19,9 @@ dashboard.
 | Error reporting: caught server faults, with code, cause and `fix:` | **shipped as a seam** — [`packages/core/src/error-reporter.ts`](../../packages/core/src/error-reporter.ts), wired for HTTP, jobs and realtime | the default reporter is a no-op; set `SENTRY_DSN` to switch the shipped transport on |
 | `x logs` | listed **planned** in `x --help` | — |
 
-`As of 2026-08` the six series every process emits are declared in
-[`packages/core/src/runtime-metrics.ts`](../../packages/core/src/runtime-metrics.ts), and each has
+`As of 2026-09-23` these are the series the framework emits (`grep -rhoE "(counter|gauge|histogram)\('[a-z_]+'" packages/*/src`
+re-derives the list). The first six are declared in
+[`packages/core/src/runtime-metrics.ts`](../../packages/core/src/runtime-metrics.ts); each has
 exactly one emitter:
 
 | Series | Type | Labels | Emitted by |
@@ -28,17 +29,25 @@ exactly one emitter:
 | `http_requests_total` | counter | `method`, `route` (PATTERN), `status` (CLASS) | the HTTP pipeline, once per request, error paths included |
 | `http_request_duration_seconds` | histogram | same three | same call |
 | `connections` | gauge | none | the sync node's socket table, `+1`/`-1` |
-| `queue_depth` | gauge | `queue` | the worker, throttled to one read per 15s |
+| `queue_depth` | gauge | `queue` | the worker, throttled to one read per 15s. The queue's GLOBAL backlog: every worker publishes the same number, so aggregate with `max`, never `sum` |
 | `jobs_total` | counter | `queue`, `outcome` (`ok`\|`failed`\|`dead`) | the worker's outcome path |
 | `job_leases_lost_total` | counter | `queue` | the worker's lease heartbeat, once per job whose window lapsed |
+| `queue_oldest_ready_seconds` | gauge | `queue` | the worker, beside `queue_depth` — how long the oldest waiting job has waited (`packages/jobs/src/metrics.ts`) |
+| `queue_dead_jobs` | gauge | `queue` | the worker, beside `queue_depth` — dead-lettered jobs still on the table |
+| `channel_frames_dropped_total` | counter | none | the sync node, per channel frame a socket's backpressure dropped (`packages/realtime/src/socket.ts`) |
+| `channel_replay_gaps_total` | counter | none | the sync node, per `replay-gap` a socket took (`packages/realtime/src/channel-gaps.ts`) |
+| `deprecated_calls_total` | counter | primitive, `name` | a call served by a declaration marked deprecated (`packages/action/src/deprecation.ts`) |
 
 Labels are deliberately low-cardinality: the route **pattern** and the status **class**, never a
 concrete path, a user id or a job name. A label an attacker chooses is a label that decides how
 much memory your monitoring stack allocates.
 
 **Read this before enabling autoscaling.** [`docker/helm/values.yaml`](../../docker/helm/values.yaml)
-declares per-role HPAs targeting custom pod metrics named `rps`, `connections` and `queue_depth`. A
-`Pods`-type HPA metric needs an emitter, a scrape **and** a custom metrics adapter that turns the
+declares per-role HPAs targeting custom metrics named `rps` and `connections` (type `Pods`) and
+`queue_depth` (type `External`: every worker pod publishes the same global backlog, so the adapter
+must expose it deduplicated — `max(queue_depth)`, never `sum` — and the HPA divides it by the
+replica count; read as a `Pods` metric it asked for N times the workers the queue needed). Either
+type needs an emitter, a scrape **and** a custom metrics adapter that turns the
 scraped series into the metric name the HPA asks for. The chart now ships the first two —
 container port `metrics` on every serving role, a Service that publishes it, and a `ServiceMonitor`
 behind `serviceMonitor.enabled` — but **not** the adapter, and `rps` in particular is a rate the
@@ -248,19 +257,23 @@ a day later. Slow, but it is the difference between "we have no backups" being n
 
 ## Alerts on the app's own metrics
 
-`As of 2026-08` the six series above are emitted and scrapable, so these are writable today.
+`As of 2026-09-23` every series above is emitted and scrapable, so these are writable today; a row
+whose signal comes from outside the app names that source.
 `queue_depth` and `jobs_total` together are what tell a drained queue from a queue nothing is
 claiming — depth alone cannot. `job_leases_lost_total` deserves a rule of its own at any non-zero
 rate: each point is a job the queue re-delivered while this process was still running it.
 
 | Role | Alert on | Because |
 |---|---|---|
-| `worker` | oldest unclaimed job age, not queue length | length says nothing about whether anything is draining |
-| `sync` | connections per pod against the per-pod ceiling | a websocket costs memory while idle; request rate is blind to it |
-| `scheduler` | leader lock unheld for longer than one tick interval | a standby that never promotes looks identical to a healthy cluster |
-| `replicator` | replication slot lag, and slot inactive | an inactive slot silently accumulates WAL until the database's disk fills |
+| `worker` | `queue_oldest_ready_seconds`, not queue length; `queue_dead_jobs` above zero | length says nothing about whether anything is draining, and a dead-letter table that filled overnight is a rate of zero |
+| `sync` | connections per pod against the per-pod ceiling; any `channel_frames_dropped_total` rate | a websocket costs memory while idle; request rate is blind to it. Dropped frames are clients re-reading |
+| `replicator` | replication slot lag, and slot inactive — from postgres (`pg_replication_slots`, e.g. postgres_exporter), not from the app | an inactive slot silently accumulates WAL until the database's disk fills |
 | `web` | `/readyz` check failures by check name | the body already names each check; do not collapse it to a boolean |
-| all | build-ID skew across live pods | a half-finished rollout serving two versions is the shape most version-skew bugs take |
+| all | build-ID skew across live pods — from kube-state-metrics' pod labels (`app.kubernetes.io/version`, which the chart sets) | a half-finished rollout serving two versions is the shape most version-skew bugs take |
+
+There is **no scheduler-leadership alert**: the app emits no series for who holds the lease (the
+lease is a row in `x_scheduler_leader`, readable with SQL). It was listed here and no series backed
+it; alerting on an absent series only ever says "no data".
 
 ## Routing
 
