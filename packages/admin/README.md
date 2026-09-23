@@ -230,3 +230,19 @@ Panes are off until enabled, and `runAiPane` refuses (never no-ops) without a ru
 ## Errors
 
 `X_ADMIN_ENTITY_UNKNOWN` · `X_ADMIN_FIELD_UNSUPPORTED` · `X_ADMIN_POLICY_MISSING` · `X_ADMIN_PAGE_UNGUARDED` · `X_ADMIN_PAGE_PATH_INVALID` · `X_ADMIN_DENIED` · `X_ADMIN_TOOL_FORBIDDEN` · `X_ADMIN_INVALID` · `X_DEV_DASHBOARD_IN_PROD` · `X_NOT_IMPLEMENTED` (an unwired `/_x` source, carrying the wiring line).
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `AdminActionDuplicateError` | `X_ADMIN_ACTION_DUPLICATE` | `src/errors.ts` |
+| `AdminEntityUnknownError` | `X_ADMIN_ENTITY_UNKNOWN` | `src/errors.ts` |
+| `AdminFieldUnsupportedError` | `X_ADMIN_FIELD_UNSUPPORTED` | `src/errors.ts` |
+| `AdminPagePathInvalidError` | `X_ADMIN_PAGE_PATH_INVALID` | `src/errors.ts` |
+| `AdminPageUnguardedError` | `X_ADMIN_PAGE_UNGUARDED` | `src/errors.ts` |
+| `AdminPolicyMissingError` | `X_ADMIN_POLICY_MISSING` | `src/errors.ts` |
+| `DevDashboardInProdError` | `X_DEV_DASHBOARD_IN_PROD` | `src/errors.ts` |
+| `DevSourceUnavailableError` | `X_NOT_IMPLEMENTED` | `src/errors.ts` |

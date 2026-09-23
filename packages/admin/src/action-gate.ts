@@ -11,7 +11,12 @@ import {
   type AdminSubject,
   decideAll,
 } from './authz';
-import { ADMIN_DESTROY, ADMIN_WRITE, CONFIRMATION_REQUIRED_REASON } from './permissions';
+import {
+  ADMIN_DESTROY,
+  ADMIN_WRITE,
+  CONFIRMATION_REQUIRED_REASON,
+  confirmationToken,
+} from './permissions';
 import type { AdminAction, AdminActionCtx } from './registry';
 
 export interface AdminActionButton {
@@ -94,9 +99,16 @@ export interface InvokeInput<Input, Output> {
   readonly audit: AuditLog;
   readonly requestId: string;
   readonly subject?: AdminSubject;
-  /** Echo of `confirmationToken(entity, id)`. Required for a destructive action. */
+  /**
+   * Echo of `confirmationToken(entity, subject.id)`. Required for a destructive action, and the
+   * gate DERIVES the token it compares against — it took the caller's `expectedConfirmation`
+   * until 22.0.0, and with both omitted `undefined !== undefined` ran the action unconfirmed.
+   *
+   * A type-to-confirm guard against ACCIDENTS, the same design as `adminDestroy`: the token is not
+   * a secret, and a hostile caller can compute it. What stops that caller is the `admin:destroy`
+   * permission this gate checks first.
+   */
   readonly confirmation?: string;
-  readonly expectedConfirmation?: string;
   readonly locale?: string;
   readonly timeZone?: string;
   /** Before/after of the affected row, when the caller knows it. Always logged. */
@@ -134,12 +146,13 @@ export async function invokeAdminAction<Input, Output>(
     };
   }
 
-  if (action.destructive === true && args.confirmation !== args.expectedConfirmation) {
+  const expected = confirmationToken(entity, entityId ?? '');
+  if (action.destructive === true && args.confirmation !== expected) {
     const refused: AdminDecision = {
       allowed: false,
       permission: ADMIN_DESTROY,
       reason: CONFIRMATION_REQUIRED_REASON,
-      trace: [`confirmation: expected "${args.expectedConfirmation ?? ''}"`],
+      trace: [`confirmation: expected "${expected}"`],
     };
     return {
       ok: false,

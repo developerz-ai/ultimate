@@ -23,6 +23,44 @@ export {
 // `test` is OURS (fixture-injecting); everything else passes through. Re-exported so an app
 // test has one import line, and so `expect` carries this package's matchers already installed.
 export { afterAll, afterEach, beforeAll, beforeEach, describe, expect } from 'bun:test';
+// The browser-backed e2e driver and the raw-CDP browser under it — moved here from
+// `@ultimat3/cli` in 22.0.0. `installE2eDriver` is the ONE entry point an app's test preload calls;
+// `openE2eBrowserIfAvailable()` answers `undefined` on a machine with no Chrome, so a
+// browser-backed suite SKIPS rather than turning a gate red. RAW CDP over Bun's own `WebSocket`:
+// no dependency, and no `@ultimat3/scraping` / `puppeteer-core` behind it.
+export type { E2eBrowser, OpenE2eBrowserOptions } from './cdp-browser';
+export {
+  DEFAULT_CDP_TIMEOUT_MS,
+  openE2eBrowser,
+  openE2eBrowserIfAvailable,
+} from './cdp-browser';
+export type {
+  CdpConnection,
+  CdpConnectionOptions,
+  CdpEventListener,
+  CdpResult,
+  CdpTransport,
+} from './cdp-connection';
+export { cdpConnect, cdpConnectOver } from './cdp-connection';
+export type { CdpE2eTabOptions, E2eTab } from './cdp-e2e-page';
+export { cdpE2eTab } from './cdp-e2e-page';
+export type { CdpE2eSessionOptions, E2eSession } from './cdp-e2e-session';
+export { cdpE2eSession } from './cdp-e2e-session';
+export {
+  CdpBrowserMissingError,
+  CdpCallFailedError,
+  CdpLaunchFailedError,
+  CdpTimeoutError,
+} from './cdp-errors';
+export type { LaunchedBrowser, LaunchOptions } from './cdp-launch';
+export {
+  CHROME_CANDIDATES,
+  CHROME_PATH_ENV,
+  CONTAINER_CHROME_ARGS,
+  findChrome,
+  launchChrome,
+  launchFoundChrome,
+} from './cdp-launch';
 // The island-state vocabulary. Pure data by design: a `*.island.states.ts` file is read by the
 // command that photographs the states, by the harness page and by a guard test — none of which has
 // a bundler, and only one of which has a browser.
@@ -47,6 +85,36 @@ export {
   seededUuid,
   setFrozenClock,
 } from './determinism';
+export type { E2eApp, E2eAppMode, StartE2eAppOptions } from './e2e-app';
+export { startE2eApp } from './e2e-app';
+export { E2E_ROOT_ENV, e2eApp, e2eBaseUrl, e2eBrowser } from './e2e-browser-handle';
+export type { E2eDriverOptions } from './e2e-driver';
+export { e2eFixtures, installE2eDriver } from './e2e-driver';
+export type { E2eErrorCode } from './e2e-error-codes';
+export { E2E_ERROR_CODES, E2E_ERROR_TITLES } from './e2e-error-codes';
+export {
+  E2eAppFailedError,
+  E2eEvaluateCapturedError,
+  E2eEvaluateThrewError,
+  E2eEvaluateUnsupportedError,
+  E2eLocatorAmbiguousError,
+  E2eLocatorEmptyError,
+  E2eServiceWorkerAbsentError,
+} from './e2e-errors';
+export type { EvaluablePage } from './e2e-evaluate';
+export { closureSource, evaluateClosure, evaluateExpression } from './e2e-evaluate';
+export type { LocatablePage } from './e2e-locator';
+export { e2eLocator, resetLocatorMarks } from './e2e-locator';
+export type { E2eBrowserPage, E2ePageOptions } from './e2e-page';
+export { DEFAULT_E2E_TIMEOUT_MS, DEFAULT_SERVICE_WORKER_TIMEOUT_MS, e2ePage } from './e2e-page';
+export type { E2eResolution, E2eSelection } from './e2e-selection';
+export {
+  MARK_ATTRIBUTE,
+  markSelector,
+  selectionCall,
+  selectionExpression,
+  unmarkExpression,
+} from './e2e-selection';
 export type { TestingErrorCode } from './errors';
 export {
   FixtureUnavailableError,
@@ -184,8 +252,6 @@ export {
 } from './island-states-resolve';
 export type { LiveConnection, LiveNodeHandle, LiveNodeOptions } from './live-node';
 export { createLiveNode } from './live-node';
-export type { LiveReplicator, LiveReplicatorOptions } from './live-replicator';
-export { startLiveReplicator } from './live-replicator';
 /**
  * The budget `toBeVisible(options?)` takes. Exported because it is in a public matcher's signature;
  * `retryUntil` and `RetryBudget` deliberately are NOT — nothing outside this package calls them,

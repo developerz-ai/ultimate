@@ -135,11 +135,14 @@ export async function arm(init: CdpArmInit, sinks: CdpSinks): Promise<void> {
     const at = init.clock.now().getTime();
     if (verdict === 'allow') {
       network.push({ method, url, resourceType: type, at });
-      void request.continue();
+      // Caught, never floated: both reject when the target closed mid-request (and on any other
+      // protocol error), and a floated rejection is one Bun ends the process on. The request is
+      // already recorded; there is nothing left to do for a target that is gone.
+      request.continue().catch(() => undefined);
       return;
     }
     network.push(refusalEntry(url, type, verdict, at, method));
-    void request.abort();
+    request.abort().catch(() => undefined);
   });
   init.page.on('console', (payload) => {
     console_.push({

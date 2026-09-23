@@ -417,3 +417,45 @@ describe('adminMcp() resolves a session token into an agent actor', () => {
     expect(response.status).toBe(401);
   });
 });
+
+/**
+ * An action a RESOURCE owns, called over MCP with an `id`, never loaded the row: the subject was
+ * `{ entity, id }` with no `row`, so a row-level rule — "only the author may publish" — decided
+ * with nothing to read and could never allow. The UI's action button loads it; MCP now does too.
+ */
+describe('a resource action over MCP decides on the row it names', () => {
+  const touch = {
+    name: 'admin_dispatch_doc.touch',
+    permission: 'admin_dispatch_doc:write',
+    entity: 'admin_dispatch_doc',
+    handle: async (): Promise<unknown> => 'touched',
+  };
+
+  /**
+   * Allows the row-scoped permission only when the loaded row is the fixture's. The catalog asks
+   * with no subject — no row is known at list time — and is answered yes, as a row rule's listing is.
+   */
+  const rowRule: AdminAuthz = {
+    decide: ({ permission, subject }): AdminDecision => {
+      const needsRow = permission === 'admin_dispatch_doc:write' && subject?.id !== undefined;
+      const row = (subject as AdminSubject | undefined)?.row as AdminRow | null | undefined;
+      const ok = !needsRow || (row !== null && row !== undefined && row['id'] === ID);
+      return { allowed: ok, permission, reason: ok ? 'ok' : 'row-rule', trace: [] };
+    },
+  };
+
+  test('the row is loaded through the resource repo before the policy runs', async () => {
+    const calls = recordingRepo();
+    const app = defineAdmin({
+      entities: [doc],
+      resources: { admin_dispatch_doc: { repo: calls.repo, actions: [touch as never] } },
+      auth: { actor: (): AdminActor | null => ACTOR, authz: rowRule },
+    });
+    const ctx: CrudCtx = { actor: ACTOR, authz: rowRule, audit: memoryAuditLog(), requestId: 'r' };
+    const result = await callAdminTool(app, ctx, 'admin.action.admin_dispatch_doc.touch', {
+      id: ID,
+    });
+    expect(result).toEqual({ ok: true, data: 'touched' });
+    expect(calls.calls).toContain(`find:${ID}`);
+  });
+});
