@@ -154,9 +154,8 @@ async function buildOne(root: string, file: string): Promise<IslandChunk> {
     // The FIRST bytes this process emitted for these inputs, so a URL served `immutable` answers
     // one byte string for as long as the process lives. Without it `x dev` re-mints the chunk on
     // every watcher tick and a browser holding the previous one under `max-age=31536000` has two
-    // different files at one address.
-    code: stableCode(file, hash, code),
-    bytes: new TextEncoder().encode(code).byteLength,
+    // different files at one address. `bytes` is measured on THAT code, never on this build's.
+    ...stableChunk(file, hash, code),
   };
 }
 
@@ -252,11 +251,18 @@ export function clearIslandChunkCache(): void {
  * value called `hash` is a digest an attacker may be probing. This one is a build input's
  * identity — the same reason `pr-threads.ts` calls a review state `wanted`.
  */
-function stableCode(file: string, graph: string, code: string): string {
+export function stableChunk(
+  file: string,
+  graph: string,
+  code: string,
+): { readonly code: string; readonly bytes: number } {
   const hit = emitted.get(file);
-  if (hit !== undefined && hit.graph === graph) return hit.code;
-  emitted.set(file, { graph, code });
-  return code;
+  const served = hit !== undefined && hit.graph === graph ? hit.code : code;
+  if (served === code) emitted.set(file, { graph, code });
+  // Measured on the code that is SERVED. It was measured on this build's output, which under a
+  // minifier that renames differently between builds is a second size for one URL in one process
+  // — and a budget weighed on bytes no browser receives.
+  return { code: served, bytes: new TextEncoder().encode(served).byteLength };
 }
 
 /**

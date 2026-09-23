@@ -147,48 +147,206 @@ async function frameworkImports(entry: string): Promise<readonly string[]> {
 const line = (chunk: IslandChunk): string => `${chunk.file} ${chunk.bytes} ${chunk.url}`;
 
 /**
- * Every string literal a chunk holds, in order. It is a fingerprint of everything a MINIFIER
- * RENAME cannot touch: renaming moves identifiers and nothing else, so two chunks whose literals
- * agree in order, whose byte counts agree, and whose bytes do not, differ only in generated names.
+ * JavaScript's reserved words — the tokens a minifier never renames, so they stay in the skeleton.
+ * Only what the minifier GENERATES is masked; `var` turning into `let` is a different program.
  */
-const literalsOf = (code: string): string =>
-  (code.match(/"[^"\\]*"|'[^'\\]*'/g) ?? []).join('\u0000');
+const RESERVED = new Set(
+  (
+    'await break case catch class const continue debugger default delete do else export extends ' +
+    'false finally for function if import in instanceof let new null of return static super ' +
+    'switch this throw true try typeof undefined var void while with yield async get set'
+  ).split(' '),
+);
+
+/** After one of these, a `/` opens a regular expression rather than dividing. */
+const REGEX_AFTER = new Set('(,=:[!&|?{};+-*%<>~^'.split(''));
+const REGEX_AFTER_WORD = new Set(['return', 'typeof', 'case', 'do', 'else', 'in', 'of', 'void']);
+
+/**
+ * One pass over a minified chunk: every binding NAME in order, and the skeleton around them —
+ * string, template and regular-expression literals verbatim, numbers, keywords, operators,
+ * punctuation and property names after a `.` all kept, each name replaced by one marker.
+ * Template text is literal and its `${…}` holes are code, so a name inside a hole is a name.
+ */
+function scan(code: string): { readonly skeleton: string; readonly names: readonly string[] } {
+  const names: string[] = [];
+  let out = '';
+  let i = 0;
+  let last = '';
+  const holes: number[] = [];
+  const quoted = (quote: string): void => {
+    const start = i;
+    i += 1;
+    while (i < code.length && code[i] !== quote) i += code[i] === '\\' ? 2 : 1;
+    i += 1;
+    out += code.slice(start, i);
+  };
+  const template = (): void => {
+    const start = i;
+    while (i < code.length) {
+      if (code[i] === '\\') i += 2;
+      else if (code[i] === '`') {
+        i += 1;
+        out += code.slice(start, i);
+        last = '`';
+        return;
+      } else if (code[i] === '$' && code[i + 1] === '{') {
+        i += 2;
+        out += code.slice(start, i);
+        holes.push(0);
+        last = '{';
+        return;
+      } else i += 1;
+    }
+    out += code.slice(start);
+  };
+  while (i < code.length) {
+    const c = code[i] as string;
+    if (c === '"' || c === "'") {
+      quoted(c);
+      last = c;
+    } else if (c === '`') {
+      i += 1;
+      out += '`';
+      template();
+    } else if (c === '{' && holes.length > 0) {
+      holes[holes.length - 1] = (holes.at(-1) ?? 0) + 1;
+      out += c;
+      i += 1;
+      last = c;
+    } else if (c === '}' && holes.length > 0 && holes.at(-1) === 0) {
+      holes.pop();
+      out += c;
+      i += 1;
+      template();
+    } else if (c === '/' && (last === '' || REGEX_AFTER.has(last) || REGEX_AFTER_WORD.has(last))) {
+      const start = i;
+      i += 1;
+      let inClass = false;
+      while (i < code.length && (code[i] !== '/' || inClass)) {
+        if (code[i] === '\\') i += 1;
+        else if (code[i] === '[') inClass = true;
+        else if (code[i] === ']') inClass = false;
+        i += 1;
+      }
+      i += 1;
+      while (i < code.length && /[a-z]/.test(code[i] as string)) i += 1;
+      out += code.slice(start, i);
+      last = ')';
+    } else if (/\d/.test(c)) {
+      const match = /^\d[\w.]*/.exec(code.slice(i, i + 64)) as RegExpExecArray;
+      out += match[0];
+      i += match[0].length;
+      last = '0';
+    } else if (/[A-Za-z_$]/.test(c)) {
+      const word = (/^[A-Za-z_$][\w$]*/.exec(code.slice(i, i + 256)) as RegExpExecArray)[0];
+      const property = out.endsWith('.') && !out.endsWith('..');
+      if (property || RESERVED.has(word)) out += word;
+      else {
+        out += '\u0001';
+        names.push(word);
+      }
+      i += word.length;
+      last = RESERVED.has(word) ? word : 'a';
+    } else {
+      if (c === '}' && holes.length > 0) holes[holes.length - 1] = (holes.at(-1) ?? 1) - 1;
+      out += c;
+      i += 1;
+      if (c.trim() !== '') last = c;
+    }
+  }
+  return { skeleton: out, names };
+}
+
+/**
+ * Two chunks are the same program up to what their bindings are called when their skeletons are
+ * equal AND the names map one-to-one: every occurrence of `dt` in one is the same name in the
+ * other, and no two names collapse into one. That is exactly and only what `oven-sh/bun#40657`
+ * varies — it renames, it never merges or splits a binding.
+ */
+function sameUpToRenaming(before: string, after: string): boolean {
+  const a = scan(before);
+  const b = scan(after);
+  if (a.skeleton !== b.skeleton || a.names.length !== b.names.length) return false;
+  const forward = new Map<string, string>();
+  const backward = new Map<string, string>();
+  for (const [index, name] of a.names.entries()) {
+    const other = b.names[index] as string;
+    if ((forward.get(name) ?? other) !== other || (backward.get(other) ?? name) !== name) {
+      return false;
+    }
+    forward.set(name, other);
+    backward.set(other, name);
+  }
+  return true;
+}
 
 /**
  * The SECOND upstream flap, and it is not the shaker's — `oven-sh/bun#40657`. `Bun.build` with
- * `minify: true` answers two different chunks of **identical byte length** for one unchanged
- * input, differing only in generated identifier names (`dt`↔`at`, `hr`↔`mr`, `Pn`↔`Jn`, …).
- * Reproduced on 1.3.14, 1.4.0 and 1.4.1-canary, exactly two variants on each; `minify: false` and
- * `minify: { identifiers: false }` are both deterministic, and it is load-correlated the same way
- * the shaker flap is — which is why it fails on a free CI runner and passes on a laptop.
+ * `minify: true` answers two different chunks for one unchanged input, differing only in generated
+ * identifier names (`dt`↔`at`, `hr`↔`mr`, `Pn`↔`Jn`, …). Reproduced on 1.3.14, 1.4.0 and
+ * 1.4.1-canary; `minify: false` and `minify: { identifiers: false }` are both deterministic, and it
+ * is load-correlated the same way the shaker flap is — which is why it fails on a free CI runner
+ * and passes on a laptop.
+ *
+ * **It can move the byte count, and this file used to say it could not.** The names are assigned
+ * by frequency and the ties are what flap, so a binding can land on a one-character name in one
+ * build and a two-character name in the next. CI run 35815786302 (2026-09-23) failed on exactly
+ * that: `contact-sales.island.tsx` 19,858 against 19,857 B, both builds carrying the shaken
+ * module, so no other difference was possible. 200 local builds under 2-core contention and 40
+ * test runs never reproduced it; the runner did.
  *
  * `identifiers: false` was measured as the in-tree fix and REFUSED: it costs +45% —
- * `feed.island.tsx` 45,925 → 66,542 B and `like.island.tsx` 48,688 → 70,215 B, which is over that
- * route's declared 50 kB budget. Trading a real budget for somebody else's determinism bug is the
- * wrong way round.
+ * `feed.island.tsx` 45,925 → 66,542 B and `like.island.tsx` 48,688 → 70,215 B. Trading a real
+ * budget for somebody else's determinism bug is the wrong way round.
  *
- * So this is tolerated, and tolerated NARROWLY: the byte count must still be equal, and every
- * literal must still match. Anything else — a plugin emitting different code, a `Date` in a name,
- * an unordered `Promise.all` — moves one of those and still fails.
+ * So a rename is tolerated, and tolerated NARROWLY: the two chunks must have ONE skeleton —
+ * every string, template, regular expression, number, keyword, operator and property name in the
+ * same place — and their binding names must map one-to-one. A plugin emitting different code, a
+ * `Date` in a literal, an unordered `Promise.all`, a module dropped or duplicated, two bindings
+ * merged: each breaks one of the two and still fails.
  */
 const renamedOnly = (before: IslandChunk, after: IslandChunk): boolean =>
-  before.bytes === after.bytes &&
-  before.code !== after.code &&
-  literalsOf(before.code) === literalsOf(after.code);
+  before.code !== after.code && sameUpToRenaming(before.code, after.code);
 
 /**
  * One chunk against its rebuild: byte-identical, or identical up to `oven-sh/bun#40657`'s
- * renaming. The byte COUNT is asserted unconditionally either way — that is the number
- * `X_BUDGET_EXCEEDED` reads, and it is the one thing neither upstream flap is allowed to move.
+ * renaming. A byte count that moved is accepted ONLY as a rename's — the skeleton proves nothing
+ * but names changed, and a name is a few bytes a budget's headroom has to hold anyway.
  */
 function expectSameChunk(before: IslandChunk, after: IslandChunk): void {
-  expect(`${after.file} ${after.bytes}`).toBe(`${before.file} ${before.bytes}`);
-  if (after.url === before.url) return;
+  if (after.url === before.url && after.bytes === before.bytes) return;
   expect(renamedOnly(before, after), `${line(before)} -> ${line(after)}`).toBe(true);
 }
 
 const byFile = async (): Promise<ReadonlyMap<string, IslandChunk>> =>
   new Map((await buildIslands(APP_ROOT)).chunks.map((chunk) => [chunk.file, chunk]));
+
+/**
+ * The SECOND build, in a process of its own — and it has to be. `buildIslands` answers the FIRST
+ * code it emitted for an unchanged source graph for as long as the process lives (`stableCode` in
+ * `packages/cli/src/island-bundle.ts`, so one URL serves one byte string), which made a second
+ * in-process build hand back the first one's code: every "byte-identical" below compared a cached
+ * string to itself and proved nothing. Worse, its `bytes` is measured on the FRESH output while
+ * its `code` is the cached one, so a length-changing rename surfaced as two byte counts over one
+ * code — the CI failure this file was repaired for, undiagnosable from inside. A child process has
+ * no cache, which is also what two real builds are: two machines, two processes.
+ */
+async function byFileInChildProcess(): Promise<ReadonlyMap<string, IslandChunk>> {
+  const script =
+    "const { buildIslands } = await import('@ultimat3/cli');" +
+    `const built = await buildIslands(${JSON.stringify(APP_ROOT)});` +
+    'await Bun.write(Bun.stdout, JSON.stringify(built.chunks));';
+  const child = Bun.spawn(['bun', '-e', script], { cwd: APP_ROOT, stdout: 'pipe', stderr: 'pipe' });
+  const [out, err, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  if (code !== 0) expect.unreachable(`the second build exited ${code}:\n${err}`);
+  const chunks = JSON.parse(out) as readonly IslandChunk[];
+  return new Map(chunks.map((chunk) => [chunk.file, chunk]));
+}
 
 /** Both builds up front: `fixtureTest` takes no timeout, and a Babel pass is not a 5s budget. */
 let first: ReadonlyMap<string, IslandChunk> = new Map();
@@ -197,7 +355,7 @@ let reachable: ReadonlyMap<string, readonly string[]> = new Map();
 
 beforeAll(async () => {
   first = await byFile();
-  second = await byFile();
+  second = await byFileInChildProcess();
   reachable = new Map(
     await Promise.all(
       [...first.keys()].map(
@@ -258,18 +416,45 @@ test('no island is pure any more, so the discriminator below judges every one', 
   expect(pure).toEqual([]);
 });
 
-test('the rename tolerance is narrow: a moved literal or a moved byte count still fails', () => {
-  const chunk = (code: string, bytes: number): IslandChunk =>
-    ({ file: 'x.island.tsx', url: `/islands/x-${bytes}.js`, code, bytes }) as IslandChunk;
+test('the rename tolerance is narrow: only binding names may differ, whatever they cost', () => {
+  const chunk = (code: string): IslandChunk =>
+    ({
+      file: 'x.island.tsx',
+      url: `/islands/x-${code.length}.js`,
+      code,
+      bytes: code.length,
+    }) as IslandChunk;
 
-  // A rename: same length, same literals, different identifiers.
-  expect(renamedOnly(chunk('var dt=1,q="a"', 14), chunk('var at=1,q="a"', 14))).toBe(true);
+  // A rename at the same length — the flap as first reported.
+  expect(renamedOnly(chunk('var dt=1,q="a";f(dt)'), chunk('var at=1,q="a";f(at)'))).toBe(true);
+  // A rename that MOVES the byte count — CI run 35815786302's 19,858 → 19,857.
+  expect(renamedOnly(chunk('var dt=1,q="a";f(dt)'), chunk('var d=1,q="a";f(d)'))).toBe(true);
   // A literal moved — the shape a plugin change or a wrong `define` takes.
-  expect(renamedOnly(chunk('var dt=1,q="a"', 14), chunk('var at=1,q="b"', 14))).toBe(false);
-  // The byte count moved, which is what a budget reads and what neither upstream flap may touch.
-  expect(renamedOnly(chunk('var dt=1,q="a"', 14), chunk('var at=1,q="aa"', 15))).toBe(false);
+  expect(renamedOnly(chunk('var dt=1,q="a"'), chunk('var at=1,q="b"'))).toBe(false);
+  // A literal grew: the byte count moved and it is NOT a rename.
+  expect(renamedOnly(chunk('var dt=1,q="a"'), chunk('var at=1,q="aa"'))).toBe(false);
+  // An operator changed at the same length — names alone cannot explain it.
+  expect(renamedOnly(chunk('f(a+b)'), chunk('f(a-b)'))).toBe(false);
+  // A keyword changed: `var` to `let` is a different program, not a different name.
+  expect(renamedOnly(chunk('var a=1'), chunk('let a=1'))).toBe(false);
+  // A property name is not a binding — a minifier never renames one it cannot prove private.
+  expect(renamedOnly(chunk('a.foo(1)'), chunk('a.bar(1)'))).toBe(false);
+  // A statement dropped — a shaken module, or a plugin emitting less.
+  expect(renamedOnly(chunk('f(a);g(b)'), chunk('f(a)'))).toBe(false);
+  // A number changed.
+  expect(renamedOnly(chunk('f(1e3)'), chunk('f(1e4)'))).toBe(false);
+  // Two bindings merged into one name is not a rename — the program changed.
+  expect(renamedOnly(chunk('f(a,b)'), chunk('f(c,c)'))).toBe(false);
+  // Template text is literal; a name inside its `${…}` hole is a name.
+  expect(renamedOnly(chunk(`f(\`x \${ab} y\`)`), chunk(`f(\`x \${c} y\`)`))).toBe(true);
+  expect(renamedOnly(chunk(`f(\`x \${ab} y\`)`), chunk(`f(\`z \${ab} y\`)`))).toBe(false);
+  // A regular expression is literal too, words and all.
+  expect(renamedOnly(chunk('f(/abc/g,a)'), chunk('f(/abcd/g,b)'))).toBe(false);
+  expect(renamedOnly(chunk('f(/abc/g,a)'), chunk('f(/abc/g,bc)'))).toBe(true);
+  // Division is not a regular expression.
+  expect(renamedOnly(chunk('x=a/b/c'), chunk('x=d/e/f'))).toBe(true);
   // Byte-identical is not this branch's business; the caller returns before asking.
-  expect(renamedOnly(chunk('var dt=1', 8), chunk('var dt=1', 8))).toBe(false);
+  expect(renamedOnly(chunk('var dt=1'), chunk('var dt=1'))).toBe(false);
 });
 
 test('an island that reaches a side-effecting module differs by that module and by nothing else', () => {

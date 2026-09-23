@@ -55,7 +55,8 @@ describe('the sync worker entry', () => {
       target: { url: 'ws://node.test/_x/sync', buildId: 'b1' },
     });
     await until(() => FakeWebSocket.opened.length > 0);
-    expect(FakeWebSocket.opened.map((ws) => ws.url)).toEqual(['ws://node.test/_x/sync?build=b1']);
+    // By url, never by count: another engine alive in this process may dial the same fake global.
+    expect(FakeWebSocket.opened[0]?.url).toBe('ws://node.test/_x/sync?build=b1');
 
     FakeWebSocket.opened[0]?.onopen?.();
     await until(() => heard.some((message) => message.t === 'open'));

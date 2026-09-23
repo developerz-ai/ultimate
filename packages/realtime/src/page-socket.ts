@@ -8,7 +8,7 @@ import { LiveClient } from './client';
 import { peekOutbox } from './outbox-slot';
 import { SyncUnconfiguredError } from './page-errors';
 import { pageRealtime } from './page-store';
-import { openHost, type SocketHost } from './socket-host';
+import { openHost, type SocketHost, type SocketHostOptions } from './socket-host';
 import { pageSyncTarget, syncWorkerFromMeta } from './sync-meta';
 
 /** Get-or-create, and connect on creation. `hook` names the caller in the refusal. */
@@ -70,10 +70,21 @@ export function pageSocket(hook: string): LiveClient {
  */
 const teardowns = new Set<() => void>();
 
-/** For tests: unsubscribe, close and unseat every page socket built so far, so a case starts clean. */
-export function resetPageSocket(): void {
+/** Where a page socket gets its host. `openHost` in production; a test hands in its own. */
+let hosts: (options: SocketHostOptions) => SocketHost = openHost;
+
+/**
+ * For tests: unsubscribe, close and unseat every page socket built so far, so a case starts clean
+ * — and, optionally, build the next ones over `openHost` of the case's own. A case that counts
+ * dials through the real engine counts every engine alive in the process; one that counts HOSTS
+ * counts only what this module asked for, which is the one thing it owns.
+ */
+export function resetPageSocket(
+  options: { readonly openHost?: (options: SocketHostOptions) => SocketHost } = {},
+): void {
   for (const teardown of teardowns) teardown();
   teardowns.clear();
+  hosts = options.openHost ?? openHost;
 }
 
 /**
@@ -93,5 +104,5 @@ function hostFor(scope: string | null): SocketHost {
     typeof document === 'undefined' || typeof location === 'undefined'
       ? undefined
       : syncWorkerFromMeta(document, location.href);
-  return openHost({ workerUrl, scope });
+  return hosts({ workerUrl, scope });
 }

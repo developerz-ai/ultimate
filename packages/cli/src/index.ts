@@ -295,7 +295,7 @@ export {
 // `islandBundle`, `writeIslands`, `ISLAND_BASE_PATH` and `ISLAND_GLOB` stay internal: they are
 // `x build`'s and `x dev`'s wiring, and every name here is a semver promise forever.
 export type { IslandBundle, IslandChunk } from './island-bundle';
-export { buildIslands } from './island-bundle';
+export { buildIslands, clearIslandChunkCache } from './island-bundle';
 export type { DrainFailure, DrainOutcome, DrainSkip } from './jobs-drain';
 export { drainJobs } from './jobs-drain';
 export type { JobsListFilter, JobsListResult } from './jobs-report';
