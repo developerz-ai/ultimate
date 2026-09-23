@@ -23,6 +23,7 @@ manual edit. Plan 102's majors (`ai.mcp.path`, admin tool names, `AuditRecord.ac
 | j | `invokeAdminAction` drops the `expectedConfirmation` input (09 a derives it) | `packages/admin/src/action-gate.ts` | stop passing it | no |
 | k | drop the `x-cache-tags` header (02 k), if anything external reads it | `packages/http/src/response.ts:211` | read `Surrogate-Key`/`Cache-Tag` | no |
 | l | plan 102's four majors | plan 102 rows 3, 6, 7, 13 | per 102 | per 102 |
+| m | `realtime.transport`, `realtime.urlEnv` and `realtime.enabled` are read by nothing (`NATS_URL` alone decides); pinned SUSPECT in `config-reader-pins.ts:29-30,50-51` | `packages/core/src/config.ts:351` | wire them (`transport: 'nats'` requires `urlEnv`, boot refuses on mismatch) or delete them | **yes**: recommend wire, so the config states the topology 06 n checks |
 
 ## Steps
 1. Decide rows e, f, g and h first (record each in `status.yml` `notes`).
