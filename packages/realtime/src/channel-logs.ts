@@ -73,7 +73,7 @@ export class ChannelLogs {
     for (const update of updates) {
       const open = this.#byTopic.get(update.topic);
       if (open === undefined) continue;
-      const entry = open.ring.append(update.adopt, update.remove);
+      const entry = open.ring.append(update.adopt, update.remove, change.write);
       const frame = renderRecords(update.topic, open.ring.epoch, entry);
       frames += this.#sockets.deliverRecords(update.topic, open.ring.epoch, frame);
     }

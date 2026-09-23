@@ -110,6 +110,9 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
         // Deliberately not a clock read: the preload freezes `Date.now()`, and a change's commit
         // time is not something any assertion in this repo reads. `at` keeps it monotonic anyway.
         at,
+        // The keyed write it belongs to, read off the request scope — what the WAL decoder reads
+        // off the transaction's opening message — so a channel frame names it here as it would there.
+        ...(change.write === undefined ? {} : { write: change.write }),
       };
       enqueue(async () => {
         // Channels first, as the node does: a live query's fanout that throws must not also cost

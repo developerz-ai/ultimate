@@ -61,6 +61,12 @@ export function isTransientFailure(error: unknown): boolean {
   return isNetworkRejection(error);
 }
 
+/** Only a classification somebody declared — for work that already classified its own wire. */
+function isDeclaredTransient(error: unknown): boolean {
+  const declared = classifyThrown(error);
+  return declared !== undefined && declared !== 'terminal';
+}
+
 /**
  * A dispatch that never produced a response. `fetch` rejects with a plain `TypeError` when the
  * network is down, DNS fails or the connection drops mid-body — the one unclassified throw a
@@ -89,6 +95,13 @@ export interface FlightPlan<T> {
   run(signal: AbortSignal | undefined, attempt: number): Promise<T>;
   /** Overrides the flight's policy for this one call. */
   readonly retry?: ClientRetry | undefined;
+  /**
+   * `true` when `run` already turns every wire failure into a classified error, as
+   * `clientTransport` does. An UNclassified throw is then the caller's own — a hook's `TypeError`
+   * — and is never sent again, where the default would read it as a network rejection. A
+   * flight-wide `transient` still wins: that is the app's own answer.
+   */
+  readonly classified?: boolean | undefined;
 }
 
 export interface ClientFlightOptions {
@@ -151,6 +164,8 @@ export function createClientFlight(options: ClientFlightOptions = {}): ClientFli
         schedule(done, ms);
       }));
   const transient = options.transient ?? isTransientFailure;
+  const transientFor = (plan: FlightPlan<unknown>): ((error: unknown) => boolean) =>
+    plan.classified === true && options.transient === undefined ? isDeclaredTransient : transient;
   const deadlineMs = options.deadlineMs;
   const flights = createSingleFlight({ deadlineMs, schedule });
   const gate: FlightGate | undefined =
@@ -169,12 +184,13 @@ export function createClientFlight(options: ClientFlightOptions = {}): ClientFli
     // and a foreign `TypeError` again. The original value is rethrown below, unwrapped — wrapping
     // it would replace a code, a cause and a runnable `fix:` with the fact that something retried.
     let stopped: { readonly error: unknown } | undefined;
+    const sendAgain = transientFor(plan);
     const answer = await retry<T | typeof STOPPED>(
       async (count) => {
         try {
           return await plan.run(signal, count);
         } catch (error) {
-          if (transient(error)) throw error;
+          if (sendAgain(error)) throw error;
           stopped = { error };
           return STOPPED;
         }

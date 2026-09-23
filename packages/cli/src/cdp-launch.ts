@@ -103,16 +103,31 @@ const STDERR_TAIL_CHARS = 4_000;
  * stops answering mid-run for a reason no log shows. The tail is the launch-failure diagnostics:
  * a missing library, a sandbox refusal and a bad flag are all named there and nowhere else.
  */
-function stderrTail(stream: ReadableStream<Uint8Array>): () => string {
+function stderrTail(stream: ReadableStream<Uint8Array>): {
+  readonly text: () => string;
+  /** Settles once the stream has ended — every byte the process wrote has been read. */
+  readonly drained: Promise<void>;
+} {
   let text = '';
-  void (async () => {
+  const drained = (async () => {
     const decoder = new TextDecoder();
     for await (const chunk of stream) {
       text = (text + decoder.decode(chunk, { stream: true })).slice(-STDERR_TAIL_CHARS);
     }
   })().catch(() => undefined);
-  return () => text;
+  return { text: () => text, drained };
 }
+
+/**
+ * How long a browser that failed its first call gets to finish dying, and its stderr to finish
+ * draining, before the tail is read. The pipe ending and the stderr reader reaching the last line
+ * are two unordered events; read at the first, the reason a browser died was reported as "printed
+ * nothing". Bounded, because a WEDGED browser neither exits nor closes stderr.
+ */
+const FAILURE_DRAIN_MS = 1_000;
+
+const within = (ms: number, work: Promise<unknown>): Promise<unknown> =>
+  Promise.race([work, Bun.sleep(ms)]);
 
 /**
  * Start Chrome on a throwaway profile and answer once it has answered one CDP call. With a pipe
@@ -153,8 +168,10 @@ export async function launchChrome(options: LaunchOptions): Promise<LaunchedBrow
     await connection.send('Browser.getVersion');
     return { connection, close };
   } catch {
+    await within(FAILURE_DRAIN_MS, child.exited);
     close();
-    const seen = tail().trim();
+    await within(FAILURE_DRAIN_MS, tail.drained);
+    const seen = tail.text().trim();
     throw new CdpLaunchFailedError({
       executable: options.executable,
       detail:

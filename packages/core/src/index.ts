@@ -631,3 +631,9 @@ export {
   webhookSignature,
   webhookSigningString,
 } from './webhook-signature';
+/**
+ * A write's public name — the digest of its idempotency key — and the server scope that carries it
+ * from `@ultimat3/action`'s HTTP projection to the layers that stamp it on a `records` frame.
+ */
+export { isWriteDigest, WRITE_DIGEST_LENGTH, writeDigest } from './write-digest';
+export { currentWriteOrigin, WRITE_ORIGIN_WAL_PREFIX, withWriteOrigin } from './write-origin';

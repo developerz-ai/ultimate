@@ -149,12 +149,14 @@ const line = (chunk: IslandChunk): string => `${chunk.file} ${chunk.bytes} ${chu
 /**
  * JavaScript's reserved words — the tokens a minifier never renames, so they stay in the skeleton.
  * Only what the minifier GENERATES is masked; `var` turning into `let` is a different program.
+ * Not `get`/`set`: they are contextual, so a minifier may name a binding either one, and listing
+ * them here kept that binding in the skeleton while its twin in the other build was masked.
  */
 const RESERVED = new Set(
   (
     'await break case catch class const continue debugger default delete do else export extends ' +
     'false finally for function if import in instanceof let new null of return static super ' +
-    'switch this throw true try typeof undefined var void while with yield async get set'
+    'switch this throw true try typeof undefined var void while with yield async'
   ).split(' '),
 );
 
@@ -324,12 +326,12 @@ const byFile = async (): Promise<ReadonlyMap<string, IslandChunk>> =>
 
 /**
  * The SECOND build, in a process of its own — and it has to be. `buildIslands` answers the FIRST
- * code it emitted for an unchanged source graph for as long as the process lives (`stableCode` in
+ * code it emitted for an unchanged source graph for as long as the process lives (`stableChunk` in
  * `packages/cli/src/island-bundle.ts`, so one URL serves one byte string), which made a second
  * in-process build hand back the first one's code: every "byte-identical" below compared a cached
- * string to itself and proved nothing. Worse, its `bytes` is measured on the FRESH output while
- * its `code` is the cached one, so a length-changing rename surfaced as two byte counts over one
- * code — the CI failure this file was repaired for, undiagnosable from inside. A child process has
+ * string to itself and proved nothing. Worse, until `stableChunk` measured `bytes` on the served
+ * code, a length-changing rename surfaced as two byte counts over one code — the CI failure this
+ * file was repaired for, undiagnosable from inside. A child process has
  * no cache, which is also what two real builds are: two machines, two processes.
  */
 async function byFileInChildProcess(): Promise<ReadonlyMap<string, IslandChunk>> {
@@ -453,6 +455,11 @@ test('the rename tolerance is narrow: only binding names may differ, whatever th
   expect(renamedOnly(chunk('f(/abc/g,a)'), chunk('f(/abc/g,bc)'))).toBe(true);
   // Division is not a regular expression.
   expect(renamedOnly(chunk('x=a/b/c'), chunk('x=d/e/f'))).toBe(true);
+  // `get` and `set` are contextual, not reserved: a minifier may hand either to a binding, and
+  // that is still only a rename. An accessor's `get` stays the same word in both, so it maps to itself.
+  expect(renamedOnly(chunk('var dt=1;f(dt)'), chunk('var get=1;f(get)'))).toBe(true);
+  expect(renamedOnly(chunk('var set=1;f(set)'), chunk('var s=1;f(s)'))).toBe(true);
+  expect(renamedOnly(chunk('({get x(){return a}})'), chunk('({get x(){return b}})'))).toBe(true);
   // Byte-identical is not this branch's business; the caller returns before asking.
   expect(renamedOnly(chunk('var dt=1'), chunk('var dt=1'))).toBe(false);
 });

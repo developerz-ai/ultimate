@@ -1,8 +1,12 @@
 # The same image, once per role. This file IS the production topology: scale a role by scaling its
 # service, and nothing about the code changes.
 #
-#   IMAGE=ghcr.io/you/app:1.2.3 docker compose -f docker/docker-compose.prod.yml run --rm migrate
-#   IMAGE=ghcr.io/you/app:1.2.3 docker compose -f docker/docker-compose.prod.yml up -d web sync worker scheduler
+#   IMAGE=ghcr.io/you/app:1.2.3 docker compose --env-file .env.production -f docker/docker-compose.prod.yml run --rm migrate
+#   IMAGE=ghcr.io/you/app:1.2.3 docker compose --env-file .env.production -f docker/docker-compose.prod.yml up -d web sync worker scheduler
+#
+# Always with `--env-file .env.production`, before `-f`: Compose fills `${SYNC_URL:?…}` below from the
+# shell and `--env-file` only, NEVER from `env_file:`, so a value set only in that file reads as
+# missing and the parse fails. `x deploy` passes it on every step (packages/cli/src/cmd-deploy.ts).
 #
 # `IMAGE` must name an APP image and the commands above show it for that reason. The `Dockerfile`
 # beside this file builds the framework's CLI (`/app/x` and nothing else) and cannot serve any of

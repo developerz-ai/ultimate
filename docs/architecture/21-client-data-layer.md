@@ -5,10 +5,11 @@ realtime frame and offline replay in a browser passes through those three and la
 record, keyed `entity:id`. The store is the client **projection of `entity`** (axiom 2) — not a
 ninth primitive: writes stay `action` / `mutator`, reads stay `query`, channels stay realtime's.
 
-**Status, `As of 2026-09-22`:** the design is decided and ships as **21.0.0**; it is not in any
-release. In the tree: the tier-0 seam, the entity projection, the action/query envelope, and
-realtime's record store, `useRecord`, `useQuery` and `useMutation` over HTTP (slices 01–08).
-In progress: channels, cross-tab, offline (slices 09–12). Pending: `ui`, `cli`, the apps. Every table below carries a status column, and that
+**Status, `As of 2026-09-23`:** the design is decided and ships as **21.0.0**; it is not in any
+release. All seventeen slices are in the tree: the tier-0 seam, the entity projection, the
+action/query envelope, realtime's record store and hooks, channels, the shared socket, offline
+(persister, outbox, page boot), `ui` rendering core's `AsyncState`, the two guards as gate steps,
+and both tracked apps migrated. Every table below carries a status column, and that
 column is the only place this page claims something exists — re-derive it with `ls` on the path it
 names, never from the prose. The plan is
 `docs/plans/2026/09/22/101-one-client-store-and-transport/`. The app-author recipe (exact imports, one
@@ -44,9 +45,9 @@ island ─ useQuery / useRecord / useChannel            useMutation / action.cli
 
 | Seam | Home | Tier | Status |
 |---|---|---|---|
-| HTTP — `clientTransport`, record envelope, page handle, scope fence | `@ultimat3/core` | 0 | in tree, unreleased; no caller yet — `action` and `query` move onto it in slice 05 |
+| HTTP — `clientTransport`, record envelope, page handle, scope fence | `@ultimat3/core` | 0 | in tree, unreleased; `action`'s and `query`'s `client.ts` both call `clientTransport` |
 | record identity — brand, `recordProjection`, `rowsOf` | `@ultimat3/entity` | 2 | in tree, unreleased |
-| store, hooks, socket, persister, outbox | `@ultimat3/realtime` | 3 | in tree: `record-store.ts`, `page-store.ts`, `page-socket.ts`, `use-record.ts`, `use-query.ts`, `use-mutation.ts`. In progress: `use-channel.ts`, `record-persister.ts`, the worker host |
+| store, hooks, socket, persister, outbox | `@ultimat3/realtime` | 3 | in tree, unreleased: `record-store.ts`, `page-store.ts`, `page-socket.ts`, `use-record.ts`, `use-query.ts`, `use-mutation.ts`, `use-channel.ts`, `record-persister.ts`, `page-outbox.ts`, `socket-host.ts`, `sync-worker.ts` |
 | realtime install | `@ultimat3/cli` (`island-bundle.ts`, `island-realtime.ts`) | 5 | in tree, unreleased. No general bootstrap: it cost ~7.9 kB of core's error registry on a core-free island. Only an island whose **own** graph reaches `@ultimat3/realtime` is built from an entry that calls `installRealtime({ signal: createSignal })` first, +103 B on a fixture island (the measurement is in `island-bundle.ts`'s header). A package importing realtime on an island's behalf is not seen |
 
 **Why the seam is tier 0.** `action` and `query` (tier 3) must hand decoded records to a store
@@ -93,7 +94,7 @@ All exported by name from `@ultimat3/core`.
 |---|---|
 | used **only** when the response header `x-ultimate-records: 1` (`RECORDS_HEADER`) is set | an output with no entity rows stays byte-identical on the wire, so `contract-diff` does not move for it |
 | never declared on an `action`: the server derives it from the output schema (`rowsOf`, below) | axiom 2 — a `records:` option would be a second statement of what the schema already says |
-| an action's answer: decided once per action, at projection, from its output schema (`packages/action/src/record-wire.ts`, `carriesRecords`); its OpenAPI `200` becomes `{ data, records?, removed? }` plus the header | a body whose shape depended on one call's data would need two OpenAPI shapes for one operation |
+| an action's answer: decided once per action, at projection, from its output schema (`packages/action/src/record-wire.ts`, `carriesRecords`); its OpenAPI `200` becomes `{ data, records, removed? }` (`records` required, possibly empty; core's `recordEnvelopeSchema`) plus the header | a body whose shape depended on one call's data would need two OpenAPI shapes for one operation |
 | a query's answer: from `rows:` on `query()`, typed against the row `sql:` returns (`packages/query/src/query.ts`). A query whose `rows:` is branded **always** answers the envelope, even for zero rows, which is the action's rule (`record-answer.ts`) | `sql:` names its table as a string, so `rows:` is the only carrier of the schema. It carries the schema; it does not switch anything on |
 | schema-free: rows are validated by the sink owner, never here | the envelope is tier 0 and cannot know an entity's schema |
 | decoded onto null-prototype maps | a record type is server data, and `JSON.parse` mints `__proto__` as a real own key |
@@ -111,7 +112,7 @@ subscribers synchronously.
 | transport — read in flight | aborted; rejects `X_CLIENT_SCOPE_CHANGED`; adopts nothing | in tree, unreleased |
 | transport — write in flight | finishes and resolves; its records are **not** adopted | in tree, unreleased |
 | store | clears every record (`page-store.ts`, `onRescope`) | in tree, unreleased |
-| socket | redials, so the node decides the socket's principal again at the upgrade (`page-socket.ts`) | in tree, unreleased; the worker host is in progress (slice 11) |
+| socket | redials, so the node decides the socket's principal again at the upgrade (`page-socket.ts`) | in tree, unreleased; the worker host (`socket-host.ts`) names the worker by principal, so a new principal is a new worker |
 | persister and outbox | wipe the previous scope's rows **and queue** on an in-page `rescope()`; queued writes are lost, deliberately. A sign-out response first sends `Clear-Site-Data: "cache", "storage"` (`@ultimat3/auth`'s `signOutHeaders()`), which empties IndexedDB, local storage and the service worker in a secure context. The page boot's wipe of every other scope (`boot.ts`, `wipeOthers`) is the second line, for a sign-out that navigates without that response. Trade-off: a second tab signed in as another principal loses its disk copy and keeps its memory | in tree, unreleased (`record-persister.ts`, `page-outbox.ts`) |
 
 Subscribers run synchronously, once per real change, in registration order, before `rescope()`
@@ -171,6 +172,7 @@ the first realtime hook. Records answered earlier wait in core's pending buffer.
 | two layers | **synced** is server truth (HTTP envelopes, socket frames); the **overlay** is every pending optimistic write, replayed over synced truth on every change |
 | a write | `useMutation` pushes the twin into the overlay, POSTs the action, adopts the answer's records, then settles the overlay. Adopt comes first, so nothing flickers. Rows the answer did not carry keep their overlay until a server row arrives, capped at 10 s (`DEFAULT_AWAIT_SERVER_MS`). A refusal drops the overlay |
 | a server row that lands **during** an in-flight write | the store notes, per pending overlay, which of the rows it wrote the server has since reached (`#hear`; a row restored from disk does not count). When the HTTP answer arrives without those rows, they settle anyway instead of waiting for another frame. Only rows neither carried nor heard wait, capped at 10 s |
+| the write's own echo | a `records` frame names the write that produced it (`write`, the SHA-256 digest of its idempotency key, never the key). A frame naming a write still pending on this page settles that overlay against the frame's rows **in the same notification** as the merge (`settleWrite`, `record-names.ts`), so its twin is never replayed over truth that already holds it. Without this, a like replayed from the outbox painted `3` for one like until the answer landed. A frame naming another write, or none, is truth under the overlay. Rows the echo carried stop showing the twin (`OverlayEntry.confirmed`); rows it did not keep it. The server stamps it in process from `withWriteOrigin` (opened by `@ultimat3/action`'s HTTP projection from the `idempotency-key` header), and through the WAL from the `pg_logical_emit_message` the Postgres driver opens a keyed write's transaction with (`packages/entity/src/write-tag.ts`) |
 | the join race | a page renders, then joins a channel; a write in between reaches no one. So the first join with no cursor on a channel that carries records gets one `replay-gap`, and the client's catch-up read covers the window. A resubscribe with `since` replays from the ring instead |
 | a rejected row | not an object, or no key: dropped and reported as `X_RECORD_REJECTED`, never partially merged |
 | lifetime | reference-counted per record; the last release evicts it |
@@ -207,17 +209,17 @@ Decided 2026-09-22 and not reopened. Status per row.
 
 | Decision | Status |
 |---|---|
-| ships as major 21.0.0, with no compatibility shim for any removed surface — a deprecated second path is what axiom 1 forbids | in progress |
+| ships as major 21.0.0, with no compatibility shim for any removed surface — a deprecated second path is what axiom 1 forbids | in tree, unreleased: each removal is a `BREAKING —` entry under `CHANGELOG.md`'s `[Unreleased]` |
 | writes over HTTP only; the socket `mutate` / `rebase` path is deleted, not wired, and `ack` only answers a refusal | in tree, unreleased (sync protocol 3) |
 | the envelope is derived from the entity brand; no `records:` option | in tree, unreleased (a query names its row schema with `rows:`) |
 | `useQuery` is the one read hook; live-ness belongs to the query declaration; `useLive` and `liveHookFor` are deleted | in tree, unreleased. **But live-ness is restated on the browser-side ref** (`{ name, live, entity }`), not derived from the declaration (see Open items) |
 | channels carry `seq` + `epoch`; the **server** owns the gap verdict (`replay-gap`); a numeric hole is not a gap; the catch-up read is named on the channel declaration | in tree, unreleased: server `channel-gaps.ts`, client `client-channels.ts` (a cursor per channel, a `catchUp` re-read on `replay-gap` or a new epoch). `channel_replay_gaps_total` counts announcements. Not measured at scale |
-| one socket per origin, in a `SharedWorker` named by principal; an in-page `MessageChannel` host is the transparent fallback, running the same engine; the store stays per tab | in tree, unreleased: `socket-engine.ts` (per-port reference counts, frames routed only to ports that want the channel, a port reaped after `REAP_AFTER_BEATS = 3` silent beats), `socket-host.ts` (worker named by principal, in-page fallback, `bye` on `pagehide`), `sync-worker.ts`. Not yet exercised by a two-tab e2e |
+| one socket per origin, in a `SharedWorker` named by principal; an in-page `MessageChannel` host is the transparent fallback, running the same engine; the store stays per tab | in tree, unreleased: `socket-engine.ts` (per-port reference counts, frames routed only to ports that want the channel, a port reaped after `REAP_AFTER_BEATS = 3` silent beats), `socket-host.ts` (worker named by principal, in-page fallback, `bye` on `pagehide`), `sync-worker.ts`. Exercised by `examples/dummy/apps/web/e2e/two-tabs.e2e.test.ts` (two tabs, one socket; closing one costs the other zero reconnects; the in-page fallback with `SharedWorker` deleted), run by the reference app's `e2e` step |
 | the scope fence is in core: reads abort, writes finish but never adopt into the new scope | in tree, unreleased |
 | one conflict vocabulary, row-shaped, in core; `@ultimat3/action`'s output-shaped `custom()` is gone | in tree, unreleased — realtime's `ConflictLike`, `custom`, `CustomMerge`, `MergeArgs` and `ConflictStrategy` are gone; its rebase calls core's `resolveConflict`, and never calls a merge for a server delete or a row the client never held |
-| `AsyncState` lives in core; `@ultimat3/ui` takes hook accessors directly, with no adapter | moved; the ui half is pending (slice 13) |
+| `AsyncState` lives in core; `@ultimat3/ui` takes hook accessors directly, with no adapter | in tree, unreleased: `@ultimat3/ui` imports it from core (`AsyncRegion.tsx`, `DataTable.tsx`, `async-branch.ts`), and a hook's answer is passed as `state={feed()}` with no adapter |
 | offline is IndexedDB, `persist` per entity (default `false`), one outbox replayed over HTTP with idempotency keys; OPFS and `/_x/outbox/flush` are deleted | in tree, unreleased: `local-store-idb.ts`, `record-persister.ts` (restored before the socket connects, provisional until the first server row), `page-outbox.ts` (a write with no response at all, `meta.failure: 'network'`, is queued and `useMutation` resolves `undefined`; replay on socket up, `online` and the SW drain message). The outbox opens with the page's realtime state, right after the restore |
-| XHR stays only in `storage/upload-client.ts`, for progress events, as a declared seam; service-worker `fetch` is exempt by path | pending (slice 15) |
+| XHR stays only in `storage/upload-client.ts`, for progress events, as a declared seam; service-worker `fetch` is exempt by path | in tree, unreleased: the seams and the exemption are `scripts/browser-transport.ts`'s |
 
 **Why a `SharedWorker` and not a leader tab.** A Web Locks leader was considered and dropped: when
 the leader tab closes, every other tab reconnects. A worker lives as long as any tab of the origin
@@ -238,19 +240,11 @@ The framework decides this; no app owns a `sync-url.ts`. It is in tree and unrel
 
 ## What each hook costs
 
-Island chunk bytes, `bun build --target=browser --minify`, one entry importing one hook, `As of
-2026-09-22`. The **after** column is the figure the core agent reported once core's titles table left
-the browser path (`@ultimat3/core/page`). It is **not yet recorded** in `packages/realtime/CLAUDE.md`,
-which still shows the middle column. No test pins any of these; re-measure before quoting.
-
-| Import | Before the page boot moved out | Page boot moved (`realtime/CLAUDE.md`) | Titles table out (reported) |
-|---|---|---|---|
-| `useRecord` | 34,838 B | 19,404 B | **13.2 kB** |
-| `useMutation` | 37,073 B | 35,480 B | 29.9 kB |
-| `useChannel` | 62,155 B | 60,566 B | 54.6 kB |
-| `useQuery` | 64,183 B | 62,596 B | 56.6 kB |
-| `queryClient` from `@ultimat3/query/client` | — | 16,458 B (`query/CLAUDE.md`) | 10.2 kB |
-| `@ultimat3/realtime/boot`, once per page, cached `immutable` | — | 34,884 B | not re-reported |
+Island chunk bytes per hook are recorded in **one** place:
+[`packages/realtime/CLAUDE.md`](../../packages/realtime/CLAUDE.md), "Browser bytes, per hook", three
+columns from before the page boot moved out to after the light core entry. `queryClient` from
+`@ultimat3/query/client` is in [`packages/query/CLAUDE.md`](../../packages/query/CLAUDE.md). No test
+pins any of these; re-measure before quoting.
 
 **What a browser bundle gives up:** it imports `@ultimat3/core/page`, which carries no titles
 table, so an error thrown in it and rendered there shows the code's **name** as its title. The
@@ -277,13 +271,10 @@ with its own budget semantics — named here, not in 21.0.0.
 
 | Rule | Enforced by | Status |
 |---|---|---|
-| a browser `fetch(` call, `new WebSocket(`, `new XMLHttpRequest(`, `new EventSource(` outside its one seam file | `scripts/browser-transport.ts`: `X_BROWSER_TRANSPORT_BYPASS`, with `X_BROWSER_TRANSPORT_UNSCANNED` when the seam moved | written, standalone (`bun run browser-transport`), **not yet a gate step**. 1 finding `As of 2026-09-22`: `examples/dummy/apps/web/shared/live-socket.ts:19` |
-| a channel spelled as a string literal or a concatenation | `scripts/channel-literals.ts`: `X_CHANNEL_LITERAL`, with `X_CHANNEL_LITERAL_UNSCANNED` when the seam moved | written, standalone (`bun run channel-literals`), **not yet a gate step**. 1 finding `As of 2026-09-22`: `packages/realtime/src/sync-node.ts:290` |
+| a browser `fetch(` call, `new WebSocket(`, `new XMLHttpRequest(`, `new EventSource(` outside its one seam file | `scripts/browser-transport.ts` (`scripts/browser-transport.test.ts`, on the gate's `unit` step): `X_BROWSER_TRANSPORT_BYPASS`, with `X_BROWSER_TRANSPORT_UNSCANNED` when the seam moved | enforced, pinned at **zero**. Standalone: `bun run browser-transport` |
+| a channel spelled as a string literal or a concatenation | `scripts/channel-literals.ts` (`scripts/channel-literals.test.ts`, on the gate's `unit` step): `X_CHANNEL_LITERAL`, with `X_CHANNEL_LITERAL_UNSCANNED` when the seam moved | enforced, pinned at **zero**. Standalone: `bun run channel-literals` |
 | two island bundles resolve one page handle | `packages/core/src/record-sink.test.ts` | in tree |
-| `export type AsyncState` has one declaration | nothing — `rg "export type AsyncState" packages` is a manual check | unenforced |
-
-Until both guards are gate steps and read zero, "one seam" is a convention, and per axiom 3 a
-convention does not exist.
+| `AsyncState`'s status union has one declaration | `packages/core/src/async-state.test.ts` (a second union with two or more of its `status` arms in any `packages/*/src` file), and `scripts/render-modes.ts` (a union sharing three statuses with it, read off `async-state.ts`) | enforced |
 
 ## Open items
 

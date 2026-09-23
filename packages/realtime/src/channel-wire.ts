@@ -38,6 +38,13 @@ export interface ChannelRecordsFrame {
   readonly epoch: string;
   readonly adopt?: ChannelAdopt;
   readonly remove?: ChannelRemove;
+  /**
+   * The write that produced this change: `writeDigest` of the idempotency key its request carried
+   * (`@ultimat3/core`), never the key. Absent for a write no page keyed — a job, a script, SQL.
+   * The page whose pending write this names settles it against these rows in the same
+   * notification, so its own echo is never painted under its own optimistic twin.
+   */
+  readonly write?: string;
 }
 
 /** Ephemeral (typing, a cursor, a toast). No seq, never written to the store, never replayed. */

@@ -53,7 +53,10 @@ export interface DevServer {
   readonly url: string;
   readonly services: DevServices;
   readonly roles: readonly Role[];
-  /** The manifest as it stands now — a reload that registers a new route moves it. */
+  /**
+   * `BUILD_ID` when stamped — the id every response carries. Otherwise the manifest as it stands
+   * now, so a reload that registers a new route moves it.
+   */
   readonly buildId: string;
   /**
    * Modules that would not import, primitives that would not register, reloads that would not
@@ -151,8 +154,10 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   // divergence between the two is visible rather than silent, and a restart closes it.
   // `BUILD_ID` wins when set — `serve.ts`'s rule, so an e2e `deploy.newBuild()` can restart `x dev`
   // as a new build with the same sources.
-  const stamped = options.env['BUILD_ID'];
-  const buildId = stamped !== undefined && stamped !== '' ? stamped : state.manifest.buildId;
+  // Stamped, it is ALSO what `server.buildId` answers below: the process serves no other build.
+  const rawStamp = options.env['BUILD_ID'];
+  const stamped = rawStamp !== undefined && rawStamp !== '' ? rawStamp : undefined;
+  const buildId = stamped ?? state.manifest.buildId;
 
   let server: DevServer;
   // Read at request time, never captured at boot: `/_x/services` must report the reload counter
@@ -254,7 +259,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     roles: running.roles,
     mcp: mcpPath,
     get buildId(): string {
-      return state.manifest.buildId;
+      return stamped ?? state.manifest.buildId;
     },
     // A getter, not a snapshot: `/_x` and `--json` must show the reload that just failed and the
     // loop the last request tripped, not the findings as they were when the route table was built.

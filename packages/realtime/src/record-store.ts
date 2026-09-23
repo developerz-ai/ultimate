@@ -8,6 +8,7 @@ import { resolveConflict } from '@ultimat3/core/page';
 import { RebaseConflictError, RecordRejectedError } from './page-errors';
 import { ServerWait } from './record-await';
 import { isRow, type RecordKey, recordKey } from './record-key';
+import { WriteNames } from './record-names';
 import { SyncedLayer } from './record-synced';
 import { type OverlayEntry, replayOverlays, sameRow } from './record-tx';
 import type { Scheduler } from './thundering-herd';
@@ -42,6 +43,8 @@ export class RecordStore implements RecordSink {
   /** Synced keys moved in the open batch — what an overlay awaiting server truth is checked against. */
   readonly #moved = new Set<RecordKey>();
   readonly #wait: ServerWait;
+  /** Which pending overlay each write digest names — what a frame's `write` is looked up in. */
+  readonly #names = new WriteNames();
 
   constructor(options: RecordStoreOptions = {}) {
     this.#report = options.report ?? ((error) => console.error(error));
@@ -160,13 +163,14 @@ export class RecordStore implements RecordSink {
       this.#overlays.set(key, { key, apply, policy });
       this.#replay();
     });
+    this.#names.name(key, (named) => this.#overlays.has(named));
   }
 
   /** Take the write back — the server refused it. Everything behind it replays without it. */
   drop(key: string): void {
     this.#wait.forget(key);
     this.batch(() => {
-      if (this.#overlays.delete(key)) this.#replay();
+      if (this.#forget(key)) this.#replay();
     });
   }
 
@@ -196,11 +200,36 @@ export class RecordStore implements RecordSink {
           ? []
           : [...touched].filter((rk) => !carried.has(rk) && heard?.has(rk) !== true);
       if (missing.length > 0) {
+        // What the server did answer holds this write already: the twin stays on the rest only.
+        const answered = [...touched].filter((rk) => !missing.includes(rk));
+        if (answered.length > 0) {
+          const confirmed = new Set([...(entry.confirmed ?? []), ...answered]);
+          this.#overlays.set(key, { ...entry, confirmed });
+          this.#replay();
+        }
         this.#wait.start(key, new Set(missing), () => this.drop(key));
         return;
       }
-      this.#overlays.delete(key);
+      this.#forget(key);
       this.#replay();
+    });
+  }
+
+  /**
+   * A `records` frame's rows, merged in the OPEN batch, named the write `digest`. When that is a
+   * write this page still holds, it is settled here against the rows the frame carried — in the
+   * same notification as the merge, so no holder ever sees the write's own row with its twin
+   * replayed over it (a like counted twice). A digest this page never pushed, or one already
+   * settled, changes nothing: the rows are server truth under whatever is still pending.
+   */
+  settleWrite(digest: string, carried: ReadonlySet<RecordKey>): void {
+    const key = this.#names.keyOf(digest);
+    if (key === undefined || !this.#overlays.has(key)) return;
+    this.batch(() => {
+      // The view the settle resolves a custom policy against is the overlay over the NEW truth —
+      // what an HTTP answer's settle sees too, because its adopt closed a batch first.
+      if (this.#syncedMoved) this.#replay();
+      this.settle(key, carried);
     });
   }
 
@@ -226,6 +255,7 @@ export class RecordStore implements RecordSink {
       for (const rk of this.#view.keys()) this.#touch(rk);
       this.#synced.clear();
       this.#overlays.clear();
+      this.#names.clear();
       this.#wait.clear();
       this.#view = new Map();
       this.#touched = new Map();
@@ -249,7 +279,7 @@ export class RecordStore implements RecordSink {
           (rk) => this.#moved.has(rk) && !this.#synced.isProvisional(rk),
         );
         const answered = this.#wait.resolve((key) => this.#overlays.has(key), this.#moved);
-        for (const key of answered) this.#overlays.delete(key);
+        for (const key of answered) this.#forget(key);
         if (this.#overlays.size > 0 || answered.length > 0) this.#replay();
       }
       this.#moved.clear();
@@ -297,7 +327,7 @@ export class RecordStore implements RecordSink {
       (error) => this.#report(error),
     );
     for (const failed of result.failed) {
-      this.#overlays.delete(failed);
+      this.#forget(failed);
       this.#wait.unhear(failed);
     }
     const next = new Map<RecordKey, Row | null>();
@@ -310,6 +340,12 @@ export class RecordStore implements RecordSink {
     for (const rk of previous.keys()) if (!next.has(rk)) this.#touch(rk);
     this.#view = next;
     this.#touched = result.touched;
+  }
+
+  /** The one way an overlay leaves: its entry and the digest that named it go together. */
+  #forget(key: string): boolean {
+    this.#names.forget(key);
+    return this.#overlays.delete(key);
   }
 
   #touchSynced(rk: RecordKey): void {

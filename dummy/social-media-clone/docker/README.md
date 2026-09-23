@@ -26,9 +26,13 @@ docker run -p 3000:3000 -e DATABASE_URL=postgres://... social-media-clone:dev
 ## One box, every role
 
 ```sh
-docker compose -f docker/docker-compose.prod.yml up -d      # db → migrate → the rest
+docker compose --env-file .env.production -f docker/docker-compose.prod.yml up -d   # db → migrate → the rest
 x deploy --image social-media-clone:dev --dry-run --json           # the same plan, printed
 ```
+
+`--env-file .env.production` is not optional: Compose fills `${SYNC_URL:?…}` and
+`${POSTGRES_PASSWORD:?…}` from the shell and `--env-file` only, never from `env_file:`, so without it
+a value set in `.env.production` reads as missing and the parse fails. `x deploy` passes it on every step.
 
 ## The other two build targets
 

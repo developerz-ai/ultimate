@@ -56,14 +56,32 @@ export const feedStates = defineIslandStates({
       id: 'long-labels',
       title: 'the same four notices in a locale whose words for them are much longer',
       note: 'you cannot reach this by clicking: it needs a locale this app was not written in',
+      // Every label, not only the notices: a spread of BASE's would photograph an English control
+      // under a Romanian claim, and the row's plural is picked by `ro`'s own CLDR categories.
       props: {
         ...BASE,
+        locale: 'ro',
         labels: {
-          ...BASE.labels,
           empty: 'Nu a fost publicată încă nicio postare în această organizație.',
           offline:
             'Sunteți offline — acesta este exemplarul aflat pe acest dispozitiv, nu cel de pe server.',
+          likes: {
+            locale: 'ro',
+            forms: {
+              one: '{count} apreciere',
+              few: '{count} aprecieri',
+              other: '{count} de aprecieri',
+            },
+          },
+          like: 'Apreciază',
           queued: 'Sunteți offline — aprecierea va fi trimisă când conexiunea revine.',
+          update: 'O versiune nouă a aplicației este pregătită pentru a fi încărcată.',
+          reload: 'Reîncarcă pagina',
+        },
+        ui: {
+          'ui.empty': 'Nu există încă nimic aici',
+          'ui.error.title': 'Ceva nu a funcționat',
+          'ui.retry': 'Încearcă din nou',
         },
       },
     },

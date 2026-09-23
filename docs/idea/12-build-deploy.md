@@ -60,7 +60,7 @@ Roles split, each scaled independently. Same image everywhere. `x new` writes an
 # docker/docker-compose.prod.yml
 x-app: &app
   image: myapp:${BUILD_ID}
-  env_file: .env.prod
+  env_file: [../.env.production]
   restart: unless-stopped
 
 services:

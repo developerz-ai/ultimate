@@ -11,6 +11,7 @@ import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagBool, flagString } from './parse';
 import { quoteArg } from './shell-quote';
+import { PROD_ENV_FILE } from './templates/scaffold-container';
 
 /**
  * Ordered, and the order is the design. `migrate` GATES — it runs to completion before anything
@@ -146,6 +147,12 @@ export function planDeploy(image: string, method: DeployMethod, root: string): D
       command: [
         'docker',
         'compose',
+        // Compose interpolates `${SYNC_URL:?…}` and `${POSTGRES_PASSWORD:?…}` from the shell and
+        // `--env-file` only — never from a service's `env_file:`. Without this an operator who put
+        // them in `.env.production`, the one file the compose file tells them to fill, had every
+        // step die on a parse error. Global flag, so it precedes `-f`; the shell still wins over it.
+        '--env-file',
+        join(root, PROD_ENV_FILE),
         '-f',
         join(root, 'docker', 'docker-compose.prod.yml'),
         ONE_SHOT_ROLES.includes(role) ? 'run' : 'up',

@@ -171,15 +171,18 @@ bunx x deploy --image myapp:dev --dry-run
 ```
 
 ```text
-  migrate    docker compose -f …/docker/docker-compose.prod.yml run --rm migrate
-  web        docker compose -f …/docker/docker-compose.prod.yml up -d web
-  sync       docker compose -f …/docker/docker-compose.prod.yml up -d sync
-  worker     docker compose -f …/docker/docker-compose.prod.yml up -d worker
-  scheduler  docker compose -f …/docker/docker-compose.prod.yml up -d scheduler
-✓ containers only: 1 image, roles migrate,web,sync,worker,scheduler
+  migrate    IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml run --rm migrate
+  web        IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml up -d web
+  sync       IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml up -d sync
+  worker     IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml up -d worker
+  scheduler  IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml up -d scheduler
+  backfill   IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml run --rm backfill
+✓ containers only: 1 image, roles migrate,web,sync,worker,scheduler,backfill
 ```
 
-Migrate to completion, then the serving roles. `--dry-run` prints the plan and runs nothing.
+Migrate to completion, then the serving roles, then the one-shot `backfill`. `--dry-run` prints the plan and runs nothing. `…` is the app root, printed absolute.
+
+**`--env-file` is what fills the `${VAR:?…}` guards.** Compose interpolates `SYNC_URL` and `POSTGRES_PASSWORD` from the shell and `--env-file` only, never from a service's `env_file:`. So both go in `.env.production`, and every step reads that file. A variable set in the shell still wins over it.
 
 **One replica each for `web` and `sync`, and the file says so** `As of 2026-08`. Both publish a host port, one host port has exactly one binder, so both are `replicas: 1`. Leave them there — this tutorial's rung is one box. `worker` publishes no port and scales freely, so `deploy: { replicas: 4 }` on it is the knob you actually have here.
 

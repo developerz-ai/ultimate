@@ -127,6 +127,30 @@ describe('retry, on the framework executor', () => {
     expect(await flight.run(plan)).toBe('rows');
     expect(plan.calls()).toBe(2);
   });
+
+  // `clientTransport` classifies its own wire failures, so a bare TypeError reaching the flight
+  // is a caller hook's bug — and was re-sent, as a network rejection, until the attempts ran out.
+  test('a classified plan never sends a bare TypeError again', async () => {
+    const bug = new TypeError('a hook broke');
+    const plan = { ...flaky(1, () => bug), classified: true };
+    const flight = createClientFlight({ retry: { attempts: 3 }, sleep: recordedSleep().sleep });
+
+    expect(await flight.run(plan).catch((caught: unknown) => caught)).toBe(bug);
+    expect(plan.calls()).toBe(1);
+  });
+
+  test("on a classified plan, the app's own predicate still decides", async () => {
+    const plan = { ...flaky(1, () => new TypeError('foreign')), classified: true };
+    const flight = createClientFlight({
+      retry: { attempts: 2 },
+      sleep: recordedSleep().sleep,
+      random: () => 0,
+      transient: () => true,
+    });
+
+    expect(await flight.run(plan)).toBe('rows');
+    expect(plan.calls()).toBe(2);
+  });
 });
 
 describe('the deadline', () => {

@@ -98,10 +98,23 @@ const subscribeFrame = (): Extract<Frame, { type: 'subscribe' }> | undefined => 
 
 let mounted: MountedIsland;
 
-/** Every POST the island made. The network is gone: each one fails the way a browser's does. */
-const posted: string[] = [];
-const offlineFetch = (url: string | URL | Request): Promise<Response> => {
-  posted.push(String(url));
+/** One request the island made, as the wire would have carried it. */
+interface Call {
+  readonly url: string;
+  readonly method: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: unknown;
+}
+
+/** Every request the island made. The network is gone: each one fails the way a browser's does. */
+const calls: Call[] = [];
+const offlineFetch = (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  calls.push({
+    url: String(url),
+    method: init?.method ?? 'GET',
+    headers: Object.fromEntries(new Headers(init?.headers).entries()),
+    body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+  });
   return Promise.reject(new TypeError('Failed to fetch'));
 };
 
@@ -228,12 +241,26 @@ describe('the feed island', () => {
     await settle();
     await settle();
 
-    expect(posted.some((url) => url.endsWith('/api/posts/like'))).toBe(true);
+    // The attempt the network refused: the FIRST row's like, under an idempotency key.
+    const attempts = calls.filter((call) => call.url.endsWith('/api/posts/like'));
+    expect(attempts).toHaveLength(1);
+    const post = attempts[0];
+    expect(post?.method).toBe('POST');
+    expect(post?.headers['idempotency-key']).toMatch(/^likePost:/);
+    expect(post?.body).toEqual({ postId: 'p1', orgId: ORG_ID });
     expect(mounted.text('[data-role="queued"]')).toBe(PROPS.labels.queued);
-    // And it IS the boot's outbox that holds it — the notice is a statement about that queue.
+    // And it IS the boot's outbox that holds it — the notice is a statement about that queue —
+    // queued under the key the attempt used, so its replay is the same write, never a second one.
     const outbox = pageOutbox();
     await outbox.ready;
     expect(outbox.size).toBe(1);
+    expect(outbox.pending()).toEqual([
+      {
+        key: post?.headers['idempotency-key'] ?? '',
+        name: 'likePost',
+        input: { postId: 'p1', orgId: ORG_ID },
+      },
+    ]);
   });
 
   test('a result set the node empties is the empty state, not a stuck spinner', async () => {

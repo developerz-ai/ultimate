@@ -4,6 +4,7 @@
 
 import { type PresenceEvent, readPresence } from './channel-presence';
 import type { JsonObject } from './json';
+import { carriedBy, type RecordKey } from './record-key';
 import type { RecordStore } from './record-store';
 import type {
   ChannelEventsFrame,
@@ -206,6 +207,13 @@ export class ChannelBook {
     store.batch(() => {
       for (const [type, rows] of Object.entries(frame.adopt ?? {})) store.adopt(type, rows);
       for (const [type, keys] of Object.entries(frame.remove ?? {})) store.remove(type, keys);
+      // This page's own write, echoed: settled in the same batch as its rows, so its twin is
+      // never replayed over the truth that already holds it.
+      if (frame.write !== undefined) {
+        const carried = new Set<RecordKey>();
+        carriedBy({ records: frame.adopt ?? {}, removed: frame.remove ?? {} }, carried);
+        store.settleWrite(frame.write, carried);
+      }
     });
     entry.above.add(frame.seq);
     let next = contiguous;

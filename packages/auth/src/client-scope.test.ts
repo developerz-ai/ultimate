@@ -62,4 +62,23 @@ describe('clientScopeOf', () => {
     expect(first).toMatch(/^[0-9a-f]{32}$/);
     expect(clientScopeOf(actor, { env: {} })).toBe(first);
   });
+
+  // The floor guarded only the env path: `{ secret: 'x' }` keyed every page's scope with one
+  // character. An explicit secret is a caller's value, so it is refused rather than replaced.
+  test('an explicit secret under the SESSION_SECRET floor is refused, never used', () => {
+    const thrown = (() => {
+      try {
+        return clientScopeOf(userActor({ id: 'alice' }), { secret: 'x'.repeat(31) });
+      } catch (error) {
+        return error;
+      }
+    })();
+
+    expect(thrown).toBeUltimateError('X_CONFIG_INVALID');
+    expect((thrown as { cause: string }).cause).toContain('31 characters');
+  });
+
+  test('the anonymous page needs no key, so a short secret cannot refuse it', () => {
+    expect(clientScopeOf(anonymousActor(), { secret: 'x' })).toBe('');
+  });
 });

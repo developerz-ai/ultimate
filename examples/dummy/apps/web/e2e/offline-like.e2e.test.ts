@@ -1,7 +1,8 @@
 /**
  * e2e — plan 101, done-when #6 and decision 11: a like taken OFFLINE shows at once, survives a
  * reload (IndexedDB, not memory), and on reconnect is replayed over HTTP exactly once — the server
- * ends at one like, not two — with no flicker back to the old count on the way.
+ * ends at one like, not two — with no flicker on the way: not back to the old count, and not up to
+ * a double count when the replayed write's own `records` frame beats its HTTP answer.
  *
  * Kenji on "Nadie formatea…" (Acme, 1 like in the seed — ada's). Not mara on the Tinta post, which
  * `postById`'s policy answers 403 for, measured 2026-09-22. Every count the page ever
@@ -64,6 +65,12 @@ describe.skipIf(noBrowser)('a like taken offline', () => {
 
   test('shows at once, survives a reload, replays once, and never flickers back', async () => {
     const { session } = browser;
+    const history = async (): Promise<string[]> => {
+      const seen = await tab.evaluate(`JSON.parse(sessionStorage.getItem('${SEEN}') || '[]')`);
+      if (!Array.isArray(seen)) return expect.unreachable('the recorder kept no history');
+      return seen.map(String);
+    };
+    const allTwo = (entry: string): boolean => entry.split(',').every((n) => n === '2');
     await tab.waitFor(
       everyCount(POSTS.timezones.id, 1),
       'the post to render with its one seeded like',
@@ -81,12 +88,14 @@ describe.skipIf(noBrowser)('a like taken offline', () => {
       'the optimistic like to show while offline',
     );
 
+    const reloadedAt = (await history()).length;
     await tab.reload();
     await tab.waitFor(
       everyCount(POSTS.timezones.id, 2),
       'the like to survive a reload from IndexedDB',
     );
 
+    const reconnectedAt = (await history()).length;
     const mark = session.requests().length;
     await session.offline(false);
     await until(
@@ -97,18 +106,18 @@ describe.skipIf(noBrowser)('a like taken offline', () => {
     // Replayed ONCE: one write reached the wire from any realm — page, worker or service worker.
     expect(requestsSince(session, app.base, mark, /^POST .*\/api\/posts\/like/)).toHaveLength(1);
     expect(await serverLikeCount(app, 'kenji', 'timezones')).toBe(2);
-    // No flicker: once 2 was painted, nothing painted 1 again — before the reload, after it, or
-    // when the server's answer replaced the optimistic row.
-    const seen = await tab.evaluate(`JSON.parse(sessionStorage.getItem('${SEEN}') || '[]')`);
-    if (!Array.isArray(seen)) return expect.unreachable('the recorder kept no history');
-    const firstLiked = seen.findIndex((entry) =>
-      String(entry)
-        .split(',')
-        .every((n) => n === '1'),
-    );
+    const seen = await history();
+    // No flicker while offline: from the like's first paint to the reload, every paint reads 2.
+    const firstLiked = seen.findIndex(allTwo);
     expect(firstLiked).toBeGreaterThan(-1);
-    expect(
-      seen.slice(firstLiked).filter((entry) => String(entry).split(',').includes('0')),
-    ).toEqual([]);
+    expect(seen.slice(firstLiked, reloadedAt).filter((entry) => !allTwo(entry))).toEqual([]);
+    // The reload's first paint (SSR/SW-cached HTML shows 1 until IndexedDB adopts 2) is not
+    // asserted: tracked follow-up #506.
+    // No flicker on reconnect: from the last all-2 paint before the socket came back, nothing but
+    // 2 — not the seed's 1, and not 3, which is the replayed like's own frame painted under its
+    // still-pending twin (the write counted twice) until the HTTP answer settled it.
+    const settled = seen.slice(0, reconnectedAt).findLastIndex(allTwo);
+    expect(settled).toBeGreaterThan(-1);
+    expect(seen.slice(settled).filter((entry) => !allTwo(entry))).toEqual([]);
   }, 90_000);
 });

@@ -12,6 +12,9 @@
 //     posts `likePost` over HTTP with an idempotency key — the socket carries no writes;
 //   - a `records` frame from the channel (another tab's like) moves the count with no refetch;
 //   - a refused write takes its overlay back, and the count returns to the server's.
+//
+// Each case after the first rides the session's one mount and socket, but the rollback case seeds
+// the record it asserts against, so no case depends on another case's server ANSWERS.
 
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
@@ -207,17 +210,40 @@ describe('the like island', () => {
   });
 
   test('a refused write takes its overlay back', async () => {
-    // The member's own like is already counted (`likedByMe` is not on the record), so the twin
-    // moves the count by one again and the refusal must take exactly that back.
-    likeAnswer = () =>
-      Response.json(
-        { code: 'X_FORBIDDEN', cause: 'denied', fix: 'x policy explain --json' },
-        { status: 403, headers: { 'content-type': 'application/problem+json' } },
-      );
+    // Seeded here, not inherited: the server's record says 7, whatever the cases above answered,
+    // so this case asserts against a number it set itself and runs alone (`-t 'refused'`).
+    opened[0]?.deliver({
+      type: 'records',
+      v: PROTOCOL_VERSION,
+      channel: `org-posts.${ORG_ID}`,
+      seq: 2,
+      epoch: 'e1',
+      adopt: { posts: { [POST_ID]: row(7) } },
+    });
+    await settle();
+    expect(count()).toBe('7 likes');
+
+    let refuse!: () => void;
+    const refused = new Promise<Response>((resolve) => {
+      refuse = () =>
+        resolve(
+          Response.json(
+            { code: 'X_FORBIDDEN', cause: 'denied', fix: 'x policy explain --json' },
+            { status: 403, headers: { 'content-type': 'application/problem+json' } },
+          ),
+        );
+    });
+    likeAnswer = () => refused;
     mounted.fire('button', 'click');
+    await settle();
+    // The twin is on screen while the write is in flight — without this, "never applied" and
+    // "taken back" would both read as 7 below.
+    expect(count()).toBe('8 likes');
+
+    refuse();
     await settle();
     await settle();
 
-    expect(count()).toBe('4 likes');
+    expect(count()).toBe('7 likes');
   });
 });

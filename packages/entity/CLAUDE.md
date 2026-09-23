@@ -1200,7 +1200,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `jit-preload.ts` | a page's foreign key values → one `in` statement for the whole `for … of` loop |
 | `preload.ts` | the relation `preload()` names → one related-rows statement → attached to the page |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is three columns) |
-| `row-observer.ts` | `setRowObserver` — committed row changes, above the driver, for a change feed that has no log to read |
+| `row-observer.ts` | `setRowObserver` — committed row changes, above the driver, for a change feed that has no log to read. A change made inside a keyed request carries `write` (`currentWriteOrigin()`) |
+| `write-tag.ts` | a keyed request's write names itself in the WAL: `pg_logical_emit_message(true, WRITE_ORIGIN_WAL_PREFIX, digest)` opens its transaction, once per transaction; a write outside one gets a transaction of its own; a role that may not execute it is probed once and its writes go out untagged; a pinned repository is never wrapped |
 | `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
 | `relations.ts` | `relationMap()`/`relationsFor()`/`relationNamed()` — the FKs as a named `belongsTo`/`hasMany` map |
 | `n-plus-one.ts` | a repeated statement → the error whose `fix` is the preload or bulk call that ends it |

@@ -98,12 +98,12 @@ describe('launchChrome', () => {
   /** Answer the launcher's first call over the pipe: read one NUL-ended message, reply to id 1. */
   const ANSWER = `read -r -d '' _ <&3\nprintf '{"id":1,"result":{"product":"Fake"}}\\0' >&4\n`;
 
-  test('is ready once the browser answers over its pipe, and drains a chatty stderr first', async () => {
+  test('is ready once the browser answers over its pipe, after 16 MB of stderr', async () => {
     // 16 MB of stderr BEFORE the answer: a launcher that read stderr only until some line, then
-    // stopped, stalled here on every run (measured when the endpoint was read off stderr). It does
-    // NOT prove the drain on its own — a launcher that never touches stderr also passes, because
-    // Bun buffers an unread pipe itself; the drain is kept because the tail is the diagnostics the
-    // next test asserts.
+    // stopped, stalled here on every run (measured when the endpoint was read off stderr). Named
+    // for what it proves — readiness past a chatty stderr — and NOT for the drain: a launcher that
+    // never touches stderr also passes, because Bun buffers an unread pipe itself. The drain is
+    // asserted by the two cause tests below, which read the tail it keeps.
     const { fake, dir } = await fakeBrowser(
       `head -c 16777216 /dev/zero | tr '\\0' 'x' >&2\n${ANSWER}sleep 5\n`,
     );
@@ -118,6 +118,42 @@ describe('launchChrome', () => {
   test('a browser that dies before answering is X_CDP_LAUNCH_FAILED quoting its own stderr', async () => {
     const { fake, dir } = await fakeBrowser(
       `echo 'error while loading shared libraries: libnss3.so' >&2\nexit 127\n`,
+    );
+    try {
+      const error = await launchChrome({ executable: fake, timeoutMs: 5_000 }).catch(
+        (e: unknown) => e,
+      );
+      expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
+      expect((error as { cause: string }).cause).toContain('libnss3.so');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A browser that neither answers nor prints nor exits — a GUI prompt, a wedged process. The
+  // per-call deadline is what ends it; no read of stderr or of the pipe is ever waited on.
+  test('a browser that hangs in silence is X_CDP_LAUNCH_FAILED once the deadline passes', async () => {
+    const { fake, dir } = await fakeBrowser('exec sleep 30\n');
+    try {
+      const started = performance.now();
+      const error = await launchChrome({ executable: fake, timeoutMs: 300 }).catch(
+        (e: unknown) => e,
+      );
+      expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
+      expect((error as { cause: string }).cause).toContain('printed nothing');
+      // The deadline plus the bounded exit/drain grace, never the process's 30 s.
+      expect(performance.now() - started).toBeLessThan(5_000);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The launcher read the tail the moment the pipe ended, and nothing ordered the stderr reader
+  // before that: a browser whose reply pipe closes before its last stderr line lands was reported
+  // as "printed nothing". Forced here by closing the pipe FIRST and writing the reason after.
+  test('the stderr a dying browser writes after its pipe closes still reaches the cause', async () => {
+    const { fake, dir } = await fakeBrowser(
+      `exec 4>&-\nsleep 0.3\necho 'error while loading shared libraries: libnss3.so' >&2\nexit 127\n`,
     );
     try {
       const error = await launchChrome({ executable: fake, timeoutMs: 5_000 }).catch(

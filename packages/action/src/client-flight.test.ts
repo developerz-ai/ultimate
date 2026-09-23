@@ -162,4 +162,29 @@ describe('a retried mutation needs an idempotency key', () => {
     // The flight declared no policy either, so the shipped default stands: one attempt.
     expect(calls).toBe(1);
   });
+
+  // `callOptions.retry ?? ONCE` read the CALL's policy or nothing, so a keyed call never saw the
+  // policy the operator declared on the flight — `createClientFlight({ retry })` was dead for writes.
+  test('with a key and no per-call retry, the flight`s own policy stands', async () => {
+    let calls = 0;
+    const fetchStub: FetchLike = () => {
+      calls += 1;
+      return Promise.resolve(
+        calls < 3 ? new Response('gateway', { status: 503 }) : Response.json(OK),
+      );
+    };
+    const clock = recordedSleep();
+    const flight = createClientFlight({
+      principal: () => 'alice',
+      retry: { attempts: 3 },
+      sleep: clock.sleep,
+      random: () => 0.5,
+    });
+    const api = rpc<typeof actions>({ baseUrl: 'https://app.test', fetch: fetchStub, flight });
+
+    const answer = await api.publishPost({ postId: POST_ID }, { idempotencyKey: 'charge-1' });
+
+    expect(answer).toEqual(OK);
+    expect(calls).toBe(3);
+  });
 });

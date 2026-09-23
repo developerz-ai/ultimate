@@ -25,6 +25,8 @@ import type { RecordEnvelope } from './record-envelope';
 import { decodeRecordEnvelope } from './record-envelope';
 import { pageClient, recordSink } from './record-sink';
 
+const ONCE = { attempts: 1 } as const;
+
 export async function clientTransport<T = unknown>(req: TransportRequest): Promise<T> {
   const read = req.method === 'GET';
   const issued = pageClient().scope.epoch;
@@ -37,8 +39,13 @@ export async function clientTransport<T = unknown>(req: TransportRequest): Promi
           // server's replay, and sharing one dispatch would hide the second intent from it.
           key: read ? flight.keyFor(req.url, { signal: req.signal, fresh: req.fresh }) : undefined,
           abortable: read,
-          retry: req.retry,
+          // A stream is read once, so a second attempt re-sends a body that is already spent —
+          // and fails as the network would, until the attempts run out. One attempt, always.
+          retry: req.rawBody instanceof ReadableStream ? ONCE : req.retry,
           run: (signal) => dispatch(req, read, issued, signal),
+          // `dispatch` makes every wire failure `X_CLIENT_TRANSPORT_FAILED`; a bare throw that
+          // reaches the flight is a caller hook's, never the network's.
+          classified: true,
         });
   const current = pageClient().scope.epoch;
   // A read that raced the abort still belongs to the previous principal.

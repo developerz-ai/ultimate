@@ -63,6 +63,8 @@ const expectedPreview = (locale: string, zone: string): string =>
 
 interface FetchCall {
   readonly url: string;
+  readonly method: string;
+  readonly headers: Readonly<Record<string, string>>;
   readonly body: Record<string, unknown>;
 }
 
@@ -97,8 +99,14 @@ beforeAll(async () => {
     globals: {
       // A real `Response`, because the typed client reads status, headers and body the way a
       // browser's `fetch` hands them over — a `{ ok }` stub is not what production answers.
-      fetch: (url: string, init: { body: string }): Promise<Response> => {
-        calls.push({ url, body: JSON.parse(init.body) as Record<string, unknown> });
+      fetch: (url: string, init: RequestInit): Promise<Response> => {
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          headers: Object.fromEntries(new Headers(init.headers).entries()),
+          body:
+            typeof init.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {},
+        });
         return Promise.resolve(
           ok
             ? Response.json({ id: 'm1' })
@@ -174,6 +182,10 @@ describe('the settings island', () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe(ENDPOINT);
+    // A write, and one the server can parse: a GET or a body with no JSON type would never reach
+    // the action, and the stub above would answer it all the same.
+    expect(calls[0]?.method).toBe('POST');
+    expect(calls[0]?.headers['content-type']).toStartWith('application/json');
     // The values the three changes above left behind, not the props the island booted with.
     expect(calls[0]?.body).toEqual({
       locale: 'es',

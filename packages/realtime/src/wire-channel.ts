@@ -2,7 +2,7 @@
 // never does, `replay-gap` is the node's verdict that a socket lost a `records` frame. Held to the
 // same ceilings as every other kind — a `records` frame is rows a socket could otherwise size.
 
-import type { Row } from '@ultimat3/core/page';
+import { isWriteDigest, type Row, WRITE_DIGEST_LENGTH } from '@ultimat3/core/page';
 import type {
   ChannelAdopt,
   ChannelEventsFrame,
@@ -26,10 +26,15 @@ export function records(parsed: JsonObject): ChannelRecordsFrame {
   } as const;
   const adopt = parsed['adopt'] === undefined ? undefined : adoptOf(parsed['adopt']);
   const remove = parsed['remove'] === undefined ? undefined : removeOf(parsed['remove']);
+  const write = parsed['write'];
+  if (write !== undefined && !isWriteDigest(write)) {
+    throw fail(`records.write must be a ${WRITE_DIGEST_LENGTH}-character lowercase hex digest`);
+  }
   return {
     ...base,
     ...(adopt === undefined ? {} : { adopt }),
     ...(remove === undefined ? {} : { remove }),
+    ...(write === undefined ? {} : { write }),
   };
 }
 

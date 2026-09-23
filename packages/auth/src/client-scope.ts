@@ -5,6 +5,7 @@
 
 import type { Actor } from '@ultimat3/core';
 import { logger } from '@ultimat3/core';
+import { clientScopeSecretShort } from './errors';
 
 /** 128 bits: a scope only has to differ between principals, never to authenticate anyone. */
 const SCOPE_HEX_CHARS = 32;
@@ -41,7 +42,14 @@ export function clientScopeOf(actor: Actor, options: ClientScopeOptions = {}): s
 }
 
 function scopeKey(options: ClientScopeOptions): string {
-  if (options.secret !== undefined) return options.secret;
+  if (options.secret !== undefined) {
+    // The same floor as the env path below: an explicit key is a caller's value, so a short one is
+    // refused rather than silently swapped for the process key.
+    if (options.secret.length < MIN_SECRET_LENGTH) {
+      throw clientScopeSecretShort(options.secret.length, MIN_SECRET_LENGTH);
+    }
+    return options.secret;
+  }
   const configured = (options.env ?? Bun.env)['SESSION_SECRET']?.trim() ?? '';
   if (configured.length >= MIN_SECRET_LENGTH) return configured;
   if (processKey === undefined) {

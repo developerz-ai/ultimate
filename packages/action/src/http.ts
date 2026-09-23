@@ -11,6 +11,8 @@ import {
   isUltimateError,
   RECORDS_OPENAPI_HEADER,
   recordEnvelopeSchema,
+  withWriteOrigin,
+  writeDigest,
 } from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 // `toBucket` is `@ultimat3/http`'s, not this package's: http owns `Bucket` and the limiter maths,
@@ -43,6 +45,12 @@ export { BUILD_ID_HEADER, IDEMPOTENCY_HEADER } from './wire-headers';
 
 export const REPLAYED_HEADER = 'x-ultimate-replayed';
 
+/** The digest a request's idempotency key names its write by; none for a missing or blank one. */
+async function writeOriginOf(req: UltimateRequest): Promise<string | undefined> {
+  const key = req.header(IDEMPOTENCY_HEADER);
+  return key === null || key === '' ? undefined : await writeDigest(key);
+}
+
 /**
  * `publishPost` -> `POST /api/posts/publish`. Derivation: the first camelCase word
  * is the verb, the rest is the resource with its last word pluralized and
@@ -65,13 +73,18 @@ export function toRoute(target: AnyAction): Route {
       const raw = await req.bodyRaw();
       const key = def.idempotent === true ? req.header(IDEMPOTENCY_HEADER) : null;
       let replayed = false;
-      const result = await invoke(target, raw, {
-        surface: 'http',
-        idempotencyKey: key,
-        onReplay: () => {
-          replayed = true;
-        },
-      });
+      // The header NAMES the write whatever the declaration, idempotent or not: a page sends one
+      // with every mutation, and the `records` frames its rows produce carry the digest so that
+      // page can tell its own echo from somebody else's change (`@ultimat3/core`'s write origin).
+      const result = await withWriteOrigin(await writeOriginOf(req), () =>
+        invoke(target, raw, {
+          surface: 'http',
+          idempotencyKey: key,
+          onReplay: () => {
+            replayed = true;
+          },
+        }),
+      );
       // The one thing an action's return value cannot say. `setRedirect()` inside the handler
       // is how a `<form method="post">` gets an answer a browser follows — a `Location` on the
       // 200 this used to always return is a header browsers ignore, so a JS-less form left the

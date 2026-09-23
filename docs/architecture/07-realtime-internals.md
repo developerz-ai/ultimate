@@ -397,7 +397,8 @@ Conflicts resolve through core's `resolveConflict` over rows (`'server-wins'`,
 | `socket-host.ts` | the tab side: a `SharedWorker` named `ultimate-sync:<scope>` from `<meta name="ultimate-sync-worker">`, or, when `SharedWorker` is absent or throws, the same engine in the page over a `MessageChannel` |
 | `sync-worker.ts` | the worker entry, served at `/_x/sync-worker/<hash>.js`, `immutable` |
 
-Each tab keeps its own `LiveClient` and store; to it, its port is a socket. A tab sends `bye` on
+Each tab keeps its own page socket (`page-socket.ts`) and record store (`page-store.ts`); to the page
+socket, its port is a socket. A tab sends `bye` on
 `pagehide`, and a port silent for `REAP_AFTER_BEATS = 3` beats is reaped, because a `MessagePort` has
 no close event. Two principals get two workers and never share a socket. A new principal makes the
 tab `bye` the old worker and redial.
@@ -427,7 +428,7 @@ keeps its records and queue in memory and re-persists them on its next write.
 | Delivery, live queries | at-least-once. A patch backpressure drops marks the subscriber `desynced`, and the next change re-snapshots it |
 | Delivery, channel `records` | repaired: a drop is announced with `replay-gap` and the client re-reads `catchUp`. **Not measured at scale**: the committed benchmark runs predate it, and ran the 30 s backoff curve |
 | Delivery, channel `events` | at-most-once, counted, never repaired |
-| Two-tab e2e | the shared socket is not yet exercised by a two-tab end-to-end test in CI |
+| Two-tab e2e | exercised: `examples/dummy/apps/web/e2e/two-tabs.e2e.test.ts` asserts one socket for two tabs, a like crossing between them, zero reconnects when one closes, and the in-page fallback with `SharedWorker` deleted. Run by the reference app's `e2e` step (`reference-app-verify`). One browser, one origin: not a multi-node result |
 | Escape valve | if the reconnect benchmark says the matcher is the bottleneck, adopting an existing open sync protocol beats defending ours |
 
 ## Codes

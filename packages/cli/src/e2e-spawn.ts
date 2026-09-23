@@ -8,6 +8,7 @@
 import { get } from 'node:http';
 // why: Bun exposes no path API — the CLI's own bin is joined, not concatenated.
 import { join } from 'node:path';
+import { assert } from '@ultimat3/core';
 import { E2eAppFailedError } from './e2e-errors';
 
 /** `x dev` (sync included), or the production entry `apps/web/server.ts` under `ROLE=web`. */
@@ -22,7 +23,7 @@ export interface SpawnedE2eApp {
   readonly base: string;
   /** Kill the process. Idempotent. */
   stop(): Promise<void>;
-  /** Kill it and start it again on the SAME port, with `env` added — a deploy. */
+  /** Kill it and start it again on the SAME port, with `env` added — a deploy. Refused after `stop()`. */
   restart(env?: Readonly<Record<string, string>>): Promise<void>;
 }
 
@@ -117,6 +118,13 @@ export async function spawnE2eApp(options: SpawnE2eAppOptions): Promise<SpawnedE
     base,
     stop,
     async restart(next: Readonly<Record<string, string>> = {}): Promise<void> {
+      // `stop()` is final. A child respawned here would be one no later `stop()` kills — the flag
+      // already says done — and `startE2eApp` has deleted the state directory it would boot on.
+      assert(
+        !stopped,
+        'restart() was called on an e2e app that was already stopped, so there is no app to deploy over',
+        'startE2eApp({ root }) again for a fresh app — restart() is for an app that is still running',
+      );
       // The same port and the same state directory — a deploy, not a second app: a tab already
       // open on `base` sees the new build on its next request, and the data it wrote is still there.
       child.kill();

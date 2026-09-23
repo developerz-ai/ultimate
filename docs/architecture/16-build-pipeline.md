@@ -42,9 +42,12 @@ budget charges**: a script added to or removed from `FRAMEWORK_SCRIPTS` or
 file written under the old rule is read as a measurement of the new one. `.x/` survives upgrades,
 and that is how the reference app was charged 250 B for `/x-sw-register.js` after it was exempted.
 `2` is that exemption, plus the decision to **charge** the page boot: it ships only on a page that
-hydrates something, so it is part of the interactivity the app opted into. No check enforces the
-bump, so it is a convention; a test that fingerprints the exemption sets against a pinned
-`BUILD_STATS_RULES` would make it a build error.
+hydrates something, so it is part of the interactivity the app opted into. **The bump is a build
+error**: `RULES_PIN` in `packages/cli/src/budgets.test.ts` pins `{ rules, fingerprint }`, the
+fingerprint hashing `FRAMEWORK_SCRIPTS`, `FRAMEWORK_INLINE_SCRIPTS` and which `<script type>` kinds
+are charged. Moving any of them without `BUILD_STATS_RULES` fails the `unit` step, naming the bump.
+What it cannot see: a decision that changes no set — charging a script that was already charged by
+default, as the page boot was — so that half of a bump stays a maintainer's call.
 
 ## Why the loader installs on import
 

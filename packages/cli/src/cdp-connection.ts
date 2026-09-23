@@ -101,8 +101,8 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
       clearTimeout(timer);
       resolve();
     };
-    // `onerror` is replaced for the handshake only, then restored above: a failure BEFORE open has
-    // no pending call to abandon, and rejecting is the only way the caller hears about it.
+    // `onerror` is the handshake's only until `listen` below reassigns it: a failure BEFORE open
+    // has no pending call to abandon, and rejecting is the only way the caller hears about it.
     socket.onerror = (): void => {
       clearTimeout(timer);
       reject(

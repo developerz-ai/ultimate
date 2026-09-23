@@ -135,6 +135,16 @@ describe('sync-protocol', () => {
     expect(() => decode(JSON.stringify(frame))).toThrow(/rows/);
   });
 
+  test('a records frame names the write that produced it, and nothing but a digest', () => {
+    const named = { ...fixtures.records, write: 'c'.repeat(32) };
+    expect(decode(JSON.stringify(named))).toEqual(named as unknown as Frame);
+    const raw = { ...fixtures.records, write: 'likePost:0192f0c4-0000-7000-8000-000000000001' };
+    expect(() => decode(JSON.stringify(raw))).toThrow(/records.write/);
+    expect(() => decode(JSON.stringify({ ...fixtures.records, write: 7 }))).toThrow(
+      /records.write/,
+    );
+  });
+
   test('record keys ride a snapshot parallel to its rows, and a patch on its own', () => {
     const snapshot = { ...fixtures.snapshot, keys: ['o1:p1'] };
     expect(decode(JSON.stringify(snapshot))).toEqual(snapshot as unknown as Frame);

@@ -72,10 +72,12 @@ export async function dispatch(
   const fence = read ? abortable([req.signal, flightSignal]) : undefined;
   const signal = fence === undefined ? req.signal : fence.signal;
   try {
-    const response = await (req.fetchImpl ?? browserFetch)(req.url, initOf(req, signal));
+    const response = await onTheWire(req, read, () =>
+      (req.fetchImpl ?? browserFetch)(req.url, initOf(req, signal)),
+    );
     await req.onResponse?.(response);
     // Read as TEXT once: a body is a single-use stream, and the failure path wants it too.
-    const text = response.status === 204 ? '' : await response.text();
+    const text = response.status === 204 ? '' : await onTheWire(req, read, () => response.text());
     if (!response.ok) {
       throw (
         req.decodeError?.(response.status, text) ?? problemError(response.status, text, req.url)
@@ -85,20 +87,35 @@ export async function dispatch(
   } catch (error) {
     const current = pageClient().scope.epoch;
     if (read && current !== issued) throw scopeChanged(req.url, issued, current);
-    // `fetch` rejects with a bare `TypeError` when no response was produced. An abort is a
-    // decision and passes through untouched.
-    if (error instanceof TypeError) {
-      throw transportFailed(
-        'network',
-        `${req.method} ${req.url} produced no response — the network refused or dropped it`,
-        read || req.idempotencyKey !== undefined ? 'retryable' : undefined,
-        { url: req.url, method: req.method },
-        error,
-      );
-    }
     throw error;
   } finally {
     fence?.release();
+  }
+}
+
+/**
+ * The network's half of a dispatch, and only that half. `fetch` — and a body read cut mid-stream —
+ * rejects with a bare `TypeError` when no response arrived; that is `failure: 'network'`. A caller's
+ * `onResponse` or `decodeError` throwing a `TypeError` is a bug in the caller, and classifying it
+ * as the network made it retryable, so a flight re-sent the request for it. An abort is a decision
+ * and passes through untouched.
+ */
+async function onTheWire<T>(
+  req: TransportRequest,
+  read: boolean,
+  work: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    throw transportFailed(
+      'network',
+      `${req.method} ${req.url} produced no response — the network refused or dropped it`,
+      read || req.idempotencyKey !== undefined ? 'retryable' : undefined,
+      { url: req.url, method: req.method },
+      error,
+    );
   }
 }
 

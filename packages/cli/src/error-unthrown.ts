@@ -5,6 +5,7 @@
 
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, maskLiterals, stripComments } from '@ultimat3/core';
+import { RESERVED_HEADING } from './error-contract';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
 import { isCodeRegistry } from './ts-scan';
@@ -19,7 +20,6 @@ const MEMBER_READ = /\.([A-Za-z_$][\w$]*)/g;
 
 /** Phrases a reference row uses to say, in words, that nothing throws the code any more. */
 const DECLARED_UNTHROWN = /thrown by nothing|not thrown/i;
-const RESERVED_HEADING = '## Reserved codes';
 
 export interface CodeUse {
   /** Every code a package registry names. */

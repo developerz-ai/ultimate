@@ -29,6 +29,13 @@ export interface OverlayEntry {
   readonly key: string;
   readonly policy: ConflictPolicy;
   apply(tx: LocalTx): void;
+  /**
+   * Rows the server has already answered for THIS write (its echo, or its answer, carried them):
+   * their synced truth holds the write, so a replay leaves them alone and only the rows still
+   * awaiting truth show the twin. Without it, a write whose echo carried one of its two rows
+   * replayed the twin over that row's truth too — the write counted twice until the other arrived.
+   */
+  readonly confirmed?: ReadonlySet<string>;
 }
 
 export interface ReplayResult {
@@ -67,8 +74,14 @@ export function replayOverlays(
       failed.push(entry.key);
       continue;
     }
-    for (const rk of wrote) view.set(rk, scratch.get(rk) ?? null);
-    touched.set(entry.key, wrote);
+    const confirmed = entry.confirmed;
+    const pending = new Set<string>();
+    for (const rk of wrote) {
+      if (confirmed?.has(rk) === true) continue;
+      view.set(rk, scratch.get(rk) ?? null);
+      pending.add(rk);
+    }
+    touched.set(entry.key, pending);
   }
   return { view, touched, failed };
 }

@@ -10,6 +10,7 @@
 //     bun test packages/realtime/src/pg-replication.live.test.ts
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { WRITE_ORIGIN_WAL_PREFIX } from '@ultimat3/core';
 import type { ChangeEvent } from './changefeed';
 import { PgLogicalReplicationFeed } from './changefeed';
 import { selectChangeFeed } from './changefeed-env';
@@ -29,6 +30,7 @@ const TABLE = 'x_live_posts';
 const SLOT = 'x_live_slot';
 const RESUME_SLOT = 'x_live_resume_slot';
 const WIRED_SLOT = 'x_live_wired_slot';
+const WRITE_SLOT = 'x_live_write_slot';
 const PUBLICATION = 'x_live_pub';
 
 /** The preload freezes the clock, so waiting is counted in polls rather than in elapsed time. */
@@ -86,7 +88,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
   const dropSlots = async (): Promise<void> => {
     await sql.query(
       `SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots ` +
-        `WHERE slot_name IN ('${SLOT}', '${RESUME_SLOT}', '${WIRED_SLOT}')`,
+        `WHERE slot_name IN ('${SLOT}', '${RESUME_SLOT}', '${WIRED_SLOT}', '${WRITE_SLOT}')`,
     );
   };
 
@@ -240,6 +242,37 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
 
     // r1/r2 were already delivered; a replay of them must be dropped, not sent twice.
     expect(second.map((event) => event.after?.['id'])).toEqual(['r3']);
+  }, 60_000);
+
+  /**
+   * `@ultimat3/entity`'s Postgres driver opens a keyed write's transaction with this exact
+   * statement (`write-tag.ts`). The scripted walsender cannot prove pgoutput sends it: only a real
+   * server, asked with `messages 'true'`, frames the message between that transaction's Begin and
+   * its first row — and sends nothing of it for a transaction that emitted none.
+   */
+  test('a transaction opened by the write-origin message names every change in it', async () => {
+    const events: ChangeEvent[] = [];
+    const feed = new PgLogicalReplicationFeed({
+      url: url ?? '',
+      slot: WRITE_SLOT,
+      publication: PUBLICATION,
+      entities: [TABLE],
+      statusIntervalMs: 250,
+    });
+    await feed.start({ onChange: (event) => void events.push(event) });
+    const digest = 'ab'.repeat(16);
+    await sql.query(`
+      BEGIN;
+      SELECT pg_logical_emit_message(true, '${WRITE_ORIGIN_WAL_PREFIX}', '${digest}');
+      INSERT INTO ${TABLE} (id, title) VALUES ('k1', 'keyed');
+      UPDATE ${TABLE} SET title = 'keyed again' WHERE id = 'k1';
+      COMMIT;
+    `);
+    await sql.query(`INSERT INTO ${TABLE} (id, title) VALUES ('k2', 'unkeyed')`);
+    await waitFor(() => events.length >= 3);
+    await feed.stop();
+
+    expect(events.map((event) => event.write)).toEqual([digest, digest, undefined]);
   }, 60_000);
 
   /**

@@ -83,6 +83,23 @@ export const update = (
 export const remove = (oid: number, before: readonly (string | null)[]): Uint8Array =>
   tuple(new ByteWriter().uint8(0x44).int32(oid).uint8(0x4f), before).finish();
 
+/** `M` — a `pg_logical_emit_message`, as pgoutput frames it outside a streamed transaction. */
+export const logicalMessage = (
+  prefix: string,
+  content: string,
+  transactional = true,
+): Uint8Array => {
+  const bytes = new TextEncoder().encode(content);
+  return new ByteWriter()
+    .uint8(0x4d)
+    .uint8(transactional ? 1 : 0)
+    .int64(0n)
+    .cstring(prefix)
+    .int32(bytes.length)
+    .raw(bytes)
+    .finish();
+};
+
 /** `w` XLogData, wrapped as the `d` CopyData message the walsender sends it in. */
 export const xlog = (payload: Uint8Array, walEnd = 0n): Uint8Array =>
   frame(

@@ -311,6 +311,25 @@ describe('resume since', () => {
     expect(b.ws.of('replay-gap')).toEqual([]);
   });
 
+  test('a change a keyed write made names that write — live, and again when the ring replays it', async () => {
+    const a = connect('alice');
+    const target = { kind: 'channel', channel: 'org-feed', params: { orgId: ORG } } as const;
+    await hub.subscribeChannel(a.socket, target);
+    const write = 'd'.repeat(32);
+    hub.deliverChange({ ...insert(post('p1', 'one')), write });
+    hub.deliverChange(insert(post('p2', 'two')));
+    const live = records(a.ws);
+    expect(live.map((frame) => frame.write)).toEqual([write, undefined]);
+    expect(Object.hasOwn(live[1] ?? {}, 'write')).toBe(false);
+
+    const b = connect('alice');
+    await hub.subscribeChannel(b.socket, {
+      ...target,
+      since: { epoch: live[0]?.epoch ?? '', seq: 0 },
+    });
+    expect(records(b.ws).map((frame) => frame.write)).toEqual([write, undefined]);
+  });
+
   test('a position outside the ring, or from another epoch, is answered replay-gap', async () => {
     const a = connect('alice');
     const target = { kind: 'channel', channel: 'org-feed', params: { orgId: ORG } } as const;

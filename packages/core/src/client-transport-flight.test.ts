@@ -129,3 +129,71 @@ describe('clientTransport — caller hooks', () => {
     expect(error).toBe(drift);
   });
 });
+
+// A caller's hook is the caller's code, not the network. The `instanceof TypeError` screen covered
+// the whole try, so a hook's own TypeError came back as `failure: 'network'`, retryable — and a
+// flight then re-sent the request for a bug no retry can fix.
+describe('clientTransport — only the wire is a network failure', () => {
+  const retrying = () => createClientFlight({ sleep: async () => {} });
+
+  test("a TypeError thrown by onResponse is the caller's own, and is never retried", async () => {
+    const { fetchImpl, calls } = fakeFetch(() => json(1));
+    const bug = new TypeError('response.headers.get is not a function');
+    const error = await failure(
+      clientTransport({
+        method: 'GET',
+        url: '/q',
+        flight: retrying(),
+        retry: { attempts: 3 },
+        fetchImpl,
+        onResponse: () => {
+          throw bug;
+        },
+      }),
+    );
+    expect(error).toBe(bug);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("a TypeError thrown by decodeError is the caller's own, and is never retried", async () => {
+    const { fetchImpl, calls } = fakeFetch(() => new Response('denied', { status: 403 }));
+    const bug = new TypeError('cannot read properties of undefined');
+    const error = await failure(
+      clientTransport({
+        method: 'GET',
+        url: '/q',
+        flight: retrying(),
+        retry: { attempts: 3 },
+        fetchImpl,
+        decodeError: () => {
+          throw bug;
+        },
+      }),
+    );
+    expect(error).toBe(bug);
+    expect(calls).toHaveLength(1);
+  });
+
+  // A stream is read once. The retry re-sent the SAME `rawBody`, whose second send can only fail —
+  // as a TypeError, so as `network`, so retryable — until the attempts ran out.
+  test('a streamed rawBody is one attempt, whatever retry was asked for', async () => {
+    let calls = 0;
+    const fetchImpl: FetchLike = async () => {
+      calls += 1;
+      throw new TypeError('Failed to fetch');
+    };
+    const error = await failure(
+      clientTransport({
+        method: 'PUT',
+        url: 'https://bucket.example/signed',
+        rawBody: new ReadableStream({ start: (controller) => controller.close() }),
+        idempotencyKey: 'upload-1',
+        flight: retrying(),
+        retry: { attempts: 3 },
+        fetchImpl,
+      }),
+    );
+    expect(isUltimateError(error) && error.code).toBe('X_CLIENT_TRANSPORT_FAILED');
+    expect(calls).toBe(1);
+  });
+});

@@ -155,4 +155,37 @@ describe('cdpE2eSession', () => {
     expect(session.sockets()).toEqual(['ws://app.test/_x/sync']);
     expect(session.requests()).toEqual(['POST http://app.test/api']);
   });
+
+  // Each `send` was awaited bare, so one closed tab's dead session rejected the whole call and the
+  // tabs after it never got the script — the case `offline()` already guarded.
+  test('a closed tab does not stop an init script reaching the tabs still open', async () => {
+    const { connection, calls, emit } = fake();
+    const dead = new Set<string>();
+    const guarded: CdpConnection = {
+      ...connection,
+      send(method, params, sessionId) {
+        if (sessionId !== undefined && dead.has(sessionId)) {
+          // What a CDP session that has gone away answers: a refusal, for every call.
+          return Promise.reject(new Error(`session ${sessionId} is closed`));
+        }
+        return connection.send(method, params, sessionId);
+      },
+    };
+    const session = await cdpE2eSession({ connection: guarded, loadTimeoutMs: 500 });
+    for (const [sessionId, targetId] of [
+      ['closed-session', 'closed-tab'],
+      ['open-session', 'open-tab'],
+    ]) {
+      emit('Target.attachedToTarget', { sessionId, targetInfo: { type: 'page', targetId } });
+    }
+    await settle();
+    dead.add('closed-session');
+
+    await session.addInitScript('window.__late = true;');
+
+    const reached = calls
+      .filter((call) => call.params['source'] === 'window.__late = true;')
+      .map((call) => call.sessionId);
+    expect(reached).toEqual(['open-session']);
+  });
 });

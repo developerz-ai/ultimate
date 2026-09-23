@@ -26,6 +26,13 @@ export interface ChangeEvent<R extends Row = Row> {
   readonly orgId: string | null;
   /** Commit time, epoch ms. */
   readonly at: number;
+  /**
+   * The write that made this change: `writeDigest` of the idempotency key its request carried
+   * (`@ultimat3/core`). Absent for a change no keyed request made. Read off the WAL message the
+   * Postgres driver writes first in the transaction, or off the request scope in-process; a
+   * channel stamps it on the `records` frame so the writing page recognises its own echo.
+   */
+  readonly write?: string;
 }
 
 export interface ChangeFeedStartOptions {

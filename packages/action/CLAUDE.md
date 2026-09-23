@@ -218,6 +218,12 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   What this does NOT close: an anonymous actor is one identity, so anonymous callers of a public
   idempotent action still share a key space — nothing at this tier can tell two apart, and keying
   on an IP or a cookie would break the retry the header exists to serve.
+- **The `idempotency-key` header also NAMES the write, on every action, idempotent or not.**
+  `http.ts` runs `invoke` inside `withWriteOrigin(writeDigest(key))` (`@ultimat3/core`), so the
+  rows the handler writes reach a channel's `records` frame carrying that digest, and the page
+  that sent the key recognises its own echo (see `packages/realtime/CLAUDE.md`). It is a label and
+  never a gate: a missing or blank header names nothing, and the blank-header refusal above still
+  belongs to `def.idempotent` alone. `http.test.ts`, "the write a request names".
 - **Both stores FENCE a settlement on the reservation `id` AND on `in-flight`**, as
   `@ultimat3/jobs`' `SQL_ACK` fences on `id = $1 and state = 'running'`. A reservation whose window
   lapsed is reclaimed by the next caller (`on conflict … do update`), so a straggler from the first
@@ -583,10 +589,15 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   **Measured, `bun build --target=browser --minify`, one entry importing from `@ultimat3/action`,
   `As of 2026-09-22`:**
 
-  | Entry | before (HEAD `98d16d84`) | after (`clientTransport`) |
-  |---|---|---|
-  | `rpc` | 18,097 B | 23,007 B |
-  | `rpc` + `createClientFlight` | 23,903 B | 28,823 B |
+  | Entry | before (HEAD `98d16d84`) | onto `clientTransport` | trace headers moved to core's outbound slot | As of 2026-09-23 |
+  |---|---|---|---|---|
+  | `rpc` | 18,097 B | 23,007 B | 18,119 B | 19,074 B |
+  | `rpc` + `createClientFlight` | 23,903 B | 28,823 B | not measured | 25,197 B |
+
+  This is the ONE table for these figures; `packages/core/CLAUDE.md` points here. The slot column
+  is the `outbound-headers.ts` change (core's `traceHeaders()` left the browser path; its own
+  "before" read 23,164 B, the transport column re-measured on a later tree). The last column is
+  one entry importing `packages/action/src/index.ts` by path, same flags.
 
   The 14,759 B this file used to quote does not reproduce on the tree it was checked against
   (18,097 B); the numbers above are both measured the same way, same day. The growth is +4,910 B,
@@ -594,7 +605,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   `UltimateError`+`problemOf`+`traceHeaders` entry: 13,059 → 14,079 B). The rest is core's
   transport graph — the scope fence, the dispatch module, and core's shared problem decoder, which
   now answers a body with no framework code (`X_CLIENT_TRANSPORT_FAILED`) behind `decodeError`. That is OVER the plan's bound ("must not grow beyond the envelope decoder") and is
-  reported, not hidden.
+  reported, not hidden. After the slot moved telemetry out, the net against the pre-transport figure
+  is +977 B (18,097 → 19,074 B, As of 2026-09-23), about the envelope decoder's size.
 - **The `sideEffects` array is what makes the barrel shakable, and it is load-bearing** (`As of
   2026-08-23`). Declaring nothing meant a bundler had to assume every module ran at import, so
   `import { rpc } from '@ultimat3/action'` was 43,104 B and `import { queryClient } from

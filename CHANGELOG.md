@@ -36,8 +36,29 @@ is no codemod and no compatibility shim.
   the page's render and its join reach it. `x dev`'s in-process change bridge now feeds the
   declared channels too, so their `records` flow in development
   (`packages/testing/src/live-replicator.ts`).
+- **A `records` frame names the write that produced it**, as `write`: the digest of the
+  idempotency key the request carried (`writeDigest` in `@ultimat3/core`, never the key, since a
+  frame goes to every member). A frame naming a write that is still pending on this page settles
+  that write's overlay in the same notification as its rows. The node fans a commit out before it
+  answers, so the frame usually beats the answer, and a like replayed from the outbox painted `3`
+  for one like until the answer landed. Any other frame is still truth under the overlay. The name
+  travels two ways:
+  - **In process** (`x dev` on the embedded database): `@ultimat3/action`'s HTTP projection opens
+    `withWriteOrigin(digest)` for any request carrying an `idempotency-key`, idempotent action or
+    not, and the row observer copies it onto the change.
+  - **Through the WAL**: the Postgres driver opens a keyed write's transaction with
+    `pg_logical_emit_message(true, 'ultimate.write', <digest>)`, and the replicator asks pgoutput
+    for `messages 'true'`. A keyed write outside a transaction is wrapped in one, which is three more
+    statements for a write a page is waiting on. A role that may not execute the function is probed
+    once per process and its writes go out untagged, never refused.
+
+  Additive to protocol 3, which is unreleased: an older client drops the field. A page served over
+  plain HTTP off `localhost` has no `crypto.subtle`, names none of its writes, and keeps the old
+  behaviour (`packages/realtime/src/write-echo.test.ts`).
 - **Deploys under e2e.**
-  - `e2eApp()` returns the spawned app, `{ base, stateDir, stop(), restart(env?) }`.
+  - `e2eApp()` returns the spawned app, `{ base, stateDir, stop(), restart(env?) }`. `stop()` is
+    final: `restart()` after it throws `X_INVARIANT` rather than spawning a child no later `stop()`
+    kills, on a state directory already deleted (`packages/cli/src/e2e-spawn.ts`).
   - The framework's `deploy` fixture offers `newBuild()`, which restarts the app with a new
     `BUILD_ID`. It is registered only when the runner can restart the app
     (`installE2eDriver({ newBuild })`) and is refused by name otherwise.
@@ -57,7 +78,8 @@ is no codemod and no compatibility shim.
 - **`FRAMEWORK_SCRIPTS` and `FRAMEWORK_INLINE_SCRIPTS`** are exported from `@ultimat3/cli`: the
   scripts `budgets` counts and never charges to the app, because the author cannot edit, delete or
   move them. Today those are the service-worker registration and the no-flash theme script
-  (`packages/cli/src/budgets.ts`).
+  (`packages/cli/src/budgets.ts`). The page boot is framework-emitted too and is **charged** to the
+  app, by decision: it ships only on a page that hydrates something.
 - **HTTP statuses for the plan's new codes** in `@ultimat3/http`'s error map:
   - `X_CLIENT_TRANSPORT_FAILED` and `X_CLIENT_RECORD_ENVELOPE_INVALID` are 502;
   - `X_CLIENT_SCOPE_CHANGED` is 499;
@@ -134,6 +156,12 @@ is no codemod and no compatibility shim.
   - `actionPath` / `actionRoute` and `queryPath` are the one URL rule, moved from `action` and
     `query`.
   - `OUTBOX_DRAIN_MESSAGE` is what the service worker posts.
+  - A raw `ReadableStream` body (`rawBody`) is sent once and never retried, because a stream is
+    spent by the first attempt.
+  - A `TypeError` thrown by a caller's `onResponse` or `decodeError` hook is the caller's bug and
+    reaches the caller as thrown. Only a `fetch` or body read that produced no response is
+    `X_CLIENT_TRANSPORT_FAILED` with `meta.failure: 'network'`, so a flight never re-sends a
+    request for a hook's own error (`packages/core/src/client-dispatch.ts`).
   - Also new: `AsyncState`, `ConflictPolicy` / `resolveConflict`, the record envelope
     (`RECORDS_HEADER`, `encodeRecordEnvelope`, `decodeRecordEnvelope`) and the scope fence
     (`rescope`, `onRescope`).
@@ -145,10 +173,12 @@ is no codemod and no compatibility shim.
   id, and an impersonating admin gets a scope distinct from the user's own.
   `@ultimat3/render`'s `clientScopeTag` writes it only when the response is `cache-control:
   private` (`documentCarriesScope`), so a shared cache never serves one visitor's scope to the next.
-  `pageClient()` reads it once, when the handle is created.
+  `pageClient()` reads it once, when the handle is created. An explicit
+  `clientScopeOf(actor, { secret })` shorter than 32 characters throws `X_CONFIG_INVALID`, the
+  same floor `SESSION_SECRET` is held to, rather than keying the scope with a guessable secret.
 - **`entity(name, { persist: true })`.** Declares that a browser keeps this entity's records on
-  disk, per principal. Default `false`. It is read into `recordProjection(e).persist`. Its consumer,
-  realtime's persister, is still landing.
+  disk, per principal. Default `false`. It is read into `recordProjection(e).persist`, which
+  realtime's persister (`record-persister.ts`) reads: see "Durable offline writes (tier 3)" above.
 - **The trace headers a server-side typed call sends onward now come from a slot**, filled by
   `runWithContext` / `startSpan` and never at import. A browser runs neither, so
   `clientTransport` carries no telemetry, context or logger code: 12.9 kB that every island calling
@@ -293,7 +323,8 @@ is no codemod and no compatibility shim.
   page's one record store adopts them. Which actions do this is decided from the output schema at
   projection, never per response (`packages/action/src/record-wire.ts`). Every other action's
   body is byte-identical. The OpenAPI `200` of those actions changes the same way: an object with
-  a required `data` holding the declared output, optional `records` and `removed`, and the
+  a required `data` holding the declared output, a required `records` (possibly empty), an
+  optional `removed` (core's `recordEnvelopeSchema`), and the
   required `x-ultimate-records` response header. The typed clients strip the envelope, so
   `rpc()` and `.client()` return what they always did. The edit applies only to a client that is
   not `@ultimat3/*`: a generated SDK, `curl` in a script, a test posting with `fetch`. When the
@@ -367,9 +398,12 @@ is no codemod and no compatibility shim.
   `reconcile`, `ReconcileOptions`, `ReconcileResult`, `ServerAck`, `rebaseFrame`, `strategyName`,
   `mutateFrame`, `MutateFrame`, `RebaseFrame`, `ConflictStrategyName` and `serverRenderLiveClient`
   are gone. The optimistic apply they gated now needs nothing: `useMutation` writes the mutator's
-  `local` twin into the record store's overlay. Durable offline writes are pending (IndexedDB and
-  one outbox). The edit: delete the `store`, `queue` and `log` you passed to `new LiveClient(…)`,
-  and any `new MemoryLocalStore()`. There is no durable replacement yet.
+  `local` twin into the record store's overlay. Durable offline writes are IndexedDB plus one
+  outbox (see "Durable offline writes (tier 3)" under Added). The edits:
+  - delete the `store`, `queue` and `log` you passed to `new LiveClient(…)`, and any
+    `new MemoryLocalStore()`.
+  - to keep an entity's records across a reload, declare it `entity(name, { persist: true })`.
+    A write that got no response is queued and replayed by the page's outbox with no declaration.
 - **BREAKING — `useMutation` writes over HTTP and resolves with the action's output.** It posts
   `actionPath(mutator.name)` through `clientTransport` with an idempotency key, where it used to
   send a socket `mutate` frame that no host ever answered (`X_NOT_IMPLEMENTED`). The call now
@@ -399,9 +433,15 @@ is no codemod and no compatibility shim.
   On that rung `sync` is published on its own port with nothing in front, so the default
   `/_x/sync` dialled `web`'s port, which does not serve the socket: a page with realtime connected
   to nothing, with no error anywhere. The edit: set `SYNC_URL=ws://<host>:3001/_x/sync` in
-  `.env.prod`, or put a proxy in front that routes `/_x/sync` to `sync` and set
+  `.env.production` and pass `--env-file .env.production` to a hand-run `docker compose`, or put a proxy in front that routes `/_x/sync` to `sync` and set
   `SYNC_URL=wss://<host>/_x/sync`. An app that copied the old compose file adds the same
   `environment` line to `web`.
+- **`x deploy --method compose` passes `--env-file <app root>/.env.production` on every step**,
+  before `-f` (`packages/cli/src/cmd-deploy.ts`, `PROD_ENV_FILE`). Compose fills `${VAR:?…}` from
+  the shell and `--env-file` only, never from a service's `env_file:`. So a `SYNC_URL` or
+  `POSTGRES_PASSWORD` set only in `.env.production`, the file the compose header says to fill,
+  failed every step on a parse error. A variable set in the shell still wins. Not breaking: a
+  deploy that exported the variables keeps working unchanged.
 - **BREAKING — `x verify --json`'s `data.durationMs` is wall time, not the sum of step times.** The
   static steps (`lint`, `boundaries`, `filesize`, `package-shape`, `errors`) now run beside the
   serial suites (`live`, `job`, `e2e`, `eval`), so the sum overstates the run

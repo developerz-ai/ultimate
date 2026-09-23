@@ -30,6 +30,27 @@ import {
   startPostly,
 } from './fixtures/postly';
 
+/** Where the in-page recorder keeps its history: a page global, since this test never reloads. */
+const PAINTS = 'e2eOneRecordPaints';
+
+/** Records each distinct set of this post's shown counts, one entry per observed mutation batch. */
+const PAINT_RECORDER = `(() => {
+  const seen = (globalThis[${JSON.stringify(PAINTS)}] = []);
+  const record = () => {
+    const now = ${likeCounts(POSTS.tenancy.id)}.join(',');
+    if (seen[seen.length - 1] !== now) seen.push(now);
+  };
+  record();
+  new MutationObserver(record).observe(document.body, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ['data-like-count'],
+  });
+  return true;
+})()`;
+
 describe.skipIf(noBrowser)('one record, many places', () => {
   let app: E2eApp;
   let browser: AcceptanceBrowser;
@@ -67,13 +88,27 @@ describe.skipIf(noBrowser)('one record, many places', () => {
       `document.querySelector('[data-channel="live"]') !== null`,
       "the like control's channel to go live",
     );
+    // Every paint of the counts from here on. A MutationObserver delivers once per task, so one
+    // store write re-rendering both islands is ONE entry; two islands each moved by their own read
+    // leave an entry in between where they disagree — which the end state alone cannot show.
+    await tab.evaluate(PAINT_RECORDER);
     const mark = session.requests().length;
     await like(tab, POSTS.tenancy.id);
     await tab.waitFor(everyCount(POSTS.tenancy.id, 3), 'EVERY island to show 3 likes');
 
-    // One write went out, and no island went back to the server to re-read what it now shows.
+    // One write went out, and no island went back to the server to re-read what it now shows —
+    // neither a live query nor an action read (`postRecord` is a GET under /api).
     expect(requestsSince(session, app.base, mark, /^POST .*\/api\/posts\/like/)).toHaveLength(1);
     expect(requestsSince(session, app.base, mark, /^GET .*\/_x\/query\//)).toEqual([]);
+    expect(requestsSince(session, app.base, mark, /^GET .*\/api\//)).toEqual([]);
+    // Moved together: no paint where one island showed the new count and another the old.
+    const painted = await tab.evaluate(`globalThis[${JSON.stringify(PAINTS)}] ?? null`);
+    if (!Array.isArray(painted)) return expect.unreachable('the paint recorder kept no history');
+    const paints = painted.map((entry) => String(entry).split(','));
+    expect(paints.some((counts) => counts.length >= 2 && counts.every((n) => n === '3'))).toBe(
+      true,
+    );
+    expect(paints.filter((counts) => new Set(counts).size > 1)).toEqual([]);
     // One socket for the page, however many islands it holds — and no reconnect along the way.
     expect(syncSockets(session, app.base)).toBe(1);
     // The islands move optimistically; the server's own render is the proof the write landed.

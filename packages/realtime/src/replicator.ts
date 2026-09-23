@@ -11,7 +11,7 @@
 // its feed and reports `/readyz` false; it retries with jittered backoff and takes over the moment
 // the holder dies. Scaling the replicator is therefore always vertical, and that is by design.
 
-import { logger, uuid, withSpan } from '@ultimat3/core';
+import { isWriteDigest, logger, uuid, withSpan } from '@ultimat3/core';
 import type { ChangeEvent, ChangeFeed } from './changefeed';
 import type { Transport } from './fanout';
 import { type BackoffPolicy, backoffDelay, defaultBackoff, type Rng } from './thundering-herd';
@@ -264,6 +264,9 @@ export function parseEnvelope(payload: string): ChangeEnvelope | null {
         txid: typeof shape.txid === 'string' ? shape.txid : '',
         orgId: typeof shape.orgId === 'string' ? shape.orgId : null,
         at: typeof shape.at === 'number' ? shape.at : 0,
+        // Only the minted shape crosses: a frame decoder refuses anything else, so a malformed
+        // label here would cost every member the whole frame rather than one page its echo.
+        ...(isWriteDigest(shape.write) ? { write: shape.write } : {}),
       },
       seq: typeof shape.seq === 'number' && Number.isFinite(shape.seq) ? shape.seq : null,
       producer: typeof shape.producer === 'string' ? shape.producer : null,

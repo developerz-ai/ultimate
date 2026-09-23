@@ -32,5 +32,6 @@ export function renderRecords(
     epoch,
     ...(entry.adopt.length === 0 ? {} : { adopt: adopt as ChannelAdopt }),
     ...(entry.remove.length === 0 ? {} : { remove: remove as ChannelRemove }),
+    ...(entry.write === undefined ? {} : { write: entry.write }),
   };
 }

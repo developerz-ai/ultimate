@@ -179,8 +179,14 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
     },
     async addInitScript(source: string): Promise<void> {
       scripts.push(source);
-      for (const session of pages.values()) {
-        await send('Page.addScriptToEvaluateOnNewDocument', { source }, session);
+      // A closed tab refuses every call; it is dropped rather than taking the open tabs down with
+      // it, exactly as `offline()` drops one.
+      for (const [targetId, session] of [...pages]) {
+        await send('Page.addScriptToEvaluateOnNewDocument', { source }, session).catch(() => {
+          pages.delete(targetId);
+          sessions.delete(session);
+          pageSessions.delete(session);
+        });
       }
     },
     offline,

@@ -68,7 +68,7 @@ describe.skipIf(noBrowser)('two tabs, one origin', () => {
 
       test('the tabs share the expected number of sockets, and a like crosses between them', async () => {
         const { session } = browser;
-        // Ada liked it in the seed: 1.
+        // Ada liked it in the seed: 1. The case below reads its own baseline rather than this 2.
         await one.waitFor(everyCount(POST, 1), 'tab one to render the post');
         await two.waitFor(everyCount(POST, 1), 'tab two to render the post');
         await until(
@@ -82,12 +82,17 @@ describe.skipIf(noBrowser)('two tabs, one origin', () => {
       }, 60_000);
 
       test('closing one tab leaves the other live, with zero reconnects', async () => {
+        // Its own baseline, read off the surviving tab: whatever the case above did or did not
+        // leave behind, bruno's like is one more than this.
+        await two.waitFor(`${likeCounts(POST)}.length > 0`, 'tab two to render the post');
+        const [before] = await readNumbers(two, likeCounts(POST));
+        if (typeof before !== 'number') return expect.unreachable('tab two shows no like count');
+        await until(() => syncSockets(browser.session, app.base) >= 1, 'a sync socket to open');
         const opened = syncSockets(browser.session, app.base);
         await one.close();
-        expect(await readNumbers(two, likeCounts(POST))).toContain(2);
         await likeOverHttp(app, 'bruno', 'timezones');
         await two.waitFor(
-          everyCount(POST, 3),
+          everyCount(POST, before + 1),
           'the surviving tab to see a change nobody in this browser made',
         );
         expect(syncSockets(browser.session, app.base)).toBe(opened);

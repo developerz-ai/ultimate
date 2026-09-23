@@ -7,7 +7,7 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 | [`00-thesis.md`](./00-thesis.md) | Rails' philosophy, but the primary developer is an AI agent — plus the inspire-explicitly table and the 9 axioms. |
 | [`01-stack.md`](./01-stack.md) | One locked choice per layer; Bun natives delete ~40 dependencies before you write a line. |
 | [`02-primitives.md`](./02-primitives.md) | Eight primitives. `action` projects to six artifacts. Two authz systems is how every Meteor-like framework died. |
-| [`03-realtime.md`](./03-realtime.md) | Channels → live queries → local-first: a ladder, not three products. Tier 2 → 3 is `persist: true` on a **query** — never a config key: `realtime.tier` was read by nothing and was deleted in 10.0.0. |
+| [`03-realtime.md`](./03-realtime.md) | Channels → live queries → local-first: a ladder, not three products. Tier 2 → 3 is `persist: true` on an **entity** — never a config key: `realtime.tier` was read by nothing and was deleted in 10.0.0. |
 | [`04-jobs.md`](./04-jobs.md) | Transactional outbox by default, durable steps, idempotency key required by the type. |
 | [`05-caching.md`](./05-caching.md) | Four tiers, one invalidation graph. `invalidates: [tag.post]` reaches memo, LRU, Redis, ISR, and the CDN in one hop. |
 | [`06-surfaces.md`](./06-surfaces.md) | `site/` cannot import `app/` — a build error, because that import is how marketing pages ship charting libraries. |

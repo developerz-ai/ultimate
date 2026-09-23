@@ -54,8 +54,10 @@ Two ways past it, in order of cost:
 `/_x/sync` on the page's own origin unless `SYNC_URL` says otherwise
 (`packages/cli/src/sync-url.ts`). Here `web` answers on 3000 and `sync` on 3001, with nothing in
 front to route between them, so write `SYNC_URL=ws://<host>:3001/_x/sync` (or `wss://`) into
-`.env.prod`. The shipped compose file makes it required (`${SYNC_URL:?…}`), so `docker compose up`
-refuses to start `web` without it. A value that is not `ws:`/`wss:` is `X_CONFIG_INVALID` at boot. Add a reverse proxy
+`.env.production`. The shipped compose file makes it required (`${SYNC_URL:?…}`), and Compose
+fills that from the shell and `--env-file` only, never from `env_file:`: run
+`docker compose --env-file .env.production -f docker/docker-compose.prod.yml up -d`, as `x deploy`
+does. Without the value, Compose refuses to start `web`. A value that is not `ws:`/`wss:` is `X_CONFIG_INVALID` at boot. Add a reverse proxy
 that routes `/_x/sync` to `sync`, and the default works with no variable. Rung 3's ingress
 already does that.
 

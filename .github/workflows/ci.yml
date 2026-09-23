@@ -380,7 +380,13 @@ jobs:
           # The prod file refuses an unset SYNC_URL (`${SYNC_URL:?…}`) — a page must dial the sync
           # role's own port — so the syntax check supplies the value an operator would.
           SYNC_URL=ws://localhost:3001/_x/sync docker compose -f docker/docker-compose.prod.yml config -q
-          echo "ok: both compose files parse"
+          # And the refusal itself: supplying the value above proves only that the file parses, so
+          # deleting the `:?` requirement would stay green without this negative case.
+          if env -u SYNC_URL docker compose -f docker/docker-compose.prod.yml config -q 2>/dev/null; then
+            echo "::error title=SYNC_URL not required::docker/docker-compose.prod.yml parsed with SYNC_URL unset, so a Compose deploy starts a web role whose pages dial nothing. fix: restore 'SYNC_URL: \${SYNC_URL:?set SYNC_URL=ws://<host>:3001/_x/sync, see wiki/Deployment.md}' under web.environment in docker/docker-compose.prod.yml"
+            exit 1
+          fi
+          echo "ok: both compose files parse, and the prod file refuses an unset SYNC_URL"
 
       - name: helm lint
         run: helm lint docker/helm --strict

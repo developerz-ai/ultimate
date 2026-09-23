@@ -139,7 +139,7 @@ services:
 # docker/docker-compose.prod.yml
 x-app: &app
   image: myapp:${BUILD_ID}
-  env_file: .env.prod
+  env_file: [../.env.production]   # what the CONTAINERS see — not what `${VAR:?}` reads
   restart: unless-stopped
 
 services:
@@ -161,12 +161,14 @@ services:
 | `migrate` completes before `web`/`sync` start | a new schema must exist before new code reads it |
 | `web` and `sync` at 1 replica | each publishes a host port, and a host port has exactly one binder |
 | `PORT: 3000` on `sync`, published as `3001:3001` | the `sync` role binds `PORT + 1`; naming 3001 opens 3002 and publishes a socket nothing in the container ever opened |
-| `SYNC_URL=ws://<host>:3001/_x/sync` in `.env.prod` | a page dials `/_x/sync` on its own origin by default, and on this rung that is `web`'s port, which does not serve the socket. With no proxy in front, only the deployment knows where `sync` is published. The shipped compose file refuses to start `web` without it (`${SYNC_URL:?…}`). Must be `ws://` or `wss://`, else `X_CONFIG_INVALID` at boot. Unreleased, 21.0.0 |
+| `SYNC_URL=ws://<host>:3001/_x/sync` in `.env.production`, read through `--env-file` | a page dials `/_x/sync` on its own origin by default, and on this rung that is `web`'s port, which does not serve the socket. With no proxy in front, only the deployment knows where `sync` is published. The shipped compose file refuses to start `web` without it (`${SYNC_URL:?…}`). Must be `ws://` or `wss://`, else `X_CONFIG_INVALID` at boot. Unreleased, 21.0.0 |
+| `POSTGRES_PASSWORD` in `.env.production`, read through `--env-file` | `x new`'s compose file runs its own `db` service and refuses to start it without one (`${POSTGRES_PASSWORD:?…}`) |
+| every command passes `--env-file .env.production`, before `-f` | Compose interpolates `${VAR:?…}` from the shell and `--env-file` only, **never** from a service's `env_file:`. Without the flag a value set only in `.env.production` reads as missing and the parse fails. `x deploy` passes it on every step (`packages/cli/src/cmd-deploy.ts`, `PROD_ENV_FILE`); a variable set in the shell still wins |
 | `scheduler` and `replicator` at 1 replica | leader lock makes a second one a standby, not throughput |
 | `stop_grace_period` >= `DRAIN_TIMEOUT` | otherwise SIGKILL truncates the drain and the reconnect fanout |
 | Health probes from `/readyz` | never from a TCP check — a process can accept sockets while unable to serve |
 
-`x deploy --method compose` applies this against the committed `docker/docker-compose.prod.yml`; it is a plain compose file you can read, diff, and run by hand.
+`x deploy --method compose` applies this against the committed `docker/docker-compose.prod.yml`; it is a plain compose file you can read, diff, and run by hand — from the app root, as `docker compose --env-file .env.production -f docker/docker-compose.prod.yml up -d`.
 
 > **`web` and `sync` are one replica each, and the file says so** `As of 2026-08`. Both publish a host port, one host port has exactly one binder, so both declare `replicas: 1` — a ceiling that is declared rather than discovered when the second container dies on `port is already allocated`. `worker`, `scheduler` and `replicator` publish nothing; `worker` scales freely.
 >

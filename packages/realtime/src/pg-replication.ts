@@ -13,7 +13,7 @@ import { entityRow } from './pg-entity-row';
 import { assertIdentifier, preflight } from './pg-preflight';
 import { bunPgStream, parsePgUrl } from './pg-socket';
 import type { PhysicalRow } from './pg-values';
-import { PgOutputDecoder, type PgOutputMessage, type PgRelation } from './pgoutput';
+import { keyedWrite, PgOutputDecoder, type PgOutputMessage, type PgRelation } from './pgoutput';
 
 const DEFAULT_STATUS_INTERVAL_MS = 10_000;
 
@@ -64,6 +64,8 @@ interface Transaction {
   readonly xid: number;
   /** Position of the next row inside this transaction. Reproducible, which is what makes it usable. */
   sequence: number;
+  /** The keyed write this transaction is (`ChangeEvent.write`), from its opening WAL message. */
+  write?: string | undefined;
 }
 
 /**
@@ -171,7 +173,7 @@ export class PgReplicationStream {
       this.#confirmed = from === undefined ? 0n : commitPositionOf(from);
       await connection.startCopyBoth(
         `START_REPLICATION SLOT ${slot} LOGICAL ${printLsn(this.#confirmed)} ` +
-          `(proto_version '1', publication_names '${publication}')`,
+          `(proto_version '1', publication_names '${publication}', messages 'true')`,
       );
     } catch (failure) {
       // The dial failure is the one that explains the boot, so a teardown that also failed must
@@ -318,6 +320,10 @@ export class PgReplicationStream {
           sequence: 0,
         };
         return;
+      case 'message':
+        // The driver's first statement in a keyed write: every row after it is that write's.
+        if (this.#transaction !== null) this.#transaction.write ??= keyedWrite(message);
+        return;
       case 'commit':
         this.#transaction = null;
         if (message.endLsn > this.#confirmed) this.#confirmed = message.endLsn;
@@ -381,6 +387,7 @@ export class PgReplicationStream {
       txid: transaction.xid.toString(10),
       orgId: tenantOf(after ?? before),
       at: transaction.commitAt,
+      ...(transaction.write === undefined ? {} : { write: transaction.write }),
     };
     await handlers.onChange(event);
     this.#lastLsn = lsn;

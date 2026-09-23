@@ -126,7 +126,8 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
       flight: options.flight,
       // Only alongside a key: a retried mutation with no key is a second write, not a second
       // attempt, so the flight's own policy is overridden with one attempt rather than inherited.
-      retry: callOptions.idempotencyKey === undefined ? ONCE : (callOptions.retry ?? ONCE),
+      // With a key, an absent per-call policy is `undefined`, which the flight reads as "mine".
+      retry: callOptions.idempotencyKey === undefined ? ONCE : callOptions.retry,
       onResponse,
       decodeError,
       fetchImpl: options.fetch,

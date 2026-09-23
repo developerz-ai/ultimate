@@ -13,6 +13,7 @@
 // the replicator — `@ultimat3/realtime`'s `selectChangeFeed` still decides, and this is never in
 // that decision.
 
+import { currentWriteOrigin } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
 import type { EntityCore } from './entity';
 import { MAX_PAGE_SIZE } from './plan';
@@ -32,6 +33,13 @@ export interface RowChange {
   readonly op: RowChangeOp;
   readonly before: Readonly<Record<string, unknown>> | null;
   readonly after: Readonly<Record<string, unknown>> | null;
+  /**
+   * The keyed write this change belongs to — `@ultimat3/core`'s `currentWriteOrigin()` at the
+   * moment the repository wrote, i.e. the digest of the idempotency key the request arrived with.
+   * The WAL decoder reads the same fact off the transaction's opening message; absent both ways
+   * for a write no keyed request made.
+   */
+  readonly write?: string;
 }
 
 /**
@@ -177,7 +185,15 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
   const name = entity.$name;
 
   const emit = (op: RowChangeOp, before: unknown, after: unknown): void => {
-    installed?.onChange({ entity: name, op, before: asRecord(before), after: asRecord(after) });
+    if (installed === null) return;
+    const write = currentWriteOrigin();
+    installed.onChange({
+      entity: name,
+      op,
+      before: asRecord(before),
+      after: asRecord(after),
+      ...(write === undefined ? {} : { write }),
+    });
   };
 
   const bulk = (op: 'delete' | 'update', rows: number): void => {

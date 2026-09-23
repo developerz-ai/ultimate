@@ -241,6 +241,19 @@ export const authPolicyNumberInvalid = (
     meta: { option: key, value: String(value) },
   });
 
+/**
+ * An explicit key for `clientScopeOf` under the floor `SESSION_SECRET` is held to. The env path
+ * already refused a short secret; the option skipped the screen, so `{ secret: 'x' }` keyed every
+ * page's scope id with one character. `X_CONFIG_INVALID`, borrowed like the two above.
+ */
+export const clientScopeSecretShort = (length: number, minLength: number): AuthError =>
+  new AuthError({
+    code: 'X_CONFIG_INVALID',
+    cause: `clientScopeOf({ secret }) was passed a key of ${String(length)} characters and at least ${String(minLength)} are required, so the scope id would be keyed by a guessable secret`,
+    fix: 'omit secret so clientScopeOf reads SESSION_SECRET, or pass one generated with: openssl rand -hex 32',
+    meta: { option: 'secret', minLength },
+  });
+
 export const passwordWeak = (reasons: readonly string[]): AuthError =>
   new AuthError({
     code: 'X_PASSWORD_WEAK',

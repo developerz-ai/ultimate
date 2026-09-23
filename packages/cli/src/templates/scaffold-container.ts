@@ -112,12 +112,25 @@ coverage
 **/playwright-report
 `;
 
+/**
+ * The production env file, relative to the app root. Named once because two readers must agree:
+ * the compose file's \`env_file:\` (what the containers see) and \`x deploy\`'s \`--env-file\` (what
+ * compose interpolates \`\${VAR:?…}\` from). Two spellings would let them drift apart silently.
+ */
+export const PROD_ENV_FILE = '.env.production';
+
 const composeProd = (
   app: NameSet,
 ): string => `# The production topology: one service per role, one image, differing only by ROLE and replicas.
 # What \`x deploy --method compose\` runs. migrate runs to completion before anything serves.
 #
 #   IMAGE=ghcr.io/you/${app.kebab}:1.2.3 x deploy --image ghcr.io/you/${app.kebab}:1.2.3
+#
+# By hand, always with \`--env-file ${PROD_ENV_FILE}\`: Compose fills \`\${VAR:?…}\` below from the shell
+# and \`--env-file\` only, NEVER from \`env_file:\`, so without it a value set only in that file is
+# "missing" and the parse fails. \`x deploy\` passes it on every step.
+#
+#   docker compose --env-file ${PROD_ENV_FILE} -f docker/docker-compose.prod.yml up -d
 #
 # A published host port has exactly one binder, so \`web\` and \`sync\` run at 1 here. Compose is one
 # box; horizontal scaling of those two belongs to an orchestrator — \`docker/helm\`, beside this
@@ -128,7 +141,7 @@ name: ${app.kebab}
 
 x-image: &image
   image: \${IMAGE:-${app.kebab}:dev}
-  env_file: [../.env.production]
+  env_file: [../${PROD_ENV_FILE}]
   restart: unless-stopped
   stop_grace_period: 30s # SIGTERM → drain in-flight requests, jobs and sockets
   depends_on:
@@ -194,6 +207,7 @@ services:
   web:
     <<: *image
     # The page dials SYNC_URL; unset, it dials /_x/sync on :3000, which web does not serve here.
+    # Set it in ${PROD_ENV_FILE}: \`--env-file\` (header) is what lets this line read it there.
     environment: [ROLE=web, 'SYNC_URL=\${SYNC_URL:?set SYNC_URL=ws://<host>:3001/_x/sync, see wiki/Deployment.md}']
     depends_on:
       db: { condition: service_healthy }
@@ -277,7 +291,7 @@ docker run -p 3000:3000 -e DATABASE_URL=postgres://... ${app.kebab}:dev
 ## One box, every role
 
 \`\`\`sh
-docker compose -f docker/docker-compose.prod.yml up -d      # db → migrate → the rest
+docker compose --env-file ${PROD_ENV_FILE} -f docker/docker-compose.prod.yml up -d   # db → migrate → the rest
 x deploy --image ${app.kebab}:dev --dry-run --json           # the same plan, printed
 \`\`\`
 

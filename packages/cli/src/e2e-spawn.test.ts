@@ -90,6 +90,20 @@ describe('spawnE2eApp', () => {
     }
   }, 30_000);
 
+  // `stopped` stayed true through a restart, so the respawned child was one no later stop() could
+  // kill — it outlived the test. A stopped app is finished: restart refuses, and spawns nothing.
+  test('restart after stop is refused, and no process is left behind', async () => {
+    const app = await spawnE2eApp({ root, mode: 'serve', env: {}, readyTimeoutMs: 20_000 });
+    await app.stop();
+
+    const error = await app.restart({ BUILD_ID: 'b2' }).catch((e: unknown) => e);
+
+    expect(error).toBeUltimateError('X_INVARIANT');
+    expect(await readJson(`${app.base}/env`).catch(() => 'nothing listening')).toBe(
+      'nothing listening',
+    );
+  }, 30_000);
+
   test('an app that dies before it is ready is X_E2E_APP_FAILED, carrying its own output', async () => {
     const error = await spawnE2eApp({
       root,

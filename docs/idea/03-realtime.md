@@ -8,11 +8,11 @@ Three tiers, one ladder. Same mutator shape at every rung — climbing is a **de
 
 | Tier | Name | You write | Server owns | Client owns | Cost |
 |---|---|---|---|---|---|
-| 1 | **Channels** | `ctx.channel('org:1').publish(evt)` | truth + fanout | subscription | ~0 — pubsub over WS |
+| 1 | **Channels** | `const org = channel('org', { params: ['orgId'], policy, events: true })`, then `hub.publishEvent(org, { orgId }, evt)` — never a string topic (`X_CHANNEL_LITERAL`) | truth + fanout | subscription | ~0 — pubsub over WS |
 | 2 | **Live queries** | `query({ live: true, sql })` | truth + change detection | a reactive result set | one replication slot + a matcher |
 | 3 | **Local-first** | the same `mutator` + `entity(name, { persist: true })` | truth + rebase | a durable local store, offline writes | IndexedDB, keyed by principal, + one outbox |
 
-Tier 1 for presence, typing indicators, toasts, cursors. Tier 2 for "the list updates when someone else edits". Tier 3 for offline-capable apps, deferred to v2.
+Tier 1 for presence, typing indicators, toasts, cursors. Tier 2 for "the list updates when someone else edits". Tier 3 for offline-capable apps (21.0.0, unreleased).
 
 **Tiers 1–2 became multi-tenant-safe in this branch, and were not before.** Until it, the socket upgrade hardcoded `actorId: null`, so there was no way to authenticate a WebSocket at all: every channel guard, live-query gate, presence entry and tenant cap ran correctly against an actor that was always anonymous. The idiomatic guard `actor?.orgId === segments[1]` therefore denied everyone, and the only way to ship was `hub.guard('org.>', () => true)` — which is what this repo's own benchmark server does. `createSyncNode({ authenticate })` closes it, and re-authorization on a timer closes the second half: a socket is no longer authorized forever once accepted.
 
@@ -128,9 +128,9 @@ Mitigation, in order:
 
 What people mean by "make it realtime" is almost always: the list updates without a refresh, and my own click feels instant. Tier 2 delivers both — server-authoritative truth, optimistic local application, automatic reconnect — with **no client database, no schema versioning on the client, no conflict-resolution UX, and no offline-write semantics to design**.
 
-Tier 3 buys exactly one additional property: **writes that survive being offline**. That property is worth real money for field apps, note-taking, and mobile-first tools — and it costs a durable local store, a rebase log, client-side migrations, and a conflict story per mutator. Charging every app for it is how "realtime frameworks" become slow frameworks.
+Tier 3 buys exactly one additional property: **writes that survive being offline**. That property is worth real money for field apps, note-taking, and mobile-first tools — and it costs a durable local store, an outbox replayed in order, and a conflict story per mutator. Charging every app for it is how "realtime frameworks" become slow frameworks.
 
-So: tiers 1–2 ship in v1, tier 3 in v2. See [`14-roadmap.md`](./14-roadmap.md) for the sequencing and [`15-risks.md`](./15-risks.md) for why this is the single largest line item.
+So: tiers 1–2 shipped first; tier 3 is in the tree for 21.0.0 (unreleased), opt-in per entity: no record of an entity without `persist: true` is written to disk. See [`14-roadmap.md`](./14-roadmap.md) for the sequencing and [`15-risks.md`](./15-risks.md) for why this is the single largest line item.
 
 ## Rules
 

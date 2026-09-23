@@ -30,9 +30,12 @@ export const endSession = action({
   handle({ ctx }) {
     const landed = carriesHeaders(ctx);
     if (landed) {
+      // Not `HttpOnly`: the demo cookie is a development-only viewing switch that `demo-actor.ts`'s
+      // boot line tells a developer to flip with `document.cookie`, and a script cannot overwrite
+      // an HttpOnly cookie — one sign-out would turn that instruction into a silent no-op.
       ctx.headers.append(
         'set-cookie',
-        `${DEMO_MEMBER_COOKIE}=${DEMO_SIGNED_OUT}; Path=/; SameSite=Lax; HttpOnly`,
+        `${DEMO_MEMBER_COOKIE}=${DEMO_SIGNED_OUT}; Path=/; SameSite=Lax`,
       );
       // The browser drops the previous member's IndexedDB, storage and cached pages — `/` is a
       // static page with no scope tag, so nothing on it would wipe them (the boot wipe is the

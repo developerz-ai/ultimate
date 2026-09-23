@@ -437,6 +437,28 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   action that returns a view, not the entity) keeps its overlay until the server's next row for it
   — a frame, another answer — bounded by `DEFAULT_AWAIT_SERVER_MS` (10 s), after which the synced
   layer stands. Without it, a like showed `+1`, fell back, then rose again on the frame.
+- **A `records` frame names the write that produced it, and the writing page settles on it
+  (21.0.0, additive to protocol 3).** The node fans a commit out before it answers, so the write's
+  own frame routinely beats its HTTP answer, and merged under the still-pending twin it painted
+  the write twice: measured in `examples/dummy`'s `offline-like` e2e, `2,2 → 3,3 → 2,2` on the
+  outbox replay. No client-side rule can tell its own echo from somebody else's change without the
+  frame saying which write it is, and deferring frames for touched rows was rejected: with no
+  version it reorders an older frame over a newer answer. `ChannelRecordsFrame.write` is
+  `writeDigest(idempotencyKey)` (`@ultimat3/core`), never the key, because a frame goes to every
+  member. `RecordStore.push` digests every overlay key it takes (`record-names.ts`), before the
+  request leaves. `client-channels.ts` calls `settleWrite` inside the frame's own batch, so the
+  merge and the settle are one notification. A digest this page does not hold changes nothing.
+  Server side, the name comes off `ChangeEvent.write`: `channel-logs.ts` stamps it on the ring
+  entry, so a `since` replay names it too. `pg-replication.ts` reads it off the transaction's
+  opening `pg_logical_emit_message` (prefix `WRITE_ORIGIN_WAL_PREFIX`, START_REPLICATION asks
+  `messages 'true'`), and `@ultimat3/testing`'s in-process replicator reads it off the row
+  observer. A frame `write` that is not a digest is a protocol error (`wire-channel.ts`); on the
+  bus it is dropped, never trusted (`parseEnvelope`). `write-echo.test.ts` covers the useMutation and
+  outbox paths, another writer, an unknown digest, a custom policy, and a partial echo.
+- **An overlay a server answer partly confirmed stops painting on those rows.** `settle` with rows
+  missing used to keep the WHOLE twin, so the rows the answer or echo did carry showed the write
+  twice until the rest arrived. The carried rows now go into `OverlayEntry.confirmed`, and
+  `replayOverlays` leaves them to synced truth. Only the rows still waiting show the twin.
 - `local(tx, input)` is pure and CONVERGENT: no I/O, no `Date.now()`, no `Math.random()`, and
   applying it over its own result changes nothing. The overlay replays it on every server update.
 - Anything a component reads is a **getter or an accessor**, never a value snapshotted at hook time:
@@ -928,7 +950,8 @@ and are unchanged.
 | `nats-fake.ts` | an in-memory bus implementing the port — server semantics, not wire bytes; the only way to prove multi-node fanout under a sealed network |
 | `cursor.ts` / `change-buffer.ts` / `thundering-herd.ts` | reconnect — the highest-risk area. `thundering-herd.ts`'s backoff is core's, shifted 0-based to 1-based; the drain plan and the accept budget are its own |
 | `page-errors.ts` | the refusals a browser can reach — the store, the hooks, the wire check, the local store — without the code table |
-| `record-store.ts` | the page's one record store: the optimistic overlay over synced truth, batched notification, and `settle` under the conflict policy |
+| `record-store.ts` | the page's one record store: the optimistic overlay over synced truth, batched notification, and `settle` under the conflict policy — from an answer, or from the write's own `records` echo (`settleWrite`) |
+| `record-names.ts` | which pending overlay a frame's `write` digest names: every pushed key digested before its request leaves |
 | `record-key.ts` / `record-synced.ts` / `record-await.ts` | a record's `type:key` name and `carriedBy`; the synced layer (merge, holds, provisional disk rows); the overlays waiting on server truth and what a write heard while in flight |
 | `record-tx.ts` | the overlay replay and the `tx` a mutator's `local` half writes through |
 | `page-store.ts` | the page state on `globalThis` — the store, the sync target, the write counts — and `hasPageSocket` |
@@ -943,7 +966,7 @@ and are unchanged.
 | `sync-meta.ts` | the sync target and worker URL read off the document's `<meta>` tags (core's names) |
 | `live-record-type.ts` | the live path's record type and record key per table, from the entity's own projection |
 | `live-rows.ts` | one live subscription's window over the store — its record type, its order, its retain/release, and `Registration` itself |
-| `offline-queue.ts` | the durable outbox, unwired since 21.0.0 until plan 101 slice 12 replays it over HTTP |
+| `offline-queue.ts` | the durable outbox queue; `page-outbox.ts` opens one per principal and replays it in order over HTTP |
 | `client.ts` / `sync-node.ts` | the two halves — connection lifecycle and subscriptions; the socket carries no writes |
 | `sync-auth.ts` | what a socket's identity IS (`SyncGrant`), the book that holds one per socket, and the pass that re-decides an expired one |
 | `sync-frames.ts` | what a RECEIVED frame does to server state — the node's inbound surface, and the mirror of `client-frames.ts` |

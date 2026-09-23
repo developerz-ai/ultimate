@@ -48,3 +48,5 @@ export type { RecordEnvelope, RecordRows } from './record-envelope';
 export { decodeRecordEnvelope, RECORDS_HEADER } from './record-envelope';
 export type { PageClient, RecordSink } from './record-sink';
 export { pageClient } from './record-sink';
+// A write's public name, so the page's store can recognise the `records` frame its own write made.
+export { isWriteDigest, WRITE_DIGEST_LENGTH, writeDigest } from './write-digest';

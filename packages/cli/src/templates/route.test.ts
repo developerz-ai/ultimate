@@ -63,9 +63,11 @@ describe('unit · the offline assertion lands where the e2e step can find it', (
     // `net::ERR_INTERNET_DISCONNECTED` on a freshly scaffolded app's first `bin/check`.
     const body = contentsOf('blog', 'page.e2e.test.ts');
     const waits = body.indexOf('await page.waitForServiceWorker();');
+    const goes = body.indexOf("await page.goto('/blog');");
+    // Both needles pinned present on the index itself, so neither order below holds on a -1.
     expect(waits).toBeGreaterThan(-1);
-    expect(body).toContain("await page.goto('/blog');");
-    expect(waits).toBeGreaterThan(body.indexOf("await page.goto('/blog');"));
+    expect(goes).toBeGreaterThan(-1);
+    expect(waits).toBeGreaterThan(goes);
     expect(waits).toBeLessThan(body.indexOf('await offline();'));
   });
 

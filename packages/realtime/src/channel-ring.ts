@@ -10,6 +10,8 @@ export interface RecordsEntry {
   readonly seq: number;
   readonly adopt: readonly RecordPart[];
   readonly remove: readonly { readonly type: string; readonly key: string }[];
+  /** The write that produced the change (`ChangeEvent.write`), kept so a replay still names it. */
+  readonly write?: string;
 }
 
 export interface RecordPart {
@@ -42,9 +44,18 @@ export class ChannelRing {
     return this.#seq;
   }
 
-  append(adopt: readonly RecordPart[], remove: RecordsEntry['remove']): RecordsEntry {
+  append(
+    adopt: readonly RecordPart[],
+    remove: RecordsEntry['remove'],
+    write?: string,
+  ): RecordsEntry {
     this.#seq += 1;
-    const entry: RecordsEntry = { seq: this.#seq, adopt, remove };
+    const entry: RecordsEntry = {
+      seq: this.#seq,
+      adopt,
+      remove,
+      ...(write === undefined ? {} : { write }),
+    };
     this.#entries.push(entry);
     if (this.#entries.length > this.#capacity) this.#entries.shift();
     return entry;
