@@ -50,8 +50,18 @@ export const SUPPORTED_LOCALES: readonly Locale[] = [
 export { type Direction, directionOf, isRtl } from '@ultimat3/core';
 
 /**
- * Strip region, lowercase, fall back to the default.
- * `pt-BR` → `pt`; `ZH-Hant-TW` → `zh-hant` when that tag is supported, else `zh`.
+ * The registered spelling of `lower`, compared case-insensitively. A registered `pt-BR` used to
+ * be compared EXACTLY against a request tag this function had just lowercased, so `pt-BR` from a
+ * query, a cookie or a header never matched it and every such request fell back.
+ */
+function registered(lower: string, supported: readonly Locale[]): Locale | undefined {
+  return supported.find((locale) => locale.toLowerCase().replace(/_/g, '-') === lower);
+}
+
+/**
+ * Strip region, match case-insensitively, answer the REGISTERED spelling, fall back to the default.
+ * `pt-BR` → `pt-BR` when that tag is registered, else `pt`; `ZH-Hant-TW` → `zh-hant` (or
+ * `zh-Hant`, as registered) when that tag is supported, else `zh`.
  */
 export function normalizeLocale(
   tag?: string | null,
@@ -61,17 +71,18 @@ export function normalizeLocale(
   if (!tag) return fallback;
   const lower = tag.trim().toLowerCase().replace(/_/g, '-');
   if (lower.length === 0 || lower === '*') return fallback;
-  if (supported.includes(lower)) return lower;
+  const whole = registered(lower, supported);
+  if (whole !== undefined) return whole;
 
   const segments = lower.split('-');
   const primary = segments[0] ?? '';
   // `lang-script` is a distinct written form (zh-hant vs zh-hans) — try it before dropping to `lang`.
   const script = segments[1];
   if (script !== undefined && script.length === 4) {
-    const withScript = `${primary}-${script}`;
-    if (supported.includes(withScript)) return withScript;
+    const withScript = registered(`${primary}-${script}`, supported);
+    if (withScript !== undefined) return withScript;
   }
-  return supported.includes(primary) ? primary : fallback;
+  return registered(primary, supported) ?? fallback;
 }
 
 /** Same as `normalizeLocale` but loud: use where an unknown locale is a caller bug. */

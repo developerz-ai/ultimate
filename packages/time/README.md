@@ -158,6 +158,15 @@ negated; an empty one is `0` in either direction, never `-0`.
 | `X_CRON_NOT_DESCRIBABLE` | a valid 6-field cron whose seconds field `CronPhrases` has no words for |
 | `X_SCHEDULE_INVALID` | a wall-clock field out of range: `slot.hour`, `slot.minute`, `slot.second`, `slot.weekday` |
 
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `TimeError` | any `TimeErrorCode` — `TIME_ERROR_CODES` | `src/errors.ts` |
+
 ## Why it exists
 
 Naive time math breaks quietly: the digest goes out an hour early for half the year, the

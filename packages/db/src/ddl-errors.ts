@@ -57,3 +57,16 @@ export const generatedExpressionUnsafe = (column: string, count: number): DbErro
     fix: `give "${column}" a single expression — .searchable() or generated: 'lower("title")' — then x db gen`,
     meta: { column, count },
   });
+
+/**
+ * A column default holding more than one command, refused before it is spliced into
+ * `alter column … set default …`. The recorded side arrives from a `.snapshot.json`; same lexer and
+ * same argument as `generatedExpressionUnsafe`.
+ */
+export const columnDefaultUnsafe = (column: string, count: number): DbError =>
+  new DbError({
+    code: 'X_SQL_UNSAFE',
+    cause: `the default of column "${column}" holds ${count} commands; a default is one expression`,
+    fix: `restore the migration's .snapshot.json from version control (git checkout -- migrations/), or give "${column}" a single .default(), then x db gen`,
+    meta: { column, count },
+  });

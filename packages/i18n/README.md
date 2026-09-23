@@ -117,6 +117,15 @@ X_CATALOG_MISSING_KEYS: catalog is incomplete
 | `X_CATALOG_MISSING_KEYS` | a shipped locale lacks a key the source uses |
 | `X_CATALOG_INVALID` | non-string leaf, bad key segment, or a dotted/nested collision |
 
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `I18nError` | `X_LOCALE_UNSUPPORTED`, `X_CATALOG_MISSING_KEYS`, `X_CATALOG_INVALID`, `X_CATALOG_UNREGISTERED` | `src/errors.ts` |
+
 ## Why it exists
 
 Retrofitting i18n means touching every string in the app. Structuring for many locales on

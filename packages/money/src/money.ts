@@ -112,8 +112,10 @@ export function toDecimalString(amount: Money): string {
 }
 
 /**
- * Major units as a float. **Format-time only** — the one place a division by the
- * currency scale is legitimate, because `Intl.NumberFormat` takes a number.
+ * Major units as a float — lossy past 2^53 / 10^scale, so never for arithmetic and no longer for
+ * formatting either: `format.ts` hands `Intl` the exact `toDecimalString`, since a float rendered
+ * `money(9007199254740991, 'USD', 6)` as `…740992`. Kept as public API for a chart axis or a sort
+ * key, where an approximation is the point.
  */
 export function toDecimalNumber(amount: Money): number {
   return amount.minor / 10 ** moneyScale(amount);

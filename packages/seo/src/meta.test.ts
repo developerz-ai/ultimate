@@ -151,3 +151,13 @@ describe('renderMeta', () => {
     expect(tags.find((tag) => tag.tag === 'title')?.text).toBe('A & B');
   });
 });
+
+describe('a title carrying a replacement pattern', () => {
+  // `String.replace` expands `$$`, `$&` and `$'` inside a replacement STRING, so a product called
+  // "Save $$ on shoes" rendered as "Save $ on shoes", and `$&` spliced the `%s` slot back in.
+  test('round-trips byte for byte', () => {
+    for (const title of ['Save $$ on shoes', 'A $& B', "C $' D", 'E $` F']) {
+      expect(applyTitleTemplate(title, '%s — Shop')).toBe(`${title} — Shop`);
+    }
+  });
+});

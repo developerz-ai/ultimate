@@ -194,7 +194,8 @@
     "error": {
       "action-failed": "The action threw before it finished.",
       "confirmation-required": "This is destructive: echo the confirmation token first.",
-      "invalid-input": "Some fields did not pass the entity's own schema."
+      "invalid-input": "Some fields did not pass the entity's own schema.",
+      "operation-not-offered": "This resource does not offer that operation."
     },
     "form": {
       "cancel": "Cancel",

@@ -106,7 +106,7 @@ The HMAC covers the **constraints**, not just the key —
 A client that edits `?x-max=` invalidates the signature — it cannot widen what it was granted.
 
 The HMAC key is `signingSecret`, else `STORAGE_SIGNING_SECRET`, else the shipped
-`DEV_SIGNING_SECRET` — and **only in `development` or `test`**. Anywhere else `localDriver` refuses
+`DEV_SIGNING_SECRET` — and **only in `development` or `test`**, read with a fallback of `production`: a process that names no environment at all (`ULTIMATE_ENV` and `NODE_ENV` both unset) is refused like a production one, `As of 2026-09-23`. Anywhere else `localDriver` refuses
 to construct (`X_ENV_MISSING`) unless one of those two is set to something that is not the shipped
 literal: the dev literal is published in this repo, so signing with it lets anyone mint a `PUT` for
 any key with a `maxBytes` and `contentType` of their choosing, which `acceptSignedUpload` then
@@ -189,9 +189,9 @@ An upload happens **before** the row it belongs to exists, so it lands at
 | `pendingKey(orgId, uploadName(id, filename))` | `org/o1/pending/u-1.png` |
 | `quarantineKey(orgId, name)` | `org/o1/pending/quarantine/u-1.png` |
 | `attachmentKey(orgId, { entity, id, field }, name)` | `org/o1/post/p-1/cover/u-1.png` |
-| `promoteAttachment({ disk, key, orgId, target })` | `copy` then `delete` — never the reverse |
+| `promoteAttachment({ disk, key, orgId, target })` | `copy` then `delete` — never the reverse. The key must be a **pending** one (`isPendingKey`): an attached key a client sent back is another row's file, and moving it would delete the victim's copy (`X_STORAGE_NOT_PENDING`) |
 | `releaseQuarantine({ disk, key, orgId })` | quarantine → pending; returns the released key |
-| `sweepOrphans({ disk, orgId, olderThanMs })` | `{ deleted, failed }` for stale `pending/` keys |
+| `sweepOrphans({ disk, orgId, olderThanMs })` | `{ deleted, failed }` for stale `pending/` keys. `olderThanMs` is a whole number of 0 or more, refused otherwise (`X_INVARIANT`) — `NaN` read as "everything is old enough" and deleted an upload made a moment ago |
 
 The filename contributes nothing but its extension, and only if it matches `.[a-z0-9]{1,12}`.
 `sweepOrphans` can only reach the `pending/` prefix of one org — a sweep that could touch an
@@ -239,10 +239,20 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 | `X_STORAGE_DELETE_FAILED` | the disk REFUSED a delete — denied `s3:DeleteObject`, a throttle, an expired credential, a read-only mount. An **absent** key is still not an error |
 | `X_STORAGE_LIST_FAILED` | the disk REFUSED a listing — denied `s3:ListBucket`, a throttle, an unreadable root. An **empty** disk is still not an error |
 | `X_STORAGE_QUARANTINED` | `promoteAttachment` on a key nothing has released from `pending/quarantine/` |
+| `X_STORAGE_NOT_PENDING` | `promoteAttachment` on a key outside the org's `pending/` prefix — most often another row's attached key |
 | `X_NOT_IMPLEMENTED` | S3 user metadata / cache-control; `serverSideEncryption` on either driver |
 | `X_ENV_MISSING` | core's: S3 credential env vars, or a `localDriver` built outside development where neither `signingSecret` nor `STORAGE_SIGNING_SECRET` holds a secret other than the published `DEV_SIGNING_SECRET` |
 | `X_IMAGE_UNSUPPORTED` | core's: an `avif` encode, a source no built-in decoder reads, or a `variantKey` format no variant can carry |
 | `X_IMAGE_DECODE_FAILED` | core's: truncated or corrupt image bytes |
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `StorageError` | any `StorageErrorCode` — `STORAGE_ERROR_CODES` | `src/errors.ts` |
 
 ## Images
 

@@ -34,6 +34,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "21.0.0"
+    "@ultimat3/core": "21.0.0",
+    "@ultimat3/schema": "21.0.0"
   }
 }

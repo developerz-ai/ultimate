@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { resolveLocale } from './context';
 import {
   assertSupportedLocale,
   directionOf,
@@ -117,3 +118,23 @@ function causeOf(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+describe('a registered tag spelled with a region', () => {
+  // `pt-BR` registered, and every request tag lowercased then compared EXACTLY — so `pt-BR` in a
+  // query, a cookie or a header never matched `pt-BR` and always fell back.
+  const regional = ['en', 'pt-BR', 'zh-Hant'] as const;
+
+  test('matches case-insensitively and answers the registered spelling', () => {
+    expect(normalizeLocale('pt-br', regional)).toBe('pt-BR');
+    expect(normalizeLocale('PT_BR', regional)).toBe('pt-BR');
+    expect(normalizeLocale('zh-hant-TW', regional)).toBe('zh-Hant');
+    expect(negotiateLocale('fr,pt-br;q=0.8', regional)).toBe('pt-BR');
+  });
+
+  test('query, header and cookie all resolve to it', () => {
+    const overrides = { supported: [...regional], fallback: 'en' };
+    for (const sources of [{ query: 'pt-br' }, { cookie: 'pt-br' }, { header: 'pt-br,en;q=0.5' }]) {
+      expect(resolveLocale(sources, overrides).locale).toBe('pt-BR');
+    }
+  });
+});

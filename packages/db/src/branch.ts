@@ -3,7 +3,7 @@
 // it is unsure about, a data backfill, a DROP — never happens against the shared database.
 // Branches are cheap and forgettable, so `reapBranches()` is part of the design, not an add-on.
 
-import { systemClock } from '@ultimat3/core';
+import { finiteCount, systemClock } from '@ultimat3/core';
 import { baseClient, type DbClient } from './client';
 import { branchExists, branchNameInvalid, DbError } from './errors';
 import { identifier, literal, sql } from './sql';
@@ -168,7 +168,10 @@ export interface ReapOptions extends DropBranchOptions {
  * no migration — the next `createBranch` writes the base down.
  */
 export async function reapBranches(options: ReapOptions): Promise<readonly string[]> {
-  const cutoff = (options.now ?? systemClock.now()).getTime() - options.maxAgeMs;
+  // Screened before anything is read: `now - NaN` is NaN and `createdAtMs > NaN` is false — the
+  // "old enough" answer — so `maxAgeMs: NaN` dropped every branch of this database.
+  const maxAgeMs = finiteCount('reapBranches', 'maxAgeMs', options.maxAgeMs, 0);
+  const cutoff = (options.now ?? systemClock.now()).getTime() - maxAgeMs;
   const client = options.client ?? baseClient();
   const here = await currentDatabase(client);
   const branches = await listBranches({ ...options, client });

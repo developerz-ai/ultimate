@@ -39,3 +39,14 @@ describe('stripSqlNoise', () => {
     expect(stripSqlNoise("select 'it''s; drop table posts'")).not.toContain('drop table');
   });
 });
+
+describe('a dollar tag carrying a digit after its first character', () => {
+  // `@ultimat3/mcp`'s readonly-sql once read a tag as letters and underscores only, so `$a1$` was
+  // not a body and `pg_sleep` beside it was misread (plan 101 slice 08 a). This lexer already
+  // reads it; pinned so the two cannot drift apart again.
+  test('$a1$ … $a1$ is one body, and the call between two of them is code', () => {
+    expect(stripSqlNoise("select $a1$'$a1$, pg_sleep(2), $a1$'$a1$")).toBe(
+      'select  , pg_sleep(2),  ',
+    );
+  });
+});

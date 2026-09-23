@@ -474,7 +474,8 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
                 // Same reason as `auditLedger`'s: `x db status` does not exist. The `down` SQL only
                 // exists in the build that shipped it, so the fix is the read that names that build.
                 `psql "$DATABASE_URL" -c "select id, app_version from ${LEDGER_TABLE} ` +
-                  `order by id desc limit 5"   # deploy the build that shipped "${row.id}", ` +
+                  `order by id desc limit 5"   # deploy the build that shipped the migration ` +
+                  `whose id is base64 ${Buffer.from(row.id, 'utf8').toString('base64')}, ` +
                   'and roll back there — its down SQL exists nowhere else',
               );
             }

@@ -5,6 +5,7 @@
 
 import { systemClock } from '@ultimat3/core';
 import { checkClauses, checkPlan, declaredChecks } from './check-ddl';
+import { alterColumnInPlace } from './column-alter';
 import { defaultExpression } from './column-default';
 import { isDestructive } from './destructive';
 import { dropOrder } from './drop-order';
@@ -194,6 +195,10 @@ function diffTable(
     if (recorded !== undefined) {
       if (retypeColumn(live, column, recorded, plan, moved, retyped) === 'rebuilt') {
         rebuilt.add(column.column);
+      } else {
+        // After any retype, so a new default is set against the column's new type. A rebuilt
+        // column was re-added carrying its whole clause, so it has nothing left to move.
+        alterColumnInPlace(entity.table, column, recorded, plan);
       }
       continue;
     }

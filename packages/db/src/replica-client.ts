@@ -8,6 +8,7 @@ import { type DbClient, type DbConnection, isReservable, type ReservableClient }
 import { isPlainRead } from './replica-route';
 import { markScopeWrote, replicaScope } from './replica-scope';
 import type { SqlFragment } from './sql';
+import { sqlState } from './sqlstate';
 
 export interface ReplicaStats {
   /** Statements the replica answered. */
@@ -30,6 +31,27 @@ export interface ReplicatedClientOptions {
 
 export interface ReplicatedClient extends DbClient {
   readonly stats: ReplicaStats;
+}
+
+/**
+ * Whether a replica failure says the REPLICA could not answer, as opposed to the statement being
+ * refused. No SQLSTATE at all is a failure that never reached a server (a refused socket, a closed
+ * pool) — the `X_DB_UNAVAILABLE` case. Class `08` is a connection failure, `57P0x` an operator or
+ * crash shutdown, `40001` on a standby a conflict with recovery, `25006` a write it refused, and
+ * `53300` a replica out of connections. Everything else — `22P02` a bad cast, `42601` a syntax
+ * error, `57014` the caller's own timeout — would fail identically on the primary, so it is
+ * rethrown: counted, three of them parked a healthy replica, and every one cost two round trips.
+ */
+function replicaUnavailable(error: unknown): boolean {
+  const state = sqlState(error);
+  if (state === undefined) return true;
+  return (
+    state.startsWith('08') ||
+    state.startsWith('57P0') ||
+    state === '40001' ||
+    state === '25006' ||
+    state === '53300'
+  );
 }
 
 /** Three in a row, then a ten-second rest — an outage costs 3 doubled reads, not every read. */
@@ -106,6 +128,12 @@ export function replicatedClient(
       consecutiveFailures = 0;
       return answer;
     } catch (error) {
+      if (!replicaUnavailable(error)) {
+        // The replica answered — with a refusal of the statement — so it is up, and the run of
+        // failures the breaker is counting is over.
+        consecutiveFailures = 0;
+        throw error;
+      }
       // Re-running is exactly-once, not at-least-once: only `isPlainRead` statements reach here,
       // and a statement a standby refused (`25006`) never executed. A replica outage therefore
       // costs latency and never an answer — which is the whole point, since a read replica is a

@@ -296,3 +296,21 @@ describe('ld.Event offers', () => {
     expect(node['eventAttendanceMode']).toBe('https://schema.org/MixedEventAttendanceMode');
   });
 });
+
+describe('a CMS null in a required field', () => {
+  // `required()` called `.trim()` on it and threw a bare `TypeError` — a crash with no code in
+  // place of the refusal the builder exists to give.
+  test('is the coded refusal, never a TypeError', () => {
+    let caught: unknown;
+    try {
+      ld.Article({
+        headline: 'Ship it',
+        author: { name: 'Ada' },
+        datePublished: null as unknown as string,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as { code?: string } | undefined)?.code).toBe(SEO_ERROR_CODES.ldInvalid);
+  });
+});

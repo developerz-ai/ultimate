@@ -5,6 +5,23 @@
 import { noiseAt } from './sql-scan';
 
 const WHITESPACE = /\s/;
+const WORD_START = /[A-Za-z_]/;
+const WORD = /[A-Za-z0-9_$]/;
+
+/**
+ * The blocks a `;` does not end. A PG14+ SQL-standard function body — `begin atomic … end` — holds
+ * whole statements, so its inner `;` is data; reproduced on PGlite, cutting there sent `create
+ * function … begin atomic select 1` alone (`syntax error at end of input`) and ran the rest of the
+ * body as top-level statements. A `case … end` inside such a body is tracked too, or its `end`
+ * would close the body early. Outside an atomic body nothing is tracked, so `begin; … end;` — a
+ * transaction — splits exactly as it always did.
+ */
+function trackBlocks(stack: string[], word: string, previous: string): void {
+  if (word === 'atomic' && previous === 'begin') stack.push('atomic');
+  else if (stack.length === 0) return;
+  else if (word === 'case') stack.push('case');
+  else if (word === 'end') stack.pop();
+}
 
 const isComment = (kind: string): boolean => kind === 'line-comment' || kind === 'block-comment';
 
@@ -22,6 +39,8 @@ export function statementsOf(script: string): readonly string[] {
   // Set by anything that is not whitespace and not inside a comment: what makes a chunk a
   // statement rather than a note between two of them.
   let content = false;
+  const blocks: string[] = [];
+  let previous = '';
 
   const cut = (end: number): void => {
     const text = content ? script.slice(start, end).trim() : '';
@@ -37,7 +56,18 @@ export function statementsOf(script: string): readonly string[] {
       continue;
     }
     const char = script[index] ?? '';
-    if (char === ';') {
+    // A word starts only after a non-word character, so `x_begin` is not `begin`.
+    if (WORD_START.test(char) && !WORD.test(script[index - 1] ?? ' ')) {
+      let end = index + 1;
+      while (end < script.length && WORD.test(script[end] ?? '')) end += 1;
+      const word = script.slice(index, end).toLowerCase();
+      trackBlocks(blocks, word, previous);
+      previous = word;
+      content = true;
+      index = end;
+      continue;
+    }
+    if (char === ';' && blocks.length === 0) {
       cut(index);
       start = index + 1;
       index += 1;

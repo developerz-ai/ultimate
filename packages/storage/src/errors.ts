@@ -20,6 +20,7 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_DELETE_FAILED',
   'X_STORAGE_LIST_FAILED',
   'X_STORAGE_QUARANTINED',
+  'X_STORAGE_NOT_PENDING',
 ] as const;
 
 /**
@@ -55,6 +56,7 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_DELETE_FAILED: 'the object could not be deleted',
   X_STORAGE_LIST_FAILED: 'the objects could not be listed',
   X_STORAGE_QUARANTINED: 'the object is still in quarantine',
+  X_STORAGE_NOT_PENDING: 'the key is not a pending upload',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws
@@ -292,6 +294,19 @@ export const quarantined = (key: string, orgId: string): StorageError =>
     code: 'X_STORAGE_QUARANTINED',
     cause: `"${key}" is still under the quarantine prefix, so nothing has cleared it for use`,
     fix: `scan the bytes, then releaseQuarantine({ disk, key: '${key}', orgId: '${orgId}' }) — promote the key it returns`,
+    meta: { key, orgId },
+  });
+
+/**
+ * A key inside the org and outside its `pending/` prefix — most often another row's attached key
+ * a client sent back. Promotion copies then deletes, so accepting it moved the victim's file onto
+ * this row and removed it from theirs.
+ */
+export const notPending = (key: string, orgId: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_NOT_PENDING',
+    cause: `"${key}" is not under org "${orgId}"'s pending/ prefix, so it is not an upload waiting for a row — it may already belong to one`,
+    fix: 'promote the key grantUpload returned with no target: promoteAttachment({ disk, key: pendingKey(orgId, name), orgId, target })',
     meta: { key, orgId },
   });
 

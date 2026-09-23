@@ -146,3 +146,24 @@ describe('acquireTimeoutMs', () => {
     expect(counter.releases).toBe(1);
   });
 });
+
+describe('named prepared statements', () => {
+  // `Bun.SQL` prepares and caches NAMED statements per connection by default, so after any
+  // migration that adds or drops a column every warm `select *` / `returning *` answered `0A000
+  // cached plan must not change result type` until its connection closed. The live half is
+  // `client-prepared.live.test.ts`; this pins what the pool is ASKED for, with no server.
+  test('the pool is opened with prepare: false', async () => {
+    let options: Readonly<Record<string, unknown>> | undefined;
+    host.Bun.SQL = class {
+      constructor(_url: string, given?: Readonly<Record<string, unknown>>) {
+        options = given;
+      }
+      async unsafe(): Promise<unknown> {
+        return [];
+      }
+      async close(): Promise<void> {}
+    };
+    await createPostgresClient({ url: TEST_URL, role: 'web' }).ping();
+    expect(options?.['prepare']).toBe(false);
+  });
+});

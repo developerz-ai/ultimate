@@ -16,7 +16,7 @@
 //     bun test packages/db/src/array-parameter.live.test.ts
 
 import { describe, expect, test } from 'bun:test';
-import { encodeArrayParameters } from './array-parameter';
+import { encodeBoundParameters } from './bound-parameters';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const describeLive = url === undefined ? describe.skip : describe;
@@ -38,7 +38,7 @@ const on = async <R>(text: string, values: readonly unknown[]): Promise<readonly
 
 /** The same call `sendOn` makes: the encoder, then `unsafe`. */
 const run = <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
-  on<R>(text, encodeArrayParameters(values));
+  on<R>(text, encodeBoundParameters(values));
 
 describeLive('live · postgres · an array bound as a statement parameter', () => {
   // The defect itself, as a property rather than as a story: the raw form is what Bun sends and it

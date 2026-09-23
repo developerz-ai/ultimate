@@ -6,11 +6,13 @@
 import { describe, expect, test } from 'bun:test';
 import { type Clock, renderThrowable } from '@ultimat3/core';
 import { db, isReservable, setDbClient } from './client';
+import { driverError } from './errors';
 import { createRecordingClient, type RecordingClient } from './fake';
 import { reservableOver } from './fake-reservable';
 import { replicatedClient } from './replica-client';
 import { withReplicaReads } from './replica-scope';
 import { sql } from './sql';
+import { sqlState } from './sqlstate';
 import { withTransaction } from './transaction';
 
 interface Pair {
@@ -270,4 +272,54 @@ describe('the breaker numbers are screened where the client is built', () => {
         .execute,
     ).toBe('function');
   });
+});
+
+/**
+ * The fallback counted EVERY replica failure, so a caller's own bad statement — a failed cast, a
+ * syntax error, its own statement timeout — was retried on the primary and fed the breaker: three
+ * bad casts parked a healthy replica for ten seconds, and every failing read cost twice. Only a
+ * failure that says the REPLICA could not answer falls back.
+ */
+describe('a statement the replica answered with a refusal of the statement itself', () => {
+  const failingWith = (state: string | undefined) => {
+    const { primary, replica } = pair();
+    let attempts = 0;
+    const failing: typeof replica = {
+      ...replica,
+      query: async () => {
+        attempts += 1;
+        // `driverError` is what the pooled funnel throws, so the test sees what production sees.
+        throw driverError(
+          'select $1::uuid',
+          state === undefined ? new TypeError('refused') : { errno: state, message: 'refused' },
+        );
+      },
+    };
+    const client = replicatedClient(primary, failing);
+    return { client, primary, attempts: () => attempts };
+  };
+
+  test.each(['22P02', '42601', '57014'])(
+    '%s is rethrown, never retried, never counted',
+    async (state) => {
+      const { client, primary } = failingWith(state);
+      for (let turn = 0; turn < 3; turn += 1) {
+        const caught = await withReplicaReads(() =>
+          client.query(sql`select ${'not-a-uuid'}::uuid`),
+        ).catch((error: unknown) => error);
+        expect(sqlState(caught)).toBe(state);
+      }
+      expect(client.stats).toMatchObject({ fallbacks: 0, parked: false, primary: 0 });
+      expect(primary.texts).toEqual([]);
+    },
+  );
+
+  test.each(['08006', '57P01', '57P03', '40001', '25006', undefined])(
+    '%p is the replica failing, so it falls back and counts',
+    async (state) => {
+      const { client } = failingWith(state);
+      await withReplicaReads(() => client.query(sql`select 1`));
+      expect(client.stats.fallbacks).toBe(1);
+    },
+  );
 });

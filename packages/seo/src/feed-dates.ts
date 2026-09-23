@@ -4,10 +4,24 @@
 // `toISOString()` as a `RangeError` that takes the whole route down over one bad row.
 
 import type { Clock } from '@ultimat3/core';
+import { logger } from '@ultimat3/core';
+import { isIsoDateTime } from '@ultimat3/schema';
 
-/** Milliseconds for a timestamp, or `undefined` when the string is not a date at all. */
+/**
+ * Milliseconds for a timestamp, or `undefined` when the string names no instant. An ISO date, or
+ * an ISO date-time carrying `Z` or an offset, is the whole accepted set — `@ultimat3/schema`'s
+ * `isIsoDateTime`, the rule `t.date` and `fromIso` answer with. `Date.parse` alone read
+ * `2026-03-14T09:00:00` through the PROCESS's zone, so a feed's `pubDate` moved with `TZ`; that
+ * form is treated as absent and logged, the screen `@ultimat3/flags` gives an expiry.
+ */
 export function epochOf(iso: string | undefined): number | undefined {
   if (iso === undefined) return undefined;
+  if (!isIsoDateTime(iso)) {
+    // Offsetless is the one refusal worth a line: it is a real date the author meant, and it
+    // used to render — adding a `Z` is exactly what makes it valid.
+    if (isIsoDateTime(`${iso}Z`)) logger.warn('seo.feed.date_offsetless', { value: iso });
+    return undefined;
+  }
   const ms = Date.parse(iso);
   return Number.isNaN(ms) ? undefined : ms;
 }

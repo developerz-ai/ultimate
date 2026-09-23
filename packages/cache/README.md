@@ -363,6 +363,21 @@ cache).
 | `X_CACHE_TOO_LARGE` | one entry exceeds a tier's whole byte budget |
 | `X_CACHE_TTL_INVALID` | a `ttlMs` that is not a positive, finite number of milliseconds |
 
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `CacheDriverUnavailableError` | `X_CACHE_DRIVER_UNAVAILABLE` | `src/errors.ts` |
+| `CacheJitterInvalidError` | `X_CACHE_JITTER_INVALID` | `src/errors.ts` |
+| `CacheLimitInvalidError` | `X_CACHE_LIMIT_INVALID` | `src/errors.ts` |
+| `CachePurgeFailedError` | `X_CACHE_PURGE_FAILED` | `src/errors.ts` |
+| `CacheTagUnknownError` | `X_CACHE_TAG_UNKNOWN` | `src/errors.ts` |
+| `CacheTooLargeError` | `X_CACHE_TOO_LARGE` | `src/errors.ts` |
+| `CacheTtlInvalidError` | `X_CACHE_TTL_INVALID` | `src/errors.ts` |
+
 ## Boundary
 
 Tier 1. Imports `@ultimat3/core` and `@ultimat3/schema` only. Knows nothing about

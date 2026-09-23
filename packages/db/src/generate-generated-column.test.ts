@@ -211,3 +211,54 @@ describe('the expression is screened before it is spliced', () => {
     expect(emitted).not.toContain('drop table users');
   });
 });
+
+describe('a generated column that becomes plain with a different type', () => {
+  // `drop expression` alone, while the snapshot recorded the new type: the database kept the old
+  // one, and every later generation compared the new type with the new type and emitted nothing.
+  test('drops the expression, then retypes the now-plain column, and reverses both', () => {
+    const doubled = (kind: string, generated: string | undefined): EntityDescriptionLike => ({
+      name: 'Counter',
+      table: 'counters',
+      primaryKey: ['id'],
+      columns: [
+        column('id', { kind: 'uuid', primaryKey: true, notNull: true }),
+        column('n', { kind: 'integer', notNull: true }),
+        column('doubled', { kind, generated }),
+      ],
+      indexes: [],
+    });
+    const { up, down } = migrate(doubled('bigint', undefined), doubled('integer', 'n * 2'));
+    const statements = up.split('\n').filter((line) => line.includes('"doubled"'));
+    expect(statements).toEqual([
+      'alter table "counters" alter column "doubled" drop expression;',
+      'alter table "counters" alter column "doubled" type bigint using "doubled"::bigint;',
+    ]);
+    const back = down.split('\n').filter((line) => line.includes('"doubled"'));
+    expect(back[0]).toBe(
+      'alter table "counters" alter column "doubled" type integer using "doubled"::integer;',
+    );
+    expect(back[1]).toContain('set expression as (n * 2)');
+  });
+});
+
+describe('every spliced expression takes the one screen', () => {
+  // `set expression as (${wanted})` skipped the screen `generatedClause` runs on the create path,
+  // so a changed expression carried a second command straight into the migration.
+  test('a CHANGED expression holding a second command is refused', () => {
+    expect(() => migrate(posts('n * 3); drop table users; --'), posts(TSV))).toThrow(
+      'X_SQL_UNSAFE',
+    );
+  });
+
+  test('a RECORDED expression holding one is refused too, before it reaches down', () => {
+    const recorded = { ...posts(TSV), columns: posts('x); drop table users; --').columns };
+    expect(() => migrate(posts(TSV), recorded)).toThrow('X_SQL_UNSAFE');
+    const plain: EntityDescriptionLike = {
+      ...posts(TSV),
+      columns: posts(TSV).columns.map((c) =>
+        c.column === 'search_tsv' ? { ...c, generated: undefined } : c,
+      ),
+    };
+    expect(() => migrate(plain, recorded)).toThrow('X_SQL_UNSAFE');
+  });
+});

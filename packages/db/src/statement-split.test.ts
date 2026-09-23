@@ -136,3 +136,32 @@ describe('a dollar delimiter needs separating from what precedes it', () => {
     ]);
   });
 });
+
+describe('a SQL-standard function body (PG14+ BEGIN ATOMIC)', () => {
+  // Reproduced on PGlite before the fix: the body was cut at its first `;` and the server answered
+  // `syntax error at end of input` for the `create function`, then ran the body's second statement
+  // on its own and left the function undefined.
+  test('stays one statement, its inner semicolons included', () => {
+    const create =
+      'create function f() returns int language sql begin atomic select 1; select 2; end';
+    expect(statementsOf(`${create}; select f();`)).toEqual([create, 'select f()']);
+  });
+
+  test('a CASE … END inside the body does not close it', () => {
+    const create =
+      'CREATE FUNCTION g(x int) RETURNS int LANGUAGE sql BEGIN ATOMIC ' +
+      'SELECT CASE WHEN x > 0 THEN 1 ELSE 0 END; SELECT 2; END';
+    expect(statementsOf(`${create};\nselect 3;`)).toEqual([create, 'select 3']);
+  });
+
+  test('a plain BEGIN / END transaction is still three statements', () => {
+    expect(statementsOf('begin; select 1; end;')).toEqual(['begin', 'select 1', 'end']);
+  });
+
+  test('the words inside a literal or a comment open nothing', () => {
+    expect(statementsOf("select 'begin atomic'; -- begin atomic\nselect 2;")).toEqual([
+      "select 'begin atomic'",
+      '-- begin atomic\nselect 2',
+    ]);
+  });
+});

@@ -22,7 +22,7 @@ export interface CacheHeaderOptions {
   readonly tags?: readonly CacheTag[];
 }
 
-/** `Cache-Control` + `Surrogate-Key`, ready to spread into a `Headers` init. */
+/** `Cache-Control` + `Surrogate-Key` + `Cache-Tag`, ready to spread into a `Headers` init. */
 export function cacheHeaders(options: CacheHeaderOptions = {}): Record<string, string> {
   const visibility = options.visibility ?? 'public';
   const parts: string[] = [visibility];
@@ -42,7 +42,11 @@ export function cacheHeaders(options: CacheHeaderOptions = {}): Record<string, s
 
   const headers: Record<string, string> = { 'Cache-Control': parts.join(', ') };
   const keys = serializeTags(options.tags ?? []);
-  if (keys.length > 0) headers['Surrogate-Key'] = keys.join(' ');
+  if (keys.length > 0) {
+    headers['Surrogate-Key'] = keys.join(' ');
+    // Cloudflare's spelling of the same list; `@ultimat3/http`'s `applyCacheHeaders` writes both.
+    headers['Cache-Tag'] = keys.join(',');
+  }
   return headers;
 }
 
