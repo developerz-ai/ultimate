@@ -11,6 +11,7 @@
       "**",
       "!**/node_modules",
       "!**/dist",
+      "!**/.codegraph",
       "!**/build",
       "!**/out",
       "!**/coverage",
@@ -72,6 +73,14 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["**", "!packages/*/src/**"],
+      "linter": { "rules": { "nursery": { "noFloatingPromises": "off" } } }
+    },
+    {
+      "includes": ["**/*.test.ts", "**/*.test.tsx"],
+      "linter": { "rules": { "nursery": { "noFloatingPromises": "off" } } }
+    },
     {
       "includes": ["**/scss.d.ts"],
       "linter": { "rules": { "style": { "noDefaultExport": "off" } } }

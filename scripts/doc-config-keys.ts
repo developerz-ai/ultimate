@@ -18,8 +18,25 @@
 
 import { CONFIG_FILE, configDeclaration, configLeaves } from './config-readers';
 import { parseScriptArgs } from './lib/args';
-import type { DocConfigKeyAllowance } from './lib/doc-config-key-pins';
-import { DOC_CONFIG_KEY_ALLOWANCES, DOC_CONFIG_PINS_FILE } from './lib/doc-config-key-pins';
+/** Where an allowance would be written: this file, which holds none since 12.0.0. */
+export const DOC_CONFIG_PINS_FILE = 'scripts/doc-config-keys.ts';
+
+/**
+ * One page's licence to cite one key `AppConfig` does not declare — a SYMPTOM of a defect that
+ * lives elsewhere and is a release decision. None is recorded: the four that existed were one
+ * defect (`AppConfig` had no `http` member) and 12.0.0 repaired it, so the rule enforces outright.
+ */
+export interface DocConfigKeyAllowance {
+  /** Repo-relative, exactly as the scan reports it. */
+  readonly path: string;
+  /** The citation verbatim: `http.requestTimeoutMs`. */
+  readonly cites: string;
+  /** Why this page may say it. One sentence, and it must survive being read out loud. */
+  readonly why: string;
+}
+
+export const DOC_CONFIG_KEY_ALLOWANCES: readonly DocConfigKeyAllowance[] = [];
+
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';

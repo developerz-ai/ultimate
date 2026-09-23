@@ -3,8 +3,14 @@
 // fails `bun run verify` with no extra wiring.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { checkDeadHost, deadHostFindingFor, deadHostGaps, scanDeadHost } from './dead-docs-host';
-import { DEAD_HOST_PINS } from './lib/dead-docs-host-pins';
+import {
+  checkDeadHost,
+  deadHostFindingFor,
+  deadHostGaps,
+  docSites,
+  scanDeadHost,
+  scanDeadHostDoc,
+} from './dead-docs-host';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
@@ -14,6 +20,38 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const lines = (source: string): readonly number[] =>
   scanDeadHost('packages/x/src/errors.ts', source).map((site) => site.line);
+
+const docLines = (path: string, text: string): readonly number[] =>
+  scanDeadHostDoc(path, text).map((site) => site.line);
+
+describe('a link a reader can click, in markdown and YAML', () => {
+  test('a markdown link target and an autolink are reported', () => {
+    expect(docLines('a.md', 'Built with [Ultimate](https://ultimate.dev). Bun-only.')).toEqual([1]);
+    expect(docLines('a.md', 'see\n<https://ultimate.dev/errors>')).toEqual([2]);
+  });
+
+  test('a code span naming the host as history is not a link', () => {
+    expect(docLines('a.md', '`https://ultimate.dev/errors/<code>` answered 404')).toEqual([]);
+  });
+
+  test('a YAML value is reported and a YAML comment is not', () => {
+    expect(docLines('.github/x.yml', 'links:\n  - url: https://ultimate.dev/errors')).toEqual([2]);
+    expect(docLines('c.yaml', '# was https://ultimate.dev, now the wiki\nurl: x')).toEqual([]);
+  });
+
+  test('the doc finding hands over the replacement URL, not a docs: edit', () => {
+    const [first] = scanDeadHostDoc('a.md', '[u](https://ultimate.dev)');
+    if (first === undefined) expect.unreachable('the scan found the link');
+    const finding = deadHostFindingFor({ kind: 'over', pkg: 'a.md', found: 1, pinned: 0, first });
+    expect(finding.fix).toContain('https://github.com/developerz-ai/ultimate');
+  });
+
+  test('this tree links to the host nowhere, and the scan read its docs and workflows', async () => {
+    const { sites, files } = await docSites(repoRoot());
+    expect(files).toBeGreaterThan(100);
+    expect(sites).toEqual([]);
+  });
+});
 
 describe('a URL the process can emit', () => {
   test('a docs: line is reported, with the line number', () => {
@@ -93,11 +131,6 @@ describe('the ratchet', () => {
     expect(deadHostFindingFor(checkDeadHost({ files: [], pins: {} })[0] as never).code).toBe(
       'X_DEAD_DOCS_HOST_UNSCANNED',
     );
-  });
-
-  /** Zero on day one, so the rule enforces outright rather than ratcheting down. */
-  test('the pin table is empty', () => {
-    expect(Object.keys(DEAD_HOST_PINS)).toEqual([]);
   });
 
   test('and this tree holds no ultimate.dev URL in any shipped string', async () => {

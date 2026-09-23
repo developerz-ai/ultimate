@@ -35,11 +35,12 @@
 // `migrate-lock.test.ts` uses it as an ordering bound.
 //
 //   bun run index-of-order  ·  bun run scripts/index-of-order.ts [--json] [--explain]
-//   bun run scripts/index-of-order.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
+//
+// ZERO-PINNED, so it holds no pin table — the 24-site sweep landed with the rule. A pin, if one is
+// ever needed, is an `OrderPin` passed in as `pins`, and it must carry its reason.
 
 import { parseScriptArgs } from './lib/args';
 import { balancedClose } from './lib/balanced-paren';
-import { INDEX_OF_ORDER_PINS, type OrderPin } from './lib/index-of-order-pins';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -265,6 +266,13 @@ export function packageOfTest(path: string): string {
   return /^packages\/([^/]+)\//.exec(path)?.[1] ?? path.split('/')[0] ?? 'root';
 }
 
+/** A package's allowance of unguarded sites, with the sentence saying what they are. */
+export interface OrderPin {
+  readonly pkg: string;
+  readonly count: number;
+  readonly reason: string;
+}
+
 export interface OrderInput {
   readonly sites: readonly OrderSite[];
   readonly pins: readonly OrderPin[];
@@ -312,8 +320,8 @@ export function checkOrdering(input: OrderInput): readonly Finding[] {
       findings.push({
         code: 'X_INDEX_ORDER_PIN_UNEXPLAINED',
         cause: `${pin.pkg} is pinned with a blank reason, so nothing records what its remaining sites are or why they stand`,
-        fix: `write what the remaining site(s) in ${pin.pkg} are and why they have not been repaired, in scripts/lib/index-of-order-pins.ts — or repair them and run bun run scripts/index-of-order.ts --unpin ${pin.pkg}`,
-        at: 'scripts/lib/index-of-order-pins.ts',
+        fix: `edit scripts/index-of-order.ts — write what the remaining site(s) in ${pin.pkg} are and why they stand on that pin, or repair them and delete it`,
+        at: 'scripts/index-of-order.ts',
       });
     }
     const count = counts.get(pin.pkg) ?? 0;
@@ -321,8 +329,8 @@ export function checkOrdering(input: OrderInput): readonly Finding[] {
       findings.push({
         code: 'X_INDEX_ORDER_PIN_STALE',
         cause: `${pin.pkg} is pinned at ${String(pin.count)} unguarded ordering assertion(s) and now has ${String(count)}`,
-        fix: `bun run scripts/index-of-order.ts --unpin ${pin.pkg}`,
-        at: 'scripts/lib/index-of-order-pins.ts',
+        fix: `edit scripts/index-of-order.ts — lower the pin for ${pin.pkg} to ${String(count)}, or delete it at 0`,
+        at: 'scripts/index-of-order.ts',
       });
     }
   }
@@ -333,41 +341,8 @@ if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
   const { sites, files } = await scanTree(root);
-  // `--unpin <pkg>[,<pkg>]` — the edit `X_INDEX_ORDER_PIN_STALE` names, performed. Advertised in
-  // this file's header from the first draft and unimplemented until a review pointed at it: an
-  // executable fix that is not executable is axiom 4 inverted.
-  const unpin = args.flags.get('unpin');
-  if (typeof unpin === 'string') {
-    const names = new Set(
-      unpin
-        .split(',')
-        .map((one) => one.trim())
-        .filter((one) => one !== ''),
-    );
-    const kept = INDEX_OF_ORDER_PINS.filter((pin) => !names.has(pin.pkg));
-    const unknown = [...names].filter(
-      (name) => !INDEX_OF_ORDER_PINS.some((pin) => pin.pkg === name),
-    );
-    report(
-      {
-        ok: unknown.length === 0,
-        script: SCRIPT,
-        summary:
-          unknown.length === 0
-            ? `unpinned ${String(INDEX_OF_ORDER_PINS.length - kept.length)} package(s); write the remaining ${String(kept.length)} into scripts/lib/index-of-order-pins.ts`
-            : `${String(unknown.length)} name(s) are not pinned`,
-        findings: unknown.map((name) => ({
-          code: 'X_INDEX_ORDER_PIN_STALE',
-          cause: `${name} has no entry in INDEX_OF_ORDER_PINS, so there is nothing to unpin`,
-          fix: 'bun run index-of-order --json  # the pinned names are in data.pins',
-          at: 'scripts/lib/index-of-order-pins.ts',
-        })),
-        data: { pins: kept },
-      },
-      args.json,
-    );
-  } else {
-    const findings = checkOrdering({ sites, pins: INDEX_OF_ORDER_PINS, scanned: files > 0 });
+  {
+    const findings = checkOrdering({ sites, pins: [], scanned: files > 0 });
     const unguarded = sites.filter((site) => !site.guarded);
     report(
       {

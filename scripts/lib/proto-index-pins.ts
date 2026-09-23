@@ -70,7 +70,7 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
       'render-mode, surface and hydration tables, each keyed by a member of a vocabulary `scripts/render-modes.ts` already refuses a second copy of.',
   },
   scripts: {
-    count: 38,
+    count: 26,
     reason:
       'the gate scripts themselves: `FINDINGS[gap.kind]` in every ratchet, a table keyed by a union the same file declares one line above and narrows exhaustively. Not shipped to an app, and the key never crosses a process boundary. It went 36 -> 38 when the two newest ratchets landed, which is the honest cost of keeping one shape across twenty guards rather than one guard shaped differently.',
   },
@@ -80,7 +80,7 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
       '`xml.ts` escapes a character its own regex matched. `images.ts` was one of the thirteen and is repaired.',
   },
   testing: {
-    count: 4,
+    count: 3,
     reason:
       'fixture tables keyed by a driver name and a bracket character, both from closed lists this package owns.',
   },
@@ -91,56 +91,3 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
       'token and widget tables keyed by a semantic role. `fake-dom.ts:79` was one of the thirteen — `querySelectorAll("[constructor]")` matched every element — and is repaired.',
   },
 };
-
-/**
- * What this package is allowed to have today. Absent means zero, deliberately — and so does a row
- * whose REASON is blank: "pinned" with no sentence is the waiver axiom 3 refuses, and this file's
- * own header has said so since the first draft while `Object.hasOwn` answered the count regardless.
- * Same guard `declarationReaderPinnedFor` has carried from ITS first draft.
- */
-export const protoIndexPinnedFor = (
-  pkg: string,
-  pins: Readonly<Record<string, ProtoIndexPin>> = PROTO_INDEX_PINS,
-): number => (protoIndexPinIsBlank(pkg, pins) ? 0 : (pins[pkg]?.count ?? 0));
-
-/** A row that exists and says nothing: the count is not honoured, and the gap says which row. */
-export const protoIndexPinIsBlank = (
-  pkg: string,
-  pins: Readonly<Record<string, ProtoIndexPin>> = PROTO_INDEX_PINS,
-): boolean => Object.hasOwn(pins, pkg) && (pins[pkg]?.reason ?? '').trim() === '';
-
-/**
- * The edit `X_PROTO_CHAIN_INDEX_PIN_STALE` names, performed: lower each named package's count to
- * what is measured, and refuse to raise one. Returns the entries it changed.
- */
-export async function applyProtoIndexUnpin(
-  root: string,
-  packages: readonly string[],
-  counts: Readonly<Record<string, number>>,
-  pins: Readonly<Record<string, ProtoIndexPin>> = PROTO_INDEX_PINS,
-): Promise<readonly string[]> {
-  const path = `${root}/${PROTO_PINS_FILE}`;
-  let text = await Bun.file(path).text();
-  const written: string[] = [];
-  for (const pkg of packages) {
-    const found = counts[pkg] ?? 0;
-    if (found >= protoIndexPinnedFor(pkg, pins)) continue;
-    // `RegExp.escape`, never the raw key: a name holding regex syntax matches a NEIGHBOURING row.
-    const key = RegExp.escape(pkg);
-    if (found === 0) {
-      // The whole entry, reason and all — a row claiming a debt of zero reads as a rule still in
-      // force over nothing. Both spellings Biome writes: `{ count: 1, reason: '…' }` on one line
-      // and the wrapped form.
-      const entry = new RegExp(`^\\s*(['"]?)${key}\\1:\\s*\\{[\\s\\S]*?\\},\\n`, 'm');
-      if (!entry.test(text)) continue;
-      text = text.replace(entry, '');
-    } else {
-      const entry = new RegExp(`^(\\s*(['"]?)${key}\\2:\\s*\\{\\s*\\n?\\s*count:\\s*)\\d+,`, 'm');
-      if (!entry.test(text)) continue;
-      text = text.replace(entry, `$1${String(found)},`);
-    }
-    written.push(`${pkg} -> ${String(found)}`);
-  }
-  if (written.length > 0) await Bun.write(path, text);
-  return written;
-}

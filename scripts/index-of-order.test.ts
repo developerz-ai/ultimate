@@ -170,8 +170,7 @@ describe('the real tree', () => {
     expect(files).toBeGreaterThan(1000);
     expect(sites.length).toBeGreaterThan(20);
 
-    const { INDEX_OF_ORDER_PINS } = await import('./lib/index-of-order-pins');
-    expect(checkOrdering({ sites, pins: INDEX_OF_ORDER_PINS, scanned: files > 0 })).toEqual([]);
+    expect(checkOrdering({ sites, pins: [], scanned: files > 0 })).toEqual([]);
   });
 });
 

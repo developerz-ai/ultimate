@@ -52,7 +52,7 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
       "`oauth-discovery.ts` splices a `curl` TARGET — the discovery URL — at three sites. SUSPECT, and still the most exposed row in this table: it is read out of a provider's own discovery document, so the value is remote text this process did not write. `new URL()` has already parsed it, which bounds it to a URL grammar and is why it is pinned rather than red; a URL may still carry a `;` in its path. `jwks.ts` left this row on 2026-09-06 — its three lines share one `readTheKeySet(tail)`, which emits the `curl` only when `isFixShellSafe` says the URI travels verbatim and PROSE otherwise, because a placeholder in an argument position is not a runnable command either. That is the repair the rest of this row still owes.",
   },
   cli: {
-    count: 75,
+    count: 73,
     reason:
       "the CLI's own commands, and the widest row by an order of magnitude: 63 of the 76 splice a value into `x <something>` — a command name, a generator kind, a test type, a workspace directory, a route path, a CI job name — each of which `@ultimat3/cli` itself parsed against a closed list before rendering the fix. The remainder are `bun run <script>`, `gh`, `docker` and `git` with a workspace or branch name. What makes the row big rather than dangerous is that a CLI's inputs are argv, already in the operator's own shell; what keeps it a debt is `island-shot.ts`, `mcp-host.ts` and `ci-runs.ts`, whose values come off a browser, an MCP client and the GitHub API. The 75th is `verify-floor.ts`'s `fixFor`, which splices `TYPECHECK_BIN_FIELD` and `VERIFY_FLOOR_FILE` — two module constants in that same file, never a runtime value — into `x verify --json   # then set …`, exactly as the `agentsMdMaxBytes` line beside it already does.",
   },
@@ -112,63 +112,8 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
       '`surfaces.ts:224` splices an ENTRY PATH into `x routes`. The path is a route file this build already resolved on disk, under `apps/*/`.',
   },
   scripts: {
-    count: 31,
+    count: 28,
     reason:
       "this repo's own gate rules, which run on a developer's machine and CI and ship to nobody: 20 splice a workspace name, a package directory or a leaf key into `bun run scripts/<rule>.ts --unpin <x>`, six a path into `git checkout --`, and the rest a package name into `gh` / `npm view`. Every value is a workspace directory, a file this tree contains or a key derived from its own source. The one that is not — `scaffold-first-run.ts:106`, a `cd <dir> && <the app bin>` — points at a temp directory this script created.",
   },
 };
-
-/**
- * What this package is allowed to have today. Absent means zero, deliberately — and so does a row
- * whose REASON is blank: "pinned" with no sentence is the waiver axiom 3 refuses.
- */
-export const fixShellArgPinnedFor = (
-  pkg: string,
-  pins: Readonly<Record<string, FixShellArgPin>> = FIX_SHELL_ARG_PINS,
-): number => (fixShellArgPinIsBlank(pkg, pins) ? 0 : (pins[pkg]?.count ?? 0));
-
-/** A row that exists and says nothing: the count is not honoured, and the gap says which row. */
-export const fixShellArgPinIsBlank = (
-  pkg: string,
-  pins: Readonly<Record<string, FixShellArgPin>> = FIX_SHELL_ARG_PINS,
-): boolean => Object.hasOwn(pins, pkg) && (pins[pkg]?.reason ?? '').trim() === '';
-
-/**
- * The edit `X_FIX_SHELL_ARG_PIN_STALE` names, performed: lower each named package's count to what
- * is measured, and refuse to raise one. Returns the entries it changed, so the caller can say
- * "nothing to lower" rather than reporting a write it did not make.
- */
-export async function applyFixShellArgUnpin(
-  root: string,
-  packages: readonly string[],
-  counts: Readonly<Record<string, number>>,
-  // The table to compare against is the one in the file being EDITED: `root` may be a temp
-  // directory, and comparing a fixture's rows against this module's would refuse an edit the
-  // fixture needs.
-  pins: Readonly<Record<string, FixShellArgPin>> = FIX_SHELL_ARG_PINS,
-): Promise<readonly string[]> {
-  const path = `${root}/${FIX_SHELL_PINS_FILE}`;
-  let text = await Bun.file(path).text();
-  const written: string[] = [];
-  for (const pkg of packages) {
-    const found = counts[pkg] ?? 0;
-    if (found >= fixShellArgPinnedFor(pkg, pins)) continue;
-    // `RegExp.escape`, never the raw key: a workspace name holding regex syntax matches a
-    // NEIGHBOURING row, so the ratchet lowers a count on the wrong package and enforces it there.
-    const key = RegExp.escape(pkg);
-    if (found === 0) {
-      // The whole entry, reason and all — a row claiming a debt of zero reads as a rule still in
-      // force over nothing. Both spellings Biome writes, one line and wrapped.
-      const entry = new RegExp(`^\\s*(['"]?)${key}\\1:\\s*\\{[\\s\\S]*?\\},\\n`, 'm');
-      if (!entry.test(text)) continue;
-      text = text.replace(entry, '');
-    } else {
-      const entry = new RegExp(`^(\\s*(['"]?)${key}\\2:\\s*\\{\\s*\\n?\\s*count:\\s*)\\d+,`, 'm');
-      if (!entry.test(text)) continue;
-      text = text.replace(entry, `$1${String(found)},`);
-    }
-    written.push(`${pkg} -> ${String(found)}`);
-  }
-  if (written.length > 0) await Bun.write(path, text);
-  return written;
-}

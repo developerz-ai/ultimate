@@ -12,9 +12,9 @@ import { mkdtemp } from 'node:fs/promises'; // why: Bun has no mkdtemp.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { applyUnpin } from './lib/ratchet';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import {
-  applySecretCompareUnpin,
   SECRET_COMPARE_PINS,
   SECRET_PINS_FILE,
   type SecretComparePin,
@@ -240,15 +240,15 @@ describe('the ratchet moves in one direction', () => {
       time: { count: 1, reason: 'a fixture' },
     };
 
-    expect(await applySecretCompareUnpin(dir, ['jobs'], { jobs: 9 }, fixture)).toEqual([]);
-    expect(await applySecretCompareUnpin(dir, ['jobs'], { jobs: 2 }, fixture)).toEqual([
+    expect(await applyUnpin(dir, SECRET_PINS_FILE, ['jobs'], { jobs: 9 }, fixture)).toEqual([]);
+    expect(await applyUnpin(dir, SECRET_PINS_FILE, ['jobs'], { jobs: 2 }, fixture)).toEqual([
       'jobs -> 2',
     ]);
     expect(await Bun.file(path).text()).toContain('count: 2,');
 
     // Zero deletes the whole entry, reason and all — a row claiming a debt of zero reads as a
     // rule still in force over nothing.
-    expect(await applySecretCompareUnpin(dir, ['time'], {}, fixture)).toEqual(['time -> 0']);
+    expect(await applyUnpin(dir, SECRET_PINS_FILE, ['time'], {}, fixture)).toEqual(['time -> 0']);
     const after = await Bun.file(path).text();
     expect(after).not.toContain('  time: {');
     expect(after).toContain('  jobs: {');

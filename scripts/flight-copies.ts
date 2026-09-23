@@ -5,19 +5,18 @@
 // error does not exist.
 //   bun run scripts/flight-copies.ts [--json]
 
-import { maskLiterals, stripComments } from '@ultimat3/cli';
+import { maskLiterals } from '../packages/core/src/source-mask';
 import { parseScriptArgs } from './lib/args';
+import { shippedSources } from './lib/corpus';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { isTestPath, lineOf } from './lib/source-scan';
+import { lineOf } from './lib/source-scan';
 
 const SCRIPT = 'flight-copies';
 
 /** The one module allowed to turn an attempt number into a delay. */
 export const BACKOFF_MODULE = 'packages/core/src/backoff.ts';
-
-export const SOURCE_GLOB = 'packages/*/src/**/*.{ts,tsx}';
 
 export interface SourceFile {
   readonly at: string;
@@ -95,8 +94,22 @@ const clamped = (window: string): boolean => CLAMP.test(window) || ternaryClamp(
  */
 const CLAMP_WINDOW = 160;
 
+/**
+ * One mask per file, shared by both checks. `maskLiterals` already blanks comments, so the
+ * `maskLiterals(stripComments(…))` each check ran was two passes for one answer, twice.
+ */
+const masks = new WeakMap<SourceFile, string>();
+const maskOf = (file: SourceFile): string => {
+  let masked = masks.get(file);
+  if (masked === undefined) {
+    masked = maskLiterals(file.text);
+    masks.set(file, masked);
+  }
+  return masked;
+};
+
 const randomCallFindings = (file: SourceFile): readonly Finding[] => {
-  const masked = maskLiterals(stripComments(file.text));
+  const masked = maskOf(file);
   const findings: Finding[] = [];
   const dice = hasCurve(masked, file.at)
     ? [...masked.matchAll(RANDOM_CALL), ...masked.matchAll(CSPRNG_CALL)]
@@ -120,7 +133,7 @@ const hasCurve = (code: string, at: string): boolean =>
   );
 
 const secondCurveFinding = (file: SourceFile): Finding | undefined => {
-  const code = maskLiterals(stripComments(file.text));
+  const code = maskOf(file);
   if (!hasCurve(code, file.at)) return undefined;
   return {
     code: 'X_FLIGHT_SECOND_CURVE',
@@ -140,14 +153,8 @@ export function checkFlightCopies(files: readonly SourceFile[]): readonly Findin
   return findings;
 }
 
-export async function readSources(root: string): Promise<readonly SourceFile[]> {
-  const files: SourceFile[] = [];
-  for await (const path of new Bun.Glob(SOURCE_GLOB).scan({ cwd: root })) {
-    if (isTestPath(path) || path.includes('/dist/')) continue;
-    files.push({ at: path, text: await Bun.file(`${root}/${path}`).text() });
-  }
-  return files.sort((a, b) => a.at.localeCompare(b.at));
-}
+/** Shipped source, read once per process: the corpus `shipped` scope. */
+export const readSources = shippedSources;
 
 export const flightCopyFindings = async (root: string): Promise<readonly Finding[]> =>
   checkFlightCopies(await readSources(root));

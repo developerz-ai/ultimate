@@ -4,7 +4,7 @@
 // the same steps because there is only one list. This file adds the two rules a package monorepo
 // enforces that the CLI cannot know on its own: the tier table, and its generated manifest.
 //
-//   bun run scripts/verify.ts [--json] [--verbose] [--workers N]
+//   bun run scripts/verify.ts [--json] [--verbose] [--workers N] [--only <step>]
 //
 // `--workers` is the CLI's own flag, passed through: the test steps shard over `cpus` by default,
 // and on a shared machine that width was measured to take the whole gate down (OOM-killed twice
@@ -28,6 +28,7 @@ import {
 import { renderThrowable } from '@ultimat3/core';
 // The leaf, not the barrel (DX ledger #10): a guard must load while a package is mid-edit.
 import { checkErrorCodesThrown } from '../packages/cli/src/error-unthrown';
+import { BadFlagError } from '../packages/cli/src/errors';
 import { benchClaimFindings } from './bench-claims';
 import {
   adminFlattenerFindingFor,
@@ -51,8 +52,11 @@ import { generatorCountFindings } from './generator-counts';
 import { frameworkCatalogFindings } from './i18n-catalog';
 import { imageContractFindings } from './image-contract';
 import { flagBool, parseScriptArgs } from './lib/args';
-import { writeOut } from './lib/log';
+import { report, writeOut } from './lib/log';
 import { repoRoot } from './lib/run';
+import type { VerifyArgs } from './lib/verify-args';
+import { readVerifyArgs } from './lib/verify-args';
+import { llmsTxtFindings } from './llms-txt';
 import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
 import { readmeFenceFindings } from './readme-fences';
 import { releaseFactFindings } from './release-facts';
@@ -257,6 +261,7 @@ export const errorContract: HostCheck = async (root) => [
  * | `generatorCountFindings` | a documented `N files` for `x new` / `x g resource` is what the generator still emits — five had gone stale and were corrected by hand | `planNewApp()` / `generate()`, the planners `--dry-run` calls |
  * | `releaseFactFindings` | the package COUNT ten pages restate is the count on disk; `SECURITY.md` claimed 28 two majors late | `listWorkspaces()` |
  * | `setupCommandFindings` | a page stating what a scaffolded app's `bin/setup` runs, or how many steps it is, describes the script `x new` writes — `x db seed` was in the script and in no CI path, and four pages hand-copy the list | `binSetup()` in `templates/scaffold-docs.ts` |
+ * | `llmsTxtFindings` | `llms.txt`'s package and wiki lists are generated — they were not, and `@ultimat3/notify` was missing | `listWorkspaces()`, `wiki/_Sidebar.md`, `wiki/Home.md` |
  *
  * `testTypecheckFindings` rides HERE and not on `typecheck`, which is where it belongs by meaning:
  * that step takes no host findings at all (`packages/cli/src/cmd-verify.ts` calls `hostFindings`
@@ -284,6 +289,7 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await generatorCountFindings(root)),
   ...(await releaseFactFindings(root)),
   ...(await setupCommandFindings(root)),
+  ...(await llmsTxtFindings(root)),
 ];
 
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {
@@ -293,23 +299,22 @@ export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {
   roadmap: checkRoadmap,
 };
 
-/** `--workers N`, whole and positive, or nothing — the CLI clamps it to the file count. */
-function readWorkers(flags: ReadonlyMap<string, string | boolean>): number | undefined {
-  const raw = flags.get('workers');
-  if (typeof raw !== 'string') return undefined;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : undefined;
-}
-
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
-  const workers = readWorkers(args.flags);
+  let gate: VerifyArgs = {};
+  try {
+    gate = readVerifyArgs(args);
+  } catch (error) {
+    if (!(error instanceof BadFlagError)) throw error;
+    const finding = { code: error.code, cause: error.cause, fix: error.fix };
+    report({ ok: false, script: 'verify', summary: 'refused', findings: [finding] }, args.json);
+  }
   const result = await runVerify(VERIFY_STEPS, {
     root,
     runner: exec,
     hostChecks: HOST_CHECKS,
-    ...(workers === undefined ? {} : { workers }),
+    ...gate,
   });
   // Through `writeOut`, not `process.stdout.write`: see the note there. A failing gate's JSON
   // carries each failed step's own output, which is exactly when the payload clears 64KB and

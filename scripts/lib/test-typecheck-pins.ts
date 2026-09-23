@@ -59,38 +59,9 @@
 /** Where the table lives, so a stale-pin finding can name the file to edit. */
 export const PINS_FILE = 'scripts/lib/test-typecheck-pins.ts';
 
-export const TEST_TYPECHECK_PINS: Readonly<Record<string, number>> = {
-  action: 0,
-  admin: 0,
-  ai: 0,
-  auth: 0,
-  cache: 0,
-  cli: 0,
-  core: 0,
-  'create-ultimate': 0,
-  db: 0,
-  entity: 0,
-  flags: 0,
-  http: 0,
-  i18n: 0,
-  jobs: 0,
-  mail: 0,
-  manifest: 0,
-  mcp: 0,
-  money: 0,
-  policy: 0,
-  pwa: 0,
-  query: 0,
-  realtime: 0,
-  render: 0,
-  schema: 0,
-  scraping: 0,
-  seo: 0,
-  storage: 0,
-  testing: 0,
-  time: 0,
-  ui: 0,
-};
+// Every package reached zero, so every row went: absent means zero, and thirty `pkg: 0` rows read
+// as thirty waivers still in force over nothing.
+export const TEST_TYPECHECK_PINS: Readonly<Record<string, number>> = {};
 
 /** What this package is allowed to have failing today. Absent means zero, deliberately. */
 export const pinnedFor = (

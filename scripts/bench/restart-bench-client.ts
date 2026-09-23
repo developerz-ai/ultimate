@@ -4,7 +4,24 @@
 // alone, exactly like a browser tab that lost its socket to a crash instead of a graceful drain —
 // on the browser's own curve (`browserBackoff`, capped at seconds), not the server-side one.
 
-import { backoffDelay, browserBackoff, decode, encode, PROTOCOL_VERSION } from '@ultimat3/realtime';
+import { backoffDelay } from '@ultimat3/core';
+import { browserBackoff, decode, encode, PROTOCOL_VERSION } from '@ultimat3/realtime';
+
+/**
+ * The browser's reconnect wait after `failures` failed dials, 0-based as this client counts them —
+ * `browserBackoff` on core's one curve, which counts from 1. `@ultimat3/realtime` stopped exporting
+ * its own 0-based `backoffDelay` in 22.0.0 (two counting conventions under one name).
+ */
+const browserDelay = (failures: number): number =>
+  backoffDelay({
+    attempt: failures + 1,
+    base: browserBackoff.baseMs,
+    max: browserBackoff.maxMs,
+    factor: browserBackoff.factor,
+    curve: 'exponential',
+    jitter: browserBackoff.jitter,
+  });
+
 import { BENCH_CHANNEL, BENCH_ROOM } from './restart-bench-channel';
 import {
   beginSeqEpoch,
@@ -149,7 +166,7 @@ export async function runClient(
     } catch {
       if (stats.firstHelloAt === null) stats.shedRamp += 1;
       else stats.shedRestart += 1;
-      await sleep(backoffDelay(Math.min(stats.attempts, 12), browserBackoff), signal);
+      await sleep(browserDelay(Math.min(stats.attempts, 12)), signal);
       continue;
     }
     stats.alive = true;
@@ -181,7 +198,7 @@ export async function runClient(
     stats.alive = false;
     stats.lastCloseAt = Date.now();
     if (signal.aborted) return;
-    await sleep(backoffDelay(0, browserBackoff), signal); // fresh disconnect: a real client restarts its own count
+    await sleep(browserDelay(0), signal); // fresh disconnect: a real client restarts its own count
     stats.attempts = 0;
   }
 }

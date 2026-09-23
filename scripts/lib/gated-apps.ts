@@ -30,25 +30,7 @@ export const GATED_APPS: readonly GatedApp[] = [
   {
     dir: 'examples/dummy',
     reference: './examples/dummy',
-    expectedRed: {
-      budgets:
-        'X_BUDGET_UNMEASURED on 6 of the 8 routes that declare a `budget:`, and `.x/` is gitignored ' +
-        'so no stats file is ever committed. `x build --target static` now COMPLETES here — the ' +
-        '/offline page called useMutationQueue() at prerender with no LiveClient and took the ' +
-        'whole build down, which is fixed — and it weighs 3 of the 8. The other 5 fail the ' +
-        'in-memory measuring pass for two reasons no app can reach: /blog, /blog/:slug, /feed and ' +
-        '/posts/:id raise X_ENV_MISSING because APP_URL is unset so the typed client has no ' +
-        'origin, and /posts/new and /settings raise X_NO_CONTEXT because the app/ shell renders ' +
-        'outside a request. Closing it means running the build with APP_URL set AND giving the ' +
-        'app/ routes a request context — not merely running `x build` first, as this line used to say. ' +
-        'A SEVENTH finding is a real app defect and not a never-run pass: X_LIVE_ROUTE_NO_ISLAND on ' +
-        'apps/web/app/posts/ui/like-button.tsx — /posts/:id renders <LikeButton> server-side, the ' +
-        'component calls useConnection() and useMutation(), and the route declares no island(), so ' +
-        'no module of it ever runs in a browser: the like button is inert and the offline-queue ' +
-        'indicator can never appear. The repair is precedented twice in this same app (/feed, ' +
-        'which fixed exactly this in #271, and /settings) and does NOT move this pin, because the ' +
-        'six above still need APP_URL and a request context',
-    } satisfies Partial<Record<VerifyStepName, string>>,
+    expectedRed: {} satisfies Partial<Record<VerifyStepName, string>>,
   },
   {
     // The deployed demo (.github/workflows/deploy-social-demo.yml publishes its image on every
@@ -61,16 +43,6 @@ export const GATED_APPS: readonly GatedApp[] = [
     // does not exist.
     dir: 'dummy/social-media-clone',
     reference: './dummy/social-media-clone',
-    expectedRed: {
-      boundaries:
-        'X_BOUNDARY_SITE_TO_APP ×3 — apps/web/site/feed/page.tsx imports ' +
-        'apps/web/app/posts/service.ts, which drags policy.ts and repo.ts across the static/app ' +
-        'line with it. The static feed needs a query, not the authed service',
-
-      budgets:
-        'X_BUDGET_UNMEASURED on every route that declares a `budget:` — the same never-run half ' +
-        'of the step pinned on examples/dummy above, for the same reason: no `.x/build-stats.json` ' +
-        'has ever existed here. Closed by running `x build` ahead of this gate',
-    } satisfies Partial<Record<VerifyStepName, string>>,
+    expectedRed: {} satisfies Partial<Record<VerifyStepName, string>>,
   },
 ];

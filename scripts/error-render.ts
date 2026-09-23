@@ -35,7 +35,7 @@
 //
 //   bun run scripts/error-render.ts [--json]
 
-import { maskLiterals } from '@ultimat3/cli';
+import { maskLiterals } from '../packages/core/src/source-mask';
 import { collectSourceFiles, type SourceFile } from './boundaries';
 import { catchRenderFindings } from './catch-render';
 import { fixShellArgFindings } from './fix-shell-arg';
@@ -124,6 +124,18 @@ function closingQuote(source: string, from: number): number {
  * around it, and an unblanked brace would also unbalance the segment depth.
  */
 export function maskToCode(source: string): CodeMask {
+  // Memoised by text: `error-render`, `catch-render` and `fix-shell-arg` each masked every shipped
+  // file for themselves, three passes of one answer on the `errors` step.
+  const hit = codeMasks.get(source);
+  if (hit !== undefined) return hit;
+  const mask = computeCodeMask(source);
+  codeMasks.set(source, mask);
+  return mask;
+}
+
+const codeMasks = new Map<string, CodeMask>();
+
+function computeCodeMask(source: string): CodeMask {
   const out = maskLiterals(source).split('');
   const substitutions: Range[] = [];
   for (let i = 0; i < source.length; i += 1) {

@@ -131,16 +131,24 @@ describe('against the real pins file', () => {
     }
   });
 
-  test('removing a real pin leaves the rest of the file byte-identical', async () => {
+  test('pinning then unpinning a step in the real file gives back the file, byte for byte', async () => {
+    // The real table has no pins left (2026-09-23), so one is written into it in the shape Biome
+    // formats a pin — and lifting it must restore the committed file exactly, collapse included.
     const source = await Bun.file(join(repoRoot(), PINS_FILE)).text();
-    const app = GATED_APPS.find((candidate) => Object.keys(candidate.expectedRed).length > 1);
-    const [first, ...rest] = Object.keys(app?.expectedRed ?? {});
-    const next = removePins(source, app?.dir ?? '', [first ?? '']) ?? '';
-    expect(pinnedSteps(next, app?.dir ?? '')).toEqual(rest);
-    expect(next.split('\n').length).toBeLessThan(source.split('\n').length);
-    // Every line that survives is a line the original had, in the original's order.
-    const kept = next.split('\n');
-    const original = source.split('\n');
-    expect(kept.every((line) => original.includes(line))).toBe(true);
+    const empty =
+      "    dir: 'examples/dummy',\n    reference: './examples/dummy',\n    expectedRed: {} satisfies";
+    expect(source).toContain(empty);
+    const pinned = source.replace(
+      empty,
+      [
+        "    dir: 'examples/dummy',",
+        "    reference: './examples/dummy',",
+        '    expectedRed: {',
+        "      drift: 'owned elsewhere',",
+        '    } satisfies',
+      ].join('\n'),
+    );
+    expect(pinnedSteps(pinned, 'examples/dummy')).toEqual(['drift']);
+    expect(removePins(pinned, 'examples/dummy', ['drift'])).toBe(source);
   });
 });

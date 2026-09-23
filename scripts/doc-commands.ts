@@ -63,17 +63,18 @@ export const skipDocPath = (path: string): boolean =>
  * sitting under a green gate, and refusing to widen the rule until every one is fixed is how a
  * rule stays narrow forever.
  *
- * An entry is a COUNT, not a verdict. Most of `packages/cli/CLAUDE.md`'s are deliberate — that file
+ * An entry is a COUNT, not a verdict. Most of `docs/history/cli.md`'s are deliberate — that record
  * documents this checker's own findings and has to quote the commands that do not exist — and a
  * deliberate citation belongs in `DOC_COMMAND_ALLOWANCES`, which records WHY. Moving one there
  * lowers the number here; fixing a genuinely wrong line lowers it too. Both are progress.
  */
 export const DOC_COMMAND_PINS: Readonly<Record<string, number>> = {
-  'packages/action/README.md': 2,
+  'packages/action/README.md': 1,
   'packages/admin/CLAUDE.md': 1,
   'packages/admin/README.md': 1,
-  'packages/cli/CLAUDE.md': 12,
-  'packages/db/CLAUDE.md': 1,
+  // why: `packages/cli/CLAUDE.md`'s 12 moved verbatim with its history (plan 101 slice 17 f,
+  // 2026-09-23); the record quotes the commands its rules were written against.
+  'docs/history/cli.md': 12,
   'packages/db/README.md': 1,
   'packages/entity/CLAUDE.md': 1,
   'packages/flags/CLAUDE.md': 1,

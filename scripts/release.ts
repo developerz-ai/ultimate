@@ -7,11 +7,16 @@
 
 import { join } from 'node:path';
 import { SEMVER } from '@ultimat3/cli';
-import { parseChangelog } from './changelog-check';
 import { CHART_FILE, setChartVersions } from './chart-version';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { promoteUnreleased, releaseDate } from './lib/release-changelog';
+import {
+  annotatedTagCommand,
+  compareReleaseVersions,
+  treeDirtyFindings,
+} from './lib/release-preflight';
 import {
   performedWriteLine,
   performReleaseWrites,
@@ -77,15 +82,67 @@ export function readReleaseVersion(input: {
     findings.push({
       code: 'X_RELEASE_VERSION_UNSTATED',
       cause: `neither --version nor --bump was given, and this repo is at ${input.current}`,
-      fix: `bun run scripts/release.ts --bump patch --dry-run --json   # or --version ${input.current}`,
+      // It also offered `--version <current>`, which the forward-only rule below now refuses.
+      fix: 'bun run scripts/release.ts --bump patch --dry-run --json',
       at: 'scripts/release.ts',
     });
+  }
+  if (findings.length > 0) return { findings };
+  // Both given: `--bump` used to be read only when `--version` was absent, so one of two stated
+  // intents was dropped without a word. Neither wins; the caller states one.
+  if (input.explicit !== undefined && input.bump !== undefined) {
+    findings.push(
+      invalidVersionFinding(
+        `--version ${input.explicit} and --bump ${input.bump} were both given, and they name two different ways to pick the version after ${input.current}`,
+      ),
+    );
+  } else if (
+    input.explicit !== undefined &&
+    compareReleaseVersions(input.explicit, input.current) <= 0
+  ) {
+    // At or below the current version is a version npm already holds, or one below it: the
+    // publish dies `E403` package by package, after the tag and the Release already exist.
+    findings.push(
+      invalidVersionFinding(
+        `--version ${input.explicit} does not move forward: this repo is already at ${input.current}`,
+      ),
+    );
   }
   if (findings.length > 0) return { findings };
   return {
     version: input.explicit ?? nextVersion(input.current, (input.bump ?? 'patch') as Bump),
   };
 }
+
+const invalidVersionFinding = (cause: string): Finding => ({
+  code: 'X_RELEASE_VERSION_INVALID',
+  cause,
+  fix: 'bun run scripts/release.ts --bump patch --dry-run --json   # or --bump minor, --bump major',
+  at: 'scripts/release.ts',
+});
+
+/**
+ * This run, re-stated from VALIDATED values only — never the raw argv — so a refusal's `fix:` can
+ * repeat it with nothing a shell would read as syntax.
+ */
+export const releaseInvocation = (input: {
+  readonly explicit: string | undefined;
+  readonly bump: Bump | undefined;
+  readonly dryRun: boolean;
+  readonly json: boolean;
+}): string =>
+  [
+    'bun run scripts/release.ts',
+    input.explicit === undefined
+      ? `--bump ${input.bump ?? 'patch'}`
+      : `--version ${input.explicit}`,
+    ...(input.dryRun ? ['--dry-run'] : []),
+    ...(input.json ? ['--json'] : []),
+  ].join(' ');
+
+/** What a finished release owes next, with the one tag command this repo prints. */
+export const releaseNextLine = (version: string): string =>
+  `  next      bun install, commit, ${annotatedTagCommand(version)}, then publish a GitHub Release`;
 
 /** The only dependency range a lockstep release rewrites — a caret or a tag is somebody's intent. */
 const EXACT_PIN = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
@@ -120,133 +177,6 @@ export const repinFrameworkDeps = (raw: string, version: string): string =>
   raw.replace(/"(@ultimat3\/[a-z0-9-]+)":\s*"([^"]+)"/g, (match, name: string, range: string) =>
     EXACT_PIN.test(range) ? `"${name}": "${version}"` : match,
   );
-
-export const UNRELEASED_HEADING = '## [Unreleased]';
-/** What a fresh `[Unreleased]` says once the release has taken its body. */
-export const UNRELEASED_PLACEHOLDER = 'Nothing yet.';
-
-/**
- * The commit subjects go INSIDE the promoted section, under a heading no hand-written section uses.
- * Generating `### Added` / `### Fixed` / `### Changed` was how a release ended up with two
- * `### Fixed` blocks in one section — the generated one below the hand-written one, saying the same
- * thing in worse words.
- */
-export const commitBlock = (subjects: readonly string[]): readonly string[] =>
-  subjects.length === 0
-    ? []
-    : ['### Commits', '', ...subjects.map((subject) => `- ${subject}`), ''];
-
-/**
- * PROMOTE, never append. `[Unreleased]` IS the release notes — hand-written as each change lands,
- * migration and all — so a release renames that heading to the version and opens a fresh empty
- * `[Unreleased]` above it.
- *
- * What appending produced is commit 8fe7c56d — `git show 8fe7c56d:CHANGELOG.md`, this script's own
- * output for `release: 6.0.0`: seven `BREAKING —` entries still under `## [Unreleased]`, a
- * `## 6.0.0` holding six merge subjects and nothing else, and two `## 5.0.1` plus two `## 5.0.0`
- * headings left by the two runs before it — an auto section above a hand-written one, same version.
- * `wiki/Upgrading.md` pointed at the `6.0.0` section throughout.
- *
- * `git show v6.0.0:CHANGELOG.md` does NOT show this: the tag points at 93443aeb, a human repairing
- * 8fe7c56d by hand. Read the tag and the bug is invisible; read 8fe7c56d and it is the whole diff.
- *
- * Promotion cannot produce either shape ON ITS OWN: one heading is renamed rather than duplicated.
- * It can still be ASKED for a version the page already holds — `--version 6.0.0` re-run after a
- * botched release, or run against 93443aeb, where a human had already written that section by hand
- * — and renaming `[Unreleased]` to a heading that exists puts a second one directly above it. That
- * is refused, not written: `checkChangelog` would red on the result, and it would red after 47
- * manifests, the chart and CHANGELOG.md had already moved.
- *
- * Keep a Changelog stays newest-first for free — `[Unreleased]` is the top section, so the version
- * it becomes lands above every previous one.
- */
-export function promoteUnreleased(input: {
-  readonly changelog: string;
-  readonly version: string;
-  readonly date: string;
-  readonly subjects: readonly string[];
-}): { readonly changelog: string } | { readonly findings: readonly Finding[] } {
-  // `parseChangelog`, not a regex of this file's own: what counts as "the 6.0.0 section" is the
-  // gate's question, and two answers to it is how a release passes here and reds there.
-  const held = parseChangelog(input.changelog).find((section) => section.version === input.version);
-  if (held !== undefined) {
-    return {
-      findings: [
-        {
-          code: 'X_DOC_CHANGELOG_SECTION_INVALID',
-          cause: `CHANGELOG.md:${held.line} already holds \`## ${held.heading}\`, so promoting [Unreleased] to ${input.version} would write a second section for one version`,
-          fix: `release a version CHANGELOG.md does not already hold: bun run scripts/release.ts --bump patch --dry-run --json, or delete the \`## ${held.heading}\` section if that release never shipped`,
-          at: `CHANGELOG.md:${held.line}`,
-        },
-      ],
-    };
-  }
-  const lines = input.changelog.split('\n');
-  const at = lines.findIndex((line) => /^## \[Unreleased\]/i.test(line));
-  if (at === -1) {
-    return {
-      findings: [
-        {
-          code: 'X_RELEASE_UNRELEASED_MISSING',
-          cause: 'CHANGELOG.md has no `## [Unreleased]` heading, so there is nothing to promote',
-          fix: 'add `## [Unreleased]` under the preamble of CHANGELOG.md, above the newest version',
-          at: 'CHANGELOG.md',
-        },
-      ],
-    };
-  }
-  let end = lines.length;
-  for (let index = at + 1; index < lines.length; index += 1) {
-    if ((lines[index] ?? '').startsWith('## ')) {
-      end = index;
-      break;
-    }
-  }
-  const body = lines
-    .slice(at + 1, end)
-    .filter((line) => line.trim() !== UNRELEASED_PLACEHOLDER)
-    .join('\n')
-    .trim();
-  const commits = commitBlock(input.subjects);
-  if (body.length === 0 && commits.length === 0) {
-    return {
-      findings: [
-        {
-          code: 'X_DOC_CHANGELOG_SECTION_INVALID',
-          cause: `[Unreleased] is empty and no commit landed since the previous tag, so ${input.version} would ship a section that says nothing`,
-          fix: 'write the release notes under `## [Unreleased]` in CHANGELOG.md, then run this again',
-          at: 'CHANGELOG.md',
-        },
-      ],
-    };
-  }
-  const section = [`## ${input.version} - ${input.date}`, ''];
-  if (body.length > 0) section.push(...body.split('\n'), '');
-  section.push(...commits);
-  return {
-    changelog: [
-      ...lines.slice(0, at),
-      UNRELEASED_HEADING,
-      '',
-      UNRELEASED_PLACEHOLDER,
-      '',
-      ...section,
-      ...lines.slice(end),
-    ].join('\n'),
-  };
-}
-
-/**
- * `en-CA` is ISO-8601 by locale, and the zone is stated because nothing here may format a date
- * without one. UTC, so a release cut at 23:00 in one timezone is not dated a day apart from the tag.
- */
-export const releaseDate = (at: Date): string =>
-  new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'UTC',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(at);
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
@@ -325,6 +255,33 @@ if (import.meta.main) {
   }
   const version = resolved.version;
   const dryRun = flagBool(args, 'dry-run');
+
+  // Before anything is read, let alone written, and under `--dry-run` too so a dry run predicts
+  // the real one: the release commit is `git add -A`, and over a dirty tree it carries whatever
+  // else was in flight as part of a release nobody reviewed as one.
+  const status = await run(['git', 'status', '--porcelain'], { cwd: root });
+  const bumpFlag = flagString(args, 'bump');
+  const dirty = treeDirtyFindings(
+    status.ok ? status.output : undefined,
+    releaseInvocation({
+      explicit: flagString(args, 'version'),
+      bump: bumpFlag !== undefined && isBump(bumpFlag) ? bumpFlag : undefined,
+      dryRun,
+      json: args.json,
+    }),
+  );
+  if (dirty.length > 0) {
+    report(
+      {
+        ok: false,
+        script: 'release',
+        summary: 'refusing to release: the working tree is not clean',
+        findings: dirty,
+        data: { version, current, dryRun },
+      },
+      args.json,
+    );
+  }
 
   const mismatched = publishable.filter((workspace) => workspace.version !== current);
   const skew: readonly Finding[] = mismatched.map((workspace) => ({
@@ -420,7 +377,7 @@ if (import.meta.main) {
         log.ok
           ? `  commits   ${subjects.length} since v${current}, appended under ### Commits`
           : `  commits   none listed — this clone has no v${current} tag to bound the range`,
-        `  next      bun install, commit, tag v${version}, then publish a GitHub Release`,
+        releaseNextLine(version),
       ],
       data: {
         version,

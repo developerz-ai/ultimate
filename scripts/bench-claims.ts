@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
-// Enforce, on `x verify`'s `manifest` step, that the realtime capacity figures `CLAUDE.md` states
-// are the figures the committed bench results carry. Nothing compared the two, so a re-run that
-// moved a percentile — or a hand-edited sentence — left the repo's loudest measured claim
-// describing a run that never happened.
+// Enforce, on `x verify`'s `manifest` step, that the realtime capacity figures
+// `scripts/bench/results/README.md` states are the figures the committed bench results carry.
+// Nothing compared the two, so a re-run that moved a percentile — or a hand-edited sentence — left
+// the repo's loudest measured claim describing a run that never happened. The prose lived in root
+// `CLAUDE.md` until 2026-09-23 and moved beside the results it describes.
 //
 //   bun run scripts/bench-claims.ts [--json]
 
@@ -11,7 +12,7 @@ import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 
-export const CLAIMS_FILE = 'CLAUDE.md';
+export const CLAIMS_FILE = 'scripts/bench/results/README.md';
 export const RESULTS_50K = 'scripts/bench/results/50k-restart.json';
 export const RESULTS_10K = 'scripts/bench/results/10k-restart-seq.json';
 

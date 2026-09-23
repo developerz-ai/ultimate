@@ -291,8 +291,23 @@ export const checkIgnores = (files: readonly IgnoreFile[]): readonly IgnoreGap[]
  * exist today were each added beside a new Dockerfile, and a table here would leave the fifth
  * unchecked with nothing red — the defect class this whole file exists to close.
  */
+/**
+ * Every `.dockerignore` under `root`. A directory another process deletes mid-walk — a test fixture
+ * under the gate's parallel run — makes the glob throw ENOENT on its `readdir`; that is the tree
+ * moving, not an answer, so the walk is taken again (three times, then the error stands).
+ */
+function scanIgnoreFiles(root: string, attempts = 3): readonly string[] {
+  try {
+    return [...new Bun.Glob('**/*.dockerignore').scanSync({ cwd: root, dot: true })].sort();
+  } catch (error) {
+    const vanished = (error as { readonly code?: unknown } | null)?.code === 'ENOENT';
+    if (!vanished || attempts <= 1) throw error;
+    return scanIgnoreFiles(root, attempts - 1);
+  }
+}
+
 export async function ignoreFilesOf(root: string): Promise<readonly IgnoreFile[]> {
-  const paths = [...new Bun.Glob('**/*.dockerignore').scanSync({ cwd: root, dot: true })].sort();
+  const paths = scanIgnoreFiles(root);
   return Promise.all(
     paths.map(async (file) => ({ file, text: await Bun.file(`${root}/${file}`).text() })),
   );

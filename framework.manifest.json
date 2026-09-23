@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "c7e2cef72f47adb2ca839192450bd7668c4e2c4cb42d5b3a22b3a512957b28a5",
+  "buildId": "549abb99bd6dfd74ee198e247cdab0eaa5644d24f7fdb71ef77b6240fc03fcd0",
   "tiers": {
     "0": [
       "core",
@@ -415,6 +415,16 @@
       "at": "packages/auth/src/errors.ts"
     },
     {
+      "code": "X_APP_EMPTY",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_APP_NAME_EMPTY",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_APP_PACKAGE_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -525,6 +535,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_BOUNDARY_SURFACE_IMPORT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_BOUNDARY_VIOLATION",
       "owner": "scripts",
       "at": "scripts/boundaries.ts"
@@ -550,9 +565,19 @@
       "at": "scripts/browser-transport.ts"
     },
     {
+      "code": "X_BUDGET_BASE_MISSING",
+      "owner": "scripts",
+      "at": "scripts/budget-raises.ts"
+    },
+    {
       "code": "X_BUDGET_EXCEEDED",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_BUDGET_PARAMS_UNDECLARED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BUDGET_RAISE_UNSTATED",
@@ -661,23 +686,23 @@
     },
     {
       "code": "X_CDP_BROWSER_MISSING",
-      "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
       "code": "X_CDP_CALL_FAILED",
-      "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
       "code": "X_CDP_LAUNCH_FAILED",
-      "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
       "code": "X_CDP_TIMEOUT",
-      "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
       "code": "X_CHANNEL_DECLARATION_INVALID",
@@ -703,6 +728,16 @@
       "code": "X_CI_RUN_NOT_FOUND",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_CLAUDE_MD_OVERSIZE",
+      "owner": "scripts",
+      "at": "scripts/claude-md-size.ts"
+    },
+    {
+      "code": "X_CLAUDE_MD_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/claude-md-size.ts"
     },
     {
       "code": "X_CLI_BAD_FLAG",
@@ -773,6 +808,11 @@
       "code": "X_CONTRACT_DRIFT",
       "owner": "action",
       "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_CORPUS_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/lib/corpus.ts"
     },
     {
       "code": "X_CORS_CONFIG_INVALID",
@@ -1115,6 +1155,16 @@
       "at": "scripts/setup-commands.ts"
     },
     {
+      "code": "X_DOC_UNRELEASED_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/lib/unreleased-claims.ts"
+    },
+    {
+      "code": "X_DOC_UNRELEASED_STALE",
+      "owner": "scripts",
+      "at": "scripts/lib/unreleased-claims.ts"
+    },
+    {
       "code": "X_DRAINING",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -1141,38 +1191,38 @@
     },
     {
       "code": "X_E2E_APP_FAILED",
-      "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
       "code": "X_E2E_EVALUATE_CAPTURED",
-      "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
       "code": "X_E2E_EVALUATE_THREW",
-      "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
       "code": "X_E2E_EVALUATE_UNSUPPORTED",
-      "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
       "code": "X_E2E_LOCATOR_AMBIGUOUS",
-      "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
       "code": "X_E2E_LOCATOR_EMPTY",
-      "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
       "code": "X_E2E_SERVICE_WORKER_ABSENT",
-      "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
       "code": "X_ENTITY_DUPLICATE",
@@ -1303,6 +1353,11 @@
       "code": "X_EXPORT_ROW_INVALID",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_FEATURE_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_FILE_TOO_LONG",
@@ -1495,6 +1550,16 @@
       "at": "scripts/lib/guard-load.ts"
     },
     {
+      "code": "X_GUARDS_DOC_DRIFT",
+      "owner": "scripts",
+      "at": "scripts/guards-doc.ts"
+    },
+    {
+      "code": "X_GUARDS_DOC_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/guards-doc.ts"
+    },
+    {
       "code": "X_HIVE_EMPTY",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
@@ -1640,6 +1705,11 @@
       "at": "packages/jobs/src/errors.ts"
     },
     {
+      "code": "X_JOB_DECLARATION_INVALID",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
       "code": "X_JOB_DUPLICATE",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
@@ -1656,6 +1726,11 @@
     },
     {
       "code": "X_JOB_NOT_CANCELLABLE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_NOT_REQUEUEABLE",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
     },
@@ -1681,6 +1756,11 @@
     },
     {
       "code": "X_JOB_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_JOB_UNREGISTERED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -1748,6 +1828,11 @@
       "code": "X_LLM_TRUNCATED",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_LLMS_TXT_DRIFT",
+      "owner": "scripts",
+      "at": "scripts/llms-txt.ts"
     },
     {
       "code": "X_LOCAL_STORE_UNAVAILABLE",
@@ -2180,9 +2265,24 @@
       "at": "packages/http/src/errors.ts"
     },
     {
+      "code": "X_PERMISSION_UNGRANTED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_PERMISSION_UNKNOWN",
       "owner": "policy",
       "at": "packages/policy/src/errors.ts"
+    },
+    {
+      "code": "X_PIN_BASE_MISSING",
+      "owner": "scripts",
+      "at": "scripts/pin-raises.ts"
+    },
+    {
+      "code": "X_PIN_RAISE_UNSTATED",
+      "owner": "scripts",
+      "at": "scripts/pin-raises.ts"
     },
     {
       "code": "X_PIPELINE_FINALIZE_FAILED",
@@ -2310,6 +2410,11 @@
       "at": "packages/query/src/errors.ts"
     },
     {
+      "code": "X_QUERY_COLUMN_UNSELECTED",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
       "code": "X_QUERY_DEPRECATION_INVALID",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
@@ -2430,6 +2535,11 @@
       "at": "scripts/readme-fences.ts"
     },
     {
+      "code": "X_REALTIME_TOPOLOGY",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
+    },
+    {
       "code": "X_REALTIME_UNINSTALLED",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
@@ -2462,7 +2572,7 @@
     {
       "code": "X_REFERENCE_APP_REGRESSED",
       "owner": "scripts",
-      "at": "scripts/reference-app-gate.ts"
+      "at": "scripts/lib/reference-app-build.ts"
     },
     {
       "code": "X_REFERENCE_APP_UNREFERENCED",
@@ -2505,7 +2615,17 @@
       "at": "scripts/release.ts"
     },
     {
+      "code": "X_RELEASE_TREE_DIRTY",
+      "owner": "scripts",
+      "at": "scripts/lib/release-preflight.ts"
+    },
+    {
       "code": "X_RELEASE_UNRELEASED_MISSING",
+      "owner": "scripts",
+      "at": "scripts/lib/release-changelog.ts"
+    },
+    {
+      "code": "X_RELEASE_VERSION_INVALID",
       "owner": "scripts",
       "at": "scripts/release.ts"
     },
@@ -2571,6 +2691,11 @@
     },
     {
       "code": "X_ROLE_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_ROUTE_ASYNC_PAGE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -2970,6 +3095,21 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_SHOT_ELEMENT_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SHOT_ELEMENT_UNREADY",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SHOT_HOST_REFUSED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_SHOT_ISLAND_MISSING",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2986,6 +3126,11 @@
     },
     {
       "code": "X_SHOT_ISLAND_UNSTUBBED_REQUEST",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SHOT_KEY_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -3111,6 +3256,11 @@
     },
     {
       "code": "X_STORAGE_NOT_FOUND",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_NOT_PENDING",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
     },
@@ -3401,6 +3551,21 @@
     },
     {
       "code": "X_TEST_NONDETERMINISTIC",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_NUMBER_EXPECTED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_OPENAPI_EXPECTED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_POLICY_EXPECTED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },

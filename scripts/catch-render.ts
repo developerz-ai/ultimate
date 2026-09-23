@@ -32,24 +32,18 @@
 // (a getter can throw too), and a rethrow whose renderer is the constructor's. A floor, like the
 // check beside it.
 //
+// ZERO-PINNED, so it holds no pin table: the seven-site sweep landed with the rule. Adding a pin
+// back is a hand edit in a review, under `pin-raises`.
+//
 //   bun run scripts/catch-render.ts [--json]
-//   bun run scripts/catch-render.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
 import type { SourceFile } from './boundaries';
-import { collectSourceFiles } from './boundaries';
 import { enclosingCallee, localDuckRenderers, maskToCode, valueEnd } from './error-render';
-import { flagList, parseScriptArgs } from './lib/args';
-import {
-  applyCatchRenderUnpin,
-  CATCH_PINS_FILE,
-  CATCH_RENDER_PINS,
-  catchRenderPinnedFor,
-} from './lib/catch-render-pins';
+import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
-import { report } from './lib/log';
-import { repoRoot } from './lib/run';
+import type { PinTable, RatchetGap } from './lib/ratchet';
+import { packageOf, ratchetGaps, ratchetMain } from './lib/ratchet';
 import { isTestPath, lineOf } from './lib/source-scan';
-import { packageOf } from './test-fix-citations';
 
 const SCRIPT = 'catch-render';
 
@@ -269,19 +263,11 @@ export function scanCatchRenders(
   return sites;
 }
 
-export type CatchRenderGapKind = 'over' | 'stale' | 'unscanned';
-
-export interface CatchRenderGap {
-  readonly kind: CatchRenderGapKind;
-  readonly pkg: string;
-  readonly found: number;
-  readonly pinned: number;
-  readonly first?: CatchRenderSite;
-}
+export type CatchRenderGap = RatchetGap<CatchRenderSite>;
 
 export interface CatchRenderInput {
   readonly files: readonly SourceFile[];
-  readonly pins: Readonly<Record<string, number>>;
+  readonly pins: PinTable;
 }
 
 /**
@@ -303,40 +289,19 @@ export function launderedByPackage(
 
 const NOTHING: ReadonlySet<string> = new Set();
 
-/** The ratchet: a package may hold what it is pinned at, may fall, may never rise. */
-export function checkCatchRenders(input: CatchRenderInput): readonly CatchRenderGap[] {
-  if (input.files.length === 0) {
-    return [{ kind: 'unscanned', pkg: '', found: 0, pinned: 0 }];
-  }
-  const laundered = launderedByPackage(input.files);
-  const found = new Map<string, CatchRenderSite[]>();
-  for (const file of input.files) {
-    if (isTestPath(file.path)) continue;
-    const fields = laundered.get(packageOf(file.path)) ?? NOTHING;
-    for (const site of scanCatchRenders(file.path, file.source, fields)) {
-      const list = found.get(packageOf(site.path)) ?? [];
-      list.push(site);
-      found.set(packageOf(site.path), list);
-    }
-  }
-  const gaps: CatchRenderGap[] = [];
-  for (const pkg of new Set([...found.keys(), ...Object.keys(input.pins)])) {
-    const hits = found.get(pkg) ?? [];
-    const pinned = catchRenderPinnedFor(pkg, input.pins);
-    if (hits.length > pinned) {
-      gaps.push({
-        kind: 'over',
-        pkg,
-        found: hits.length,
-        pinned,
-        ...(hits[0] === undefined ? {} : { first: hits[0] }),
-      });
-      continue;
-    }
-    if (hits.length < pinned) gaps.push({ kind: 'stale', pkg, found: hits.length, pinned });
-  }
-  return gaps.sort((a, b) => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : 0));
+/** Every unsafe render in shipped source, each file read against its own package's fields. */
+export function catchRenderSites(files: readonly SourceFile[]): readonly CatchRenderSite[] {
+  const laundered = launderedByPackage(files);
+  return files.flatMap((file) =>
+    isTestPath(file.path)
+      ? []
+      : scanCatchRenders(file.path, file.source, laundered.get(packageOf(file.path)) ?? NOTHING),
+  );
 }
+
+/** The ratchet: a package may hold what it is pinned at, may fall, may never rise. */
+export const checkCatchRenders = (input: CatchRenderInput): readonly CatchRenderGap[] =>
+  ratchetGaps(catchRenderSites(input.files), input.pins, input.files.length > 0);
 
 const CAUSE: Readonly<Record<CatchRenderKind, string>> = {
   instanceof:
@@ -361,12 +326,12 @@ const overFinding = (gap: CatchRenderGap): Finding => ({
 const staleFinding = (gap: CatchRenderGap): Finding => ({
   code: 'X_CATCH_RENDER_PIN_STALE',
   cause: `${gap.pkg} is pinned at ${String(gap.pinned)} unsafe catch render(s) and has ${String(gap.found)} — the pin is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
-  fix: `bun run scripts/catch-render.ts --unpin ${gap.pkg}`,
-  at: CATCH_PINS_FILE,
+  fix: `edit scripts/catch-render.ts — the rule is zero-pinned and holds no table, so delete the pin for ${gap.pkg}`,
+  at: 'scripts/catch-render.ts',
 });
 
 /**
- * `at` is the file the `fix:` EDITS — `scripts/boundaries.ts`, which owns `SOURCE_PATTERNS` — and
+ * `at` is the file the `fix:` EDITS — `scripts/lib/corpus.ts`, which owns `PATTERNS` — and
  * not this file, which the repair never touches. Review tooling anchors on `at`, so the two
  * disagreeing sends a reader to the wrong file; `config-readers.ts`, `doc-fixes.ts` and
  * `side-effects.ts` all point their `unscanned` finding at the file their own fix line names.
@@ -375,75 +340,34 @@ const unscannedFinding = (): Finding => ({
   code: 'X_CATCH_RENDER_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a clean tree',
-  fix: 'edit SOURCE_PATTERNS in scripts/boundaries.ts so it matches this repo layout, then bun run scripts/catch-render.ts',
-  at: 'scripts/boundaries.ts',
+  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/catch-render.ts',
+  at: 'scripts/lib/corpus.ts',
 });
 
-const FINDINGS: Readonly<Record<CatchRenderGapKind, (gap: CatchRenderGap) => Finding>> = {
-  over: overFinding,
-  stale: staleFinding,
-  unscanned: unscannedFinding,
-};
+export const catchRenderFindingFor = (gap: CatchRenderGap): Finding =>
+  gap.kind === 'over'
+    ? overFinding(gap)
+    : gap.kind === 'stale'
+      ? staleFinding(gap)
+      : unscannedFinding();
 
-export const catchRenderFindingFor = (gap: CatchRenderGap): Finding => FINDINGS[gap.kind](gap);
+const treeSites = async (root: string): Promise<readonly CatchRenderSite[]> =>
+  catchRenderSites(await corpus(root, 'source'));
 
 export const catchRenderGaps = async (root: string): Promise<readonly CatchRenderGap[]> =>
-  checkCatchRenders({ files: await collectSourceFiles(root), pins: CATCH_RENDER_PINS });
+  ratchetGaps(await treeSites(root), {}, true);
 
 /** What this rule contributes to `x verify`'s `errors` step, through `errorRendering`'s caller. */
 export const catchRenderFindings = async (root: string): Promise<readonly Finding[]> =>
   (await catchRenderGaps(root)).map(catchRenderFindingFor);
 
-/** Every site per package, for `--unpin` and for the number a maintainer wants when lowering one. */
-export async function catchRenderCounts(root: string): Promise<Readonly<Record<string, number>>> {
-  const counts: Record<string, number> = {};
-  const files = await collectSourceFiles(root);
-  const laundered = launderedByPackage(files);
-  for (const file of files) {
-    if (isTestPath(file.path)) continue;
-    for (const site of scanCatchRenders(
-      file.path,
-      file.source,
-      laundered.get(packageOf(file.path)) ?? NOTHING,
-    )) {
-      counts[packageOf(site.path)] = (counts[packageOf(site.path)] ?? 0) + 1;
-    }
-  }
-  return counts;
-}
-
 if (import.meta.main) {
-  const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const unpin = flagList(args, 'unpin');
-  if (unpin.length > 0) {
-    const lowered = await applyCatchRenderUnpin(root, unpin, await catchRenderCounts(root));
-    report(
-      {
-        ok: true,
-        script: SCRIPT,
-        summary:
-          lowered.length === 0
-            ? 'nothing to lower — every named package is already at what this tree measures'
-            : `lowered ${String(lowered.length)} pin(s): ${lowered.join(', ')}`,
-        findings: [],
-      },
-      args.json,
-    );
-  } else {
-    const gaps = await catchRenderGaps(root);
-    report(
-      {
-        ok: gaps.length === 0,
-        script: SCRIPT,
-        summary:
-          gaps.length === 0
-            ? 'no package renders a caught value into a refusal above its pin'
-            : `${String(gaps.length)} package(s) off the catch-render ratchet`,
-        findings: gaps.map(catchRenderFindingFor),
-        data: { counts: await catchRenderCounts(root) },
-      },
-      args.json,
-    );
-  }
+  await ratchetMain({
+    script: SCRIPT,
+    pinsFile: 'scripts/catch-render.ts',
+    pins: {},
+    sites: treeSites,
+    findingFor: catchRenderFindingFor,
+    clean: 'no package renders a caught value into a refusal',
+  });
 }

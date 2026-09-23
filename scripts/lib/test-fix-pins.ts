@@ -32,37 +32,3 @@ export const TEST_FIX_PINS: Readonly<Record<string, number>> = {
   flags: 1,
   http: 5,
 };
-
-/** What this package is allowed to have today. Absent means zero, deliberately. */
-export const testFixPinnedFor = (
-  pkg: string,
-  pins: Readonly<Record<string, number>> = TEST_FIX_PINS,
-): number => pins[pkg] ?? 0;
-
-/**
- * The edit `X_TEST_FIX_PIN_STALE` names, performed: lower each named package's pin to what is
- * measured, and refuse to raise one. Returns the entries it changed, so the caller can say
- * "nothing to lower" rather than reporting a write it did not make.
- */
-export async function applyTestFixUnpin(
-  root: string,
-  packages: readonly string[],
-  gaps: readonly { readonly kind: string; readonly pkg: string; readonly found: number }[],
-): Promise<readonly string[]> {
-  const path = `${root}/${PINS_FILE}`;
-  let text = await Bun.file(path).text();
-  const written: string[] = [];
-  for (const pkg of packages) {
-    const gap = gaps.find((one) => one.pkg === pkg && one.kind === 'stale');
-    if (gap === undefined) continue;
-    const entry = new RegExp(`^(\\s*)${pkg}: \\d+,$`, 'm');
-    if (!entry.test(text)) continue;
-    text =
-      gap.found === 0
-        ? text.replace(new RegExp(`^\\s*${pkg}: \\d+,\\n`, 'm'), '')
-        : text.replace(entry, `$1${pkg}: ${String(gap.found)},`);
-    written.push(`${pkg} -> ${String(gap.found)}`);
-  }
-  if (written.length > 0) await Bun.write(path, text);
-  return written;
-}

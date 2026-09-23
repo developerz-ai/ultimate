@@ -297,7 +297,6 @@
         "@ultimat3/realtime": "21.0.0",
         "@ultimat3/render": "21.0.0",
         "@ultimat3/schema": "21.0.0",
-        "@ultimat3/scraping": "21.0.0",
         "@ultimat3/seo": "21.0.0",
         "@ultimat3/storage": "21.0.0",
         "@ultimat3/testing": "21.0.0",
@@ -534,6 +533,7 @@
       "version": "21.0.0",
       "dependencies": {
         "@ultimat3/core": "21.0.0",
+        "@ultimat3/schema": "21.0.0",
       },
     },
     "packages/ui": {

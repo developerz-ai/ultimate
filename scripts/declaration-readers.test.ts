@@ -7,11 +7,11 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import {
   checkDeclarationReaders,
+  DECLARATION_PINS_FILE,
   type DeclarationReaderGap,
   declarationReaderFindingFor,
   declarationReaderInput,
 } from './declaration-readers';
-import { DECLARATION_PINS_FILE, declarationReaderPinnedFor } from './lib/declaration-reader-pins';
 import { declarationLeaves, interfaceTable } from './lib/declaration-scan';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
@@ -271,11 +271,7 @@ describe('this repository', () => {
     SCAN_TIMEOUT_MS,
   );
 
-  test('every pin carries a reason a human wrote', async () => {
-    const { pins } = await input();
-    for (const [leaf, pin] of Object.entries(pins)) {
-      expect(`${leaf}: ${pin.reason.trim()}`.length).toBeGreaterThan(leaf.length + 40);
-      expect(declarationReaderPinnedFor(leaf, pins)).toBe(true);
-    }
+  test('the tree is held at zero: no waiver, so every unread key is a finding', async () => {
+    expect((await input()).pins).toEqual({});
   });
 });

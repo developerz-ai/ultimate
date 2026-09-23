@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // One rule: a closed set of string literals is declared in ONE module and nowhere else. TWO ways to
 // recognise a second declaration, and `by` below says which each vocabulary takes: by LITERAL SET,
 // which is how the copy called `PwaRenderMode` was caught — a rule keyed on the word `RenderMode`
@@ -7,7 +8,6 @@
 // here to go stale. ONE known divergence is still held out until a decision lands (see below).
 //   bun run scripts/render-modes.ts [--json]
 
-import { maskLiterals, stripComments } from '@ultimat3/cli';
 import {
   CACHE_TIERS,
   HYDRATE_STRATEGIES,
@@ -17,11 +17,13 @@ import {
 } from '@ultimat3/core';
 import { JOB_STATES } from '@ultimat3/jobs';
 import { TEST_TYPES } from '@ultimat3/testing';
+import { maskLiterals, stripComments } from '../packages/core/src/source-mask';
 import { parseScriptArgs } from './lib/args';
+import { shippedSources } from './lib/corpus';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { isCode, isTestPath, lineOf } from './lib/source-scan';
+import { isCode, lineOf } from './lib/source-scan';
 import { scanStatusUnions } from './lib/status-unions';
 
 const SCRIPT = 'render-modes';
@@ -310,21 +312,8 @@ export function asyncStatusFindings(files: readonly SourceFile[]): readonly Find
   return findings;
 }
 
-/**
- * Shipped source only. A test fixture spelling a vocabulary out is INPUT to the code under test,
- * never a declaration anything imports — the same rule `scripts/test-bare-error.ts` applies to a
- * `new Error` a test hands to its subject. An app's own source is likewise not the framework's.
- */
-export const SOURCE_GLOB = 'packages/*/src/**/*.{ts,tsx}';
-
-export async function readSources(root: string): Promise<readonly SourceFile[]> {
-  const files: SourceFile[] = [];
-  for await (const path of new Bun.Glob(SOURCE_GLOB).scan({ cwd: root })) {
-    if (isTestPath(path) || path.includes('/dist/')) continue;
-    files.push({ at: path, text: await Bun.file(`${root}/${path}`).text() });
-  }
-  return files.sort((a, b) => a.at.localeCompare(b.at));
-}
+/** Shipped source, read once per process: the corpus `shipped` scope. */
+export const readSources = shippedSources;
 
 export const vocabularyFindings = async (root: string): Promise<readonly Finding[]> =>
   checkVocabulary(await readSources(root));

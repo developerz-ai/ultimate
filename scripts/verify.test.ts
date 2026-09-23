@@ -181,6 +181,9 @@ describe('unit · the repo gate is the CLI gate', () => {
   test('an image that could not start is reported through the boundaries step', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-image-'));
     try {
+      // One source file: a root whose source scope reads nothing is refused (`X_CORPUS_UNSCANNED`)
+      // before any rule runs, and this test is about the image rule.
+      await Bun.write(join(dir, 'packages/core/src/ok.ts'), 'export const ok = 1;\n');
       await Bun.write(
         join(dir, 'docker/Dockerfile'),
         [

@@ -55,7 +55,8 @@ This file is a link map, not a status page. **It states no version, count or ver
 
 Generated from `bun run scripts/list-workspaces.ts --json` and each package's own `description`. A package may import only from a STRICTLY LOWER tier — never sideways unless the edge is declared, never upward; a violation is a build error (`bun run boundaries`). Declared sideways edges: `realtime -> query`, `cli -> admin`, `cli -> testing`, `create-ultimate -> cli`.
 
-- [@ultimat3/core](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/core/README.md): tier 0 — Ultimate's foundation: errors, context, env, config, clock, ids, logging, telemetry, lifecycle, and the flight layer (backoff, retry, single-flight, concurrency gate, generation fence). Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/core/CLAUDE.md).
+<!-- generated: packages — bun run llms-txt --write -->
+- [@ultimat3/core](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/core/README.md): tier 0 — Ultimate's foundation: errors, context, env, config, clock, ids, logging, telemetry, lifecycle. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/core/CLAUDE.md).
 - [@ultimat3/schema](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/schema/README.md): tier 0 — Ultimate's validation seam: Standard Schema interface, the t namespace, JSON Schema output. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/schema/CLAUDE.md).
 - [@ultimat3/cache](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/cache/README.md): tier 1 — Tagged caching: request memo, LRU, Redis, CDN — one invalidation graph. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/cache/CLAUDE.md).
 - [@ultimat3/db](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/db/README.md): tier 1 — Postgres access, transactions, migrations and drift detection. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/db/CLAUDE.md).
@@ -77,6 +78,7 @@ Generated from `bun run scripts/list-workspaces.ts --json` and each package's ow
 - [@ultimat3/mail](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/mail/README.md): tier 4 — Transactional email as data: one template renders HTML and text, sent through a job. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/mail/CLAUDE.md).
 - [@ultimat3/manifest](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/manifest/README.md): tier 4 — x.manifest.json: deterministic generated facts, contract diff, AGENTS.md budget. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/manifest/CLAUDE.md).
 - [@ultimat3/mcp](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/mcp/README.md): tier 4 — MCP server, dev tools, and the action-to-tool projection — one authz system, two surfaces. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/mcp/CLAUDE.md).
+- [@ultimat3/notify](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/notify/README.md): tier 4 — Notifications: one declaration, many channels — fan-out, preference gate, digest window, delivery ledger, in-app inbox. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/notify/CLAUDE.md).
 - [@ultimat3/pwa](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/pwa/README.md): tier 4 — Generated service worker, web manifest, icons, push and version-skew handling. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/pwa/CLAUDE.md).
 - [@ultimat3/render](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/render/README.md): tier 4 — The route primitive and the five render modes: static, isr, ssr, stream, spa. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/render/CLAUDE.md).
 - [@ultimat3/ui](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/ui/README.md): tier 4 — SolidJS design system: semantic design tokens, dark/RTL-ready SCSS modules, a11y primitives. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/ui/CLAUDE.md).
@@ -85,7 +87,7 @@ Generated from `bun run scripts/list-workspaces.ts --json` and each package's ow
 - [@ultimat3/scraping](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/scraping/README.md): tier 5 — Browser automation as a job: scrape() returns a JobHandle. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/scraping/CLAUDE.md).
 - [@ultimat3/testing](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/testing/README.md): tier 5 — Test harness: cloned template DBs per worker, frozen clock, sealed network, 6 test types. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/testing/CLAUDE.md).
 - [create-ultimate](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/create-ultimate/README.md): tier 6 — bunx create-ultimate myapp — scaffold an Ultimate monorepo. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/create-ultimate/CLAUDE.md).
-
+<!-- end generated -->
 
 ## Primitives, in source
 
@@ -95,9 +97,8 @@ Generated from `bun run scripts/list-workspaces.ts --json` and each package's ow
 - [query](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/query/src/index.ts): a policy-checked read, optionally `live: true`; requires deterministic, bounded SQL, and a live query's sort key has to be readable on the row it returns.
 - [job](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/jobs/src/index.ts): durable steps, a required idempotency key, the transactional outbox, and `backfill()` as a job factory. `handle` is at-least-once — an attempt cancelled before its checkpoint replays that page, so a handler must be idempotent.
 - [route](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/render/src/index.ts): `defineRoute`, the five render modes, hydration timing, budgets.
-- [realtime](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/realtime/src/index.ts): channels, live-query transport, mutator rebase, cursors. Tiers 1–2 ship; tier 3 local-first (`entity(name, { persist: true })`, IndexedDB per principal plus one HTTP outbox) is in the tree for 21.0.0, unreleased. Capacity is measured on ONE node and the audited figures live in `CLAUDE.md`.
+- [realtime](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/realtime/src/index.ts): channels, live-query transport, mutator rebase, cursors. Tiers 1–2 ship; tier 3 local-first (`entity(name, { persist: true })`, IndexedDB per principal plus one HTTP outbox) shipped in 21.0.0, opt-in per entity. Capacity is measured on ONE node and the audited figures live in `CLAUDE.md`.
 - [registrar](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/core/src/registrar.ts): `PRIMITIVE_KINDS` — the single source the eight derive from, pinned by a test. A ninth entry is a failing test.
-
 
 ## Design — docs/idea
 
@@ -192,53 +193,61 @@ Recommendations, not requirements: the framework depends on none of it (axiom 7,
 
 The single public documentation surface; there is no separate marketing site. Source of truth is `wiki/` in this repo, mirrored to the GitHub wiki on merge. Browsable: https://github.com/developerz-ai/ultimate/wiki
 
+<!-- generated: wiki — bun run llms-txt --write -->
 - [Home](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Home.md): the full wiki index, with a reading path per audience.
-
-
-- [Actions](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Actions.md): every field, the six generated artifacts, the mutator twin, contract tests.
-- [Admin dashboard](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Admin-Dashboard.md): the generated admin app and its MCP surface.
-- [Agents](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Agents.md): `agent()` as an action factory, tools as real actions, `hive()`, `agentJob()`, and the at-least-once trap.
-- [Bare VM](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Bare-VM.md): the four commands a fresh Ubuntu box with bun and git runs — `bunx create-ultimate demo --no-git`, `cd demo`, `bin/setup`, `bin/check` — and why no Docker and no service is needed.
-- [Batching and preloading](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Batching-And-Preloading.md): JIT preload, `.preload()`, `insertAll`/`upsertAll`/`updateWhere`, `inBatches`, the tenancy guarantee.
-- [Building your own base](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Building-Your-Own-Base.md): wrap a primitive in your own factory: `tenantEntity`, `auditedMutator`, the two caveats, and why nothing downstream notices.
-- [CLI reference](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/CLI-Reference.md): every `x` command and flag, with `--json` examples.
-- [Caching and invalidation](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Caching-And-Invalidation.md): four tiers, one tag graph, one-hop fanout.
-- [Configuration](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Configuration.md): every `app.config.ts` field and every env var.
-- [Contributing](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Contributing.md): package layout, import tiers, conventions, PR expectations.
-- [Deployment](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Deployment.md): one image, six roles, `ROLE`/`PORT`, drain, compose, Helm, targets, `docs/ops/`.
-- [Entities and migrations](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Entities-And-Migrations.md): tables, invariants, tenancy, `x db gen`, drift, branch databases.
-- [Error codes](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Error-Codes.md): every `X_*` code: meaning, cause, exact fix.
-- [FAQ](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/FAQ.md): why Bun only, why no GraphQL, is it production ready.
 - [Getting started](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Getting-Started.md): zero to a running app, one action, one green `x verify`.
-- [I18n](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/I18n.md): flat catalogs, loud misses, locale routing, `hreflang`.
 - [Installation](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Installation.md): prerequisites, `x new`, typed env, editor and MCP client setup.
-- [Jobs and workflows](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Jobs-And-Workflows.md): transactional outbox, durable steps, idempotency, drivers.
-- [Known gaps](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Known-Gaps.md): every defect and unfinished seam in the published release, named.
-- [MCP and AI](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/MCP-And-AI.md): the dev MCP server, every action as a tool, the `llm()` gateway, evals.
-- [Migrating an existing app](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Migrating-An-Existing-App.md): strangler fig off Rails/Node/Django, adopting a live schema, identity during cutover, and what does not work yet.
-- [Migrations and backfills](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Migrations-And-Backfills.md): one migration engine and ledger, the destructive-migration rail, `backfill()` as a `job` factory.
-- [Money](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Money.md): `Money = { minor, currency }`, never a float.
-- [N+1 detection](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/N-Plus-One-Detection.md): the two codes, `expectedQueryLoop`, four surfaces, why prod pays nothing.
-- [Observability](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Observability.md): counters, gauges, histograms, `MetricExporter`, the Prometheus body, `/metrics` on its own port, and what the chart still cannot reach.
-- [PWA and offline](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/PWA-And-Offline.md): generated `sw.js`, precache budgets, version skew.
-- [Policies and authz](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Policies-And-Authz.md): `can()`, where a policy is evaluated, denials, tenancy scoping.
+- [Bare VM](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Bare-VM.md): the four commands a fresh Ubuntu box with bun and git runs, and why no Docker and no service is needed.
 - [Project layout](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Project-Layout.md): the generated monorepo, the four surfaces, feature slices, the hard boundaries.
-- [Queries and live queries](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Queries-And-Live-Queries.md): reads, `live: true`, per-row policy, bounded SQL.
-- [Realtime](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Realtime.md): channels → live queries → local-first, the pipeline, the reconnect problem.
-- [Resource management](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Resource-Management.md): `Disposable` db resources, `using`/`await using`, idempotent release, compile-time pins.
-- [Routes and render modes](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Routes-And-Render-Modes.md): five render modes, hydration timing, budgets, enforced SEO.
-- [Scheduled tasks](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Scheduled-Tasks.md): cron with an explicit tz, leader election, next-run introspection.
-- [Scraping](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Scraping.md): `scrape()` as a job factory, the driver-blind page vocabulary, robots and host gates, the yield alarm.
-- [Testing](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Testing.md): six test types, cloned databases, sealed network, `x verify`.
-- [The eight primitives](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/The-Eight-Primitives.md): `entity`, `policy`, `action`, `mutator`, `query`, `job`, `route`, `task` — the whole vocabulary.
-- [Theming](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Theming.md): 24 semantic colour roles as RGB channels, every token scale, `defineTheme()`, what contrast is gated.
-- [Timezones and dates](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Timezones-And-Dates.md): store UTC, format with an explicit IANA zone, frozen clocks in tests.
-- [Troubleshooting](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Troubleshooting.md): symptom → cause → fix.
+- [Migrating an existing app](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Migrating-An-Existing-App.md): strangler fig off Rails/Node/Django, adopting a live schema, identity during cutover, and what does not work yet.
 - [1 · First app](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Tutorial-01-First-App.md): a scaffolded app running on `x dev`, green gate, no Docker.
 - [2 · First feature](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Tutorial-02-First-Feature.md): one `action` projected into five surfaces, with tests.
 - [3 · Auth and admin](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Tutorial-03-Auth-And-Admin.md): roles, policies and a real login flow.
 - [4 · Jobs and realtime](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Tutorial-04-Jobs-And-Realtime.md): a durable job, a cron task, a live query.
 - [5 · Deploy free](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Tutorial-05-Deploy-Free.md): the image running on a free PaaS tier, migrations on release.
 - [6 · Growing up](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Tutorial-06-Growing-Up.md): the rung you should be on, and the signal to climb.
-- [UI components](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/UI-Components.md): the four page composites, and the generated 46-component catalog.
+- [The eight primitives](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/The-Eight-Primitives.md): `entity`, `policy`, `action`, `mutator`, `query`, `job`, `route`, `task` — the whole vocabulary.
+- [Building your own base](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Building-Your-Own-Base.md): wrap a primitive in your own factory: `tenantEntity`, `auditedMutator`, the two caveats, and why nothing downstream notices.
+- [Actions](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Actions.md): every field, the six generated artifacts, the mutator twin, contract tests.
+- [Entities and migrations](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Entities-And-Migrations.md): tables, invariants, tenancy, `x db gen`, drift, branch databases.
+- [Policies and authz](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Policies-And-Authz.md): `can()`, where a policy is evaluated, denials, tenancy scoping.
+- [Queries and live queries](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Queries-And-Live-Queries.md): reads, `live: true`, per-row policy, bounded SQL.
+- [Client data](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Client-Data.md).
+- [Jobs and workflows](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Jobs-And-Workflows.md): transactional outbox, durable steps, idempotency, drivers.
+- [Scheduled tasks](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Scheduled-Tasks.md): cron with an explicit tz, leader election, next-run introspection.
+- [Routes and render modes](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Routes-And-Render-Modes.md): five render modes, hydration timing, budgets, enforced SEO.
+- [Realtime](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Realtime.md): channels → live queries → local-first, the pipeline, the reconnect problem.
+- [Caching and invalidation](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Caching-And-Invalidation.md): four tiers, one tag graph, one-hop fanout.
+- [Batching and preloading](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Batching-And-Preloading.md): JIT preload, `.preload()`, `insertAll`/`upsertAll`/`updateWhere`, `inBatches`, the tenancy guarantee.
+- [N+1 detection](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/N-Plus-One-Detection.md): the two codes, `expectedQueryLoop`, four surfaces, why prod pays nothing.
+- [PWA and offline](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/PWA-And-Offline.md): generated `sw.js`, precache budgets, version skew.
+- [MCP and AI](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/MCP-And-AI.md): the dev MCP server, every action as a tool, the `llm()` gateway, evals.
+- [Agents](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Agents.md): `agent()` as an action factory, tools as real actions, `hive()`, `agentJob()`, and the at-least-once trap.
+- [Admin dashboard](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Admin-Dashboard.md): the generated admin app and its MCP surface.
+- [Scraping](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Scraping.md): `scrape()` as a job factory, the driver-blind page vocabulary, robots and host gates, the yield alarm.
+- [Auth](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Auth.md): sessions, OAuth, MFA, API keys and service tokens — the output is an `Actor`.
+- [Mail](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Mail.md): one template renders HTML and text, every string a key, sending is a job.
+- [Notify](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Notify.md): `notifier()` as a job factory: fan-out, preference gate, digest window, ledger, inbox.
+- [Storage and uploads](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Storage-And-Uploads.md): named disks, safe keys, the three-call signed upload, quarantine, orphans.
+- [Feature flags](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Feature-Flags.md): permanent switches and temporary ones that cannot be forgotten.
+- [SEO](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/SEO.md): enforced meta, typed JSON-LD, sitemaps, fail-closed robots, feeds, responsive images.
+- [I18n](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/I18n.md): flat catalogs, loud misses, locale routing, `hreflang`.
+- [Theming](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Theming.md): 24 semantic colour roles as RGB channels, every token scale, `defineTheme()`, what contrast is gated.
+- [UI components](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/UI-Components.md): the four page composites, and the generated 52-component catalog.
+- [Interface rules](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Interface-Rules.md).
+- [Timezones and dates](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Timezones-And-Dates.md): store UTC, format with an explicit IANA zone, frozen clocks in tests.
+- [Money](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Money.md): `Money = { minor, currency }`, never a float.
+- [Resource management](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Resource-Management.md): `Disposable` db resources, `using`/`await using`, idempotent release, compile-time pins.
+- [Migrations and backfills](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Migrations-And-Backfills.md): one migration engine and ledger, the destructive-migration rail, `backfill()` as a `job` factory.
+- [Testing](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Testing.md): six test types, cloned databases, sealed network, `x verify`.
+- [CLI reference](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/CLI-Reference.md): every `x` command and flag, with `--json` examples.
+- [Error codes](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Error-Codes.md): every `X_*` code: meaning, cause, exact fix.
+- [Configuration](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Configuration.md): every `app.config.ts` field and every env var.
+- [Deployment](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Deployment.md): one image, six roles, `ROLE`/`PORT`, drain, compose, Helm, targets, `docs/ops/`.
+- [Observability](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Observability.md): counters, gauges, histograms, `MetricExporter`, the Prometheus body, `/metrics` on its own port, and what the chart still cannot reach.
 - [Upgrading](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Upgrading.md): why the next release is a major, breaking-change detection, version skew — and that `x upgrade` is planned.
+- [Troubleshooting](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Troubleshooting.md): symptom → cause → fix.
+- [Known gaps](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Known-Gaps.md): every defect and unfinished seam in the published release, named.
+- [FAQ](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/FAQ.md): why Bun only, why no GraphQL, is it production ready.
+- [Contributing](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Contributing.md): package layout, import tiers, conventions, PR expectations.
+<!-- end generated -->

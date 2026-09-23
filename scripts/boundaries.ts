@@ -12,21 +12,17 @@
 //      type, never load its module.
 //   4. `@ultimat3/admin`'s one-flattener rule: one file may read `$meta`/`$describe()`.
 //
-// The scan below is Bun's transpiler and is a SECOND import scanner beside
-// `packages/cli/src/workspace-graph.ts`'s regex one. The reason this header used to give for the
-// copy — "the CI job that runs it needs no `bun install`" — names a job that does not exist:
-// `ci.yml` runs `boundaries` only as a step of `x verify`, and `scripts/verify.ts` imports
-// `@ultimat3/cli` to do it. Measured 2026-08-22: over all 4,007 scanned files under `packages/`,
-// the two scanners resolve the SAME framework package for every specifier, zero either way — so
-// the copy can go as soon as `workspace-graph.ts` exports raw SPECIFIERS. `importedPackages`
-// answers package names and drops relative ones, and a relative cross-package import is exactly
-// what rule 1 learned to follow.
+// The scan is `packages/cli/src/import-scan.ts`, a leaf read by path — the ONE import scanner, which
+// `workspace-graph.ts` reads too. It was a second regex scanner there until #493 showed the two
+// disagreeing on a template nested in a substitution.
 //
 //   bun run scripts/boundaries.ts [--json] [--package cli]
 
 import { join } from 'node:path';
 import { dirname, join as joinPosix, normalize } from 'node:path/posix';
+import { scanAllImports, scanRuntimeImports } from '../packages/cli/src/import-scan';
 import { parseScriptArgs } from './lib/args';
+import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -80,74 +76,27 @@ export function targetPackage(fromFile: string, specifier: string): string | und
   return packageOf(`${normalize(joinPosix(dirname(fromFile), specifier))}/`);
 }
 
-/** The transpiler rejects a shebang, and `bin.ts` legitimately has one. */
-export const stripShebang = (source: string): string =>
-  source.startsWith('#!') ? source.slice(source.indexOf('\n') + 1) : source;
-
 /**
- * `scanImports` ERASES `import type` / `export type`, so `packages/core/src/x.ts` could name
- * `@ultimat3/cli` — tier 0 reaching tier 5 — and this script reported clean, while the contract
- * says a tier violation is a build error. Dropping the keyword before the parse makes the
- * transpiler report it as an ordinary import.
- *
- * Done as a rewrite fed BACK THROUGH the transpiler rather than as a regex over raw text, because
- * the raw text is full of decoys: `packages/cli/src/templates/*.ts` emit generated app source
- * inside template literals, and doc blocks quote import lines verbatim. The transpiler still sees
- * those as a string and a comment; a regex would report them as this file's own imports.
- */
-const TYPE_ONLY_CLAUSE = /\b(import|export)\s+type\s+(?=[{*]|[A-Za-z_$][\w$]*\s+from\b)/g;
-
-export const dropTypeKeyword = (source: string): string =>
-  // The lookahead is what keeps `export type Foo = string` — a type ALIAS, not an import — from
-  // becoming `export Foo = string`, which is a syntax error the transpiler then reports instead
-  // of the imports this pass exists to find.
-  source.replace(TYPE_ONLY_CLAUSE, '$1 ');
-
-/**
- * The INLINE spelling the keyword pass cannot see: `import { type Foo } from '@ultimat3/cli'` is
- * a whole specifier list of type-only bindings, so the transpiler erases the statement and tier 0
- * reached tier 5 with `bun run boundaries` clean — the same hole `dropTypeKeyword` closed for
- * `import type`, one syntax over. It is the form `useImportType` rewrites a mixed list INTO, so
- * `import { A, type B }` losing its value binding turns a checked edge into an unchecked one.
- *
- * The specifier list is DELETED rather than de-`type`d, because deciding which `type` is a
- * modifier and which is a binding named `type` (`{ type as kind }`, `{ type as as as }`) is the
- * parser's job, and a wrong guess is a syntax error that takes the whole scan down. A side-effect
- * import carries the one thing the tier rule reads — the specifier — and is never erased.
- */
-const BRACE_IMPORT =
-  /(^|[\s;}])(?:import|export)\s+(?:[A-Za-z_$][\w$]*\s*,\s*)?\{[^{}]*\}\s*from\s*(['"])([^'"\n]+)\2/g;
-
-export const asSideEffectImports = (source: string): string =>
-  source.replace(BRACE_IMPORT, '$1import $2$3$2');
-
-/** Bun's transpiler is the parser: type-only imports are erased, dynamic imports are included. */
-export function importsOf(file: SourceFile): readonly string[] {
-  const loader = file.path.endsWith('x') ? 'tsx' : 'ts';
-  return new Bun.Transpiler({ loader })
-    .scanImports(stripShebang(file.source))
-    .map((entry) => entry.path);
-}
-
-/**
- * Every specifier the file names, type-only ones included. The tier rule applies to both — a
- * type-only edge still couples two packages' release cycles. `checkSharedLeaf` deliberately does
- * NOT use this: naming an `app/` type from a leaf is legal there, loading its module is not.
+ * Every specifier the file names, type-only ones included — `import-scan.ts`'s `scanAllImports`,
+ * the one scanner the CLI's workspace rule reads too. The tier rule applies to both halves: a
+ * type-only edge still couples two packages' release cycles. Memoised per file OBJECT: the corpus
+ * hands every rule the same objects, and the ceiling and the floor both ask.
  */
 export function allImportsOf(file: SourceFile): readonly string[] {
-  const loader = file.path.endsWith('x') ? 'tsx' : 'ts';
-  const rewritten = asSideEffectImports(dropTypeKeyword(stripShebang(file.source)));
-  // A rewrite the transpiler refuses must not take the whole scan down with it: `importsOf` is the
-  // unrewritten pass and still answers, so a file this cannot rewrite is checked as it was before
-  // — never skipped silently for every rule at once.
-  let typed: readonly string[] = [];
+  const hit = scanned.get(file);
+  if (hit !== undefined) return hit;
+  let found: readonly string[];
   try {
-    typed = new Bun.Transpiler({ loader }).scanImports(rewritten).map((entry) => entry.path);
+    found = scanAllImports(file);
   } catch {
-    typed = [];
+    // A file the parser refuses is typecheck's to report; this rule reads what it can.
+    found = [];
   }
-  return [...new Set([...importsOf(file), ...typed])];
+  scanned.set(file, found);
+  return found;
 }
+
+const scanned = new WeakMap<SourceFile, readonly string[]>();
 
 /**
  * Pure. Callers do the I/O, so a test can hand this a fixture import graph and assert on the
@@ -253,34 +202,13 @@ async function readFiles(root: string, pattern: string): Promise<readonly Source
 }
 
 /**
- * `src/` is not all of a package's source: three packages carry an `e2e` directory beside it,
- * and every rule here was blind to them — `packages/core/e2e/version.e2e.test.ts` could import
- * `@ultimat3/cli` (tier 0 reaching tier 5) and this script reported "no boundary violations".
+ * `src/` is not all of a package's source: three packages carry an `e2e` directory beside it, and
+ * `scripts/**` is in `@ultimat3/cli`'s `SOURCE_GLOBS`, so both halves of the `errors` step see the
+ * same files. The set is `corpus.ts`'s `source` scope — read once per process, and refused below
+ * its floor rather than answered with "no boundary violations" over nothing.
  */
-const SOURCE_PATTERNS = [
-  'packages/*/src/**/*.{ts,tsx}',
-  'packages/*/e2e/**/*.{ts,tsx}',
-  // `scripts/**` is in `@ultimat3/cli`'s `SOURCE_GLOBS` and was missing here, so the two halves of
-  // the `errors` step disagreed about what source is: the 16 `X_*` codes this directory declares
-  // were held to the fix-line rule (`checkErrorFixes`, which walks that list) and NOT to the
-  // render-safety rule (`errorRendering`, which walks this one). The tier rule ignores these files
-  // — `packageOf` answers undefined outside `packages/` — so what the addition buys is the second
-  // half of `errors`, not a new tier check.
-  'scripts/**/*.{ts,tsx}',
-] as const;
-
-export async function collectSourceFiles(root: string): Promise<readonly SourceFile[]> {
-  const seen = new Set<string>();
-  const files: SourceFile[] = [];
-  for (const pattern of SOURCE_PATTERNS) {
-    for (const file of await readFiles(root, pattern)) {
-      if (seen.has(file.path)) continue;
-      seen.add(file.path);
-      files.push(file);
-    }
-  }
-  return files;
-}
+export const collectSourceFiles = (root: string): Promise<readonly SourceFile[]> =>
+  corpus(root, 'source');
 
 // ---------------------------------------------------------------------------
 // Rule 2: `shared/` is a leaf.
@@ -316,7 +244,7 @@ export function resolveSpecifier(fromFile: string, specifier: string): string {
 }
 
 /**
- * Pure, like `checkBoundaries`. `importsOf` is Bun's transpiler, so `import type` is already gone
+ * Pure, like `checkBoundaries`. `scanRuntimeImports` is Bun's transpiler, so `import type` is already gone
  * by the time this sees a specifier — which is precisely the line the rule draws: naming an
  * `app/` type from a leaf is legal, loading its module is not.
  */
@@ -324,7 +252,7 @@ export function checkSharedLeaf(files: readonly SourceFile[]): readonly SharedLe
   const violations: SharedLeafViolation[] = [];
   for (const file of files) {
     if (surfaceOf(file.path) !== 'shared') continue;
-    for (const specifier of importsOf(file)) {
+    for (const specifier of scanRuntimeImports(file)) {
       const surface = surfaceOf(resolveSpecifier(file.path, specifier));
       if (surface === undefined || !CLOSED_TO_LEAF.has(surface)) continue;
       violations.push({ file: file.path, specifier, surface });

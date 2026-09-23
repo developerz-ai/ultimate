@@ -116,7 +116,10 @@ function ownCodesArray(source: string): number | undefined {
   if (found === null) return undefined;
   const open = found.index + found[0].length;
   const end = source.indexOf('\n] as const;', open);
-  if (end < 0 || !/^[\s'A-Z0-9_,]*$/.test(source.slice(open, end))) return undefined;
+  // Comment lines are allowed between entries — `@ultimat3/cli`'s array carries a sentence per
+  // code, and reading that as "no array" wrote the title alone: a type error in the package.
+  const body = source.slice(open, end).replace(/^\s*\/\/.*$/gm, '');
+  if (end < 0 || !/^[\s'A-Z0-9_,]*$/.test(body)) return undefined;
   return found.index;
 }
 

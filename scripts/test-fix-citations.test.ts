@@ -3,8 +3,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { CommandCatalog } from '@ultimat3/cli';
+import { packageOf } from './lib/ratchet';
 import { sourceStrings } from './lib/source-strings';
-import { checkTestFixes, packageOf, scanTestFixes, type TestFixGap } from './test-fix-citations';
+import { checkTestFixes, scanTestFixes, type TestFixGap } from './test-fix-citations';
 
 /** One command, one subcommand — enough for `citedCommandProblem` to answer, and no more. */
 const CATALOG: CommandCatalog = {

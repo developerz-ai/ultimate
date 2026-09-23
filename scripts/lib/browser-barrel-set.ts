@@ -70,7 +70,7 @@ export function packageFacts(root: string, dir: string): PackageFacts | undefine
  * binds the class in EVERY package, statically, with no bundle at all.
  *
  * Measured, and the reason this exists: `@ultimat3/cli` entered the seam set on 2026-08-24 —
- * `packages/cli/src/dev-replica.ts` names the seam in a comment — and three assertions went red on
+ * `packages/cli/src/runtime-replica.ts` names the seam in a comment — and three assertions went red on
  * a build that CANNOT succeed. `packages/testing/src/index.ts:25` re-exports `bun:test` and
  * `nats/lib/src/mod.js:49` requires `stream/web`, both reached legitimately through the declared
  * `cli → testing` edge. No edit inside `packages/cli` makes that build green, so the set had been

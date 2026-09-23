@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-// Every tracked app's own `x verify`, run as a BLOCKING check on this repo — `examples/dummy` and
-// the deployed `dummy/social-media-clone`. Neither is green yet, so the check is a ratchet rather
+// Every tracked app's own `x verify`, built first as its `bin/check` does, run as a BLOCKING check
+// on this repo — `examples/dummy` and the deployed `dummy/social-media-clone`. A ratchet rather
 // than a pass/fail: every step passing today must keep passing, every step pinned in that app's
 // `expectedRed` must still be failing, and the moment an app's `typecheck` comes off the pin it
 // has to join the root `tsc -b` solution. Red never becomes the resting state.
@@ -26,6 +26,7 @@ import type { GatedApp } from './lib/gated-apps';
 import { GATED_APPS, PINS_FILE } from './lib/gated-apps';
 import type { Finding, ScriptResult } from './lib/log';
 import { renderFinding, report } from './lib/log';
+import { buildApp } from './lib/reference-app-build';
 import { repoRoot } from './lib/run';
 import { parseUnpin, pinnedSteps, removePins } from './lib/unpin';
 
@@ -52,9 +53,6 @@ export interface GateStep {
    * for exactly this reason, with a comment saying the alternative is a log that reads "one or
    * more unit tests failed" and nothing else. This file then dropped it on the floor, so that is
    * precisely what CI showed: a shard's exit code, no test name, and nothing in the log to find.
-   *
-   * Diagnosing one flaky shard cost a clean-checkout reproduction and 300 instrumented builds
-   * because of this line's absence.
    */
   readonly output?: string;
 }
@@ -80,8 +78,7 @@ const asStep = (value: unknown): GateStep | undefined => {
     findings: (Array.isArray(findings) ? findings : [])
       .map(asFinding)
       .filter((f) => f !== undefined),
-    // Absent, never `''` — a step that captured nothing and a step whose output was dropped are
-    // different states, and only one of them is a bug in this file.
+    // Absent, never `''`: "captured nothing" and "output dropped" are different states.
     ...(typeof output === 'string' && output.length > 0 ? { output } : {}),
   };
 };
@@ -389,16 +386,20 @@ const badFlag = (cause: string, fix: string): ScriptResult => ({
  * text parser finds must be exactly the keys the gate's own import sees — a pins file this cannot
  * read is a hand edit, never a guess at which lines to delete.
  */
-export const unpin = async (root: string, token: string): Promise<ScriptResult> => {
+export const unpin = async (
+  root: string,
+  token: string,
+  apps: readonly GatedApp[] = GATED_APPS, // a test passes its own pinned world
+): Promise<ScriptResult> => {
   const request = parseUnpin(token);
-  const shape = `bun run scripts/reference-app-gate.ts --unpin ${GATED_APPS[0]?.dir ?? '<app>'}:drift`;
+  const shape = `bun run scripts/reference-app-gate.ts --unpin ${apps[0]?.dir ?? '<app>'}:drift`;
   if (request === undefined)
     return badFlag(`--unpin "${token}" is not <app>:<step>[,<step>]`, shape);
-  const app = GATED_APPS.find((candidate) => candidate.dir === request.app);
+  const app = apps.find((candidate) => candidate.dir === request.app);
   if (app === undefined) {
     return badFlag(
       `--unpin names ${request.app}, which is not a gated app`,
-      `bun run scripts/reference-app-gate.ts --unpin <${GATED_APPS.map((a) => a.dir).join('|')}>:<step>`,
+      `bun run scripts/reference-app-gate.ts --unpin <${apps.map((a) => a.dir).join('|')}>:<step>`,
     );
   }
   const declared = Object.keys(app.expectedRed);
@@ -457,6 +458,9 @@ if (import.meta.main) {
   // embedded Postgres and binds the e2e server's port. Two at once would race for all three, and
   // the shared runner has two cores to give them anyway.
   for (const app of GATED_APPS) {
+    // Built first, as `bin/check` does: `budgets` weighs what this build writes.
+    const built = await buildApp(root, exec, app);
+    if (built !== undefined) findings.push(built);
     const steps = await runAppGate(root, exec, app.dir);
     const referenced = await referencesApp(root, app.reference);
     findings.push(...gateFindings({ app, steps, referenced, declaredSteps: VERIFY_STEP_NAMES }));

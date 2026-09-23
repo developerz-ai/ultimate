@@ -10,9 +10,9 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import {
   checkFixShellArgs,
-  fixShellArgCounts,
   fixShellArgFindingFor,
   fixShellArgGaps,
+  fixShellArgSites,
   scanFixShellArgs,
 } from './fix-shell-arg';
 import { FIX_SHELL_ARG_PINS, FIX_SHELL_PINS_FILE } from './lib/fix-shell-arg-pins';
@@ -171,10 +171,9 @@ describe('the real tree', () => {
   });
 
   test('is on the ratchet, and the scan really read it', async () => {
-    const counts = await fixShellArgCounts(ROOT);
     // Non-vacuity: the scan found sites at all. A glob that stopped matching would make this suite
     // green by making the rule blind, which is how every sibling rule here has failed once.
-    expect(Object.values(counts).reduce((sum, one) => sum + one, 0)).toBeGreaterThan(20);
+    expect((await fixShellArgSites(ROOT)).length).toBeGreaterThan(20);
     expect(await fixShellArgGaps(ROOT)).toEqual([]);
   });
 });

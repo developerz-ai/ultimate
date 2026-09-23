@@ -3,6 +3,7 @@
 // that suite serially — a sharded unit worker would race it for both.
 
 import { describe, expect, test } from 'bun:test';
+import { decode } from '@ultimat3/realtime';
 import {
   AcceptBudget,
   ChannelHub,
@@ -93,16 +94,18 @@ async function startNode(port: number): Promise<BenchNode> {
       hub.deliverChange(probeChange(seq, Date.now()));
       return seq;
     },
+    // `sendEncoded`, the path every channel fan-out takes since it encodes once per topic: patching
+    // `send` intercepted nothing, so no frame was dropped and there was nothing to repair.
     dropNextFrame: (): void => {
       for (const socket of sockets.all()) {
-        const send = socket.send.bind(socket);
+        const sendEncoded = socket.sendEncoded.bind(socket);
         let armed = true;
-        socket.send = (frame) => {
-          if (armed && frame.type === 'records') {
+        socket.sendEncoded = (text) => {
+          if (armed && decode(text).type === 'records') {
             armed = false;
             return false;
           }
-          return send(frame);
+          return sendEncoded(text);
         };
       }
     },
