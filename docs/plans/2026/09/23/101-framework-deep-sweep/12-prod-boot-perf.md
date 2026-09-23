@@ -24,6 +24,9 @@ Evidence (measured 2026-09-23, `bun build --metafile`):
 | g | Production reads the error pages once at boot, not per error response | `packages/cli/src/error-pages.ts:41` | patch |
 | h | `serve.ts` calls 01 e's `assertNoDevSecretsOutsideLocal()` and 02 j's storage check at boot | `packages/cli/src/serve.ts` | patch |
 | i | Graph test: bundle `@ultimat3/cli/serve` with `--metafile` and assert that no input path matches `packages/testing/`, `/templates/`, `/e2e-` or `/cdp-`, and that the module count is under a pinned ceiling (the measured value + 10%, with the number and reason in the diff per axiom 9). This is what makes the rule a build error | `packages/cli/src/serve-graph.test.ts` (new) | none |
+| j | open the metrics listener **before** boot work, so `/metrics` answers during island builds and `_helpers.tpl`'s "FIRST" becomes true | `packages/cli/src/serve.ts:328`, `dev-roles.ts:379` | patch |
+| k | `.x` is created when only `NATS_URL` is unset, although in-process fanout writes nothing, which forces a writable `.x` under `readOnlyRootFilesystem` (the demo crash-looped on EROFS). Create it only for an embedded DB or storage | `packages/cli/src/dev-services.ts:53` | patch |
+| l | realtime islands embed the absolute `Bun.resolveSync` path in a virtual module, so the chunk hash and URL depend on the checkout path. This breaks row e's image cache when the build and boot paths differ. Import `@ultimat3/realtime` by bare name and resolve it in `onResolve` | `packages/cli/src/island-realtime.ts:171-174`, `island-bundle.ts:212` | patch |
 
 ## Steps
 1. a, then b, then i (the test goes red before b and green after).

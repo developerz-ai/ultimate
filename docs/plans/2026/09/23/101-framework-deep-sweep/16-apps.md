@@ -21,6 +21,8 @@ Measured 2026-09-23 with `bun run scripts/reference-app-gate.ts --json`, 3m51s, 
 | f | the stale untracked `examples/dummy/.x/static-report.json` makes local gate runs read different inputs from CI | `scripts/reference-app-gate.ts` | Clear `.x/static*` before building (row a) |
 | g | both apps import `runRole` from the `@ultimat3/cli` barrel | `*/apps/web/server.ts` | Switch to `@ultimat3/cli/serve` (12 b) |
 | h | `examples/dummy/apps/admin/README.md` documents `x dev --app admin`, "20 lines", and three `DefineAdminInput` keys that do not exist. `examples/dummy/README.md:114` cites `X_SW_HAND_EDITED` (reserved, never thrown) and a non-existent `public/` | listed | Rewrite from the real `index.ts`; delete the row |
+| i | the social app's `APP_URL` defaults to `http://localhost:3000` and is accepted in production. An unset `HCAPTCHA_SECRET` silently selects the null verifier in production | `dummy/social-media-clone/app.config.ts` env schema | Both required when the environment is `production` (the schema's env-conditional form) |
+| j | the demo declares live queries and channels (`app/messages/live.ts`, `notifications/topics.ts`) with `realtime: { transport: 'memory' }`, which cannot work across the deployed pods | `dummy/social-media-clone/app.config.ts` | Set the transport the deploy uses (after 18 m decides what the key means). Slice 19 deploys sync, NATS and the replicator |
 
 ## Steps
 1. a and f, then re-run to get the true reds.

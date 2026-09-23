@@ -15,6 +15,7 @@ matcher used under `.not` cannot pass on a receiver of the wrong type.
 | d | `toDenyPolicy`, `toMatchOpenApi` and `toBeWithinBudget` answer `pass:false` for a wrong-typed receiver, so `.not` passes. `.not.toDenyPolicy` is used 5× in the repo | `packages/testing/src/matchers.ts:228-235,262-289`, `matchers.test.ts:81` | Throw synchronously (the `assertStandardSchema` pattern, `:62`) with new codes `X_TEST_POLICY_EXPECTED`, `X_TEST_OPENAPI_EXPECTED`, `X_TEST_NUMBER_EXPECTED`. Invert the hole test at `:81`. Then grep the 5 `.not.toDenyPolicy` call sites and check each still passes | patch |
 | e | the README example passes a Promise and no context, so it can never pass | `packages/testing/README.md:193` | Rewrite it with `await` and a real ctx | none |
 | f | the fake DOM's `VOID_TAGS` is missing `source`, `area`, `wbr`, `col`, `embed`, `track`, `base` and `param`, so `<picture><source><img>` nests wrong | `packages/testing/src/island-dom.ts:330` | Use the full HTML void-element set | patch |
+| g | `IslandResizeObserver.observe()` after `disconnect()` never re-registers, so a re-observing island never gets a resize | `packages/testing/src/island-observers.ts:81-92` | `this.registry.add(this)` in `observe` | patch |
 
 ## Steps
 1. a first: a failing test with `destructive: true` and neither field set, expecting a refusal.

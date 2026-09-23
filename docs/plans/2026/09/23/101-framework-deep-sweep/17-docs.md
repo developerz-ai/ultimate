@@ -32,6 +32,7 @@ file an agent loads on every session.
 | 21 | `wiki/Configuration.md:227` | surrogate keys are the tags | nothing emitted them before 02 k | Update after 02 k |
 | 22 | `CLAUDE.md` | catch-render is on the `unit` step; `cmd-i18n.ts:289`; secret-compare "53 on day one" | `errors` step (`scripts/error-render.ts:444`); `:311`; 63 now | Fix, or delete in f |
 | 23 | Tutorial-01 | `live`, `job`, `e2e` shown skipped | they run on a fresh scaffold | Update |
+| 24 | `docs/ops/01-kubernetes.md:174-179` | "the binary writes nothing else [than /tmp]"; grace 45 with no preStop | `.x` is needed for embedded services (`ULTIMATE_STATE_DIR`); a preStop sleep plus startupProbe are needed (13 b, d) | Document the `.x` emptyDir or `ULTIMATE_STATE_DIR=/tmp/x`, preStop, startupProbe, and the split-role realtime topology (sync + NATS + one replicator, 06 n) |
 
 ## b. docs/ops
 | Doc | Claim | Truth |

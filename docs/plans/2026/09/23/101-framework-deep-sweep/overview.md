@@ -1,7 +1,7 @@
 # Framework deep sweep: bugs, gaps, refactors, speed
 
 ## Goal
-Fix what a two-pass, whole-repo audit found at `5262dc32` (21.0.0). That means about 150 verified
+Fix what a two-pass, whole-repo audit found at `5262dc32` (21.0.0). That means about 200 verified
 defects, gaps and refactors across all 31 packages, the CLI, the gate, CI, deploy and docs. The
 outcome is a framework whose generated code works on first run, whose two drivers agree, whose
 production boot carries no dev or test code, and whose gate is faster and cannot pass on nothing.
@@ -16,6 +16,8 @@ production boot carries no dev or test code, and whose gate is faster and cannot
 - **Method.**
   - 13 first-pass agents: bug hunts per tier group, concurrency, security, architecture, performance, DX (scaffolded and used an app), docs, gate and CI, tracked apps and deploy.
   - Then 5 second-pass hunters over the files the first pass did not reach.
+  - Then a third pass: 4 hunters over what was still unread, plus a read-only audit of the deployed demo's stack in `../infrastructure` (slice 19).
+  - That pass found the root causes of #474 (10 x) and #450 (14 r), and one production outage class: named prepared statements break every running pod's writes after a column migration (02 n).
   - Every row below was either reproduced by a probe or confirmed by reading the code. Rows marked **(suspected)** were not reproduced, and their slice says to confirm them first.
   - Six top rows were re-read by hand before this plan was written: `channel-authz.ts:21`, `action-gate.ts:137`, `action/src/http.ts:106-113`, `dev-live-feed.ts:15`, `transition.ts:112`, `app-load.ts:115`.
 - Bun only, Postgres with no ORM (PGlite embedded in dev), SolidJS islands, `@ultimat3/*` tiers from `scripts/lib/tiers.ts`.
@@ -76,12 +78,14 @@ Land the lowest tier first. Every new import goes down, except one: moving the l
 16. [`16-apps.md`](16-apps.md): both tracked apps. Pin texts, the gate builds first, the demo's workarounds.
 17. [`17-docs.md`](17-docs.md): drift rows, ops runbooks, missing wiki pages, `CLAUDE.md` diet.
 18. [`18-major-22.md`](18-major-22.md): every breaking item, collected for 22.0.0. API surface pruning.
+19. [`19-infrastructure.md`](19-infrastructure.md): **edited from `../infrastructure`**. The demo stack's missing sync/NATS/replicator (realtime is dead in production), preStop, startupProbe, proxy hops, and Postgres replication readiness.
 
 **Parallel sets:**
 - `{01}`, then `{02}`, then `{03, 04}`, then `{05, 06, 07}`, then `{08}`, then `{09, 10, 11}`.
 - `12` needs `06`. `13` needs `01`.
 - `{14, 15, 16, 17}` can start at any time, because they are path-disjoint from packages. Of these, `16` needs `11` and `12`. `17` row e (plan 102's semver note) runs **first**, before either plan starts; the rest of `17` goes last for accuracy.
 - `18` is last.
+- `19` runs in `../infrastructure`. Rows b–g and i run at any time; rows h and a wait for 06 n/o/p to ship in a release the demo image picks up.
 
 **Path overlap with plan 102** (`docs/plans/2026/09/22/102-downstream-app-gaps/`, not started):
 - 102 slice 12 edits `templates/scaffold-auth.ts` and `scaffold-roles.ts`, the same files as this plan's slice 11 rows c and a.
@@ -95,6 +99,8 @@ Whichever plan runs second rebases onto the first. Never run both slices at the 
 - A fresh `x new` plus `x g resource customer` produces a `POST /api/customers/create` that answers 2xx under `x dev` as the dev actor (slice 11).
 - Importing `@ultimat3/cli/serve` pulls no module from `@ultimat3/testing` and no `templates/`, `e2e-*` or `cdp-*` module (`bun build --metafile` assertion, slice 12).
 - `bun run verify` is at least 30% faster in wall time than the 3m19s measured on 2026-09-23 (12 cores), and `bun run verify --only <step>` runs one step (slice 14).
+- The deployed demo carries live updates between two browsers (slice 19 a).
+- #474 and #450 are closed by 10 x and 14 r.
 - `bun run manifest`, `bun run changelog-check`, and `bun run verify` green, all 20 steps.
 
 ## Risks / open questions
@@ -114,10 +120,8 @@ Whichever plan runs second rebases onto the first. Never run both slices at the 
   - MCP multi-statement SQL: `DECLARE … CURSOR` blocks it.
   - Schema regex ReDoS: all linear.
 - **Suspected rows** carry "(suspected)" and must be reproduced by a failing test before any fix. A row that cannot be reproduced is dropped with a note, never fixed on faith.
-- **Unaudited after two passes**, a candidate for a third sweep:
-  - `db`: `pglite*`, `pool-*`, `replica-*`
-  - `realtime`: `pg-wire`/`pg-connection`
-  - `cli`: `cmd-test`/`test-shards`, the island-shot family
-  - `render`: registry/hydrate/css-modules
-  - `seo`: `meta`/`ld`
-  - `core`: `config`/`lifecycle`/otlp
+- **Unaudited after three passes:**
+  - `ui`: about 55 components (`CommandPalette`, `Popover`, `Drawer`, `DataTable`, `Select`, `Dropzone`, `FileInput`, `Image`, `QrCode`, `Tooltip`, `Accordion`, …). The SCSS raw-colour scan came back clean.
+  - `core`: `image/png-*`, `probe-svg.ts`, `color.ts`, `flight-gate.ts`, `runtime-metrics.ts`.
+  - `cli`: the remaining ~55 `templates/*.ts` beyond what `scaffold-typecheck.contract.test.ts` compiles.
+  - `db`: `sql-scan.ts`/`sql-noise.ts` internals (02 d/e own them).

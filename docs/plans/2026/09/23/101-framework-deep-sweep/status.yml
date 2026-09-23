@@ -79,6 +79,10 @@ slices:
     tier: 6        # cross-tier release slice; 6 sorts it after every tier-0–5 slice, as overview.md requires
     status: not_started
     percent: 0
-evidence: []
-notes: "Two audit passes at 5262dc32 (21.0.0), 18 agents. Decisions pending in 18-major-22.md rows e, f, g, h."
+  - file: 19-infrastructure.md
+    tier: 6        # edited from ../infrastructure, in its own repo
+    status: not_started
+    percent: 0
+evidence: ["#510"]
+notes: "Three audit passes plus a read-only audit of ../infrastructure's demo stack. First two passes at 5262dc32 (21.0.0), 18 agents. Decisions pending in 18-major-22.md rows e, f, g, h."
 last_updated: 2026-09-23
