@@ -1,4 +1,4 @@
-// One responsibility: compose the three halves — find a browser, connect to it, attach a page —
+// One responsibility: compose the halves — find a browser, launch it over its pipe, attach a page —
 // into the one object `installE2eDriver({ page })` takes, plus the way to shut it down.
 //
 // **Absent is a SKIP, never a failure, and that is a requirement rather than a state.** A CI box
@@ -8,8 +8,6 @@
 // already decided a browser is required.
 
 import { finiteCount } from '@ultimat3/core';
-import type { CdpConnection } from './cdp-connection';
-import { cdpConnect } from './cdp-connection';
 import type { E2eTab } from './cdp-e2e-page';
 import type { E2eSession } from './cdp-e2e-session';
 import { cdpE2eSession } from './cdp-e2e-session';
@@ -48,20 +46,13 @@ export interface OpenE2eBrowserOptions {
 const budget = (options: OpenE2eBrowserOptions): number =>
   finiteCount('openE2eBrowser', 'timeoutMs', options.timeoutMs ?? DEFAULT_CDP_TIMEOUT_MS);
 
-const compose = (
-  launched: LaunchedBrowser,
-  connection: CdpConnection,
-  session: E2eSession,
-  page: E2eTab,
-): E2eBrowser => ({
+const compose = (launched: LaunchedBrowser, session: E2eSession, page: E2eTab): E2eBrowser => ({
   page,
   session,
-  close(): void {
-    // The socket first: closing the process out from under an open connection makes every
-    // in-flight call report "the browser closed the CDP connection", which is true and useless.
-    connection.close();
-    launched.close();
-  },
+  // The connection first, then the process — `launched.close()` does both, in that order: closing
+  // the process out from under an open connection makes every in-flight call report "the browser
+  // closed the CDP connection", which is true and useless.
+  close: () => launched.close(),
 });
 
 /**
@@ -92,18 +83,11 @@ export async function openE2eBrowserIfAvailable(
  */
 async function openLaunched(executable: string, timeoutMs: number): Promise<E2eBrowser> {
   const launched = await launchChrome({ executable, timeoutMs });
-  let connection: CdpConnection;
-  try {
-    connection = await cdpConnect({ endpoint: launched.endpoint, timeoutMs });
-  } catch (error) {
-    launched.close();
-    throw error;
-  }
+  const { connection } = launched;
   try {
     const session = await cdpE2eSession({ connection, loadTimeoutMs: timeoutMs });
-    return compose(launched, connection, session, await session.newTab());
+    return compose(launched, session, await session.newTab());
   } catch (error) {
-    connection.close();
     launched.close();
     throw error;
   }

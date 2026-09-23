@@ -7,6 +7,7 @@ import type { CdpConnection } from './cdp-connection';
 import type { E2eTab } from './cdp-e2e-page';
 import { cdpE2eTab } from './cdp-e2e-page';
 import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
+import { offlineScripts } from './cdp-offline-script';
 
 export interface E2eSession {
   /** A new tab in the same profile — same cookies, same origin storage, same SharedWorker. */
@@ -55,6 +56,8 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
 
   // `-1` is CDP's "no throttling" for both throughputs; 0 would be a browser that can never
   // transfer a byte, which is a different failure wearing the same name.
+  const pageSessions = new Set<string>();
+  const onLineScripts = offlineScripts(send);
   const condition = (session: string): Promise<unknown> =>
     send(
       'Network.emulateNetworkConditions',
@@ -90,9 +93,11 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
       if (cut) configured.push(condition(session));
       if (type === 'page') {
         configured.push(send('Page.enable', {}, session), send('Runtime.enable', {}, session));
+        pageSessions.add(session);
         for (const source of scripts) {
           configured.push(send('Page.addScriptToEvaluateOnNewDocument', { source }, session));
         }
+        if (cut) configured.push(onLineScripts.add(session));
         // The page's own workers attach under it UNPAUSED. Measured: paused here, the emitted
         // service worker never took control of its page (`e2e/service-worker.e2e.test.ts` went
         // red), because it is also attached at browser level. A dedicated worker's first request
@@ -132,6 +137,12 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
     // Sequential, and a session that has gone away is dropped rather than taking the rest down.
     for (const session of [...sessions]) {
       await condition(session).catch(() => sessions.delete(session));
+    }
+    // And `navigator.onLine` from a new document's first script (`cdp-offline-script.ts`) — the
+    // network condition alone reaches a reloaded page only after its scripts have run.
+    for (const session of [...pageSessions]) {
+      const toggled = enabled ? onLineScripts.add(session) : onLineScripts.remove(session);
+      await toggled.catch(() => pageSessions.delete(session));
     }
   };
 

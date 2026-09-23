@@ -75,6 +75,7 @@ export function resetPage(): void {
   Reflect.deleteProperty(globalThis, Symbol.for('ultimate.realtime'));
   Reflect.deleteProperty(globalThis, Symbol.for('ultimate.outbox'));
   Reflect.deleteProperty(globalThis, Symbol.for('ultimate.page-boot'));
+  Reflect.deleteProperty(globalThis, Symbol.for('ultimate.page-boot.release'));
   const handle = pageClient();
   handle.store = undefined;
   handle.socket = undefined;

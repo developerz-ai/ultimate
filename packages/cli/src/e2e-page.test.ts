@@ -112,8 +112,36 @@ describe('e2e page — the streamed shell', () => {
   test('it reads ONE chunk — a whole-body read would never be a first flush', async () => {
     const browser = recorder([JSON.stringify({ html: '' })]);
     await e2ePage({ page: browser, baseUrl: BASE }).gotoStreamed('/feed');
-    expect(browser.evaluated[0]).toContain('getReader().read()');
+    expect(browser.evaluated[0]).toContain('reader.read()');
+    expect(browser.evaluated[0]).not.toContain('for (');
     expect(browser.evaluated[0]).not.toContain('.text()');
+  });
+
+  test('it CANCELS the stream after the first chunk, rather than holding the response open', async () => {
+    // A streamed document the reader stops pulling is a response the server keeps open until the
+    // last hole fills — one of the six connections a page has to its origin, held for the rest of
+    // the test by a read nobody will finish.
+    const browser = recorder([JSON.stringify({ html: '' })]);
+    await e2ePage({ page: browser, baseUrl: BASE }).gotoStreamed('/feed');
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('<h1>first</h1>'));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const globals = globalThis as unknown as Record<string, unknown>;
+    const sealed = globals['fetch'];
+    globals['fetch'] = () => Promise.resolve(new Response(body));
+    try {
+      const run = new Function(`return ${browser.evaluated[0] ?? ''}`) as () => Promise<string>;
+      expect(JSON.parse(await run())).toEqual({ html: '<h1>first</h1>' });
+    } finally {
+      globals['fetch'] = sealed;
+    }
+    expect(cancelled).toBe(true);
   });
 
   test('the fetch carries the page’s own credentials', async () => {

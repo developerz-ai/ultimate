@@ -149,4 +149,29 @@ describe('listenForDrain', () => {
       Reflect.deleteProperty(globalThis, 'navigator');
     }
   });
+
+  test('while the browser says it is offline, no signal replays — the attempt could only fail', () => {
+    const worker = new EventTarget();
+    const navigator = { serviceWorker: worker, onLine: false };
+    Reflect.set(globalThis, 'navigator', navigator);
+    let replays = 0;
+    const stop = listenForDrain({
+      replay: async () => {
+        replays += 1;
+        return { sent: 0, collapsed: 0, remaining: 0, stoppedAt: null };
+      },
+    });
+    try {
+      worker.dispatchEvent(
+        Object.assign(new Event('message'), { data: { type: OUTBOX_DRAIN_MESSAGE } }),
+      );
+      expect(replays).toBe(0);
+      navigator.onLine = true;
+      globalThis.dispatchEvent(new Event('online'));
+      expect(replays).toBe(1);
+    } finally {
+      stop();
+      Reflect.deleteProperty(globalThis, 'navigator');
+    }
+  });
 });

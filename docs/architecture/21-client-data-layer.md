@@ -148,6 +148,16 @@ other view is showing. If a *wrapper* (`nullable`, `array`) strips the brand, th
 private document's `<meta name="ultimate-persist">` (`packages/cli/src/page-sync.ts`), which
 realtime's persister reads.
 
+## The service worker's pages cache
+
+A private document is one principal's (`packages/pwa/src/service-worker.ts`, `pagesCache`). The
+server stamps `x-ultimate-scope` (`CLIENT_SCOPE_HEADER`) on every scope-tagged document
+(`packages/cli/src/dev-render.ts`). The worker never answers a private document from cache while
+online, keeps it in a per-principal partition that only the offline path reads, wipes the other
+partitions when it stores one, and keeps nothing for a private document with no scope. Before this,
+the cache was keyed by URL alone, and one member's `/feed` answered the next on a shared browser.
+That was affected since 19.0.0, and is fixed in 21.0.0.
+
 ## The record store
 
 `packages/realtime/src/record-store.ts`, in tree and unreleased. One per tab, on

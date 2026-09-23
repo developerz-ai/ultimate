@@ -6,6 +6,11 @@ import { messagePort, type PortMessage } from './socket-port';
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
 
+/** Waits for `check`, never a fixed tick count: a `MessageChannel` hop is a task, not a promise. */
+async function until(check: () => boolean): Promise<void> {
+  for (let waited = 0; waited < 2_000 && !check(); waited += 5) await settle();
+}
+
 describe('messagePort', () => {
   test('a message crosses with its data alone, and the handler reads back as set', async () => {
     const channel = new MessageChannel();
@@ -17,7 +22,7 @@ describe('messagePort', () => {
     port.onmessage = handler;
     expect(port.onmessage).toBe(handler);
     channel.port2.postMessage({ t: 'bye' } satisfies PortMessage);
-    await settle();
+    await until(() => heard.length > 0);
     expect(heard).toEqual([{ t: 'bye' }]);
 
     port.onmessage = null;
@@ -29,7 +34,7 @@ describe('messagePort', () => {
     const back: unknown[] = [];
     channel.port2.onmessage = (event: MessageEvent) => back.push(event.data);
     port.postMessage({ t: 'close', code: 1006 });
-    await settle();
+    await until(() => back.length > 0);
     expect(back).toEqual([{ t: 'close', code: 1006 }]);
     port.close?.();
     channel.port2.close();

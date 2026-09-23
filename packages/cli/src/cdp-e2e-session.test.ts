@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { CdpConnection, CdpResult } from './cdp-connection';
 import { cdpE2eSession } from './cdp-e2e-session';
+import { OFFLINE_FIRST_SCRIPT } from './cdp-offline-script';
 
 interface Call {
   readonly method: string;
@@ -137,7 +138,11 @@ describe('cdpE2eSession', () => {
     );
     expect(conditions.map((call) => call.sessionId)).toContain('worker-session');
     const scripts = calls.filter((call) => call.method === 'Page.addScriptToEvaluateOnNewDocument');
-    expect(scripts.map((call) => call.sessionId)).toEqual(['tab-session']);
+    const sources = (source: string) =>
+      scripts.filter((call) => call.params['source'] === source).map((call) => call.sessionId);
+    expect(sources('window.__init = true;')).toEqual(['tab-session']);
+    // A page attached while cut reads `navigator.onLine` false from its first script too.
+    expect(sources(OFFLINE_FIRST_SCRIPT)).toEqual(['tab-session']);
   });
 
   test('every WebSocket and request the browser reports is logged, in order', async () => {

@@ -32,6 +32,11 @@ afterAll(() => {
 /** A MessageChannel delivers a task later; a few turns lets a round trip land. */
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
 
+/** Waits for `check`, never a fixed tick count: a `MessageChannel` hop is a task, not a promise. */
+async function until(check: () => boolean): Promise<void> {
+  for (let waited = 0; waited < 2_000 && !check(); waited += 5) await settle();
+}
+
 describe('the sync worker entry', () => {
   test('a connecting tab is attached: its open dials the node, and its bye closes the socket', async () => {
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
@@ -49,15 +54,15 @@ describe('the sync worker entry', () => {
       t: 'open',
       target: { url: 'ws://node.test/_x/sync', buildId: 'b1' },
     });
-    await settle();
+    await until(() => FakeWebSocket.opened.length > 0);
     expect(FakeWebSocket.opened.map((ws) => ws.url)).toEqual(['ws://node.test/_x/sync?build=b1']);
 
     FakeWebSocket.opened[0]?.onopen?.();
-    await settle();
+    await until(() => heard.some((message) => message.t === 'open'));
     expect(heard.map((message) => message.t)).toContain('open');
 
     channel.port2.postMessage({ t: 'bye' });
-    await settle();
+    await until(() => (FakeWebSocket.opened[0]?.closes.length ?? 0) > 0);
     expect(FakeWebSocket.opened[0]?.closes).toEqual([1000]);
     channel.port2.close();
   });

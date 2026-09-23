@@ -10,7 +10,7 @@
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
 import type { Frame } from '@ultimat3/realtime';
-import { decode, encode, installRealtime, PROTOCOL_VERSION } from '@ultimat3/realtime';
+import { decode, encode, installRealtime, PROTOCOL_VERSION, pageOutbox } from '@ultimat3/realtime';
 import {
   afterAll,
   beforeAll,
@@ -115,6 +115,9 @@ beforeAll(async () => {
     },
     sync: { url: SYNC_URL, buildId: 'build-1' },
   });
+  // What the page boot does, and the one module that opens the outbox: an island only finds it
+  // (`Symbol.for('ultimate.outbox')`), so a page with no boot has none and refuses an offline write.
+  pageOutbox();
   mounted = await mountIsland({
     build: buildIslands,
     root: APP_ROOT,
@@ -132,6 +135,7 @@ afterAll(() => {
   mounted?.[Symbol.dispose]();
   // The page state is process-global: left behind it would be the next file's page.
   Reflect.deleteProperty(globalThis, PAGE);
+  Reflect.deleteProperty(globalThis, Symbol.for('ultimate.outbox'));
 });
 
 /**
@@ -226,6 +230,10 @@ describe('the feed island', () => {
 
     expect(posted.some((url) => url.endsWith('/api/posts/like'))).toBe(true);
     expect(mounted.text('[data-role="queued"]')).toBe(PROPS.labels.queued);
+    // And it IS the boot's outbox that holds it — the notice is a statement about that queue.
+    const outbox = pageOutbox();
+    await outbox.ready;
+    expect(outbox.size).toBe(1);
   });
 
   test('a result set the node empties is the empty state, not a stuck spinner', async () => {

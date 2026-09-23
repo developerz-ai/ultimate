@@ -89,6 +89,21 @@ without consulting the table. A per-route `strategy` overrides both.
 
 Overriding `offline` is allowed. Contradictions are **not** rejected `As of 2026-08`: `offline: 'precache'` on a `render: 'ssr'` route is accepted, and `X_SW_UNCACHEABLE` is a reserved name nothing raises ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)). The scope half *is* enforced — `X_SW_SCOPE_INVALID`, when the service-worker scope cannot serve the routes it precaches. Until the coherence check ships, review the pairing yourself: a per-request render has no cacheable body, so `precache` on `ssr` means the shell is served stale.
 
+**A private page is one member's, and the cache knows it**, `As of 2026-09-22` (21.0.0,
+unreleased; a security fix, affected since 19.0.0). A document is private when it is
+`cache-control: private` or `no-store`, or carries `x-ultimate-scope` (every scope-tagged document
+does). Such a document:
+
+| Rule | Why |
+|---|---|
+| is never answered from cache while online, whatever the route's `offline` strategy | the pages cache was keyed by URL alone, so `/feed` rendered for one member answered the next on the same browser |
+| is kept only in its principal's own partition, which only the offline path reads | offline, a member sees their own last copy |
+| wipes every other partition when stored | offline answers the most recent member only |
+| is not kept at all without a scope header | there is no principal to file it under |
+
+A shareable document is cached and served as before. Sign-out's `Clear-Site-Data: "cache",
+"storage"` empties every partition.
+
 **The installing page is cached too**, `As of 2026-09-22` (21.0.0, unreleased). The page that registers the worker loaded before the worker controlled it, so no strategy saw it, and an `offline: 'runtime'` route was unavailable offline until a second online visit. On `activate`, the worker now runs each open window's URL through its route's own strategy, the same rule every later visit follows. It is best effort: a failure costs the warm-up only.
 
 Mutations are never cached. **Offline writes go through the tier-3 mutator queue ([Realtime](Realtime)), not through Background Sync guesswork** — a durable queue with a declared `conflict` strategy per mutator, replayed on reconnect and rebased against server truth. Background Sync, when enabled, is only a wake-up trigger for that queue; it is never the queue. **One outbox, and it is realtime's**, in the page's IndexedDB, keyed by principal. On a `sync` event the worker posts `OUTBOX_DRAIN_MESSAGE` (`'x-outbox-drain'`, from `@ultimat3/core`) to every open tab and sends nothing itself. With no tab open the queue waits on disk for the next page load. `As of 2026-09-22` (21.0.0, unreleased) both halves are in the tree: the page's outbox listens for the message. Until 21.0.0 the worker POSTed `/_x/outbox/flush`, a route nothing ever mounted.

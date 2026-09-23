@@ -35,6 +35,15 @@ const TARGET = { url: 'ws://127.0.0.1:9/_x/sync', buildId: 'b1' };
 const realWebSocket = globalThis.WebSocket;
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5));
 
+/**
+ * Waits for `check` to hold, then answers — never a fixed number of ticks. Every step here crosses
+ * a `MessageChannel` (tab → engine → tab), whose delivery is a task the runtime schedules when it
+ * can: 5 ms was enough on a laptop and not on a loaded 4-core runner with coverage on.
+ */
+async function until(check: () => boolean): Promise<void> {
+  for (let waited = 0; waited < 2_000 && !check(); waited += 5) await settle();
+}
+
 afterEach(() => {
   resetPageSocket();
   resetPage();
@@ -77,33 +86,36 @@ describe('pageSocket', () => {
     await settle();
     expect(FakeWebSocket.opened).toEqual([]); // the disk restore has not landed yet
     boot();
-    await settle();
+    await until(() => FakeWebSocket.opened.length > 0);
     expect(FakeWebSocket.opened.map((ws) => ws.url)).toEqual([`${TARGET.url}?build=b1`]);
 
     FakeWebSocket.opened[0]?.onopen?.();
-    await settle();
+    await until(() => client.connected);
     expect(client.connected).toBe(true);
   });
 
   test('pagehide says bye: the page socket is closed with the tab', async () => {
     browserPage(TARGET);
     pageSocket('useConnection');
-    await settle();
+    await until(() => FakeWebSocket.opened.length > 0);
     dispatchEvent(new Event('pagehide'));
-    await settle();
+    await until(() => (FakeWebSocket.opened[0]?.closes.length ?? 0) > 0);
     expect(FakeWebSocket.opened[0]?.closes).toEqual([1000]);
   });
 
   test('a new principal leaves the old socket and dials a fresh one', async () => {
     browserPage(TARGET);
     const client = pageSocket('useConnection');
-    await settle();
+    await until(() => FakeWebSocket.opened.length > 0);
     FakeWebSocket.opened[0]?.onopen?.();
-    await settle();
+    await until(() => client.connected);
     expect(client.connected).toBe(true);
 
     rescope(`${pageClient().scope.principal ?? 'nobody'}-next`);
-    await settle();
+    await until(
+      () => FakeWebSocket.opened.length >= 2 && (FakeWebSocket.opened[0]?.closes.length ?? 0) > 0,
+    );
+    await settle(); // and nothing further: exactly one redial, never two
     expect(FakeWebSocket.opened[0]?.closes).toEqual([1000]);
     expect(FakeWebSocket.opened).toHaveLength(2);
   });

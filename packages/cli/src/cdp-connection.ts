@@ -1,6 +1,8 @@
-// One responsibility: a Chrome DevTools Protocol connection over Bun's own WebSocket — request
-// framing, response correlation, and the per-call deadline. Launching a browser is `cdp-launch.ts`
-// and the page surface is `cdp-e2e-page.ts`; this file knows nothing about either.
+// One responsibility: a Chrome DevTools Protocol connection — request framing, response
+// correlation, and the per-call deadline — over a TRANSPORT that moves whole messages. Two exist:
+// the pipe a launched Chrome is driven over (`cdp-pipe.ts`, what the e2e driver uses) and a remote
+// browser's WebSocket (`cdpConnect` below). Launching is `cdp-launch.ts`; the page surface is
+// `cdp-e2e-page.ts`; this file knows nothing about either.
 //
 // **No library, and that is the point rather than an economy.** `packages/scraping/src/cdp-port.ts`
 // declares a ~25-method port because `ScrapePage` is a full scraping surface, and its intended
@@ -57,12 +59,33 @@ const errorText = (frame: Record<string, unknown>): string | undefined => {
   return typeof message === 'string' ? message : 'the browser refused the call';
 };
 
+/**
+ * What a connection needs of the wire: whole messages out, whole messages in, and a close. Framing
+ * is the transport's — a WebSocket frames per message, the pipe splits on NUL — so correlation and
+ * deadlines are written once, over either.
+ */
+export interface CdpTransport {
+  send(text: string): void;
+  close(): void;
+  /** Installed exactly once, by the connection, before the first `send`. */
+  listen(handlers: {
+    readonly message: (text: string) => void;
+    readonly closed: (reason: string) => void;
+  }): void;
+}
+
 export interface CdpConnectionOptions {
   readonly endpoint: string;
   /** Per-call deadline. A CDP call that never answers is a suite that never finishes. */
   readonly timeoutMs: number;
 }
 
+/**
+ * A remote browser over its WebSocket url. NOT the e2e driver's wire: measured in the dummy's
+ * `offline-feed` suite on Bun 1.4.0, Bun's WebSocket client handed `onmessage` text spliced out of
+ * several frames — 64 unparseable frames in one run, one of them the reply to a `Runtime.evaluate`
+ * that then waited out its whole deadline. A launched Chrome is driven over `cdp-pipe.ts` instead.
+ */
 export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConnection> {
   assert(
     options.endpoint.startsWith('ws://') || options.endpoint.startsWith('wss://'),
@@ -70,6 +93,40 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
     'pass the `webSocketDebuggerUrl` Chrome prints on stderr, or the one /json/version answers',
   );
   const socket = new WebSocket(options.endpoint);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new CdpTimeoutError({ method: 'connect', timeoutMs: options.timeoutMs }));
+    }, options.timeoutMs);
+    socket.onopen = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    // `onerror` is replaced for the handshake only, then restored above: a failure BEFORE open has
+    // no pending call to abandon, and rejecting is the only way the caller hears about it.
+    socket.onerror = (): void => {
+      clearTimeout(timer);
+      reject(
+        new CdpCallFailedError({ method: 'connect', detail: 'the browser refused the connection' }),
+      );
+    };
+  });
+
+  const transport: CdpTransport = {
+    send: (text) => socket.send(text),
+    close: () => socket.close(),
+    listen(handlers) {
+      socket.onmessage = (event: MessageEvent): void => {
+        handlers.message(typeof event.data === 'string' ? event.data : '');
+      };
+      socket.onclose = (): void => handlers.closed('the browser closed the CDP connection');
+      socket.onerror = (): void => handlers.closed('the CDP connection failed');
+    },
+  };
+  return cdpConnectOver(transport, options.timeoutMs);
+}
+
+/** A connection over any transport — correlation, deadlines and events, written once. */
+export function cdpConnectOver(transport: CdpTransport, timeoutMs: number): CdpConnection {
   const pending = new Map<number, Pending>();
   const waiters = new Set<(method: string, sessionId: string | undefined) => void>();
   const listeners = new Map<string, Set<(params: Record<string, unknown>) => void>>();
@@ -91,8 +148,7 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
     waiters.clear();
   };
 
-  socket.onmessage = (event: MessageEvent): void => {
-    const raw = typeof event.data === 'string' ? event.data : '';
+  const message = (raw: string): void => {
     let frame: Record<string, unknown>;
     try {
       frame = JSON.parse(raw) as Record<string, unknown>;
@@ -134,27 +190,7 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
           : undefined,
     });
   };
-  socket.onclose = (): void => abandon('the browser closed the CDP connection');
-  socket.onerror = (): void => abandon('the CDP connection failed');
-
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new CdpTimeoutError({ method: 'connect', timeoutMs: options.timeoutMs }));
-    }, options.timeoutMs);
-    socket.onopen = (): void => {
-      clearTimeout(timer);
-      resolve();
-    };
-    // `onerror` is replaced for the handshake only, then restored above: a failure BEFORE open has
-    // no pending call to abandon, and rejecting is the only way the caller hears about it.
-    socket.onerror = (): void => {
-      clearTimeout(timer);
-      reject(
-        new CdpCallFailedError({ method: 'connect', detail: 'the browser refused the connection' }),
-      );
-    };
-  });
-  socket.onerror = (): void => abandon('the CDP connection failed');
+  transport.listen({ message, closed: abandon });
 
   return {
     send(method, params = {}, sessionId): Promise<CdpResult> {
@@ -168,10 +204,10 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
       return new Promise<CdpResult>((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
-          reject(new CdpTimeoutError({ method, timeoutMs: options.timeoutMs }));
-        }, options.timeoutMs);
+          reject(new CdpTimeoutError({ method, timeoutMs: timeoutMs }));
+        }, timeoutMs);
         pending.set(id, { resolve, reject, timer });
-        socket.send(
+        transport.send(
           JSON.stringify({ id, method, params, ...(sessionId === undefined ? {} : { sessionId }) }),
         );
       });
@@ -205,7 +241,7 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
     close(): void {
       listeners.clear();
       abandon('the driver closed the CDP connection');
-      socket.close();
+      transport.close();
     },
   };
 }

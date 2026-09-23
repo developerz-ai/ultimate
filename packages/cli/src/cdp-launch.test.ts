@@ -86,31 +86,46 @@ describe('chromeLaunchFlags', () => {
 });
 
 describe('launchChrome', () => {
-  test('keeps draining stderr after the endpoint, so a chatty browser never blocks on a full pipe', async () => {
-    // A pipe nobody reads fills, and the browser's next write past it BLOCKS the thread doing it.
-    // 16 MB and not 64 KB: Bun's stream buffers well beyond the kernel pipe (256 KB passed with the
-    // reader released), and 16 MB stalled the undrained launcher on every run while taking ~200 ms
-    // drained. The fake writes it after its endpoint, then leaves a marker only a drained run reaches.
-    const dir = await mkdtemp(join(tmpdir(), 'x-launch-drain-'));
-    const marker = join(dir, 'done');
+  /** A fake browser: a shell script, written executable into a throwaway directory. */
+  const fakeBrowser = async (script: string): Promise<{ fake: string; dir: string }> => {
+    const dir = await mkdtemp(join(tmpdir(), 'x-launch-fake-'));
     const fake = join(dir, 'chrome');
-    await writeFile(
-      fake,
-      `#!/bin/sh\necho 'DevTools listening on ws://127.0.0.1:1/devtools/browser/x' >&2\n` +
-        `head -c 16777216 /dev/zero | tr '\\0' 'x' >&2\ntouch '${marker}'\nsleep 5\n`,
-      'utf8',
-    );
+    await writeFile(fake, `#!/bin/bash\n${script}`, 'utf8');
     await chmod(fake, 0o755);
-    const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
+    return { fake, dir };
+  };
+
+  /** Answer the launcher's first call over the pipe: read one NUL-ended message, reply to id 1. */
+  const ANSWER = `read -r -d '' _ <&3\nprintf '{"id":1,"result":{"product":"Fake"}}\\0' >&4\n`;
+
+  test('is ready once the browser answers over its pipe, and drains a chatty stderr first', async () => {
+    // 16 MB of stderr BEFORE the answer: a launcher that read stderr only until some line, then
+    // stopped, stalled here on every run (measured when the endpoint was read off stderr). It does
+    // NOT prove the drain on its own — a launcher that never touches stderr also passes, because
+    // Bun buffers an unread pipe itself; the drain is kept because the tail is the diagnostics the
+    // next test asserts.
+    const { fake, dir } = await fakeBrowser(
+      `head -c 16777216 /dev/zero | tr '\\0' 'x' >&2\n${ANSWER}sleep 5\n`,
+    );
     try {
-      let reached = false;
-      for (let i = 0; i < 40 && !reached; i += 1) {
-        reached = await Bun.file(marker).exists();
-        if (!reached) await Bun.sleep(50);
-      }
-      expect(reached).toBe(true);
-    } finally {
+      const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
       launched.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a browser that dies before answering is X_CDP_LAUNCH_FAILED quoting its own stderr', async () => {
+    const { fake, dir } = await fakeBrowser(
+      `echo 'error while loading shared libraries: libnss3.so' >&2\nexit 127\n`,
+    );
+    try {
+      const error = await launchChrome({ executable: fake, timeoutMs: 5_000 }).catch(
+        (e: unknown) => e,
+      );
+      expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
+      expect((error as { cause: string }).cause).toContain('libnss3.so');
+    } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });

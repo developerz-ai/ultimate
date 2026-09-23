@@ -67,11 +67,14 @@ const TITLE = '(() => JSON.stringify({ title: document.title }))()';
  * The cost, stated rather than hidden: this is a SECOND request to the same route, so what it
  * measures is that route's streaming behaviour and not the byte-for-byte first chunk the open
  * document received. It runs in the page, so it carries the page's cookies and its origin — a
- * `fetch` from the test process would carry neither.
+ * `fetch` from the test process would carry neither. The reader is CANCELLED after that chunk: a
+ * streamed response nobody pulls stays open until its last hole fills, holding one of the page's
+ * six connections to its origin for the rest of the test.
  */
 const firstFlushExpression = (url: string): string =>
   `(() => fetch(${JSON.stringify(url)}, { credentials: 'same-origin' })
-    .then((response) => response.body.getReader().read())
+    .then((response) => { const reader = response.body.getReader(); return reader.read()
+      .then((chunk) => { reader.cancel().catch(() => {}); return chunk; }); })
     .then((chunk) => JSON.stringify({ html: new TextDecoder().decode(chunk.value || new Uint8Array()) })))()`;
 
 /**

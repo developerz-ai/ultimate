@@ -56,6 +56,13 @@ export interface OutboxOptions {
    */
   readonly send?: ((entry: OutboxEntry, carried: Set<string>) => Promise<unknown>) | undefined;
   readonly overlays?: (() => OutboxOverlays | undefined) | undefined;
+  /**
+   * Runs, and is awaited, before a write is queued. The boot hands it the record persister's
+   * `flush`: a queued write is replayed over the rows it touched, so those rows reach the disk no
+   * later than the write does — measured, a reload inside the persister's debounce came back with
+   * the write queued and the post it liked missing, and showed the old count.
+   */
+  readonly beforeEnqueue?: (() => Promise<void>) | undefined;
 }
 
 const EMPTY: DrainReport = { sent: 0, collapsed: 0, remaining: 0, stoppedAt: null };
@@ -110,6 +117,8 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
 
   return {
     enqueue: async (entry) => {
+      // A disk that refused the rows must not also cost the write: the intent still goes on disk.
+      await options.beforeEnqueue?.().catch(() => undefined);
       await ready;
       await queue?.enqueue(entry);
     },
@@ -151,16 +160,16 @@ function sendOverHttp(entry: OutboxEntry, carried: Set<string>): Promise<unknown
  * The page's outbox, created once per tab. In a browser it replays on open, on `online`, and on the
  * service worker's drain message; with no `document` it is a memory queue that listens for nothing.
  */
-export function pageOutbox(): PageOutbox {
+export function pageOutbox(options: Pick<OutboxOptions, 'beforeEnqueue'> = {}): PageOutbox {
   const host = globalThis as OutboxHost;
   const existing = host[OUTBOX_KEY];
   // Only this function writes the slot, so what it holds is always a `PageOutbox`.
   if (existing !== undefined) return existing as PageOutbox;
-  const outbox = createOutbox({ local: pageLocalStore() });
+  const outbox = createOutbox({ local: pageLocalStore(), beforeEnqueue: options.beforeEnqueue });
   Object.defineProperty(host, OUTBOX_KEY, { value: outbox, configurable: true });
   if (Reflect.has(globalThis, 'document')) {
     listenForDrain(outbox);
-    void outbox.replay().catch(() => undefined);
+    if (!knownOffline()) void outbox.replay().catch(() => undefined);
   }
   return outbox;
 }
@@ -171,7 +180,9 @@ export function pageOutbox(): PageOutbox {
  * queue as it was — the next signal tries again — so its rejection is not the listener's to raise.
  */
 export function listenForDrain(outbox: Pick<PageOutbox, 'replay'>): () => void {
-  const replay = (): void => void outbox.replay().catch(() => undefined);
+  const replay = (): void => {
+    if (!knownOffline()) void outbox.replay().catch(() => undefined);
+  };
   const worker: EventTarget | undefined = Reflect.get(
     Reflect.get(globalThis, 'navigator') ?? {},
     'serviceWorker',
@@ -192,4 +203,20 @@ export function listenForDrain(outbox: Pick<PageOutbox, 'replay'>): () => void {
     worker?.removeEventListener('message', onMessage);
     globalThis.removeEventListener('online', replay);
   };
+}
+
+/**
+ * The browser says it has no network. A replay then is an attempt that can only fail — and a
+ * failed attempt is still a request on the wire: measured, a reload taken offline replayed on open,
+ * that POST failed, and the real one followed on `online`, so one write went out twice. The
+ * `online` event is the replay's own trigger, so nothing is lost by waiting for it. Unknown (no
+ * `navigator`) is not offline.
+ */
+function knownOffline(): boolean {
+  const navigator: unknown = Reflect.get(globalThis, 'navigator');
+  return (
+    typeof navigator === 'object' &&
+    navigator !== null &&
+    Reflect.get(navigator, 'onLine') === false
+  );
 }

@@ -194,26 +194,31 @@ async function fallbackOrThrow(options: StrategyOptions): Promise<Response> {
 /**
  * The emitted counterpart of the functions above. Kept as source strings because the
  * service worker is a generated artifact with no bundler in the loop — the shapes are
- * identical on purpose and `strategies.test.ts` asserts both halves stay in step.
+ * identical on purpose and `strategies.test.ts` asserts both halves stay in step. They open a
+ * cache through the worker's `openCache`, never `caches.open`: the pages cache is a facade that
+ * partitions a per-member document by principal (`service-worker.ts`, `pagesCache`). And the cache
+ * copy is NEVER awaited before answering: `Cache.put` reads the whole body, so awaiting it held a
+ * streamed document away from the tab until it had ended. It goes to `later(wait, …)` instead —
+ * the fetch event's `waitUntil`, which keeps the worker alive for the copy.
  */
 export const STRATEGY_SOURCE = Object.freeze<Record<StrategyName, string>>({
-  'cache-first': `async function cacheFirst(req,cn,fb){
-  const c=await caches.open(cn);const hit=await c.match(req);if(hit)return hit;
-  try{const r=await fetch(req);if(r.ok)await c.put(req,r.clone());return r}catch(e){if(fb)return fb();throw e}
+  'cache-first': `async function cacheFirst(req,cn,fb,wait){
+  const c=await openCache(cn);const hit=await c.match(req);if(hit)return hit;
+  try{const r=await fetch(req);if(r.ok)later(wait,c.put(req,r.clone()));return r}catch(e){if(fb)return fb();throw e}
 }`,
-  'network-first': `async function networkFirst(req,cn,fb){
-  const c=await caches.open(cn);
-  try{const r=await fetch(req);if(r.ok)await c.put(req,r.clone());return r}
+  'network-first': `async function networkFirst(req,cn,fb,wait){
+  const c=await openCache(cn);
+  try{const r=await fetch(req);if(r.ok)later(wait,c.put(req,r.clone()));return r}
   catch(e){const hit=await c.match(req);if(hit)return hit;if(fb)return fb();throw e}
 }`,
-  'stale-while-revalidate': `async function staleWhileRevalidate(req,cn,fb){
-  const c=await caches.open(cn);const hit=await c.match(req);
-  const refresh=fetch(req).then(async(r)=>{if(r.ok)await c.put(req,r.clone());return r})
+  'stale-while-revalidate': `async function staleWhileRevalidate(req,cn,fb,wait){
+  const c=await openCache(cn);const hit=await c.match(req);
+  const refresh=fetch(req).then((r)=>{if(r.ok)later(wait,c.put(req,r.clone()));return r})
     .catch(()=>hit||(fb?fb():Response.error()));
   if(hit){refresh.catch(()=>{});return hit}
   return refresh
 }`,
-  'network-only': `async function networkOnly(req,cn,fb){
+  'network-only': `async function networkOnly(req,cn,fb,wait){
   try{return await fetch(req)}catch(e){if(fb)return fb();throw e}
 }`,
 });

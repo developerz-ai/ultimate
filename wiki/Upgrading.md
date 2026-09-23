@@ -6,7 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 20.x → 21.0.0 | **26** so far, and **unreleased** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. More land with the client data layer, one entry per removed surface | the `20.x → 21.0.0` section below, in order. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
+| 20.x → 21.0.0 | **27** so far, and **unreleased** — `AsyncState`'s import path, `custom(merge)` over rows rather than outputs, realtime's second conflict vocabulary removed, `isSuperseded` widened, one error path for every typed client, the record envelope on actions that return entity rows, the service worker's outbox flush replaced by a message to open tabs, a third client-scope answer, `last-write-wins` refused without a clock, the realtime client rebuilt around one page store and one read hook, Compose requiring `SYNC_URL`, `x verify`'s duration as wall time, and channels served by declaration only. More land with the client data layer, one entry per removed surface | the `20.x → 21.0.0` section below, in order. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 19.x → 20.0.0 | **2**, both `@ultimat3/ui` component behaviour and neither a type change — a `DataTable` that keeps its rows while reloading, and a `Button` whose `loading` no longer sets the native `disabled`. Nothing fails to compile; what changes is what a screen does | the `20.0.0` section, in order |
 | 18.x → 19.0.0 | **2**, both from the same hole — the service worker had no build behind it, so the config key that steers it and the route it falls back to both had to move | the `19.0.0` section, in order |
 | 17.x → 18.0.0 | **5** — a runtime floor that was a minor behind what the CLI emits, two PWA config surfaces that had to grow before an app could be installable, a `--json` shape, and one scraping interface | the `18.0.0` section, in order |
@@ -69,7 +69,7 @@ Each entry changes a surface the table below covers.
 
 ## 20.x → 21.0.0, entry by entry — **unreleased**
 
-**Twenty-six entries so far.** Entries 1–3, 5, 8, 9, 11–17 and 20–23 are compile errors. Entry 24
+**Twenty-seven entries so far.** Entries 1–3, 5, 8, 9, 11–17, 20–23 and 27 are compile errors. Entry 24
 is a stale file one rebuild replaces, entry 25 is a `budgets` finding, and entry 26 is capacity
 planning, not code. Entry 10
 throws when the module loads, and entry 18 when `docker compose up` starts. Entry 19 is a
@@ -109,6 +109,7 @@ entries sit under `## [Unreleased]` in [`CHANGELOG.md`](https://github.com/devel
 | 24 | `.x/build-stats.json` | you ran `x build` before upgrading. Every budgeted route reads `X_BUDGET_UNMEASURED` until `x build --target static` runs again, because the stats file carries the measurement rules that wrote it and v1 files are not read |
 | 25 | `hasPageSocket()` as a guard in page code | a module no island imports calls it (an offline banner, an update prompt in a layout). The `budgets` step now reports it as `X_LIVE_ROUTE_NO_ISLAND`. Move the module into an island: `x g island <route-dir> --at <route-dir>`, import it from the island's `mount()`, declare `island({ src })` |
 | 26 | a browser's reconnect backoff | you sized a sync node on the 30 s spread of reconnects. Browsers now redial within 4 s (`equal` jitter from 500 ms). Check the node's `AcceptBudget` sheds a SIGKILL herd arriving in 2–4 s. Nothing to change in app code |
+| 27 | `LaunchedBrowser.endpoint` from `@ultimat3/cli` | you launch Chrome yourself for tests. `cdpConnect(browser.endpoint)` → `browser.connection`, which is already answering over the debugging pipe. `cdpConnect(url)` remains for a remote browser |
 
 ### Where the sites are
 

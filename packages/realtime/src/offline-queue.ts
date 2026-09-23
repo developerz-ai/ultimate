@@ -204,7 +204,8 @@ export class OfflineQueue {
     const mutation = this.find(key);
     if (!mutation) return;
     mutation.status = 'acked';
-    this.#mutations = this.#mutations.filter((candidate) => candidate.key !== key);
+    // By identity: `find` already matched it, and a second comparison of the key is the same question.
+    this.#mutations = this.#mutations.filter((entry) => entry !== mutation);
     await this.#persist();
   }
 

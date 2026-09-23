@@ -16,6 +16,8 @@ is no codemod and no compatibility shim.
 
 ### Added
 
+- **`CLIENT_SCOPE_HEADER`** (`'x-ultimate-scope'`) in `@ultimat3/core`: the response header naming the
+  principal scope a private document was rendered for, which the service worker partitions by.
 - **`@ultimat3/core/page`, a browser-light entry.** The page handle, the scope fence, the page-meta
   constants (`APP_UPDATE_MESSAGE` among them), `UltimateError`, `clientTransport`, `actionPath`,
   `queryPath` and the helpers browser code needs, with **no error-titles table**.
@@ -161,6 +163,24 @@ is no codemod and no compatibility shim.
 
 ### Fixed
 
+- **e2e: intermittent `X_CDP_TIMEOUT` from spliced WebSocket frames.** Bun 1.4.0's WebSocket client
+  spliced large CDP frames together (64 unparseable frames in one run), so their replies were
+  dropped. The driver now talks to Chrome over its debugging pipe instead.
+- **e2e: a page reloaded under offline emulation read `navigator.onLine` as `true`.** Chrome never
+  tells a document created while offline that it is offline. The driver injects an `onLine` override
+  while offline, and dispatches exactly one `online` event when the network is restored
+  (`packages/cli/src/cdp-e2e-session.ts`, `cdp-offline-script.ts`).
+- **Security: the service worker no longer serves one member's page to another.** Its pages cache
+  was keyed by URL alone. On a shared browser, a per-member document rendered for one member
+  (`stream`, or gated `ssr`, with `offline: 'runtime'`) was served from cache to the next member.
+  Now a private document is never answered from cache while online. A document counts as private
+  when it is `cache-control: private` or `no-store`, or carries `x-ultimate-scope`. It is kept only
+  in its principal's own cache partition, which only the offline path reads. Storing one principal's
+  page wipes every other partition, so offline answers only the most recent member's own pages. A
+  private document with no scope header is not kept at all. The server stamps
+  `x-ultimate-scope: <scope>` on every scope-tagged document (`packages/cli/src/dev-render.ts`); the
+  cache facade is `packages/pwa/src/service-worker.ts`. **Affected since 19.0.0**, the first release
+  that emits `sw.js`.
 - **`idle` hydration kept a click made before the island mounted.** It captures the click and
   replays it once the island has mounted, through the same catch-up `interaction` uses. The replay
   targets the same element structurally, by its path, because the server-rendered node the visitor
@@ -454,6 +474,11 @@ is no codemod and no compatibility shim.
   `reconnect` frame from a draining node still assigns each socket its slot. The edit is only for a
   deployment sized on the old spread: a SIGKILLed node's herd now redials inside a 2–4 s window, so
   check the sync node's `AcceptBudget` sheds that burst before any query runs.
+- **BREAKING — `LaunchedBrowser` is `{ connection, close }`, not `{ endpoint, close }`**
+  (`@ultimat3/cli`). A launched Chrome is now driven over `--remote-debugging-pipe`
+  (`packages/cli/src/cdp-pipe.ts`), and the connection it returns is already answering. The edit:
+  `cdpConnect(browser.endpoint)` → `browser.connection`. `cdpConnect(endpoint)` stays, for a remote
+  browser reached by URL.
 
 ## 20.2.1 - 2026-09-19
 

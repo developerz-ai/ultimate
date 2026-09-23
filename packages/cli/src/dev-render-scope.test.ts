@@ -12,6 +12,7 @@ import type { Actor } from '@ultimat3/core';
 import {
   CLIENT_BUILD_META,
   CLIENT_PERSIST_META,
+  CLIENT_SCOPE_HEADER,
   CLIENT_SCOPE_META,
   CLIENT_SYNC_META,
   CLIENT_SYNC_WORKER_META,
@@ -52,7 +53,11 @@ async function scopeIn(path: string, actor: Actor | null): Promise<string | null
   });
   const response = await server.fetch(new Request(`http://dev.test${path}`));
   expect(response.status).toBe(200);
-  return SCOPE_META.exec(await response.text())?.[1] ?? null;
+  const meta = SCOPE_META.exec(await response.text())?.[1] ?? null;
+  // The same scope rides the RESPONSE, where the service worker — which parses no HTML — partitions
+  // its offline pages by it. Every assertion on the meta below is one on the header too.
+  expect(response.headers.get(CLIENT_SCOPE_HEADER)).toBe(meta);
+  return meta;
 }
 
 afterEach(() => {

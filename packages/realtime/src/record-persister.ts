@@ -128,7 +128,8 @@ function onPageLeave(flush: () => void): () => void {
     globalThis,
     'document',
   );
-  if (doc === undefined) return () => {};
+  // A partial `document` (a test's stand-in) has no events to hear: nothing to subscribe to.
+  if (doc === undefined || typeof doc.addEventListener !== 'function') return () => {};
   const hidden = (): void => {
     if (doc.visibilityState === 'hidden') flush();
   };

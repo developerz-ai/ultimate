@@ -8,12 +8,14 @@
  * update check does not fire on a no-op deploy.
  */
 
+import { CLIENT_SCOPE_HEADER } from '@ultimat3/core';
 import { backgroundSyncSource } from './background-sync';
 import type { CapabilityFlags, ResolvedCapabilities } from './capabilities';
 import { isEnabled, resolveCapabilities } from './capabilities';
 import { SwScopeInvalidError } from './errors';
 import type { OfflineConfig } from './offline-fallback';
 import { offlineFallbackSource, requireOfflineFallback } from './offline-fallback';
+import { PAGES_CACHE_SOURCE } from './pages-cache-source';
 import type { PrecacheAsset, PrecacheManifest } from './precache';
 import { buildPrecacheManifest, serializePrecacheManifest } from './precache';
 import type { VapidConfig } from './push';
@@ -273,6 +275,7 @@ const PAGES=${JSON.stringify(cacheNamespace(buildId, 'pages'))};
 const RETAINED=${JSON.stringify(retainedCaches(retained))};
 const NEVER_CACHE=${JSON.stringify(neverCache)};
 const BUILD_HEADER=${JSON.stringify(BUILD_ID_HEADER)};
+const SCOPE_HEADER=${JSON.stringify(CLIENT_SCOPE_HEADER)};
 let SKEWED=false;`.trim();
 }
 
@@ -333,9 +336,14 @@ self.addEventListener('activate',(event)=>{
     await self.clients.claim();
     const cs=await self.clients.matchAll({type:'window'});
     for(const c of cs)c.postMessage({type:${JSON.stringify(APP_UPDATE_AVAILABLE)},to:BUILD_ID});
-    await Promise.all(cs.map((c)=>warm(c.url)));
+    // NOT part of this waitUntil: a fetch event waits for the worker to finish ACTIVATING, so a
+    // warm-up that copies a streamed page's whole body in here held every request of the tab it
+    // just claimed — /feed's own reads included — until that body had ended. Kicked off, never
+    // awaited; the one reader that needs it done, the offline page read, waits for it.
+    warming=Promise.all(cs.map((c)=>warm(c.url))).catch(()=>{});
   })());
 });
+let warming=Promise.resolve();
 // The page that installed this worker loaded BEFORE the worker controlled it, so no strategy ever
 // saw it and a runtime-cached route was unavailable offline until a second online visit. Now that
 // the worker controls the window, its URL is run through its own route's strategy — the same rule
@@ -349,7 +357,10 @@ async function warm(href){
   const fn=STRATEGIES[rule.s];
   if(!fn)return;
   const req=new Request(url.href,{headers:withBuild(new Headers())});
-  try{await fn(req,cacheName(rule.c),()=>offlineFallback(req))}catch(e){}
+  const copies=[];
+  // The plain offline document, never pageOffline: that one waits for THIS warm-up to finish.
+  try{await fn(req,cacheName(rule.c),()=>offlineFallback(req),(p)=>copies.push(p))}catch(e){}
+  await Promise.all(copies);
 }`.trim();
 }
 
@@ -384,6 +395,7 @@ function ruleFor(url){
   return null
 }
 function cacheName(kind){return kind==='precache'?PRECACHE:kind==='pages'?PAGES:RUNTIME}
+${PAGES_CACHE_SOURCE}
 const STRATEGIES={cacheFirst:typeof cacheFirst==='function'?cacheFirst:null,
   networkFirst:typeof networkFirst==='function'?networkFirst:null,
   staleWhileRevalidate:typeof staleWhileRevalidate==='function'?staleWhileRevalidate:null,
@@ -400,7 +412,7 @@ self.addEventListener('fetch',(event)=>{
   if(!fn)return;
   // Every proxied request carries the client's build id so the server can detect skew.
   const tagged=new Request(req,{headers:withBuild(req.headers)});
-  event.respondWith(fn(tagged,cacheName(rule.c),()=>offlineFallback(req)).then((res)=>healSkew(req,res)));
+  event.respondWith(fn(tagged,cacheName(rule.c),fallbackFor(rule,req),(p)=>event.waitUntil(p)).then((res)=>healSkew(req,res)));
 });
 function withBuild(headers){
   const h=new Headers(headers);

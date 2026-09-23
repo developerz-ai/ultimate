@@ -18,6 +18,7 @@
 import { posix } from 'node:path';
 import { clientScopeOf } from '@ultimat3/auth';
 import type { Ctx } from '@ultimat3/core';
+import { CLIENT_SCOPE_HEADER } from '@ultimat3/core';
 import type { RouteMeta as HttpRouteMeta, Route, RouteParams } from '@ultimat3/http';
 import { asCtx, html, stream } from '@ultimat3/http';
 import { currentLocale } from '@ultimat3/i18n';
@@ -334,17 +335,20 @@ async function resultFor(
         headFor(entry, request, data, options, clientScopeOf(ctx.actor)),
         routeBody(entry, request, data, islands),
       ]);
-      return streamResult(
-        {
-          head: `<!doctype html><html lang="${lang()}"><head>${head}${styleTag(entry)}</head><body>`,
-          // The runtime rides the first flush, with the shell it boots. A later chunk would leave
-          // the window between flush one and the close with inert islands and no listeners on
-          // them — which is exactly the first-click-lost failure `interaction` replay exists for.
-          shell: `${shell}${bootScript(entry, islands, options, clientScopeOf(ctx.actor))}${hydrateRuntime(islands.directives)}`,
-          holes: [],
-        },
-        { buildId: options.buildId },
-        status,
+      return withScope(
+        streamResult(
+          {
+            head: `<!doctype html><html lang="${lang()}"><head>${head}${styleTag(entry)}</head><body>`,
+            // The runtime rides the first flush, with the shell it boots. A later chunk would leave
+            // the window between flush one and the close with inert islands and no listeners on
+            // them — which is exactly the first-click-lost failure `interaction` replay exists for.
+            shell: `${shell}${bootScript(entry, islands, options, clientScopeOf(ctx.actor))}${hydrateRuntime(islands.directives)}`,
+            holes: [],
+          },
+          { buildId: options.buildId },
+          status,
+        ),
+        clientScopeOf(ctx.actor),
       );
     }
     default: {
@@ -354,14 +358,27 @@ async function resultFor(
       const scope = documentCarriesScope(ssrHeaders(entry, { buildId: options.buildId }))
         ? clientScopeOf(ctx.actor)
         : undefined;
-      return renderSsr(
-        { entry, params: request.params, url, ctx },
-        () => documentFrom(entry, request, data, options, scope),
-        { buildId: options.buildId, status },
+      return withScope(
+        await renderSsr(
+          { entry, params: request.params, url, ctx },
+          () => documentFrom(entry, request, data, options, scope),
+          { buildId: options.buildId, status },
+        ),
+        scope,
       );
     }
   }
 }
+
+/**
+ * A private document's scope, as a RESPONSE header too: the service worker partitions its offline
+ * pages by principal and never parses HTML, so the meta alone cannot reach it. Exactly the
+ * documents that carry the scope tag carry this — a shareable one carries neither.
+ */
+const withScope = (result: RenderResult, scope: string | undefined): RenderResult =>
+  scope === undefined
+    ? result
+    : { ...result, headers: { ...result.headers, [CLIENT_SCOPE_HEADER]: scope } };
 
 const responseOf = (result: RenderResult): Response =>
   typeof result.body === 'string'

@@ -8,7 +8,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import type { CdpConnection } from './cdp-connection';
+import { cdpConnectOver } from './cdp-connection';
 import { CdpBrowserMissingError, CdpLaunchFailedError } from './cdp-errors';
+import { pipeTransport } from './cdp-pipe';
 
 /**
  * Where a Chrome is, in the order worth trying. `CHROME_PATH` first because it is the operator's
@@ -52,14 +55,15 @@ export const CONTAINER_CHROME_ARGS: readonly string[] = ['--no-sandbox', '--disa
 /**
  * The flags, and every one of them earns its line.
  *
- * `--headless=new` is Chrome's own headless rather than the retired shim. `--remote-debugging-port=0`
- * asks the OS for a free port, so two suites on one machine never collide — the port is read back
- * off stderr, which is the only place Chrome states the one it took. A throwaway `--user-data-dir`
- * because a run sharing a profile with a real browser inherits its cookies and locks its files.
+ * `--headless=new` is Chrome's own headless rather than the retired shim. `--remote-debugging-pipe`
+ * is the wire (`cdp-pipe.ts` says why it is not the WebSocket): no port, so two suites on one
+ * machine can never collide, and nothing but this process can drive the browser. A throwaway
+ * `--user-data-dir` because a run sharing a profile with a real browser inherits its cookies and
+ * locks its files.
  */
 export const chromeLaunchFlags = (profileDir: string): readonly string[] => [
   '--headless=new',
-  '--remote-debugging-port=0',
+  '--remote-debugging-pipe',
   `--user-data-dir=${profileDir}`,
   ...CONTAINER_CHROME_ARGS,
   '--disable-gpu',
@@ -78,74 +82,87 @@ export const chromeLaunchFlags = (profileDir: string): readonly string[] => [
   'about:blank',
 ];
 
-const ENDPOINT = /DevTools listening on (ws:\/\/\S+)/;
-
 export interface LaunchedBrowser {
-  readonly endpoint: string;
-  /** Idempotent: killing a dead process and deleting a gone directory are both no-ops. */
+  /** The browser's own CDP connection, over its debugging pipe. Already answering. */
+  readonly connection: CdpConnection;
+  /** Idempotent: closes the connection, kills the process, deletes the profile. */
   close(): void;
 }
 
 export interface LaunchOptions {
   readonly executable: string;
-  /** How long Chrome has to announce its endpoint before this gives up and kills it. */
+  /** How long Chrome has to answer its first call, and every call's deadline after that. */
   readonly timeoutMs: number;
 }
 
+const STDERR_TAIL_CHARS = 4_000;
+
 /**
- * Chrome announces `DevTools listening on ws://…` on **stderr**, once, before it is usable. Reading
- * it there rather than polling `/json/version` is what makes `--remote-debugging-port=0` safe: with
- * a random port there is no URL to poll until Chrome has said which one it took.
+ * Read stderr to its end for the life of the process, keeping only a bounded tail. A pipe nobody
+ * reads fills, and Chrome's next stderr write then blocks the thread making it — a browser that
+ * stops answering mid-run for a reason no log shows. The tail is the launch-failure diagnostics:
+ * a missing library, a sandbox refusal and a bad flag are all named there and nowhere else.
  */
-/** Consume a stream to its end, keeping nothing. A read that fails means the process is gone. */
-async function drain(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
-  try {
-    for (;;) if ((await reader.read()).done) return;
-  } catch {
-    // The browser was killed under the read; there is nothing left to drain.
-  }
+function stderrTail(stream: ReadableStream<Uint8Array>): () => string {
+  let text = '';
+  void (async () => {
+    const decoder = new TextDecoder();
+    for await (const chunk of stream) {
+      text = (text + decoder.decode(chunk, { stream: true })).slice(-STDERR_TAIL_CHARS);
+    }
+  })().catch(() => undefined);
+  return () => text;
 }
 
+/**
+ * Start Chrome on a throwaway profile and answer once it has answered one CDP call. With a pipe
+ * there is no "DevTools listening" line to wait for — the first reply IS the readiness signal, and
+ * a browser that dies or stays silent before it is `X_CDP_LAUNCH_FAILED` carrying its own stderr.
+ */
 export async function launchChrome(options: LaunchOptions): Promise<LaunchedBrowser> {
   const profileDir = mkdtempSync(join(tmpdir(), 'x-e2e-chrome-'));
   const child = Bun.spawn([options.executable, ...chromeLaunchFlags(profileDir)], {
-    stderr: 'pipe',
-    stdout: 'ignore',
+    // Chrome's fd 3 is where it READS commands and fd 4 where it WRITES replies and events.
+    stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'],
   });
+  const tail = stderrTail(child.stderr as ReadableStream<Uint8Array>);
+  const [, , , toBrowser, fromBrowser] = child.stdio as unknown as readonly number[];
+  const sink = Bun.file(toBrowser ?? -1).writer();
+  const connection = cdpConnectOver(
+    pipeTransport({
+      write: (bytes) => {
+        sink.write(bytes);
+        void sink.flush();
+      },
+      read: Bun.file(fromBrowser ?? -1).stream(),
+      end: () => {
+        void Promise.resolve(sink.end()).catch(() => undefined);
+      },
+    }),
+    options.timeoutMs,
+  );
+  let closed = false;
   const close = (): void => {
+    if (closed) return;
+    closed = true;
+    connection.close();
     child.kill();
     rmSync(profileDir, { recursive: true, force: true });
   };
-
-  const reader = (child.stderr as ReadableStream<Uint8Array>).getReader();
-  const decoder = new TextDecoder();
-  let seen = '';
-  const deadline = Bun.nanoseconds() + options.timeoutMs * 1_000_000;
-  while (Bun.nanoseconds() < deadline) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    seen += decoder.decode(value, { stream: true });
-    const found = ENDPOINT.exec(seen);
-    if (found?.[1] !== undefined) {
-      // Read to the end and DISCARD, for the life of the process. A pipe nobody reads fills, and
-      // Chrome's next stderr write then blocks the thread making it — a browser that stops
-      // answering mid-run for a reason no log shows. Kept a pipe rather than `'ignore'` because the
-      // lines before the endpoint are the launch-failure diagnostics below.
-      void drain(reader);
-      return { endpoint: found[1], close };
-    }
+  try {
+    await connection.send('Browser.getVersion');
+    return { connection, close };
+  } catch {
+    close();
+    const seen = tail().trim();
+    throw new CdpLaunchFailedError({
+      executable: options.executable,
+      detail:
+        seen === ''
+          ? 'it answered no DevTools call and printed nothing before the deadline'
+          : seen.split('\n').slice(-3).join(' | '),
+    });
   }
-  reader.releaseLock();
-  close();
-  // Chrome's own stderr is the actionable half — a missing library, a sandbox refusal, a bad flag
-  // are all named there — so it is reported rather than "the launch failed".
-  throw new CdpLaunchFailedError({
-    executable: options.executable,
-    detail:
-      seen.trim() === ''
-        ? 'it printed nothing before the deadline'
-        : seen.trim().split('\n').slice(-3).join(' | '),
-  });
 }
 
 /** `findChrome` then `launchChrome`. Refuses by name when there is no browser to drive. */

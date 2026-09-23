@@ -2,7 +2,7 @@
 // asks first. On `globalThis` under a `Symbol.for` key, because every island is its own bundle and
 // a module-scope singleton here is one store PER ISLAND — the bug this file exists to end.
 
-import { onRescope, pageClient } from '@ultimat3/core/page';
+import { CLIENT_SCOPE_META, onRescope, pageClient } from '@ultimat3/core/page';
 import { RecordStore } from './record-store';
 
 /** Where the page's one socket dials. Resolved on the server and handed to the island bootstrap. */
@@ -45,7 +45,54 @@ const KEY: unique symbol = Symbol.for('ultimate.realtime');
  */
 export const BOOT_KEY: unique symbol = Symbol.for('ultimate.page-boot');
 
-export type BootHost = { [BOOT_KEY]?: Promise<void> };
+/**
+ * Set only while an island is waiting on a boot that has not started yet: the resolver of the
+ * promise already sitting under `BOOT_KEY`. The boot CLAIMS it (deletes it) and resolves it once
+ * the restore is done; a page whose boot never ran has it resolved by `load` instead.
+ */
+export const BOOT_RELEASE_KEY: unique symbol = Symbol.for('ultimate.page-boot.release');
+
+export type BootHost = { [BOOT_KEY]?: Promise<void>; [BOOT_RELEASE_KEY]?: () => void };
+
+/**
+ * The boot's promise, or — when an island asks FIRST on a page whose boot is still coming — a
+ * promise the boot will settle. An island can hydrate before the deferred boot script has run
+ * (the idle callback fires while the parser waits on that script), and answering "already booted"
+ * then meant a reload offline rebuilt no overlay and replayed nothing: the write looked lost.
+ * A boot is coming exactly when the document carries the scope tag (the CLI renders the boot
+ * beside it) and has not finished loading; `load` settles it if the script never ran.
+ */
+export function bootedPromise(): Promise<void> {
+  const host = globalThis as BootHost;
+  const started = host[BOOT_KEY];
+  if (started !== undefined) return started;
+  if (!bootComing()) return Promise.resolve();
+  let release: () => void = () => undefined;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  Object.defineProperty(host, BOOT_KEY, { value: waiting, configurable: true });
+  Object.defineProperty(host, BOOT_RELEASE_KEY, { value: release, configurable: true });
+  addEventListener(
+    'load',
+    () => {
+      // Still unclaimed after every deferred script ran: this page's boot is not coming.
+      if (host[BOOT_RELEASE_KEY] !== release) return;
+      Reflect.deleteProperty(host, BOOT_RELEASE_KEY);
+      release();
+    },
+    { once: true },
+  );
+  return waiting;
+}
+
+function bootComing(): boolean {
+  if (typeof document === 'undefined' || typeof addEventListener !== 'function') return false;
+  if (document.readyState === 'complete') return false;
+  // A partial `document` (a component test's stand-in) has no query surface: no tag, no boot.
+  if (typeof document.querySelector !== 'function') return false;
+  return document.querySelector(`meta[name="${CLIENT_SCOPE_META}"]`) !== null;
+}
 
 type Host = { [KEY]?: PageRealtime };
 
@@ -61,7 +108,7 @@ export function pageRealtime(): PageRealtime {
     socket: undefined,
     writes: { pending: new Map(), failed: 0, listeners: new Set() },
     get booted(): Promise<void> {
-      return (globalThis as BootHost)[BOOT_KEY] ?? Promise.resolve();
+      return bootedPromise();
     },
   };
   Object.defineProperty(host, KEY, { value: created, configurable: true });

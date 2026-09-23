@@ -8,6 +8,13 @@
 export const CLIENT_SCOPE_META = 'ultimate-scope';
 
 /**
+ * The same scope on the RESPONSE of a private document, so a service worker — which never parses
+ * HTML — can partition its offline pages by principal. Present only where the meta is; its value
+ * is the meta's (`''` for the anonymous visitor).
+ */
+export const CLIENT_SCOPE_HEADER = 'x-ultimate-scope';
+
+/**
  * The build id the document was rendered by. `x-ultimate-build` — the same spelling as the header,
  * and the one `@ultimat3/pwa` shipped as `BUILD_ID_META`, so no shipped reader changes.
  */

@@ -7,8 +7,8 @@ import type { ClientScope } from '@ultimat3/core/page';
 import { pageClient } from '@ultimat3/core/page';
 import { pageLocalStore, scopeKey } from './local-store-idb';
 import { pageOutbox } from './page-outbox';
-import { BOOT_KEY, type BootHost, pageRealtime } from './page-store';
-import { persistedTypes, recordPersister } from './record-persister';
+import { BOOT_KEY, BOOT_RELEASE_KEY, type BootHost, pageRealtime } from './page-store';
+import { persistedTypes, type RecordPersister, recordPersister } from './record-persister';
 import type { RecordStore } from './record-store';
 
 /**
@@ -18,6 +18,7 @@ import type { RecordStore } from './record-store';
 async function restoreFromDisk(store: RecordStore, principal: Principal): Promise<void> {
   const types = persistedTypes();
   const keep = scopeKey(principal);
+  let persister: RecordPersister | undefined;
   try {
     // A sign-out by full navigation (a form post and a redirect) never calls `rescope()`, so the
     // previous principal's rows and queued writes would outlive it on disk. The boot is the one
@@ -27,7 +28,8 @@ async function restoreFromDisk(store: RecordStore, principal: Principal): Promis
     // disk; that tab keeps its records in memory and re-persists them on its next write.
     if (keep !== undefined) await (await pageLocalStore()).wipeOthers(keep);
     if (types.size > 0) {
-      await recordPersister({ store, local: await pageLocalStore(), types }).restore();
+      persister = recordPersister({ store, local: await pageLocalStore(), types });
+      await persister.restore();
     }
   } catch (error) {
     // A disk the browser refused (quota, a private window) costs the offline copy, never the page.
@@ -36,7 +38,9 @@ async function restoreFromDisk(store: RecordStore, principal: Principal): Promis
   // The outbox opens with the page, not with the first write or live hook: a reload that holds
   // neither must still replay what the previous load queued (on open, `online`, the SW's drain).
   // After the restore, so a replay settles overlays over the records it restored.
-  pageOutbox();
+  // A queued write flushes the persisted rows first, so both are on disk before a reload can come.
+  const kept = persister;
+  pageOutbox({ beforeEnqueue: kept === undefined ? undefined : () => kept.flush() });
 }
 
 type Principal = ClientScope['principal'];
@@ -51,8 +55,15 @@ export function bootPage(
 ): Promise<void> {
   const host = globalThis as BootHost;
   const started = host[BOOT_KEY];
-  if (started !== undefined) return started;
+  const waiting = host[BOOT_RELEASE_KEY];
+  // Already booting — unless what sits there is an island's placeholder, which this boot claims.
+  if (started !== undefined && waiting === undefined) return started;
+  Reflect.deleteProperty(host, BOOT_RELEASE_KEY);
   const booted = restoreFromDisk(pageRealtime().store, scope.principal);
+  if (started !== undefined && waiting !== undefined) {
+    void booted.then(waiting);
+    return started;
+  }
   Object.defineProperty(host, BOOT_KEY, { value: booted, configurable: true });
   return booted;
 }
