@@ -204,7 +204,7 @@ describe('the queue path', () => {
     expect(memory.sent).toHaveLength(0);
     // The id is the QUEUE row's, not a transport's.
     expect(result.id).not.toBe('');
-    expect(result.idempotencyKey).toMatch(/^mail:test-basic:ada@example\.test:/);
+    expect(result.idempotencyKey).toMatch(/^mail:test-basic:[0-9a-f]{32}$/);
   });
 
   test('the queued result reports every envelope recipient, cc and bcc included', async () => {

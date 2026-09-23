@@ -61,6 +61,12 @@ export interface McpPrompt {
   readonly name: string;
   readonly description: string;
   readonly arguments?: readonly McpPromptArgument[];
+  /**
+   * The prompt's TEXT, for `prompts/get`, given the arguments the client passed. An injected thunk
+   * — the `frameworkResources` pattern — so the server never learns where a prompt lives.
+   * Absent, the prompt is listed and `prompts/get` refuses it (`-32602`) rather than inventing a body.
+   */
+  readonly read?: (args: Readonly<Record<string, string>>) => Promise<string> | string;
 }
 
 export interface McpPromptArgument {
@@ -79,7 +85,13 @@ export interface McpPromptArgument {
 export function promptFromPath(path: string): McpPrompt {
   const file = path.split('/').pop() ?? path;
   const name = file.replace(/\.(md|markdown|txt|prompt)$/i, '');
-  return { name, description: `Versioned prompt artifact: ${path}` };
+  // The file IS the body, read when an agent asks for it — never cached, so an edited artifact is
+  // what the next `prompts/get` serves.
+  return {
+    name,
+    description: `Versioned prompt artifact: ${path}`,
+    read: () => Bun.file(path).text(),
+  };
 }
 
 /** Accepts either authoring form; an object is already the wire shape and passes through. */

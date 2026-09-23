@@ -12,6 +12,7 @@ import {
   loadStylesheet,
   registeredStylesheets,
   stylesFor,
+  stylesheetsRevision,
   transformTsx,
 } from './module-loader';
 
@@ -142,6 +143,17 @@ describe('loadStylesheet', () => {
   test('a stylesheet that compiles to nothing registers nothing', () => {
     loadStylesheet(SITE, '// only a comment\n');
     expect(registeredStylesheets()).toHaveLength(0);
+  });
+
+  // `x dev`: a stylesheet emptied by an edit kept serving the rules it had before, because an
+  // empty compile skipped the registration and left the old entry in place.
+  test('a stylesheet emptied by an edit stops serving its old rules', () => {
+    loadStylesheet(SITE, '.hero{color:red}');
+    const before = stylesheetsRevision();
+    loadStylesheet(SITE, '// all rules deleted\n');
+    expect(registeredStylesheets()).toHaveLength(0);
+    expect(stylesFor('site')).not.toContain('color:red');
+    expect(stylesheetsRevision()).toBeGreaterThan(before);
   });
 });
 

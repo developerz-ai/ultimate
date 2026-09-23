@@ -35,7 +35,9 @@ export async function flushDigest<Params>(input: DigestFlush<Params>): Promise<v
   // One step for the whole append pass: appending is what a replayed attempt must NOT redo, or the
   // same event lands in the digest twice.
   const opened = await step.run(`digest:${channel.name}`, async () => {
-    const owned: string[] = [];
+    // Each owner's OWN window end: two recipients' windows need not close together, and the
+    // drain takes the window it names.
+    const owned: { readonly id: string; readonly endsAt: number }[] = [];
     let endsAt = 0;
     for (const recipient of allowed) {
       const bucket = await digest.append({
@@ -45,7 +47,7 @@ export async function flushDigest<Params>(input: DigestFlush<Params>): Promise<v
         now: ctx.now(),
       });
       if (!bucket.opened) continue;
-      owned.push(recipient.id);
+      owned.push({ id: recipient.id, endsAt: bucket.endsAt });
       endsAt = Math.max(endsAt, bucket.endsAt);
     }
     return { owned, endsAt };
@@ -58,7 +60,7 @@ export async function flushDigest<Params>(input: DigestFlush<Params>): Promise<v
   if (remaining > 0) await step.sleep(`digest-wait:${channel.name}`, remaining);
 
   const byId = new Map(allowed.map((recipient) => [recipient.id, recipient]));
-  for (const id of opened.owned) {
+  for (const { id, endsAt } of opened.owned) {
     const recipient = byId.get(id);
     if (recipient === undefined) continue;
     // Drain and send are TWO steps on purpose. The drain's result is checkpointed, so an ordinary
@@ -66,7 +68,7 @@ export async function flushDigest<Params>(input: DigestFlush<Params>): Promise<v
     // now empty. What it does not close is a process killed between the drain and its checkpoint;
     // `DigestStore.drain` says so in its own words, and a durable store can do better.
     const batch = await step.run(`digest-drain:${channel.name}:${id}`, () =>
-      digest.drain(slotFor(id)),
+      digest.drain(slotFor(id), endsAt),
     );
     if (batch.length === 0) continue;
     const events = rehydrate<Params>(batch);

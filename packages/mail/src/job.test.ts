@@ -18,7 +18,8 @@ test('the same mail, recipient and payload produce the same idempotency key', ()
   const second = mailIdempotencyKey(renderMessage(welcomeMail, PAYLOAD, TO));
 
   expect(first).toBe(second);
-  expect(first.startsWith('mail:welcome:ada@example.test:')).toBe(true);
+  // The recipients are inside the digest (plan 101, 08 j), never spelled out in the key.
+  expect(first).toMatch(/^mail:welcome:[0-9a-f]{32}$/);
 });
 
 test('a different payload produces a different idempotency key', () => {

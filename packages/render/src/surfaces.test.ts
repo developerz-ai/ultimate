@@ -93,3 +93,47 @@ describe('checkSurfaceBoundary', () => {
     expect(() => assertSurfaceBoundary(importGraph({}))).not.toThrow();
   });
 });
+
+// Plan 08 row u: `SURFACE_SPECS.mayImport` / `mayImportTypes` were read by nothing, so api → site,
+// site → api and app → site value imports classified as nothing at all. The table is the rule now.
+describe('checkSurfaceBoundary derives every edge from SURFACE_SPECS', () => {
+  const rulesOf = (
+    record: Readonly<Record<string, readonly (string | { file: string; type: boolean })[]>>,
+  ) =>
+    checkSurfaceBoundary(importGraph(record)).map((v) => `${v.rule} ${v.importer} → ${v.imported}`);
+
+  test('a value import the importer’s mayImport does not list is a violation', () => {
+    expect(
+      rulesOf({ 'api/hook/route.ts': ['site/home/copy.ts'], 'site/home/copy.ts': [] }),
+    ).toEqual(['surface-imports-surface api/hook/route.ts → site/home/copy.ts']);
+    expect(rulesOf({ 'app/a/page.tsx': ['site/b/page.tsx'], 'site/b/page.tsx': [] })).toEqual([
+      'surface-imports-surface app/a/page.tsx → site/b/page.tsx',
+    ]);
+  });
+
+  test('the pairs with a rule of their own keep it, so their codes do not move', () => {
+    expect(rulesOf({ 'app/a/page.tsx': ['api/x/route.ts'], 'api/x/route.ts': [] })).toEqual([
+      'app-imports-api-at-runtime app/a/page.tsx → api/x/route.ts',
+    ]);
+    expect(rulesOf({ 'shared/x.ts': ['app/y.ts'], 'app/y.ts': [] })).toEqual([
+      'shared-is-a-leaf shared/x.ts → app/y.ts',
+    ]);
+  });
+
+  test('a type import the table allows is clean; one it does not is a violation', () => {
+    expect(rulesOf({ 'app/a/page.tsx': [{ file: 'api/x/route.ts', type: true }] })).toEqual([]);
+    expect(rulesOf({ 'site/a/page.tsx': [{ file: 'api/x/route.ts', type: true }] })).toEqual([
+      'surface-imports-surface site/a/page.tsx → api/x/route.ts',
+    ]);
+  });
+
+  test('importing within a surface and from shared/ is always clean', () => {
+    expect(
+      rulesOf({
+        'api/a/route.ts': ['api/b/lib.ts', 'shared/x.ts'],
+        'api/b/lib.ts': [],
+        'shared/x.ts': [],
+      }),
+    ).toEqual([]);
+  });
+});

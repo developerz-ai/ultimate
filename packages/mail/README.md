@@ -34,7 +34,7 @@ delivers inline only when `{ sync: true }` is passed or no job driver is configu
 | Every colour is a token | `MAIL_TOKENS` in `layout.ts` holds light + dark hexes; templates never see a hex |
 | Every date takes an IANA zone | `options.tz`, else `ctx.tz`, else `UTC` |
 | No CR/LF in a header-bound field | checked in `renderMessage` and again in `sendMailJob`, so every driver refuses the same message (`X_MAIL_HEADER_INVALID`). `mime.ts` keeps its own gate for the headers the SMTP transport mints itself |
-| Sending is a job | `retry: { attempts: 5, backoff: 'exponential' }`, idempotency key derived from `(mailId, recipients, hash(rendered))`, or `(mailId, your key)` when you pass one — a caller's key is scoped to its mail so two templates cannot dedupe each other away |
+| Sending is a job | `retry: { attempts: 5, backoff: 'exponential' }`, idempotency key `mail:<mailId>:<hash(recipients + rendered)>` — 128 bits, ASCII, under Resend's 256-character limit at any recipient count — or `(mailId, your key)` when you pass one (digested if it is not a short ASCII token) — a caller's key is scoped to its mail so two templates cannot dedupe each other away |
 
 ## Drivers
 
@@ -126,6 +126,15 @@ Translating them = shipping `mail.*` keys in an app catalog. Never edit a templa
 | `X_MAIL_HEADER_INVALID` | strip CR/LF from the interpolated value before it reaches a header |
 | `X_MAIL_ADDRESS_INVALID` | pass a bare `addr-spec` — an envelope address may hold no control character and no `<`/`>` |
 | `X_MAIL_SEND_FAILED` | the `cause` names the stage, the provider's status and whether a retry can help — and so does `error.retry`, which is what `sendMailJob` acts on: `terminal` dead-letters a 550 or a rejected credential at attempt 1 instead of sending it four more times |
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `MailError` | any `MailErrorCode` — `MAIL_ERROR_CODES` | `src/errors.ts` |
 
 ## Commands
 

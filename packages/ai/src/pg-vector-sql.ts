@@ -192,6 +192,19 @@ order by f.score desc, d."id" asc
 limit ${args.k}`;
 }
 
+/** Every row the scope and `filter` admit, except the ids in `keep` — a re-index's cleanup. */
+export function pruneSql(
+  target: PgVectorTable,
+  scope: VectorScope,
+  filter: MetadataFilter,
+  keep: readonly string[],
+): SqlFragment {
+  const kept =
+    keep.length === 0 ? ALWAYS : sql`"id" not in (${join(keep.map((id) => sql`${id}`))})`;
+  return sql`delete from ${identifier(target.table)}
+where ${kept} and ${conditionsSql(scope, filter)}`;
+}
+
 export function deleteSql(
   target: PgVectorTable,
   scope: VectorScope,

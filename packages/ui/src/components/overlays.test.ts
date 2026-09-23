@@ -169,9 +169,16 @@ describe('the modal overlays', () => {
           const element = fakeDialog();
           attachRef(dialogNode, element);
 
+          fire(dialogNode, 'onPointerDown', { target: { not: 'the dialog' } });
           fire(dialogNode, 'onClick', { target: { not: 'the dialog' } });
           expect(closed).toBe(0);
 
+          // A drag-select begun in the panel and released on the backdrop is not a dismissal.
+          fire(dialogNode, 'onPointerDown', { target: { not: 'the dialog' } });
+          fire(dialogNode, 'onClick', { target: element });
+          expect(closed).toBe(0);
+
+          fire(dialogNode, 'onPointerDown', { target: element });
           fire(dialogNode, 'onClick', { target: element });
           expect(closed).toBe(1);
         } finally {

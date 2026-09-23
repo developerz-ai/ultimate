@@ -30,7 +30,7 @@ export function diffChannels(
       changes.push({
         kind: 'breaking',
         path: `${path}.policy`,
-        detail: `policy ${channel.policy ?? 'none'} -> ${next.policy ?? 'none'}`,
+        detail: `policy ${channel.policy} -> ${next.policy}`,
       });
     }
     changes.push(...diffPermissions(path, channel, next));

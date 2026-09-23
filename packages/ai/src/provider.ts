@@ -102,7 +102,13 @@ export type StopReason =
   | 'stop_sequence'
   | 'tool_use'
   | 'pause_turn'
-  | 'refusal';
+  | 'refusal'
+  /** The prompt plus the answer outgrew the model's context window: cut off, like `max_tokens`. */
+  | 'model_context_window_exceeded';
+
+/** Whether an answer was CUT OFF — never parse one of these as a complete answer. */
+export const isTruncated = (reason: StopReason): boolean =>
+  reason === 'max_tokens' || reason === 'model_context_window_exceeded';
 
 /**
  * Why a refusal happened. Only ever present when `stopReason` is `refusal`, and `category` is

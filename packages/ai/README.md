@@ -270,7 +270,7 @@ summarize.contract();    // the contract tests
 | `budget` | reserved against the worst case **before** the provider is reached — nothing spent, nothing truncated |
 | `cache.semantic` | one store per scope, keyed by embedding; a prompt version bump reaches a different store, so the bump *is* the invalidation. `scope` receives `{ input, ctx }` and **defaults to the calling actor** — the narrowest key, `@ultimat3/query`'s `readAuthority` rule; a shared store is `scope: () => 'global'`, written down |
 | `policy` | the same object every surface evaluates — an MCP call and an HTTP call are denied identically |
-| `vars` | the one declared place a model call loads data, so a reader can see what was sent — and the one place a redactor sees it, and where a `Secret` is refused |
+| `vars` | the declared place an `llm()` call loads data, so a reader can see what was sent — the redactor sees it (and every `agent()` tool result), and a `Secret` is refused here |
 
 ### Streaming is the same action
 
@@ -466,8 +466,9 @@ an action with no name reaches no route, no tool catalogue and no queue.
 
 ## Redaction: one declared seam
 
-`vars()` is the one place a model call loads data, so it is the one place anything can sit between
-the row and a third-party endpoint.
+A model call loads data in two places — `vars()`, and in an `agent()` the RESULT of every tool it
+runs — and the redactor sits on both, between the row and a third-party endpoint. It sat on
+`vars()` alone until 2026-09-23, so an agent's tool results left the process unredacted.
 
 ```ts
 configureAi({ gateway, redact: (text) => scrubPatientIdentifiers(text) });
@@ -654,3 +655,36 @@ fail-closed `terminal` default.
 | `X_VECTOR_DIM_MISMATCH` | a vector's length disagrees with the store |
 | `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave the tenant it was bound to |
 | `X_NOT_IMPLEMENTED` | a remote driver with no key or transport; the fix names the env var |
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `AgentMaxTurnsError` | `X_AGENT_MAX_TURNS` | `src/errors.ts` |
+| `AgentToolUnexposedError` | `X_AGENT_TOOL_UNEXPOSED` | `src/errors.ts` |
+| `AiBudgetExceededError` | `X_AI_BUDGET_EXCEEDED` | `src/errors.ts` |
+| `AiGatewayMissingError` | `X_AI_GATEWAY_MISSING` | `src/errors.ts` |
+| `AiKeyMissingError` | `X_AI_KEY_MISSING` | `src/errors.ts` |
+| `AiModelUnknownError` | `X_AI_MODEL_UNKNOWN` | `src/errors.ts` |
+| `AiPromptRenderError` | `X_AI_PROMPT_VERSION` | `src/errors.ts` |
+| `AiPromptSecretError` | `X_AI_PROMPT_SECRET` | `src/errors.ts` |
+| `AiPromptVersionError` | `X_AI_PROMPT_VERSION` | `src/errors.ts` |
+| `AiProviderUnavailableError` | `X_AI_PROVIDER_UNAVAILABLE` | `src/errors.ts` |
+| `AiRequestInvalidError` | `X_AI_REQUEST_INVALID` | `src/errors.ts` |
+| `AiTransportError` | `X_AI_PROVIDER_UNAVAILABLE` | `src/errors.ts` |
+| `EmbedderDimMismatchError` | `X_VECTOR_DIM_MISMATCH` | `src/errors.ts` |
+| `EvalBaselineInvalidError` | `X_EVAL_BASELINE_INVALID` | `src/eval-errors.ts` |
+| `EvalBaselineMissingError` | `X_EVAL_BASELINE_MISSING` | `src/eval-errors.ts` |
+| `EvalMissingError` | `X_EVAL_MISSING` | `src/eval-errors.ts` |
+| `EvalRecordingError` | `X_EVAL_RECORDING` | `src/eval-errors.ts` |
+| `EvalThresholdError` | `X_EVAL_THRESHOLD` | `src/eval-errors.ts` |
+| `HiveEmptyError` | `X_HIVE_EMPTY` | `src/hive-errors.ts` |
+| `LlmOutputInvalidError` | `X_LLM_OUTPUT_INVALID` | `src/errors.ts` |
+| `LlmRefusedError` | `X_LLM_REFUSED` | `src/errors.ts` |
+| `LlmStreamInvalidError` | `X_LLM_STREAM_INVALID` | `src/errors.ts` |
+| `LlmTruncatedError` | `X_LLM_TRUNCATED` | `src/errors.ts` |
+| `VectorDimMismatchError` | `X_VECTOR_DIM_MISMATCH` | `src/errors.ts` |
+| `VectorScopeWidenedError` | `X_VECTOR_SCOPE_WIDENED` | `src/errors.ts` |

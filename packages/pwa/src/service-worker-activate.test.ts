@@ -116,3 +116,37 @@ describe('a streamed response through the worker', () => {
     },
   );
 });
+
+/**
+ * Stale-while-revalidate answers from cache and refreshes in the background. The refresh used to
+ * call `waitUntil` only once its fetch came back — AFTER `respondWith` had settled with the hit —
+ * which a browser refuses (`InvalidStateError`), so the worker could be killed mid-refresh and the
+ * copy never land. The extension has to be taken while the event is still live.
+ */
+describe('a stale-while-revalidate refresh keeps its event alive', () => {
+  test('waitUntil is called before the cached answer is returned, never after', async () => {
+    const routes: readonly PwaRoute[] = [
+      { path: '/about', surface: 'site', mode: 'isr', offline: 'runtime' },
+    ];
+    const sw = swHarness();
+    sw.load(generateServiceWorker(routes, config, 'build-1').source);
+    await sw.request('/about');
+
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    sw.answerWith((request) =>
+      request.url.endsWith('/about')
+        ? (gate.then(() => new Response('fresh')) as unknown as Response)
+        : undefined,
+    );
+    const hit = await sw.respond('/about');
+    expect(await hit.text()).toBe('bytes for /about');
+    release();
+    // The refresh lands on its own schedule; give it every tick it needs before reading.
+    await Bun.sleep(10);
+    await sw.settled();
+    expect(sw.lateWaitUntil).toEqual([]);
+  });
+});

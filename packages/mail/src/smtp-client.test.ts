@@ -61,6 +61,15 @@ class ScriptedStream implements SmtpStream {
     return Promise.resolve();
   }
 
+  /** Plaintext the server sent that the client has not read yet. */
+  buffered(): boolean {
+    return this.outbox.length > 0;
+  }
+
+  protected inject(chunk: string): void {
+    this.outbox.push(chunk);
+  }
+
   close(): void {
     this.closed = true;
   }
@@ -335,4 +344,40 @@ test('a reply split across several chunks is still read as one reply', async () 
   const error = await caught(smtpDeliver(dribbling, ENVELOPE, SESSION));
 
   expect(metaOf(error)['stage']).toBe('recipient');
+});
+
+// RFC 3207 §4.2: bytes a man-in-the-middle appends to the plaintext `220` were read as the
+// TLS-side EHLO reply — an injected `250 AUTH PLAIN` decided how credentials were sent, over a
+// channel the client believed was now encrypted. Anything buffered after the 220 fails closed.
+test('bytes arriving with the STARTTLS 220 refuse the session, before any upgrade', async () => {
+  const stream = new ScriptedStream([
+    [/^EHLO /, EHLO_STARTTLS],
+    [/^STARTTLS/, '220 2.0.0 Ready to start TLS\r\n250-injected\r\n250 AUTH LOGIN\r\n'],
+    ...DELIVERY,
+  ]);
+  const error = await caught(smtpDeliver(stream, ENVELOPE, { ...SESSION, secure: false }));
+  expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
+  expect(metaOf(error)['stage']).toBe('starttls');
+  expect(stream.tlsUpgrades).toBe(0);
+});
+
+/** A server whose injected bytes arrive as a SECOND plaintext chunk, still queued at the upgrade. */
+class InjectingStream extends ScriptedStream {
+  override write(data: string): Promise<void> {
+    const done = super.write(data);
+    if (/^STARTTLS/.test(data)) this.inject('250 AUTH LOGIN\r\n');
+    return done;
+  }
+}
+
+test('bytes still queued in the socket at the upgrade refuse the session too', async () => {
+  const stream = new InjectingStream([
+    [/^EHLO /, EHLO_STARTTLS],
+    [/^STARTTLS/, '220 2.0.0 Ready to start TLS\r\n'],
+    ...DELIVERY,
+  ]);
+  const error = await caught(smtpDeliver(stream, ENVELOPE, { ...SESSION, secure: false }));
+  expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
+  expect(metaOf(error)['stage']).toBe('starttls');
+  expect(stream.tlsUpgrades).toBe(0);
 });

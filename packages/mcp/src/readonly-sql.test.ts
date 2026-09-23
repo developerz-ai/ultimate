@@ -95,6 +95,28 @@ describe('assertReadOnlyQuery returns what will actually run', () => {
 });
 
 describe('assertReadOnlyQuery refuses', () => {
+  // A tag is an identifier: letters, digits after the first, `_` and non-ASCII. The scan read only
+  // `[a-z_]`, so `$a1$` was two dollars around text — and the `'` between them opened a string that
+  // HID the call Postgres runs, since Postgres reads `$a1$'$a1$` as one dollar-quoted body.
+  test.each([
+    "select $a1$'$a1$, pg_sleep(2), $a1$'$a1$",
+    "select $a1$'$a1$, pg_advisory_lock(1), $a1$'$a1$",
+    "select $é$'$é$, pg_sleep(2), $é$'$é$",
+  ])('a call between two dollar-quoted bodies with a digit or non-ASCII tag: %p', (sql) => {
+    expect(() => assertReadOnlyQuery(sql)).toThrowError(expect.objectContaining(refusal));
+  });
+
+  // `$` is legal INSIDE an identifier, so `a$b$` is one name to Postgres and never opens a body —
+  // a scan that read it as a tag hid everything up to the next `$b$`.
+  test('a `$tag$` glued to an identifier is part of the name, not a quote', () => {
+    const sql = 'select a$b$, pg_sleep(2), 1 as x$b$';
+    expect(() => assertReadOnlyQuery(sql)).toThrowError(expect.objectContaining(refusal));
+  });
+
+  test('a numbered parameter is not a tag', () => {
+    expect(assertReadOnlyQuery('select $1, $2')).toBe('select $1, $2');
+  });
+
   test('an empty statement', () => {
     expect(() => assertReadOnlyQuery('   ')).toThrowError(expect.objectContaining(refusal));
     expect(() => assertReadOnlyQuery(';;')).toThrowError(expect.objectContaining(refusal));

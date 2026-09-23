@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { renderThrowable } from '@ultimat3/core';
-import * as sass from 'sass';
+import type * as Sass from 'sass';
 import { PrerenderFailedError } from './errors';
 import { contentHash } from './render-static';
 
@@ -38,7 +38,7 @@ export function isGlobalStylesheet(file: string): boolean {
  * Sass resolves relative `@use` itself; a bare specifier is Bun's job, because `@ultimat3/ui/tokens`
  * is an `exports` entry and only the module resolver knows where that lands.
  */
-const packageImporter = (from: string): sass.FileImporter<'sync'> => ({
+const packageImporter = (from: string): Sass.FileImporter<'sync'> => ({
   findFileUrl(url: string, context: { readonly containingUrl?: URL | null }): URL | null {
     // Sass routes every load inside a file THIS importer supplied back to this importer, including
     // `_index.scss`'s own relative `@forward`s — so the filesystem lookup has to live here too, or
@@ -185,11 +185,24 @@ export function stripCharset(css: string): string {
   return css.replace(CHARSET_HEAD, '');
 }
 
+let loadedSass: typeof Sass | undefined;
+
+/**
+ * Dart Sass, loaded on the first compile and never at import: it is ~290ms of module evaluation,
+ * measured, and every process importing `@ultimat3/render/server` paid it — `x --help`, `x doctor`,
+ * a container role that renders no stylesheet. `require` and not `import()` because this function
+ * is synchronous: Bun's loader-plugin `onLoad` path in `module-loader.ts` calls it inline.
+ */
+const sassCompiler = (): typeof Sass => {
+  loadedSass ??= require('sass') as typeof Sass;
+  return loadedSass;
+};
+
 export function compileStylesheet(file: string, source: string): CompiledStylesheet {
   let css: string;
   try {
     css = stripCharset(
-      sass.compileString(source, {
+      sassCompiler().compileString(source, {
         url: pathToFileURL(file),
         loadPaths: [dirname(file)],
         importers: [packageImporter(dirname(file))],

@@ -3,9 +3,7 @@
 Tier 4. May import tier 0–3: `core schema i18n money time cache seo entity policy http action
 query jobs realtime`. **Never** `render manifest ai pwa ui admin testing cli`.
 
-`@ultimat3/http` is a DIRECT dependency since 2026-08-24 (`transport-http.ts`, the rate limiter) and
-was already a transitive one through `action` and `query` — declaring it added nothing to the
-install graph and made the edge readable.
+`@ultimat3/http` is a DIRECT dependency (`transport-http.ts`, the rate limiter).
 
 Same-tier data (routes, manifest, policy catalog) arrives as an **injected thunk**, never an
 import. The CLI wires it.
@@ -44,6 +42,11 @@ import. The CLI wires it.
   wording (`McpBodyTooLargeError`, shared with the stdio line cap; `McpProtocolError`). The
   `-32601` for a tool carries no `data` — see the next rule — so its instruction rides in the
   MESSAGE, and it is `TOOL_UNKNOWN_FIX`, the same sentence on the absent and the hidden branch.
+- **`ping` answers `{}` and `prompts/get` resolves, `As of 2026-09-23`.** Both answered `-32601`
+  while `initialize` advertised `prompts` and `prompts/list` listed them. A prompt's body is an
+  injected `read(args)` (`promptFromPath` reads its file on each call); a prompt with none, an
+  unknown name or a missing name is `-32602`. `prompts/list` sends `promptListEntry` — never the
+  object, whose reader is a function. `METHODS` and `classify` move with every new method.
 - Three outcomes, never blurred: role-hidden → `-32601` ToolNotFound with no `data`;
   scope → `-32600` `X_MCP_SCOPE_DENIED` naming the scope; policy → an `isError` result
   carrying `X_FORBIDDEN`. Swapping any two is an enumeration oracle.
@@ -75,29 +78,20 @@ import. The CLI wires it.
   lands on the result through `Object.defineProperty`, because `out[key] = v` for `__proto__` runs
   the setter on `Object.prototype` and re-prototypes the record instead of adding a key.
 - **The RESOURCE surface owes the same three outcomes as the tool surface.** `resources/list` and
-  `resources/read` take the `McpCaller`; `McpResource` carries `visibleTo` and `scope`, and
-  `ResourceRegistry.resolve` applies them in the same order `ToolRegistry.resolve` does, through the
-  same `visibleToCaller`. Both took no caller at all until 2026-08: any token `resolveToken`
-  accepted could enumerate every URI and read every document — the manifest, the OpenAPI document,
-  the route table and the entity schema, which together are an app's whole policy and data map. The
-  not-found branch answered `data.available` with the full catalog, so one wrong guess enumerated
-  it; it now carries no `data`, exactly as `tool not found` does. `resource-security.test.ts` is the
-  contract, in both halves — hand-built resources AND `defineAppMcp({ resources })`.
+  `resources/read` take the `McpCaller`; `McpResource` carries `visibleTo` and `scope`, applied by
+  `ResourceRegistry.resolve` in `ToolRegistry.resolve`'s order through the same `visibleToCaller`.
+  The not-found branch carries no `data` (a catalog there enumerates it). `resource-security.test.ts`
+  is the contract, for hand-built resources AND `defineAppMcp({ resources })`.
 - **Every provider call is inside a `try`.** A resource's `read` is an INJECTED THUNK —
   `frameworkResources` wires it to a file read, and `Bun.file(...).text()` on a missing
   `x.manifest.json` throws ENOENT. Outside the try it escaped `handle()`: `serveStdio` REJECTED with
   the raw error, zero frames written, the request unanswered and every later request on that buffer
   never processed. Same shape `toolsCall` uses — a framework error keeps its code/cause/fix, anything
   else is `-32603` with no internals.
-- **A declared `pattern` is compiled once per schema NODE, never once per `tools/call`.** A tool's
-  schema is registered at boot and validated on every call, so `new RegExp(pattern)` in `string()`
-  was per-request work over a constant — `@ultimat3/schema`'s `patternTester` already draws the
-  line in the same place for the same contract. The memo is a `WeakMap` keyed on the node, not a
-  `Map` keyed on the pattern string: a process registering tools dynamically would otherwise
-  accumulate one entry per distinct pattern forever with nothing to evict it. An uncompilable
-  pattern caches its `null` verdict too — it is the branch with the highest per-call cost.
-  `compiledPatternCount()` is the test-only probe (not in `index.ts`); a count that climbs once
-  per CALL is the memo gone, which `validate-args.test.ts` asserts over 100 calls.
+- **A declared `pattern` is compiled once per schema NODE, never per `tools/call`** — a `WeakMap`
+  keyed on the node (never on the pattern string, which grows forever), caching an uncompilable
+  pattern's `null` too. `compiledPatternCount()` is the test-only probe; `validate-args.test.ts`
+  asserts it does not climb over 100 calls.
 - **`format` is NOT in the wire subset**, and `wire.ts` types it `never` so re-adding it does not
   compile. It names a rule whose meaning lives in `@ultimat3/schema` (`uuid`, `email`,
   `iana-time-zone`), and this package cannot check it without a second definition of each that can
@@ -127,16 +121,11 @@ import. The CLI wires it.
 - A framework error rendered into a tool result is **byte-identical to
   `UltimateError.format()`** — one denial must not read one way over MCP and another in the
   terminal. `server.ts` renders it; the test pins it against `format()`, never a literal.
-- Every outcome is audited via `audit.ts`, hidden included, at `warn`. Never log arguments
-  or row data — a denial reason naming a row is a leak wearing an audit line's clothes.
-  **On both surfaces**: `mcp.tool-call.<outcome>` from `toolsCall`, `mcp.resource-read.<outcome>`
-  from `resourcesRead`, one `LEVEL` table and one field builder behind them. `resources/read`
-  emitted nothing at all until 2026-08-23, so a URI walk over the four documents that describe an
-  app's whole policy and data map left no trace while the identical walk over tool NAMES was one
-  `warn` per attempt. Two EVENTS and not one, because an alert that buckets a document read as a
-  tool call cannot tell the two walks apart. `resources/list` and `tools/list` are both silent by
-  design — each is answered pre-filtered, so it reveals only what the caller could already see.
-  `resource-security.test.ts` reads BOTH streams: core's logger puts `error` on stderr.
+- Every outcome is audited via `audit.ts`, hidden included, at `warn`. Never log arguments or row
+  data. **On both surfaces**: `mcp.tool-call.<outcome>` and `mcp.resource-read.<outcome>` — two
+  events, one `LEVEL` table, so an alert can tell a URI walk from a tool-name walk. `resources/list`
+  and `tools/list` are silent by design (answered pre-filtered). `resource-security.test.ts` reads
+  both streams: core's logger puts `error` on stderr.
 - **A tool that renders its OWN `isError` result may NAME the code it refused with**
   (`McpToolResult.code`), and `outcomeForResult` sends it through the same `outcomeForCode` a
   THROWN error goes through. Audit-only: `server.ts` never puts it on the wire, because the code is
@@ -147,13 +136,8 @@ import. The CLI wires it.
   `X_INPUT_INVALID` deliberately stays `failed`, because a projected action publishes its WHOLE
   schema and input this server already validated failing inside it means the two have drifted.
   A result naming no code keeps the conservative `policy-denied`.
-- **A `--` comment ends at the first CR *or* LF, because that is Postgres' own boundary set**
-  (`readonly-sql.ts`). `non_newline` is `[^\n\r]`, so a bare CR ends the comment for the SERVER
-  and did not for this scanner: `select 1;--\rupdate members set role='admin'` was one statement
-  with no mutating keyword to all five layer-3 checks at once — the statement split, the read-leader
-  check, the write-keyword scan, the forbidden-call scan and the `FOR UPDATE` regex all read the
-  stripped form — and `verbatim()` handed the caller's bytes back to run. `endOfLineComment` is the
-  lexer's set, never one character of it, the same shape `skipSingleQuoted` already had.
+- **A `--` comment ends at the first CR *or* LF — Postgres' own boundary set** (`readonly-sql.ts`,
+  `endOfLineComment`). A scanner stopping at LF alone read `select 1;--\rupdate …` as one read.
 - `security.test.ts` and `app-security.test.ts` are the executable contract for all of the
   above — the first over hand-built tools (each gate in isolation), the second over what an app
   actually declares (`defineAppMcp` projecting real actions and queries). Extend them, never
@@ -172,28 +156,19 @@ import. The CLI wires it.
   collects every offender before throwing, so one boot names all of them and one edit closes
   all of them. Two calls would throw on the first array and never examine the second.
 - `actions:`/`queries:` take the **real primitives** (`actions: [publishPost]`), adapted by
-  `projectable.ts` into the same `ProjectablePrimitive` the registry sweep builds. They took
-  `ProjectablePrimitive` alone until 2026-08, which no `action()` or `query()` satisfies — they
-  carry `as`/`tool`, never `run` — so listing one was a TS2741 and the only value that could
-  reach `X_MCP_TOOL_UNDECLARED` was a hand-built fake. A gate that no declaration can reach
-  refuses nothing. `ProjectablePrimitive` stays in the union for surfaces that build a catalog
-  programmatically (`@ultimat3/admin`); `isAction`/`isQuery` read each package's private
-  declaration store, so a look-alike falls through instead of borrowing `invoke`.
+  `projectable.ts` into the same `ProjectablePrimitive` the sweep builds. `ProjectablePrimitive`
+  stays in the union for programmatic catalogs (`@ultimat3/admin`); `isAction`/`isQuery` read each
+  package's private store, so a look-alike falls through.
 - The adapter is **one function with two callers**, never a copy per route: the written-out list
   and `include: 'exposed'` land on the same `run` — `invoke` for an action, `sourceFor` for a
   query. Writing a primitive out NAMES a tool; it never re-shapes or re-runs one. An action
   with no export name is `X_ACTION_UNREGISTERED` rather than a tool called `''`, which no
   `tools/call` and no `scopes:` entry could ever address.
 - **This package NAMES a tool, it never derives one.** `primitive.mcp?.name ?? primitive.name` in
-  `from-action.ts` is the whole rule, fed the verbatim export name by `projectable.ts` — a
-  transform here would be a second spelling of a name that is already an addressable identity.
-  Every surface that PUBLISHES the name owes the same string: `action.tool()`, `query.tool()`,
-  `x-ultimate.mcpTool`, `ActionDescriptor.mcp.tool`. The three action publishers snake_cased it
-  through `toToolName` until 2026-08, so a spec-reading agent called `publish_post` and got
-  `-32601` from a catalog holding `publishPost`, and nothing noticed because no test compared the
-  served name to a published one. `cross-surface.test.ts` is that comparison — it reads the
-  catalog off `tools/list` and drives a `tools/call` with the name OpenAPI published, so a
-  publisher that re-derives is a failing test and not a wiki note.
+  `from-action.ts` is the whole rule, fed the verbatim export name by `projectable.ts`. Every
+  publisher (`action.tool()`, `query.tool()`, `x-ultimate.mcpTool`, `ActionDescriptor.mcp.tool`)
+  owes the same string; `cross-surface.test.ts` drives a `tools/call` with the name OpenAPI
+  published.
 - Every boot-time refusal in `defineAppMcp` is an `UltimateError` with a code, never a bare
   throw: `X_MCP_TOOL_UNDECLARED`, `X_MCP_TOOL_UNSAFE`, `X_MCP_TOOL_DUPLICATE`,
   `X_MCP_SCOPE_UNKNOWN`, `X_MCP_SCOPE_CONFLICT`. The caller reading them is usually an agent
@@ -232,59 +207,31 @@ import. The CLI wires it.
 - `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs
   (`X_MCP_QUERY_REJECTED` / `X_MCP_NOT_BRANCH_DB` — one code each, because they want different
   next commands).
-- `pg_notify` and the server-control / replication families are banned for the reason every other
-  family is: the same ban already exists in another spelling. `notify`/`listen`/`unlisten` are
-  WRITE KEYWORDS, so `pg_notify()` is `NOTIFY` as a call the keyword scan cannot see;
-  `pg_cancel_backend`/`pg_terminate_backend` establish that server control belongs, so
-  `pg_reload_*`, `pg_rotate_*`, `pg_switch_*`, `pg_promote` and `pg_wal_replay_*` join them; and
-  `pg_logical_slot_get_changes` is `nextval`'s argument exactly — it advances a slot's confirmed
-  position, a write with no keyword that no `ROLLBACK` undoes — which brings `pg_create_*`,
-  `pg_drop_*`, `pg_replication_*` and `pg_logical_*` with it. `pg_file_*` is the writing half of
-  `pg_read_*`. `txid_current`/`pg_current_xact_id` ASSIGN a transaction id a rollback does not
-  return. The catalog VIEWS beside them (`pg_replication_slots`, `pg_stat_replication`) are read
-  `from` and never called, so the call scan never sees them.
-- Banned SQL functions are matched as a **prefix of a CALLED function name**, so the family is the
-  unit and a spelling nobody wrote down is refused rather than admitted — an exact-name list let
-  `pg_sleep_for` past a ban on `pg_sleep`, and `set_config` past `SET`, which is already a write
-  keyword. Add a family, never a name. The unit is the call (`name` before `(`), never a bare word:
-  a word scan refused a column named `pg_sleep_for_seconds`. The call scan reads a strip that KEEPS
-  quoted-identifier content, because `"pg_advisory_lock"(1)` is the same call as the bare spelling —
-  the keyword scan still reads the blanked form, so `select "update" from t` stays a column. Two of
-  the families exist because the same ban is already made elsewhere in another spelling:
-  `pg_advisory_*` is `FOR UPDATE`'s ban and the worse breach (a session lock survives layer 2's
-  `ROLLBACK`, so it outlives the read on a pooled connection — proved live in
-  `packages/testing/src/db-integration.test.ts`), and `pg_sleep*` is the one ban that still holds on
-  embedded PGlite, whose single WASM thread cannot honour a statement timeout. `nextval`/`setval`
-  are a family no keyword can reach: they advance a SEQUENCE, which is a write, and one `ROLLBACK`
-  does not undo — a consumed id is gone, so a read can burn the next id a real insert would take.
+- **Banned function families** (each is a ban already made elsewhere in another spelling):
+  `pg_notify` (= `NOTIFY`, a write keyword); server control (`pg_cancel_backend`,
+  `pg_terminate_backend`, `pg_reload_*`, `pg_rotate_*`, `pg_switch_*`, `pg_promote`,
+  `pg_wal_replay_*`); replication (`pg_logical_*`, `pg_create_*`, `pg_drop_*`, `pg_replication_*` —
+  advancing a slot is a write no `ROLLBACK` undoes); `pg_file_*`; `txid_current` /
+  `pg_current_xact_id`. Catalog VIEWS (`pg_replication_slots`) are read `from`, never called.
+- Banned SQL functions are matched as a **prefix of a CALLED function name** — add a family, never
+  a name (`pg_sleep_for` passed an exact `pg_sleep` ban). The unit is the call (`name(`), so a
+  column `pg_sleep_for_seconds` is fine; the call scan keeps quoted-identifier content
+  (`"pg_advisory_lock"(1)` is a call), the keyword scan blanks it. `pg_advisory_*` (a session lock
+  survives layer 2's `ROLLBACK`; `packages/testing/src/db-integration.test.ts`), `pg_sleep*` (the
+  one ban that holds on PGlite), `nextval`/`setval` (a consumed id is not rolled back).
 - `db.query` is defended four ways: a SELECT-only role and `BEGIN READ ONLY` in `@ultimat3/db`
   (the CLI wires them — this package must never import `db`), the parse here, and the caps here.
   `limit` is a request, never a permission: `resolveQueryLimits` clamps it into a hard 1000.
 - The caps run in the **tool**, not the host. A host that forgets them answers a million rows
   into a model's context. `guards` names the layers that engaged; a layer that could not engage
   is absent from the list, never assumed present.
-- **`MCP_RATE_LIMITS` is ENFORCED, in `handle`, and it has to be there** (2026-08-24). `limits` and
-  `rateLimitClass` were published on `McpRouteDescriptor` and read by no mount point — `x mcp serve`
-  runs `route.handle` in a bare `Bun.serve` and `defineAppMcp` hands its route to the app — so the
-  type promised 20 writes a minute while the real ceiling was Bun's accept rate: an agent looping on
-  `db.query` was never UNSAFE (the `readonly-sql` parse and `query-limits` caps hold per call) and
-  never BOUNDED. It cannot be enforced from OUTSIDE, which is why deleting the option was the wrong
-  half of the choice: `rateLimitClass(body)` takes an ALREADY-PARSED body and `handle` is the only
-  thing that parses one, so a limiter above it would have to consume the request stream first and a
-  `Request` body reads once. The maths, the `Bucket`, `toBucket`, `rateLimitKey` and the store are
-  `@ultimat3/http`'s — tier 2, a legal downward import — and **never** a second token bucket written
-  here. Metered after the parse and before dispatch; an unauthenticated caller is answered 401 first,
-  so a token nobody issued cannot spend an actor's allowance. The key is
-  `mcp:<class>|actor:<id>`, never the TOKEN: a bucket key reaches a log and an error reporter, and a
-  credential in one is a leak wearing a throttle's clothes.
-- **`X_MCP_RATE_LIMITED`, not `@ultimat3/http`'s `X_RATE_LIMITED`, and the reason is the KNOB.** The
-  enforcement is shared to the last function; only the sentence differs. `X_RATE_LIMITED`'s `fix:`
-  says to raise `rateLimit.buckets` in `app.config.ts`, which governs the HTTP pipeline and has no
-  effect on this route — an instruction that runs and changes nothing is worse than none, which is
-  the same call `@ultimat3/realtime`'s `SubscriptionLimitError` makes when it names the knob rather
-  than the default. The 429 renders `{ code, cause, fix }` plus `Retry-After`, the shape this file's
-  401 and 403 already use, never a JSON-RPC envelope: the transport refused before dispatch, so
-  there is no call to answer.
+- **`MCP_RATE_LIMITS` is ENFORCED, in `handle`, and has to be there**: `rateLimitClass(body)` needs
+  the parsed body and `handle` is the only parser (a `Request` body reads once). The bucket, store
+  and key maths are `@ultimat3/http`'s — never a second token bucket here. Metered after the parse
+  and the 401, before dispatch. Key `mcp:<class>|actor:<id>`, never the token.
+- **`X_MCP_RATE_LIMITED`, not http's `X_RATE_LIMITED`**, because the knob differs: http's `fix:`
+  names `rateLimit.buckets`, which does not govern this route. The 429 is `{ code, cause, fix }`
+  plus `Retry-After`, never a JSON-RPC envelope.
 - **A per-process store is the default and a lie for a fleet.** `mcpHttpRoute({ rateLimitStore })`
   and `defineAppMcp({ rateLimitStore })` are the seam; N replicas on the memory store enforce N x
   every number, silently and only in production. Forwarded through `defineAppMcp` deliberately —
@@ -294,13 +241,9 @@ import. The CLI wires it.
   answered `400 parse error` for a malformed payload and `401` for a well-formed one under the
   SAME rejected token, which is precisely the oracle the pre-parse 401 exists to remove. The parse
   error still exists — it is what an authenticated agent gets.
-- **`transport-stdio.ts`'s default `write` is AWAITED, and it has to be** (`As of 2026-09`). It was
-  `Bun.stdout.write(chunk)` returning `void`, so every `await write(...)` in `serveStdio` awaited
-  nothing: fd 1 is a pipe for every real peer (a local agent LAUNCHED this process), the runtime
-  queues past the buffer, and the CLI's exit threw the queue away — measured, a 4,000,236-byte
-  frame arrived as 1,388,672 bytes. The same failure `scripts/stdout-truncation.test.ts` pins for
-  `--json`, and it needs a CHILD PROCESS to see: in-process it does not exist. Awaiting it is also
-  the loop's only back-pressure.
+- **`transport-stdio.ts`'s default `write` is AWAITED** — fd 1 is a pipe, and an unawaited
+  `Bun.stdout.write` lost the tail of a 4 MB frame at exit. It is also the loop's only
+  back-pressure; only a child-process test can see it.
 - **A schema property lands through `Object.defineProperty` too** — `input-schema.ts`'s
   `narrowProperties`, the twin of `validate-args.ts`'s `put` on the schema side. `out[key] = …` for
   a property named `__proto__` runs `Object.prototype`'s setter and re-prototypes the published
@@ -320,3 +263,5 @@ import. The CLI wires it.
 bun test packages/mcp
 bun run --filter @ultimat3/mcp typecheck
 ```
+
+Why each rule above is shaped the way it is: [`docs/history/mcp.md`](../../docs/history/mcp.md).

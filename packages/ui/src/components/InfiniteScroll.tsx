@@ -10,6 +10,7 @@ import { useUi } from '../theme/context';
 import { solid } from '../theme/solid-adapter';
 import styles from './InfiniteScroll.module.scss';
 import { loadMoreState } from './infinite-scroll-view';
+import { createLoadMoreTrigger } from './load-more-trigger';
 import { Spinner } from './Spinner';
 
 /** One viewport-ish of runway, so the next page is usually there before the current one ends. */
@@ -36,6 +37,9 @@ export function InfiniteScroll(props: InfiniteScrollProps): JSX.Element {
   const rt = solid();
   let sentinel: HTMLSpanElement | undefined;
 
+  // Built once per mount; the observer reports into it and so does the `loading` edge below.
+  const trigger = createLoadMoreTrigger(() => props.onLoadMore?.());
+
   rt.createEffect(() => {
     const onLoadMore = props.onLoadMore;
     if (onLoadMore === undefined || sentinel === undefined) return;
@@ -43,12 +47,22 @@ export function InfiniteScroll(props: InfiniteScrollProps): JSX.Element {
     if (!props.hasMore || typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (props.loading !== true && entries.some((entry) => entry.isIntersecting)) onLoadMore();
+        trigger.seen(
+          entries.some((entry) => entry.isIntersecting),
+          props.loading === true,
+        );
       },
       { rootMargin: props.rootMargin ?? ROOT_MARGIN },
     );
     observer.observe(sentinel);
     rt.onCleanup(() => observer.disconnect());
+  });
+
+  // A page that loaded without pushing the sentinel out of view gets no new intersection report,
+  // so the loading edge re-asks — the list stalled here with its runway still showing.
+  rt.createEffect(() => {
+    const loading = props.loading === true;
+    if (props.hasMore) trigger.settled(loading);
   });
 
   const onClick = (event: MouseEvent): void => {

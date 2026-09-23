@@ -82,6 +82,13 @@ export function swHarness() {
   const messages: unknown[] = [];
   const windows: string[] = [];
   const extended: Promise<unknown>[] = [];
+  /**
+   * `waitUntil` calls a real browser REFUSES: after the fetch event's `respondWith` settled with no
+   * extension still pending, `waitUntil` throws `InvalidStateError` and the worker may be killed
+   * with the work unfinished. This harness used to accept it, so a strategy extending its event too
+   * late passed every test. Recorded here AND thrown, as the browser throws.
+   */
+  const lateWaitUntil: string[] = [];
   let offline = false;
   let respond: ((request: Request) => Response | undefined) | undefined;
   const fetcher = async (request: Request | string): Promise<Response> => {
@@ -177,12 +184,24 @@ export function swHarness() {
       });
       await work;
     },
+    lateWaitUntil,
     /** The response, as the page receives it — the cache copy is NOT awaited, see `settled`. */
     async respond(path: string): Promise<Response> {
       let answer: Promise<Response> | undefined;
+      let finished = false;
+      let pending = 0;
+      const done = (): void => {
+        pending -= 1;
+      };
       listeners.get('fetch')?.({
         request: new SwRequest(path),
         waitUntil: (p) => {
+          if (finished && pending === 0) {
+            lateWaitUntil.push(path);
+            throw new DOMException('the event handler is already finished', 'InvalidStateError');
+          }
+          pending += 1;
+          p.then(done, done);
           extended.push(p);
         },
         respondWith: (p) => {
@@ -190,7 +209,9 @@ export function swHarness() {
         },
       });
       if (answer === undefined) expect.unreachable(`no handler answered ${path}`);
-      return await answer;
+      const response = await answer;
+      finished = true;
+      return response;
     },
     /** Every `waitUntil` the worker has extended its events with, settled — the cache writes. */
     async settled(): Promise<void> {

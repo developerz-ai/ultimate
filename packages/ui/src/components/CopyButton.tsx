@@ -12,6 +12,7 @@ import { iconCopy } from '../icons/glyphs/copy';
 import { useUi } from '../theme/context';
 import { solid } from '../theme/solid-adapter';
 import styles from './CopyButton.module.scss';
+import { writeToClipboard } from './copy-write';
 import { Icon } from './Icon';
 import type { Size } from './variants';
 
@@ -36,12 +37,20 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
   const label = (): string => props.label ?? ui.t(UI_KEYS.copy);
   const copiedLabel = (): string => props.copiedLabel ?? ui.t(UI_KEYS.copied);
 
+  let reset: ReturnType<typeof setTimeout> | undefined;
+  // The "copied" timer does not outlive the button: firing a setter on an unmounted component is
+  // a write into a disposed owner.
+  rt.onCleanup(() => clearTimeout(reset));
+
   const onClick = async (): Promise<void> => {
-    // Optional chaining on both: a harness has a `navigator` with no `clipboard`, and `announce`
-    // needs a document that can find its live region.
-    await navigator.clipboard?.writeText(props.value);
+    const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
+    // "Copied" only on a write that RESOLVED: no clipboard used to show the check mark anyway, and
+    // a refused write escaped as an unhandled rejection through the `void` below.
+    if (!(await writeToClipboard(props.value, clipboard))) return;
     setCopied(true);
-    setTimeout(() => setCopied(false), COPIED_MS);
+    clearTimeout(reset);
+    reset = setTimeout(() => setCopied(false), COPIED_MS);
+    // `announce` needs a document that can find its live region.
     if (typeof document !== 'undefined' && typeof document.getElementById === 'function') {
       announce(copiedLabel());
     }

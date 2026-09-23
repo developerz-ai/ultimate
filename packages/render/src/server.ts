@@ -40,22 +40,18 @@ export { ROOT_ELEMENT_ID, renderComponent, renderToHtml } from './render-html';
 export type {
   IsrController,
   IsrControllerOptions,
-  IsrEntry,
   IsrRendered,
   IsrRenderFn,
   IsrServeResult,
-  IsrState,
-  IsrStore,
-  MemoryIsrStoreOptions,
 } from './render-isr';
 export {
   createIsrController,
-  DEFAULT_ISR_MAX_ENTRIES,
   ISR_LOCALE_PARAM,
   invalidateAndRevalidate,
   isrKey,
-  memoryIsrStore,
 } from './render-isr';
+export type { IsrEntry, IsrState, IsrStore, MemoryIsrStoreOptions } from './render-isr-store';
+export { DEFAULT_ISR_MAX_ENTRIES, memoryIsrStore } from './render-isr-store';
 export type { SsrOptions, SsrRenderFn, SsrRenderInput } from './render-ssr';
 export { renderSsr, ssrHeaders } from './render-ssr';
 export type { StaticArtifact, StaticBuildOptions, StaticRenderFn } from './render-static';

@@ -93,6 +93,15 @@ describe('unit · the parse is zoned too, not just the format', () => {
     }
   });
 
+  // BREAKING (22.0.0): only ISO-8601 shapes. `'August 14, 2026 09:00'` and `'8/14/2026'` were not
+  // "ISO-shaped", so the old guard let them through to `new Date`, which read them in the host zone.
+  test.each(['August 14, 2026 09:00', '8/14/2026', 'Fri Aug 14 2026', '12'])(
+    'a non-ISO string %p is refused, as t.date refuses it',
+    (value) => {
+      expect(() => toDate(value)).toThrow();
+    },
+  );
+
   test('Z, an offset, a date-only string, a Date and epoch millis all still parse', () => {
     expect(toDate('2026-08-14T09:00:00.000Z').toISOString()).toBe('2026-08-14T09:00:00.000Z');
     expect(toDate('2026-08-14T09:00+02:00').toISOString()).toBe('2026-08-14T07:00:00.000Z');

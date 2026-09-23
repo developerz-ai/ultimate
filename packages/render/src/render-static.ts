@@ -8,12 +8,13 @@ import { renderThrowable, useContext } from '@ultimat3/core';
 import { PrerenderFailedError, RouteModeInvalidError } from './errors';
 import type { RouteEntry } from './registry';
 import type { RenderResult, RouteParams } from './route';
+import { filePathOf, filledSegments, urlPathOf } from './static-path';
 
 export interface StaticArtifact {
   readonly path: string;
   readonly params: RouteParams;
   readonly html: string;
-  /** FNV-1a of the HTML. Stable across machines and across Bun versions. */
+  /** `contentHash` (xxHash32) of the HTML. Stable across machines and across Bun versions. */
   readonly hash: string;
   /** Where the file lands on disk, relative to the build output root. */
   readonly outputPath: string;
@@ -25,14 +26,15 @@ export type StaticRenderFn = (input: {
   readonly params: RouteParams;
 }) => string | Promise<string>;
 
-/** Deterministic, dependency-free 32-bit FNV-1a, hex. */
+/**
+ * xxHash32 (seed 0) of the UTF-8 bytes, 8 hex characters. Native: FNV-1a in JS measured 134 µs on a
+ * 96 kB document against 21 µs here, and every static page, ISR regeneration and CSS module hashes
+ * through it. xxHash32 is a SPECIFIED algorithm — the test pins its reference vectors — so the value
+ * is stable across machines and Bun versions, as the FNV one was. Switching was a one-time cache
+ * bust: every ETag and every scoped CSS class name changed once, in 22.0.0.
+ */
 export function contentHash(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0');
+  return Bun.hash.xxHash32(input).toString(16).padStart(8, '0');
 }
 
 /**
@@ -115,7 +117,8 @@ export async function renderStatic(
 
   const artifacts: StaticArtifact[] = [];
   for (const params of paramSets) {
-    const path = fillPath(entry.pattern.source, params);
+    const segments = filledSegments(entry.pattern.source, params);
+    const path = urlPathOf(segments);
     let html: string;
     try {
       html = await render({ path, params });
@@ -131,7 +134,7 @@ export async function renderStatic(
       params,
       html,
       hash,
-      outputPath: `${path === '/' ? '' : path}/${indexFile}`.replace(/^\/+/, ''),
+      outputPath: filePathOf(segments, indexFile),
       headers: staticHeaders(hash, options.buildId),
     });
   }
@@ -152,17 +155,11 @@ export function staticResult(artifact: StaticArtifact): RenderResult {
   return { status: 200, headers: artifact.headers, body: artifact.html };
 }
 
-/** `/blog/:slug` + `{ slug: 'hello' }` → `/blog/hello`. */
+/**
+ * `/blog/:slug` + `{ slug: 'hello' }` → `/blog/hello`, each segment percent-encoded. A missing
+ * param, a dot segment, a separator inside a `:param`, NUL, `?` and `#` are `X_PRERENDER_FAILED`
+ * (`static-path.ts`) — they wrote a `:slug` directory, or a file outside the build output.
+ */
 export function fillPath(pattern: string, params: RouteParams): string {
-  return (
-    pattern
-      .split('/')
-      .map((segment) => {
-        if (segment.startsWith(':')) return params[segment.slice(1)] ?? segment;
-        if (segment.startsWith('*')) return params[segment.slice(1)] ?? '';
-        return segment;
-      })
-      .join('/')
-      .replace(/\/+$/, '') || '/'
-  );
+  return urlPathOf(filledSegments(pattern, params));
 }

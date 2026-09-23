@@ -53,6 +53,13 @@ export interface VectorStore {
   searchText(query: string, k: number, filter?: MetadataFilter): Promise<readonly SearchHit[]>;
   hybrid(input: HybridSearchInput): Promise<readonly SearchHit[]>;
   delete(ids: readonly string[]): Promise<void>;
+  /**
+   * Delete every row `filter` matches EXCEPT the ids in `keep`, inside this store's scope. What a
+   * re-index needs: `indexDocument` upserts a document's new chunks, then prunes the ones the
+   * shorter text no longer produced. Optional so a hand-written store still satisfies the type;
+   * without it a re-index cannot clean up, and says so in `indexDocument`'s doc.
+   */
+  prune?(filter: MetadataFilter, keep: readonly string[]): Promise<void>;
 }
 
 export interface MemoryVectorStoreInput {
@@ -186,6 +193,15 @@ export class MemoryVectorStore implements VectorStore {
       this.searchText(input.query, width, input.filter),
     ]);
     return fuse([dense, lexical], rrfK).slice(0, k);
+  }
+
+  /** Scoped and filtered, exactly like `pruneSql`: everything `filter` matches but `keep`. */
+  async prune(filter: MetadataFilter, keep: readonly string[]): Promise<void> {
+    const kept = new Set(keep);
+    for (const record of this.candidates(filter)) {
+      if (kept.has(record.id)) continue;
+      for (const [key, stored] of this.records) if (stored === record) this.records.delete(key);
+    }
   }
 
   /** Scoped, exactly like the SQL `delete ... where id in (...) and <scope>`. */

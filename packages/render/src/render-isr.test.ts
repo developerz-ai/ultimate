@@ -1,8 +1,9 @@
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { CacheTag } from '@ultimat3/cache';
 import { invalidateTags, isolateGraph, resetGraph, tag } from '@ultimat3/cache';
 import { clearRoutes, describeRoutes, registerRoute } from './registry';
-import { createIsrController, isrKey, memoryIsrStore } from './render-isr';
+import { createIsrController, isrKey } from './render-isr';
+import { memoryIsrStore } from './render-isr-store';
 import type { RenderResult, RouteMetaFn } from './route';
 import { defineRoute } from './route';
 
@@ -421,28 +422,6 @@ describe('a bust that lands mid-render', () => {
   });
 });
 
-describe('memoryIsrStore eviction order', () => {
-  test('marking a page stale does not make it the newest — eviction is by generation', () => {
-    // `markStale` re-inserted through `set`, so the Map's iteration order — which IS the eviction
-    // order — put the STALEST page last. A tag bust therefore protected exactly the pages that
-    // most needed regenerating and evicted the freshest one instead.
-    const store = memoryIsrStore({ maxEntries: 2 });
-    const entry = (path: string): void =>
-      store.set({ path, html: path, hash: path, generatedAt: 0, ttlMs: null, stale: false });
-
-    entry('/a');
-    entry('/b');
-    store.markStale('/a');
-    entry('/c');
-
-    expect(store.paths()).toEqual(['/b', '/c']);
-  });
-
-  test('an in-place mark answers false for a page the store never held', () => {
-    expect(memoryIsrStore().markStale('/nothing')).toBe(false);
-  });
-});
-
 describe('isrKey', () => {
   test('a bare path carries the locale and nothing else', () => {
     expect(isrKey(new URL('https://app.test/blog'), 'en')).toBe('/blog?__x_locale=en');
@@ -475,5 +454,38 @@ describe('isrKey', () => {
     // `routePathOf` splits at the `?`; the locale rides in the query for exactly this reason —
     // a prefix would make `descriptorFor` match no route and silently drop a declared ttl.
     expect(isrKey(new URL('https://app.test/blog/hello'), 'es').split('?')[0]).toBe('/blog/hello');
+  });
+});
+
+// Every regeneration looked its route up by re-sorting the whole table and compiling a `RegExp` per
+// dynamic route. The table only changes when a route REGISTERS, so both are built once per change.
+describe('the route table an ISR lookup reads', () => {
+  test('describeRoutes answers the same array until the registry changes', () => {
+    isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
+    const first = describeRoutes();
+    expect(describeRoutes()).toBe(first);
+    isrRoute('apps/web/site/team/page.tsx', [postTag]);
+    const second = describeRoutes();
+    expect(second).not.toBe(first);
+    expect(second.map((route) => route.path)).toEqual(['/blog/:slug', '/team']);
+    clearRoutes();
+    expect(describeRoutes()).toEqual([]);
+  });
+
+  test('matchers are compiled once per table, and still match after a new route', async () => {
+    isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
+    const compiled = spyOn(globalThis, 'RegExp');
+    try {
+      const controller = createIsrController({ routes: describeRoutes });
+      const render = async (path: string): Promise<string> => `<p>${path}</p>`;
+      await controller.serve('/blog/a', render);
+      await controller.serve('/blog/b', render);
+      await controller.serve('/blog/c', render);
+      const afterThree = compiled.mock.calls.length;
+      await controller.serve('/blog/d', render);
+      expect(compiled.mock.calls.length).toBe(afterThree);
+    } finally {
+      compiled.mockRestore();
+    }
   });
 });

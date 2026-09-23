@@ -70,6 +70,14 @@ describe('contentHash', () => {
   test('returns an 8-char lowercase hex string', () => {
     expect(contentHash('anything at all')).toMatch(/^[0-9a-f]{8}$/);
   });
+
+  // The xxHash32 reference vectors (seed 0), so the value is the SPECIFIED algorithm's and not
+  // whatever a runtime happens to answer: `XXH32("") = 0x02CC5D05`, `XXH32("hello") = 0xFB0077F9`.
+  // Native, where FNV-1a in JS was 143 µs on a 96 kB document against 21 µs.
+  test('is xxHash32 over the UTF-8 bytes, pinned to the reference vectors', () => {
+    expect(contentHash('')).toBe('02cc5d05');
+    expect(contentHash('hello')).toBe('fb0077f9');
+  });
 });
 
 describe('fillPath', () => {
@@ -85,8 +93,31 @@ describe('fillPath', () => {
     expect(fillPath('/docs/*path', {})).toBe('/docs');
   });
 
-  test('a missing named param falls back to the literal :segment text', () => {
-    expect(fillPath('/blog/:slug', {})).toBe('/blog/:slug');
+  // It fell back to the literal `:slug`, and a file named `:slug/index.html` was written.
+  test('a missing named param is refused, never written as the literal :segment', () => {
+    expect(() => fillPath('/blog/:slug', {})).toThrow(PrerenderFailedError);
+  });
+
+  // `prerender()` returns app data; `'../../../../tmp/pwned'` wrote a file outside the build output.
+  test.each([
+    ['..', { slug: '..' }],
+    ['a traversal', { slug: '../../../../tmp/pwned' }],
+    ['a slash in a named param', { slug: 'a/b' }],
+    ['a NUL', { slug: 'a\u0000b' }],
+    ['a query', { slug: 'a?b' }],
+    ['a fragment', { slug: 'a#b' }],
+    ['a backslash', { slug: 'a\\b' }],
+  ])('%s is refused', (_label, params) => {
+    expect(() => fillPath('/blog/:slug', params)).toThrow(PrerenderFailedError);
+  });
+
+  test('a catch-all may carry slashes, but no dot segment', () => {
+    expect(fillPath('/docs/*path', { path: 'guides/intro' })).toBe('/docs/guides/intro');
+    expect(() => fillPath('/docs/*path', { path: 'a/../../etc' })).toThrow(PrerenderFailedError);
+  });
+
+  test('a segment needing encoding is percent-encoded in the URL', () => {
+    expect(fillPath('/blog/:slug', { slug: 'hello world' })).toBe('/blog/hello%20world');
   });
 
   test('trailing slashes are stripped', () => {
@@ -215,6 +246,21 @@ describe('renderStatic', () => {
     expect(artifacts[0]?.html).toBe('<p>/blog/hello</p>');
     expect(artifacts[0]?.hash).toBe(contentHash('<p>/blog/hello</p>'));
     expect(artifacts[0]?.outputPath).toBe('blog/hello/index.html');
+  });
+
+  test('a traversal from prerender() never becomes an output path', async () => {
+    const entry = blogRoute(async () => ['../../../../tmp/pwned']);
+    const render: StaticRenderFn = () => '<p>x</p>';
+    await expect(renderStatic(entry, render, { buildId: 'b1' })).rejects.toThrow(
+      PrerenderFailedError,
+    );
+  });
+
+  test('the file is named by the DECODED segment, the URL by the encoded one', async () => {
+    const entry = blogRoute(async () => ['hello world']);
+    const artifacts = await renderStatic(entry, () => '<p>x</p>', { buildId: 'b1' });
+    expect(artifacts[0]?.path).toBe('/blog/hello%20world');
+    expect(artifacts[0]?.outputPath).toBe('blog/hello world/index.html');
     expect(artifacts[0]?.headers).toEqual(staticHeaders(artifacts[0]?.hash ?? '', 'b1'));
   });
 

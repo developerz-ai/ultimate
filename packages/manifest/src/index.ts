@@ -16,8 +16,6 @@ export { diffManifest, formatDiff } from './diff';
 export type { DocEntry, DocEntryKind } from './docs-scan';
 export {
   headerComment,
-  parseGuideSections,
-  parseReExports,
   scanInstalledDocs,
   scanPackageDocs,
   shortName,

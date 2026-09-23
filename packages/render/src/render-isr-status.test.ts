@@ -4,7 +4,8 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { CacheTag } from '@ultimat3/cache';
 import { isolateGraph, resetGraph, tag } from '@ultimat3/cache';
 import { clearRoutes, describeRoutes, registerRoute } from './registry';
-import { createIsrController, isrKey, memoryIsrStore } from './render-isr';
+import { createIsrController, isrKey } from './render-isr';
+import { memoryIsrStore } from './render-isr-store';
 import type { RenderResult, RouteMetaFn } from './route';
 import { defineRoute } from './route';
 

@@ -19,7 +19,11 @@ import { estimateCost, estimateInputTokens, estimateTokens, totalTokens } from '
 
 /** Ceilings. An omitted scope is unlimited — declare the ones that matter. */
 export interface BudgetLimits {
-  /** Token ceiling for one `generate`/`stream` call, including its pre-flight estimate. */
+  /**
+   * Token ceiling for one call CHAIN — every `generate`/`stream` sharing a ledger, pre-flight
+   * estimates included. An `llm()` repair turn and an `agent()` turn each debit the same ledger,
+   * so this is not "one provider call" once a scope is open.
+   */
   readonly request?: number;
   /**
    * Prompt-token ceiling for ONE call. Distinct from `request`, which counts the completion

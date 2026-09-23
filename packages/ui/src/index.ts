@@ -28,7 +28,6 @@ export {
   focusableWithin,
   LIVE_REGION_LEVELS,
   liveRegionAttrs,
-  nextRovingIndex,
   resetIdCounter,
   useId,
 } from './a11y';
@@ -45,9 +44,8 @@ export { AsyncRegion } from './components/AsyncRegion';
 export type { AvatarProps } from './components/Avatar';
 export { Avatar, initialsOf } from './components/Avatar';
 export type { AccordionSection } from './components/accordion-view';
-export { accordionOpenIds } from './components/accordion-view';
 export type { ShellIds, ShellLandmark, ShellSlots } from './components/app-shell-view';
-export { shellIds, shellLandmarks } from './components/app-shell-view';
+export { shellIds } from './components/app-shell-view';
 export type {
   AsyncBranch,
   AsyncFlags,
@@ -69,7 +67,7 @@ export { Breadcrumb } from './components/Breadcrumb';
 export type { ButtonProps } from './components/Button';
 export { Button } from './components/Button';
 export type { BarRect, ChartPoint } from './components/bar-chart-view';
-export { BAR_CHART, barRects, GRID_STEPS, gridY, maxOf } from './components/bar-chart-view';
+export { barRects } from './components/bar-chart-view';
 export type { CardProps, Elevation } from './components/Card';
 export { Card } from './components/Card';
 export type { CheckboxProps } from './components/Checkbox';
@@ -83,7 +81,7 @@ export { Container } from './components/Container';
 export type { CopyButtonProps } from './components/CopyButton';
 export { COPIED_MS, CopyButton } from './components/CopyButton';
 export type { ComboboxOption } from './components/combobox-filter';
-export { COMBOBOX_LIMIT, filterOptions, normalizeQuery } from './components/combobox-filter';
+export { filterOptions, normalizeQuery } from './components/combobox-filter';
 export type { CommandPaletteItem, PaletteKeyAction } from './components/command-palette-view';
 export {
   filterItems,
@@ -130,10 +128,7 @@ export type {
   FileTarget,
 } from './components/file-input-view';
 export {
-  acceptMatches,
-  adoptDroppedFiles,
   formatBytes,
-  progressPercent,
   selectFiles,
 } from './components/file-input-view';
 export type { GridProps } from './components/Grid';
@@ -152,11 +147,10 @@ export { InfiniteScroll } from './components/InfiniteScroll';
 export type { InputProps, InputType } from './components/Input';
 export { Input } from './components/Input';
 export type { IconElement, IconGlyph, IconTag } from './components/icon-glyph';
-export { ICON_TAGS, iconElements, isIconTag } from './components/icon-glyph';
+export { ICON_TAGS, iconElements } from './components/icon-glyph';
 export type { ImageBox, ImageLoadingHints, ImageVariant } from './components/image-source';
-export { boxFor, loadingHints, ratioFor, srcsetFor } from './components/image-source';
+export { boxFor, srcsetFor } from './components/image-source';
 export type { LoadMoreInput, LoadMoreState } from './components/infinite-scroll-view';
-export { loadMoreState } from './components/infinite-scroll-view';
 export type { KbdProps } from './components/Kbd';
 export { Kbd } from './components/Kbd';
 export type { LinkProps } from './components/Link';
@@ -164,14 +158,12 @@ export { Link } from './components/Link';
 export type { LocaleSwitcherProps } from './components/LocaleSwitcher';
 export { LocaleSwitcher, localeLabel } from './components/LocaleSwitcher';
 export type { LinkTarget } from './components/link-target';
-export { linkTarget } from './components/link-target';
 export type { MenuItem, MenuProps } from './components/Menu';
 export { Menu } from './components/Menu';
 export type { MeterProps } from './components/Meter';
 export { Meter } from './components/Meter';
 export type { MoneyProps } from './components/Money';
 export { Money } from './components/Money';
-export { meterShare, meterWidth } from './components/meter-view';
 export type { MoneyFormatter, MoneyInput, MoneyViewOptions } from './components/money-view';
 // --- formatting cores (pure, renderer-free) ----------------------------------
 export { moneyText, toMoney } from './components/money-view';
@@ -190,7 +182,6 @@ export { Radio } from './components/Radio';
 export type { RelativeTimeProps } from './components/RelativeTime';
 export { RelativeTime } from './components/RelativeTime';
 export type { RelativeTimeOptions } from './components/relative-time-view';
-export { relativeTimeText } from './components/relative-time-view';
 export type { SectionProps } from './components/Section';
 export { Section } from './components/Section';
 export type { SelectOption, SelectProps } from './components/Select';
@@ -208,11 +199,10 @@ export { StatTile } from './components/StatTile';
 export type { SwitchProps } from './components/Switch';
 export { Switch } from './components/Switch';
 export type { SortDirection, SortState } from './components/sort-state';
-export { ariaSortFor, nextSortState } from './components/sort-state';
 export type { SparkPoint } from './components/sparkline-view';
-export { SPARKLINE, sparklinePath, sparkPoints } from './components/sparkline-view';
+export { sparklinePath } from './components/sparkline-view';
 export type { StatDelta, StatTrend } from './components/stat-delta';
-export { DELTA_ARROW_PATH, deltaOf } from './components/stat-delta';
+export { deltaOf } from './components/stat-delta';
 export type { TableProps } from './components/Table';
 export { Table } from './components/Table';
 export type { TabItem, TabsProps } from './components/Tabs';
@@ -269,11 +259,9 @@ export type {
 export { issuesFromRejection, issuesFromValidation } from './form/form-issue';
 export type { FormErrors, FormState, FormStatus } from './form/form-state';
 export {
-  distributeIssues,
   errorOf,
   firstInvalidField,
   IDLE_FORM_STATE,
-  messagesOf,
   NO_FORM_ERRORS,
 } from './form/form-state';
 export type { FormTouch } from './form/form-touch';
@@ -282,7 +270,6 @@ export {
   markDirty,
   markTouched,
   NO_FORM_TOUCH,
-  sameFieldValue,
 } from './form/form-touch';
 export { valuesOfForm } from './form/form-values';
 export { useForm } from './form/use-form';
@@ -319,7 +306,7 @@ export type { UiProviderProps } from './theme/provider';
 export { UiProvider } from './theme/provider';
 // The slot is its own module so that registering a runtime does not drag `errors.ts` — and with it
 // @ultimat3/core's error registry — into an island chunk. `barrel-bytes.test.ts` holds the ceiling.
-export { clearSolidRuntime, hasSolidRuntime, setSolidRuntime } from './theme/runtime-slot';
+export { hasSolidRuntime, setSolidRuntime } from './theme/runtime-slot';
 export type { Accessor, Setter, SolidContext, SolidRuntime } from './theme/solid-adapter';
 export { solid } from './theme/solid-adapter';
 export type { ThemeEnv } from './theme/theme';
@@ -349,11 +336,8 @@ export type {
 } from './toast/toast-state';
 // --- toasts: the queue behind ToastRegion ------------------------------------
 export {
-  collapsedToasts,
-  EMPTY_TOAST_QUEUE,
   TOAST_DWELL_MS,
   TOAST_MAX_VISIBLE,
-  visibleToasts,
 } from './toast/toast-state';
 export type { ToastEnv, ToastStore } from './toast/toast-store';
 export { browserToastEnv, createToastStore, INERT_TOAST_ENV } from './toast/toast-store';
@@ -362,15 +346,13 @@ export type { Channels } from './tokens/contrast';
 export {
   AA_LARGE,
   AA_TEXT,
-  CHANNELS_PATTERN,
   contrastRatio,
   meetsContrast,
-  parseChannels,
   relativeLuminance,
   roleContrast,
 } from './tokens/contrast';
 export type { ContrastPair } from './tokens/contrast-pairs';
-export { CONTRAST_PAIRS, VISIBLE_EDGE } from './tokens/contrast-pairs';
+export { CONTRAST_PAIRS } from './tokens/contrast-pairs';
 export type { ColorRole, RadiusName, Theme } from './tokens/tokens';
 // --- tokens ------------------------------------------------------------------
 export {

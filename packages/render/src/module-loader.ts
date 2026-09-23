@@ -152,6 +152,9 @@ export function transformTsx(source: string): string {
  */
 export function loadStylesheet(path: string, source: string): string {
   const compiled = compileStylesheet(path, source);
+  // An EMPTY compile unregisters: under `x dev` an edit that deleted every rule left the old entry
+  // in place, serving rules the file no longer had until the process restarted.
+  if (compiled.css.length === 0 && stylesheets.delete(path)) revision += 1;
   if (compiled.css.length > 0) {
     if (stylesheets.get(path)?.css !== compiled.css) revision += 1;
     stylesheets.set(path, {

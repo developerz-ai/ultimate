@@ -12,6 +12,7 @@ import {
   hybridSql,
   type PgHybridArgs,
   type PgVectorTable,
+  pruneSql,
   searchSql,
   textSql,
   upsertSql,
@@ -87,11 +88,15 @@ export class PgVectorStore implements VectorStore {
   async upsert(records: readonly VectorRecord[]): Promise<void> {
     if (records.length === 0) return;
     for (const record of records) this.assertDimension(record.vector.length);
+    // One row per id, the LAST one winning — what `MemoryVectorStore` answers. Postgres refuses a
+    // statement whose `on conflict do update` touches one row twice, so a batch carrying an id
+    // twice failed here and succeeded there.
+    const unique = [...new Map(records.map((record) => [record.id, record])).values()];
     await this.client().execute(
       upsertSql(
         this.target,
         tenantOf(this.scope),
-        records.map((record) => ({
+        unique.map((record) => ({
           id: record.id,
           vector: record.vector,
           text: record.text,
@@ -140,6 +145,10 @@ export class PgVectorStore implements VectorStore {
       rrfK: finiteOption(HYBRID, 'rrfK', input.rrfK ?? 60),
     };
     return this.run(hybridSql(this.target, input.query, input.vector, args));
+  }
+
+  async prune(filter: MetadataFilter, keep: readonly string[]): Promise<void> {
+    await this.client().execute(pruneSql(this.target, this.scope, filter, keep));
   }
 
   async delete(ids: readonly string[]): Promise<void> {

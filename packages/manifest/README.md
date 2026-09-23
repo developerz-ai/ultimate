@@ -150,3 +150,15 @@ never writes, and it never synthesises a sentence.
 | `X_MANIFEST_BREAKING` | contract broke with no major bump | bump the version, or restore |
 | `X_AGENTS_MD_MISSING` | no `AGENTS.md` | write one by hand |
 | `X_AGENTS_MD_TOO_LARGE` | over the byte budget | move facts to `x.manifest.json` |
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `AgentsMdMissingError` | `X_AGENTS_MD_MISSING` | `src/errors.ts` |
+| `AgentsMdTooLargeError` | `X_AGENTS_MD_TOO_LARGE` | `src/errors.ts` |
+| `ManifestBreakingError` | `X_MANIFEST_BREAKING` | `src/errors.ts` |
+| `ManifestDriftError` | `X_MANIFEST_DRIFT` | `src/errors.ts` |

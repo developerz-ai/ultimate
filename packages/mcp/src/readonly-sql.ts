@@ -344,8 +344,13 @@ function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = '
       i = end;
       continue;
     }
-    if (char === '$') {
-      const tag = /^\$[a-z_]*\$/i.exec(sql.slice(i));
+    // Glued to an identifier, `$` is part of the NAME (`a$b$` is one identifier to Postgres), so
+    // it opens nothing — `@ultimat3/db`'s `dollarTagAt` makes the same check.
+    if (char === '$' && !IDENTIFIER_CHAR.test(sql[i - 1] ?? '')) {
+      // Postgres's own tag grammar: an identifier that does not start with a digit — letters,
+      // `_`, digits after the first, and any non-ASCII character. `[a-z_]*` read `$a1$` as text,
+      // and the `'` it then saw hid a `pg_sleep` Postgres runs outside every quote.
+      const tag = DOLLAR_TAG.exec(sql.slice(i));
       if (tag !== null) {
         const marker = tag[0];
         const end = sql.indexOf(marker, i + marker.length);
@@ -365,6 +370,9 @@ function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = '
   }
   return out;
 }
+
+const IDENTIFIER_CHAR = /[A-Za-z0-9_$\u0080-\uffff]/;
+const DOLLAR_TAG = /^\$(?:[A-Za-z_\u0080-\uffff][A-Za-z0-9_\u0080-\uffff]*)?\$/;
 
 /**
  * Where a `--` comment ends: the first CR **or** LF, or the end of the input.

@@ -9,6 +9,7 @@ import {
   revealChunk,
   streamResult,
 } from './render-stream';
+import { STREAM_REVEAL_BODIES } from './stream-scripts';
 
 function deferred(): {
   promise: Promise<string>;
@@ -252,11 +253,12 @@ describe('a hole id that would break out', () => {
     expect(chunk).toContain('&quot;');
   });
 
-  test('the script argument is a JS string literal, never raw interpolation', () => {
+  // The id never reaches a script at all now: the reveal call is one constant body, so a
+  // production CSP can admit it by hash — a per-hole `$X("id")` could not be enumerated.
+  test('the id is never interpolated into a script', () => {
     const chunk = revealChunk('a");alert(1);//', '<p>x</p>');
-    expect(chunk).not.toContain('$X("x:a");alert(1);//")');
-    expect(chunk).toContain('alert(1);//');
-    expect(chunk).toContain(String.raw`$X("x:a\");alert(1);//")`);
+    expect(chunk).toContain('<script>$X()</script>');
+    expect(chunk).not.toContain('$X("');
   });
 
   test('a closing tag inside the id cannot end the script element', () => {
@@ -267,7 +269,7 @@ describe('a hole id that would break out', () => {
   test('an ordinary id still round-trips between the marker and the reveal', () => {
     expect(holeMarker('feed', 'f')).toBe('<x-hole id="x:feed">f</x-hole>');
     expect(revealChunk('feed', '<p>x</p>')).toBe(
-      '<template data-x-hole="x:feed"><p>x</p></template><script>$X("x:feed")</script>',
+      '<template data-x-hole="x:feed"><p>x</p></template><script>$X()</script>',
     );
   });
 });
@@ -293,7 +295,7 @@ describe('a hole that rejects with a value String() cannot render', () => {
     };
     const html = await collectStream(renderStreamHtml(plan, { buildId: 'b1' }));
     expect(html).toContain('data-x-hole="x:feed"');
-    expect(html).toContain('$X("x:feed")');
+    expect(html).toContain('<script>$X()</script>');
   });
 });
 
@@ -331,5 +333,38 @@ describe('a non-finite hole deadline is refused, not turned into zero', () => {
     const plan: StreamPlan = { head: '<html><body>', shell: '', holes: [] };
     expect(() => streamResult(plan, { buildId: 'b1' }, Number.NaN)).toThrow(/status/);
     expect(streamResult(plan, { buildId: 'b1' }, 404).status).toBe(404);
+  });
+});
+
+/**
+ * Every inline script a streamed document carries has to be admissible by a hash-based CSP —
+ * `render: 'stream'` gets no per-response nonce. The per-hole `$X("<id>")` call was one body per
+ * id and could never be listed, so the production policy blocked every reveal.
+ */
+describe('stream scripts are a closed, hashable set', () => {
+  test('every <script> body in a revealed stream is one of STREAM_REVEAL_BODIES', async () => {
+    const first = deferred();
+    const second = deferred();
+    const html = collectStream(
+      renderStreamHtml(
+        {
+          head: '<head></head>',
+          shell: `<body>${holeMarker('one', 'f')}${holeMarker('two', 'f')}`,
+          tail: '</body>',
+          holes: [
+            { id: 'one', fallback: 'f', resolve: () => first.promise },
+            { id: 'two', fallback: 'f', resolve: () => second.promise },
+          ],
+        } satisfies StreamPlan,
+        { buildId: 'b1' },
+      ),
+    );
+    first.resolve('<p>1</p>');
+    second.resolve('<p>2</p>');
+    const bodies = [...(await html).matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+      (match) => match[1],
+    );
+    expect(bodies.length).toBeGreaterThan(1);
+    for (const body of bodies) expect(STREAM_REVEAL_BODIES).toContain(body ?? '');
   });
 });

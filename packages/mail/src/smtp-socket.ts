@@ -66,6 +66,11 @@ class ChunkQueue {
     this.take()?.reject(error);
   }
 
+  /** Chunks received and not yet read — what `buffered()` reports after a STARTTLS 220. */
+  get size(): number {
+    return this.chunks.length;
+  }
+
   read(): Promise<string | undefined> {
     const next = this.chunks.shift();
     if (next !== undefined) return Promise.resolve(next);
@@ -233,6 +238,7 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
 
     return {
       read: () => queue.read(),
+      buffered: () => queue.size > 0,
       write: (data: string) => flush(encoder.encode(data)),
       startTls: () => {
         // Bun hands back `[raw, tls]`; every later read and write goes through the second one, and

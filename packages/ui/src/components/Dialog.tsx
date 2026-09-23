@@ -30,6 +30,9 @@ export function Dialog(props: DialogProps): JSX.Element {
   const rt = solid();
   const titleId = useId('dialog-title');
   let element: HTMLDialogElement | undefined;
+  // Where the press STARTED. A drag-select begun in the panel and released over the backdrop
+  // fires `click` on the <dialog> itself, and closed the dialog mid-selection.
+  let pressedBackdrop = false;
 
   rt.createEffect(() => {
     const dialog = element;
@@ -52,9 +55,15 @@ export function Dialog(props: DialogProps): JSX.Element {
         event.preventDefault();
         props.onClose();
       }}
+      onPointerDown={(event) => {
+        pressedBackdrop = event.target === element;
+      }}
       onClick={(event) => {
-        // A click on the backdrop lands on the <dialog> itself, never a child.
-        if (props.dismissOnBackdrop !== false && event.target === element) props.onClose();
+        // A click on the backdrop lands on the <dialog> itself, never a child — and so must the
+        // press that began it, or this is the end of a drag that started in the panel.
+        const dismiss = pressedBackdrop && event.target === element;
+        pressedBackdrop = false;
+        if (props.dismissOnBackdrop !== false && dismiss) props.onClose();
       }}
     >
       <div class={styles['panel']}>

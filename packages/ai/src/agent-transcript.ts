@@ -47,6 +47,12 @@ export function toolResultTurn(
   results: readonly LlmToolResult[],
   chars: number,
   unaccepted: readonly LlmToolCall[],
+  /**
+   * The app's `configureAi({ redact })`, run over each result BEFORE the truncation — a tool
+   * result is where an agent loads a row, and it left the process unredacted while the prompt
+   * that asked for it did not. Redacted first, so a cut never splits a match the redactor needs.
+   */
+  redact: (text: string) => string = (text) => text,
 ): AiMessage {
   return {
     role: 'user',
@@ -54,7 +60,7 @@ export function toolResultTurn(
       ...results.map((result) => ({
         type: 'tool_result' as const,
         tool_use_id: result.toolUseId,
-        content: truncate(result.content, chars),
+        content: truncate(redact(result.content), chars),
         // A denial or a failure is an outcome the model should read and react to, flagged so it
         // does not read as data.
         ...(result.isError === true ? { is_error: true } : {}),

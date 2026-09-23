@@ -30,6 +30,9 @@ export function Drawer(props: DrawerProps): JSX.Element {
   const rt = solid();
   const titleId = useId('drawer-title');
   let element: HTMLDialogElement | undefined;
+  // Where the press STARTED — the `Dialog` rule: a drag-select begun in the panel and released
+  // over the backdrop fires `click` on the <dialog> itself, and closed the drawer mid-selection.
+  let pressedBackdrop = false;
 
   rt.createEffect(() => {
     const dialog = element;
@@ -53,8 +56,13 @@ export function Drawer(props: DrawerProps): JSX.Element {
         event.preventDefault();
         props.onClose();
       }}
+      onPointerDown={(event) => {
+        pressedBackdrop = event.target === element;
+      }}
       onClick={(event) => {
-        if (event.target === element) props.onClose();
+        const dismiss = pressedBackdrop && event.target === element;
+        pressedBackdrop = false;
+        if (dismiss) props.onClose();
       }}
     >
       <div class={styles['panel']}>

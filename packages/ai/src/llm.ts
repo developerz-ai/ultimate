@@ -45,6 +45,7 @@ import type { ModelId } from './models';
 import { DEFAULT_MODEL, moreCapableThan } from './models';
 import type { Prompt, PromptVars } from './prompt';
 import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
+import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
 import { aiGateway, aiRedactor } from './runtime';
 import type { LlmTool } from './tools';
@@ -254,10 +255,15 @@ async function generate<
     // A ledger derived from the ambient one, so a per-call budget can only TIGHTEN the actor
     // and org ceilings this call runs inside, never widen them. The gateway reserves against
     // it before the provider is touched — that is where `X_AI_BUDGET_EXCEEDED` comes from.
-    const ledger = (currentBudget() ?? new BudgetLedger({ limits: {} })).derive(
-      limitsOf(def.budget),
-    );
+    // Screened first, as before: a bad declaration is refused whether or not a gateway exists.
+    const limits = limitsOf(def.budget);
+    // Rooted in the GATEWAY's own ceilings when no scope is open — an empty root ignored them.
     const gateway = aiGateway(name);
+    const ledger = (
+      currentBudget() ??
+      gateway.callLedger?.() ??
+      new BudgetLedger({ limits: {} })
+    ).derive(limits);
     const sink = currentLlmSink();
 
     return withBudget(ledger, async () => {
@@ -293,7 +299,7 @@ async function generate<
         }
         // A cut-off answer that also fails its schema is not a disagreement about the shape: the
         // ceiling is the same on the next attempt, so the repair turn is a second truncation.
-        if (result.stopReason === 'max_tokens') {
+        if (isTruncated(result.stopReason)) {
           throw new LlmTruncatedError({ prompt: name, maxTokens: request.maxTokens });
         }
         issues = formatIssues(parsed.issues).join('; ');
@@ -352,7 +358,7 @@ async function streamedAnswer<TOutput extends StandardSchemaV1>(
       explanation: result.stopDetails?.explanation,
     });
   }
-  if (result.stopReason === 'max_tokens') {
+  if (isTruncated(result.stopReason)) {
     throw new LlmTruncatedError({ prompt: name, maxTokens: request.maxTokens });
   }
   // Prose, and its JSON parse when it has one. Both, because a stream carries no `respond` tool
