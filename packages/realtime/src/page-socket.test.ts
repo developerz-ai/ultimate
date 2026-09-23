@@ -162,10 +162,14 @@ describe('pageSocket over the real in-page engine', () => {
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
     browserPage(TARGET);
     const client = pageSocket('useConnection');
-    await until(() => FakeWebSocket.opened.length > 0);
-    // The first dial is this page's: asserted by url, never by how many engines the process holds.
-    expect(FakeWebSocket.opened[0]?.url).toBe(`${TARGET.url}?build=b1`);
-    FakeWebSocket.opened[0]?.onopen?.();
+    // Found by url, never by position: an engine another file left alive in this process can
+    // redial through the swapped constructor first, and that dial is not this page's.
+    const url = `${TARGET.url}?build=b1`;
+    const mine = (): FakeWebSocket | undefined =>
+      FakeWebSocket.opened.find((socket) => socket.url === url);
+    await until(() => mine() !== undefined);
+    expect(mine()?.url).toBe(url);
+    mine()?.onopen?.();
     await until(() => client.connected);
     expect(client.connected).toBe(true);
   });
