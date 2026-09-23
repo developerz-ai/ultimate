@@ -110,6 +110,28 @@ describe('pageSocket', () => {
     expect(hosts.map((host) => host.byes)).toEqual([1]);
   });
 
+  // A page going into the back/forward cache may come back: saying bye there released the port,
+  // and the restored page dialled a port nobody read. It re-hosts on `pageshow` instead.
+  test('a bfcache pagehide keeps the host, and the restore re-hosts and redials', async () => {
+    const { hosts, openHost } = countedHosts();
+    resetPageSocket({ openHost });
+    browserPage(TARGET);
+    const client = pageSocket('useConnection');
+    await microtasks();
+    hosts[0]?.sockets[0]?.open();
+    const cached = (type: string): Event => Object.assign(new Event(type), { persisted: true });
+
+    dispatchEvent(cached('pagehide'));
+    expect(hosts.map((host) => host.byes)).toEqual([0]);
+    dispatchEvent(cached('pageshow'));
+    expect(hosts.map((host) => [host.byes, host.sockets.length])).toEqual([
+      [1, 1],
+      [0, 1],
+    ]);
+    hosts[1]?.sockets[0]?.open();
+    expect(client.connected).toBe(true);
+  });
+
   test('a new principal leaves the old host and dials exactly once on a host of its own', async () => {
     const { hosts, openHost } = countedHosts();
     resetPageSocket({ openHost });

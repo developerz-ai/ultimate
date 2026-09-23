@@ -69,21 +69,52 @@ class — stay on `.`.
 
 | Concern | Entry | Export |
 |---|---|---|
-| tier 1 | `./server` | `topic`, `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry` |
+| tier 1 | `./server` | `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry` |
 | tier 2 | `./server` | `LiveQueryRegistry`, `InMemoryChangeFeed`, `PgLogicalReplicationFeed`, `selectChangeFeed`, `createReplicator`, `PgAdvisoryLock`, `matcherFor` |
 | replication | `./server` | `parsePgUrl`, `bunPgStream`, `PgOutputDecoder`, `entityRow`, `changeLsn`, `commitPositionOf` |
+| the in-process change source | `./server` | `startLiveReplicator` — a repository's own writes as `ChangeEvent`s, for the embedded database `x dev` runs on (PGlite has no walsender). Moved from `@ultimat3/testing`, which no longer re-exports it |
 | fanout | `./server` | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
 | the bus, behind `NatsTransport` | `./server` | the port — `NatsClient`, `NatsMessage`, `NatsSubscription`, `NatsConnect`, `NatsTarget`, `parseNatsUrl` — plus `openNatsClient` (the `nats` adapter), `NatsKvSet`, `ensureKvBucket`, `kvGet`/`kvLast`/`kvWrite`, `assertBucket`, `encodeToken`/`decodeToken`, and `FakeNatsBroker`/`fakeNatsConnect` for tests |
-| reconnect | both | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `backoffDelay`, `Scheduler`, `timeoutScheduler` on `.`; `RingChangeBuffer`, `drainPlan`, `AcceptBudget`, `reconnectFrame` on `./server` — the node's half of the reconnect is the node's |
+| reconnect | both | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `Scheduler`, `timeoutScheduler` on `.`; `RingChangeBuffer`, `drainPlan`, `AcceptBudget`, `reconnectFrame` on `./server` — the node's half of the reconnect is the node's |
 | the page's record store | `.` | `RecordStore` — one record per `type:key`, synced truth plus the optimistic overlay — `recordKey`, `LocalTx`, `RowWindows`, `applyPatches`/`orderAfterPatches` |
 | the outbox | `.` | `OfflineQueue`, `MemoryQueueStore` — replayed over HTTP from plan 101 slice 12. The conflict vocabulary is `ConflictPolicy` from `@ultimat3/core`; realtime declares none |
 | wire | `.` | `PROTOCOL_VERSION` (3), `encode`, `decode`, `Frame` |
 | the node | `./server` | `createSyncNode` / `listenSyncNode` (`sync` role) |
 | a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
 | hooks | `.` | `useQuery`, `useRecord`, `useMutation`, `useMutationQueue`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
-| channels | `.` | `channel`, `topic`, `readPresence`, the channel frame types |
+| channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types |
 | offline | `.` | `pageOutbox`, `recordPersister`, `persistedTypes`, `openLocalStore`, `pageLocalStore`, `MemoryLocalStore` |
 | the socket's worker | `./sync-worker` | the SharedWorker entry — no exports |
+
+## `channelRef` — a channel an island can hold
+
+A channel has two halves, and they live in two files so a browser chunk never bundles an entity or
+a policy. `channelRef(name, { params, catchUp })` is the **client** half: the name, the ordered
+params and the catch-up read — nothing else. The server declares the records and who may join on
+**the same ref** with `channel(ref, { … })`, so the name and the params are written once.
+
+```ts
+// app/posts/channel-ref.ts — imported by islands
+import { channelRef } from '@ultimat3/realtime';
+
+export const ORG_POSTS = channelRef('org-posts', {
+  params: ['orgId'],
+  catchUp: { name: 'orgPosts' },   // the query a client re-runs on `replay-gap` or a new epoch
+});
+
+// The one topic spelling both halves use.
+ORG_POSTS.topic({ orgId: 'org_1' });   // 'org-posts.org_1'
+```
+
+The server half, in its own file, names the entity and the policy on the same ref —
+`channel(ORG_POSTS, { records: [posts], policy: feedRead })` — and an island subscribes with
+`useChannel(ORG_POSTS, { orgId })`.
+
+`ref.topic(params)` is the one spelling of the topic both halves use (`org-posts.<orgId>`), and
+`bun run channel-literals` refuses a hand-built topic anywhere else. A bad name or a repeated param
+is `X_CHANNEL_DECLARATION_INVALID` at declaration. `catchUp` is read on every access, so a query
+whose name `registerQueries()` stamps at boot is picked up. The reference app's
+[`app/posts/channel-ref.ts`](../../examples/dummy/apps/web/app/posts/channel-ref.ts) is the idiom.
 
 ## The hooks
 
@@ -288,7 +319,7 @@ sends a `reconnect` frame carrying that delay — clients redistribute instead o
 because refusing without one just moves the herd next door.
 
 The client dials itself back. A closed socket arms one timer — the node's delay when a `reconnect`
-frame assigned one, otherwise `backoffDelay()` — and that timer calls `connect()`, which re-subscribes
+frame assigned one, otherwise `@ultimat3/core`'s `backoffDelay()` on the client's `BackoffPolicy` — and that timer calls `connect()`, which re-subscribes
 every registration **and re-announces every topic**. Topic membership is state on the node's socket
 and `hello` carries none of it, so without that half a channel goes silent from the first reconnect
 onwards while its handler is still installed — and its presence membership is swept, because
@@ -337,7 +368,8 @@ wire twice by a reconnect that raced an ack.
 | Backpressure **declines**, it does not fail | over `MAX_BUFFERED_BYTES` (1 MiB, the node's `backpressureLimit` at the other end of the same socket) the sender throws `X_TRANSPORT_UNAVAILABLE`, the mutation stays pending and the next drain resumes there. `ClientSocket.bufferedAmount` is optional; a socket that does not report it is treated as never backed up |
 | Delivery is therefore at least once | every mutation carries an idempotency key — the `key` argument, or `<mutator>:<uuid>` — and the resend carries the same one |
 | A lost connection **cancels the pass it interrupted** | the lane orders passes against each other, but a socket death is not a pass and cannot reach one parked inside `send`. `requeueInflight()` bumps a connection epoch; a pass whose epoch went stale returns and leaves the rest `pending`. Without it the parked pass resumed and marked everything behind it `inflight` for a dead socket — never re-sent (`inflight` is not sendable) and never acked |
-| The store is handed a **snapshot**, never the live entries | `QueueStore.save` is a durable write and may await before it reads; given the array itself it persists a status that was never true when it was called |
+| The store is handed **snapshots, by key**, never the live entries or the whole queue | `QueueStore.write` is a durable write and may await before it reads; given an entry itself it persists a status that was never true when it was called. By key, because two tabs of one user share the store and a whole-queue save let the last tab erase the other's write |
+| One tab drains at a time, and drains what every tab queued | the outbox's replay runs under the Web Lock `ultimate-outbox:<principal>` and re-reads the queue first, so a write another tab queued is sent, in order, and a stored `inflight` from a closed page goes back to `pending` |
 
 ### Limits, stated plainly
 
@@ -491,11 +523,15 @@ wire twice by a reconnect that raced an ack.
   pg_try_advisory_lock(hashtext('x:replicator:<slot>'))` on its own session. Session-scoped, so a
   crashed replicator releases it automatically: no lease renewal, no fencing token, no split brain.
   `InMemoryAdvisoryLock` remains the single-process default for `x dev` and tests.
-- **`selectTransport(env)` decides which transport a boot fans out on** — the same law again, and
-  the only place that reads `NATS_URL`. It returns `{ transport, mode, detail, bucket,
-  presenceTtlMs, connect }`: unset → `InProcessTransport` and `mode: 'embedded'`, set → a
-  `NatsTransport` on the KV bucket `NATS_KV_BUCKET` names (default `x_presence`, so two apps on one
-  cluster do not share one presence namespace), validated here rather than on first connect.
+- **`selectTransport(env, realtime)` decides which transport a boot fans out on** — and since
+  22.0.0 the CONFIG decides it, not the environment: `realtime` is `app.config.ts`'s
+  `{ transport, urlEnv }`. It returns `{ transport, mode, detail, bucket, presenceTtlMs, connect }`:
+  `'memory'` → `InProcessTransport` and `mode: 'embedded'`; `'nats'` → a `NatsTransport` dialling
+  the variable `urlEnv` names, on the KV bucket `NATS_KV_BUCKET` names (default `x_presence`, so
+  two apps on one cluster do not share one presence namespace), validated here rather than on
+  first connect. Both mismatches refuse with `X_CONFIG_INVALID`: `'nats'` with that variable unset,
+  and `'memory'` with `NATS_URL` (or the named variable) set — an operator who set one expected
+  fanout across nodes. Until 22.0.0 `NATS_URL` alone decided and both keys were read by nothing.
   `presenceTtlMs` comes back with it because the bucket's whole-stream age limit was derived from
   it — a `PresenceRegistry` given a different number would report members leaving that never left.
   Selection is pure; `connect()` is the dial, so an unreachable bus fails at boot.
@@ -548,8 +584,9 @@ wire twice by a reconnect that raced an ack.
 `X_NOT_IMPLEMENTED` and `X_TIMEOUT` are **borrowed** from `@ultimat3/core`, which owns and titles
 them — `REALTIME_BORROWED_ERROR_CODES`. Everything else on that list is realtime's own.
 
-Topics deny by default: a topic with no matching guard is forbidden. An authz hole is not a config
-option someone forgot to set.
+Topics deny by default: a topic no `channel()` declares is forbidden, and a `channel()` with no
+`policy` is refused at declaration (`X_CHANNEL_DECLARATION_INVALID`) — a public channel writes
+`policy: allow('public')`. An authz hole is not a config option someone forgot to set.
 
 An upgrade `authenticate` refuses is `X_SOCKET_UNAUTHENTICATED` (401) and one it *could not decide*
 is `X_SOCKET_AUTH_UNAVAILABLE` (503). Two codes, because the two have opposite instructions: the
@@ -568,3 +605,32 @@ The fix is `x queries list --json`, and the name the client sent is echoed back 
 never is.
 
 `As of 2026-07`: tiers 1–2 target v1, tier 3 targets v2.
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `CursorStaleError` (extends `RealtimeError`) | `X_CURSOR_STALE` | `src/page-errors.ts` |
+| `FrameRateLimitError` (extends `RealtimeError`) | `X_FRAME_RATE_LIMIT` | `src/errors.ts` |
+| `LiveQueryUnknownError` (extends `RealtimeError`) | `X_LIVE_QUERY_UNKNOWN` | `src/errors.ts` |
+| `LiveRowUnidentifiedError` (extends `RealtimeError`) | `X_LIVE_ROW_UNIDENTIFIED` | `src/errors.ts` |
+| `NotImplementedError` (extends `RealtimeError`) | `X_NOT_IMPLEMENTED` | `src/errors.ts` |
+| `ProtocolVersionError` (extends `RealtimeError`) | `X_PROTOCOL_VERSION` | `src/page-errors.ts` |
+| `RealtimeError` | any `RealtimeErrorCode` — `REALTIME_ERROR_CODES`; the base of every other class here, thrown directly for a code none of them covers | `src/realtime-error.ts` |
+| `RealtimeUninstalledError` (extends `RealtimeError`) | `X_REALTIME_UNINSTALLED` | `src/page-errors.ts` |
+| `RebaseConflictError` (extends `RealtimeError`) | `X_REBASE_CONFLICT` | `src/page-errors.ts` |
+| `RecordRejectedError` (extends `RealtimeError`) | `X_RECORD_REJECTED` | `src/page-errors.ts` |
+| `ReplicaIdentityError` (extends `RealtimeError`) | `X_LIVE_REPLICA_IDENTITY` | `src/replication-errors.ts` |
+| `ReplicationFailedError` (extends `RealtimeError`) | `X_REPLICATION_FAILED` | `src/replication-errors.ts` |
+| `ReplicationProtocolError` (extends `RealtimeError`) | `X_REPLICATION_PROTOCOL` | `src/replication-errors.ts` |
+| `ReplicatorSlotHeldError` (extends `RealtimeError`) | `X_REPLICATOR_SLOT_HELD` | `src/replication-errors.ts` |
+| `ServerRenderLiveError` (extends `RealtimeError`) | `X_LIVE_SERVER_RENDER` | `src/page-errors.ts` |
+| `SubscriptionLimitError` (extends `RealtimeError`) | `X_SUBSCRIPTION_LIMIT` | `src/errors.ts` |
+| `SyncUnconfiguredError` (extends `RealtimeError`) | `X_SYNC_UNCONFIGURED` | `src/page-errors.ts` |
+| `TopicForbiddenError` (extends `RealtimeError`) | `X_TOPIC_FORBIDDEN` | `src/errors.ts` |
+| `TransportProtocolError` (extends `RealtimeError`) | `X_TRANSPORT_PROTOCOL` | `src/errors.ts` |
+| `TransportUnavailableError` (extends `RealtimeError`) | `X_TRANSPORT_UNAVAILABLE` | `src/errors.ts` |
+| `WindowReadTimeoutError` (extends `RealtimeError`) | `X_TIMEOUT` | `src/errors.ts` |

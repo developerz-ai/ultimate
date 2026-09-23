@@ -24,7 +24,8 @@ import type { Clock } from '@ultimat3/core';
 import { finiteOption, isUltimateError, logger, onShutdown, renderThrowable } from '@ultimat3/core';
 import { instant, nextCronOccurrence } from '@ultimat3/time';
 import { nowMs } from './clock';
-import { settleAllBy } from './drain-wait';
+import type { DrainBudget } from './drain-wait';
+import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { JobDriver } from './driver';
 import type { TaskHandle, TaskJobResult } from './task';
 import { registeredTasks } from './task';
@@ -258,43 +259,54 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
       // on a wall clock in the middle of this walk, not between rounds. See the file header for
       // what a second dispatcher costs — the occurrence key does NOT absorb it in general.
       if (!(await stillLeading())) break;
-      const last = await schedulerState.lastFiredAt(handle.name);
-      if (last === undefined) {
-        // First sight of this task: arm it, never fire retroactively for all of history.
-        await schedulerState.markFired(handle.name, nextRunFor(handle, new Date(at)).getTime() - 1);
-        continue;
-      }
-
-      const due = occurrencesSince(handle, last, at);
-      if (due.length === 0) continue;
-
-      if (handle.catchUp === 'skip') {
-        // The real latest occurrence, never `due`'s last element: that one is `maxCatchUp` steps
-        // past the watermark, and dispatching it leaves the watermark there — so the next tick
-        // found the next ten still due and fired again, until the walk reached `at`. The
-        // occurrence key stays honest (this IS the occurrence the payload is for), and the
-        // watermark `dispatch` leaves is that occurrence — nothing at or before `at` is due past it.
-        const latest = latestOccurrenceBy(handle, last, at);
-        dispatched.push(await dispatch(handle, latest, due.length > 1));
-        continue;
-      }
-      if (handle.catchUp === 'run-once') {
-        const first = due[0];
-        if (first !== undefined) {
-          dispatched.push(await dispatch(handle, first, due.length > 1));
-          // `dispatch` leaves the watermark on the occurrence it RAN — the earliest missed one
-          // here — so the next round found occurrences 2..n still due and fired the second, then
-          // the third, one per tick until the backlog drained: 24 nightly digests a second apart
-          // after a day down. "One catch-up" means the rest are DROPPED, and dropping an
-          // occurrence is moving the watermark past it. `at` rather than the last element of
-          // `due`, which `maxCatchUp` truncates: every occurrence at or before `at` is missed by
-          // definition, and this policy fires none of them.
-          if (first !== at) await schedulerState.markFired(handle.name, at);
+      // One task's failure is that task's: its `enqueue` callback, its state read or its dispatch
+      // threw, and the round used to abort there — every task after it stopped firing, in every
+      // round, until a deploy. Logged and skipped; its watermark is untouched, so it retries next
+      // round.
+      try {
+        const last = await schedulerState.lastFiredAt(handle.name);
+        if (last === undefined) {
+          // First sight of this task: arm it, never fire retroactively for all of history.
+          await schedulerState.markFired(
+            handle.name,
+            nextRunFor(handle, new Date(at)).getTime() - 1,
+          );
+          continue;
         }
-        continue;
-      }
-      for (const occurrence of due) {
-        dispatched.push(await dispatch(handle, occurrence, occurrence !== due[due.length - 1]));
+
+        const due = occurrencesSince(handle, last, at);
+        if (due.length === 0) continue;
+
+        if (handle.catchUp === 'skip') {
+          // The real latest occurrence, never `due`'s last element: that one is `maxCatchUp` steps
+          // past the watermark, and dispatching it leaves the watermark there — so the next tick
+          // found the next ten still due and fired again, until the walk reached `at`. The
+          // occurrence key stays honest (this IS the occurrence the payload is for), and the
+          // watermark `dispatch` leaves is that occurrence — nothing at or before `at` is due past it.
+          const latest = latestOccurrenceBy(handle, last, at);
+          dispatched.push(await dispatch(handle, latest, due.length > 1));
+          continue;
+        }
+        if (handle.catchUp === 'run-once') {
+          const first = due[0];
+          if (first !== undefined) {
+            dispatched.push(await dispatch(handle, first, due.length > 1));
+            // `dispatch` leaves the watermark on the occurrence it RAN — the earliest missed one
+            // here — so the next round found occurrences 2..n still due and fired the second, then
+            // the third, one per tick until the backlog drained: 24 nightly digests a second apart
+            // after a day down. "One catch-up" means the rest are DROPPED, and dropping an
+            // occurrence is moving the watermark past it. `at` rather than the last element of
+            // `due`, which `maxCatchUp` truncates: every occurrence at or before `at` is missed by
+            // definition, and this policy fires none of them.
+            if (first !== at) await schedulerState.markFired(handle.name, at);
+          }
+          continue;
+        }
+        for (const occurrence of due) {
+          dispatched.push(await dispatch(handle, occurrence, occurrence !== due[due.length - 1]));
+        }
+      } catch (error) {
+        logger.error('jobs.task.round_failed', { task: handle.name, ...failureFields(error) });
       }
     }
 
@@ -346,7 +358,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
     timer = undefined;
   };
 
-  const teardown = async (reason: string, deadlineAt?: number): Promise<void> => {
+  const teardown = async (reason: string, budget: DrainBudget): Promise<void> => {
     stopDispatching();
     logger.info('jobs.scheduler.draining', { reason, dispatching: round !== undefined });
     try {
@@ -360,7 +372,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
       // a queue that is not answering cannot be cancelled from here, and an unbounded wait is a
       // teardown that never ends — hooks never handed back, `state` never past 'draining', and the
       // memoised `stopping` every later `stop()` joins never settling.
-      const dispatched = await settleAllBy(round === undefined ? [] : [round], deadlineAt);
+      const dispatched = await settleAllBy(round === undefined ? [] : [round], budget);
       // A round we ABANDONED is a round still enqueueing, so the lock is deliberately NOT handed
       // back: promoting a standby onto an occurrence this process is mid-dispatch for is the
       // double-fire above, delivered by the shutdown. A lease row expires on its own, which is
@@ -385,16 +397,25 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
     }
   };
 
+  /** The wait a teardown may spend, tightened by every shutdown that reaches it. */
+  let budget = createDrainBudget();
+
   const stop = async (reason = 'stop', deadlineAt?: number): Promise<void> => {
     // Answered immediately once this scheduler is done: the teardown always REACHES 'stopped', so
     // a caller landing after an abandoned drain gets an answer rather than joining a promise that
     // never settles.
     if (state === 'stopped') return;
+    // Bound on EVERY call, before the join — `createDrainBudget`, the worker's rule. A manual
+    // stop waits with no deadline; a SIGTERM that lands on it joined that teardown without its
+    // own, so a round parked on a queue that is not answering held the close hook past the whole
+    // process budget. Reproduced in `scheduler-drain-budget.test.ts`.
+    if (deadlineAt !== undefined) budget.bind(deadlineAt);
     // One teardown, joined rather than repeated — the worker's rule, for the same reason: a
     // SIGTERM landing on a manual stop must wait out the same round, not release the lock a
     // second time behind it. Cleared as it settles, so a scheduler started again stops again.
-    stopping ??= teardown(reason, deadlineAt).finally(() => {
+    stopping ??= teardown(reason, budget).finally(() => {
       stopping = undefined;
+      budget = createDrainBudget();
     });
     await stopping;
   };

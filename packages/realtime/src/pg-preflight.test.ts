@@ -42,22 +42,33 @@ describe('PgLogicalReplicationFeed', () => {
     await existing.feed.stop();
   });
 
-  test('a non-logical wal_level names the exact statement that fixes it', async () => {
+  // `ALTER SYSTEM` is refused on managed and operator-run Postgres, where the setting lives in the
+  // provider's configuration — so the fix names the setting and where it goes, never that command.
+  test('a non-logical wal_level names the setting and the restart, never ALTER SYSTEM', async () => {
     const failure = await start({ script: { walLevel: 'replica' } }).catch(
       (error: unknown) => error,
     );
     expect((failure as { code?: string }).code).toBe('X_REPLICATION_FAILED');
-    expect((failure as { fix?: string }).fix).toContain("ALTER SYSTEM SET wal_level = 'logical'");
+    const fix = (failure as { fix?: string }).fix ?? '';
+    expect(fix).toContain('wal_level=logical');
+    expect(fix).toContain('restart');
+    expect(fix).not.toContain('ALTER SYSTEM');
   });
 
-  test('a missing publication and a foreign slot plugin each carry their own fix', async () => {
+  // `FOR ALL TABLES` needs a superuser, which a managed database never hands an app role; the
+  // publication an app needs is exactly its entities' tables. And streaming needs the REPLICATION
+  // role attribute, which no fix line ever named.
+  test('a missing publication is created FOR the entity tables, and names the role attribute', async () => {
     const noPublication = await start({ script: { publicationExists: false } }).catch(
       (error: unknown) => error,
     );
-    expect((noPublication as { fix?: string }).fix).toBe(
-      'CREATE PUBLICATION ultimate_pub FOR ALL TABLES;',
-    );
+    const fix = (noPublication as { fix?: string }).fix ?? '';
+    expect(fix).toStartWith('CREATE PUBLICATION ultimate_pub FOR TABLE posts;');
+    expect(fix).not.toContain('FOR ALL TABLES');
+    expect(fix).toContain('ALTER ROLE "replicator" WITH REPLICATION;');
+  });
 
+  test('a foreign slot plugin carries its own fix', async () => {
     const wrongPlugin = await start({ script: { slotPlugin: 'wal2json' } }).catch(
       (error: unknown) => error,
     );

@@ -36,6 +36,8 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_WEBHOOK_DELIVERY_REJECTED',
   'X_EXPORT_ROW_INVALID',
   'X_EXPORT_PART_TOO_LARGE',
+  'X_JOB_DECLARATION_INVALID',
+  'X_JOB_NOT_REQUEUEABLE',
 ] as const;
 
 /**
@@ -86,6 +88,8 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_WEBHOOK_DELIVERY_REJECTED: 'the endpoint refused the delivery in a way a retry cannot change',
   X_EXPORT_ROW_INVALID: 'row() answered something the declared columns do not carry',
   X_EXPORT_PART_TOO_LARGE: 'one page encoded to more bytes than a part may hold',
+  X_JOB_DECLARATION_INVALID: 'the job declaration is missing a required field',
+  X_JOB_NOT_REQUEUEABLE: 'the job is still live and cannot be requeued',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws
@@ -148,11 +152,12 @@ registerErrorRetry({
 
 /** An enqueue collided with a live job holding the same idempotency key under `onConflict: 'error'`. */
 export class JobDuplicateError extends UltimateError {
-  constructor(input: { job: string; idempotencyKey: string; existingId: string }) {
+  /** `fix` for a caller the enqueue-time instruction does not fit — a requeue, where it is moot. */
+  constructor(input: { job: string; idempotencyKey: string; existingId: string; fix?: string }) {
     super({
       code: 'X_JOB_DUPLICATE',
       cause: `job "${input.job}" already queued as ${input.existingId} with idempotencyKey "${input.idempotencyKey}"`,
-      fix: 'pass onConflict: "dedupe" to enqueue, or make idempotencyKey narrower',
+      fix: input.fix ?? 'pass onConflict: "dedupe" to enqueue, or make idempotencyKey narrower',
     });
   }
 }
@@ -320,11 +325,20 @@ export class DriverUnavailableError extends UltimateError {
  * generated code and JS callers, so the guarantee holds at both ends.
  */
 export class IdempotencyRequiredError extends UltimateError {
-  constructor(input: { job: string }) {
+  /**
+   * `positional` is a name `job()` minted from a counter (`anonymous-job-3`). Spliced into the key
+   * template it would be written into persisted idempotency keys — and it MOVES when an import is
+   * added above the declaration, so every key written before the move stops matching. The fix
+   * names the edit instead of the counter.
+   */
+  constructor(input: { job: string; positional?: boolean }) {
     super({
       code: 'X_IDEMPOTENCY_REQUIRED',
       cause: `job "${input.job}" has no idempotencyKey — at-least-once delivery would run it twice`,
-      fix: `add idempotencyKey: (input) => \`${input.job}:\${input.id}\` to the job definition`,
+      fix:
+        input.positional === true
+          ? `give the job a stable name first — job({ name: 'syncInvoices', … }), or register it in apps/web/api/index.ts so its export name is stamped — then add idempotencyKey: (input) => \`syncInvoices:\${input.id}\``
+          : `add idempotencyKey: (input) => \`${input.job}:\${input.id}\` to the job definition`,
     });
   }
 }

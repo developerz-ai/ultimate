@@ -17,7 +17,9 @@ export {
   SQL_JOB_DEAD_LETTERS,
   SQL_JOB_GET,
   SQL_JOB_LIST,
+  SQL_JOB_LIVE_HOLDER,
   SQL_JOB_REQUEUE,
+  SQL_STEPS_FROM,
 } from './driver-pg-jobs-sql';
 
 import { JOB_ROW_COLUMNS } from './driver-pg-jobs-sql';
@@ -150,14 +152,13 @@ returning id
  */
 export const SQL_STATS = `
 select queue,
-       count(*) filter (where state = 'ready' and run_at <= now())              as ready,
-       count(*) filter (where state = 'delayed'
-                           or (state = 'ready' and run_at > now()))             as delayed,
+       count(*) filter (where state in ('ready', 'delayed') and run_at <= now()) as ready,
+       count(*) filter (where state in ('ready', 'delayed') and run_at > now())  as delayed,
        count(*) filter (where state = 'running')                                as running,
        count(*) filter (where state = 'suspended')                              as suspended,
        count(*) filter (where state = 'dead')                                   as dead,
        coalesce(max(extract(epoch from now() - run_at)) filter
-         (where state = 'ready' and run_at <= now()), 0) * 1000                 as oldest_ready_ms
+         (where state in ('ready', 'delayed') and run_at <= now()), 0) * 1000   as oldest_ready_ms
   from x_jobs
  group by queue
  order by queue

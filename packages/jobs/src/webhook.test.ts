@@ -49,8 +49,18 @@ interface Harness {
 
 let sequence = 0;
 
+/** A public address the harness resolves every hostname to, unless a test says otherwise. */
+const PUBLIC_IP = '93.184.215.14';
+
 const harness = (
-  over: { endpoint?: WebhookEndpoint | null; topic?: string; disableAfter?: number } = {},
+  over: {
+    endpoint?: WebhookEndpoint | null;
+    topic?: string;
+    disableAfter?: number;
+    resolve?: (hostname: string) => Promise<readonly string[]>;
+    allowPrivate?: boolean;
+    env?: Readonly<Record<string, string | undefined>>;
+  } = {},
 ): Harness => {
   sequence += 1;
   const ledger = memoryWebhookLedger();
@@ -67,6 +77,9 @@ const harness = (
     ledger,
     clock: frozenClock(NOW_MS),
     ...(over.disableAfter === undefined ? {} : { disableAfter: over.disableAfter }),
+    resolve: over.resolve ?? (() => Promise.resolve([PUBLIC_IP])),
+    ...(over.allowPrivate === undefined ? {} : { allowPrivate: over.allowPrivate }),
+    ...(over.env === undefined ? {} : { env: over.env }),
     endpoint: () => (over.endpoint === undefined ? ENDPOINT : over.endpoint),
     event: ({ eventId }) =>
       eventId === 'evt_missing'
@@ -160,7 +173,8 @@ describe('a delivery that lands', () => {
 
     expect(one.sent).toHaveLength(1);
     const [call] = one.sent;
-    expect(call?.url).toBe(ENDPOINT.url);
+    // The approved ADDRESS, reached as the endpoint's host — pinned (`webhook-target.ts`).
+    expect(call?.url).toBe(ENDPOINT.url.replace('hooks.partner.test', PUBLIC_IP));
     expect(call?.init.method).toBe('POST');
     expect(call?.init.body).toBe('{"amount":100}');
     const headers = call?.init.headers as Record<string, string>;
@@ -379,8 +393,91 @@ describe('a delivery that can never be signed is refused before the socket opens
     }
   });
 
-  test('a plain http url is allowed, because a dev receiver is one', async () => {
-    const one = harness({ endpoint: { ...ENDPOINT, url: 'http://localhost:4000/hooks' } });
+  // A dev receiver is `http://localhost:…`, which is loopback: it needs BOTH a local environment
+  // (for `http:`) and the explicit `allowPrivate` opt-out (for the address).
+  test('a plain http dev receiver is allowed, locally and with allowPrivate', async () => {
+    const one = harness({
+      endpoint: { ...ENDPOINT, url: 'http://localhost:4000/hooks' },
+      resolve: () => Promise.resolve(['127.0.0.1']),
+      allowPrivate: true,
+      env: { ULTIMATE_ENV: 'development' },
+    });
     expect(await codeOf(() => one.run())).toBe('delivered');
+  });
+});
+
+/**
+ * A tenant-supplied URL is screened before the first byte leaves. Delivery accepted any host:
+ * loopback, RFC 1918, link-local — `169.254.169.254` is the cloud metadata service — so a customer
+ * who could register an endpoint could make the worker POST into the cluster.
+ */
+describe('an endpoint that points inside the network', () => {
+  const literals = [
+    'http://127.0.0.1/hook',
+    'https://10.0.0.1/hook',
+    'https://172.16.5.4/hook',
+    'https://192.168.1.1/hook',
+    'http://169.254.169.254/latest/meta-data',
+    'https://100.64.0.1/hook',
+    'https://0.0.0.0/hook',
+    'https://[::1]/hook',
+    'https://[fd00::1]/hook',
+    'https://[::ffff:127.0.0.1]/hook',
+  ];
+
+  for (const url of literals) {
+    test(`${url} is refused and never sent`, async () => {
+      const one = harness({ endpoint: { ...ENDPOINT, url }, env: { ULTIMATE_ENV: 'development' } });
+      expect(await codeOf(() => one.run())).toBe('X_WEBHOOK_ENDPOINT_INVALID');
+      expect(one.sent).toHaveLength(0);
+    });
+  }
+
+  test('a hostname resolving to a private address is refused — ANY one of its addresses', async () => {
+    const one = harness({ resolve: () => Promise.resolve([PUBLIC_IP, '10.0.0.5']) });
+    expect(await codeOf(() => one.run())).toBe('X_WEBHOOK_ENDPOINT_INVALID');
+    expect(one.sent).toHaveLength(0);
+  });
+
+  test('allowPrivate is the explicit opt-out for a receiver inside the network', async () => {
+    const one = harness({ resolve: () => Promise.resolve(['10.0.0.5']), allowPrivate: true });
+    expect(await codeOf(() => one.run())).toBe('delivered');
+  });
+
+  test('http: outside a local environment is refused; https: is not', async () => {
+    const production = { ULTIMATE_ENV: 'production' };
+    const plain = harness({
+      endpoint: { ...ENDPOINT, url: 'http://hooks.partner.test/in' },
+      env: production,
+    });
+    expect(await codeOf(() => plain.run())).toBe('X_WEBHOOK_ENDPOINT_INVALID');
+    expect(plain.sent).toHaveLength(0);
+    expect(await codeOf(() => harness({ env: production }).run())).toBe('delivered');
+    // No environment named at all is production — the process that forgot to say is not local.
+    const unnamed = harness({
+      endpoint: { ...ENDPOINT, url: 'http://hooks.partner.test/in' },
+      env: {},
+    });
+    expect(await codeOf(() => unnamed.run())).toBe('X_WEBHOOK_ENDPOINT_INVALID');
+  });
+
+  // Resolved once and CONNECTED to that address: a hostname that answered a public address to the
+  // screen and a private one to the socket (DNS rebinding) cannot reach past it.
+  test('the connection is pinned to the address the screen approved', async () => {
+    const one = harness();
+    expect(await codeOf(() => one.run())).toBe('delivered');
+    const sent = one.sent[0];
+    expect(new URL(sent?.url ?? '').hostname).toBe(PUBLIC_IP);
+    const init = sent?.init as (RequestInit & { tls?: { serverName?: string } }) | undefined;
+    expect((init?.headers as Record<string, string> | undefined)?.['host']).toBe(
+      'hooks.partner.test',
+    );
+    expect(init?.tls?.serverName).toBe('hooks.partner.test');
+  });
+
+  test('a name that does not resolve is a failed delivery the queue retries, not a refusal', async () => {
+    const one = harness({ resolve: () => Promise.reject(new TypeError('ENOTFOUND')) });
+    expect(await codeOf(() => one.run())).toBe('X_WEBHOOK_DELIVERY_FAILED');
+    expect(one.sent).toHaveLength(0);
   });
 });

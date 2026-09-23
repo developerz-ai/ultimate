@@ -45,17 +45,20 @@ export async function preflight(
     throw new ReplicationFailedError({
       stage: 'preflight',
       detail: `wal_level is "${walLevel?.[0] ?? 'unknown'}", so the server writes no logical WAL`,
-      fix: "ALTER SYSTEM SET wal_level = 'logical'; -- then restart postgres",
+      // Not `ALTER SYSTEM`: managed and operator-run Postgres refuse it, and the setting lives in
+      // the provider's configuration. The setting, where it goes, and that it needs a restart.
+      fix: "set wal_level=logical in the server configuration — postgresql.conf, your managed provider's database flags, or `postgres -c wal_level=logical` on a container — then restart postgres",
     });
   }
   const publications = await connection.query(
     `SELECT 1 FROM pg_publication WHERE pubname = '${publication}'`,
   );
   if (publications.length === 0) {
+    const [role] = await connection.query('SELECT current_user');
     throw new ReplicationFailedError({
       stage: 'preflight',
       detail: `no publication named "${publication}" exists`,
-      fix: `CREATE PUBLICATION ${publication} FOR ALL TABLES;`,
+      fix: publicationFix(publication, entities, role?.[0]),
     });
   }
   await warnPartialIdentity(connection, entities);
@@ -75,6 +78,25 @@ export async function preflight(
       fix: `SELECT pg_drop_replication_slot('${slot}'); -- then start the replicator again`,
     });
   }
+}
+
+/**
+ * The publication an app needs is exactly its entities' tables, and `FOR TABLE` is what an app role
+ * that owns them may create — `FOR ALL TABLES`, which this said, needs a superuser a managed
+ * database never hands out. Streaming also needs the `REPLICATION` role attribute, which no fix
+ * line named. Every name here already passed `assertIdentifier`; the role is quoted, because a
+ * role name is whatever the operator chose.
+ */
+function publicationFix(
+  publication: string,
+  entities: ReadonlySet<string>,
+  role: string | null | undefined,
+): string {
+  const tables = [...entities].sort().join(', ');
+  const create = `CREATE PUBLICATION ${publication} FOR TABLE ${tables};`;
+  const who =
+    typeof role === 'string' && role !== '' ? `"${role.replaceAll('"', '""')}"` : 'CURRENT_USER';
+  return `${create} -- and, if the role cannot stream yet: ALTER ROLE ${who} WITH REPLICATION;`;
 }
 
 /**

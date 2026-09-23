@@ -6,8 +6,10 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { presenceEvent } from './channel-presence';
+import { ChannelBook } from './client-channels';
 import { type FakeSocket, pageHarness, resetPage } from './hooks-fixture';
 import type { JsonObject } from './json';
+import { RecordStore } from './record-store';
 import { type ChannelRecordsFrame, PROTOCOL_VERSION, type SubscribeFrame } from './sync-protocol';
 import { useChannel, usePresence } from './use-channel';
 import { useRecord } from './use-record';
@@ -195,10 +197,18 @@ describe('the channel cursor', () => {
   });
 });
 
+// A failed catch-up marked the channel `live` and never retried, so the frames it held were
+// applied over a store the read never refreshed — `live`, and wrong, with nothing left to repair it.
 describe('a catch-up read that fails', () => {
-  test('is reported, and the frames held behind it still land — the channel goes live again', async () => {
+  test('is reported and exposed as failed, and retried on the next open — only then live', async () => {
     const refused = new TypeError('network down');
-    const { socket, page, errors } = pageHarness({ catchUp: () => Promise.reject(refused) });
+    let fail = true;
+    const { socket, page, errors, client } = pageHarness({
+      catchUp: async () => {
+        if (fail) throw refused;
+        page.store.adopt('posts', { p1: { id: 'p1', likes: 5 } });
+      },
+    });
     socket.open();
     const state = useChannel(orgFeed, { orgId: 'o1' });
     socket.deliver({
@@ -208,12 +218,79 @@ describe('a catch-up read that fails', () => {
       epoch: 'e1',
     });
     socket.deliver(records(1, 9));
-    expect(page.store.peek('posts', 'p1')).toBeUndefined(); // held behind the read
     await Promise.resolve();
     await Promise.resolve();
     expect(errors).toEqual([refused]);
+    expect(state()).toBe('failed');
+    // Still held: applying it over a store the read never refreshed is how the channel went wrong.
+    expect(page.store.peek('posts', 'p1')).toBeUndefined();
+
+    fail = false;
+    // The socket comes back (a redial): the read is retried on it.
+    client.connect();
+    socket.open();
+    for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
     expect(page.store.peek('posts', 'p1')?.['likes']).toBe(9);
     expect(state()).toBe('live');
+  });
+});
+
+// A `replay-gap` arriving while a catch-up read was in flight was ignored, and frames of a newer
+// epoch held during the read were discarded when it landed — a gap nothing ever repaired.
+describe('gaps during a catch-up', () => {
+  test('two gaps during one catch-up are two reads', async () => {
+    let reads = 0;
+    const finishers: (() => void)[] = [];
+    const { socket } = pageHarness({
+      catchUp: () => {
+        reads += 1;
+        return new Promise((resolve) => finishers.push(() => resolve(undefined)));
+      },
+    });
+    socket.open();
+    const state = useChannel(orgFeed, { orgId: 'o1' });
+    const gap = {
+      type: 'replay-gap',
+      v: PROTOCOL_VERSION,
+      channel: 'org-feed.o1',
+      epoch: 'e1',
+    } as const;
+    socket.deliver(gap);
+    socket.deliver(gap); // arrives during the first read
+    expect(reads).toBe(1);
+    finishers[0]?.();
+    for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+    expect(reads).toBe(2);
+    expect(state()).toBe('catching-up');
+    finishers[1]?.();
+    for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+    expect(state()).toBe('live');
+  });
+
+  test('frames of a newer epoch held during the read re-read in that epoch, and then land', async () => {
+    let reads = 0;
+    const finishers: (() => void)[] = [];
+    const { socket, page } = pageHarness({
+      catchUp: () => {
+        reads += 1;
+        return new Promise((resolve) => finishers.push(() => resolve(undefined)));
+      },
+    });
+    socket.open();
+    useChannel(orgFeed, { orgId: 'o1' });
+    socket.deliver({
+      type: 'replay-gap',
+      v: PROTOCOL_VERSION,
+      channel: 'org-feed.o1',
+      epoch: 'e1',
+    });
+    socket.deliver(records(1, 70, 'e2')); // the node restarted mid-read
+    finishers[0]?.();
+    for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+    expect(reads).toBe(2);
+    finishers[1]?.();
+    for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+    expect(page.store.peek('posts', 'p1')?.['likes']).toBe(70);
   });
 });
 
@@ -238,5 +315,37 @@ describe('usePresence', () => {
     expect(seen).toEqual([{ typing: 'b' }]);
     // Presence and the channel are one membership on the page: one subscribe frame.
     expect(channelFrames(socket).map((frame) => frame.op)).toEqual(['add']);
+  });
+});
+
+describe('a failed catch-up retries on its own', () => {
+  test('on the reconnect curve, attempt by attempt, until a read lands', async () => {
+    const armed: { attempt: number; run: () => void }[] = [];
+    let reads = 0;
+    const book = new ChannelBook({
+      store: new RecordStore(),
+      send: () => undefined,
+      connected: () => true,
+      catchUp: async () => {
+        reads += 1;
+        if (reads < 3) throw new TypeError('network down');
+      },
+      report: () => undefined,
+      retry: (attempt, run) => {
+        armed.push({ attempt, run });
+        return () => undefined;
+      },
+    });
+    const membership = book.hold(orgFeed, { orgId: 'o1' });
+    book.gap({ type: 'replay-gap', v: PROTOCOL_VERSION, channel: 'org-feed.o1', epoch: 'e1' });
+    for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+    expect(membership.state()).toBe('failed');
+    armed.at(-1)?.run();
+    for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+    armed.at(-1)?.run();
+    for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+    expect(armed.map((one) => one.attempt)).toEqual([1, 2]);
+    expect(reads).toBe(3);
+    expect(membership.state()).toBe('live');
   });
 });

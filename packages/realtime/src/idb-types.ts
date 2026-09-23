@@ -14,6 +14,7 @@ export interface IdbRequestLike<T> {
 }
 
 export interface IdbStoreLike {
+  get(key: string): IdbRequestLike<unknown>;
   put(value: unknown, key: string): IdbRequestLike<unknown>;
   delete(key: string): IdbRequestLike<unknown>;
   getAll(): IdbRequestLike<unknown[]>;
@@ -23,6 +24,12 @@ export interface IdbStoreLike {
 export interface IdbTransactionLike {
   oncomplete: (() => void) | null;
   onerror: (() => void) | null;
+  /**
+   * A transaction the browser ABORTED — a quota refusal is the ordinary one — fires `abort` and
+   * nothing else: no `complete`, and no `error` on the transaction. Unlistened, every write awaiting
+   * it hung forever.
+   */
+  onabort: (() => void) | null;
   error: unknown;
   objectStore(name: string): IdbStoreLike;
 }

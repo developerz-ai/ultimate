@@ -5,10 +5,17 @@
 import { onRescope, pageClient } from '@ultimat3/core/page';
 import { queryClientMethodFor } from '@ultimat3/query/client';
 import { LiveClient } from './client';
+import { DEFAULT_HEARTBEAT_MS } from './client-heartbeat';
 import { peekOutbox } from './outbox-slot';
 import { SyncUnconfiguredError } from './page-errors';
 import { pageRealtime } from './page-store';
-import { openHost, type SocketHost, type SocketHostOptions } from './socket-host';
+import {
+  openHost,
+  type RehostingHost,
+  rehosting,
+  type SocketHost,
+  type SocketHostOptions,
+} from './socket-host';
 import { pageSyncTarget, syncWorkerFromMeta } from './sync-meta';
 
 /** Get-or-create, and connect on creation. `hook` names the caller in the refusal. */
@@ -20,7 +27,7 @@ export function pageSocket(hook: string): LiveClient {
   // What the bootstrap passed, else what the document shell rendered into `<head>`.
   const target = page.sync ?? pageSyncTarget();
   if (target === undefined) throw new SyncUnconfiguredError({ hook });
-  let host = hostFor(pageClient().scope.principal ?? null);
+  let host = rehostingFor(pageClient().scope.principal ?? null, target.buildId);
   const client = new LiveClient({
     connect: () => host.socket(target),
     buildId: target.buildId,
@@ -46,15 +53,31 @@ export function pageSocket(hook: string): LiveClient {
   // A new principal gets its own worker — never the previous principal's socket — and redials.
   const offRescope = onRescope((next) => {
     host.bye();
-    host = hostFor(next.principal ?? null);
+    host = rehostingFor(next.principal ?? null, target.buildId);
     client.connect();
   });
-  const bye = (): void => host.bye();
+  // `bye` only for a page that is really going: a `pagehide` into the back/forward cache is a page
+  // that may come back, and one that said bye came back to a port the engine had released.
+  const bye = (event: Event): void => {
+    if (Reflect.get(event, 'persisted') !== true) host.bye();
+  };
+  // ...and a page restored from that cache re-hosts rather than trusting the port it left with.
+  const restored = (event: Event): void => {
+    if (Reflect.get(event, 'persisted') !== true) return;
+    host.rehost();
+    client.connect();
+  };
   const listens = typeof addEventListener === 'function';
-  if (listens) addEventListener('pagehide', bye);
+  if (listens) {
+    addEventListener('pagehide', bye);
+    addEventListener('pageshow', restored);
+  }
   teardowns.add(() => {
     offRescope();
-    if (listens) removeEventListener('pagehide', bye);
+    if (listens) {
+      removeEventListener('pagehide', bye);
+      removeEventListener('pageshow', restored);
+    }
     client.close();
     host.bye();
     if (page.socket === client) page.socket = undefined;
@@ -99,10 +122,18 @@ export function hasPageSocket(): boolean {
   );
 }
 
-function hostFor(scope: string | null): SocketHost {
+function hostFor(scope: string | null, buildId: string): SocketHost {
   const workerUrl =
     typeof document === 'undefined' || typeof location === 'undefined'
       ? undefined
       : syncWorkerFromMeta(document, location.href);
-  return hosts({ workerUrl, scope });
+  return hosts({ workerUrl, scope, buildId });
+}
+
+/**
+ * The host for one principal, re-made when an `open` goes unanswered for two heartbeats — a port
+ * the engine reaped, or a worker that died — rather than leaving the tab dialling a dead port.
+ */
+function rehostingFor(scope: string | null, buildId: string): RehostingHost {
+  return rehosting(() => hostFor(scope, buildId), { openTimeoutMs: 2 * DEFAULT_HEARTBEAT_MS });
 }

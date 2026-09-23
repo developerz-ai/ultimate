@@ -38,6 +38,11 @@ export interface ChannelBookDeps {
   /** Re-run the channel's catch-up read; its records land in the store through the transport. */
   catchUp(query: string, params: Readonly<Record<string, string>>): Promise<unknown>;
   report(error: unknown): void;
+  /**
+   * When a failed catch-up tries again on its own, on the client's reconnect curve. Absent, a
+   * failed read waits for the next open of the socket or the next gap.
+   */
+  readonly retry?: ((attempt: number, run: () => void) => () => void) | undefined;
 }
 
 interface Entry {
@@ -57,6 +62,17 @@ interface Entry {
   readonly above: Set<number>;
   /** Frames that arrived while the catch-up read was in flight, applied after it lands. */
   buffered: ChannelRecordsFrame[] | null;
+  /**
+   * A gap announced while a read was in flight: one more read follows it, in this epoch (or the
+   * current one when the gap named none). A flag, never a count — the `coalesceReloads` shape.
+   */
+  again: { readonly epoch: string | undefined } | null;
+  /** The read is not in flight: it failed, and waits for a retry with `buffered` still held. */
+  waiting: boolean;
+  /** Consecutive failed reads — the retry curve's attempt number. */
+  failures: number;
+  /** Disarms the scheduled retry. */
+  disarm: (() => void) | null;
 }
 
 export interface ChannelMembership extends Disposable {
@@ -97,6 +113,10 @@ export class ChannelBook {
         contiguous: null,
         above: new Set(),
         buffered: null,
+        again: null,
+        waiting: false,
+        failures: 0,
+        disarm: null,
       };
       this.#byTopic.set(topic, entry);
       if (this.#deps.connected()) this.#deps.send(this.#frame(entry, 'add', true));
@@ -110,6 +130,8 @@ export class ChannelBook {
       held.holders.delete(handlers);
       if (held.holders.size > 0) return;
       this.#byTopic.delete(topic);
+      held.disarm?.();
+      held.disarm = null;
       this.#deps.send(this.#frame(held, 'drop', false));
     };
     return {
@@ -130,6 +152,12 @@ export class ChannelBook {
   /** Every membership again, on a new socket — resuming from each cursor. */
   resubscribe(): void {
     for (const entry of this.#byTopic.values()) {
+      // A catch-up that failed retries on the new socket: the read is what it was waiting for.
+      if (entry.waiting) {
+        this.#deps.send(this.#frame(entry, 'add', true));
+        this.#read(entry);
+        continue;
+      }
       this.#set(entry, 'joining');
       this.#deps.send(this.#frame(entry, 'add', true));
     }
@@ -225,32 +253,74 @@ export class ChannelBook {
   /**
    * Re-read the channel through its catch-up query, holding every frame that arrives meanwhile;
    * then apply those, in order, over the read. The cursor restarts in the new epoch.
+   *
+   * A gap that lands DURING the read is not dropped: it earns one more read after this one (it
+   * was ignored, and the hole it announced was never repaired).
    */
   #catchUp(entry: Entry, pending: ChannelRecordsFrame[], epoch?: string): void {
     if (entry.buffered !== null) {
       entry.buffered.push(...pending);
+      if (pending.length === 0) entry.again = { epoch: epoch ?? entry.again?.epoch };
+      // No read in flight — the last one failed — so this gap is the retry, now.
+      if (entry.waiting) this.#read(entry);
       return;
     }
     entry.buffered = [...pending];
-    entry.epoch = epoch ?? pending[0]?.epoch ?? entry.epoch;
+    this.#restart(entry, epoch ?? pending[0]?.epoch ?? entry.epoch);
+    this.#read(entry);
+  }
+
+  /** The cursor, reset into `epoch`: every seq before the read is the read's to answer. */
+  #restart(entry: Entry, epoch: string | null): void {
+    entry.epoch = epoch;
     entry.contiguous = null;
     entry.above.clear();
+  }
+
+  #read(entry: Entry): void {
+    entry.waiting = false;
+    entry.error = undefined;
+    entry.disarm?.();
+    entry.disarm = null;
     this.#set(entry, 'catching-up');
     this.#deps.catchUp(entry.catchUp, entry.params).then(
       () => this.#drain(entry),
       (error: unknown) => {
         this.#deps.report(error);
-        this.#drain(entry);
+        // NOT live: the frames held behind the read would land over a store it never refreshed.
+        // Failed, the error exposed, and the frames still held for the retry — which the next
+        // open of the socket runs (`resubscribe`), or the next gap.
+        entry.waiting = true;
+        entry.error = error;
+        entry.failures += 1;
+        if (this.#byTopic.get(entry.topic) !== entry) return;
+        this.#set(entry, 'failed');
+        entry.disarm =
+          this.#deps.retry?.(entry.failures, () => {
+            entry.disarm = null;
+            if (entry.waiting && this.#byTopic.get(entry.topic) === entry) this.#read(entry);
+          }) ?? null;
       },
     );
   }
 
   #drain(entry: Entry): void {
     const held = entry.buffered ?? [];
+    // A newer epoch arrived while the read was in flight (the node restarted mid-read): the read
+    // answered for the OLD one, so it is re-read in the new one, keeping only that epoch's frames.
+    // `#drain` used to discard them, and the rows they carried with them.
+    const newer = held.find((frame) => frame.epoch !== entry.epoch);
+    if (entry.again !== null || newer !== undefined) {
+      const epoch = newer?.epoch ?? entry.again?.epoch ?? entry.epoch;
+      entry.again = null;
+      entry.buffered = held.filter((frame) => frame.epoch === epoch);
+      this.#restart(entry, epoch);
+      this.#read(entry);
+      return;
+    }
     entry.buffered = null;
-    // Frames of an epoch other than the one caught up to predate it; the read already holds them.
-    const current = held.filter((frame) => frame.epoch === entry.epoch);
-    current.sort((a, b) => a.seq - b.seq);
+    entry.failures = 0;
+    const current = [...held].sort((a, b) => a.seq - b.seq);
     for (const frame of current) {
       if (entry.contiguous === null) entry.contiguous = frame.seq - 1;
       this.#apply(entry, frame);

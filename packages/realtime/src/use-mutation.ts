@@ -134,6 +134,19 @@ export function useMutation(mutator: MutatorLike): Mutate {
       page.store.push(key, (tx) => mutator.local?.(tx, input), mutator.conflict ?? 'server-wins');
     }
     count(writes, mutator.name, 1);
+    // Older writes still wait in the outbox: this one queues BEHIND them rather than overtaking
+    // them over HTTP — a like queued offline and the unlike made once the network was back could
+    // otherwise land swapped. The replay sends the queue in order, this write last, under its key.
+    const queued = peekOutbox();
+    if (queued !== undefined && queued.pending().length > 0) {
+      try {
+        await queued.enqueue({ key, name: mutator.name, input });
+        void queued.replay().catch(() => undefined);
+        return undefined;
+      } finally {
+        count(writes, mutator.name, -1);
+      }
+    }
     let output: unknown;
     /** The records the answer carried, `type:key` — what the overlay may be settled against. */
     const carried = new Set<string>();

@@ -13,8 +13,8 @@ import { PortRouter } from './socket-routes';
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 import {
   type BackoffPolicy,
-  backoffDelay,
   browserBackoff,
+  policyDelay,
   type Rng,
   type Scheduler,
   timeoutScheduler,
@@ -250,7 +250,8 @@ export class SocketEngine {
     if (this.#reconnect !== null) return;
     const rng = this.#options.rng ?? Math.random;
     const delay =
-      afterMs ?? backoffDelay(this.#attempt, this.#options.backoff ?? browserBackoff, rng);
+      // `#attempt` counts reconnects already scheduled, from 0; the wait being armed is the next one.
+      afterMs ?? policyDelay(this.#options.backoff ?? browserBackoff, this.#attempt + 1, rng);
     this.#attempt += 1;
     this.#reconnect = this.#schedule(() => {
       this.#reconnect = null;
@@ -284,6 +285,17 @@ export class SocketEngine {
     socket?.close(1000, 'no tab left');
   }
 
+  /**
+   * A silent port, released — and TOLD first. Silent is usually a closed tab, but a hidden tab the
+   * browser throttled is silent too, and it was released without a word: its virtual socket stayed
+   * "open" over a port nobody read, and that tab's realtime was dead until a reload. Told, its
+   * client goes offline and redials, and the page re-hosts (`socket-host.ts`'s `rehosting`).
+   */
+  #reap(attached: AttachedPort): void {
+    if (attached.open) this.#post(attached, { t: 'close', code: 1006 });
+    this.#detach(attached);
+  }
+
   /** A `MessagePort` has no close event: a port silent for three beats is a closed tab. */
   #armReaper(): void {
     if (this.#reaper !== null) return;
@@ -291,7 +303,7 @@ export class SocketEngine {
       this.#reaper = null;
       const cutoff = this.#now() - REAP_AFTER_BEATS * this.#beatMs;
       for (const attached of [...this.#ports.values()]) {
-        if (attached.lastSeen < cutoff) this.#detach(attached);
+        if (attached.lastSeen < cutoff) this.#reap(attached);
       }
       if (this.#ports.size > 0) this.#armReaper();
     }, this.#beatMs);

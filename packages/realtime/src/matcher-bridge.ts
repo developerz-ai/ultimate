@@ -61,6 +61,8 @@ export function bridgeChange(
 
 /** Default derivation, used by matchers that only answer "affected" without describing the delta. */
 export function patchFromChange(change: ChangeEvent): RowPatch | null {
+  // A truncate names no row, so there is no patch — the window is re-read (`live-fanout.ts`).
+  if (change.op === 'truncate') return null;
   if (change.op === 'delete') {
     const id = change.before?.id;
     return id === undefined ? null : { op: 'delete', id, row: null, lsn: change.lsn };
@@ -81,6 +83,9 @@ export function matcherFor(live: LiveQuery, projection?: () => Projection): Incr
   return {
     entities: live.reads,
     match: (change, rows) => {
+      // Every row of a relation this query reads is gone: the window cannot be patched, only
+      // replaced. `refill` is the matcher's word for exactly that.
+      if (change.op === 'truncate') return { patches: [], refill: true };
       const row = change.after ?? change.before;
       if (!row) return NO_CHANGE;
       const patches = match<Row>(live.name, live.shape, rows, {

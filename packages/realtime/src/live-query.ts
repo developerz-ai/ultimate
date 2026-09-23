@@ -70,6 +70,7 @@ export class LiveQueryRegistry {
   readonly #maxEntries: number;
   /** What one lane needs, and nothing this class holds beyond it. */
   readonly #fanout: FanoutDeps;
+  #lastLsn = '';
   #staleChanges = 0;
 
   constructor(options: LiveQueryRegistryOptions) {
@@ -363,7 +364,17 @@ export class LiveQueryRegistry {
    * never per node — awaiting one entry before entering the next made one slow policy pass the
    * whole node's pace, and let a lane that threw skip every entry behind it with nobody desynced.
    */
+  /**
+   * The newest change position this registry has been handed. What a node's snapshot may claim
+   * (`liveQueryDefinition`'s `lsn`): a read begun after it holds at least that change, and every
+   * later change is above it. `''` before the first.
+   */
+  get lastLsn(): string {
+    return this.#lastLsn;
+  }
+
   async deliver(change: ChangeEvent): Promise<number> {
+    if (change.lsn > this.#lastLsn) this.#lastLsn = change.lsn;
     const lanes = [...this.#entries.values()].map(async (entry) => {
       try {
         const result = await entry.lock.run(() => fanoutChange(this.#fanout, entry, change));

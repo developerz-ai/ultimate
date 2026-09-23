@@ -20,8 +20,9 @@ import type {
   NackOptions,
   QueueStats,
 } from './driver';
-import { assertClaimBounds, assertClaimQueues, DEFAULT_QUEUE } from './driver';
+import { assertClaimBounds, assertClaimQueues, DEFAULT_QUEUE, REQUEUEABLE_STATES } from './driver';
 import { JobDuplicateError } from './errors';
+import { JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
 import type { LeaseStore } from './leases';
 import { createMemoryLeaseStore } from './leases';
 import type { StepStore } from './steps';
@@ -133,11 +134,30 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
         'requeue a job id returned by enqueue() or stats() — the memory driver holds no state across processes, so an id from another run will not resolve',
       );
       const record = existing;
-      if (requeueOptions?.fromStep !== undefined) {
-        // Drop the target step so it re-executes; earlier steps stay memoized.
-        await steps.del(record.runId, requeueOptions.fromStep);
+      // The two refusals `SQL_JOB_REQUEUE` and `SQL_JOB_LIVE_HOLDER` give, before anything moves.
+      if (!REQUEUEABLE_STATES.has(record.state)) {
+        throw new JobNotRequeueableError({ jobId, state: record.state });
       }
-      update(jobId, { state: 'ready', attempt: 0, runAt: nowMs(clock) });
+      const holder = liveByKey(record.name, record.idempotencyKey, record.tenantId);
+      if (holder !== undefined && holder.id !== jobId) {
+        throw requeueKeyTaken({ ...record, holderId: holder.id });
+      }
+      if (requeueOptions?.fromStep !== undefined) {
+        // The target step and every step that started AFTER it — `SQL_STEPS_FROM`, whose header
+        // says why a tie is kept. Earlier steps stay memoized; a later one replaying the old run's
+        // result is what this prevents.
+        const all = await steps.list(record.runId);
+        const target = all.find((step) => step.name === requeueOptions.fromStep);
+        if (target !== undefined) {
+          for (const step of all) {
+            if (step === target || step.startedAt > target.startedAt) {
+              await steps.del(record.runId, step.name);
+            }
+          }
+        }
+      }
+      // `settle` releases the claim — `SQL_JOB_REQUEUE` writes `claimed_by = null` too.
+      settle(jobId, { state: 'ready', attempt: 0, runAt: nowMs(clock) });
       const next = jobs.get(jobId);
       return next ?? record;
     },
@@ -306,10 +326,15 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
           oldestReadyMs: 0,
         };
         const next = { ...current };
-        if (record.state === 'ready' && record.runAt <= at) {
+        // Due is due, whatever state the row was WRITTEN in: a job enqueued `delayed` stays
+        // `delayed` once its `runAt` passes (the claim scan reads `runAt`, nothing rewrites the
+        // state), and counted by state it never reached `ready` or `oldestReadyMs` — the backlog
+        // the autoscaler reads. `SQL_STATS` makes the same split.
+        const waiting = record.state === 'ready' || record.state === 'delayed';
+        if (waiting && record.runAt <= at) {
           next.ready += 1;
           next.oldestReadyMs = Math.max(next.oldestReadyMs, at - record.runAt);
-        } else if (record.state === 'ready' || record.state === 'delayed') next.delayed += 1;
+        } else if (waiting) next.delayed += 1;
         else if (record.state === 'running') next.running += 1;
         else if (record.state === 'suspended') next.suspended += 1;
         else if (record.state === 'dead') next.dead += 1;

@@ -15,6 +15,7 @@ import type { ChannelRecordsFrame } from './channel-wire';
 import { InProcessTransport } from './fanout';
 // The wire's row — what a change event carries — so a test row is one the feed could deliver.
 import type { Row } from './json';
+import { OPEN_POLICY } from './policy-fake';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 
 const posts = entity('channel_seq_posts', {
@@ -50,6 +51,7 @@ const orgMembers: QueryPolicy = {
 const feed = channel('org-feed', {
   params: ['orgId'],
   catchUp: { name: 'orgFeed' },
+  policy: OPEN_POLICY,
   records: [posts],
 });
 const ownFeed = channel('own-feed', {
@@ -63,7 +65,12 @@ const ownFeed = channel('own-feed', {
     return { members: ['alice', 'bob'] };
   },
 });
-const typing = channel('typing', { params: ['orgId'], catchUp: { name: 'none' }, events: true });
+const typing = channel('typing', {
+  params: ['orgId'],
+  catchUp: { name: 'none' },
+  policy: OPEN_POLICY,
+  events: true,
+});
 
 type Wire = { readonly type: string } & Record<string, unknown>;
 
@@ -176,6 +183,25 @@ describe('records on a declared channel', () => {
     expect(records(a.ws)).toEqual(records(b.ws));
     expect(records(a.ws)[0]?.remove).toEqual({ channel_seq_posts: ['p2'] });
     expect(records(a.ws)[0]?.adopt).toBeUndefined();
+  });
+
+  // No frame can enumerate what a TRUNCATE removed, so each member is told to re-read, at a NEW
+  // epoch: nothing in the old ring may be replayed onto a table that no longer has those rows.
+  test('a truncate is a replay-gap at a new epoch for every member, never a records frame', async () => {
+    const a = connect('alice');
+    await hub.subscribeChannel(a.socket, {
+      kind: 'channel',
+      channel: 'org-feed',
+      params: { orgId: ORG },
+    });
+    hub.deliverChange(insert(post('p1', 'one')));
+    const before = records(a.ws)[0]?.epoch;
+    const gaps = a.ws.of('replay-gap').length;
+    hub.deliverChange({ ...insert(post('p1', 'one')), op: 'truncate', before: null, after: null });
+    const announced = a.ws.of('replay-gap');
+    expect(announced).toHaveLength(gaps + 1);
+    expect(announced.at(-1)?.['epoch']).not.toBe(before);
+    expect(records(a.ws)).toHaveLength(1);
   });
 
   test('a member of another org’s topic receives nothing', async () => {
@@ -441,9 +467,9 @@ describe('authorization', () => {
   });
 
   test('a second channel() of a registered name is refused', () => {
-    expect(() => channel('org-feed', { params: [], catchUp: { name: 'x' } })).toThrow(
-      expect.objectContaining({ code: 'X_CHANNEL_DECLARATION_INVALID' }),
-    );
+    expect(() =>
+      channel('org-feed', { params: [], catchUp: { name: 'x' }, policy: OPEN_POLICY }),
+    ).toThrow(expect.objectContaining({ code: 'X_CHANNEL_DECLARATION_INVALID' }));
   });
 });
 

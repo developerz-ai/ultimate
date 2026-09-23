@@ -384,3 +384,39 @@ describe('a write queued offline, after a reload', () => {
     rescope(null);
   });
 });
+
+// A write made while older writes still wait in the outbox went straight to HTTP, so a like queued
+// offline and the unlike made once the network was back could land swapped — the unlike first.
+describe('a write made while the outbox still holds older ones', () => {
+  test('queues behind them, and the replay sends them in the order they were made', async () => {
+    pageHarness();
+    pageOutbox();
+    globalThis.fetch = (async () => {
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    const like = useMutation({ name: 'likePost' });
+    const unlike = useMutation({ name: 'unlikePost' });
+    await like({ postId: 'p1' });
+    const outbox = pageOutbox();
+    await outbox.ready;
+    expect(outbox.size).toBe(1);
+
+    const order: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      order.push(String(url));
+      return new Response(JSON.stringify({ data: null }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+    await unlike({ postId: 'p1' });
+    await outbox.replay();
+    for (let turn = 0; turn < 20 && outbox.size > 0; turn += 1) await Promise.resolve();
+
+    expect(order).toHaveLength(2);
+    expect(order[0]).toContain('like');
+    expect(order[0]).not.toContain('unlike');
+    expect(order[1]).toContain('unlike');
+    expect(outbox.size).toBe(0);
+  });
+});

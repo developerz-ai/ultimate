@@ -7,6 +7,7 @@ import type { ChangeEvent } from './changefeed';
 import { channel } from './channel-decl';
 import { updatesFor } from './channel-records';
 import { clearChannels } from './channel-registry';
+import { OPEN_POLICY } from './policy-fake';
 
 const accounts = entity('channel_records_account', {
   table: 'legacy_accounts',
@@ -21,6 +22,7 @@ afterAll(() => {
 const feed = channel('accounts', {
   params: ['orgId'],
   catchUp: { name: 'accounts' },
+  policy: OPEN_POLICY,
   records: [accounts],
 });
 

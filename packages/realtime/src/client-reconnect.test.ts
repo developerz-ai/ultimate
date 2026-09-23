@@ -5,8 +5,16 @@
 // a timer nobody awaits, and that `close()` cancels it. The scheduler is injected, so nothing sleeps.
 
 import { describe, expect, test } from 'bun:test';
+import { LiveClient } from './client';
 import { RECONNECT_CODE } from './client-frames';
-import { cursorsChannel, feed, harness } from './client-harness-fixture';
+import {
+  backoff,
+  cursorsChannel,
+  FakeSocket,
+  feed,
+  harness,
+  ManualScheduler,
+} from './client-harness-fixture';
 import type { JsonObject, Row } from './json';
 import { PROTOCOL_VERSION } from './sync-protocol';
 import { BROWSER_RECONNECT_MAX_MS } from './thundering-herd';
@@ -227,5 +235,37 @@ describe('LiveClient reconnect', () => {
     expect(timers.pending).toBeNull();
     sockets[1]?.open();
     expect(sockets).toHaveLength(2); // the cancelled timer never dialled a third
+  });
+});
+
+describe('LiveClient channel catch-up retry', () => {
+  // The book counts failures from 1 and core counts waits from 1, so the first retry waits the
+  // base. Shifting the count once more — which the 0-based realtime copy did — waited 1_000 here.
+  test('a failed catch-up waits the base before its first retry, on core counting', async () => {
+    const timers = new ManualScheduler();
+    const socket = new FakeSocket();
+    const client = new LiveClient({
+      connect: () => socket,
+      buildId: 'build-1',
+      catchUp: async () => {
+        throw new TypeError('network down');
+      },
+      heartbeatMs: 0,
+      backoff,
+      scheduler: timers.schedule,
+      onError: () => undefined,
+    });
+    client.connect();
+    socket.open();
+    client.holdChannel(cursorsChannel, { orgId: 'o1' });
+    socket.deliver({
+      type: 'replay-gap',
+      v: PROTOCOL_VERSION,
+      channel: 'org-cursors.o1',
+      epoch: 'e1',
+    });
+    for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+    expect(timers.pending).toBe(backoff.baseMs);
+    client.close();
   });
 });

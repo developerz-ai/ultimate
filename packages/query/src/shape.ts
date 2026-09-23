@@ -31,10 +31,14 @@ export interface QueryShape {
   readonly unsupported: readonly string[];
 }
 
-/** Where a page resumes: the sort-key values of the last row plus its id tiebreak. */
+/**
+ * Where a page resumes: the sort-key values of the last row plus its id tiebreak. `id` keeps the
+ * row's own TYPE: a stringified numeric id compared lexically against the next page's rows, so
+ * `"10" < "7"` and a row tied on the sort key after id 7 was never served.
+ */
 export interface SeekKey {
   readonly key: readonly unknown[];
-  readonly id: string;
+  readonly id: unknown;
 }
 
 /**
@@ -53,7 +57,7 @@ export function seekKeyOf(
   if (id === undefined || id === null) throw new QueryNotPageableError(shape.entity);
   return {
     key: shape.orderBy.map((order) => columnOf(row, order.column)),
-    id: typeof id === 'string' ? id : String(id),
+    id,
   };
 }
 
@@ -193,10 +197,17 @@ function normalize(value: unknown): unknown {
   return value instanceof Date ? value.getTime() : value;
 }
 
+/**
+ * Equality as Postgres answers it. A number and a bigint are ONE family — an `int8` arrives as a
+ * `bigint` from one driver while a filter value is usually a `number` literal, and `5n = 5` is
+ * true there — so the type check that keeps `'5'` from equalling `5` treats them as one.
+ */
 function same(a: unknown, b: unknown): boolean {
   if (isNull(a) || isNull(b)) return isNull(a) && isNull(b);
-  return compareValues(a, b) === 0 && typeof normalize(a) === typeof normalize(b);
+  return compareValues(a, b) === 0 && family(normalize(a)) === family(normalize(b));
 }
+
+const family = (value: unknown): string => (isNumeric(value) ? 'numeric' : typeof value);
 
 /** Row ordering under an `orderBy` list. Stable, and total when an id key is last. */
 export function compareRows(a: object, b: object, orderBy: readonly OrderKey[]): number {

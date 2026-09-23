@@ -1,4 +1,4 @@
-// Presence over a real nats-server, reached the way a boot reaches it: `selectTransport(env)`, not
+// Presence over a real nats-server, reached the way a boot reaches it: `selectTransport(env, …)`, not
 // a hand-built transport. The in-memory server cannot catch a bucket the selector named differently
 // from the one the KV set writes to, or a TTL that never left the selection — and "presence
 // survives a node loss" is a claim about two processes, which is the one thing a unit test cannot be.
@@ -23,6 +23,7 @@ const selected: TransportSelection[] = [];
 async function node(ttlMs?: number): Promise<PresenceRegistry> {
   const selection = selectTransport(
     { NATS_URL: url ?? '', NATS_KV_BUCKET: BUCKET },
+    { transport: 'nats', urlEnv: 'NATS_URL' },
     ttlMs === undefined ? {} : { presenceTtlMs: ttlMs },
   );
   selected.push(selection);

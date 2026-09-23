@@ -173,6 +173,8 @@ export {
   OutboxNoTxError,
   StepDuplicateError,
 } from './errors';
+export { JobDeclarationInvalidError } from './errors-declaration';
+export { JobNotRequeueableError } from './errors-requeue';
 export type { EventBus, JobEvent, MemoryEventBusOptions, PublishOptions } from './events';
 export { createMemoryEventBus, eventBus, publishEvent, setEventBus } from './events';
 export type { PgEventBusOptions } from './events-pg';

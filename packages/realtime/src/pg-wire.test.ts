@@ -309,7 +309,10 @@ describe('responseFields / describeFields / serverError', () => {
         '55006',
         'another replicator holds the slot — exactly one replicator per database, by design',
       ],
-      ['0A000', 'set wal_level = logical in postgresql.conf and restart the server'],
+      [
+        '0A000',
+        "set wal_level=logical in the server configuration (postgresql.conf, or your managed provider's database flags) and restart the server",
+      ],
     ];
 
     for (const [sqlstate, fix] of cases) {
@@ -340,7 +343,8 @@ describe('responseFields / describeFields / serverError', () => {
     // The whole command, not the two halves separately: a fix naming the right publication in its
     // explanatory tail and the WRONG one in the statement would satisfy both partial assertions.
     const fix = FIXES['42704'] ?? '';
-    expect(fix).toInclude(`CREATE PUBLICATION ${DEFAULT_REPLICATION_PUBLICATION} FOR ALL TABLES`);
+    expect(fix).toInclude(`CREATE PUBLICATION ${DEFAULT_REPLICATION_PUBLICATION} FOR TABLE`);
+    expect(fix).not.toInclude('FOR ALL TABLES"');
     expect(fix).not.toInclude('x db replication');
   });
 

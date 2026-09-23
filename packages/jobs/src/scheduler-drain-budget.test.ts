@@ -191,4 +191,25 @@ describe('the scheduler drains in two phases, and its wait is bounded', () => {
 
     app.release();
   });
+
+  // A manual stop waits with NO deadline — a caller that asked wants its round finished — and a
+  // SIGTERM landing on it JOINED that teardown without bringing its own. So a stop issued while a
+  // round was parked on a queue that does not answer held the process drain past its budget:
+  // the `close` hook never came back, and the pod burned its whole grace period to SIGKILL.
+  test('a SIGTERM landing on a manual stop binds the budget the manual stop had none of', async () => {
+    configureLifecycle({ deadlineMs: 150 });
+    const app = await rig();
+
+    const manual = app.scheduler.stop('rollback');
+    const drained = await Promise.race([
+      drain('SIGTERM').then(() => 'drained'),
+      Bun.sleep(600).then(() => 'wedged'),
+    ]);
+    expect(drained).toBe('drained');
+    expect(
+      await Promise.race([manual.then(() => 'stopped'), Bun.sleep(100).then(() => 'wedged')]),
+    ).toBe('stopped');
+
+    app.release();
+  });
 });

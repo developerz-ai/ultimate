@@ -520,6 +520,27 @@ router feature here.
 Denials re-throw the policy layer's own codes and keep the surface denial on
 `QueryDeniedError.denial`, so a live socket closes with 4403 instead of guessing.
 
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `CursorValueUnsupportedError` | `X_CURSOR_VALUE_UNSUPPORTED` | `src/errors.ts` |
+| `MatcherUnsupportedError` | `X_MATCHER_UNSUPPORTED` | `src/errors.ts` |
+| `QueryDeniedError` | the policy denial's own code (`X_FORBIDDEN`, `X_UNAUTHENTICATED`, …), kept on `.denial` | `src/errors.ts` |
+| `QueryDeprecationInvalidError` | `X_QUERY_DEPRECATION_INVALID` | `src/errors.ts` |
+| `QueryDuplicateError` | `X_QUERY_DUPLICATE` | `src/errors.ts` |
+| `QueryForeignError` | `X_QUERY_FOREIGN` | `src/errors.ts` |
+| `QueryInputInvalidError` | `X_INPUT_INVALID` | `src/errors.ts` |
+| `QueryInputUnencodableError` | `X_QUERY_INPUT_UNENCODABLE` | `src/errors.ts` |
+| `QueryNotPageableError` | `X_QUERY_NOT_PAGEABLE` | `src/errors.ts` |
+| `QueryPolicyMissingError` | `X_QUERY_POLICY_MISSING` | `src/errors.ts` |
+| `QuerySubscribesDriftError` | `X_QUERY_SUBSCRIBES_DRIFT` | `src/errors.ts` |
+| `QuerySubscribesInvalidError` | `X_QUERY_SUBSCRIBES_INVALID` | `src/errors.ts` |
+| `QueryUnregisteredError` | `X_QUERY_UNREGISTERED` | `src/errors.ts` |
+
 ## Boundaries
 
 Tier 3. Imports `@ultimat3/core`, `schema`, `cache`, `entity`, `http`, `policy`. Never imports `action`,

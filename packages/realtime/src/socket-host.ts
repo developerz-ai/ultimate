@@ -7,12 +7,15 @@ import { browserSocket, dialUrl } from './browser-socket';
 import type { ClientSocket } from './client-contract';
 import type { SyncTarget } from './page-store';
 import { messagePort, type PortLike, SocketEngine } from './socket-engine';
+import { type Scheduler, timeoutScheduler } from './thundering-herd';
 
 export interface SocketHostOptions {
   /** The built worker script (`<meta name="ultimate-sync-worker">`); absent = in-page host. */
   readonly workerUrl?: string | undefined;
   /** The principal the page acts for: one worker per principal, never a shared socket across two. */
   readonly scope: string | null;
+  /** The build the page was rendered by: one worker per build, too. See `workerName`. */
+  readonly buildId?: string | undefined;
   /** Injected for tests; production reads the globals. */
   readonly sharedWorker?: SharedWorkerLike | undefined;
   readonly inPageEngine?: () => SocketEngine;
@@ -32,9 +35,13 @@ export interface SocketHost {
   bye(): void;
 }
 
-/** The worker's name carries the scope, so two principals in two tabs get two workers. */
-export function workerName(scope: string | null): string {
-  return `ultimate-sync:${encodeURIComponent(scope ?? '')}`;
+/**
+ * The worker's name carries the scope, so two principals in two tabs get two workers — and the
+ * BUILD, so two builds do too. A SharedWorker keeps the first tab's build id for its whole life, so
+ * a tab of the new build joined the old engine and was told "update available" about itself.
+ */
+export function workerName(scope: string | null, buildId: string | undefined): string {
+  return `ultimate-sync:${encodeURIComponent(scope ?? '')}:${encodeURIComponent(buildId ?? '')}`;
 }
 
 export function openHost(options: SocketHostOptions): SocketHost {
@@ -55,7 +62,9 @@ function workerPort(options: SocketHostOptions): PortLike | undefined {
     (typeof SharedWorker === 'function' ? (SharedWorker as SharedWorkerLike) : undefined);
   if (Worker === undefined || options.workerUrl === undefined) return undefined;
   try {
-    return messagePort(new Worker(options.workerUrl, { name: workerName(options.scope) }).port);
+    return messagePort(
+      new Worker(options.workerUrl, { name: workerName(options.scope, options.buildId) }).port,
+    );
   } catch {
     return undefined;
   }
@@ -123,4 +132,94 @@ class VirtualSocket implements ClientSocket {
       this.#closed?.(typeof typed.code === 'number' ? typed.code : 1006);
     }
   }
+}
+
+/** A host that can be replaced under the page's one client. */
+export interface RehostingHost extends SocketHost {
+  /** Say bye to the current host and build a new one — the next `socket()` dials through it. */
+  rehost(): void;
+}
+
+export interface RehostingOptions {
+  /** How long a virtual socket may wait for `open` before its host is presumed dead. */
+  readonly openTimeoutMs: number;
+  readonly schedule?: Scheduler | undefined;
+}
+
+/**
+ * The page's host, replaceable. A port the engine reaped (a throttled hidden tab), or one the tab
+ * itself said `bye` on at `pagehide` before a bfcache restore, is a port nobody reads: the virtual
+ * socket over it waited for `open` forever and the tab's realtime was dead until a reload. So an
+ * `open` unanswered by `openTimeoutMs` closes that socket (1006, which the client redials on) and
+ * re-hosts on a fresh port; `page-socket.ts` also re-hosts on a bfcache `pageshow`.
+ */
+export function rehosting(make: () => SocketHost, options: RehostingOptions): RehostingHost {
+  const schedule = options.schedule ?? timeoutScheduler;
+  let current = make();
+  const self: RehostingHost = {
+    get kind(): 'worker' | 'in-page' {
+      return current.kind;
+    },
+    socket: (target) => {
+      const inner = current.socket(target);
+      return watchOpen(inner, schedule, options.openTimeoutMs, () => self.rehost());
+    },
+    bye: () => current.bye(),
+    rehost: () => {
+      current.bye();
+      current = make();
+    },
+  };
+  return self;
+}
+
+/** `inner`, with a deadline on its `open`: missed, the host is re-made and the socket closes. */
+function watchOpen(
+  inner: ClientSocket,
+  schedule: Scheduler,
+  ms: number,
+  rehost: () => void,
+): ClientSocket {
+  let opened: (() => void) | null = null;
+  let closed: ((code: number) => void) | null = null;
+  let settled = false;
+  const disarm = schedule(() => {
+    if (settled) return;
+    settled = true;
+    rehost();
+    closed?.(1006);
+  }, ms);
+  inner.onOpen(() => {
+    if (settled) return;
+    settled = true;
+    disarm();
+    opened?.();
+  });
+  inner.onClose((code) => {
+    if (!settled) {
+      settled = true;
+      disarm();
+    }
+    closed?.(code);
+  });
+  return {
+    get bufferedAmount(): number {
+      return inner.bufferedAmount ?? 0;
+    },
+    send: (data) => inner.send(data),
+    close: (code, reason) => {
+      if (!settled) {
+        settled = true;
+        disarm();
+      }
+      inner.close(code, reason);
+    },
+    onOpen: (handler) => {
+      opened = handler;
+    },
+    onMessage: (handler) => inner.onMessage(handler),
+    onClose: (handler) => {
+      closed = handler;
+    },
+  };
 }

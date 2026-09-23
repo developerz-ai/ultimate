@@ -70,6 +70,7 @@ export {
   CursorInvalidError,
   CursorValueUnsupportedError,
   MatcherUnsupportedError,
+  QueryColumnUnselectedError,
   QueryDeniedError,
   QueryDeprecationInvalidError,
   QueryDuplicateError,
@@ -85,7 +86,7 @@ export {
 /** The HTTP projection: `GET /_x/query/<kebab>`, the URL `client()` derives. */
 export { toQueryRoute } from './http';
 export type { LiveCursor, LiveQuery, ResumeMode, ResumePlan, ToLiveOptions } from './live';
-export { advanceCursor, liveEpoch, planResume, seekOf, toLiveQuery } from './live';
+export { planResume, seekOf, toLiveQuery } from './live';
 export type { ChangeEvent, ChangeOp, Patch } from './matcher';
 export { assertMatchable, match, positionFor } from './matcher';
 export type { QueryToolDescriptor, QueryToolReadOptions } from './mcp-tool';
@@ -94,7 +95,7 @@ export { isExposed, toQueryTool, toQueryTools } from './mcp-tool';
  * Path derivation only. There is no `toToolName`: an MCP tool is served under the export name
  * verbatim, and an exported derivation would be a second way to spell one tool.
  */
-export { derivePath, toKebabCase } from './naming';
+export { derivePath } from './naming';
 /**
  * The read half of `openapi.json`. `@ultimat3/cli` merges these paths into `@ultimat3/action`'s
  * `buildOpenApi` document — the two packages are one tier and cannot compose each other.
@@ -105,7 +106,7 @@ export { queryOpenApiPaths, toQueryOpenApiOperation } from './openapi';
  * shape the typed client's `.page()` takes. `MAX_PAGE_SIZE` is the bound both ends check.
  */
 export type { PageControls } from './page-controls';
-export { MAX_PAGE_SIZE, PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
+export { MAX_PAGE_SIZE } from './page-controls';
 /**
  * The shapes `query.page(input, { first, after })` takes and answers with. `paginate` itself is
  * deliberately unexported: a page is the read's own answer, and a second, importable way to ask
@@ -139,7 +140,7 @@ export type {
   QueryRateLimit,
   SourceOptions,
 } from './query';
-export { describeQuery, isQuery, nameQuery, query, queryHash } from './query';
+export { describeQuery, isQuery, query, queryHash } from './query';
 /** The one read path. `defOf` stays unexported — that is the enforcement. */
 export { queryName, runQuery, sourceFor } from './read';
 
@@ -164,7 +165,6 @@ export {
   compareValues,
   isNull,
   matchesFilter,
-  matchesFilters,
   seekKeyOf,
   totalOrder,
 } from './shape';

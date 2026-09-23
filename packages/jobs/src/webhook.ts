@@ -47,9 +47,18 @@ import {
   WebhookEventUnknownError,
 } from './webhook-errors';
 import type { WebhookLedger } from './webhook-ledger';
+import type { WebhookResolve, WebhookTarget } from './webhook-target';
+import { resolveWebhookHost, webhookTarget } from './webhook-target';
 
 /** Just the call. `typeof fetch` also carries `preconnect`, which no test double should have to. */
-export type WebhookFetch = (url: string, init: RequestInit) => Promise<Response>;
+/**
+ * The transport. `init.tls.serverName` carries the hostname a PINNED connection proves, because
+ * the url it is handed names the approved address (`webhook-target.ts`); Bun's `fetch` honours it.
+ */
+export type WebhookFetch = (
+  url: string,
+  init: RequestInit & { readonly tls?: { readonly serverName?: string } },
+) => Promise<Response>;
 
 /**
  * Consecutive failures before an endpoint stops taking deliveries. Ten is roughly a day of a
@@ -66,7 +75,11 @@ const RETRY_AFTER_SECONDS = /^\d{1,7}$/;
 
 export interface WebhookEndpoint {
   readonly id: string;
-  /** `https://…` in production, `http://…` for a dev receiver. Nothing else is opened. */
+  /**
+   * `https://…` in production, `http://…` only in a local environment. A host that resolves to a
+   * loopback, private, link-local, ULA, CGNAT or unspecified address is refused unless the
+   * definition sets `allowPrivate` (`webhook-target.ts`). Nothing else is opened.
+   */
   readonly url: string;
   /** The shared secret. Never logged, never in a `cause`, never on the ledger row. */
   readonly secret: string;
@@ -151,6 +164,16 @@ export interface WebhookDefinition {
   readonly clock?: Clock;
   /** Injected so a test can drive the transport. The network is sealed in this repo's suites. */
   readonly fetch?: WebhookFetch;
+  /**
+   * The explicit opt-out from the address screen, for a receiver inside your own network — a dev
+   * receiver on `localhost`, a service in the same cluster. Off by default: an endpoint URL is
+   * tenant-supplied, and the screen is what stops it reaching the metadata service.
+   */
+  readonly allowPrivate?: boolean;
+  /** Which environment decides whether `http:` is allowed. Defaults to `process.env`. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  /** How a hostname is resolved. Defaults to `Bun.dns.lookup`; injected in tests. */
+  readonly resolve?: WebhookResolve;
   readonly queue?: string;
   readonly retry?: RetryPolicy;
   /**
@@ -203,7 +226,16 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
           endpointId: endpoint.id,
         });
       }
-      assertDeliverable(definition.name, endpoint);
+      const url = assertDeliverable(definition.name, endpoint);
+      // Screened and resolved before the event is read, let alone sent — see `webhook-target.ts`.
+      const target = await webhookTarget({
+        webhook: definition.name,
+        endpointId: endpoint.id,
+        url,
+        allowPrivate: definition.allowPrivate === true,
+        env: definition.env,
+        resolve: definition.resolve ?? resolveWebhookHost,
+      });
 
       const event = await definition.event({ eventId: input.eventId, ctx });
       if (event === null) {
@@ -229,13 +261,15 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
       // than the age of the fact behind it.
       const timestampSeconds = Math.floor(nowMs(clock) / 1_000);
       const startedAt = clock.monotonic();
-      const outcome = await attemptDelivery(send, endpoint, {
-        secret: endpoint.secret,
-        timestampSeconds,
-        eventId: input.eventId,
-        topic: event.topic,
-        body: event.body,
-      });
+      const outcome: Outcome = await ('unresolved' in target
+        ? Promise.resolve({ ok: false as const, status: null, detail: target.unresolved })
+        : attemptDelivery(send, endpoint, target, {
+            secret: endpoint.secret,
+            timestampSeconds,
+            eventId: input.eventId,
+            topic: event.topic,
+            body: event.body,
+          }));
       const durationMs = Math.max(0, clock.monotonic() - startedAt);
 
       // Recorded whatever happened, and BEFORE the throw: a failure that is not on the ledger is a
@@ -279,8 +313,8 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
   });
 }
 
-/** A URL no delivery may open, or a secret that would make the POST unsigned. */
-function assertDeliverable(name: string, endpoint: WebhookEndpoint): void {
+/** A URL no delivery may open, or a secret that would make the POST unsigned. The parsed url. */
+function assertDeliverable(name: string, endpoint: WebhookEndpoint): URL {
   if (endpoint.secret.length === 0) {
     throw new WebhookEndpointInvalidError({
       webhook: name,
@@ -288,9 +322,9 @@ function assertDeliverable(name: string, endpoint: WebhookEndpoint): void {
       reason: 'has an empty secret, so the delivery would carry no proof of who sent it',
     });
   }
-  let protocol: string;
+  let parsed: URL;
   try {
-    protocol = new URL(endpoint.url).protocol;
+    parsed = new URL(endpoint.url);
   } catch {
     // Never the caught value and never the url: an unparseable value is exactly the one whose
     // shape is unknown, and this reason reaches a durable dead-letter row.
@@ -302,13 +336,14 @@ function assertDeliverable(name: string, endpoint: WebhookEndpoint): void {
   }
   // `file:`, `data:` and the rest are refused by NAME rather than by a blocklist: a delivery opens
   // an HTTP conversation, and anything else is a row in a table reaching the worker's filesystem.
-  if (protocol !== 'https:' && protocol !== 'http:') {
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     throw new WebhookEndpointInvalidError({
       webhook: name,
       endpointId: endpoint.id,
-      reason: `has a ${protocol} url, and a delivery only ever opens http: or https:`,
+      reason: `has a ${parsed.protocol} url, and a delivery only ever opens http: or https:`,
     });
   }
+  return parsed;
 }
 
 type Outcome =
@@ -323,18 +358,23 @@ type Outcome =
 async function attemptDelivery(
   send: WebhookFetch,
   endpoint: WebhookEndpoint,
+  target: WebhookTarget,
   signing: Parameters<typeof webhookHeaders>[0],
 ): Promise<Outcome> {
   let response: Response;
   try {
-    response = await send(endpoint.url, {
+    response = await send(target.url, {
       method: 'POST',
       headers: {
         ...endpoint.headers,
+        // The name the pinned address is reached AS — after the row's own headers, so an endpoint
+        // cannot redirect the request to a different virtual host than the one it registered.
+        host: target.host,
         'content-type': WEBHOOK_CONTENT_TYPE,
         // LAST, so an endpoint row's own headers can never overwrite the signature it is proved by.
         ...webhookHeaders(signing),
       },
+      ...(target.serverName === undefined ? {} : { tls: { serverName: target.serverName } }),
       body: signing.body,
       // Never followed: a 3xx would re-POST a body signed for one host to whatever the receiver
       // named, and the signature would travel with it.

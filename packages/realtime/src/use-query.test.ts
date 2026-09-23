@@ -220,4 +220,42 @@ describe('useQuery — paged', () => {
     await flush();
     expect(urls).toHaveLength(2);
   });
+
+  // A `more()` a refetch superseded still wrote its page's cursor, before the generation check that
+  // discards its rows — so the refetched first page came back with `hasMore` and a cursor from a
+  // page nobody is showing, and the next `more()` skipped the second page.
+  test('a superseded more() leaves the cursor to the read that replaced it', async () => {
+    pageHarness();
+    const bodies: unknown[] = [{ rows: [{ id: 'p1' }], endCursor: 'c1', hasNextPage: true }];
+    const held: ((body: unknown) => void)[] = [];
+    const urls: string[] = [];
+    globalThis.fetch = ((url: string) => {
+      urls.push(url);
+      const answer = (data: unknown): Response => {
+        const rows = (data as { rows: Row[] }).rows;
+        const posts = Object.fromEntries(rows.map((row) => [`k-${String(row['id'])}`, row]));
+        return new Response(JSON.stringify({ data, records: { posts } }), {
+          status: 200,
+          headers: { 'x-ultimate-records': '1' },
+        });
+      };
+      const next = bodies.shift();
+      if (next !== undefined) return Promise.resolve(answer(next));
+      return new Promise<Response>((resolve) => held.push((body) => resolve(answer(body))));
+    }) as typeof fetch;
+    const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null, { first: 1 });
+    await flush();
+    posts.more(); // held: the page after c1
+    posts.refetch(); // held: a fresh first page
+    // The refetch answers first; the stale more() answers last.
+    held[1]?.({ rows: [{ id: 'p1' }], endCursor: 'fresh', hasNextPage: true });
+    await flush();
+    held[0]?.({ rows: [{ id: 'p2' }], endCursor: 'stale', hasNextPage: false });
+    await flush();
+    expect(posts()).toEqual({ status: 'ready', data: [{ id: 'p1' }] });
+    expect(posts.hasMore()).toBe(true);
+    posts.more();
+    await flush();
+    expect(urls.at(-1)).toContain('fresh');
+  });
 });

@@ -245,3 +245,70 @@ describe('a sid is claimed where it is chosen, not two awaits later', () => {
     expect(target.matched()).toBe(1);
   });
 });
+
+// The first read of a cold window, racing a write. The change is fanned into a window no read has
+// landed in yet, so the fanout moves `entry.lsn` past a read that answers `''` (no lsn wired, which
+// is what `x dev` runs) — and the read that then lands was discarded as "older than the window". The
+// window kept only the one patched row, permanently: every later unforced read was discarded too.
+describe('a cold subscribe whose read races a write', () => {
+  test('both subscribers see every row, the one written mid-read included', async () => {
+    const gate = deferred<{ rows: readonly Row[]; lsn: string }>();
+    const table: Row[] = [
+      { id: 'p1', orgId: 'o1', likes: 0 },
+      { id: 'p2', orgId: 'o1', likes: 0 },
+    ];
+    let reads = 0;
+    const target = feed(() => {
+      reads += 1;
+      // The first read saw the table before the write; every later one sees it after.
+      return reads === 1 ? gate.promise : Promise.resolve({ rows: [...table], lsn: '' });
+    });
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(
+      target.definition,
+    );
+    const alice = socketFor('sock-a', actor('alice', 'o1'));
+    const bob = socketFor('sock-b', actor('bob', 'o1'));
+
+    const first = registry.subscribe({ socket: alice.socket, name: 'liveFeed', input, sid: 'a' });
+    // The read is in flight — the entry exists and holds no window yet — before the write lands.
+    for (let turn = 0; reads === 0 && turn < 100; turn += 1) await Promise.resolve();
+    expect(reads).toBe(1);
+    const before = [...table];
+    const inserted: Row = { id: 'p3', orgId: 'o1', likes: 0 };
+    table.push(inserted);
+    await registry.deliver({
+      entity: 'posts',
+      op: 'insert',
+      before: null,
+      after: inserted,
+      lsn: formatLsn(5),
+      txid: '5',
+      orgId: 'o1',
+      at: 2_000,
+    });
+    gate.resolve({ rows: before, lsn: '' });
+    const forAlice = await first;
+    const forBob = await registry.subscribe({
+      socket: bob.socket,
+      name: 'liveFeed',
+      input,
+      sid: 'b',
+    });
+
+    const seen = (result: { frame: Frame }): string[] =>
+      result.frame.type === 'snapshot' ? result.frame.rows.map((row) => row.id).sort() : [];
+    expect(seen(forAlice)).toEqual(['p1', 'p2', 'p3']);
+    expect(seen(forBob)).toEqual(['p1', 'p2', 'p3']);
+  });
+});
+
+// What a node's snapshot may claim: `x dev` wired no lsn at all, so every snapshot claimed `''`.
+describe('the position a registry has been handed', () => {
+  test('is the newest change lsn delivered, never rewound by an older one', async () => {
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() });
+    expect(registry.lastLsn).toBe('');
+    await registry.deliver({ ...change, lsn: formatLsn(9) });
+    await registry.deliver({ ...change, lsn: formatLsn(4) });
+    expect(registry.lastLsn).toBe(formatLsn(9));
+  });
+});

@@ -5,6 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { CLOSE, SocketRegistry, SyncSocket, type WsLike } from './socket';
+import { DROP_WINDOW_MS } from './socket-drops';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 /** A socket whose runtime answer is scripted, which is the whole point — see `socket.test.ts`. */
@@ -64,12 +65,44 @@ describe('unit · what a send answers', () => {
     expect(socket.droppedFrames).toBe(1);
   });
 
-  test('a frame refused for backpressure is false too', () => {
+  // Bun answers `-1` when the frame was QUEUED under backpressure — it will be delivered. Counted as
+  // a drop it sent a spurious `replay-gap`, marked a healthy subscriber out of sync, and closed a
+  // socket after 33 such "drops" over its whole life.
+  test('a frame Bun queued under backpressure (-1) was sent, and is never a drop', () => {
     const ws = new ScriptedWs();
     ws.answer = -1;
-    const socket = socketOn(ws);
-    expect(socket.send(frame)).toBe(false);
-    expect(socket.sentFrames).toBe(0);
+    const socket = socketOn(ws, 2);
+    for (let i = 0; i < 10; i += 1) expect(socket.send(frame)).toBe(true);
+    expect(socket.sentFrames).toBe(10);
+    expect(socket.droppedFrames).toBe(0);
+    expect(ws.closedWith).toBeUndefined();
+  });
+
+  test('the drop ceiling is per window, never per lifetime', () => {
+    const ws = new ScriptedWs();
+    ws.answer = 0;
+    let ms = 0;
+    const socket = new SyncSocket({
+      ws,
+      id: 'a',
+      clientBuildId: 'b1',
+      serverBuildId: 'b1',
+      maxDroppedFrames: 2,
+      clock: { now: () => new Date(ms), monotonic: () => ms },
+    });
+    // Two drops a window, for many windows: a long-lived socket on a flaky link stays open.
+    for (let window = 0; window < 20; window += 1) {
+      socket.send(frame);
+      socket.send(frame);
+      ms += DROP_WINDOW_MS + 1;
+    }
+    expect(socket.droppedFrames).toBe(40);
+    expect(ws.closedWith).toBeUndefined();
+    // Three inside one window is a socket that is drowning.
+    socket.send(frame);
+    socket.send(frame);
+    socket.send(frame);
+    expect(ws.closedWith).toBe(CLOSE.overloaded);
   });
 
   test('a socket the runtime keeps refusing is closed, exactly as backpressure closes one', () => {

@@ -36,10 +36,41 @@ select ${JOB_ROW_COLUMNS}
   from x_jobs where state = 'dead' order by updated_at desc limit $1
 `.trim();
 
-/** `run_at = now()` makes the requeued job due immediately; the attempt counter starts over. */
+/**
+ * `run_at = now()` makes the requeued job due immediately; the attempt counter starts over. Fenced
+ * to FINISHED states and releasing the claim: requeueing a running row left `claimed_by` set with
+ * state `ready`, and a second worker claimed it — the job ran twice. `REQUEUEABLE_STATES`
+ * (`driver.ts`) is the same set; a row this matches nothing for was refused before it was sent,
+ * or raced to live in between.
+ */
 export const SQL_JOB_REQUEUE = `
 update x_jobs
-   set state = 'ready', attempt = 0, run_at = now(), updated_at = now()
- where id = $1
+   set state = 'ready', attempt = 0, run_at = now(), updated_at = now(),
+       claimed_by = null, visible_at = null
+ where id = $1 and state in ('dead', 'cancelled', 'done', 'failed')
 returning ${JOB_ROW_COLUMNS}
+`.trim();
+
+/**
+ * The LIVE row holding a requeued row's key, if any — `x_jobs_name_tenant_idempotency_live_idx`'s
+ * predicate, read before the update so the answer is `X_JOB_DUPLICATE` rather than a raw 23505.
+ */
+export const SQL_JOB_LIVE_HOLDER = `
+select id from x_jobs
+ where name = $1 and coalesce(tenant_id, '') = coalesce($2, '') and idempotency_key = $3
+   and id <> $4 and state in ('ready', 'delayed', 'running', 'suspended')
+ limit 1
+`.trim();
+
+/**
+ * "From that step onward": the step `fromStep` names and every step that started AFTER it.
+ * Deleting the named step alone left later steps replaying results computed from the old run.
+ * Strictly after, plus the step itself: a step sharing the target's millisecond is not provably
+ * later, and re-running an EARLIER step — the charge before the receipt — is the worse mistake.
+ */
+export const SQL_STEPS_FROM = `
+delete from x_job_steps
+ where run_id = $1
+   and (name = $2
+        or started_at > (select started_at from x_job_steps where run_id = $1 and name = $2))
 `.trim();

@@ -11,7 +11,13 @@ import type { PgTarget } from './pg-socket';
 import type { PgStream } from './pg-wire';
 import type { Rng } from './thundering-herd';
 
-export type ChangeOp = 'insert' | 'update' | 'delete';
+/**
+ * `truncate` carries no row — `before` and `after` are both `null` — and means every row of the
+ * relation is gone. A window cannot be patched from it, only re-read; a channel's members are told
+ * to re-read (`replay-gap`). It was decoded and dropped, so with the recommended `FOR ALL TABLES`
+ * publication every window and every client kept the truncated rows forever.
+ */
+export type ChangeOp = 'insert' | 'update' | 'delete' | 'truncate';
 
 export interface ChangeEvent<R extends Row = Row> {
   /** Entity name, not table name — the matcher's dependency sets are declared in entity terms. */

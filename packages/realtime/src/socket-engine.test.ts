@@ -237,6 +237,11 @@ describe('SocketEngine — one socket for every tab', () => {
       engineTimers.fire();
     }
     expect(engine.ports).toBe(1);
+    await settle();
+    // A reaped tab may only have been throttled (a hidden tab), not closed: it is TOLD, so its
+    // client goes offline and redials instead of holding a dead port as a live socket forever.
+    expect(a.client.connected).toBe(false);
+    expect(b.client.connected).toBe(true);
     // Between the join and the drop the engine's beats repeat the membership (presence).
     const ops = channelFrames(servers[0]).map((frame) => frame.op);
     expect(ops.at(-1)).toBe('drop');

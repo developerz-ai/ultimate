@@ -228,3 +228,61 @@ describe('listenForDrain', () => {
     }
   });
 });
+
+// Two tabs of one user each kept an in-memory copy of the outbox and saved it WHOLE, so the last
+// save won and the other tab's queued write was gone. One record per mutation key now.
+describe('two tabs, one outbox', () => {
+  test('both tabs queue offline, and a reload sends both writes, in order', async () => {
+    const local = new MemoryLocalStore();
+    const tabA = setup('u1', local);
+    const tabB = setup('u1', local);
+    await tabA.outbox.ready;
+    await tabB.outbox.ready;
+    await tabA.outbox.enqueue(like(1));
+    await tabB.outbox.enqueue(like(2));
+
+    const reloaded = setup('u1', local);
+    await reloaded.outbox.replay();
+    expect(reloaded.sent.map((entry) => entry.key)).toEqual(['like:1', 'like:2']);
+    expect(reloaded.outbox.size).toBe(0);
+  });
+
+  test('a tab replays what ANOTHER tab queued since it opened', async () => {
+    const local = new MemoryLocalStore();
+    const tabA = setup('u1', local);
+    const tabB = setup('u1', local);
+    await tabA.outbox.ready;
+    await tabB.outbox.enqueue(like(7));
+    await tabA.outbox.replay();
+    expect(tabA.sent.map((entry) => entry.key)).toEqual(['like:7']);
+    // ...and once sent it is gone for every tab: tab B's next replay sends nothing.
+    await tabB.outbox.replay();
+    expect(tabB.sent).toEqual([]);
+  });
+
+  // A write saved as `inflight` belonged to a page that is gone. It was never resent after a
+  // reload, and every later write overtook it.
+  test('a write a closed page left inflight is sent first after the reload', async () => {
+    const local = new MemoryLocalStore();
+    const first = setup('u1', local);
+    let hang: (() => void) | undefined;
+    first.answerWith(
+      () =>
+        new Promise(() => {
+          hang = () => undefined;
+        }),
+    );
+    await first.outbox.enqueue(like(1));
+    void first.outbox.replay();
+    for (let turn = 0; turn < 20 && hang === undefined; turn += 1) await Promise.resolve();
+    expect(hang).toBeDefined();
+    // Queued while like:1 is on the wire: this save is what wrote like:1 to disk as `inflight`.
+    await first.outbox.enqueue(like(2));
+    // The page closes: the browser releases the drain lock it held, mid-send.
+    Reflect.deleteProperty(globalThis, Symbol.for('ultimate.outbox-locks'));
+
+    const reloaded = setup('u1', local);
+    await reloaded.outbox.replay();
+    expect(reloaded.sent.map((entry) => entry.key)).toEqual(['like:1', 'like:2']);
+  });
+});

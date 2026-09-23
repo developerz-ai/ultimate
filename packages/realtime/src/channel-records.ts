@@ -29,6 +29,9 @@ export interface TopicUpdate {
  */
 export function updatesFor(channels: Iterable<Channel>, change: ChangeEvent): TopicUpdate[] {
   const updates: TopicUpdate[] = [];
+  // A truncate names no row, so it routes to no topic here: `ChannelLogs` announces a gap on every
+  // open topic of every channel carrying the relation instead (`truncatedTopics`).
+  if (change.op === 'truncate') return updates;
   for (const channel of channels) {
     const projection = channel.records.find((candidate) => candidate.table === change.entity);
     if (projection === undefined) continue;
@@ -76,4 +79,9 @@ function removal(
     remove: [{ type: projection.type, key: projection.key(row) }],
     row,
   };
+}
+
+/** The channels whose records a truncate of `table` wiped: every one listing that relation. */
+export function carriesTable(channel: Channel, table: string): boolean {
+  return channel.records.some((projection) => projection.table === table);
 }

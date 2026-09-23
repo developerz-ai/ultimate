@@ -70,6 +70,9 @@ function rig(
   };
   const entry = createEntry('liveFeed:1', definition, input, definition.matcher(input));
   entry.rows = seated;
+  // As a landed read leaves it: a window no read has filled is never patched.
+  entry.generation = 1;
+  entry.applied = 1;
   return {
     entry,
     deps: {
@@ -267,6 +270,8 @@ describe('a live row travels under its RECORD key', () => {
     };
     const entry = createEntry('liveFeed:1', definition, input, definition.matcher(input));
     entry.rows = seated;
+    entry.generation = 1;
+    entry.applied = 1;
     return entry;
   }
 
@@ -296,5 +301,43 @@ describe('a live row travels under its RECORD key', () => {
     await fanoutChange(deps, entry, change('1'));
     const sent = alice.ws.frames.find((frame) => frame.type === 'patch');
     expect(sent?.type === 'patch' && sent.patches[0]?.key).toBe('o1:p1');
+  });
+});
+
+// A TRUNCATE was decoded and dropped: with `FOR ALL TABLES`, every window and every client kept the
+// truncated rows until something else happened to touch the query.
+describe('a truncate empties the window it reads from', () => {
+  const truncate = (lsn: string): ChangeEvent => ({
+    entity: 'posts',
+    op: 'truncate',
+    before: null,
+    after: null,
+    lsn,
+    txid: lsn,
+    at: 0,
+    orgId: null,
+  });
+
+  test('the window is re-read now and every subscriber is re-snapshotted out of it', async () => {
+    const { entry, deps, reads } = rig(() => patched, []);
+    const alice = connect();
+    subscribe(entry, alice.socket, 's1');
+
+    const result = await fanoutChange(deps, entry, truncate('9'));
+
+    expect(reads()).toBe(1);
+    expect(entry.rows).toEqual([]);
+    expect(result.sent).toBe(1);
+    expect(alice.ws.frames[0]).toMatchObject({ type: 'snapshot', sid: 's1', rows: [] });
+    expect(alice.socket.desynced.has('s1')).toBe(false);
+  });
+
+  test('a window that reads another relation is untouched', async () => {
+    const { entry, deps, reads } = rig(() => patched, []);
+    subscribe(entry, connect().socket, 's1');
+    const other = { ...truncate('9'), entity: 'comments' };
+    expect(await fanoutChange(deps, entry, other)).toEqual({ sent: 0, stale: 0 });
+    expect(reads()).toBe(0);
+    expect(entry.rows).toEqual(seated);
   });
 });

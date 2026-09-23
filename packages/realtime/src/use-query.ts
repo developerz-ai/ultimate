@@ -161,7 +161,9 @@ function readAccessor<R extends object>(
    * read's records in answer order (`records[type]`, which `rowsOf` fills first-seen = data order).
    * The browser never derives a key: an answer with no records envelope holds its rows itself.
    */
-  const fetch = (append: boolean): Promise<{ rows: readonly Row[]; keys: string[] | null }> => {
+  const fetch = (
+    append: boolean,
+  ): Promise<{ rows: readonly Row[]; keys: string[] | null; next?: string | null }> => {
     let keysOf: string[] | null = null;
     const onEnvelope = (envelope: RecordEnvelope): void => {
       const records = type === undefined ? undefined : envelope.records?.[type];
@@ -173,10 +175,12 @@ function readAccessor<R extends object>(
     }
     const controls =
       append && after !== null ? { first: options.first, after } : { first: options.first };
-    return method.page(input, controls, { onEnvelope }).then((page) => {
-      after = page.hasNextPage ? page.endCursor : null;
-      return answered(page.rows as readonly Row[]);
-    });
+    // The page's cursor travels WITH its rows and is taken only where the rows are: a `more()`
+    // a refetch superseded wrote its cursor here, before the generation check discarded its rows.
+    return method.page(input, controls, { onEnvelope }).then((page) => ({
+      ...answered(page.rows as readonly Row[]),
+      next: page.hasNextPage ? page.endCursor : null,
+    }));
   };
 
   const load = (append = false): void => {
@@ -186,6 +190,7 @@ function readAccessor<R extends object>(
     fetch(append).then(
       (answer) => {
         if (released || mine !== generation) return;
+        if (answer.next !== undefined) after = answer.next;
         if (type === undefined || answer.keys === null) {
           // Not records — no type named, or no envelope: the list holds its own rows.
           own = append ? [...own, ...answer.rows] : answer.rows;

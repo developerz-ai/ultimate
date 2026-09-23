@@ -7,8 +7,17 @@
 
 import type { ConflictPolicy, Ctx, Row } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
-import type { Action, ActionCache, ActionDef, ActionDescriptor, ActionMcp } from './action';
+import type {
+  Action,
+  ActionCache,
+  ActionDef,
+  ActionDescriptor,
+  ActionMcp,
+  ActionRateLimit,
+  ActionRowArgs,
+} from './action';
 import { action, isAction } from './action';
+import type { Deprecation } from './deprecation';
 import { assertConflictClock } from './mutator-clock';
 import type { ActionPolicy } from './policy-gate';
 
@@ -71,13 +80,26 @@ export function custom<TRow extends object = Row>(
   return { kind: 'custom', merge: merge as unknown as (local: Row, server: Row) => Row };
 }
 
-export interface MutatorDef<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1> {
+export interface MutatorDef<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  TRow = unknown,
+> {
   readonly input: TInput;
   readonly output: TOutput;
-  readonly policy: ActionPolicy;
+  readonly policy: ActionPolicy<TRow>;
   readonly cache?: ActionCache;
   readonly mcp?: ActionMcp;
+  /** Same key, same meaning as an action's — a mutator IS an action. */
+  readonly rateLimit?: ActionRateLimit;
+  /** Same key, same meaning as an action's: `Deprecation`/`Sunset` on every response. */
+  readonly deprecated?: Deprecation;
   readonly idempotent?: boolean;
+  /**
+   * The row a row-level `policy` decides about — an action's `row`, and dropped on the way into
+   * the action until 2026-09-23, so such a policy received `row === null` and denied every call.
+   */
+  row?(args: ActionRowArgs<TInput>): TRow | null | Promise<TRow | null>;
   /**
    * Record every attempt through the installed `AuditSink`. Same key, same meaning as an
    * action's — a mutator IS an action, so it inherits the seam rather than getting a second one.
@@ -128,15 +150,21 @@ export interface Mutator<
   named(name: string): Mutator<TInput, TOutput>;
 }
 
-export function mutator<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
-  def: MutatorDef<TInput, TOutput>,
-): Mutator<TInput, TOutput> {
-  const actionDef: ActionDef<TInput, TOutput> = {
+export function mutator<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  TRow = unknown,
+>(def: MutatorDef<TInput, TOutput, TRow>): Mutator<TInput, TOutput> {
+  const row = def.row;
+  const actionDef: ActionDef<TInput, TOutput, TRow> = {
     input: def.input,
     output: def.output,
     policy: def.policy,
     ...(def.cache === undefined ? {} : { cache: def.cache }),
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
+    ...(def.rateLimit === undefined ? {} : { rateLimit: def.rateLimit }),
+    ...(def.deprecated === undefined ? {} : { deprecated: def.deprecated }),
+    ...(row === undefined ? {} : { row: (args: ActionRowArgs<TInput>) => row.call(def, args) }),
     ...(def.idempotent === undefined ? {} : { idempotent: def.idempotent }),
     ...(def.audit === undefined ? {} : { audit: def.audit }),
     handle: ({ input, ctx }) => def.server(ctx, input),

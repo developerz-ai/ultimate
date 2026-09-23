@@ -12,6 +12,7 @@ import { channel } from './channel-decl';
 import { clearChannels } from './channel-registry';
 import { InProcessTransport, type Transport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
+import { OPEN_POLICY } from './policy-fake';
 import { PresenceRegistry } from './presence';
 import { SocketRegistry } from './socket';
 import { createSyncNode, type SyncWs, type WsData } from './sync-node';
@@ -22,6 +23,7 @@ const BUILD_ID = 'build-1';
 const room = channel('leaves-room', {
   params: ['orgId'],
   catchUp: { name: 'roomRead' },
+  policy: OPEN_POLICY,
   events: true,
 });
 const ROOM: Topic = room.topic({ orgId: 'o1' });

@@ -4,6 +4,7 @@
  * app's `sql:` returns `from()` over an `@ultimat3/entity` repo, and a source only has to
  * answer these four questions.
  */
+import { QueryColumnUnselectedError } from './errors';
 import type { Filter, FilterOp, OrderKey, QueryShape, SeekKey } from './shape';
 import { compareRows, compareValues, isNull, matchesFilters, totalOrder } from './shape';
 import { columnOf } from './stable';
@@ -132,6 +133,7 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
 
   async execute(): Promise<readonly TRow[]> {
     const source = typeof this.rows === 'function' ? await this.rows() : this.rows;
+    this.assertCarried(source);
     let result = source.filter((row) => matchesFilters(row, this.filters));
     const keys = this.servedOrder();
     if (keys.length > 0) {
@@ -142,6 +144,19 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
       result = result.filter((row) => isAfterKey(row, cut, this.order));
     }
     return this.rowLimit === null ? result : result.slice(0, this.rowLimit);
+  }
+
+  /**
+   * Every column a filter or the declared ordering reads must be ON the rows. Only the declared
+   * keys: the `id` tiebreak `servedOrder()` adds is `seek()`'s concern, refused there by name.
+   */
+  private assertCarried(rows: readonly TRow[]): void {
+    const read = new Set([...this.filters, ...this.order].map((entry) => entry.column));
+    for (const row of rows) {
+      for (const column of read) {
+        if (!(column in row)) throw new QueryColumnUnselectedError(this.entity, column);
+      }
+    }
   }
 
   /** True when the ordering already names `id`, so the tiebreak is neither added nor doubled. */

@@ -19,6 +19,8 @@ import {
 import { GapRepairs } from './channel-gaps';
 import type { ChannelRecordsFrame } from './channel-wire';
 import { CLOSE } from './close-codes';
+import { DropWindow } from './socket-drops';
+import { DEFAULT_IDLE_TIMEOUT_MS } from './socket-idle';
 import { encode, type Frame } from './sync-protocol';
 import { AcceptBudget } from './thundering-herd';
 
@@ -156,6 +158,7 @@ export class SyncSocket {
   readonly #maxDroppedFrames: number;
   #clientBuildId: string;
   #closed = false;
+  readonly #drops: DropWindow;
 
   constructor(options: SyncSocketOptions) {
     this.#ws = options.ws;
@@ -168,6 +171,7 @@ export class SyncSocket {
     finiteOption('SyncSocket', 'maxBufferedBytes', this.#maxBufferedBytes);
     this.#maxDroppedFrames = options.maxDroppedFrames ?? 32;
     finiteOption('SyncSocket', 'maxDroppedFrames', this.#maxDroppedFrames);
+    this.#drops = new DropWindow(this.#maxDroppedFrames);
     this.frameBudget = new AcceptBudget({
       perSecond: finiteOption(
         'SyncSocket',
@@ -215,31 +219,32 @@ export class SyncSocket {
 
   /** `false` means the frame was dropped by backpressure — the caller must mark state stale. */
   send(frame: Frame): boolean {
+    return this.sendEncoded(encode(frame));
+  }
+
+  /** An `encode()`d frame — the fan-outs encode once for every socket. Adds no validation. */
+  sendEncoded(text: string): boolean {
     if (this.#closed) return false;
     if (this.#ws.getBufferedAmount() > this.#maxBufferedBytes) {
-      this.droppedFrames += 1;
-      if (this.droppedFrames > this.#maxDroppedFrames) {
-        this.close(CLOSE.overloaded, 'backpressure');
-      }
+      this.#dropped();
       return false;
     }
-    // `WsLike.send` is declared `: number` for this line and no other: Bun answers `0` for a
-    // message it DROPPED — the socket closed between the buffered-amount check above and this
-    // write — and `-1` under backpressure. Discarded, a dropped frame read as delivered, so
-    // `live-fanout` advanced the subscriber's cursor past a patch that never left and
-    // `sync-frames`' desync mark was never taken: permanently stale on a healthy socket, which is
-    // the exact outcome every other `socket.send` on this node reads its answer to prevent.
-    if (this.#ws.send(encode(frame)) <= 0) {
-      this.droppedFrames += 1;
-      // The same ceiling backpressure takes: a socket the runtime keeps refusing is one to close,
-      // and the two are one failure — the write went nowhere either way.
-      if (this.droppedFrames > this.#maxDroppedFrames) {
-        this.close(CLOSE.overloaded, 'backpressure');
-      }
+    // Bun answers `0` for a message it DROPPED (the socket closed after the check above) — the one
+    // drop. `-1` means QUEUED under backpressure, and it is delivered: counted as a drop it sent a
+    // spurious `replay-gap`, desynced a healthy subscriber, and closed the socket after 33.
+    if (this.#ws.send(text) === 0) {
+      this.#dropped();
       return false;
     }
     this.sentFrames += 1;
     return true;
+  }
+
+  /** One frame that never left: counted for life, judged per `DROP_WINDOW_MS` (`socket-drops.ts`). */
+  #dropped(): void {
+    this.droppedFrames += 1;
+    if (this.#drops.overflowed(this.#clock.monotonic()))
+      this.close(CLOSE.overloaded, 'backpressure');
   }
 
   /** Record a dropped or invalidated subscription so the next flush re-snapshots it. */
@@ -280,25 +285,6 @@ export class SyncSocket {
     this.#closed = true;
     this.#ws.close(code, reason);
   }
-}
-
-/**
- * How long a socket may route no frame before `sync-node` evicts it. It is an APPLICATION
- * inactivity budget and not Bun's transport one: Bun's `idleTimeout` is renewed by its own
- * ping/pong, so a client whose TCP stack still answers pings while its frame loop is wedged holds
- * its grant, its subscriptions and its topic membership forever. A beating client sends a `hello`
- * every `DEFAULT_HEARTBEAT_MS` (15s), so this is eight missed beats.
- */
-export const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
-
-/**
- * How often to ask. A quarter of the budget, floored at a second: a socket is evicted within 25%
- * of its window of going quiet, and a node holding 50,000 of them pays one pass over the table
- * four times per window rather than once a second. Derived rather than configured — a second knob
- * is a second number that can disagree with the one it is a fraction of.
- */
-export function idleSweepPeriodMs(idleTimeoutMs: number): number {
-  return Math.max(1_000, Math.floor(idleTimeoutMs / 4));
 }
 
 export interface SocketRegistryOptions {
@@ -425,6 +411,9 @@ export class SocketRegistry {
   deliver(topic: string, frame: Frame): number {
     const members = this.#byTopic.get(topic);
     if (!members) return 0;
+    // Encoded ONCE for every member: per socket it was 16.9 ms against 0.6 ms for a 2 kB frame to
+    // 10,000 sockets, measured.
+    const text = encode(frame);
     let sent = 0;
     let dropped = 0;
     for (const socket of members) {
@@ -432,7 +421,7 @@ export class SocketRegistry {
         members.delete(socket);
         continue;
       }
-      if (socket.send(frame)) sent += 1;
+      if (socket.sendEncoded(text)) sent += 1;
       else dropped += 1;
     }
     if (members.size === 0) this.#byTopic.delete(topic);
@@ -447,6 +436,7 @@ export class SocketRegistry {
   deliverRecords(topic: string, epoch: string, frame: ChannelRecordsFrame): number {
     const members = this.#byTopic.get(topic);
     if (!members) return 0;
+    const text = encode(frame);
     let sent = 0;
     let dropped = 0;
     for (const socket of members) {
@@ -455,7 +445,7 @@ export class SocketRegistry {
         continue;
       }
       this.gapRepairs.repair(socket, topic);
-      if (socket.send(frame)) {
+      if (socket.sendEncoded(text)) {
         sent += 1;
         continue;
       }
@@ -465,6 +455,19 @@ export class SocketRegistry {
     if (members.size === 0) this.#byTopic.delete(topic);
     if (dropped > 0) this.#countDropped(topic, dropped);
     return sent;
+  }
+
+  /** Every member owes a re-read (a TRUNCATE): one `replay-gap` each now, or kept as a mark. */
+  announceGap(topic: string, epoch: string): number {
+    const members = this.#byTopic.get(topic);
+    if (!members) return 0;
+    let announced = 0;
+    for (const socket of members) {
+      if (socket.closed) continue;
+      socket.gaps.set(topic, epoch);
+      if (this.gapRepairs.repair(socket, topic)) announced += 1;
+    }
+    return announced;
   }
 
   #countDropped(topic: string, dropped: number): void {

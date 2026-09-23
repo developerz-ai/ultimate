@@ -229,3 +229,38 @@ describe('a settlement is fenced on the reservation that produced it', () => {
     expect(record?.id).toBe(second);
   });
 });
+
+/**
+ * A replay is the value the handler RETURNED, whichever store holds it. The memory store kept the
+ * live object and the postgres store kept `JSON.parse(JSON.stringify(v))` with no re-validation,
+ * so a `Date` output came back a `Date` on the first call and a `string` on every retry served
+ * from Postgres. `WireStore` round-trips through JSON exactly as `postgresIdempotencyStore` does.
+ */
+describe('a replayed output is parsed, on every store', () => {
+  class WireStore extends MemoryIdempotencyStore {
+    override settle(key: string, value: unknown, reservationId: string): Promise<void> {
+      return super.settle(key, JSON.parse(JSON.stringify(value ?? null)), reservationId);
+    }
+  }
+
+  const stamped = action({
+    input: Input,
+    output: t.object({ id: t.uuid, at: t.date }),
+    policy: can('post:publish'),
+    idempotent: true,
+    handle: ({ input }) => ({ id: input.postId, at: new Date('2026-01-01T00:00:00.000Z') }),
+  }).named('stampPost');
+
+  for (const [name, store] of [
+    ['memory', () => new MemoryIdempotencyStore()],
+    ['wire (postgres)', () => new WireStore()],
+  ] as const) {
+    test(`${name}: the retry answers the same Date the first call did`, async () => {
+      const options = { ctx, store: store(), idempotencyKey: 'key-1' } as const;
+      const first = await invoke(stamped, { postId: POST_ID }, options);
+      const second = await invoke(stamped, { postId: POST_ID }, options);
+      expect((second as { readonly at: unknown }).at).toBeInstanceOf(Date);
+      expect(second).toEqual(first);
+    });
+  }
+});

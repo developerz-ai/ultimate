@@ -11,7 +11,7 @@ import type { ChangeEvent, ChangeFeed } from './changefeed';
 import { formatLsn, InMemoryChangeFeed } from './changefeed';
 import { InProcessTransport } from './fanout';
 import type { AdvisoryLock } from './replicator';
-import { createReplicator, InMemoryAdvisoryLock } from './replicator';
+import { createReplicator, InMemoryAdvisoryLock, normalize, parseChange } from './replicator';
 import { defaultBackoff } from './thundering-herd';
 
 let keyCounter = 0;
@@ -369,5 +369,30 @@ describe('retryDelayMs', () => {
     expect(spread.retryDelayMs(1)).toBe(
       Math.round(defaultBackoff.baseMs * defaultBackoff.factor * 0.25),
     );
+  });
+});
+
+// A truncate carries no row by design. `normalize` dropped every rowless change and the envelope
+// decoder refused any op but three, so a truncate the WAL delivered never reached a sync node.
+describe('a truncate crosses the bus', () => {
+  const truncate: ChangeEvent = {
+    entity: 'posts',
+    op: 'truncate',
+    before: null,
+    after: null,
+    lsn: formatLsn(9),
+    txid: '9',
+    orgId: null,
+    at: 0,
+  };
+
+  test('normalize keeps it and the envelope decoder reads it back', () => {
+    expect(normalize(truncate)).toBe(truncate);
+    expect(parseChange(JSON.stringify({ ...truncate, seq: 1, producer: 'p' }))).toMatchObject({
+      entity: 'posts',
+      op: 'truncate',
+      before: null,
+      after: null,
+    });
   });
 });

@@ -17,6 +17,7 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_CURSOR_VALUE_UNSUPPORTED: 'a sort value cannot be carried in a cursor',
   X_MATCHER_UNSUPPORTED: 'live query shape cannot be patched incrementally',
   X_QUERY_CACHE_TTL_INVALID: 'a query declares a cache ttlMs no tier can hold',
+  X_QUERY_COLUMN_UNSELECTED: 'a read filters or sorts on a column its rows do not carry',
   X_QUERY_DEPRECATION_INVALID: 'a query declares a deprecation whose dates cannot be rendered',
   X_QUERY_DUPLICATE: 'two queries are registered under one name',
   X_QUERY_FOREIGN: 'a value that is not a query was projected as one',
@@ -236,6 +237,23 @@ export class CursorValueUnsupportedError extends UltimateError {
       code: 'X_CURSOR_VALUE_UNSUPPORTED',
       cause: `a sort key holds ${description}, which no cursor can carry`,
       fix: 'order by a scalar column — .orderBy("createdAt") or .orderBy("id") — and project the composite value into the row instead',
+    });
+  }
+}
+
+/**
+ * A `where()`, `compare()` or `orderBy()` on a column the provider's rows do not carry. Absent is
+ * not "not equal": every row failed the filter and the read answered `[]` — a loader that selected
+ * `slug` and `updatedAt` and filtered on `status` built a blog with no article in it, under a
+ * green gate. Refused by name, because the repair is one edit to the loader's `select`.
+ */
+export class QueryColumnUnselectedError extends UltimateError {
+  constructor(entity: string, column: string) {
+    super({
+      code: 'X_QUERY_COLUMN_UNSELECTED',
+      cause: `the rows of "${entity}" carry no "${column}" column, so filtering or sorting on it matches nothing`,
+      fix: 'select it in the loader: db.posts.select({ slug: true, status: true, publishedAt: true }) — or drop the filter the loader already applied',
+      meta: { entity, column },
     });
   }
 }

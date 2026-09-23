@@ -33,21 +33,38 @@ export interface QueueState {
   readonly nextSeq: number;
 }
 
+/**
+ * One change to the durable queue: these entries written BY KEY, these keys deleted, and the
+ * sequence floor. Never the whole queue — two tabs of one user share the store, and a whole-queue
+ * save let the last tab to save erase the other's queued write.
+ */
+export interface QueueChange {
+  readonly puts: readonly QueuedMutation[];
+  readonly deletes: readonly string[];
+  readonly nextSeq: number;
+}
+
 /** Durability seam: IndexedDB in the browser (`page-outbox.ts`), memory in tests. */
 export interface QueueStore {
   load(): Promise<QueueState>;
-  save(state: QueueState): Promise<void>;
+  write(change: QueueChange): Promise<void>;
 }
 
 export class MemoryQueueStore implements QueueStore {
-  #state: QueueState = { mutations: [], nextSeq: 1 };
+  readonly #mutations = new Map<string, QueuedMutation>();
+  #nextSeq = 1;
 
   async load(): Promise<QueueState> {
-    return this.#state;
+    return {
+      mutations: [...this.#mutations.values()].map((m) => ({ ...m })),
+      nextSeq: this.#nextSeq,
+    };
   }
 
-  async save(state: QueueState): Promise<void> {
-    this.#state = { mutations: state.mutations.map((m) => ({ ...m })), nextSeq: state.nextSeq };
+  async write(change: QueueChange): Promise<void> {
+    for (const key of change.deletes) this.#mutations.delete(key);
+    for (const mutation of change.puts) this.#mutations.set(mutation.key, { ...mutation });
+    this.#nextSeq = Math.max(this.#nextSeq, change.nextSeq);
   }
 }
 
@@ -81,9 +98,37 @@ export class OfflineQueue {
     this.#nextSeq = state.nextSeq;
   }
 
-  /** Rehydrates from durable storage, so a reload resumes the same queue with the same sequence. */
+  /**
+   * Rehydrates from durable storage, so a reload resumes the same queue with the same sequence.
+   *
+   * An `inflight` entry on disk belonged to a page that is gone, so it goes back to `pending`. Left
+   * as it was, `#sendable` skipped it forever — no ack was coming to a page that no longer exists —
+   * and every later write overtook it. The replay carries its idempotency key, so a write the old
+   * page did get through is answered from the action's idempotency store, never applied twice.
+   */
   static async open(store: QueueStore): Promise<OfflineQueue> {
-    return new OfflineQueue(store, await store.load());
+    const queue = new OfflineQueue(store, await store.load());
+    await queue.#reclaimInflight();
+    return queue;
+  }
+
+  /**
+   * Re-reads the durable queue, which another tab of the same user may have written since this one
+   * opened. Call ONLY while this queue is the one draining — `page-outbox.ts` holds a Web Lock for
+   * exactly that — because it reclaims every `inflight` entry as `pending`: with the lock held, no
+   * other pass can have one on the wire.
+   */
+  async reload(): Promise<void> {
+    const state = await this.#store.load();
+    this.#mutations = state.mutations.map((mutation) => ({ ...mutation }));
+    this.#nextSeq = Math.max(this.#nextSeq, state.nextSeq);
+    await this.#reclaimInflight();
+  }
+
+  async #reclaimInflight(): Promise<void> {
+    const reclaimed = this.#mutations.filter((mutation) => mutation.status === 'inflight');
+    for (const mutation of reclaimed) mutation.status = 'pending';
+    if (reclaimed.length > 0) await this.#persist(reclaimed);
   }
 
   get size(): number {
@@ -133,6 +178,8 @@ export class OfflineQueue {
     // entry is dropped and this one takes a new sequence at the back of the queue.
     // By identity: `existing` IS the entry for this key, found above — no second key comparison.
     if (existing) this.#mutations = this.#mutations.filter((entry) => entry !== existing);
+    // Another tab of the same user may have taken sequence numbers since this one loaded.
+    this.#nextSeq = Math.max(this.#nextSeq, (await this.#store.load()).nextSeq);
     const mutation: QueuedMutation = {
       key: args.key,
       seq: this.#nextSeq,
@@ -145,7 +192,7 @@ export class OfflineQueue {
     };
     this.#nextSeq += 1;
     this.#mutations.push(mutation);
-    await this.#persist();
+    await this.#persist([mutation]);
     return mutation;
   }
 
@@ -190,12 +237,14 @@ export class OfflineQueue {
   async requeueInflight(): Promise<number> {
     this.#epoch += 1;
     let returned = 0;
+    const back: QueuedMutation[] = [];
     for (const mutation of this.#mutations) {
       if (mutation.status !== 'inflight') continue;
       mutation.status = 'pending';
       returned += 1;
+      back.push(mutation);
     }
-    if (returned > 0) await this.#persist();
+    if (returned > 0) await this.#persist(back);
     return returned;
   }
 
@@ -206,7 +255,7 @@ export class OfflineQueue {
     mutation.status = 'acked';
     // By identity: `find` already matched it, and a second comparison of the key is the same question.
     this.#mutations = this.#mutations.filter((entry) => entry !== mutation);
-    await this.#persist();
+    await this.#persist([], [key]);
   }
 
   /** Terminal failure (policy denial, validation): kept for the UI, never retried blindly. */
@@ -215,7 +264,7 @@ export class OfflineQueue {
     if (!mutation) return;
     mutation.status = 'failed';
     mutation.error = error;
-    await this.#persist();
+    await this.#persist([mutation]);
   }
 
   /**
@@ -252,6 +301,7 @@ export class OfflineQueue {
       return { sent: 0, collapsed: this.#collapsed, remaining: 0, stoppedAt: null };
     }
     let sent = 0;
+    const touched: QueuedMutation[] = [];
     for (const mutation of sendable) {
       // The connection this pass was draining into is gone, and `requeueInflight` has already
       // handed back what was on it. Everything left stays `pending` for the pass the next
@@ -269,6 +319,7 @@ export class OfflineQueue {
       if (!this.#stillSendable(mutation)) continue;
       mutation.status = 'inflight';
       mutation.attempts += 1;
+      touched.push(mutation);
       try {
         await send(mutation);
         // Stays `inflight`. `send` resolving means the frame reached a socket — a browser
@@ -280,7 +331,7 @@ export class OfflineQueue {
       } catch (error) {
         mutation.status = 'pending';
         mutation.error = toQueueError(error);
-        await this.#persist();
+        await this.#persist([mutation]);
         return {
           sent,
           collapsed: this.#collapsed,
@@ -289,7 +340,9 @@ export class OfflineQueue {
         };
       }
     }
-    await this.#persist();
+    // Only what this pass touched AND the queue still holds: an entry the server settled during the
+    // pass was already deleted by `ack`, and writing it back would resurrect it.
+    await this.#persist(touched.filter((mutation) => this.#mutations.includes(mutation)));
     return {
       sent,
       collapsed: this.#collapsed,
@@ -299,19 +352,21 @@ export class OfflineQueue {
   }
 
   async clear(): Promise<void> {
+    const keys = this.#mutations.map((mutation) => mutation.key);
     this.#mutations = [];
-    await this.#persist();
+    await this.#persist([], keys);
   }
 
   /**
-   * A snapshot, never the live entries. `save` is a durable write — OPFS, IndexedDB — and it is
-   * allowed to await before it reads. Handed the array itself, a store that resolves after the next
-   * pass has moved on persists a status that was never true when it was called; `inflight` is the
-   * one a reload cannot recover from, because `#sendable` skips it and no ack is coming.
+   * Snapshots, never the live entries. `write` is a durable write — IndexedDB — and it is allowed
+   * to await before it reads. Handed an entry itself, a store that resolves after the next pass has
+   * moved on persists a status that was never true when it was called. BY KEY, never the whole
+   * queue: a second tab's entries are not this tab's to overwrite or delete.
    */
-  async #persist(): Promise<void> {
-    await this.#store.save({
-      mutations: this.#mutations.map((mutation) => ({ ...mutation })),
+  async #persist(puts: readonly QueuedMutation[], deletes: readonly string[] = []): Promise<void> {
+    await this.#store.write({
+      puts: puts.map((mutation) => ({ ...mutation })),
+      deletes,
       nextSeq: this.#nextSeq,
     });
   }

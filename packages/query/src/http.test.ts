@@ -3,7 +3,7 @@
 // handler, and the URL it answers on is the one `client()` derives with no server import.
 
 import { describe, expect, test } from 'bun:test';
-import { userActor } from '@ultimat3/core';
+import { UltimateError, userActor } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import { createServer, defineHttpConfig } from '@ultimat3/http';
 import type { Actor } from '@ultimat3/policy';
@@ -380,5 +380,56 @@ describe('a paged read over the route', () => {
     const second = await client.page({ orgId: ORG }, { first: 1, after: first.endCursor ?? '' });
     expect(second.rows).toEqual([{ id: 'c', orgId: ORG, rank: 3 }]);
     expect(second.hasNextPage).toBe(false);
+  });
+});
+
+/**
+ * A query's error takes the path every other route's error takes — the same repair
+ * `@ultimat3/action`'s `toRoute` got. `toQueryRoute` caught an `UltimateError` and answered
+ * `problem(error)` itself, so the pipeline's `error-map` stage never saw it: no
+ * `onError`/`reportError` on a 5xx, no HTML error page for a browser, no `requestId`.
+ */
+describe('a query error reaches the error-map stage', () => {
+  const failing = query({
+    input: t.object({ orgId: t.uuid }),
+    policy: allow(),
+    deprecated: { since: '2026-08-01T00:00:00Z', sunset: '2027-01-01T00:00:00Z' },
+    sql: () => {
+      throw new UltimateError({
+        code: 'X_PIPELINE_NO_RESPONSE',
+        cause: 'the read failed on purpose',
+        fix: 'nothing to fix: this test throws a 5xx',
+      });
+    },
+  }).named('brokenFeed');
+
+  const get = (onError: (error: unknown) => void, accept: string) =>
+    createServer({
+      routes: [toQueryRoute(failing)],
+      config: oneProcess(),
+      hooks: { onError, authenticate: () => reader('u-1') },
+    }).fetch(
+      new Request(`http://dev.test/_x/query/broken-feed?orgId=${ORG}`, {
+        method: 'GET',
+        headers: { accept },
+      }),
+    );
+
+  test('a 5xx is reported to onError exactly once, with a requestId in the body', async () => {
+    const reported: unknown[] = [];
+    const response = await get((error) => reported.push(error), 'application/json');
+    expect(response.status).toBe(500);
+    expect(reported).toHaveLength(1);
+    expect((await response.json()).requestId).toBeString();
+  });
+
+  test('a browser asking for html gets the html error page', async () => {
+    const response = await get(() => undefined, 'text/html');
+    expect(response.headers.get('content-type')).toStartWith('text/html');
+  });
+
+  test('the deprecation headers still ride on the failure', async () => {
+    const response = await get(() => undefined, 'application/json');
+    expect(response.headers.get('sunset')).not.toBeNull();
   });
 });

@@ -161,6 +161,11 @@ export function advance(
   lsn: string,
   now: number,
 ): LiveCursor {
+  // An update moves no id in or out, and it is the common change: the ids are reused as they are,
+  // so a fan-out to N subscribers of a W-row window is not N rebuilds of a W-id set per change.
+  if (!patches.some((patch) => patch.op !== 'update')) {
+    return { qid: cursor.qid, lsn, ids: cursor.ids, at: now };
+  }
   const ids = new Set(cursor.ids);
   for (const patch of patches) {
     if (patch.op === 'delete') ids.delete(patch.id);

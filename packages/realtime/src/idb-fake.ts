@@ -13,6 +13,11 @@ type Tables = Map<string, Map<string, unknown>>;
 export interface FakeIdbOptions {
   /** `open` fails, as it does in a private window or with storage blocked. */
   readonly blocked?: boolean;
+  /**
+   * Every write ABORTS its transaction, as a quota refusal does: `abort` fires and nothing else —
+   * no `complete`, no transaction `error` event. Read at write time, so a test can flip it.
+   */
+  quotaExceeded?: boolean;
 }
 
 /** A fresh, empty database server. Share one instance to simulate a reload over the same disk. */
@@ -28,7 +33,7 @@ export function fakeIndexedDb(options: FakeIdbOptions = {}): IdbFactoryLike {
         }
         const known = databases.get(name) ?? { version: 0, tables: new Map() };
         databases.set(name, known);
-        const db = database(known.tables);
+        const db = database(known.tables, options);
         request.result = db;
         if (known.version < version) {
           known.version = version;
@@ -41,7 +46,7 @@ export function fakeIndexedDb(options: FakeIdbOptions = {}): IdbFactoryLike {
   };
 }
 
-function database(tables: Tables): IdbDatabaseLike {
+function database(tables: Tables, options: FakeIdbOptions): IdbDatabaseLike {
   return {
     objectStoreNames: { contains: (name: string): boolean => tables.has(name) },
     createObjectStore: (name: string): void => {
@@ -49,12 +54,19 @@ function database(tables: Tables): IdbDatabaseLike {
     },
     transaction(names: string | readonly string[]) {
       let open = 0;
-      const failed = false;
+      let failed = false;
       const tx = {
         oncomplete: null as (() => void) | null,
         onerror: null as (() => void) | null,
+        onabort: null as (() => void) | null,
         error: null as unknown,
         objectStore: (name: string): IdbStoreLike => store(name),
+      };
+      const abort = (): void => {
+        if (failed) return;
+        failed = true;
+        tx.error = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        queueMicrotask(() => tx.onabort?.());
       };
       const settleLater = (): void => {
         queueMicrotask(() => {
@@ -82,7 +94,15 @@ function database(tables: Tables): IdbDatabaseLike {
         const sorted = (): [string, unknown][] =>
           [...table].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
         return {
-          put: (value, key) => run(() => void table.set(key, structuredClone(value))),
+          get: (key) => run(() => structuredClone(table.get(key))),
+          put: (value, key) =>
+            run(() => {
+              if (options.quotaExceeded === true) {
+                abort();
+                return;
+              }
+              table.set(key, structuredClone(value));
+            }),
           delete: (key) => run(() => void table.delete(key)),
           getAll: () => run(() => sorted().map(([, value]) => structuredClone(value))),
           getAllKeys: () => run(() => sorted().map(([key]) => key)),

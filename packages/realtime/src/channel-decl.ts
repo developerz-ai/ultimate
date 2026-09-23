@@ -43,10 +43,12 @@ function projectionFor(name: string, entity: ChannelEntity): RecordProjection {
 export interface ChannelServerInit {
   /**
    * Evaluated on subscribe: the params are the input, and `row` is what the loader below answered
-   * (`null` without one). Omitted = any socket may join. Records are NOT gated per row — the topic's
+   * (`null` without one). REQUIRED, as on an `action` and a `query`: it was optional, and an omitted
+   * one let any socket — anonymous included — join with any param and receive every committed row.
+   * A public channel says so with `allow('public')`. Records are NOT gated per row — the topic's
    * params are the scope, so a channel that must hide rows is declared narrower.
    */
-  readonly policy?: QueryPolicy;
+  readonly policy: QueryPolicy;
   /**
    * The subject the policy decides about, loaded by the SURFACE before the rule runs — the same
    * split an action's `row:` makes, because a rule is synchronous and membership is a read.
@@ -69,7 +71,7 @@ export interface Channel<K extends string = string> {
   readonly kind: 'channel';
   readonly name: string;
   readonly params: readonly K[];
-  readonly policy: QueryPolicy | undefined;
+  readonly policy: QueryPolicy;
   readonly row: ChannelRowLoader | undefined;
   readonly catchUp: string;
   readonly records: readonly RecordProjection[];
@@ -87,7 +89,7 @@ export interface Channel<K extends string = string> {
  * Registers the declaration (`channel-registry.ts`) — a second one of the same name is refused.
  *
  * The params-matching rule, decided here once: a row belongs to the topic whose params equal the
- * row's own properties of those names. So `channel('org-feed', { params: ['orgId'], records:
+ * row's own properties of those names. So `channel('org-feed', { params: ['orgId'], policy, records:
  * [posts] })` carries every `posts` row on `org-feed.<row.orgId>`, and every listed entity must have
  * a column named after every param — refused at declaration, where the author is.
  */
@@ -103,6 +105,15 @@ export function channel<K extends string>(
   const ref =
     typeof nameOrRef === 'string' ? channelRef(nameOrRef, init as ChannelInit<K>) : nameOrRef;
   const name = ref.name;
+  // The type requires it; this is the refusal a JS caller, or a cast, reaches.
+  const policy = (init as Partial<ChannelServerInit>).policy;
+  if (policy === undefined) {
+    refuseChannel(
+      name,
+      'declares no policy, so any socket, anonymous included, could join and receive every row',
+      "add policy: can('<resource>:read') to the channel() call, or policy: allow('public') for a channel anyone may join",
+    );
+  }
   const records = (init.records ?? []).map((entity) => {
     const projection = projectionFor(name, entity);
     for (const param of ref.params) {
@@ -121,7 +132,7 @@ export function channel<K extends string>(
     kind: 'channel' as const,
     name,
     params: ref.params,
-    policy: init.policy,
+    policy,
     row: init.row,
     get catchUp(): string {
       return ref.catchUp;

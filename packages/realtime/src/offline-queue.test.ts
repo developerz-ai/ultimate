@@ -260,14 +260,14 @@ describe('what a durable store is handed', () => {
     let first = true;
     const observing: QueueStore = {
       load: () => store.load(),
-      save: async (state) => {
+      write: async (change) => {
         if (first) {
           first = false;
-          held.atCall = state.mutations.map((mutation) => mutation.status);
+          held.atCall = change.puts.map((mutation) => mutation.status);
           await slow.promise;
-          held.afterAwait = state.mutations.map((mutation) => mutation.status);
+          held.afterAwait = change.puts.map((mutation) => mutation.status);
         }
-        await store.save(state);
+        await store.write(change);
       },
     };
 

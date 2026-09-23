@@ -48,7 +48,11 @@ describe('one authz system', () => {
     const route = toRoute(target);
     const { request, rctx } = requestFor('/api/posts/publish', { postId: POST_ID });
 
-    const response = await runWithContext(anonymous, () => route.handler(request, rctx));
+    // The route handler THROWS its refusal now — the pipeline's `error-map` stage renders it, the
+    // same path every route's error takes — so the two surfaces are compared on the error itself.
+    const refusal = await runWithContext(anonymous, () =>
+      Promise.resolve(route.handler(request, rctx)).catch((error: unknown) => error),
+    );
     const denial = await runWithContext(anonymous, () =>
       toMcpTool(target)
         .invoke({ postId: POST_ID })
@@ -59,7 +63,7 @@ describe('one authz system', () => {
     // the denial is rendered (problem+json here, tool content there).
     // No actor at all, so the permission clause short-circuits before the predicate.
     expect(seen).toEqual([]);
-    expect(response.status).toBe(401);
+    expect((refusal as { code?: string }).code).toBe('X_UNAUTHENTICATED');
     expect((denial as { code?: string }).code).toBe('X_UNAUTHENTICATED');
   });
 

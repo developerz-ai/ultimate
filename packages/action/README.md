@@ -623,7 +623,7 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_IDEMPOTENCY_NOT_SHARED` | `configureIdempotency({ scope: 'shared' })` over a per-process (or scope-less) store | install `postgresIdempotencyStore({ executor })` at boot |
 | `X_IDEMPOTENCY_REPLAYED_FAILURE` | a retried key replays a first attempt that failed and carried no framework code of its own | read the first attempt, then send a fresh key |
 | `X_IDEMPOTENCY_STATUS_UNKNOWN` | `x_idempotency.status` holds a word this build has no branch for — written by a newer deploy | finish the rollout onto the build that writes it, then reconcile those requests — never DELETE the rows, which frees the key to run an already-committed action a second time |
-| `X_CONTRACT_DRIFT` | client/server build skew, missing spec entry | reload / `x verify --contract` |
+| `X_CONTRACT_DRIFT` | client/server build skew, missing spec entry | reload / `x verify --only contract` |
 | `X_RPC_FAILED` | registered, thrown by nothing since 21.0.0 — a non-`problem+json` failure is core's `X_CLIENT_TRANSPORT_FAILED` now, as for a query | match `X_CLIENT_TRANSPORT_FAILED` instead |
 | `X_ACTION_UNREGISTERED` | projected before `registerActions()` ran | register at boot |
 | `X_AUDIT_SINK_MISSING` | `audit: true` and no sink installed — raised before the input parse | `setAuditSink(yourSink)` at boot |
@@ -644,6 +644,33 @@ A document carrying an `issues` member arrives parsed as well: `meta.issues`, re
 cannot read is dropped whole rather than half-kept, leaving `cause` (which still holds every
 rejection) as the answer. It is exported for the island that posts with a plain `fetch` and holds
 the body itself.
+
+### Error classes
+
+Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
+a job boundary the class is gone and the `code` is what survives — match on that.
+
+| Class | Code | Declared in |
+|---|---|---|
+| `ActionDeniedError` | the policy denial's own code (`X_FORBIDDEN`, `X_UNAUTHENTICATED`, …), kept on `.denial` | `src/errors.ts` |
+| `ActionDeprecationInvalidError` | `X_ACTION_DEPRECATION_INVALID` | `src/errors.ts` |
+| `ActionDuplicateError` | `X_ACTION_DUPLICATE` | `src/errors.ts` |
+| `ActionForeignError` | `X_ACTION_FOREIGN` | `src/errors.ts` |
+| `ActionPathDuplicateError` | `X_ACTION_PATH_DUPLICATE` | `src/errors.ts` |
+| `ActionPolicyMissingError` | `X_ACTION_POLICY_MISSING` | `src/errors.ts` |
+| `ActionUnregisteredError` | `X_ACTION_UNREGISTERED` | `src/errors.ts` |
+| `AuditSinkFailedError` | `X_AUDIT_SINK_FAILED` | `src/errors.ts` |
+| `AuditSinkMissingError` | `X_AUDIT_SINK_MISSING` | `src/errors.ts` |
+| `ContractDriftError` | `X_CONTRACT_DRIFT` | `src/errors.ts` |
+| `IdempotencyConflictError` | `X_IDEMPOTENCY_CONFLICT` | `src/errors-idempotency.ts` |
+| `IdempotencyKeyInvalidError` | `X_IDEMPOTENCY_KEY_INVALID` | `src/errors-idempotency.ts` |
+| `IdempotencyNotSharedError` | `X_IDEMPOTENCY_NOT_SHARED` | `src/errors-idempotency.ts` |
+| `IdempotencyReplayedFailureError` | `X_IDEMPOTENCY_REPLAYED_FAILURE` | `src/errors-idempotency.ts` |
+| `IdempotencyStatusUnknownError` | `X_IDEMPOTENCY_STATUS_UNKNOWN` | `src/errors-idempotency.ts` |
+| `InputInvalidError` | `X_INPUT_INVALID` | `src/errors.ts` |
+| `OutputInvalidError` | `X_OUTPUT_INVALID` | `src/errors.ts` |
+| `RemoteActionError` | the code the server sent, verbatim — `meta.origin: 'remote'` | `src/errors.ts` |
+| `RpcFailedError` | `X_RPC_FAILED` | `src/errors.ts` |
 
 ## Boundaries
 

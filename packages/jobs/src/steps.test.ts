@@ -380,3 +380,55 @@ describe('the attempt trace is bounded, and duplicate detection is not', () => {
     expect(second.replayedNames()).toHaveLength(MAX_TRACE_NAMES);
   });
 });
+
+/**
+ * A replay answers the same value on every driver. The memory store kept the live REFERENCE and
+ * the pg store `JSON.stringify(output ?? null)`, so a `Date` step output replayed as a `Date` in
+ * tests and as a string in production — and a `waitForEvent` timeout replayed as `null` on pg,
+ * where `evt === undefined` then read as "an event arrived". `wire` is the pg store's own reading:
+ * JSON on the way in, `row.output` on the way out.
+ */
+describe('a replay is the same value on every store', () => {
+  const wire = (): StepStore => {
+    const inner = createMemoryStepStore();
+    return {
+      ...inner,
+      put: (record) =>
+        inner.put({ ...record, output: JSON.parse(JSON.stringify(record.output ?? null)) }),
+    };
+  };
+
+  for (const [label, make] of [
+    ['memory', createMemoryStepStore],
+    ['wire (postgres)', wire],
+  ] as const) {
+    test(`${label}: a Date output replays as what the store persisted, identically`, async () => {
+      const on = make();
+      const at = new Date(T0);
+      const first = createStepRunner({ runId: 'run-p', jobName: 'j', store: on });
+      await first.step.run('stamp', () => ({ at }));
+      const second = createStepRunner({ runId: 'run-p', jobName: 'j', store: on });
+      const replayed = await second.step.run('stamp', () => ({ at: new Date(0) }));
+      expect(replayed).toEqual({ at: at.toISOString() } as unknown as { at: Date });
+    });
+
+    test(`${label}: a timed-out wait replays as undefined, never null`, async () => {
+      const on = make();
+      const clock = fakeClock(T0);
+      const events = createMemoryEventBus({ clock });
+      const attempt = (): Promise<unknown> =>
+        createStepRunner({
+          runId: 'run-t',
+          jobName: 'j',
+          store: on,
+          clock,
+          events,
+        }).step.waitForEvent('maybe', 'never.happens', { timeout: '1m' });
+      expect(isStepSuspension(await attempt().catch((error: unknown) => error))).toBe(true);
+      clock.advance(61_000);
+      expect(await attempt()).toBeUndefined();
+      // The replay — the record is `completed` now, and this is what a retry reads.
+      expect(await attempt()).toBeUndefined();
+    });
+  }
+});
