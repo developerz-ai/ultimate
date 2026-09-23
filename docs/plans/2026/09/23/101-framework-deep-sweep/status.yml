@@ -1,0 +1,84 @@
+plan: 101-framework-deep-sweep
+title: "Framework deep sweep: bugs, gaps, refactors, speed"
+status: not_started
+created_by: sebi
+worked_by: ""
+owner: sebi
+percent: 0
+current_focus: "17-docs.md row e (plan 102 semver fix), then 01-core-schema.md; 14-guards-gate.md row a can run in parallel"
+slices:
+  - file: 01-core-schema.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 02-tier1-data-edge.md
+    tier: 1
+    status: not_started
+    percent: 0
+  - file: 03-entity-query.md
+    tier: 2
+    status: not_started
+    percent: 0
+  - file: 04-http-auth.md
+    tier: 2
+    status: not_started
+    percent: 0
+  - file: 05-action-jobs.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 06-realtime-server.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 07-realtime-client.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 08-tier4-services.md
+    tier: 4
+    status: not_started
+    percent: 0
+  - file: 09-admin-testing.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 10-cli-correctness.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 11-cli-generators-dx.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 12-prod-boot-perf.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 13-deploy.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 14-guards-gate.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 15-ci-release.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 16-apps.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 17-docs.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 18-major-22.md
+    tier: 6        # cross-tier release slice; 6 sorts it after every tier-0–5 slice, as overview.md requires
+    status: not_started
+    percent: 0
+evidence: []
+notes: "Two audit passes at 5262dc32 (21.0.0), 18 agents. Decisions pending in 18-major-22.md rows e, f, g, h."
+last_updated: 2026-09-23
